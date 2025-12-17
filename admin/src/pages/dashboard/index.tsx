@@ -29,14 +29,17 @@ const Dashboard: React.FC = () => {
         try {
             setLoading(true);
             // 并发请求
-            const [projRes, escrowRes] = await Promise.all([
+            const [projRes, _escrowRes] = await Promise.all([
                 projectApi.list({ page: 1, pageSize: 5 }),
                 escrowApi.detail(1) // 暂时取项目1的托管作为示例
             ]);
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            void _escrowRes; // Mark as intentionally unused
 
-            if (projRes.code === 0) {
-                setRecentProjects(projRes.data.list || []);
-                setStats(prev => ({ ...prev, activeProjects: projRes.data.total }));
+            const projData = projRes as any;
+            if (projData.code === 0) {
+                setRecentProjects(projData.data.list || []);
+                setStats(prev => ({ ...prev, activeProjects: projData.data.total }));
             }
             // 托管余额只是单个项目的，此处仅演示集成
             // 实际应调用聚合统计API
@@ -119,6 +122,7 @@ const Dashboard: React.FC = () => {
                     columns={columns}
                     rowKey="id"
                     pagination={false}
+                    loading={loading}
                 />
             </Card>
         </Space>

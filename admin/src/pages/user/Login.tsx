@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Form, Input, Button, message, Layout, Typography } from 'antd';
-import { UserOutlined, LockOutlined, MobileOutlined } from '@ant-design/icons';
+import { LockOutlined, MobileOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../../services/api';
 
@@ -17,7 +17,7 @@ const Login: React.FC = () => {
             const res = await authApi.login({
                 phone: values.phone,
                 code: values.code
-            });
+            }) as any;
 
             if (res.code === 0) {
                 message.success('登录成功');

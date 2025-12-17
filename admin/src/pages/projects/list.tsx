@@ -17,7 +17,7 @@ const ProjectList: React.FC = () => {
     const fetchProjects = async () => {
         setLoading(true);
         try {
-            const res = await projectApi.list({ page: 1, pageSize: 10 });
+            const res = await projectApi.list({ page: 1, pageSize: 10 }) as any;
             if (res.code === 0) {
                 setProjects(res.data.list || []);
                 setTotal(res.data.total);
