@@ -1,0 +1,24 @@
+# 装修设计一体化平台 - 服务端配置
+
+server:
+  host: "0.0.0.0"
+  port: "8080"
+  mode: "debug"
+
+database:
+  host: "localhost"
+  port: "5432"
+  user: "postgres"
+  password: "123456"
+  dbname: "home_decoration"
+  sslmode: "disable"
+
+redis:
+  host: "localhost"
+  port: "6379"
+  password: ""
+  db: 0
+
+jwt:
+  secret: "home-decoration-jwt-secret-dev-2024"
+  expire_hour: 72

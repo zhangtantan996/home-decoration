@@ -1,0 +1,61 @@
+services:
+  # Database
+  db:
+    image: mysql:8.0
+    container_name: decorating_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root  # 建议修改
+      MYSQL_DATABASE: home_decoration
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - decorating-net
+  
+  # Redis Cache
+  redis:
+    image: redis:6.2-alpine
+    container_name: decorating_redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    networks:
+      - decorating-net
+
+  # Go API Server
+  api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: decorating_api
+    restart: always
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+    networks:
+      - decorating-net
+
+  # Frontend (Admin + Mobile + Nginx)
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    container_name: decorating_web
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - decorating-net
+
+volumes:
+  db_data:
+  redis_data:
+
+networks:
+  decorating-net:
+    driver: bridge
