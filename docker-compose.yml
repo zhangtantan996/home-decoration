@@ -1,14 +1,15 @@
 services:
-  # Database
+  # Database - PostgreSQL (matching server code)
   db:
-    image: mysql:8.0
+    image: postgres:15-alpine
     container_name: decorating_db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root  # 建议修改
-      MYSQL_DATABASE: home_decoration
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: home_decoration
     volumes:
-      - db_data:/var/lib/mysql
+      - db_data:/var/lib/postgresql/data
     networks:
       - decorating-net
   
@@ -32,9 +33,8 @@ services:
     depends_on:
       - db
       - redis
-    environment:
-      - DB_HOST=db
-      - REDIS_HOST=redis
+    volumes:
+      - ./server/config.docker.yaml:/app/config.yaml:ro
     networks:
       - decorating-net
 

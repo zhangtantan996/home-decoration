@@ -1,0 +1,24 @@
+# 装修设计一体化平台 - Docker 环境配置
+
+server:
+  host: "0.0.0.0"
+  port: "8080"
+  mode: "release"
+
+database:
+  host: "db"
+  port: "5432"
+  user: "postgres"
+  password: "123456"
+  dbname: "home_decoration"
+  sslmode: "disable"
+
+redis:
+  host: "redis"
+  port: "6379"
+  password: ""
+  db: 0
+
+jwt:
+  secret: "home-decoration-jwt-secret-prod-2024"
+  expire_hour: 72
