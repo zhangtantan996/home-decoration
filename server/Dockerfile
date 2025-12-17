@@ -10,12 +10,12 @@ ENV GO111MODULE=on \
 
 WORKDIR /app
 
-# Copy go mod and sum files
-COPY go.mod go.sum ./
+# Copy go mod and sum files (from server directory)
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
-# Copy source code
-COPY . .
+# Copy source code (server directory)
+COPY server/ .
 
 # Build the application
 RUN go build -o main ./cmd/api
