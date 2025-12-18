@@ -2,14 +2,10 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Android 模拟器使用 10.0.2.2，iOS 使用 localhost
-// 真机需要使用电脑局域网 IP
-const BASE_URL = Platform.OS === 'android'
-    // ? 'http://10.0.2.2:8080/api/v1'
-    ? 'http://192.168.110.40:8080/api/v1'
-    : Platform.OS === 'web'
-        ? 'http://localhost:8080/api/v1'
-        : 'http://localhost:8080/api/v1';
+// @ts-ignore
+import { getApiUrl } from '../config';
+
+const BASE_URL = getApiUrl();
 
 const api = axios.create({
     baseURL: BASE_URL,
@@ -34,14 +30,27 @@ api.interceptors.request.use(
 );
 
 // 响应拦截器 - 处理 401
+// 响应拦截器 - 处理 401 及业务错误
 api.interceptors.response.use(
-    (response) => response.data,
+    (response) => {
+        // 如果后端返回了业务错误码 (非0)，手动抛出错误
+        const res = response.data;
+        if (res.code && res.code !== 0) {
+            // 构造一个类似 AxiosError 的对象，以便前端 catch 块能统一处理
+            const error = new Error(res.message || 'Error') as any;
+            error.response = {
+                status: 200,
+                data: res
+            };
+            return Promise.reject(error);
+        }
+        return res;
+    },
     async (error) => {
         if (error.response?.status === 401) {
             // Token 过期，清除本地存储
             await AsyncStorage.removeItem('token');
             await AsyncStorage.removeItem('user');
-            // 这里可以触发全局登出逻辑
         }
         return Promise.reject(error);
     }

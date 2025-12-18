@@ -8,6 +8,68 @@
 
 ## 1. 安装 Docker
 
+---
+
+## 本地开发环境（可选）
+
+如果您想在本地电脑上运行和调试项目，请按以下步骤操作。
+
+### 前置要求
+- **Node.js** 18+ (推荐使用 [nvm](https://github.com/nvm-sh/nvm) 管理)
+- **Go** 1.21+
+- **PostgreSQL** 15+ (本地数据库)
+- **Redis** 6+
+
+### 启动移动端 (Mobile)
+
+```powershell
+# 进入目录
+cd "G:\AI engineering\home_decoration\mobile"
+
+# 安装依赖（首次运行需要）
+npm install
+
+# 启动开发服务器
+npm run web
+```
+
+访问地址：**http://localhost:5173/mobile/**
+
+### 启动管理后台 (Admin)
+
+```powershell
+# 进入目录
+cd "G:\AI engineering\home_decoration\admin"
+
+# 安装依赖
+npm install
+
+# 启动
+npm run dev
+```
+
+访问地址：**http://localhost:5174/admin/**
+
+### 启动后端 API (Server)
+
+```powershell
+# 进入目录
+cd "G:\AI engineering\home_decoration\server"
+
+# 启动
+go run ./cmd/api
+```
+
+API 地址：**http://localhost:8080**
+
+> 💡 **提示**：后端需要本地 PostgreSQL 和 Redis 服务。请确保 `server/config.yaml` 中的数据库配置正确。
+
+---
+
+## 2. Docker 生产环境部署
+
+### 2.1 安装 Docker
+
 连接到服务器后，执行以下命令安装 Docker 和 Docker Compose：
 
 ```bash

@@ -9,7 +9,7 @@ import {
     Dimensions,
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 // Toast 类型
 type ToastType = 'info' | 'success' | 'warning' | 'error';
@@ -29,9 +29,15 @@ interface ConfirmConfig {
     onCancel?: () => void;
 }
 
+interface AgreementConfig {
+    onAgree: () => void;
+    onDisagree?: () => void;
+}
+
 interface ToastContextType {
     showToast: (config: ToastConfig | string) => void;
     showConfirm: (config: ConfirmConfig) => void;
+    showAgreementModal: (config: AgreementConfig) => void;
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -50,6 +56,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [toastConfig, setToastConfig] = useState<ToastConfig>({ message: '' });
     const [confirmVisible, setConfirmVisible] = useState(false);
     const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ title: '', message: '' });
+    const [agreementVisible, setAgreementVisible] = useState(false);
+    const [agreementConfig, setAgreementConfig] = useState<AgreementConfig>({ onAgree: () => { } });
 
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(-100)).current;
@@ -104,6 +112,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setConfirmVisible(true);
     }, []);
 
+    const showAgreementModal = useCallback((config: AgreementConfig) => {
+        setAgreementConfig(config);
+        setAgreementVisible(true);
+    }, []);
+
     const handleConfirm = () => {
         setConfirmVisible(false);
         confirmConfig.onConfirm?.();
@@ -114,10 +127,20 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         confirmConfig.onCancel?.();
     };
 
+    const handleAgree = () => {
+        setAgreementVisible(false);
+        agreementConfig.onAgree();
+    };
+
+    const handleDisagree = () => {
+        setAgreementVisible(false);
+        agreementConfig.onDisagree?.();
+    };
+
     const toastColor = TOAST_COLORS[toastConfig.type || 'info'];
 
     return (
-        <ToastContext.Provider value={{ showToast, showConfirm }}>
+        <ToastContext.Provider value={{ showToast, showConfirm, showAgreementModal }}>
             {children}
 
             {/* Toast 组件 */}
@@ -139,7 +162,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 </Animated.View>
             )}
 
-            {/* Confirm Modal */}
+            {/* Confirm Modal - 居中样式 */}
             <Modal
                 visible={confirmVisible}
                 transparent
@@ -168,6 +191,43 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                                 </Text>
                             </TouchableOpacity>
                         </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Agreement Modal - 底部弹出样式 (仿美团) */}
+            <Modal
+                visible={agreementVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={handleDisagree}
+            >
+                <View style={styles.agreementOverlay}>
+                    <TouchableOpacity
+                        style={styles.agreementBackdrop}
+                        activeOpacity={1}
+                        onPress={handleDisagree}
+                    />
+                    <View style={styles.agreementSheet}>
+                        <Text style={styles.agreementTitle}>请同意用户协议及隐私保护</Text>
+                        <Text style={styles.agreementText}>
+                            我已阅读并同意
+                            <Text style={styles.agreementLink}>《用户协议》</Text>
+                            和
+                            <Text style={styles.agreementLink}>《隐私政策》</Text>
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.agreeButton}
+                            onPress={handleAgree}
+                        >
+                            <Text style={styles.agreeButtonText}>同意并继续</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.disagreeButton}
+                            onPress={handleDisagree}
+                        >
+                            <Text style={styles.disagreeButtonText}>不同意</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
@@ -256,11 +316,69 @@ const styles = StyleSheet.create({
         color: '#666',
     },
     confirmButton: {
-        backgroundColor: '#C8A45B',
+        backgroundColor: '#000',
     },
     confirmButtonText: {
         fontSize: 16,
         fontWeight: '600',
         color: '#fff',
+    },
+    // Agreement Modal Styles (底部弹出)
+    agreementOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    agreementBackdrop: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    agreementSheet: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingHorizontal: 24,
+        paddingTop: 28,
+        paddingBottom: 40,
+    },
+    agreementTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#000',
+        textAlign: 'center',
+        marginBottom: 16,
+    },
+    agreementText: {
+        fontSize: 15,
+        color: '#666',
+        textAlign: 'center',
+        lineHeight: 24,
+        marginBottom: 24,
+    },
+    agreementLink: {
+        color: '#1890FF',
+    },
+    agreeButton: {
+        backgroundColor: '#000',
+        paddingVertical: 16,
+        borderRadius: 28,
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    agreeButtonText: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#fff',
+    },
+    disagreeButton: {
+        paddingVertical: 12,
+        alignItems: 'center',
+    },
+    disagreeButtonText: {
+        fontSize: 15,
+        color: '#999',
     },
 });

@@ -140,8 +140,27 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 
 	// 查找用户
 	var user model.User
+	userNotFound := false
 	if err := repository.DB.Where("phone = ?", req.Phone).First(&user).Error; err != nil {
-		return nil, nil, errors.New("用户不存在，请先注册")
+		userNotFound = true
+	}
+
+	// 如果是密码登录但用户不存在，返回错误
+	if userNotFound && req.Type == "password" {
+		return nil, nil, errors.New("用户不存在，请使用验证码登录")
+	}
+
+	// 如果是验证码登录且用户不存在，自动创建账号
+	if userNotFound && req.Type != "password" {
+		user = model.User{
+			Phone:    req.Phone,
+			Nickname: "用户" + req.Phone[7:], // 默认昵称：用户+手机号后4位
+			UserType: 1,                    // 默认业主
+			Status:   1,
+		}
+		if err := repository.DB.Create(&user).Error; err != nil {
+			return nil, nil, errors.New("账号创建失败，请稍后重试")
+		}
 	}
 
 	// 检查用户状态

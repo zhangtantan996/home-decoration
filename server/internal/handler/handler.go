@@ -42,7 +42,7 @@ func Register(c *gin.Context) {
 
 	tokenResp, user, err := userService.Register(&req, jwtConfig)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		response.BadRequest(c, err.Error())
 		return
 	}
 
@@ -70,7 +70,7 @@ func Login(c *gin.Context) {
 
 	tokenResp, user, err := userService.Login(&req, jwtConfig)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		response.BadRequest(c, err.Error())
 		return
 	}
 

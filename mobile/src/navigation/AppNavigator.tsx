@@ -2,7 +2,8 @@ import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Text, View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Text, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { Home, Sparkles, FileText, MessageSquare, User } from 'lucide-react-native';
 
 // 导入页面
 import HomeScreen from '../screens/HomeScreen';
@@ -18,20 +19,29 @@ import { useAuthStore } from '../store/authStore';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// Tab 图标
-const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => (
-    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{name}</Text>
-);
-
 // 底部Tab导航
 const MainTabs = () => {
     return (
         <Tab.Navigator
             screenOptions={{
                 headerShown: false,
-                tabBarStyle: { height: 60, paddingBottom: 8, paddingTop: 8 },
-                tabBarActiveTintColor: '#1890FF',
-                tabBarInactiveTintColor: '#999',
+                tabBarStyle: {
+                    height: Platform.OS === 'ios' ? 88 : 70,
+                    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+                    paddingTop: 8,
+                    backgroundColor: '#FFFFFF',
+                    borderTopWidth: 1,
+                    borderTopColor: '#F4F4F5',
+                    elevation: 0,
+                    shadowOpacity: 0,
+                },
+                tabBarActiveTintColor: '#09090B',
+                tabBarInactiveTintColor: '#9CA3AF',
+                tabBarLabelStyle: {
+                    fontSize: 10,
+                    fontWeight: '500',
+                    marginTop: 4,
+                },
             }}
         >
             <Tab.Screen
@@ -39,23 +49,29 @@ const MainTabs = () => {
                 component={HomeScreen}
                 options={{
                     tabBarLabel: '首页',
-                    tabBarIcon: ({ focused }) => <TabIcon name="🏠" focused={focused} />,
+                    tabBarIcon: ({ focused, color }) => (
+                        <Home size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+                    ),
                 }}
             />
             <Tab.Screen
-                name="Search"
+                name="Inspiration"
                 component={SearchScreen}
                 options={{
-                    tabBarLabel: '发现',
-                    tabBarIcon: ({ focused }) => <TabIcon name="🔍" focused={focused} />,
+                    tabBarLabel: '灵感',
+                    tabBarIcon: ({ focused, color }) => (
+                        <Sparkles size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+                    ),
                 }}
             />
             <Tab.Screen
-                name="MySite"
+                name="Progress"
                 component={MySiteScreen}
                 options={{
-                    tabBarLabel: '工地',
-                    tabBarIcon: ({ focused }) => <TabIcon name="🏗️" focused={focused} />,
+                    tabBarLabel: '进度',
+                    tabBarIcon: ({ focused, color }) => (
+                        <FileText size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+                    ),
                 }}
             />
             <Tab.Screen
@@ -63,7 +79,9 @@ const MainTabs = () => {
                 component={MessageScreen}
                 options={{
                     tabBarLabel: '消息',
-                    tabBarIcon: ({ focused }) => <TabIcon name="💬" focused={focused} />,
+                    tabBarIcon: ({ focused, color }) => (
+                        <MessageSquare size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+                    ),
                 }}
             />
             <Tab.Screen
@@ -71,7 +89,9 @@ const MainTabs = () => {
                 component={ProfileScreen}
                 options={{
                     tabBarLabel: '我的',
-                    tabBarIcon: ({ focused }) => <TabIcon name="👤" focused={focused} />,
+                    tabBarIcon: ({ focused, color }) => (
+                        <User size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+                    ),
                 }}
             />
         </Tab.Navigator>
@@ -81,7 +101,7 @@ const MainTabs = () => {
 // 加载页面
 const LoadingScreen = () => (
     <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#1890FF" />
+        <ActivityIndicator size="large" color="#09090B" />
         <Text style={styles.loadingText}>加载中...</Text>
     </View>
 );
@@ -120,8 +140,10 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         marginTop: 12,
-        color: '#999',
+        color: '#71717A',
+        fontSize: 14,
     },
 });
 
 export default AppNavigator;
+
