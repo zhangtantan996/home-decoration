@@ -35,6 +35,8 @@ const router = createBrowserRouter([
             { path: 'settings', element: <PlaceholderPage title="系统设置" /> },
         ],
     },
-]);
+], {
+    basename: '/admin'
+});
 
 export default router;

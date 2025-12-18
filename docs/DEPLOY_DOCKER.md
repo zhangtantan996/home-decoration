@@ -145,3 +145,102 @@ docker image prune -f
 ```
 这样就完成了全自动化的更新流程！
 
+---
+
+## 7. 日常更新部署详细步骤
+
+以下是代码更新后推送到服务器的**完整操作流程**，包含详细目录操作。
+
+### 7.1 本地操作（Windows）
+
+在您的开发电脑上，打开 PowerShell 或终端：
+
+```powershell
+# 第一步：进入项目根目录
+cd G:\AI engineering\home_decoration
+
+# 第二步：查看修改了哪些文件
+git status
+
+# 第三步：添加所有修改到暂存区
+git add .
+
+# 第四步：提交代码（写明本次修改内容）
+git commit -m "feat: 本次更新说明，例如修复登录弹框"
+
+# 第五步：推送到远程仓库
+git push
+```
+
+> 💡 **提示**：如果是第一次推送，可能需要执行 `git push -u origin main`
+
+### 7.2 服务器操作（Linux）
+
+使用 SSH 连接到您的阿里云服务器后：
+
+```bash
+# 第一步：进入项目目录
+cd /data/www/home-decoration
+
+# 第二步：拉取最新代码
+git pull
+
+# 第三步：重新构建并启动 Docker 容器
+docker compose up -d --build
+```
+
+> ⏱️ **构建时间**：首次构建约 5-10 分钟，后续更新约 2-3 分钟
+
+### 7.3 验证部署
+
+```bash
+# 查看容器状态
+docker compose ps
+
+# 预期输出（所有容器 STATUS 应为 Up）：
+# NAME               STATUS
+# decorating_db      Up
+# decorating_redis   Up
+# decorating_api     Up
+# decorating_web     Up
+```
+
+访问以下地址验证：
+- **移动端**：http://47.99.105.195/mobile
+- **管理后台**：http://47.99.105.195/admin
+
+### 7.4 故障排查
+
+如果部署后无法访问，按以下顺序排查：
+
+```bash
+# 1. 查看所有容器日志
+docker compose logs --tail=50
+
+# 2. 单独查看某个服务的日志
+docker compose logs api      # 后端日志
+docker compose logs web      # Nginx日志
+
+# 3. 检查端口是否正常监听
+ss -tlnp | grep 80
+
+# 4. 重启所有服务
+docker compose restart
+
+# 5. 强制重新构建（清除缓存）
+docker compose down
+docker compose up -d --build
+```
+
+### 7.5 完整命令速查表
+
+| 场景 | 本地命令 | 服务器命令 |
+|------|---------|-----------|
+| **查看状态** | `git status` | `docker compose ps` |
+| **提交代码** | `git add . && git commit -m "msg"` | - |
+| **推送代码** | `git push` | - |
+| **拉取更新** | - | `cd /data/www/home-decoration && git pull` |
+| **重新部署** | - | `docker compose up -d --build` |
+| **查看日志** | - | `docker compose logs -f` |
+| **停止服务** | - | `docker compose down` |
+| **清理镜像** | - | `docker image prune -f` |

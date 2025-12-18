@@ -5,18 +5,16 @@ import {
     StyleSheet,
     TextInput,
     TouchableOpacity,
-    Alert,
     KeyboardAvoidingView,
     Platform,
     SafeAreaView,
-    Image,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { authApi } from '../services/api';
-
-import { showAlert } from '../utils/alert';
+import { useToast } from '../components/Toast';
 
 const LoginScreen: React.FC = () => {
+    const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
     const [loginMethod, setLoginMethod] = useState<'code' | 'password'>('code');
     const [phone, setPhone] = useState('');
@@ -39,41 +37,41 @@ const LoginScreen: React.FC = () => {
 
     const handleSendCode = async () => {
         if (!phone || phone.length !== 11) {
-            showAlert('提示', '请输入正确的11位手机号');
+            showToast({ message: '请输入正确的11位手机号', type: 'warning' });
             return;
         }
         try {
             await authApi.sendCode(phone);
             setCountdown(60);
-            showAlert('提示', '验证码已发送 (测试码: 123456)');
+            showToast({ message: '验证码已发送 (测试码: 123456)', type: 'success' });
         } catch (error: any) {
-            showAlert('发送失败', error.response?.data?.message || '请稍后重试');
+            showToast({ message: error.response?.data?.message || '发送失败，请稍后重试', type: 'error' });
         }
     };
 
     const handleLogin = async () => {
         if (!agreed) {
-            showAlert('提示', '请先阅读并同意用户协议和隐私政策');
+            showToast({ message: '请先阅读并同意用户协议和隐私政策', type: 'warning' });
             return;
         }
         if (!phone) {
-            showAlert('提示', '请输入手机号');
+            showToast({ message: '请输入手机号', type: 'warning' });
             return;
         }
 
         if (activeTab === 'login') {
             if (loginMethod === 'code' && !code) {
-                showAlert('提示', '请输入验证码');
+                showToast({ message: '请输入验证码', type: 'warning' });
                 return;
             }
             if (loginMethod === 'password' && !password) {
-                showAlert('提示', '请输入密码');
+                showToast({ message: '请输入密码', type: 'warning' });
                 return;
             }
         } else {
             // 注册
             if (!code) {
-                showAlert('提示', '请输入验证码');
+                showToast({ message: '请输入验证码', type: 'warning' });
                 return;
             }
         }
@@ -95,7 +93,7 @@ const LoginScreen: React.FC = () => {
             const { token, user } = result as any;
             setAuth(token, user);
         } catch (error: any) {
-            showAlert('操作失败', error.response?.data?.message || '请检查输入');
+            showToast({ message: error.response?.data?.message || '操作失败，请检查输入', type: 'error' });
         } finally {
             setLoading(false);
         }

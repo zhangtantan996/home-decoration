@@ -6,21 +6,22 @@ import {
     SafeAreaView,
     TouchableOpacity,
     ScrollView,
-    Alert,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
-import { showConfirm } from '../utils/alert';
+import { useToast } from '../components/Toast';
 
 const ProfileScreen = () => {
     const { user, logout } = useAuthStore();
+    const { showConfirm } = useToast();
 
     const handleLogout = () => {
-        showConfirm(
-            '确认退出',
-            '确定要退出登录吗？',
-            logout,
-            '退出'
-        );
+        showConfirm({
+            title: '确认退出',
+            message: '确定要退出登录吗？',
+            confirmText: '退出',
+            cancelText: '取消',
+            onConfirm: logout,
+        });
     };
 
     const menuItems = [
