@@ -352,6 +352,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        paddingTop: Platform.OS === 'ios' ? 12 : 44, // 适配沉浸式状态栏
         marginBottom: 40,
     },
     logoBox: {

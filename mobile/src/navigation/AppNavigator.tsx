@@ -7,11 +7,23 @@ import { Home, Sparkles, FileText, MessageSquare, User } from 'lucide-react-nati
 
 // 导入页面
 import HomeScreen from '../screens/HomeScreen';
-import SearchScreen from '../screens/SearchScreen';
+
 import MySiteScreen from '../screens/MySiteScreen';
 import MessageScreen from '../screens/MessageScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import LoginScreen from '../screens/LoginScreen';
+import InspirationScreen from '../screens/InspirationScreen';
+import { LiveRoomScreen, VideoPlayerScreen, ArticleDetailScreen } from '../screens/InspirationDetails';
+import { DesignerDetailScreen, WorkerDetailScreen, CompanyDetailScreen } from '../screens/ProviderDetails';
+import { CaseGalleryScreen, CaseDetailScreen } from '../screens/CaseScreens';
+import BookingScreen from '../screens/BookingScreen';
+import ProjectTimelineScreen from '../screens/ProjectTimelineScreen';
+import ChatRoomScreen from '../screens/ChatRoomScreen';
+import ChatSettingsScreen from '../screens/ChatSettingsScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
+import PersonalInfoScreen from '../screens/PersonalInfoScreen';
+import AccountSecurityScreen from '../screens/AccountSecurityScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
@@ -27,8 +39,8 @@ const MainTabs = () => {
                 headerShown: false,
                 tabBarStyle: {
                     height: Platform.OS === 'ios' ? 88 : 70,
-                    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
-                    paddingTop: 8,
+                    paddingBottom: Platform.OS === 'ios' ? 28 : 18,
+                    paddingTop: 6,
                     backgroundColor: '#FFFFFF',
                     borderTopWidth: 1,
                     borderTopColor: '#F4F4F5',
@@ -56,7 +68,7 @@ const MainTabs = () => {
             />
             <Tab.Screen
                 name="Inspiration"
-                component={SearchScreen}
+                component={InspirationScreen}
                 options={{
                     tabBarLabel: '灵感',
                     tabBarIcon: ({ focused, color }) => (
@@ -126,6 +138,23 @@ const AppNavigator = () => {
                 ) : (
                     <Stack.Screen name="Login" component={LoginScreen} />
                 )}
+
+                <Stack.Screen name="LiveRoom" component={LiveRoomScreen} />
+                <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
+                <Stack.Screen name="ArticleDetail" component={ArticleDetailScreen} />
+                <Stack.Screen name="DesignerDetail" component={DesignerDetailScreen} />
+                <Stack.Screen name="WorkerDetail" component={WorkerDetailScreen} />
+                <Stack.Screen name="CompanyDetail" component={CompanyDetailScreen} />
+                <Stack.Screen name="CaseGallery" component={CaseGalleryScreen} />
+                <Stack.Screen name="CaseDetail" component={CaseDetailScreen} />
+                <Stack.Screen name="Booking" component={BookingScreen} />
+                <Stack.Screen name="ProjectTimeline" component={ProjectTimelineScreen} />
+                <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+                <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
+                <Stack.Screen name="Settings" component={SettingsScreen} />
+                <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+                <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
+                <Stack.Screen name="AccountSecurity" component={AccountSecurityScreen} />
             </Stack.Navigator>
         </NavigationContainer>
     );

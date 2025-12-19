@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -6,13 +6,56 @@ import {
     SafeAreaView,
     TouchableOpacity,
     ScrollView,
+    Platform,
+    Image,
+    Modal,
 } from 'react-native';
+import {
+    Settings,
+    FileText,
+    Heart,
+    MapPin,
+    Ticket,
+    MessageCircle,
+    Calculator,
+    ImageIcon,
+    Headphones,
+    Shield,
+    ChevronRight,
+    Info,
+} from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../components/Toast';
 
-const ProfileScreen = () => {
+// 主色调
+const PRIMARY_GOLD = '#D4AF37';
+
+// Mock 当前项目数据
+const MOCK_PROJECT = {
+    name: '上海·汤臣一品 别墅装修',
+    stage: '报价阶段',
+    progress: 30,
+    budget: '280万',
+    estimatedDays: 12,
+};
+
+// Mock 最新消息
+const MOCK_MESSAGE = {
+    sender: '设计顾问 - Jason',
+    time: '10:42 AM',
+    preview: '您的初步平面布局方案已经调整完毕...',
+};
+
+const ProfileScreen = ({ navigation }: any) => {
     const { user, logout } = useAuthStore();
     const { showConfirm } = useToast();
+    const [dialogVisible, setDialogVisible] = useState(false);
+    const [dialogMessage, setDialogMessage] = useState('');
+
+    const handleServicePress = (label: string) => {
+        setDialogMessage(`${label}功能正在开发中，敬请期待！`);
+        setDialogVisible(true);
+    };
 
     const handleLogout = () => {
         showConfirm({
@@ -24,75 +67,159 @@ const ProfileScreen = () => {
         });
     };
 
-    const menuItems = [
-        { icon: '📋', label: '我的订单', badge: '' },
-        { icon: '❤️', label: '我的收藏', badge: '' },
-        { icon: '📍', label: '地址管理', badge: '' },
-        { icon: '🎫', label: '优惠券', badge: '2' },
-        { icon: '⚙️', label: '设置', badge: '' },
-        { icon: '❓', label: '帮助与反馈', badge: '' },
+    // 快捷统计数据
+    const quickStats = [
+        { label: '我的收藏', value: 12 },
+        { label: '浏览足迹', value: 48 },
+        { label: '卡券包', value: 3 },
+        { label: '待处理', value: 1, hasRedDot: true },
+    ];
+
+    // 更多服务
+    const moreServices = [
+        { icon: Calculator, label: '装修算价' },
+        { icon: ImageIcon, label: '设计图库' },
+        { icon: Headphones, label: '专属客服' },
+        { icon: Shield, label: '隐私保护' },
     ];
 
     return (
         <SafeAreaView style={styles.container}>
-            <ScrollView>
-                {/* 用户信息卡片 */}
-                <View style={styles.userCard}>
-                    <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>
-                            {user?.nickname?.[0] || user?.phone?.[0] || '👤'}
-                        </Text>
-                    </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+                {/* 用户信息区 */}
+                <View style={styles.userSection}>
                     <View style={styles.userInfo}>
-                        <Text style={styles.nickname}>
-                            {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
-                        </Text>
-                        <Text style={styles.phone}>
-                            {user?.phone?.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') || '未绑定手机'}
-                        </Text>
+                        <View style={styles.avatar}>
+                            {user?.avatar ? (
+                                <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+                            ) : (
+                                <Text style={styles.avatarText}>
+                                    {user?.nickname?.[0] || user?.phone?.[0] || '👤'}
+                                </Text>
+                            )}
+                        </View>
+                        <View style={styles.userDetails}>
+                            <Text style={styles.userName}>
+                                {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
+                            </Text>
+                            <View style={styles.memberBadge}>
+                                <Text style={styles.memberBadgeText}>BLACK MEMBER</Text>
+                            </View>
+                        </View>
                     </View>
-                    <TouchableOpacity style={styles.editBtn}>
-                        <Text style={styles.editBtnText}>编辑</Text>
+                    <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')}>
+                        <Settings size={22} color="#71717A" />
                     </TouchableOpacity>
                 </View>
 
-                {/* 统计数据 */}
-                <View style={styles.statsRow}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>0</Text>
-                        <Text style={styles.statLabel}>进行中</Text>
+                {/* 当前项目卡片 */}
+                <View style={styles.projectCard}>
+                    <View style={styles.projectHeader}>
+                        <View style={styles.projectLabelRow}>
+                            <FileText size={16} color={PRIMARY_GOLD} />
+                            <Text style={styles.projectLabel}>当前项目</Text>
+                        </View>
+                        <TouchableOpacity style={styles.viewDetailBtn}>
+                            <Text style={styles.viewDetailText}>查看详情</Text>
+                        </TouchableOpacity>
                     </View>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>0</Text>
-                        <Text style={styles.statLabel}>已完成</Text>
+                    <Text style={styles.projectName}>{MOCK_PROJECT.name}</Text>
+
+                    {/* 进度条 */}
+                    <View style={styles.progressSection}>
+                        <View style={styles.progressLabelRow}>
+                            <Text style={styles.stageText}>{MOCK_PROJECT.stage}</Text>
+                            <Text style={styles.progressText}>已完成 {MOCK_PROJECT.progress}%</Text>
+                        </View>
+                        <View style={styles.progressBarContainer}>
+                            <View style={[styles.progressBar, { width: `${MOCK_PROJECT.progress}%` }]} />
+                        </View>
                     </View>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>0</Text>
-                        <Text style={styles.statLabel}>待评价</Text>
+
+                    {/* 预算和时间 */}
+                    <View style={styles.projectStats}>
+                        <View style={styles.projectStatItem}>
+                            <Text style={styles.projectStatValue}>¥{MOCK_PROJECT.budget}</Text>
+                            <Text style={styles.projectStatLabel}>预估报价</Text>
+                        </View>
+                        <View style={styles.projectStatItem}>
+                            <Text style={styles.projectStatValue}>{MOCK_PROJECT.estimatedDays}天</Text>
+                            <Text style={styles.projectStatLabel}>预计耗时</Text>
+                        </View>
                     </View>
                 </View>
 
-                {/* 菜单列表 */}
-                <View style={styles.menuList}>
-                    {menuItems.map((item, index) => (
-                        <TouchableOpacity key={index} style={styles.menuItem}>
-                            <Text style={styles.menuIcon}>{item.icon}</Text>
-                            <Text style={styles.menuLabel}>{item.label}</Text>
-                            {item.badge ? (
-                                <View style={styles.badge}>
-                                    <Text style={styles.badgeText}>{item.badge}</Text>
-                                </View>
-                            ) : null}
-                            <Text style={styles.menuArrow}>›</Text>
+                {/* 快捷统计 */}
+                <View style={styles.quickStatsRow}>
+                    {quickStats.map((stat, index) => (
+                        <TouchableOpacity key={index} style={styles.quickStatItem}>
+                            <View style={styles.quickStatValueContainer}>
+                                <Text style={styles.quickStatValue}>{stat.value}</Text>
+                                {stat.hasRedDot && <View style={styles.redDot} />}
+                            </View>
+                            <Text style={styles.quickStatLabel}>{stat.label}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>
 
-                {/* 退出登录按钮 */}
-                <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-                    <Text style={styles.logoutText}>退出登录</Text>
+                {/* 最新消息预览 */}
+                <TouchableOpacity style={styles.messagePreview}>
+                    <View style={styles.messageIcon}>
+                        <MessageCircle size={20} color="#71717A" />
+                    </View>
+                    <View style={styles.messageContent}>
+                        <View style={styles.messageHeader}>
+                            <Text style={styles.messageSender}>{MOCK_MESSAGE.sender}</Text>
+                            <Text style={styles.messageTime}>{MOCK_MESSAGE.time}</Text>
+                        </View>
+                        <Text style={styles.messageText} numberOfLines={1}>
+                            {MOCK_MESSAGE.preview}
+                        </Text>
+                    </View>
+                    <View style={styles.messageUnread} />
                 </TouchableOpacity>
+
+                {/* 更多服务 */}
+                <View style={styles.moreServicesSection}>
+                    <Text style={styles.sectionTitle}>更多服务</Text>
+                    <View style={styles.servicesGrid}>
+                        {moreServices.map((service, index) => (
+                            <TouchableOpacity key={index} style={styles.serviceItem} onPress={() => handleServicePress(service.label)}>
+                                <View style={styles.serviceIconContainer}>
+                                    <service.icon size={24} color="#09090B" />
+                                </View>
+                                <Text style={styles.serviceLabel}>{service.label}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+
+                <View style={{ height: 40 }} />
             </ScrollView>
+
+            {/* 自定义弹窗 */}
+            <Modal
+                visible={dialogVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setDialogVisible(false)}
+            >
+                <View style={styles.dialogOverlay}>
+                    <View style={styles.dialogContainer}>
+                        <View style={styles.dialogIconContainer}>
+                            <Info size={32} color={PRIMARY_GOLD} />
+                        </View>
+                        <Text style={styles.dialogTitle}>功能开发中</Text>
+                        <Text style={styles.dialogMessage}>{dialogMessage}</Text>
+                        <TouchableOpacity
+                            style={styles.dialogBtn}
+                            onPress={() => setDialogVisible(false)}
+                        >
+                            <Text style={styles.dialogBtnText}>知道了</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 };
@@ -100,117 +227,331 @@ const ProfileScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: '#F8F9FA',
     },
-    userCard: {
+    // 用户信息区
+    userSection: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#1890FF',
-        padding: 20,
-        paddingTop: 40,
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingTop: Platform.OS === 'ios' ? 20 : 50,
+        paddingBottom: 20,
+        backgroundColor: '#FFFFFF',
+    },
+    userInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     avatar: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        backgroundColor: 'rgba(255,255,255,0.3)',
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#E5E7EB',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    avatarImage: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+    },
+    avatarText: {
+        fontSize: 24,
+        color: '#71717A',
+    },
+    userDetails: {
+        marginLeft: 14,
+    },
+    userName: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#09090B',
+        marginBottom: 6,
+    },
+    memberBadge: {
+        backgroundColor: '#1C1C1E',
+        paddingHorizontal: 10,
+        paddingVertical: 3,
+        borderRadius: 4,
+    },
+    memberBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '600',
+        letterSpacing: 0.5,
+    },
+    settingsBtn: {
+        padding: 8,
+    },
+    // 项目卡片
+    projectCard: {
+        marginHorizontal: 16,
+        marginTop: 16,
+        backgroundColor: '#1C1C1E',
+        borderRadius: 16,
+        padding: 20,
+    },
+    projectHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    projectLabelRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    projectLabel: {
+        color: PRIMARY_GOLD,
+        fontSize: 13,
+        fontWeight: '600',
+        marginLeft: 6,
+    },
+    viewDetailBtn: {
+        backgroundColor: '#FFFFFF',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 6,
+    },
+    viewDetailText: {
+        color: '#09090B',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    projectName: {
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 16,
+    },
+    progressSection: {
+        marginBottom: 16,
+    },
+    progressLabelRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    stageText: {
+        color: 'rgba(255,255,255,0.5)',
+        fontSize: 13,
+    },
+    progressBarContainer: {
+        height: 6,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 3,
+    },
+    progressBar: {
+        height: 6,
+        backgroundColor: PRIMARY_GOLD,
+        borderRadius: 3,
+    },
+    progressText: {
+        color: 'rgba(255,255,255,0.6)',
+        fontSize: 12,
+    },
+    projectStats: {
+        flexDirection: 'row',
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255,255,255,0.1)',
+        paddingTop: 16,
+    },
+    projectStatItem: {
+        flex: 1,
+    },
+    projectStatValue: {
+        color: '#FFFFFF',
+        fontSize: 22,
+        fontWeight: '700',
+        marginBottom: 4,
+    },
+    projectStatLabel: {
+        color: 'rgba(255,255,255,0.5)',
+        fontSize: 12,
+    },
+    // 快捷统计
+    quickStatsRow: {
+        flexDirection: 'row',
+        backgroundColor: '#FFFFFF',
+        marginHorizontal: 16,
+        marginTop: 16,
+        borderRadius: 12,
+        paddingVertical: 20,
+    },
+    quickStatItem: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    quickStatValueContainer: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+    },
+    quickStatValue: {
+        fontSize: 22,
+        fontWeight: '700',
+        color: '#09090B',
+    },
+    redDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#EF4444',
+        marginLeft: 2,
+        marginTop: 2,
+    },
+    quickStatLabel: {
+        fontSize: 12,
+        color: '#71717A',
+        marginTop: 6,
+    },
+    // 消息预览
+    messagePreview: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFFFF',
+        marginHorizontal: 16,
+        marginTop: 16,
+        borderRadius: 12,
+        padding: 16,
+    },
+    messageIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#F4F4F5',
         justifyContent: 'center',
         alignItems: 'center',
     },
-    avatarText: {
-        fontSize: 28,
-        color: '#fff',
-    },
-    userInfo: {
+    messageContent: {
         flex: 1,
-        marginLeft: 16,
+        marginLeft: 12,
     },
-    nickname: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#fff',
-    },
-    phone: {
-        fontSize: 14,
-        color: 'rgba(255,255,255,0.8)',
-        marginTop: 4,
-    },
-    editBtn: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.5)',
-    },
-    editBtnText: {
-        color: '#fff',
-        fontSize: 12,
-    },
-    statsRow: {
+    messageHeader: {
         flexDirection: 'row',
-        backgroundColor: '#fff',
-        paddingVertical: 20,
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    messageSender: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#09090B',
+    },
+    messageTime: {
+        fontSize: 12,
+        color: '#A1A1AA',
+    },
+    messageText: {
+        fontSize: 13,
+        color: '#71717A',
+    },
+    messageUnread: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: PRIMARY_GOLD,
+        marginLeft: 8,
+    },
+    // 更多服务
+    moreServicesSection: {
+        marginTop: 24,
+        paddingHorizontal: 16,
+    },
+    sectionTitle: {
+        fontSize: 14,
+        color: '#71717A',
         marginBottom: 12,
     },
-    statItem: {
-        flex: 1,
-        alignItems: 'center',
-    },
-    statNumber: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#333',
-    },
-    statLabel: {
-        fontSize: 12,
-        color: '#999',
-        marginTop: 4,
-    },
-    menuList: {
-        backgroundColor: '#fff',
-    },
-    menuItem: {
+    servicesGrid: {
         flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        paddingVertical: 20,
     },
-    menuIcon: {
-        fontSize: 20,
-        marginRight: 12,
-    },
-    menuLabel: {
+    serviceItem: {
         flex: 1,
-        fontSize: 16,
-        color: '#333',
+        alignItems: 'center',
     },
-    badge: {
-        backgroundColor: '#FF4D4F',
-        borderRadius: 10,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        marginRight: 8,
+    serviceIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: '#F4F4F5',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 8,
     },
-    badgeText: {
-        color: '#fff',
+    serviceLabel: {
         fontSize: 12,
+        color: '#09090B',
     },
-    menuArrow: {
-        fontSize: 20,
-        color: '#ccc',
-    },
+    // 退出登录
     logoutBtn: {
-        margin: 20,
-        backgroundColor: '#fff',
+        marginHorizontal: 16,
+        marginTop: 32,
+        backgroundColor: '#FFFFFF',
         paddingVertical: 14,
-        borderRadius: 8,
+        borderRadius: 12,
         alignItems: 'center',
     },
     logoutText: {
-        color: '#FF4D4F',
-        fontSize: 16,
+        color: '#EF4444',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    // 弹窗样式
+    dialogOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 40,
+    },
+    dialogContainer: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        padding: 24,
+        alignItems: 'center',
+        width: '100%',
+        maxWidth: 320,
+    },
+    dialogIconContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: '#FFFBEB',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    dialogTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#09090B',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    dialogMessage: {
+        fontSize: 14,
+        color: '#71717A',
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 24,
+    },
+    dialogBtn: {
+        width: '100%',
+        paddingVertical: 12,
+        borderRadius: 10,
+        alignItems: 'center',
+        backgroundColor: PRIMARY_GOLD,
+    },
+    dialogBtnText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#FFFFFF',
     },
 });
 
