@@ -8,6 +8,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     SafeAreaView,
+    Image,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { authApi } from '../services/api';
@@ -169,9 +170,11 @@ const LoginScreen: React.FC = () => {
                 >
                     {/* 顶部 Logo */}
                     <View style={styles.topBar}>
-                        <View style={styles.logoBox}>
-                            <Text style={styles.logoText}>L</Text>
-                        </View>
+                        <Image
+                            source={require('../assets/logo.png')}
+                            style={styles.logo}
+                            resizeMode="contain"
+                        />
                         <View />
                     </View>
 
@@ -355,18 +358,16 @@ const styles = StyleSheet.create({
         paddingTop: Platform.OS === 'ios' ? 12 : 44, // 适配沉浸式状态栏
         marginBottom: 40,
     },
-    logoBox: {
-        width: 48,
-        height: 48,
-        backgroundColor: '#000',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    logoText: {
-        color: '#fff',
-        fontSize: 28,
-        fontFamily: Platform.OS === 'ios' ? 'Times New Roman' : 'serif',
-        fontWeight: 'bold',
+    logo: {
+        width: 88,
+        height: 88,
+        borderRadius: 44,
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 8,
     },
     header: {
         marginBottom: 40,
