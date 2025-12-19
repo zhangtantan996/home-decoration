@@ -10,7 +10,6 @@ import {
     Modal,
 } from 'react-native';
 import { ArrowLeft, ChevronRight, Info } from 'lucide-react-native';
-import { CommonActions } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../components/Toast';
 
@@ -39,16 +38,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             message: '确定要退出登录吗？',
             confirmText: '退出',
             cancelText: '取消',
-            onConfirm: () => {
-                logout();
-                // 重置导航栈到登录页面
-                navigation.dispatch(
-                    CommonActions.reset({
-                        index: 0,
-                        routes: [{ name: 'Login' }],
-                    })
-                );
-            },
+            onConfirm: logout,
         });
     };
 
