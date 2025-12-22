@@ -16,8 +16,8 @@ interface AuthState {
     isAuthenticated: boolean;
 
     // Actions
-    setAuth: (token: string, user: User) => void;
-    logout: () => void;
+    setAuth: (token: string, user: User) => Promise<void>;
+    logout: () => Promise<void>;
     loadStoredAuth: () => Promise<void>;
 }
 
@@ -27,10 +27,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     isLoading: true,
     isAuthenticated: false,
 
-    setAuth: (token, user) => {
-        // Save to storage
-        AsyncStorage.setItem('token', token);
-        AsyncStorage.setItem('user', JSON.stringify(user));
+    setAuth: async (token, user) => {
+        try {
+            await AsyncStorage.setItem('token', token);
+            await AsyncStorage.setItem('user', JSON.stringify(user));
+        } catch (error) {
+            console.error('Failed to save auth to storage:', error);
+            // 即使存储失败，仍然更新内存状态让用户可以使用
+        }
 
         set({
             token,
@@ -40,9 +44,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         });
     },
 
-    logout: () => {
-        AsyncStorage.removeItem('token');
-        AsyncStorage.removeItem('user');
+    logout: async () => {
+        try {
+            await AsyncStorage.removeItem('token');
+            await AsyncStorage.removeItem('user');
+        } catch (error) {
+            console.error('Failed to clear auth from storage:', error);
+            // 即使存储清除失败，仍然清除内存状态以强制登出
+        }
 
         set({
             token: null,

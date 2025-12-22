@@ -134,27 +134,28 @@ const AppNavigator = () => {
         <NavigationContainer>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
                 {isAuthenticated ? (
-                    <Stack.Screen name="Main" component={MainTabs} />
+                    <>
+                        <Stack.Screen name="Main" component={MainTabs} />
+                        <Stack.Screen name="LiveRoom" component={LiveRoomScreen} />
+                        <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
+                        <Stack.Screen name="ArticleDetail" component={ArticleDetailScreen} />
+                        <Stack.Screen name="DesignerDetail" component={DesignerDetailScreen} />
+                        <Stack.Screen name="WorkerDetail" component={WorkerDetailScreen} />
+                        <Stack.Screen name="CompanyDetail" component={CompanyDetailScreen} />
+                        <Stack.Screen name="CaseGallery" component={CaseGalleryScreen} />
+                        <Stack.Screen name="CaseDetail" component={CaseDetailScreen} />
+                        <Stack.Screen name="Booking" component={BookingScreen} />
+                        <Stack.Screen name="ProjectTimeline" component={ProjectTimelineScreen} />
+                        <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+                        <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
+                        <Stack.Screen name="Settings" component={SettingsScreen} />
+                        <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+                        <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
+                        <Stack.Screen name="AccountSecurity" component={AccountSecurityScreen} />
+                    </>
                 ) : (
                     <Stack.Screen name="Login" component={LoginScreen} />
                 )}
-
-                <Stack.Screen name="LiveRoom" component={LiveRoomScreen} />
-                <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
-                <Stack.Screen name="ArticleDetail" component={ArticleDetailScreen} />
-                <Stack.Screen name="DesignerDetail" component={DesignerDetailScreen} />
-                <Stack.Screen name="WorkerDetail" component={WorkerDetailScreen} />
-                <Stack.Screen name="CompanyDetail" component={CompanyDetailScreen} />
-                <Stack.Screen name="CaseGallery" component={CaseGalleryScreen} />
-                <Stack.Screen name="CaseDetail" component={CaseDetailScreen} />
-                <Stack.Screen name="Booking" component={BookingScreen} />
-                <Stack.Screen name="ProjectTimeline" component={ProjectTimelineScreen} />
-                <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
-                <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
-                <Stack.Screen name="Settings" component={SettingsScreen} />
-                <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-                <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
-                <Stack.Screen name="AccountSecurity" component={AccountSecurityScreen} />
             </Stack.Navigator>
         </NavigationContainer>
     );

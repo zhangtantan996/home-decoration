@@ -242,10 +242,11 @@ git push
 
 ```bash
 # 第一步：进入项目目录
-cd /data/www/home-decoration
+/data/www/home-decoration
 
 # 第二步：拉取最新代码
 git pull
+crazy-uneasy
 
 # 第三步：重新构建并启动 Docker 容器
 docker compose up -d --build
