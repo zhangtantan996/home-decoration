@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -12,6 +12,7 @@ import {
     Platform,
     ActivityIndicator,
     ImageBackground,
+    Animated,
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -37,19 +38,94 @@ const translateWorkType = (workType: string): string => {
         'painter': '油漆工',
         'mason': '泥瓦工',
         'tiler': '瓷砖工',
-        'hvac': '暖通',
-        'general': '全屋',
+        'hvac': '暖通工',
+        'general': '全屋装修',
+        'demolition': '拆除',
         '水电工': '水电工',
         '木工': '木工',
         '油漆工': '油漆工',
     };
+    // 处理逗号分隔的多个工种
+    if (workType.includes(',')) {
+        return workType.split(',').map(t => map[t.trim()] || t.trim()).join(' · ');
+    }
     return map[workType] || workType;
+};
+
+// ========== Parallax Scroll Layout ==========
+const ParallaxScrollLayout = ({
+    scrollY,
+    headerHeight = 280,
+    renderHeader,
+    renderStickyNav,
+    children,
+    bottomBar
+}: any) => {
+    // Animations
+    const imageTranslateY = scrollY.interpolate({
+        inputRange: [0, headerHeight],
+        outputRange: [0, -headerHeight / 2],
+        extrapolate: 'clamp',
+    });
+    const imageScale = scrollY.interpolate({
+        inputRange: [-headerHeight, 0],
+        outputRange: [2, 1],
+        extrapolate: 'clamp',
+    });
+    const navOpacity = scrollY.interpolate({
+        inputRange: [0, 200],
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+    });
+
+    return (
+        <View style={styles.parallaxContainer}>
+            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+            {/* 1. Parallax Header */}
+            <Animated.View style={[styles.parallaxHeader, { height: headerHeight, transform: [{ translateY: imageTranslateY }, { scale: imageScale }] }]}>
+                {renderHeader()}
+            </Animated.View>
+
+            {/* 2. Sticky Nav */}
+            <View style={styles.stickyNavContainer}>
+                <Animated.View style={[styles.stickyNavBg, { opacity: navOpacity }]} />
+                <SafeAreaView>
+                    {renderStickyNav(navOpacity)}
+                </SafeAreaView>
+            </View>
+
+            {/* 3. Content */}
+            <Animated.ScrollView
+                style={{ flex: 1, backgroundColor: 'transparent' }}
+                contentContainerStyle={{ paddingTop: headerHeight - 30, paddingBottom: 100 }}
+                onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                    { useNativeDriver: true }
+                )}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={styles.contentCard}>
+                    {children}
+                </View>
+            </Animated.ScrollView>
+
+            {/* Floating Bottom Bar */}
+            {bottomBar && (
+                <View style={styles.floatBottomContainer}>
+                    {bottomBar}
+                </View>
+            )}
+        </View>
+    );
 };
 
 // ========== Designer Detail Screen ==========
 export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const { designer } = route.params;
     const { showToast } = useToast();
+    const scrollY = useRef(new Animated.Value(0)).current;
 
     // API 数据状态
     const [detail, setDetail] = useState<any>(null);
@@ -150,33 +226,17 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
         priceMax: provider.priceMax || 500,
     };
 
-    if (loading) {
-        return (
-            <SafeAreaView style={styles.container}>
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                        <ArrowLeft size={24} color="#111" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>设计师详情</Text>
-                    <View style={styles.shareBtn} />
-                </View>
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <ActivityIndicator size="large" color="#111" />
-                </View>
-            </SafeAreaView>
-        );
-    }
+
 
     // ========== Magazine Style UI ==========
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-                {/* 1. Hero Header */}
+        <ParallaxScrollLayout
+            scrollY={scrollY}
+            headerHeight={280}
+            renderHeader={() => (
                 <ImageBackground
                     source={{ uri: displayData.avatar || 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200' }}
-                    style={styles.heroHeader}
+                    style={{ width: '100%', height: '100%', justifyContent: 'flex-end' }}
                 >
                     <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
                         <Defs>
@@ -187,20 +247,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         </Defs>
                         <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
                     </Svg>
-                    {/* Top Nav (Absolute) */}
-                    <SafeAreaView style={styles.heroNav}>
-                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.heroBackBtn}>
-                            <ArrowLeft size={24} color="#fff" />
-                        </TouchableOpacity>
-                        <View style={styles.heroActions}>
-                            <TouchableOpacity style={styles.heroActionBtn} onPress={handleShare}>
-                                <Share2 size={20} color="#fff" />
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.heroActionBtn} onPress={handleFavorite}>
-                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} />
-                            </TouchableOpacity>
-                        </View>
-                    </SafeAreaView>
 
                     <View style={styles.heroContent}>
                         <View style={styles.heroInfo}>
@@ -227,128 +273,50 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         </View>
                     </View>
                 </ImageBackground>
-
-                {/* 2. Dashboard Stats (Floating) */}
-                <View style={styles.dashboardCard}>
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.rating}</Text>
-                        <View style={styles.dashLabelRow}>
-                            <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                            <Text style={styles.dashLabel}>综合评分</Text>
+            )}
+            renderStickyNav={(navOpacity: any) => (
+                <View style={styles.stickyNavContent}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.stickyActionBtn}>
+                        <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                            <ArrowLeft size={24} color="#fff" style={{ position: 'absolute' }} />
+                            <Animated.View style={{ opacity: navOpacity }}>
+                                <ArrowLeft size={24} color="#111" />
+                            </Animated.View>
                         </View>
-                    </View>
-                    <View style={styles.dashDivider} />
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{formatFollowers(followersCount)}</Text>
-                        <Text style={styles.dashLabel}>粉丝关注</Text>
-                    </View>
-                    <View style={styles.dashDivider} />
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.completedCnt}</Text>
-                        <Text style={styles.dashLabel}>完成案例</Text>
-                    </View>
-                </View>
+                    </TouchableOpacity>
 
-                {/* 3. Service Intro */}
-                <View style={styles.magazineSection}>
-                    <Text style={styles.magSectionTitle}>设计理念</Text>
-                    <Text style={styles.magDescText} numberOfLines={3}>{displayData.serviceIntro}</Text>
-
-                    <View style={styles.priceTagRow}>
-                        <Text style={styles.priceTagLabel}>设计费</Text>
-                        <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}/m²</Text>
-                    </View>
-                </View>
-
-                {/* 4. Portfolio Showcase */}
-                <View style={styles.magazineSection}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.magSectionTitle}>精选作品</Text>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('CaseGallery', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
+                    {/* Title Fades In */}
+                    <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
+                        <Animated.Text
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: '#111' }}
                         >
-                            <Text style={styles.moreLink}>全部作品</Text>
-                        </TouchableOpacity>
+                            {displayData.name}
+                        </Animated.Text>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.magPortfolioList}>
-                        {cases.length > 0 ? cases.slice(0, 5).map((caseItem: any, idx: number) => (
-                            <TouchableOpacity
-                                key={caseItem.id || idx}
-                                style={styles.magCaseCard}
-                                activeOpacity={0.9}
-                                onPress={() => navigation.navigate('CaseDetail', {
-                                    caseItem: {
-                                        id: caseItem.id,
-                                        title: caseItem.title,
-                                        coverImage: caseItem.coverImage,
-                                        style: caseItem.style,
-                                        area: caseItem.area,
-                                        year: caseItem.year,
-                                        description: caseItem.description,
-                                        images: caseItem.images ? JSON.parse(caseItem.images) : [caseItem.coverImage],
-                                    },
-                                    providerName: displayData.name,
-                                    providerType: 'designer'
-                                })}
-                            >
-                                <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
-                                <View style={styles.magCaseOverlay}>
-                                    <Text style={styles.magCaseTitle} numberOfLines={1}>{caseItem.title}</Text>
-                                    <Text style={styles.magCaseMeta}>{caseItem.style} · {caseItem.area}</Text>
-                                </View>
-                            </TouchableOpacity>
-                        )) : (
-                            <View style={styles.emptyCase}>
-                                <Text style={styles.emptyText}>暂无作品展示</Text>
+
+                    <View style={styles.headerActions}>
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
+                                </Animated.View>
                             </View>
-                        )}
-                    </ScrollView>
-                </View>
-
-                {/* 5. Reviews Preview */}
-                <View style={[styles.magazineSection, { paddingBottom: 0 }]}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.magSectionTitle}>口碑评价</Text>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('Reviews', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
-                        >
-                            <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Share2 size={20} color="#333" />
+                                </Animated.View>
+                            </View>
                         </TouchableOpacity>
                     </View>
-
-                    {reviews.length > 0 ? (
-                        <View style={styles.magReviewList}>
-                            {reviews.slice(0, 2).map((review: any, idx: number) => (
-                                <View key={review.id || idx} style={styles.magReviewCard}>
-                                    <View style={styles.magReviewHeader}>
-                                        <Image source={{ uri: review.userAvatar || 'https://via.placeholder.com/32' }} style={styles.magReviewAvatar} />
-                                        <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
-                                        <View style={{ flex: 1 }} />
-                                        <View style={styles.flexRow}>
-                                            <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                                            <Text style={styles.miniRating}>{review.rating}</Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.magReviewContent} numberOfLines={2}>{review.content}</Text>
-                                </View>
-                            ))}
-                            <TouchableOpacity
-                                style={styles.checkAllReviewsBtn}
-                                onPress={() => navigation.navigate('Reviews', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
-                            >
-                                <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <View style={styles.emptyReview}>
-                            <Text style={styles.emptyText}>暂无评价</Text>
-                        </View>
-                    )}
                 </View>
-            </ScrollView>
-
-            {/* Floating Bottom Bar */}
-            <View style={styles.floatBottomContainer}>
+            )}
+            bottomBar={
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -374,8 +342,126 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约设计</Text>
                     </TouchableOpacity>
                 </View>
+            }
+        >
+            {/* 2. Dashboard Stats (Floating) */}
+            <View style={[styles.dashboardCard, { marginTop: -40, alignSelf: 'center', width: '90%' }]}>
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{displayData.rating}</Text>
+                    <View style={styles.dashLabelRow}>
+                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                        <Text style={styles.dashLabel}>综合评分</Text>
+                    </View>
+                </View>
+                <View style={styles.dashDivider} />
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{formatFollowers(followersCount)}</Text>
+                    <Text style={styles.dashLabel}>粉丝关注</Text>
+                </View>
+                <View style={styles.dashDivider} />
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{displayData.completedCnt}</Text>
+                    <Text style={styles.dashLabel}>完成案例</Text>
+                </View>
             </View>
-        </View>
+
+            {/* 3. Service Intro */}
+            <View style={styles.magazineSection}>
+                <Text style={styles.magSectionTitle}>设计理念</Text>
+                <Text style={styles.magDescText} numberOfLines={3}>{displayData.serviceIntro}</Text>
+
+                <View style={styles.priceTagRow}>
+                    <Text style={styles.priceTagLabel}>设计费</Text>
+                    <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}/m²</Text>
+                </View>
+            </View>
+
+            {/* 4. Portfolio Showcase */}
+            <View style={styles.magazineSection}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.magSectionTitle}>精选作品</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('CaseGallery', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
+                    >
+                        <Text style={styles.moreLink}>全部作品</Text>
+                    </TouchableOpacity>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.magPortfolioList}>
+                    {cases.length > 0 ? cases.slice(0, 5).map((caseItem: any, idx: number) => (
+                        <TouchableOpacity
+                            key={caseItem.id || idx}
+                            style={styles.magCaseCard}
+                            activeOpacity={0.9}
+                            onPress={() => navigation.navigate('CaseDetail', {
+                                caseItem: {
+                                    id: caseItem.id,
+                                    title: caseItem.title,
+                                    coverImage: caseItem.coverImage,
+                                    style: caseItem.style,
+                                    area: caseItem.area,
+                                    year: caseItem.year,
+                                    description: caseItem.description,
+                                    images: caseItem.images ? JSON.parse(caseItem.images) : [caseItem.coverImage],
+                                },
+                                providerName: displayData.name,
+                                providerType: 'designer'
+                            })}
+                        >
+                            <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
+                            <View style={styles.magCaseOverlay}>
+                                <Text style={styles.magCaseTitle} numberOfLines={1}>{caseItem.title}</Text>
+                                <Text style={styles.magCaseMeta}>{caseItem.style} · {caseItem.area}</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )) : (
+                        <View style={styles.emptyCase}>
+                            <Text style={styles.emptyText}>暂无作品展示</Text>
+                        </View>
+                    )}
+                </ScrollView>
+            </View>
+
+            {/* 5. Reviews Preview */}
+            <View style={[styles.magazineSection, { paddingBottom: 0 }]}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.magSectionTitle}>口碑评价</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('Reviews', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
+                    >
+                        <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {reviews.length > 0 ? (
+                    <View style={styles.magReviewList}>
+                        {reviews.slice(0, 2).map((review: any, idx: number) => (
+                            <View key={review.id || idx} style={styles.magReviewCard}>
+                                <View style={styles.magReviewHeader}>
+                                    <Image source={{ uri: review.userAvatar || 'https://via.placeholder.com/32' }} style={styles.magReviewAvatar} />
+                                    <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
+                                    <View style={{ flex: 1 }} />
+                                    <View style={styles.flexRow}>
+                                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                                        <Text style={styles.miniRating}>{review.rating}</Text>
+                                    </View>
+                                </View>
+                                <Text style={styles.magReviewContent} numberOfLines={2}>{review.content}</Text>
+                            </View>
+                        ))}
+                        <TouchableOpacity
+                            style={styles.checkAllReviewsBtn}
+                            onPress={() => navigation.navigate('Reviews', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
+                        >
+                            <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <View style={styles.emptyReview}>
+                        <Text style={styles.emptyText}>暂无评价</Text>
+                    </View>
+                )}
+            </View>
+        </ParallaxScrollLayout>
     );
 };
 
@@ -384,6 +470,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
 export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const { worker } = route.params;
     const { showToast } = useToast();
+    const scrollY = useRef(new Animated.Value(0)).current;
 
     // API 数据状态
     const [detail, setDetail] = useState<any>(null);
@@ -488,34 +575,20 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
             'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400',
         ];
 
-    if (loading) {
-        return (
-            <SafeAreaView style={styles.container}>
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                        <ArrowLeft size={24} color="#111" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>师傅详情</Text>
-                    <View style={styles.shareBtn} />
-                </View>
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <ActivityIndicator size="large" color="#111" />
-                </View>
-            </SafeAreaView>
-        );
-    }
+
+
+
 
 
     // ========== Magazine Style UI for Worker ==========
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-                {/* 1. Hero Header */}
+        <ParallaxScrollLayout
+            scrollY={scrollY}
+            headerHeight={280}
+            renderHeader={() => (
                 <ImageBackground
-                    source={{ uri: displayData.avatar || 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=800' }}
-                    style={styles.heroHeader}
+                    source={{ uri: displayData.avatar || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?w=1200' }}
+                    style={{ width: '100%', height: '100%', justifyContent: 'flex-end' }}
                 >
                     <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
                         <Defs>
@@ -526,21 +599,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         </Defs>
                         <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
                     </Svg>
-                    {/* Top Nav */}
-                    <SafeAreaView style={styles.heroNav}>
-                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.heroBackBtn}>
-                            <ArrowLeft size={24} color="#fff" />
-                        </TouchableOpacity>
-                        <View style={styles.heroActions}>
-                            <TouchableOpacity style={styles.heroActionBtn} onPress={handleShare}>
-                                <Share2 size={20} color="#fff" />
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.heroActionBtn} onPress={handleFavorite}>
-                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} />
-                            </TouchableOpacity>
-                        </View>
-                    </SafeAreaView>
-
                     <View style={styles.heroContent}>
                         <View style={styles.heroInfo}>
                             <View style={[styles.flexRow, { marginBottom: 8 }]}>
@@ -556,8 +614,8 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                                 </TouchableOpacity>
                             </View>
                             <View style={styles.heroBadgeRow}>
-                                <View style={styles.heroBadge}>
-                                    <Text style={styles.heroBadgeText}>{displayData.workTypeLabels}</Text>
+                                <View style={[styles.heroBadge, { backgroundColor: '#EAB308' }]}>
+                                    <Text style={[styles.heroBadgeText, { color: '#fff', fontWeight: 'bold' }]}>{displayData.workTypeLabels}</Text>
                                 </View>
                                 <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
                                     <Text style={styles.heroBadgeText}>{displayData.yearsExperience}年经验</Text>
@@ -566,133 +624,50 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         </View>
                     </View>
                 </ImageBackground>
-
-                {/* 2. Dashboard Stats (Floating) */}
-                <View style={styles.dashboardCard}>
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.rating}</Text>
-                        <View style={styles.dashLabelRow}>
-                            <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                            <Text style={styles.dashLabel}>综合评分</Text>
+            )}
+            renderStickyNav={(navOpacity: any) => (
+                <View style={styles.stickyNavContent}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.stickyActionBtn}>
+                        <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                            <ArrowLeft size={24} color="#fff" style={{ position: 'absolute' }} />
+                            <Animated.View style={{ opacity: navOpacity }}>
+                                <ArrowLeft size={24} color="#111" />
+                            </Animated.View>
                         </View>
-                    </View>
-                    <View style={styles.dashDivider} />
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.reviewCount}</Text>
-                        <Text style={styles.dashLabel}>好评数</Text>
-                    </View>
-                    <View style={styles.dashDivider} />
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
-                        <Text style={styles.dashLabel}>完成单量</Text>
-                    </View>
-                </View>
+                    </TouchableOpacity>
 
-                {/* 3. Service Intro */}
-                <View style={styles.magazineSection}>
-                    <Text style={styles.magSectionTitle}>服务介绍</Text>
-                    <Text style={styles.magDescText}>
-                        {displayData.serviceIntro}
-                    </Text>
-                    <View style={styles.tagsContainer}>
-                        {displayData.tags.map((tag: string, idx: number) => (
-                            <View key={idx} style={styles.tag}>
-                                <Text style={styles.tagText}>{tag}</Text>
-                            </View>
-                        ))}
-                    </View>
-                </View>
-
-                {/* 4. Portfolio Showcase */}
-                <View style={styles.magazineSection}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.magSectionTitle}>施工案例</Text>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('CaseGallery', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
+                    {/* Title */}
+                    <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
+                        <Animated.Text
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: '#111' }}
                         >
-                            <Text style={styles.moreLink}>全部案例</Text>
+                            {displayData.name}
+                        </Animated.Text>
+                    </View>
+
+                    <View style={styles.headerActions}>
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
+                                </Animated.View>
+                            </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Share2 size={20} color="#333" />
+                                </Animated.View>
+                            </View>
                         </TouchableOpacity>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.magPortfolioList}>
-                        {cases.length > 0 ? cases.slice(0, 5).map((caseItem: any, idx: number) => (
-                            <TouchableOpacity
-                                key={caseItem.id || idx}
-                                style={styles.magCaseCard}
-                                activeOpacity={0.9}
-                                onPress={() => navigation.navigate('CaseDetail', {
-                                    caseItem: {
-                                        id: caseItem.id,
-                                        title: caseItem.title,
-                                        coverImage: caseItem.coverImage,
-                                        style: caseItem.style,
-                                        area: caseItem.area,
-                                        year: caseItem.year,
-                                        description: caseItem.description,
-                                        images: caseItem.images ? JSON.parse(caseItem.images) : [caseItem.coverImage],
-                                        height: 200
-                                    },
-                                    providerName: displayData.name,
-                                    providerType: 'foreman'
-                                })}
-                            >
-                                <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
-                                <View style={styles.magCaseOverlay}>
-                                    <Text style={styles.magCaseTitle} numberOfLines={1}>{caseItem.title}</Text>
-                                    <Text style={styles.magCaseMeta}>{caseItem.year} · {caseItem.style || '完工'}</Text>
-                                </View>
-                            </TouchableOpacity>
-                        )) : (
-                            <View style={styles.emptyCase}>
-                                <Text style={styles.emptyText}>暂无案例</Text>
-                            </View>
-                        )}
-                    </ScrollView>
                 </View>
-
-                {/* 5. Reviews Preview */}
-                <View style={[styles.magazineSection, { paddingBottom: 0 }]}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.magSectionTitle}>用户口碑</Text>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('Reviews', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
-                        >
-                            <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {reviews.length > 0 ? (
-                        <View style={styles.magReviewList}>
-                            {reviews.slice(0, 2).map((review: any, idx: number) => (
-                                <View key={review.id || idx} style={styles.magReviewCard}>
-                                    <View style={styles.magReviewHeader}>
-                                        <Image source={{ uri: review.userAvatar || 'https://via.placeholder.com/32' }} style={styles.magReviewAvatar} />
-                                        <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
-                                        <View style={{ flex: 1 }} />
-                                        <View style={styles.flexRow}>
-                                            <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                                            <Text style={styles.miniRating}>{review.rating}</Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.magReviewContent} numberOfLines={2}>{review.content}</Text>
-                                </View>
-                            ))}
-                            <TouchableOpacity
-                                style={styles.checkAllReviewsBtn}
-                                onPress={() => navigation.navigate('Reviews', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
-                            >
-                                <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <View style={styles.emptyReview}>
-                            <Text style={styles.emptyText}>暂无评价</Text>
-                        </View>
-                    )}
-                </View>
-            </ScrollView>
-
-            {/* Floating Bottom Bar */}
-            <View style={styles.floatBottomContainer}>
+            )}
+            bottomBar={
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -718,15 +693,140 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约施工</Text>
                     </TouchableOpacity>
                 </View>
+            }
+        >
+            {/* Dashboard Stats */}
+            <View style={[styles.dashboardCard, { marginTop: -40, alignSelf: 'center', width: '90%' }]}>
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{displayData.rating}</Text>
+                    <View style={styles.dashLabelRow}>
+                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                        <Text style={styles.dashLabel}>综合评分</Text>
+                    </View>
+                </View>
+                <View style={styles.dashDivider} />
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{formatFollowers(followersCount)}</Text>
+                    <Text style={styles.dashLabel}>粉丝关注</Text>
+                </View>
+                <View style={styles.dashDivider} />
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
+                    <Text style={styles.dashLabel}>完成案例</Text>
+                </View>
             </View>
-        </View>
+
+            {/* Service Intro */}
+            <View style={styles.magazineSection}>
+                <Text style={styles.magSectionTitle}>服务介绍</Text>
+                <Text style={styles.magDescText}>
+                    {displayData.serviceIntro}
+                </Text>
+                <View style={styles.tagsContainer}>
+                    {displayData.tags && displayData.tags.map((tag: string, idx: number) => (
+                        <View key={idx} style={styles.tag}>
+                            <Text style={styles.tagText}>{tag}</Text>
+                        </View>
+                    ))}
+                </View>
+            </View>
+
+            {/* Portfolio Showcase */}
+            <View style={styles.magazineSection}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.magSectionTitle}>施工案例</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('CaseGallery', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
+                    >
+                        <Text style={styles.moreLink}>全部案例</Text>
+                    </TouchableOpacity>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.magPortfolioList}>
+                    {cases.length > 0 ? cases.slice(0, 5).map((caseItem: any, idx: number) => (
+                        <TouchableOpacity
+                            key={caseItem.id || idx}
+                            style={styles.magCaseCard}
+                            activeOpacity={0.9}
+                            onPress={() => navigation.navigate('CaseDetail', {
+                                caseItem: {
+                                    id: caseItem.id,
+                                    title: caseItem.title,
+                                    coverImage: caseItem.coverImage,
+                                    style: caseItem.style,
+                                    area: caseItem.area,
+                                    year: caseItem.year,
+                                    description: caseItem.description,
+                                    images: caseItem.images ? JSON.parse(caseItem.images) : [caseItem.coverImage],
+                                    height: 200
+                                },
+                                providerName: displayData.name,
+                                providerType: 'foreman'
+                            })}
+                        >
+                            <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
+                            <View style={styles.magCaseOverlay}>
+                                <Text style={styles.magCaseTitle} numberOfLines={1}>{caseItem.title}</Text>
+                                <Text style={styles.magCaseMeta}>{caseItem.year} · {caseItem.style || '完工'}</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )) : (
+                        <View style={styles.emptyCase}>
+                            <Text style={styles.emptyText}>暂无案例</Text>
+                        </View>
+                    )}
+                </ScrollView>
+            </View>
+
+            {/* Reviews Preview */}
+            <View style={[styles.magazineSection, { paddingBottom: 0 }]}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.magSectionTitle}>用户口碑</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('Reviews', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
+                    >
+                        <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {reviews.length > 0 ? (
+                    <View style={styles.magReviewList}>
+                        {reviews.slice(0, 2).map((review: any, idx: number) => (
+                            <View key={review.id || idx} style={styles.magReviewCard}>
+                                <View style={styles.magReviewHeader}>
+                                    <Image source={{ uri: review.userAvatar || 'https://via.placeholder.com/32' }} style={styles.magReviewAvatar} />
+                                    <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
+                                    <View style={{ flex: 1 }} />
+                                    <View style={styles.flexRow}>
+                                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                                        <Text style={styles.miniRating}>{review.rating}</Text>
+                                    </View>
+                                </View>
+                                <Text style={styles.magReviewContent} numberOfLines={2}>{review.content}</Text>
+                            </View>
+                        ))}
+                        <TouchableOpacity
+                            style={styles.checkAllReviewsBtn}
+                            onPress={() => navigation.navigate('Reviews', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
+                        >
+                            <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <View style={styles.emptyReview}>
+                        <Text style={styles.emptyText}>暂无评价</Text>
+                    </View>
+                )}
+            </View>
+        </ParallaxScrollLayout>
     );
 };
+
 
 // ========== Company Detail Screen ==========
 export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const { company } = route.params;
     const { showToast } = useToast();
+    const scrollY = useRef(new Animated.Value(0)).current;
 
     // API 数据状态
     const [detail, setDetail] = useState<any>(null);
@@ -832,34 +932,18 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
             'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=400',
         ];
 
-    if (loading) {
-        return (
-            <SafeAreaView style={styles.container}>
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                        <ArrowLeft size={24} color="#111" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>公司详情</Text>
-                    <View style={styles.shareBtn} />
-                </View>
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                    <ActivityIndicator size="large" color="#111" />
-                </View>
-            </SafeAreaView>
-        );
-    }
+
 
 
     // ========== Magazine Style UI for Company ==========
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-                {/* 1. Hero Header */}
+        <ParallaxScrollLayout
+            scrollY={scrollY}
+            headerHeight={280}
+            renderHeader={() => (
                 <ImageBackground
                     source={{ uri: displayData.logo || 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200' }}
-                    style={styles.heroHeader}
+                    style={{ width: '100%', height: '100%', justifyContent: 'flex-end' }}
                 >
                     <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
                         <Defs>
@@ -870,20 +954,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         </Defs>
                         <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
                     </Svg>
-                    {/* Top Nav */}
-                    <SafeAreaView style={styles.heroNav}>
-                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.heroBackBtn}>
-                            <ArrowLeft size={24} color="#fff" />
-                        </TouchableOpacity>
-                        <View style={styles.heroActions}>
-                            <TouchableOpacity style={styles.heroActionBtn} onPress={handleFavorite}>
-                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} />
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.heroActionBtn} onPress={handleShare}>
-                                <Share2 size={20} color="#fff" />
-                            </TouchableOpacity>
-                        </View>
-                    </SafeAreaView>
 
                     <View style={styles.heroContent}>
                         <View style={styles.heroInfo}>
@@ -910,142 +980,50 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         </View>
                     </View>
                 </ImageBackground>
-
-                {/* 2. Dashboard Stats (Floating) */}
-                <View style={styles.dashboardCard}>
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.rating}</Text>
-                        <View style={styles.dashLabelRow}>
-                            <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                            <Text style={styles.dashLabel}>综合评分</Text>
+            )}
+            renderStickyNav={(navOpacity: any) => (
+                <View style={styles.stickyNavContent}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.stickyActionBtn}>
+                        <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                            <ArrowLeft size={24} color="#fff" style={{ position: 'absolute' }} />
+                            <Animated.View style={{ opacity: navOpacity }}>
+                                <ArrowLeft size={24} color="#111" />
+                            </Animated.View>
                         </View>
-                    </View>
-                    <View style={styles.dashDivider} />
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.reviewCount}</Text>
-                        <Text style={styles.dashLabel}>评价数</Text>
-                    </View>
-                    <View style={styles.dashDivider} />
-                    <View style={styles.dashItem}>
-                        <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
-                        <Text style={styles.dashLabel}>竣工项目</Text>
-                    </View>
-                </View>
+                    </TouchableOpacity>
 
-                {/* 3. Service & Certs */}
-                <View style={styles.magazineSection}>
-                    <Text style={styles.magSectionTitle}>公司介绍</Text>
-                    <Text style={styles.magDescText}>
-                        {displayData.serviceIntro}
-                    </Text>
-
-                    <View style={{ height: 16 }} />
-                    <Text style={[styles.magSectionTitle, { fontSize: 16 }]}>资质认证</Text>
-                    <View style={styles.certsContainer}>
-                        {displayData.certifications?.map((cert: string, idx: number) => (
-                            <View key={idx} style={styles.certBadge}>
-                                <Award size={14} color="#059669" />
-                                <Text style={styles.certText}>{cert}</Text>
-                            </View>
-                        ))}
-                    </View>
-
-                    <View style={styles.priceTagRow}>
-                        <Text style={styles.priceTagLabel}>参考均价</Text>
-                        <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}{displayData.priceUnit?.replace('平米', 'm²')}</Text>
-                    </View>
-                </View>
-
-                {/* 4. Portfolio Showcase */}
-                <View style={styles.magazineSection}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.magSectionTitle}>工程案例</Text>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('CaseGallery', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
+                    {/* Title */}
+                    <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
+                        <Animated.Text
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: '#111' }}
                         >
-                            <Text style={styles.moreLink}>全部案例</Text>
+                            {displayData.name}
+                        </Animated.Text>
+                    </View>
+
+                    <View style={styles.headerActions}>
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
+                                </Animated.View>
+                            </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Share2 size={20} color="#333" />
+                                </Animated.View>
+                            </View>
                         </TouchableOpacity>
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.magPortfolioList}>
-                        {cases.length > 0 ? cases.slice(0, 5).map((caseItem: any, idx: number) => (
-                            <TouchableOpacity
-                                key={caseItem.id || idx}
-                                style={styles.magCaseCard}
-                                activeOpacity={0.9}
-                                onPress={() => navigation.navigate('CaseDetail', {
-                                    caseItem: {
-                                        id: caseItem.id,
-                                        title: caseItem.title,
-                                        coverImage: caseItem.coverImage,
-                                        style: caseItem.style,
-                                        area: caseItem.area,
-                                        year: caseItem.year,
-                                        description: caseItem.description,
-                                        images: caseItem.images ? JSON.parse(caseItem.images) : [caseItem.coverImage],
-                                        height: 200
-                                    },
-                                    providerName: displayData.name,
-                                    providerType: 'company'
-                                })}
-                            >
-                                <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
-                                <View style={styles.magCaseOverlay}>
-                                    <Text style={styles.magCaseTitle} numberOfLines={1}>{caseItem.title}</Text>
-                                    <Text style={styles.magCaseMeta}>{caseItem.year} · {caseItem.style || '完工'}</Text>
-                                </View>
-                            </TouchableOpacity>
-                        )) : (
-                            <View style={styles.emptyCase}>
-                                <Text style={styles.emptyText}>暂无案例</Text>
-                            </View>
-                        )}
-                    </ScrollView>
                 </View>
-
-                {/* 5. Reviews Preview */}
-                <View style={[styles.magazineSection, { paddingBottom: 0 }]}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.magSectionTitle}>客户评价</Text>
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('Reviews', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
-                        >
-                            <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {reviews.length > 0 ? (
-                        <View style={styles.magReviewList}>
-                            {reviews.slice(0, 2).map((review: any, idx: number) => (
-                                <View key={review.id || idx} style={styles.magReviewCard}>
-                                    <View style={styles.magReviewHeader}>
-                                        <Image source={{ uri: review.userAvatar || 'https://via.placeholder.com/32' }} style={styles.magReviewAvatar} />
-                                        <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
-                                        <View style={{ flex: 1 }} />
-                                        <View style={styles.flexRow}>
-                                            <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                                            <Text style={styles.miniRating}>{review.rating}</Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.magReviewContent} numberOfLines={2}>{review.content}</Text>
-                                </View>
-                            ))}
-                            <TouchableOpacity
-                                style={styles.checkAllReviewsBtn}
-                                onPress={() => navigation.navigate('Reviews', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
-                            >
-                                <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <View style={styles.emptyReview}>
-                            <Text style={styles.emptyText}>暂无评价</Text>
-                        </View>
-                    )}
-                </View>
-            </ScrollView>
-
-            {/* Floating Bottom Bar */}
-            <View style={styles.floatBottomContainer}>
+            )}
+            bottomBar={
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -1070,8 +1048,140 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约</Text>
                     </TouchableOpacity>
                 </View>
+            }
+        >
+            {/* 2. Dashboard Stats (Floating) */}
+            <View style={[styles.dashboardCard, { marginTop: -40, alignSelf: 'center', width: '90%' }]}>
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{displayData.rating}</Text>
+                    <View style={styles.dashLabelRow}>
+                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                        <Text style={styles.dashLabel}>综合评分</Text>
+                    </View>
+                </View>
+                <View style={styles.dashDivider} />
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{displayData.reviewCount}</Text>
+                    <Text style={styles.dashLabel}>评价数</Text>
+                </View>
+                <View style={styles.dashDivider} />
+                <View style={styles.dashItem}>
+                    <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
+                    <Text style={styles.dashLabel}>竣工项目</Text>
+                </View>
             </View>
-        </View>
+
+            {/* 3. Service & Certs */}
+            <View style={styles.magazineSection}>
+                <Text style={styles.magSectionTitle}>公司介绍</Text>
+                <Text style={styles.magDescText}>
+                    {displayData.serviceIntro}
+                </Text>
+
+                <View style={{ height: 16 }} />
+                <Text style={[styles.magSectionTitle, { fontSize: 16 }]}>资质认证</Text>
+                <View style={styles.certsContainer}>
+                    {displayData.certifications?.map((cert: string, idx: number) => (
+                        <View key={idx} style={styles.certBadge}>
+                            <Award size={14} color="#059669" />
+                            <Text style={styles.certText}>{cert}</Text>
+                        </View>
+                    ))}
+                </View>
+
+                <View style={styles.priceTagRow}>
+                    <Text style={styles.priceTagLabel}>参考均价</Text>
+                    <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}{displayData.priceUnit?.replace('平米', 'm²')}</Text>
+                </View>
+            </View>
+
+            {/* 4. Portfolio Showcase */}
+            <View style={styles.magazineSection}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.magSectionTitle}>工程案例</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('CaseGallery', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
+                    >
+                        <Text style={styles.moreLink}>全部案例</Text>
+                    </TouchableOpacity>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.magPortfolioList}>
+                    {cases.length > 0 ? cases.slice(0, 5).map((caseItem: any, idx: number) => (
+                        <TouchableOpacity
+                            key={caseItem.id || idx}
+                            style={styles.magCaseCard}
+                            activeOpacity={0.9}
+                            onPress={() => navigation.navigate('CaseDetail', {
+                                caseItem: {
+                                    id: caseItem.id,
+                                    title: caseItem.title,
+                                    coverImage: caseItem.coverImage,
+                                    style: caseItem.style,
+                                    area: caseItem.area,
+                                    year: caseItem.year,
+                                    description: caseItem.description,
+                                    images: caseItem.images ? JSON.parse(caseItem.images) : [caseItem.coverImage],
+                                    height: 200
+                                },
+                                providerName: displayData.name,
+                                providerType: 'company'
+                            })}
+                        >
+                            <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
+                            <View style={styles.magCaseOverlay}>
+                                <Text style={styles.magCaseTitle} numberOfLines={1}>{caseItem.title}</Text>
+                                <Text style={styles.magCaseMeta}>{caseItem.year} · {caseItem.style || '完工'}</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )) : (
+                        <View style={styles.emptyCase}>
+                            <Text style={styles.emptyText}>暂无案例</Text>
+                        </View>
+                    )}
+                </ScrollView>
+            </View>
+
+            {/* 5. Reviews Preview */}
+            <View style={[styles.magazineSection, { paddingBottom: 0 }]}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.magSectionTitle}>客户评价</Text>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('Reviews', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
+                    >
+                        <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {reviews.length > 0 ? (
+                    <View style={styles.magReviewList}>
+                        {reviews.slice(0, 2).map((review: any, idx: number) => (
+                            <View key={review.id || idx} style={styles.magReviewCard}>
+                                <View style={styles.magReviewHeader}>
+                                    <Image source={{ uri: review.userAvatar || 'https://via.placeholder.com/32' }} style={styles.magReviewAvatar} />
+                                    <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
+                                    <View style={{ flex: 1 }} />
+                                    <View style={styles.flexRow}>
+                                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                                        <Text style={styles.miniRating}>{review.rating}</Text>
+                                    </View>
+                                </View>
+                                <Text style={styles.magReviewContent} numberOfLines={2}>{review.content}</Text>
+                            </View>
+                        ))}
+                        <TouchableOpacity
+                            style={styles.checkAllReviewsBtn}
+                            onPress={() => navigation.navigate('Reviews', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
+                        >
+                            <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <View style={styles.emptyReview}>
+                        <Text style={styles.emptyText}>暂无评价</Text>
+                    </View>
+                )}
+            </View>
+        </ParallaxScrollLayout>
     );
 };
 
@@ -1083,7 +1193,7 @@ const styles = StyleSheet.create({
     // Common
     content: {
         flex: 1,
-        backgroundColor: '#F9FAFB',
+        backgroundColor: 'transparent',
     },
     flexRow: {
         flexDirection: 'row',
@@ -1602,15 +1712,65 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         marginLeft: 12,
     },
-    profileFollowedBtn: {
-        backgroundColor: '#E5E7EB',
-    },
-    profileFollowText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: '600',
-    },
     profileFollowedText: {
         color: '#6B7280',
     },
+    // ===========================
+    // Parallax Header Styles
+    // ===========================
+    parallaxContainer: {
+        flex: 1,
+        backgroundColor: '#fff',
+    },
+    parallaxHeader: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        overflow: 'hidden',
+    },
+    parallaxContentWrapper: {
+        paddingHorizontal: 20,
+        position: 'absolute',
+        bottom: 30,
+        left: 0,
+        right: 0,
+        zIndex: 2,
+    },
+    contentCard: {
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        paddingTop: 24,
+        paddingBottom: 100,
+        minHeight: 800,
+        marginTop: 0,
+    },
+    stickyNavContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 100,
+    },
+    stickyNavBg: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: '#fff',
+        borderBottomWidth: 0.5,
+        borderBottomColor: '#E5E7EB',
+    },
+    stickyNavContent: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingBottom: 10,
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 0,
+    },
+    stickyActionBtn: {
+        padding: 8,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0,0,0,0.1)', // backup bg for visibility
+    },
 });
+

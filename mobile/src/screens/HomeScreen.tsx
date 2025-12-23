@@ -13,12 +13,15 @@ import {
     Modal,
     TextInput,
     ActivityIndicator,
+    Animated,
+    Easing,
+    TouchableWithoutFeedback,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MATERIALS } from '../services/mockData';
-import { providerApi } from '../services/api';
-import { Designer, Worker, ProviderDTO, toDesigner, toWorker } from '../types/provider';
-import { NetworkErrorView, LoadingView, EmptyView, PullToRefresh } from '../components';
+import { Designer, Worker } from '../types/provider';
+import { NetworkErrorView, EmptyView, PullToRefresh, DesignerSkeletonCard, WorkerSkeletonCard } from '../components';
+import { useProviderStore } from '../store/providerStore';
 import {
     MapPin,
     Search,
@@ -137,21 +140,33 @@ const HOT_SEARCH_TERMS = [
     '新中式',
 ];
 
+
+
+
+
 const HomeScreen: React.FC = () => {
     const [activeCategory, setActiveCategory] = useState('designer');
+    const [renderedCategory, setRenderedCategory] = useState('designer');
 
-    // API 数据状态
-    const [designers, setDesigners] = useState<Designer[]>([]);
-    const [workers, setWorkers] = useState<Worker[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    // 从全局 Store 获取预加载的数据
+    const {
+        designers,
+        workers,
+        isDesignerLoading,
+        isWorkerLoading,
+        designerError,
+        workerError,
+        hasMoreDesigners,
+        hasMoreWorkers,
+        designerPage,
+        workerPage,
+        fetchDesigners: storeFetchDesigners,
+        fetchWorkers: storeFetchWorkers,
+    } = useProviderStore();
 
-    // 分页状态
-    const [designerPage, setDesignerPage] = useState(1);
-    const [workerPage, setWorkerPage] = useState(1);
-    const [hasMoreDesigners, setHasMoreDesigners] = useState(true);
-    const [hasMoreWorkers, setHasMoreWorkers] = useState(true);
-    const [loadingMore, setLoadingMore] = useState(false);
+    // 加载更多状态（保留本地，因为是卷续行为）
+    const [loadingMoreDesigners, setLoadingMoreDesigners] = React.useState(false);
+    const [loadingMoreWorkers, setLoadingMoreWorkers] = React.useState(false);
 
     // 设计师状态
     const [designerSortBy, setDesignerSortBy] = useState('recommend');
@@ -175,116 +190,31 @@ const HomeScreen: React.FC = () => {
     const scrollRef = useRef<ScrollView>(null);
     const [categoryHeight, setCategoryHeight] = useState(0);
     const navigation = useNavigation();
-    // refreshing 状态由 PullToRefresh 内部控制，但由于我们需要手动触发刷新，保留该状态也没问题，
-    // 不过 PullToRefresh 组件是受控的吗？看代码是内部管理的state。我们只传 onRefresh promise。
-    // 这里保留 refreshing 也没事。
 
-    // 获取设计师数据
-    const fetchDesigners = async (page: number, shouldRefresh: boolean = false) => {
-        try {
-            if (shouldRefresh) setIsLoading(true);
-            else setLoadingMore(true);
-
-            const res = await providerApi.designers({
-                page,
-                pageSize: 10,
-                sortBy: designerSortBy,
-                keyword: searchText,
-                subType: designerOrgFilter === 'all' ? '' : designerOrgFilter, // Pass subType
-                type: 1
-            });
-            const list = (res?.data?.list || []).map((dto: ProviderDTO) => toDesigner(dto));
-            const total = res?.data?.total || 0;
-
-            if (shouldRefresh) {
-                setDesigners(list);
-                setDesignerPage(1);
-            } else {
-                setDesigners(prev => [...prev, ...list]);
-                setDesignerPage(page);
-            }
-            setHasMoreDesigners(list.length >= 10);
-        } catch (err: any) {
-            console.error('Fetch designers failed:', err);
-        } finally {
-            setIsLoading(false);
-            setLoadingMore(false);
-        }
-    };
-
-    // 获取施工数据
-    const fetchWorkers = async (page: number, shouldRefresh: boolean = false) => {
-        try {
-            if (shouldRefresh) setIsLoading(true);
-            else setLoadingMore(true);
-
-            // 处理工种筛选: 只要选了非all，就传第一个作为 WorkType (后端目前支持单选LIKE)
-            let workTypeParam = '';
-            if (!selectedWorkTypes.includes('all') && selectedWorkTypes.length > 0) {
-                workTypeParam = selectedWorkTypes[0];
-            }
-
-            const res = await providerApi.foremen({
-                page,
-                pageSize: 10,
-                sortBy: constructionSortBy,
-                keyword: searchText,
-                workType: workTypeParam,
-                subType: constructionOrgFilter === 'all' ? '' : constructionOrgFilter, // Pass subType
-                type: 3
-            });
-            const list = (res?.data?.list || []).map((dto: ProviderDTO) => toWorker(dto));
-
-            if (shouldRefresh) {
-                setWorkers(list);
-                setWorkerPage(1);
-            } else {
-                setWorkers(prev => [...prev, ...list]);
-                setWorkerPage(page);
-            }
-            setHasMoreWorkers(list.length >= 10);
-        } catch (err: any) {
-            console.error('Fetch workers failed:', err);
-        } finally {
-            setIsLoading(false);
-            setLoadingMore(false);
-        }
-    };
-
-    // 初始加载
-    useEffect(() => {
-        fetchDesigners(1, true);
-        fetchWorkers(1, true);
-    }, []);
-
-    // 监听筛选变化 - 设计师
-    useEffect(() => {
-        fetchDesigners(1, true);
-    }, [designerSortBy, searchText, designerOrgFilter]); // Add designerOrgFilter
-
-    // 监听筛选变化 - 施工
-    useEffect(() => {
-        fetchWorkers(1, true);
-    }, [constructionSortBy, selectedWorkTypes, constructionOrgFilter]); // Add constructionOrgFilter
+    // 初始加载已在 AppNavigator 中完成 (preloadAll)
+    // 如果用户手动刷新或筛选变化时才重新请求
 
     // 下拉刷新处理
     const handleRefresh = async () => {
         if (activeCategory === 'designer') {
-            await fetchDesigners(1, true);
+            await storeFetchDesigners(1, true);
         } else if (activeCategory === 'construction') {
-            await fetchWorkers(1, true);
+            await storeFetchWorkers(1, true);
         }
-        // Material tab not implemented yet
     };
 
     // 加载更多处理
-    const handleLoadMore = () => {
-        if (loadingMore || isLoading) return;
-
-        if (activeCategory === 'designer' && hasMoreDesigners) {
-            fetchDesigners(designerPage + 1, false);
-        } else if (activeCategory === 'construction' && hasMoreWorkers) {
-            fetchWorkers(workerPage + 1, false);
+    const handleLoadMore = async () => {
+        if (activeCategory === 'designer') {
+            if (loadingMoreDesigners || isDesignerLoading || !hasMoreDesigners) return;
+            setLoadingMoreDesigners(true);
+            await storeFetchDesigners(designerPage + 1, false);
+            setLoadingMoreDesigners(false);
+        } else if (activeCategory === 'construction') {
+            if (loadingMoreWorkers || isWorkerLoading || !hasMoreWorkers) return;
+            setLoadingMoreWorkers(true);
+            await storeFetchWorkers(workerPage + 1, false);
+            setLoadingMoreWorkers(false);
         }
     };
 
@@ -412,11 +342,17 @@ const HomeScreen: React.FC = () => {
 
     // 切换分类时重置状态
     const handleCategoryChange = (categoryId: string) => {
+        // 1. 立即更新 Tab 选中状态（实现无感响应）
         setActiveCategory(categoryId);
-        // 关闭所有菜单
-        setShowDesignerSortMenu(false);
-        setShowConstructionSortMenu(false);
-        setShowWorkTypeModal(false);
+
+        // 2. 将繁重的列表渲染推迟到下一个事件循环，确保 Tab 动画先执行渲染
+        setTimeout(() => {
+            setRenderedCategory(categoryId);
+            // 关闭所有菜单
+            setShowDesignerSortMenu(false);
+            setShowConstructionSortMenu(false);
+            setShowWorkTypeModal(false);
+        }, 0);
     };
 
     const toggleDesignerSort = () => {
@@ -448,8 +384,8 @@ const HomeScreen: React.FC = () => {
     };
 
     // 获取当前排序选项和标签
-    const currentSortOptions = activeCategory === 'designer' ? DESIGNER_SORT_OPTIONS : CONSTRUCTION_SORT_OPTIONS;
-    const currentSortBy = activeCategory === 'designer' ? designerSortBy : constructionSortBy;
+    const currentSortOptions = renderedCategory === 'designer' ? DESIGNER_SORT_OPTIONS : CONSTRUCTION_SORT_OPTIONS;
+    const currentSortBy = renderedCategory === 'designer' ? designerSortBy : constructionSortBy;
     const currentSortLabel = currentSortOptions.find(o => o.id === currentSortBy)?.label || '综合排序';
 
     return (
@@ -665,35 +601,21 @@ const HomeScreen: React.FC = () => {
                             style={styles.categorySection}
                             onLayout={(e) => setCategoryHeight(e.nativeEvent.layout.height)}
                         >
-                            {SERVICE_CATEGORIES.map((cat) => {
-                                const IconComponent = cat.icon;
-                                const isActive = activeCategory === cat.id;
-                                return (
-                                    <TouchableOpacity
-                                        key={cat.id}
-                                        style={styles.categoryTab}
-                                        onPress={() => handleCategoryChange(cat.id)}
-                                        activeOpacity={1}
-                                    >
-                                        <View style={[
-                                            styles.categoryIconBox,
-                                            isActive ? styles.categoryIconBoxActive : styles.categoryIconBoxInactive
-                                        ]}>
-                                            <IconComponent size={24} color={isActive ? '#FFFFFF' : '#71717A'} strokeWidth={1.5} />
-                                        </View>
-                                        <Text style={[styles.categoryLabel, isActive && styles.categoryLabelActive]}>
-                                            {cat.title}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
+                            {SERVICE_CATEGORIES.map((cat) => (
+                                <CategoryTab
+                                    key={cat.id}
+                                    item={cat}
+                                    isActive={activeCategory === cat.id}
+                                    onPress={() => handleCategoryChange(cat.id)}
+                                />
+                            ))}
                         </View>
                     )}
 
                     {/* 筛选排序区域 - 直接子元素 [1] - 吸顶 */}
                     {!isSearchFocused && !isSearching && (
                         <View style={styles.filterSectionWrapper}>
-                            {activeCategory === 'designer' && (
+                            {renderedCategory === 'designer' && (
                                 <View style={styles.filterSection}>
                                     <View style={styles.filterLeft}>
                                         <TouchableOpacity
@@ -721,7 +643,7 @@ const HomeScreen: React.FC = () => {
                                 </View>
                             )}
 
-                            {activeCategory === 'construction' && (
+                            {renderedCategory === 'construction' && (
                                 <View style={styles.filterSection}>
                                     <View style={styles.filterLeft}>
                                         <TouchableOpacity
@@ -758,14 +680,14 @@ const HomeScreen: React.FC = () => {
                                 </View>
                             )}
 
-                            {activeCategory === 'material' && (
+                            {renderedCategory === 'material' && (
                                 <View style={styles.filterSection}>
                                     <Text style={styles.comingSoonText}>主材商城即将上线</Text>
                                 </View>
                             )}
 
                             {/* 设计师排序下拉菜单 */}
-                            {showDesignerSortMenu && activeCategory === 'designer' && (
+                            {showDesignerSortMenu && renderedCategory === 'designer' && (
                                 <View style={styles.sortDropdown}>
                                     {DESIGNER_SORT_OPTIONS.map(option => (
                                         <TouchableOpacity
@@ -792,7 +714,7 @@ const HomeScreen: React.FC = () => {
                             )}
 
                             {/* 施工排序下拉菜单 */}
-                            {showConstructionSortMenu && activeCategory === 'construction' && (
+                            {showConstructionSortMenu && renderedCategory === 'construction' && (
                                 <View style={styles.sortDropdown}>
                                     {CONSTRUCTION_SORT_OPTIONS.map(option => (
                                         <TouchableOpacity
@@ -819,7 +741,7 @@ const HomeScreen: React.FC = () => {
                             )}
 
                             {/* 施工工种筛选下拉菜单 (替换原来的 Modal) */}
-                            {showWorkTypeModal && activeCategory === 'construction' && (
+                            {showWorkTypeModal && renderedCategory === 'construction' && (
                                 <View style={styles.sortDropdown}>
                                     <View style={styles.workTypeDropdownGrid}>
                                         {WORK_TYPES.map(type => (
@@ -861,14 +783,16 @@ const HomeScreen: React.FC = () => {
                     )}
 
                     {/* 设计师列表 - 直接子元素 [2] */}
-                    {!isSearchFocused && !isSearching && activeCategory === 'designer' && (
+                    {!isSearchFocused && !isSearching && renderedCategory === 'designer' && (
                         <View style={styles.listSection}>
-                            {isLoading ? (
-                                <LoadingView message="加载设计师中..." />
-                            ) : error ? (
+                            {isDesignerLoading ? (
+                                Array.from({ length: 4 }).map((_, index) => (
+                                    <DesignerSkeletonCard key={index} />
+                                ))
+                            ) : designerError ? (
                                 <NetworkErrorView
                                     type="network"
-                                    message={error}
+                                    message={designerError}
                                     onRetry={handleRefresh}
                                 />
                             ) : designers.length === 0 ? (
@@ -932,14 +856,16 @@ const HomeScreen: React.FC = () => {
                     )}
 
                     {/* 施工列表 - 直接子元素 [2] */}
-                    {!isSearchFocused && !isSearching && activeCategory === 'construction' && (
+                    {!isSearchFocused && !isSearching && renderedCategory === 'construction' && (
                         <View style={styles.listSection}>
-                            {isLoading ? (
-                                <LoadingView message="加载施工人员中..." />
-                            ) : error ? (
+                            {isWorkerLoading ? (
+                                Array.from({ length: 4 }).map((_, index) => (
+                                    <WorkerSkeletonCard key={index} />
+                                ))
+                            ) : workerError ? (
                                 <NetworkErrorView
                                     type="network"
-                                    message={error}
+                                    message={workerError}
                                     onRetry={handleRefresh}
                                 />
                             ) : workers.length === 0 ? (
@@ -1099,7 +1025,7 @@ const HomeScreen: React.FC = () => {
                     )}
 
                     {/* 主材列表 - 直接子元素 [2] */}
-                    {!isSearchFocused && !isSearching && activeCategory === 'material' && (
+                    {!isSearchFocused && !isSearching && renderedCategory === 'material' && (
                         <View style={styles.emptyState}>
                             <Package size={64} color="#E4E4E7" strokeWidth={1} />
                             <Text style={styles.emptyStateTitle}>主材商城即将上线</Text>
@@ -1112,12 +1038,14 @@ const HomeScreen: React.FC = () => {
                         <View style={{ height: 100 }} />
                     )}
                     {/* 底部加载更多 */}
-                    {loadingMore && (
+                    {(loadingMoreDesigners && renderedCategory === 'designer') || (loadingMoreWorkers && renderedCategory === 'construction') ? (
                         <View style={{ paddingVertical: 16, alignItems: 'center' }}>
                             <ActivityIndicator size="small" color="#A1A1AA" />
-                            <Text style={{ color: '#A1A1AA', fontSize: 12, marginTop: 4 }}>加载更多数据...</Text>
+                            <Text style={{ color: '#A1A1AA', fontSize: 12, marginTop: 4 }}>
+                                加载更多数据...
+                            </Text>
                         </View>
-                    )}
+                    ) : null}
                 </ScrollView>
             </PullToRefresh>
         </SafeAreaView>
@@ -1975,5 +1903,101 @@ const styles = StyleSheet.create({
         color: '#71717A',
     },
 });
+
+// 独立的分类 Tab 组件，处理按压动画 (Function Declaration for hoisting)
+function CategoryTab({ item, isActive, onPress }: { item: any, isActive: boolean, onPress: () => void }) {
+    const scaleAnim = React.useRef(new Animated.Value(1)).current;
+    const selectionAnim = React.useRef(new Animated.Value(isActive ? 1 : 0)).current;
+
+    React.useEffect(() => {
+        Animated.timing(selectionAnim, {
+            toValue: isActive ? 1 : 0,
+            duration: 200,
+            useNativeDriver: false, // Color interpolation requires false
+            easing: Easing.out(Easing.quad),
+        }).start();
+    }, [isActive]);
+
+    const handlePressIn = () => {
+        Animated.spring(scaleAnim, {
+            toValue: 0.9,
+            useNativeDriver: true,
+            speed: 20,
+            bounciness: 0,
+        }).start();
+    };
+
+    const handlePressOut = () => {
+        Animated.spring(scaleAnim, {
+            toValue: 1,
+            useNativeDriver: true,
+            speed: 20,
+            bounciness: 8,
+        }).start();
+    };
+
+    const IconComponent = item.icon;
+
+    // Interpolations
+    const containerBg = selectionAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['#F8F9FA', '#09090B']
+    });
+
+    const containerBorder = selectionAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['rgba(0,0,0,0.03)', 'rgba(0,0,0,0)']
+    });
+
+    const labelColor = selectionAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['#71717A', '#09090B']
+    });
+
+    // For icon color, we crossfade opacity of two icons because native icon doesn't support animated color string easily
+    const activeIconOpacity = selectionAnim;
+    const inactiveIconOpacity = selectionAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 0]
+    });
+
+    return (
+        <TouchableWithoutFeedback
+            onPress={onPress}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+        >
+            <Animated.View style={[styles.categoryTab, { transform: [{ scale: scaleAnim }] }]}>
+                {/* Icon Container with interpolated background */}
+                <Animated.View style={[
+                    styles.categoryIconBox,
+                    {
+                        backgroundColor: containerBg,
+                        borderColor: containerBorder,
+                        borderWidth: 1, // continuous border width
+                    }
+                ]}>
+                    {/* Inactive Icon (Gray) */}
+                    <Animated.View style={{ position: 'absolute', opacity: inactiveIconOpacity }}>
+                        <IconComponent size={24} color="#71717A" strokeWidth={1.5} />
+                    </Animated.View>
+
+                    {/* Active Icon (White) */}
+                    <Animated.View style={{ opacity: activeIconOpacity }}>
+                        <IconComponent size={24} color="#FFFFFF" strokeWidth={1.5} />
+                    </Animated.View>
+                </Animated.View>
+
+                {/* Animated Label */}
+                <Animated.Text style={[
+                    styles.categoryLabel,
+                    { color: labelColor, fontWeight: isActive ? '700' : '500' }
+                ]}>
+                    {item.title}
+                </Animated.Text>
+            </Animated.View>
+        </TouchableWithoutFeedback>
+    );
+}
 
 export default HomeScreen;

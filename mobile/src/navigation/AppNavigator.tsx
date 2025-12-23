@@ -30,6 +30,7 @@ import { ReviewsScreen } from '../screens/ReviewsScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
+import { useProviderStore } from '../store/providerStore';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -124,9 +125,12 @@ const LoadingScreen = () => (
 // 根导航
 const AppNavigator = () => {
     const { isAuthenticated, isLoading, loadStoredAuth } = useAuthStore();
+    const preloadAll = useProviderStore(state => state.preloadAll);
 
     useEffect(() => {
         loadStoredAuth();
+        // 应用启动时预加载首页数据，用户进入首页时数据已就绪
+        preloadAll();
     }, []);
 
     if (isLoading) {
@@ -142,11 +146,31 @@ const AppNavigator = () => {
                         <Stack.Screen name="LiveRoom" component={LiveRoomScreen} />
                         <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
                         <Stack.Screen name="ArticleDetail" component={ArticleDetailScreen} />
-                        <Stack.Screen name="DesignerDetail" component={DesignerDetailScreen} />
-                        <Stack.Screen name="WorkerDetail" component={WorkerDetailScreen} />
-                        <Stack.Screen name="CompanyDetail" component={CompanyDetailScreen} />
-                        <Stack.Screen name="CaseGallery" component={CaseGalleryScreen} />
-                        <Stack.Screen name="CaseDetail" component={CaseDetailScreen} />
+                        <Stack.Screen
+                            name="DesignerDetail"
+                            component={DesignerDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="WorkerDetail"
+                            component={WorkerDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="CompanyDetail"
+                            component={CompanyDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="CaseGallery"
+                            component={CaseGalleryScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="CaseDetail"
+                            component={CaseDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
                         <Stack.Screen name="Booking" component={BookingScreen} />
                         <Stack.Screen name="ProjectTimeline" component={ProjectTimelineScreen} />
                         <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
