@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>下拉刷新组件 Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #1890ff;
+            --success-color: #52c41a;
+            --error-color: #ff4d4f;
+            --text-color: #333;
+            --text-secondary: #666;
+            --bg-color: #f5f5f5;
+            --indicator-height: 60px;
+            --threshold: 60;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-color);
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        /* 顶部 Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #fff;
+            border-bottom: 1px solid #eee;
+            flex-shrink: 0;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .toggle-btn {
+            padding: 6px 12px;
+            border-radius: 16px;
+            border: none;
+            background: var(--success-color);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-btn.fail-mode {
+            background: var(--error-color);
+        }
+
+        /* 下拉刷新容器 */
+        .pull-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 刷新指示器 */
+        .refresh-indicator {
+            position: absolute;
+            top: calc(-1 * var(--indicator-height));
+            left: 0;
+            right: 0;
+            height: var(--indicator-height);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            background: #f0f0f0;
+            transition: none;
+            z-index: 10;
+        }
+
+        .refresh-indicator.animating {
+            transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        .refresh-indicator svg {
+            width: 22px;
+            height: 22px;
+            transition: transform 0.1s ease-out;
+        }
+
+        .refresh-indicator.refreshing svg {
+            animation: spin 0.8s linear infinite;
+        }
+
+        .refresh-indicator span {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .refresh-indicator.refreshing span {
+            color: var(--primary-color);
+        }
+
+        .refresh-indicator.success span {
+            color: var(--success-color);
+        }
+
+        .refresh-indicator.fail span {
+            color: var(--error-color);
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* 内容区 */
+        .content-wrapper {
+            height: 100%;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            transition: none;
+        }
+
+        .content-wrapper.animating {
+            transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        .content-list {
+            padding: 16px;
+        }
+
+        .hint {
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+            margin-bottom: 16px;
+        }
+
+        .card {
+            display: flex;
+            align-items: center;
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 600;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .card-content h3 {
+            font-size: 16px;
+            font-weight: 500;
+            color: var(--text-color);
+            margin-bottom: 4px;
+        }
+
+        .card-content p {
+            font-size: 13px;
+            color: #999;
+        }
+
+        /* 底部 TabBar */
+        .tabbar {
+            display: flex;
+            background: #fff;
+            border-top: 1px solid #eee;
+            padding-bottom: env(safe-area-inset-bottom, 20px);
+            flex-shrink: 0;
+        }
+
+        .tab-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 0;
+        }
+
+        .tab-item span:first-child {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .tab-item span:last-child {
+            font-size: 11px;
+            color: #666;
+        }
+
+        /* 状态调试信息 */
+        .debug-info {
+            position: fixed;
+            top: 60px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: monospace;
+            z-index: 100;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="header">
+            <h1>下拉刷新 Demo</h1>
+            <button class="toggle-btn" id="toggleBtn" onclick="toggleMode()">模拟成功</button>
+        </div>
+
+        <div class="pull-container" id="pullContainer">
+            <div class="refresh-indicator" id="indicator">
+                <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6M1 20v-6h6" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                <span id="indicatorText">下拉刷新</span>
+            </div>
+            <div class="content-wrapper" id="contentWrapper">
+                <div class="content-list" id="contentList">
+                    <p class="hint">👆 下拉触发刷新 (阈值: 60px)</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="tabbar">
+            <div class="tab-item"><span>🏠</span><span>首页</span></div>
+            <div class="tab-item"><span>💬</span><span>消息</span></div>
+            <div class="tab-item"><span>👤</span><span>我的</span></div>
+        </div>
+    </div>
+
+    <div class="debug-info" id="debugInfo">状态: IDLE | 距离: 0px</div>
+
+    <script>
+        // 状态枚举
+        const RefreshState = {
+            IDLE: 'IDLE',
+            PULLING: 'PULLING',
+            REFRESHING: 'REFRESHING',
+            SUCCESS: 'SUCCESS',
+            FAIL: 'FAIL'
+        };
+
+        // 配置
+        const CONFIG = {
+            THRESHOLD: 60,
+            DAMPING: 0.5,
+            RESULT_DURATION: 800,
+            INDICATOR_HEIGHT: 60
+        };
+
+        // 状态
+        let state = RefreshState.IDLE;
+        let shouldFail = false;
+        let startY = 0;
+        let pullDistance = 0;
+        let itemCount = 10;
+
+        // DOM 元素
+        const pullContainer = document.getElementById('pullContainer');
+        const indicator = document.getElementById('indicator');
+        const indicatorText = document.getElementById('indicatorText');
+        const refreshIcon = document.getElementById('refreshIcon');
+        const contentWrapper = document.getElementById('contentWrapper');
+        const contentList = document.getElementById('contentList');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const debugInfo = document.getElementById('debugInfo');
+
+        // 初始化列表
+        function initList() {
+            for (let i = 1; i <= itemCount; i++) {
+                addCard(i);
+            }
+        }
+
+        function addCard(num) {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+                <div class="card-icon">${num}</div>
+                <div class="card-content">
+                    <h3>列表项 #${num}</h3>
+                    <p>下拉刷新演示内容</p>
+                </div>
+            `;
+            contentList.appendChild(card);
+        }
+
+        // 模式切换
+        function toggleMode() {
+            shouldFail = !shouldFail;
+            toggleBtn.textContent = shouldFail ? '模拟失败' : '模拟成功';
+            toggleBtn.classList.toggle('fail-mode', shouldFail);
+        }
+
+        // 更新调试信息
+        function updateDebug() {
+            debugInfo.textContent = `状态: ${state} | 距离: ${Math.round(pullDistance)}px`;
+        }
+
+        // 更新UI
+        function updateIndicator() {
+            const icons = {
+                refresh: '<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+                check: '<polyline points="20 6 9 17 4 12"/>',
+                alert: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
+            };
+
+            switch (state) {
+                case RefreshState.PULLING:
+                    refreshIcon.innerHTML = icons.refresh;
+                    refreshIcon.style.color = '#666';
+                    refreshIcon.style.transform = `rotate(${pullDistance * 3}deg)`;
+                    indicatorText.textContent = pullDistance >= CONFIG.THRESHOLD ? '释放刷新' : '下拉刷新';
+                    indicator.className = 'refresh-indicator';
+                    break;
+                case RefreshState.REFRESHING:
+                    refreshIcon.innerHTML = icons.refresh;
+                    refreshIcon.style.color = '#1890ff';
+                    refreshIcon.style.transform = '';
+                    indicatorText.textContent = '刷新中...';
+                    indicator.className = 'refresh-indicator refreshing';
+                    break;
+                case RefreshState.SUCCESS:
+                    refreshIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#52c41a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                    indicatorText.textContent = '刷新完成';
+                    indicatorText.style.color = '#52c41a';
+                    indicator.className = 'refresh-indicator success'; // Keep existing class for overall styling
+                    refreshIcon.style.color = ''; // Clear previous color if any, as SVG has its own stroke
+                    break;
+                case RefreshState.FAIL:
+                    refreshIcon.innerHTML = icons.alert;
+                    refreshIcon.style.color = '#ff4d4f';
+                    indicatorText.textContent = '网络连接失败';
+                    indicator.className = 'refresh-indicator fail';
+                    break;
+            }
+        }
+
+        // 设置位移
+        function setTransform(distance, animate = false) {
+            if (animate) {
+                indicator.classList.add('animating');
+                contentWrapper.classList.add('animating');
+            } else {
+                indicator.classList.remove('animating');
+                contentWrapper.classList.remove('animating');
+            }
+            indicator.style.transform = `translateY(${distance}px)`;
+            contentWrapper.style.transform = `translateY(${distance}px)`;
+        }
+
+        // 触摸事件
+        function handleTouchStart(e) {
+            if (state !== RefreshState.IDLE) return;
+            if (contentWrapper.scrollTop > 0) return;
+
+            startY = e.touches[0].clientY;
+            pullDistance = 0;
+        }
+
+        function handleTouchMove(e) {
+            if (state !== RefreshState.IDLE && state !== RefreshState.PULLING) return;
+            if (contentWrapper.scrollTop > 0) return;
+
+            const currentY = e.touches[0].clientY;
+            const delta = (currentY - startY) * CONFIG.DAMPING;
+
+            if (delta > 0) {
+                e.preventDefault();
+                pullDistance = delta;
+                state = RefreshState.PULLING;
+                setTransform(delta, false);
+                updateIndicator();
+                updateDebug();
+            }
+        }
+
+        function handleTouchEnd() {
+            if (state !== RefreshState.PULLING) return;
+
+            if (pullDistance >= CONFIG.THRESHOLD) {
+                state = RefreshState.REFRESHING;
+                updateIndicator();
+                setTransform(CONFIG.INDICATOR_HEIGHT, true);
+                doRefresh();
+            } else {
+                state = RefreshState.IDLE;
+                pullDistance = 0;
+                setTransform(0, true);
+            }
+            updateDebug();
+        }
+
+        // 执行刷新
+        async function doRefresh() {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            if (shouldFail) {
+                state = RefreshState.FAIL;
+            } else {
+                state = RefreshState.SUCCESS;
+                itemCount++;
+                // 插入新项到顶部
+                const firstCard = contentList.querySelector('.card');
+                const newCard = document.createElement('div');
+                newCard.className = 'card';
+                newCard.innerHTML = `
+                    <div class="card-icon">${itemCount}</div>
+                    <div class="card-content">
+                        <h3>列表项 #${itemCount} (新)</h3>
+                        <p>刷新后新增的内容</p>
+                    </div>
+                `;
+                newCard.querySelector('.card-icon').style.background = '#52c41a';
+                if (firstCard) {
+                    contentList.insertBefore(newCard, firstCard);
+                } else {
+                    contentList.appendChild(newCard);
+                }
+            }
+
+            updateIndicator();
+            updateDebug();
+
+            // 结果展示后回弹
+            setTimeout(() => {
+                setTransform(0, true);
+                setTimeout(() => {
+                    state = RefreshState.IDLE;
+                    pullDistance = 0;
+                    indicator.className = 'refresh-indicator';
+                    updateDebug();
+                }, 300);
+            }, CONFIG.RESULT_DURATION);
+        }
+
+        // 初始化
+        initList();
+        pullContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+        pullContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+        pullContainer.addEventListener('touchend', handleTouchEnd);
+    </script>
+</body>
+
+</html>

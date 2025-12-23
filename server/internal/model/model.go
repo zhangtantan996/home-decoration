@@ -36,6 +36,53 @@ type Provider struct {
 	Verified      bool    `json:"verified" gorm:"default:false"`
 	Latitude      float64 `json:"latitude"`
 	Longitude     float64 `json:"longitude"`
+	// 新增字段
+	SubType         string  `json:"subType" gorm:"size:20;default:'personal'"` // 子类型：personal, studio, company
+	YearsExperience int     `json:"yearsExperience" gorm:"default:0"`          // 从业年限
+	Specialty       string  `json:"specialty" gorm:"size:200"`                 // 专长/风格描述
+	WorkTypes       string  `json:"workTypes" gorm:"size:100"`                 // 工种类型，逗号分隔：mason,electrician,carpenter,painter,plumber
+	ReviewCount     int     `json:"reviewCount" gorm:"default:0"`              // 评价数量
+	PriceMin        float64 `json:"priceMin" gorm:"default:0"`                 // 最低价格
+	PriceMax        float64 `json:"priceMax" gorm:"default:0"`                 // 最高价格
+	PriceUnit       string  `json:"priceUnit" gorm:"size:20;default:'元/天'"`    // 价格单位
+	// 详情页扩展字段
+	CoverImage      string `json:"coverImage" gorm:"size:500"`          // 封面背景图
+	FollowersCount  int    `json:"followersCount" gorm:"default:0"`     // 粉丝/关注数
+	ServiceIntro    string `json:"serviceIntro" gorm:"type:text"`       // 服务介绍
+	TeamSize        int    `json:"teamSize" gorm:"default:1"`           // 团队规模
+	EstablishedYear int    `json:"establishedYear" gorm:"default:2020"` // 成立年份
+	Certifications  string `json:"certifications" gorm:"type:text"`     // 资质认证 (JSON数组)
+}
+
+// ProviderCase 服务商案例/作品
+type ProviderCase struct {
+	Base
+	ProviderID  uint64 `json:"providerId" gorm:"index"`
+	Title       string `json:"title" gorm:"size:100"`
+	CoverImage  string `json:"coverImage" gorm:"size:500"`
+	Style       string `json:"style" gorm:"size:50"` // 风格
+	Area        string `json:"area" gorm:"size:20"`  // 面积
+	Year        string `json:"year" gorm:"size:10"`  // 年份
+	Description string `json:"description" gorm:"type:text"`
+	Images      string `json:"images" gorm:"type:text"` // JSON数组
+	SortOrder   int    `json:"sortOrder" gorm:"default:0"`
+}
+
+// ProviderReview 服务商评价
+type ProviderReview struct {
+	Base
+	ProviderID   uint64     `json:"providerId" gorm:"index"`
+	UserID       uint64     `json:"userId" gorm:"index"`
+	Rating       float32    `json:"rating"`                        // 评分 1-5
+	Content      string     `json:"content" gorm:"type:text"`      // 评价内容
+	Images       string     `json:"images" gorm:"type:text"`       // 评价图片 JSON数组
+	ServiceType  string     `json:"serviceType" gorm:"size:20"`    // 服务类型：全包、半包、局部
+	Area         string     `json:"area" gorm:"size:20"`           // 面积
+	Style        string     `json:"style" gorm:"size:50"`          // 风格
+	Tags         string     `json:"tags" gorm:"size:200"`          // 评价标签 JSON数组
+	HelpfulCount int        `json:"helpfulCount" gorm:"default:0"` // 有用数
+	Reply        string     `json:"reply" gorm:"type:text"`        // 商家回复
+	ReplyAt      *time.Time `json:"replyAt"`                       // 回复时间
 }
 
 // Worker 工人
@@ -120,4 +167,79 @@ type Transaction struct {
 	ToUserID    uint64     `json:"toUserId"`
 	Status      int8       `json:"status" gorm:"default:0"`
 	CompletedAt *time.Time `json:"completedAt"`
+}
+
+// Booking 预约记录
+type Booking struct {
+	Base
+	UserID         uint64  `json:"userId" gorm:"index"`
+	ProviderID     uint64  `json:"providerId" gorm:"index"`
+	ProviderType   string  `json:"providerType" gorm:"size:20"` // designer, worker, company
+	Address        string  `json:"address" gorm:"size:200"`
+	Area           float64 `json:"area"`
+	RenovationType string  `json:"renovationType" gorm:"size:50"`
+	BudgetRange    string  `json:"budgetRange" gorm:"size:50"`
+	PreferredDate  string  `json:"preferredDate" gorm:"size:100"`
+	Phone          string  `json:"phone" gorm:"size:20"`
+	Notes          string  `json:"notes" gorm:"type:text"`
+	Status         int8    `json:"status" gorm:"default:1"` // 1:pending, 2:confirmed, 3:completed, 4:cancelled
+}
+
+// ProjectPhase 项目工程阶段
+type ProjectPhase struct {
+	Base
+	ProjectID         uint64      `json:"projectId" gorm:"index"`
+	PhaseType         string      `json:"phaseType" gorm:"size:20"`              // preparation, demolition, electrical, masonry, painting, installation, inspection
+	Seq               int         `json:"seq"`                                   // 阶段顺序 1-7
+	Status            string      `json:"status" gorm:"size:20;default:pending"` // pending, in_progress, completed
+	ResponsiblePerson string      `json:"responsiblePerson" gorm:"size:50"`
+	StartDate         *time.Time  `json:"startDate" gorm:"type:date"`
+	EndDate           *time.Time  `json:"endDate" gorm:"type:date"`
+	EstimatedDays     int         `json:"estimatedDays"`
+	Tasks             []PhaseTask `json:"tasks" gorm:"foreignKey:PhaseID"` // 子任务
+}
+
+// TableName 指定表名
+func (ProjectPhase) TableName() string {
+	return "project_phases"
+}
+
+// PhaseTask 阶段子任务
+type PhaseTask struct {
+	Base
+	PhaseID     uint64     `json:"phaseId" gorm:"index"`
+	Name        string     `json:"name" gorm:"size:100"`
+	IsCompleted bool       `json:"isCompleted" gorm:"default:false"`
+	CompletedAt *time.Time `json:"completedAt"`
+}
+
+// TableName 指定表名
+func (PhaseTask) TableName() string {
+	return "phase_tasks"
+}
+
+// UserFollow 用户关注关系
+type UserFollow struct {
+	Base
+	UserID     uint64 `json:"userId" gorm:"index;uniqueIndex:idx_user_follow"`
+	TargetID   uint64 `json:"targetId" gorm:"uniqueIndex:idx_user_follow"`
+	TargetType string `json:"targetType" gorm:"size:20;uniqueIndex:idx_user_follow"` // designer, company, foreman
+}
+
+// TableName 指定表名
+func (UserFollow) TableName() string {
+	return "user_follows"
+}
+
+// UserFavorite 用户收藏
+type UserFavorite struct {
+	Base
+	UserID     uint64 `json:"userId" gorm:"index;uniqueIndex:idx_user_favorite"`
+	TargetID   uint64 `json:"targetId" gorm:"uniqueIndex:idx_user_favorite"`
+	TargetType string `json:"targetType" gorm:"size:20;uniqueIndex:idx_user_favorite"` // provider, case
+}
+
+// TableName 指定表名
+func (UserFavorite) TableName() string {
+	return "user_favorites"
 }

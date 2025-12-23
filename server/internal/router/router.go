@@ -47,6 +47,9 @@ func Setup(cfg *config.Config) *gin.Engine {
 			{
 				designers.GET("", handler.ListDesigners)
 				designers.GET("/:id", handler.GetDesigner)
+				designers.GET("/:id/cases", handler.GetProviderCases)
+				designers.GET("/:id/reviews", handler.GetProviderReviews)
+				designers.GET("/:id/review-stats", handler.GetReviewStats)
 			}
 
 			// 装修公司
@@ -54,6 +57,9 @@ func Setup(cfg *config.Config) *gin.Engine {
 			{
 				companies.GET("", handler.ListCompanies)
 				companies.GET("/:id", handler.GetCompany)
+				companies.GET("/:id/cases", handler.GetProviderCases)
+				companies.GET("/:id/reviews", handler.GetProviderReviews)
+				companies.GET("/:id/review-stats", handler.GetReviewStats)
 			}
 
 			// 工长
@@ -61,6 +67,15 @@ func Setup(cfg *config.Config) *gin.Engine {
 			{
 				foremen.GET("", handler.ListForemen)
 				foremen.GET("/:id", handler.GetForeman)
+				foremen.GET("/:id/cases", handler.GetProviderCases)
+				foremen.GET("/:id/reviews", handler.GetProviderReviews)
+				foremen.GET("/:id/review-stats", handler.GetReviewStats)
+			}
+
+			// 预约
+			bookings := authorized.Group("/bookings")
+			{
+				bookings.POST("", handler.CreateBooking)
 			}
 
 			// 项目
@@ -75,10 +90,30 @@ func Setup(cfg *config.Config) *gin.Engine {
 				projects.GET("/:id/milestones", handler.GetMilestones)
 				projects.POST("/:id/accept", handler.AcceptMilestone)
 
-				// 托管账户 (嵌套路由)
+				// 托管账户
 				projects.GET("/:id/escrow", handler.GetEscrowAccount)
 				projects.POST("/:id/deposit", handler.Deposit)
 				projects.POST("/:id/release", handler.ReleaseFunds)
+
+				// 项目阶段
+				projects.GET("/:id/phases", handler.GetProjectPhases)
+			}
+
+			// 阶段管理
+			phases := authorized.Group("/phases")
+			{
+				phases.PUT("/:phaseId", handler.UpdatePhase)
+				phases.PUT("/:phaseId/tasks/:taskId", handler.UpdatePhaseTask)
+			}
+
+			// 服务商通用 (关注/收藏)
+			providers := authorized.Group("/providers")
+			{
+				providers.POST("/:id/follow", handler.FollowProvider)
+				providers.DELETE("/:id/follow", handler.UnfollowProvider)
+				providers.POST("/:id/favorite", handler.FavoriteProvider)
+				providers.DELETE("/:id/favorite", handler.UnfavoriteProvider)
+				providers.GET("/:id/user-status", handler.GetProviderUserStatus)
 			}
 		}
 	}

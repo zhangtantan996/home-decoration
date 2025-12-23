@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,9 @@ import {
     TouchableOpacity,
     Platform,
     Dimensions,
+    ActivityIndicator,
 } from 'react-native';
+import { projectApi } from '../services/api';
 import {
     ArrowLeft,
     CheckCircle2,
@@ -43,35 +45,23 @@ const PROJECT_PHASES = [
     { id: 'inspection', name: '竣工验收', icon: ClipboardCheck, description: '全屋验收、交付使用' },
 ];
 
-// 模拟项目阶段数据
-const MOCK_PHASES = [
-    {
-        id: 'preparation', status: 'completed', startDate: '2024-11-05', endDate: '2024-11-08', responsiblePerson: '张工长', subTasks: [
-            { id: 'p1', name: '现场交接确认', isCompleted: true },
-            { id: 'p2', name: '施工图纸确认', isCompleted: true },
-            { id: 'p3', name: '材料进场验收', isCompleted: true },
-        ]
-    },
-    {
-        id: 'demolition', status: 'completed', startDate: '2024-11-09', endDate: '2024-11-15', responsiblePerson: '李师傅', subTasks: [
-            { id: 'd1', name: '客厅隔墙拆除', isCompleted: true },
-            { id: 'd2', name: '卫生间墙体拆除', isCompleted: true },
-            { id: 'd3', name: '垃圾清运完成', isCompleted: true },
-        ]
-    },
-    {
-        id: 'electrical', status: 'in_progress', startDate: '2024-11-16', endDate: null, responsiblePerson: '王师傅', subTasks: [
-            { id: 'e1', name: '厨房水管布置', isCompleted: true },
-            { id: 'e2', name: '卫生间水管布置', isCompleted: true },
-            { id: 'e3', name: '全屋电路布线', isCompleted: false },
-            { id: 'e4', name: '水电验收', isCompleted: false },
-        ]
-    },
-    { id: 'masonry', status: 'pending', startDate: null, endDate: null, estimatedDays: 15 },
-    { id: 'painting', status: 'pending', startDate: null, endDate: null, estimatedDays: 10 },
-    { id: 'installation', status: 'pending', startDate: null, endDate: null, estimatedDays: 7 },
-    { id: 'inspection', status: 'pending', startDate: null, endDate: null, estimatedDays: 3 },
-];
+// API 返回的阶段类型
+interface PhaseTask {
+    id: number;
+    name: string;
+    isCompleted: boolean;
+}
+
+interface PhaseData {
+    id: number;
+    phaseType: string;
+    status: string;
+    responsiblePerson?: string;
+    startDate?: string;
+    endDate?: string;
+    estimatedDays?: number;
+    tasks?: PhaseTask[];
+}
 
 interface ProjectTimelineScreenProps {
     route: any;
@@ -79,8 +69,33 @@ interface ProjectTimelineScreenProps {
 }
 
 const ProjectTimelineScreen: React.FC<ProjectTimelineScreenProps> = ({ route, navigation }) => {
-    const { project } = route.params || { project: { name: '汤臣一品 A栋-1201', startDate: '2024-11-05' } };
-    const [expandedPhase, setExpandedPhase] = useState<string | null>('electrical');
+    const { project } = route.params || { project: { id: 1, name: '汤臣一品 A栋-1201', startDate: '2024-11-05' } };
+    const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
+    const [phases, setPhases] = useState<PhaseData[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    // 获取项目阶段数据
+    useEffect(() => {
+        const fetchPhases = async () => {
+            try {
+                setLoading(true);
+                const response = await projectApi.phases(String(project.id));
+                if (response?.data?.phases) {
+                    setPhases(response.data.phases);
+                    // 自动展开进行中的阶段
+                    const inProgress = response.data.phases.find((p: PhaseData) => p.status === 'in_progress');
+                    if (inProgress) setExpandedPhase(inProgress.phaseType);
+                }
+            } catch (err: any) {
+                console.error('Failed to fetch phases:', err);
+                setError(err.message || '加载失败');
+            } finally {
+                setLoading(false);
+            }
+        };
+        if (project.id) fetchPhases();
+    }, [project.id]);
 
     // 计算开工天数
     const getConstructionDays = () => {
@@ -92,8 +107,8 @@ const ProjectTimelineScreen: React.FC<ProjectTimelineScreenProps> = ({ route, na
 
     // 计算完成进度
     const getProgress = () => {
-        const completed = MOCK_PHASES.filter(p => p.status === 'completed').length;
-        return { completed, total: MOCK_PHASES.length };
+        const completed = phases.filter((p: PhaseData) => p.status === 'completed').length;
+        return { completed, total: phases.length };
     };
 
     const progress = getProgress();
@@ -125,16 +140,16 @@ const ProjectTimelineScreen: React.FC<ProjectTimelineScreenProps> = ({ route, na
     };
 
     // 渲染阶段卡片
-    const renderPhaseCard = (phase: typeof MOCK_PHASES[0], index: number) => {
-        const info = getPhaseInfo(phase.id);
+    const renderPhaseCard = (phase: PhaseData, index: number) => {
+        const info = getPhaseInfo(phase.phaseType);
         if (!info) return null;
 
         const IconComponent = info.icon;
         const isCompleted = phase.status === 'completed';
         const isActive = phase.status === 'in_progress';
         const isPending = phase.status === 'pending';
-        const isExpanded = expandedPhase === phase.id;
-        const isLast = index === MOCK_PHASES.length - 1;
+        const isExpanded = expandedPhase === phase.phaseType;
+        const isLast = index === phases.length - 1;
 
         return (
             <View key={phase.id} style={styles.phaseContainer}>
@@ -167,7 +182,7 @@ const ProjectTimelineScreen: React.FC<ProjectTimelineScreenProps> = ({ route, na
                         styles.phaseCard,
                         isActive && styles.phaseCardActive,
                     ]}
-                    onPress={() => toggleExpand(phase.id)}
+                    onPress={() => toggleExpand(phase.phaseType)}
                     activeOpacity={0.8}
                 >
                     <View style={styles.phaseCardHeader}>
@@ -191,7 +206,7 @@ const ProjectTimelineScreen: React.FC<ProjectTimelineScreenProps> = ({ route, na
                             </View>
                             <Text style={styles.phaseDescription}>{info.description}</Text>
                         </View>
-                        {(phase.subTasks || phase.responsiblePerson) && (
+                        {(phase.tasks || phase.responsiblePerson) && (
                             isExpanded ? (
                                 <ChevronUp size={20} color="#A1A1AA" />
                             ) : (
@@ -225,9 +240,9 @@ const ProjectTimelineScreen: React.FC<ProjectTimelineScreenProps> = ({ route, na
                     </View>
 
                     {/* 展开的子任务 */}
-                    {isExpanded && phase.subTasks && (
+                    {isExpanded && phase.tasks && (
                         <View style={styles.subTasksContainer}>
-                            {phase.subTasks.map(task => (
+                            {phase.tasks.map((task: PhaseTask) => (
                                 <View key={task.id} style={styles.subTaskItem}>
                                     {task.isCompleted ? (
                                         <CheckCircle2 size={16} color="#10B981" />
@@ -285,7 +300,7 @@ const ProjectTimelineScreen: React.FC<ProjectTimelineScreenProps> = ({ route, na
 
                 {/* 时间轴列表 */}
                 <View style={styles.timelineContainer}>
-                    {MOCK_PHASES.map((phase, index) => renderPhaseCard(phase, index))}
+                    {phases.map((phase: PhaseData, index: number) => renderPhaseCard(phase, index))}
                 </View>
 
                 <View style={{ height: 40 }} />

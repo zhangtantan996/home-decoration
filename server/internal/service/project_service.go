@@ -199,3 +199,158 @@ func (s *ProjectService) GetProjectLogs(projectID uint64, page, pageSize int) ([
 
 	return logs, total, nil
 }
+
+// ========== 项目阶段相关 ==========
+
+// GetProjectPhases 获取项目所有阶段（含子任务）
+func (s *ProjectService) GetProjectPhases(projectID uint64) ([]model.ProjectPhase, error) {
+	var phases []model.ProjectPhase
+	err := repository.DB.Where("project_id = ?", projectID).
+		Preload("Tasks").
+		Order("seq ASC").
+		Find(&phases).Error
+	if err != nil {
+		return nil, err
+	}
+	return phases, nil
+}
+
+// UpdatePhaseRequest 更新阶段请求
+type UpdatePhaseRequest struct {
+	Status            string `json:"status"`
+	ResponsiblePerson string `json:"responsiblePerson"`
+	StartDate         string `json:"startDate"` // YYYY-MM-DD
+	EndDate           string `json:"endDate"`
+	EstimatedDays     int    `json:"estimatedDays"`
+}
+
+// UpdatePhase 更新阶段状态
+func (s *ProjectService) UpdatePhase(phaseID uint64, req *UpdatePhaseRequest) error {
+	var phase model.ProjectPhase
+	if err := repository.DB.First(&phase, phaseID).Error; err != nil {
+		return errors.New("阶段不存在")
+	}
+
+	updates := map[string]interface{}{}
+
+	if req.Status != "" {
+		updates["status"] = req.Status
+	}
+	if req.ResponsiblePerson != "" {
+		updates["responsible_person"] = req.ResponsiblePerson
+	}
+	if req.StartDate != "" {
+		if t, err := time.Parse("2006-01-02", req.StartDate); err == nil {
+			updates["start_date"] = t
+		}
+	}
+	if req.EndDate != "" {
+		if t, err := time.Parse("2006-01-02", req.EndDate); err == nil {
+			updates["end_date"] = t
+		}
+	}
+	if req.EstimatedDays > 0 {
+		updates["estimated_days"] = req.EstimatedDays
+	}
+
+	return repository.DB.Model(&phase).Updates(updates).Error
+}
+
+// UpdatePhaseTaskRequest 更新子任务请求
+type UpdatePhaseTaskRequest struct {
+	IsCompleted bool `json:"isCompleted"`
+}
+
+// UpdatePhaseTask 更新子任务状态
+func (s *ProjectService) UpdatePhaseTask(taskID uint64, req *UpdatePhaseTaskRequest) error {
+	var task model.PhaseTask
+	if err := repository.DB.First(&task, taskID).Error; err != nil {
+		return errors.New("任务不存在")
+	}
+
+	updates := map[string]interface{}{
+		"is_completed": req.IsCompleted,
+	}
+
+	if req.IsCompleted {
+		now := time.Now()
+		updates["completed_at"] = &now
+	} else {
+		updates["completed_at"] = nil
+	}
+
+	return repository.DB.Model(&task).Updates(updates).Error
+}
+
+// InitProjectPhases 创建项目时初始化默认阶段
+func (s *ProjectService) InitProjectPhases(tx *gorm.DB, projectID uint64) error {
+	defaultPhases := []model.ProjectPhase{
+		{ProjectID: projectID, PhaseType: "preparation", Seq: 1, Status: "pending", EstimatedDays: 4},
+		{ProjectID: projectID, PhaseType: "demolition", Seq: 2, Status: "pending", EstimatedDays: 7},
+		{ProjectID: projectID, PhaseType: "electrical", Seq: 3, Status: "pending", EstimatedDays: 10},
+		{ProjectID: projectID, PhaseType: "masonry", Seq: 4, Status: "pending", EstimatedDays: 15},
+		{ProjectID: projectID, PhaseType: "painting", Seq: 5, Status: "pending", EstimatedDays: 10},
+		{ProjectID: projectID, PhaseType: "installation", Seq: 6, Status: "pending", EstimatedDays: 7},
+		{ProjectID: projectID, PhaseType: "inspection", Seq: 7, Status: "pending", EstimatedDays: 3},
+	}
+
+	for i := range defaultPhases {
+		if err := tx.Create(&defaultPhases[i]).Error; err != nil {
+			return err
+		}
+
+		// 为每个阶段创建默认子任务
+		var tasks []model.PhaseTask
+		switch defaultPhases[i].PhaseType {
+		case "preparation":
+			tasks = []model.PhaseTask{
+				{PhaseID: defaultPhases[i].ID, Name: "现场交接确认"},
+				{PhaseID: defaultPhases[i].ID, Name: "施工图纸确认"},
+				{PhaseID: defaultPhases[i].ID, Name: "材料进场验收"},
+			}
+		case "demolition":
+			tasks = []model.PhaseTask{
+				{PhaseID: defaultPhases[i].ID, Name: "墙体拆除"},
+				{PhaseID: defaultPhases[i].ID, Name: "地面拆除"},
+				{PhaseID: defaultPhases[i].ID, Name: "垃圾清运"},
+			}
+		case "electrical":
+			tasks = []model.PhaseTask{
+				{PhaseID: defaultPhases[i].ID, Name: "水管布置"},
+				{PhaseID: defaultPhases[i].ID, Name: "电路布线"},
+				{PhaseID: defaultPhases[i].ID, Name: "水电验收"},
+			}
+		case "masonry":
+			tasks = []model.PhaseTask{
+				{PhaseID: defaultPhases[i].ID, Name: "瓷砖铺贴"},
+				{PhaseID: defaultPhases[i].ID, Name: "木工制作"},
+				{PhaseID: defaultPhases[i].ID, Name: "吊顶施工"},
+			}
+		case "painting":
+			tasks = []model.PhaseTask{
+				{PhaseID: defaultPhases[i].ID, Name: "墙面处理"},
+				{PhaseID: defaultPhases[i].ID, Name: "乳胶漆施工"},
+			}
+		case "installation":
+			tasks = []model.PhaseTask{
+				{PhaseID: defaultPhases[i].ID, Name: "灯具安装"},
+				{PhaseID: defaultPhases[i].ID, Name: "洁具安装"},
+				{PhaseID: defaultPhases[i].ID, Name: "五金安装"},
+			}
+		case "inspection":
+			tasks = []model.PhaseTask{
+				{PhaseID: defaultPhases[i].ID, Name: "全屋保洁"},
+				{PhaseID: defaultPhases[i].ID, Name: "设备调试"},
+				{PhaseID: defaultPhases[i].ID, Name: "交付验收"},
+			}
+		}
+
+		if len(tasks) > 0 {
+			if err := tx.Create(&tasks).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}

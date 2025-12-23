@@ -3,18 +3,31 @@ import { Platform } from 'react-native';
 // Native 环境 (iOS/Android) 默认配置
 // Native 环境不支持 .env 文件直接加载，保留原有逻辑
 
-export const getApiUrl = (): string => {
-    // 只有在非开发环境（即打包打包 APK 时）切换到服务器 IP
+// 获取基础 API URL (后端 Go 服务，端口 8080)
+export const getApiBaseUrl = (): string => {
     if (__DEV__) {
         if (Platform.OS === 'android') {
-            // 真机调试：使用电脑的局域网 IP
-            // 模拟器请根据需要改回 10.0.2.2
-            return 'http://192.168.110.40:8080/api/v1';
+            return 'http://192.168.110.40:8080';
         }
-        // iOS 模拟器或 Web 环境
-        return 'http://localhost:8080/api/v1';
+        return 'http://localhost:8080';
     }
+    return 'http://47.99.105.195';
+};
 
-    // 正式环境（打发布包时使用）
-    return 'http://47.99.105.195/api/v1';
+// 获取前端 Web URL (React Native Web 服务，通常端口 8081)
+export const getWebUrl = (): string => {
+    if (__DEV__) {
+        if (Platform.OS === 'android') {
+            return 'http://192.168.110.40:8082'; // 前端 Web 端口 (Vite)
+        }
+        return 'http://localhost:8082';
+    }
+    return 'http://47.99.105.195'; // 生产环境通常同域
+};
+
+// 兼容旧代码 (API 使用)
+export const getBaseUrl = getApiBaseUrl;
+
+export const getApiUrl = (): string => {
+    return `${getApiBaseUrl()}/api/v1`;
 };

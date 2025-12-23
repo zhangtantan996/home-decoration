@@ -70,9 +70,30 @@ export const userApi = {
 };
 
 export const providerApi = {
-    designers: (params?: any) => api.get('/designers', { params }),
-    companies: (params?: any) => api.get('/companies', { params }),
-    foremen: (params?: any) => api.get('/foremen', { params }),
+    designers: (params?: any) => api.get<any>('/designers', { params }),
+    designerDetail: (id: number) => api.get<any>(`/designers/${id}`),
+    companies: (params?: any) => api.get<any>('/companies', { params }),
+    companyDetail: (id: number) => api.get<any>(`/companies/${id}`),
+    foremen: (params?: any) => api.get<any>('/foremen', { params }),
+    foremanDetail: (id: number) => api.get<any>(`/foremen/${id}`),
+    // 案例和评价
+    getCases: (type: 'designers' | 'companies' | 'foremen', id: number, page = 1) =>
+        api.get<any>(`/${type}/${id}/cases`, { params: { page, pageSize: 10 } }),
+    getReviews: (type: 'designers' | 'companies' | 'foremen', id: number, page = 1, filter = 'all') =>
+        api.get<any>(`/${type}/${id}/reviews`, { params: { page, pageSize: 10, filter } }),
+    getReviewStats: (type: 'designers' | 'companies' | 'foremen', id: number) =>
+        api.get<any>(`/${type}/${id}/review-stats`),
+    // 关注/收藏
+    follow: (id: number, type = 'designer') =>
+        api.post(`/providers/${id}/follow`, null, { params: { type } }),
+    unfollow: (id: number, type = 'designer') =>
+        api.delete(`/providers/${id}/follow`, { params: { type } }),
+    favorite: (id: number, type = 'provider') =>
+        api.post(`/providers/${id}/favorite`, null, { params: { type } }),
+    unfavorite: (id: number, type = 'provider') =>
+        api.delete(`/providers/${id}/favorite`, { params: { type } }),
+    getUserStatus: (id: number) =>
+        api.get<{ isFollowed: boolean; isFavorited: boolean }>(`/providers/${id}/user-status`),
 };
 
 export const projectApi = {
@@ -81,6 +102,14 @@ export const projectApi = {
     create: (data: any) => api.post('/projects', data),
     logs: (id: string) => api.get(`/projects/${id}/logs`),
     milestones: (id: string) => api.get(`/projects/${id}/milestones`),
+    phases: (projectId: string) => api.get<any>(`/projects/${projectId}/phases`),
+};
+
+export const phaseApi = {
+    update: (phaseId: string, data: { status?: string; responsiblePerson?: string; startDate?: string; endDate?: string }) =>
+        api.put(`/phases/${phaseId}`, data),
+    updateTask: (phaseId: string, taskId: string, data: { isCompleted: boolean }) =>
+        api.put(`/phases/${phaseId}/tasks/${taskId}`, data),
 };
 
 export const escrowApi = {
@@ -89,6 +118,10 @@ export const escrowApi = {
         api.post(`/projects/${projectId}/deposit`, { amount }),
     release: (projectId: string, milestoneId: number, amount: number) =>
         api.post(`/projects/${projectId}/release`, { milestone_id: milestoneId, amount }),
+};
+
+export const bookingApi = {
+    create: (data: any) => api.post('/bookings', data),
 };
 
 export default api;

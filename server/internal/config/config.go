@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+
 	"github.com/spf13/viper"
 )
 
@@ -39,7 +41,14 @@ type JWTConfig struct {
 }
 
 func Load() (*Config, error) {
-	viper.SetConfigName("config")
+	// 根据 APP_ENV 环境变量选择配置文件
+	// local/docker 环境使用 config.docker.yaml
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "local" || appEnv == "docker" {
+		viper.SetConfigName("config.docker")
+	} else {
+		viper.SetConfigName("config")
+	}
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")

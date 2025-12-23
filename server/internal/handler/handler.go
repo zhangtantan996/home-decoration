@@ -13,6 +13,7 @@ var (
 	providerService = &service.ProviderService{}
 	projectService  = &service.ProjectService{}
 	escrowService   = &service.EscrowService{}
+	bookingService  = &service.BookingService{}
 	jwtConfig       *config.JWTConfig
 )
 
@@ -182,24 +183,13 @@ func GetDesigner(c *gin.Context) {
 		return
 	}
 
-	provider, user, err := providerService.GetProviderByID(id)
+	detail, err := providerService.GetProviderDetail(id)
 	if err != nil {
 		response.NotFound(c, "设计师不存在")
 		return
 	}
 
-	response.Success(c, gin.H{
-		"id":            provider.ID,
-		"userId":        provider.UserID,
-		"companyName":   provider.CompanyName,
-		"nickname":      user.Nickname,
-		"avatar":        user.Avatar,
-		"rating":        provider.Rating,
-		"restoreRate":   provider.RestoreRate,
-		"budgetControl": provider.BudgetControl,
-		"completedCnt":  provider.CompletedCnt,
-		"verified":      provider.Verified,
-	})
+	response.Success(c, detail)
 }
 
 // ========== 装修公司 ==========
@@ -221,19 +211,18 @@ func ListCompanies(c *gin.Context) {
 // GetCompany 装修公司详情
 func GetCompany(c *gin.Context) {
 	id := parseUint64(c.Param("id"))
-	provider, user, err := providerService.GetProviderByID(id)
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	detail, err := providerService.GetProviderDetail(id)
 	if err != nil {
 		response.NotFound(c, "公司不存在")
 		return
 	}
 
-	response.Success(c, gin.H{
-		"id":          provider.ID,
-		"companyName": provider.CompanyName,
-		"nickname":    user.Nickname,
-		"avatar":      user.Avatar,
-		"rating":      provider.Rating,
-	})
+	response.Success(c, detail)
 }
 
 // ========== 工长 ==========
@@ -255,18 +244,91 @@ func ListForemen(c *gin.Context) {
 // GetForeman 工长详情
 func GetForeman(c *gin.Context) {
 	id := parseUint64(c.Param("id"))
-	provider, user, err := providerService.GetProviderByID(id)
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	detail, err := providerService.GetProviderDetail(id)
 	if err != nil {
 		response.NotFound(c, "工长不存在")
 		return
 	}
 
-	response.Success(c, gin.H{
-		"id":          provider.ID,
-		"companyName": provider.CompanyName,
-		"nickname":    user.Nickname,
-		"rating":      provider.Rating,
-	})
+	response.Success(c, detail)
+}
+
+// ========== 服务商案例、评价 ==========
+
+// GetProviderCases 获取服务商案例列表
+func GetProviderCases(c *gin.Context) {
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	page := 1
+	pageSize := 10
+	// 从 Query 获取分页参数
+	if p := c.Query("page"); p != "" {
+		page = int(parseUint64(p))
+	}
+	if ps := c.Query("pageSize"); ps != "" {
+		pageSize = int(parseUint64(ps))
+	}
+
+	list, total, err := providerService.GetProviderCases(id, page, pageSize)
+	if err != nil {
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.PageSuccess(c, list, total, page, pageSize)
+}
+
+// GetProviderReviews 获取服务商评价列表
+func GetProviderReviews(c *gin.Context) {
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	page := 1
+	pageSize := 10
+	if p := c.Query("page"); p != "" {
+		page = int(parseUint64(p))
+	}
+	if ps := c.Query("pageSize"); ps != "" {
+		pageSize = int(parseUint64(ps))
+	}
+	filter := c.Query("filter") // all, pic, good, 或标签名
+
+	list, total, err := providerService.GetProviderReviews(id, page, pageSize, filter)
+	if err != nil {
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.PageSuccess(c, list, total, page, pageSize)
+}
+
+// GetReviewStats 获取评价统计
+func GetReviewStats(c *gin.Context) {
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	stats, err := providerService.GetReviewStats(id)
+	if err != nil {
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.Success(c, stats)
 }
 
 // ========== 项目 ==========
@@ -381,6 +443,69 @@ func AcceptMilestone(c *gin.Context) {
 	response.Success(c, gin.H{"message": "验收成功"})
 }
 
+// ========== 项目阶段 ==========
+
+// GetProjectPhases 获取项目工程阶段
+func GetProjectPhases(c *gin.Context) {
+	projectId := parseUint64(c.Param("id"))
+	if projectId == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	phases, err := projectService.GetProjectPhases(projectId)
+	if err != nil {
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.Success(c, gin.H{"phases": phases})
+}
+
+// UpdatePhase 更新阶段状态
+func UpdatePhase(c *gin.Context) {
+	phaseId := parseUint64(c.Param("phaseId"))
+	if phaseId == 0 {
+		response.BadRequest(c, "无效阶段ID")
+		return
+	}
+
+	var req service.UpdatePhaseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	if err := projectService.UpdatePhase(phaseId, &req); err != nil {
+		response.ServerError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"message": "更新成功"})
+}
+
+// UpdatePhaseTask 更新子任务状态
+func UpdatePhaseTask(c *gin.Context) {
+	taskId := parseUint64(c.Param("taskId"))
+	if taskId == 0 {
+		response.BadRequest(c, "无效任务ID")
+		return
+	}
+
+	var req service.UpdatePhaseTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	if err := projectService.UpdatePhaseTask(taskId, &req); err != nil {
+		response.ServerError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"message": "更新成功"})
+}
+
 // ========== 托管账户 ==========
 
 // GetEscrowAccount 获取托管账户详情
@@ -437,6 +562,90 @@ func ReleaseFunds(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "资金释放成功"})
+}
+
+// ========== 关注/收藏 ==========
+
+// FollowProvider 关注服务商
+func FollowProvider(c *gin.Context) {
+	userID := c.GetUint64("userID")
+	providerID := parseUint64(c.Param("id"))
+	targetType := c.Query("type")
+	if targetType == "" {
+		targetType = "designer"
+	}
+
+	if err := providerService.FollowProvider(userID, providerID, targetType); err != nil {
+		response.ServerError(c, "关注失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "关注成功"})
+}
+
+// UnfollowProvider 取消关注服务商
+func UnfollowProvider(c *gin.Context) {
+	userID := c.GetUint64("userID")
+	providerID := parseUint64(c.Param("id"))
+	targetType := c.Query("type")
+	if targetType == "" {
+		targetType = "designer"
+	}
+
+	if err := providerService.UnfollowProvider(userID, providerID, targetType); err != nil {
+		response.ServerError(c, "取消关注失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "已取消关注"})
+}
+
+// FavoriteProvider 收藏服务商
+func FavoriteProvider(c *gin.Context) {
+	userID := c.GetUint64("userID")
+	providerID := parseUint64(c.Param("id"))
+	targetType := c.Query("type")
+	if targetType == "" {
+		targetType = "provider"
+	}
+
+	if err := providerService.FavoriteProvider(userID, providerID, targetType); err != nil {
+		response.ServerError(c, "收藏失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "收藏成功"})
+}
+
+// UnfavoriteProvider 取消收藏服务商
+func UnfavoriteProvider(c *gin.Context) {
+	userID := c.GetUint64("userID")
+	providerID := parseUint64(c.Param("id"))
+	targetType := c.Query("type")
+	if targetType == "" {
+		targetType = "provider"
+	}
+
+	if err := providerService.UnfavoriteProvider(userID, providerID, targetType); err != nil {
+		response.ServerError(c, "取消收藏失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "已取消收藏"})
+}
+
+// GetProviderUserStatus 获取用户对服务商的关注/收藏状态
+func GetProviderUserStatus(c *gin.Context) {
+	userID := c.GetUint64("userID")
+	providerID := parseUint64(c.Param("id"))
+
+	status, err := providerService.GetUserProviderStatus(userID, providerID)
+	if err != nil {
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.Success(c, status)
 }
 
 // ========== 工具函数 ==========

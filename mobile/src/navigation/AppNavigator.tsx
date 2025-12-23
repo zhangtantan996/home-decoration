@@ -24,6 +24,9 @@ import SettingsScreen from '../screens/SettingsScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import PersonalInfoScreen from '../screens/PersonalInfoScreen';
 import AccountSecurityScreen from '../screens/AccountSecurityScreen';
+import PullToRefreshDemo from '../screens/PullToRefreshDemo';
+import { ScanQRScreen } from '../screens/ScanQRScreen';
+import { ReviewsScreen } from '../screens/ReviewsScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
@@ -152,6 +155,16 @@ const AppNavigator = () => {
                         <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
                         <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
                         <Stack.Screen name="AccountSecurity" component={AccountSecurityScreen} />
+                        <Stack.Screen name="PullToRefreshDemo" component={PullToRefreshDemo} />
+                        <Stack.Screen
+                            name="ScanQR"
+                            component={ScanQRScreen}
+                            options={{
+                                presentation: 'fullScreenModal',
+                                animation: 'fade' // 模拟相机启动的淡入感
+                            }}
+                        />
+                        <Stack.Screen name="Reviews" component={ReviewsScreen} />
                     </>
                 ) : (
                     <Stack.Screen name="Login" component={LoginScreen} />

@@ -38,12 +38,19 @@ func autoMigrate() error {
 	return DB.AutoMigrate(
 		&model.User{},
 		&model.Provider{},
+		&model.ProviderCase{},
+		&model.ProviderReview{},
 		&model.Worker{},
 		&model.Project{},
 		&model.Milestone{},
 		&model.WorkLog{},
 		&model.EscrowAccount{},
 		&model.Transaction{},
+		&model.Booking{},
+		&model.ProjectPhase{},
+		&model.PhaseTask{},
+		&model.UserFollow{},
+		&model.UserFavorite{},
 	)
 }
 

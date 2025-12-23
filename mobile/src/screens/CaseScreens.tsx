@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -12,8 +12,15 @@ import {
     FlatList,
     Modal,
     Platform,
+    ActivityIndicator,
+    ImageBackground,
 } from 'react-native';
-import { ArrowLeft, Share2, Star, MessageCircle, X } from 'lucide-react-native';
+import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
+import { ArrowLeft, Share2, Star, MessageCircle, X, ChevronRight } from 'lucide-react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { providerApi } from '../services/api';
+import { getWebUrl } from '../config';
+import { useToast } from '../components/Toast';
 
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - 48) / 2;
@@ -110,17 +117,53 @@ const MOCK_CASES = [
 
 // ========== Case Gallery Screen ==========
 export const CaseGalleryScreen = ({ route, navigation }: any) => {
-    const { providerName, providerType } = route.params || {};
+    const { providerId, providerName, providerType } = route.params || {};
+    const [cases, setCases] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        loadCases();
+    }, []);
+
+    const loadCases = async () => {
+        try {
+            // 根据 providerType 选择 API 类型
+            const apiType = providerType === 'designer' ? 'designers' :
+                providerType === 'company' ? 'companies' : 'foremen';
+            const res = await providerApi.getCases(apiType, providerId);
+            if (res.data && res.data.list) {
+                // 为每个案例添加随机高度
+                const casesWithHeight = res.data.list.map((c: any, idx: number) => ({
+                    ...c,
+                    height: 160 + (idx % 3) * 30, // 160, 190, 220
+                }));
+                setCases(casesWithHeight);
+            }
+        } catch (error) {
+            console.log('加载案例失败:', error);
+            // 降级使用 MOCK 数据
+            setCases(MOCK_CASES);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const renderCaseCard = (caseItem: any) => (
         <TouchableOpacity
             key={caseItem.id}
-            style={[styles.caseCard, { height: caseItem.height + 60 }]}
-            onPress={() => navigation.navigate('CaseDetail', { caseItem, providerName, providerType })}
+            style={[styles.caseCard, { height: (caseItem.height || 180) + 60 }]}
+            onPress={() => navigation.navigate('CaseDetail', {
+                caseItem: {
+                    ...caseItem,
+                    images: caseItem.images ? (typeof caseItem.images === 'string' ? JSON.parse(caseItem.images) : caseItem.images) : [caseItem.coverImage],
+                },
+                providerName,
+                providerType
+            })}
         >
             <Image
                 source={{ uri: caseItem.coverImage }}
-                style={[styles.caseCover, { height: caseItem.height }]}
+                style={[styles.caseCover, { height: caseItem.height || 180 }]}
                 resizeMode="cover"
             />
             <View style={styles.caseInfo}>
@@ -130,13 +173,11 @@ export const CaseGalleryScreen = ({ route, navigation }: any) => {
         </TouchableOpacity>
     );
 
-    const leftColumn = MOCK_CASES.filter((_, i) => i % 2 === 0);
-    const rightColumn = MOCK_CASES.filter((_, i) => i % 2 === 1);
+    const leftColumn = cases.filter((_, i) => i % 2 === 0);
+    const rightColumn = cases.filter((_, i) => i % 2 === 1);
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* 全局已在 App.tsx 配置 StatusBar */}
-
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -147,17 +188,27 @@ export const CaseGalleryScreen = ({ route, navigation }: any) => {
             </View>
 
             {/* Gallery Grid */}
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                <View style={styles.galleryGrid}>
-                    <View style={styles.column}>
-                        {leftColumn.map(renderCaseCard)}
-                    </View>
-                    <View style={styles.column}>
-                        {rightColumn.map(renderCaseCard)}
-                    </View>
+            {loading ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#111" />
                 </View>
-                <View style={{ height: 20 }} />
-            </ScrollView>
+            ) : cases.length === 0 ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text style={{ color: '#9CA3AF' }}>暂无案例</Text>
+                </View>
+            ) : (
+                <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                    <View style={styles.galleryGrid}>
+                        <View style={styles.column}>
+                            {leftColumn.map(renderCaseCard)}
+                        </View>
+                        <View style={styles.column}>
+                            {rightColumn.map(renderCaseCard)}
+                        </View>
+                    </View>
+                    <View style={{ height: 20 }} />
+                </ScrollView>
+            )}
         </SafeAreaView>
     );
 };
@@ -165,6 +216,7 @@ export const CaseGalleryScreen = ({ route, navigation }: any) => {
 // ========== Case Detail Screen ==========
 export const CaseDetailScreen = ({ route, navigation }: any) => {
     const { caseItem, providerName, providerType } = route.params;
+    const { showToast } = useToast();
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [showImageViewer, setShowImageViewer] = useState(false);
     const [viewerIndex, setViewerIndex] = useState(0);
@@ -182,9 +234,15 @@ export const CaseDetailScreen = ({ route, navigation }: any) => {
         }
     };
 
+    const handleShare = () => {
+        const shareUrl = `${getWebUrl()}/case/${caseItem.id}`;
+        Clipboard.setString(shareUrl);
+        showToast({ message: '链接已复制到剪贴板', type: 'success' });
+    };
+
     return (
         <SafeAreaView style={styles.container}>
-            {/* 全局已在 App.tsx 配置 StatusBar */}
+            {/* Global StatusBar configured in App.tsx */}
 
             {/* Header */}
             <View style={styles.header}>
@@ -192,13 +250,12 @@ export const CaseDetailScreen = ({ route, navigation }: any) => {
                     <ArrowLeft size={24} color="#111" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>案例详情</Text>
-                <TouchableOpacity style={styles.shareBtn}>
+                <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
                     <Share2 size={20} color="#111" />
                 </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Main Image */}
                 {/* Main Image Carousel */}
                 <View>
                     <ScrollView
@@ -267,33 +324,8 @@ export const CaseDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 )}
 
-
-
-                <View style={{ height: 100 }} />
+                <View style={{ height: 30 }} />
             </ScrollView>
-
-            {/* Bottom Action Bar */}
-            <View style={styles.bottomBar}>
-                <TouchableOpacity
-                    style={styles.consultBtn}
-                    onPress={() => navigation.navigate('ChatRoom', {
-                        conversation: {
-                            id: caseItem.id,
-                            name: caseItem.designer,
-                            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-                            role: 'designer',
-                            roleLabel: '设计师',
-                            isOnline: true,
-                        }
-                    })}
-                >
-                    <MessageCircle size={18} color="#111" />
-                    <Text style={styles.consultBtnText}>在线咨询</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.bookBtn}>
-                    <Text style={styles.bookBtnText}>立即预约</Text>
-                </TouchableOpacity>
-            </View>
 
             {/* Image Viewer Modal */}
             <Modal visible={showImageViewer} transparent animationType="fade">
@@ -436,8 +468,6 @@ const styles = StyleSheet.create({
     },
     caseInfoSection: {
         padding: 20,
-        borderBottomWidth: 8,
-        borderBottomColor: '#F3F4F6',
     },
     caseDetailTitle: {
         fontSize: 20,
@@ -459,8 +489,6 @@ const styles = StyleSheet.create({
     },
     section: {
         padding: 20,
-        borderBottomWidth: 8,
-        borderBottomColor: '#F3F4F6',
     },
     sectionTitle: {
         fontSize: 16,
@@ -483,55 +511,8 @@ const styles = StyleSheet.create({
         marginRight: 12,
         backgroundColor: '#E5E7EB',
     },
-    providerCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F9FAFB',
-        borderRadius: 12,
-        padding: 16,
-    },
-    providerAvatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#E5E7EB',
-        marginRight: 12,
-    },
-    providerInfo: {
-        flex: 1,
-    },
-    providerName: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#111',
-        marginBottom: 4,
-    },
-    providerRating: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    providerRatingText: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#111',
-        marginLeft: 4,
-    },
-    providerReviews: {
-        fontSize: 12,
-        color: '#9CA3AF',
-        marginLeft: 4,
-    },
-    viewProfileBtn: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#E5E7EB',
-    },
-    viewProfileText: {
-        fontSize: 12,
-        color: '#6B7280',
-    },
+    // Provider Card (Not used in original detail, but kept for gallery?) No, original didn't have provider card in detail.
+    // Keeping shared styles safe.
     // Bottom Bar
     bottomBar: {
         flexDirection: 'row',
@@ -609,3 +590,4 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
 });
+

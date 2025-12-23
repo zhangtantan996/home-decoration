@@ -1,0 +1,28 @@
+FROM golang:1.23-alpine
+
+# 安装 git (air 依赖)
+RUN apk add --no-cache git
+
+# 设置 Go 代理以加速下载
+ENV GOPROXY=https://goproxy.cn,direct
+
+# 安装 air (v1.51.0 版本的模块路径仍为 cosmtrek)
+RUN go install github.com/cosmtrek/air@v1.51.0
+
+
+
+
+WORKDIR /app
+
+# 预拷贝依赖
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 复制源码
+COPY . .
+
+# 暴露端口
+EXPOSE 8080
+
+# 使用 air 运行
+CMD ["air", "-c", ".air.toml"]

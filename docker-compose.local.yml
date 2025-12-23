@@ -1,0 +1,88 @@
+services:
+  # 数据库
+  db:
+    image: postgres:15-alpine
+    container_name: home_decor_db_local
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: home_decoration
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db_data_local:/var/lib/postgresql/data
+    networks:
+      - dev-net
+
+  # Redis
+  redis:
+    image: redis:6.2-alpine
+    container_name: home_decor_redis_local
+    ports:
+      - "6380:6379"
+    networks:
+      - dev-net
+
+  # 后端 API (热更新)
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.api.dev
+    container_name: home_decor_api_local
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./server:/app
+    environment:
+      - APP_ENV=local
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=123456
+      - DATABASE_DBNAME=home_decoration
+      - DATABASE_SSLMODE=disable
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    ports:
+      - "8080:8080"
+    networks:
+      - dev-net
+
+  # 管理后台 (Vite Dev)
+  admin:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.node.dev
+    container_name: home_decor_admin_local
+    working_dir: /app/admin
+    volumes:
+      - .:/app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080/api/v1
+    command: sh -c "npm install --registry=https://registry.npmmirror.com/ && npm run dev -- --host"
+    networks:
+      - dev-net
+
+  # 移动端 Web (Vite Dev)
+  mobile:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.node.dev
+    container_name: home_decor_mobile_local
+    working_dir: /app/mobile
+    volumes:
+      - .:/app
+    ports:
+      - "5174:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080/api/v1
+    command: sh -c "npm install --registry=https://registry.npmmirror.com/ && npm run web -- --host"
+    networks:
+      - dev-net
+
+networks:
+  dev-net:
+    driver: bridge

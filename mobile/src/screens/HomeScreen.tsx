@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -12,9 +12,13 @@ import {
     Platform,
     Modal,
     TextInput,
+    ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { DESIGNERS, CONSTRUCTION_WORKERS, MATERIALS } from '../services/mockData';
+import { MATERIALS } from '../services/mockData';
+import { providerApi } from '../services/api';
+import { Designer, Worker, ProviderDTO, toDesigner, toWorker } from '../types/provider';
+import { NetworkErrorView, LoadingView, EmptyView, PullToRefresh } from '../components';
 import {
     MapPin,
     Search,
@@ -136,6 +140,19 @@ const HOT_SEARCH_TERMS = [
 const HomeScreen: React.FC = () => {
     const [activeCategory, setActiveCategory] = useState('designer');
 
+    // API 数据状态
+    const [designers, setDesigners] = useState<Designer[]>([]);
+    const [workers, setWorkers] = useState<Worker[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    // 分页状态
+    const [designerPage, setDesignerPage] = useState(1);
+    const [workerPage, setWorkerPage] = useState(1);
+    const [hasMoreDesigners, setHasMoreDesigners] = useState(true);
+    const [hasMoreWorkers, setHasMoreWorkers] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+
     // 设计师状态
     const [designerSortBy, setDesignerSortBy] = useState('recommend');
     const [showDesignerSortMenu, setShowDesignerSortMenu] = useState(false);
@@ -158,6 +175,118 @@ const HomeScreen: React.FC = () => {
     const scrollRef = useRef<ScrollView>(null);
     const [categoryHeight, setCategoryHeight] = useState(0);
     const navigation = useNavigation();
+    // refreshing 状态由 PullToRefresh 内部控制，但由于我们需要手动触发刷新，保留该状态也没问题，
+    // 不过 PullToRefresh 组件是受控的吗？看代码是内部管理的state。我们只传 onRefresh promise。
+    // 这里保留 refreshing 也没事。
+
+    // 获取设计师数据
+    const fetchDesigners = async (page: number, shouldRefresh: boolean = false) => {
+        try {
+            if (shouldRefresh) setIsLoading(true);
+            else setLoadingMore(true);
+
+            const res = await providerApi.designers({
+                page,
+                pageSize: 10,
+                sortBy: designerSortBy,
+                keyword: searchText,
+                subType: designerOrgFilter === 'all' ? '' : designerOrgFilter, // Pass subType
+                type: 1
+            });
+            const list = (res?.data?.list || []).map((dto: ProviderDTO) => toDesigner(dto));
+            const total = res?.data?.total || 0;
+
+            if (shouldRefresh) {
+                setDesigners(list);
+                setDesignerPage(1);
+            } else {
+                setDesigners(prev => [...prev, ...list]);
+                setDesignerPage(page);
+            }
+            setHasMoreDesigners(list.length >= 10);
+        } catch (err: any) {
+            console.error('Fetch designers failed:', err);
+        } finally {
+            setIsLoading(false);
+            setLoadingMore(false);
+        }
+    };
+
+    // 获取施工数据
+    const fetchWorkers = async (page: number, shouldRefresh: boolean = false) => {
+        try {
+            if (shouldRefresh) setIsLoading(true);
+            else setLoadingMore(true);
+
+            // 处理工种筛选: 只要选了非all，就传第一个作为 WorkType (后端目前支持单选LIKE)
+            let workTypeParam = '';
+            if (!selectedWorkTypes.includes('all') && selectedWorkTypes.length > 0) {
+                workTypeParam = selectedWorkTypes[0];
+            }
+
+            const res = await providerApi.foremen({
+                page,
+                pageSize: 10,
+                sortBy: constructionSortBy,
+                keyword: searchText,
+                workType: workTypeParam,
+                subType: constructionOrgFilter === 'all' ? '' : constructionOrgFilter, // Pass subType
+                type: 3
+            });
+            const list = (res?.data?.list || []).map((dto: ProviderDTO) => toWorker(dto));
+
+            if (shouldRefresh) {
+                setWorkers(list);
+                setWorkerPage(1);
+            } else {
+                setWorkers(prev => [...prev, ...list]);
+                setWorkerPage(page);
+            }
+            setHasMoreWorkers(list.length >= 10);
+        } catch (err: any) {
+            console.error('Fetch workers failed:', err);
+        } finally {
+            setIsLoading(false);
+            setLoadingMore(false);
+        }
+    };
+
+    // 初始加载
+    useEffect(() => {
+        fetchDesigners(1, true);
+        fetchWorkers(1, true);
+    }, []);
+
+    // 监听筛选变化 - 设计师
+    useEffect(() => {
+        fetchDesigners(1, true);
+    }, [designerSortBy, searchText, designerOrgFilter]); // Add designerOrgFilter
+
+    // 监听筛选变化 - 施工
+    useEffect(() => {
+        fetchWorkers(1, true);
+    }, [constructionSortBy, selectedWorkTypes, constructionOrgFilter]); // Add constructionOrgFilter
+
+    // 下拉刷新处理
+    const handleRefresh = async () => {
+        if (activeCategory === 'designer') {
+            await fetchDesigners(1, true);
+        } else if (activeCategory === 'construction') {
+            await fetchWorkers(1, true);
+        }
+        // Material tab not implemented yet
+    };
+
+    // 加载更多处理
+    const handleLoadMore = () => {
+        if (loadingMore || isLoading) return;
+
+        if (activeCategory === 'designer' && hasMoreDesigners) {
+            fetchDesigners(designerPage + 1, false);
+        } else if (activeCategory === 'construction' && hasMoreWorkers) {
+            fetchWorkers(workerPage + 1, false);
+        }
+    };
 
     // 搜索模式下隐藏底部导航栏
     React.useEffect(() => {
@@ -181,71 +310,7 @@ const HomeScreen: React.FC = () => {
         }
     };
 
-    // 根据筛选条件和搜索关键词过滤设计师
-    const filteredDesigners = DESIGNERS.filter(d => {
-        if (designerOrgFilter && d.orgType !== designerOrgFilter) return false;
-        // 搜索过滤
-        if (searchText.trim()) {
-            const keyword = searchText.toLowerCase();
-            const name = d.name.toLowerCase();
-            const specialty = d.specialty.toLowerCase();
-            const orgLabel = d.orgLabel.toLowerCase();
-            if (!name.includes(keyword) && !specialty.includes(keyword) && !orgLabel.includes(keyword)) {
-                return false;
-            }
-        }
-        return true;
-    });
 
-    // 根据排序条件排序设计师
-    const sortedDesigners = [...filteredDesigners].sort((a, b) => {
-        switch (designerSortBy) {
-            case 'distance':
-                return parseFloat(a.distance) - parseFloat(b.distance);
-            case 'rating':
-                return b.rating - a.rating;
-            case 'experience':
-                return b.yearsExperience - a.yearsExperience;
-            default:
-                return 0;
-        }
-    });
-
-    // 根据筛选条件和搜索关键词过滤施工
-    const filteredWorkers = CONSTRUCTION_WORKERS.filter(w => {
-        if (constructionOrgFilter && w.type !== constructionOrgFilter) return false;
-        if (!selectedWorkTypes.includes('all')) {
-            const hasMatchingWorkType = w.workTypes.some(wt => selectedWorkTypes.includes(wt));
-            if (!hasMatchingWorkType) return false;
-        }
-        // 搜索过滤
-        if (searchText.trim()) {
-            const keyword = searchText.toLowerCase();
-            const name = w.name.toLowerCase();
-            const workTypeLabels = w.workTypeLabels.toLowerCase();
-            const tags = w.tags.join(' ').toLowerCase();
-            if (!name.includes(keyword) && !workTypeLabels.includes(keyword) && !tags.includes(keyword)) {
-                return false;
-            }
-        }
-        return true;
-    });
-
-    // 根据排序条件排序施工
-    const sortedWorkers = [...filteredWorkers].sort((a, b) => {
-        switch (constructionSortBy) {
-            case 'rating':
-                return b.rating - a.rating;
-            case 'price_low':
-                return parseFloat(a.priceRange.split('-')[0]) - parseFloat(b.priceRange.split('-')[0]);
-            case 'price_high':
-                return parseFloat(b.priceRange.split('-')[1]) - parseFloat(a.priceRange.split('-')[1]);
-            case 'orders':
-                return b.completedOrders - a.completedOrders;
-            default:
-                return 0;
-        }
-    });
 
     // ========== 全局搜索统一结果 ==========
     const getUnifiedSearchResults = () => {
@@ -255,7 +320,7 @@ const HomeScreen: React.FC = () => {
         let results: any[] = [];
 
         // 1. 搜索设计师
-        DESIGNERS.forEach(d => {
+        designers.forEach((d: Designer) => {
             const name = d.name.toLowerCase();
             const specialty = d.specialty.toLowerCase();
             const orgLabel = d.orgLabel.toLowerCase();
@@ -270,7 +335,7 @@ const HomeScreen: React.FC = () => {
         });
 
         // 2. 搜索施工人员
-        CONSTRUCTION_WORKERS.forEach(w => {
+        workers.forEach((w: Worker) => {
             const name = w.name.toLowerCase();
             const workTypeLabels = w.workTypeLabels.toLowerCase();
             const tags = w.tags.join(' ').toLowerCase();
@@ -389,8 +454,6 @@ const HomeScreen: React.FC = () => {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* 全局已在 App.tsx 配置 StatusBar */}
-
             {/* 固定Header - 始终在顶部 */}
             <View style={styles.header}>
                 {isSearchFocused ? (
@@ -455,559 +518,608 @@ const HomeScreen: React.FC = () => {
                             </Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity style={styles.iconBtn}>
-                            <Bell size={20} color="#09090B" />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.iconBtn}>
+                        <TouchableOpacity
+                            style={styles.iconBtn}
+                            onPress={() => navigation.navigate('ScanQR' as never)}
+                        >
                             <Maximize2 size={20} color="#09090B" />
                         </TouchableOpacity>
                     </>
                 )}
             </View>
 
-            {/* 可滚动内容区域 */}
-            <ScrollView
-                ref={scrollRef}
-                style={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                stickyHeaderIndices={(!isSearchFocused && !isSearching) ? [1] : []} // 筛选栏吸顶
-                keyboardShouldPersistTaps="handled"
+            <PullToRefresh
+                onRefresh={handleRefresh}
+                disabled={isSearchFocused || isSearching}
             >
-                {/* 搜索状态分支 */}
-                {isSearchFocused && !isSearching ? (
-                    // 热门搜索词
-                    <View style={styles.hotSearchSection}>
-                        <Text style={styles.hotSearchTitle}>热门搜索</Text>
-                        <View style={styles.hotSearchTags}>
-                            {HOT_SEARCH_TERMS.map((term, index) => (
-                                <TouchableOpacity
-                                    key={index}
-                                    style={styles.hotSearchTag}
-                                    onPress={() => {
-                                        setSearchText(term);
-                                        setIsSearching(true);
-                                    }}
-                                >
-                                    <Text style={styles.hotSearchTagText}>{term}</Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </View>
-                ) : isSearching ? (
-                    <View>
-                        {/* 搜索结果头部 + 排序 */}
-                        <View style={styles.searchResultsHeader}>
-                            <Text style={styles.searchResultsInfo}>
-                                共找到 {unifiedSearchResults.length} 个结果
-                            </Text>
-                            <TouchableOpacity
-                                style={styles.sortBtn}
-                                onPress={() => setShowGlobalSortMenu(!showGlobalSortMenu)}
-                            >
-                                <Text style={styles.sortBtnText}>
-                                    {GLOBAL_SORT_OPTIONS.find(o => o.id === globalSortBy)?.label || '综合排序'}
-                                </Text>
-                                <ChevronDown size={14} color="#71717A" />
-                            </TouchableOpacity>
-                        </View>
 
-                        {/* 排序下拉菜单 */}
-                        {showGlobalSortMenu && (
-                            <View style={styles.sortDropdown}>
-                                {GLOBAL_SORT_OPTIONS.map(option => (
+                {/* 可滚动内容区域 */}
+                <ScrollView
+                    ref={scrollRef}
+                    style={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    stickyHeaderIndices={(!isSearchFocused && !isSearching) ? [1] : []}
+                    keyboardShouldPersistTaps="handled"
+                    scrollEnabled={true}
+                    scrollEventThrottle={400}
+                    onScroll={({ nativeEvent }) => {
+                        const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                        if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 20) {
+                            handleLoadMore();
+                        }
+                    }}
+                >
+                    {/* 搜索状态分支 */}
+                    {isSearchFocused && !isSearching ? (
+                        // 热门搜索词
+                        <View style={styles.hotSearchSection}>
+                            <Text style={styles.hotSearchTitle}>热门搜索</Text>
+                            <View style={styles.hotSearchTags}>
+                                {HOT_SEARCH_TERMS.map((term, index) => (
                                     <TouchableOpacity
-                                        key={option.id}
-                                        style={[
-                                            styles.sortDropdownItem,
-                                            globalSortBy === option.id && styles.sortDropdownItemActive
-                                        ]}
+                                        key={index}
+                                        style={styles.hotSearchTag}
                                         onPress={() => {
-                                            setGlobalSortBy(option.id);
-                                            setShowGlobalSortMenu(false);
+                                            setSearchText(term);
+                                            setIsSearching(true);
                                         }}
                                     >
-                                        <Text style={[
-                                            styles.sortDropdownText,
-                                            globalSortBy === option.id && styles.sortDropdownTextActive
-                                        ]}>
-                                            {option.label}
-                                        </Text>
-                                        {globalSortBy === option.id && (
-                                            <Check size={16} color="#09090B" />
-                                        )}
+                                        <Text style={styles.hotSearchTagText}>{term}</Text>
                                     </TouchableOpacity>
                                 ))}
                             </View>
-                        )}
+                        </View>
+                    ) : isSearching ? (
+                        <View>
+                            {/* 搜索结果头部 + 排序 */}
+                            <View style={styles.searchResultsHeader}>
+                                <Text style={styles.searchResultsInfo}>
+                                    共找到 {unifiedSearchResults.length} 个结果
+                                </Text>
+                                <TouchableOpacity
+                                    style={styles.sortBtn}
+                                    onPress={() => setShowGlobalSortMenu(!showGlobalSortMenu)}
+                                >
+                                    <Text style={styles.sortBtnText}>
+                                        {GLOBAL_SORT_OPTIONS.find(o => o.id === globalSortBy)?.label || '综合排序'}
+                                    </Text>
+                                    <ChevronDown size={14} color="#71717A" />
+                                </TouchableOpacity>
+                            </View>
 
-                        {/* 搜索结果列表 */}
-                        <View style={styles.listSection}>
-                            {unifiedSearchResults.length === 0 ? (
-                                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                                    <Text style={{ fontSize: 16, color: '#71717A' }}>未找到相关结果</Text>
-                                    <Text style={{ fontSize: 13, color: '#A1A1AA', marginTop: 8 }}>试试其他关键词</Text>
-                                </View>
-                            ) : (
-                                unifiedSearchResults.map((item, index) => (
-                                    <TouchableOpacity key={`${item._type}-${item.id}-${index}`} style={styles.searchResultCard}>
-                                        {item._type === 'material' ? (
-                                            <Image source={{ uri: item.image }} style={styles.searchResultImage} />
-                                        ) : (
-                                            <Image source={{ uri: item.avatar || item.logo }} style={styles.searchResultAvatar} />
-                                        )}
-                                        <View style={styles.searchResultInfo}>
-                                            <Text style={styles.searchResultName} numberOfLines={1}>{item.name}</Text>
-                                            <View style={styles.searchResultMeta}>
-                                                <View style={[
-                                                    styles.searchResultTypeBadge,
-                                                    { backgroundColor: item._type === 'designer' ? '#F0F9FF' : item._type === 'construction' ? '#FFF7ED' : '#FDF2F8' }
-                                                ]}>
-                                                    <Text style={[
-                                                        styles.searchResultTypeBadgeText,
-                                                        { color: item._type === 'designer' ? '#0369A1' : item._type === 'construction' ? '#C2410C' : '#BE185D' }
-                                                    ]}>
-                                                        {item._type === 'designer' ? '设计师' : item._type === 'construction' ? '施工' : '主材'}
-                                                    </Text>
-                                                </View>
-                                                <Star size={12} color="#F59E0B" fill="#F59E0B" />
-                                                <Text style={{ fontSize: 12, color: '#09090B', marginLeft: 2 }}>{item.rating}</Text>
-                                            </View>
-                                            <Text style={styles.searchResultDesc} numberOfLines={1}>
-                                                {item._type === 'material' ? `${item.brand} · ¥${item.price}/${item.unit}` : item.specialty || item.workTypeLabels}
+                            {/* 排序下拉菜单 */}
+                            {showGlobalSortMenu && (
+                                <View style={styles.sortDropdown}>
+                                    {GLOBAL_SORT_OPTIONS.map(option => (
+                                        <TouchableOpacity
+                                            key={option.id}
+                                            style={[
+                                                styles.sortDropdownItem,
+                                                globalSortBy === option.id && styles.sortDropdownItemActive
+                                            ]}
+                                            onPress={() => {
+                                                setGlobalSortBy(option.id);
+                                                setShowGlobalSortMenu(false);
+                                            }}
+                                        >
+                                            <Text style={[
+                                                styles.sortDropdownText,
+                                                globalSortBy === option.id && styles.sortDropdownTextActive
+                                            ]}>
+                                                {option.label}
                                             </Text>
+                                            {globalSortBy === option.id && (
+                                                <Check size={16} color="#09090B" />
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+
+                            {/* 搜索结果列表 */}
+                            <View style={styles.listSection}>
+                                {unifiedSearchResults.length === 0 ? (
+                                    <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                                        <Text style={{ fontSize: 16, color: '#71717A' }}>未找到相关结果</Text>
+                                        <Text style={{ fontSize: 13, color: '#A1A1AA', marginTop: 8 }}>试试其他关键词</Text>
+                                    </View>
+                                ) : (
+                                    unifiedSearchResults.map((item, index) => (
+                                        <TouchableOpacity key={`${item._type}-${item.id}-${index}`} style={styles.searchResultCard}>
+                                            {item._type === 'material' ? (
+                                                <Image source={{ uri: item.image }} style={styles.searchResultImage} />
+                                            ) : (
+                                                <Image source={{ uri: item.avatar || item.logo }} style={styles.searchResultAvatar} />
+                                            )}
+                                            <View style={styles.searchResultInfo}>
+                                                <Text style={styles.searchResultName} numberOfLines={1}>{item.name}</Text>
+                                                <View style={styles.searchResultMeta}>
+                                                    <View style={[
+                                                        styles.searchResultTypeBadge,
+                                                        { backgroundColor: item._type === 'designer' ? '#F0F9FF' : item._type === 'construction' ? '#FFF7ED' : '#FDF2F8' }
+                                                    ]}>
+                                                        <Text style={[
+                                                            styles.searchResultTypeBadgeText,
+                                                            { color: item._type === 'designer' ? '#0369A1' : item._type === 'construction' ? '#C2410C' : '#BE185D' }
+                                                        ]}>
+                                                            {item._type === 'designer' ? '设计师' : item._type === 'construction' ? '施工' : '主材'}
+                                                        </Text>
+                                                    </View>
+                                                    <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                                                    <Text style={{ fontSize: 12, color: '#09090B', marginLeft: 2 }}>{item.rating}</Text>
+                                                </View>
+                                                <Text style={styles.searchResultDesc} numberOfLines={1}>
+                                                    {item._type === 'material' ? `${item.brand} · ¥${item.price}/${item.unit}` : item.specialty || item.workTypeLabels}
+                                                </Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    ))
+                                )}
+                            </View>
+                        </View>
+                    ) : null}
+
+                    {/* 服务分类 - 直接子元素 [0] */}
+                    {!isSearchFocused && !isSearching && (
+                        <View
+                            style={styles.categorySection}
+                            onLayout={(e) => setCategoryHeight(e.nativeEvent.layout.height)}
+                        >
+                            {SERVICE_CATEGORIES.map((cat) => {
+                                const IconComponent = cat.icon;
+                                const isActive = activeCategory === cat.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={cat.id}
+                                        style={styles.categoryTab}
+                                        onPress={() => handleCategoryChange(cat.id)}
+                                        activeOpacity={1}
+                                    >
+                                        <View style={[
+                                            styles.categoryIconBox,
+                                            isActive ? styles.categoryIconBoxActive : styles.categoryIconBoxInactive
+                                        ]}>
+                                            <IconComponent size={24} color={isActive ? '#FFFFFF' : '#71717A'} strokeWidth={1.5} />
+                                        </View>
+                                        <Text style={[styles.categoryLabel, isActive && styles.categoryLabelActive]}>
+                                            {cat.title}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    )}
+
+                    {/* 筛选排序区域 - 直接子元素 [1] - 吸顶 */}
+                    {!isSearchFocused && !isSearching && (
+                        <View style={styles.filterSectionWrapper}>
+                            {activeCategory === 'designer' && (
+                                <View style={styles.filterSection}>
+                                    <View style={styles.filterLeft}>
+                                        <TouchableOpacity
+                                            style={styles.sortBtn}
+                                            onPress={toggleDesignerSort}
+                                        >
+                                            <Text style={styles.sortBtnText}>{currentSortLabel}</Text>
+                                            <ChevronDown size={14} color="#71717A" />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View style={styles.filterRight}>
+                                        {DESIGNER_ORG_TYPES.map(org => (
+                                            <TouchableOpacity
+                                                key={org.id}
+                                                style={[styles.orgFilterBtn, designerOrgFilter === org.id && styles.orgFilterBtnActive]}
+                                                onPress={() => handleDesignerOrgFilter(org.id)}
+                                            >
+                                                <Text style={[styles.orgFilterText, designerOrgFilter === org.id && styles.orgFilterTextActive]}>
+                                                    {org.label}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
+                            )}
+
+                            {activeCategory === 'construction' && (
+                                <View style={styles.filterSection}>
+                                    <View style={styles.filterLeft}>
+                                        <TouchableOpacity
+                                            style={styles.sortBtn}
+                                            onPress={toggleConstructionSort}
+                                        >
+                                            <Text style={styles.sortBtnText}>
+                                                {CONSTRUCTION_SORT_OPTIONS.find(o => o.id === constructionSortBy)?.label}
+                                            </Text>
+                                            <ChevronDown size={14} color="#71717A" />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View style={styles.filterRight}>
+                                        {CONSTRUCTION_ORG_TYPES.map(org => (
+                                            <TouchableOpacity
+                                                key={org.id}
+                                                style={[styles.orgFilterBtn, constructionOrgFilter === org.id && styles.orgFilterBtnActive]}
+                                                onPress={() => handleConstructionOrgFilter(org.id)}
+                                            >
+                                                <Text style={[styles.orgFilterText, constructionOrgFilter === org.id && styles.orgFilterTextActive]}>
+                                                    {org.label}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                        <TouchableOpacity
+                                            style={[styles.filterBtn, !selectedWorkTypes.includes('all') && styles.filterBtnActive]}
+                                            onPress={toggleWorkTypeMenu}
+                                        >
+                                            <SlidersHorizontal size={14} color={!selectedWorkTypes.includes('all') ? '#09090B' : '#71717A'} />
+                                            <Text style={[styles.filterBtnText, !selectedWorkTypes.includes('all') && styles.filterBtnTextActive]}>筛选</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
+
+                            {activeCategory === 'material' && (
+                                <View style={styles.filterSection}>
+                                    <Text style={styles.comingSoonText}>主材商城即将上线</Text>
+                                </View>
+                            )}
+
+                            {/* 设计师排序下拉菜单 */}
+                            {showDesignerSortMenu && activeCategory === 'designer' && (
+                                <View style={styles.sortDropdown}>
+                                    {DESIGNER_SORT_OPTIONS.map(option => (
+                                        <TouchableOpacity
+                                            key={option.id}
+                                            style={[
+                                                styles.sortDropdownItem,
+                                                designerSortBy === option.id && styles.sortDropdownItemActive
+                                            ]}
+                                            onPress={() => {
+                                                setDesignerSortBy(option.id);
+                                                setShowDesignerSortMenu(false);
+                                            }}
+                                        >
+                                            <Text style={[
+                                                styles.sortDropdownText,
+                                                designerSortBy === option.id && styles.sortDropdownTextActive
+                                            ]}>
+                                                {option.label}
+                                            </Text>
+                                            {designerSortBy === option.id && <Check size={16} color="#09090B" />}
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+
+                            {/* 施工排序下拉菜单 */}
+                            {showConstructionSortMenu && activeCategory === 'construction' && (
+                                <View style={styles.sortDropdown}>
+                                    {CONSTRUCTION_SORT_OPTIONS.map(option => (
+                                        <TouchableOpacity
+                                            key={option.id}
+                                            style={[
+                                                styles.sortDropdownItem,
+                                                constructionSortBy === option.id && styles.sortDropdownItemActive
+                                            ]}
+                                            onPress={() => {
+                                                setConstructionSortBy(option.id);
+                                                setShowConstructionSortMenu(false);
+                                            }}
+                                        >
+                                            <Text style={[
+                                                styles.sortDropdownText,
+                                                constructionSortBy === option.id && styles.sortDropdownTextActive
+                                            ]}>
+                                                {option.label}
+                                            </Text>
+                                            {constructionSortBy === option.id && <Check size={16} color="#09090B" />}
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+
+                            {/* 施工工种筛选下拉菜单 (替换原来的 Modal) */}
+                            {showWorkTypeModal && activeCategory === 'construction' && (
+                                <View style={styles.sortDropdown}>
+                                    <View style={styles.workTypeDropdownGrid}>
+                                        {WORK_TYPES.map(type => (
+                                            <TouchableOpacity
+                                                key={type.id}
+                                                style={[
+                                                    styles.workTypeDropdownItem,
+                                                    selectedWorkTypes.includes(type.id) && styles.workTypeDropdownItemActive
+                                                ]}
+                                                onPress={() => handleWorkTypeToggle(type.id)}
+                                            >
+                                                <Text style={[
+                                                    styles.workTypeDropdownText,
+                                                    selectedWorkTypes.includes(type.id) && styles.workTypeDropdownTextActive
+                                                ]}>
+                                                    {type.label}
+                                                </Text>
+                                                {selectedWorkTypes.includes(type.id) && <Check size={14} color="#09090B" />}
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                    <View style={styles.dropdownFooter}>
+                                        <TouchableOpacity
+                                            style={styles.dropdownResetBtn}
+                                            onPress={resetWorkTypes}
+                                        >
+                                            <Text style={styles.dropdownResetBtnText}>重置</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={styles.dropdownConfirmBtn}
+                                            onPress={() => setShowWorkTypeModal(false)}
+                                        >
+                                            <Text style={styles.dropdownConfirmBtnText}>完成</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    )}
+
+                    {/* 设计师列表 - 直接子元素 [2] */}
+                    {!isSearchFocused && !isSearching && activeCategory === 'designer' && (
+                        <View style={styles.listSection}>
+                            {isLoading ? (
+                                <LoadingView message="加载设计师中..." />
+                            ) : error ? (
+                                <NetworkErrorView
+                                    type="network"
+                                    message={error}
+                                    onRetry={handleRefresh}
+                                />
+                            ) : designers.length === 0 ? (
+                                <EmptyView
+                                    type="data"
+                                    title="暂无设计师数据"
+                                    subtitle="请稍后刷新重试"
+                                />
+                            ) : (
+                                designers.map((designer) => (
+                                    <TouchableOpacity
+                                        key={designer.id}
+                                        style={styles.designerCard}
+                                        onPress={() => (navigation as any).navigate('DesignerDetail', { designer })}
+                                    >
+                                        <View style={styles.designerCardHeader}>
+                                            <Image
+                                                source={{ uri: designer.avatar }}
+                                                style={styles.designerAvatar}
+                                            />
+                                            <View style={styles.designerInfo}>
+                                                <Text style={styles.designerName}>{designer.name}</Text>
+                                                <View style={styles.designerMeta}>
+                                                    <Text style={styles.experienceText}>{designer.yearsExperience}年经验</Text>
+                                                    <Text style={styles.divider}>·</Text>
+                                                    <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                                                    <Text style={styles.ratingText}>{designer.rating}</Text>
+                                                    <Text style={styles.reviewCountText}>({designer.reviewCount})</Text>
+                                                </View>
+                                                <View style={styles.designerOrg}>
+                                                    <View style={[styles.orgBadge, styles[designer.orgType as keyof typeof styles] as any]}>
+                                                        <Text style={styles.orgBadgeText}>
+                                                            {designer.orgType === 'personal' ? '个人' : designer.orgType === 'studio' ? '工作室' : '公司'}
+                                                        </Text>
+                                                    </View>
+                                                    <Text style={styles.orgName} numberOfLines={1}>{designer.orgLabel}</Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                        <View style={styles.designerCardBody}>
+                                            <View style={styles.designerTagsRow}>
+                                                <View style={styles.distanceInfo}>
+                                                    <MapPinned size={12} color="#71717A" />
+                                                    <Text style={styles.distanceText}>{designer.distance}</Text>
+                                                </View>
+                                                <Text style={styles.specialtyText} numberOfLines={1}>{designer.specialty}</Text>
+                                            </View>
+                                        </View>
+                                        <View style={styles.designerCardFooter}>
+                                            <TouchableOpacity
+                                                style={styles.bookBtnFull}
+                                                onPress={() => (navigation as any).navigate('Booking', { provider: designer, providerType: 'designer' })}
+                                            >
+                                                <Text style={styles.bookBtnText}>立即预约</Text>
+                                            </TouchableOpacity>
                                         </View>
                                     </TouchableOpacity>
                                 ))
                             )}
                         </View>
-                    </View>
-                ) : null}
+                    )}
 
-                {/* 服务分类 - 直接子元素 [0] */}
-                {!isSearchFocused && !isSearching && (
-                    <View
-                        style={styles.categorySection}
-                        onLayout={(e) => setCategoryHeight(e.nativeEvent.layout.height)}
-                    >
-                        {SERVICE_CATEGORIES.map((cat) => {
-                            const IconComponent = cat.icon;
-                            const isActive = activeCategory === cat.id;
-                            return (
-                                <TouchableOpacity
-                                    key={cat.id}
-                                    style={styles.categoryTab}
-                                    onPress={() => handleCategoryChange(cat.id)}
-                                    activeOpacity={1}
-                                >
-                                    <View style={[
-                                        styles.categoryIconBox,
-                                        isActive ? styles.categoryIconBoxActive : styles.categoryIconBoxInactive
-                                    ]}>
-                                        <IconComponent size={24} color={isActive ? '#FFFFFF' : '#71717A'} strokeWidth={1.5} />
-                                    </View>
-                                    <Text style={[styles.categoryLabel, isActive && styles.categoryLabelActive]}>
-                                        {cat.title}
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-                )}
-
-                {/* 筛选排序区域 - 直接子元素 [1] - 吸顶 */}
-                {!isSearchFocused && !isSearching && (
-                    <View style={styles.filterSectionWrapper}>
-                        {activeCategory === 'designer' && (
-                            <View style={styles.filterSection}>
-                                <View style={styles.filterLeft}>
-                                    <TouchableOpacity
-                                        style={styles.sortBtn}
-                                        onPress={toggleDesignerSort}
-                                    >
-                                        <Text style={styles.sortBtnText}>{currentSortLabel}</Text>
-                                        <ChevronDown size={14} color="#71717A" />
-                                    </TouchableOpacity>
-                                </View>
-
-                                <View style={styles.filterRight}>
-                                    {DESIGNER_ORG_TYPES.map(org => (
-                                        <TouchableOpacity
-                                            key={org.id}
-                                            style={[styles.orgFilterBtn, designerOrgFilter === org.id && styles.orgFilterBtnActive]}
-                                            onPress={() => handleDesignerOrgFilter(org.id)}
-                                        >
-                                            <Text style={[styles.orgFilterText, designerOrgFilter === org.id && styles.orgFilterTextActive]}>
-                                                {org.label}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                            </View>
-                        )}
-
-                        {activeCategory === 'construction' && (
-                            <View style={styles.filterSection}>
-                                <View style={styles.filterLeft}>
-                                    <TouchableOpacity
-                                        style={styles.sortBtn}
-                                        onPress={toggleConstructionSort}
-                                    >
-                                        <Text style={styles.sortBtnText}>
-                                            {CONSTRUCTION_SORT_OPTIONS.find(o => o.id === constructionSortBy)?.label}
-                                        </Text>
-                                        <ChevronDown size={14} color="#71717A" />
-                                    </TouchableOpacity>
-                                </View>
-
-                                <View style={styles.filterRight}>
-                                    {CONSTRUCTION_ORG_TYPES.map(org => (
-                                        <TouchableOpacity
-                                            key={org.id}
-                                            style={[styles.orgFilterBtn, constructionOrgFilter === org.id && styles.orgFilterBtnActive]}
-                                            onPress={() => handleConstructionOrgFilter(org.id)}
-                                        >
-                                            <Text style={[styles.orgFilterText, constructionOrgFilter === org.id && styles.orgFilterTextActive]}>
-                                                {org.label}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                    <TouchableOpacity
-                                        style={[styles.filterBtn, !selectedWorkTypes.includes('all') && styles.filterBtnActive]}
-                                        onPress={toggleWorkTypeMenu}
-                                    >
-                                        <SlidersHorizontal size={14} color={!selectedWorkTypes.includes('all') ? '#09090B' : '#71717A'} />
-                                        <Text style={[styles.filterBtnText, !selectedWorkTypes.includes('all') && styles.filterBtnTextActive]}>筛选</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
-
-                        {activeCategory === 'material' && (
-                            <View style={styles.filterSection}>
-                                <Text style={styles.comingSoonText}>主材商城即将上线</Text>
-                            </View>
-                        )}
-
-                        {/* 设计师排序下拉菜单 */}
-                        {showDesignerSortMenu && activeCategory === 'designer' && (
-                            <View style={styles.sortDropdown}>
-                                {DESIGNER_SORT_OPTIONS.map(option => (
-                                    <TouchableOpacity
-                                        key={option.id}
-                                        style={[
-                                            styles.sortDropdownItem,
-                                            designerSortBy === option.id && styles.sortDropdownItemActive
-                                        ]}
-                                        onPress={() => {
-                                            setDesignerSortBy(option.id);
-                                            setShowDesignerSortMenu(false);
-                                        }}
-                                    >
-                                        <Text style={[
-                                            styles.sortDropdownText,
-                                            designerSortBy === option.id && styles.sortDropdownTextActive
-                                        ]}>
-                                            {option.label}
-                                        </Text>
-                                        {designerSortBy === option.id && <Check size={16} color="#09090B" />}
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
-
-                        {/* 施工排序下拉菜单 */}
-                        {showConstructionSortMenu && activeCategory === 'construction' && (
-                            <View style={styles.sortDropdown}>
-                                {CONSTRUCTION_SORT_OPTIONS.map(option => (
-                                    <TouchableOpacity
-                                        key={option.id}
-                                        style={[
-                                            styles.sortDropdownItem,
-                                            constructionSortBy === option.id && styles.sortDropdownItemActive
-                                        ]}
-                                        onPress={() => {
-                                            setConstructionSortBy(option.id);
-                                            setShowConstructionSortMenu(false);
-                                        }}
-                                    >
-                                        <Text style={[
-                                            styles.sortDropdownText,
-                                            constructionSortBy === option.id && styles.sortDropdownTextActive
-                                        ]}>
-                                            {option.label}
-                                        </Text>
-                                        {constructionSortBy === option.id && <Check size={16} color="#09090B" />}
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
-
-                        {/* 施工工种筛选下拉菜单 (替换原来的 Modal) */}
-                        {showWorkTypeModal && activeCategory === 'construction' && (
-                            <View style={styles.sortDropdown}>
-                                <View style={styles.workTypeDropdownGrid}>
-                                    {WORK_TYPES.map(type => (
-                                        <TouchableOpacity
-                                            key={type.id}
-                                            style={[
-                                                styles.workTypeDropdownItem,
-                                                selectedWorkTypes.includes(type.id) && styles.workTypeDropdownItemActive
-                                            ]}
-                                            onPress={() => handleWorkTypeToggle(type.id)}
-                                        >
-                                            <Text style={[
-                                                styles.workTypeDropdownText,
-                                                selectedWorkTypes.includes(type.id) && styles.workTypeDropdownTextActive
-                                            ]}>
-                                                {type.label}
-                                            </Text>
-                                            {selectedWorkTypes.includes(type.id) && <Check size={14} color="#09090B" />}
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
-                                <View style={styles.dropdownFooter}>
-                                    <TouchableOpacity
-                                        style={styles.dropdownResetBtn}
-                                        onPress={resetWorkTypes}
-                                    >
-                                        <Text style={styles.dropdownResetBtnText}>重置</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={styles.dropdownConfirmBtn}
-                                        onPress={() => setShowWorkTypeModal(false)}
-                                    >
-                                        <Text style={styles.dropdownConfirmBtnText}>完成</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
-                    </View>
-                )}
-
-                {/* 设计师列表 - 直接子元素 [2] */}
-                {!isSearchFocused && !isSearching && activeCategory === 'designer' && (
-                    <View style={styles.listSection}>
-                        {sortedDesigners.map((designer) => (
-                            <TouchableOpacity
-                                key={designer.id}
-                                style={styles.designerCard}
-                                onPress={() => (navigation as any).navigate('DesignerDetail', { designer })}
-                            >
-                                <View style={styles.designerCardHeader}>
-                                    <Image
-                                        source={{ uri: designer.avatar }}
-                                        style={styles.designerAvatar}
-                                    />
-                                    <View style={styles.designerInfo}>
-                                        <Text style={styles.designerName}>{designer.name}</Text>
-                                        <View style={styles.designerMeta}>
-                                            <Text style={styles.experienceText}>{designer.yearsExperience}年经验</Text>
-                                            <Text style={styles.divider}>·</Text>
-                                            <Star size={12} color="#F59E0B" fill="#F59E0B" />
-                                            <Text style={styles.ratingText}>{designer.rating}</Text>
-                                            <Text style={styles.reviewCountText}>({designer.reviewCount})</Text>
-                                        </View>
-                                        <View style={styles.designerOrg}>
-                                            <View style={[styles.orgBadge, styles[designer.orgType as keyof typeof styles] as any]}>
-                                                <Text style={styles.orgBadgeText}>
-                                                    {designer.orgType === 'personal' ? '个人' : designer.orgType === 'studio' ? '工作室' : '公司'}
-                                                </Text>
-                                            </View>
-                                            <Text style={styles.orgName} numberOfLines={1}>{designer.orgLabel}</Text>
-                                        </View>
-                                    </View>
-                                </View>
-                                <View style={styles.designerCardBody}>
-                                    <View style={styles.designerTagsRow}>
-                                        <View style={styles.distanceInfo}>
-                                            <MapPinned size={12} color="#71717A" />
-                                            <Text style={styles.distanceText}>{designer.distance}</Text>
-                                        </View>
-                                        <Text style={styles.specialtyText} numberOfLines={1}>{designer.specialty}</Text>
-                                    </View>
-                                </View>
-                                <View style={styles.designerCardFooter}>
-                                    <TouchableOpacity
-                                        style={styles.bookBtnFull}
-                                        onPress={() => (navigation as any).navigate('Booking', { provider: designer, providerType: 'designer' })}
-                                    >
-                                        <Text style={styles.bookBtnText}>立即预约</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                )}
-
-                {/* 施工列表 - 直接子元素 [2] */}
-                {!isSearchFocused && !isSearching && activeCategory === 'construction' && (
-                    <View style={styles.listSection}>
-                        {sortedWorkers.map((worker) => (
-                            worker.type === 'personal' ? (
-                                // 个人师傅卡片 - 改为垂直布局
-                                <TouchableOpacity
-                                    key={worker.id}
-                                    style={styles.workerCard}
-                                    onPress={() => (navigation as any).navigate('WorkerDetail', { worker })}
-                                >
-                                    <View style={styles.workerCardHeader}>
-                                        <Image
-                                            source={{ uri: worker.avatar }}
-                                            style={styles.workerAvatar}
-                                        />
-                                        <View style={styles.workerInfo}>
-                                            <Text style={styles.workerName}>{worker.name}</Text>
-                                            <View style={styles.workerMeta}>
-                                                <Text style={styles.experienceText}>{worker.yearsExperience}年经验</Text>
-                                                <Text style={styles.divider}>·</Text>
-                                                <Star size={12} color="#F59E0B" fill="#F59E0B" />
-                                                <Text style={styles.ratingText}>{worker.rating}</Text>
-                                                <Text style={styles.reviewCountText}>({worker.reviewCount})</Text>
-                                            </View>
-                                            <View style={styles.workerWorkType}>
-                                                <View style={styles.workTypeBadge}>
-                                                    <Text style={styles.workTypeBadgeText}>{worker.workTypeLabels}</Text>
-                                                </View>
-                                            </View>
-                                        </View>
-                                    </View>
-                                    <View style={styles.workerCardBody}>
-                                        <View style={styles.workerStatsRow}>
-                                            <Text style={styles.priceInline}>
-                                                ¥{worker.priceRange}<Text style={styles.priceUnit}>/{worker.priceUnit.replace('元/', '')}</Text>
-                                            </Text>
-                                            <Text style={styles.ordersInline}>已完成{worker.completedOrders}单</Text>
-                                            <View style={styles.distanceInline}>
-                                                <MapPinned size={12} color="#A1A1AA" />
-                                                <Text style={styles.distanceInlineText}>{worker.distance}</Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.workerTags}>
-                                            {worker.tags.map((tag, idx) => (
-                                                <View key={idx} style={styles.tagBadge}>
-                                                    <Text style={styles.tagText}>{tag}</Text>
-                                                </View>
-                                            ))}
-                                        </View>
-                                    </View>
-                                    <View style={styles.workerCardFooter}>
-                                        <TouchableOpacity
-                                            style={styles.bookBtnFull}
-                                            onPress={() => (navigation as any).navigate('Booking', { provider: worker, providerType: 'worker' })}
-                                        >
-                                            <Text style={styles.bookBtnTextSmall}>立即预约</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </TouchableOpacity>
+                    {/* 施工列表 - 直接子元素 [2] */}
+                    {!isSearchFocused && !isSearching && activeCategory === 'construction' && (
+                        <View style={styles.listSection}>
+                            {isLoading ? (
+                                <LoadingView message="加载施工人员中..." />
+                            ) : error ? (
+                                <NetworkErrorView
+                                    type="network"
+                                    message={error}
+                                    onRetry={handleRefresh}
+                                />
+                            ) : workers.length === 0 ? (
+                                <EmptyView
+                                    type="data"
+                                    title="暂无施工人员数据"
+                                    subtitle="请稍后刷新重试"
+                                />
                             ) : (
-                                // 公司卡片
-                                <TouchableOpacity
-                                    key={worker.id}
-                                    style={styles.companyCard}
-                                    onPress={() => (navigation as any).navigate('CompanyDetail', {
-                                        company: {
-                                            ...worker,
-                                            logo: (worker as any).logo,
-                                            establishedYear: (worker as any).establishedYear,
-                                            teamSize: (worker as any).teamSize,
-                                            certifications: (worker as any).certifications,
-                                        }
-                                    })}
-                                >
-                                    <View style={styles.companyHeader}>
-                                        <Image
-                                            source={{ uri: (worker as any).logo }}
-                                            style={styles.companyLogo}
-                                        />
-                                        <View style={styles.companyTitle}>
-                                            <Text style={styles.companyName}>{worker.name}</Text>
-                                            <View style={styles.companyMeta}>
-                                                <Text style={styles.establishedText}>成立{new Date().getFullYear() - (worker as any).establishedYear}年</Text>
-                                                <Text style={styles.divider}>·</Text>
-                                                <Star size={12} color="#F59E0B" fill="#F59E0B" />
-                                                <Text style={styles.ratingText}>{worker.rating}</Text>
-                                                <Text style={styles.reviewCountText}>({worker.reviewCount})</Text>
-                                            </View>
-                                        </View>
-                                    </View>
-                                    <View style={styles.companyBody}>
-                                        <View style={styles.companyStats}>
-                                            <View style={styles.companyStatItem}>
-                                                <Users size={16} color="#71717A" />
-                                                <Text style={styles.statValue}>{(worker as any).teamSize}人</Text>
-                                                <Text style={styles.statLabel}>团队</Text>
-                                            </View>
-                                            <View style={styles.companyStatItem}>
-                                                <Briefcase size={16} color="#71717A" />
-                                                <Text style={styles.statValue}>{worker.completedOrders}</Text>
-                                                <Text style={styles.statLabel}>已完工</Text>
-                                            </View>
-                                            <View style={styles.companyStatItem}>
-                                                <Award size={16} color="#71717A" />
-                                                <Text style={styles.statValue} numberOfLines={1}>{worker.workTypeLabels}</Text>
-                                                <Text style={styles.statLabel}>工种</Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.companyCerts}>
-                                            {(worker as any).certifications?.map((cert: string, idx: number) => (
-                                                <View key={idx} style={styles.certBadge}>
-                                                    <Text style={styles.certBadgeText}>{cert}</Text>
-                                                </View>
-                                            ))}
-                                        </View>
-                                        <View style={styles.companyPrice}>
-                                            <Text style={styles.priceLabel}>参考报价</Text>
-                                            <Text style={styles.companyPriceValue}>¥{worker.priceRange}{worker.priceUnit}</Text>
-                                        </View>
-                                        <View style={styles.workerTags}>
-                                            {worker.tags.map((tag, idx) => (
-                                                <View key={idx} style={styles.tagBadge}>
-                                                    <Text style={styles.tagText}>{tag}</Text>
-                                                </View>
-                                            ))}
-                                        </View>
-                                    </View>
-                                    <View style={styles.workerCardFooter}>
+                                workers.map((worker) => (
+                                    worker.type === 'personal' ? (
+                                        // 个人师傅卡片 - 改为垂直布局
                                         <TouchableOpacity
-                                            style={styles.bookBtnFull}
-                                            onPress={() => (navigation as any).navigate('Booking', {
-                                                provider: {
+                                            key={worker.id}
+                                            style={styles.workerCard}
+                                            onPress={() => (navigation as any).navigate('WorkerDetail', { worker })}
+                                        >
+                                            <View style={styles.workerCardHeader}>
+                                                <Image
+                                                    source={{ uri: worker.avatar }}
+                                                    style={styles.workerAvatar}
+                                                />
+                                                <View style={styles.workerInfo}>
+                                                    <Text style={styles.workerName}>{worker.name}</Text>
+                                                    <View style={styles.workerMeta}>
+                                                        <Text style={styles.experienceText}>{worker.yearsExperience}年经验</Text>
+                                                        <Text style={styles.divider}>·</Text>
+                                                        <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                                                        <Text style={styles.ratingText}>{worker.rating}</Text>
+                                                        <Text style={styles.reviewCountText}>({worker.reviewCount})</Text>
+                                                    </View>
+                                                    <View style={styles.workerWorkType}>
+                                                        <View style={styles.workTypeBadge}>
+                                                            <Text style={styles.workTypeBadgeText}>{worker.workTypeLabels}</Text>
+                                                        </View>
+                                                    </View>
+                                                </View>
+                                            </View>
+                                            <View style={styles.workerCardBody}>
+                                                <View style={styles.workerStatsRow}>
+                                                    <Text style={styles.priceInline}>
+                                                        ¥{worker.priceRange}<Text style={styles.priceUnit}>/{worker.priceUnit.replace('元/', '')}</Text>
+                                                    </Text>
+                                                    <Text style={styles.ordersInline}>已完成{worker.completedOrders}单</Text>
+                                                    <View style={styles.distanceInline}>
+                                                        <MapPinned size={12} color="#A1A1AA" />
+                                                        <Text style={styles.distanceInlineText}>{worker.distance}</Text>
+                                                    </View>
+                                                </View>
+                                                <View style={styles.workerTags}>
+                                                    {worker.tags.map((tag, idx) => (
+                                                        <View key={idx} style={styles.tagBadge}>
+                                                            <Text style={styles.tagText}>{tag}</Text>
+                                                        </View>
+                                                    ))}
+                                                </View>
+                                            </View>
+                                            <View style={styles.workerCardFooter}>
+                                                <TouchableOpacity
+                                                    style={styles.bookBtnFull}
+                                                    onPress={() => (navigation as any).navigate('Booking', { provider: worker, providerType: 'worker' })}
+                                                >
+                                                    <Text style={styles.bookBtnTextSmall}>立即预约</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        </TouchableOpacity>
+                                    ) : (
+                                        // 公司卡片
+                                        <TouchableOpacity
+                                            key={worker.id}
+                                            style={styles.companyCard}
+                                            onPress={() => (navigation as any).navigate('CompanyDetail', {
+                                                company: {
                                                     ...worker,
                                                     logo: (worker as any).logo,
                                                     establishedYear: (worker as any).establishedYear,
                                                     teamSize: (worker as any).teamSize,
                                                     certifications: (worker as any).certifications,
-                                                },
-                                                providerType: 'company'
+                                                }
                                             })}
                                         >
-                                            <Text style={styles.bookBtnTextSmall}>立即预约</Text>
+                                            <View style={styles.companyHeader}>
+                                                <Image
+                                                    source={{ uri: (worker as any).logo }}
+                                                    style={styles.companyLogo}
+                                                />
+                                                <View style={styles.companyTitle}>
+                                                    <Text style={styles.companyName}>{worker.name}</Text>
+                                                    <View style={styles.companyMeta}>
+                                                        <Text style={styles.establishedText}>成立{new Date().getFullYear() - (worker as any).establishedYear}年</Text>
+                                                        <Text style={styles.divider}>·</Text>
+                                                        <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                                                        <Text style={styles.ratingText}>{worker.rating}</Text>
+                                                        <Text style={styles.reviewCountText}>({worker.reviewCount})</Text>
+                                                    </View>
+                                                </View>
+                                            </View>
+                                            <View style={styles.companyBody}>
+                                                <View style={styles.companyStats}>
+                                                    <View style={styles.companyStatItem}>
+                                                        <Users size={16} color="#71717A" />
+                                                        <Text style={styles.statValue}>{(worker as any).teamSize}人</Text>
+                                                        <Text style={styles.statLabel}>团队</Text>
+                                                    </View>
+                                                    <View style={styles.companyStatItem}>
+                                                        <Briefcase size={16} color="#71717A" />
+                                                        <Text style={styles.statValue}>{worker.completedOrders}</Text>
+                                                        <Text style={styles.statLabel}>已完工</Text>
+                                                    </View>
+                                                    <View style={styles.companyStatItem}>
+                                                        <Award size={16} color="#71717A" />
+                                                        <Text style={styles.statValue} numberOfLines={1}>{worker.workTypeLabels}</Text>
+                                                        <Text style={styles.statLabel}>工种</Text>
+                                                    </View>
+                                                </View>
+                                                <View style={styles.companyCerts}>
+                                                    {(worker as any).certifications?.map((cert: string, idx: number) => (
+                                                        <View key={idx} style={styles.certBadge}>
+                                                            <Text style={styles.certBadgeText}>{cert}</Text>
+                                                        </View>
+                                                    ))}
+                                                </View>
+                                                <View style={styles.companyPrice}>
+                                                    <Text style={styles.priceLabel}>参考报价</Text>
+                                                    <Text style={styles.companyPriceValue}>¥{worker.priceRange}{worker.priceUnit}</Text>
+                                                </View>
+                                                <View style={styles.workerTags}>
+                                                    {worker.tags.map((tag, idx) => (
+                                                        <View key={idx} style={styles.tagBadge}>
+                                                            <Text style={styles.tagText}>{tag}</Text>
+                                                        </View>
+                                                    ))}
+                                                </View>
+                                            </View>
+                                            <View style={styles.workerCardFooter}>
+                                                <TouchableOpacity
+                                                    style={styles.bookBtnFull}
+                                                    onPress={() => (navigation as any).navigate('Booking', {
+                                                        provider: {
+                                                            ...worker,
+                                                            logo: (worker as any).logo,
+                                                            establishedYear: (worker as any).establishedYear,
+                                                            teamSize: (worker as any).teamSize,
+                                                            certifications: (worker as any).certifications,
+                                                        },
+                                                        providerType: 'company'
+                                                    })}
+                                                >
+                                                    <Text style={styles.bookBtnTextSmall}>立即预约</Text>
+                                                </TouchableOpacity>
+                                            </View>
                                         </TouchableOpacity>
-                                    </View>
-                                </TouchableOpacity>
-                            )
-                        ))}
-                    </View>
-                )}
+                                    )
+                                ))
+                            )}
+                        </View>
+                    )}
 
-                {/* 主材列表 - 直接子元素 [2] */}
-                {!isSearchFocused && !isSearching && activeCategory === 'material' && (
-                    <View style={styles.emptyState}>
-                        <Package size={64} color="#E4E4E7" strokeWidth={1} />
-                        <Text style={styles.emptyStateTitle}>主材商城即将上线</Text>
-                        <Text style={styles.emptyStateSub}>敬请期待，精选建材品牌即将入驻</Text>
-                    </View>
-                )}
+                    {/* 主材列表 - 直接子元素 [2] */}
+                    {!isSearchFocused && !isSearching && activeCategory === 'material' && (
+                        <View style={styles.emptyState}>
+                            <Package size={64} color="#E4E4E7" strokeWidth={1} />
+                            <Text style={styles.emptyStateTitle}>主材商城即将上线</Text>
+                            <Text style={styles.emptyStateSub}>敬请期待，精选建材品牌即将入驻</Text>
+                        </View>
+                    )}
 
-                {/* 底部间距 */}
-                {!isSearchFocused && !isSearching && (
-                    <View style={{ height: 100 }} />
-                )}
-            </ScrollView>
-
-
-
-
+                    {/* 底部间距 */}
+                    {!isSearchFocused && !isSearching && (
+                        <View style={{ height: 100 }} />
+                    )}
+                    {/* 底部加载更多 */}
+                    {loadingMore && (
+                        <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                            <ActivityIndicator size="small" color="#A1A1AA" />
+                            <Text style={{ color: '#A1A1AA', fontSize: 12, marginTop: 4 }}>加载更多数据...</Text>
+                        </View>
+                    )}
+                </ScrollView>
+            </PullToRefresh>
         </SafeAreaView>
     );
 };
@@ -1803,6 +1915,64 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 14,
         fontWeight: '600',
+    },
+    // 加载、错误、空状态样式
+    loadingContainer: {
+        paddingVertical: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    loadingText: {
+        marginTop: 12,
+        fontSize: 14,
+        color: '#71717A',
+    },
+    errorContainer: {
+        paddingVertical: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    errorText: {
+        fontSize: 14,
+        color: '#EF4444',
+        marginBottom: 16,
+    },
+    retryBtn: {
+        backgroundColor: '#09090B',
+        paddingHorizontal: 24,
+        paddingVertical: 10,
+        borderRadius: 8,
+    },
+    retryBtnText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    emptyContainer: {
+        paddingVertical: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyText: {
+        fontSize: 14,
+        color: '#A1A1AA',
+    },
+    // 自定义刷新指示器样式
+    customRefreshIndicator: {
+        overflow: 'hidden',
+        backgroundColor: '#F8F8F8',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    refreshContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+    },
+    refreshText: {
+        fontSize: 13,
+        color: '#71717A',
     },
 });
 

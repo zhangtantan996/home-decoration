@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import {
     View,
     Text,
@@ -7,9 +7,12 @@ import {
     TouchableOpacity,
     Modal,
     Dimensions,
+    Platform,
+    Easing,
 } from 'react-native';
+import { Check, X, Info, AlertTriangle } from 'lucide-react-native';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 // Toast 类型
 type ToastType = 'info' | 'success' | 'warning' | 'error';
@@ -42,26 +45,44 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | null>(null);
 
-// Toast 颜色配置
-const TOAST_COLORS: Record<ToastType, { bg: string; text: string; icon: string }> = {
-    info: { bg: '#1A1A1A', text: '#fff', icon: 'ℹ️' },
-    success: { bg: '#52C41A', text: '#fff', icon: '✓' },
-    warning: { bg: '#FAAD14', text: '#fff', icon: '⚠️' },
-    error: { bg: '#FF4D4F', text: '#fff', icon: '✕' },
+// 新版设计配置：轻量化、现代感
+const TOAST_THEME: Record<ToastType, { bg: string; border: string; iconColor: string; textColor: string }> = {
+    info: { bg: '#FFFFFF', border: '#3B82F6', iconColor: '#3B82F6', textColor: '#1F2937' },
+    success: { bg: '#FFFFFF', border: '#10B981', iconColor: '#10B981', textColor: '#1F2937' },
+    warning: { bg: '#FFFFFF', border: '#F59E0B', iconColor: '#F59E0B', textColor: '#1F2937' },
+    error: { bg: '#FFFFFF', border: '#EF4444', iconColor: '#EF4444', textColor: '#1F2937' },
 };
 
-// Toast Provider 组件
+// 图标组件
+const ToastIcon: React.FC<{ type: ToastType; color: string }> = ({ type, color }) => {
+    const iconProps = { size: 16, color, strokeWidth: 2.5 };
+    switch (type) {
+        case 'success':
+            return <Check {...iconProps} />;
+        case 'error':
+            return <X {...iconProps} />;
+        case 'warning':
+            return <AlertTriangle {...iconProps} />;
+        case 'info':
+        default:
+            return <Info {...iconProps} />;
+    }
+};
+
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [toastVisible, setToastVisible] = useState(false);
     const [toastConfig, setToastConfig] = useState<ToastConfig>({ message: '' });
+
+    // 弹窗相关状态
     const [confirmVisible, setConfirmVisible] = useState(false);
     const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ title: '', message: '' });
     const [agreementVisible, setAgreementVisible] = useState(false);
     const [agreementConfig, setAgreementConfig] = useState<AgreementConfig>({ onAgree: () => { } });
 
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(-100)).current;
+    // 动画值
+    const animValue = useRef(new Animated.Value(0)).current;
 
+    // 显示 Toast
     const showToast = useCallback((config: ToastConfig | string) => {
         const normalizedConfig: ToastConfig = typeof config === 'string'
             ? { message: config, type: 'info', duration: 2500 }
@@ -70,45 +91,40 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setToastConfig(normalizedConfig);
         setToastVisible(true);
 
-        // 动画显示
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-            }),
-            Animated.timing(slideAnim, {
-                toValue: 0,
-                duration: 300,
-                useNativeDriver: true,
-            }),
-        ]).start();
+        // 重置动画值
+        animValue.setValue(0);
+
+        // 进场动画：Spring 弹簧效果
+        Animated.spring(animValue, {
+            toValue: 1,
+            friction: 6, // 摩擦力，越小越弹
+            tension: 50, // 张力
+            useNativeDriver: true,
+        }).start();
 
         // 自动隐藏
-        setTimeout(() => {
-            Animated.parallel([
-                Animated.timing(fadeAnim, {
-                    toValue: 0,
-                    duration: 300,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(slideAnim, {
-                    toValue: -100,
-                    duration: 300,
-                    useNativeDriver: true,
-                }),
-            ]).start(() => {
-                setToastVisible(false);
-            });
+        const timer = setTimeout(() => {
+            hideToast();
         }, normalizedConfig.duration);
-    }, [fadeAnim, slideAnim]);
 
-    const showConfirm = useCallback((config: ConfirmConfig) => {
-        setConfirmConfig({
-            confirmText: '确定',
-            cancelText: '取消',
-            ...config,
+        return () => clearTimeout(timer);
+    }, [animValue]);
+
+    const hideToast = () => {
+        // 出场动画：平滑淡出并位移
+        Animated.timing(animValue, {
+            toValue: 0,
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+        }).start(() => {
+            setToastVisible(false);
         });
+    };
+
+    // Confirm & Agreement Handlers (保持原有逻辑)
+    const showConfirm = useCallback((config: ConfirmConfig) => {
+        setConfirmConfig({ confirmText: '确定', cancelText: '取消', ...config });
         setConfirmVisible(true);
     }, []);
 
@@ -117,115 +133,88 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setAgreementVisible(true);
     }, []);
 
-    const handleConfirm = () => {
-        setConfirmVisible(false);
-        confirmConfig.onConfirm?.();
-    };
+    const handleConfirm = () => { confirmConfig.onConfirm?.(); setConfirmVisible(false); };
+    const handleCancel = () => { confirmConfig.onCancel?.(); setConfirmVisible(false); };
+    const handleAgree = () => { agreementConfig.onAgree(); setAgreementVisible(false); };
+    const handleDisagree = () => { agreementConfig.onDisagree?.(); setAgreementVisible(false); };
 
-    const handleCancel = () => {
-        setConfirmVisible(false);
-        confirmConfig.onCancel?.();
-    };
+    const theme = TOAST_THEME[toastConfig.type || 'info'];
 
-    const handleAgree = () => {
-        setAgreementVisible(false);
-        agreementConfig.onAgree();
-    };
+    // 动画插值
+    const translateY = animValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-20, 0], // 从上方 -20px 处下落到 0
+    });
 
-    const handleDisagree = () => {
-        setAgreementVisible(false);
-        agreementConfig.onDisagree?.();
-    };
+    const opacity = animValue.interpolate({
+        inputRange: [0, 0.2, 1],
+        outputRange: [0, 1, 1],
+    });
 
-    const toastColor = TOAST_COLORS[toastConfig.type || 'info'];
+    const scale = animValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.9, 1],
+    });
 
     return (
         <ToastContext.Provider value={{ showToast, showConfirm, showAgreementModal }}>
             {children}
 
-            {/* Toast 组件 */}
+            {/* Toast 容器 */}
             {toastVisible && (
-                <Animated.View
-                    style={[
-                        styles.toastContainer,
-                        {
-                            opacity: fadeAnim,
-                            transform: [{ translateY: slideAnim }],
-                            backgroundColor: toastColor.bg,
-                        },
-                    ]}
-                >
-                    <Text style={styles.toastIcon}>{toastColor.icon}</Text>
-                    <Text style={[styles.toastText, { color: toastColor.text }]}>
-                        {toastConfig.message}
-                    </Text>
-                </Animated.View>
+                <View style={styles.toastWrapper} pointerEvents="none">
+                    <Animated.View
+                        style={[
+                            styles.toastContainer,
+                            {
+                                backgroundColor: theme.bg,
+                                transform: [{ translateY }, { scale }],
+                                opacity,
+                                borderLeftColor: theme.border,
+                            },
+                        ]}
+                    >
+                        <View style={[styles.iconContainer, { backgroundColor: theme.border + '15' }]}>
+                            <ToastIcon type={toastConfig.type || 'info'} color={theme.iconColor} />
+                        </View>
+                        <Text style={[styles.toastText, { color: theme.textColor }]}>
+                            {toastConfig.message}
+                        </Text>
+                    </Animated.View>
+                </View>
             )}
 
-            {/* Confirm Modal - 居中样式 */}
-            <Modal
-                visible={confirmVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={handleCancel}
-            >
+            {/* Confirm Modal */}
+            <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={handleCancel}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                         <Text style={styles.modalTitle}>{confirmConfig.title}</Text>
                         <Text style={styles.modalMessage}>{confirmConfig.message}</Text>
                         <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.cancelButton]}
-                                onPress={handleCancel}
-                            >
-                                <Text style={styles.cancelButtonText}>
-                                    {confirmConfig.cancelText}
-                                </Text>
+                            <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={handleCancel}>
+                                <Text style={styles.cancelButtonText}>{confirmConfig.cancelText}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.confirmButton]}
-                                onPress={handleConfirm}
-                            >
-                                <Text style={styles.confirmButtonText}>
-                                    {confirmConfig.confirmText}
-                                </Text>
+                            <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleConfirm}>
+                                <Text style={styles.confirmButtonText}>{confirmConfig.confirmText}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 </View>
             </Modal>
 
-            {/* Agreement Modal - 底部弹出样式 (仿美团) */}
-            <Modal
-                visible={agreementVisible}
-                transparent
-                animationType="slide"
-                onRequestClose={handleDisagree}
-            >
+            {/* Agreement Modal */}
+            <Modal visible={agreementVisible} transparent animationType="slide" onRequestClose={handleDisagree}>
                 <View style={styles.agreementOverlay}>
-                    <TouchableOpacity
-                        style={styles.agreementBackdrop}
-                        activeOpacity={1}
-                        onPress={handleDisagree}
-                    />
+                    <TouchableOpacity style={styles.agreementBackdrop} activeOpacity={1} onPress={handleDisagree} />
                     <View style={styles.agreementSheet}>
                         <Text style={styles.agreementTitle}>请同意用户协议及隐私保护</Text>
                         <Text style={styles.agreementText}>
-                            我已阅读并同意
-                            <Text style={styles.agreementLink}>《用户协议》</Text>
-                            和
-                            <Text style={styles.agreementLink}>《隐私政策》</Text>
+                            我已阅读并同意<Text style={styles.agreementLink}>《用户协议》</Text>和<Text style={styles.agreementLink}>《隐私政策》</Text>
                         </Text>
-                        <TouchableOpacity
-                            style={styles.agreeButton}
-                            onPress={handleAgree}
-                        >
+                        <TouchableOpacity style={styles.agreeButton} onPress={handleAgree}>
                             <Text style={styles.agreeButtonText}>同意并继续</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.disagreeButton}
-                            onPress={handleDisagree}
-                        >
+                        <TouchableOpacity style={styles.disagreeButton} onPress={handleDisagree}>
                             <Text style={styles.disagreeButtonText}>不同意</Text>
                         </TouchableOpacity>
                     </View>
@@ -235,42 +224,51 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     );
 };
 
-// Hook 使用 Toast
 export const useToast = () => {
     const context = useContext(ToastContext);
-    if (!context) {
-        throw new Error('useToast must be used within a ToastProvider');
-    }
+    if (!context) throw new Error('useToast must be used within a ToastProvider');
     return context;
 };
 
 const styles = StyleSheet.create({
-    toastContainer: {
+    toastWrapper: {
         position: 'absolute',
-        top: 60,
-        left: 20,
-        right: 20,
-        flexDirection: 'row',
+        top: Platform.OS === 'ios' ? 100 : 90, // 下移到 header 下方
+        left: 0,
+        right: 0,
         alignItems: 'center',
-        paddingVertical: 14,
-        paddingHorizontal: 18,
-        borderRadius: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 8,
         zIndex: 9999,
     },
-    toastIcon: {
-        fontSize: 16,
-        marginRight: 10,
+    toastContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8, // 减小垂直内边距
+        paddingHorizontal: 12, // 减小水平内边距
+        borderRadius: 50,
+        maxWidth: width - 60, // 限制最大宽度，更小巧
+        alignSelf: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 6,
+        borderLeftWidth: 3, // 稍微减细强调线
+        backgroundColor: '#FFFFFF',
+    },
+    iconContainer: {
+        width: 24, // 减小图标容器
+        height: 24,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 8,
     },
     toastText: {
-        fontSize: 15,
-        fontWeight: '500',
-        flex: 1,
+        fontSize: 13, // 稍微减小字号
+        fontWeight: '600',
+        flexShrink: 1, // 允许文字换行但保持紧凑
     },
+    // Modal Styles ...
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -323,7 +321,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#fff',
     },
-    // Agreement Modal Styles (底部弹出)
     agreementOverlay: {
         flex: 1,
         justifyContent: 'flex-end',
