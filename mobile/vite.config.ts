@@ -15,6 +15,9 @@ export default defineConfig({
         host: '0.0.0.0', // 允许局域网访问
         port: 8082,      // 修改为 8082，避开 Metro (8081) 端口冲突
         open: true,      // 启动自动打开浏览器
+        watch: {
+            usePolling: true,
+        },
     },
     optimizeDeps: {
         esbuildOptions: {

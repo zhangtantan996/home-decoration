@@ -73,6 +73,24 @@ export interface Worker {
     tags: string[];
 }
 
+// 前端展示用的主材门店类型
+export interface MaterialShop {
+    id: number;
+    type: 'showroom' | 'brand'; // 展示店 | 品牌店
+    name: string;
+    cover: string; // 门店封面图
+    brandLogo?: string; // 品牌Logo（品牌店特有）
+    rating: number;
+    reviewCount: number;
+    mainProducts: string[]; // 主营产品
+    productCategories: string[]; // 产品分类标签
+    address: string;
+    distance: string;
+    openTime: string; // 营业时间
+    tags: string[]; // 如：免费停车、免费设计
+    isVerified: boolean; // 认证商家
+}
+
 // DTO -> 前端类型转换函数
 export function toDesigner(dto: ProviderDTO): Designer {
     // 根据 providerType 推断 orgType

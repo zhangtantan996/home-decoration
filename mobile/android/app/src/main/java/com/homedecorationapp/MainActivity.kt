@@ -19,4 +19,13 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    try {
+      super.onWindowFocusChanged(hasFocus)
+    } catch (e: Throwable) {
+      // Ignore the exception if the React Context is not ready
+      android.util.Log.e("HomeDecorationApp", "Caught React Native focus race condition", e)
+    }
+  }
 }

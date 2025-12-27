@@ -11,16 +11,16 @@ type ProviderService struct{}
 
 // ProviderQuery 服务商查询参数
 type ProviderQuery struct {
-	ProviderType int8    `form:"type"`     // 1设计师 2公司 3工长
-	Lat          float64 `form:"lat"`      // 纬度
-	Lng          float64 `form:"lng"`      // 经度
-	Radius       float64 `form:"radius"`   // 半径(km)
-	Keyword      string  `form:"keyword"`  // 关键词
-	SortBy       string  `form:"sortBy"`   // 排序: rating, distance, price
-	Page         int     `form:"page"`     // 页码
-	PageSize     int     `form:"pageSize"` // 每页数量
-	WorkType     string  `form:"workType"` // 工种筛选
-	SubType      string  `form:"subType"`  // 子类型筛选
+	Type     string  `form:"type"`     // 1设计师 2公司 3工长, 或字符串设计师、施工队等
+	Lat      float64 `form:"lat"`      // 纬度
+	Lng      float64 `form:"lng"`      // 经度
+	Radius   float64 `form:"radius"`   // 半径(km)
+	Keyword  string  `form:"keyword"`  // 关键词
+	SortBy   string  `form:"sortBy"`   // 排序: rating, distance, price
+	Page     int     `form:"page"`     // 页码
+	PageSize int     `form:"pageSize"` // 每页数量
+	WorkType string  `form:"workType"` // 工种筛选
+	SubType  string  `form:"subType"`  // 子类型筛选
 }
 
 // ... (ProviderListItem struct unchanged)
@@ -54,22 +54,43 @@ type ProviderListItem struct {
 
 // ListDesigners 获取设计师列表
 func (s *ProviderService) ListDesigners(query *ProviderQuery) ([]ProviderListItem, int64, error) {
-	return s.listProviders([]int8{1}, query)
+	return s.ListProvidersInternal([]int8{1}, query)
 }
 
 // ListCompanies 获取装修公司列表
 func (s *ProviderService) ListCompanies(query *ProviderQuery) ([]ProviderListItem, int64, error) {
-	return s.listProviders([]int8{2}, query)
+	return s.ListProvidersInternal([]int8{2}, query)
 }
 
 // ListForemen 获取工长列表 (含装修公司)
 func (s *ProviderService) ListForemen(query *ProviderQuery) ([]ProviderListItem, int64, error) {
 	// 查询 工长(3) 和 公司(2)
-	return s.listProviders([]int8{2, 3}, query)
+	return s.ListProvidersInternal([]int8{2, 3}, query)
 }
 
-// listProviders 通用服务商列表查询
-func (s *ProviderService) listProviders(providerTypes []int8, query *ProviderQuery) ([]ProviderListItem, int64, error) {
+// ListProviders 公开的分页列表
+func (s *ProviderService) ListProviders(query *ProviderQuery) ([]ProviderListItem, int64, error) {
+	var providerTypes []int8
+
+	if query.Type != "" && query.Type != "all" {
+		switch query.Type {
+		case "1", "designer":
+			providerTypes = []int8{1}
+		case "2", "company":
+			providerTypes = []int8{2}
+		case "3", "worker", "foreman":
+			providerTypes = []int8{3}
+		default:
+			// 尝试直接转换为数字
+			return s.ListProvidersInternal(nil, query)
+		}
+	}
+
+	return s.ListProvidersInternal(providerTypes, query)
+}
+
+// ListProvidersInternal 通用服务商列表查询
+func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *ProviderQuery) ([]ProviderListItem, int64, error) {
 	// 默认分页
 	if query.Page <= 0 {
 		query.Page = 1

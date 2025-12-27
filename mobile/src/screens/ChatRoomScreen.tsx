@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -24,71 +24,11 @@ import {
     CheckCircle,
     Info,
 } from 'lucide-react-native';
+import { useChatStore, Message } from '../store/chatStore';
+import { useAuthStore } from '../store/authStore';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
-
-// 消息类型
-interface ChatMessage {
-    id: string;
-    senderId: string;
-    content: string;
-    timestamp: string;
-    isMe: boolean;
-    status: 'sending' | 'sent' | 'read';
-}
-
-// Mock 消息数据
-const MOCK_MESSAGES: ChatMessage[] = [
-    {
-        id: '1',
-        senderId: 'designer1',
-        content: '您好，我是张设计师，很高兴为您服务！',
-        timestamp: '10:30',
-        isMe: false,
-        status: 'read',
-    },
-    {
-        id: '2',
-        senderId: 'me',
-        content: '您好，我想咨询一下现代简约风格的设计方案',
-        timestamp: '10:32',
-        isMe: true,
-        status: 'read',
-    },
-    {
-        id: '3',
-        senderId: 'designer1',
-        content: '好的，请问您的房屋面积是多少？有什么特殊的功能需求吗？',
-        timestamp: '10:33',
-        isMe: false,
-        status: 'read',
-    },
-    {
-        id: '4',
-        senderId: 'me',
-        content: '120平米，三室两厅。希望客厅和餐厅能够做开放式设计，主卧需要带衣帽间',
-        timestamp: '10:35',
-        isMe: true,
-        status: 'read',
-    },
-    {
-        id: '5',
-        senderId: 'designer1',
-        content: '明白了，这个需求很常见。我之前做过类似的案例，效果非常不错。',
-        timestamp: '10:36',
-        isMe: false,
-        status: 'read',
-    },
-    {
-        id: '6',
-        senderId: 'designer1',
-        content: '新的平面布局方案已经发给您了，请查收。如有任何问题随时沟通！',
-        timestamp: '10:42',
-        isMe: false,
-        status: 'read',
-    },
-];
 
 // 快捷回复
 const QUICK_REPLIES = [
@@ -105,7 +45,29 @@ interface ChatRoomScreenProps {
 
 const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) => {
     const { conversation } = route.params || {};
-    const [messages, setMessages] = useState<ChatMessage[]>(MOCK_MESSAGES);
+    const partnerId = conversation?.partnerId || conversation?.id;
+    const partnerName = conversation?.partnerName || conversation?.name || '聊天';
+    const partnerAvatar = conversation?.partnerAvatar || conversation?.avatar;
+
+    // 从 Store 获取数据
+    const currentUser = useAuthStore(state => state.user);
+    const currentUserId = currentUser?.id || 1;
+
+    // 生成 conversationId (memoize 防止重复计算)
+    const conversationId = useMemo(() => {
+        return currentUserId < partnerId
+            ? `${currentUserId}_${partnerId}`
+            : `${partnerId}_${currentUserId}`;
+    }, [currentUserId, partnerId]);
+
+    // 使用稳定的选择器，避免每次返回新数组
+    const messagesFromStore = useChatStore(state => state.messages[conversationId]);
+    const messages = useMemo(() => messagesFromStore || [], [messagesFromStore]);
+    const storeSendMessage = useChatStore(state => state.sendMessage);
+    const fetchMessages = useChatStore(state => state.fetchMessages);
+    const markAsRead = useChatStore(state => state.markAsRead);
+    const isLoadingMessages = useChatStore(state => state.isLoadingMessages);
+
     const [inputText, setInputText] = useState('');
     const [showQuickReplies, setShowQuickReplies] = useState(true);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -117,6 +79,29 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         onConfirm?: () => void;
     }>({ visible: false, type: 'info', title: '', message: '' });
     const scrollViewRef = useRef<ScrollView>(null);
+    const lastMarkedMsgIdRef = useRef<number | null>(null);
+
+    // 加载历史消息
+    useEffect(() => {
+        if (conversationId) {
+            fetchMessages(conversationId);
+        }
+    }, [conversationId]);
+
+    // 标记已读 (使用 ref 防止重复调用)
+    useEffect(() => {
+        if (messages.length > 0) {
+            const lastMsg = messages[messages.length - 1];
+            if (
+                lastMsg.senderId !== currentUserId &&
+                !lastMsg.isRead &&
+                lastMarkedMsgIdRef.current !== lastMsg.id
+            ) {
+                lastMarkedMsgIdRef.current = lastMsg.id;
+                markAsRead(conversationId, lastMsg.id);
+            }
+        }
+    }, [messages.length]); // 只依赖 messages.length 而非整个 messages
 
     // 滚动到底部
     const scrollToBottom = () => {
@@ -130,29 +115,12 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     }, [messages]);
 
     // 发送消息
-    const sendMessage = (text: string) => {
+    const handleSendMessage = (text: string) => {
         if (!text.trim()) return;
-
-        const newMessage: ChatMessage = {
-            id: Date.now().toString(),
-            senderId: 'me',
-            content: text.trim(),
-            timestamp: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-            isMe: true,
-            status: 'sending',
-        };
-
-        setMessages(prev => [...prev, newMessage]);
+        storeSendMessage(partnerId, text.trim());
         setInputText('');
         setShowQuickReplies(false);
         Keyboard.dismiss();
-
-        // 模拟发送成功
-        setTimeout(() => {
-            setMessages(prev =>
-                prev.map(m => m.id === newMessage.id ? { ...m, status: 'sent' } : m)
-            );
-        }, 500);
     };
 
     // 电话按钮点击
@@ -190,7 +158,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     type: 'confirm',
                     title: '清空聊天记录',
                     message: '确定要清空与该用户的聊天记录吗？此操作不可恢复。',
-                    onConfirm: () => setMessages([]),
+                    onConfirm: () => { /* TODO: clear messages API */ },
                 });
                 break;
             case 'report':
@@ -205,15 +173,16 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     };
 
     // 渲染消息气泡
-    const renderMessage = (message: ChatMessage, index: number) => {
-        const isMe = message.isMe;
-        const showTime = index === 0 ||
-            messages[index - 1]?.timestamp !== message.timestamp;
+    const renderMessage = (message: Message, index: number) => {
+        const isMe = message.senderId === currentUserId;
+        const msgTime = new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        const prevMsgTime = index > 0 ? new Date(messages[index - 1]?.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+        const showTime = index === 0 || prevMsgTime !== msgTime;
 
         return (
             <View key={message.id}>
                 {showTime && (
-                    <Text style={styles.timeLabel}>{message.timestamp}</Text>
+                    <Text style={styles.timeLabel}>{msgTime}</Text>
                 )}
                 <View style={[
                     styles.messageRow,
@@ -221,7 +190,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 ]}>
                     {!isMe && (
                         <Image
-                            source={{ uri: conversation?.avatar || 'https://via.placeholder.com/40' }}
+                            source={{ uri: partnerAvatar || 'https://via.placeholder.com/40' }}
                             style={styles.messageAvatar}
                         />
                     )}
@@ -249,7 +218,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     <ArrowLeft size={24} color="#09090B" />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
-                    <Text style={styles.headerTitle}>{conversation?.name || '聊天'}</Text>
+                    <Text style={styles.headerTitle}>{partnerName}</Text>
                     {conversation?.isOnline && (
                         <Text style={styles.headerSubtitle}>在线</Text>
                     )}
@@ -292,7 +261,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             <TouchableOpacity
                                 key={index}
                                 style={styles.quickReplyBtn}
-                                onPress={() => sendMessage(reply)}
+                                onPress={() => handleSendMessage(reply)}
                             >
                                 <Text style={styles.quickReplyText}>{reply}</Text>
                             </TouchableOpacity>
@@ -321,7 +290,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             styles.sendBtn,
                             inputText.trim() && styles.sendBtnActive,
                         ]}
-                        onPress={() => sendMessage(inputText)}
+                        onPress={() => handleSendMessage(inputText)}
                         disabled={!inputText.trim()}
                     >
                         <Send size={20} color={inputText.trim() ? '#FFFFFF' : '#A1A1AA'} />

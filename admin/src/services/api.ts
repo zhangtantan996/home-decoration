@@ -13,7 +13,9 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('token');
+        // 优先使用管理员token
+        const adminToken = localStorage.getItem('admin_token');
+        const token = adminToken || localStorage.getItem('token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -27,9 +29,12 @@ api.interceptors.response.use(
     (response) => response.data,
     (error) => {
         if (error.response?.status === 401) {
-            localStorage.removeItem('token');
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_user');
+            localStorage.removeItem('admin_permissions');
+            localStorage.removeItem('admin_menus');
             if (window.location.pathname !== '/login') {
-                window.location.href = '/login';
+                window.location.href = '/admin/login';
             }
         }
         return Promise.reject(error);
@@ -40,6 +45,12 @@ api.interceptors.response.use(
 export const authApi = {
     login: (data: { phone: string; code: string }) => api.post('/auth/login', data),
     sendCode: (phone: string) => api.post('/auth/send-code', { phone }),
+};
+
+// ==================== Admin 管理员认证 ====================
+export const adminAuthApi = {
+    login: (data: { username: string; password: string }) => api.post('/admin/login', data),
+    getInfo: () => api.get('/admin/info'),
 };
 
 export const projectApi = {
@@ -58,6 +69,120 @@ export const escrowApi = {
     detail: (projectId: string | number) => api.get(`/projects/${projectId}/escrow`),
     deposit: (projectId: string | number, data: any) => api.post(`/projects/${projectId}/deposit`, data),
     release: (projectId: string | number, data: any) => api.post(`/projects/${projectId}/release`, data),
+};
+
+// ==================== Admin 管理接口 ====================
+
+// 统计 API
+export const adminStatsApi = {
+    overview: () => api.get('/admin/stats/overview'),
+    trends: (params?: { days?: number }) => api.get('/admin/stats/trends', { params }),
+    distribution: () => api.get('/admin/stats/distribution'),
+};
+
+// 用户管理
+export const adminUserApi = {
+    list: (params?: { page?: number; pageSize?: number; keyword?: string; userType?: number }) =>
+        api.get('/admin/users', { params }),
+    detail: (id: number) => api.get(`/admin/users/${id}`),
+    create: (data: any) => api.post('/admin/users', data),
+    update: (id: number, data: any) => api.put(`/admin/users/${id}`, data),
+    updateStatus: (id: number, status: number) => api.patch(`/admin/users/${id}/status`, { status }),
+};
+
+// 服务商管理
+export const adminProviderApi = {
+    list: (params?: { page?: number; pageSize?: number; type?: number; verified?: boolean }) =>
+        api.get('/admin/providers', { params }),
+    detail: (id: number) => api.get(`/admin/providers/${id}`),
+    create: (data: any) => api.post('/admin/providers', data),
+    update: (id: number, data: any) => api.put(`/admin/providers/${id}`, data),
+    verify: (id: number, verified: boolean) => api.patch(`/admin/providers/${id}/verify`, { verified }),
+    updateStatus: (id: number, status: number) => api.patch(`/admin/providers/${id}/status`, { status }),
+};
+
+// 主材门店管理
+export const adminMaterialShopApi = {
+    list: (params?: { page?: number; pageSize?: number; type?: string }) =>
+        api.get('/admin/material-shops', { params }),
+    detail: (id: number) => api.get(`/admin/material-shops/${id}`),
+    create: (data: any) => api.post('/admin/material-shops', data),
+    update: (id: number, data: any) => api.put(`/admin/material-shops/${id}`, data),
+    delete: (id: number) => api.delete(`/admin/material-shops/${id}`),
+    verify: (id: number, verified: boolean) => api.patch(`/admin/material-shops/${id}/verify`, { verified }),
+};
+
+// 预约管理
+export const adminBookingApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: number }) =>
+        api.get('/admin/bookings', { params }),
+    detail: (id: number) => api.get(`/admin/bookings/${id}`),
+    updateStatus: (id: number, status: number) => api.patch(`/admin/bookings/${id}/status`, { status }),
+};
+
+// 评价管理
+export const adminReviewApi = {
+    list: (params?: { page?: number; pageSize?: number; providerId?: number }) =>
+        api.get('/admin/reviews', { params }),
+    delete: (id: number) => api.delete(`/admin/reviews/${id}`),
+};
+
+// 操作日志
+export const adminLogApi = {
+    list: (params?: { page?: number; pageSize?: number; adminId?: number; action?: string }) =>
+        api.get('/admin/logs', { params }),
+};
+
+// 管理员管理
+export const adminManageApi = {
+    list: (params?: { page?: number; pageSize?: number; keyword?: string }) =>
+        api.get('/admin/admins', { params }),
+    create: (data: any) => api.post('/admin/admins', data),
+    update: (id: number, data: any) => api.put(`/admin/admins/${id}`, data),
+    delete: (id: number) => api.delete(`/admin/admins/${id}`),
+    updateStatus: (id: number, status: number) => api.patch(`/admin/admins/${id}/status`, { status }),
+};
+
+// 审核管理
+export const adminAuditApi = {
+    providers: (params?: { page?: number; pageSize?: number; status?: number }) =>
+        api.get('/admin/audits/providers', { params }),
+    materialShops: (params?: { page?: number; pageSize?: number; status?: number }) =>
+        api.get('/admin/audits/material-shops', { params }),
+    approve: (type: string, id: number, data: any) => api.post(`/admin/audits/${type}/${id}/approve`, data),
+    reject: (type: string, id: number, data: any) => api.post(`/admin/audits/${type}/${id}/reject`, data),
+};
+
+// 财务管理
+export const adminFinanceApi = {
+    escrowAccounts: (params?: { page?: number; pageSize?: number }) =>
+        api.get('/admin/finance/escrow-accounts', { params }),
+    transactions: (params?: { page?: number; pageSize?: number; type?: string }) =>
+        api.get('/admin/finance/transactions', { params }),
+    withdraw: (accountId: number, data: any) => api.post(`/admin/finance/escrow-accounts/${accountId}/withdraw`, data),
+};
+
+// 风险管理
+export const adminRiskApi = {
+    warnings: (params?: { page?: number; pageSize?: number; level?: string }) =>
+        api.get('/admin/risk/warnings', { params }),
+    arbitrations: (params?: { page?: number; pageSize?: number; status?: number }) =>
+        api.get('/admin/risk/arbitrations', { params }),
+    handleWarning: (id: number, data: any) => api.post(`/admin/risk/warnings/${id}/handle`, data),
+    updateArbitration: (id: number, data: any) => api.put(`/admin/risk/arbitrations/${id}`, data),
+};
+
+// 系统设置
+export const adminSettingsApi = {
+    get: () => api.get('/admin/settings'),
+    update: (data: any) => api.put('/admin/settings', data),
+};
+
+// 数据导出
+export const adminExportApi = {
+    users: (params?: any) => api.get('/admin/export/users', { params, responseType: 'blob' }),
+    providers: (params?: any) => api.get('/admin/export/providers', { params, responseType: 'blob' }),
+    projects: (params?: any) => api.get('/admin/export/projects', { params, responseType: 'blob' }),
 };
 
 export default api;

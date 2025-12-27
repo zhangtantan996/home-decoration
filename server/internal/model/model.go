@@ -14,12 +14,15 @@ type Base struct {
 // User 用户
 type User struct {
 	Base
-	Phone    string `json:"phone" gorm:"uniqueIndex;size:20"`
-	Nickname string `json:"nickname" gorm:"size:50"`
-	Avatar   string `json:"avatar" gorm:"size:500"`
-	Password string `json:"-" gorm:"size:255"` // 密码，不返回给前端
-	UserType int8   `json:"userType"`          // 1业主 2服务商 3工人 4管理员
-	Status   int8   `json:"status" gorm:"default:1"`
+	Phone             string     `json:"phone" gorm:"uniqueIndex;size:20"`
+	Nickname          string     `json:"nickname" gorm:"size:50"`
+	Avatar            string     `json:"avatar" gorm:"size:500"`
+	Password          string     `json:"-" gorm:"size:255"` // 密码，不返回给前端
+	UserType          int8       `json:"userType"`          // 1业主 2服务商 3工人 4管理员
+	Status            int8       `json:"status" gorm:"default:1"`
+	LoginFailedCount  int        `json:"-" gorm:"default:0"` // 登录失败次数
+	LockedUntil       *time.Time `json:"-"`                  // 锁定到期时间
+	LastFailedLoginAt *time.Time `json:"-"`                  // 最后失败登录时间
 }
 
 // Provider 服务商
@@ -34,6 +37,7 @@ type Provider struct {
 	BudgetControl float32 `json:"budgetControl"` // 预算控制力
 	CompletedCnt  int     `json:"completedCnt" gorm:"default:0"`
 	Verified      bool    `json:"verified" gorm:"default:false"`
+	Status        int8    `json:"status" gorm:"default:1"` // 1:正常 0:封禁
 	Latitude      float64 `json:"latitude"`
 	Longitude     float64 `json:"longitude"`
 	// 新增字段
@@ -149,23 +153,31 @@ type WorkLog struct {
 // EscrowAccount 托管账户
 type EscrowAccount struct {
 	Base
-	ProjectID      uint64  `json:"projectId" gorm:"uniqueIndex"`
-	TotalAmount    float64 `json:"totalAmount"`
-	FrozenAmount   float64 `json:"frozenAmount" gorm:"default:0"`
-	ReleasedAmount float64 `json:"releasedAmount" gorm:"default:0"`
-	Status         int8    `json:"status" gorm:"default:1"`
+	ProjectID       uint64  `json:"projectId" gorm:"uniqueIndex;index"`
+	UserID          uint64  `json:"userId" gorm:"index"` // 账户所有者
+	ProjectName     string  `json:"projectName" gorm:"size:100"`
+	UserName        string  `json:"userName" gorm:"size:50"`
+	TotalAmount     float64 `json:"totalAmount"`
+	FrozenAmount    float64 `json:"frozenAmount" gorm:"default:0"`
+	AvailableAmount float64 `json:"availableAmount" gorm:"default:0"`
+	ReleasedAmount  float64 `json:"releasedAmount" gorm:"default:0"`
+	Status          int8    `json:"status" gorm:"default:1"` // 0:待激活 1:正常 2:冻结 3:已清算
 }
 
 // Transaction 交易记录
 type Transaction struct {
 	Base
+	OrderID     string     `json:"orderId" gorm:"uniqueIndex;size:50"` // 订单号
 	EscrowID    uint64     `json:"escrowId" gorm:"index"`
 	MilestoneID uint64     `json:"milestoneId" gorm:"index"`
-	Type        string     `json:"type" gorm:"size:20"` // deposit, release, refund
+	Type        string     `json:"type" gorm:"size:20;index"` // deposit, withdraw, transfer, refund
 	Amount      float64    `json:"amount"`
-	FromUserID  uint64     `json:"fromUserId"`
-	ToUserID    uint64     `json:"toUserId"`
-	Status      int8       `json:"status" gorm:"default:0"`
+	FromUserID  uint64     `json:"fromUserId" gorm:"index"`
+	FromAccount string     `json:"fromAccount" gorm:"size:200"` // 付款账户
+	ToUserID    uint64     `json:"toUserId" gorm:"index"`
+	ToAccount   string     `json:"toAccount" gorm:"size:200"` // 收款账户
+	Status      int8       `json:"status" gorm:"default:0"`   // 0:处理中 1:成功 2:失败
+	Remark      string     `json:"remark" gorm:"type:text"`   // 备注
 	CompletedAt *time.Time `json:"completedAt"`
 }
 
@@ -242,4 +254,28 @@ type UserFavorite struct {
 // TableName 指定表名
 func (UserFavorite) TableName() string {
 	return "user_favorites"
+}
+
+// MaterialShop 主材门店
+type MaterialShop struct {
+	Base
+	Type              string  `json:"type" gorm:"size:20"` // showroom | brand
+	Name              string  `json:"name" gorm:"size:100"`
+	Cover             string  `json:"cover" gorm:"size:500"`     // 封面图
+	BrandLogo         string  `json:"brandLogo" gorm:"size:500"` // 品牌 Logo
+	Rating            float32 `json:"rating" gorm:"default:0"`
+	ReviewCount       int     `json:"reviewCount" gorm:"default:0"`
+	MainProducts      string  `json:"mainProducts" gorm:"type:text"`     // JSON 数组
+	ProductCategories string  `json:"productCategories" gorm:"size:200"` // 逗号分隔
+	Address           string  `json:"address" gorm:"size:300"`
+	Latitude          float64 `json:"latitude"`
+	Longitude         float64 `json:"longitude"`
+	OpenTime          string  `json:"openTime" gorm:"size:50"`
+	Tags              string  `json:"tags" gorm:"type:text"` // JSON 数组
+	IsVerified        bool    `json:"isVerified" gorm:"default:false"`
+}
+
+// TableName 指定表名
+func (MaterialShop) TableName() string {
+	return "material_shops"
 }

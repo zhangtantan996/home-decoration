@@ -1,79 +1,110 @@
 import React, { useState } from 'react';
 import { Card, Form, Input, Button, message, Layout, Typography } from 'antd';
-import { LockOutlined, MobileOutlined } from '@ant-design/icons';
+import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { authApi } from '../../services/api';
+import { adminAuthApi } from '../../services/api';
+import { useAuthStore } from '../../stores/authStore';
 
 const { Content } = Layout;
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 const Login: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+    const { login, setPermissions } = useAuthStore();
 
-    const onFinish = async (values: any) => {
+    const onFinish = async (values: { username: string; password: string }) => {
         setLoading(true);
         try {
-            const res = await authApi.login({
-                phone: values.phone,
-                code: values.code
+            console.log('开始登录...', values);
+
+            // 1. 登录获取 token
+            const loginRes = await adminAuthApi.login({
+                username: values.username,
+                password: values.password
             }) as any;
 
-            if (res.code === 0) {
+            console.log('登录响应:', loginRes);
+
+            if (loginRes.code === 0) {
+                const { token, admin } = loginRes.data;
+
+                // 保存 token 和用户信息
+                login(token, admin);
+                console.log('Token已保存');
+
+                // 2. 获取权限和菜单
+                try {
+                    const infoRes = await adminAuthApi.getInfo() as any;
+                    console.log('权限信息:', infoRes);
+                    if (infoRes.code === 0) {
+                        setPermissions(infoRes.data.permissions, infoRes.data.menus);
+                    }
+                } catch (infoError) {
+                    console.error('获取权限失败，但继续登录:', infoError);
+                }
+
                 message.success('登录成功');
-                localStorage.setItem('token', res.data.token);
-                localStorage.setItem('user', JSON.stringify(res.data.user));
+                console.log('准备跳转到 /dashboard');
                 navigate('/dashboard');
             } else {
-                message.error(res.message || '登录失败');
+                message.error(loginRes.message || '登录失败');
             }
         } catch (error: any) {
-            console.error(error);
-            message.error(error.response?.data?.message || '登录异常');
+            console.error('登录错误:', error);
+            message.error(error.response?.data?.message || error.message || '用户名或密码错误');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleSendCode = async () => {
-        message.success('验证码已发送: 123456');
-    };
-
     return (
-        <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+        <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
             <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <Card style={{ width: 400, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                    <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                        <Title level={3}>装修平台管理后台</Title>
+                <Card style={{ width: 400, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}>
+                    <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                        <Title level={3} style={{ marginBottom: 8 }}>装修平台管理后台</Title>
+                        <Text type="secondary">RBAC 权限管理系统</Text>
                     </div>
                     <Form
-                        name="login_form"
-                        initialValues={{ remember: true }}
+                        name="admin_login"
+                        initialValues={{ username: 'admin', password: 'admin123' }}
                         onFinish={onFinish}
                         size="large"
                     >
                         <Form.Item
-                            name="phone"
-                            rules={[{ required: true, message: '请输入手机号' }]}
+                            name="username"
+                            rules={[{ required: true, message: '请输入用户名' }]}
                         >
-                            <Input prefix={<MobileOutlined />} placeholder="手机号 (任意)" />
+                            <Input
+                                prefix={<UserOutlined />}
+                                placeholder="用户名"
+                                autoComplete="username"
+                            />
                         </Form.Item>
 
                         <Form.Item
-                            name="code"
-                            rules={[{ required: true, message: '请输入验证码' }]}
+                            name="password"
+                            rules={[{ required: true, message: '请输入密码' }]}
                         >
-                            <div style={{ display: 'flex', gap: 8 }}>
-                                <Input prefix={<LockOutlined />} placeholder="验证码: 123456" />
-                                <Button onClick={handleSendCode}>获取</Button>
-                            </div>
+                            <Input.Password
+                                prefix={<LockOutlined />}
+                                placeholder="密码"
+                                autoComplete="current-password"
+                            />
                         </Form.Item>
 
                         <Form.Item>
                             <Button type="primary" htmlType="submit" block loading={loading}>
-                                登录
+                                登 录
                             </Button>
                         </Form.Item>
+
+                        <div style={{ textAlign: 'center' }}>
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                默认账号: admin / admin123
+                            </Text>
+                        </div>
                     </Form>
                 </Card>
             </Content>

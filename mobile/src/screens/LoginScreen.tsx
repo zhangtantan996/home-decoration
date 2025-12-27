@@ -142,13 +142,13 @@ const LoginScreen: React.FC = () => {
 
             // 注意：api.ts 拦截器返回的是完整响应对象 { code: 0, data: {...} }
             const res = result as any;
-            const { token, user } = res.data || {};
+            const { token, refreshToken, user } = res.data || {};
 
             if (!token || !user) {
                 throw new Error('登录返回数据异常');
             }
 
-            setAuth(token, user);
+            setAuth(token, refreshToken || '', user);
         } catch (error: any) {
             setErrorMessage(error.response?.data?.message || '登录失败，请检查输入');
         } finally {

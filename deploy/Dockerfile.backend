@@ -1,0 +1,35 @@
+# Build Stage
+FROM golang:1.23-alpine AS builder
+
+# Set GOPROXY for China
+ENV GOPROXY=https://goproxy.cn,direct
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
+
+WORKDIR /app
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build
+COPY . .
+RUN go build -ldflags="-s -w" -o api-server cmd/api/main.go
+
+# Run Stage
+FROM alpine:latest
+
+WORKDIR /app
+
+# Install timezone data
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Shanghai
+
+COPY --from=builder /app/api-server .
+# Copy default config if needed, though env vars are better
+# COPY server/config.docker.yaml config.yaml 
+
+EXPOSE 8080
+
+CMD ["./api-server"]

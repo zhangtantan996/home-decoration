@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -10,20 +10,24 @@ import {
     Platform,
     TextInput,
     Image,
+    ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
     Search,
     Bell,
     FileText,
     CheckCheck,
     Circle,
+    Wifi,
+    WifiOff,
 } from 'lucide-react-native';
+import { useChatStore, Conversation as StoreConversation } from '../store/chatStore';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
 
-// 会话数据类型
+// 扩展会话数据类型 (兼容现有UI)
 interface Conversation {
     id: string;
     name: string;
@@ -35,6 +39,8 @@ interface Conversation {
     unreadCount: number;
     isOnline: boolean;
     isRead: boolean;
+    // 真实数据
+    partnerId?: number;
 }
 
 // 系统通知数据类型
@@ -47,59 +53,7 @@ interface SystemNotification {
     isRead: boolean;
 }
 
-// Mock 会话数据
-const MOCK_CONVERSATIONS: Conversation[] = [
-    {
-        id: '1',
-        name: '张设计师',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-        role: 'designer',
-        roleLabel: '设计师',
-        lastMessage: '新的平面布局方案已经发给您了，请查收',
-        time: '10:42',
-        unreadCount: 2,
-        isOnline: true,
-        isRead: false,
-    },
-    {
-        id: '2',
-        name: '李工长',
-        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100',
-        role: 'manager',
-        roleLabel: '工长',
-        lastMessage: '水电验收将在明天下午2点开始，请确认时...',
-        time: '昨天',
-        unreadCount: 0,
-        isOnline: false,
-        isRead: false,
-    },
-    {
-        id: '3',
-        name: '王师傅',
-        avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100',
-        role: 'worker',
-        roleLabel: '工人',
-        lastMessage: '您的第一期款项已确认到账。',
-        time: '周一',
-        unreadCount: 0,
-        isOnline: true,
-        isRead: true,
-    },
-    {
-        id: '4',
-        name: '美家装饰',
-        avatar: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100',
-        role: 'company',
-        roleLabel: '公司',
-        lastMessage: '感谢您选择我们，期待为您服务！',
-        time: '12/15',
-        unreadCount: 0,
-        isOnline: false,
-        isRead: true,
-    },
-];
-
-// Mock 系统通知数据
+// Mock 系统通知数据 (未来可从API获取)
 const MOCK_NOTIFICATIONS: SystemNotification[] = [
     {
         id: '1',
@@ -125,14 +79,6 @@ const MOCK_NOTIFICATIONS: SystemNotification[] = [
         time: '3天前',
         isRead: true,
     },
-    {
-        id: '4',
-        type: 'system',
-        title: '账户安全提醒',
-        content: '检测到您的账户在新设备登录，如非本人操作请及时修改密码。',
-        time: '1周前',
-        isRead: true,
-    },
 ];
 
 // 角色颜色映射
@@ -143,17 +89,65 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
     company: { bg: '#F3E8FF', text: '#7C3AED' },
 };
 
+// 格式化时间
+const formatTime = (isoString: string): string => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0) {
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    } else if (days === 1) {
+        return '昨天';
+    } else if (days < 7) {
+        const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        return weekDays[date.getDay()];
+    } else {
+        return `${date.getMonth() + 1}/${date.getDate()}`;
+    }
+};
+
 const MessageScreen: React.FC = () => {
     const navigation = useNavigation();
     const [activeTab, setActiveTab] = useState<'conversations' | 'notifications'>('conversations');
     const [refreshing, setRefreshing] = useState(false);
     const [searchText, setSearchText] = useState('');
-    const [conversations, setConversations] = useState(MOCK_CONVERSATIONS);
     const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
 
-    const onRefresh = () => {
+    // 从 ChatStore 获取真实数据
+    const storeConversations = useChatStore(state => state.conversations);
+    const fetchConversations = useChatStore(state => state.fetchConversations);
+    const isLoadingConversations = useChatStore(state => state.isLoadingConversations);
+    const connectionStatus = useChatStore(state => state.connectionStatus);
+
+    // 转换 store 会话为 UI 格式
+    const conversations: Conversation[] = storeConversations.map(conv => ({
+        id: conv.id,
+        name: conv.partnerName || '未知用户',
+        avatar: conv.partnerAvatar || 'https://via.placeholder.com/100',
+        role: 'designer' as const, // TODO: 从用户信息获取角色
+        roleLabel: '服务商',
+        lastMessage: conv.lastMessageContent || '暂无消息',
+        time: formatTime(conv.lastMessageTime),
+        unreadCount: conv.unreadCount,
+        isOnline: false, // TODO: 从 Hub 获取在线状态
+        isRead: conv.unreadCount === 0,
+        partnerId: conv.partnerId,
+    }));
+
+    // 页面聚焦时刷新
+    useFocusEffect(
+        useCallback(() => {
+            fetchConversations();
+        }, [])
+    );
+
+    const onRefresh = async () => {
         setRefreshing(true);
-        setTimeout(() => setRefreshing(false), 1000);
+        await fetchConversations();
+        setRefreshing(false);
     };
 
     // 未读通知数量
@@ -249,6 +243,16 @@ const MessageScreen: React.FC = () => {
             {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>消息中心</Text>
+                {/* 连接状态指示器 */}
+                <View style={styles.connectionStatus}>
+                    {connectionStatus === 'connected' ? (
+                        <Wifi size={16} color="#22C55E" />
+                    ) : connectionStatus === 'connecting' ? (
+                        <ActivityIndicator size="small" color="#F59E0B" />
+                    ) : (
+                        <WifiOff size={16} color="#EF4444" />
+                    )}
+                </View>
             </View>
 
             {/* 搜索框 */}
@@ -327,6 +331,9 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
     },
     header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         paddingHorizontal: 20,
         paddingTop: Platform.OS === 'ios' ? 12 : 44,
         paddingBottom: 16,
@@ -336,6 +343,14 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: '700',
         color: '#09090B',
+    },
+    connectionStatus: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: '#F4F4F5',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     // 搜索框
     searchContainer: {

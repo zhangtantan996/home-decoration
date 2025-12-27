@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"time"
 	"unicode"
@@ -145,9 +146,9 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		userNotFound = true
 	}
 
-	// 如果是密码登录但用户不存在，返回错误
+	// 如果是密码登录但用户不存在，统一返回错误（避免信息泄露）
 	if userNotFound && req.Type == "password" {
-		return nil, nil, errors.New("用户不存在，请使用验证码登录")
+		return nil, nil, errors.New("手机号或密码错误")
 	}
 
 	// 如果是验证码登录且用户不存在，自动创建账号
@@ -161,6 +162,25 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		if err := repository.DB.Create(&user).Error; err != nil {
 			return nil, nil, errors.New("账号创建失败，请稍后重试")
 		}
+		// 新创建的用户直接跳过锁定检查
+	} else {
+		// 检查账号是否被锁定
+		if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+			remainingMinutes := int(time.Until(*user.LockedUntil).Minutes())
+			return nil, nil, errors.New(fmt.Sprintf("账号已被锁定，请在 %d 分钟后重试", remainingMinutes))
+		}
+
+		// 如果锁定时间已过，重置失败次数
+		if user.LockedUntil != nil && time.Now().After(*user.LockedUntil) {
+			user.LoginFailedCount = 0
+			user.LockedUntil = nil
+			user.LastFailedLoginAt = nil
+			repository.DB.Model(&user).Updates(map[string]interface{}{
+				"login_failed_count":   0,
+				"locked_until":         nil,
+				"last_failed_login_at": nil,
+			})
+		}
 	}
 
 	// 检查用户状态
@@ -171,11 +191,22 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	// 如果是密码登录，验证密码
 	if req.Type == "password" {
 		if user.Password == "" {
-			return nil, nil, errors.New("未设置密码，请使用验证码登录")
+			return nil, nil, errors.New("手机号或密码错误")
 		}
 		if !CheckPassword(req.Password, user.Password) {
-			return nil, nil, errors.New("密码错误")
+			// 密码错误，记录失败次数
+			return nil, nil, s.handleLoginFailure(&user, "password")
 		}
+	}
+
+	// 登录成功，重置失败次数
+	if user.LoginFailedCount > 0 {
+		repository.DB.Model(&user).Updates(map[string]interface{}{
+			"login_failed_count":   0,
+			"last_failed_login_at": nil,
+		})
+		user.LoginFailedCount = 0
+		user.LastFailedLoginAt = nil
 	}
 
 	// 生成Token
@@ -206,12 +237,117 @@ func (s *UserService) GetUserByID(id uint64) (*model.User, error) {
 	return &user, nil
 }
 
+// RefreshToken 刷新访问令牌
+func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (*TokenResponse, error) {
+	// 验证 RefreshToken
+	token, err := jwt.Parse(refreshToken, func(token *jwt.Token) (interface{}, error) {
+		// 验证签名方法
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("无效的签名方法")
+		}
+		return jwtSecret, nil
+	})
+
+	if err != nil {
+		return nil, errors.New("刷新令牌无效或已过期")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return nil, errors.New("刷新令牌无效")
+	}
+
+	// 提取用户信息
+	userID, ok := claims["userId"].(float64)
+	if !ok {
+		return nil, errors.New("刷新令牌格式错误")
+	}
+
+	userType, ok := claims["userType"].(float64)
+	if !ok {
+		return nil, errors.New("刷新令牌格式错误")
+	}
+
+	// 验证用户是否存在且状态正常
+	user, err := s.GetUserByID(uint64(userID))
+	if err != nil {
+		return nil, errors.New("用户不存在")
+	}
+
+	if user.Status != 1 {
+		return nil, errors.New("账号已被禁用")
+	}
+
+	// 生成新的 Token
+	newToken, err := generateToken(uint64(userID), int8(userType), cfg.ExpireHour)
+	if err != nil {
+		return nil, err
+	}
+
+	// 生成新的 RefreshToken
+	newRefreshToken, err := generateToken(uint64(userID), int8(userType), cfg.ExpireHour*24)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TokenResponse{
+		Token:        newToken,
+		RefreshToken: newRefreshToken,
+		ExpiresIn:    int64(cfg.ExpireHour * 3600),
+	}, nil
+}
+
 // UpdateUser 更新用户信息
 func (s *UserService) UpdateUser(id uint64, nickname, avatar string) error {
 	return repository.DB.Model(&model.User{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nickname": nickname,
 		"avatar":   avatar,
 	}).Error
+}
+
+// handleLoginFailure 处理登录失败逻辑
+func (s *UserService) handleLoginFailure(user *model.User, loginType string) error {
+	now := time.Now()
+	user.LoginFailedCount++
+	user.LastFailedLoginAt = &now
+
+	updates := map[string]interface{}{
+		"login_failed_count":   user.LoginFailedCount,
+		"last_failed_login_at": now,
+	}
+
+	// 密码登录：5次失败锁定15分钟
+	// 验证码登录：10次失败锁定30分钟
+	var lockThreshold int
+	var lockDuration time.Duration
+
+	if loginType == "password" {
+		lockThreshold = 5
+		lockDuration = 15 * time.Minute
+	} else {
+		lockThreshold = 10
+		lockDuration = 30 * time.Minute
+	}
+
+	if user.LoginFailedCount >= lockThreshold {
+		lockedUntil := now.Add(lockDuration)
+		user.LockedUntil = &lockedUntil
+		updates["locked_until"] = lockedUntil
+
+		// 更新数据库
+		repository.DB.Model(user).Updates(updates)
+
+		return errors.New(fmt.Sprintf("登录失败次数过多，账号已被锁定 %d 分钟", int(lockDuration.Minutes())))
+	}
+
+	// 更新数据库
+	repository.DB.Model(user).Updates(updates)
+
+	remainingAttempts := lockThreshold - user.LoginFailedCount
+	if loginType == "password" {
+		return errors.New(fmt.Sprintf("手机号或密码错误，还可尝试 %d 次", remainingAttempts))
+	}
+	return errors.New(fmt.Sprintf("验证码错误，还可尝试 %d 次", remainingAttempts))
 }
 
 // generateToken 生成JWT Token
@@ -251,25 +387,38 @@ func validatePhone(phone string) error {
 
 // validatePassword 校验密码强度
 func validatePassword(password string) error {
-	if len(password) < 6 {
-		return errors.New("密码长度不能少于6位")
+	if len(password) < 8 {
+		return errors.New("密码长度不能少于8位")
 	}
 	if len(password) > 20 {
 		return errors.New("密码长度不能超过20位")
 	}
 
-	var hasLetter, hasDigit bool
+	var hasUpper, hasLower, hasDigit, hasSpecial bool
 	for _, c := range password {
-		if unicode.IsLetter(c) {
-			hasLetter = true
-		}
-		if unicode.IsDigit(c) {
+		switch {
+		case unicode.IsUpper(c):
+			hasUpper = true
+		case unicode.IsLower(c):
+			hasLower = true
+		case unicode.IsDigit(c):
 			hasDigit = true
+		case unicode.IsPunct(c) || unicode.IsSymbol(c):
+			hasSpecial = true
 		}
 	}
 
-	if !hasLetter || !hasDigit {
-		return errors.New("密码需包含字母和数字")
+	if !hasUpper {
+		return errors.New("密码需包含至少一个大写字母")
+	}
+	if !hasLower {
+		return errors.New("密码需包含至少一个小写字母")
+	}
+	if !hasDigit {
+		return errors.New("密码需包含至少一个数字")
+	}
+	if !hasSpecial {
+		return errors.New("密码需包含至少一个特殊字符")
 	}
 	return nil
 }

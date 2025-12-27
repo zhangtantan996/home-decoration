@@ -20,5 +20,5 @@ redis:
   db: 0
 
 jwt:
-  secret: "home-decoration-jwt-secret-prod-2024"
-  expire_hour: 72
+  secret: "${JWT_SECRET}"  # 从环境变量读取
+  expire_hour: 8  # 8小时过期

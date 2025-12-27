@@ -1,0 +1,269 @@
+import React, { useEffect, useState } from 'react';
+import { Table, Card, Select, Tag, Button, Space, message, Modal, Form, Input, Image, Descriptions } from 'antd';
+import { ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { adminAuditApi } from '../../services/api';
+
+interface ShopAuditItem {
+    id: number;
+    shopId: number;
+    shopName: string;
+    type: string;
+    brandName: string;
+    address: string;
+    contactPerson: string;
+    contactPhone: string;
+    businessLicense: string;
+    storeFront: string[];
+    status: number;
+    submitTime: string;
+    auditTime?: string;
+    rejectReason?: string;
+}
+
+const statusMap: Record<number, { text: string; color: string }> = {
+    0: { text: '待审核', color: 'orange' },
+    1: { text: '已通过', color: 'green' },
+    2: { text: '已拒绝', color: 'red' },
+};
+
+const MaterialShopAudit: React.FC = () => {
+    const [loading, setLoading] = useState(false);
+    const [items, setItems] = useState<ShopAuditItem[]>([]);
+    const [total, setTotal] = useState(0);
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(10);
+    const [statusFilter, setStatusFilter] = useState<number>(0);
+    const [detailVisible, setDetailVisible] = useState(false);
+    const [currentItem, setCurrentItem] = useState<ShopAuditItem | null>(null);
+    const [rejectVisible, setRejectVisible] = useState(false);
+    const [form] = Form.useForm();
+
+    useEffect(() => {
+        loadData();
+    }, [page, statusFilter]);
+
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const res = await adminAuditApi.materialShops({ page, pageSize, status: statusFilter }) as any;
+            if (res.code === 0) {
+                setItems(res.data.list || []);
+                setTotal(res.data.total || 0);
+            }
+        } catch (error) {
+            console.error(error);
+            message.error('加载失败');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const showDetail = (record: ShopAuditItem) => {
+        setCurrentItem(record);
+        setDetailVisible(true);
+    };
+
+    const handleApprove = async (record: ShopAuditItem) => {
+        Modal.confirm({
+            title: '确认审核通过',
+            content: `确定通过 ${record.shopName} 的认证审核吗？`,
+            onOk: async () => {
+                try {
+                    await adminAuditApi.approve('material-shops', record.id, {});
+                    message.success('审核通过');
+                    loadData();
+                } catch (error) {
+                    message.error('操作失败');
+                }
+            },
+        });
+    };
+
+    const showRejectModal = (record: ShopAuditItem) => {
+        setCurrentItem(record);
+        form.resetFields();
+        setRejectVisible(true);
+    };
+
+    const handleReject = async () => {
+        try {
+            const values = await form.validateFields();
+            if (currentItem) {
+                await adminAuditApi.reject('material-shops', currentItem.id, values);
+                message.success('已拒绝');
+                setRejectVisible(false);
+                loadData();
+            }
+        } catch (error) {
+            message.error('操作失败');
+        }
+    };
+
+    const columns = [
+        {
+            title: 'ID',
+            dataIndex: 'id',
+            width: 80,
+        },
+        {
+            title: '门店名称',
+            dataIndex: 'shopName',
+        },
+        {
+            title: '类型',
+            dataIndex: 'type',
+        },
+        {
+            title: '品牌',
+            dataIndex: 'brandName',
+        },
+        {
+            title: '联系人',
+            dataIndex: 'contactPerson',
+        },
+        {
+            title: '联系电话',
+            dataIndex: 'contactPhone',
+        },
+        {
+            title: '状态',
+            dataIndex: 'status',
+            render: (val: number) => {
+                const config = statusMap[val];
+                return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
+            },
+        },
+        {
+            title: '提交时间',
+            dataIndex: 'submitTime',
+            render: (val: string) => new Date(val).toLocaleString(),
+        },
+        {
+            title: '操作',
+            key: 'action',
+            render: (_: any, record: ShopAuditItem) => (
+                <Space>
+                    <Button type="link" size="small" onClick={() => showDetail(record)}>详情</Button>
+                    {record.status === 0 && (
+                        <>
+                            <Button
+                                type="link"
+                                size="small"
+                                icon={<CheckCircleOutlined />}
+                                onClick={() => handleApprove(record)}
+                            >
+                                通过
+                            </Button>
+                            <Button
+                                type="link"
+                                size="small"
+                                danger
+                                icon={<CloseCircleOutlined />}
+                                onClick={() => showRejectModal(record)}
+                            >
+                                拒绝
+                            </Button>
+                        </>
+                    )}
+                </Space>
+            ),
+        },
+    ];
+
+    return (
+        <Card>
+            <Space style={{ marginBottom: 16 }}>
+                <Select
+                    placeholder="审核状态"
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    style={{ width: 150 }}
+                    options={[
+                        { label: '待审核', value: 0 },
+                        { label: '已通过', value: 1 },
+                        { label: '已拒绝', value: 2 },
+                    ]}
+                />
+                <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
+            </Space>
+
+            <Table
+                loading={loading}
+                dataSource={items}
+                columns={columns}
+                rowKey="id"
+                pagination={{
+                    current: page,
+                    pageSize,
+                    total,
+                    onChange: setPage,
+                    showTotal: (total) => `共 ${total} 条`,
+                }}
+            />
+
+            <Modal
+                title="审核详情"
+                open={detailVisible}
+                onCancel={() => setDetailVisible(false)}
+                footer={null}
+                width={800}
+            >
+                {currentItem && (
+                    <Descriptions bordered column={2}>
+                        <Descriptions.Item label="门店名称" span={2}>
+                            {currentItem.shopName}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="类型">
+                            {currentItem.type}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="品牌">
+                            {currentItem.brandName}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="地址" span={2}>
+                            {currentItem.address}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="联系人">
+                            {currentItem.contactPerson}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="联系电话">
+                            {currentItem.contactPhone}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="营业执照" span={2}>
+                            <Image src={currentItem.businessLicense} width={200} />
+                        </Descriptions.Item>
+                        <Descriptions.Item label="门店照片" span={2}>
+                            <Image.PreviewGroup>
+                                {currentItem.storeFront?.map((img, index) => (
+                                    <Image key={index} src={img} width={150} style={{ marginRight: 8 }} />
+                                ))}
+                            </Image.PreviewGroup>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="提交时间" span={2}>
+                            {new Date(currentItem.submitTime).toLocaleString()}
+                        </Descriptions.Item>
+                        {currentItem.status === 2 && (
+                            <Descriptions.Item label="拒绝原因" span={2}>
+                                {currentItem.rejectReason}
+                            </Descriptions.Item>
+                        )}
+                    </Descriptions>
+                )}
+            </Modal>
+
+            <Modal
+                title="拒绝审核"
+                open={rejectVisible}
+                onOk={handleReject}
+                onCancel={() => setRejectVisible(false)}
+            >
+                <Form form={form} layout="vertical">
+                    <Form.Item label="拒绝原因" name="reason" rules={[{ required: true }]}>
+                        <Input.TextArea rows={4} placeholder="请输入拒绝原因" />
+                    </Form.Item>
+                </Form>
+            </Modal>
+        </Card>
+    );
+};
+
+export default MaterialShopAudit;

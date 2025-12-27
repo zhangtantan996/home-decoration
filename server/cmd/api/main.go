@@ -7,6 +7,7 @@ import (
 	"home-decoration-server/internal/handler"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/router"
+	"home-decoration-server/internal/ws"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +25,20 @@ func main() {
 	}
 	log.Println("Database connected successfully")
 
+	// 初始化Redis
+	if err := repository.InitRedis(&cfg.Redis); err != nil {
+		log.Fatalf("Failed to connect Redis: %v", err)
+	}
+	log.Println("Redis connected successfully")
+
+	// 初始化 WebSocket Hub
+	hub := ws.NewHub()
+	go hub.Run()
+	log.Println("WebSocket Hub started")
+
+	// 创建 WebSocket 消息处理器
+	wsHandler := ws.NewHandler(repository.DB, hub)
+
 	// 初始化处理器
 	handler.InitHandlers(cfg)
 
@@ -32,8 +47,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// 初始化路由
-	r := router.Setup(cfg)
+	// 初始化路由 (传入 WS 相关依赖)
+	r := router.Setup(cfg, hub, wsHandler)
 
 	// 启动服务
 	addr := cfg.Server.Host + ":" + cfg.Server.Port

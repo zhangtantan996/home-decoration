@@ -77,7 +77,22 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// 保存到全局变量
+	globalConfig = &cfg
+
 	return &cfg, nil
+}
+
+// 全局配置
+var globalConfig *Config
+
+// GetConfig 获取全局配置
+func GetConfig() *Config {
+	if globalConfig == nil {
+		cfg, _ := Load()
+		globalConfig = cfg
+	}
+	return globalConfig
 }
 
 // GetDSN 返回数据库连接字符串

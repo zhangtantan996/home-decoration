@@ -9,12 +9,13 @@ import (
 )
 
 var (
-	userService     = &service.UserService{}
-	providerService = &service.ProviderService{}
-	projectService  = &service.ProjectService{}
-	escrowService   = &service.EscrowService{}
-	bookingService  = &service.BookingService{}
-	jwtConfig       *config.JWTConfig
+	userService         = &service.UserService{}
+	providerService     = &service.ProviderService{}
+	projectService      = &service.ProjectService{}
+	escrowService       = &service.EscrowService{}
+	bookingService      = &service.BookingService{}
+	materialShopService = &service.MaterialShopService{}
+	jwtConfig           *config.JWTConfig
 )
 
 // InitHandlers 初始化处理器
@@ -99,7 +100,20 @@ func SendCode(c *gin.Context) {
 		return
 	}
 
+	// 获取客户端IP
+	clientIP := c.ClientIP()
+
+	// 检查发送频率
+	smsService := service.GetSMSService()
+	if err := smsService.CanSendCode(req.Phone, clientIP); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
 	// TODO: 实际项目接入短信服务
+	// 发送成功后记录
+	smsService.RecordSent(req.Phone, clientIP)
+
 	// 测试环境验证码固定为 123456
 	response.SuccessWithMessage(c, "验证码已发送", gin.H{
 		"message": "测试验证码: 123456",
@@ -108,8 +122,25 @@ func SendCode(c *gin.Context) {
 
 // RefreshToken 刷新Token
 func RefreshToken(c *gin.Context) {
-	// TODO: 实现刷新Token逻辑
-	response.Success(c, gin.H{"token": "xxx"})
+	var req struct {
+		RefreshToken string `json:"refreshToken" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "缺少刷新令牌")
+		return
+	}
+
+	tokenResp, err := userService.RefreshToken(req.RefreshToken, jwtConfig)
+	if err != nil {
+		response.Unauthorized(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"token":        tokenResp.Token,
+		"refreshToken": tokenResp.RefreshToken,
+		"expiresIn":    tokenResp.ExpiresIn,
+	})
 }
 
 // ========== 用户相关 ==========
@@ -256,6 +287,23 @@ func GetForeman(c *gin.Context) {
 	}
 
 	response.Success(c, detail)
+}
+
+// ========== 服务商通用 (关注/收藏) ==========
+
+// ListProviders 统一服务商列表
+func ListProviders(c *gin.Context) {
+	var query service.ProviderQuery
+	// 这里忽略绑定错误，因为 Type 是字符串，其他字段（如 Page）有默认值或手动处理更稳妥
+	_ = c.ShouldBindQuery(&query)
+
+	list, total, err := providerService.ListProviders(&query)
+	if err != nil {
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.PageSuccess(c, list, total, query.Page, query.PageSize)
 }
 
 // ========== 服务商案例、评价 ==========
@@ -646,6 +694,39 @@ func GetProviderUserStatus(c *gin.Context) {
 	}
 
 	response.Success(c, status)
+}
+
+// ========== 主材门店 ==========
+
+// ListMaterialShops 获取门店列表
+func ListMaterialShops(c *gin.Context) {
+	var query service.MaterialShopQuery
+	_ = c.ShouldBindQuery(&query)
+
+	list, total, err := materialShopService.ListMaterialShops(&query)
+	if err != nil {
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.PageSuccess(c, list, total, query.Page, query.PageSize)
+}
+
+// GetMaterialShop 获取门店详情
+func GetMaterialShop(c *gin.Context) {
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	detail, err := materialShopService.GetMaterialShopByID(id)
+	if err != nil {
+		response.NotFound(c, "门店不存在")
+		return
+	}
+
+	response.Success(c, detail)
 }
 
 // ========== 工具函数 ==========

@@ -51,6 +51,26 @@ func autoMigrate() error {
 		&model.PhaseTask{},
 		&model.UserFollow{},
 		&model.UserFavorite{},
+		// Chat
+		&model.Conversation{},
+		&model.ChatMessage{},
+		// MaterialShop
+		&model.MaterialShop{},
+		// RBAC 权限系统
+		&model.SysAdmin{},
+		&model.SysRole{},
+		&model.SysMenu{},
+		&model.SysAdminRole{},
+		&model.SysRoleMenu{},
+		&model.SysOperationLog{},
+		// 管理后台新增
+		&model.Admin{},
+		&model.ProviderAudit{},
+		&model.MaterialShopAudit{},
+		&model.RiskWarning{},
+		&model.Arbitration{},
+		&model.SystemSettings{},
+		&model.AdminLog{},
 	)
 }
 

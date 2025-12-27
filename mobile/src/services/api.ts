@@ -1,6 +1,5 @@
 import axios from 'axios';
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SecureStorage } from '../utils/SecureStorage';
 
 // @ts-ignore
 import { getApiUrl } from '../config';
@@ -13,23 +12,41 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
+// 正在刷新的标志
+let isRefreshing = false;
+// 刷新失败的请求队列
+let failedQueue: any[] = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+    failedQueue.forEach(prom => {
+        if (error) {
+            prom.reject(error);
+        } else {
+            prom.resolve(token);
+        }
+    });
+
+    failedQueue = [];
+};
+
 // 请求拦截器 - 自动添加 Token
 api.interceptors.request.use(
     async (config) => {
         try {
-            const token = await AsyncStorage.getItem('token');
+            const token = await SecureStorage.getToken();
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
             }
         } catch (error) {
-            console.log('Failed to get token:', error);
+            if (__DEV__) {
+                console.log('Failed to get token:', error);
+            }
         }
         return config;
     },
     (error) => Promise.reject(error)
 );
 
-// 响应拦截器 - 处理 401
 // 响应拦截器 - 处理 401 及业务错误
 api.interceptors.response.use(
     (response) => {
@@ -47,11 +64,68 @@ api.interceptors.response.use(
         return res;
     },
     async (error) => {
-        if (error.response?.status === 401) {
-            // Token 过期，清除本地存储
-            await AsyncStorage.removeItem('token');
-            await AsyncStorage.removeItem('user');
+        const originalRequest = error.config;
+
+        // 如果是 401 错误且不是刷新 Token 请求
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            if (isRefreshing) {
+                // 正在刷新，将请求加入队列
+                return new Promise((resolve, reject) => {
+                    failedQueue.push({ resolve, reject });
+                }).then(token => {
+                    originalRequest.headers['Authorization'] = 'Bearer ' + token;
+                    return api(originalRequest);
+                }).catch(err => {
+                    return Promise.reject(err);
+                });
+            }
+
+            originalRequest._retry = true;
+            isRefreshing = true;
+
+            try {
+                const refreshToken = await SecureStorage.getRefreshToken();
+
+                if (!refreshToken) {
+                    throw new Error('No refresh token');
+                }
+
+                // 调用刷新 Token 接口
+                const response = await axios.post(`${BASE_URL}/auth/refresh-token`, {
+                    refreshToken
+                });
+
+                const { token, refreshToken: newRefreshToken } = response.data.data;
+
+                // 保存新的 Token
+                await SecureStorage.saveToken(token);
+                if (newRefreshToken) {
+                    await SecureStorage.saveRefreshToken(newRefreshToken);
+                }
+
+                // 更新请求头
+                api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+                originalRequest.headers['Authorization'] = 'Bearer ' + token;
+
+                processQueue(null, token);
+                isRefreshing = false;
+
+                // 重试原请求
+                return api(originalRequest);
+            } catch (refreshError) {
+                processQueue(refreshError, null);
+                isRefreshing = false;
+
+                // Token 刷新失败，清除本地存储
+                await SecureStorage.clearAll();
+
+                // 通知用户需要重新登录（通过事件或导航）
+                // 这里可以使用 EventEmitter 或者其他方式通知应用跳转到登录页
+
+                return Promise.reject(refreshError);
+            }
         }
+
         return Promise.reject(error);
     }
 );
@@ -122,6 +196,19 @@ export const escrowApi = {
 
 export const bookingApi = {
     create: (data: any) => api.post('/bookings', data),
+};
+
+export const chatApi = {
+    getConversations: () => api.get<any>('/chat/conversations'),
+    getMessages: (conversationId: string, page = 1, pageSize = 20) =>
+        api.get<any>('/chat/messages', { params: { conversationId, page, pageSize } }),
+    getUnreadCount: () => api.get<any>('/chat/unread-count'),
+};
+
+export const materialShopApi = {
+    list: (params?: { page?: number; pageSize?: number; sortBy?: string; type?: string }) =>
+        api.get<any>('/material-shops', { params }),
+    detail: (id: number) => api.get<any>(`/material-shops/${id}`),
 };
 
 export default api;

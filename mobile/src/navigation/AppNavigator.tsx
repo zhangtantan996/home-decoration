@@ -31,6 +31,7 @@ import { ReviewsScreen } from '../screens/ReviewsScreen';
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
 import { useProviderStore } from '../store/providerStore';
+import { useChatStore } from '../store/chatStore';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -126,12 +127,23 @@ const LoadingScreen = () => (
 const AppNavigator = () => {
     const { isAuthenticated, isLoading, loadStoredAuth } = useAuthStore();
     const preloadAll = useProviderStore(state => state.preloadAll);
+    const connectChat = useChatStore(state => state.connect);
+    const disconnectChat = useChatStore(state => state.disconnect);
 
     useEffect(() => {
         loadStoredAuth();
         // 应用启动时预加载首页数据，用户进入首页时数据已就绪
         preloadAll();
     }, []);
+
+    // 当用户认证状态变化时，连接或断开 WebSocket
+    useEffect(() => {
+        if (isAuthenticated) {
+            connectChat();
+        } else {
+            disconnectChat();
+        }
+    }, [isAuthenticated]);
 
     if (isLoading) {
         return <LoadingScreen />;

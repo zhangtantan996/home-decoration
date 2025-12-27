@@ -1,29 +1,53 @@
-# Stage 1: Build Admin
+# ==========================================
+# Stage 1: Build Admin Panel
+# ==========================================
 FROM node:20-alpine AS admin-builder
 WORKDIR /app/admin
-COPY admin/package*.json ./
-RUN npm config set registry https://registry.npmmirror.com/
+
+# Mirror for China
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY admin/package.json ./
 RUN npm install
-COPY admin/ .
+
+COPY admin/ ./
 RUN npm run build
 
-# Stage 2: Build Mobile
-FROM node:20-alpine AS mobile-builder
+# ==========================================
+# Stage 2: Build Mobile Web (Landing/App)
+# ==========================================
+FROM node:20-alpine AS web-builder
 WORKDIR /app/mobile
-COPY mobile/package*.json ./
-RUN npm config set registry https://registry.npmmirror.com/
+
+# Mirror for China
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY mobile/package.json ./
 RUN npm install
-COPY mobile/ .
+
+COPY mobile/ ./
 RUN npm run build
 
-# Stage 3: Serve with Nginx
+# ==========================================
+# Stage 3: Nginx File Server
+# ==========================================
 FROM nginx:alpine
-# Copy build artifacts
-COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
-COPY --from=mobile-builder /app/mobile/dist /usr/share/nginx/html/mobile
 
-# Copy Nginx config
-COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+# Install timezone
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Shanghai
+
+# Copy Nginx Config
+COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
+
+# Copy Build Artifacts
+# Admin goes to /usr/share/nginx/html/admin
+COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
+
+# Web goes to /usr/share/nginx/html/web
+COPY --from=web-builder /app/mobile/dist /usr/share/nginx/html/web
 
 EXPOSE 80
+EXPOSE 443
+
 CMD ["nginx", "-g", "daemon off;"]

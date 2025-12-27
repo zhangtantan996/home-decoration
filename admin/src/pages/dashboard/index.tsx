@@ -1,25 +1,44 @@
-import React from 'react';
-import { Card, Row, Col, Statistic, Table, Tag, Space } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Card, Row, Col, Statistic, Table, Tag, Space, Spin } from 'antd';
 import {
+    UserOutlined,
+    TeamOutlined,
     ProjectOutlined,
     DollarOutlined,
-    WarningOutlined,
-    CheckCircleOutlined
+    CalendarOutlined,
+    ShopOutlined,
+    RiseOutlined,
 } from '@ant-design/icons';
+import { adminStatsApi } from '../../services/api';
 
-import { projectApi, escrowApi } from '../../services/api';
-import { useEffect, useState } from 'react';
+interface OverviewStats {
+    userCount: number;
+    todayNewUsers: number;
+    providerCount: number;
+    designerCount: number;
+    companyCount: number;
+    foremanCount: number;
+    projectCount: number;
+    activeProjects: number;
+    completedProjects: number;
+    bookingCount: number;
+    pendingBookings: number;
+    materialShopCount: number;
+    monthlyGMV: number;
+}
+
+interface TrendItem {
+    date: string;
+    users: number;
+    bookings: number;
+    projects: number;
+    gmv: number;
+}
 
 const Dashboard: React.FC = () => {
-    // 状态管理
     const [loading, setLoading] = useState(true);
-    const [recentProjects, setRecentProjects] = useState<any[]>([]);
-    const [stats, setStats] = useState({
-        activeProjects: 0,
-        monthlyGMV: 32000000, // 暂无API
-        escrowBalance: 0,
-        warnings: 0,          // 暂无API
-    });
+    const [stats, setStats] = useState<OverviewStats | null>(null);
+    const [trends, setTrends] = useState<TrendItem[]>([]);
 
     useEffect(() => {
         loadData();
@@ -28,21 +47,20 @@ const Dashboard: React.FC = () => {
     const loadData = async () => {
         try {
             setLoading(true);
-            // 并发请求
-            const [projRes, _escrowRes] = await Promise.all([
-                projectApi.list({ page: 1, pageSize: 5 }),
-                escrowApi.detail(1) // 暂时取项目1的托管作为示例
+            const [overviewRes, trendsRes] = await Promise.all([
+                adminStatsApi.overview(),
+                adminStatsApi.trends({ days: 7 }),
             ]);
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            void _escrowRes; // Mark as intentionally unused
 
-            const projData = projRes as any;
-            if (projData.code === 0) {
-                setRecentProjects(projData.data.list || []);
-                setStats(prev => ({ ...prev, activeProjects: projData.data.total }));
+            const overviewData = overviewRes as any;
+            const trendsData = trendsRes as any;
+
+            if (overviewData.code === 0) {
+                setStats(overviewData.data);
             }
-            // 托管余额只是单个项目的，此处仅演示集成
-            // 实际应调用聚合统计API
+            if (trendsData.code === 0) {
+                setTrends(trendsData.data || []);
+            }
         } catch (error) {
             console.error('Fetch dashboard data failed', error);
         } finally {
@@ -50,34 +68,65 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    const columns = [
-        { title: '项目名称', dataIndex: 'name', key: 'name' },
-        { title: '当前阶段', dataIndex: 'currentPhase', key: 'currentPhase', render: (val: number) => ['准备', '开工', '水电', '泥木', '油漆', '竣工'][val] || '未知' },
+    // 趋势表格列
+    const trendColumns = [
+        { title: '日期', dataIndex: 'date', key: 'date' },
+        { title: '新增用户', dataIndex: 'users', key: 'users' },
+        { title: '新增预约', dataIndex: 'bookings', key: 'bookings' },
+        { title: '新增项目', dataIndex: 'projects', key: 'projects' },
         {
-            title: '状态',
-            dataIndex: 'status',
-            key: 'status',
-            render: (status: number) => {
-                const config: Record<number, { color: string; text: string }> = {
-                    0: { color: 'blue', text: '进行中' },
-                    1: { color: 'green', text: '已完工' },
-                    2: { color: 'orange', text: '暂停' },
-                };
-                return <Tag color={config[status]?.color}>{config[status]?.text}</Tag>;
-            },
+            title: '成交额',
+            dataIndex: 'gmv',
+            key: 'gmv',
+            render: (val: number) => `¥${(val / 10000).toFixed(1)}万`,
         },
     ];
 
+    if (loading) {
+        return (
+            <div style={{ textAlign: 'center', padding: 100 }}>
+                <Spin size="large" />
+            </div>
+        );
+    }
+
     return (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            {/* 概览卡片 - 第一行 */}
             <Row gutter={16}>
                 <Col span={6}>
                     <Card>
                         <Statistic
-                            title="在建项目"
-                            value={stats.activeProjects}
+                            title="用户总数"
+                            value={stats?.userCount || 0}
+                            prefix={<UserOutlined />}
+                            suffix={
+                                <Tag color="green" style={{ marginLeft: 8 }}>
+                                    +{stats?.todayNewUsers || 0} 今日
+                                </Tag>
+                            }
+                        />
+                    </Card>
+                </Col>
+                <Col span={6}>
+                    <Card>
+                        <Statistic
+                            title="服务商总数"
+                            value={stats?.providerCount || 0}
+                            prefix={<TeamOutlined />}
+                        />
+                        <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                            设计师 {stats?.designerCount} | 公司 {stats?.companyCount} | 工长 {stats?.foremanCount}
+                        </div>
+                    </Card>
+                </Col>
+                <Col span={6}>
+                    <Card>
+                        <Statistic
+                            title="进行中项目"
+                            value={stats?.activeProjects || 0}
                             prefix={<ProjectOutlined />}
-                            suffix="个"
+                            suffix={`/ ${stats?.projectCount || 0}`}
                         />
                     </Card>
                 </Col>
@@ -85,44 +134,67 @@ const Dashboard: React.FC = () => {
                     <Card>
                         <Statistic
                             title="本月成交"
-                            value={stats.monthlyGMV / 10000}
+                            value={(stats?.monthlyGMV || 0) / 10000}
                             prefix={<DollarOutlined />}
                             suffix="万"
-                            precision={0}
-                        />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic
-                            title="托管余额"
-                            value={stats.escrowBalance / 10000}
-                            prefix={<CheckCircleOutlined />}
-                            suffix="万"
-                            precision={0}
-                        />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic
-                            title="风险预警"
-                            value={stats.warnings}
-                            prefix={<WarningOutlined />}
-                            suffix="个"
-                            valueStyle={{ color: stats.warnings > 0 ? '#cf1322' : '#3f8600' }}
+                            precision={1}
                         />
                     </Card>
                 </Col>
             </Row>
 
-            <Card title="最新项目动态">
+            {/* 概览卡片 - 第二行 */}
+            <Row gutter={16}>
+                <Col span={6}>
+                    <Card>
+                        <Statistic
+                            title="待处理预约"
+                            value={stats?.pendingBookings || 0}
+                            prefix={<CalendarOutlined />}
+                            valueStyle={{ color: stats?.pendingBookings ? '#cf1322' : '#3f8600' }}
+                            suffix={`/ ${stats?.bookingCount || 0}`}
+                        />
+                    </Card>
+                </Col>
+                <Col span={6}>
+                    <Card>
+                        <Statistic
+                            title="主材门店"
+                            value={stats?.materialShopCount || 0}
+                            prefix={<ShopOutlined />}
+                        />
+                    </Card>
+                </Col>
+                <Col span={6}>
+                    <Card>
+                        <Statistic
+                            title="已完成项目"
+                            value={stats?.completedProjects || 0}
+                            prefix={<RiseOutlined />}
+                            valueStyle={{ color: '#3f8600' }}
+                        />
+                    </Card>
+                </Col>
+                <Col span={6}>
+                    <Card>
+                        <Statistic
+                            title="项目完成率"
+                            value={stats?.projectCount ? Math.round((stats.completedProjects / stats.projectCount) * 100) : 0}
+                            suffix="%"
+                            valueStyle={{ color: '#1890ff' }}
+                        />
+                    </Card>
+                </Col>
+            </Row>
+
+            {/* 趋势数据 */}
+            <Card title="近7天趋势">
                 <Table
-                    dataSource={recentProjects}
-                    columns={columns}
-                    rowKey="id"
+                    dataSource={trends}
+                    columns={trendColumns}
+                    rowKey="date"
                     pagination={false}
-                    loading={loading}
+                    size="small"
                 />
             </Card>
         </Space>
