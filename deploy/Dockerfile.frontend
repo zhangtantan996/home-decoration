@@ -8,7 +8,7 @@ WORKDIR /app/admin
 RUN npm config set registry https://registry.npmmirror.com
 
 COPY admin/package.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY admin/ ./
 RUN npm run build
@@ -23,7 +23,7 @@ WORKDIR /app/mobile
 RUN npm config set registry https://registry.npmmirror.com
 
 COPY mobile/package.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY mobile/ ./
 RUN npm run build
