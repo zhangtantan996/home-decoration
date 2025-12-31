@@ -16,6 +16,7 @@ export interface ProviderDTO {
     longitude: number;
     distance?: number;
     // 新增字段
+    subType?: string; // personal, studio, company - 注册时选择的类型
     yearsExperience: number;
     specialty: string;
     workTypes: string;  // 逗号分隔：mason,electrician,carpenter,painter,plumber
@@ -23,6 +24,7 @@ export interface ProviderDTO {
     priceMin: number;
     priceMax: number;
     priceUnit: string;
+    serviceArea?: string; // JSON数组，服务区域
 }
 
 // 分页响应包装
@@ -49,6 +51,12 @@ export interface Designer {
     orgLabel: string;
     distance: string;
     specialty: string;
+    // Price Display - 拆分价格和单位
+    price: string; // 保留兼容
+    priceRange: string; // 如: 180-400
+    priceUnit: string; // 如: /m²
+    // Service Area
+    serviceArea: string[];
 }
 
 // 前端展示用的施工人员类型
@@ -93,13 +101,20 @@ export interface MaterialShop {
 
 // DTO -> 前端类型转换函数
 export function toDesigner(dto: ProviderDTO): Designer {
-    // 根据 providerType 推断 orgType
+    // 优先使用后端返回的 subType，仅在缺失时才根据名称推断
     let orgType: 'personal' | 'studio' | 'company' = 'personal';
-    if (dto.companyName && dto.companyName.includes('工作室')) {
+    if (dto.subType && ['personal', 'studio', 'company'].includes(dto.subType)) {
+        orgType = dto.subType as 'personal' | 'studio' | 'company';
+    } else if (dto.companyName && dto.companyName.includes('工作室')) {
         orgType = 'studio';
     } else if (dto.companyName && dto.companyName.includes('公司')) {
         orgType = 'company';
     }
+
+    const priceRange = dto.priceMin && dto.priceMax
+        ? `${dto.priceMin}-${dto.priceMax}`
+        : '120-300';
+    const priceUnit = '/m²';
 
     return {
         id: dto.id,
@@ -112,6 +127,12 @@ export function toDesigner(dto: ProviderDTO): Designer {
         orgLabel: dto.companyName || (orgType === 'personal' ? '独立设计师' : '设计公司'),
         distance: dto.distance ? `${dto.distance.toFixed(1)}km` : '附近',
         specialty: dto.specialty || (dto.restoreRate > 95 ? '高还原度 · 精品设计' : '现代简约 · 实用主义'),
+        price: `¥${priceRange}${priceUnit}`, // 兼容旧代码
+        priceRange,
+        priceUnit,
+        serviceArea: dto.serviceArea
+            ? JSON.parse(dto.serviceArea)
+            : ['雁塔区', '曲江新区', '高新区'],
     };
 }
 
@@ -150,6 +171,8 @@ export function toWorker(dto: ProviderDTO): Worker {
         teamSize: isCompany ? Math.floor(dto.completedCnt / 30) + 10 : undefined,
         certifications: isCompany ? ['建筑装饰资质'] : undefined,
         distance: dto.distance ? `${dto.distance.toFixed(1)}km` : '附近',
-        tags: dto.verified ? ['认证商家', '品质保障'] : ['服务优质'],
+        tags: isCompany
+            ? (dto.verified ? ['认证商家', '品质保障'] : ['正规资质'])
+            : (dto.verified ? ['实名认证', '技术过硬'] : ['服务优质']),
     };
 }

@@ -233,9 +233,21 @@ const ProviderAudit: React.FC = () => {
                         </Descriptions.Item>
                         <Descriptions.Item label="资质证书" span={2}>
                             <Image.PreviewGroup>
-                                {currentItem.certificates?.map((cert, index) => (
-                                    <Image key={index} src={cert} width={150} style={{ marginRight: 8 }} />
-                                ))}
+                                {(() => {
+                                    let certList: string[] = [];
+                                    if (typeof currentItem.certificates === 'string') {
+                                        try {
+                                            certList = JSON.parse(currentItem.certificates);
+                                        } catch {
+                                            certList = currentItem.certificates ? [currentItem.certificates] : [];
+                                        }
+                                    } else if (Array.isArray(currentItem.certificates)) {
+                                        certList = currentItem.certificates;
+                                    }
+                                    return certList.map((cert, index) => (
+                                        <Image key={index} src={cert} width={150} style={{ marginRight: 8 }} />
+                                    ));
+                                })()}
                             </Image.PreviewGroup>
                         </Descriptions.Item>
                         <Descriptions.Item label="提交时间" span={2}>

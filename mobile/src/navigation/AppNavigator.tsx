@@ -13,7 +13,8 @@ import MessageScreen from '../screens/MessageScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import LoginScreen from '../screens/LoginScreen';
 import InspirationScreen from '../screens/InspirationScreen';
-import { LiveRoomScreen, VideoPlayerScreen, ArticleDetailScreen } from '../screens/InspirationDetails';
+import { InspirationDetailScreen } from '../screens/InspirationDetails';
+import { MaterialShopDetailScreen } from '../screens/MaterialShopDetailScreen';
 import { DesignerDetailScreen, WorkerDetailScreen, CompanyDetailScreen } from '../screens/ProviderDetails';
 import { CaseGalleryScreen, CaseDetailScreen } from '../screens/CaseScreens';
 import BookingScreen from '../screens/BookingScreen';
@@ -27,14 +28,56 @@ import AccountSecurityScreen from '../screens/AccountSecurityScreen';
 import PullToRefreshDemo from '../screens/PullToRefreshDemo';
 import { ScanQRScreen } from '../screens/ScanQRScreen';
 import { ReviewsScreen } from '../screens/ReviewsScreen';
+import ProposalDetailScreen from '../screens/ProposalDetailScreen';
+import BillScreen from '../screens/BillScreen';
+import PaymentScreen from '../screens/PaymentScreen';
+import OrderListScreen from '../screens/OrderListScreen';
+import OrderDetailScreen from '../screens/OrderDetailScreen';
+import AfterSalesScreen from '../screens/AfterSalesScreen';
+import PendingScreen from '../screens/PendingScreen';
+import ProjectDetailScreen from '../screens/ProjectDetailScreen';
+import DesignFeePaymentScreen from '../screens/DesignFeePaymentScreen';
+import ProposalPaidDetailScreen from '../screens/ProposalPaidDetailScreen';
+import CreateProjectScreen from '../screens/CreateProjectScreen';
+import ProjectListScreen from '../screens/ProjectListScreen';
+import NotificationScreen from '../screens/NotificationScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
 import { useProviderStore } from '../store/providerStore';
 import { useChatStore } from '../store/chatStore';
+import { useSessionExpiry } from '../hooks/useSessionExpiry';
+
+// 定义导航参数列表
+export type RootStackParamList = {
+    Main: undefined;
+    Login: undefined;
+    Booking: {
+        providerId: string;
+        providerType: 'designer' | 'worker' | 'company';
+        providerName: string;
+        providerAvatar: string;
+        providerRating?: number;
+    };
+    Payment: {
+        bookingId: number;
+        amount: number;
+        providerName?: string;
+    };
+    OrderList: {
+        tab?: 'all' | 'pending_payment' | 'pending' | 'in_progress' | 'to_review' | 'cancelled';
+    };
+    OrderDetail: {
+        orderId: number;
+    };
+    AfterSales: {
+        tab?: 'all' | 'pending' | 'processing' | 'completed';
+    };
+    [key: string]: any;
+};
 
 const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // 底部Tab导航
 const MainTabs = () => {
@@ -130,16 +173,21 @@ const AppNavigator = () => {
     const connectChat = useChatStore(state => state.connect);
     const disconnectChat = useChatStore(state => state.disconnect);
 
+    // 监听会话过期事件，自动跳转登录页
+    useSessionExpiry();
+
     useEffect(() => {
         loadStoredAuth();
         // 应用启动时预加载首页数据，用户进入首页时数据已就绪
         preloadAll();
     }, []);
 
-    // 当用户认证状态变化时，连接或断开 WebSocket
+    // 当用户认证状态变化时，连接或断开 WebSocket，并尝试预加载数据
     useEffect(() => {
         if (isAuthenticated) {
             connectChat();
+            // 登录成功后立即尝试获取数据（如果之前为空或失败）
+            preloadAll();
         } else {
             disconnectChat();
         }
@@ -155,9 +203,16 @@ const AppNavigator = () => {
                 {isAuthenticated ? (
                     <>
                         <Stack.Screen name="Main" component={MainTabs} />
-                        <Stack.Screen name="LiveRoom" component={LiveRoomScreen} />
-                        <Stack.Screen name="VideoPlayer" component={VideoPlayerScreen} />
-                        <Stack.Screen name="ArticleDetail" component={ArticleDetailScreen} />
+                        <Stack.Screen
+                            name="InspirationDetail"
+                            component={InspirationDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="MaterialShopDetail"
+                            component={MaterialShopDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
                         <Stack.Screen
                             name="DesignerDetail"
                             component={DesignerDetailScreen}
@@ -201,6 +256,72 @@ const AppNavigator = () => {
                             }}
                         />
                         <Stack.Screen name="Reviews" component={ReviewsScreen} />
+                        {/* 业务流程扩展 */}
+                        <Stack.Screen
+                            name="ProposalDetail"
+                            component={ProposalDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="Pending"
+                            component={PendingScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="Payment"
+                            component={PaymentScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="OrderList"
+                            component={OrderListScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="OrderDetail"
+                            component={OrderDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="AfterSales"
+                            component={AfterSalesScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="Bill"
+                            component={BillScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="ProjectDetail"
+                            component={ProjectDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="DesignFeePayment"
+                            component={DesignFeePaymentScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="ProposalPaidDetail"
+                            component={ProposalPaidDetailScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="CreateProject"
+                            component={CreateProjectScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="ProjectList"
+                            component={ProjectListScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="Notification"
+                            component={NotificationScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
                     </>
                 ) : (
                     <Stack.Screen name="Login" component={LoginScreen} />

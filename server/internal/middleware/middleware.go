@@ -102,9 +102,11 @@ func JWT(secret string) gin.HandlerFunc {
 			c.Set("is_super", claims["is_super"])
 		}
 		if userID, ok := claims["userId"]; ok {
-			// 普通用户 Token
-			c.Set("userId", userID)
-			c.Set("userType", claims["userType"])
+			// 普通用户 Token - 转换为 uint64
+			c.Set("userId", uint64(userID.(float64)))
+			if userType, ok := claims["userType"]; ok {
+				c.Set("userType", userType)
+			}
 		}
 		c.Next()
 	}

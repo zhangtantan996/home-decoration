@@ -28,12 +28,14 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => response.data,
     (error) => {
+        // 如果是 401 错误且不在登录页面,清除认证信息并跳转
         if (error.response?.status === 401) {
-            localStorage.removeItem('admin_token');
-            localStorage.removeItem('admin_user');
-            localStorage.removeItem('admin_permissions');
-            localStorage.removeItem('admin_menus');
-            if (window.location.pathname !== '/login') {
+            // 只有在非登录页面才跳转,避免干扰登录页面的错误提示
+            if (!window.location.pathname.includes('/login')) {
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('admin_user');
+                localStorage.removeItem('admin_permissions');
+                localStorage.removeItem('admin_menus');
                 window.location.href = '/admin/login';
             }
         }
@@ -143,6 +145,24 @@ export const adminManageApi = {
     updateStatus: (id: number, status: number) => api.patch(`/admin/admins/${id}/status`, { status }),
 };
 
+// 角色管理
+export const adminRoleApi = {
+    list: () => api.get('/admin/roles'),
+    create: (data: any) => api.post('/admin/roles', data),
+    update: (id: number, data: any) => api.put(`/admin/roles/${id}`, data),
+    delete: (id: number) => api.delete(`/admin/roles/${id}`),
+    getMenus: (id: number) => api.get(`/admin/roles/${id}/menus`),
+    assignMenus: (id: number, menuIds: number[]) => api.post(`/admin/roles/${id}/menus`, { menuIds }),
+};
+
+// 菜单管理
+export const adminMenuApi = {
+    list: () => api.get('/admin/menus'),
+    create: (data: any) => api.post('/admin/menus', data),
+    update: (id: number, data: any) => api.put(`/admin/menus/${id}`, data),
+    delete: (id: number) => api.delete(`/admin/menus/${id}`),
+};
+
 // 审核管理
 export const adminAuditApi = {
     providers: (params?: { page?: number; pageSize?: number; status?: number }) =>
@@ -183,6 +203,28 @@ export const adminExportApi = {
     users: (params?: any) => api.get('/admin/export/users', { params, responseType: 'blob' }),
     providers: (params?: any) => api.get('/admin/export/providers', { params, responseType: 'blob' }),
     projects: (params?: any) => api.get('/admin/export/projects', { params, responseType: 'blob' }),
+};
+
+// 作品审核
+export const caseAuditApi = {
+    list: (params?: any) => api.get('/admin/audits/cases', { params }),
+    detail: (id: number) => api.get(`/admin/audits/cases/${id}`),
+    approve: (id: number) => api.post(`/admin/audits/cases/${id}/approve`),
+    reject: (id: number, reason: string) => api.post(`/admin/audits/cases/${id}/reject`, { reason }),
+};
+
+// 通知系统
+export const notificationApi = {
+    list: (params?: { page?: number; pageSize?: number }) =>
+        api.get('/admin/notifications', { params }),
+    getUnreadCount: () =>
+        api.get('/admin/notifications/unread-count'),
+    markAsRead: (id: number) =>
+        api.put(`/admin/notifications/${id}/read`),
+    markAllAsRead: () =>
+        api.put('/admin/notifications/read-all'),
+    delete: (id: number) =>
+        api.delete(`/admin/notifications/${id}`),
 };
 
 export default api;

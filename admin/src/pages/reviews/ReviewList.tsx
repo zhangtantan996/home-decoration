@@ -6,7 +6,9 @@ import { adminReviewApi } from '../../services/api';
 interface Review {
     id: number;
     providerId: number;
+    providerName: string; // 新增：服务商名称
     userId: number;
+    userName: string; // 新增：用户名称
     rating: number;
     content: string;
     images: string;
@@ -58,12 +60,12 @@ const ReviewList: React.FC = () => {
             width: 80,
         },
         {
-            title: '服务商ID',
-            dataIndex: 'providerId',
+            title: '服务商',
+            dataIndex: 'providerName', // 改为显示服务商名称
         },
         {
-            title: '用户ID',
-            dataIndex: 'userId',
+            title: '用户',
+            dataIndex: 'userName', // 改为显示用户名称
         },
         {
             title: '评分',

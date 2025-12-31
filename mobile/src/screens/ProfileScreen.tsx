@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -16,13 +16,19 @@ import {
     Heart,
     MapPin,
     Ticket,
-    MessageCircle,
     Calculator,
     ImageIcon,
     Headphones,
     Shield,
     ChevronRight,
     Info,
+    ClipboardList,
+    CreditCard,
+    MessageSquare,
+    RotateCcw,
+    Banknote,
+    MoreHorizontal,
+    Bell,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../components/Toast';
@@ -37,13 +43,6 @@ const MOCK_PROJECT = {
     progress: 30,
     budget: '280万',
     estimatedDays: 12,
-};
-
-// Mock 最新消息
-const MOCK_MESSAGE = {
-    sender: '设计顾问 - Jason',
-    time: '10:42 AM',
-    preview: '您的初步平面布局方案已经调整完毕...',
 };
 
 const ProfileScreen = ({ navigation }: any) => {
@@ -67,20 +66,77 @@ const ProfileScreen = ({ navigation }: any) => {
         });
     };
 
+    const [pendingCount, setPendingCount] = useState(0);
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+
+    // 加载待处理数量
+    // 加载待处理数量 (方案 + 待付款)
+    useEffect(() => {
+        const loadPendingCount = async () => {
+            try {
+                const { proposalApi, orderApi } = await import('../services/api');
+
+                // 并行请求
+                const [proposalRes, paymentRes] = await Promise.all([
+                    proposalApi.pendingCount().catch(() => ({ data: { count: 0 } })),
+                    orderApi.listPendingPayments().catch(() => ({ data: { items: [] } }))
+                ]);
+
+                const proposalCount = (proposalRes as any).data?.count || 0;
+                const paymentCount = (paymentRes as any).data?.items?.length || 0;
+
+                setPendingCount(proposalCount + paymentCount);
+            } catch (error) {
+                console.log('Failed to load pending count');
+            }
+        };
+        loadPendingCount();
+
+        // 监听焦点变化，每次返回页面都刷新数量
+        const unsubscribe = navigation.addListener('focus', loadPendingCount);
+        return unsubscribe;
+    }, [navigation]);
+
+    // 加载未读通知数量
+    useEffect(() => {
+        const loadUnreadNotifications = async () => {
+            try {
+                const { notificationApi } = await import('../services/api');
+                const res = await notificationApi.getUnreadCount();
+                setUnreadNotificationCount(res.data?.count || 0);
+            } catch (error) {
+                console.log('Failed to load unread notification count');
+            }
+        };
+        loadUnreadNotifications();
+
+        // 监听焦点变化，每次返回页面都刷新未读数量
+        const unsubscribe = navigation.addListener('focus', loadUnreadNotifications);
+        return unsubscribe;
+    }, [navigation]);
+
     // 快捷统计数据
     const quickStats = [
-        { label: '我的收藏', value: 12 },
-        { label: '浏览足迹', value: 48 },
-        { label: '卡券包', value: 3 },
-        { label: '待处理', value: 1, hasRedDot: true },
+        { label: '我的收藏', value: 12, key: 'favorites' },
+        { label: '我的项目', value: 3, key: 'projects' }, // TODO: Fetch real project count
+        { label: '卡券包', value: 3, key: 'coupons' },
+        { label: '待处理', value: pendingCount, hasRedDot: pendingCount > 0, key: 'pending' },
+    ];
+
+    // 订单模块
+    const orderItems = [
+        { icon: ClipboardList, label: '全部订单' },
+        { icon: CreditCard, label: '待付款' },
+        { icon: MessageSquare, label: '待评价' },
+        { icon: RotateCcw, label: '售后' },
     ];
 
     // 更多服务
     const moreServices = [
         { icon: Calculator, label: '装修算价' },
-        { icon: ImageIcon, label: '设计图库' },
-        { icon: Headphones, label: '专属客服' },
-        { icon: Shield, label: '隐私保护' },
+        { icon: Banknote, label: '贷款' },
+        { icon: Headphones, label: '客服' },
+        { icon: MoreHorizontal, label: '其他' },
     ];
 
     return (
@@ -107,52 +163,45 @@ const ProfileScreen = ({ navigation }: any) => {
                             </View>
                         </View>
                     </View>
-                    <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')}>
-                        <Settings size={22} color="#71717A" />
-                    </TouchableOpacity>
-                </View>
-
-                {/* 当前项目卡片 */}
-                <View style={styles.projectCard}>
-                    <View style={styles.projectHeader}>
-                        <View style={styles.projectLabelRow}>
-                            <FileText size={16} color={PRIMARY_GOLD} />
-                            <Text style={styles.projectLabel}>当前项目</Text>
-                        </View>
-                        <TouchableOpacity style={styles.viewDetailBtn}>
-                            <Text style={styles.viewDetailText}>查看详情</Text>
+                    <View style={styles.headerActions}>
+                        <TouchableOpacity
+                            style={styles.notificationBtn}
+                            onPress={() => navigation.navigate('Notification')}
+                        >
+                            <Bell size={22} color="#71717A" />
+                            {unreadNotificationCount > 0 && (
+                                <View style={styles.notificationBadge}>
+                                    <Text style={styles.notificationBadgeText}>
+                                        {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                                    </Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.settingsBtn} onPress={() => navigation.navigate('Settings')}>
+                            <Settings size={22} color="#71717A" />
                         </TouchableOpacity>
                     </View>
-                    <Text style={styles.projectName}>{MOCK_PROJECT.name}</Text>
-
-                    {/* 进度条 */}
-                    <View style={styles.progressSection}>
-                        <View style={styles.progressLabelRow}>
-                            <Text style={styles.stageText}>{MOCK_PROJECT.stage}</Text>
-                            <Text style={styles.progressText}>已完成 {MOCK_PROJECT.progress}%</Text>
-                        </View>
-                        <View style={styles.progressBarContainer}>
-                            <View style={[styles.progressBar, { width: `${MOCK_PROJECT.progress}%` }]} />
-                        </View>
-                    </View>
-
-                    {/* 预算和时间 */}
-                    <View style={styles.projectStats}>
-                        <View style={styles.projectStatItem}>
-                            <Text style={styles.projectStatValue}>¥{MOCK_PROJECT.budget}</Text>
-                            <Text style={styles.projectStatLabel}>预估报价</Text>
-                        </View>
-                        <View style={styles.projectStatItem}>
-                            <Text style={styles.projectStatValue}>{MOCK_PROJECT.estimatedDays}天</Text>
-                            <Text style={styles.projectStatLabel}>预计耗时</Text>
-                        </View>
-                    </View>
                 </View>
+
+                {/* 当前项目卡片 - 暂时移除 Mock 数据，等待真实数据接入 */}
+                {/* <ProjectCard /> */}
 
                 {/* 快捷统计 */}
                 <View style={styles.quickStatsRow}>
                     {quickStats.map((stat, index) => (
-                        <TouchableOpacity key={index} style={styles.quickStatItem}>
+                        <TouchableOpacity
+                            key={index}
+                            style={styles.quickStatItem}
+                            onPress={() => {
+                                if (stat.key === 'pending') {
+                                    navigation.navigate('Pending');
+                                } else if (stat.key === 'projects') {
+                                    navigation.navigate('ProjectList');
+                                } else {
+                                    handleServicePress(stat.label);
+                                }
+                            }}
+                        >
                             <View style={styles.quickStatValueContainer}>
                                 <Text style={styles.quickStatValue}>{stat.value}</Text>
                                 {stat.hasRedDot && <View style={styles.redDot} />}
@@ -162,33 +211,59 @@ const ProfileScreen = ({ navigation }: any) => {
                     ))}
                 </View>
 
-                {/* 最新消息预览 */}
-                <TouchableOpacity style={styles.messagePreview}>
-                    <View style={styles.messageIcon}>
-                        <MessageCircle size={20} color="#71717A" />
+                {/* 订单模块 */}
+                <View style={styles.menuCard}>
+                    <Text style={styles.menuTitle}>我的订单</Text>
+                    <View style={styles.menuGrid}>
+                        {orderItems.map((item, index) => {
+                            // 售后跳转到售后页面
+                            if (item.label === '售后') {
+                                return (
+                                    <TouchableOpacity
+                                        key={index}
+                                        style={styles.menuItem}
+                                        onPress={() => navigation.navigate('AfterSales', { tab: 'all' })}
+                                    >
+                                        <View style={styles.menuIconContainer}>
+                                            <item.icon size={24} color="#09090B" />
+                                        </View>
+                                        <Text style={styles.menuLabel}>{item.label}</Text>
+                                    </TouchableOpacity>
+                                );
+                            }
+
+                            // 其他跳转到订单页面
+                            const tabMapping: { [key: string]: 'all' | 'pending_payment' | 'to_review' } = {
+                                '全部订单': 'all',
+                                '待付款': 'pending_payment',
+                                '待评价': 'to_review',
+                            };
+                            return (
+                                <TouchableOpacity
+                                    key={index}
+                                    style={styles.menuItem}
+                                    onPress={() => navigation.navigate('OrderList', { tab: tabMapping[item.label] || 'all' })}
+                                >
+                                    <View style={styles.menuIconContainer}>
+                                        <item.icon size={24} color="#09090B" />
+                                    </View>
+                                    <Text style={styles.menuLabel}>{item.label}</Text>
+                                </TouchableOpacity>
+                            );
+                        })}
                     </View>
-                    <View style={styles.messageContent}>
-                        <View style={styles.messageHeader}>
-                            <Text style={styles.messageSender}>{MOCK_MESSAGE.sender}</Text>
-                            <Text style={styles.messageTime}>{MOCK_MESSAGE.time}</Text>
-                        </View>
-                        <Text style={styles.messageText} numberOfLines={1}>
-                            {MOCK_MESSAGE.preview}
-                        </Text>
-                    </View>
-                    <View style={styles.messageUnread} />
-                </TouchableOpacity>
+                </View>
 
                 {/* 更多服务 */}
-                <View style={styles.moreServicesSection}>
-                    <Text style={styles.sectionTitle}>更多服务</Text>
-                    <View style={styles.servicesGrid}>
+                <View style={styles.menuCard}>
+                    <Text style={styles.menuTitle}>更多服务</Text>
+                    <View style={styles.menuGrid}>
                         {moreServices.map((service, index) => (
-                            <TouchableOpacity key={index} style={styles.serviceItem} onPress={() => handleServicePress(service.label)}>
-                                <View style={styles.serviceIconContainer}>
+                            <TouchableOpacity key={index} style={styles.menuItem} onPress={() => handleServicePress(service.label)}>
+                                <View style={styles.menuIconContainer}>
                                     <service.icon size={24} color="#09090B" />
                                 </View>
-                                <Text style={styles.serviceLabel}>{service.label}</Text>
+                                <Text style={styles.menuLabel}>{service.label}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -284,6 +359,32 @@ const styles = StyleSheet.create({
     },
     settingsBtn: {
         padding: 8,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    notificationBtn: {
+        padding: 8,
+        position: 'relative',
+    },
+    notificationBadge: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        backgroundColor: '#EF4444',
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+    },
+    notificationBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '600',
     },
     // 项目卡片
     projectCard: {
@@ -407,86 +508,43 @@ const styles = StyleSheet.create({
         color: '#71717A',
         marginTop: 6,
     },
-    // 消息预览
-    messagePreview: {
-        flexDirection: 'row',
-        alignItems: 'center',
+
+    // 菜单模块 (订单 & 更多服务)
+    menuCard: {
         backgroundColor: '#FFFFFF',
         marginHorizontal: 16,
         marginTop: 16,
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 16,
+        padding: 20,
     },
-    messageIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#F4F4F5',
-        justifyContent: 'center',
-        alignItems: 'center',
+    menuTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#09090B',
+        marginBottom: 20,
     },
-    messageContent: {
-        flex: 1,
-        marginLeft: 12,
-    },
-    messageHeader: {
+    menuGrid: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 4,
+        alignItems: 'flex-start',
     },
-    messageSender: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#09090B',
-    },
-    messageTime: {
-        fontSize: 12,
-        color: '#A1A1AA',
-    },
-    messageText: {
-        fontSize: 13,
-        color: '#71717A',
-    },
-    messageUnread: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: PRIMARY_GOLD,
-        marginLeft: 8,
-    },
-    // 更多服务
-    moreServicesSection: {
-        marginTop: 24,
-        paddingHorizontal: 16,
-    },
-    sectionTitle: {
-        fontSize: 14,
-        color: '#71717A',
-        marginBottom: 12,
-    },
-    servicesGrid: {
-        flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        paddingVertical: 20,
-    },
-    serviceItem: {
+    menuItem: {
         flex: 1,
         alignItems: 'center',
     },
-    serviceIconContainer: {
+    menuIconContainer: {
         width: 48,
         height: 48,
-        borderRadius: 12,
-        backgroundColor: '#F4F4F5',
+        borderRadius: 16,
+        backgroundColor: '#F8F9FA',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 8,
     },
-    serviceLabel: {
+    menuLabel: {
         fontSize: 12,
-        color: '#09090B',
+        color: '#18181B',
+        fontWeight: '500',
     },
     // 退出登录
     logoutBtn: {

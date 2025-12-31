@@ -80,6 +80,18 @@ func AdminLogin(c *gin.Context) {
 		"last_login_ip": c.ClientIP(),
 	})
 
+	// 加载管理员角色
+	repository.DB.Preload("Roles").First(&admin, admin.ID)
+
+	// 获取角色标识列表
+	roleKeys := getRoleKeys(admin.Roles)
+
+	// 获取权限列表
+	permissions := getAdminPermissions(&admin)
+
+	// 获取菜单树
+	menus := getAdminMenuTree(&admin)
+
 	// 生成 Token（管理员 Token 有效期 60 分钟）
 	cfg := config.GetConfig()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -104,7 +116,10 @@ func AdminLogin(c *gin.Context) {
 			"nickname":     admin.Nickname,
 			"avatar":       admin.Avatar,
 			"isSuperAdmin": admin.IsSuperAdmin,
+			"roles":        roleKeys,
 		},
+		"permissions": permissions,
+		"menus":       menus,
 	})
 }
 
@@ -205,15 +220,14 @@ func getAdminMenuTree(admin *model.SysAdmin) []*model.SysMenu {
 			Find(&menus)
 	}
 
-	// 去重
-	menuMap := make(map[uint64]*model.SysMenu)
-	for i := range menus {
-		menuMap[menus[i].ID] = &menus[i]
-	}
-
+	// 去重（保持顺序）
+	menuMap := make(map[uint64]bool)
 	var uniqueMenus []*model.SysMenu
-	for _, m := range menuMap {
-		uniqueMenus = append(uniqueMenus, m)
+	for i := range menus {
+		if !menuMap[menus[i].ID] {
+			menuMap[menus[i].ID] = true
+			uniqueMenus = append(uniqueMenus, &menus[i])
+		}
 	}
 
 	// 构建树
@@ -326,6 +340,21 @@ func AdminDeleteRole(c *gin.Context) {
 	tx.Commit()
 
 	response.Success(c, nil)
+}
+
+// AdminGetRoleMenus 获取角色已分配的菜单权限
+func AdminGetRoleMenus(c *gin.Context) {
+	roleID := c.Param("id")
+
+	var roleMenus []model.SysRoleMenu
+	repository.DB.Where("role_id = ?", roleID).Find(&roleMenus)
+
+	menuIds := make([]uint64, len(roleMenus))
+	for i, rm := range roleMenus {
+		menuIds[i] = rm.MenuID
+	}
+
+	response.Success(c, gin.H{"menuIds": menuIds})
 }
 
 // AdminAssignRoleMenus 给角色分配菜单权限

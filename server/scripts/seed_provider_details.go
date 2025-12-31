@@ -63,14 +63,34 @@ func updateProviderProfile(p *model.Provider) {
 	case 1: // 设计师
 		updates["service_intro"] = "专注现代简约、北欧风格设计，擅长空间规划与色彩搭配。提供从平面布局、效果图设计到软装搭配的全流程服务。秉承\"少即是多\"的设计理念，打造舒适、实用、美观的居住空间。"
 		updates["team_size"] = 1
+		// 西安区域数据
+		areas := [][]string{
+			{"雁塔区", "曲江新区", "高新区"},
+			{"未央区", "莲湖区", "经开区"},
+			{"碑林区", "新城区", "灞桥区"},
+		}
+		areaJson, _ := json.Marshal(areas[p.ID%3])
+		updates["service_area"] = string(areaJson)
+
 	case 2: // 公司
 		updates["service_intro"] = "专业装修公司，提供从设计到施工的一站式服务。拥有专业施工团队，严格把控工程质量，让您省心省力。"
 		updates["team_size"] = 20 + int(p.ID%10)*5
 		certs, _ := json.Marshal([]string{"营业执照", "建筑装饰资质", "安全生产许可证"})
 		updates["certifications"] = string(certs)
+		areaJson, _ := json.Marshal([]string{"西安市全城"})
+		updates["service_area"] = string(areaJson)
+
 	case 3: // 工长
 		updates["service_intro"] = "多年施工经验，熟悉各类装修工艺。工作认真负责，注重细节，确保每个环节都达到高标准。"
 		updates["team_size"] = 5 + int(p.ID%5)
+		// 西安区域数据
+		areas := [][]string{
+			{"雁塔区", "高新区"},
+			{"莲湖区", "未央区"},
+			{"长安区", "曲江新区"},
+		}
+		areaJson, _ := json.Marshal(areas[p.ID%3])
+		updates["service_area"] = string(areaJson)
 	}
 
 	repository.DB.Model(p).Updates(updates)

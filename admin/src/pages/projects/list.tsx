@@ -4,8 +4,10 @@ import { SearchOutlined, EyeOutlined } from '@ant-design/icons';
 
 import { projectApi } from '../../services/api';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const ProjectList: React.FC = () => {
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [projects, setProjects] = useState<any[]>([]);
     const [total, setTotal] = useState(0);
@@ -57,8 +59,8 @@ const ProjectList: React.FC = () => {
         {
             title: '操作',
             key: 'action',
-            render: () => (
-                <Button type="link" icon={<EyeOutlined />}>查看</Button>
+            render: (_: any, record: any) => (
+                <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/projects/detail/${record.id}`)}>查看</Button>
             ),
         },
     ];

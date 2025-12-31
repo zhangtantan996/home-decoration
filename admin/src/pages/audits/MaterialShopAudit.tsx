@@ -233,9 +233,21 @@ const MaterialShopAudit: React.FC = () => {
                         </Descriptions.Item>
                         <Descriptions.Item label="门店照片" span={2}>
                             <Image.PreviewGroup>
-                                {currentItem.storeFront?.map((img, index) => (
-                                    <Image key={index} src={img} width={150} style={{ marginRight: 8 }} />
-                                ))}
+                                {(() => {
+                                    let imgList: string[] = [];
+                                    if (typeof currentItem.storeFront === 'string') {
+                                        try {
+                                            imgList = JSON.parse(currentItem.storeFront);
+                                        } catch {
+                                            imgList = currentItem.storeFront ? [currentItem.storeFront] : [];
+                                        }
+                                    } else if (Array.isArray(currentItem.storeFront)) {
+                                        imgList = currentItem.storeFront;
+                                    }
+                                    return imgList.map((img, index) => (
+                                        <Image key={index} src={img} width={150} style={{ marginRight: 8 }} />
+                                    ));
+                                })()}
                             </Image.PreviewGroup>
                         </Descriptions.Item>
                         <Descriptions.Item label="提交时间" span={2}>

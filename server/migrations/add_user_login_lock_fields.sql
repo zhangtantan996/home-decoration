@@ -1,0 +1,10 @@
+-- 添加用户登录锁定相关字段
+-- 执行时间: 2025-12-26
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS login_failed_count INT DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_failed_login_at TIMESTAMP;
+
+COMMENT ON COLUMN users.login_failed_count IS '登录失败次数';
+COMMENT ON COLUMN users.locked_until IS '锁定到期时间';
+COMMENT ON COLUMN users.last_failed_login_at IS '最后失败登录时间';

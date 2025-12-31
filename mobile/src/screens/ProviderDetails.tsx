@@ -123,7 +123,12 @@ const ParallaxScrollLayout = ({
 
 // ========== Designer Detail Screen ==========
 export const DesignerDetailScreen = ({ route, navigation }: any) => {
-    const { designer } = route.params;
+    const params = route.params || {};
+    // 支持直接传 id，或者传完整的 designer 对象
+    const designerId = params.id || params.designer?.id;
+    // 初始数据可能是 undefined，需要做空保护
+    const initialDesigner = params.designer || { id: designerId, name: '加载中...' };
+
     const { showToast } = useToast();
     const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -133,15 +138,18 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const [isFollowed, setIsFollowed] = useState(false);
     const [isFavorited, setIsFavorited] = useState(false);
     const [followersCount, setFollowersCount] = useState(0);
+    const [isIntroExpanded, setIsIntroExpanded] = useState(false);
 
     useEffect(() => {
-        loadDetail();
-        loadUserStatus();
-    }, []);
+        if (designerId) {
+            loadDetail();
+            loadUserStatus();
+        }
+    }, [designerId]);
 
     const loadDetail = async () => {
         try {
-            const res = await providerApi.designerDetail(designer.id);
+            const res = await providerApi.designerDetail(designerId);
             if (res.data) {
                 setDetail(res.data);
                 setFollowersCount(res.data.provider?.followersCount || 0);
@@ -155,7 +163,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
 
     const loadUserStatus = async () => {
         try {
-            const res = await providerApi.getUserStatus(designer.id);
+            const res = await providerApi.getUserStatus(designerId);
             if (res.data) {
                 setIsFollowed(res.data.isFollowed);
                 setIsFavorited(res.data.isFavorited);
@@ -167,7 +175,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     };
 
     const handleShare = () => {
-        const shareUrl = `${getWebUrl()}/designer/${designer.id}`;
+        const shareUrl = `${getWebUrl()}/designer/${designerId}`;
         Clipboard.setString(shareUrl);
         showToast({ message: '链接已复制到剪贴板', type: 'success' });
     };
@@ -175,10 +183,10 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const handleFollow = async () => {
         try {
             if (isFollowed) {
-                await providerApi.unfollow(designer.id, 'designer');
+                await providerApi.unfollow(designerId, 'designer');
                 setFollowersCount(prev => Math.max(0, prev - 1));
             } else {
-                await providerApi.follow(designer.id, 'designer');
+                await providerApi.follow(designerId, 'designer');
                 setFollowersCount(prev => prev + 1);
             }
             setIsFollowed(!isFollowed);
@@ -190,9 +198,9 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const handleFavorite = async () => {
         try {
             if (isFavorited) {
-                await providerApi.unfavorite(designer.id, 'provider');
+                await providerApi.unfavorite(designerId, 'provider');
             } else {
-                await providerApi.favorite(designer.id, 'provider');
+                await providerApi.favorite(designerId, 'provider');
             }
             setIsFavorited(!isFavorited);
         } catch (error) {
@@ -207,20 +215,20 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const reviews = detail?.reviews || [];
     const caseCount = detail?.caseCount || 0;
 
-    // 合并数据（API 优先，降级使用传入的 designer）
+    // 合并数据（API 优先，降级使用传入的 initialDesigner）
     const displayData = {
-        name: user.nickname || designer.name,
-        avatar: user.avatar || designer.avatar,
-        coverImage: provider.coverImage || provider.avatar || designer.avatar,
-        rating: provider.rating || designer.rating,
-        reviewCount: detail?.reviewCount || provider.reviewCount || designer.reviewCount || 0,
-        yearsExperience: provider.yearsExperience || designer.yearsExperience,
-        specialty: provider.specialty || designer.specialty,
-        orgType: provider.subType || designer.orgType || 'personal',
-        orgLabel: provider.companyName || designer.orgLabel || '',
-        distance: designer.distance || '3km',
-        completedCnt: provider.completedCnt || 128,
-        followersCount: provider.followersCount || 1200,
+        name: user.nickname || initialDesigner.name || '设计师',
+        avatar: user.avatar || initialDesigner.avatar,
+        coverImage: provider.coverImage || provider.avatar || initialDesigner.avatar,
+        rating: provider.rating || initialDesigner.rating || 5.0,
+        reviewCount: detail?.reviewCount || provider.reviewCount || initialDesigner.reviewCount || 0,
+        yearsExperience: provider.yearsExperience || initialDesigner.yearsExperience || 0,
+        specialty: provider.specialty || initialDesigner.specialty || '',
+        orgType: provider.subType || initialDesigner.orgType || 'personal',
+        orgLabel: provider.companyName || initialDesigner.orgLabel || '',
+        distance: initialDesigner.distance || '3km',
+        completedCnt: provider.completedCnt || 0,
+        followersCount: provider.followersCount || 0,
         serviceIntro: provider.serviceIntro || '专注现代简约、北欧风格设计，擅长空间规划与色彩搭配。提供从平面布局、效果图设计到软装搭配的全流程服务。',
         priceMin: provider.priceMin || 300,
         priceMax: provider.priceMax || 500,
@@ -264,7 +272,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                             </View>
                             <View style={styles.heroBadgeRow}>
                                 <View style={styles.heroBadge}>
-                                    <Text style={styles.heroBadgeText}>{displayData.specialty}</Text>
+                                    <Text style={styles.heroBadgeText}>{displayData.specialty?.replace(/[,，]/g, ' · ')}</Text>
                                 </View>
                                 <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
                                     <Text style={styles.heroBadgeText}>{displayData.yearsExperience}年经验</Text>
@@ -322,7 +330,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
                             conversation: {
-                                id: designer.id,
+                                id: Number(designerId),
                                 name: displayData.name,
                                 avatar: displayData.avatar,
                                 role: 'designer',
@@ -337,7 +345,17 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
 
                     <TouchableOpacity
                         style={styles.floatPrimaryBtn}
-                        onPress={() => navigation.navigate('Booking', { provider: designer, providerType: 'designer' })}
+                        onPress={() => navigation.navigate('Booking', {
+                            provider: {
+                                id: Number(designerId),
+                                name: displayData.name,
+                                avatar: displayData.avatar,
+                                rating: displayData.rating,
+                                yearsExperience: displayData.yearsExperience,
+                                specialty: displayData.specialty,
+                            },
+                            providerType: 'designer'
+                        })}
                     >
                         <Text style={styles.floatPrimaryText}>立即预约设计</Text>
                     </TouchableOpacity>
@@ -365,10 +383,35 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                 </View>
             </View>
 
-            {/* 3. Service Intro */}
+            {/* Service Area Section */}
+            <View style={styles.magazineSection}>
+                <Text style={styles.magSectionTitle}>服务区域</Text>
+                <View style={styles.tagsContainer}>
+                    {(provider.serviceArea ? JSON.parse(provider.serviceArea) : ['雁塔区', '曲江新区', '高新区']).map((area: string, idx: number) => (
+                        <View key={idx} style={styles.tag}>
+                            <Text style={styles.tagText}>{area}</Text>
+                        </View>
+                    ))}
+                </View>
+            </View>
+
+            {/* 4. Service Intro */}
             <View style={styles.magazineSection}>
                 <Text style={styles.magSectionTitle}>设计理念</Text>
-                <Text style={styles.magDescText} numberOfLines={3}>{displayData.serviceIntro}</Text>
+
+                <Text style={styles.magDescText} numberOfLines={isIntroExpanded ? undefined : 3}>
+                    {displayData.serviceIntro}
+                </Text>
+                {displayData.serviceIntro && displayData.serviceIntro.length > 60 && (
+                    <TouchableOpacity
+                        onPress={() => setIsIntroExpanded(!isIntroExpanded)}
+                        style={{ marginTop: 4, alignSelf: 'flex-end' }}
+                    >
+                        <Text style={{ color: '#6B7280', fontSize: 13 }}>
+                            {isIntroExpanded ? '收起' : '展开'}
+                        </Text>
+                    </TouchableOpacity>
+                )}
 
                 <View style={styles.priceTagRow}>
                     <Text style={styles.priceTagLabel}>设计费</Text>
@@ -381,7 +424,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.sectionHeader}>
                     <Text style={styles.magSectionTitle}>精选作品</Text>
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('CaseGallery', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
+                        onPress={() => navigation.navigate('CaseGallery', { providerId: designerId, providerName: displayData.name, providerType: 'designer' })}
                     >
                         <Text style={styles.moreLink}>全部作品</Text>
                     </TouchableOpacity>
@@ -426,7 +469,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.sectionHeader}>
                     <Text style={styles.magSectionTitle}>口碑评价</Text>
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('Reviews', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
+                        onPress={() => navigation.navigate('Reviews', { providerId: designerId, providerName: displayData.name, providerType: 'designer' })}
                     >
                         <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
                     </TouchableOpacity>
@@ -450,7 +493,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         ))}
                         <TouchableOpacity
                             style={styles.checkAllReviewsBtn}
-                            onPress={() => navigation.navigate('Reviews', { providerId: designer.id, providerName: displayData.name, providerType: 'designer' })}
+                            onPress={() => navigation.navigate('Reviews', { providerId: designerId, providerName: displayData.name, providerType: 'designer' })}
                         >
                             <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
                         </TouchableOpacity>
@@ -468,7 +511,10 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
 
 // ========== Worker Detail Screen ==========
 export const WorkerDetailScreen = ({ route, navigation }: any) => {
-    const { worker } = route.params;
+    const params = route.params || {};
+    const workerId = params.id || params.worker?.id;
+    const initialWorker = params.worker || { id: workerId, name: '加载中...' };
+
     const { showToast } = useToast();
     const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -480,13 +526,15 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const [followersCount, setFollowersCount] = useState(0);
 
     useEffect(() => {
-        loadDetail();
-        loadUserStatus();
-    }, []);
+        if (workerId) {
+            loadDetail();
+            loadUserStatus();
+        }
+    }, [workerId]);
 
     const loadDetail = async () => {
         try {
-            const res = await providerApi.foremanDetail(worker.id);
+            const res = await providerApi.foremanDetail(workerId);
             if (res.data) {
                 setDetail(res.data);
                 setFollowersCount(res.data.provider?.followersCount || 0);
@@ -500,7 +548,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
 
     const loadUserStatus = async () => {
         try {
-            const res = await providerApi.getUserStatus(worker.id);
+            const res = await providerApi.getUserStatus(workerId);
             if (res.data) {
                 setIsFollowed(res.data.isFollowed);
                 setIsFavorited(res.data.isFavorited);
@@ -511,7 +559,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     };
 
     const handleShare = () => {
-        const shareUrl = `${getWebUrl()}/worker/${worker.id}`;
+        const shareUrl = `${getWebUrl()}/worker/${workerId}`;
         Clipboard.setString(shareUrl);
         showToast({ message: '链接已复制到剪贴板', type: 'success' });
     };
@@ -519,10 +567,10 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const handleFollow = async () => {
         try {
             if (isFollowed) {
-                await providerApi.unfollow(worker.id, 'foreman');
+                await providerApi.unfollow(workerId, 'foreman');
                 setFollowersCount(prev => Math.max(0, prev - 1));
             } else {
-                await providerApi.follow(worker.id, 'foreman');
+                await providerApi.follow(workerId, 'foreman');
                 setFollowersCount(prev => prev + 1);
             }
             setIsFollowed(!isFollowed);
@@ -534,9 +582,9 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const handleFavorite = async () => {
         try {
             if (isFavorited) {
-                await providerApi.unfavorite(worker.id, 'provider');
+                await providerApi.unfavorite(workerId, 'provider');
             } else {
-                await providerApi.favorite(worker.id, 'provider');
+                await providerApi.favorite(workerId, 'provider');
             }
             setIsFavorited(!isFavorited);
         } catch (error) {
@@ -550,20 +598,20 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
 
-    // 合并数据（API 优先，降级使用传入的 worker）
+    // 合并数据（API 优先，降级使用传入的 initialWorker）
     const displayData = {
-        name: user.nickname || worker.name,
-        avatar: user.avatar || worker.avatar,
-        rating: provider.rating || worker.rating,
-        reviewCount: detail?.reviewCount || provider.reviewCount || worker.reviewCount || 0,
-        yearsExperience: provider.yearsExperience || worker.yearsExperience,
-        completedOrders: provider.completedCnt || worker.completedOrders || 0,
-        workTypeLabels: translateWorkType(provider.workTypes || worker.workTypeLabels || '水电工'),
-        tags: worker.tags || ['准时守信', '技术过硬', '收费透明'],
-        serviceIntro: provider.serviceIntro || `专注${worker.workTypeLabels || '施工'}服务${worker.yearsExperience || 5}年，经验丰富，做工细致。`,
-        priceMin: provider.priceMin || worker.priceRange?.split('-')[0] || 200,
-        priceMax: provider.priceMax || worker.priceRange?.split('-')[1] || 400,
-        priceUnit: provider.priceUnit || worker.priceUnit || '/m²',
+        name: user.nickname || initialWorker.name || '工人',
+        avatar: user.avatar || initialWorker.avatar,
+        rating: provider.rating || initialWorker.rating || 5.0,
+        reviewCount: detail?.reviewCount || provider.reviewCount || initialWorker.reviewCount || 0,
+        yearsExperience: provider.yearsExperience || initialWorker.yearsExperience || 0,
+        completedOrders: provider.completedCnt || initialWorker.completedOrders || 0,
+        workTypeLabels: translateWorkType(provider.workTypes || initialWorker.workTypeLabels || '水电工'),
+        tags: initialWorker.tags || ['准时守信', '技术过硬', '收费透明'],
+        serviceIntro: provider.serviceIntro || `专注${initialWorker.workTypeLabels || '施工'}服务${initialWorker.yearsExperience || 5}年，经验丰富，做工细致。`,
+        priceMin: provider.priceMin || initialWorker.priceRange?.split('-')[0] || 200,
+        priceMax: provider.priceMax || initialWorker.priceRange?.split('-')[1] || 400,
+        priceUnit: provider.priceUnit || initialWorker.priceUnit || '/m²',
     };
 
     // 案例图片（优先使用API数据）
@@ -673,9 +721,9 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
                             conversation: {
-                                id: worker.id,
-                                name: worker.name,
-                                avatar: worker.avatar,
+                                id: Number(workerId),
+                                name: initialWorker.name,
+                                avatar: initialWorker.avatar,
                                 role: 'worker',
                                 roleLabel: '工人',
                                 isOnline: true,
@@ -688,7 +736,17 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
 
                     <TouchableOpacity
                         style={styles.floatPrimaryBtn}
-                        onPress={() => navigation.navigate('Booking', { provider: worker, providerType: 'worker' })}
+                        onPress={() => navigation.navigate('Booking', {
+                            provider: {
+                                id: Number(workerId),
+                                name: displayData.name,
+                                avatar: displayData.avatar,
+                                rating: displayData.rating,
+                                yearsExperience: displayData.yearsExperience,
+                                specialty: displayData.workTypeLabels, // Workers use workTypeLabels as specialty
+                            },
+                            providerType: 'worker'
+                        })}
                     >
                         <Text style={styles.floatPrimaryText}>立即预约施工</Text>
                     </TouchableOpacity>
@@ -716,6 +774,18 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                 </View>
             </View>
 
+            {/* Service Area */}
+            <View style={styles.magazineSection}>
+                <Text style={styles.magSectionTitle}>服务区域</Text>
+                <View style={styles.tagsContainer}>
+                    {(provider.serviceArea ? JSON.parse(provider.serviceArea) : ['雁塔区', '曲江新区', '高新区']).map((area: string, idx: number) => (
+                        <View key={idx} style={styles.tag}>
+                            <Text style={styles.tagText}>{area}</Text>
+                        </View>
+                    ))}
+                </View>
+            </View>
+
             {/* Service Intro */}
             <View style={styles.magazineSection}>
                 <Text style={styles.magSectionTitle}>服务介绍</Text>
@@ -729,6 +799,11 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         </View>
                     ))}
                 </View>
+
+                <View style={styles.priceTagRow}>
+                    <Text style={styles.priceTagLabel}>施工费</Text>
+                    <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}{displayData.priceUnit?.replace('平米', 'm²') || '/m²'}</Text>
+                </View>
             </View>
 
             {/* Portfolio Showcase */}
@@ -736,7 +811,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.sectionHeader}>
                     <Text style={styles.magSectionTitle}>施工案例</Text>
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('CaseGallery', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
+                        onPress={() => navigation.navigate('CaseGallery', { providerId: Number(workerId), providerName: displayData.name, providerType: 'foreman' })}
                     >
                         <Text style={styles.moreLink}>全部案例</Text>
                     </TouchableOpacity>
@@ -782,7 +857,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.sectionHeader}>
                     <Text style={styles.magSectionTitle}>用户口碑</Text>
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('Reviews', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
+                        onPress={() => navigation.navigate('Reviews', { providerId: Number(workerId), providerName: displayData.name, providerType: 'foreman' })}
                     >
                         <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
                     </TouchableOpacity>
@@ -806,7 +881,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         ))}
                         <TouchableOpacity
                             style={styles.checkAllReviewsBtn}
-                            onPress={() => navigation.navigate('Reviews', { providerId: worker.id, providerName: displayData.name, providerType: 'foreman' })}
+                            onPress={() => navigation.navigate('Reviews', { providerId: Number(workerId), providerName: displayData.name, providerType: 'foreman' })}
                         >
                             <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
                         </TouchableOpacity>
@@ -824,7 +899,10 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
 
 // ========== Company Detail Screen ==========
 export const CompanyDetailScreen = ({ route, navigation }: any) => {
-    const { company } = route.params;
+    const params = route.params || {};
+    const companyId = params.id || params.company?.id;
+    const initialCompany = params.company || { id: companyId, name: '加载中...' };
+
     const { showToast } = useToast();
     const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -836,13 +914,15 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const [followersCount, setFollowersCount] = useState(0);
 
     useEffect(() => {
-        loadDetail();
-        loadUserStatus();
-    }, []);
+        if (companyId) {
+            loadDetail();
+            loadUserStatus();
+        }
+    }, [companyId]);
 
     const loadDetail = async () => {
         try {
-            const res = await providerApi.companyDetail(company.id);
+            const res = await providerApi.companyDetail(companyId);
             if (res.data) {
                 setDetail(res.data);
                 setFollowersCount(res.data.provider?.followersCount || 0);
@@ -856,7 +936,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
 
     const loadUserStatus = async () => {
         try {
-            const res = await providerApi.getUserStatus(company.id);
+            const res = await providerApi.getUserStatus(companyId);
             if (res.data) {
                 setIsFollowed(res.data.isFollowed);
                 setIsFavorited(res.data.isFavorited);
@@ -867,7 +947,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     };
 
     const handleShare = () => {
-        const shareUrl = `${getWebUrl()}/company/${company.id}`;
+        const shareUrl = `${getWebUrl()}/company/${companyId}`;
         Clipboard.setString(shareUrl);
         showToast({ message: '链接已复制到剪贴板', type: 'success' });
     };
@@ -875,10 +955,10 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const handleFollow = async () => {
         try {
             if (isFollowed) {
-                await providerApi.unfollow(company.id, 'company');
+                await providerApi.unfollow(companyId, 'company');
                 setFollowersCount(prev => Math.max(0, prev - 1));
             } else {
-                await providerApi.follow(company.id, 'company');
+                await providerApi.follow(companyId, 'company');
                 setFollowersCount(prev => prev + 1);
             }
             setIsFollowed(!isFollowed);
@@ -890,9 +970,9 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const handleFavorite = async () => {
         try {
             if (isFavorited) {
-                await providerApi.unfavorite(company.id, 'provider');
+                await providerApi.unfavorite(companyId, 'provider');
             } else {
-                await providerApi.favorite(company.id, 'provider');
+                await providerApi.favorite(companyId, 'provider');
             }
             setIsFavorited(!isFavorited);
         } catch (error) {
@@ -906,18 +986,18 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
 
-    // 合并数据（API 优先，降级使用传入的 company）
+    // 合并数据（API 优先，降级使用传入的 initialCompany）
     const displayData = {
-        name: provider.companyName || company.name,
-        logo: user.avatar || company.logo,
-        rating: provider.rating || company.rating,
-        reviewCount: detail?.reviewCount || provider.reviewCount || company.reviewCount || 0,
-        completedOrders: provider.completedCnt || company.completedOrders || 0,
-        teamSize: provider.teamSize || company.teamSize || 20,
-        establishedYear: provider.establishedYear || company.establishedYear || 2015,
-        workTypeLabels: translateWorkType(provider.workTypes || company.workTypeLabels || '全包'),
-        certifications: company.certifications || ['建筑装饰资质', '设计甲级资质'],
-        serviceIntro: provider.serviceIntro || `${company.name || '本公司'}成立于${company.establishedYear || 2015}年，提供专业的装修设计与施工服务。`,
+        name: provider.companyName || initialCompany.name || '装修公司',
+        logo: user.avatar || initialCompany.logo,
+        rating: provider.rating || initialCompany.rating || 5.0,
+        reviewCount: detail?.reviewCount || provider.reviewCount || initialCompany.reviewCount || 0,
+        completedOrders: provider.completedCnt || initialCompany.completedOrders || 0,
+        teamSize: provider.teamSize || initialCompany.teamSize || 20,
+        establishedYear: provider.establishedYear || initialCompany.establishedYear || 2015,
+        workTypeLabels: translateWorkType(provider.workTypes || initialCompany.workTypeLabels || '全包'),
+        certifications: initialCompany.certifications || ['建筑装饰资质', '设计甲级资质'],
+        serviceIntro: provider.serviceIntro || `${initialCompany.name || '本公司'}成立于${initialCompany.establishedYear || 2015}年，提供专业的装修设计与施工服务。`,
         priceMin: provider.priceMin || 800,
         priceMax: provider.priceMax || 1500,
         priceUnit: provider.priceUnit || '/m²',
@@ -1029,9 +1109,9 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
                             conversation: {
-                                id: company.id,
-                                name: company.name,
-                                logo: company.logo,
+                                id: Number(companyId),
+                                name: displayData.name,
+                                logo: displayData.logo,
                                 role: 'company',
                                 roleLabel: '公司',
                                 isOnline: true,
@@ -1043,7 +1123,15 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={styles.floatPrimaryBtn}
-                        onPress={() => navigation.navigate('Booking', { provider: company, providerType: 'company' })}
+                        onPress={() => navigation.navigate('Booking', {
+                            provider: {
+                                id: Number(companyId),
+                                name: displayData.name,
+                                avatar: displayData.logo,
+                                rating: displayData.rating,
+                            },
+                            providerType: 'company'
+                        })}
                     >
                         <Text style={styles.floatPrimaryText}>立即预约</Text>
                     </TouchableOpacity>
@@ -1068,6 +1156,18 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.dashItem}>
                     <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
                     <Text style={styles.dashLabel}>竣工项目</Text>
+                </View>
+            </View>
+
+            {/* Service Area */}
+            <View style={styles.magazineSection}>
+                <Text style={styles.magSectionTitle}>服务区域</Text>
+                <View style={styles.tagsContainer}>
+                    {(provider.serviceArea ? JSON.parse(provider.serviceArea) : ['雁塔区', '曲江新区', '高新区']).map((area: string, idx: number) => (
+                        <View key={idx} style={styles.tag}>
+                            <Text style={styles.tagText}>{area}</Text>
+                        </View>
+                    ))}
                 </View>
             </View>
 
@@ -1100,7 +1200,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.sectionHeader}>
                     <Text style={styles.magSectionTitle}>工程案例</Text>
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('CaseGallery', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
+                        onPress={() => navigation.navigate('CaseGallery', { providerId: Number(companyId), providerName: displayData.name, providerType: 'company' })}
                     >
                         <Text style={styles.moreLink}>全部案例</Text>
                     </TouchableOpacity>
@@ -1146,7 +1246,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.sectionHeader}>
                     <Text style={styles.magSectionTitle}>客户评价</Text>
                     <TouchableOpacity
-                        onPress={() => navigation.navigate('Reviews', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
+                        onPress={() => navigation.navigate('Reviews', { providerId: Number(companyId), providerName: displayData.name, providerType: 'company' })}
                     >
                         <Text style={styles.moreLink}>全部 {displayData.reviewCount} 条</Text>
                     </TouchableOpacity>
@@ -1170,7 +1270,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         ))}
                         <TouchableOpacity
                             style={styles.checkAllReviewsBtn}
-                            onPress={() => navigation.navigate('Reviews', { providerId: company.id, providerName: displayData.name, providerType: 'company' })}
+                            onPress={() => navigation.navigate('Reviews', { providerId: Number(companyId), providerName: displayData.name, providerType: 'company' })}
                         >
                             <Text style={styles.checkAllReviewsText}>查看所有评价</Text>
                         </TouchableOpacity>

@@ -167,6 +167,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			Verified:        p.Verified,
 			Latitude:        p.Latitude,
 			Longitude:       p.Longitude,
+			SubType:         p.SubType,
 			YearsExperience: p.YearsExperience,
 			Specialty:       p.Specialty,
 			WorkTypes:       p.WorkTypes,

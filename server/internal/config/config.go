@@ -11,6 +11,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
+	Log      LogConfig      `mapstructure:"log"`
 }
 
 type ServerConfig struct {
@@ -40,6 +41,11 @@ type JWTConfig struct {
 	ExpireHour int    `mapstructure:"expire_hour"`
 }
 
+type LogConfig struct {
+	Level string `mapstructure:"level"` // debug, info, warn, error
+	File  string `mapstructure:"file"`  // 日志文件路径
+}
+
 func Load() (*Config, error) {
 	// 根据 APP_ENV 环境变量选择配置文件
 	// local/docker 环境使用 config.docker.yaml
@@ -65,6 +71,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("redis.port", "6379")
 	viper.SetDefault("redis.db", 0)
 	viper.SetDefault("jwt.expire_hour", 72)
+	viper.SetDefault("log.level", "info")
+	viper.SetDefault("log.file", "logs/backend.log")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Table, Card, Select, Tag, Button, Space, message, Switch, Descriptions, Modal, Form, Input, InputNumber } from 'antd';
 import { ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { adminProviderApi } from '../../services/api';
+import { PermissionWrapper } from '../../components/PermissionWrapper';
 
 interface Provider {
     id: number;
@@ -16,6 +17,19 @@ interface Provider {
     specialty: string;
     yearsExperience: number;
     createdAt: string;
+    restoreRate?: number;
+    budgetControl?: number;
+    // 移动端详情页字段
+    workTypes: string;
+    priceMin: number;
+    priceMax: number;
+    priceUnit: string;
+    coverImage: string;
+    serviceIntro: string;
+    teamSize: number;
+    establishedYear: number;
+    certifications: string;
+    serviceArea: string;
 }
 
 const providerTypeMap: Record<number, { text: string; color: string }> = {
@@ -44,6 +58,7 @@ const ProviderList: React.FC = () => {
     const [modalVisible, setModalVisible] = useState(false);
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
     const [form] = Form.useForm();
+    const [currentFormType, setCurrentFormType] = useState<number>(1); // 当前表单的服务商类型
 
     // 根据URL路径设置服务商类型
     useEffect(() => {
@@ -114,14 +129,23 @@ const ProviderList: React.FC = () => {
     const openModal = (provider?: Provider) => {
         setEditingProvider(provider || null);
         if (provider) {
-            form.setFieldsValue(provider);
+            // 编辑模式：处理工长的 workTypes 字段
+            const formValues = { ...provider };
+            if (provider.providerType === 3 && provider.workTypes) {
+                // 将逗号分隔的字符串转为数组
+                formValues.workTypes = provider.workTypes.split(',').filter(Boolean) as any;
+            }
+            form.setFieldsValue(formValues);
+            setCurrentFormType(provider.providerType);
         } else {
             form.resetFields();
+            const newType = providerType || 1;
             form.setFieldsValue({
-                providerType: providerType || 1,
+                providerType: newType,
                 subType: 'personal',
                 status: 1,
             });
+            setCurrentFormType(newType);
         }
         setModalVisible(true);
     };
@@ -129,11 +153,32 @@ const ProviderList: React.FC = () => {
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
+
+            // 根据服务商类型清理不相关的字段
+            const cleanedValues = { ...values };
+
+            if (currentFormType === 1) {
+                // 设计师：移除 teamSize, establishedYear
+                delete cleanedValues.teamSize;
+                delete cleanedValues.establishedYear;
+            } else if (currentFormType === 2) {
+                // 装修公司：移除 workTypes
+                delete cleanedValues.workTypes;
+            } else if (currentFormType === 3) {
+                // 工长：移除 teamSize, establishedYear, 并处理 workTypes 为字符串
+                delete cleanedValues.teamSize;
+                delete cleanedValues.establishedYear;
+                // 将工种数组转为逗号分隔的字符串
+                if (Array.isArray(cleanedValues.workTypes)) {
+                    cleanedValues.workTypes = cleanedValues.workTypes.join(',');
+                }
+            }
+
             if (editingProvider) {
-                await adminProviderApi.update(editingProvider.id, values);
+                await adminProviderApi.update(editingProvider.id, cleanedValues);
                 message.success('更新成功');
             } else {
-                await adminProviderApi.create(values);
+                await adminProviderApi.create(cleanedValues);
                 message.success('创建成功');
             }
             setModalVisible(false);
@@ -173,6 +218,16 @@ const ProviderList: React.FC = () => {
             render: (val: number) => val?.toFixed(1) || '-',
         },
         {
+            title: '还原度',
+            dataIndex: 'restoreRate',
+            render: (val: number) => val ? `${val}%` : '-',
+        },
+        {
+            title: '预算',
+            dataIndex: 'budgetControl',
+            render: (val: number) => val ? `${val}%` : '-',
+        },
+        {
             title: '经验',
             dataIndex: 'yearsExperience',
             render: (val: number) => val ? `${val}年` : '-',
@@ -181,24 +236,36 @@ const ProviderList: React.FC = () => {
             title: '认证状态',
             dataIndex: 'verified',
             render: (val: boolean, record: Provider) => (
-                <Switch
-                    checked={val}
-                    checkedChildren={<CheckCircleOutlined />}
-                    unCheckedChildren={<CloseCircleOutlined />}
-                    onChange={(checked) => handleVerify(record.id, checked)}
-                />
+                <PermissionWrapper permission={[
+                    'provider:designer:verify',
+                    'provider:company:verify',
+                    'provider:foreman:verify'
+                ]}>
+                    <Switch
+                        checked={val}
+                        checkedChildren={<CheckCircleOutlined />}
+                        unCheckedChildren={<CloseCircleOutlined />}
+                        onChange={(checked) => handleVerify(record.id, checked)}
+                    />
+                </PermissionWrapper>
             ),
         },
         {
             title: '封禁状态',
             dataIndex: 'status',
             render: (val: number, record: Provider) => (
-                <Switch
-                    checked={val === 1}
-                    checkedChildren="正常"
-                    unCheckedChildren="封禁"
-                    onChange={(checked) => handleStatusChange(record.id, checked ? 1 : 0)}
-                />
+                <PermissionWrapper permission={[
+                    'provider:designer:status',
+                    'provider:company:status',
+                    'provider:foreman:status'
+                ]}>
+                    <Switch
+                        checked={val === 1}
+                        checkedChildren="正常"
+                        unCheckedChildren="封禁"
+                        onChange={(checked) => handleStatusChange(record.id, checked ? 1 : 0)}
+                    />
+                </PermissionWrapper>
             ),
         },
         {
@@ -206,8 +273,20 @@ const ProviderList: React.FC = () => {
             key: 'action',
             render: (_: any, record: Provider) => (
                 <Space>
-                    <Button type="link" size="small" onClick={() => openModal(record)}>编辑</Button>
-                    <Button type="link" size="small" onClick={() => showDetail(record)}>详情</Button>
+                    <PermissionWrapper permission={[
+                        'provider:designer:edit',
+                        'provider:company:edit',
+                        'provider:foreman:edit'
+                    ]}>
+                        <Button type="link" size="small" onClick={() => openModal(record)}>编辑</Button>
+                    </PermissionWrapper>
+                    <PermissionWrapper permission={[
+                        'provider:designer:view',
+                        'provider:company:view',
+                        'provider:foreman:view'
+                    ]}>
+                        <Button type="link" size="small" onClick={() => showDetail(record)}>详情</Button>
+                    </PermissionWrapper>
                 </Space>
             ),
         },
@@ -244,9 +323,15 @@ const ProviderList: React.FC = () => {
                 <Button icon={<ReloadOutlined />} onClick={loadData}>
                     刷新
                 </Button>
-                <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
-                    新增服务商
-                </Button>
+                <PermissionWrapper permission={[
+                    'provider:designer:create',
+                    'provider:company:create',
+                    'provider:foreman:create'
+                ]}>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
+                        新增服务商
+                    </Button>
+                </PermissionWrapper>
             </Space>
 
             <Table
@@ -268,7 +353,7 @@ const ProviderList: React.FC = () => {
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
                 footer={null}
-                width={600}
+                width={800}
             >
                 {currentProvider && (
                     <Descriptions column={2} bordered size="small">
@@ -281,6 +366,25 @@ const ProviderList: React.FC = () => {
                         <Descriptions.Item label="评分">{currentProvider.rating?.toFixed(1)}</Descriptions.Item>
                         <Descriptions.Item label="经验">{currentProvider.yearsExperience}年</Descriptions.Item>
                         <Descriptions.Item label="专长" span={2}>{currentProvider.specialty || '-'}</Descriptions.Item>
+
+                        {/* 移动端详情页字段 */}
+                        <Descriptions.Item label="价格范围" span={2}>
+                            {currentProvider.priceMin && currentProvider.priceMax
+                                ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ''}`
+                                : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="工种类型" span={2}>{currentProvider.workTypes || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="服务介绍" span={2}>{currentProvider.serviceIntro || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="服务区域" span={2}>{currentProvider.serviceArea || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="团队规模">{currentProvider.teamSize || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="成立年份">{currentProvider.establishedYear || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="资质认证" span={2}>{currentProvider.certifications || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="封面图" span={2}>
+                            {currentProvider.coverImage ? (
+                                <img src={currentProvider.coverImage} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
+                            ) : '-'}
+                        </Descriptions.Item>
+
                         <Descriptions.Item label="认证">
                             {currentProvider.verified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
                         </Descriptions.Item>
@@ -292,11 +396,11 @@ const ProviderList: React.FC = () => {
             </Modal>
 
             <Modal
-                title={editingProvider ? '编辑服务商' : '新增服务商'}
+                title={editingProvider ? '编辑服务商详情' : '新增服务商'}
                 open={modalVisible}
                 onCancel={() => setModalVisible(false)}
                 onOk={handleSubmit}
-                width={600}
+                width={800}
             >
                 <Form form={form} layout="vertical">
                     <Form.Item name="companyName" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
@@ -305,6 +409,7 @@ const ProviderList: React.FC = () => {
                     <Form.Item name="providerType" label="类型" rules={[{ required: true }]}>
                         <Select
                             disabled={!!editingProvider}
+                            onChange={(val) => setCurrentFormType(val)}
                             options={[
                                 { value: 1, label: '设计师' },
                                 { value: 2, label: '装修公司' },
@@ -319,12 +424,108 @@ const ProviderList: React.FC = () => {
                             { value: 'company', label: '公司' },
                         ]} />
                     </Form.Item>
-                    <Form.Item name="specialty" label="专长">
-                        <Input placeholder="如：现代简约、北欧风格" />
+                    <Form.Item name="specialty" label="专长/标签">
+                        <Select
+                            mode="tags"
+                            placeholder="输入标签后回车，如：现代简约"
+                            options={[
+                                { value: '现代简约', label: '现代简约' },
+                                { value: '法式复古', label: '法式复古' },
+                                { value: '其他', label: '其他' },
+                            ]}
+                        />
                     </Form.Item>
                     <Form.Item name="yearsExperience" label="从业年限">
                         <InputNumber min={0} max={50} style={{ width: '100%' }} />
                     </Form.Item>
+
+                    {/* 移动端详情页字段 */}
+                    <Form.Item name="coverImage" label="封面背景图">
+                        <Input placeholder="请输入图片URL，如：https://..." />
+                    </Form.Item>
+                    <Form.Item name="serviceIntro" label="服务介绍">
+                        <Input.TextArea rows={4} placeholder="请输入服务介绍、设计理念或公司简介" />
+                    </Form.Item>
+
+                    {/* 工长专属字段：工种类型 */}
+                    {currentFormType === 3 && (
+                        <Form.Item
+                            name="workTypes"
+                            label="工种类型"
+                            tooltip="多个工种用逗号分隔"
+                            rules={[{ required: true, message: '工长必须选择工种类型' }]}
+                        >
+                            <Select
+                                mode="multiple"
+                                placeholder="请选择工种"
+                                options={[
+                                    { value: 'mason', label: '瓦工' },
+                                    { value: 'electrician', label: '电工' },
+                                    { value: 'carpenter', label: '木工' },
+                                    { value: 'painter', label: '油漆工' },
+                                    { value: 'plumber', label: '水暖工' },
+                                ]}
+                            />
+                        </Form.Item>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 16 }}>
+                        <Form.Item name="priceMin" label="最低价格" style={{ flex: 1 }}>
+                            <InputNumber min={0} style={{ width: '100%' }} placeholder="如：300" />
+                        </Form.Item>
+                        <Form.Item name="priceMax" label="最高价格" style={{ flex: 1 }}>
+                            <InputNumber min={0} style={{ width: '100%' }} placeholder="如：500" />
+                        </Form.Item>
+                        <Form.Item name="priceUnit" label="价格单位" style={{ flex: 1 }}>
+                            <Select
+                                placeholder="选择单位"
+                                options={
+                                    currentFormType === 1
+                                        ? [{ value: '元/㎡', label: '元/㎡' }, { value: '元/套', label: '元/套' }]
+                                        : currentFormType === 2
+                                            ? [{ value: '元/㎡', label: '元/㎡' }, { value: '元/套', label: '元/套' }]
+                                            : [{ value: '元/天', label: '元/天' }, { value: '元/㎡', label: '元/㎡' }]
+                                }
+                            />
+                        </Form.Item>
+                    </div>
+
+                    {/* 装修公司专属字段：团队规模和成立年份 */}
+                    {currentFormType === 2 && (
+                        <>
+                            <Form.Item
+                                name="teamSize"
+                                label="团队规模"
+                                rules={[{ required: true, message: '装修公司必须填写团队规模' }]}
+                            >
+                                <InputNumber min={1} style={{ width: '100%' }} placeholder="如：20人" />
+                            </Form.Item>
+                            <Form.Item
+                                name="establishedYear"
+                                label="成立年份"
+                                rules={[{ required: true, message: '装修公司必须填写成立年份' }]}
+                            >
+                                <InputNumber min={1980} max={new Date().getFullYear()} style={{ width: '100%' }} placeholder="如：2015" />
+                            </Form.Item>
+                        </>
+                    )}
+
+                    <Form.Item name="certifications" label="资质认证（JSON数组）">
+                        <Input.TextArea
+                            rows={2}
+                            placeholder={
+                                currentFormType === 1
+                                    ? '如：["国家注册室内设计师","红点设计奖"]'
+                                    : currentFormType === 2
+                                        ? '如：["建筑装饰装修工程专业承包壹级","设计甲级资质"]'
+                                        : '如：["电工上岗证","高级技工证书"]'
+                            }
+                        />
+                    </Form.Item>
+                    <Form.Item name="serviceArea" label="服务区域（JSON数组）">
+                        <Input.TextArea rows={2} placeholder='如：["雁塔区","曲江新区","高新区"]' />
+                    </Form.Item>
+
                     <Form.Item name="status" label="状态">
                         <Select options={[
                             { value: 1, label: '正常' },

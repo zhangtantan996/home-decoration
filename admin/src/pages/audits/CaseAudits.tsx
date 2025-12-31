@@ -1,0 +1,349 @@
+import React, { useState, useEffect } from 'react';
+import {
+    Card, Table, Button, Modal, Tag,
+    message, Image, Descriptions, Input, Tabs
+} from 'antd';
+import { CheckOutlined, CloseOutlined, EyeOutlined } from '@ant-design/icons';
+import type { ColumnsType } from 'antd/es/table';
+import { caseAuditApi } from '../../services/api';
+
+interface CaseAudit {
+    id: number;
+    caseId?: number;
+    providerId: number;
+    providerName: string;
+    actionType: string; // create, update, delete
+    title: string;
+    status: number; // 0:pending, 1:approved, 2:rejected
+    createdAt: string;
+}
+
+interface AuditDetail extends CaseAudit {
+    coverImage: string;
+    style: string;
+    layout: string; // 户型
+    area: string;
+    price: number; // 装修总价
+    year: string;
+    description: string;
+    images: string[]; // JSON array
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8080';
+
+const getFullUrl = (path: string) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    return `${API_BASE_URL}${path}`;
+};
+
+const CaseAudits: React.FC = () => {
+    const [activeTab, setActiveTab] = useState('0'); // 0: Pending, 1: Processed (Approved/Rejected)
+    const [loading, setLoading] = useState(false);
+    const [data, setData] = useState<CaseAudit[]>([]);
+    const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
+
+    // Modal
+    const [detailVisible, setDetailVisible] = useState(false);
+    const [currentDetail, setCurrentDetail] = useState<AuditDetail | null>(null);
+    const [rejectVisible, setRejectVisible] = useState(false);
+    const [rejectReason, setRejectReason] = useState('');
+    const [actionLoading, setActionLoading] = useState(false);
+
+    useEffect(() => {
+        fetchData();
+    }, [activeTab, pagination.current]);
+
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            // Backend currently only supports status=0 filter properly. 
+            // For processed list, we might need backend update, but let's try calling with status=1 first.
+            // Wait, backend `AdminListCaseAudits` logic: `status := c.DefaultQuery("status", "0")`.
+            // So we can pass status=1 for approved, status=2 for rejected.
+            // For UI simplicity, let's just show Pending list first.
+            // If activeTab is '1', we can't easily show both approved and rejected unless backend supports status IN (1,2).
+            // Let's stick to Pending list for MVP.
+
+            const res = await caseAuditApi.list({
+                page: pagination.current,
+                pageSize: pagination.pageSize,
+                status: activeTab === '0' ? 0 : 'processed' // processed 查询所有已审核(通过+拒绝)
+            }) as any;
+
+            if (res.code === 0) {
+                setData(res.data.list || []);
+                setPagination(prev => ({ ...prev, total: res.data.total }));
+            }
+        } catch (error) {
+            message.error('加载失败');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleView = async (record: CaseAudit) => {
+        try {
+            const res = await caseAuditApi.detail(record.id) as any;
+            if (res.code === 0) {
+                setCurrentDetail({
+                    ...res.data.audit,
+                    images: res.data.images // Parsed images
+                });
+                setDetailVisible(true);
+            }
+        } catch (error) {
+            message.error('获取详情失败');
+        }
+    };
+
+    const handleApprove = async () => {
+        if (!currentDetail) return;
+        setActionLoading(true);
+        try {
+            const res = await caseAuditApi.approve(currentDetail.id) as any;
+            if (res.code === 0) {
+                message.success('审核通过');
+                setDetailVisible(false);
+                fetchData();
+            } else {
+                message.error(res.message || '操作失败');
+            }
+        } catch (error) {
+            message.error('操作失败');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleReject = async () => {
+        if (!currentDetail || !rejectReason) {
+            message.warning('请输入拒绝原因');
+            return;
+        }
+        setActionLoading(true);
+        try {
+            const res = await caseAuditApi.reject(currentDetail.id, rejectReason) as any;
+            if (res.code === 0) {
+                message.success('已拒绝');
+                setRejectVisible(false);
+                setDetailVisible(false);
+                setRejectReason('');
+                fetchData();
+            } else {
+                message.error(res.message || '操作失败');
+            }
+        } catch (error) {
+            message.error('操作失败');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const getActionTag = (type: string) => {
+        switch (type) {
+            case 'create': return <Tag color="orange">新增</Tag>;
+            case 'update': return <Tag color="blue">修改</Tag>;
+            case 'delete': return <Tag color="red">删除</Tag>;
+            default: return <Tag>{type}</Tag>;
+        }
+    };
+
+    const getActionText = (type: string) => {
+        switch (type) {
+            case 'create': return '新增';
+            case 'update': return '修改';
+            case 'delete': return '删除';
+            default: return type;
+        }
+    };
+
+    const columns: ColumnsType<CaseAudit> = [
+        {
+            title: 'ID',
+            dataIndex: 'id',
+            width: 80,
+        },
+        {
+            title: '商家名称',
+            dataIndex: 'providerName',
+        },
+        {
+            title: '申请类型',
+            dataIndex: 'actionType',
+            width: 100,
+            render: (text) => getActionTag(text),
+        },
+        {
+            title: '作品标题',
+            dataIndex: 'title',
+            render: (text, record) => record.actionType === 'delete' ? <span style={{ color: '#999', textDecoration: 'line-through' }}>{text || '(原标题)'}</span> : text
+        },
+        {
+            title: '提交时间',
+            dataIndex: 'createdAt',
+            width: 180,
+            render: (text) => new Date(text).toLocaleString(),
+        },
+        {
+            title: '审核状态',
+            dataIndex: 'status',
+            width: 100,
+            render: (status: number) => {
+                if (status === 0) return <Tag color="orange">待审核</Tag>;
+                if (status === 1) return <Tag color="success">已通过</Tag>;
+                if (status === 2) return <Tag color="error">已拒绝</Tag>;
+                return <Tag>未知</Tag>;
+            },
+        },
+        {
+            title: '操作',
+            key: 'action',
+            width: 150,
+            render: (_, record) => (
+                <Button type="link" icon={<EyeOutlined />} onClick={() => handleView(record)}>
+                    {record.status === 0 ? '审核' : '查看'}
+                </Button>
+            ),
+        },
+    ];
+
+    return (
+        <Card title="作品审核">
+            <Tabs
+                activeKey={activeTab}
+                onChange={setActiveTab}
+                items={[
+                    { key: '0', label: '待审核' },
+                    { key: '1', label: '审核历史' },
+                ]}
+            />
+
+            <Table
+                columns={columns}
+                dataSource={data}
+                rowKey="id"
+                loading={loading}
+                pagination={{
+                    ...pagination,
+                    onChange: (page) => setPagination({ ...pagination, current: page }),
+                }}
+            />
+
+            {/* Audit Modal */}
+            <Modal
+                title={`${currentDetail?.status === 0 ? '审核' : '查看'}作品 - ${getActionText(currentDetail?.actionType || '')}申请`}
+                open={detailVisible}
+                onCancel={() => setDetailVisible(false)}
+                width={800}
+                footer={
+                    currentDetail?.status === 0 ? [
+                        <Button key="close" onClick={() => setDetailVisible(false)}>
+                            取消
+                        </Button>,
+                        <Button
+                            key="reject"
+                            danger
+                            icon={<CloseOutlined />}
+                            onClick={() => setRejectVisible(true)}
+                        >
+                            拒绝
+                        </Button>,
+                        <Button
+                            key="approve"
+                            type="primary"
+                            icon={<CheckOutlined />}
+                            onClick={handleApprove}
+                            loading={actionLoading}
+                        >
+                            通过
+                        </Button>,
+                    ] : [
+                        <Button key="close" type="primary" onClick={() => setDetailVisible(false)}>
+                            关闭
+                        </Button>,
+                    ]
+                }
+            >
+                {currentDetail && (
+                    <div>
+                        {currentDetail.actionType === 'delete' && (
+                            <div style={{ padding: 16, background: '#fff2f0', border: '1px solid #ffccc7', marginBottom: 16, borderRadius: 4 }}>
+                                <p style={{ color: '#cf1322', margin: 0 }}>
+                                    警告：商家申请删除此作品。审核通过后，该作品将从用户端永久移除。
+                                </p>
+                            </div>
+                        )}
+
+                        <Descriptions bordered column={2}>
+                            <Descriptions.Item label="商家">{currentDetail.providerName || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="提交时间">{new Date(currentDetail.createdAt).toLocaleString()}</Descriptions.Item>
+
+                            <Descriptions.Item label="标题" span={2}>{currentDetail.title}</Descriptions.Item>
+
+                            <Descriptions.Item label="风格">{currentDetail.style || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="户型">{currentDetail.layout || '-'}</Descriptions.Item>
+
+                            <Descriptions.Item label="面积">{currentDetail.area ? `${currentDetail.area}㎡` : '-'}</Descriptions.Item>
+                            <Descriptions.Item label="装修总价">
+                                {currentDetail.price > 0 ? `¥${(currentDetail.price / 10000).toFixed(1)}万` : '-'}
+                            </Descriptions.Item>
+
+                            <Descriptions.Item label="年份">{currentDetail.year || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="申请类型">{getActionTag(currentDetail.actionType)}</Descriptions.Item>
+
+                            <Descriptions.Item label="描述" span={2}>
+                                {currentDetail.description || '暂无描述'}
+                            </Descriptions.Item>
+                        </Descriptions>
+
+                        <div style={{ marginTop: 24 }}>
+                            <h4>封面图片</h4>
+                            <Image
+                                width={200}
+                                src={getFullUrl(currentDetail.coverImage)}
+                                fallback="https://via.placeholder.com/200?text=No+Image"
+                            />
+                        </div>
+
+                        <div style={{ marginTop: 24 }}>
+                            <h4>详情图片 ({currentDetail.images?.length || 0}张)</h4>
+                            <Image.PreviewGroup>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                    {currentDetail.images?.map((img, idx) => (
+                                        <Image
+                                            key={idx}
+                                            width={100}
+                                            height={100}
+                                            style={{ objectFit: 'cover' }}
+                                            src={getFullUrl(img)}
+                                        />
+                                    ))}
+                                </div>
+                            </Image.PreviewGroup>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            {/* Reject Modal */}
+            <Modal
+                title="拒绝审核"
+                open={rejectVisible}
+                onCancel={() => setRejectVisible(false)}
+                onOk={handleReject}
+                confirmLoading={actionLoading}
+            >
+                <p>请输入拒绝原因（商家可见）：</p>
+                <Input.TextArea
+                    rows={4}
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="例如：图片包含水印、内容涉黄、非装修相关等..."
+                />
+            </Modal>
+        </Card>
+    );
+};
+
+export default CaseAudits;

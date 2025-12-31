@@ -14,10 +14,17 @@ type ProjectService struct{}
 
 // CreateProjectRequest 创建项目请求
 type CreateProjectRequest struct {
+	ProposalID     uint64 `json:"proposalId"` // 可选，从方案创建
+	MaterialMethod string `json:"materialMethod"`
+	CrewID         uint64 `json:"crewId"`
+	EntryStartDate string `json:"entryStartDate"` // YYYY-MM-DD
+	EntryEndDate   string `json:"entryEndDate"`   // YYYY-MM-DD
+
+	// 原有字段（如不从方案创建，则必填）
 	OwnerID     uint64  `json:"ownerId"`
 	ProviderID  uint64  `json:"providerId"`
-	Name        string  `json:"name" binding:"required"`
-	Address     string  `json:"address" binding:"required"`
+	Name        string  `json:"name"`
+	Address     string  `json:"address"`
 	Latitude    float64 `json:"latitude"`
 	Longitude   float64 `json:"longitude"`
 	Area        float64 `json:"area"`
@@ -38,35 +45,76 @@ type ProjectDetail struct {
 
 // CreateProject 创建项目
 func (s *ProjectService) CreateProject(req *CreateProjectRequest) (*model.Project, error) {
-	// 验证服务商是否存在
-	var provider model.Provider
-	if err := repository.DB.First(&provider, req.ProviderID).Error; err != nil {
-		return nil, errors.New("服务商不存在")
-	}
-
-	// 验证业主是否存在
-	var owner model.User
-	if err := repository.DB.First(&owner, req.OwnerID).Error; err != nil {
-		return nil, errors.New("业主不存在")
-	}
-
-	// 解析日期
-	start, _ := time.Parse("2006-01-02", req.StartDate)
-	end, _ := time.Parse("2006-01-02", req.ExpectedEnd)
-
 	project := &model.Project{
-		OwnerID:      req.OwnerID,
-		ProviderID:   req.ProviderID,
-		Name:         req.Name,
-		Address:      req.Address,
-		Latitude:     req.Latitude,
-		Longitude:    req.Longitude,
-		Area:         req.Area,
-		Budget:       req.Budget,
-		Status:       0, // 待签约
-		CurrentPhase: "准备阶段",
-		StartDate:    &start,
-		ExpectedEnd:  &end,
+		OwnerID:        req.OwnerID,
+		Status:         0, // 待准备
+		CurrentPhase:   "准备阶段",
+		MaterialMethod: req.MaterialMethod,
+		CrewID:         req.CrewID,
+	}
+
+	// 如果是从方案创建
+	if req.ProposalID > 0 {
+		var proposal model.Proposal
+		if err := repository.DB.First(&proposal, req.ProposalID).Error; err != nil {
+			return nil, errors.New("方案不存在")
+		}
+
+		var booking model.Booking
+		if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
+			return nil, errors.New("关联预约不存在")
+		}
+
+		project.OwnerID = booking.UserID
+		project.ProviderID = booking.ProviderID
+		project.Name = booking.Address + "装修项目" // 默认项目名
+		project.Address = booking.Address
+		project.Area = booking.Area
+		project.Budget = proposal.DesignFee + proposal.ConstructionFee + proposal.MaterialFee
+
+		// 经纬度暂未存储在booking/proposal中，可设为0或后续补充
+
+		// 解析进场时间
+		if t, err := time.Parse("2006-01-02", req.EntryStartDate); err == nil {
+			project.EntryStartDate = &t
+			// 默认开工时间 = 进场时间
+			project.StartDate = &t
+		}
+		if t, err := time.Parse("2006-01-02", req.EntryEndDate); err == nil {
+			project.EntryEndDate = &t
+		}
+		// 预估工期默认90天
+		if project.StartDate != nil {
+			end := project.StartDate.AddDate(0, 0, 90)
+			project.ExpectedEnd = &end
+		}
+
+	} else {
+		// 手动创建逻辑（保持原有）
+		if req.Name == "" || req.Address == "" {
+			return nil, errors.New("项目名称和地址不能为空")
+		}
+
+		project.ProviderID = req.ProviderID
+		project.Name = req.Name
+		project.Address = req.Address
+		project.Latitude = req.Latitude
+		project.Longitude = req.Longitude
+		project.Area = req.Area
+		project.Budget = req.Budget
+
+		if t, err := time.Parse("2006-01-02", req.StartDate); err == nil {
+			project.StartDate = &t
+		}
+		if t, err := time.Parse("2006-01-02", req.ExpectedEnd); err == nil {
+			project.ExpectedEnd = &t
+		}
+	}
+
+	// 验证服务商
+	var provider model.Provider
+	if err := repository.DB.First(&provider, project.ProviderID).Error; err != nil {
+		return nil, errors.New("服务商不存在")
 	}
 
 	// 开启事务
@@ -85,7 +133,12 @@ func (s *ProjectService) CreateProject(req *CreateProjectRequest) (*model.Projec
 			return err
 		}
 
-		// 创建默认验收节点 (示例模板)
+		// 只有完整创建的项目才初始化阶段
+		if err := s.InitProjectPhases(tx, project.ID); err != nil {
+			return err
+		}
+
+		// 创建默认验收节点
 		milestones := []model.Milestone{
 			{ProjectID: project.ID, Name: "开工交底", Seq: 1, Percentage: 20, Status: 0, Criteria: "现场保护完成，图纸确认"},
 			{ProjectID: project.ID, Name: "水电验收", Seq: 2, Percentage: 30, Status: 0, Criteria: "水管试压合格，电路通断测试"},
@@ -95,7 +148,7 @@ func (s *ProjectService) CreateProject(req *CreateProjectRequest) (*model.Projec
 
 		// 计算金额
 		for i := range milestones {
-			milestones[i].Amount = req.Budget * float64(milestones[i].Percentage) / 100
+			milestones[i].Amount = project.Budget * float64(milestones[i].Percentage) / 100
 		}
 
 		if err := tx.Create(&milestones).Error; err != nil {
@@ -117,12 +170,20 @@ func (s *ProjectService) ListProjects(userID uint64, userType int8, page, pageSi
 	var projects []model.Project
 	var total int64
 
+	// 如果 userType 为 0（可能 Token 中未包含），查库确认
+	if userType == 0 {
+		var u model.User
+		if err := repository.DB.First(&u, userID).Error; err == nil {
+			userType = u.UserType
+		}
+	}
+
 	db := repository.DB.Model(&model.Project{})
 
 	// 根据用户类型筛选
 	if userType == 1 { // 业主
 		db = db.Where("owner_id = ?", userID)
-	} else if userType == 2 || userType == 3 { // 服务商/工人 (TODO: 工人关联项目逻辑较复杂，简化处理)
+	} else if userType == 2 || userType == 3 { // 服务商/工人
 		db = db.Where("provider_id = ? OR id IN (SELECT project_id FROM work_logs WHERE worker_id = ?)", userID, userID)
 	}
 
@@ -131,6 +192,78 @@ func (s *ProjectService) ListProjects(userID uint64, userType int8, page, pageSi
 	offset := (page - 1) * pageSize
 	if err := db.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&projects).Error; err != nil {
 		return nil, 0, err
+	}
+
+	// 针对业主，补充“待完善”的项目（即已生成设计费订单的方案，无论是否支付）
+	// 为避免分页复杂性，仅在第一页且用户是业主时加载这些数据
+	if userType == 1 && page == 1 {
+		var proposalIDs []uint64
+		// 1. 查找该用户所有设计费订单关联的 ProposalID
+		// 逻辑：User -> Booking -> Order(type=design) -> Proposal
+		err := repository.DB.Table("orders").
+			Joins("JOIN bookings ON bookings.id = orders.booking_id").
+			Where("bookings.user_id = ? AND orders.order_type = ?", userID, "design").
+			Pluck("orders.proposal_id", &proposalIDs).Error
+
+		if err == nil && len(proposalIDs) > 0 {
+			var proposals []model.Proposal
+			// 获取方案详情
+			if err := repository.DB.Where("id IN ?", proposalIDs).Find(&proposals).Error; err == nil {
+				for _, p := range proposals {
+					// 手动获取 Booking 以获取地址
+					var booking model.Booking
+					if err := repository.DB.First(&booking, p.BookingID).Error; err != nil {
+						continue // 如果找不到关联的 Booking，则跳过此方案
+					}
+
+					// 检查是否已存在同名/同地址项目
+					exists := false
+
+					// 1. 检查当前返回列表中的项目
+					for _, proj := range projects {
+						if proj.Address == booking.Address {
+							exists = true
+							break
+						}
+					}
+
+					// 2. 检查数据库中已存在的项目
+					if !exists {
+						var count int64
+						repository.DB.Model(&model.Project{}).
+							Where("owner_id = ? AND address = ?", userID, booking.Address).
+							Count(&count)
+						if count > 0 {
+							exists = true
+						}
+					}
+
+					if !exists {
+						// 构造“待完善”项目
+						// 使用 Booking.Address 加上 "(待创建)" 后缀
+						// 注意：ProviderID 取自 Proposal.DesignerID
+						pendingProject := model.Project{
+							Base: model.Base{
+								ID:        p.ID, // 使用 ProposalID 作为临时 ID
+								CreatedAt: p.CreatedAt,
+								UpdatedAt: p.UpdatedAt,
+							},
+							OwnerID:      userID,
+							Name:         booking.Address + " (待创建)",
+							Address:      booking.Address,
+							Status:       -1, // -1 代表待创建
+							CurrentPhase: "待完善信息",
+							Budget:       p.DesignFee + p.ConstructionFee + p.MaterialFee,
+							ProviderID:   p.DesignerID,
+						}
+
+						// 插入到列表头部
+						projects = append([]model.Project{pendingProject}, projects...)
+						total++
+					}
+				}
+			}
+		}
 	}
 
 	return projects, total, nil

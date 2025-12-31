@@ -113,6 +113,7 @@ const MySiteScreen: React.FC = () => {
     const [hasProject, setHasProject] = useState(true);
     const [project, setProject] = useState<any>(MOCK_PROJECT);
     const [loading, setLoading] = useState(false);
+    const [isHeaderScrolled, setIsHeaderScrolled] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
 
     // 图片查看器状态
@@ -319,7 +320,11 @@ const MySiteScreen: React.FC = () => {
 
     return (
         <View style={styles.container}>
-            {/* 全局已在 App.tsx 配置 StatusBar */}
+            <StatusBar
+                barStyle={isHeaderScrolled ? "dark-content" : "light-content"}
+                backgroundColor="transparent"
+                translucent
+            />
 
             {loading ? (
                 <View style={[styles.container, styles.center]}>
@@ -333,6 +338,11 @@ const MySiteScreen: React.FC = () => {
                         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
                     }
                     stickyHeaderIndices={[1]}
+                    onScroll={(e) => {
+                        const offsetY = e.nativeEvent.contentOffset.y;
+                        setIsHeaderScrolled(offsetY > 200); // Threshold at 200 (near hero height)
+                    }}
+                    scrollEventThrottle={16}
                 >
                     <ProjectHero />
                     <MilestoneTimeline />

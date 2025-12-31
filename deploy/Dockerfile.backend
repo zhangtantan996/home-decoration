@@ -10,11 +10,13 @@ ENV GOARCH=amd64
 WORKDIR /app
 
 # Cache dependencies
-COPY go.mod go.sum ./
+COPY server/go.mod ./
+# Copy go.sum if it exists (brackets make it optional)
+COPY server/go.su[m] ./
 RUN go mod download
 
 # Build
-COPY . .
+COPY server/ .
 RUN go build -ldflags="-s -w" -o api-server cmd/api/main.go
 
 # Run Stage

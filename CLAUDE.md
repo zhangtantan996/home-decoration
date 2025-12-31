@@ -5,16 +5,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 This is a **home decoration platform** (装修设计一体化平台) that connects homeowners with designers, construction companies, foremen, and workers. The platform includes:
-- **Mobile app** (React Native) - homeowner interface
+- **Mobile app** (React Native) - homeowner native app (iOS/Android only)
 - **Admin panel** (React + Ant Design) - management dashboard
 - **Backend API** (Go + Gin) - REST API with WebSocket support
 - **Database** - PostgreSQL with Redis caching
+
+### React Version Strategy
+
+This project uses a **hybrid React version strategy** to accommodate different ecosystem requirements:
+
+| Component | React Version | Reason |
+|-----------|--------------|--------|
+| **Admin Panel** | 18.3.1 | Required for Ant Design 5.x and Tencent Cloud IM SDK compatibility |
+| **Mobile App** | 19.2.0 | React Native 0.83 supports React 19, leveraging latest features |
+
+Both projects are independent in this monorepo with separate `package.json` files, ensuring no version conflicts.
 
 ## Repository Structure
 
 ```
 ├── server/          # Go backend (Gin + GORM + PostgreSQL)
-├── mobile/          # React Native app (iOS/Android + web via Vite)
+├── mobile/          # React Native app (iOS/Android native only)
 ├── admin/           # Admin panel (React + Vite + Ant Design)
 ├── docs/            # Product documentation (PRD, design specs)
 ├── deploy/          # Deployment configs (Docker, Nginx)
@@ -30,6 +41,17 @@ Start all services with Docker Compose:
 docker-compose -f docker-compose.local.yml up -d
 ```
 
+**Services included**:
+- PostgreSQL database (port 5432)
+- Redis cache (port 6380)
+- Backend API with hot reload (port 8080)
+- Admin panel dev server (port 5173)
+
+**Note**: Mobile app is NOT included in Docker Compose. Use React Native Metro bundler directly:
+```bash
+cd mobile && npm start
+```
+
 Rebuild backend API only:
 ```bash
 docker-compose -f docker-compose.local.yml build --no-cache api
@@ -38,6 +60,61 @@ docker-compose -f docker-compose.local.yml build --no-cache api
 Start database and Redis only:
 ```bash
 docker compose up -d db redis
+```
+
+### Docker Management Commands
+
+**View running containers:**
+```bash
+docker-compose -f docker-compose.local.yml ps
+```
+
+**View logs:**
+```bash
+# View all service logs
+docker-compose -f docker-compose.local.yml logs
+
+# View specific service logs (e.g., API)
+docker-compose -f docker-compose.local.yml logs api
+
+# Follow logs in real-time
+docker-compose -f docker-compose.local.yml logs -f
+```
+
+**Stop all services:**
+```bash
+docker-compose -f docker-compose.local.yml down
+```
+
+**Stop and remove data volumes (WARNING: This will delete all database data):**
+```bash
+docker-compose -f docker-compose.local.yml down -v
+```
+
+**Restart services:**
+```bash
+docker-compose -f docker-compose.local.yml restart
+```
+
+**Access container shell:**
+```bash
+# Access database container
+docker-compose -f docker-compose.local.yml exec db psql -U postgres
+
+# Access API container
+docker-compose -f docker-compose.local.yml exec api sh
+```
+
+**Find and kill processes occupying ports (Windows):**
+```bash
+# Find process using specific port (e.g., 5173)
+netstat -ano | findstr :5173
+
+# Kill process by PID
+taskkill //F //PID <process_id>
+
+# Kill all Node.js processes (use with caution)
+taskkill //F //IM node.exe
 ```
 
 ### Backend (Go)
@@ -100,13 +177,9 @@ npm run lint
 
 ### Mobile App (React Native)
 
-**Web development** (Vite):
-```bash
-cd mobile
-npm run web
-```
+**IMPORTANT**: Mobile app is **native-only** (React Native 0.83). Web build has been disabled.
 
-**Metro bundler** (for React Native):
+**Metro bundler** (for React Native development):
 ```bash
 cd mobile
 npm start
@@ -124,11 +197,7 @@ cd mobile
 npm run ios
 ```
 
-Build for web:
-```bash
-cd mobile
-npm run build
-```
+**Note**: The mobile app uses React 19.2.0 and is designed exclusively for native platforms. Production builds are done through Android Studio (APK/AAB) or Xcode (IPA).
 
 ### Android Debugging with ADB
 
@@ -341,3 +410,60 @@ Comprehensive docs in `docs/` directory:
 - `1.md` - Quick start commands (Chinese)
 
 Refer to these docs for detailed product context before making architectural changes.
+
+## Production Deployment
+
+### Docker Build Strategy
+
+**Backend API** ([deploy/Dockerfile.backend](deploy/Dockerfile.backend)):
+- Multi-stage build with Go 1.23
+- Optimized binary with `-ldflags="-s -w"`
+- Runs on Alpine Linux
+- Exposes port 8080
+
+**Frontend (Admin Panel Only)** ([deploy/Dockerfile.frontend](deploy/Dockerfile.frontend)):
+- Multi-stage build with Node.js 20
+- Stage 1: Build Admin panel (React 18.3.1)
+- Stage 2: Serve with Nginx
+- Admin served at `/usr/share/nginx/html/admin`
+- **Mobile Web build removed** (native-only app)
+
+**Mobile App Deployment**:
+- Build APK/AAB via Android Studio
+- Build IPA via Xcode
+- No Docker support (native platforms only)
+
+### Production Docker Compose
+
+Use [deploy/docker-compose.prod.yml](deploy/docker-compose.prod.yml):
+
+```bash
+cd deploy
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+**Services**:
+- `db`: PostgreSQL 15 (or use managed RDS in production)
+- `redis`: Redis 6.2 with password
+- `api`: Backend API server
+- `web`: Nginx serving Admin panel (ports 80/443)
+
+### Environment Variables
+
+Required for production deployment:
+
+```bash
+# Database
+DB_USER=postgres
+DB_PASSWORD=your_secure_password
+DB_NAME=home_decoration
+
+# Redis
+REDIS_PASSWORD=your_redis_password
+
+# Backend
+SERVER_MODE=release
+JWT_SECRET=your_jwt_secret
+```
+
+Refer to [server/config.yaml](server/config.yaml) and [server/config.docker.yaml](server/config.docker.yaml) for full configuration options.

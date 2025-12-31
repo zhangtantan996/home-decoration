@@ -30,41 +30,31 @@ export const WorkerCard = memo(({ worker, onPress, onBookPress }: WorkerCardProp
                             <Text style={styles.divider}>·</Text>
                             <Star size={12} color="#F59E0B" fill="#F59E0B" />
                             <Text style={styles.ratingText}>{worker.rating}</Text>
-                            <Text style={styles.reviewCountText}>({worker.reviewCount})</Text>
                         </View>
-                        <View style={styles.workerWorkType}>
+                        {/* 工种 + 附近 同行显示 */}
+                        <View style={styles.workTypeDistanceRow}>
                             <View style={styles.workTypeBadge}>
                                 <Text style={styles.workTypeBadgeText}>{worker.workTypeLabels}</Text>
+                            </View>
+                            <View style={styles.distanceInline}>
+                                <MapPinned size={12} color="#A1A1AA" />
+                                <Text style={styles.distanceInlineText}>{worker.distance}</Text>
                             </View>
                         </View>
                     </View>
                 </View>
-                <View style={styles.workerCardBody}>
-                    <View style={styles.workerStatsRow}>
-                        <Text style={styles.priceInline}>
-                            ¥{worker.priceRange}<Text style={styles.priceUnit}>/{worker.priceUnit.replace('元/', '')}</Text>
-                        </Text>
-                        <Text style={styles.ordersInline}>已完成{worker.completedOrders}单</Text>
-                        <View style={styles.distanceInline}>
-                            <MapPinned size={12} color="#A1A1AA" />
-                            <Text style={styles.distanceInlineText}>{worker.distance}</Text>
-                        </View>
-                    </View>
-                    <View style={styles.workerTags}>
-                        {worker.tags.map((tag, idx) => (
+                {/* 价格行 + 认证标签 */}
+                <View style={styles.workerPriceRow}>
+                    <Text style={styles.priceInlineLarge}>
+                        ¥{worker.priceRange}<Text style={styles.priceUnitLarge}>/{worker.priceUnit.replace('元/', '')}</Text>
+                    </Text>
+                    <View style={styles.certTagsRow}>
+                        {worker.tags.slice(0, 2).map((tag, idx) => (
                             <View key={idx} style={styles.tagBadge}>
                                 <Text style={styles.tagText}>{tag}</Text>
                             </View>
                         ))}
                     </View>
-                </View>
-                <View style={styles.workerCardFooter}>
-                    <TouchableOpacity
-                        style={styles.bookBtnFull}
-                        onPress={() => onBookPress(worker, 'worker')}
-                    >
-                        <Text style={styles.bookBtnTextSmall}>立即预约</Text>
-                    </TouchableOpacity>
                 </View>
             </TouchableOpacity>
         );
@@ -89,7 +79,6 @@ export const WorkerCard = memo(({ worker, onPress, onBookPress }: WorkerCardProp
                         <Text style={styles.divider}>·</Text>
                         <Star size={12} color="#F59E0B" fill="#F59E0B" />
                         <Text style={styles.ratingText}>{worker.rating}</Text>
-                        <Text style={styles.reviewCountText}>({worker.reviewCount})</Text>
                     </View>
                 </View>
             </View>
@@ -111,32 +100,23 @@ export const WorkerCard = memo(({ worker, onPress, onBookPress }: WorkerCardProp
                         <Text style={styles.statLabel}>工种</Text>
                     </View>
                 </View>
-                <View style={styles.companyCerts}>
-                    {(worker as any).certifications?.map((cert: string, idx: number) => (
-                        <View key={idx} style={styles.certBadge}>
-                            <Text style={styles.certBadgeText}>{cert}</Text>
-                        </View>
-                    ))}
+                {/* 资质行 + 认证标签 */}
+                <View style={styles.certsRow}>
+                    <View style={styles.companyCertsInline}>
+                        {(worker as any).certifications?.map((cert: string, idx: number) => (
+                            <View key={idx} style={styles.certBadge}>
+                                <Text style={styles.certBadgeText}>{cert}</Text>
+                            </View>
+                        ))}
+                    </View>
+                    <View style={styles.authTagsRow}>
+                        {worker.tags.slice(0, 2).map((tag, idx) => (
+                            <View key={idx} style={styles.tagBadge}>
+                                <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                        ))}
+                    </View>
                 </View>
-                <View style={styles.companyPrice}>
-                    <Text style={styles.priceLabel}>参考报价</Text>
-                    <Text style={styles.companyPriceValue}>¥{worker.priceRange}{worker.priceUnit}</Text>
-                </View>
-                <View style={styles.workerTags}>
-                    {worker.tags.map((tag, idx) => (
-                        <View key={idx} style={styles.tagBadge}>
-                            <Text style={styles.tagText}>{tag}</Text>
-                        </View>
-                    ))}
-                </View>
-            </View>
-            <View style={styles.workerCardFooter}>
-                <TouchableOpacity
-                    style={styles.bookBtnFull}
-                    onPress={() => onBookPress(worker, 'company')}
-                >
-                    <Text style={styles.bookBtnTextSmall}>立即预约</Text>
-                </TouchableOpacity>
             </View>
         </TouchableOpacity>
     );
@@ -217,6 +197,31 @@ const styles = StyleSheet.create({
     workerWorkType: {
         flexDirection: 'row',
         marginBottom: 8,
+    },
+    workTypeDistanceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    workerPriceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 8,
+    },
+    priceInlineLarge: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#EF4444',
+    },
+    priceUnitLarge: {
+        fontSize: 12,
+        fontWeight: '400',
+        color: '#71717A',
+    },
+    certTagsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     workTypeBadge: {
         backgroundColor: 'rgba(9, 9, 11, 0.05)',
@@ -357,6 +362,20 @@ const styles = StyleSheet.create({
     statLabel: {
         fontSize: 11,
         color: '#71717A',
+    },
+    certsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    companyCertsInline: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        flex: 1,
+    },
+    authTagsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     companyCerts: {
         flexDirection: 'row',

@@ -48,7 +48,7 @@ type ConnectionCallback = (status: 'connected' | 'disconnected' | 'connecting') 
 
 class WebSocketService {
     private static instance: WebSocketService;
-    private ws: WebSocket | null = null;
+    private ws: any | null = null;
     private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
     private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     private reconnectAttempts = 0;

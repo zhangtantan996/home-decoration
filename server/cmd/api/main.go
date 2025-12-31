@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"home-decoration-server/internal/config"
+	"home-decoration-server/internal/cron"
 	"home-decoration-server/internal/handler"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/router"
@@ -41,6 +42,16 @@ func main() {
 
 	// 初始化处理器
 	handler.InitHandlers(cfg)
+
+	// 启动定时任务
+	cron.StartOrderCron()
+	log.Println("Order cron job started")
+
+	cron.StartBookingCron()
+	log.Println("Booking cron job started")
+
+	cron.StartIncomeCron()
+	log.Println("Income settlement cron job started")
 
 	// 设置运行模式
 	if cfg.Server.Mode == "release" {

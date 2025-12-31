@@ -28,7 +28,6 @@ export const DesignerCard = memo(({ designer, onPress, onBookPress }: DesignerCa
                         <Text style={styles.divider}>·</Text>
                         <Star size={12} color="#F59E0B" fill="#F59E0B" />
                         <Text style={styles.ratingText}>{designer.rating}</Text>
-                        <Text style={styles.reviewCountText}>({designer.reviewCount})</Text>
                     </View>
                     <View style={styles.designerOrg}>
                         <View style={[styles.orgBadge, styles[designer.orgType as keyof typeof styles] as any]}>
@@ -37,26 +36,24 @@ export const DesignerCard = memo(({ designer, onPress, onBookPress }: DesignerCa
                             </Text>
                         </View>
                         <Text style={styles.orgName} numberOfLines={1}>{designer.orgLabel}</Text>
+                        <View style={styles.distanceInfo}>
+                            <MapPinned size={12} color="#71717A" />
+                            <Text style={styles.distanceText}>{designer.distance}</Text>
+                        </View>
                     </View>
                 </View>
             </View>
             <View style={styles.designerCardBody}>
                 <View style={styles.designerTagsRow}>
-                    <View style={styles.distanceInfo}>
-                        <MapPinned size={12} color="#71717A" />
-                        <Text style={styles.distanceText}>{designer.distance}</Text>
+                    <View style={styles.designerTagsRow}>
+                        <Text style={styles.priceText}>
+                            ¥{designer.priceRange}<Text style={styles.priceUnitText}>{designer.priceUnit}</Text>
+                        </Text>
+                        <Text style={styles.specialtyText} numberOfLines={1}>{designer.specialty?.replace(/[,，]/g, ' · ')}</Text>
                     </View>
-                    <Text style={styles.specialtyText} numberOfLines={1}>{designer.specialty}</Text>
                 </View>
             </View>
-            <View style={styles.designerCardFooter}>
-                <TouchableOpacity
-                    style={styles.bookBtnFull}
-                    onPress={() => onBookPress(designer)}
-                >
-                    <Text style={styles.bookBtnText}>立即预约</Text>
-                </TouchableOpacity>
-            </View>
+
         </TouchableOpacity>
     );
 });
@@ -87,11 +84,6 @@ const styles = StyleSheet.create({
     },
     designerCardBody: {
         marginBottom: 12,
-    },
-    designerCardFooter: {
-        borderTopWidth: 1,
-        borderTopColor: '#F4F4F5',
-        paddingTop: 12,
     },
     designerAvatar: {
         width: 64,
@@ -160,7 +152,18 @@ const styles = StyleSheet.create({
     designerTagsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        // justifyContent: 'space-between', // Removed to control layout better
+    },
+    priceText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#EF4444',
+        marginRight: 12,
+    },
+    priceUnitText: {
+        fontSize: 12,
+        fontWeight: '400',
+        color: '#71717A',
     },
     distanceInfo: {
         flexDirection: 'row',
@@ -177,16 +180,5 @@ const styles = StyleSheet.create({
         color: '#A1A1AA',
         textAlign: 'right',
     },
-    bookBtnFull: {
-        backgroundColor: '#09090B',
-        paddingVertical: 10,
-        borderRadius: 8,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    bookBtnText: {
-        color: '#FFFFFF',
-        fontSize: 14,
-        fontWeight: '600',
-    },
+
 });

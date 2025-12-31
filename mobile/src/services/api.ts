@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { SecureStorage } from '../utils/SecureStorage';
+import { authEventEmitter } from './AuthEventEmitter';
 
 // @ts-ignore
 import { getApiUrl } from '../config';
@@ -119,8 +120,11 @@ api.interceptors.response.use(
                 // Token 刷新失败，清除本地存储
                 await SecureStorage.clearAll();
 
-                // 通知用户需要重新登录（通过事件或导航）
-                // 这里可以使用 EventEmitter 或者其他方式通知应用跳转到登录页
+                // 发送会话过期事件，由 App 根组件处理跳转
+                authEventEmitter.emit('session_expired', {
+                    reason: 'refresh_token_failed',
+                    message: '登录已过期，请重新登录',
+                });
 
                 return Promise.reject(refreshError);
             }
@@ -195,7 +199,20 @@ export const escrowApi = {
 };
 
 export const bookingApi = {
+    list: (params?: { paid?: boolean }) => api.get<any>('/bookings', { params }),
     create: (data: any) => api.post('/bookings', data),
+    getDetail: (id: number) => api.get<any>(`/bookings/${id}`),
+    payIntent: (id: number) => api.post<any>(`/bookings/${id}/pay-intent`),
+    cancel: (id: number) => api.delete<any>(`/bookings/${id}/cancel`),
+    delete: (id: number) => api.delete<any>(`/bookings/${id}`),
+};
+
+export const afterSalesApi = {
+    list: (params?: { status?: number }) => api.get<any>('/after-sales', { params }),
+    create: (data: { bookingId: number; type: string; reason: string; description?: string; images?: string; amount?: number }) =>
+        api.post<any>('/after-sales', data),
+    getDetail: (id: number) => api.get<any>(`/after-sales/${id}`),
+    cancel: (id: number) => api.delete<any>(`/after-sales/${id}`),
 };
 
 export const chatApi = {
@@ -211,4 +228,81 @@ export const materialShopApi = {
     detail: (id: number) => api.get<any>(`/material-shops/${id}`),
 };
 
+// ========== 业务流程扩展 ==========
+
+export const proposalApi = {
+    // 获取我收到的方案列表
+    list: () => api.get<any>('/proposals'),
+    // 获取待处理数量
+    pendingCount: () => api.get<{ count: number }>('/proposals/pending-count'),
+    // 获取方案详情
+    detail: (id: number) => api.get<any>(`/proposals/${id}`),
+    // 根据预约获取方案
+    getByBooking: (bookingId: number) => api.get<any>(`/bookings/${bookingId}/proposal`),
+    // 确认方案
+    confirm: (id: number) => api.post<any>(`/proposals/${id}/confirm`),
+    // 拒绝方案（支持拒绝原因）
+    reject: (id: number, data: { reason: string }) => api.post<any>(`/proposals/${id}/reject`, data),
+    // 获取方案版本历史
+    getVersionHistory: (bookingId: number) => api.get<any>(`/proposals/booking/${bookingId}/history`),
+};
+
+export const orderApi = {
+    // 获取所有待付款项（意向金+设计费）
+    listPendingPayments: () => {
+        return api.get<any>('/orders/pending-payments');
+    },
+    // 获取订单详情
+    detail: (id: number) => api.get<any>(`/orders/${id}`),
+    // 支付订单
+    pay: (orderId: number) => api.post<any>(`/orders/${orderId}/pay`),
+    // 支付分期款项
+    payPlan: (planId: number) => {
+        return api.post(`/orders/plans/${planId}/pay`);
+    },
+    cancel: (orderId: number) => {
+        return api.delete(`/orders/${orderId}`);
+    },
+};
+
+export const billApi = {
+    // 生成账单
+    generate: (projectId: number, data: {
+        designFee: number;
+        constructionFee: number;
+        materialFee: number;
+        paymentType?: 'milestone' | 'onetime';
+    }) => api.post<any>(`/projects/${projectId}/bill`, { projectId, ...data }),
+    // 获取账单
+    get: (projectId: number) => api.get<any>(`/projects/${projectId}/bill`),
+    // 获取项目文件（需付设计费）
+    getFiles: (projectId: number) => api.get<any>(`/projects/${projectId}/files`),
+};
+
+export const configApi = {
+    // 获取意向金金额
+    getIntentFee: () => api.get<{ intentFee: number }>('/config/intent-fee'),
+};
+
+// ========== 通知系统 ==========
+
+export const notificationApi = {
+    // 获取通知列表
+    list: (params?: { page?: number; pageSize?: number }) =>
+        api.get<any>('/notifications', { params }),
+    // 获取未读数量
+    getUnreadCount: () =>
+        api.get<{ count: number }>('/notifications/unread-count'),
+    // 标记单个通知为已读
+    markAsRead: (id: number) =>
+        api.put<any>(`/notifications/${id}/read`),
+    // 标记全部已读
+    markAllAsRead: () =>
+        api.put<any>('/notifications/read-all'),
+    // 删除通知
+    delete: (id: number) =>
+        api.delete<any>(`/notifications/${id}`),
+};
+
 export default api;
+

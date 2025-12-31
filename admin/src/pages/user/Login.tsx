@@ -27,21 +27,16 @@ const Login: React.FC = () => {
             console.log('登录响应:', loginRes);
 
             if (loginRes.code === 0) {
-                const { token, admin } = loginRes.data;
+                const { token, admin, permissions, menus } = loginRes.data;
 
                 // 保存 token 和用户信息
                 login(token, admin);
-                console.log('Token已保存');
+                console.log('Token已保存, admin:', admin);
 
-                // 2. 获取权限和菜单
-                try {
-                    const infoRes = await adminAuthApi.getInfo() as any;
-                    console.log('权限信息:', infoRes);
-                    if (infoRes.code === 0) {
-                        setPermissions(infoRes.data.permissions, infoRes.data.menus);
-                    }
-                } catch (infoError) {
-                    console.error('获取权限失败，但继续登录:', infoError);
+                // 保存权限和菜单 (登录接口已返回)
+                if (permissions && menus) {
+                    setPermissions(permissions, menus);
+                    console.log('权限和菜单已保存:', { permissions, menus });
                 }
 
                 message.success('登录成功');
@@ -68,7 +63,7 @@ const Login: React.FC = () => {
                     </div>
                     <Form
                         name="admin_login"
-                        initialValues={{ username: 'admin', password: 'admin123' }}
+                        initialValues={{ username: '', password: '' }}
                         onFinish={onFinish}
                         size="large"
                     >
@@ -99,12 +94,6 @@ const Login: React.FC = () => {
                                 登 录
                             </Button>
                         </Form.Item>
-
-                        <div style={{ textAlign: 'center' }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                默认账号: admin / admin123
-                            </Text>
-                        </div>
                     </Form>
                 </Card>
             </Content>

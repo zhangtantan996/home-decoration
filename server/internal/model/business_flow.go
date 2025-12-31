@@ -1,0 +1,134 @@
+package model
+
+import "time"
+
+// SystemConfig 系统配置 - 支持管理后台动态修改
+type SystemConfig struct {
+	Base
+	Key         string `json:"key" gorm:"uniqueIndex;size:50"`     // 配置键，如 "booking.intent_fee"
+	Value       string `json:"value" gorm:"type:text"`             // 配置值
+	Type        string `json:"type" gorm:"size:20;default:string"` // string, number, boolean, json
+	Description string `json:"description" gorm:"size:200"`        // 配置说明
+	Editable    bool   `json:"editable" gorm:"default:true"`       // 是否允许后台修改
+}
+
+// TableName 指定表名
+func (SystemConfig) TableName() string {
+	return "system_configs"
+}
+
+// ============================================
+// 默认配置键常量
+// ============================================
+
+const (
+	ConfigKeyIntentFee               = "booking.intent_fee"               // 意向金金额
+	ConfigKeyIntentFeeRefundable     = "booking.intent_fee_refundable"    // 意向金是否可退
+	ConfigKeyDesignFeeUnlockDownload = "order.design_fee_unlock_download" // 支付设计费后解锁下载
+	ConfigKeyConstructionMilestones  = "order.construction_milestones"    // 施工分期比例 JSON
+
+	// 平台抽成配置
+	ConfigKeyIntentFeeRate        = "fee.platform.intent_fee_rate"        // 意向金抽成比例
+	ConfigKeyDesignFeeRate        = "fee.platform.design_fee_rate"        // 设计费抽成比例
+	ConfigKeyConstructionFeeRate  = "fee.platform.construction_fee_rate"  // 施工费抽成比例
+	ConfigKeyMaterialFeeRate      = "fee.platform.material_fee_rate"      // 材料费抽成比例
+	ConfigKeyWithdrawMinAmount    = "withdraw.min_amount"                 // 最小提现金额
+	ConfigKeyWithdrawFee          = "withdraw.fee"                        // 提现手续费
+	ConfigKeySettlementAutoDays   = "settlement.auto_days"                // 自动结算天数
+
+	// 腾讯云 IM 配置
+	ConfigKeyTencentIMSDKAppID  = "im.tencent_sdk_app_id" // 腾讯云 IM SDKAppID
+	ConfigKeyTencentIMSecretKey = "im.tencent_secret_key" // 腾讯云 IM SecretKey
+	ConfigKeyTencentIMEnabled   = "im.tencent_enabled"    // 是否启用腾讯云 IM
+)
+
+// Proposal 设计方案
+type Proposal struct {
+	Base
+	BookingID              uint64     `json:"bookingId" gorm:"index"`
+	DesignerID             uint64     `json:"designerId" gorm:"index"`      // Provider ID
+	Summary                string     `json:"summary" gorm:"type:text"`     // 方案概述
+	DesignFee              float64    `json:"designFee"`                    // 设计费
+	ConstructionFee        float64    `json:"constructionFee"`              // 施工费预估
+	MaterialFee            float64    `json:"materialFee"`                  // 主材费预估
+	EstimatedDays          int        `json:"estimatedDays"`                // 预计工期
+	Attachments            string     `json:"attachments" gorm:"type:text"` // JSON: 附件列表
+	Status                 int8       `json:"status" gorm:"default:1"`      // 1:待确认 2:已确认 3:已拒绝 4:已被新版本替代
+	ConfirmedAt            *time.Time `json:"confirmedAt"`
+	Version                int        `json:"version" gorm:"default:1"`                  // 版本号（v1, v2, v3...）
+	ParentProposalID       uint64     `json:"parentProposalId" gorm:"index"`             // 上一版本方案ID
+	RejectionCount         int        `json:"rejectionCount" gorm:"default:0"`           // 该预约的累计拒绝次数
+	RejectionReason        string     `json:"rejectionReason" gorm:"type:text"`          // 拒绝原因
+	RejectedAt             *time.Time `json:"rejectedAt"`                                // 拒绝时间
+	SubmittedAt            *time.Time `json:"submittedAt"`                               // 提交时间
+	UserResponseDeadline   *time.Time `json:"userResponseDeadline"`                      // 用户确认/拒绝的截止时间（14天）
+}
+
+// TableName 指定表名
+func (Proposal) TableName() string {
+	return "proposals"
+}
+
+// Order 订单
+type Order struct {
+	Base
+	ProjectID   uint64     `json:"projectId" gorm:"index"`
+	ProposalID  uint64     `json:"proposalId" gorm:"index"`    // 关联方案ID（设计费订单）
+	BookingID   uint64     `json:"bookingId" gorm:"index"`     // 追踪意向金
+	OrderNo     string     `json:"orderNo" gorm:"uniqueIndex"` // 订单号
+	OrderType   string     `json:"orderType" gorm:"size:20"`   // design, construction, material
+	TotalAmount float64    `json:"totalAmount"`
+	PaidAmount  float64    `json:"paidAmount" gorm:"default:0"`
+	Discount    float64    `json:"discount" gorm:"default:0"` // 意向金抵扣额
+	Status      int8       `json:"status" gorm:"default:0"`   // 0:待支付 1:已支付 2:已取消 3:已退款
+	ExpireAt    *time.Time `json:"expireAt"`                  // 支付过期时间（48小时）
+	PaidAt      *time.Time `json:"paidAt"`
+}
+
+// TableName 指定表名
+func (Order) TableName() string {
+	return "orders"
+}
+
+// PaymentPlan 支付计划
+type PaymentPlan struct {
+	Base
+	OrderID    uint64     `json:"orderId" gorm:"index"`
+	Type       string     `json:"type" gorm:"size:20"` // milestone, onetime
+	Seq        int        `json:"seq"`                 // 期数顺序
+	Name       string     `json:"name" gorm:"size:50"` // e.g., "开工款"
+	Amount     float64    `json:"amount"`
+	Percentage float32    `json:"percentage"`
+	Status     int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付
+	DueAt      *time.Time `json:"dueAt"`                   // 应付日期
+	PaidAt     *time.Time `json:"paidAt"`
+}
+
+// TableName 指定表名
+func (PaymentPlan) TableName() string {
+	return "payment_plans"
+}
+
+// ============================================
+// 订单状态常量
+// ============================================
+
+const (
+	OrderStatusPending   int8 = 0 // 待支付
+	OrderStatusPaid      int8 = 1 // 已支付
+	OrderStatusCancelled int8 = 2 // 已取消
+	OrderStatusRefunded  int8 = 3 // 已退款
+)
+
+const (
+	OrderTypeDesign       = "design"       // 设计费订单
+	OrderTypeConstruction = "construction" // 施工费订单
+	OrderTypeMaterial     = "material"     // 主材费订单
+)
+
+const (
+	ProposalStatusPending    int8 = 1 // 待确认
+	ProposalStatusConfirmed  int8 = 2 // 已确认
+	ProposalStatusRejected   int8 = 3 // 已拒绝
+	ProposalStatusSuperseded int8 = 4 // 已被新版本替代
+)

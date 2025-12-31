@@ -1,0 +1,82 @@
+详情弹窗代码段,需要插入到 Table 和编辑Modal之间:
+
+            {/* 详情弹窗 */}
+            <Modal
+                title="门店详情"
+                open={detailVisible}
+                onCancel={() => setDetailVisible(false)}
+                footer={null}
+                width={800}
+            >
+                {currentShop && (
+                    <Descriptions column={2} bordered size="small">
+                        <Descriptions.Item label="ID">{currentShop.id}</Descriptions.Item>
+                        <Descriptions.Item label="名称">{currentShop.name}</Descriptions.Item>
+                        <Descriptions.Item label="类型">
+                            <Tag color={currentShop.type === 'brand' ? 'blue' : 'green'}>
+                                {currentShop.type === 'brand' ? '品牌店' : '展示店'}
+                            </Tag>
+                        </Descriptions.Item>
+                        <Descriptions.Item label="认证状态">
+                            {currentShop.isVerified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="评分">{currentShop.rating?.toFixed(1) || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="评价数">{currentShop.reviewCount || 0}</Descriptions.Item>
+
+                        {currentShop.brandLogo && (
+                            <Descriptions.Item label="品牌Logo" span={2}>
+                                <img src={currentShop.brandLogo} alt="Logo" style={{ maxWidth: 100, maxHeight: 50 }} />
+                            </Descriptions.Item>
+                        )}
+
+                        <Descriptions.Item label="封面图" span={2}>
+                            {currentShop.cover ? (
+                                <img src={currentShop.cover} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
+                            ) : '-'}
+                        </Descriptions.Item>
+
+                        <Descriptions.Item label="主营产品" span={2}>
+                            {(() => {
+                                try {
+                                    return currentShop.mainProducts ? JSON.parse(currentShop.mainProducts).join('、') : '-';
+                                } catch {
+                                    return currentShop.mainProducts || '-';
+                                }
+                            })()}
+                        </Descriptions.Item>
+
+                        <Descriptions.Item label="产品分类" span={2}>
+                            {currentShop.productCategories || '-'}
+                        </Descriptions.Item>
+
+                        <Descriptions.Item label="地址" span={2}>
+                            {currentShop.address || '-'}
+                        </Descriptions.Item>
+
+                        <Descriptions.Item label="经纬度" span={2}>
+                            {currentShop.latitude && currentShop.longitude
+                                ? `${currentShop.latitude}, ${currentShop.longitude}`
+                                : '-'}
+                        </Descriptions.Item>
+
+                        <Descriptions.Item label="营业时间" span={2}>
+                            {currentShop.openTime || '-'}
+                        </Descriptions.Item>
+
+                        <Descriptions.Item label="门店标签" span={2}>
+                            {(() => {
+                                try {
+                                    const tags = currentShop.tags ? JSON.parse(currentShop.tags) : [];
+                                    return tags.length > 0
+                                        ? tags.map((tag: string, idx: number) => (
+                                            <Tag key={idx} style={{ marginBottom: 4 }}>{tag}</Tag>
+                                        ))
+                                        : '-';
+                                } catch {
+                                    return currentShop.tags || '-';
+                                }
+                            })()}
+                        </Descriptions.Item>
+                    </Descriptions>
+                )}
+            </Modal>

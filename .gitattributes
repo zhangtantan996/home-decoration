@@ -1,0 +1,14 @@
+# Handle line endings automatically
+# Set default behavior to automatically normalize line endings
+* text=auto
+
+# Force LF for shell scripts and config files (recommended for Docker/Linux servers)
+*.sh text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.conf text eol=lf
+dockerfile* text eol=lf
+
+# Explicitly declare text files that should always use CRLF if desired (Optional)
+# *.bat text eol=crlf
+# *.ps1 text eol=crlf

@@ -214,7 +214,6 @@ const UserList: React.FC = () => {
                             { value: 1, label: '业主' },
                             { value: 2, label: '服务商' },
                             { value: 3, label: '工人' },
-                            { value: 4, label: '管理员' },
                         ]} />
                     </Form.Item>
                     <Form.Item name="status" label="状态">

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
+	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -388,11 +390,24 @@ func AdminUpdateProvider(c *gin.Context) {
 		return
 	}
 	var req struct {
-		CompanyName     string `json:"companyName"`
-		SubType         string `json:"subType"`
-		Specialty       string `json:"specialty"`
-		YearsExperience int    `json:"yearsExperience"`
-		Status          int8   `json:"status"`
+		CompanyName     string  `json:"companyName"`
+		SubType         string  `json:"subType"`
+		Specialty       string  `json:"specialty"`
+		YearsExperience int     `json:"yearsExperience"`
+		Status          int8    `json:"status"`
+		Rating          float32 `json:"rating"`          // 综合评分
+		RestoreRate     float32 `json:"restoreRate"`     // 还原度
+		BudgetControl   float32 `json:"budgetControl"`   // 预算控制力
+		WorkTypes       string  `json:"workTypes"`       // 工种类型（逗号分隔）
+		PriceMin        float64 `json:"priceMin"`        // 最低价格
+		PriceMax        float64 `json:"priceMax"`        // 最高价格
+		PriceUnit       string  `json:"priceUnit"`       // 价格单位
+		CoverImage      string  `json:"coverImage"`      // 封面背景图
+		ServiceIntro    string  `json:"serviceIntro"`    // 服务介绍
+		TeamSize        int     `json:"teamSize"`        // 团队规模
+		EstablishedYear int     `json:"establishedYear"` // 成立年份
+		Certifications  string  `json:"certifications"`  // 资质认证（JSON数组）
+		ServiceArea     string  `json:"serviceArea"`     // 服务区域（JSON数组）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -411,6 +426,45 @@ func AdminUpdateProvider(c *gin.Context) {
 	}
 	if req.YearsExperience > 0 {
 		updates["years_experience"] = req.YearsExperience
+	}
+	if req.Rating > 0 {
+		updates["rating"] = req.Rating
+	}
+	if req.RestoreRate >= 0 {
+		updates["restore_rate"] = req.RestoreRate
+	}
+	if req.BudgetControl >= 0 {
+		updates["budget_control"] = req.BudgetControl
+	}
+	if req.WorkTypes != "" {
+		updates["work_types"] = req.WorkTypes
+	}
+	if req.PriceMin >= 0 {
+		updates["price_min"] = req.PriceMin
+	}
+	if req.PriceMax >= 0 {
+		updates["price_max"] = req.PriceMax
+	}
+	if req.PriceUnit != "" {
+		updates["price_unit"] = req.PriceUnit
+	}
+	if req.CoverImage != "" {
+		updates["cover_image"] = req.CoverImage
+	}
+	if req.ServiceIntro != "" {
+		updates["service_intro"] = req.ServiceIntro
+	}
+	if req.TeamSize > 0 {
+		updates["team_size"] = req.TeamSize
+	}
+	if req.EstablishedYear > 0 {
+		updates["established_year"] = req.EstablishedYear
+	}
+	if req.Certifications != "" {
+		updates["certifications"] = req.Certifications
+	}
+	if req.ServiceArea != "" {
+		updates["service_area"] = req.ServiceArea
 	}
 	updates["status"] = req.Status
 
@@ -501,8 +555,54 @@ func AdminListReviews(c *gin.Context) {
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&reviews)
 
+	// 转换为前端需要的格式，关联用户和服务商信息
+	type ReviewResponse struct {
+		ID           uint64  `json:"id"`
+		ProviderID   uint64  `json:"providerId"`
+		ProviderName string  `json:"providerName"` // 新增：服务商名称
+		UserID       uint64  `json:"userId"`
+		UserName     string  `json:"userName"` // 新增：用户名称
+		Rating       float32 `json:"rating"`
+		Content      string  `json:"content"`
+		Images       string  `json:"images"`
+		ServiceType  string  `json:"serviceType"`
+		CreatedAt    string  `json:"createdAt"`
+	}
+
+	var result []ReviewResponse
+	for _, review := range reviews {
+		resp := ReviewResponse{
+			ID:          review.ID,
+			ProviderID:  review.ProviderID,
+			UserID:      review.UserID,
+			Rating:      review.Rating,
+			Content:     review.Content,
+			Images:      review.Images,
+			ServiceType: review.ServiceType,
+			CreatedAt:   review.CreatedAt.Format("2006-01-02 15:04:05"),
+		}
+
+		// 查询用户名称
+		var user model.User
+		if err := repository.DB.Select("nickname").First(&user, review.UserID).Error; err == nil {
+			resp.UserName = user.Nickname
+		} else {
+			resp.UserName = fmt.Sprintf("用户%d", review.UserID)
+		}
+
+		// 查询服务商名称
+		var provider model.Provider
+		if err := repository.DB.Select("company_name").First(&provider, review.ProviderID).Error; err == nil {
+			resp.ProviderName = provider.CompanyName
+		} else {
+			resp.ProviderName = fmt.Sprintf("服务商%d", review.ProviderID)
+		}
+
+		result = append(result, resp)
+	}
+
 	response.Success(c, gin.H{
-		"list":  reviews,
+		"list":  result,
 		"total": total,
 	})
 }
@@ -600,6 +700,116 @@ func AdminVerifyMaterialShop(c *gin.Context) {
 		return
 	}
 	response.Success(c, nil)
+}
+
+// ==================== Admin 退款管理 ====================
+
+// AdminRefundIntentFee 管理员手动退款意向金
+func AdminRefundIntentFee(c *gin.Context) {
+	bookingID := parseUint64(c.Param("bookingId"))
+
+	var input struct {
+		Reason string `json:"reason" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+
+	// 调用退款服务
+	refundSvc := &service.RefundService{}
+	if err := refundSvc.RefundIntentFee(bookingID, service.RefundScenarioAdminManual, input.Reason); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "退款成功",
+	})
+}
+
+// AdminGetRefundableBookings 获取可退款的预约列表
+func AdminGetRefundableBookings(c *gin.Context) {
+	refundSvc := &service.RefundService{}
+	bookings, err := refundSvc.GetRefundableBookings()
+	if err != nil {
+		response.Error(c, 500, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"bookings": bookings,
+		"count":    len(bookings),
+	})
+}
+
+// ==================== Admin 系统配置管理 ====================
+
+// AdminGetSystemConfigs 获取所有系统配置
+func AdminGetSystemConfigs(c *gin.Context) {
+	var configs []model.SystemConfig
+	if err := repository.DB.Order("key ASC").Find(&configs).Error; err != nil {
+		response.Error(c, 500, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"configs": configs,
+		"count":   len(configs),
+	})
+}
+
+// AdminUpdateSystemConfig 更新单个系统配置
+func AdminUpdateSystemConfig(c *gin.Context) {
+	key := c.Param("key")
+
+	var input struct {
+		Value       string `json:"value" binding:"required"`
+		Description string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+
+	configSvc := &service.ConfigService{}
+	if err := configSvc.SetConfig(key, input.Value, input.Description); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	// 清除配置缓存
+	configSvc.ClearCache()
+
+	response.Success(c, gin.H{
+		"message": "配置更新成功",
+	})
+}
+
+// AdminBatchUpdateSystemConfigs 批量更新系统配置
+func AdminBatchUpdateSystemConfigs(c *gin.Context) {
+	var input map[string]string
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+
+	configSvc := &service.ConfigService{}
+
+	// 批量更新，SetConfig需要3个参数，这里简化处理
+	for key, value := range input {
+		if err := configSvc.SetConfig(key, value, ""); err != nil {
+			log.Printf("[AdminBatchUpdateSystemConfigs] Failed to update %s: %v", key, err)
+		}
+	}
+
+	// 清除配置缓存
+	configSvc.ClearCache()
+
+	response.Success(c, gin.H{
+		"message": "配置批量更新成功",
+		"updated": len(input),
+	})
 }
 
 // ==================== Helper ====================

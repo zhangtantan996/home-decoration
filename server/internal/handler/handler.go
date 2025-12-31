@@ -405,7 +405,7 @@ func CreateProject(c *gin.Context) {
 
 // ListProjects 项目列表
 func ListProjects(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
+	userId := c.GetUint64("userId")
 	userType := int8(c.GetFloat64("userType"))
 
 	page := 1

@@ -33,7 +33,9 @@ const MOCK_CASES = [
         coverImage: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
         style: '现代简约',
         area: '120㎡',
+        houseLayout: '3室2厅2卫',
         year: '2024',
+        price: '18.5万',
         description: '本案例位于城市中心高档社区，业主是一对年轻夫妇。他们希望打造一个简洁大气、功能完善的现代化住宅。设计师通过开放式布局、明亮的色彩搭配和精选的家具，成功实现了业主的愿望。',
         images: [
             'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
@@ -49,7 +51,9 @@ const MOCK_CASES = [
         coverImage: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
         style: '北欧风格',
         area: '85㎡',
+        houseLayout: '2客1厅1卫',
         year: '2024',
+        price: '12.8万',
         description: '这是一套位于老城区的小户型公寓改造项目。通过巧妙的空间规划和北欧风格的设计语言，让原本局促的空间焕发新生。大量使用白色和原木色，营造出清新自然的居住氛围。',
         images: [
             'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
@@ -63,7 +67,9 @@ const MOCK_CASES = [
         coverImage: 'https://images.unsplash.com/photo-1616486338812-3dadae4b4f9d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
         style: '新中式',
         area: '280㎡',
+        houseLayout: '5客3厅3卫',
         year: '2023',
+        price: '45.0万',
         description: '这套别墅项目融合了传统中式元素与现代设计理念。通过木质格栅、水墨画元素和东方园林的设计手法，打造出既有文化底蕴又不失现代感的居住空间。',
         images: [
             'https://images.unsplash.com/photo-1616486338812-3dadae4b4f9d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
@@ -78,7 +84,9 @@ const MOCK_CASES = [
         coverImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
         style: '法式轻奢',
         area: '150㎡',
+        houseLayout: '4宨2厅2卫',
         year: '2024',
+        price: '28.0万',
         description: '法式轻奢风格的公寓设计，注重细节与品质。通过精致的石膏线条、优雅的配色和高端软装，打造出浪漫又不失格调的居住环境。',
         images: [
             'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
@@ -92,7 +100,9 @@ const MOCK_CASES = [
         coverImage: 'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
         style: '工业风',
         area: '100㎡',
+        houseLayout: '1客1厅1卫',
         year: '2023',
+        price: '15.0万',
         description: '将老厂房改造成现代化的Loft住宅。保留了原有的裸露管道和砖墙，结合现代化的家具和灯具设计，营造出独特的工业美学氛围。',
         images: [
             'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
@@ -105,7 +115,9 @@ const MOCK_CASES = [
         coverImage: 'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
         style: '日式',
         area: '95㎡',
+        houseLayout: '2客1厅1卫',
         year: '2024',
+        price: '13.5万',
         description: '追求极致简约的日式设计，通过留白、自然材质和柔和光线，创造出宁静致远的禅意空间。',
         images: [
             'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
@@ -241,10 +253,10 @@ export const CaseDetailScreen = ({ route, navigation }: any) => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Global StatusBar configured in App.tsx */}
+        <View style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-            {/* Header */}
+            {/* Simple Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <ArrowLeft size={24} color="#111" />
@@ -255,77 +267,74 @@ export const CaseDetailScreen = ({ route, navigation }: any) => {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Main Image Carousel */}
-                <View>
-                    <ScrollView
-                        horizontal
-                        pagingEnabled
-                        showsHorizontalScrollIndicator={false}
-                        onMomentumScrollEnd={(event) => {
-                            const slideSize = event.nativeEvent.layoutMeasurement.width;
-                            const index = Math.floor(event.nativeEvent.contentOffset.x / slideSize);
-                            setCurrentImageIndex(index);
-                        }}
-                    >
-                        {caseItem.images.map((img: string, idx: number) => (
-                            <TouchableOpacity key={idx} onPress={() => openImageViewer(idx)} activeOpacity={0.9}>
-                                <Image
-                                    source={{ uri: img }}
-                                    style={[styles.mainImage, { width: width }]}
-                                    resizeMode="cover"
-                                />
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
 
-                    {/* Image Indicators */}
-                    {caseItem.images.length > 1 && (
-                        <View style={styles.indicatorsOverlay}>
-                            {caseItem.images.map((_: any, idx: number) => (
-                                <View
-                                    key={idx}
-                                    style={[styles.indicator, currentImageIndex === idx && styles.activeIndicator]}
-                                />
-                            ))}
+
+            <ScrollView
+                style={styles.content}
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+            >
+                {/* Gray Content Area */}
+                <View style={styles.verticalContent}>
+
+                    {/* Module 1: Header & Info (Merged) */}
+                    <View style={styles.moduleCard}>
+                        {/* Title & Price */}
+                        <Text style={styles.premiumTitle}>{caseItem.title}</Text>
+                        <View style={styles.priceRow}>
+                            <Text style={styles.priceLabel}>参考价</Text>
+                            <Text style={styles.priceValue}>{caseItem.price ? `¥${caseItem.price}` : '暂无报价'}</Text>
                         </View>
-                    )}
-                </View>
 
-                {/* Case Info */}
-                <View style={styles.caseInfoSection}>
-                    <Text style={styles.caseDetailTitle}>{caseItem.title}</Text>
-                    <View style={styles.caseMeta}>
-                        <Text style={styles.caseMetaText}>{caseItem.style}</Text>
-                        <Text style={styles.caseMetaDivider}>|</Text>
-                        <Text style={styles.caseMetaText}>{caseItem.area}</Text>
-                        <Text style={styles.caseMetaDivider}>|</Text>
-                        <Text style={styles.caseMetaText}>{caseItem.year}年</Text>
+                        <View style={styles.divider} />
+
+                        {/* Info Grid */}
+                        <View style={styles.premiumGrid}>
+                            <View style={styles.premiumGridItem}>
+                                <Text style={styles.gridLabel}>户型</Text>
+                                <Text style={styles.gridValue}>{caseItem.houseLayout || '暂无'}</Text>
+                            </View>
+                            <View style={styles.premiumGridItem}>
+                                <Text style={styles.gridLabel}>面积</Text>
+                                <Text style={styles.gridValue}>{caseItem.area}</Text>
+                            </View>
+                            <View style={styles.premiumGridItem}>
+                                <Text style={styles.gridLabel}>风格</Text>
+                                <Text style={styles.gridValue}>{caseItem.style}</Text>
+                            </View>
+                            <View style={styles.premiumGridItem}>
+                                <Text style={styles.gridLabel}>完工</Text>
+                                <Text style={styles.gridValue}>{caseItem.year || '-'}年</Text>
+                            </View>
+                        </View>
                     </View>
-                </View>
 
-                {/* Description */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>项目介绍</Text>
-                    <Text style={styles.descText}>{caseItem.description}</Text>
-                </View>
+                    {/* Module 3: Description */}
+                    <View style={styles.moduleCard}>
+                        <Text style={styles.sectionTitle}>设计理念</Text>
+                        <Text style={styles.premiumDesc}>{caseItem.description}</Text>
+                    </View>
 
-                {/* More Images */}
-                {caseItem.images.length > 1 && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>更多图片</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.moreImagesScroll}>
+                    {/* Module 4: Gallery */}
+                    <View style={styles.moduleCard}>
+                        <Text style={styles.sectionTitle}>案例图赏 ({caseItem.images.length})</Text>
+                        <View style={styles.verticalGallery}>
                             {caseItem.images.map((img: string, idx: number) => (
-                                <TouchableOpacity key={idx} onPress={() => openImageViewer(idx)}>
-                                    <Image source={{ uri: img }} style={styles.moreImage} />
+                                <TouchableOpacity key={idx} onPress={() => openImageViewer(idx)} activeOpacity={0.9} style={{ marginBottom: 16 }}>
+                                    <Image
+                                        source={{ uri: img }}
+                                        style={{ width: '100%', height: width * 0.75 - 32, borderRadius: 8, backgroundColor: '#f0f0f0' }}
+                                        resizeMode="cover"
+                                    />
                                 </TouchableOpacity>
                             ))}
-                        </ScrollView>
+                        </View>
                     </View>
-                )}
+                </View>
 
-                <View style={{ height: 30 }} />
+
             </ScrollView>
+
 
             {/* Image Viewer Modal */}
             <Modal visible={showImageViewer} transparent animationType="fade">
@@ -366,7 +375,7 @@ export const CaseDetailScreen = ({ route, navigation }: any) => {
                     />
                 </View>
             </Modal>
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -475,6 +484,25 @@ const styles = StyleSheet.create({
         color: '#111',
         marginBottom: 12,
     },
+
+    infoGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+    },
+    infoItem: {
+        width: '50%',
+        marginBottom: 12,
+    },
+    infoLabel: {
+        fontSize: 12,
+        color: '#9CA3AF',
+        marginBottom: 4,
+    },
+    infoValue: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#111',
+    },
     caseMeta: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -511,6 +539,86 @@ const styles = StyleSheet.create({
         marginRight: 12,
         backgroundColor: '#E5E7EB',
     },
+    // New Premium Styles
+    // New Premium Styles
+    // floatingHeader & circleBtn removed
+    verticalContent: {
+        backgroundColor: '#F5F5F5', // Gray background
+        padding: 12, // Outer padding
+        paddingBottom: 40,
+    },
+    moduleCard: {
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12,
+    },
+    verticalGallery: {
+        marginTop: 12,
+    },
+    // cardHeader removed/merged into moduleCard
+    premiumTitle: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        color: '#111',
+        marginBottom: 12,
+        lineHeight: 30,
+    },
+    // premiumSubtitle removed
+    priceRow: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+    },
+    priceLabel: {
+        fontSize: 14,
+        color: '#FF4D4F',
+        marginRight: 4,
+        fontWeight: '500',
+    },
+    priceValue: {
+        fontSize: 28,
+        fontWeight: '800',
+        color: '#FF4D4F',
+    },
+    divider: {
+        height: 1,
+        backgroundColor: '#F3F4F6',
+        marginTop: 16,
+        marginBottom: 16,
+    },
+    premiumGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+    },
+    premiumGridItem: {
+        width: '50%',
+        marginBottom: 24,
+    },
+    gridLabel: {
+        fontSize: 12,
+        color: '#999',
+        marginBottom: 6,
+        letterSpacing: 1,
+    },
+    gridValue: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#333',
+    },
+    premiumDesc: {
+        fontSize: 15,
+        color: '#444',
+        lineHeight: 28,
+        letterSpacing: 0.5,
+    },
+    premiumMoreImage: {
+        width: 140,
+        height: 100,
+        borderRadius: 12,
+        marginRight: 16,
+        backgroundColor: '#F3F4F6',
+    },
+
     // Provider Card (Not used in original detail, but kept for gallery?) No, original didn't have provider card in detail.
     // Keeping shared styles safe.
     // Bottom Bar

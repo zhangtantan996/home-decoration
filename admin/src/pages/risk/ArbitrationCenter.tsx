@@ -190,11 +190,24 @@ const ArbitrationCenter: React.FC = () => {
                         </Descriptions.Item>
                         <Descriptions.Item label="证据材料" span={2}>
                             <Space direction="vertical">
-                                {currentItem.evidence?.map((url, index) => (
-                                    <a key={index} href={url} target="_blank" rel="noopener noreferrer">
-                                        证据 {index + 1}
-                                    </a>
-                                ))}
+                                {(() => {
+                                    // 防御性解析：evidence可能是JSON字符串或数组
+                                    let evidenceList: string[] = [];
+                                    if (typeof currentItem.evidence === 'string') {
+                                        try {
+                                            evidenceList = JSON.parse(currentItem.evidence);
+                                        } catch {
+                                            evidenceList = currentItem.evidence ? [currentItem.evidence] : [];
+                                        }
+                                    } else if (Array.isArray(currentItem.evidence)) {
+                                        evidenceList = currentItem.evidence;
+                                    }
+                                    return evidenceList.map((url, index) => (
+                                        <a key={index} href={url} target="_blank" rel="noopener noreferrer">
+                                            证据 {index + 1}
+                                        </a>
+                                    ));
+                                })()}
                             </Space>
                         </Descriptions.Item>
                         <Descriptions.Item label="状态" span={2}>

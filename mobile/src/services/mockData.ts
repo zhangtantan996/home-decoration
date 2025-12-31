@@ -11,6 +11,8 @@ export const DESIGNERS = [
         orgLabel: '独立设计师',
         distance: '1.2km',
         specialty: '现代简约 · 北欧风格',
+        price: '¥120-300/㎡',
+        serviceArea: ['雁塔区', '碑林区', '高新区'],
     },
     {
         id: 2,
@@ -23,6 +25,8 @@ export const DESIGNERS = [
         orgLabel: '雅居设计工作室',
         distance: '2.5km',
         specialty: '新中式 · 轻奢风格',
+        price: '¥200-400/㎡',
+        serviceArea: ['未央区', '莲湖区', '经开区'],
     },
     {
         id: 3,
@@ -35,6 +39,8 @@ export const DESIGNERS = [
         orgLabel: '华美装饰设计公司',
         distance: '3.8km',
         specialty: '欧式古典 · 别墅大宅',
+        price: '¥300-600/㎡',
+        serviceArea: ['曲江新区', '雁塔区', '长安区'],
     },
     {
         id: 4,
@@ -47,6 +53,8 @@ export const DESIGNERS = [
         orgLabel: '独立设计师',
         distance: '0.8km',
         specialty: '日式原木 · 极简主义',
+        price: '¥150-350/㎡',
+        serviceArea: ['碑林区', '新城区'],
     },
     {
         id: 5,
@@ -59,6 +67,8 @@ export const DESIGNERS = [
         orgLabel: '强设计工作室',
         distance: '4.2km',
         specialty: '工业风 · Loft空间',
+        price: '¥180-400/㎡',
+        serviceArea: ['灞桥区', '浐灞生态区', '新城区'],
     },
     {
         id: 6,
@@ -71,6 +81,8 @@ export const DESIGNERS = [
         orgLabel: '燕归来设计公司',
         distance: '5.1km',
         specialty: '法式浪漫 · 田园风格',
+        price: '¥250-500/㎡',
+        serviceArea: ['雁塔区', '高新区', '未央区'],
     },
 ];
 

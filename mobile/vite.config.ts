@@ -6,9 +6,16 @@ export default defineConfig({
     // base: '/mobile/', // 移除子路径，使用根路径，修复 SPA 路由问题
     plugins: [react()],
     resolve: {
-        alias: {
-            'react-native': 'react-native-web',
-        },
+        alias: [
+            { find: 'react-native', replacement: resolve(__dirname, 'src/mocks/react-native-web-all.js') },
+            { find: /^react-native-camera-kit(\/.*)?$/, replacement: resolve(__dirname, 'src/mocks/native-mocks.js') },
+            { find: /^react-native-image-crop-picker(\/.*)?$/, replacement: resolve(__dirname, 'src/mocks/native-mocks.js') },
+            { find: /^react-native-image-picker(\/.*)?$/, replacement: resolve(__dirname, 'src/mocks/native-mocks.js') },
+            { find: /^react-native-keychain(\/.*)?$/, replacement: resolve(__dirname, 'src/mocks/native-mocks.js') },
+            { find: /^react-native-safe-area-context(\/.*)?$/, replacement: resolve(__dirname, 'src/mocks/react-native-web-all.js') }, // Redirect this too if it causes issues
+            { find: /^react-native\/Libraries\/Utilities\/codegenNativeComponent$/, replacement: resolve(__dirname, 'src/mocks/native-mocks.js') },
+            { find: /^react-native\/Libraries\/Renderer\/shims\/ReactNative$/, replacement: resolve(__dirname, 'node_modules/react-native-web') },
+        ],
         extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.js'],
     },
     server: {

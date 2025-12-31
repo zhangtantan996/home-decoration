@@ -22,3 +22,7 @@ redis:
 jwt:
   secret: "${JWT_SECRET}"  # 从环境变量读取，不要硬编码！
   expire_hour: 8  # 缩短至8小时
+
+log:
+  level: "info"
+  file: "logs/backend.log"

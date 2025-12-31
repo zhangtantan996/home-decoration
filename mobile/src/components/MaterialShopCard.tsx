@@ -40,7 +40,6 @@ export const MaterialShopCard = memo(({ shop, onPress }: MaterialShopCardProps) 
                         <Text style={styles.divider}>·</Text>
                         <Star size={12} color="#F59E0B" fill="#F59E0B" />
                         <Text style={styles.ratingText}>{shop.rating}</Text>
-                        <Text style={styles.reviewCountText}>({shop.reviewCount})</Text>
                     </View>
 
                     {/* Main Products */}

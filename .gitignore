@@ -11,12 +11,16 @@ bin/
 *.so
 server/server_linux
 server/main
+server/api.exe
+server/tmp/
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+logs/
+backend.log
 
 # Environment variables
 .env
@@ -32,8 +36,26 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+NUL
+
+# Agent & IDE Specific
+.agent/
+.claude/
+.cursor/
+.kiro/
+.superdesign/
+.windsurfrules
+stitch/
+playwright-report/
+test-results/
 
 # Project specific
 mobile/android/app/build/
 mobile/ios/build/
 mobile/android/.gradle/
+mobile/android/.idea/
+mobile/android/.kotlin/
+mobile/android/app/.cxx/
+db_data_local/
+/db_data_local/
+*.pid

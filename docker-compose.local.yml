@@ -66,22 +66,9 @@ services:
     networks:
       - dev-net
 
-  # 移动端 Web (Vite Dev)
-  mobile:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.node.dev
-    container_name: home_decor_mobile_local
-    working_dir: /app/mobile
-    volumes:
-      - .:/app
-    ports:
-      - "5174:5173"
-    environment:
-      - VITE_API_URL=http://localhost:8080/api/v1
-    command: sh -c "npm install --registry=https://registry.npmmirror.com/ && npm run web -- --host"
-    networks:
-      - dev-net
+  # 注意: Mobile 端仅用于原生 App 开发
+  # 使用 React Native Metro (npm start) 和 Android Studio/Xcode
+  # Web 版本已禁用，无需 Docker 容器
 
 networks:
   dev-net:

@@ -19,12 +19,12 @@ func AdminListAdmins(c *gin.Context) {
 	pageSize := parseInt(c.Query("pageSize"), 10)
 	keyword := c.Query("keyword")
 
-	var admins []model.Admin
+	var admins []model.SysAdmin
 	var total int64
 
-	db := repository.DB.Model(&model.Admin{})
+	db := repository.DB.Model(&model.SysAdmin{}).Preload("Roles")
 	if keyword != "" {
-		db = db.Where("username LIKE ? OR phone LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		db = db.Where("username LIKE ? OR phone LIKE ? OR nickname LIKE ?", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
 	db.Count(&total)
@@ -39,23 +39,33 @@ func AdminListAdmins(c *gin.Context) {
 // AdminCreateAdmin 创建管理员
 func AdminCreateAdmin(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required"`
-		Phone    string `json:"phone" binding:"required"`
-		Email    string `json:"email"`
-		Password string `json:"password" binding:"required,min=6"`
-		Role     string `json:"role" binding:"required"`
+		Username string   `json:"username" binding:"required"`
+		Phone    string   `json:"phone"`
+		Email    string   `json:"email"`
+		Password string   `json:"password" binding:"required,min=6"`
+		Nickname string   `json:"nickname"`
+		RoleIDs  []uint64 `json:"roleIds" binding:"required"` // 角色ID列表
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+		response.BadRequest(c, "参数错误: "+err.Error())
 		return
 	}
 
 	// 检查用户名是否已存在
 	var count int64
-	repository.DB.Model(&model.Admin{}).Where("username = ? OR phone = ?", req.Username, req.Phone).Count(&count)
+	repository.DB.Model(&model.SysAdmin{}).Where("username = ?", req.Username).Count(&count)
 	if count > 0 {
-		response.BadRequest(c, "用户名或手机号已存在")
+		response.BadRequest(c, "用户名已存在")
 		return
+	}
+
+	// 检查手机号是否已存在(如果提供了)
+	if req.Phone != "" {
+		repository.DB.Model(&model.SysAdmin{}).Where("phone = ?", req.Phone).Count(&count)
+		if count > 0 {
+			response.BadRequest(c, "手机号已存在")
+			return
+		}
 	}
 
 	// 密码加密
@@ -65,61 +75,176 @@ func AdminCreateAdmin(c *gin.Context) {
 		return
 	}
 
-	admin := model.Admin{
-		Username: req.Username,
-		Phone:    req.Phone,
-		Email:    req.Email,
-		Password: string(hashedPassword),
-		Role:     req.Role,
-		Status:   1,
+	// 创建管理员
+	admin := model.SysAdmin{
+		Username:     req.Username,
+		Phone:        req.Phone,
+		Email:        req.Email,
+		Password:     string(hashedPassword),
+		Nickname:     req.Nickname,
+		Status:       1,
+		IsSuperAdmin: false,
 	}
 
-	if err := repository.DB.Create(&admin).Error; err != nil {
-		response.ServerError(c, "创建失败")
+	// 使用事务创建管理员并分配角色
+	tx := repository.DB.Begin()
+	if err := tx.Create(&admin).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "创建失败: "+err.Error())
 		return
 	}
+
+	// 分配角色
+	for _, roleID := range req.RoleIDs {
+		if err := tx.Create(&model.SysAdminRole{
+			AdminID: admin.ID,
+			RoleID:  roleID,
+		}).Error; err != nil {
+			tx.Rollback()
+			response.ServerError(c, "分配角色失败")
+			return
+		}
+	}
+
+	tx.Commit()
+
+	// 加载角色信息返回
+	repository.DB.Preload("Roles").First(&admin, admin.ID)
 	response.Success(c, admin)
 }
 
 // AdminUpdateAdmin 更新管理员
 func AdminUpdateAdmin(c *gin.Context) {
 	id := c.Param("id")
-	var admin model.Admin
-	if err := repository.DB.First(&admin, "id = ?", id).Error; err != nil {
+	var admin model.SysAdmin
+	if err := repository.DB.Preload("Roles").First(&admin, "id = ?", id).Error; err != nil {
 		response.NotFound(c, "管理员不存在")
 		return
 	}
 
 	var req struct {
-		Username string `json:"username"`
-		Phone    string `json:"phone"`
-		Email    string `json:"email"`
-		Role     string `json:"role"`
+		Username string   `json:"username"`
+		Phone    string   `json:"phone"`
+		Email    string   `json:"email"`
+		Nickname string   `json:"nickname"`
+		Password string   `json:"password"` // 可选,如果提供则更新密码
+		RoleIDs  []uint64 `json:"roleIds"`  // 角色ID列表
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	admin.Username = req.Username
-	admin.Phone = req.Phone
-	admin.Email = req.Email
-	admin.Role = req.Role
+	// 检查用户名是否被其他管理员占用
+	if req.Username != "" && req.Username != admin.Username {
+		var count int64
+		repository.DB.Model(&model.SysAdmin{}).Where("username = ? AND id != ?", req.Username, id).Count(&count)
+		if count > 0 {
+			response.BadRequest(c, "用户名已被占用")
+			return
+		}
+		admin.Username = req.Username
+	}
 
-	if err := repository.DB.Save(&admin).Error; err != nil {
+	// 检查手机号是否被其他管理员占用
+	if req.Phone != "" && req.Phone != admin.Phone {
+		var count int64
+		repository.DB.Model(&model.SysAdmin{}).Where("phone = ? AND id != ?", req.Phone, id).Count(&count)
+		if count > 0 {
+			response.BadRequest(c, "手机号已被占用")
+			return
+		}
+		admin.Phone = req.Phone
+	}
+
+	// 更新基本信息
+	if req.Email != "" {
+		admin.Email = req.Email
+	}
+	if req.Nickname != "" {
+		admin.Nickname = req.Nickname
+	}
+
+	// 如果提供了密码,则更新密码
+	if req.Password != "" {
+		if len(req.Password) < 6 {
+			response.BadRequest(c, "密码长度不能少于6位")
+			return
+		}
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			response.ServerError(c, "密码加密失败")
+			return
+		}
+		admin.Password = string(hashedPassword)
+	}
+
+	// 使用事务更新管理员信息和角色
+	tx := repository.DB.Begin()
+
+	// 更新管理员基本信息
+	if err := tx.Save(&admin).Error; err != nil {
+		tx.Rollback()
 		response.ServerError(c, "更新失败")
 		return
 	}
+
+	// 如果提供了角色列表,则更新角色
+	if len(req.RoleIDs) > 0 {
+		// 删除旧角色关联
+		tx.Where("admin_id = ?", id).Delete(&model.SysAdminRole{})
+
+		// 创建新角色关联
+		for _, roleID := range req.RoleIDs {
+			if err := tx.Create(&model.SysAdminRole{
+				AdminID: admin.ID,
+				RoleID:  roleID,
+			}).Error; err != nil {
+				tx.Rollback()
+				response.ServerError(c, "更新角色失败")
+				return
+			}
+		}
+	}
+
+	tx.Commit()
+
+	// 重新加载角色信息返回
+	repository.DB.Preload("Roles").First(&admin, admin.ID)
 	response.Success(c, admin)
 }
 
 // AdminDeleteAdmin 删除管理员
 func AdminDeleteAdmin(c *gin.Context) {
 	id := c.Param("id")
-	if err := repository.DB.Delete(&model.Admin{}, "id = ?", id).Error; err != nil {
+
+	// 检查管理员是否存在
+	var admin model.SysAdmin
+	if err := repository.DB.First(&admin, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "管理员不存在")
+		return
+	}
+
+	// 防止删除超级管理员
+	if admin.IsSuperAdmin {
+		response.BadRequest(c, "不能删除超级管理员")
+		return
+	}
+
+	// 使用事务删除管理员及其角色关联
+	tx := repository.DB.Begin()
+
+	// 删除角色关联
+	tx.Where("admin_id = ?", id).Delete(&model.SysAdminRole{})
+
+	// 删除管理员
+	if err := tx.Delete(&model.SysAdmin{}, "id = ?", id).Error; err != nil {
+		tx.Rollback()
 		response.ServerError(c, "删除失败")
 		return
 	}
+
+	tx.Commit()
 	response.Success(c, nil)
 }
 
@@ -134,7 +259,20 @@ func AdminUpdateAdminStatus(c *gin.Context) {
 		return
 	}
 
-	if err := repository.DB.Model(&model.Admin{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+	// 检查管理员是否存在
+	var admin model.SysAdmin
+	if err := repository.DB.First(&admin, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "管理员不存在")
+		return
+	}
+
+	// 防止禁用超级管理员
+	if admin.IsSuperAdmin && req.Status == 0 {
+		response.BadRequest(c, "不能禁用超级管理员")
+		return
+	}
+
+	if err := repository.DB.Model(&model.SysAdmin{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -531,8 +669,34 @@ func AdminListLogs(c *gin.Context) {
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&logs)
 
+	// 转换为前端需要的格式
+	type LogResponse struct {
+		ID         uint64 `json:"id"`
+		AdminID    uint64 `json:"adminId"`
+		AdminName  string `json:"adminName"`
+		Action     string `json:"action"`
+		TargetType string `json:"targetType"` // 映射自 resource
+		TargetID   uint64 `json:"targetId"`   // 映射自 resource_id
+		IP         string `json:"ip"`
+		CreatedAt  string `json:"createdAt"`
+	}
+
+	var result []LogResponse
+	for _, log := range logs {
+		result = append(result, LogResponse{
+			ID:         log.ID,
+			AdminID:    log.AdminID,
+			AdminName:  log.AdminName,
+			Action:     log.Action,
+			TargetType: log.Resource,
+			TargetID:   log.ResourceID,
+			IP:         log.IP,
+			CreatedAt:  log.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
 	response.Success(c, gin.H{
-		"list":  logs,
+		"list":  result,
 		"total": total,
 	})
 }

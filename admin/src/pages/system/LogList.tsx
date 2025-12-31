@@ -6,9 +6,10 @@ import { adminLogApi } from '../../services/api';
 interface AdminLog {
     id: number;
     adminId: number;
+    adminName: string; // 添加管理员名称字段
     action: string;
-    targetType: string;
-    targetId: number;
+    targetType: string; // 前端字段名已修正
+    targetId: number;   // 前端字段名已修正
     detail: string;
     ip: string;
     createdAt: string;
@@ -52,7 +53,7 @@ const LogList: React.FC = () => {
 
     const columns = [
         { title: 'ID', dataIndex: 'id', width: 80 },
-        { title: '管理员ID', dataIndex: 'adminId' },
+        { title: '管理员', dataIndex: 'adminName' }, // 改为显示管理员名称
         {
             title: '操作',
             dataIndex: 'action',

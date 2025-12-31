@@ -56,17 +56,37 @@ ON CONFLICT DO NOTHING;
 -- 8. 插入系统设置示例数据
 INSERT INTO system_settings (key, value, description, category, created_at, updated_at)
 VALUES
+-- 基本设置
 ('site_name', '家装管理平台', '网站名称', 'basic', NOW(), NOW()),
 ('site_description', '专业的家装服务管理系统', '网站描述', 'basic', NOW(), NOW()),
 ('contact_email', 'support@example.com', '联系邮箱', 'basic', NOW(), NOW()),
 ('contact_phone', '400-888-8888', '联系电话', 'basic', NOW(), NOW()),
 ('icp', '京ICP备12345678号', 'ICP备案号', 'basic', NOW(), NOW()),
+-- 功能开关
 ('enable_registration', 'true', '是否允许用户注册', 'security', NOW(), NOW()),
 ('enable_sms_verify', 'true', '是否开启短信验证', 'security', NOW(), NOW()),
 ('enable_email_verify', 'false', '是否开启邮箱验证', 'security', NOW(), NOW()),
 ('min_password_length', '6', '最小密码长度', 'security', NOW(), NOW()),
 ('session_timeout', '30', '会话超时时间（分钟）', 'security', NOW(), NOW()),
-('max_upload_size', '10', '最大上传文件大小（MB）', 'security', NOW(), NOW())
+('max_upload_size', '10', '最大上传文件大小（MB）', 'security', NOW(), NOW()),
+-- 微信支付配置
+('wechat_app_id', '', '微信支付AppID', 'payment', NOW(), NOW()),
+('wechat_mch_id', '', '微信支付商户号', 'payment', NOW(), NOW()),
+('wechat_api_key', '', '微信支付API密钥', 'payment', NOW(), NOW()),
+-- 支付宝配置
+('alipay_app_id', '', '支付宝AppID', 'payment', NOW(), NOW()),
+('alipay_private_key', '', '支付宝应用私钥', 'payment', NOW(), NOW()),
+('alipay_public_key', '', '支付宝公钥', 'payment', NOW(), NOW()),
+-- 短信配置
+('sms_provider', '', '短信服务商（阿里云/腾讯云等）', 'sms', NOW(), NOW()),
+('sms_access_key', '', '短信服务AccessKey', 'sms', NOW(), NOW()),
+('sms_secret_key', '', '短信服务SecretKey', 'sms', NOW(), NOW()),
+('sms_sign_name', '', '短信签名', 'sms', NOW(), NOW()),
+('sms_template_id', '', '短信模板ID', 'sms', NOW(), NOW()),
+-- 腾讯云 IM 配置
+('im_tencent_enabled', 'false', '是否启用腾讯云IM', 'im', NOW(), NOW()),
+('im_tencent_sdk_app_id', '', '腾讯云IM SDKAppID', 'im', NOW(), NOW()),
+('im_tencent_secret_key', '', '腾讯云IM SecretKey', 'im', NOW(), NOW())
 ON CONFLICT (key) DO UPDATE SET
     value = EXCLUDED.value,
     description = EXCLUDED.description,

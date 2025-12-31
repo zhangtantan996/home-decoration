@@ -71,6 +71,21 @@ func autoMigrate() error {
 		&model.Arbitration{},
 		&model.SystemSettings{},
 		&model.AdminLog{},
+		// 业务流程扩展 (2025-12-28)
+		&model.SystemConfig{},
+		&model.Proposal{},
+		&model.Order{},
+		&model.PaymentPlan{},
+		// 商家中心 (2025-12-29)
+		&model.MerchantApplication{},
+		&model.MerchantIncome{},
+		&model.MerchantWithdraw{},
+		&model.MerchantBankAccount{},
+		&model.MerchantServiceSetting{},
+		// 售后
+		&model.AfterSales{},
+		// 安全审计 (2025-12-29)
+		&model.AuditLog{},
 	)
 }
 

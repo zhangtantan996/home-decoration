@@ -23,7 +23,7 @@ type SysAdmin struct {
 	UpdatedAt    time.Time  `json:"updatedAt"`
 
 	// 关联
-	Roles []SysRole `json:"roles" gorm:"many2many:sys_admin_roles;"`
+	Roles []SysRole `json:"roles" gorm:"many2many:sys_admin_roles;foreignKey:ID;joinForeignKey:AdminID;References:ID;joinReferences:RoleID"`
 }
 
 func (SysAdmin) TableName() string {

@@ -1,5 +1,5 @@
 # ==========================================
-# Stage 1: Build Admin Panel
+# Stage 1: Build Admin Panel (React 18.3.1)
 # ==========================================
 FROM node:20-alpine AS admin-builder
 WORKDIR /app/admin
@@ -14,22 +14,7 @@ COPY admin/ ./
 RUN npm run build
 
 # ==========================================
-# Stage 2: Build Mobile Web (Landing/App)
-# ==========================================
-FROM node:20-alpine AS web-builder
-WORKDIR /app/mobile
-
-# Mirror for China
-RUN npm config set registry https://registry.npmmirror.com
-
-COPY mobile/package.json ./
-RUN npm install --legacy-peer-deps
-
-COPY mobile/ ./
-RUN npm run build
-
-# ==========================================
-# Stage 3: Nginx File Server
+# Stage 2: Nginx Static File Server
 # ==========================================
 FROM nginx:alpine
 
@@ -40,12 +25,12 @@ ENV TZ=Asia/Shanghai
 # Copy Nginx Config
 COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 
-# Copy Build Artifacts
+# Copy Admin Build Artifacts
 # Admin goes to /usr/share/nginx/html/admin
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
 
-# Web goes to /usr/share/nginx/html/web
-COPY --from=web-builder /app/mobile/dist /usr/share/nginx/html/web
+# Note: Mobile app is native-only (React Native)
+# No web build needed. Use Android Studio or Xcode for mobile deployment.
 
 EXPOSE 80
 EXPOSE 443
