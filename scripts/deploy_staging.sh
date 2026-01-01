@@ -50,6 +50,9 @@ if [ ! -f "$COMPOSE_FILE" ]; then
     sed -i 's/db_data_prod/db_data_staging/g' $COMPOSE_FILE
     sed -i 's/redis_data_prod/redis_data_staging/g' $COMPOSE_FILE
     
+    # 使用静态构建的 Dockerfile (避免服务器内存不足)
+    sed -i 's|deploy/Dockerfile.frontend|deploy/Dockerfile.frontend.static|g' $COMPOSE_FILE
+    
     echo "✅ 配置文件创建完成: $COMPOSE_FILE"
 fi
 

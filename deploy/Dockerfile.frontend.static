@@ -1,0 +1,21 @@
+# ==========================================
+# Static Deployment Dockerfile
+# Skips build stage, requires pre-built 'dist' folder
+# ==========================================
+FROM nginx:alpine
+
+# Install timezone
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Shanghai
+
+# Copy Nginx Config
+COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
+
+# Copy Pre-built Admin Artifacts
+# IMPORTANT: You must upload 'admin/dist' to the server before building this
+COPY admin/dist /usr/share/nginx/html/admin
+
+EXPOSE 80
+EXPOSE 443
+
+CMD ["nginx", "-g", "daemon off;"]
