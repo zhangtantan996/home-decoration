@@ -1,0 +1,46 @@
+# Skill_Seekers Configuration for Home Decoration Project
+
+# Project Information
+name: "HomeDecoration"
+version: "1.0.0"
+
+# Source Code Scanning
+source_paths:
+  - "server/internal"
+  - "admin/src"
+  - "mobile/src"
+
+# Documentation Scanning
+doc_paths:
+  - "docs"
+  - "server/docs"
+
+# Exclusion Rules
+excludes:
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/.git/**"
+  - "**/migrations/**"
+
+# Language Specific Settings (AST Analysis)
+languages:
+  go:
+    enabled: true
+    scan_structs: true
+  typescript:
+    enabled: true
+    scan_interfaces: true
+    scan_components: true
+
+# AI Skill Packaging Settings
+packaging:
+  output_format: "zip"
+  include_source_summary: true
+  include_api_mapping: true
+
+# Conflict Detection Rules
+conflict_detection:
+  check_api_docs: true
+  api_doc_path: "server/docs/API接口文档.md"

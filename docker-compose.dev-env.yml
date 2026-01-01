@@ -1,0 +1,33 @@
+version: '3.8'
+services:
+  # Database - Persistent
+  # Only runs the database, no application code.
+  # Intended to be run in the background (detached) and left running.
+  db:
+    image: postgres:15-alpine
+    container_name: home_decor_db_local
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: home_decoration
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db_data_local:/var/lib/postgresql/data
+    networks:
+      - dev-net
+    restart: always
+
+  # Redis - Persistent
+  redis:
+    image: redis:6.2-alpine
+    container_name: home_decor_redis_local
+    ports:
+      - "6380:6379"
+    networks:
+      - dev-net
+    restart: always
+
+networks:
+  dev-net:
+    driver: bridge

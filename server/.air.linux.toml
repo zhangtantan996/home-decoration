@@ -1,0 +1,42 @@
+# .air.linux.toml
+# Configured for Linux/Docker environment
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Linux binary (no .exe)
+  bin = "./tmp/main"
+  # Build command
+  cmd = "go build -o ./tmp/main ./cmd/api"
+  # Delay in ms after file change before build trigger
+  delay = 1000
+  # Directories to ignore
+  exclude_dir = ["assets", "tmp", "vendor", "test", "docs", ".idea", ".vscode", "node_modules", ".git"]
+  # Extensions to watch
+  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml", "env"]
+  # Regex to exclude
+  exclude_regex = ["_test.go"]
+  # Delay before killing the process
+  kill_delay = "500ms"
+  # Build error log
+  log = "build-errors.log"
+  # Send interrupt signal (useful for graceful shutdown)
+  send_interrupt = true
+  # Stop if build fails
+  stop_on_error = true
+  # Poll is often necessary in Docker across OS mounts
+  poll = true
+  poll_interval = 500
+
+[log]
+  time = true
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  clean_on_exit = true

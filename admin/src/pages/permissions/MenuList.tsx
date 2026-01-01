@@ -21,6 +21,11 @@ interface Menu {
     children?: Menu[];
 }
 
+// 用于下拉选择的扁平结构，带上层级深度方便缩进展示
+interface FlatMenu extends Menu {
+    depth?: number;
+}
+
 // 常用图标列表
 const ICON_OPTIONS = [
     'DashboardOutlined', 'UserOutlined', 'TeamOutlined', 'ShopOutlined',
@@ -28,13 +33,14 @@ const ICON_OPTIONS = [
     'SafetyOutlined', 'FileTextOutlined', 'SettingOutlined', 'LockOutlined',
     'AppstoreOutlined', 'TableOutlined', 'FormOutlined', 'BarChartOutlined',
     'PieChartOutlined', 'MailOutlined', 'BellOutlined', 'TagOutlined',
+    'ExclamationCircleOutlined', 'WarningOutlined',
 ];
 
 const MenuList: React.FC = () => {
     const { modal, message } = App.useApp();
     const [loading, setLoading] = useState(false);
     const [menus, setMenus] = useState<Menu[]>([]);
-    const [flatMenus, setFlatMenus] = useState<Menu[]>([]);
+    const [flatMenus, setFlatMenus] = useState<FlatMenu[]>([]);
     const [modalVisible, setModalVisible] = useState(false);
     const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
     const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
@@ -50,14 +56,13 @@ const MenuList: React.FC = () => {
             const res = await adminMenuApi.list() as any;
 
             if (res.code === 0) {
-                const menuList = res.data.list || [];
-                setFlatMenus(menuList);
-                const tree = buildMenuTree(menuList);
-                setMenus(tree);
+                const menuTree: Menu[] = res.data.list || [];
+                const flattened = flattenMenus(menuTree);
+                setFlatMenus(flattened);
+                setMenus(menuTree);
 
-                // 默认展开所有一级菜单
-                const topLevelKeys = menuList.filter((m: Menu) => m.parentId === 0).map((m: Menu) => m.id);
-                setExpandedRowKeys(topLevelKeys);
+                // 默认收起
+                setExpandedRowKeys([]);
             }
         } catch (error) {
             console.error(error);
@@ -67,27 +72,16 @@ const MenuList: React.FC = () => {
         }
     };
 
-    const buildMenuTree = (menus: Menu[]): Menu[] => {
-        const menuMap = new Map<number, Menu & { children: Menu[] }>();
-
-        menus.forEach(menu => {
-            menuMap.set(menu.id, { ...menu, children: [] });
-        });
-
-        const tree: Menu[] = [];
-
-        menuMap.forEach(menu => {
-            if (menu.parentId === 0) {
-                tree.push(menu);
-            } else {
-                const parent = menuMap.get(menu.parentId);
-                if (parent) {
-                    parent.children.push(menu);
-                }
+    // 后端已返回树形结构，这里仅负责展开成扁平列表用于下拉选择
+    const flattenMenus = (menuTree: Menu[], depth: number = 0): FlatMenu[] => {
+        const result: FlatMenu[] = [];
+        menuTree.forEach(menu => {
+            result.push({ ...menu, depth });
+            if (menu.children && menu.children.length > 0) {
+                result.push(...flattenMenus(menu.children, depth + 1));
             }
         });
-
-        return tree.sort((a, b) => a.sort - b.sort);
+        return result;
     };
 
     const handleAdd = (parentId: number = 0) => {
@@ -270,12 +264,12 @@ const MenuList: React.FC = () => {
                     {record.type !== 3 && (
                         <Tooltip title="添加子菜单">
                             <Button
-                                type="text"
+                                type="link"
                                 size="small"
                                 icon={<PlusOutlined />}
                                 onClick={() => handleAdd(record.id)}
                             >
-                                新增
+                                添加下级
                             </Button>
                         </Tooltip>
                     )}
@@ -311,7 +305,7 @@ const MenuList: React.FC = () => {
             .filter(m => m.type !== 3)
             .map(m => ({
                 value: m.id,
-                label: `${'  '.repeat(m.parentId === 0 ? 0 : 1)}${m.parentId === 0 ? '📁' : '📄'} ${m.title}`,
+                label: `${'  '.repeat(m.depth ?? 0)}${(m.depth ?? 0) === 0 ? '📁' : '📄'} ${m.title}`,
             })),
     ];
 

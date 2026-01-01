@@ -147,6 +147,11 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 
 				// 项目阶段
 				projects.GET("/:id/phases", handler.GetProjectPhases)
+
+				// 项目账单
+				projects.GET("/:id/bill", handler.GetProjectBill)
+				projects.POST("/:id/bill", handler.GenerateBill)
+				projects.GET("/:id/files", handler.GetProjectFiles)
 			}
 
 			// 阶段管理
@@ -174,6 +179,8 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 				orders.GET("/:id", handler.GetOrder)
 				orders.POST("/:id/pay", handler.PayOrder)
 				orders.DELETE("/:id", handler.CancelOrder)
+				// 分期付款
+				orders.POST("/plans/:planId/pay", handler.PayPaymentPlan)
 			}
 
 			// 服务商通用 (关注/收藏)
@@ -191,6 +198,9 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 			{
 				im.GET("/usersig", handler.GetIMUserSig)
 			}
+
+			// 通用上传
+			authorized.POST("/upload", handler.UploadFile)
 
 			// 通知系统
 			notifications := authorized.Group("/notifications")
@@ -278,6 +288,12 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 			admin.POST("/audits/cases/:id/approve", handler.AdminApproveCaseAudit)
 			admin.POST("/audits/cases/:id/reject", handler.AdminRejectCaseAudit)
 
+			// 作品管理 (CRUD)
+			admin.GET("/cases", handler.AdminListCases)
+			admin.POST("/cases", handler.AdminCreateCase)
+			admin.PUT("/cases/:id", handler.AdminUpdateCase)
+			admin.DELETE("/cases/:id", handler.AdminDeleteCase)
+
 			// 财务管理
 			admin.GET("/finance/escrow-accounts", handler.AdminListEscrowAccounts)
 			admin.GET("/finance/transactions", handler.AdminListTransactions)
@@ -327,6 +343,31 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 			admin.GET("/merchant-applications/:id", handler.AdminGetApplication)
 			admin.POST("/merchant-applications/:id/approve", handler.AdminApproveApplication)
 			admin.POST("/merchant-applications/:id/reject", handler.AdminRejectApplication)
+
+			// ========== 项目管理 ==========
+			admin.GET("/projects", handler.AdminListProjects)
+			admin.GET("/projects/:id", handler.AdminGetProject)
+			admin.PUT("/projects/:id/status", handler.AdminUpdateProjectStatus)
+			// 阶段管理
+			admin.GET("/projects/:id/phases", handler.AdminGetProjectPhases)
+			admin.PUT("/projects/:id/phases/:phaseId", handler.AdminUpdatePhase)
+			// 施工日志管理（仅管理员可编辑）
+			admin.GET("/projects/:id/logs", handler.AdminGetProjectLogs)
+			admin.POST("/projects/:id/phases/:phaseId/logs", handler.AdminCreateWorkLog)
+			admin.PUT("/logs/:logId", handler.AdminUpdateWorkLog)
+			admin.DELETE("/logs/:logId", handler.AdminDeleteWorkLog)
+
+			// ========== 争议预约管理 ==========
+			admin.GET("/disputed-bookings", handler.AdminListDisputedBookings)
+			admin.GET("/disputed-bookings/:id", handler.AdminGetDisputedBooking)
+			admin.POST("/disputed-bookings/:id/resolve", handler.AdminResolveDispute)
+
+			// 通知系统
+			admin.GET("/notifications", handler.GetNotifications)
+			admin.GET("/notifications/unread-count", handler.GetNotificationUnreadCount)
+			admin.PUT("/notifications/:id/read", handler.MarkNotificationAsRead)
+			admin.PUT("/notifications/read-all", handler.MarkAllNotificationsAsRead)
+			admin.DELETE("/notifications/:id", handler.DeleteNotification)
 		}
 
 		// ==================== Merchant 商家端 ====================
@@ -398,6 +439,9 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 			merchant.PUT("/notifications/:id/read", handler.MarkNotificationAsRead)
 			merchant.PUT("/notifications/read-all", handler.MarkAllNotificationsAsRead)
 			merchant.DELETE("/notifications/:id", handler.DeleteNotification)
+
+			// 腾讯云 IM
+			merchant.GET("/im/usersig", handler.MerchantGetIMUserSig)
 		}
 	}
 

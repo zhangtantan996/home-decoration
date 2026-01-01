@@ -4,6 +4,8 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/pkg/response"
+	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,37 +20,43 @@ func MerchantIncomeSummary(c *gin.Context) {
 	var summary struct {
 		TotalIncome     float64 `json:"totalIncome"`     // 累计收入
 		PendingSettle   float64 `json:"pendingSettle"`   // 待结算
-		SettledAmount   float64 `json:"settledAmount"`   // 已结算
-		WithdrawnAmount float64 `json:"withdrawnAmount"` // 已提现
+		SettledAmount   float64 `json:"settledAmount"`   // 已结算 (总额)
+		WithdrawnAmount float64 `json:"withdrawnAmount"` // 已提现 (总额)
 		AvailableAmount float64 `json:"availableAmount"` // 可提现
 	}
 
-	// 累计收入
+	// 1. 累计收入 (所有状态)
 	repository.DB.Model(&model.MerchantIncome{}).
 		Where("provider_id = ?", providerID).
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&summary.TotalIncome)
 
-	// 待结算 (status=0)
+	// 2. 待结算 (status=0)
 	repository.DB.Model(&model.MerchantIncome{}).
 		Where("provider_id = ? AND status = 0", providerID).
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&summary.PendingSettle)
 
-	// 已结算 (status=1)
+	// 3. 已结算 (status=1 或 status=2) - 这里视为进入资金池的总金额
+	var totalSettled float64
 	repository.DB.Model(&model.MerchantIncome{}).
-		Where("provider_id = ? AND status = 1", providerID).
+		Where("provider_id = ? AND status IN (1, 2)", providerID).
 		Select("COALESCE(SUM(net_amount), 0)").
-		Scan(&summary.SettledAmount)
+		Scan(&totalSettled)
+	summary.SettledAmount = totalSettled
 
-	// 已提现 (status=2)
-	repository.DB.Model(&model.MerchantIncome{}).
-		Where("provider_id = ? AND status = 2", providerID).
-		Select("COALESCE(SUM(net_amount), 0)").
+	// 4. 已提现 (从提现记录表统计: 处理中+成功)
+	// status: 0处理中, 1成功, 2失败
+	repository.DB.Model(&model.MerchantWithdraw{}).
+		Where("provider_id = ? AND status IN (0, 1)", providerID).
+		Select("COALESCE(SUM(amount), 0)").
 		Scan(&summary.WithdrawnAmount)
 
-	// 可提现 = 已结算
-	summary.AvailableAmount = summary.SettledAmount
+	// 5. 可提现 = (已结算总额) - (已提现/提现中总额)
+	summary.AvailableAmount = summary.SettledAmount - summary.WithdrawnAmount
+	if summary.AvailableAmount < 0 {
+		summary.AvailableAmount = 0
+	}
 
 	response.Success(c, summary)
 }
@@ -210,12 +218,20 @@ func MerchantWithdrawCreate(c *gin.Context) {
 		return
 	}
 
-	// 1. 检查可提现金额
-	var availableAmount float64
+	// 1. 计算可提现金额 (逻辑同 MerchantIncomeSummary)
+	var totalSettled float64
 	repository.DB.Model(&model.MerchantIncome{}).
-		Where("provider_id = ? AND status = 1", providerID).
+		Where("provider_id = ? AND status IN (1, 2)", providerID).
 		Select("COALESCE(SUM(net_amount), 0)").
-		Scan(&availableAmount)
+		Scan(&totalSettled)
+
+	var totalWithdrawn float64
+	repository.DB.Model(&model.MerchantWithdraw{}).
+		Where("provider_id = ? AND status IN (0, 1)", providerID).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&totalWithdrawn)
+
+	availableAmount := totalSettled - totalWithdrawn
 
 	if input.Amount > availableAmount {
 		response.Error(c, 400, "提现金额超过可提现余额")
@@ -258,8 +274,8 @@ func MerchantWithdrawCreate(c *gin.Context) {
 }
 
 func generateWithdrawOrderNo() string {
-	return "W" + time.Now().Format("20060102150405") +
-		randomString(6)
+	// 使用时间戳+随机数
+	return "W" + time.Now().Format("20060102150405") + randomString(6)
 }
 
 // ==================== 商家银行账户 Handler ====================
@@ -386,11 +402,7 @@ func MerchantBankAccountSetDefault(c *gin.Context) {
 // ==================== 辅助函数 ====================
 
 func parseIntDefault(s string, defaultVal int) int {
-	if s == "" {
-		return defaultVal
-	}
-	var v int
-	_, err := parseIntFrom(s, &v)
+	v, err := strconv.Atoi(s)
 	if err != nil {
 		return defaultVal
 	}
@@ -398,22 +410,19 @@ func parseIntDefault(s string, defaultVal int) int {
 }
 
 func parseIntFrom(s string, v *int) (int, error) {
-	n := 0
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, nil
-		}
-		n = n*10 + int(c-'0')
+	val, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, err
 	}
-	*v = n
-	return n, nil
+	*v = val
+	return val, nil
 }
 
 func randomString(n int) string {
 	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
+		b[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(b)
 }

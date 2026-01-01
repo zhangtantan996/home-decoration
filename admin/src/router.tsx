@@ -6,13 +6,13 @@ import UserList from './pages/users/UserList';
 import ProviderList from './pages/providers/ProviderList';
 import MaterialShopList from './pages/materials/MaterialShopList';
 import BookingList from './pages/bookings/BookingList';
+import DisputedBookings from './pages/bookings/DisputedBookings';
 import ReviewList from './pages/reviews/ReviewList';
 import LogList from './pages/system/LogList';
 import Login from './pages/user/Login';
 import AdminList from './pages/admins/AdminList';
 import ProviderAudit from './pages/audits/ProviderAudit';
 import MaterialShopAudit from './pages/audits/MaterialShopAudit';
-import CaseAudits from './pages/audits/CaseAudits';
 import ProjectDetail from './pages/projects/ProjectDetail';
 import ProjectMap from './pages/projects/ProjectMap';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
@@ -22,6 +22,7 @@ import ArbitrationCenter from './pages/risk/ArbitrationCenter';
 import SystemSettings from './pages/settings/SystemSettings';
 import RoleList from './pages/permissions/RoleList';
 import MenuList from './pages/permissions/MenuList';
+import CaseManagement from './pages/cases/CaseManagement';
 
 
 const router = createBrowserRouter([
@@ -52,8 +53,9 @@ const router = createBrowserRouter([
             { path: 'materials/list', element: <MaterialShopList /> },
             { path: 'materials/audit', element: <MaterialShopAudit /> },
 
-            // Case Audits
-            { path: 'audits/cases', element: <CaseAudits /> },
+            // Case Management (作品管理，整合审核功能)
+            { path: 'cases', element: <Navigate to="/cases/manage" replace /> },
+            { path: 'cases/manage', element: <CaseManagement /> },
 
             // Projects
             { path: 'projects', element: <Navigate to="/projects/list" replace /> },
@@ -64,6 +66,7 @@ const router = createBrowserRouter([
             // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
             { path: 'bookings/list', element: <BookingList /> },
+            { path: 'bookings/disputed', element: <DisputedBookings /> },
 
             // Finance
             { path: 'finance', element: <Navigate to="/finance/escrow" replace /> },

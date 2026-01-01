@@ -7,8 +7,9 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     Dimensions,
+    StatusBar,
+    Platform,
 } from 'react-native';
 import {
     ArrowLeft,
@@ -30,6 +31,7 @@ import {
     getOrderStatusText,
     getOrderTypeText,
 } from '../types/businessFlow';
+import InfoModal from '../components/InfoModal';
 
 const { width } = Dimensions.get('window');
 
@@ -46,6 +48,19 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
     const [payingOrderId, setPayingOrderId] = useState<number | null>(null);
     const [payingPlanId, setPayingPlanId] = useState<number | null>(null);
 
+    // Modal state
+    const [modalVisible, setModalVisible] = useState(false);
+    const [modalConfig, setModalConfig] = useState<{
+        title: string;
+        message: string;
+        type: 'success' | 'error' | 'info';
+    }>({ title: '', message: '', type: 'info' });
+
+    const showModal = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setModalConfig({ title, message, type });
+        setModalVisible(true);
+    };
+
     useEffect(() => {
         loadBill();
     }, [projectId]);
@@ -56,75 +71,48 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
             const res = await billApi.get(projectId);
             setBillItems(res.data || []);
         } catch (error: any) {
-            Alert.alert('加载失败', error.message || '请稍后重试');
+            showModal('加载失败', error.message || '请稍后重试', 'error');
         } finally {
             setLoading(false);
         }
     };
 
     const handlePayOrder = async (orderId: number) => {
-        Alert.alert(
-            '确认支付',
-            '确认支付此订单？',
-            [
-                { text: '取消', style: 'cancel' },
-                {
-                    text: '确认支付',
-                    onPress: async () => {
-                        try {
-                            setPayingOrderId(orderId);
-                            await orderApi.pay(orderId);
-                            Alert.alert('支付成功', '订单支付成功');
-                            loadBill(); // 刷新账单
-                        } catch (error: any) {
-                            Alert.alert('支付失败', error.message || '请稍后重试');
-                        } finally {
-                            setPayingOrderId(null);
-                        }
-                    },
-                },
-            ]
-        );
+        try {
+            setPayingOrderId(orderId);
+            await orderApi.pay(orderId);
+            showModal('支付成功', '订单支付成功', 'success');
+            loadBill();
+        } catch (error: any) {
+            showModal('支付失败', error.message || '请稍后重试', 'error');
+        } finally {
+            setPayingOrderId(null);
+        }
     };
 
     const handlePayPlan = async (planId: number) => {
-        Alert.alert(
-            '确认支付',
-            '确认支付此期款项？',
-            [
-                { text: '取消', style: 'cancel' },
-                {
-                    text: '确认支付',
-                    onPress: async () => {
-                        try {
-                            setPayingPlanId(planId);
-                            await orderApi.payPlan(planId);
-                            Alert.alert('支付成功', '款项支付成功');
-                            loadBill(); // 刷新账单
-                        } catch (error: any) {
-                            Alert.alert('支付失败', error.message || '请稍后重试');
-                        } finally {
-                            setPayingPlanId(null);
-                        }
-                    },
-                },
-            ]
-        );
+        try {
+            setPayingPlanId(planId);
+            await orderApi.payPlan(planId);
+            showModal('支付成功', '款项支付成功', 'success');
+            loadBill();
+        } catch (error: any) {
+            showModal('支付失败', error.message || '请稍后重试', 'error');
+        } finally {
+            setPayingPlanId(null);
+        }
     };
 
     const handleViewFiles = async () => {
         try {
             const res = await billApi.getFiles(projectId);
-            if (res.data?.files?.length > 0) {
-                Alert.alert('设计图纸', '图纸列表功能开发中');
-            } else {
-                Alert.alert('暂无文件', '设计师尚未上传设计图纸');
-            }
+            // 成功获取（哪怕为空），跳转到列表页
+            navigation.navigate('DesignFiles', { projectId });
         } catch (error: any) {
             if (error.response?.status === 403) {
-                Alert.alert('无权限', '请先支付设计费后查看图纸');
+                showModal('无权限', '请先支付设计费后查看图纸', 'error');
             } else {
-                Alert.alert('加载失败', error.message || '请稍后重试');
+                showModal('加载失败', error.message || '请稍后重试', 'error');
             }
         }
     };
@@ -309,6 +297,15 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
 
                 <View style={{ height: 40 }} />
             </ScrollView>
+
+            {/* Info Modal */}
+            <InfoModal
+                visible={modalVisible}
+                onClose={() => setModalVisible(false)}
+                title={modalConfig.title}
+                message={modalConfig.message}
+                type={modalConfig.type}
+            />
         </SafeAreaView>
     );
 };
@@ -324,6 +321,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 16,
         paddingVertical: 12,
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 40) + 12 : 12,
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
         borderBottomColor: '#E4E4E7',

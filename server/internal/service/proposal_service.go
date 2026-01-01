@@ -239,8 +239,8 @@ func (s *ProposalService) ResubmitProposal(designerID uint64, input *ResubmitPro
 		EstimatedDays:        input.EstimatedDays,
 		Attachments:          input.Attachments,
 		Status:               model.ProposalStatusPending,
-		Version:              oldProposal.Version + 1, // 版本号递增
-		ParentProposalID:     oldProposal.ID,          // 指向上一版本
+		Version:              oldProposal.Version + 1,    // 版本号递增
+		ParentProposalID:     oldProposal.ID,             // 指向上一版本
 		RejectionCount:       oldProposal.RejectionCount, // 继承拒绝次数
 		SubmittedAt:          &now,
 		UserResponseDeadline: &deadline,
@@ -345,36 +345,43 @@ func (s *ProposalService) RejectProposal(userID, proposalID uint64, input *Rejec
 		return err
 	}
 
-	// 如果达到3次拒绝，触发自动退款并关闭预约
+	// 如果达到3次拒绝，转入争议处理（不再自动退款）
 	if newRejectionCount >= 3 {
-		// 调用退款服务
-		refundSvc := &RefundService{}
-		_ = refundSvc.RefundIntentFee(booking.ID, RefundScenarioProposalRejected3, "用户连续拒绝3次方案")
-
-		// 更新预约状态为已取消
-		booking.Status = 4 // Cancelled
+		// 更新预约状态为争议中（status=5）
+		booking.Status = 5 // Disputed - 争议中
 		repository.DB.Save(&booking)
 
-		// 通知商家方案被拒绝且已达上限
+		// 通知商家方案被拒绝且已达上限，等待平台介入
 		notifService := &NotificationService{}
 		var provider model.Provider
 		if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
 			proposalData := map[string]interface{}{
-				"id":              proposal.ID,
-				"rejectionCount":  newRejectionCount,
-				"canResubmit":     false,
+				"id":             proposal.ID,
+				"rejectionCount": newRejectionCount,
+				"canResubmit":    false,
+				"disputed":       true,
 			}
-			_ = notifService.NotifyProposalRejected(proposalData, provider.UserID, "用户连续拒绝3次，预约已取消，意向金已退还用户")
+			_ = notifService.NotifyProposalRejected(proposalData, provider.UserID, "用户连续拒绝3次，预约已转入争议处理，请等待平台客服联系")
 		}
+
+		// 通知用户预约已转入争议处理
+		userNotification := &model.Notification{
+			UserID:  userID,
+			Type:    "booking_dispute",
+			Title:   "预约已转入争议处理",
+			Content: "您已连续拒绝3次设计方案，预约已转入平台争议处理，客服将尽快与您联系协调。",
+			IsRead:  false,
+		}
+		repository.DB.Create(userNotification)
 	} else {
 		// 通知商家方案被拒绝
 		notifService := &NotificationService{}
 		var provider model.Provider
 		if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
 			proposalData := map[string]interface{}{
-				"id":              proposal.ID,
-				"rejectionCount":  newRejectionCount,
-				"canResubmit":     newRejectionCount < 3,
+				"id":             proposal.ID,
+				"rejectionCount": newRejectionCount,
+				"canResubmit":    newRejectionCount < 3,
 			}
 			_ = notifService.NotifyProposalRejected(proposalData, provider.UserID, input.Reason)
 		}

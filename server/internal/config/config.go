@@ -15,9 +15,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host string `mapstructure:"host"`
-	Port string `mapstructure:"port"`
-	Mode string `mapstructure:"mode"` // debug, release
+	Host      string `mapstructure:"host"`
+	Port      string `mapstructure:"port"`
+	Mode      string `mapstructure:"mode"` // debug, release
+	PublicURL string `mapstructure:"public_url"`
 }
 
 type DatabaseConfig struct {
@@ -64,6 +65,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.mode", "debug")
+	viper.SetDefault("server.public_url", "http://localhost:8080")
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", "5432")
 	viper.SetDefault("database.sslmode", "disable")

@@ -157,6 +157,6 @@ export { merchantApi };
 // 统一导出，方便 MerchantChat 使用
 export default {
     ...merchantApi,
-    getIMUserSig: () => merchantApi.get('/im/usersig'),
+    getIMUserSig: () => merchantApi.get('/merchant/im/usersig'),
 };
 

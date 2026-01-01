@@ -1,15 +1,31 @@
 # .air.toml
+# Configured for Windows local development
+
 root = "."
 tmp_dir = "tmp"
 
 [build]
-  bin = "./tmp/main"
-  cmd = "go build -o ./tmp/main ./cmd/api"
+  # Windows executable extension
+  bin = "./tmp/main.exe"
+  # Build command
+  cmd = "go build -o ./tmp/main.exe ./cmd/api"
+  # Delay in ms after file change before build trigger
   delay = 1000
-  exclude_dir = ["assets", "tmp", "vendor", "test"]
-  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml"]
+  # Directories to ignore
+  exclude_dir = ["assets", "tmp", "vendor", "test", "docs", ".idea", ".vscode", "node_modules", ".git"]
+  # Extensions to watch
+  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml", "env"]
+  # Regex to exclude
+  exclude_regex = ["_test.go"]
+  # Delay before killing the process
   kill_delay = "500ms"
+  # Build error log
   log = "build-errors.log"
+  # Send interrupt signal (useful for graceful shutdown)
+  send_interrupt = true
+  # Stop if build fails
+  stop_on_error = true
+  # Poll for file changes (reliable on some Windows systems)
   poll = true
   poll_interval = 500
 

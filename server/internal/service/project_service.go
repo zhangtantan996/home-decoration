@@ -65,6 +65,7 @@ func (s *ProjectService) CreateProject(req *CreateProjectRequest) (*model.Projec
 			return nil, errors.New("关联预约不存在")
 		}
 
+		project.ProposalID = req.ProposalID // 关联方案ID
 		project.OwnerID = booking.UserID
 		project.ProviderID = booking.ProviderID
 		project.Name = booking.Address + "装修项目" // 默认项目名

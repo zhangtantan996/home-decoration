@@ -31,6 +31,8 @@ interface BankAccount {
     isDefault: boolean;
 }
 
+const formatCurrency = (value: number) => `¥${value.toFixed(2)}`;
+
 const MerchantWithdraw: React.FC = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -44,87 +46,101 @@ const MerchantWithdraw: React.FC = () => {
     const [form] = Form.useForm();
 
     const token = localStorage.getItem('merchant_token');
+    const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
 
     useEffect(() => {
         fetchWithdrawList();
         fetchAvailableAmount();
         fetchBankAccounts();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
         fetchWithdrawList();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage]);
 
+    const ensureLogin = () => {
+        if (!token) {
+            message.error('登录状态已失效，请重新登录');
+            navigate('/login');
+            return false;
+        }
+        return true;
+    };
+
+    const parseResponse = async <T,>(response: Response, errorMessage: string): Promise<T> => {
+        const result = await response.json();
+        if (!response.ok || result.code !== 0) {
+            throw new Error(result.message || errorMessage);
+        }
+        return result.data as T;
+    };
+
     const fetchWithdrawList = async () => {
+        if (!ensureLogin()) return;
         setLoading(true);
         try {
             const response = await fetch(
                 `/api/v1/merchant/withdraw/list?page=${currentPage}&pageSize=10`,
-                { headers: { 'Authorization': `Bearer ${token}` } }
+                { headers: authHeaders }
             );
-            const result = await response.json();
-            if (result.code === 0) {
-                setWithdrawList(result.data.list || []);
-                setTotal(result.data.total || 0);
-            }
+            const data = await parseResponse<{ list: WithdrawRecord[]; total: number }>(response, '获取提现记录失败');
+            setWithdrawList(data.list || []);
+            setTotal(data.total || 0);
         } catch (error) {
-            message.error('获取提现记录失败');
+            message.error((error as Error).message || '获取提现记录失败');
         } finally {
             setLoading(false);
         }
     };
 
     const fetchAvailableAmount = async () => {
+        if (!ensureLogin()) return;
         try {
             const response = await fetch('/api/v1/merchant/income/summary', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: authHeaders
             });
-            const result = await response.json();
-            if (result.code === 0) {
-                setAvailableAmount(result.data.availableAmount || 0);
-            }
+            const data = await parseResponse<{ availableAmount: number }>(response, '获取可提现金额失败');
+            setAvailableAmount(data.availableAmount || 0);
         } catch (error) {
-            console.error('获取可提现金额失败');
+            message.error((error as Error).message || '获取可提现金额失败');
         }
     };
 
     const fetchBankAccounts = async () => {
+        if (!ensureLogin()) return;
         try {
             const response = await fetch('/api/v1/merchant/bank-accounts', {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: authHeaders
             });
-            const result = await response.json();
-            if (result.code === 0) {
-                setBankAccounts(result.data.list || []);
-            }
+            const data = await parseResponse<{ list: BankAccount[] }>(response, '获取银行账户失败');
+            setBankAccounts(data.list || []);
         } catch (error) {
-            console.error('获取银行账户失败');
+            message.error((error as Error).message || '获取银行账户失败');
         }
     };
 
     const handleWithdraw = async (values: { amount: number; bankAccountId: number }) => {
+        if (!ensureLogin()) return;
         setSubmitting(true);
         try {
             const response = await fetch('/api/v1/merchant/withdraw', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
+                    ...authHeaders,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(values)
             });
-            const result = await response.json();
-            if (result.code === 0) {
-                message.success('提现申请已提交');
-                setModalVisible(false);
-                form.resetFields();
-                fetchWithdrawList();
-                fetchAvailableAmount();
-            } else {
-                message.error(result.message || '提现失败');
-            }
+            await parseResponse(response, '提现失败');
+            message.success('提现申请已提交');
+            setModalVisible(false);
+            form.resetFields();
+            fetchWithdrawList();
+            fetchAvailableAmount();
         } catch (error) {
-            message.error('提现失败');
+            message.error((error as Error).message || '提现失败');
         } finally {
             setSubmitting(false);
         }
@@ -159,7 +175,7 @@ const MerchantWithdraw: React.FC = () => {
             title: '提现金额',
             dataIndex: 'amount',
             key: 'amount',
-            render: (v) => <span style={{ fontWeight: 'bold' }}>¥{v.toFixed(2)}</span>,
+            render: (v) => <span style={{ fontWeight: 'bold' }}>{formatCurrency(v)}</span>,
             width: 120,
         },
         {
@@ -184,14 +200,14 @@ const MerchantWithdraw: React.FC = () => {
             title: '申请时间',
             dataIndex: 'createdAt',
             key: 'createdAt',
-            render: (text) => new Date(text).toLocaleString(),
+            render: (text) => new Date(text).toLocaleString('zh-CN'),
             width: 180,
         },
         {
             title: '完成时间',
             dataIndex: 'completedAt',
             key: 'completedAt',
-            render: (text) => text ? new Date(text).toLocaleString() : '-',
+            render: (text) => text ? new Date(text).toLocaleString('zh-CN') : '-',
             width: 180,
         },
         {
@@ -266,7 +282,7 @@ const MerchantWithdraw: React.FC = () => {
                         total: total,
                         pageSize: 10,
                         onChange: (page) => setCurrentPage(page),
-                        showTotal: (t) => `共 ${t} 条`,
+                        showTotal: (t) => `共${t} 条`,
                     }}
                     scroll={{ x: 1000 }}
                     locale={{
@@ -298,8 +314,8 @@ const MerchantWithdraw: React.FC = () => {
                         label="提现金额"
                         rules={[
                             { required: true, message: '请输入提现金额' },
-                            { type: 'number', min: 1, message: '最小提现金额为1元' },
-                            { type: 'number', max: availableAmount, message: '超过可提现金额' },
+                            { type: 'number', min: 1, message: '最小提现金额为 1 元' },
+                            { type: 'number', max: availableAmount, message: '超出可提现金额' },
                         ]}
                     >
                         <InputNumber
@@ -339,7 +355,7 @@ const MerchantWithdraw: React.FC = () => {
                             ]}
                         />
                         <div style={{ marginTop: 12, color: '#666', fontSize: 12 }}>
-                            预计1-3个工作日内到账，请确保银行账户信息正确
+                            预计 1-3 个工作日内到账，请确保银行账户信息正确。
                         </div>
                     </div>
 

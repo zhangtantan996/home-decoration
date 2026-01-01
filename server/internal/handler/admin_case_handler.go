@@ -1,0 +1,230 @@
+package handler
+
+import (
+	"encoding/json"
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
+	"home-decoration-server/pkg/response"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// ==================== 管理员作品管理 ====================
+
+// AdminListCases 获取所有作品列表
+func AdminListCases(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("pageSize"), 10)
+	providerID := c.Query("providerId") // 可选筛选
+	style := c.Query("style")           // 可选筛选
+
+	var cases []model.ProviderCase
+	var total int64
+
+	query := repository.DB.Model(&model.ProviderCase{})
+
+	// 筛选条件
+	if providerID != "" {
+		query = query.Where("provider_id = ?", providerID)
+	}
+	if style != "" {
+		query = query.Where("style = ?", style)
+	}
+
+	query.Count(&total)
+
+	if err := query.Order("created_at DESC").
+		Offset((page - 1) * pageSize).Limit(pageSize).
+		Find(&cases).Error; err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+
+	// 聚合商家名称
+	var resultList []gin.H
+	for _, caseItem := range cases {
+		var providerName string
+		var provider model.Provider
+		var user model.User
+
+		// 查询商家信息（如果 provider_id 为 0 则为官方）
+		if caseItem.ProviderID == 0 {
+			providerName = "官方"
+		} else {
+			if err := repository.DB.First(&provider, caseItem.ProviderID).Error; err == nil {
+				repository.DB.First(&user, provider.UserID)
+				providerName = user.Nickname
+				if providerName == "" {
+					providerName = provider.CompanyName
+				}
+			}
+		}
+
+		// 解析图片
+		var images []string
+		json.Unmarshal([]byte(caseItem.Images), &images)
+
+		resultList = append(resultList, gin.H{
+			"id":           caseItem.ID,
+			"providerId":   caseItem.ProviderID,
+			"providerName": providerName,
+			"title":        caseItem.Title,
+			"coverImage":   caseItem.CoverImage,
+			"style":        caseItem.Style,
+			"layout":       caseItem.Layout,
+			"area":         caseItem.Area,
+			"price":        caseItem.Price,
+			"year":         caseItem.Year,
+			"description":  caseItem.Description,
+			"images":       images,
+			"sortOrder":    caseItem.SortOrder,
+			"createdAt":    caseItem.CreatedAt,
+			"updatedAt":    caseItem.UpdatedAt,
+		})
+	}
+
+	response.Success(c, gin.H{
+		"list":  resultList,
+		"total": total,
+	})
+}
+
+// AdminCreateCase 官方添加作品
+func AdminCreateCase(c *gin.Context) {
+	var input struct {
+		ProviderID  *uint64  `json:"providerId"` // 可选，官方作品为 null 或 0
+		Title       string   `json:"title" binding:"required"`
+		CoverImage  string   `json:"coverImage" binding:"required"`
+		Style       string   `json:"style" binding:"required"`
+		Layout      string   `json:"layout"`
+		Area        string   `json:"area"`
+		Price       float64  `json:"price"`
+		Year        string   `json:"year"`
+		Description string   `json:"description"`
+		Images      []string `json:"images"` // 前端传 JSON 数组
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+
+	// 序列化图片数组
+	imagesJSON, _ := json.Marshal(input.Images)
+
+	// 确定 ProviderID（官方作品为 0）
+	var providerID uint64
+	if input.ProviderID != nil {
+		providerID = *input.ProviderID
+	} else {
+		providerID = 0
+	}
+
+	newCase := model.ProviderCase{
+		ProviderID:  providerID,
+		Title:       input.Title,
+		CoverImage:  input.CoverImage,
+		Style:       input.Style,
+		Layout:      input.Layout,
+		Area:        input.Area,
+		Price:       input.Price,
+		Year:        input.Year,
+		Description: input.Description,
+		Images:      string(imagesJSON),
+		SortOrder:   0, // 默认排序
+	}
+
+	if err := repository.DB.Create(&newCase).Error; err != nil {
+		response.Error(c, 500, "创建失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"id":      newCase.ID,
+		"message": "创建成功",
+	})
+}
+
+// AdminUpdateCase 官方编辑作品
+func AdminUpdateCase(c *gin.Context) {
+	caseID := parseUint64(c.Param("id"))
+
+	var input struct {
+		ProviderID  *uint64  `json:"providerId"`
+		Title       string   `json:"title" binding:"required"`
+		CoverImage  string   `json:"coverImage" binding:"required"`
+		Style       string   `json:"style" binding:"required"`
+		Layout      string   `json:"layout"`
+		Area        string   `json:"area"`
+		Price       float64  `json:"price"`
+		Year        string   `json:"year"`
+		Description string   `json:"description"`
+		Images      []string `json:"images"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+
+	// 检查作品是否存在
+	var existingCase model.ProviderCase
+	if err := repository.DB.First(&existingCase, caseID).Error; err != nil {
+		response.Error(c, 404, "作品不存在")
+		return
+	}
+
+	// 序列化图片数组
+	imagesJSON, _ := json.Marshal(input.Images)
+
+	// 确定 ProviderID
+	var providerID uint64
+	if input.ProviderID != nil {
+		providerID = *input.ProviderID
+	} else {
+		providerID = 0
+	}
+
+	// 更新数据
+	updates := map[string]interface{}{
+		"provider_id": providerID,
+		"title":       input.Title,
+		"cover_image": input.CoverImage,
+		"style":       input.Style,
+		"layout":      input.Layout,
+		"area":        input.Area,
+		"price":       input.Price,
+		"year":        input.Year,
+		"description": input.Description,
+		"images":      string(imagesJSON),
+		"updated_at":  time.Now(),
+	}
+
+	if err := repository.DB.Model(&model.ProviderCase{}).Where("id = ?", caseID).Updates(updates).Error; err != nil {
+		response.Error(c, 500, "更新失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "更新成功"})
+}
+
+// AdminDeleteCase 官方删除作品
+func AdminDeleteCase(c *gin.Context) {
+	caseID := parseUint64(c.Param("id"))
+
+	// 检查作品是否存在
+	var existingCase model.ProviderCase
+	if err := repository.DB.First(&existingCase, caseID).Error; err != nil {
+		response.Error(c, 404, "作品不存在")
+		return
+	}
+
+	// 物理删除
+	if err := repository.DB.Delete(&model.ProviderCase{}, caseID).Error; err != nil {
+		response.Error(c, 500, "删除失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "删除成功"})
+}

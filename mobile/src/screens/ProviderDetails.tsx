@@ -20,6 +20,7 @@ import { ArrowLeft, Star, MapPin, MessageCircle, Calendar, Award, Briefcase, Use
 import { useToast } from '../components/Toast';
 import { getWebUrl } from '../config';
 import { providerApi } from '../services/api';
+import UserProfileCache from '../services/UserProfileCache';
 
 const { width } = Dimensions.get('window');
 
@@ -329,14 +330,9 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            conversation: {
-                                id: Number(designerId),
-                                name: displayData.name,
-                                avatar: displayData.avatar,
-                                role: 'designer',
-                                roleLabel: '设计师',
-                                isOnline: true,
-                            }
+                            partnerID: String(provider.userId || displayData.userId),
+                            name: displayData.name,
+                            avatar: displayData.avatar,
                         })}
                     >
                         <MessageCircle size={22} color="#111" />
@@ -720,14 +716,9 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            conversation: {
-                                id: Number(workerId),
-                                name: initialWorker.name,
-                                avatar: initialWorker.avatar,
-                                role: 'worker',
-                                roleLabel: '工人',
-                                isOnline: true,
-                            }
+                            partnerID: String(provider.userId || displayData.userId),
+                            name: displayData.name,
+                            avatar: displayData.avatar,
                         })}
                     >
                         <MessageCircle size={22} color="#111" />
@@ -1108,14 +1099,9 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            conversation: {
-                                id: Number(companyId),
-                                name: displayData.name,
-                                logo: displayData.logo,
-                                role: 'company',
-                                roleLabel: '公司',
-                                isOnline: true,
-                            }
+                            partnerID: String(provider.userId || displayData.userId), // 注意: displayData 里可能没有 userId，主要靠 provider.userId
+                            name: displayData.name,
+                            avatar: displayData.logo,
                         })}
                     >
                         <MessageCircle size={22} color="#111" />

@@ -142,7 +142,7 @@ const HOT_SEARCH_TERMS = [
 const HomeScreen: React.FC = () => {
     const [activeCategory, setActiveCategory] = useState('designer');
     const [renderedCategory, setRenderedCategory] = useState('designer');
-    const [currentCity, setCurrentCity] = useState('上海');
+    const [currentCity, setCurrentCity] = useState('西安');
 
     useEffect(() => {
         const fetchLocation = async () => {

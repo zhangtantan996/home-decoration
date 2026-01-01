@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -299,10 +300,31 @@ func GetProjectFiles(c *gin.Context) {
 		return
 	}
 
-	// TODO: 返回实际文件列表
+	// 获取项目关联的设计方案
+	var project model.Project
+	if err := repository.DB.First(&project, projectID).Error; err != nil {
+		response.Error(c, 404, "项目不存在")
+		return
+	}
+
+	// 通过 ProposalID 获取方案附件
+	var files []string
+	if project.ProposalID > 0 {
+		var proposal model.Proposal
+		if err := repository.DB.Select("attachments").First(&proposal, project.ProposalID).Error; err == nil {
+			if proposal.Attachments != "" {
+				// 尝试解析 JSON 数组
+				if err := json.Unmarshal([]byte(proposal.Attachments), &files); err != nil {
+					// 如果不是 JSON 数组，当作单个文件处理
+					files = []string{proposal.Attachments}
+				}
+			}
+		}
+	}
+
 	response.Success(c, gin.H{
 		"message": "设计费已支付，可访问文件",
-		"files":   []string{}, // 实际项目中从文件存储获取
+		"files":   files,
 	})
 }
 

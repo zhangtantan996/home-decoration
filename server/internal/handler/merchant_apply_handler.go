@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/utils/tencentim"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
 	"time"
@@ -418,6 +419,18 @@ func AdminApproveApplication(c *gin.Context) {
 	tx.Save(&app)
 
 	tx.Commit()
+
+	// 同步商家到腾讯云 IM（异步）
+	go func() {
+		displayName := provider.CompanyName
+		if displayName == "" {
+			displayName = user.Nickname
+		}
+		if err := tencentim.SyncUserToIM(user.ID, displayName, ""); err != nil {
+			// 仅记录日志，不影响主流程
+			// log.Printf("[TencentIM] 商家同步失败: userID=%d, err=%v", user.ID, err)
+		}
+	}()
 
 	// TODO: 发送短信通知
 	// sendSMS(app.Phone, "恭喜！您的商家入驻申请已通过审核，请使用手机号登录商家中心")

@@ -18,18 +18,20 @@ import {
     Bell,
     FileText,
     CheckCheck,
-    Circle,
     Wifi,
     WifiOff,
 } from 'lucide-react-native';
-import { useChatStore, Conversation as StoreConversation } from '../store/chatStore';
+import TencentIMService from '../services/TencentIMService';
+import TIM from '@tencentcloud/chat';
+import { parseEmojiText } from '../utils/emojiParser';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
 
-// 扩展会话数据类型 (兼容现有UI)
-interface Conversation {
-    id: string;
+// UI 会话数据类型
+interface UIConversation {
+    conversationID: string;
+    partnerID: string;
     name: string;
     avatar: string;
     role: 'designer' | 'worker' | 'company' | 'manager';
@@ -39,8 +41,6 @@ interface Conversation {
     unreadCount: number;
     isOnline: boolean;
     isRead: boolean;
-    // 真实数据
-    partnerId?: number;
 }
 
 // 系统通知数据类型
@@ -116,39 +116,110 @@ const MessageScreen: React.FC = () => {
     const [searchText, setSearchText] = useState('');
     const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
 
-    // 从 ChatStore 获取真实数据
-    const storeConversations = useChatStore(state => state.conversations);
-    const fetchConversations = useChatStore(state => state.fetchConversations);
-    const isLoadingConversations = useChatStore(state => state.isLoadingConversations);
-    const connectionStatus = useChatStore(state => state.connectionStatus);
+    // IM 状态
+    const [conversations, setConversations] = useState<UIConversation[]>([]);
+    const [imStatus, setImStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
 
-    // 转换 store 会话为 UI 格式
-    const conversations: Conversation[] = storeConversations.map(conv => ({
-        id: conv.id,
-        name: conv.partnerName || '未知用户',
-        avatar: conv.partnerAvatar || 'https://via.placeholder.com/100',
-        role: 'designer' as const, // TODO: 从用户信息获取角色
-        roleLabel: '服务商',
-        lastMessage: conv.lastMessageContent || '暂无消息',
-        time: formatTime(conv.lastMessageTime),
-        unreadCount: conv.unreadCount,
-        isOnline: false, // TODO: 从 Hub 获取在线状态
-        isRead: conv.unreadCount === 0,
-        partnerId: conv.partnerId,
-    }));
+    // 加载会话列表
+    const loadConversations = async () => {
+        const isLoggedIn = TencentIMService.getIsLoggedIn();
+        if (!isLoggedIn) {
+            setImStatus('connecting');
+            const success = await TencentIMService.init();
+            if (!success) {
+                setImStatus('disconnected');
+                return;
+            }
+        }
+        setImStatus('connected');
+
+        const list = await TencentIMService.getConversationList();
+
+        // 转换数据格式
+        const uiList: UIConversation[] = list.map((item: any) => {
+            const profile = item.userProfile || {};
+            const rawLastMessage = item.lastMessage?.messageForShow || '';
+            return {
+                conversationID: item.conversationID,
+                partnerID: profile.userID || item.conversationID.replace('C2C', ''),
+                name: profile.nick || profile.userID || '未知用户',
+                avatar: profile.avatar || 'https://via.placeholder.com/100',
+                role: 'designer', // TODO: 根据自定义字段判断
+                roleLabel: '服务商',
+                lastMessage: parseEmojiText(rawLastMessage),
+                time: formatTime(item.lastMessage?.lastTime),
+                unreadCount: item.unreadCount,
+                isOnline: false,
+                isRead: item.unreadCount === 0,
+            };
+        });
+
+        setConversations(uiList);
+    };
 
     // 页面聚焦时刷新
     useFocusEffect(
         useCallback(() => {
-            fetchConversations();
+            loadConversations();
         }, [])
     );
 
+    // 监听 IM SDK 事件（简化版，仅监听新消息以刷新列表）
+    useEffect(() => {
+        const chat = TencentIMService.getChat();
+        if (!chat) return;
+
+        const onMessageReceived = () => {
+            loadConversations();
+        };
+
+        chat.on(TIM.EVENT.MESSAGE_RECEIVED, onMessageReceived);
+
+        return () => {
+            chat.off(TIM.EVENT.MESSAGE_RECEIVED, onMessageReceived);
+        };
+    }, [imStatus]);
+
     const onRefresh = async () => {
         setRefreshing(true);
-        await fetchConversations();
+        await loadConversations();
         setRefreshing(false);
     };
+
+    const renderEmptyConversations = () => {
+        if (imStatus === 'connecting') {
+            return (
+                <View style={styles.emptyContainer}>
+                    <ActivityIndicator size="small" color="#F59E0B" />
+                    <Text style={styles.emptyText}>正在连接 IM...</Text>
+                    <Text style={styles.emptySubtext}>请稍候，正在获取会话列表</Text>
+                </View>
+            );
+        }
+
+        if (imStatus === 'disconnected') {
+            return (
+                <TouchableOpacity style={styles.emptyContainer} onPress={loadConversations} activeOpacity={0.7}>
+                    <Text style={styles.emptyIcon}>⚠️</Text>
+                    <Text style={styles.emptyText}>IM 未登录</Text>
+                    <Text style={styles.emptySubtext}>点击重试或重新登录后再试</Text>
+                </TouchableOpacity>
+            );
+        }
+
+        return (
+            <View style={styles.emptyContainer}>
+                <Text style={styles.emptyIcon}>💬</Text>
+                <Text style={styles.emptyText}>暂无会话</Text>
+                <Text style={styles.emptySubtext}>开始咨询服务商吧</Text>
+            </View>
+        );
+    };
+
+    // 页面聚焦时刷新
+
+
+
 
     // 未读通知数量
     const unreadNotificationCount = notifications.filter(n => !n.isRead).length;
@@ -168,14 +239,19 @@ const MessageScreen: React.FC = () => {
     };
 
     // 渲染会话卡片
-    const renderConversationCard = (conversation: Conversation) => {
+    const renderConversationCard = (conversation: UIConversation) => {
         const roleColor = ROLE_COLORS[conversation.role] || ROLE_COLORS.designer;
 
         return (
             <TouchableOpacity
-                key={conversation.id}
+                key={conversation.conversationID}
                 style={styles.conversationCard}
-                onPress={() => (navigation as any).navigate('ChatRoom', { conversation })}
+                onPress={() => (navigation as any).navigate('ChatRoom', {
+                    conversationID: conversation.conversationID,
+                    partnerID: conversation.partnerID,
+                    name: conversation.name,
+                    avatar: conversation.avatar,
+                })}
                 activeOpacity={0.7}
             >
                 {/* 头像 + 在线状态 */}
@@ -245,9 +321,9 @@ const MessageScreen: React.FC = () => {
                 <Text style={styles.headerTitle}>消息中心</Text>
                 {/* 连接状态指示器 */}
                 <View style={styles.connectionStatus}>
-                    {connectionStatus === 'connected' ? (
+                    {imStatus === 'connected' ? (
                         <Wifi size={16} color="#22C55E" />
-                    ) : connectionStatus === 'connecting' ? (
+                    ) : imStatus === 'connecting' ? (
                         <ActivityIndicator size="small" color="#F59E0B" />
                     ) : (
                         <WifiOff size={16} color="#EF4444" />
@@ -300,11 +376,7 @@ const MessageScreen: React.FC = () => {
             >
                 {activeTab === 'conversations' ? (
                     conversations.length === 0 ? (
-                        <View style={styles.emptyContainer}>
-                            <Text style={styles.emptyIcon}>💬</Text>
-                            <Text style={styles.emptyText}>暂无会话</Text>
-                            <Text style={styles.emptySubtext}>开始咨询服务商吧</Text>
-                        </View>
+                        renderEmptyConversations()
                     ) : (
                         conversations.map(renderConversationCard)
                     )

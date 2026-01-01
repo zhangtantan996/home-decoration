@@ -11,7 +11,6 @@ import {
     KeyboardAvoidingView,
     Image,
     Keyboard,
-    Alert,
     Modal,
 } from 'react-native';
 import {
@@ -19,13 +18,22 @@ import {
     Send,
     MoreVertical,
     Phone,
-    Paperclip,
+    Plus,
+    Camera,
+    Image as ImageIcon,
+    File,
     AlertCircle,
     CheckCircle,
     Info,
 } from 'lucide-react-native';
-import { useChatStore, Message } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
+import TencentIMService from '../services/TencentIMService';
+import TIM from '@tencentcloud/chat';
+import { parseEmojiText } from '../utils/emojiParser';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import DocumentPicker from '@react-native-documents/picker';
+import { fileApi } from '../services/api';
+import { getApiUrl } from '../config'; // Use config to get base URL for constructing full image paths if needed
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -43,31 +51,26 @@ interface ChatRoomScreenProps {
     navigation: any;
 }
 
+// UI 消息类型
+interface UIMessage {
+    id: string;
+    senderId: string;
+    content: string;
+    createdAt: number;
+    isRead: boolean;
+    isMe: boolean;
+}
+
 const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) => {
-    const { conversation } = route.params || {};
-    const partnerId = conversation?.partnerId || conversation?.id;
-    const partnerName = conversation?.partnerName || conversation?.name || '聊天';
-    const partnerAvatar = conversation?.partnerAvatar || conversation?.avatar;
+    // 从 MessageScreen 传递的参数
+    const { conversationID, partnerID, name: partnerName, avatar: partnerAvatar } = route.params || {};
+    const defaultAvatar = 'https://via.placeholder.com/80/E5E7EB/71717A?text=U';
 
     // 从 Store 获取数据
     const currentUser = useAuthStore(state => state.user);
-    const currentUserId = currentUser?.id || 1;
+    const currentUserId = String(currentUser?.id || '');
 
-    // 生成 conversationId (memoize 防止重复计算)
-    const conversationId = useMemo(() => {
-        return currentUserId < partnerId
-            ? `${currentUserId}_${partnerId}`
-            : `${partnerId}_${currentUserId}`;
-    }, [currentUserId, partnerId]);
-
-    // 使用稳定的选择器，避免每次返回新数组
-    const messagesFromStore = useChatStore(state => state.messages[conversationId]);
-    const messages = useMemo(() => messagesFromStore || [], [messagesFromStore]);
-    const storeSendMessage = useChatStore(state => state.sendMessage);
-    const fetchMessages = useChatStore(state => state.fetchMessages);
-    const markAsRead = useChatStore(state => state.markAsRead);
-    const isLoadingMessages = useChatStore(state => state.isLoadingMessages);
-
+    const [messages, setMessages] = useState<UIMessage[]>([]);
     const [inputText, setInputText] = useState('');
     const [showQuickReplies, setShowQuickReplies] = useState(true);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -78,30 +81,63 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         message: string;
         onConfirm?: () => void;
     }>({ visible: false, type: 'info', title: '', message: '' });
+    const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
-    const lastMarkedMsgIdRef = useRef<number | null>(null);
+
+    // 解析 TIM 消息为 UI 消息
+    const parseTIMMessages = (timMessages: any[]): UIMessage[] => {
+        return timMessages.map(msg => ({
+            id: msg.ID,
+            senderId: msg.from,
+            content: msg.type === TIM.TYPES.MSG_TEXT ? parseEmojiText(msg.payload.text) : '[非文本消息]',
+            createdAt: msg.time * 1000,
+            isRead: msg.isRead,
+            isMe: msg.from === currentUserId
+        }));
+    };
 
     // 加载历史消息
-    useEffect(() => {
-        if (conversationId) {
-            fetchMessages(conversationId);
-        }
-    }, [conversationId]);
+    const loadMessages = async () => {
+        const chat = TencentIMService.getChat();
+        if (!chat || !conversationID) return;
 
-    // 标记已读 (使用 ref 防止重复调用)
-    useEffect(() => {
-        if (messages.length > 0) {
-            const lastMsg = messages[messages.length - 1];
-            if (
-                lastMsg.senderId !== currentUserId &&
-                !lastMsg.isRead &&
-                lastMarkedMsgIdRef.current !== lastMsg.id
-            ) {
-                lastMarkedMsgIdRef.current = lastMsg.id;
-                markAsRead(conversationId, lastMsg.id);
-            }
+        try {
+            const imResponse = await chat.getMessageList({ conversationID: conversationID });
+            const history = imResponse.data.messageList;
+            setMessages(parseTIMMessages(history));
+
+            // 标记已读
+            chat.setMessageRead({ conversationID });
+        } catch (error) {
+            console.error('Failed to load messages:', error);
         }
-    }, [messages.length]); // 只依赖 messages.length 而非整个 messages
+    };
+
+    useEffect(() => {
+        loadMessages();
+    }, [conversationID]);
+
+    // 监听新消息
+    useEffect(() => {
+        const chat = TencentIMService.getChat();
+        if (!chat) return;
+
+        const onMessageReceived = (event: any) => {
+            // 筛选当前会话的消息
+            const newMsgs = event.data.filter((msg: any) => msg.conversationID === conversationID);
+            if (newMsgs.length > 0) {
+                setMessages(prev => [...prev, ...parseTIMMessages(newMsgs)]);
+                chat.setMessageRead({ conversationID });
+                scrollToBottom();
+            }
+        };
+
+        chat.on(TIM.EVENT.MESSAGE_RECEIVED, onMessageReceived);
+
+        return () => {
+            chat.off(TIM.EVENT.MESSAGE_RECEIVED, onMessageReceived);
+        };
+    }, [conversationID]);
 
     // 滚动到底部
     const scrollToBottom = () => {
@@ -112,15 +148,90 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages]);
+    }, [messages.length]);
 
     // 发送消息
-    const handleSendMessage = (text: string) => {
+    const handleSendMessage = async (text: string) => {
         if (!text.trim()) return;
-        storeSendMessage(partnerId, text.trim());
-        setInputText('');
-        setShowQuickReplies(false);
-        Keyboard.dismiss();
+
+        const chat = TencentIMService.getChat();
+        console.log('[ChatRoom] handleSendMessage - chat:', !!chat, 'partnerID:', partnerID, 'isLoggedIn:', TencentIMService.getIsLoggedIn());
+
+        if (!chat || !partnerID) {
+            console.warn('[ChatRoom] Cannot send: chat or partnerID is missing');
+            // IM 未初始化时尝试重新初始化
+            if (!TencentIMService.getIsLoggedIn()) {
+                console.log('[ChatRoom] Attempting to reinitialize IM...');
+                const success = await TencentIMService.init();
+                if (!success) {
+                    setDialogConfig({
+                        visible: true,
+                        type: 'info',
+                        title: 'IM 未就绪',
+                        message: '即时通信服务未就绪，请稍后再试',
+                    });
+                    return;
+                }
+            }
+            return;
+        }
+        try {
+            // 1. 创建消息
+            console.log('[ChatRoom] Creating text message to:', partnerID);
+            const message = chat.createTextMessage({
+                to: partnerID,
+                conversationType: TIM.TYPES.CONV_C2C,
+                payload: {
+                    text: text.trim()
+                }
+            });
+            console.log('[ChatRoom] Message created:', message.ID);
+
+            // 先上屏 (临时消息)
+            const uiMsg: UIMessage = {
+                id: message.ID, // 使用 TIM 生成的 ID 作为临时 ID
+                senderId: currentUserId,
+                content: text.trim(),
+                createdAt: Date.now(),
+                isRead: false,
+                isMe: true
+            };
+            setMessages(prev => [...prev, uiMsg]);
+            scrollToBottom();
+
+            setInputText('');
+            setShowQuickReplies(false);
+            Keyboard.dismiss();
+
+            // 2. 发送消息
+            console.log('[ChatRoom] Sending message...');
+            const promise = chat.sendMessage(message);
+            const res = await promise;
+
+            console.log('✅ [ChatRoom] Send success:', res);
+
+            // 腾讯IM SDK通常会自动触发 MESSAGE_RECEIVED 事件来更新消息状态和ID，
+            // 但如果需要更即时的UI更新，可以根据 res.data.message 更新本地消息列表。
+            // 这里我们依赖 MESSAGE_RECEIVED 事件来处理最终状态。
+            // 如果需要手动更新，可以这样做：
+            // if (res.code === 0 && res.data && res.data.message) {
+            //     setMessages(prev => prev.map(msg =>
+            //         msg.id === uiMsg.id ? { ...msg, id: res.data.message.ID, createdAt: res.data.message.time * 1000 } : msg
+            //     ));
+            // }
+
+        } catch (error: any) {
+            console.error('❌ [ChatRoom] Send failed:', error);
+            // 打印完整的错误对象
+            if (error.data) console.error('   Error Data:', error.data);
+
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '消息发送失败，请重试',
+            });
+        }
     };
 
     // 电话按钮点击
@@ -143,14 +254,13 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         setShowMoreMenu(false);
         switch (option) {
             case 'profile':
-                // 跳转到服务商详情页
-                if (conversation?.role === 'designer') {
-                    navigation.navigate('DesignerDetail', { designer: conversation });
-                } else if (conversation?.role === 'worker') {
-                    navigation.navigate('WorkerDetail', { worker: conversation });
-                } else if (conversation?.role === 'company') {
-                    navigation.navigate('CompanyDetail', { company: conversation });
-                }
+                // TODO: 跳转逻辑需要根据 role 判断，目前 conversation 对象不完整
+                setDialogConfig({
+                    visible: true,
+                    type: 'info',
+                    title: '提示',
+                    message: '查看资料功能待修复'
+                });
                 break;
             case 'clear':
                 setDialogConfig({
@@ -172,9 +282,171 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         }
     };
 
+    // 通用文件上传并发送 helper
+    const uploadAndSendFile = async (file: { uri: string; type: string; name: string }, msgType: string) => {
+        const chat = TencentIMService.getChat();
+        if (!chat || !partnerID) return;
+
+        try {
+            // 1. 上传文件到应用后端
+            console.log('[ChatRoom] Uploading file...', file.name);
+            const uploadRes = await fileApi.upload(file);
+            console.log('[ChatRoom] Upload success:', uploadRes.data);
+
+            const fileUrl = uploadRes.data.url;
+            // 注意：腾讯云IM SDK 发送图片/文件通常需要先上传到腾讯云对象存储(COS)，
+            // 或者使用 external 方式。
+            // 简单做法：我们发送自定义消息或者文本消息带链接？
+            // 不，TUIKit 标准做法是 CreateImageMessage，但需要传入 file object (web) 或 path (native)。
+            // React Native SDK createMessage 本地路径即可，SDK 会自动上传到腾讯云。
+
+            // 纠正：Chat SDK for RN 通常会自动上传。我们不需要自己上传到后端，除非为了备份。
+            // 但是为了与管理后台互通（管理后台可能只认后端 URL？），或者为了统一管理。
+            // 如果 SDK 自动上传到腾讯云，那最好。
+            // 让我们尝试直接使用 SDK 的 createMessage 方法。
+
+            let message;
+            if (msgType === TIM.TYPES.MSG_IMAGE) {
+                // Image Message
+                message = chat.createImageMessage({
+                    to: partnerID,
+                    conversationType: TIM.TYPES.CONV_C2C,
+                    payload: {
+                        file: {
+                            uri: file.uri, // 本地路径
+                            type: file.type,
+                            name: file.name,
+                        }
+                    }
+                });
+            } else if (msgType === TIM.TYPES.MSG_FILE) {
+                message = chat.createFileMessage({
+                    to: partnerID,
+                    conversationType: TIM.TYPES.CONV_C2C,
+                    payload: {
+                        file: {
+                            uri: file.uri,
+                            type: file.type,
+                            name: file.name,
+                        }
+                    }
+                });
+            } else {
+                return;
+            }
+
+            // 先上屏
+            const uiMsg: UIMessage = {
+                id: String(Date.now()), // 临时 ID
+                senderId: currentUserId,
+                content: msgType === TIM.TYPES.MSG_IMAGE ? '[图片]' : '[文件]',
+                createdAt: Date.now(),
+                isRead: false,
+                isMe: true
+            };
+            setMessages(prev => [...prev, uiMsg]);
+            scrollToBottom();
+
+            // 发送
+            const res = await chat.sendMessage(message);
+            if (res.code === 0) {
+                // 成功，更新 ID 等信息，或者等待 event
+                console.log('✅ [ChatRoom] Attachment sent:', res);
+            }
+        } catch (error: any) {
+            console.error('❌ [ChatRoom] Send attachment failed:', error);
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '附件发送失败，请重试',
+            });
+        }
+    };
+
+    // 拍照
+    const handleCamera = async () => {
+        setShowAttachmentMenu(false);
+        try {
+            const result = await launchCamera({
+                mediaType: 'photo',
+                quality: 0.8,
+            });
+
+            if (result.didCancel) return;
+            if (result.errorCode) {
+                console.error('Camera Error:', result.errorMessage);
+                return;
+            }
+
+            const asset = result.assets?.[0];
+            if (asset && asset.uri) {
+                await uploadAndSendFile({
+                    uri: asset.uri,
+                    type: asset.type || 'image/jpeg',
+                    name: asset.fileName || 'photo.jpg',
+                }, TIM.TYPES.MSG_IMAGE);
+            }
+        } catch (error) {
+            console.error('Handle Camera Error:', error);
+        }
+    };
+
+    // 相册
+    const handleGallery = async () => {
+        setShowAttachmentMenu(false);
+        try {
+            const result = await launchImageLibrary({
+                mediaType: 'photo',
+                quality: 0.8,
+                selectionLimit: 1,
+            });
+            if (result.didCancel) return;
+            if (result.errorCode) {
+                console.error('Gallery Error:', result.errorMessage);
+                return;
+            }
+
+            const asset = result.assets?.[0];
+            if (asset && asset.uri) {
+                await uploadAndSendFile({
+                    uri: asset.uri,
+                    type: asset.type || 'image/jpeg',
+                    name: asset.fileName || 'image.jpg',
+                }, TIM.TYPES.MSG_IMAGE);
+            }
+        } catch (error) {
+            console.error('Handle Gallery Error:', error);
+        }
+    };
+
+    // 文件文档
+    const handleFile = async () => {
+        setShowAttachmentMenu(false);
+        try {
+            const res = await DocumentPicker.pick({
+                type: [DocumentPicker.types.allFiles],
+            });
+            const file = res[0];
+            if (file && file.uri) {
+                await uploadAndSendFile({
+                    uri: file.uri,
+                    type: file.type || 'application/octet-stream',
+                    name: file.name || 'document',
+                }, TIM.TYPES.MSG_FILE);
+            }
+        } catch (err) {
+            if (DocumentPicker.isCancel(err)) {
+                // cancelled
+            } else {
+                console.error('DocumentPicker Error:', err);
+            }
+        }
+    };
+
     // 渲染消息气泡
-    const renderMessage = (message: Message, index: number) => {
-        const isMe = message.senderId === currentUserId;
+    const renderMessage = (message: UIMessage, index: number) => {
+        const isMe = message.isMe;
         const msgTime = new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
         const prevMsgTime = index > 0 ? new Date(messages[index - 1]?.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
         const showTime = index === 0 || prevMsgTime !== msgTime;
@@ -190,7 +462,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 ]}>
                     {!isMe && (
                         <Image
-                            source={{ uri: partnerAvatar || 'https://via.placeholder.com/40' }}
+                            source={{ uri: partnerAvatar || defaultAvatar }}
                             style={styles.messageAvatar}
                         />
                     )}
@@ -219,15 +491,13 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
                     <Text style={styles.headerTitle}>{partnerName}</Text>
-                    {conversation?.isOnline && (
-                        <Text style={styles.headerSubtitle}>在线</Text>
-                    )}
+                    {/* 在线状态暂未接入 */}
                 </View>
                 <View style={styles.headerRight}>
                     <TouchableOpacity style={styles.headerBtn} onPress={handlePhonePress}>
                         <Phone size={20} color="#09090B" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.navigate('ChatSettings', { conversation })}>
+                    <TouchableOpacity style={styles.headerBtn} onPress={() => setShowMoreMenu(true)}>
                         <MoreVertical size={20} color="#09090B" />
                     </TouchableOpacity>
                 </View>
@@ -236,7 +506,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.keyboardView}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+                keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
             >
                 {/* 消息列表 */}
                 <ScrollView
@@ -271,8 +541,11 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
                 {/* 输入区域 */}
                 <View style={styles.inputContainer}>
-                    <TouchableOpacity style={styles.attachBtn}>
-                        <Paperclip size={20} color="#71717A" />
+                    <TouchableOpacity
+                        style={styles.attachBtn}
+                        onPress={() => setShowAttachmentMenu(true)}
+                    >
+                        <Plus size={22} color="#71717A" />
                     </TouchableOpacity>
                     <View style={styles.inputWrapper}>
                         <TextInput
@@ -392,10 +665,59 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     </View>
                 </View>
             </Modal>
+
+            {/* 附件菜单弹窗 */}
+            <Modal
+                visible={showAttachmentMenu}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowAttachmentMenu(false)}
+            >
+                <TouchableOpacity
+                    style={styles.attachmentOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowAttachmentMenu(false)}
+                >
+                    <View style={styles.attachmentContainer}>
+                        <View style={styles.attachmentHandle} />
+                        <Text style={styles.attachmentTitle}>发送</Text>
+                        <View style={styles.attachmentGrid}>
+                            <TouchableOpacity
+                                style={styles.attachmentItem}
+                                onPress={handleCamera}
+                            >
+                                <View style={[styles.attachmentIcon, { backgroundColor: '#FEF3C7' }]}>
+                                    <Camera size={24} color="#F59E0B" />
+                                </View>
+                                <Text style={styles.attachmentLabel}>拍照</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.attachmentItem}
+                                onPress={handleGallery}
+                            >
+                                <View style={[styles.attachmentIcon, { backgroundColor: '#DBEAFE' }]}>
+                                    <ImageIcon size={24} color="#3B82F6" />
+                                </View>
+                                <Text style={styles.attachmentLabel}>相册</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.attachmentItem}
+                                onPress={handleFile}
+                            >
+                                <View style={[styles.attachmentIcon, { backgroundColor: '#F3E8FF' }]}>
+                                    <File size={24} color="#8B5CF6" />
+                                </View>
+                                <Text style={styles.attachmentLabel}>文件</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </SafeAreaView>
     );
 };
 
+// ... keep styles same
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -671,6 +993,55 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
         color: '#EF4444',
+    },
+    // 附件菜单样式
+    attachmentOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        justifyContent: 'flex-end',
+    },
+    attachmentContainer: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingHorizontal: 16,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+    },
+    attachmentHandle: {
+        width: 40,
+        height: 4,
+        backgroundColor: '#E4E4E7',
+        borderRadius: 2,
+        alignSelf: 'center',
+        marginTop: 12,
+        marginBottom: 16,
+    },
+    attachmentTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#09090B',
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    attachmentGrid: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        paddingHorizontal: 20,
+    },
+    attachmentItem: {
+        alignItems: 'center',
+    },
+    attachmentIcon: {
+        width: 56,
+        height: 56,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    attachmentLabel: {
+        fontSize: 13,
+        color: '#71717A',
     },
 });
 

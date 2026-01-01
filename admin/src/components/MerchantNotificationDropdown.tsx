@@ -249,7 +249,8 @@ const MerchantNotificationDropdown: React.FC = () => {
 
     return (
         <Dropdown
-            overlay={dropdownContent}
+            menu={{ items: [] }}
+            dropdownRender={() => dropdownContent}
             trigger={['click']}
             open={open}
             onOpenChange={setOpen}

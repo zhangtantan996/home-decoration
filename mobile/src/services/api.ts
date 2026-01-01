@@ -13,6 +13,36 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
+// 刷新 Token 辅助方法：尝试多个后端路径，兼容不同实现
+const tryRefreshToken = async (refreshToken: string) => {
+    const candidates = ['/auth/refresh-token', '/auth/refreshToken', '/auth/refresh'];
+
+    let lastError: any = null;
+    for (const path of candidates) {
+        try {
+            const response = await axios.post(`${BASE_URL}${path}`, { refreshToken });
+            const payload = response.data;
+
+            // 兼容两种返回：1) { code:0, data:{ token, refreshToken } } 2) { token, refreshToken }
+            const data = payload?.data ?? payload;
+            const token = data?.token;
+            const newRefreshToken = data?.refreshToken || data?.refresh_token;
+
+            if (!token) throw new Error('Empty token in refresh response');
+            return { token, refreshToken: newRefreshToken };
+        } catch (err: any) {
+            lastError = err;
+            // 404/405/501 继续尝试下一条，其他错误直接抛出
+            const status = err?.response?.status;
+            if (status && ![404, 405, 501].includes(status)) {
+                throw err;
+            }
+        }
+    }
+    if (lastError) throw lastError;
+    throw new Error('Refresh token failed: no candidates succeeded');
+};
+
 // 正在刷新的标志
 let isRefreshing = false;
 // 刷新失败的请求队列
@@ -92,11 +122,7 @@ api.interceptors.response.use(
                 }
 
                 // 调用刷新 Token 接口
-                const response = await axios.post(`${BASE_URL}/auth/refresh-token`, {
-                    refreshToken
-                });
-
-                const { token, refreshToken: newRefreshToken } = response.data.data;
+                const { token, refreshToken: newRefreshToken } = await tryRefreshToken(refreshToken);
 
                 // 保存新的 Token
                 await SecureStorage.saveToken(token);
@@ -113,9 +139,15 @@ api.interceptors.response.use(
 
                 // 重试原请求
                 return api(originalRequest);
-            } catch (refreshError) {
+            } catch (refreshError: any) {
                 processQueue(refreshError, null);
                 isRefreshing = false;
+
+                const status = refreshError?.response?.status;
+                // 对于 404/405/501 表示后端未实现刷新，不清空本地，交给上层处理
+                if (status && [404, 405, 501].includes(status)) {
+                    return Promise.reject(refreshError);
+                }
 
                 // Token 刷新失败，清除本地存储
                 await SecureStorage.clearAll();
@@ -302,6 +334,24 @@ export const notificationApi = {
     // 删除通知
     delete: (id: number) =>
         api.delete<any>(`/notifications/${id}`),
+};
+
+// 文件上传
+export const fileApi = {
+    upload: async (file: { uri: string; type: string; name: string }) => {
+        const formData = new FormData();
+        formData.append('file', {
+            uri: file.uri,
+            type: file.type,
+            name: file.name,
+        } as any);
+
+        return api.post<{ url: string; filename: string; size: number }>('/upload', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+    },
 };
 
 export default api;

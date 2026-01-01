@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"time"
 
@@ -630,17 +631,42 @@ func AdminUpdateSettings(c *gin.Context) {
 		return
 	}
 
-	// ✅ 只更新存在的设置项，不允许创建新项
 	for key, value := range req {
+		// ✅ 前端使用 im_tencent_* 格式，后端使用 im.tencent_* 格式，自动转换
+		dbKey := key
+		if len(key) > 3 && key[:3] == "im_" {
+			dbKey = "im." + key[3:] // im_tencent_enabled -> im.tencent_enabled
+		}
+
+		// 1. 尝试更新 system_settings 表（旧版通用设置）
 		var setting model.SystemSettings
-		if err := repository.DB.Where("`key` = ?", key).First(&setting).Error; err != nil {
-			// 设置项不存在，跳过
+		if err := repository.DB.Where("\"key\" = ?", dbKey).First(&setting).Error; err == nil {
+			setting.Value = value
+			repository.DB.Save(&setting)
 			continue
 		}
 
-		// ✅ 只更新value字段
-		setting.Value = value
-		repository.DB.Save(&setting)
+		// 2. 尝试更新 system_configs 表（业务配置，包括腾讯云 IM）
+		var config model.SystemConfig
+		if err := repository.DB.Where("key = ?", dbKey).First(&config).Error; err == nil {
+			config.Value = value
+			repository.DB.Save(&config)
+			// ✅ 清除配置缓存，确保新值立即生效
+			configSvc := &service.ConfigService{}
+			configSvc.ClearCache()
+			continue
+		}
+
+		// 3. 如果两表都不存在，为 im.* 开头的 key 自动创建到 system_configs
+		if len(dbKey) > 3 && dbKey[:3] == "im." {
+			newConfig := model.SystemConfig{
+				Key:      dbKey,
+				Value:    value,
+				Type:     "string",
+				Editable: true,
+			}
+			repository.DB.Create(&newConfig)
+		}
 	}
 
 	response.Success(c, nil)

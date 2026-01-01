@@ -113,6 +113,7 @@ type Project struct {
 	Base
 	OwnerID      uint64  `json:"ownerId" gorm:"index"`
 	ProviderID   uint64  `json:"providerId" gorm:"index"`
+	ProposalID   uint64  `json:"proposalId" gorm:"index"` // 关联的设计方案ID
 	Name         string  `json:"name" gorm:"size:100"`
 	Address      string  `json:"address" gorm:"size:200"`
 	Latitude     float64 `json:"latitude"`
@@ -152,7 +153,10 @@ type Milestone struct {
 type WorkLog struct {
 	Base
 	ProjectID   uint64    `json:"projectId" gorm:"index"`
-	WorkerID    uint64    `json:"workerId" gorm:"index"`
+	PhaseID     uint64    `json:"phaseId" gorm:"index"`   // 关联的阶段ID
+	WorkerID    uint64    `json:"workerId" gorm:"index"`  // 工人ID（可选）
+	CreatedBy   uint64    `json:"createdBy" gorm:"index"` // 创建人（管理员ID）
+	Title       string    `json:"title" gorm:"size:100"`  // 日志标题
 	LogDate     time.Time `json:"logDate" gorm:"type:date;index"`
 	Description string    `json:"description" gorm:"type:text"`
 	Photos      string    `json:"photos" gorm:"type:jsonb"` // JSON数组
@@ -195,16 +199,16 @@ type Transaction struct {
 // Booking 预约记录
 type Booking struct {
 	Base
-	UserID            uint64  `json:"userId" gorm:"index"`
-	ProviderID        uint64  `json:"providerId" gorm:"index"`
-	ProviderType      string  `json:"providerType" gorm:"size:20"` // designer, worker, company
-	Address           string  `json:"address" gorm:"size:200"`
-	Area              float64 `json:"area"`
-	RenovationType    string  `json:"renovationType" gorm:"size:50"`
-	BudgetRange       string  `json:"budgetRange" gorm:"size:50"`
-	PreferredDate     string  `json:"preferredDate" gorm:"size:100"`
-	Phone             string  `json:"phone" gorm:"size:20"`
-	Notes             string  `json:"notes" gorm:"type:text"`
+	UserID                   uint64     `json:"userId" gorm:"index"`
+	ProviderID               uint64     `json:"providerId" gorm:"index"`
+	ProviderType             string     `json:"providerType" gorm:"size:20"` // designer, worker, company
+	Address                  string     `json:"address" gorm:"size:200"`
+	Area                     float64    `json:"area"`
+	RenovationType           string     `json:"renovationType" gorm:"size:50"`
+	BudgetRange              string     `json:"budgetRange" gorm:"size:50"`
+	PreferredDate            string     `json:"preferredDate" gorm:"size:100"`
+	Phone                    string     `json:"phone" gorm:"size:20"`
+	Notes                    string     `json:"notes" gorm:"type:text"`
 	HouseLayout              string     `json:"houseLayout" gorm:"size:50"`             // e.g., "3室2厅2卫"
 	Status                   int8       `json:"status" gorm:"default:1"`                // 1:pending, 2:confirmed, 3:completed, 4:cancelled
 	IntentFee                float64    `json:"intentFee" gorm:"default:0"`             // 意向金金额 (从系统配置读取)
@@ -343,23 +347,23 @@ func (Notification) TableName() string {
 
 // 通知类型常量
 const (
-	NotificationTypeBookingIntentPaid  = "booking.intent_paid"
-	NotificationTypeBookingConfirmed   = "booking.confirmed"
-	NotificationTypeBookingCancelled   = "booking.cancelled"
-	NotificationTypeProposalSubmitted  = "proposal.submitted"
-	NotificationTypeProposalConfirmed  = "proposal.confirmed"
-	NotificationTypeProposalRejected   = "proposal.rejected"
-	NotificationTypeOrderCreated       = "order.created"
-	NotificationTypeOrderPaid          = "order.paid"
-	NotificationTypeOrderExpiring      = "order.expiring"
-	NotificationTypeOrderExpired       = "order.expired"
-	NotificationTypeWithdrawApproved   = "withdraw.approved"
-	NotificationTypeWithdrawRejected   = "withdraw.rejected"
-	NotificationTypeWithdrawCompleted  = "withdraw.completed"
-	NotificationTypeAuditApproved      = "audit.approved"
-	NotificationTypeAuditRejected      = "audit.rejected"
-	NotificationTypeCaseAuditApproved  = "case_audit.approved"
-	NotificationTypeCaseAuditRejected  = "case_audit.rejected"
+	NotificationTypeBookingIntentPaid = "booking.intent_paid"
+	NotificationTypeBookingConfirmed  = "booking.confirmed"
+	NotificationTypeBookingCancelled  = "booking.cancelled"
+	NotificationTypeProposalSubmitted = "proposal.submitted"
+	NotificationTypeProposalConfirmed = "proposal.confirmed"
+	NotificationTypeProposalRejected  = "proposal.rejected"
+	NotificationTypeOrderCreated      = "order.created"
+	NotificationTypeOrderPaid         = "order.paid"
+	NotificationTypeOrderExpiring     = "order.expiring"
+	NotificationTypeOrderExpired      = "order.expired"
+	NotificationTypeWithdrawApproved  = "withdraw.approved"
+	NotificationTypeWithdrawRejected  = "withdraw.rejected"
+	NotificationTypeWithdrawCompleted = "withdraw.completed"
+	NotificationTypeAuditApproved     = "audit.approved"
+	NotificationTypeAuditRejected     = "audit.rejected"
+	NotificationTypeCaseAuditApproved = "case_audit.approved"
+	NotificationTypeCaseAuditRejected = "case_audit.rejected"
 )
 
 // ==================== 商家中心模型 ====================

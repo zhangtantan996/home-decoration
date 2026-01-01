@@ -7,7 +7,7 @@ import {
     CalendarOutlined,
     FileTextOutlined,
     DollarOutlined,
-
+    MessageOutlined,
     PictureOutlined,
     SettingOutlined,
     UserOutlined,
@@ -48,6 +48,11 @@ const MerchantLayout: React.FC = () => {
             key: '/orders',
             icon: <DollarOutlined />,
             label: '订单管理',
+        },
+        {
+            key: '/chat',
+            icon: <MessageOutlined />,
+            label: '客户消息',
         },
         {
             type: 'divider',

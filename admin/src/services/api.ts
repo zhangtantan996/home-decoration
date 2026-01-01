@@ -61,6 +61,42 @@ export const projectApi = {
     logs: (id: string | number) => api.get(`/projects/${id}/logs`),
 };
 
+// ==================== Admin 项目管理 ====================
+export const adminProjectApi = {
+    // 项目列表和详情
+    list: (params?: { page?: number; pageSize?: number; status?: number; keyword?: string }) =>
+        api.get('/admin/projects', { params }),
+    detail: (id: string | number) => api.get(`/admin/projects/${id}`),
+    updateStatus: (id: string | number, data: { status: number; currentPhase?: string }) =>
+        api.put(`/admin/projects/${id}/status`, data),
+
+    // 阶段管理
+    getPhases: (id: string | number) => api.get(`/admin/projects/${id}/phases`),
+    updatePhase: (projectId: string | number, phaseId: string | number, data: any) =>
+        api.put(`/admin/projects/${projectId}/phases/${phaseId}`, data),
+
+    // 施工日志管理
+    getLogs: (projectId: string | number, params?: { page?: number; pageSize?: number; phaseId?: string }) =>
+        api.get(`/admin/projects/${projectId}/logs`, { params }),
+    createLog: (projectId: string | number, phaseId: string | number, data: { title: string; description?: string; photos?: string; logDate?: string }) =>
+        api.post(`/admin/projects/${projectId}/phases/${phaseId}/logs`, data),
+    updateLog: (logId: string | number, data: { title?: string; description?: string; photos?: string; logDate?: string }) =>
+        api.put(`/admin/logs/${logId}`, data),
+    deleteLog: (logId: string | number) => api.delete(`/admin/logs/${logId}`),
+};
+
+// ==================== Admin 争议预约管理 ====================
+export const adminDisputeApi = {
+    // 争议预约列表
+    list: (params?: { page?: number; pageSize?: number }) =>
+        api.get('/admin/disputed-bookings', { params }),
+    // 争议预约详情
+    detail: (id: string | number) => api.get(`/admin/disputed-bookings/${id}`),
+    // 处理争议
+    resolve: (id: string | number, data: { resolution: string; reason?: string; refundRate?: number }) =>
+        api.post(`/admin/disputed-bookings/${id}/resolve`, data),
+};
+
 export const providerApi = {
     designers: (params?: any) => api.get('/designers', { params }),
     companies: (params?: any) => api.get('/companies', { params }),
@@ -212,6 +248,16 @@ export const caseAuditApi = {
     approve: (id: number) => api.post(`/admin/audits/cases/${id}/approve`),
     reject: (id: number, reason: string) => api.post(`/admin/audits/cases/${id}/reject`, { reason }),
 };
+
+// 作品管理
+export const caseApi = {
+    list: (params?: { page?: number; pageSize?: number; providerId?: string; style?: string }) =>
+        api.get('/admin/cases', { params }),
+    create: (data: any) => api.post('/admin/cases', data),
+    update: (id: number, data: any) => api.put(`/admin/cases/${id}`, data),
+    delete: (id: number) => api.delete(`/admin/cases/${id}`),
+};
+
 
 // 通知系统
 export const notificationApi = {

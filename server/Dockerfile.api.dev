@@ -25,4 +25,4 @@ COPY . .
 EXPOSE 8080
 
 # 使用 air 运行
-CMD ["air", "-c", ".air.toml"]
+CMD ["air", "-c", ".air.linux.toml"]

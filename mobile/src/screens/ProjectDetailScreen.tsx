@@ -29,6 +29,7 @@ interface Project {
     id: number;
     ownerId: number;
     providerId: number;
+    proposalId?: number; // 关联的设计方案ID
     name: string;
     address: string;
     area: number;
@@ -46,7 +47,7 @@ interface ProjectDetailScreenProps {
 }
 
 const PROJECT_STATUS_MAP: Record<number, { label: string; color: string }> = {
-    0: { label: '选材中', color: '#F59E0B' },
+    0: { label: '准备阶段', color: '#F59E0B' },
     1: { label: '施工中', color: '#3B82F6' },
     2: { label: '已完工', color: '#10B981' },
     3: { label: '已取消', color: '#EF4444' },
@@ -230,25 +231,51 @@ const ProjectDetailScreen: React.FC<ProjectDetailScreenProps> = ({ route, naviga
                     </View>
 
                     <View style={styles.actionGrid}>
+                        {/* 设计方案入口 - 添加渐变背景效果 */}
+                        {project.proposalId && (
+                            <TouchableOpacity
+                                style={[styles.actionCard, styles.proposalCard]}
+                                onPress={() => navigation.navigate('ProposalPaidDetail', { proposalId: project.proposalId, fromProject: true })}
+                                activeOpacity={0.7}
+                            >
+                                <View style={[styles.actionIcon, styles.proposalIcon]}>
+                                    <FileText size={24} color="#059669" />
+                                </View>
+                                <View style={styles.actionTextContainer}>
+                                    <Text style={styles.actionLabel}>设计方案</Text>
+                                    <Text style={styles.actionSubLabel}>查看图纸与方案详情</Text>
+                                </View>
+                                <ChevronRight size={16} color="#059669" />
+                            </TouchableOpacity>
+                        )}
+
                         <TouchableOpacity
                             style={styles.actionCard}
                             onPress={() => navigation.navigate('Bill', { projectId: project.id })}
+                            activeOpacity={0.7}
                         >
                             <View style={[styles.actionIcon, { backgroundColor: '#FEF3C7' }]}>
                                 <DollarSign size={24} color="#F59E0B" />
                             </View>
-                            <Text style={styles.actionLabel}>账单费用</Text>
+                            <View style={styles.actionTextContainer}>
+                                <Text style={styles.actionLabel}>账单费用</Text>
+                                <Text style={styles.actionSubLabel}>查看支付明细与账单</Text>
+                            </View>
                             <ChevronRight size={16} color="#A1A1AA" />
                         </TouchableOpacity>
 
                         <TouchableOpacity
                             style={styles.actionCard}
-                            onPress={() => navigation.navigate('ProjectTimeline', { projectId: project.id })}
+                            onPress={() => navigation.navigate('ProjectTimeline', { project: project })}
+                            activeOpacity={0.7}
                         >
                             <View style={[styles.actionIcon, { backgroundColor: '#DBEAFE' }]}>
                                 <Clock size={24} color="#3B82F6" />
                             </View>
-                            <Text style={styles.actionLabel}>进度跟踪</Text>
+                            <View style={styles.actionTextContainer}>
+                                <Text style={styles.actionLabel}>进度跟踪</Text>
+                                <Text style={styles.actionSubLabel}>施工阶段与日志</Text>
+                            </View>
                             <ChevronRight size={16} color="#A1A1AA" />
                         </TouchableOpacity>
                     </View>
@@ -457,23 +484,43 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         backgroundColor: '#FAFAFA',
         padding: 16,
-        borderRadius: 12,
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: '#F4F4F5',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.03,
+        shadowRadius: 4,
+        elevation: 1,
+    },
+    proposalCard: {
+        backgroundColor: '#ECFDF5',
+        borderColor: '#A7F3D0',
+        borderWidth: 1.5,
+    },
+    proposalIcon: {
+        backgroundColor: '#D1FAE5',
     },
     actionIcon: {
         width: 48,
         height: 48,
-        borderRadius: 12,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 16,
+        marginRight: 14,
+    },
+    actionTextContainer: {
+        flex: 1,
     },
     actionLabel: {
-        flex: 1,
         fontSize: 15,
-        fontWeight: '500',
+        fontWeight: '600',
         color: '#09090B',
+    },
+    actionSubLabel: {
+        fontSize: 12,
+        color: '#71717A',
+        marginTop: 2,
     },
 });
 

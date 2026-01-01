@@ -28,7 +28,9 @@ backend.log
 .env.*.local
 
 # IDEs
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
 .idea/
 *.swp
 *.swo

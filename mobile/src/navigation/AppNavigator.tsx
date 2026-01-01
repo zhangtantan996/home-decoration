@@ -41,11 +41,11 @@ import ProposalPaidDetailScreen from '../screens/ProposalPaidDetailScreen';
 import CreateProjectScreen from '../screens/CreateProjectScreen';
 import ProjectListScreen from '../screens/ProjectListScreen';
 import NotificationScreen from '../screens/NotificationScreen';
+import DesignFilesScreen from '../screens/DesignFilesScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
 import { useProviderStore } from '../store/providerStore';
-import { useChatStore } from '../store/chatStore';
 import { useSessionExpiry } from '../hooks/useSessionExpiry';
 
 // 定义导航参数列表
@@ -170,8 +170,6 @@ const LoadingScreen = () => (
 const AppNavigator = () => {
     const { isAuthenticated, isLoading, loadStoredAuth } = useAuthStore();
     const preloadAll = useProviderStore(state => state.preloadAll);
-    const connectChat = useChatStore(state => state.connect);
-    const disconnectChat = useChatStore(state => state.disconnect);
 
     // 监听会话过期事件，自动跳转登录页
     useSessionExpiry();
@@ -182,14 +180,26 @@ const AppNavigator = () => {
         preloadAll();
     }, []);
 
-    // 当用户认证状态变化时，连接或断开 WebSocket，并尝试预加载数据
     useEffect(() => {
         if (isAuthenticated) {
-            connectChat();
-            // 登录成功后立即尝试获取数据（如果之前为空或失败）
+            // 登录成功后立即尝试获取数据
             preloadAll();
+
+            // 初始化腾讯云 IM（后台静默，不阻塞主流程）
+            import('../services/TencentIMService').then(({ default: TencentIMService }) => {
+                TencentIMService.init().then((success) => {
+                    if (success) {
+                        console.log('[TencentIM] 初始化成功');
+                    }
+                }).catch(() => {
+                    // 静默失败，WebSocket 作为主要通道
+                });
+            });
         } else {
-            disconnectChat();
+            // 登出时也登出腾讯 IM
+            import('../services/TencentIMService').then(({ default: TencentIMService }) => {
+                TencentIMService.logout();
+            });
         }
     }, [isAuthenticated]);
 
@@ -290,6 +300,11 @@ const AppNavigator = () => {
                         <Stack.Screen
                             name="Bill"
                             component={BillScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="DesignFiles"
+                            component={DesignFilesScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                         <Stack.Screen

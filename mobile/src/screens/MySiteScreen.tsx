@@ -27,14 +27,12 @@ import {
     ClipboardCheck,
     Trash2,
     MessageCircle,
-    AlertCircle,
     Clock,
     MapPin,
-    Calendar,
     X,
     ChevronLeft,
 } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -110,6 +108,7 @@ const MOCK_PROJECT = {
 
 const MySiteScreen: React.FC = () => {
     const navigation = useNavigation();
+    const isFocused = useIsFocused();
     const [hasProject, setHasProject] = useState(true);
     const [project, setProject] = useState<any>(MOCK_PROJECT);
     const [loading, setLoading] = useState(false);
@@ -304,27 +303,15 @@ const MySiteScreen: React.FC = () => {
         </View>
     );
 
-    // 问题反馈组件
-    const FeedbackBanner = () => (
-        <TouchableOpacity style={styles.feedbackBanner}>
-            <View style={styles.feedbackContent}>
-                <AlertCircle size={20} color="#EF4444" />
-                <View style={styles.feedbackTextMain}>
-                    <Text style={styles.feedbackTitleText}>遇到问题？</Text>
-                    <Text style={styles.feedbackSubText}>提交反馈，我们将在1小时内响应处理</Text>
-                </View>
-            </View>
-            <ChevronRight size={18} color="#D1D5DB" />
-        </TouchableOpacity>
-    );
+
 
     return (
         <View style={styles.container}>
-            <StatusBar
+            {isFocused && <StatusBar
                 barStyle={isHeaderScrolled ? "dark-content" : "light-content"}
                 backgroundColor="transparent"
                 translucent
-            />
+            />}
 
             {loading ? (
                 <View style={[styles.container, styles.center]}>
@@ -348,7 +335,6 @@ const MySiteScreen: React.FC = () => {
                     <MilestoneTimeline />
                     <View style={styles.mainContent}>
                         <ConstructionLogs />
-                        <FeedbackBanner />
                     </View>
                     <View style={{ height: 40 }} />
                 </ScrollView>
@@ -575,8 +561,6 @@ const styles = StyleSheet.create({
     logsContainer: {
         backgroundColor: '#FFFFFF',
         paddingVertical: 20,
-        borderBottomWidth: 8,
-        borderBottomColor: '#F3F4F6',
     },
     sectionHeaderLogs: {
         flexDirection: 'row',
@@ -659,33 +643,7 @@ const styles = StyleSheet.create({
         marginRight: 8,
         backgroundColor: '#F3F4F6',
     },
-    // Feedback
-    feedbackBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#FFFFFF',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F3F4F6',
-    },
-    feedbackContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    feedbackTextMain: {
-        marginLeft: 12,
-    },
-    feedbackTitleText: {
-        fontSize: 15,
-        fontWeight: 'bold',
-        color: '#B91C1C',
-    },
-    feedbackSubText: {
-        fontSize: 12,
-        color: '#EF4444',
-        marginTop: 2,
-    },
+
     // Empty State
     emptyContainer: {
         flex: 1,

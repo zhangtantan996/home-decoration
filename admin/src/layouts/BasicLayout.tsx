@@ -18,6 +18,10 @@ import {
     FileTextOutlined,
     LogoutOutlined,
     LockOutlined,
+    ExclamationCircleOutlined,
+    WarningOutlined,
+    FileImageOutlined,
+    UnorderedListOutlined,
 } from '@ant-design/icons';
 
 // 图标映射 - 根据后端返回的 icon 字段匹配对应的 React 组件
@@ -34,6 +38,10 @@ const iconMap: Record<string, React.ReactNode> = {
     'FileTextOutlined': <FileTextOutlined />,
     'SettingOutlined': <SettingOutlined />,
     'LockOutlined': <LockOutlined />,
+    'ExclamationCircleOutlined': <ExclamationCircleOutlined />,
+    'WarningOutlined': <WarningOutlined />,
+    'FileImageOutlined': <FileImageOutlined />,
+    'UnorderedListOutlined': <UnorderedListOutlined />,
 };
 
 const BasicLayout: React.FC = () => {

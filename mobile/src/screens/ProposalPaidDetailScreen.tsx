@@ -7,7 +7,6 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     Platform,
     Linking,
 } from 'react-native';
@@ -21,6 +20,9 @@ import {
 } from 'lucide-react-native';
 import { proposalApi } from '../services/api';
 import { Proposal } from '../types/businessFlow';
+import InfoModal from '../components/InfoModal';
+import { getApiBaseUrl } from '../config';
+import { downloadFile } from '../utils/fileDownload';
 
 interface ProposalPaidDetailScreenProps {
     route: any;
@@ -32,6 +34,20 @@ const ProposalPaidDetailScreen: React.FC<ProposalPaidDetailScreenProps> = ({ rou
 
     const [proposal, setProposal] = useState<Proposal | null>(null);
     const [loading, setLoading] = useState(true);
+    const [downloading, setDownloading] = useState<number | null>(null); // Track which file is downloading
+
+    // Modal state
+    const [modalVisible, setModalVisible] = useState(false);
+    const [modalConfig, setModalConfig] = useState<{
+        title: string;
+        message: string;
+        type: 'success' | 'error' | 'info';
+    }>({ title: '', message: '', type: 'info' });
+
+    const showModal = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setModalConfig({ title, message, type });
+        setModalVisible(true);
+    };
 
     useEffect(() => {
         loadProposal();
@@ -47,21 +63,30 @@ const ProposalPaidDetailScreen: React.FC<ProposalPaidDetailScreenProps> = ({ rou
                 setProposal(res.data);
             }
         } catch (error: any) {
-            Alert.alert('加载失败', error.message || '请稍后重试');
+            showModal('加载失败', error.message || '请稍后重试', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDownload = (url: string) => {
-        Linking.openURL(url).catch((err) =>
-            Alert.alert('无法打开链接', '请检查您的设备是否支持打开此文件')
-        );
+    const getFullUrl = (path: string) => {
+        if (!path) return '';
+        if (path.startsWith('http')) return path;
+        return `${getApiBaseUrl()}${path.startsWith('/') ? '' : '/'}${path}`;
     };
 
-    const handleCreateProject = () => {
-        // 跳转到创建项目页面
-        navigation.navigate('CreateProject', { proposalId });
+    const handleDownload = async (url: string, index: number) => {
+        const fullUrl = getFullUrl(url);
+        setDownloading(index);
+
+        const result = await downloadFile(fullUrl);
+        setDownloading(null);
+
+        if (result.success) {
+            showModal('下载成功', '文件已保存到下载目录', 'success');
+        } else {
+            showModal('下载失败', result.error || '请稍后重试', 'error');
+        }
     };
 
     const formatMoney = (amount: number) => {
@@ -174,16 +199,19 @@ const ProposalPaidDetailScreen: React.FC<ProposalPaidDetailScreenProps> = ({ rou
                                 <TouchableOpacity
                                     key={index}
                                     style={styles.fileItem}
-                                    onPress={() => handleDownload(url)}
+                                    onPress={() => handleDownload(url, index)}
+                                    disabled={downloading !== null}
                                 >
                                     <View style={styles.fileIcon}>
                                         <FileText size={20} color="#3B82F6" />
                                     </View>
                                     <View style={styles.fileInfo}>
                                         <Text style={styles.fileName}>设计图纸 {index + 1}</Text>
-                                        <Text style={styles.fileType}>PDF/JPG</Text>
+                                        <Text style={styles.fileType}>
+                                            {downloading === index ? '下载中...' : '点击下载'}
+                                        </Text>
                                     </View>
-                                    <Download size={20} color="#A1A1AA" />
+                                    <Download size={20} color={downloading === index ? '#3B82F6' : '#A1A1AA'} />
                                 </TouchableOpacity>
                             ))}
                         </View>
@@ -196,12 +224,14 @@ const ProposalPaidDetailScreen: React.FC<ProposalPaidDetailScreenProps> = ({ rou
                 <View style={{ height: 40 }} />
             </ScrollView>
 
-            {/* 底部按钮 */}
-            <View style={styles.footer}>
-                <TouchableOpacity style={styles.createBtn} onPress={handleCreateProject}>
-                    <Text style={styles.createBtnText}>下一步：创建项目</Text>
-                </TouchableOpacity>
-            </View>
+            {/* InfoModal */}
+            <InfoModal
+                visible={modalVisible}
+                onClose={() => setModalVisible(false)}
+                title={modalConfig.title}
+                message={modalConfig.message}
+                type={modalConfig.type}
+            />
         </SafeAreaView>
     );
 };
@@ -374,24 +404,6 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         color: '#94A3B8',
         padding: 20,
-    },
-    footer: {
-        padding: 16,
-        paddingBottom: Platform.OS === 'ios' ? 32 : 16,
-        backgroundColor: '#FFFFFF',
-        borderTopWidth: 1,
-        borderTopColor: '#E4E4E7',
-    },
-    createBtn: {
-        backgroundColor: '#09090B',
-        paddingVertical: 16,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    createBtnText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#FFFFFF',
     },
 });
 

@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"time"
 	"unicode"
@@ -10,6 +11,8 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/utils/image"
+	"home-decoration-server/internal/utils/tencentim"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -101,6 +104,14 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		return nil, nil, err
 	}
 
+	// 同步用户到腾讯云 IM（异步，失败不影响注册）
+	go func(u *model.User) {
+		fullAvatar := image.GetFullImageURL(u.Avatar)
+		if err := tencentim.SyncUserToIM(u.ID, u.Nickname, fullAvatar); err != nil {
+			log.Printf("[TencentIM] 用户同步失败: userID=%d, err=%v", u.ID, err)
+		}
+	}(user)
+
 	// 注册成功后自动签发 Token
 	token, err := generateToken(user.ID, user.UserType, cfg.ExpireHour)
 	if err != nil {
@@ -162,12 +173,19 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		if err := repository.DB.Create(&user).Error; err != nil {
 			return nil, nil, errors.New("账号创建失败，请稍后重试")
 		}
+		// 同步新用户到腾讯云 IM（异步）
+		go func(u *model.User) {
+			fullAvatar := image.GetFullImageURL(u.Avatar)
+			if err := tencentim.SyncUserToIM(u.ID, u.Nickname, fullAvatar); err != nil {
+				log.Printf("[TencentIM] 用户同步失败: userID=%d, err=%v", u.ID, err)
+			}
+		}(&user)
 		// 新创建的用户直接跳过锁定检查
 	} else {
 		// 检查账号是否被锁定
 		if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
 			remainingMinutes := int(time.Until(*user.LockedUntil).Minutes())
-			return nil, nil, errors.New(fmt.Sprintf("账号已被锁定，请在 %d 分钟后重试", remainingMinutes))
+			return nil, nil, fmt.Errorf("账号已被锁定，请在 %d 分钟后重试", remainingMinutes)
 		}
 
 		// 如果锁定时间已过，重置失败次数
@@ -299,10 +317,41 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 
 // UpdateUser 更新用户信息
 func (s *UserService) UpdateUser(id uint64, nickname, avatar string) error {
-	return repository.DB.Model(&model.User{}).Where("id = ?", id).Updates(map[string]interface{}{
+	err := repository.DB.Model(&model.User{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nickname": nickname,
 		"avatar":   avatar,
 	}).Error
+
+	if err != nil {
+		return err
+	}
+
+	// 异步同步到腾讯云 IM
+	go func() {
+		// 重新查询用户以获取完整信息（或者直接使用传入的新值）
+		// 这里直接使用新值，注意处理avatar可能为空的情况（如果是局部更新）
+		// 但为了保险，建议如果为空则查询数据库，或者简单地 assume 传入的就是最新值
+		// 这里参数是必传的吗？ handler里是 struct binding，可能是空字符串
+		// 为了稳健，查询一次数据库最新的状态
+		var user model.User
+		if err := repository.DB.First(&user, id).Error; err == nil {
+			// 处理默认昵称
+			if user.Nickname == "" {
+				suffix := ""
+				if len(user.Phone) >= 4 {
+					suffix = user.Phone[len(user.Phone)-4:]
+				}
+				user.Nickname = fmt.Sprintf("用户%s", suffix)
+			}
+
+			fullAvatar := image.GetFullImageURL(user.Avatar)
+			if err := tencentim.SyncUserToIM(user.ID, user.Nickname, fullAvatar); err != nil {
+				log.Printf("[TencentIM] 更新用户同步失败: userID=%d, err=%v", user.ID, err)
+			}
+		}
+	}()
+
+	return nil
 }
 
 // handleLoginFailure 处理登录失败逻辑
@@ -337,7 +386,7 @@ func (s *UserService) handleLoginFailure(user *model.User, loginType string) err
 		// 更新数据库
 		repository.DB.Model(user).Updates(updates)
 
-		return errors.New(fmt.Sprintf("登录失败次数过多，账号已被锁定 %d 分钟", int(lockDuration.Minutes())))
+		return fmt.Errorf("登录失败次数过多，账号已被锁定 %d 分钟", int(lockDuration.Minutes()))
 	}
 
 	// 更新数据库
@@ -345,9 +394,9 @@ func (s *UserService) handleLoginFailure(user *model.User, loginType string) err
 
 	remainingAttempts := lockThreshold - user.LoginFailedCount
 	if loginType == "password" {
-		return errors.New(fmt.Sprintf("手机号或密码错误，还可尝试 %d 次", remainingAttempts))
+		return fmt.Errorf("手机号或密码错误，还可尝试 %d 次", remainingAttempts)
 	}
-	return errors.New(fmt.Sprintf("验证码错误，还可尝试 %d 次", remainingAttempts))
+	return fmt.Errorf("验证码错误，还可尝试 %d 次", remainingAttempts)
 }
 
 // generateToken 生成JWT Token

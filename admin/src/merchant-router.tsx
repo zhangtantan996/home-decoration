@@ -15,6 +15,7 @@ import MerchantBankAccounts from './pages/merchant/MerchantBankAccounts';
 import MerchantCases from './pages/merchant/MerchantCases';
 import MerchantSettings from './pages/merchant/MerchantSettings';
 import MerchantChat from './pages/merchant/MerchantChat';
+import IMTest from './pages/merchant/IMTest';
 import MerchantLayout from './layouts/MerchantLayout';
 
 // 商家端专用路由
@@ -36,6 +37,8 @@ const merchantRouter = createBrowserRouter([
 
             // 客户消息
             { path: '/chat', element: <MerchantChat /> },
+            // IM 纯 SDK 测试页面
+            { path: '/im-test', element: <IMTest /> },
 
             // 财务模块
             { path: '/income', element: <MerchantIncome /> },
