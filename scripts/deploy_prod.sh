@@ -44,7 +44,7 @@ fi
 # 3. 构建并启动
 echo ""
 echo "🔨 正在构建并启动正式环境..."
-docker-compose -p $PROJECT_NAME -f $COMPOSE_FILE up -d --build
+docker compose -p $PROJECT_NAME -f $COMPOSE_FILE up -d --build
 
 # 4. 健康检查
 echo ""
@@ -54,7 +54,7 @@ sleep 10
 # 5. 验证服务状态
 echo ""
 echo "🔍 检查服务状态..."
-docker-compose -p $PROJECT_NAME ps
+docker compose -p $PROJECT_NAME ps
 
 # 6. 显示结果
 echo ""
@@ -68,8 +68,8 @@ echo "   - 移动端Web: http://您的域名/mobile/"
 echo "   - API接口:   http://您的域名/api/"
 echo ""
 echo "📋 常用命令:"
-echo "   查看日志:   docker-compose -p $PROJECT_NAME -f $COMPOSE_FILE logs -f"
-echo "   停止服务:   docker-compose -p $PROJECT_NAME -f $COMPOSE_FILE down"
-echo "   重启服务:   docker-compose -p $PROJECT_NAME -f $COMPOSE_FILE restart"
+echo "   查看日志:   docker compose -p $PROJECT_NAME -f $COMPOSE_FILE logs -f"
+echo "   停止服务:   docker compose -p $PROJECT_NAME -f $COMPOSE_FILE down"
+echo "   重启服务:   docker compose -p $PROJECT_NAME -f $COMPOSE_FILE restart"
 echo ""
 echo "============================================"

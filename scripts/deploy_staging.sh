@@ -63,7 +63,7 @@ fi
 # 4. 构建并启动
 echo ""
 echo "🔨 正在构建并启动测试环境..."
-docker-compose -p $PROJECT_NAME -f $COMPOSE_FILE up -d --build
+docker compose -p $PROJECT_NAME -f $COMPOSE_FILE up -d --build
 
 # 5. 显示状态
 echo ""
@@ -77,8 +77,8 @@ echo "   - 移动端Web: http://服务器IP:$STAGING_PORT/mobile/"
 echo "   - API接口:   http://服务器IP:$STAGING_PORT/api/"
 echo ""
 echo "📋 常用命令:"
-echo "   查看日志:   docker-compose -p $PROJECT_NAME logs -f"
-echo "   停止服务:   docker-compose -p $PROJECT_NAME down"
-echo "   重启服务:   docker-compose -p $PROJECT_NAME restart"
+echo "   查看日志:   docker compose -p $PROJECT_NAME logs -f"
+echo "   停止服务:   docker compose -p $PROJECT_NAME down"
+echo "   重启服务:   docker compose -p $PROJECT_NAME restart"
 echo ""
 echo "============================================"
