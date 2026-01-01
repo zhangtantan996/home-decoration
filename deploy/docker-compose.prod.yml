@@ -50,7 +50,7 @@ services:
     container_name: prod_web
     restart: always
     ports:
-      - "80:80"
+      - "8888:8888"
       - "443:443"
     depends_on:
       - api
