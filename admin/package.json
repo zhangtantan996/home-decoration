@@ -17,6 +17,7 @@
     "@tencentcloud/chat-uikit-react": "^4.5.1",
     "@tencentcloud/lite-chat": "^1.6.6",
     "@tencentcloud/tui-core-lite": "^1.0.0",
+    "@tencentcloud/tuiroom-engine-js": "^3.5.2",
     "@tencentcloud/uikit-base-component-react": "^1.1.4",
     "@tencentcloud/universal-api": "^2.4.0",
     "ahooks": "^3.9.6",
