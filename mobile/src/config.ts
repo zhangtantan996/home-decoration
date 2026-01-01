@@ -11,7 +11,8 @@ export const getApiBaseUrl = (): string => {
         }
         return 'http://localhost:8080';
     }
-    return 'http://47.99.105.195';
+    // 生产环境连接到测试服务器（端口 8888）
+    return 'http://47.99.105.195:8888';
 };
 
 // 获取前端 Web URL (React Native Web 服务，通常端口 8081)
@@ -22,7 +23,8 @@ export const getWebUrl = (): string => {
         }
         return 'http://localhost:8082';
     }
-    return 'http://47.99.105.195'; // 生产环境通常同域
+    // 生产环境连接到测试服务器（端口 8888）
+    return 'http://47.99.105.195:8888';
 };
 
 // 兼容旧代码 (API 使用)

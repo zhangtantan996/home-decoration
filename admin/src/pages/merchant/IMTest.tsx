@@ -71,7 +71,7 @@ const IMTest: React.FC = () => {
                 });
             });
 
-            chat.on(TIM.EVENT.CONVERSATION_LIST_UPDATED, (event: any) => {
+            chat.on(TIM.EVENT.CONVERSATION_LIST_UPDATED, () => {
                 log('📋 CONVERSATION_LIST_UPDATED 事件触发');
             });
 
