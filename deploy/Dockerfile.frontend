@@ -11,6 +11,9 @@ COPY admin/package.json ./
 RUN npm install --legacy-peer-deps
 
 COPY admin/ ./
+
+# Increase Node.js heap size for Vite build (adjusted for 2GB server)
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 RUN npm run build
 
 # ==========================================
