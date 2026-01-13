@@ -11,10 +11,12 @@ import (
 var (
 	userService         = &service.UserService{}
 	providerService     = &service.ProviderService{}
+	caseService         = &service.CaseService{}
 	projectService      = &service.ProjectService{}
 	escrowService       = &service.EscrowService{}
 	bookingService      = &service.BookingService{}
 	materialShopService = &service.MaterialShopService{}
+	wechatAuthService   *service.WechatAuthService
 	jwtConfig           *config.JWTConfig
 )
 
@@ -22,6 +24,7 @@ var (
 func InitHandlers(cfg *config.Config) {
 	jwtConfig = &cfg.JWT
 	service.InitJWT(cfg.JWT.Secret)
+	wechatAuthService = service.NewWechatAuthService(cfg.WechatMini)
 }
 
 // HealthCheck 健康检查

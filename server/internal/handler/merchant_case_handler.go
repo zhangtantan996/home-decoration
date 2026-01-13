@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"time"
 
@@ -46,41 +47,45 @@ func MerchantCaseList(c *gin.Context) {
 		var images []string
 		json.Unmarshal([]byte(audit.Images), &images)
 		resultList = append(resultList, gin.H{
-			"id":           0, // 新增暂无 ID
-			"auditId":      audit.ID,
-			"title":        audit.Title,
-			"coverImage":   audit.CoverImage,
-			"style":        audit.Style,
-			"layout":       audit.Layout,
-			"area":         audit.Area,
-			"price":        audit.Price,
-			"year":         audit.Year,
-			"description":  audit.Description,
-			"images":       images,
-			"sortOrder":    0,
-			"createdAt":    audit.CreatedAt,
-			"status":       audit.Status, // 0=待审核, 2=已拒绝
-			"actionType":   "create",
-			"rejectReason": audit.RejectReason,
+			"id":             0, // 新增暂无 ID
+			"auditId":        audit.ID,
+			"title":          audit.Title,
+			"coverImage":     audit.CoverImage,
+			"style":          audit.Style,
+			"layout":         audit.Layout,
+			"area":           audit.Area,
+			"price":          audit.Price,
+			"quoteTotalCent": audit.QuoteTotalCent,
+			"quoteCurrency":  audit.QuoteCurrency,
+			"year":           audit.Year,
+			"description":    audit.Description,
+			"images":         images,
+			"sortOrder":      0,
+			"createdAt":      audit.CreatedAt,
+			"status":         audit.Status, // 0=待审核, 2=已拒绝
+			"actionType":     "create",
+			"rejectReason":   audit.RejectReason,
 		})
 	}
 
 	// 处理已发布作品 (检查是否有更新/删除审核)
 	for _, pc := range publishedCases {
 		item := gin.H{
-			"id":          pc.ID,
-			"title":       pc.Title,
-			"coverImage":  pc.CoverImage,
-			"style":       pc.Style,
-			"layout":      pc.Layout,
-			"area":        pc.Area,
-			"price":       pc.Price,
-			"year":        pc.Year,
-			"description": pc.Description,
-			"sortOrder":   pc.SortOrder,
-			"createdAt":   pc.CreatedAt,
-			"status":      1, // 已发布
-			"actionType":  "",
+			"id":             pc.ID,
+			"title":          pc.Title,
+			"coverImage":     pc.CoverImage,
+			"style":          pc.Style,
+			"layout":         pc.Layout,
+			"area":           pc.Area,
+			"price":          pc.Price,
+			"quoteTotalCent": pc.QuoteTotalCent,
+			"quoteCurrency":  pc.QuoteCurrency,
+			"year":           pc.Year,
+			"description":    pc.Description,
+			"sortOrder":      pc.SortOrder,
+			"createdAt":      pc.CreatedAt,
+			"status":         1, // 已发布
+			"actionType":     "",
 		}
 
 		var images []string
@@ -102,6 +107,8 @@ func MerchantCaseList(c *gin.Context) {
 				item["layout"] = audit.Layout
 				item["area"] = audit.Area
 				item["price"] = audit.Price
+				item["quoteTotalCent"] = audit.QuoteTotalCent
+				item["quoteCurrency"] = audit.QuoteCurrency
 				item["year"] = audit.Year
 				item["description"] = audit.Description
 				var newImages []string
@@ -127,15 +134,18 @@ func MerchantCaseCreate(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 
 	var input struct {
-		Title       string   `json:"title" binding:"required"`
-		CoverImage  string   `json:"coverImage" binding:"required"`
-		Style       string   `json:"style"`
-		Layout      string   `json:"layout"`
-		Area        string   `json:"area"`
-		Price       float64  `json:"price"`
-		Year        string   `json:"year"`
-		Description string   `json:"description"`
-		Images      []string `json:"images" binding:"required,min=1"`
+		Title          string          `json:"title" binding:"required"`
+		CoverImage     string          `json:"coverImage" binding:"required"`
+		Style          string          `json:"style"`
+		Layout         string          `json:"layout"`
+		Area           string          `json:"area"`
+		Price          float64         `json:"price"`
+		QuoteTotalCent *int64          `json:"quoteTotalCent"`
+		QuoteCurrency  string          `json:"quoteCurrency"`
+		QuoteItems     json.RawMessage `json:"quoteItems"`
+		Year           string          `json:"year"`
+		Description    string          `json:"description"`
+		Images         []string        `json:"images" binding:"required,min=1"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
@@ -155,19 +165,46 @@ func MerchantCaseCreate(c *gin.Context) {
 
 	imagesJSON, _ := json.Marshal(input.Images)
 
+	quoteItemsJSON := "[]"
+	quoteTotalCent := int64(0)
+	quoteCurrency := input.QuoteCurrency
+	if quoteCurrency == "" {
+		quoteCurrency = "CNY"
+	}
+	if input.QuoteItems != nil {
+		var quoteItems []service.CaseQuoteItem
+		if err := json.Unmarshal(input.QuoteItems, &quoteItems); err != nil {
+			response.Error(c, 400, "报价明细格式错误")
+			return
+		}
+		computedTotal, normalizedItems := service.NormalizeCaseQuote(quoteItems)
+		quoteTotalCent = computedTotal
+		if input.QuoteTotalCent != nil && *input.QuoteTotalCent > 0 {
+			quoteTotalCent = *input.QuoteTotalCent
+		}
+		if b, err := json.Marshal(normalizedItems); err == nil {
+			quoteItemsJSON = string(b)
+		}
+	} else if input.QuoteTotalCent != nil && *input.QuoteTotalCent > 0 {
+		quoteTotalCent = *input.QuoteTotalCent
+	}
+
 	audit := model.CaseAudit{
-		ProviderID:  providerID,
-		ActionType:  "create",
-		Status:      0, // Pending
-		Title:       input.Title,
-		CoverImage:  input.CoverImage,
-		Style:       input.Style,
-		Layout:      input.Layout,
-		Area:        input.Area,
-		Price:       input.Price,
-		Year:        input.Year,
-		Description: input.Description,
-		Images:      string(imagesJSON),
+		ProviderID:     providerID,
+		ActionType:     "create",
+		Status:         0, // Pending
+		Title:          input.Title,
+		CoverImage:     input.CoverImage,
+		Style:          input.Style,
+		Layout:         input.Layout,
+		Area:           input.Area,
+		Price:          input.Price,
+		QuoteTotalCent: quoteTotalCent,
+		QuoteCurrency:  quoteCurrency,
+		QuoteItems:     quoteItemsJSON,
+		Year:           input.Year,
+		Description:    input.Description,
+		Images:         string(imagesJSON),
 	}
 
 	if err := repository.DB.Create(&audit).Error; err != nil {
@@ -187,15 +224,18 @@ func MerchantCaseUpdate(c *gin.Context) {
 	caseID := parseUint64(c.Param("id"))
 
 	var input struct {
-		Title       string   `json:"title"`
-		CoverImage  string   `json:"coverImage"`
-		Style       string   `json:"style"`
-		Layout      string   `json:"layout"`
-		Area        string   `json:"area"`
-		Price       float64  `json:"price"`
-		Year        string   `json:"year"`
-		Description string   `json:"description"`
-		Images      []string `json:"images"`
+		Title          string          `json:"title"`
+		CoverImage     string          `json:"coverImage"`
+		Style          string          `json:"style"`
+		Layout         string          `json:"layout"`
+		Area           string          `json:"area"`
+		Price          float64         `json:"price"`
+		QuoteTotalCent *int64          `json:"quoteTotalCent"`
+		QuoteCurrency  string          `json:"quoteCurrency"`
+		QuoteItems     json.RawMessage `json:"quoteItems"`
+		Year           string          `json:"year"`
+		Description    string          `json:"description"`
+		Images         []string        `json:"images"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
@@ -208,6 +248,32 @@ func MerchantCaseUpdate(c *gin.Context) {
 
 	imagesJSON, _ := json.Marshal(input.Images)
 
+	var (
+		quoteItemsJSON string
+		quoteTotalCent int64
+		hasQuoteItems  bool
+	)
+	if input.QuoteItems != nil {
+		hasQuoteItems = true
+		var quoteItems []service.CaseQuoteItem
+		if err := json.Unmarshal(input.QuoteItems, &quoteItems); err != nil {
+			response.Error(c, 400, "报价明细格式错误")
+			return
+		}
+		computedTotal, normalizedItems := service.NormalizeCaseQuote(quoteItems)
+		quoteTotalCent = computedTotal
+		if input.QuoteTotalCent != nil && *input.QuoteTotalCent > 0 {
+			quoteTotalCent = *input.QuoteTotalCent
+		}
+		if b, err := json.Marshal(normalizedItems); err == nil {
+			quoteItemsJSON = string(b)
+		} else {
+			quoteItemsJSON = "[]"
+		}
+	} else if input.QuoteTotalCent != nil && *input.QuoteTotalCent > 0 {
+		quoteTotalCent = *input.QuoteTotalCent
+	}
+
 	if hasPending {
 		// 更新现有的 Audit
 		updates := map[string]interface{}{
@@ -217,28 +283,49 @@ func MerchantCaseUpdate(c *gin.Context) {
 			"layout":      input.Layout,
 			"area":        input.Area,
 			"price":       input.Price,
+			"updated_at":  time.Now(),
 			"year":        input.Year,
 			"description": input.Description,
 			"images":      string(imagesJSON),
-			"updated_at":  time.Now(),
+		}
+		if input.QuoteCurrency != "" {
+			updates["quote_currency"] = input.QuoteCurrency
+		}
+		if input.QuoteTotalCent != nil || hasQuoteItems {
+			updates["quote_total_cent"] = quoteTotalCent
+		}
+		if hasQuoteItems {
+			updates["quote_items"] = quoteItemsJSON
 		}
 		repository.DB.Model(&existingAudit).Updates(updates)
 	} else {
 		// 创建新的 Audit
 		newAudit := model.CaseAudit{
-			ProviderID:  providerID,
-			CaseID:      &caseID,
-			ActionType:  "update",
-			Status:      0,
-			Title:       input.Title,
-			CoverImage:  input.CoverImage,
-			Style:       input.Style,
-			Layout:      input.Layout,
-			Area:        input.Area,
-			Price:       input.Price,
-			Year:        input.Year,
-			Description: input.Description,
-			Images:      string(imagesJSON),
+			ProviderID:     providerID,
+			CaseID:         &caseID,
+			ActionType:     "update",
+			Status:         0,
+			Title:          input.Title,
+			CoverImage:     input.CoverImage,
+			Style:          input.Style,
+			Layout:         input.Layout,
+			Area:           input.Area,
+			Price:          input.Price,
+			QuoteTotalCent: quoteTotalCent,
+			QuoteCurrency:  input.QuoteCurrency,
+			QuoteItems:     quoteItemsJSON,
+			Year:           input.Year,
+			Description:    input.Description,
+			Images:         string(imagesJSON),
+		}
+		if newAudit.QuoteCurrency == "" {
+			newAudit.QuoteCurrency = "CNY"
+		}
+		if !hasQuoteItems {
+			newAudit.QuoteItems = "[]"
+			if input.QuoteTotalCent == nil {
+				newAudit.QuoteTotalCent = 0
+			}
 		}
 		if err := repository.DB.Create(&newAudit).Error; err != nil {
 			response.Error(c, 500, "提交失败")
@@ -316,19 +403,22 @@ func MerchantCaseGet(c *gin.Context) {
 		var images []string
 		json.Unmarshal([]byte(audit.Images), &images)
 		response.Success(c, gin.H{
-			"id":          caseID,
-			"auditId":     audit.ID,
-			"title":       audit.Title,
-			"coverImage":  audit.CoverImage,
-			"style":       audit.Style,
-			"layout":      audit.Layout,
-			"area":        audit.Area,
-			"price":       audit.Price,
-			"year":        audit.Year,
-			"description": audit.Description,
-			"images":      images,
-			"status":      0,
-			"actionType":  audit.ActionType,
+			"id":             caseID,
+			"auditId":        audit.ID,
+			"title":          audit.Title,
+			"coverImage":     audit.CoverImage,
+			"style":          audit.Style,
+			"layout":         audit.Layout,
+			"area":           audit.Area,
+			"price":          audit.Price,
+			"quoteTotalCent": audit.QuoteTotalCent,
+			"quoteCurrency":  audit.QuoteCurrency,
+			"quoteItems":     audit.QuoteItems,
+			"year":           audit.Year,
+			"description":    audit.Description,
+			"images":         images,
+			"status":         0,
+			"actionType":     audit.ActionType,
 		})
 		return
 	}
@@ -345,19 +435,22 @@ func MerchantCaseGet(c *gin.Context) {
 	json.Unmarshal([]byte(providerCase.Images), &images)
 
 	response.Success(c, gin.H{
-		"id":          providerCase.ID,
-		"title":       providerCase.Title,
-		"coverImage":  providerCase.CoverImage,
-		"style":       providerCase.Style,
-		"layout":      providerCase.Layout,
-		"area":        providerCase.Area,
-		"price":       providerCase.Price,
-		"year":        providerCase.Year,
-		"description": providerCase.Description,
-		"images":      images,
-		"sortOrder":   providerCase.SortOrder,
-		"createdAt":   providerCase.CreatedAt,
-		"status":      1,
+		"id":             providerCase.ID,
+		"title":          providerCase.Title,
+		"coverImage":     providerCase.CoverImage,
+		"style":          providerCase.Style,
+		"layout":         providerCase.Layout,
+		"area":           providerCase.Area,
+		"price":          providerCase.Price,
+		"quoteTotalCent": providerCase.QuoteTotalCent,
+		"quoteCurrency":  providerCase.QuoteCurrency,
+		"quoteItems":     providerCase.QuoteItems,
+		"year":           providerCase.Year,
+		"description":    providerCase.Description,
+		"images":         images,
+		"sortOrder":      providerCase.SortOrder,
+		"createdAt":      providerCase.CreatedAt,
+		"status":         1,
 	})
 }
 

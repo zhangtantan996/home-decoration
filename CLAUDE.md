@@ -2,10 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ 开发约束（最高优先级）
+
+**所有代码修改必须先阅读以下文档**:
+1. **[docs/CLAUDE_DEV_GUIDE.md](docs/CLAUDE_DEV_GUIDE.md)** - 开发约束和规范（P0 优先级）
+2. **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - 已知问题解决方案
+
+这两份文档包含:
+- ✅ 技术栈版本约束（React 18.3.1 vs 19.2.0）
+- ✅ 文件命名规范（Go: snake_case, React: PascalCase）
+- ✅ 架构约束（分层架构、路由规范）
+- ✅ 禁止操作清单（依赖管理、数据库、安全）
+- ✅ 问题排查流程（5 步闭环）
+- ✅ 常见问题解决方案
+
+---
+
 ## Project Overview
 
 This is a **home decoration platform** (装修设计一体化平台) that connects homeowners with designers, construction companies, foremen, and workers. The platform includes:
 - **Mobile app** (React Native) - homeowner native app (iOS/Android only)
+- **WeChat Mini Program** (Taro + React) - WeChat mini program for homeowners
 - **Admin panel** (React + Ant Design) - management dashboard
 - **Backend API** (Go + Gin) - REST API with WebSocket support
 - **Database** - PostgreSQL with Redis caching
@@ -18,14 +35,16 @@ This project uses a **hybrid React version strategy** to accommodate different e
 |-----------|--------------|--------|
 | **Admin Panel** | 18.3.1 | Required for Ant Design 5.x and Tencent Cloud IM SDK compatibility |
 | **Mobile App** | 19.2.0 | React Native 0.83 supports React 19, leveraging latest features |
+| **WeChat Mini Program** | 18.3.1 | Taro 3.x requires React 18.x for WeChat mini program compatibility |
 
-Both projects are independent in this monorepo with separate `package.json` files, ensuring no version conflicts.
+All projects are independent in this monorepo with separate `package.json` files, ensuring no version conflicts.
 
 ## Repository Structure
 
 ```
 ├── server/          # Go backend (Gin + GORM + PostgreSQL)
 ├── mobile/          # React Native app (iOS/Android native only)
+├── mini/            # WeChat Mini Program (Taro + React)
 ├── admin/           # Admin panel (React + Vite + Ant Design)
 ├── docs/            # Product documentation (PRD, design specs)
 ├── deploy/          # Deployment configs (Docker, Nginx)
@@ -50,6 +69,11 @@ docker-compose -f docker-compose.local.yml up -d
 **Note**: Mobile app is NOT included in Docker Compose. Use React Native Metro bundler directly:
 ```bash
 cd mobile && npm start
+```
+
+**Note**: WeChat Mini Program is NOT included in Docker Compose. Use Taro dev server:
+```bash
+cd mini && npm run dev:weapp
 ```
 
 Rebuild backend API only:
@@ -199,6 +223,36 @@ npm run ios
 
 **Note**: The mobile app uses React 19.2.0 and is designed exclusively for native platforms. Production builds are done through Android Studio (APK/AAB) or Xcode (IPA).
 
+### WeChat Mini Program (Taro)
+
+**IMPORTANT**: WeChat Mini Program uses **Taro 3.x + React 18.3.1** for WeChat platform compatibility.
+
+**Development server**:
+```bash
+cd mini
+npm install
+npm run dev:weapp
+```
+
+Then import the generated `mini/dist` directory into WeChat Developer Tools.
+
+**Build for production**:
+```bash
+cd mini
+npm run build:weapp
+```
+
+**Environment variables**:
+- `TARO_APP_API_BASE`: API base URL (default: `http://localhost:8080/api/v1`)
+- Backend requires `WECHAT_MINI_APPID` and `WECHAT_MINI_SECRET` environment variables
+
+**Authentication flow**:
+- Uses WeChat login: `wx.login` → `POST /api/v1/auth/wechat/mini/login`
+- Phone binding: `wx.getPhoneNumber` → `POST /api/v1/auth/wechat/mini/bind-phone`
+- Shares same JWT/RefreshToken system with mobile app
+
+**Note**: See `docs/WECHAT_MINIPROGRAM_STATUS.md` for current development status and `mini/README.md` for detailed setup.
+
 ### Android Debugging with ADB
 
 Enable Metro bundler access from Android device:
@@ -246,7 +300,7 @@ adb reverse tcp:8080 tcp:8080
 
 ### Admin Panel Architecture (React)
 
-**Framework**: React 19 + TypeScript + Vite + Ant Design Pro Components
+**Framework**: React 18.3.1 + TypeScript + Vite + Ant Design Pro Components
 
 **State Management**: Zustand (see `admin/src/stores/`)
 
@@ -299,6 +353,30 @@ adb reverse tcp:8080 tcp:8080
 
 **WebSocket**: Connects to backend `/api/v1/ws` when authenticated (see `mobile/src/services/WebSocketService.ts`)
 
+### WeChat Mini Program Architecture (Taro)
+
+**Framework**: Taro 3.x + React 18.3.1 + TypeScript
+
+**Navigation**:
+- Taro built-in navigation system
+- 5 main tabs: Home, Inspiration, Progress, Message, Profile
+
+**State Management**: Zustand
+- `authStore` - WeChat authentication state (openid, JWT tokens)
+- Persistent storage via Taro.setStorage
+
+**Key Features**:
+- WeChat login integration (`wx.login`, `wx.getPhoneNumber`)
+- Request wrapper with auto token refresh (`mini/src/utils/request.ts`)
+- Shared backend API with mobile app
+- Theme system (`mini/src/theme/`)
+
+**Authentication**: Uses WeChat-specific login flow, then shares JWT system with mobile app
+
+**API Integration**: Connects to same backend as mobile app (`/api/v1/*`)
+
+**Note**: Currently in MVP stage with basic authentication. See `docs/WECHAT_MINIPROGRAM_STATUS.md` for roadmap.
+
 ## Important Technical Notes
 
 ### Backend
@@ -326,29 +404,33 @@ adb reverse tcp:8080 tcp:8080
    - REDIS_HOST, REDIS_PORT
    - JWT_SECRET
 
-### Frontend (Admin + Mobile)
+### Frontend (Admin + Mobile + Mini Program)
 
 1. **API Base URL**:
    - Admin: Uses environment variable `VITE_API_URL`
    - Mobile: Hardcoded in `mobile/src/services/api.ts`
+   - Mini Program: Uses environment variable `TARO_APP_API_BASE`
    - Default: `http://localhost:8080/api/v1`
 
 2. **Admin Routing**: All admin routes have `/admin` basename (see `router.tsx`)
 
-3. **Mobile Dual Platform**:
-   - Native: React Native components + navigation
-   - Web: Same code runs in browser via Vite + react-native-web
-   - Icons: Uses `lucide-react-native` (compatible with both)
+3. **Mobile Platform**: Native-only (iOS/Android)
+   - React Native components + navigation
+   - Icons: Uses `lucide-react-native`
 
-4. **State Persistence**:
+4. **WeChat Mini Program**: WeChat platform only
+   - Taro components (compile to WeChat mini program)
+   - Uses WeChat APIs (`wx.login`, `wx.getPhoneNumber`, etc.)
+
+5. **State Persistence**:
    - Admin: Browser localStorage
    - Mobile Native: `@react-native-async-storage/async-storage`
    - Mobile tokens: Encrypted keychain storage
+   - Mini Program: Taro.setStorage (WeChat storage API)
 
-5. **Authentication Flow**:
-   - Login returns JWT token
-   - Token stored securely (keychain on mobile, localStorage on admin)
-   - Token sent in `Authorization: Bearer <token>` header
+6. **Authentication Flow**:
+   - **Admin/Mobile**: Login returns JWT token → stored securely → sent in `Authorization: Bearer <token>` header
+   - **Mini Program**: WeChat login (`wx.login`) → backend validates → returns JWT → same token system as mobile
    - WebSocket connects after auth with token in query params
 
 ## Common Development Patterns
@@ -376,6 +458,14 @@ adb reverse tcp:8080 tcp:8080
 3. Add to Stack.Navigator (authenticated or unauthenticated)
 4. Update store in `mobile/src/store/` if needed
 5. Add API integration via `mobile/src/services/api.ts`
+
+### Adding a New Mini Program Page
+
+1. Create page in `mini/src/pages/{pageName}/index.tsx`
+2. Register in `mini/src/app.config.ts` (add to pages array)
+3. Add navigation logic using `Taro.navigateTo` or `Taro.switchTab`
+4. Update store in `mini/src/store/` if needed
+5. Add API integration via `mini/src/services/` (use `mini/src/utils/request.ts`)
 
 ## Database Schema Notes
 
@@ -433,6 +523,13 @@ Refer to these docs for detailed product context before making architectural cha
 - Build IPA via Xcode
 - No Docker support (native platforms only)
 
+**WeChat Mini Program Deployment**:
+- Build via `npm run build:weapp` in `mini/` directory
+- Upload to WeChat Mini Program platform via WeChat Developer Tools
+- Requires WeChat Mini Program account and AppID
+- Backend must configure `WECHAT_MINI_APPID` and `WECHAT_MINI_SECRET`
+- No Docker support (WeChat platform only)
+
 ### Production Docker Compose
 
 Use [deploy/docker-compose.prod.yml](deploy/docker-compose.prod.yml):
@@ -464,6 +561,10 @@ REDIS_PASSWORD=your_redis_password
 # Backend
 SERVER_MODE=release
 JWT_SECRET=your_jwt_secret
+
+# WeChat Mini Program (if using)
+WECHAT_MINI_APPID=your_wechat_mini_appid
+WECHAT_MINI_SECRET=your_wechat_mini_secret
 ```
 
 Refer to [server/config.yaml](server/config.yaml) and [server/config.docker.yaml](server/config.docker.yaml) for full configuration options.

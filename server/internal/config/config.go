@@ -2,16 +2,18 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Log      LogConfig      `mapstructure:"log"`
+	Server     ServerConfig     `mapstructure:"server"`
+	Database   DatabaseConfig   `mapstructure:"database"`
+	Redis      RedisConfig      `mapstructure:"redis"`
+	JWT        JWTConfig        `mapstructure:"jwt"`
+	Log        LogConfig        `mapstructure:"log"`
+	WechatMini WechatMiniConfig `mapstructure:"wechat_mini"`
 }
 
 type ServerConfig struct {
@@ -47,6 +49,13 @@ type LogConfig struct {
 	File  string `mapstructure:"file"`  // 日志文件路径
 }
 
+// WechatMiniConfig 微信小程序配置
+type WechatMiniConfig struct {
+	AppID                  string `mapstructure:"app_id"`
+	AppSecret              string `mapstructure:"app_secret"`
+	BindTokenExpireMinutes int    `mapstructure:"bind_token_expire_minutes"`
+}
+
 func Load() (*Config, error) {
 	// 根据 APP_ENV 环境变量选择配置文件
 	// local/docker 环境使用 config.docker.yaml
@@ -60,6 +69,8 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 	viper.AutomaticEnv()
+	// 设置环境变量键名替换规则：将 . 替换为 _（如 database.password -> DATABASE_PASSWORD）
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	// 设置默认值
 	viper.SetDefault("server.host", "0.0.0.0")
@@ -75,6 +86,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("jwt.expire_hour", 72)
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", "logs/backend.log")
+	viper.SetDefault("wechat_mini.bind_token_expire_minutes", 5)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

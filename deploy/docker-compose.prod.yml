@@ -1,14 +1,18 @@
 services:
-  # Database logic: use RDS/Cloud DB in production. 
-  # This service is kept for "Complete Self-Hosted" option or testing.
-  # In true production, remove this and point api to RDS.
+  # ⚠️  生产环境数据库配置说明
+  # 推荐使用云数据库服务（如 AWS RDS, 阿里云 RDS, 腾讯云 CDB）
+  # 如需自托管，请务必：
+  # 1. 设置强密码环境变量（至少16字符，包含大小写字母、数字、特殊字符）
+  # 2. 限制数据库端口仅对内网开放，不要暴露到公网
+  # 3. 定期备份数据库
   db:
     image: postgres:15-alpine
     container_name: prod_db
     restart: always
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-securepassword}
+      # ⚠️ 必须设置环境变量 DB_PASSWORD
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD not set}
       POSTGRES_DB: ${DB_NAME:-home_decoration}
     volumes:
       - db_data_prod:/var/lib/postgresql/data
@@ -19,7 +23,8 @@ services:
     image: redis:6.2-alpine
     container_name: prod_redis
     restart: always
-    command: redis-server --requirepass ${REDIS_PASSWORD:-secureredispassword}
+    # ⚠️ 必须设置环境变量 REDIS_PASSWORD
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD not set}
     volumes:
       - redis_data_prod:/data
     networks:
@@ -34,9 +39,11 @@ services:
     environment:
       - SERVER_MODE=release
       - DB_HOST=db
-      - DB_PASSWORD=${DB_PASSWORD:-securepassword}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD not set}
       - REDIS_HOST=redis
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-secureredispassword}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD not set}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET not set}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY not set}
     depends_on:
       - db
       - redis

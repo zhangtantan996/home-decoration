@@ -1,0 +1,40 @@
+{
+  "name": "home-decoration-mini",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:weapp": "taro build --type weapp",
+    "lint": "eslint --ext .ts,.tsx src",
+    "format": "prettier --write \"src/**/*.{ts,tsx,scss}\""
+  },
+  "dependencies": {
+    "@tarojs/components": "3.6.37",
+    "@tarojs/helper": "3.6.37",
+    "@tarojs/plugin-framework-react": "3.6.37",
+    "@tarojs/plugin-platform-weapp": "3.6.37",
+    "@tarojs/react": "3.6.37",
+    "@tarojs/runtime": "3.6.37",
+    "@tarojs/taro": "3.6.37",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "zustand": "4.5.2"
+  },
+  "devDependencies": {
+    "@babel/core": "7.23.9",
+    "@tarojs/cli": "3.6.37",
+    "@tarojs/mini-runner": "3.6.37",
+    "@tarojs/webpack5-runner": "3.6.37",
+    "@types/react": "18.2.48",
+    "@types/react-dom": "18.2.18",
+    "eslint": "8.57.0",
+    "eslint-config-taro": "3.6.37",
+    "eslint-plugin-import": "2.29.1",
+    "eslint-plugin-react": "7.33.2",
+    "eslint-plugin-react-hooks": "4.6.0",
+    "prettier": "3.2.5",
+    "sass": "1.70.0",
+    "stylelint": "15.10.3",
+    "typescript": "5.4.5"
+  }
+}

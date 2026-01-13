@@ -9,22 +9,12 @@ import {
     ArrowLeftOutlined, ArrowRightOutlined, CheckOutlined
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { dictionaryApi } from '../../services/dictionaryApi';
+import { regionApi } from '../../services/regionApi';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
 const { TextArea } = Input;
-
-// 风格选项
-const STYLE_OPTIONS = [
-    '现代简约', '北欧风格', '新中式', '轻奢风格',
-    '美式风格', '欧式风格', '日式风格', '工业风格'
-];
-
-// 服务区域选项（西安市区）
-const AREA_OPTIONS = [
-    '雁塔区', '碑林区', '新城区', '莲湖区', '未央区',
-    '灞桥区', '长安区', '高新区', '曲江新区', '经开区'
-];
 
 interface PortfolioCase {
     title: string;
@@ -49,6 +39,10 @@ const MerchantRegister: React.FC = () => {
         { title: '', images: [], style: '', area: '' },
     ]);
 
+    // Dictionary Options
+    const [styleOptions, setStyleOptions] = useState<string[]>([]);
+    const [areaOptions, setAreaOptions] = useState<string[]>([]);
+
     const typeLabels: Record<string, string> = {
         personal: '独立设计师',
         studio: '设计工作室',
@@ -65,7 +59,38 @@ const MerchantRegister: React.FC = () => {
 
     useEffect(() => {
         form.setFieldsValue({ applicantType });
+        loadStyleOptions();
+        loadAreaOptions();
     }, [applicantType, form]);
+
+    const loadStyleOptions = async () => {
+        try {
+            const options = await dictionaryApi.getOptions('style');
+            setStyleOptions(options.map(opt => opt.label));
+        } catch (error) {
+            console.error('加载装修风格失败:', error);
+            // 降级到默认选项
+            setStyleOptions([
+                '现代简约', '北欧风格', '新中式', '轻奢风格',
+                '美式风格', '欧式风格', '日式风格', '工业风格'
+            ]);
+        }
+    };
+
+    const loadAreaOptions = async () => {
+        try {
+            // 加载陕西省西安市的区县数据
+            const districts = await regionApi.getChildren('610100'); // 西安市代码
+            setAreaOptions(districts.map(d => d.name));
+        } catch (error) {
+            console.error('加载服务区域失败:', error);
+            // 降级到默认选项
+            setAreaOptions([
+                '雁塔区', '碑林区', '新城区', '莲湖区', '未央区',
+                '灞桥区', '长安区', '高新区', '曲江新区', '经开区'
+            ]);
+        }
+    };
 
     // 发送验证码
     const handleSendCode = async () => {
@@ -424,7 +449,7 @@ const MerchantRegister: React.FC = () => {
                                                 value={caseItem.style || undefined}
                                                 onChange={(v) => updatePortfolioCase(index, 'style', v)}
                                             >
-                                                {STYLE_OPTIONS.map(s => (
+                                                {styleOptions.map(s => (
                                                     <Select.Option key={s} value={s}>{s}</Select.Option>
                                                 ))}
                                             </Select>
@@ -495,7 +520,7 @@ const MerchantRegister: React.FC = () => {
                                 placeholder="选择可服务的区域"
                                 style={{ width: '100%' }}
                             >
-                                {AREA_OPTIONS.map(area => (
+                                {areaOptions.map(area => (
                                     <Select.Option key={area} value={area}>{area}</Select.Option>
                                 ))}
                             </Select>
@@ -510,7 +535,7 @@ const MerchantRegister: React.FC = () => {
                                 placeholder="选择擅长的设计风格"
                                 style={{ width: '100%' }}
                             >
-                                {STYLE_OPTIONS.map(style => (
+                                {styleOptions.map(style => (
                                     <Select.Option key={style} value={style}>{style}</Select.Option>
                                 ))}
                             </Select>

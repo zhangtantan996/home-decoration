@@ -25,6 +25,17 @@ type User struct {
 	LastFailedLoginAt *time.Time `json:"-"`                  // 最后失败登录时间
 }
 
+// UserWechatBinding 微信小程序绑定关系
+type UserWechatBinding struct {
+	Base
+	UserID      uint64     `json:"userId" gorm:"index;uniqueIndex:idx_user_wechat_user_app"`
+	AppID       string     `json:"appId" gorm:"size:64;uniqueIndex:idx_user_wechat_user_app;uniqueIndex:idx_user_wechat_app_openid"`
+	OpenID      string     `json:"openId" gorm:"size:128;uniqueIndex:idx_user_wechat_app_openid"`
+	UnionID     string     `json:"unionId" gorm:"size:128;index"`
+	BoundAt     *time.Time `json:"boundAt"`
+	LastLoginAt *time.Time `json:"lastLoginAt"`
+}
+
 // Provider 服务商
 type Provider struct {
 	Base
@@ -63,17 +74,20 @@ type Provider struct {
 // ProviderCase 服务商案例/作品
 type ProviderCase struct {
 	Base
-	ProviderID  uint64  `json:"providerId" gorm:"index"`
-	Title       string  `json:"title" gorm:"size:100"`
-	CoverImage  string  `json:"coverImage" gorm:"size:500"`
-	Style       string  `json:"style" gorm:"size:50"`   // 风格
-	Layout      string  `json:"layout" gorm:"size:50"`  // 户型
-	Area        string  `json:"area" gorm:"size:20"`    // 面积
-	Price       float64 `json:"price" gorm:"default:0"` // 总价(万)
-	Year        string  `json:"year" gorm:"size:10"`    // 年份
-	Description string  `json:"description" gorm:"type:text"`
-	Images      string  `json:"images" gorm:"type:text"` // JSON数组
-	SortOrder   int     `json:"sortOrder" gorm:"default:0"`
+	ProviderID     uint64  `json:"providerId" gorm:"index"`
+	Title          string  `json:"title" gorm:"size:100"`
+	CoverImage     string  `json:"coverImage" gorm:"size:500"`
+	Style          string  `json:"style" gorm:"size:50"`                       // 风格
+	Layout         string  `json:"layout" gorm:"size:50"`                      // 户型
+	Area           string  `json:"area" gorm:"size:20"`                        // 面积
+	Price          float64 `json:"price" gorm:"default:0"`                     // 总价(万)
+	QuoteTotalCent int64   `json:"quoteTotalCent" gorm:"default:0"`            // 报价总计（分）
+	QuoteCurrency  string  `json:"quoteCurrency" gorm:"size:10;default:'CNY'"` // 币种
+	QuoteItems     string  `json:"-" gorm:"type:jsonb;default:'[]'"`           // 报价明细（JSONB），通过专用接口返回
+	Year           string  `json:"year" gorm:"size:10"`                        // 年份
+	Description    string  `json:"description" gorm:"type:text"`
+	Images         string  `json:"images" gorm:"type:text"` // JSON数组
+	SortOrder      int     `json:"sortOrder" gorm:"default:0"`
 }
 
 // ProviderReview 服务商评价
@@ -418,16 +432,19 @@ type CaseAudit struct {
 	ActionType string  `json:"actionType" gorm:"size:20"` // create, update, delete
 
 	// 作品数据快照
-	Title       string  `json:"title" gorm:"size:100"`
-	CoverImage  string  `json:"coverImage" gorm:"size:500"`
-	Style       string  `json:"style" gorm:"size:50"`
-	Layout      string  `json:"layout" gorm:"size:50"`
-	Area        string  `json:"area" gorm:"size:20"`
-	Price       float64 `json:"price" gorm:"default:0"`
-	Year        string  `json:"year" gorm:"size:10"`
-	Description string  `json:"description" gorm:"type:text"`
-	Images      string  `json:"images" gorm:"type:text"`
-	SortOrder   int     `json:"sortOrder" gorm:"default:0"`
+	Title          string  `json:"title" gorm:"size:100"`
+	CoverImage     string  `json:"coverImage" gorm:"size:500"`
+	Style          string  `json:"style" gorm:"size:50"`
+	Layout         string  `json:"layout" gorm:"size:50"`
+	Area           string  `json:"area" gorm:"size:20"`
+	Price          float64 `json:"price" gorm:"default:0"`
+	QuoteTotalCent int64   `json:"quoteTotalCent" gorm:"default:0"`            // 报价总计（分）
+	QuoteCurrency  string  `json:"quoteCurrency" gorm:"size:10;default:'CNY'"` // 币种
+	QuoteItems     string  `json:"quoteItems" gorm:"type:jsonb;default:'[]'"`  // 报价明细（JSONB 数组）
+	Year           string  `json:"year" gorm:"size:10"`
+	Description    string  `json:"description" gorm:"type:text"`
+	Images         string  `json:"images" gorm:"type:text"`
+	SortOrder      int     `json:"sortOrder" gorm:"default:0"`
 
 	// 审核状态
 	Status       int8       `json:"status" gorm:"default:0"` // 0:pending, 1:approved, 2:rejected

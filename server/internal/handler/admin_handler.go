@@ -8,11 +8,14 @@ import (
 	"home-decoration-server/pkg/response"
 	"log"
 	"time"
+	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 )
 
 // ==================== Admin 统计 API ====================
+
+var adminRegionService = &service.RegionService{}
 
 // AdminStatsOverview 概览统计
 func AdminStatsOverview(c *gin.Context) {
@@ -404,14 +407,36 @@ func AdminUpdateProvider(c *gin.Context) {
 		PriceUnit       string  `json:"priceUnit"`       // 价格单位
 		CoverImage      string  `json:"coverImage"`      // 封面背景图
 		ServiceIntro    string  `json:"serviceIntro"`    // 服务介绍
-		TeamSize        int     `json:"teamSize"`        // 团队规模
-		EstablishedYear int     `json:"establishedYear"` // 成立年份
-		Certifications  string  `json:"certifications"`  // 资质认证（JSON数组）
-		ServiceArea     string  `json:"serviceArea"`     // 服务区域（JSON数组）
+		TeamSize        int      `json:"teamSize"`        // 团队规模
+		EstablishedYear int      `json:"establishedYear"` // 成立年份
+		Certifications  string   `json:"certifications"`  // 资质认证（JSON数组）
+		ServiceArea     []string `json:"serviceArea"`     // 服务区域（区域代码数组）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
+	}
+
+	// 验证服务区域代码（如果提供）支持自动转换名称为代码
+	var serviceAreaCodes []string
+	if len(req.ServiceArea) > 0 {
+		if err := adminRegionService.ValidateRegionCodes(req.ServiceArea); err != nil {
+			// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
+			codes, convertErr := adminRegionService.ConvertNamesToCodes(req.ServiceArea)
+			if convertErr != nil {
+				response.BadRequest(c, "服务区域验证失败: "+err.Error())
+				return
+			}
+			// 转换成功后再次验证代码
+			if err := adminRegionService.ValidateRegionCodes(codes); err != nil {
+				response.BadRequest(c, "服务区域代码验证失败: "+err.Error())
+				return
+			}
+			serviceAreaCodes = codes
+		} else {
+			// 如果是代码格式，直接使用
+			serviceAreaCodes = req.ServiceArea
+		}
 	}
 
 	updates := map[string]interface{}{}
@@ -463,8 +488,9 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.Certifications != "" {
 		updates["certifications"] = req.Certifications
 	}
-	if req.ServiceArea != "" {
-		updates["service_area"] = req.ServiceArea
+	if len(serviceAreaCodes) > 0 {
+		serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
+		updates["service_area"] = string(serviceAreaJSON)
 	}
 	updates["status"] = req.Status
 

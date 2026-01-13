@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import type { RcFile, UploadFile, UploadProps } from 'antd/es/upload/interface';
 import { merchantCaseApi, merchantUploadApi } from '../../services/merchantApi';
+import { dictionaryApi } from '../../services/dictionaryApi';
 
 interface CaseItem {
     id: number;
@@ -33,16 +34,6 @@ interface CaseItem {
     rejectReason?: string; // 拒绝原因
 }
 
-const STYLE_OPTIONS = [
-    '现代简约', '北欧风格', '新中式', '轻奢风格',
-    '美式风格', '欧式风格', '日式风格', '工业风格',
-    '法式风格', '地中海风格'
-];
-
-const LAYOUT_OPTIONS = [
-    '一室', '一室一厅', '两室一厅', '两室两厅',
-    '三室一厅', '三室两厅', '四室及以上', '复式', '别墅', '其他'
-];
 
 // 动态生成年份选项 (2000 - 当前年份)
 const generateYearOptions = () => {
@@ -55,7 +46,9 @@ const generateYearOptions = () => {
 };
 const YEAR_OPTIONS = generateYearOptions();
 
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8080';
+const API_BASE_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:8080'
+    : '';
 
 const getFullUrl = (path: string) => {
     if (!path) return '';
@@ -77,9 +70,44 @@ const MerchantCases: React.FC = () => {
     const [coverFileList, setCoverFileList] = useState<UploadFile[]>([]);
     const [detailFileList, setDetailFileList] = useState<UploadFile[]>([]);
 
+    // Dictionary Options
+    const [styleOptions, setStyleOptions] = useState<string[]>([]);
+    const [layoutOptions, setLayoutOptions] = useState<string[]>([]);
+
     useEffect(() => {
         fetchCases();
+        loadStyleOptions();
+        loadLayoutOptions();
     }, []);
+
+    const loadStyleOptions = async () => {
+        try {
+            const options = await dictionaryApi.getOptions('style');
+            setStyleOptions(options.map(opt => opt.label));
+        } catch (error) {
+            console.error('加载装修风格失败:', error);
+            // 降级到默认选项
+            setStyleOptions([
+                '现代简约', '北欧风格', '新中式', '轻奢风格',
+                '美式风格', '欧式风格', '日式风格', '工业风格',
+                '法式风格', '地中海风格'
+            ]);
+        }
+    };
+
+    const loadLayoutOptions = async () => {
+        try {
+            const options = await dictionaryApi.getOptions('layout');
+            setLayoutOptions(options.map(opt => opt.label));
+        } catch (error) {
+            console.error('加载户型失败:', error);
+            // 降级到默认选项
+            setLayoutOptions([
+                '一室', '一室一厅', '两室一厅', '两室两厅',
+                '三室一厅', '三室两厅', '四室及以上', '复式', '别墅', '其他'
+            ]);
+        }
+    };
 
     const fetchCases = async () => {
         setLoading(true);
@@ -518,7 +546,7 @@ const MerchantCases: React.FC = () => {
                                 rules={[{ required: true, message: '请选择设计风格' }]}
                             >
                                 <Select placeholder="选择风格">
-                                    {STYLE_OPTIONS.map(s => (
+                                    {styleOptions.map(s => (
                                         <Select.Option key={s} value={s}>{s}</Select.Option>
                                     ))}
                                 </Select>
@@ -531,7 +559,7 @@ const MerchantCases: React.FC = () => {
                                 rules={[{ required: true, message: '请选择户型' }]}
                             >
                                 <Select placeholder="选择户型">
-                                    {LAYOUT_OPTIONS.map(l => (
+                                    {layoutOptions.map(l => (
                                         <Select.Option key={l} value={l}>{l}</Select.Option>
                                     ))}
                                 </Select>

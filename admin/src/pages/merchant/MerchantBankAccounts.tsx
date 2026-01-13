@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { merchantBankAccountApi } from '../../services/merchantApi';
 import {
     Card, Table, Button, Modal, Form, Input, Select,
     message, Tag, Popconfirm, Space, Empty
@@ -46,7 +47,7 @@ const MerchantBankAccounts: React.FC = () => {
     const [submitting, setSubmitting] = useState(false);
     const [form] = Form.useForm();
 
-    const token = localStorage.getItem('merchant_token');
+
 
     useEffect(() => {
         fetchAccounts();
@@ -55,13 +56,8 @@ const MerchantBankAccounts: React.FC = () => {
     const fetchAccounts = async () => {
         setLoading(true);
         try {
-            const response = await fetch('/api/v1/merchant/bank-accounts', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const result = await response.json();
-            if (result.code === 0) {
-                setAccounts(result.data.list || []);
-            }
+            const result = await merchantBankAccountApi.list() as any;
+            setAccounts(result.list || []);
         } catch (error) {
             message.error('获取银行账户失败');
         } finally {
@@ -72,25 +68,13 @@ const MerchantBankAccounts: React.FC = () => {
     const handleAdd = async (values: any) => {
         setSubmitting(true);
         try {
-            const response = await fetch('/api/v1/merchant/bank-accounts', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(values)
-            });
-            const result = await response.json();
-            if (result.code === 0) {
-                message.success('添加成功');
-                setModalVisible(false);
-                form.resetFields();
-                fetchAccounts();
-            } else {
-                message.error(result.message || '添加失败');
-            }
+            await merchantBankAccountApi.add(values);
+            message.success('添加成功');
+            setModalVisible(false);
+            form.resetFields();
+            fetchAccounts();
         } catch (error) {
-            message.error('添加失败');
+            message.error((error as Error).message || '添加失败');
         } finally {
             setSubmitting(false);
         }
@@ -98,37 +82,21 @@ const MerchantBankAccounts: React.FC = () => {
 
     const handleDelete = async (id: number) => {
         try {
-            const response = await fetch(`/api/v1/merchant/bank-accounts/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const result = await response.json();
-            if (result.code === 0) {
-                message.success('删除成功');
-                fetchAccounts();
-            } else {
-                message.error(result.message || '删除失败');
-            }
+            await merchantBankAccountApi.delete(id);
+            message.success('删除成功');
+            fetchAccounts();
         } catch (error) {
-            message.error('删除失败');
+            message.error((error as Error).message || '删除失败');
         }
     };
 
     const handleSetDefault = async (id: number) => {
         try {
-            const response = await fetch(`/api/v1/merchant/bank-accounts/${id}/default`, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const result = await response.json();
-            if (result.code === 0) {
-                message.success('设置成功');
-                fetchAccounts();
-            } else {
-                message.error(result.message || '设置失败');
-            }
+            await merchantBankAccountApi.setDefault(id);
+            message.success('设置成功');
+            fetchAccounts();
         } catch (error) {
-            message.error('设置失败');
+            message.error((error as Error).message || '设置失败');
         }
     };
 

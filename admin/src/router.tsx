@@ -23,6 +23,8 @@ import SystemSettings from './pages/settings/SystemSettings';
 import RoleList from './pages/permissions/RoleList';
 import MenuList from './pages/permissions/MenuList';
 import CaseManagement from './pages/cases/CaseManagement';
+import DictionaryManagement from './pages/system/DictionaryManagement';
+import RegionManagement from './pages/system/RegionManagement';
 
 
 const router = createBrowserRouter([
@@ -86,6 +88,11 @@ const router = createBrowserRouter([
             { path: 'logs/list', element: <LogList /> },
             { path: 'settings', element: <Navigate to="/settings/config" replace /> },
             { path: 'settings/config', element: <SystemSettings /> },
+            { path: 'settings/regions', element: <RegionManagement /> },
+
+            // System
+            { path: 'system', element: <Navigate to="/system/dictionary" replace /> },
+            { path: 'system/dictionary', element: <DictionaryManagement /> },
 
             // Permissions (注意：路径为单数 permission，与数据库菜单配置一致)
             { path: 'permission', element: <Navigate to="/permission/roles" replace /> },

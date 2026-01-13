@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Card, Table, Button, Modal, Tag, message, Image,
     Descriptions, Input, Tabs, Space, Popconfirm, Form,
-    Select, InputNumber, Upload
+    InputNumber, Upload
 } from 'antd';
 import {
     PlusOutlined, EditOutlined, DeleteOutlined,
@@ -11,8 +11,11 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { caseApi, caseAuditApi } from '../../services/api';
 import type { RcFile, UploadProps } from 'antd/es/upload/interface';
+import { DictSelect } from '../../components/DictSelect';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8080';
+const API_BASE_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:8080'
+    : '';
 
 const getFullUrl = (path: string) => {
     if (!path) return '';
@@ -452,17 +455,10 @@ const CaseManagement: React.FC = () => {
                         <Input placeholder="作品标题" />
                     </Form.Item>
                     <Form.Item label="风格" name="style" rules={[{ required: true, message: '请选择风格' }]}>
-                        <Select placeholder="请选择">
-                            <Select.Option value="现代简约">现代简约</Select.Option>
-                            <Select.Option value="北欧">北欧</Select.Option>
-                            <Select.Option value="新中式">新中式</Select.Option>
-                            <Select.Option value="轻奢">轻奢</Select.Option>
-                            <Select.Option value="日式">日式</Select.Option>
-                            <Select.Option value="美式">美式</Select.Option>
-                        </Select>
+                        <DictSelect category="style" placeholder="请选择装修风格" />
                     </Form.Item>
                     <Form.Item label="户型" name="layout">
-                        <Input placeholder="如：3室2厅2卫" />
+                        <DictSelect category="layout" placeholder="请选择户型" />
                     </Form.Item>
                     <Form.Item label="面积" name="area">
                         <Input placeholder="如：120" />

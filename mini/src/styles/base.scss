@@ -1,0 +1,40 @@
+@import '../theme/tokens';
+
+page {
+  font-family: 'PingFang SC', 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  background: $color-sand-50;
+  color: $color-ink-900;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.page__title {
+  font-size: 32px;
+  font-weight: 700;
+  color: $color-ink-900;
+  margin-bottom: 12px;
+}
+
+.section-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(20, 20, 20, 0.04);
+  margin-bottom: 16px;
+}
+
+.section-card__title {
+  font-size: 28px;
+  color: $color-ink-800;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.text-dim {
+  color: $color-ink-500;
+  font-size: 24px;
+}

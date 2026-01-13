@@ -4,6 +4,7 @@ import { Card, Table, Tag, Button, Space, Typography, message, Modal, Form, Inpu
 import { ArrowLeftOutlined, FileAddOutlined, EyeOutlined, UploadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { merchantBookingApi, merchantProposalApi, merchantUploadApi } from '../../services/merchantApi';
+import { useDictStore } from '../../stores/dictStore';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -33,22 +34,6 @@ const statusMap: Record<number, { text: string; color: string }> = {
     4: { text: '已取消', color: 'default' },
 };
 
-// 装修类型映射
-const renovationTypeMap: Record<string, string> = {
-    'new': '新房装修',
-    'old': '老房翻新',
-    'partial': '局部改造',
-};
-
-// 预算范围映射
-const budgetRangeMap: Record<string, string> = {
-    '1': '5万以下',
-    '2': '5-10万',
-    '3': '10-20万',
-    '4': '20-50万',
-    '5': '50万以上',
-};
-
 const MerchantBookings: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -61,9 +46,26 @@ const MerchantBookings: React.FC = () => {
     const [form] = Form.useForm();
     const navigate = useNavigate();
 
+    const { loadDict, getDictOptions } = useDictStore();
+
     useEffect(() => {
         loadBookings();
-    }, []);
+        loadDict('renovation_type');
+        loadDict('budget_range');
+    }, [loadDict]);
+
+    // 获取字典映射
+    const getRenovationTypeLabel = (value: string) => {
+        const options = getDictOptions('renovation_type');
+        const option = options.find(opt => opt.value === value);
+        return option?.label || value;
+    };
+
+    const getBudgetRangeLabel = (value: string) => {
+        const options = getDictOptions('budget_range');
+        const option = options.find(opt => opt.value === value);
+        return option?.label || value;
+    };
 
     const loadBookings = async () => {
         try {
@@ -252,7 +254,7 @@ const MerchantBookings: React.FC = () => {
                         <br />
                         <Text>面积：{selectedBooking.area}㎡ | 户型：{selectedBooking.houseLayout}</Text>
                         <br />
-                        <Text>装修类型：{renovationTypeMap[selectedBooking.renovationType] || selectedBooking.renovationType} | 预算：{budgetRangeMap[selectedBooking.budgetRange] || selectedBooking.budgetRange}</Text>
+                        <Text>装修类型：{getRenovationTypeLabel(selectedBooking.renovationType)} | 预算：{getBudgetRangeLabel(selectedBooking.budgetRange)}</Text>
                     </div>
                 )}
 
@@ -355,10 +357,10 @@ const MerchantBookings: React.FC = () => {
                         <Descriptions.Item label="面积">{currentBooking.area}㎡</Descriptions.Item>
                         <Descriptions.Item label="户型">{currentBooking.houseLayout}</Descriptions.Item>
                         <Descriptions.Item label="装修类型">
-                            {renovationTypeMap[currentBooking.renovationType] || currentBooking.renovationType}
+                            {getRenovationTypeLabel(currentBooking.renovationType)}
                         </Descriptions.Item>
                         <Descriptions.Item label="预算范围">
-                            {budgetRangeMap[currentBooking.budgetRange] || currentBooking.budgetRange}
+                            {getBudgetRangeLabel(currentBooking.budgetRange)}
                         </Descriptions.Item>
                         <Descriptions.Item label="预约时间">{currentBooking.preferredDate}</Descriptions.Item>
                         <Descriptions.Item label="联系电话">{currentBooking.phone}</Descriptions.Item>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/internal/utils/tencentim"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
@@ -13,6 +14,8 @@ import (
 )
 
 // ==================== 商家入驻 Handler ====================
+
+var regionService = &service.RegionService{}
 
 // MerchantApplyInput 入驻申请输入
 type MerchantApplyInput struct {
@@ -114,12 +117,32 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
-	// 7. 序列化 JSON 字段
-	serviceAreaJSON, _ := json.Marshal(input.ServiceArea)
+	// 7. 验证服务区域代码是否有效（支持自动转换名称为代码）
+	var serviceAreaCodes []string
+	if err := regionService.ValidateRegionCodes(input.ServiceArea); err != nil {
+		// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
+		codes, convertErr := regionService.ConvertNamesToCodes(input.ServiceArea)
+		if convertErr != nil {
+			response.Error(c, 400, "服务区域验证失败: "+err.Error())
+			return
+		}
+		// 转换成功后再次验证代码
+		if err := regionService.ValidateRegionCodes(codes); err != nil {
+			response.Error(c, 400, "服务区域代码验证失败: "+err.Error())
+			return
+		}
+		serviceAreaCodes = codes
+	} else {
+		// 如果是代码格式，直接使用
+		serviceAreaCodes = input.ServiceArea
+	}
+
+	// 8. 序列化 JSON 字段
+	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
 	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
 
-	// 5. 创建申请记录
+	// 9. 创建申请记录
 	application := model.MerchantApplication{
 		Phone:          input.Phone,
 		ApplicantType:  input.ApplicantType,
@@ -144,7 +167,7 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
-	// 6. TODO: 发送短信通知
+	// 10. TODO: 发送短信通知
 	// sendSMS(input.Phone, "您的商家入驻申请已提交，预计1-3个工作日内完成审核")
 
 	response.Success(c, gin.H{
@@ -212,8 +235,28 @@ func MerchantResubmit(c *gin.Context) {
 		return
 	}
 
+	// 验证服务区域代码（支持自动转换名称为代码）
+	var serviceAreaCodes []string
+	if err := regionService.ValidateRegionCodes(input.ServiceArea); err != nil {
+		// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
+		codes, convertErr := regionService.ConvertNamesToCodes(input.ServiceArea)
+		if convertErr != nil {
+			response.Error(c, 400, "服务区域验证失败: "+err.Error())
+			return
+		}
+		// 转换成功后再次验证代码
+		if err := regionService.ValidateRegionCodes(codes); err != nil {
+			response.Error(c, 400, "服务区域代码验证失败: "+err.Error())
+			return
+		}
+		serviceAreaCodes = codes
+	} else {
+		// 如果是代码格式，直接使用
+		serviceAreaCodes = input.ServiceArea
+	}
+
 	// 更新申请信息
-	serviceAreaJSON, _ := json.Marshal(input.ServiceArea)
+	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
 	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
 
@@ -293,11 +336,14 @@ func AdminGetApplication(c *gin.Context) {
 	}
 
 	// 解析 JSON 字段
-	var serviceArea, styles []string
+	var serviceAreaCodes, styles []string
 	var portfolioCases []PortfolioCaseInput
-	json.Unmarshal([]byte(app.ServiceArea), &serviceArea)
+	json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
 	json.Unmarshal([]byte(app.Styles), &styles)
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
+
+	// 将服务区域代码转换为名称（用于前端展示）
+	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
 	response.Success(c, gin.H{
 		"id":             app.ID,
@@ -311,7 +357,8 @@ func AdminGetApplication(c *gin.Context) {
 		"licenseImage":   app.LicenseImage,
 		"teamSize":       app.TeamSize,
 		"officeAddress":  app.OfficeAddress,
-		"serviceArea":    serviceArea,
+		"serviceArea":    serviceAreaNames, // 返回名称数组，方便前端展示
+		"serviceAreaCodes": serviceAreaCodes, // 同时返回代码数组
 		"styles":         styles,
 		"introduction":   app.Introduction,
 		"portfolioCases": portfolioCases,

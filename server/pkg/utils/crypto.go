@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"os"
 )
 
@@ -20,19 +22,32 @@ var defaultCrypto *Crypto
 
 // InitCrypto 初始化加密工具
 // 从环境变量获取密钥，密钥必须是32字节(AES-256)
+// 🔒 安全要求：生产环境必须设置 ENCRYPTION_KEY 环境变量，否则拒绝启动
 func InitCrypto() error {
 	keyStr := os.Getenv("ENCRYPTION_KEY")
 	if keyStr == "" {
-		// 开发环境使用默认密钥（生产环境必须设置环境变量）
-		keyStr = "home-decoration-secret-key-32!!"
+		errMsg := fmt.Sprintf(
+			"❌ 安全错误：ENCRYPTION_KEY 环境变量未设置！\n\n" +
+			"敏感数据（身份证号、银行卡号）需要加密存储，必须设置32字节加密密钥。\n\n" +
+			"生成密钥命令:\n" +
+			"  Linux/macOS: openssl rand -base64 32\n" +
+			"  Windows:     使用在线生成器或 Git Bash 执行上述命令\n\n" +
+			"设置方法:\n" +
+			"  export ENCRYPTION_KEY=\"your_generated_32_byte_key\"\n" +
+			"  或在 .env 文件中添加: ENCRYPTION_KEY=your_generated_32_byte_key\n\n" +
+			"⚠️  服务器拒绝启动以保护数据安全。",
+		)
+		log.Fatal(errMsg)
+		return errors.New("ENCRYPTION_KEY not set")
 	}
 
 	key := []byte(keyStr)
 	if len(key) != 32 {
-		return errors.New("encryption key must be 32 bytes")
+		return fmt.Errorf("ENCRYPTION_KEY 长度必须为32字节，当前为 %d 字节", len(key))
 	}
 
 	defaultCrypto = &Crypto{key: key}
+	log.Println("✅ 加密工具初始化成功 (AES-256-GCM)")
 	return nil
 }
 

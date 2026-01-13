@@ -9,20 +9,25 @@ database:
   host: "db"
   port: "5432"
   user: "postgres"
-  password: "123456"
+  password: ""  # 从环境变量 DATABASE_PASSWORD 自动读取
   dbname: "home_decoration"
   sslmode: "disable"
 
 redis:
   host: "redis"
   port: "6379"
-  password: ""
+  password: ""  # 从环境变量 REDIS_PASSWORD 自动读取
   db: 0
 
 jwt:
-  secret: "${JWT_SECRET}"  # 从环境变量读取
+  secret: ""  # 从环境变量 JWT_SECRET 自动读取
   expire_hour: 8  # 8小时过期
 
 log:
   level: "info"
   file: "logs/backend.log"
+
+wechat_mini:
+  app_id: "${WECHAT_MINI_APPID}"
+  app_secret: "${WECHAT_MINI_SECRET}"
+  bind_token_expire_minutes: 5

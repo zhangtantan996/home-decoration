@@ -180,6 +180,85 @@
 
 ---
 
+### 2.5 ????????code ??????
+??: POST /api/v1/auth/wechat/mini/login
+??: ?? wx.login ??? code ???????????????????
+??: ????
+????:
+`json
+{
+    "code": "wxlogin-code"
+}
+`
+
+????????????:
+`json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIs...",
+        "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+        "expiresIn": 28800,
+        "user": {
+            "id": 1,
+            "phone": "13800138000",
+            "nickname": "??3800",
+            "avatar": "",
+            "userType": 1
+        }
+    }
+}
+`
+
+????????????:
+`json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "needBindPhone": true,
+        "bindToken": "eyJhbGciOiJIUzI1NiIs...",
+        "expiresIn": 300
+    }
+}
+`
+
+---
+
+### 2.6 ??????????
+??: POST /api/v1/auth/wechat/mini/bind-phone
+??: ?? bindToken ? wx.getPhoneNumber ??? code ???????? JWT
+??: ????
+????:
+`json
+{
+    "bindToken": "?????? bindToken",
+    "phoneCode": "wx.getPhoneNumber ??? code"
+}
+`
+
+????:
+`json
+{
+    "code": 0,
+    "message": "success",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIs...",
+        "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+        "expiresIn": 28800,
+        "user": {
+            "id": 2,
+            "phone": "13800138000",
+            "nickname": "????3800",
+            "avatar": "",
+            "userType": 1
+        }
+    }
+}
+`
+
+---
 ## 3. 用户/业主端接口 (User)
 
 > **所有用户端接口均需携带 JWT Token**

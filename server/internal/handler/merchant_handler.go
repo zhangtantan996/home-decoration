@@ -21,6 +21,7 @@ import (
 // ========== 商家端 Handler ==========
 
 var merchantProposalService = &service.ProposalService{}
+var merchantRegionService = &service.RegionService{}
 
 // MerchantLogin 商家登录（手机号+验证码）
 func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
@@ -123,11 +124,14 @@ func MerchantGetInfo(c *gin.Context) {
 		displayName = user.Nickname
 	}
 
-	// 解析 ServiceArea (JSON数组)
-	var serviceArea []string
+	// 解析 ServiceArea (JSON数组) - 存储的是区域代码
+	var serviceAreaCodes []string
 	if provider.ServiceArea != "" {
-		json.Unmarshal([]byte(provider.ServiceArea), &serviceArea)
+		json.Unmarshal([]byte(provider.ServiceArea), &serviceAreaCodes)
 	}
+
+	// 将区域代码转换为名称（用于前端展示）
+	serviceAreaNames, _ := merchantRegionService.ConvertCodesToNames(serviceAreaCodes)
 
 	// 解析 Specialty (逗号或点分隔)
 	var specialty []string
@@ -150,7 +154,8 @@ func MerchantGetInfo(c *gin.Context) {
 		"verified":        provider.Verified,
 		"yearsExperience": provider.YearsExperience,
 		"specialty":       specialty,
-		"serviceArea":     serviceArea,
+		"serviceArea":     serviceAreaNames, // 返回区域名称数组
+		"serviceAreaCodes": serviceAreaCodes, // 返回区域代码数组（用于编辑）
 		"introduction":    provider.ServiceIntro,
 		"teamSize":        provider.TeamSize,
 		"officeAddress":   provider.OfficeAddress,
@@ -167,7 +172,7 @@ func MerchantUpdateInfo(c *gin.Context) {
 		CompanyName     string   `json:"companyName"`
 		YearsExperience int      `json:"yearsExperience"`
 		Specialty       []string `json:"specialty"`
-		ServiceArea     []string `json:"serviceArea"`
+		ServiceArea     []string `json:"serviceArea"` // 区域代码数组
 		Introduction    string   `json:"introduction"`
 		TeamSize        int      `json:"teamSize"`
 		OfficeAddress   string   `json:"officeAddress"`
@@ -176,6 +181,29 @@ func MerchantUpdateInfo(c *gin.Context) {
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
 		return
+	}
+
+	// 验证服务区域代码（如果提供）
+	var serviceAreaCodes []string
+	if len(input.ServiceArea) > 0 {
+		// 先尝试验证是否为代码格式
+		if err := merchantRegionService.ValidateRegionCodes(input.ServiceArea); err != nil {
+			// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
+			codes, convertErr := merchantRegionService.ConvertNamesToCodes(input.ServiceArea)
+			if convertErr != nil {
+				response.Error(c, 400, "服务区域验证失败: "+err.Error())
+				return
+			}
+			// 转换成功后再次验证代码
+			if err := merchantRegionService.ValidateRegionCodes(codes); err != nil {
+				response.Error(c, 400, "服务区域代码验证失败: "+err.Error())
+				return
+			}
+			serviceAreaCodes = codes
+		} else {
+			// 如果是代码格式，直接使用
+			serviceAreaCodes = input.ServiceArea
+		}
 	}
 
 	tx := repository.DB.Begin()
@@ -200,8 +228,8 @@ func MerchantUpdateInfo(c *gin.Context) {
 		updates["specialty"] = ""
 	}
 
-	if len(input.ServiceArea) > 0 {
-		jsonBytes, _ := json.Marshal(input.ServiceArea)
+	if len(serviceAreaCodes) > 0 {
+		jsonBytes, _ := json.Marshal(serviceAreaCodes)
 		updates["service_area"] = string(jsonBytes)
 	} else {
 		updates["service_area"] = "[]"

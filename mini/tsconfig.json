@@ -1,0 +1,11 @@
+{
+  "extends": "@tarojs/cli/tsconfig/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": ["@tarojs/plugin-platform-weapp"]
+  },
+  "include": ["src/**/*", "config/**/*", "types/**/*"]
+}

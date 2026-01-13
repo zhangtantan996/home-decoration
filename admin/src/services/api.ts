@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
+// 优先使用环境变量 (本地 Docker 开发)
+// 其次根据运行环境动态判断 (生产部署)
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+    (window.location.hostname === 'localhost'
+        ? 'http://localhost:8080/api/v1'
+        : '/api/v1');
 
 const api = axios.create({
     baseURL: API_BASE_URL,

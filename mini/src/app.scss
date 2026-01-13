@@ -1,0 +1,8 @@
+@import './theme/tokens';
+
+.btn-primary {
+  background: $color-brand;
+  color: #fff;
+  border: none;
+  border-radius: $radius-12;
+}

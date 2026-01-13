@@ -206,6 +206,10 @@ export const providerApi = {
         api.get<{ isFollowed: boolean; isFavorited: boolean }>(`/providers/${id}/user-status`),
 };
 
+export const caseApi = {
+    getQuote: (caseId: number) => api.get<any>(`/cases/${caseId}/quote`),
+};
+
 export const projectApi = {
     list: () => api.get('/projects'),
     detail: (id: string) => api.get(`/projects/${id}`),

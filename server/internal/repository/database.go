@@ -37,6 +37,7 @@ func InitDB(cfg *config.DatabaseConfig) error {
 func autoMigrate() error {
 	return DB.AutoMigrate(
 		&model.User{},
+		&model.UserWechatBinding{},
 		&model.Provider{},
 		&model.ProviderCase{},
 		&model.ProviderReview{},

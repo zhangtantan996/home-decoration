@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import type { UploadFile } from 'antd';
 import { Card, Table, Tag, Button, Typography, message, Modal, Space, Descriptions, Form, Input, InputNumber, Upload } from 'antd';
-import { ArrowLeftOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UploadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { merchantProposalApi, merchantUploadApi } from '../../services/merchantApi';
+import { useDictStore } from '../../stores/dictStore';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -44,20 +45,6 @@ const statusMap: Record<number, { text: string; color: string }> = {
     4: { text: '已被替代', color: 'default' },
 };
 
-const renovationTypeMap: Record<string, string> = {
-    'new': '新房装修',
-    'old': '老房翻新',
-    'partial': '局部改造',
-};
-
-const budgetRangeMap: Record<string, string> = {
-    '1': '5万以下',
-    '2': '5-10万',
-    '3': '10-20万',
-    '4': '20-50万',
-    '5': '50万以上',
-};
-
 const MerchantProposals: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -73,9 +60,26 @@ const MerchantProposals: React.FC = () => {
     const [resubmitForm] = Form.useForm(); // 重新提交表单
     const navigate = useNavigate();
 
+    const { loadDict, getDictOptions } = useDictStore();
+
     useEffect(() => {
         loadProposals();
-    }, []);
+        loadDict('renovation_type');
+        loadDict('budget_range');
+    }, [loadDict]);
+
+    // 获取字典映射
+    const getRenovationTypeLabel = (value: string) => {
+        const options = getDictOptions('renovation_type');
+        const option = options.find(opt => opt.value === value);
+        return option?.label || value;
+    };
+
+    const getBudgetRangeLabel = (value: string) => {
+        const options = getDictOptions('budget_range');
+        const option = options.find(opt => opt.value === value);
+        return option?.label || value;
+    };
 
     const loadProposals = async () => {
         try {
@@ -183,28 +187,6 @@ const MerchantProposals: React.FC = () => {
                     }
                 } catch (error) {
                     message.error('取消失败');
-                }
-            },
-        });
-    };
-
-    const handleReopen = (record: Proposal) => {
-        Modal.confirm({
-            title: '重新发起方案',
-            content: '确定要重新发起此方案吗？用户将收到通知并可以重新确认支付。',
-            okText: '确定',
-            cancelText: '取消',
-            onOk: async () => {
-                try {
-                    const res = await merchantProposalApi.reopen(record.id) as any;
-                    if (res.code === 0) {
-                        message.success('方案已重新发起，等待用户确认');
-                        loadProposals();
-                    } else {
-                        message.error(res.message || '操作失败');
-                    }
-                } catch (error: any) {
-                    message.error(error.response?.data?.error || '操作失败');
                 }
             },
         });
@@ -357,16 +339,6 @@ const MerchantProposals: React.FC = () => {
                             取消
                         </Button>
                     )}
-                    {record.status === 2 && (
-                        <Button
-                            type="link"
-                            size="small"
-                            icon={<ReloadOutlined />}
-                            onClick={() => handleReopen(record)}
-                        >
-                            重新发起
-                        </Button>
-                    )}
                 </Space>
             ),
         },
@@ -409,7 +381,7 @@ const MerchantProposals: React.FC = () => {
                             <br />
                             <Text>面积：{currentBooking.area}㎡ | 户型：{currentBooking.houseLayout}</Text>
                             <br />
-                            <Text>装修类型：{renovationTypeMap[currentBooking.renovationType] || currentBooking.renovationType} | 预算：{budgetRangeMap[currentBooking.budgetRange] || currentBooking.budgetRange}</Text>
+                            <Text>装修类型：{getRenovationTypeLabel(currentBooking.renovationType)} | 预算：{getBudgetRangeLabel(currentBooking.budgetRange)}</Text>
                         </div>
                         <Descriptions column={2} bordered size="small">
                             <Descriptions.Item label="方案ID">{currentProposal.id}</Descriptions.Item>

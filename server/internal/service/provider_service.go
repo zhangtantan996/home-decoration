@@ -206,6 +206,9 @@ type ProviderDetail struct {
 	Reviews     []ProviderReviewItem `json:"reviews"`
 	ReviewCount int64                `json:"reviewCount"`
 	CaseCount   int64                `json:"caseCount"`
+	// 服务区域（名称数组 + 代码数组，方便前端展示/编辑）
+	ServiceArea      []string `json:"serviceArea"`
+	ServiceAreaCodes []string `json:"serviceAreaCodes"`
 }
 
 // ProviderReviewItem 评价列表项
@@ -233,6 +236,21 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	var user model.User
 	if err := repository.DB.First(&user, provider.UserID).Error; err != nil {
 		return nil, err
+	}
+
+	// 服务区域：数据库存储的是代码数组，这里转换为名称数组用于前端展示
+	regionService := RegionService{}
+	serviceAreaCodes, err := regionService.ParseServiceAreaJSON(provider.ServiceArea)
+	if err != nil {
+		serviceAreaCodes = []string{}
+	}
+	serviceAreaNames, err := regionService.ConvertCodesToNames(serviceAreaCodes)
+	if err != nil {
+		serviceAreaNames = []string{}
+	}
+	if namesJSON, err := json.Marshal(serviceAreaNames); err == nil {
+		// 继续复用 provider.serviceArea 字段，但内容换成名称数组，兼容现有前端解析逻辑
+		provider.ServiceArea = string(namesJSON)
 	}
 
 	// 获取案例（前5条）
@@ -272,12 +290,14 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	}
 
 	return &ProviderDetail{
-		Provider:    &provider,
-		User:        &user,
-		Cases:       cases,
-		Reviews:     reviewItems,
-		ReviewCount: reviewCount,
-		CaseCount:   caseCount,
+		Provider:         &provider,
+		User:             &user,
+		Cases:            cases,
+		Reviews:          reviewItems,
+		ReviewCount:      reviewCount,
+		CaseCount:        caseCount,
+		ServiceArea:      serviceAreaNames,
+		ServiceAreaCodes: serviceAreaCodes,
 	}, nil
 }
 

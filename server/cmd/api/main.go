@@ -8,6 +8,7 @@ import (
 	"home-decoration-server/internal/handler"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/router"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/internal/ws"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +44,12 @@ func main() {
 	// 初始化处理器
 	handler.InitHandlers(cfg)
 
+	// 初始化数据字典相关
+	dictRepo := repository.NewDictionaryRepository(repository.DB)
+	dictCache := service.NewDictCacheService()
+	dictService := service.NewDictionaryService(dictRepo, dictCache)
+	dictHandler := handler.NewDictionaryHandler(dictService)
+
 	// 启动定时任务
 	cron.StartOrderCron()
 	log.Println("Order cron job started")
@@ -59,7 +66,7 @@ func main() {
 	}
 
 	// 初始化路由 (传入 WS 相关依赖)
-	r := router.Setup(cfg, hub, wsHandler)
+	r := router.Setup(cfg, hub, wsHandler, dictHandler)
 
 	// 启动服务
 	addr := cfg.Server.Host + ":" + cfg.Server.Port

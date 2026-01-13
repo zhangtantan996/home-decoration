@@ -5,7 +5,7 @@ services:
     container_name: home_decor_db_local
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: "123456"
+      POSTGRES_PASSWORD: "IXwUBjxFia33XltiY0wFch8n3N68hptI"
       POSTGRES_DB: home_decoration
     ports:
       - "5432:5432"
@@ -18,6 +18,7 @@ services:
   redis:
     image: redis:6.2-alpine
     container_name: home_decor_redis_local
+    command: redis-server --requirepass kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf
     ports:
       - "6380:6379"
     networks:
@@ -39,11 +40,12 @@ services:
       - DATABASE_HOST=db
       - DATABASE_PORT=5432
       - DATABASE_USER=postgres
-      - DATABASE_PASSWORD=123456
+      - DATABASE_PASSWORD=IXwUBjxFia33XltiY0wFch8n3N68hptI
       - DATABASE_DBNAME=home_decoration
       - DATABASE_SSLMODE=disable
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf
     ports:
       - "8080:8080"
     networks:
@@ -62,7 +64,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:8080/api/v1
-    command: sh -c "npm install --registry=https://registry.npmmirror.com/ && npm run dev -- --host"
+    command: sh -c "npm install --registry=https://registry.npmmirror.com/ --legacy-peer-deps && npm run dev -- --host"
     networks:
       - dev-net
 

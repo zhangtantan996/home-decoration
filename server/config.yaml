@@ -1,29 +1,37 @@
 # 装修设计一体化平台 - 服务端配置
+# ⚠️  注意：此文件为开发环境默认配置
+# 生产环境请通过环境变量或 .env 文件覆盖敏感配置
 
 server:
   host: "0.0.0.0"
   port: "8080"
-  mode: "debug"
+  mode: "debug"  # 生产环境设置为 "release"
   public_url: "http://localhost:8080" # API 公网地址/入口地址
 
 database:
   host: "localhost"
   port: "5432"
   user: "postgres"
-  password: "123456"
+  password: "${DATABASE_PASSWORD}"  # 从环境变量读取，不要硬编码！
   dbname: "home_decoration"
   sslmode: "disable"
 
 redis:
   host: "localhost"
   port: "6380"
-  password: ""
+  password: "${REDIS_PASSWORD}"  # 从环境变量读取
   db: 0
 
 jwt:
-  secret: "${JWT_SECRET}" # 从环境变量读取，不要硬编码！
-  expire_hour: 8 # 缩短至8小时
+  secret: "${JWT_SECRET}"  # 从环境变量读取，不要硬编码！
+  expire_hour: 8  # AccessToken 有效期（小时）
 
 log:
   level: "info"
   file: "logs/backend.log"
+
+wechat_mini:
+  app_id: "${WECHAT_MINI_APPID}"
+  app_secret: "${WECHAT_MINI_SECRET}"
+  bind_token_expire_minutes: 5
+

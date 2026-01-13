@@ -110,22 +110,25 @@ func AdminGetCaseAudit(c *gin.Context) {
 
 	// 构造返回数据（包含 providerName）
 	auditData := gin.H{
-		"id":           audit.ID,
-		"caseId":       audit.CaseID,
-		"providerId":   audit.ProviderID,
-		"providerName": providerName,
-		"actionType":   audit.ActionType,
-		"title":        audit.Title,
-		"coverImage":   audit.CoverImage,
-		"style":        audit.Style,
-		"layout":       audit.Layout,
-		"area":         audit.Area,
-		"price":        audit.Price,
-		"year":         audit.Year,
-		"description":  audit.Description,
-		"status":       audit.Status,
-		"rejectReason": audit.RejectReason,
-		"createdAt":    audit.CreatedAt,
+		"id":             audit.ID,
+		"caseId":         audit.CaseID,
+		"providerId":     audit.ProviderID,
+		"providerName":   providerName,
+		"actionType":     audit.ActionType,
+		"title":          audit.Title,
+		"coverImage":     audit.CoverImage,
+		"style":          audit.Style,
+		"layout":         audit.Layout,
+		"area":           audit.Area,
+		"price":          audit.Price,
+		"quoteTotalCent": audit.QuoteTotalCent,
+		"quoteCurrency":  audit.QuoteCurrency,
+		"quoteItems":     audit.QuoteItems,
+		"year":           audit.Year,
+		"description":    audit.Description,
+		"status":         audit.Status,
+		"rejectReason":   audit.RejectReason,
+		"createdAt":      audit.CreatedAt,
 	}
 
 	response.Success(c, gin.H{
@@ -155,22 +158,30 @@ func AdminApproveCaseAudit(c *gin.Context) {
 		return
 	}
 
+	quoteCurrency := audit.QuoteCurrency
+	if quoteCurrency == "" {
+		quoteCurrency = "CNY"
+	}
+
 	// 执行 Action
 	switch audit.ActionType {
 	case "create":
 		// 插入 ProviderCase
 		newCase := model.ProviderCase{
-			ProviderID:  audit.ProviderID,
-			Title:       audit.Title,
-			CoverImage:  audit.CoverImage,
-			Style:       audit.Style,
-			Layout:      audit.Layout,
-			Area:        audit.Area,
-			Price:       audit.Price,
-			Year:        audit.Year,
-			Description: audit.Description,
-			Images:      audit.Images,
-			SortOrder:   0, // 默认
+			ProviderID:     audit.ProviderID,
+			Title:          audit.Title,
+			CoverImage:     audit.CoverImage,
+			Style:          audit.Style,
+			Layout:         audit.Layout,
+			Area:           audit.Area,
+			Price:          audit.Price,
+			QuoteTotalCent: audit.QuoteTotalCent,
+			QuoteCurrency:  quoteCurrency,
+			QuoteItems:     audit.QuoteItems,
+			Year:           audit.Year,
+			Description:    audit.Description,
+			Images:         audit.Images,
+			SortOrder:      0, // 默认
 		}
 		if err := tx.Create(&newCase).Error; err != nil {
 			tx.Rollback()
@@ -188,16 +199,19 @@ func AdminApproveCaseAudit(c *gin.Context) {
 		}
 		// 更新 ProviderCase
 		updates := map[string]interface{}{
-			"title":       audit.Title,
-			"cover_image": audit.CoverImage,
-			"style":       audit.Style,
-			"layout":      audit.Layout,
-			"area":        audit.Area,
-			"price":       audit.Price,
-			"year":        audit.Year,
-			"description": audit.Description,
-			"images":      audit.Images,
-			"updated_at":  time.Now(),
+			"title":            audit.Title,
+			"cover_image":      audit.CoverImage,
+			"style":            audit.Style,
+			"layout":           audit.Layout,
+			"area":             audit.Area,
+			"price":            audit.Price,
+			"quote_total_cent": audit.QuoteTotalCent,
+			"quote_currency":   quoteCurrency,
+			"quote_items":      audit.QuoteItems,
+			"year":             audit.Year,
+			"description":      audit.Description,
+			"images":           audit.Images,
+			"updated_at":       time.Now(),
 		}
 		if err := tx.Model(&model.ProviderCase{}).Where("id = ?", *audit.CaseID).Updates(updates).Error; err != nil {
 			tx.Rollback()

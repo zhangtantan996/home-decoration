@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { merchantIncomeApi } from '../../services/merchantApi';
 import { Card, Row, Col, Statistic, Table, Tag, Tabs, Button, message } from 'antd';
 import { DollarOutlined, ClockCircleOutlined, CheckCircleOutlined, WalletOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -36,8 +37,6 @@ const MerchantIncome: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [activeTab, setActiveTab] = useState('all');
 
-    const token = localStorage.getItem('merchant_token');
-
     useEffect(() => {
         fetchSummary();
         fetchIncomeList();
@@ -49,13 +48,8 @@ const MerchantIncome: React.FC = () => {
 
     const fetchSummary = async () => {
         try {
-            const response = await fetch('/api/v1/merchant/income/summary', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const result = await response.json();
-            if (result.code === 0) {
-                setSummary(result.data);
-            }
+            const result = await merchantIncomeApi.summary();
+            setSummary(result as any);
         } catch (error) {
             message.error('获取收入概览失败');
         }
@@ -65,15 +59,13 @@ const MerchantIncome: React.FC = () => {
         setLoading(true);
         try {
             const status = activeTab === 'all' ? '' : activeTab;
-            const response = await fetch(
-                `/api/v1/merchant/income/list?page=${currentPage}&pageSize=10&status=${status}`,
-                { headers: { 'Authorization': `Bearer ${token}` } }
-            );
-            const result = await response.json();
-            if (result.code === 0) {
-                setIncomeList(result.data.list || []);
-                setTotal(result.data.total || 0);
-            }
+            const result = await merchantIncomeApi.list({
+                page: currentPage,
+                pageSize: 10,
+                status
+            }) as any;
+            setIncomeList(result.list || []);
+            setTotal(result.total || 0);
         } catch (error) {
             message.error('获取收入记录失败');
         } finally {

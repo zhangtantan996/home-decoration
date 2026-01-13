@@ -7,6 +7,8 @@ import { ArrowLeftOutlined, UserOutlined, SaveOutlined, CameraOutlined, LoadingO
 import type { UploadProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { merchantAuthApi, merchantUploadApi } from '../../services/merchantApi';
+import { dictionaryApi } from '../../services/dictionaryApi';
+import { regionApi } from '../../services/regionApi';
 
 interface ProviderInfo {
     id: number;
@@ -25,27 +27,50 @@ interface ProviderInfo {
     officeAddress: string;
 }
 
-const STYLE_OPTIONS = [
-    '现代简约', '北欧风格', '新中式', '轻奢风格',
-    '美式风格', '欧式风格', '日式风格', '工业风格'
-];
-
-const AREA_OPTIONS = [
-    '雁塔区', '碑林区', '新城区', '莲湖区', '未央区',
-    '灞桥区', '长安区', '高新区', '曲江新区', '经开区'
-];
-
 const MerchantSettings: React.FC = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [avatarUploading, setAvatarUploading] = useState(false);
     const [providerInfo, setProviderInfo] = useState<ProviderInfo | null>(null);
+    const [styleOptions, setStyleOptions] = useState<string[]>([]);
+    const [areaOptions, setAreaOptions] = useState<string[]>([]);
     const [form] = Form.useForm();
 
     useEffect(() => {
         fetchProviderInfo();
+        loadStyleOptions();
+        loadAreaOptions();
     }, []);
+
+    const loadStyleOptions = async () => {
+        try {
+            const options = await dictionaryApi.getOptions('style');
+            setStyleOptions(options.map(opt => opt.label));
+        } catch (error) {
+            console.error('加载装修风格失败:', error);
+            // 降级到默认选项
+            setStyleOptions([
+                '现代简约', '北欧风格', '新中式', '轻奢风格',
+                '美式风格', '欧式风格', '日式风格', '工业风格'
+            ]);
+        }
+    };
+
+    const loadAreaOptions = async () => {
+        try {
+            // 加载陕西省西安市的区县数据
+            const districts = await regionApi.getChildren('610100'); // 西安市代码
+            setAreaOptions(districts.map(d => d.name));
+        } catch (error) {
+            console.error('加载服务区域失败:', error);
+            // 降级到默认选项
+            setAreaOptions([
+                '雁塔区', '碑林区', '新城区', '莲湖区', '未央区',
+                '灞桥区', '长安区', '高新区', '曲江新区', '经开区'
+            ]);
+        }
+    };
 
     const fetchProviderInfo = async () => {
         setLoading(true);
@@ -260,7 +285,7 @@ const MerchantSettings: React.FC = () => {
                                         ]}
                                     >
                                         <Select mode="multiple" placeholder="选择擅长风格" maxTagCount={3}>
-                                            {STYLE_OPTIONS.map(s => (
+                                            {styleOptions.map(s => (
                                                 <Select.Option key={s} value={s}>{s}</Select.Option>
                                             ))}
                                         </Select>
@@ -270,7 +295,7 @@ const MerchantSettings: React.FC = () => {
 
                             <Form.Item name="serviceArea" label="服务区域">
                                 <Select mode="multiple" placeholder="选择可服务的区域">
-                                    {AREA_OPTIONS.map(a => (
+                                    {areaOptions.map(a => (
                                         <Select.Option key={a} value={a}>{a}</Select.Option>
                                     ))}
                                 </Select>

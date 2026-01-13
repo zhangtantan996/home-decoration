@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
+    merchantWithdrawApi,
+    merchantIncomeApi,
+    merchantBankAccountApi
+} from '../../services/merchantApi';
+import {
     Card, Table, Tag, Button, Modal, Form, InputNumber, Select,
     message, Row, Col, Statistic, Empty, Steps
 } from 'antd';
@@ -45,8 +50,7 @@ const MerchantWithdraw: React.FC = () => {
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [form] = Form.useForm();
 
-    const token = localStorage.getItem('merchant_token');
-    const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
+
 
     useEffect(() => {
         fetchWithdrawList();
@@ -60,87 +64,51 @@ const MerchantWithdraw: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage]);
 
-    const ensureLogin = () => {
-        if (!token) {
-            message.error('登录状态已失效，请重新登录');
-            navigate('/login');
-            return false;
-        }
-        return true;
-    };
-
-    const parseResponse = async <T,>(response: Response, errorMessage: string): Promise<T> => {
-        const result = await response.json();
-        if (!response.ok || result.code !== 0) {
-            throw new Error(result.message || errorMessage);
-        }
-        return result.data as T;
-    };
-
     const fetchWithdrawList = async () => {
-        if (!ensureLogin()) return;
         setLoading(true);
         try {
-            const response = await fetch(
-                `/api/v1/merchant/withdraw/list?page=${currentPage}&pageSize=10`,
-                { headers: authHeaders }
-            );
-            const data = await parseResponse<{ list: WithdrawRecord[]; total: number }>(response, '获取提现记录失败');
+            const data = await merchantWithdrawApi.list({
+                page: currentPage,
+                pageSize: 10
+            }) as any;
             setWithdrawList(data.list || []);
             setTotal(data.total || 0);
         } catch (error) {
-            message.error((error as Error).message || '获取提现记录失败');
+            message.error('获取提现记录失败');
         } finally {
             setLoading(false);
         }
     };
 
     const fetchAvailableAmount = async () => {
-        if (!ensureLogin()) return;
         try {
-            const response = await fetch('/api/v1/merchant/income/summary', {
-                headers: authHeaders
-            });
-            const data = await parseResponse<{ availableAmount: number }>(response, '获取可提现金额失败');
+            const data = await merchantIncomeApi.summary() as any;
             setAvailableAmount(data.availableAmount || 0);
         } catch (error) {
-            message.error((error as Error).message || '获取可提现金额失败');
+            message.error('获取可提现金额失败');
         }
     };
 
     const fetchBankAccounts = async () => {
-        if (!ensureLogin()) return;
         try {
-            const response = await fetch('/api/v1/merchant/bank-accounts', {
-                headers: authHeaders
-            });
-            const data = await parseResponse<{ list: BankAccount[] }>(response, '获取银行账户失败');
+            const data = await merchantBankAccountApi.list() as any;
             setBankAccounts(data.list || []);
         } catch (error) {
-            message.error((error as Error).message || '获取银行账户失败');
+            message.error('获取银行账户失败');
         }
     };
 
     const handleWithdraw = async (values: { amount: number; bankAccountId: number }) => {
-        if (!ensureLogin()) return;
         setSubmitting(true);
         try {
-            const response = await fetch('/api/v1/merchant/withdraw', {
-                method: 'POST',
-                headers: {
-                    ...authHeaders,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(values)
-            });
-            await parseResponse(response, '提现失败');
+            await merchantWithdrawApi.apply(values);
             message.success('提现申请已提交');
             setModalVisible(false);
             form.resetFields();
             fetchWithdrawList();
             fetchAvailableAmount();
         } catch (error) {
-            message.error((error as Error).message || '提现失败');
+            message.error('提现失败');
         } finally {
             setSubmitting(false);
         }

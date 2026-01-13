@@ -7,7 +7,16 @@ interface LocationResult {
     city: string;
     latitude: number;
     longitude: number;
+    success?: boolean;
+    error?: string;
 }
+
+// 默认城市坐标 (西安)
+const DEFAULT_LOCATION = {
+    city: '西安',
+    latitude: 34.341568,
+    longitude: 108.940174,
+};
 
 export const LocationService = {
     requestPermission: async (): Promise<boolean> => {
@@ -35,7 +44,7 @@ export const LocationService = {
     },
 
     getCurrentCity: (): Promise<LocationResult> => {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             Geolocation.getCurrentPosition(
                 async (position) => {
                     const { latitude, longitude } = position.coords;
@@ -60,19 +69,34 @@ export const LocationService = {
                         resolve({
                             city: cleanCity,
                             latitude,
-                            longitude
+                            longitude,
+                            success: true,
                         });
                     } catch (error) {
-                        console.error('Reverse Geocoding Error:', error);
+                        console.warn('逆地理编码失败,使用坐标位置:', error);
                         // Fallback to coordinates if network fails
-                        resolve({ city: '定位失败', latitude, longitude });
+                        resolve({ 
+                            city: '定位失败', 
+                            latitude, 
+                            longitude,
+                            success: true,
+                        });
                     }
                 },
                 (error) => {
-                    console.error('Geolocation Error:', error);
-                    reject(error);
+                    console.warn('定位失败,使用默认城市 (西安):', error.message);
+                    // ✅ 关键修复: 不要 reject,而是 resolve 默认值
+                    resolve({
+                        ...DEFAULT_LOCATION,
+                        success: false,
+                        error: error.message,
+                    });
                 },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+                {
+                    enableHighAccuracy: false,  // 优先使用网络定位 (更快)
+                    timeout: 10000,             // 10 秒超时
+                    maximumAge: 300000,         // 5 分钟缓存
+                }
             );
         });
     }

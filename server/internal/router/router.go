@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
+func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *handler.DictionaryHandler) *gin.Engine {
 	r := gin.Default()
 
 	// ✅ CORS白名单配置
@@ -23,6 +23,7 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 	}
 
 	// 全局中间件
+	r.Use(middleware.SecurityHeaders()) // 安全响应头
 	r.Use(middleware.Cors(allowedOrigins))
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
@@ -38,12 +39,14 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 		// 健康检查
 		v1.GET("/health", handler.HealthCheck)
 
-		// 认证相关 (无需登录)
+		// 认证相关 (无需登录) - 添加限流保护防止暴力破解
 		auth := v1.Group("/auth")
 		{
-			auth.POST("/register", handler.Register)
-			auth.POST("/login", handler.Login)
-			auth.POST("/send-code", handler.SendCode)
+			auth.POST("/register", middleware.LoginRateLimit(), handler.Register)
+			auth.POST("/login", middleware.LoginRateLimit(), handler.Login)
+			auth.POST("/send-code", middleware.LoginRateLimit(), handler.SendCode)
+			auth.POST("/wechat/mini/login", middleware.LoginRateLimit(), handler.WechatMiniLogin)
+			auth.POST("/wechat/mini/bind-phone", middleware.LoginRateLimit(), handler.WechatMiniBindPhone)
 			auth.POST("/refresh", handler.RefreshToken)
 		}
 
@@ -57,11 +60,27 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 			materialShops.GET("/:id", handler.GetMaterialShop)
 		}
 
-		// 调试工具 (后续可移除或加权限)
-		debug := v1.Group("/debug")
+		v1.GET("/dictionaries/categories", dictHandler.GetAllCategories)
+		v1.GET("/dictionaries/:category", dictHandler.GetDictOptions)
+
+		// 行政区划 API (公开 - 用于级联选择器)
+		regions := v1.Group("/regions")
 		{
-			debug.GET("/fix-data", handler.FixData)
-			debug.POST("/init-settings", handler.AdminInitSettings)
+			regions.GET("/provinces", handler.GetProvinces)
+			regions.GET("/provinces/:provinceCode/cities", handler.GetCitiesByProvince)
+			regions.GET("/cities/:cityCode/districts", handler.GetDistrictsByCity)
+			regions.GET("/children/:parentCode", handler.GetChildrenByParentCode) // 懒加载子节点
+		}
+		// 🔒 调试工具 - 仅在非生产环境启用，且需要管理员权限
+		// 生产环境 (SERVER_MODE=release) 完全禁用此端点以防止数据泄露和恶意操作
+		if cfg.Server.Mode != "release" {
+			debug := v1.Group("/debug")
+			debug.Use(middleware.AdminJWT(cfg.JWT.Secret))
+			debug.Use(middleware.RequirePermission("system:debug:*"))
+			{
+				debug.GET("/fix-data", handler.FixData)
+				debug.POST("/init-settings", handler.AdminInitSettings)
+			}
 		}
 
 		// 需要认证的路由（普通用户）
@@ -107,6 +126,9 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 				foremen.GET("/:id/reviews", handler.GetProviderReviews)
 				foremen.GET("/:id/review-stats", handler.GetReviewStats)
 			}
+
+			// 案例报价（登录可查看，不提供下载）
+			authorized.GET("/cases/:id/quote", handler.GetCaseQuote)
 
 			// 预约
 			bookings := authorized.Group("/bookings")
@@ -294,6 +316,20 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler) *gin.Engine {
 			admin.PUT("/cases/:id", handler.AdminUpdateCase)
 			admin.DELETE("/cases/:id", handler.AdminDeleteCase)
 
+			admin.GET("/dictionaries", dictHandler.ListDicts)
+			admin.POST("/dictionaries", dictHandler.CreateDict)
+			admin.PUT("/dictionaries/:id", dictHandler.UpdateDict)
+			admin.DELETE("/dictionaries/:id", dictHandler.DeleteDict)
+			// 字典分类管理（可选）
+			admin.GET("/dictionaries/categories", dictHandler.ListCategories)
+			admin.POST("/dictionaries/categories", dictHandler.CreateCategory)
+			admin.PUT("/dictionaries/categories/:code", dictHandler.UpdateCategory)
+			admin.DELETE("/dictionaries/categories/:code", dictHandler.DeleteCategory)
+
+			// 行政区划管理
+			admin.GET("/regions", handler.AdminListRegions)
+			admin.GET("/regions/children/:parentCode", handler.AdminGetChildrenByParentCode) // 懒加载子节点（包含已禁用）
+			admin.PUT("/regions/:id/toggle", handler.AdminToggleRegion)
 			// 财务管理
 			admin.GET("/finance/escrow-accounts", handler.AdminListEscrowAccounts)
 			admin.GET("/finance/transactions", handler.AdminListTransactions)

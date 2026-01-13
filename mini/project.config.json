@@ -1,0 +1,20 @@
+{
+  "miniprogramRoot": "dist",
+  "projectname": "home-decoration-mini",
+  "description": "Home Decoration mini program (Taro)",
+  "appid": "wx-your-appid-here",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "enhance": true
+  },
+  "compileType": "miniprogram",
+  "condition": {
+    "miniprogram": {
+      "current": 0,
+      "list": []
+    }
+  }
+}

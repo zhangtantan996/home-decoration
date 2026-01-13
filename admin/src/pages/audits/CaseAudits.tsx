@@ -29,7 +29,9 @@ interface AuditDetail extends CaseAudit {
     images: string[]; // JSON array
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:8080';
+const API_BASE_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:8080'
+    : '';
 
 const getFullUrl = (path: string) => {
     if (!path) return '';

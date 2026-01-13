@@ -144,12 +144,24 @@ const HomeScreen: React.FC = () => {
     const [renderedCategory, setRenderedCategory] = useState('designer');
     const [currentCity, setCurrentCity] = useState('西安');
 
-    useEffect(() => {
+        useEffect(() => {
         const fetchLocation = async () => {
-            const hasPermission = await LocationService.requestPermission();
-            if (hasPermission) {
-                const result = await LocationService.getCurrentCity();
-                setCurrentCity(result.city);
+            try {
+                const hasPermission = await LocationService.requestPermission();
+                if (hasPermission) {
+                    const result = await LocationService.getCurrentCity();
+                    if (result.success !== false) {
+                        setCurrentCity(result.city);
+                    } else {
+                        // 定位失败,使用默认城市 (西安)
+                        console.log('定位失败,使用默认城市:', result.error);
+                        setCurrentCity('西安');
+                    }
+                }
+            } catch (error) {
+                // 兜底错误处理
+                console.warn('定位异常,使用默认城市:', error);
+                setCurrentCity('西安');
             }
         };
         fetchLocation();
