@@ -144,22 +144,21 @@ func MerchantGetInfo(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"id":               provider.ID,
-		"name":             displayName,
-		"avatar":           user.Avatar,
-		"coverImage":       provider.CoverImage,
-		"providerType":     provider.ProviderType,
-		"companyName":      provider.CompanyName,
-		"rating":           provider.Rating,
-		"completedCnt":     provider.CompletedCnt,
-		"verified":         provider.Verified,
-		"yearsExperience":  provider.YearsExperience,
-		"specialty":        specialty,
-		"serviceArea":      serviceAreaNames, // 返回区域名称数组
+		"id":              provider.ID,
+		"name":            displayName,
+		"avatar":          user.Avatar,
+		"providerType":    provider.ProviderType,
+		"companyName":     provider.CompanyName,
+		"rating":          provider.Rating,
+		"completedCnt":    provider.CompletedCnt,
+		"verified":        provider.Verified,
+		"yearsExperience": provider.YearsExperience,
+		"specialty":       specialty,
+		"serviceArea":     serviceAreaNames, // 返回区域名称数组
 		"serviceAreaCodes": serviceAreaCodes, // 返回区域代码数组（用于编辑）
-		"introduction":     provider.ServiceIntro,
-		"teamSize":         provider.TeamSize,
-		"officeAddress":    provider.OfficeAddress,
+		"introduction":    provider.ServiceIntro,
+		"teamSize":        provider.TeamSize,
+		"officeAddress":   provider.OfficeAddress,
 	})
 }
 
@@ -177,7 +176,6 @@ func MerchantUpdateInfo(c *gin.Context) {
 		Introduction    string   `json:"introduction"`
 		TeamSize        int      `json:"teamSize"`
 		OfficeAddress   string   `json:"officeAddress"`
-		CoverImage      *string  `json:"coverImage"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -240,9 +238,6 @@ func MerchantUpdateInfo(c *gin.Context) {
 	updates["service_intro"] = input.Introduction
 	updates["team_size"] = input.TeamSize
 	updates["office_address"] = input.OfficeAddress
-	if input.CoverImage != nil {
-		updates["cover_image"] = *input.CoverImage
-	}
 
 	if err := tx.Model(&provider).Updates(updates).Error; err != nil {
 		tx.Rollback()

@@ -258,6 +258,7 @@ export const caseAuditApi = {
 export const caseApi = {
     list: (params?: { page?: number; pageSize?: number; providerId?: string; style?: string }) =>
         api.get('/admin/cases', { params }),
+    detail: (id: number) => api.get(`/admin/cases/${id}`),
     create: (data: any) => api.post('/admin/cases', data),
     update: (id: number, data: any) => api.put(`/admin/cases/${id}`, data),
     delete: (id: number) => api.delete(`/admin/cases/${id}`),

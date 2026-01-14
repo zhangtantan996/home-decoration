@@ -24,6 +24,9 @@ interface AuditDetail extends CaseAudit {
     layout: string; // 户型
     area: string;
     price: number; // 装修总价
+    quoteTotalCent?: number;
+    quoteCurrency?: string;
+    quoteItems?: unknown;
     year: string;
     description: string;
     images: string[]; // JSON array
@@ -37,6 +40,48 @@ const getFullUrl = (path: string) => {
     if (!path) return '';
     if (path.startsWith('http')) return path;
     return `${API_BASE_URL}${path}`;
+};
+
+const QUOTE_CATEGORY_ORDER = ['设计费', '施工费', '主材费', '软装费', '其他'] as const;
+
+const parseQuoteItems = (raw: unknown): Array<{ category?: string; amountCent?: number }> => {
+    if (Array.isArray(raw)) {
+        return raw as Array<{ category?: string; amountCent?: number }>;
+    }
+    if (typeof raw === 'string' && raw.trim()) {
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    }
+    return [];
+};
+
+const summarizeQuote = (raw: unknown) => {
+    const items = parseQuoteItems(raw);
+    const totals: Record<string, number> = {};
+
+    for (const item of items) {
+        const category = item.category || '其他';
+        totals[category] = (totals[category] || 0) + Number(item.amountCent || 0);
+    }
+
+    const parts = QUOTE_CATEGORY_ORDER
+        .map(category => {
+            const amountCent = totals[category] || 0;
+            if (amountCent <= 0) return null;
+            return `${category} ¥${(amountCent / 100).toFixed(2)}`;
+        })
+        .filter(Boolean) as string[];
+
+    const totalCent = Object.values(totals).reduce((sum, v) => sum + v, 0);
+
+    return {
+        totalCent,
+        text: parts.length ? parts.join('；') : '-',
+    };
 };
 
 const CaseAudits: React.FC = () => {
@@ -210,6 +255,8 @@ const CaseAudits: React.FC = () => {
         },
     ];
 
+    const quoteSummary = currentDetail ? summarizeQuote(currentDetail.quoteItems) : null;
+
     return (
         <Card title="作品审核">
             <Tabs
@@ -289,6 +336,13 @@ const CaseAudits: React.FC = () => {
                             <Descriptions.Item label="面积">{currentDetail.area ? `${currentDetail.area}㎡` : '-'}</Descriptions.Item>
                             <Descriptions.Item label="装修总价">
                                 {currentDetail.price > 0 ? `¥${(currentDetail.price / 10000).toFixed(1)}万` : '-'}
+                            </Descriptions.Item>
+
+                            <Descriptions.Item label="报价总计">
+                                {quoteSummary && quoteSummary.totalCent > 0 ? `¥${(quoteSummary.totalCent / 100).toFixed(2)}` : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="报价分项" span={2}>
+                                {quoteSummary?.text || '-'}
                             </Descriptions.Item>
 
                             <Descriptions.Item label="年份">{currentDetail.year || '-'}</Descriptions.Item>

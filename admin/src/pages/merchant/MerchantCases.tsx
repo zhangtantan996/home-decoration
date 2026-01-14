@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Card, Table, Button, Modal, Form, Input, Select, InputNumber,
     message, Space, Image, Popconfirm, Empty, Row, Col, Upload, Tag, Tooltip
@@ -22,12 +22,16 @@ interface CaseItem {
     layout: string;
     area: string;
     price: number;
+    quoteTotalCent?: number;
+    quoteCurrency?: string;
+    quoteItems?: unknown;
     year: string;
     description: string;
     images: string[];
     sortOrder: number;
     createdAt: string;
     // Audit fields
+
     status: number; // 0: pending, 1: published, 2: rejected
     actionType?: string; // create, update, delete
     auditId?: number;
@@ -56,6 +60,110 @@ const getFullUrl = (path: string) => {
     return `${API_BASE_URL}${path}`;
 };
 
+type QuoteAmountFields = {
+    quoteDesignFee?: number;
+    quoteConstructionFee?: number;
+    quoteMaterialFee?: number;
+    quoteSoftDecorationFee?: number;
+    quoteOtherFee?: number;
+};
+
+const QUOTE_CATEGORY_ORDER = ['设计费', '施工费', '主材费', '软装费', '其他'] as const;
+
+const yuanToCent = (yuan?: number) => {
+    if (yuan == null) return 0;
+    const normalized = Number(yuan.toFixed(2));
+    return Math.round(normalized * 100);
+};
+
+const parseQuoteItems = (raw: unknown): Array<{ category?: string; amountCent?: number }> => {
+    if (Array.isArray(raw)) {
+        return raw as Array<{ category?: string; amountCent?: number }>;
+    }
+    if (typeof raw === 'string' && raw.trim()) {
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    }
+    return [];
+};
+
+const getQuoteTotalsByCategoryCent = (raw: unknown) => {
+    const items = parseQuoteItems(raw);
+    const totals: Record<string, number> = {};
+    for (const item of items) {
+        const category = item.category || '其他';
+        totals[category] = (totals[category] || 0) + Number(item.amountCent || 0);
+    }
+    return totals;
+};
+
+const extractQuoteAmountsFromItems = (raw: unknown): QuoteAmountFields => {
+    const totals = getQuoteTotalsByCategoryCent(raw);
+    const getYuan = (category: string) => (totals[category] || 0) / 100;
+    return {
+        quoteDesignFee: getYuan('设计费'),
+        quoteConstructionFee: getYuan('施工费'),
+        quoteMaterialFee: getYuan('主材费'),
+        quoteSoftDecorationFee: getYuan('软装费'),
+        quoteOtherFee: getYuan('其他'),
+    };
+};
+
+const buildQuoteItemsFromAmounts = (amounts: QuoteAmountFields) => {
+    const categoryToYuan: Record<string, number> = {
+        设计费: amounts.quoteDesignFee || 0,
+        施工费: amounts.quoteConstructionFee || 0,
+        主材费: amounts.quoteMaterialFee || 0,
+        软装费: amounts.quoteSoftDecorationFee || 0,
+        其他: amounts.quoteOtherFee || 0,
+    };
+
+    return QUOTE_CATEGORY_ORDER
+        .map((category, index) => {
+            const amountYuan = categoryToYuan[category] || 0;
+            const amountCent = yuanToCent(amountYuan);
+            if (amountCent <= 0) return null;
+            return {
+                category,
+                itemName: category,
+                unit: '项',
+                quantity: 1,
+                unitPriceCent: amountCent,
+                amountCent,
+                sortOrder: index + 1,
+            };
+        })
+        .filter(Boolean);
+};
+
+const getErrorMessage = (error: unknown) => {
+    if (typeof error === 'object' && error !== null) {
+        const withMessage = error as { message?: unknown };
+        const messageText = typeof withMessage.message === 'string' ? withMessage.message : '';
+
+        const withResponse = error as { response?: unknown };
+        const responseObj = withResponse.response;
+        if (typeof responseObj === 'object' && responseObj !== null) {
+            const withData = responseObj as { data?: unknown };
+            const dataObj = withData.data;
+            if (typeof dataObj === 'object' && dataObj !== null) {
+                const withDataMessage = dataObj as { message?: unknown };
+                if (typeof withDataMessage.message === 'string' && withDataMessage.message) {
+                    return withDataMessage.message;
+                }
+            }
+        }
+
+        if (messageText) return messageText;
+    }
+
+    return '操作失败';
+};
+
 const MerchantCases: React.FC = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -65,6 +173,40 @@ const MerchantCases: React.FC = () => {
     const [submitting, setSubmitting] = useState(false);
     const [previewCase, setPreviewCase] = useState<CaseItem | null>(null);
     const [form] = Form.useForm();
+    const [quoteTouched, setQuoteTouched] = useState(false);
+
+    const quoteDesignFee = Form.useWatch('quoteDesignFee', form) as number | undefined;
+    const quoteConstructionFee = Form.useWatch('quoteConstructionFee', form) as number | undefined;
+    const quoteMaterialFee = Form.useWatch('quoteMaterialFee', form) as number | undefined;
+    const quoteSoftDecorationFee = Form.useWatch('quoteSoftDecorationFee', form) as number | undefined;
+    const quoteOtherFee = Form.useWatch('quoteOtherFee', form) as number | undefined;
+
+    const quoteTotalYuan = useMemo(() => {
+        const parts = [
+            quoteDesignFee,
+            quoteConstructionFee,
+            quoteMaterialFee,
+            quoteSoftDecorationFee,
+            quoteOtherFee,
+        ];
+        const sum = parts.reduce<number>((acc, v) => acc + Number(v ?? 0), 0);
+        return Number(sum.toFixed(2));
+    }, [
+        quoteDesignFee,
+        quoteConstructionFee,
+        quoteMaterialFee,
+        quoteSoftDecorationFee,
+        quoteOtherFee,
+    ]);
+
+    const isQuoteBreakdownActive = quoteTotalYuan > 0;
+
+    useEffect(() => {
+        if (isQuoteBreakdownActive) {
+            form.setFieldValue('price', quoteTotalYuan);
+        }
+    }, [form, isQuoteBreakdownActive, quoteTotalYuan]);
+
 
     // Upload States
     const [coverFileList, setCoverFileList] = useState<UploadFile[]>([]);
@@ -128,11 +270,20 @@ const MerchantCases: React.FC = () => {
         setCoverFileList([]);
         setDetailFileList([]);
         form.resetFields();
+        setQuoteTouched(false);
+        form.setFieldsValue({
+            quoteDesignFee: 0,
+            quoteConstructionFee: 0,
+            quoteMaterialFee: 0,
+            quoteSoftDecorationFee: 0,
+            quoteOtherFee: 0,
+        });
         setModalVisible(true);
     };
 
-    const handleEdit = (record: CaseItem) => {
+    const handleEdit = async (record: CaseItem) => {
         setEditingCase(record);
+        setQuoteTouched(false);
 
         // Init file lists for upload components
         setCoverFileList([{
@@ -174,8 +325,45 @@ const MerchantCases: React.FC = () => {
             year: record.year,
             description: record.description,
             images: record.images,
+            quoteDesignFee: 0,
+            quoteConstructionFee: 0,
+            quoteMaterialFee: 0,
+            quoteSoftDecorationFee: 0,
+            quoteOtherFee: 0,
         });
         setModalVisible(true);
+
+        try {
+            const res = (await merchantCaseApi.detail(record.id)) as unknown as {
+                code: number;
+                data?: { quoteItems?: unknown; quoteTotalCent?: number; quoteCurrency?: string };
+            };
+            if (res.code === 0 && res.data) {
+                const quoteAmounts = extractQuoteAmountsFromItems(res.data.quoteItems);
+                form.setFieldsValue(quoteAmounts);
+
+                const total = Number((
+                    Number(quoteAmounts.quoteDesignFee || 0) +
+                    Number(quoteAmounts.quoteConstructionFee || 0) +
+                    Number(quoteAmounts.quoteMaterialFee || 0) +
+                    Number(quoteAmounts.quoteSoftDecorationFee || 0) +
+                    Number(quoteAmounts.quoteOtherFee || 0)
+                ).toFixed(2));
+                if (total > 0) {
+                    form.setFieldValue('price', total);
+                }
+
+                setQuoteTouched(false);
+                setEditingCase(prev => prev ? ({
+                    ...prev,
+                    price: total > 0 ? total : prev.price,
+                    quoteItems: res.data?.quoteItems,
+                    quoteTotalCent: res.data?.quoteTotalCent,
+                    quoteCurrency: res.data?.quoteCurrency,
+                }) : prev);
+            }
+        } catch {
+        }
     };
 
 
@@ -190,14 +378,45 @@ const MerchantCases: React.FC = () => {
             return;
         }
 
-        const payload = {
-            ...values,
-            area: String(values.area),
-            price: Number(values.price) || 0
+        const {
+            quoteDesignFee,
+            quoteConstructionFee,
+            quoteMaterialFee,
+            quoteSoftDecorationFee,
+            quoteOtherFee,
+            ...restValues
+        } = values;
+
+        const quoteItems = buildQuoteItemsFromAmounts({
+            quoteDesignFee,
+            quoteConstructionFee,
+            quoteMaterialFee,
+            quoteSoftDecorationFee,
+            quoteOtherFee,
+        });
+
+        const basePayload = {
+            ...restValues,
+            area: String(restValues.area),
+            price: Number(restValues.price) || 0,
         };
+
+        const payload = quoteTouched
+            ? {
+                ...basePayload,
+                quoteCurrency: 'CNY',
+                quoteItems,
+            }
+            : basePayload;
 
         // 编辑模式下检测是否有实际修改
         if (editingCase) {
+            const previousQuoteTotals = getQuoteTotalsByCategoryCent(editingCase.quoteItems);
+            const nextQuoteTotals = getQuoteTotalsByCategoryCent(quoteItems);
+            const hasQuoteChange = quoteTouched && QUOTE_CATEGORY_ORDER.some(category =>
+                (previousQuoteTotals[category] || 0) !== (nextQuoteTotals[category] || 0)
+            );
+
             const hasChange =
                 payload.title !== editingCase.title ||
                 payload.coverImage !== editingCase.coverImage ||
@@ -207,7 +426,8 @@ const MerchantCases: React.FC = () => {
                 payload.price !== editingCase.price ||
                 payload.year !== editingCase.year ||
                 payload.description !== editingCase.description ||
-                JSON.stringify(payload.images) !== JSON.stringify(editingCase.images);
+                JSON.stringify(payload.images) !== JSON.stringify(editingCase.images) ||
+                hasQuoteChange;
 
             if (!hasChange) {
                 message.info('内容未修改，无需提交');
@@ -234,7 +454,7 @@ const MerchantCases: React.FC = () => {
                 message.error(res.message || '操作失败');
             }
         } catch (error) {
-            message.error('操作失败');
+            message.error(getErrorMessage(error));
         } finally {
             setSubmitting(false);
         }
@@ -524,7 +744,26 @@ const MerchantCases: React.FC = () => {
                 width={700}
                 style={{ top: 20 }}
             >
-                <Form form={form} layout="vertical" onFinish={handleSubmit}>
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onFinish={handleSubmit}
+                    onValuesChange={(changedValues) => {
+                        const changedKeys = Object.keys(changedValues || {});
+                        const hasQuoteFieldChange = changedKeys.some((key) =>
+                            [
+                                'quoteDesignFee',
+                                'quoteConstructionFee',
+                                'quoteMaterialFee',
+                                'quoteSoftDecorationFee',
+                                'quoteOtherFee',
+                            ].includes(key)
+                        );
+                        if (hasQuoteFieldChange) {
+                            setQuoteTouched(true);
+                        }
+                    }}
+                >
                     <Form.Item
                         name="title"
                         label="作品名称"
@@ -594,18 +833,50 @@ const MerchantCases: React.FC = () => {
                                 rules={[
                                     { type: 'number', min: 0, max: 99999999, message: '价格范围 0-99999999 元' }
                                 ]}
-                                tooltip="选填，用于用户参考"
+                                tooltip={isQuoteBreakdownActive ? '已填写分项，系统自动合计' : '选填，用于用户参考'}
                             >
                                 <InputNumber
                                     placeholder="例如：150000"
                                     min={0}
                                     max={99999999}
-                                    precision={0}
+                                    precision={2}
                                     addonAfter="元"
+                                    disabled={isQuoteBreakdownActive}
                                     style={{ width: '100%' }}
                                     formatter={(value) => value ? `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''}
                                     parser={(value) => (value ? Number(value.replace(/,/g, '')) : 0) as 0 | 99999999}
                                 />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                        <Col span={8}>
+                            <Form.Item name="quoteDesignFee" label="设计费（元）" tooltip="可选，最多两位小数">
+                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="quoteConstructionFee" label="施工费（元）" tooltip="可选，最多两位小数">
+                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={8}>
+                            <Form.Item name="quoteMaterialFee" label="主材费（元）" tooltip="可选，最多两位小数">
+                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+
+                    <Row gutter={16}>
+                        <Col span={12}>
+                            <Form.Item name="quoteSoftDecorationFee" label="软装费（元）" tooltip="可选，最多两位小数">
+                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="quoteOtherFee" label="其他（元）" tooltip="可选，最多两位小数">
+                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
                             </Form.Item>
                         </Col>
                     </Row>

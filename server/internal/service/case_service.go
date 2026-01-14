@@ -31,6 +31,20 @@ type CaseQuote struct {
 
 type CaseService struct{}
 
+// GetCaseDetail 获取案例详情（公开接口，不含报价明细）
+func (s *CaseService) GetCaseDetail(caseID uint64) (*model.ProviderCase, error) {
+	var pc model.ProviderCase
+
+	// 查询案例详情，排除敏感的报价明细字段
+	if err := repository.DB.
+		Select("id, provider_id, title, cover_image, style, layout, area, price, quote_total_cent, quote_currency, year, description, images, sort_order, created_at, updated_at").
+		First(&pc, caseID).Error; err != nil {
+		return nil, err
+	}
+
+	return &pc, nil
+}
+
 func (s *CaseService) GetCaseQuote(caseID uint64) (*CaseQuote, error) {
 	var pc model.ProviderCase
 	if err := repository.DB.
@@ -75,16 +89,6 @@ func (s *CaseService) GetCaseQuote(caseID uint64) (*CaseQuote, error) {
 		Items:     items,
 		UpdatedAt: updatedAt.Format(time.RFC3339),
 	}, nil
-}
-
-func (s *CaseService) GetCaseDetail(caseID uint64) (*model.ProviderCase, error) {
-	var pc model.ProviderCase
-	if err := repository.DB.
-		Select("id, provider_id, title, cover_image, style, layout, area, price, year, description, images, created_at, updated_at").
-		First(&pc, caseID).Error; err != nil {
-		return nil, err
-	}
-	return &pc, nil
 }
 
 // NormalizeCaseQuote 规范化报价明细：补齐 amountCent，并返回合计（分）

@@ -53,6 +53,47 @@ const translateWorkType = (workType: string): string => {
     return map[workType] || workType;
 };
 
+const StickyFollowButton = ({
+    navOpacity,
+    isFollowed,
+    onPress,
+}: {
+    navOpacity: any;
+    isFollowed: boolean;
+    onPress: () => void;
+}) => {
+    const lightOpacity = Animated.subtract(1, navOpacity);
+    const label = isFollowed ? '已关注' : '+ 关注';
+
+    return (
+        <TouchableOpacity
+            onPress={onPress}
+            activeOpacity={0.85}
+            style={styles.navFollowTouchable}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+            <Animated.View
+                pointerEvents="none"
+                style={[styles.navFollowPill, styles.navFollowPillLight, { opacity: lightOpacity }]}
+            >
+                <Text style={[styles.navFollowText, styles.navFollowTextLight]}>{label}</Text>
+            </Animated.View>
+
+            <Animated.View
+                pointerEvents="none"
+                style={[
+                    styles.navFollowPill,
+                    styles.navFollowPillDark,
+                    StyleSheet.absoluteFillObject,
+                    { opacity: navOpacity },
+                ]}
+            >
+                <Text style={[styles.navFollowText, styles.navFollowTextDark]}>{label}</Text>
+            </Animated.View>
+        </TouchableOpacity>
+    );
+};
+
 // ========== Parallax Scroll Layout ==========
 const ParallaxScrollLayout = ({
     scrollY,
@@ -129,8 +170,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const designerId = params.id || params.designer?.id;
     // 初始数据可能是 undefined，需要做空保护
     const initialDesigner = params.designer || { id: designerId, name: '加载中...' };
-    const isDesignerHeaderV2 = Number(designerId) === 4;
-    const hideFavorite = isDesignerHeaderV2;
 
     const { showToast } = useToast();
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -223,7 +262,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
         name: user.nickname || initialDesigner.name || '设计师',
         avatar: user.avatar || initialDesigner.avatar,
         userId: provider.userId || user.id || initialDesigner.userId,
-        coverImage: isDesignerHeaderV2 ? provider.coverImage : (provider.coverImage || provider.avatar || initialDesigner.avatar),
+        coverImage: provider.coverImage || provider.avatar || initialDesigner.avatar,
         rating: provider.rating || initialDesigner.rating || 5.0,
         reviewCount: detail?.reviewCount || provider.reviewCount || initialDesigner.reviewCount || 0,
         yearsExperience: provider.yearsExperience || initialDesigner.yearsExperience || 0,
@@ -245,96 +284,38 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
         <ParallaxScrollLayout
             scrollY={scrollY}
             headerHeight={280}
-            renderHeader={() =>
-                isDesignerHeaderV2 ? (
-                    <View style={{ width: '100%', height: '100%', justifyContent: 'flex-end' }}>
-                        {displayData.coverImage ? (
-                            <Image
-                                source={{ uri: displayData.coverImage }}
-                                style={StyleSheet.absoluteFillObject}
-                                resizeMode="cover"
-                            />
-                        ) : (
-                            <View style={[StyleSheet.absoluteFillObject, styles.designerDefaultHeaderBg]} />
-                        )}
+            renderHeader={() => (
+                <ImageBackground
+                    source={{ uri: displayData.avatar || 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200' }}
+                    style={{ width: '100%', height: '100%', justifyContent: 'flex-end' }}
+                >
+                    <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
+                        <Defs>
+                            <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+                                <Stop offset="0.3" stopColor="black" stopOpacity="0" />
+                                <Stop offset="1" stopColor="black" stopOpacity="0.8" />
+                            </LinearGradient>
+                        </Defs>
+                        <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
+                    </Svg>
 
-                        <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
-                            <Defs>
-                                <LinearGradient id="designerBg" x1="0" y1="0" x2="1" y2="1">
-                                    <Stop offset="0" stopColor="#111827" stopOpacity="1" />
-                                    <Stop offset="0.7" stopColor="#1D4ED8" stopOpacity="0.85" />
-                                    <Stop offset="1" stopColor="#7C3AED" stopOpacity="0.85" />
-                                </LinearGradient>
-                                <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-                                    <Stop offset="0.3" stopColor="black" stopOpacity="0" />
-                                    <Stop offset="1" stopColor="black" stopOpacity="0.8" />
-                                </LinearGradient>
-                            </Defs>
-                            {!displayData.coverImage && (
-                                <Rect x="0" y="0" width="100%" height="100%" fill="url(#designerBg)" />
-                            )}
-                            <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
-                        </Svg>
-
-                        <View style={styles.heroContent}>
-                            <Image source={{ uri: displayData.avatar }} style={styles.heroAvatar} />
-                            <View style={[styles.heroInfo, { marginLeft: 0 }]}>
-                                <View style={[styles.flexRow, { marginBottom: 8 }]}>
-                                    <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
+                    <View style={styles.heroContent}>
+                        <View style={styles.heroInfo}>
+                            <View style={[styles.flexRow, { marginBottom: 8 }]}>
+                                <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
+                            </View>
+                            <View style={styles.heroBadgeRow}>
+                                <View style={styles.heroBadge}>
+                                    <Text style={styles.heroBadgeText}>{displayData.specialty?.replace(/[,，]/g, ' · ')}</Text>
                                 </View>
-                                <View style={styles.heroBadgeRow}>
-                                    <View style={styles.heroBadge}>
-                                        <Text style={styles.heroBadgeText}>{displayData.specialty?.replace(/[,，]/g, ' · ')}</Text>
-                                    </View>
-                                    <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                                        <Text style={styles.heroBadgeText}>{displayData.yearsExperience}年经验</Text>
-                                    </View>
+                                <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
+                                    <Text style={styles.heroBadgeText}>{displayData.yearsExperience}年经验</Text>
                                 </View>
                             </View>
                         </View>
                     </View>
-                ) : (
-                    <ImageBackground
-                        source={{ uri: displayData.avatar || 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200' }}
-                        style={{ width: '100%', height: '100%', justifyContent: 'flex-end' }}
-                    >
-                        <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
-                            <Defs>
-                                <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-                                    <Stop offset="0.3" stopColor="black" stopOpacity="0" />
-                                    <Stop offset="1" stopColor="black" stopOpacity="0.8" />
-                                </LinearGradient>
-                            </Defs>
-                            <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
-                        </Svg>
-
-                        <View style={styles.heroContent}>
-                            <View style={styles.heroInfo}>
-                                <View style={[styles.flexRow, { marginBottom: 8 }]}>
-                                    <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
-                                    <TouchableOpacity
-                                        style={[styles.followBtn, isFollowed && styles.followedBtn]}
-                                        onPress={handleFollow}
-                                        activeOpacity={0.7}
-                                    >
-                                        <Text style={[styles.followText, isFollowed && styles.followedText]}>
-                                            {isFollowed ? '已关注' : '+ 关注'}
-                                        </Text>
-                                    </TouchableOpacity>
-                                </View>
-                                <View style={styles.heroBadgeRow}>
-                                    <View style={styles.heroBadge}>
-                                        <Text style={styles.heroBadgeText}>{displayData.specialty?.replace(/[,，]/g, ' · ')}</Text>
-                                    </View>
-                                    <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                                        <Text style={styles.heroBadgeText}>{displayData.yearsExperience}年经验</Text>
-                                    </View>
-                                </View>
-                            </View>
-                        </View>
-                    </ImageBackground>
-                )
-            }
+                </ImageBackground>
+            )}
             renderStickyNav={(navOpacity: any) => (
                 <View style={styles.stickyNavContent}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.stickyActionBtn}>
@@ -358,16 +339,17 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     </View>
 
                     <View style={styles.headerActions}>
-                        {!hideFavorite && (
-                            <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
-                                <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
-                                    <Animated.View style={{ opacity: navOpacity }}>
-                                        <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
-                                    </Animated.View>
-                                </View>
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
+                                </Animated.View>
+                            </View>
+                        </TouchableOpacity>
+
+                        <StickyFollowButton navOpacity={navOpacity} isFollowed={isFollowed} onPress={handleFollow} />
+
                         <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
                                 <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
@@ -428,22 +410,10 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                 </View>
                 <View style={styles.dashDivider} />
                 <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{isDesignerHeaderV2 ? caseCount : displayData.completedCnt}</Text>
-                    <Text style={styles.dashLabel}>{isDesignerHeaderV2 ? '案例数量' : '完成案例'}</Text>
+                    <Text style={styles.dashValue}>{displayData.completedCnt}</Text>
+                    <Text style={styles.dashLabel}>完成案例</Text>
                 </View>
             </View>
-
-            {isDesignerHeaderV2 && (
-                <TouchableOpacity
-                    style={[styles.fullWidthFollowBtn, isFollowed && styles.fullWidthFollowedBtn]}
-                    onPress={handleFollow}
-                    activeOpacity={0.85}
-                >
-                    <Text style={[styles.fullWidthFollowText, isFollowed && styles.fullWidthFollowedText]}>
-                        {isFollowed ? '已关注' : '+ 关注'}
-                    </Text>
-                </TouchableOpacity>
-            )}
 
             {/* Service Area Section */}
             <View style={styles.magazineSection}>
@@ -504,10 +474,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                                     coverImage: caseItem.coverImage,
                                     style: caseItem.style,
                                     area: caseItem.area,
-                                    year: caseItem.year,
-                                },
-                                providerName: displayData.name,
-                                providerType: 'designer'
+                                }
                             })}
                         >
                             <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
@@ -574,7 +541,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const params = route.params || {};
     const workerId = params.id || params.worker?.id;
     const initialWorker = params.worker || { id: workerId, name: '加载中...' };
-    const hideFavorite = false;
 
     const { showToast } = useToast();
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -713,15 +679,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         <View style={styles.heroInfo}>
                             <View style={[styles.flexRow, { marginBottom: 8 }]}>
                                 <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
-                                <TouchableOpacity
-                                    style={[styles.followBtn, isFollowed && styles.followedBtn]}
-                                    onPress={handleFollow}
-                                    activeOpacity={0.7}
-                                >
-                                    <Text style={[styles.followText, isFollowed && styles.followedText]}>
-                                        {isFollowed ? '已关注' : '+ 关注'}
-                                    </Text>
-                                </TouchableOpacity>
                             </View>
                             <View style={styles.heroBadgeRow}>
                                 <View style={[styles.heroBadge, { backgroundColor: '#EAB308' }]}>
@@ -758,16 +715,17 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     </View>
 
                     <View style={styles.headerActions}>
-                        {!hideFavorite && (
-                            <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
-                                <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
-                                    <Animated.View style={{ opacity: navOpacity }}>
-                                        <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
-                                    </Animated.View>
-                                </View>
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
+                                </Animated.View>
+                            </View>
+                        </TouchableOpacity>
+
+                        <StickyFollowButton navOpacity={navOpacity} isFollowed={isFollowed} onPress={handleFollow} />
+
                         <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
                                 <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
@@ -888,10 +846,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                                     coverImage: caseItem.coverImage,
                                     style: caseItem.style,
                                     area: caseItem.area,
-                                    year: caseItem.year,
                                 },
-                                providerName: displayData.name,
-                                providerType: 'foreman'
                             })}
                         >
                             <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
@@ -958,7 +913,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const params = route.params || {};
     const companyId = params.id || params.company?.id;
     const initialCompany = params.company || { id: companyId, name: '加载中...' };
-    const hideFavorite = false;
 
     const { showToast } = useToast();
     const scrollY = useRef(new Animated.Value(0)).current;
@@ -1097,15 +1051,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         <View style={styles.heroInfo}>
                             <View style={[styles.flexRow, { marginBottom: 8 }]}>
                                 <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
-                                <TouchableOpacity
-                                    style={[styles.followBtn, isFollowed && styles.followedBtn]}
-                                    onPress={handleFollow}
-                                    activeOpacity={0.7}
-                                >
-                                    <Text style={[styles.followText, isFollowed && styles.followedText]}>
-                                        {isFollowed ? '已关注' : '+ 关注'}
-                                    </Text>
-                                </TouchableOpacity>
                             </View>
                             <View style={styles.heroBadgeRow}>
                                 <View style={styles.heroBadge}>
@@ -1142,16 +1087,17 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     </View>
 
                     <View style={styles.headerActions}>
-                        {!hideFavorite && (
-                            <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
-                                <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
-                                    <Animated.View style={{ opacity: navOpacity }}>
-                                        <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
-                                    </Animated.View>
-                                </View>
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
+                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
+                                <Animated.View style={{ opacity: navOpacity }}>
+                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
+                                </Animated.View>
+                            </View>
+                        </TouchableOpacity>
+
+                        <StickyFollowButton navOpacity={navOpacity} isFollowed={isFollowed} onPress={handleFollow} />
+
                         <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
                                 <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
@@ -1273,10 +1219,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                                     coverImage: caseItem.coverImage,
                                     style: caseItem.style,
                                     area: caseItem.area,
-                                    year: caseItem.year,
                                 },
-                                providerName: displayData.name,
-                                providerType: 'company'
                             })}
                         >
                             <Image source={{ uri: caseItem.coverImage }} style={styles.magCaseImg} />
@@ -1441,31 +1384,6 @@ const styles = StyleSheet.create({
     },
     followedText: {
         color: '#374151',
-    },
-    designerDefaultHeaderBg: {
-        backgroundColor: '#111827',
-    },
-    fullWidthFollowBtn: {
-        marginTop: 16,
-        marginBottom: 8,
-        height: 46,
-        width: '90%',
-        alignSelf: 'center',
-        borderRadius: 14,
-        backgroundColor: '#111',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    fullWidthFollowedBtn: {
-        backgroundColor: '#E5E7EB',
-    },
-    fullWidthFollowText: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#fff',
-    },
-    fullWidthFollowedText: {
-        color: '#111827',
     },
     heroBadgeRow: {
         flexDirection: 'row',
@@ -1864,6 +1782,40 @@ const styles = StyleSheet.create({
         padding: 8,
         marginLeft: 8,
     },
+
+    navFollowTouchable: {
+        marginLeft: 8,
+        height: 32,
+        minWidth: 72,
+        justifyContent: 'center',
+    },
+    navFollowPill: {
+        paddingHorizontal: 12,
+        height: 32,
+        borderRadius: 16,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    navFollowPillLight: {
+        backgroundColor: 'rgba(255,255,255,0.16)',
+        borderColor: 'rgba(255,255,255,0.72)',
+    },
+    navFollowPillDark: {
+        backgroundColor: '#111',
+        borderColor: '#111',
+    },
+    navFollowText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    navFollowTextLight: {
+        color: '#fff',
+    },
+    navFollowTextDark: {
+        color: '#fff',
+    },
+
     // Tags
     tagsContainer: {
         flexDirection: 'row',

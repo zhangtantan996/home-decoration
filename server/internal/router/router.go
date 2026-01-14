@@ -63,6 +63,9 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 		v1.GET("/dictionaries/categories", dictHandler.GetAllCategories)
 		v1.GET("/dictionaries/:category", dictHandler.GetDictOptions)
 
+		// 案例详情 (公开)
+		v1.GET("/cases/:id", handler.GetCaseDetail)
+
 		// 行政区划 API (公开 - 用于级联选择器)
 		regions := v1.Group("/regions")
 		{
@@ -127,7 +130,6 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 				foremen.GET("/:id/review-stats", handler.GetReviewStats)
 			}
 
-			authorized.GET("/cases/:id", handler.GetCaseDetail)
 			// 案例报价（登录可查看，不提供下载）
 			authorized.GET("/cases/:id/quote", handler.GetCaseQuote)
 
@@ -313,6 +315,7 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 
 			// 作品管理 (CRUD)
 			admin.GET("/cases", handler.AdminListCases)
+			admin.GET("/cases/:id", handler.AdminGetCase)
 			admin.POST("/cases", handler.AdminCreateCase)
 			admin.PUT("/cases/:id", handler.AdminUpdateCase)
 			admin.DELETE("/cases/:id", handler.AdminDeleteCase)

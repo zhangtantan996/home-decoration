@@ -93,6 +93,59 @@ func AdminListCases(c *gin.Context) {
 	})
 }
 
+func AdminGetCase(c *gin.Context) {
+	caseID := parseUint64(c.Param("id"))
+	if caseID == 0 {
+		response.Error(c, 400, "ID无效")
+		return
+	}
+
+	var caseItem model.ProviderCase
+	if err := repository.DB.First(&caseItem, caseID).Error; err != nil {
+		response.Error(c, 404, "作品不存在")
+		return
+	}
+
+	var providerName string
+	if caseItem.ProviderID == 0 {
+		providerName = "官方"
+	} else {
+		var provider model.Provider
+		var user model.User
+		if err := repository.DB.First(&provider, caseItem.ProviderID).Error; err == nil {
+			repository.DB.First(&user, provider.UserID)
+			providerName = user.Nickname
+			if providerName == "" {
+				providerName = provider.CompanyName
+			}
+		}
+	}
+
+	var images []string
+	json.Unmarshal([]byte(caseItem.Images), &images)
+
+	response.Success(c, gin.H{
+		"id":             caseItem.ID,
+		"providerId":     caseItem.ProviderID,
+		"providerName":   providerName,
+		"title":          caseItem.Title,
+		"coverImage":     caseItem.CoverImage,
+		"style":          caseItem.Style,
+		"layout":         caseItem.Layout,
+		"area":           caseItem.Area,
+		"price":          caseItem.Price,
+		"quoteTotalCent": caseItem.QuoteTotalCent,
+		"quoteCurrency":  caseItem.QuoteCurrency,
+		"quoteItems":     caseItem.QuoteItems,
+		"year":           caseItem.Year,
+		"description":    caseItem.Description,
+		"images":         images,
+		"sortOrder":      caseItem.SortOrder,
+		"createdAt":      caseItem.CreatedAt,
+		"updatedAt":      caseItem.UpdatedAt,
+	})
+}
+
 // AdminCreateCase 官方添加作品
 func AdminCreateCase(c *gin.Context) {
 	var input struct {

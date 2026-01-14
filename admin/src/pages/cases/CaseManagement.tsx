@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Card, Table, Button, Modal, Tag, message, Image,
     Descriptions, Input, Tabs, Space, Popconfirm, Form,
@@ -63,6 +63,86 @@ interface AuditDetail extends CaseAudit {
     images: string[];
 }
 
+type QuoteAmountFields = {
+    quoteDesignFee?: number;
+    quoteConstructionFee?: number;
+    quoteMaterialFee?: number;
+    quoteSoftDecorationFee?: number;
+    quoteOtherFee?: number;
+};
+
+const QUOTE_CATEGORY_ORDER = ['设计费', '施工费', '主材费', '软装费', '其他'] as const;
+
+const yuanToCent = (yuan?: number) => {
+    if (yuan == null) return 0;
+    const normalized = Number(yuan.toFixed(2));
+    return Math.round(normalized * 100);
+};
+
+const parseQuoteItems = (raw: unknown): Array<{ category?: string; amountCent?: number }> => {
+    if (Array.isArray(raw)) {
+        return raw as Array<{ category?: string; amountCent?: number }>;
+    }
+    if (typeof raw === 'string' && raw.trim()) {
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    }
+    return [];
+};
+
+const buildQuoteItemsFromAmounts = (amounts: QuoteAmountFields) => {
+    const categoryToYuan: Record<string, number> = {
+        设计费: amounts.quoteDesignFee || 0,
+        施工费: amounts.quoteConstructionFee || 0,
+        主材费: amounts.quoteMaterialFee || 0,
+        软装费: amounts.quoteSoftDecorationFee || 0,
+        其他: amounts.quoteOtherFee || 0,
+    };
+
+    return QUOTE_CATEGORY_ORDER
+        .map((category, index) => {
+            const amountYuan = categoryToYuan[category] || 0;
+            const amountCent = yuanToCent(amountYuan);
+            if (amountCent <= 0) return null;
+            return {
+                category,
+                itemName: category,
+                unit: '项',
+                quantity: 1,
+                unitPriceCent: amountCent,
+                amountCent,
+                sortOrder: index + 1,
+            };
+        })
+        .filter(Boolean);
+};
+
+const extractQuoteAmountsFromItems = (raw: unknown): QuoteAmountFields => {
+    const items = parseQuoteItems(raw);
+    const totalsCent: Record<string, number> = {};
+
+    for (const item of items) {
+        const category = item.category || '其他';
+        const amountCent = Number(item.amountCent || 0);
+        totalsCent[category] = (totalsCent[category] || 0) + amountCent;
+    }
+
+    const getYuan = (category: string) => (totalsCent[category] || 0) / 100;
+
+    return {
+        quoteDesignFee: getYuan('设计费'),
+        quoteConstructionFee: getYuan('施工费'),
+        quoteMaterialFee: getYuan('主材费'),
+        quoteSoftDecorationFee: getYuan('软装费'),
+        quoteOtherFee: getYuan('其他'),
+    };
+};
+
+
 const CaseManagement: React.FC = () => {
     const [activeTab, setActiveTab] = useState('list');
     const [loading, setLoading] = useState(false);
@@ -76,6 +156,40 @@ const CaseManagement: React.FC = () => {
     const [uploading, setUploading] = useState(false);
     const [coverImageUrl, setCoverImageUrl] = useState('');
     const [detailImages, setDetailImages] = useState<string[]>([]);
+    const [quoteTouched, setQuoteTouched] = useState(false);
+
+    const quoteDesignFee = Form.useWatch('quoteDesignFee', form) as number | undefined;
+    const quoteConstructionFee = Form.useWatch('quoteConstructionFee', form) as number | undefined;
+    const quoteMaterialFee = Form.useWatch('quoteMaterialFee', form) as number | undefined;
+    const quoteSoftDecorationFee = Form.useWatch('quoteSoftDecorationFee', form) as number | undefined;
+    const quoteOtherFee = Form.useWatch('quoteOtherFee', form) as number | undefined;
+
+    const quoteTotalYuan = useMemo(() => {
+        const parts = [
+            quoteDesignFee,
+            quoteConstructionFee,
+            quoteMaterialFee,
+            quoteSoftDecorationFee,
+            quoteOtherFee,
+        ];
+        const sum = parts.reduce<number>((acc, v) => acc + Number(v ?? 0), 0);
+        return Number(sum.toFixed(2));
+    }, [
+        quoteDesignFee,
+        quoteConstructionFee,
+        quoteMaterialFee,
+        quoteSoftDecorationFee,
+        quoteOtherFee,
+    ]);
+
+    const isQuoteBreakdownActive = quoteTotalYuan > 0;
+
+    useEffect(() => {
+        if (isQuoteBreakdownActive) {
+            form.setFieldValue('price', quoteTotalYuan);
+        }
+    }, [form, isQuoteBreakdownActive, quoteTotalYuan]);
+
 
     // 审核详情相关
     const [auditDetailVisible, setAuditDetailVisible] = useState(false);
@@ -125,13 +239,22 @@ const CaseManagement: React.FC = () => {
     const handleAdd = () => {
         setEditingId(null);
         form.resetFields();
+        setQuoteTouched(false);
+        form.setFieldsValue({
+            quoteDesignFee: 0,
+            quoteConstructionFee: 0,
+            quoteMaterialFee: 0,
+            quoteSoftDecorationFee: 0,
+            quoteOtherFee: 0,
+        });
         setCoverImageUrl('');
         setDetailImages([]);
         setFormVisible(true);
     };
 
-    const handleEdit = (record: CaseItem) => {
+    const handleEdit = async (record: CaseItem) => {
         setEditingId(record.id);
+        setQuoteTouched(false);
         form.setFieldsValue({
             providerId: record.providerId || undefined,
             title: record.title,
@@ -141,10 +264,28 @@ const CaseManagement: React.FC = () => {
             price: record.price,
             year: record.year,
             description: record.description,
+            quoteDesignFee: 0,
+            quoteConstructionFee: 0,
+            quoteMaterialFee: 0,
+            quoteSoftDecorationFee: 0,
+            quoteOtherFee: 0,
         });
         setCoverImageUrl(record.coverImage);
         setDetailImages(record.images || []);
         setFormVisible(true);
+
+        try {
+            const res = (await caseApi.detail(record.id)) as unknown as {
+                code: number;
+                data?: { quoteItems?: unknown };
+            };
+            if (res.code === 0 && res.data) {
+                const quoteAmounts = extractQuoteAmountsFromItems(res.data.quoteItems);
+                form.setFieldsValue(quoteAmounts);
+                setQuoteTouched(false);
+            }
+        } catch {
+        }
     };
 
     const handleDelete = async (id: number) => {
@@ -170,12 +311,38 @@ const CaseManagement: React.FC = () => {
                 return;
             }
 
-            const data = {
-                ...values,
+            const {
+                providerId,
+                quoteDesignFee,
+                quoteConstructionFee,
+                quoteMaterialFee,
+                quoteSoftDecorationFee,
+                quoteOtherFee,
+                ...restValues
+            } = values;
+
+            const quoteItems = buildQuoteItemsFromAmounts({
+                quoteDesignFee,
+                quoteConstructionFee,
+                quoteMaterialFee,
+                quoteSoftDecorationFee,
+                quoteOtherFee,
+            });
+
+            const baseData = {
+                ...restValues,
+                providerId: providerId || null,
                 coverImage: coverImageUrl,
                 images: detailImages,
-                providerId: values.providerId || null,
             };
+
+            const data = quoteTouched
+                ? {
+                    ...baseData,
+                    quoteCurrency: 'CNY',
+                    quoteItems,
+                }
+                : baseData;
 
             const res = editingId
                 ? await caseApi.update(editingId, data)
@@ -447,7 +614,25 @@ const CaseManagement: React.FC = () => {
                 width={800}
                 confirmLoading={uploading}
             >
-                <Form form={form} layout="vertical">
+                <Form
+                    form={form}
+                    layout="vertical"
+                    onValuesChange={(changedValues) => {
+                        const changedKeys = Object.keys(changedValues || {});
+                        const hasQuoteFieldChange = changedKeys.some((key) =>
+                            [
+                                'quoteDesignFee',
+                                'quoteConstructionFee',
+                                'quoteMaterialFee',
+                                'quoteSoftDecorationFee',
+                                'quoteOtherFee',
+                            ].includes(key)
+                        );
+                        if (hasQuoteFieldChange) {
+                            setQuoteTouched(true);
+                        }
+                    }}
+                >
                     <Form.Item label="商家" name="providerId">
                         <Input placeholder="留空表示官方作品" type="number" />
                     </Form.Item>
@@ -463,9 +648,30 @@ const CaseManagement: React.FC = () => {
                     <Form.Item label="面积" name="area">
                         <Input placeholder="如：120" />
                     </Form.Item>
-                    <Form.Item label="装修总价（元）" name="price">
-                        <InputNumber min={0} style={{ width: '100%' }} />
+                    <Form.Item
+                        label="装修总价（元）"
+                        name="price"
+                        tooltip={isQuoteBreakdownActive ? '已填写分项，系统自动合计' : undefined}
+                    >
+                        <InputNumber min={0} precision={2} disabled={isQuoteBreakdownActive} style={{ width: '100%' }} />
                     </Form.Item>
+
+                    <Form.Item label="设计费（元）" name="quoteDesignFee" tooltip="可选，最多两位小数">
+                        <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item label="施工费（元）" name="quoteConstructionFee" tooltip="可选，最多两位小数">
+                        <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item label="主材费（元）" name="quoteMaterialFee" tooltip="可选，最多两位小数">
+                        <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item label="软装费（元）" name="quoteSoftDecorationFee" tooltip="可选，最多两位小数">
+                        <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item label="其他（元）" name="quoteOtherFee" tooltip="可选，最多两位小数">
+                        <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+                    </Form.Item>
+
                     <Form.Item label="年份" name="year">
                         <Input placeholder="如：2024" />
                     </Form.Item>

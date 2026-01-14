@@ -6,6 +6,7 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -208,7 +209,12 @@ func MerchantCaseCreate(c *gin.Context) {
 	}
 
 	if err := repository.DB.Create(&audit).Error; err != nil {
-		response.Error(c, 500, "提交失败")
+		msg := "提交失败"
+		errText := err.Error()
+		if strings.Contains(errText, "does not exist") || strings.Contains(errText, "UndefinedColumn") {
+			msg = "提交失败，请联系管理员检查数据库是否已升级"
+		}
+		response.Error(c, 500, msg)
 		return
 	}
 
@@ -328,7 +334,12 @@ func MerchantCaseUpdate(c *gin.Context) {
 			}
 		}
 		if err := repository.DB.Create(&newAudit).Error; err != nil {
-			response.Error(c, 500, "提交失败")
+			msg := "提交失败"
+			errText := err.Error()
+			if strings.Contains(errText, "does not exist") || strings.Contains(errText, "UndefinedColumn") {
+				msg = "提交失败，请联系管理员检查数据库是否已升级"
+			}
+			response.Error(c, 500, msg)
 			return
 		}
 	}
