@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -13,18 +13,14 @@ import {
     Modal,
     Platform,
     ActivityIndicator,
-    ImageBackground,
 } from 'react-native';
-import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import { ArrowLeft, Share2, Star, MessageCircle, X, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, Share2, X } from 'lucide-react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { providerApi } from '../services/api';
+import { caseApi, providerApi } from '../services/api';
 import { getWebUrl } from '../config';
 import { useToast } from '../components/Toast';
 
 const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 48) / 2;
-
 // Mock case data
 const MOCK_CASES = [
     {
@@ -134,40 +130,41 @@ export const CaseGalleryScreen = ({ route, navigation }: any) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        loadCases();
-    }, []);
-
-    const loadCases = async () => {
-        try {
-            // 根据 providerType 选择 API 类型
-            const apiType = providerType === 'designer' ? 'designers' :
-                providerType === 'company' ? 'companies' : 'foremen';
-            const res = await providerApi.getCases(apiType, providerId);
-            if (res.data && res.data.list) {
-                // 为每个案例添加随机高度
-                const casesWithHeight = res.data.list.map((c: any, idx: number) => ({
-                    ...c,
-                    height: 160 + (idx % 3) * 30, // 160, 190, 220
-                }));
-                setCases(casesWithHeight);
+        const loadCases = async () => {
+            try {
+                const apiType = providerType === 'designer' ? 'designers' :
+                    providerType === 'company' ? 'companies' : 'foremen';
+                const res = await providerApi.getCases(apiType, providerId);
+                if (res.data && res.data.list) {
+                    const casesWithHeight = res.data.list.map((c: any, idx: number) => ({
+                        ...c,
+                        height: 160 + (idx % 3) * 30,
+                    }));
+                    setCases(casesWithHeight);
+                }
+            } catch (error) {
+                console.log('加载案例失败:', error);
+                setCases(MOCK_CASES);
+            } finally {
+                setLoading(false);
             }
-        } catch (error) {
-            console.log('加载案例失败:', error);
-            // 降级使用 MOCK 数据
-            setCases(MOCK_CASES);
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
+
+        loadCases();
+    }, [providerId, providerType]);
 
     const renderCaseCard = (caseItem: any) => (
         <TouchableOpacity
             key={caseItem.id}
             style={[styles.caseCard, { height: (caseItem.height || 180) + 60 }]}
             onPress={() => navigation.navigate('CaseDetail', {
-                caseItem: {
-                    ...caseItem,
-                    images: caseItem.images ? (typeof caseItem.images === 'string' ? JSON.parse(caseItem.images) : caseItem.images) : [caseItem.coverImage],
+                caseId: caseItem.id,
+                initialData: {
+                    title: caseItem.title,
+                    coverImage: caseItem.coverImage,
+                    style: caseItem.style,
+                    area: caseItem.area,
+                    year: caseItem.year,
                 },
                 providerName,
                 providerType
@@ -227,30 +224,113 @@ export const CaseGalleryScreen = ({ route, navigation }: any) => {
 
 // ========== Case Detail Screen ==========
 export const CaseDetailScreen = ({ route, navigation }: any) => {
-    const { caseItem, providerName, providerType } = route.params;
+    const params = route.params || {};
+    const numericCaseId = Number(params.caseId ?? params.caseItem?.id);
+    const initialData = params.initialData;
+
     const { showToast } = useToast();
-    const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [caseItem, setCaseItem] = useState<any>(params.caseItem || null);
+    const [_loading, setLoading] = useState(true);
     const [showImageViewer, setShowImageViewer] = useState(false);
     const [viewerIndex, setViewerIndex] = useState(0);
     const flatListRef = React.useRef<FlatList>(null);
+
+    const normalizeCaseItem = useCallback((raw: any) => {
+        const imagesRaw = raw?.images;
+        let images: string[] = [];
+        if (Array.isArray(imagesRaw)) {
+            images = imagesRaw;
+        } else if (typeof imagesRaw === 'string' && imagesRaw.trim() !== '') {
+            try {
+                const parsed = JSON.parse(imagesRaw);
+                images = Array.isArray(parsed) ? parsed : [];
+            } catch {
+                images = [];
+            }
+        }
+
+        if (images.length === 0 && raw?.coverImage) {
+            images = [raw.coverImage];
+        }
+
+        return {
+            ...raw,
+            id: raw?.id ?? numericCaseId,
+            images,
+        };
+    }, [numericCaseId]);
+
+    useEffect(() => {
+        if (!numericCaseId) {
+            showToast({ message: '缺少案例ID', type: 'error' });
+            navigation.goBack();
+            return;
+        }
+
+        let cancelled = false;
+        const loadDetail = async () => {
+            setLoading(true);
+            if (initialData && !params.caseItem) {
+                setCaseItem(normalizeCaseItem({ ...initialData, id: numericCaseId }));
+            }
+            try {
+                const res = await caseApi.getDetail(numericCaseId);
+                if (!cancelled && res.data) {
+                    setCaseItem(normalizeCaseItem(res.data));
+                }
+            } catch {
+                if (!cancelled) {
+                    if (initialData && !params.caseItem) {
+                        setCaseItem(normalizeCaseItem({ ...initialData, id: numericCaseId }));
+                    } else {
+                        showToast({ message: '加载失败，请稍后重试', type: 'error' });
+                    }
+                }
+            } finally {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            }
+        };
+
+        loadDetail();
+        return () => {
+            cancelled = true;
+        };
+    }, [initialData, normalizeCaseItem, numericCaseId, navigation, params.caseItem, showToast]);
 
     const openImageViewer = (index: number) => {
         setViewerIndex(index);
         setShowImageViewer(true);
     };
 
-    const goToImage = (index: number) => {
-        if (index >= 0 && index < caseItem.images.length) {
-            setViewerIndex(index);
-            flatListRef.current?.scrollToIndex({ index, animated: true });
-        }
-    };
-
     const handleShare = () => {
-        const shareUrl = `${getWebUrl()}/case/${caseItem.id}`;
+        const shareUrl = `${getWebUrl()}/case/${numericCaseId}`;
         Clipboard.setString(shareUrl);
         showToast({ message: '链接已复制到剪贴板', type: 'success' });
     };
+
+    if (!caseItem) {
+        return (
+            <View style={styles.container}>
+                <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+
+                <View style={styles.header}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                        <ArrowLeft size={24} color="#111" />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>案例详情</Text>
+                    <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+                        <Share2 size={20} color="#111" />
+                    </TouchableOpacity>
+                </View>
+
+                <View style={[styles.content, { justifyContent: 'center', alignItems: 'center' }]}>
+                    <ActivityIndicator size="large" color="#111" />
+                </View>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>

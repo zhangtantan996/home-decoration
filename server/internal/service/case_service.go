@@ -77,6 +77,16 @@ func (s *CaseService) GetCaseQuote(caseID uint64) (*CaseQuote, error) {
 	}, nil
 }
 
+func (s *CaseService) GetCaseDetail(caseID uint64) (*model.ProviderCase, error) {
+	var pc model.ProviderCase
+	if err := repository.DB.
+		Select("id, provider_id, title, cover_image, style, layout, area, price, year, description, images, created_at, updated_at").
+		First(&pc, caseID).Error; err != nil {
+		return nil, err
+	}
+	return &pc, nil
+}
+
 // NormalizeCaseQuote 规范化报价明细：补齐 amountCent，并返回合计（分）
 func NormalizeCaseQuote(items []CaseQuoteItem) (int64, []CaseQuoteItem) {
 	var total int64

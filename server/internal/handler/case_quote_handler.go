@@ -29,3 +29,23 @@ func GetCaseQuote(c *gin.Context) {
 
 	response.Success(c, quote)
 }
+
+func GetCaseDetail(c *gin.Context) {
+	caseID := parseUint64(c.Param("id"))
+	if caseID == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	pc, err := caseService.GetCaseDetail(caseID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "案例不存在")
+			return
+		}
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.Success(c, pc)
+}

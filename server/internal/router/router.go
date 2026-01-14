@@ -127,6 +127,7 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 				foremen.GET("/:id/review-stats", handler.GetReviewStats)
 			}
 
+			authorized.GET("/cases/:id", handler.GetCaseDetail)
 			// 案例报价（登录可查看，不提供下载）
 			authorized.GET("/cases/:id/quote", handler.GetCaseQuote)
 

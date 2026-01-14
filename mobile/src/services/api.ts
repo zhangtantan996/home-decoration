@@ -207,6 +207,7 @@ export const providerApi = {
 };
 
 export const caseApi = {
+    getDetail: (caseId: number) => api.get<any>(`/cases/${caseId}`),
     getQuote: (caseId: number) => api.get<any>(`/cases/${caseId}/quote`),
 };
 
