@@ -53,46 +53,6 @@ const translateWorkType = (workType: string): string => {
     return map[workType] || workType;
 };
 
-const StickyFollowButton = ({
-    navOpacity,
-    isFollowed,
-    onPress,
-}: {
-    navOpacity: any;
-    isFollowed: boolean;
-    onPress: () => void;
-}) => {
-    const lightOpacity = Animated.subtract(1, navOpacity);
-    const label = isFollowed ? '已关注' : '+ 关注';
-
-    return (
-        <TouchableOpacity
-            onPress={onPress}
-            activeOpacity={0.85}
-            style={styles.navFollowTouchable}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-            <Animated.View
-                pointerEvents="none"
-                style={[styles.navFollowPill, styles.navFollowPillLight, { opacity: lightOpacity }]}
-            >
-                <Text style={[styles.navFollowText, styles.navFollowTextLight]}>{label}</Text>
-            </Animated.View>
-
-            <Animated.View
-                pointerEvents="none"
-                style={[
-                    styles.navFollowPill,
-                    styles.navFollowPillDark,
-                    StyleSheet.absoluteFillObject,
-                    { opacity: navOpacity },
-                ]}
-            >
-                <Text style={[styles.navFollowText, styles.navFollowTextDark]}>{label}</Text>
-            </Animated.View>
-        </TouchableOpacity>
-    );
-};
 
 // ========== Parallax Scroll Layout ==========
 const ParallaxScrollLayout = ({
@@ -286,7 +246,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
             headerHeight={280}
             renderHeader={() => (
                 <ImageBackground
-                    source={{ uri: displayData.avatar || 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200' }}
+                    source={{ uri: displayData.coverImage || displayData.avatar || 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200' }}
                     style={{ width: '100%', height: '100%', justifyContent: 'flex-end' }}
                 >
                     <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
@@ -298,24 +258,9 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         </Defs>
                         <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
                     </Svg>
-
-                    <View style={styles.heroContent}>
-                        <View style={styles.heroInfo}>
-                            <View style={[styles.flexRow, { marginBottom: 8 }]}>
-                                <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
-                            </View>
-                            <View style={styles.heroBadgeRow}>
-                                <View style={styles.heroBadge}>
-                                    <Text style={styles.heroBadgeText}>{displayData.specialty?.replace(/[,，]/g, ' · ')}</Text>
-                                </View>
-                                <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                                    <Text style={styles.heroBadgeText}>{displayData.yearsExperience}年经验</Text>
-                                </View>
-                            </View>
-                        </View>
-                    </View>
                 </ImageBackground>
             )}
+
             renderStickyNav={(navOpacity: any) => (
                 <View style={styles.stickyNavContent}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.stickyActionBtn}>
@@ -348,7 +293,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                             </View>
                         </TouchableOpacity>
 
-                        <StickyFollowButton navOpacity={navOpacity} isFollowed={isFollowed} onPress={handleFollow} />
+
 
                         <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
@@ -395,25 +340,55 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
             }
         >
             {/* 2. Dashboard Stats (Floating) */}
-            <View style={[styles.dashboardCard, { marginTop: -40, alignSelf: 'center', width: '90%' }]}>
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{displayData.rating}</Text>
-                    <View style={styles.dashLabelRow}>
-                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                        <Text style={styles.dashLabel}>综合评分</Text>
+            <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
+                <View style={styles.designerDashHeaderRow}>
+                    <Image source={{ uri: displayData.avatar }} style={styles.designerDashAvatar} />
+                    <View style={styles.designerDashHeaderInfo}>
+                        <View style={styles.designerDashNameRow}>
+                            <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
+                            <TouchableOpacity
+                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                onPress={handleFollow}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                    {isFollowed ? '已关注' : '+关注'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.designerDashExperienceText}>{displayData.yearsExperience}年经验</Text>
+                        {!!displayData.specialty && (
+                            <View style={styles.specialtyPill}>
+                                <Text style={styles.specialtyPillText} numberOfLines={1}>
+                                    {displayData.specialty?.replace(/[,，]/g, ' · ')}
+                                </Text>
+                            </View>
+                        )}
                     </View>
                 </View>
-                <View style={styles.dashDivider} />
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{formatFollowers(followersCount)}</Text>
-                    <Text style={styles.dashLabel}>粉丝关注</Text>
-                </View>
-                <View style={styles.dashDivider} />
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{displayData.completedCnt}</Text>
-                    <Text style={styles.dashLabel}>完成案例</Text>
+
+                <View style={styles.designerDashSeparator} />
+
+                <View style={styles.designerDashStatsRow}>
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{displayData.rating}</Text>
+                        <View style={styles.dashLabelRow}>
+                            <Text style={styles.dashLabel}>综合评分</Text>
+                        </View>
+                    </View>
+                    <View style={styles.dashDivider} />
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{formatFollowers(followersCount)}</Text>
+                        <Text style={styles.dashLabel}>粉丝关注</Text>
+                    </View>
+                    <View style={styles.dashDivider} />
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{caseCount}</Text>
+                        <Text style={styles.dashLabel}>案例数量</Text>
+                    </View>
                 </View>
             </View>
+
 
             {/* Service Area Section */}
             <View style={styles.magazineSection}>
@@ -675,23 +650,9 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         </Defs>
                         <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
                     </Svg>
-                    <View style={styles.heroContent}>
-                        <View style={styles.heroInfo}>
-                            <View style={[styles.flexRow, { marginBottom: 8 }]}>
-                                <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
-                            </View>
-                            <View style={styles.heroBadgeRow}>
-                                <View style={[styles.heroBadge, { backgroundColor: '#EAB308' }]}>
-                                    <Text style={[styles.heroBadgeText, { color: '#fff', fontWeight: 'bold' }]}>{displayData.workTypeLabels}</Text>
-                                </View>
-                                <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                                    <Text style={styles.heroBadgeText}>{displayData.yearsExperience}年经验</Text>
-                                </View>
-                            </View>
-                        </View>
-                    </View>
                 </ImageBackground>
             )}
+
             renderStickyNav={(navOpacity: any) => (
                 <View style={styles.stickyNavContent}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.stickyActionBtn}>
@@ -724,7 +685,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                             </View>
                         </TouchableOpacity>
 
-                        <StickyFollowButton navOpacity={navOpacity} isFollowed={isFollowed} onPress={handleFollow} />
+
 
                         <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
@@ -771,25 +732,55 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
             }
         >
             {/* Dashboard Stats */}
-            <View style={[styles.dashboardCard, { marginTop: -40, alignSelf: 'center', width: '90%' }]}>
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{displayData.rating}</Text>
-                    <View style={styles.dashLabelRow}>
-                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                        <Text style={styles.dashLabel}>综合评分</Text>
+            <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
+                <View style={styles.designerDashHeaderRow}>
+                    <Image source={{ uri: displayData.avatar }} style={styles.designerDashAvatar} />
+                    <View style={styles.designerDashHeaderInfo}>
+                        <View style={styles.designerDashNameRow}>
+                            <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
+                            <TouchableOpacity
+                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                onPress={handleFollow}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                    {isFollowed ? '已关注' : '+关注'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.designerDashExperienceText}>{displayData.yearsExperience}年经验</Text>
+                        {!!displayData.workTypeLabels && (
+                            <View style={styles.specialtyPill}>
+                                <Text style={styles.specialtyPillText} numberOfLines={1}>
+                                    {displayData.workTypeLabels}
+                                </Text>
+                            </View>
+                        )}
                     </View>
                 </View>
-                <View style={styles.dashDivider} />
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{formatFollowers(followersCount)}</Text>
-                    <Text style={styles.dashLabel}>粉丝关注</Text>
-                </View>
-                <View style={styles.dashDivider} />
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
-                    <Text style={styles.dashLabel}>完成案例</Text>
+
+                <View style={styles.designerDashSeparator} />
+
+                <View style={styles.designerDashStatsRow}>
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{displayData.rating}</Text>
+                        <View style={styles.dashLabelRow}>
+                            <Text style={styles.dashLabel}>综合评分</Text>
+                        </View>
+                    </View>
+                    <View style={styles.dashDivider} />
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{formatFollowers(followersCount)}</Text>
+                        <Text style={styles.dashLabel}>粉丝关注</Text>
+                    </View>
+                    <View style={styles.dashDivider} />
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
+                        <Text style={styles.dashLabel}>完成案例</Text>
+                    </View>
                 </View>
             </View>
+
 
             {/* Service Area */}
             <View style={styles.magazineSection}>
@@ -1046,24 +1037,9 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         </Defs>
                         <Rect x="0" y="0" width="100%" height="100%" fill="url(#grad)" />
                     </Svg>
-
-                    <View style={styles.heroContent}>
-                        <View style={styles.heroInfo}>
-                            <View style={[styles.flexRow, { marginBottom: 8 }]}>
-                                <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
-                            </View>
-                            <View style={styles.heroBadgeRow}>
-                                <View style={styles.heroBadge}>
-                                    <Text style={styles.heroBadgeText}>{displayData.establishedYear}年成立</Text>
-                                </View>
-                                <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-                                    <Text style={styles.heroBadgeText}>团队{displayData.teamSize}人</Text>
-                                </View>
-                            </View>
-                        </View>
-                    </View>
                 </ImageBackground>
             )}
+
             renderStickyNav={(navOpacity: any) => (
                 <View style={styles.stickyNavContent}>
                     <TouchableOpacity onPress={() => navigation.goBack()} style={styles.stickyActionBtn}>
@@ -1096,7 +1072,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                             </View>
                         </TouchableOpacity>
 
-                        <StickyFollowButton navOpacity={navOpacity} isFollowed={isFollowed} onPress={handleFollow} />
+
 
                         <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
@@ -1140,25 +1116,53 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
             }
         >
             {/* 2. Dashboard Stats (Floating) */}
-            <View style={[styles.dashboardCard, { marginTop: -40, alignSelf: 'center', width: '90%' }]}>
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{displayData.rating}</Text>
-                    <View style={styles.dashLabelRow}>
-                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                        <Text style={styles.dashLabel}>综合评分</Text>
+            <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
+                <View style={styles.designerDashHeaderRow}>
+                    <Image source={{ uri: displayData.logo }} style={styles.designerDashAvatar} />
+                    <View style={styles.designerDashHeaderInfo}>
+                        <View style={styles.designerDashNameRow}>
+                            <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
+                            <TouchableOpacity
+                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                onPress={handleFollow}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                    {isFollowed ? '已关注' : '+关注'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.designerDashExperienceText}>{displayData.establishedYear}年成立</Text>
+                        <View style={styles.specialtyPill}>
+                            <Text style={styles.specialtyPillText} numberOfLines={1}>
+                                团队{displayData.teamSize}人
+                            </Text>
+                        </View>
                     </View>
                 </View>
-                <View style={styles.dashDivider} />
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{displayData.reviewCount}</Text>
-                    <Text style={styles.dashLabel}>评价数</Text>
-                </View>
-                <View style={styles.dashDivider} />
-                <View style={styles.dashItem}>
-                    <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
-                    <Text style={styles.dashLabel}>竣工项目</Text>
+
+                <View style={styles.designerDashSeparator} />
+
+                <View style={styles.designerDashStatsRow}>
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{displayData.rating}</Text>
+                        <View style={styles.dashLabelRow}>
+                            <Text style={styles.dashLabel}>综合评分</Text>
+                        </View>
+                    </View>
+                    <View style={styles.dashDivider} />
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{displayData.reviewCount}</Text>
+                        <Text style={styles.dashLabel}>评价数</Text>
+                    </View>
+                    <View style={styles.dashDivider} />
+                    <View style={styles.dashItem}>
+                        <Text style={styles.dashValue}>{displayData.completedOrders}</Text>
+                        <Text style={styles.dashLabel}>竣工项目</Text>
+                    </View>
                 </View>
             </View>
+
 
             {/* Service Area */}
             <View style={styles.magazineSection}>
@@ -1418,10 +1422,96 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
     },
+    designerDashboardCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
+    },
+    designerDashHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    designerDashAvatar: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: '#F4F4F5',
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+    },
+    designerDashHeaderInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    designerDashNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    designerDashName: {
+        flex: 1,
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#111827',
+    },
+    designerDashExperienceText: {
+        marginTop: 4,
+        fontSize: 12,
+        color: '#6B7280',
+    },
+    specialtyPill: {
+        marginTop: 6,
+        backgroundColor: '#F3F4F6',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        alignSelf: 'flex-start',
+    },
+    specialtyPillText: {
+        fontSize: 11,
+        color: '#4B5563',
+        fontWeight: '500',
+    },
+    designerDashFollowBtn: {
+        marginLeft: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#111',
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    designerDashFollowedBtn: {
+        backgroundColor: '#E5E7EB',
+    },
+    designerDashFollowText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#fff',
+    },
+    designerDashFollowedText: {
+        color: '#111827',
+    },
+    designerDashSeparator: {
+        height: 1,
+        backgroundColor: '#F3F4F6',
+        marginTop: 12,
+        marginBottom: 12,
+    },
+    designerDashStatsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
     dashItem: {
         flex: 1,
         alignItems: 'center',
     },
+
     dashValue: {
         fontSize: 20,
         fontWeight: 'bold',
