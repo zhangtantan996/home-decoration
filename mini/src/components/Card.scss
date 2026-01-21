@@ -1,0 +1,31 @@
+@import "../theme/tokens";
+
+.card {
+  background-color: $color-bg-card;
+  border-radius: $radius-md;
+  border: 1rpx solid $color-border-soft;
+  padding: $spacing-lg;
+  margin-bottom: $spacing-md;
+  
+  &--hover:active {
+    background-color: $color-bg-page;
+  }
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: $spacing-md;
+  }
+
+  &__title {
+    font-size: $font-h3;
+    font-weight: 600;
+    color: $color-primary;
+  }
+
+  &__extra {
+    font-size: $font-body;
+    color: $color-secondary;
+  }
+}

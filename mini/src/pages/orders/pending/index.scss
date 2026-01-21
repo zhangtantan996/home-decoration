@@ -1,0 +1,46 @@
+.pending-orders-page {
+  padding: 24rpx;
+  min-height: 100vh;
+
+  .mb-3 {
+    margin-bottom: 24rpx;
+  }
+
+  .price {
+    color: #EF4444;
+    font-weight: 600;
+  }
+
+  .order-content {
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12rpx;
+      font-size: 28rpx;
+
+      .label {
+        color: #71717A;
+      }
+
+      .value {
+        color: #09090B;
+        text-align: right;
+        max-width: 70%;
+      }
+    }
+
+    .action-row {
+      margin-top: 24rpx;
+      padding-top: 16rpx;
+      border-top: 1rpx solid #F4F4F5;
+      display: flex;
+      justify-content: flex-end;
+    }
+  }
+
+  .loading {
+    text-align: center;
+    padding: 40rpx;
+    color: #999;
+  }
+}

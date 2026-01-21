@@ -1,0 +1,111 @@
+.project-detail-page {
+  min-height: 100vh;
+  background-color: #FFFFFF;
+  padding: 40rpx;
+
+  .header {
+    margin-bottom: 48rpx;
+    
+    .title {
+      font-size: 40rpx;
+      font-weight: 600;
+      color: #09090B;
+      margin-bottom: 16rpx;
+    }
+    
+    .address {
+      font-size: 28rpx;
+      color: #71717A;
+    }
+  }
+
+  .section-title {
+    font-size: 32rpx;
+    font-weight: 600;
+    margin-bottom: 32rpx;
+    color: #09090B;
+  }
+
+  .timeline {
+    .phase-item {
+      display: flex;
+      
+      .phase-line {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-right: 24rpx;
+        width: 30rpx;
+
+        .dot {
+          width: 24rpx;
+          height: 24rpx;
+          border-radius: 50%;
+          background: #E4E4E7;
+          border: 4rpx solid #FFFFFF;
+          box-shadow: 0 0 0 1rpx #E4E4E7;
+          z-index: 1;
+
+          &.active {
+            background: #D4AF37;
+            box-shadow: 0 0 0 1rpx #D4AF37;
+          }
+
+          &.completed {
+            background: #10B981;
+            box-shadow: 0 0 0 1rpx #10B981;
+          }
+        }
+
+        .line {
+          flex: 1;
+          width: 2rpx;
+          background: #E4E4E7;
+          margin-top: -4rpx;
+          margin-bottom: -4rpx;
+          min-height: 100rpx;
+        }
+      }
+
+      .phase-content {
+        flex: 1;
+        padding-bottom: 48rpx;
+
+        .phase-name {
+          font-size: 30rpx;
+          font-weight: 600;
+          color: #09090B;
+          margin-bottom: 8rpx;
+        }
+
+        .phase-status {
+          font-size: 24rpx;
+          color: #71717A;
+          margin-bottom: 16rpx;
+        }
+
+        .tasks {
+          background: #F8F9FA;
+          padding: 16rpx;
+          border-radius: 8rpx;
+
+          .task-item {
+            font-size: 26rpx;
+            color: #52525B;
+            margin-bottom: 8rpx;
+            
+            &:last-child {
+              margin-bottom: 0;
+            }
+
+            .checked {
+              color: #10B981;
+              text-decoration: line-through;
+              opacity: 0.7;
+            }
+          }
+        }
+      }
+    }
+  }
+}

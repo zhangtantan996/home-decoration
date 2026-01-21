@@ -1,0 +1,46 @@
+.proposal-list-page {
+  padding: 24rpx;
+  min-height: 100vh;
+  
+  .mb-3 {
+    margin-bottom: 24rpx;
+  }
+
+  .proposal-content {
+    .row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12rpx;
+      font-size: 28rpx;
+
+      .label {
+        color: #71717A;
+      }
+
+      .value {
+        color: #09090B;
+        font-weight: 500;
+        
+        &.price {
+          color: #D4AF37;
+          font-weight: 600;
+        }
+      }
+    }
+
+    .summary {
+      margin-top: 16rpx;
+      padding-top: 16rpx;
+      border-top: 1rpx solid #F4F4F5;
+      font-size: 26rpx;
+      color: #52525B;
+      line-height: 1.5;
+    }
+  }
+
+  .loading {
+    text-align: center;
+    padding: 40rpx;
+    color: #999;
+  }
+}

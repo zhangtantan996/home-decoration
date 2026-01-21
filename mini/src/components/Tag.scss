@@ -1,0 +1,51 @@
+@import "../theme/tokens";
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rpx 16rpx;
+  border-radius: $radius-full;
+  font-size: $font-xs;
+  font-weight: 500;
+  
+  &--default {
+    background-color: $color-border-soft;
+    color: $color-secondary;
+  }
+  
+  &--primary {
+    background-color: $color-primary;
+    color: $color-white;
+  }
+
+  &--secondary {
+    background-color: $color-border-soft;
+    color: $color-secondary;
+  }
+  
+  &--brand {
+    background-color: rgba($color-brand, 0.1);
+    color: $color-brand;
+  }
+  
+  &--success {
+    background-color: rgba($color-success, 0.1);
+    color: $color-success;
+  }
+  
+  &--warning {
+    background-color: rgba($color-warning, 0.1);
+    color: $color-warning;
+  }
+  
+  &--error {
+    background-color: rgba($color-error, 0.1);
+    color: $color-error;
+  }
+
+  &--outline {
+    background-color: transparent;
+    border: 1rpx solid currentColor;
+  }
+}

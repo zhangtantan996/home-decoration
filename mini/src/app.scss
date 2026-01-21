@@ -1,8 +1,7 @@
-@import './theme/tokens';
+@import "./styles/base.scss";
 
-.btn-primary {
-  background: $color-brand;
-  color: #fff;
-  border: none;
-  border-radius: $radius-12;
+// Global App Styles
+.container {
+  min-height: 100vh;
+  background-color: $color-bg-page;
 }

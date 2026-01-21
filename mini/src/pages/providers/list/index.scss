@@ -1,0 +1,32 @@
+.provider-list-page {
+  min-height: 100vh;
+  background-color: #F8F9FA;
+  padding-bottom: 40rpx;
+
+  .tabs-container {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    padding: 20rpx 0;
+    border-bottom: 1rpx solid #F4F4F5;
+  }
+
+  .list-container {
+    padding: 20rpx;
+  }
+
+  .provider-avatar {
+    width: 80rpx;
+    height: 80rpx;
+    border-radius: 50%;
+    background-color: #eee;
+  }
+
+  .loading-state {
+    text-align: center;
+    padding: 40rpx;
+    color: #999;
+    font-size: 28rpx;
+  }
+}

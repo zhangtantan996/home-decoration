@@ -18,7 +18,8 @@ export interface RequestOptions<T> {
   retry?: boolean;
 }
 
-const API_BASE = process.env.TARO_APP_API_BASE || 'http://localhost:8080/api/v1';
+// 使用本地 IP 地址以便微信开发者工具可以访问 OrbStack 容器
+const API_BASE = process.env.TARO_APP_API_BASE || 'http://192.168.110.128:8080/api/v1';
 
 async function refreshAuth(refreshToken: string) {
   const res = await Taro.request<ApiResponse<{ token: string; refreshToken: string; expiresIn: number }>>({

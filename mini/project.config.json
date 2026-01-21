@@ -1,14 +1,32 @@
 {
-  "miniprogramRoot": "dist",
+  "miniprogramRoot": "dist/",
   "projectname": "home-decoration-mini",
   "description": "Home Decoration mini program (Taro)",
-  "appid": "wx-your-appid-here",
+  "appid": "wxbda9b98cbf9ce54a",
   "setting": {
     "urlCheck": false,
     "es6": true,
     "postcss": true,
     "minified": true,
-    "enhance": true
+    "enhance": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
   "compileType": "miniprogram",
   "condition": {
@@ -16,5 +34,12 @@
       "current": 0,
       "list": []
     }
-  }
+  },
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "editorSetting": {},
+  "libVersion": "3.13.2"
 }

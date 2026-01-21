@@ -1,0 +1,36 @@
+@import "../theme/tokens";
+
+.tabs {
+  display: flex;
+  background-color: $color-white;
+  border-bottom: 1rpx solid $color-border-soft;
+  
+  &__item {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 88rpx;
+    font-size: $font-body;
+    color: $color-secondary;
+    position: relative;
+    transition: color 0.2s;
+    
+    &--active {
+      color: $color-primary;
+      font-weight: 600;
+      
+      &::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40rpx;
+        height: 4rpx;
+        background-color: $color-brand;
+        border-radius: $radius-full;
+      }
+    }
+  }
+}

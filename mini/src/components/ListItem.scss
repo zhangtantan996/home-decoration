@@ -1,0 +1,65 @@
+@import "../theme/tokens";
+
+.list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md $spacing-lg;
+  background-color: $color-bg-card;
+  border-bottom: 1rpx solid $color-border-soft;
+  
+  &:last-child {
+    border-bottom: none;
+  }
+  
+  &--hover:active {
+    background-color: $color-bg-page;
+  }
+
+  &__left {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  &__icon {
+    width: 48rpx;
+    height: 48rpx;
+    margin-right: $spacing-md;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__content {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  &__title {
+    font-size: $font-body;
+    font-weight: 500;
+    color: $color-primary;
+    margin-bottom: 4rpx;
+  }
+
+  &__desc {
+    font-size: $font-caption;
+    color: $color-secondary;
+  }
+
+  &__right {
+    margin-left: $spacing-md;
+    display: flex;
+    align-items: center;
+    font-size: $font-body;
+    color: $color-secondary;
+  }
+
+  &__arrow {
+    margin-left: $spacing-xs;
+    font-size: $font-h3;
+    color: $color-placeholder;
+  }
+}

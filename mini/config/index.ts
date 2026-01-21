@@ -35,6 +35,11 @@ export default defineConfig(async (merge) => {
         cssModules: {
           enable: false
         }
+      },
+      sassLoaderOption: {
+        sassOptions: {
+          includePaths: [path.resolve(__dirname, '..', 'src')]
+        }
       }
     },
     h5: {

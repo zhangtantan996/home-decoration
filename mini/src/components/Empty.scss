@@ -1,0 +1,24 @@
+@import "../theme/tokens";
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-xl;
+  min-height: 400rpx;
+  
+  &__image {
+    width: 200rpx;
+    height: 200rpx;
+    margin-bottom: $spacing-lg;
+    opacity: 0.5;
+  }
+  
+  &__description {
+    font-size: $font-body;
+    color: $color-secondary;
+    margin-bottom: $spacing-lg;
+    text-align: center;
+  }
+}
