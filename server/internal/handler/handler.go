@@ -3,6 +3,7 @@ package handler
 import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/service"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -59,7 +60,7 @@ func Register(c *gin.Context) {
 			"id":       user.ID,
 			"phone":    user.Phone,
 			"nickname": user.Nickname,
-			"avatar":   user.Avatar,
+			"avatar":   imgutil.GetFullImageURL(user.Avatar),
 			"userType": user.UserType,
 		},
 	})
@@ -87,7 +88,7 @@ func Login(c *gin.Context) {
 			"id":       user.ID,
 			"phone":    user.Phone,
 			"nickname": user.Nickname,
-			"avatar":   user.Avatar,
+			"avatar":   imgutil.GetFullImageURL(user.Avatar),
 			"userType": user.UserType,
 		},
 	})
@@ -163,7 +164,7 @@ func GetProfile(c *gin.Context) {
 		"id":       user.ID,
 		"phone":    user.Phone,
 		"nickname": user.Nickname,
-		"avatar":   user.Avatar,
+		"avatar":   imgutil.GetFullImageURL(user.Avatar),
 		"userType": user.UserType,
 	})
 }
@@ -619,7 +620,7 @@ func ReleaseFunds(c *gin.Context) {
 
 // FollowProvider 关注服务商
 func FollowProvider(c *gin.Context) {
-	userID := c.GetUint64("userID")
+	userID := c.GetUint64("userId")
 	providerID := parseUint64(c.Param("id"))
 	targetType := c.Query("type")
 	if targetType == "" {
@@ -636,7 +637,7 @@ func FollowProvider(c *gin.Context) {
 
 // UnfollowProvider 取消关注服务商
 func UnfollowProvider(c *gin.Context) {
-	userID := c.GetUint64("userID")
+	userID := c.GetUint64("userId")
 	providerID := parseUint64(c.Param("id"))
 	targetType := c.Query("type")
 	if targetType == "" {
@@ -653,7 +654,7 @@ func UnfollowProvider(c *gin.Context) {
 
 // FavoriteProvider 收藏服务商
 func FavoriteProvider(c *gin.Context) {
-	userID := c.GetUint64("userID")
+	userID := c.GetUint64("userId")
 	providerID := parseUint64(c.Param("id"))
 	targetType := c.Query("type")
 	if targetType == "" {
@@ -670,7 +671,7 @@ func FavoriteProvider(c *gin.Context) {
 
 // UnfavoriteProvider 取消收藏服务商
 func UnfavoriteProvider(c *gin.Context) {
-	userID := c.GetUint64("userID")
+	userID := c.GetUint64("userId")
 	providerID := parseUint64(c.Param("id"))
 	targetType := c.Query("type")
 	if targetType == "" {
@@ -687,7 +688,7 @@ func UnfavoriteProvider(c *gin.Context) {
 
 // GetProviderUserStatus 获取用户对服务商的关注/收藏状态
 func GetProviderUserStatus(c *gin.Context) {
-	userID := c.GetUint64("userID")
+	userID := c.GetUint64("userId")
 	providerID := parseUint64(c.Param("id"))
 
 	status, err := providerService.GetUserProviderStatus(userID, providerID)

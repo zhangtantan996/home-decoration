@@ -6,6 +6,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 
 	"gorm.io/gorm"
 )
@@ -289,6 +290,9 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 
 	var logs []model.WorkLog
 	repository.DB.Where("project_id = ?", id).Order("log_date DESC").Limit(5).Find(&logs)
+	for i := range logs {
+		logs[i].Photos = imgutil.NormalizeImageURLsJSON(logs[i].Photos)
+	}
 
 	var escrow model.EscrowAccount
 	repository.DB.Where("project_id = ?", id).First(&escrow)
@@ -329,6 +333,9 @@ func (s *ProjectService) GetProjectLogs(projectID uint64, page, pageSize int) ([
 	offset := (page - 1) * pageSize
 	if err := db.Order("log_date DESC").Offset(offset).Limit(pageSize).Find(&logs).Error; err != nil {
 		return nil, 0, err
+	}
+	for i := range logs {
+		logs[i].Photos = imgutil.NormalizeImageURLsJSON(logs[i].Photos)
 	}
 
 	return logs, total, nil

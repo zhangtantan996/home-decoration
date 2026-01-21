@@ -5,6 +5,7 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"time"
 
@@ -65,13 +66,14 @@ func AdminListCases(c *gin.Context) {
 		// 解析图片
 		var images []string
 		json.Unmarshal([]byte(caseItem.Images), &images)
+		images = imgutil.GetFullImageURLs(images)
 
 		resultList = append(resultList, gin.H{
 			"id":             caseItem.ID,
 			"providerId":     caseItem.ProviderID,
 			"providerName":   providerName,
 			"title":          caseItem.Title,
-			"coverImage":     caseItem.CoverImage,
+			"coverImage":     imgutil.GetFullImageURL(caseItem.CoverImage),
 			"style":          caseItem.Style,
 			"layout":         caseItem.Layout,
 			"area":           caseItem.Area,
@@ -123,13 +125,14 @@ func AdminGetCase(c *gin.Context) {
 
 	var images []string
 	json.Unmarshal([]byte(caseItem.Images), &images)
+	images = imgutil.GetFullImageURLs(images)
 
 	response.Success(c, gin.H{
 		"id":             caseItem.ID,
 		"providerId":     caseItem.ProviderID,
 		"providerName":   providerName,
 		"title":          caseItem.Title,
-		"coverImage":     caseItem.CoverImage,
+		"coverImage":     imgutil.GetFullImageURL(caseItem.CoverImage),
 		"style":          caseItem.Style,
 		"layout":         caseItem.Layout,
 		"area":           caseItem.Area,

@@ -6,6 +6,7 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"os"
 	"path/filepath"
@@ -93,7 +94,7 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			"provider": gin.H{
 				"id":           provider.ID,
 				"name":         displayName,
-				"avatar":       user.Avatar,
+				"avatar":       imgutil.GetFullImageURL(user.Avatar),
 				"providerType": provider.ProviderType,
 				"phone":        input.Phone,
 				"verified":     provider.Verified,
@@ -146,7 +147,7 @@ func MerchantGetInfo(c *gin.Context) {
 	response.Success(c, gin.H{
 		"id":              provider.ID,
 		"name":            displayName,
-		"avatar":          user.Avatar,
+		"avatar":          imgutil.GetFullImageURL(user.Avatar),
 		"providerType":    provider.ProviderType,
 		"companyName":     provider.CompanyName,
 		"rating":          provider.Rating,
@@ -547,7 +548,10 @@ func MerchantUploadAvatar(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, gin.H{"url": avatarURL})
+	response.Success(c, gin.H{
+		"url":  imgutil.GetFullImageURL(avatarURL),
+		"path": avatarURL,
+	})
 }
 
 // MerchantUploadImage 上传通用图片 (案例/封面等)
@@ -594,7 +598,10 @@ func MerchantUploadImage(c *gin.Context) {
 	// 生成访问URL
 	imageURL := fmt.Sprintf("/uploads/cases/%s", filename)
 
-	response.Success(c, gin.H{"url": imageURL})
+	response.Success(c, gin.H{
+		"url":  imgutil.GetFullImageURL(imageURL),
+		"path": imageURL,
+	})
 }
 
 // MerchantGetProposal 获取方案详情

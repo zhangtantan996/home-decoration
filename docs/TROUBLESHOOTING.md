@@ -5,12 +5,7 @@
 ## 📋 问题索引
 
 | 问题类别 | 问题数量 | 最后更新 |
-|---------|---------|---------|
-| 依赖冲突 | 2 | 2026-01-07 |
-| 构建失败 | 2 | 2026-01-07 |
-| 部署问题 | 1 | 2026-01-07 |
-| 数据库问题 | 0 | - |
-| 性能问题 | 0 | - |
+|---------|---------|---------|\n| 依赖冲突 | 2 | 2026-01-07 |\n| 构建失败 | 2 | 2026-01-07 |\n| 部署问题 | 1 | 2026-01-07 |\n| 数据库问题 | 1 | 2026-01-21 |\n| 性能问题 | 0 | - |
 
 **快速导航**:
 - [P0 级问题](#-p0-级问题影响开发部署)
@@ -350,6 +345,64 @@ keytool -list -v -keystore my-release-key.keystore
 
 ## 🟢 已解决的历史问题
 
+### [已解决-003] 设计师/工长列表显示错误的名字和头像
+
+**解决时间**: 2026-01-21
+**状态**: ✅ 已永久修复
+
+**问题描述**:
+- **环境**: 移动端 (iOS/Android)
+- **现象**: 首页设计师卡片显示 "独立设计师" 而非真实姓名，头像显示案例封面图而非人物头像
+- **影响**: 用户体验差，无法识别设计师
+
+**根本原因**:
+1. `providers` 表有种子数据 (ID 90001-90022)，但 `users` 表没有对应的用户记录
+2. 后端 `provider_service.go` 查询 `users` 表时找不到记录，返回空的 `nickname` 和 `avatar`
+3. 前端 `toDesigner()` 函数 fallback 到 `companyName`（如 "独立设计师"）
+4. 后端 fallback 使用 `provider.CoverImage`（案例封面图）作为头像
+
+**数据模型说明**:
+```
+Provider 表:
+- user_id: 关联 users 表
+- company_name: 公司/工作室名称（如 "独立设计师"、"雅居设计工作室"）
+- cover_image: 案例封面图（不是头像！）
+
+User 表:
+- nickname: 设计师真实姓名（如 "李明设计师"）
+- avatar: 头像 URL
+
+前端显示逻辑:
+- name = dto.nickname || dto.companyName || '未知'
+- avatar = dto.avatar || 'https://via.placeholder.com/100'
+```
+
+**解决方案**:
+```sql
+-- 为种子数据的 providers 创建对应的 users 记录
+INSERT INTO users (id, phone, nickname, avatar, user_type, status, created_at, updated_at) VALUES
+(90001, '13800090001', '李明设计师', 'https://randomuser.me/api/portraits/men/1.jpg', 2, 1, NOW(), NOW()),
+(90002, '13800090002', '王雅居', 'https://randomuser.me/api/portraits/women/2.jpg', 2, 1, NOW(), NOW()),
+-- ... 其他记录
+ON CONFLICT (id) DO UPDATE SET nickname = EXCLUDED.nickname, avatar = EXCLUDED.avatar;
+```
+
+**预防措施**:
+1. ✅ 种子数据脚本必须同时创建 `providers` 和 `users` 记录
+2. ✅ 后端 API 返回数据前验证 `nickname` 和 `avatar` 不为空
+3. ✅ 前端使用 placeholder 头像作为 fallback
+4. ✅ 本文档记录数据模型关系，避免混淆
+
+**相关文件**:
+- `server/internal/service/provider_service.go` - 查询用户信息
+- `mobile/src/types/provider.ts` - 前端数据转换逻辑
+- `server/internal/model/model.go` - 数据模型定义
+
+**参考 Commit**: 待提交
+**关联文档**: [CLAUDE_DEV_GUIDE.md](CLAUDE_DEV_GUIDE.md)
+
+---
+
 ### [已解决-001] CORS 跨域问题
 
 **解决时间**: 2025-11-XX
@@ -479,10 +532,10 @@ grep -i "cannot find module" docs/TROUBLESHOOTING.md
 
 ## 📊 问题统计
 
-**总问题数**: 5
+**总问题数**: 6
 **P0 级**: 3
 **P1 级**: 1
-**已解决**: 2
+**已解决**: 3
 **平均修复时间**: < 1 小时
 
 **高频问题**:
@@ -505,6 +558,6 @@ grep -i "cannot find module" docs/TROUBLESHOOTING.md
 
 ---
 
-*最后更新: 2026-01-07*
+*最后更新: 2026-01-21*
 *维护者: 项目技术团队*
 *文档版本: v1.0.0*

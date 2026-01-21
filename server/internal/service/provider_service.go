@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 )
 
 // ProviderService 服务商服务
@@ -153,13 +154,20 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 		var user model.User
 		repository.DB.First(&user, p.UserID)
 
+		// Some seeded providers may not have a corresponding user row yet.
+		// Fallback to provider's cover image so the client can render something.
+		avatarPath := user.Avatar
+		if avatarPath == "" {
+			avatarPath = p.CoverImage
+		}
+
 		result[i] = ProviderListItem{
 			ID:              p.ID,
 			UserID:          p.UserID,
 			ProviderType:    p.ProviderType,
 			CompanyName:     p.CompanyName,
 			Nickname:        user.Nickname,
-			Avatar:          user.Avatar,
+			Avatar:          imgutil.GetFullImageURL(avatarPath),
 			Rating:          p.Rating,
 			RestoreRate:     p.RestoreRate,
 			BudgetControl:   p.BudgetControl,
@@ -237,6 +245,12 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	if err := repository.DB.First(&user, provider.UserID).Error; err != nil {
 		return nil, err
 	}
+	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
+	// Also fallback to provider cover image for legacy/seeded data.
+	if user.Avatar == "" {
+		user.Avatar = provider.CoverImage
+	}
+	user.Avatar = imgutil.GetFullImageURL(user.Avatar)
 
 	// 服务区域：数据库存储的是代码数组，这里转换为名称数组用于前端展示
 	regionService := RegionService{}
@@ -256,6 +270,10 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	// 获取案例（前5条）
 	var cases []model.ProviderCase
 	repository.DB.Where("provider_id = ?", id).Order("sort_order ASC, created_at DESC").Limit(5).Find(&cases)
+	for i := range cases {
+		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
+		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
+	}
 
 	// 统计案例总数
 	var caseCount int64
@@ -277,10 +295,10 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		reviewItems[i] = ProviderReviewItem{
 			ID:           r.ID,
 			UserName:     reviewUser.Nickname,
-			UserAvatar:   reviewUser.Avatar,
+			UserAvatar:   imgutil.GetFullImageURL(reviewUser.Avatar),
 			Rating:       r.Rating,
 			Content:      r.Content,
-			Images:       r.Images,
+			Images:       imgutil.NormalizeImageURLsJSON(r.Images),
 			ServiceType:  r.ServiceType,
 			Area:         r.Area,
 			Style:        r.Style,
@@ -319,6 +337,10 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 	offset := (page - 1) * pageSize
 	if err := db.Order("sort_order ASC, created_at DESC").Offset(offset).Limit(pageSize).Find(&cases).Error; err != nil {
 		return nil, 0, err
+	}
+	for i := range cases {
+		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
+		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
 	}
 
 	return cases, total, nil
@@ -367,10 +389,10 @@ func (s *ProviderService) GetProviderReviews(providerID uint64, page, pageSize i
 		items[i] = ProviderReviewItem{
 			ID:           r.ID,
 			UserName:     reviewUser.Nickname,
-			UserAvatar:   reviewUser.Avatar,
+			UserAvatar:   imgutil.GetFullImageURL(reviewUser.Avatar),
 			Rating:       r.Rating,
 			Content:      r.Content,
-			Images:       r.Images,
+			Images:       imgutil.NormalizeImageURLsJSON(r.Images),
 			ServiceType:  r.ServiceType,
 			Area:         r.Area,
 			Style:        r.Style,

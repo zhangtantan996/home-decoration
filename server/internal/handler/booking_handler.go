@@ -3,6 +3,7 @@ package handler
 import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"log"
 
@@ -40,7 +41,7 @@ func GetBooking(c *gin.Context) {
 		providerInfo = gin.H{
 			"id":              provider.ID,
 			"name":            displayName,
-			"avatar":          user.Avatar,
+			"avatar":          imgutil.GetFullImageURL(user.Avatar),
 			"rating":          provider.Rating,
 			"completedCnt":    provider.CompletedCnt,
 			"yearsExperience": provider.YearsExperience,

@@ -1,6 +1,7 @@
 package image
 
 import (
+	"encoding/json"
 	"strings"
 
 	"home-decoration-server/internal/config"
@@ -30,4 +31,38 @@ func GetFullImageURL(path string) string {
 	}
 
 	return baseURL + path
+}
+
+// GetFullImageURLs converts each path in the slice to a full URL.
+func GetFullImageURLs(paths []string) []string {
+	if len(paths) == 0 {
+		return paths
+	}
+
+	result := make([]string, 0, len(paths))
+	for _, p := range paths {
+		result = append(result, GetFullImageURL(p))
+	}
+	return result
+}
+
+// NormalizeImageURLsJSON parses a JSON string array and converts each entry
+// into a full URL. If parsing fails, the original string is returned.
+func NormalizeImageURLsJSON(imagesJSON string) string {
+	if imagesJSON == "" {
+		return imagesJSON
+	}
+
+	var images []string
+	if err := json.Unmarshal([]byte(imagesJSON), &images); err != nil {
+		return imagesJSON
+	}
+
+	images = GetFullImageURLs(images)
+	b, err := json.Marshal(images)
+	if err != nil {
+		return imagesJSON
+	}
+
+	return string(b)
 }

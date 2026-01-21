@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -16,15 +16,15 @@ import {
     Animated,
     Easing,
     TouchableWithoutFeedback,
-    Alert,
     FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 // Mock data no longer needed for material shops, using store
 import { Designer, Worker, MaterialShop } from '../types/provider';
-import { NetworkErrorView, EmptyView, PullToRefresh, DesignerSkeletonCard, WorkerSkeletonCard } from '../components';
-import { LocationService } from '../services/LocationService';
+import { NetworkErrorView, EmptyView, PullToRefresh, DesignerSkeletonCard, WorkerSkeletonCard, useToast } from '../components';
 import { useProviderStore } from '../store/providerStore';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import { ChevronDown, MapPin, Search, Maximize2, ArrowLeft, X, Star, MapPinned, Users, Briefcase, Award, Check, SlidersHorizontal, Package, Bell, PencilRuler, Hammer } from 'lucide-react-native';
 import { DesignerCard } from '../components/DesignerCard';
 import { WorkerCard } from '../components/WorkerCard';
@@ -144,28 +144,7 @@ const HomeScreen: React.FC = () => {
     const [renderedCategory, setRenderedCategory] = useState('designer');
     const [currentCity, setCurrentCity] = useState('西安');
 
-        useEffect(() => {
-        const fetchLocation = async () => {
-            try {
-                const hasPermission = await LocationService.requestPermission();
-                if (hasPermission) {
-                    const result = await LocationService.getCurrentCity();
-                    if (result.success !== false) {
-                        setCurrentCity(result.city);
-                    } else {
-                        // 定位失败,使用默认城市 (西安)
-                        console.log('定位失败,使用默认城市:', result.error);
-                        setCurrentCity('西安');
-                    }
-                }
-            } catch (error) {
-                // 兜底错误处理
-                console.warn('定位异常,使用默认城市:', error);
-                setCurrentCity('西安');
-            }
-        };
-        fetchLocation();
-    }, []);
+    const { showToast } = useToast();
 
     // 从全局 Store 获取预加载的数据
     const {
@@ -225,7 +204,13 @@ const HomeScreen: React.FC = () => {
     const scrollRef = useRef<ScrollView>(null);
     const materialFlatListRef = useRef<FlatList>(null);
     const [categoryHeight, setCategoryHeight] = useState(0);
-    const navigation = useNavigation();
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+    // Pilot is currently Xi'an only; keep city fixed and show a friendly hint.
+    const handleLocationPress = useCallback(() => {
+        showToast({ message: '暂时仅开放西安试点，其他地区暂未开放', type: 'info' });
+        setCurrentCity('西安');
+    }, [showToast]);
 
     // 筛选按钮位置追踪（用于紧贴按钮显示下拉框）
     const [filterButtonLayout, setFilterButtonLayout] = useState({ x: 0, y: 0, width: 0, height: 0 });
@@ -1011,7 +996,7 @@ const HomeScreen: React.FC = () => {
                             </>
                         ) : (
                             <>
-                                <TouchableOpacity style={styles.locationBtn}>
+                                <TouchableOpacity style={styles.locationBtn} onPress={handleLocationPress}>
                                     <MapPin size={16} color="#71717A" />
                                     <Text style={styles.locationText}>{currentCity}</Text>
                                 </TouchableOpacity>
@@ -1047,9 +1032,25 @@ const HomeScreen: React.FC = () => {
                                             <Text style={{ fontSize: 16, color: '#71717A' }}>未找到相关结果</Text>
                                             <Text style={{ fontSize: 13, color: '#A1A1AA', marginTop: 8 }}>试试其他关键词</Text>
                                         </View>
-                                    ) : (
-                                        unifiedSearchResults.map((item, index) => (
-                                            <TouchableOpacity key={`${item._type}-${item.id}-${index}`} style={styles.searchResultCard}>
+                                     ) : (
+                                         unifiedSearchResults.map((item, index) => (
+                                            <TouchableOpacity
+                                                key={`${item._type}-${item.id}-${index}`}
+                                                style={styles.searchResultCard}
+                                                onPress={() => {
+                                                    if (item._type === 'designer') {
+                                                        navigation.navigate('DesignerDetail', { designer: item });
+                                                        return;
+                                                    }
+                                                    if (item._type === 'construction') {
+                                                        if (item.type === 'company') {
+                                                            navigation.navigate('CompanyDetail', { company: item });
+                                                        } else {
+                                                            navigation.navigate('WorkerDetail', { worker: item });
+                                                        }
+                                                    }
+                                                }}
+                                            >
                                                 {item._type === 'material' ? (
                                                     <Image source={{ uri: item.image }} style={styles.searchResultImage} />
                                                 ) : (

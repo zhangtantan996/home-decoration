@@ -5,6 +5,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"sort"
 	"time"
@@ -114,7 +115,7 @@ func AdminLogin(c *gin.Context) {
 			"id":           admin.ID,
 			"username":     admin.Username,
 			"nickname":     admin.Nickname,
-			"avatar":       admin.Avatar,
+			"avatar":       imgutil.GetFullImageURL(admin.Avatar),
 			"isSuperAdmin": admin.IsSuperAdmin,
 			"roles":        roleKeys,
 		},
@@ -149,7 +150,7 @@ func AdminGetInfo(c *gin.Context) {
 			"id":           admin.ID,
 			"username":     admin.Username,
 			"nickname":     admin.Nickname,
-			"avatar":       admin.Avatar,
+			"avatar":       imgutil.GetFullImageURL(admin.Avatar),
 			"isSuperAdmin": admin.IsSuperAdmin,
 			"roles":        getRoleKeys(admin.Roles),
 		},

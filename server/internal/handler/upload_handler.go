@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"os"
 	"path/filepath"
@@ -72,7 +73,8 @@ func UploadFile(c *gin.Context) {
 	fileURL = strings.ReplaceAll(fileURL, "\\", "/")
 
 	response.Success(c, gin.H{
-		"url":      fileURL,
+		"url":      imgutil.GetFullImageURL(fileURL),
+		"path":     fileURL,
 		"filename": file.Filename,
 		"size":     file.Size,
 		"type":     ext,

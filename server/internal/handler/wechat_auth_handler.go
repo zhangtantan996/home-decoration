@@ -1,6 +1,7 @@
 package handler
 
 import (
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -45,7 +46,7 @@ func WechatMiniLogin(c *gin.Context) {
 			"id":       result.User.ID,
 			"phone":    result.User.Phone,
 			"nickname": result.User.Nickname,
-			"avatar":   result.User.Avatar,
+			"avatar":   imgutil.GetFullImageURL(result.User.Avatar),
 			"userType": result.User.UserType,
 		},
 	})
@@ -82,7 +83,7 @@ func WechatMiniBindPhone(c *gin.Context) {
 			"id":       user.ID,
 			"phone":    user.Phone,
 			"nickname": user.Nickname,
-			"avatar":   user.Avatar,
+			"avatar":   imgutil.GetFullImageURL(user.Avatar),
 			"userType": user.UserType,
 		},
 	})

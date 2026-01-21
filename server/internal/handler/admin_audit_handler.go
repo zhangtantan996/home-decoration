@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"time"
 
@@ -98,6 +99,7 @@ func AdminGetCaseAudit(c *gin.Context) {
 	// 解析图片
 	var images []string
 	json.Unmarshal([]byte(audit.Images), &images)
+	images = imgutil.GetFullImageURLs(images)
 
 	// 如果是修改/删除，查询原作品信息用于对比
 	var originalCase *model.ProviderCase
@@ -116,7 +118,7 @@ func AdminGetCaseAudit(c *gin.Context) {
 		"providerName":   providerName,
 		"actionType":     audit.ActionType,
 		"title":          audit.Title,
-		"coverImage":     audit.CoverImage,
+		"coverImage":     imgutil.GetFullImageURL(audit.CoverImage),
 		"style":          audit.Style,
 		"layout":         audit.Layout,
 		"area":           audit.Area,
@@ -129,6 +131,10 @@ func AdminGetCaseAudit(c *gin.Context) {
 		"status":         audit.Status,
 		"rejectReason":   audit.RejectReason,
 		"createdAt":      audit.CreatedAt,
+	}
+	if originalCase != nil {
+		originalCase.CoverImage = imgutil.GetFullImageURL(originalCase.CoverImage)
+		originalCase.Images = imgutil.NormalizeImageURLsJSON(originalCase.Images)
 	}
 
 	response.Success(c, gin.H{

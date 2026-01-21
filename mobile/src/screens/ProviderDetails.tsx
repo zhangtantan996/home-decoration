@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { ArrowLeft, Star, MapPin, MessageCircle, Calendar, Award, Briefcase, Users, Clock, ChevronRight, Heart, Share2 } from 'lucide-react-native';
+import { ArrowLeft, Star, MapPin, MessageCircle, Calendar, Award, Briefcase, Users, Clock, ChevronRight, Share2 } from 'lucide-react-native';
 import { useToast } from '../components/Toast';
 import { getWebUrl } from '../config';
 import { providerApi } from '../services/api';
@@ -138,7 +138,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const [detail, setDetail] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isFollowed, setIsFollowed] = useState(false);
-    const [isFavorited, setIsFavorited] = useState(false);
     const [followersCount, setFollowersCount] = useState(0);
     const [isIntroExpanded, setIsIntroExpanded] = useState(false);
 
@@ -168,7 +167,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
             const res = await providerApi.getUserStatus(designerId);
             if (res.data) {
                 setIsFollowed(res.data.isFollowed);
-                setIsFavorited(res.data.isFavorited);
             }
         } catch (error) {
             // 未登录或其他错误，静默失败
@@ -192,19 +190,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                 setFollowersCount(prev => prev + 1);
             }
             setIsFollowed(!isFollowed);
-        } catch (error) {
-            showToast({ message: '操作失败，请重试', type: 'error' });
-        }
-    };
-
-    const handleFavorite = async () => {
-        try {
-            if (isFavorited) {
-                await providerApi.unfavorite(designerId, 'provider');
-            } else {
-                await providerApi.favorite(designerId, 'provider');
-            }
-            setIsFavorited(!isFavorited);
         } catch (error) {
             showToast({ message: '操作失败，请重试', type: 'error' });
         }
@@ -284,18 +269,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     </View>
 
                     <View style={styles.headerActions}>
-                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
-                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
-                                <Animated.View style={{ opacity: navOpacity }}>
-                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
-                                </Animated.View>
-                            </View>
-                        </TouchableOpacity>
-
-
-
-                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
+                        <TouchableOpacity style={styles.stickyActionBtn} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
                                 <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
                                 <Animated.View style={{ opacity: navOpacity }}>
@@ -524,7 +498,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const [detail, setDetail] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isFollowed, setIsFollowed] = useState(false);
-    const [isFavorited, setIsFavorited] = useState(false);
     const [followersCount, setFollowersCount] = useState(0);
 
     useEffect(() => {
@@ -553,7 +526,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
             const res = await providerApi.getUserStatus(workerId);
             if (res.data) {
                 setIsFollowed(res.data.isFollowed);
-                setIsFavorited(res.data.isFavorited);
             }
         } catch (error) {
             console.log('加载用户状态失败:', error);
@@ -576,19 +548,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                 setFollowersCount(prev => prev + 1);
             }
             setIsFollowed(!isFollowed);
-        } catch (error) {
-            showToast({ message: '操作失败，请重试', type: 'error' });
-        }
-    };
-
-    const handleFavorite = async () => {
-        try {
-            if (isFavorited) {
-                await providerApi.unfavorite(workerId, 'provider');
-            } else {
-                await providerApi.favorite(workerId, 'provider');
-            }
-            setIsFavorited(!isFavorited);
         } catch (error) {
             showToast({ message: '操作失败，请重试', type: 'error' });
         }
@@ -676,18 +635,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     </View>
 
                     <View style={styles.headerActions}>
-                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
-                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
-                                <Animated.View style={{ opacity: navOpacity }}>
-                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
-                                </Animated.View>
-                            </View>
-                        </TouchableOpacity>
-
-
-
-                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
+                        <TouchableOpacity style={styles.stickyActionBtn} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
                                 <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
                                 <Animated.View style={{ opacity: navOpacity }}>
@@ -912,7 +860,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const [detail, setDetail] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isFollowed, setIsFollowed] = useState(false);
-    const [isFavorited, setIsFavorited] = useState(false);
     const [followersCount, setFollowersCount] = useState(0);
 
     useEffect(() => {
@@ -941,7 +888,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
             const res = await providerApi.getUserStatus(companyId);
             if (res.data) {
                 setIsFollowed(res.data.isFollowed);
-                setIsFavorited(res.data.isFavorited);
             }
         } catch (error) {
             console.log('加载用户状态失败:', error);
@@ -964,19 +910,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                 setFollowersCount(prev => prev + 1);
             }
             setIsFollowed(!isFollowed);
-        } catch (error) {
-            showToast({ message: '操作失败，请重试', type: 'error' });
-        }
-    };
-
-    const handleFavorite = async () => {
-        try {
-            if (isFavorited) {
-                await providerApi.unfavorite(companyId, 'provider');
-            } else {
-                await providerApi.favorite(companyId, 'provider');
-            }
-            setIsFavorited(!isFavorited);
         } catch (error) {
             showToast({ message: '操作失败，请重试', type: 'error' });
         }
@@ -1063,18 +996,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     </View>
 
                     <View style={styles.headerActions}>
-                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleFavorite}>
-                            <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                                <Heart size={20} color={isFavorited ? "#EF4444" : "#fff"} fill={isFavorited ? "#EF4444" : "none"} style={{ position: 'absolute' }} />
-                                <Animated.View style={{ opacity: navOpacity }}>
-                                    <Heart size={20} color={isFavorited ? "#EF4444" : "#333"} fill={isFavorited ? "#EF4444" : "none"} />
-                                </Animated.View>
-                            </View>
-                        </TouchableOpacity>
-
-
-
-                        <TouchableOpacity style={[styles.stickyActionBtn, { marginLeft: 8 }]} onPress={handleShare}>
+                        <TouchableOpacity style={styles.stickyActionBtn} onPress={handleShare}>
                             <View style={{ width: 24, height: 24, justifyContent: 'center', alignItems: 'center' }}>
                                 <Share2 size={20} color="#fff" style={{ position: 'absolute' }} />
                                 <Animated.View style={{ opacity: navOpacity }}>
@@ -1992,4 +1914,3 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.1)', // backup bg for visibility
     },
 });
-

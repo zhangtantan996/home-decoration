@@ -8,6 +8,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 )
 
 // MaterialShopService 主材门店服务
@@ -114,8 +115,8 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			ID:                shop.ID,
 			Type:              shop.Type,
 			Name:              shop.Name,
-			Cover:             shop.Cover,
-			BrandLogo:         shop.BrandLogo,
+			Cover:             imgutil.GetFullImageURL(shop.Cover),
+			BrandLogo:         imgutil.GetFullImageURL(shop.BrandLogo),
 			Rating:            shop.Rating,
 			ReviewCount:       shop.ReviewCount,
 			MainProducts:      mainProducts,
@@ -152,8 +153,8 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		ID:                shop.ID,
 		Type:              shop.Type,
 		Name:              shop.Name,
-		Cover:             shop.Cover,
-		BrandLogo:         shop.BrandLogo,
+		Cover:             imgutil.GetFullImageURL(shop.Cover),
+		BrandLogo:         imgutil.GetFullImageURL(shop.BrandLogo),
 		Rating:            shop.Rating,
 		ReviewCount:       shop.ReviewCount,
 		MainProducts:      mainProducts,

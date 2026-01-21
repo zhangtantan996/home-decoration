@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 
 	"gorm.io/gorm"
@@ -27,6 +28,8 @@ func GetCaseDetail(c *gin.Context) {
 		return
 	}
 
+	caseDetail.CoverImage = imgutil.GetFullImageURL(caseDetail.CoverImage)
+	caseDetail.Images = imgutil.NormalizeImageURLsJSON(caseDetail.Images)
 	response.Success(c, caseDetail)
 }
 

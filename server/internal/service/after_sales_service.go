@@ -4,6 +4,7 @@ import (
 	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 	"time"
 )
 
@@ -55,7 +56,7 @@ func (s *AfterSalesService) Create(userID uint64, input *CreateAfterSalesInput) 
 	if err := repository.DB.Create(afterSales).Error; err != nil {
 		return nil, errors.New("创建售后申请失败")
 	}
-
+	afterSales.Images = imgutil.NormalizeImageURLsJSON(afterSales.Images)
 	return afterSales, nil
 }
 
@@ -71,6 +72,9 @@ func (s *AfterSalesService) GetUserAfterSales(userID uint64, status *int8) ([]mo
 	if err := query.Order("created_at DESC").Find(&list).Error; err != nil {
 		return nil, err
 	}
+	for i := range list {
+		list[i].Images = imgutil.NormalizeImageURLsJSON(list[i].Images)
+	}
 
 	return list, nil
 }
@@ -85,7 +89,7 @@ func (s *AfterSalesService) GetByID(userID uint64, id uint64) (*model.AfterSales
 	if afterSales.UserID != userID {
 		return nil, errors.New("无权查看此售后申请")
 	}
-
+	afterSales.Images = imgutil.NormalizeImageURLsJSON(afterSales.Images)
 	return &afterSales, nil
 }
 

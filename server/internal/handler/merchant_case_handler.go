@@ -5,6 +5,7 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"strings"
 	"time"
@@ -47,11 +48,12 @@ func MerchantCaseList(c *gin.Context) {
 	for _, audit := range newAudits {
 		var images []string
 		json.Unmarshal([]byte(audit.Images), &images)
+		images = imgutil.GetFullImageURLs(images)
 		resultList = append(resultList, gin.H{
 			"id":             0, // 新增暂无 ID
 			"auditId":        audit.ID,
 			"title":          audit.Title,
-			"coverImage":     audit.CoverImage,
+			"coverImage":     imgutil.GetFullImageURL(audit.CoverImage),
 			"style":          audit.Style,
 			"layout":         audit.Layout,
 			"area":           audit.Area,
@@ -74,7 +76,7 @@ func MerchantCaseList(c *gin.Context) {
 		item := gin.H{
 			"id":             pc.ID,
 			"title":          pc.Title,
-			"coverImage":     pc.CoverImage,
+			"coverImage":     imgutil.GetFullImageURL(pc.CoverImage),
 			"style":          pc.Style,
 			"layout":         pc.Layout,
 			"area":           pc.Area,
@@ -91,7 +93,7 @@ func MerchantCaseList(c *gin.Context) {
 
 		var images []string
 		json.Unmarshal([]byte(pc.Images), &images)
-		item["images"] = images
+		item["images"] = imgutil.GetFullImageURLs(images)
 
 		// 检查是否有挂起的审核
 		if audit, exists := auditMap[pc.ID]; exists {
@@ -103,7 +105,7 @@ func MerchantCaseList(c *gin.Context) {
 			// 如果是修改，优先展示修改后的内容预览
 			if audit.ActionType == "update" {
 				item["title"] = audit.Title
-				item["coverImage"] = audit.CoverImage
+				item["coverImage"] = imgutil.GetFullImageURL(audit.CoverImage)
 				item["style"] = audit.Style
 				item["layout"] = audit.Layout
 				item["area"] = audit.Area
@@ -114,7 +116,7 @@ func MerchantCaseList(c *gin.Context) {
 				item["description"] = audit.Description
 				var newImages []string
 				json.Unmarshal([]byte(audit.Images), &newImages)
-				item["images"] = newImages
+				item["images"] = imgutil.GetFullImageURLs(newImages)
 			}
 		}
 
@@ -413,11 +415,12 @@ func MerchantCaseGet(c *gin.Context) {
 		// 返回 Audit 数据
 		var images []string
 		json.Unmarshal([]byte(audit.Images), &images)
+		images = imgutil.GetFullImageURLs(images)
 		response.Success(c, gin.H{
 			"id":             caseID,
 			"auditId":        audit.ID,
 			"title":          audit.Title,
-			"coverImage":     audit.CoverImage,
+			"coverImage":     imgutil.GetFullImageURL(audit.CoverImage),
 			"style":          audit.Style,
 			"layout":         audit.Layout,
 			"area":           audit.Area,
@@ -444,11 +447,12 @@ func MerchantCaseGet(c *gin.Context) {
 
 	var images []string
 	json.Unmarshal([]byte(providerCase.Images), &images)
+	images = imgutil.GetFullImageURLs(images)
 
 	response.Success(c, gin.H{
 		"id":             providerCase.ID,
 		"title":          providerCase.Title,
-		"coverImage":     providerCase.CoverImage,
+		"coverImage":     imgutil.GetFullImageURL(providerCase.CoverImage),
 		"style":          providerCase.Style,
 		"layout":         providerCase.Layout,
 		"area":           providerCase.Area,
