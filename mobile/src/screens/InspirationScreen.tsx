@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -8,15 +8,20 @@ import {
     Image,
     TouchableOpacity,
     Dimensions,
-    Platform,
     TouchableWithoutFeedback,
     Animated,
     Easing,
+    StatusBar,
+    ActivityIndicator,
+    RefreshControl,
+    Platform,
 } from 'react-native';
 import { Heart, ChevronDown, ChevronUp, Check } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
+import { inspirationApi } from '../services/api';
+import { useToast } from '../components/Toast';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 const HALF_SCREEN_HEIGHT = height / 2;
 
 // 新的主题色彩系统
@@ -71,92 +76,16 @@ const HOUSE_TYPE_OPTIONS = ['全部', '一居', '二居', '三居', '四居及�
 const PRICE_OPTIONS = ['全部', '10万以下', '10-20万', '20-50万', '50万以上'];
 const STYLE_OPTIONS = ['全部', '现代简约', '北欧', '新中式', '轻奢', '日式', '工业风'];
 
-// Mock Data
-const INSPIRATION_ITEMS = [
-    {
-        id: 1,
-        title: '黑白金配色：重新定义现代奢华',
-        subtitle: 'Black, white and gold color scheme',
-        image: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-        author: 'ID 杂志',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        likes: 245,
-        houseType: '三居',
-        priceRange: '20-50万',
-        style: '轻奢',
-        height: 200,
-    },
-    {
-        id: 2,
-        title: '探索自然光影：极简别墅设计案例',
-        subtitle: 'Exploring natural light and shadow',
-        image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-        author: '建筑视野',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        likes: 189,
-        houseType: '别墅',
-        priceRange: '50万以上',
-        style: '现代简约',
-        height: 240,
-    },
-    {
-        id: 3,
-        title: '把森林搬回家：植物系家居指南',
-        subtitle: 'Bring the forest home',
-        image: 'https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-        author: 'Green Life',
-        avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        likes: 562,
-        houseType: '二居',
-        priceRange: '10-20万',
-        style: '北欧',
-        height: 180,
-    },
-    {
-        id: 4,
-        title: '新中式禅意空间：东方美学的现代演绎',
-        subtitle: 'New Chinese zen space',
-        image: 'https://images.unsplash.com/photo-1616486338812-3dadae4b4f9d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-        author: '东方设计',
-        avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        likes: 423,
-        houseType: '四居及以上',
-        priceRange: '50万以上',
-        style: '新中式',
-        height: 220,
-    },
-    {
-        id: 5,
-        title: '工业风Loft：都市青年的理想居所',
-        subtitle: 'Industrial Loft',
-        image: 'https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-        author: 'Urban Studio',
-        avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        likes: 312,
-        houseType: '一居',
-        priceRange: '10万以下',
-        style: '工业风',
-        height: 190,
-    },
-    {
-        id: 6,
-        title: '日式和风：简约中的极致美学',
-        subtitle: 'Japanese style',
-        image: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-        author: '侘寂生活',
-        avatar: 'https://images.unsplash.com/photo-1527980965255-d3b416303d12?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
-        likes: 287,
-        houseType: '二居',
-        priceRange: '10-20万',
-        style: '日式',
-        height: 210,
-    },
-];
-
 type FilterType = 'houseType' | 'priceRange' | 'style' | null;
 
 const InspirationScreen = () => {
     const navigation = useNavigation<any>();
+    const { showToast } = useToast();
+
+    // 数据状态
+    const [items, setItems] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     // 筛选状态
     const [selectedHouseType, setSelectedHouseType] = useState('全部');
@@ -165,9 +94,6 @@ const InspirationScreen = () => {
 
     // 下拉框状态
     const [activeDropdown, setActiveDropdown] = useState<FilterType>(null);
-
-    // 按钮位置引用
-    const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
     const filterBarRef = useRef<View>(null);
     const [filterBarBottom, setFilterBarBottom] = useState(0);
 
@@ -178,19 +104,110 @@ const InspirationScreen = () => {
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(-10)).current;
 
-    // 根据筛选条件过滤数据
-    const filteredItems = useMemo(() => {
-        return INSPIRATION_ITEMS.filter(item => {
-            const matchHouseType = selectedHouseType === '全部' || item.houseType === selectedHouseType;
-            const matchPrice = selectedPrice === '全部' || item.priceRange === selectedPrice;
-            const matchStyle = selectedStyle === '全部' || item.style === selectedStyle;
-            return matchHouseType && matchPrice && matchStyle;
-        });
-    }, [selectedHouseType, selectedPrice, selectedStyle]);
+    // 瀑布流布局常量
+    const { width: screenWidth } = Dimensions.get('window');
+    // Calculate card width based on screen width - padding (32) - column gaps (20) / 2
+    const CARD_WIDTH = (screenWidth - 52) / 2;
+    const MIN_RATIO = 0.75;
+    const MAX_RATIO = 1.55;
+    const DEFAULT_RATIO = 1.33;
 
-    // 分列
-    const leftColumn = filteredItems.filter((_, i) => i % 2 === 0);
-    const rightColumn = filteredItems.filter((_, i) => i % 2 === 1);
+    // 缓存图片比例
+    const aspectRatioCache = useRef(new Map<string, number>());
+
+    const fetchItems = useCallback(async () => {
+        try {
+            const params: any = {};
+            if (selectedStyle !== '全部') params.style = selectedStyle;
+            // Map houseType to layout
+            if (selectedHouseType !== '全部') params.layout = selectedHouseType;
+            // Map priceRange
+            if (selectedPrice !== '全部') {
+                if (selectedPrice === '10万以下') params.priceMax = 10;
+                else if (selectedPrice === '10-20万') { params.priceMin = 10; params.priceMax = 20; }
+                else if (selectedPrice === '20-50万') { params.priceMin = 20; params.priceMax = 50; }
+                else if (selectedPrice === '50万以上') { params.priceMin = 50; }
+            }
+
+            const res = await inspirationApi.list(params);
+            // API returns { code, data: { list: [], ... } }
+            const list = res?.data?.list || [];
+
+            // 预计算图片高度，避免布局抖动
+            const decoratedList = await Promise.all(list.map(async (item: any) => {
+                const uri = item.coverImage || item.image;
+                let ratio = DEFAULT_RATIO;
+
+                if (uri) {
+                    if (aspectRatioCache.current.has(uri)) {
+                        ratio = aspectRatioCache.current.get(uri)!;
+                    } else {
+                        try {
+                            const { width: imgWidth, height: imgHeight } = await new Promise<{ width: number, height: number }>((resolve, reject) => {
+                                Image.getSize(uri, (w, h) => resolve({ width: w, height: h }), reject);
+                            });
+                            if (imgWidth && imgHeight) {
+                                const rawRatio = imgHeight / imgWidth;
+                                ratio = Math.min(Math.max(rawRatio, MIN_RATIO), MAX_RATIO);
+                                aspectRatioCache.current.set(uri, ratio);
+                            }
+                        } catch {
+                            // 失败使用默认比例
+                        }
+                    }
+				}
+                
+                return { 
+                    ...item, 
+                    _displayHeight: CARD_WIDTH * ratio 
+                };
+            }));
+
+            setItems(decoratedList);
+        } catch (error) {
+            console.error('Fetch inspiration failed:', error);
+            // 错误处理可以加上Toast
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, [selectedStyle, selectedHouseType, selectedPrice, CARD_WIDTH]);
+
+    useEffect(() => {
+        setLoading(true);
+        fetchItems();
+    }, [fetchItems]);
+
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchItems();
+    };
+
+    // 计算分列 (Height Balancing)
+    const { leftColumn, rightColumn } = useMemo(() => {
+        const left: any[] = [];
+        const right: any[] = [];
+        let leftH = 0;
+        let rightH = 0;
+
+        items.forEach((item) => {
+            const cardHeight = item._displayHeight || CARD_WIDTH * DEFAULT_RATIO;
+            
+            // 估算卡片总高度 (Image + Content)
+            // Title (max 2 lines ~40px + margin 10) + Padding (24) + Footer (20) = ~100px
+            const totalItemHeight = cardHeight + 100; 
+
+            if (leftH <= rightH) {
+                left.push(item);
+                leftH += totalItemHeight;
+            } else {
+                right.push(item);
+                rightH += totalItemHeight;
+            }
+        });
+
+        return { leftColumn: left, rightColumn: right };
+    }, [items, CARD_WIDTH]);
 
     const toggleDropdown = (type: FilterType) => {
         if (activeDropdown === type) {
@@ -261,29 +278,65 @@ const InspirationScreen = () => {
         closeDropdown();
     };
 
-    const renderCard = (item: typeof INSPIRATION_ITEMS[0]) => (
+    const handleLike = async (item: any) => {
+        const isLiked = item.isLiked;
+        const newIsLiked = !isLiked;
+        const newCount = (item.likeCount || 0) + (newIsLiked ? 1 : -1);
+
+        // Optimistic update
+        setItems(prevItems => prevItems.map(i =>
+            i.id === item.id
+                ? { ...i, isLiked: newIsLiked, likeCount: newCount }
+                : i
+        ));
+
+        try {
+            if (newIsLiked) {
+                await inspirationApi.like(item.id);
+            } else {
+                await inspirationApi.unlike(item.id);
+            }
+        } catch {
+            // Revert
+            setItems(prevItems => prevItems.map(i =>
+                i.id === item.id
+                    ? { ...i, isLiked: isLiked, likeCount: item.likeCount }
+                    : i
+            ));
+            showToast({ message: '操作失败', type: 'error' });
+        }
+    };
+
+    const renderCard = (item: any) => (
         <TouchableOpacity
             key={item.id}
-            style={[styles.card, { height: (item.height || 200) + 100 }]} // Increased from 80 to 100
+            style={styles.card}
             activeOpacity={0.9}
             onPress={() => navigation.navigate('InspirationDetail', { item })}
         >
             <Image
-                source={{ uri: item.image }}
-                style={[styles.cardImage, { height: item.height || 200 }]}
+                source={{ uri: item.coverImage || item.image }}
+                style={[styles.cardImage, { height: item._displayHeight || 200 }]}
                 resizeMode="cover"
             />
             <View style={styles.cardContent}>
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
                 <View style={styles.cardFooter}>
                     <View style={styles.authorInfo}>
-                        <Image source={{ uri: item.avatar }} style={styles.authorAvatar} />
-                        <Text style={styles.authorName} numberOfLines={1}>{item.author}</Text>
+                        <Image 
+                            source={{ uri: item.author?.avatar || 'https://via.placeholder.com/40' }} 
+                            style={styles.authorAvatar} 
+                        />
+                        <Text style={styles.authorName} numberOfLines={1}>{item.author?.name || '未知作者'}</Text>
                     </View>
-                    <View style={styles.likeInfo}>
-                        <Heart size={12} color="#9CA3AF" />
-                        <Text style={styles.likeCount}>{item.likes}</Text>
-                    </View>
+                    <TouchableOpacity 
+                        style={styles.likeInfo}
+                        onPress={() => handleLike(item)}
+                        activeOpacity={0.7}
+                    >
+                        <Heart size={12} color={item.isLiked ? "#EF4444" : "#9CA3AF"} fill={item.isLiked ? "#EF4444" : "transparent"} />
+                        <Text style={styles.likeCount}>{item.likeCount || 0}</Text>
+                    </TouchableOpacity>
                 </View>
             </View>
         </TouchableOpacity>
@@ -317,20 +370,21 @@ const InspirationScreen = () => {
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+            
             {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>灵感图库</Text>
             </View>
 
-            {/* 筛选条 - 加上 zIndex 确保在遮罩之上 */}
+            {/* 筛选条 */}
             <View
                 style={styles.filterBar}
                 ref={filterBarRef}
                 onLayout={(e) => {
-                    const { y, height } = e.nativeEvent.layout;
-                    // Platform check for Android offset if needed, but usually y+height is enough relative to parent
-                    setFilterBarBottom(y + height);
+                    const { y, height: barHeight } = e.nativeEvent.layout;
+                    setFilterBarBottom(y + barHeight);
                 }}
             >
                 {renderFilterBtn('houseType', '户型', selectedHouseType)}
@@ -344,8 +398,15 @@ const InspirationScreen = () => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
                 scrollEnabled={activeDropdown === null}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
+                }
             >
-                {filteredItems.length === 0 ? (
+                {loading && !refreshing ? (
+                    <View style={styles.loadingState}>
+                        <ActivityIndicator size="large" color="#3B82F6" />
+                    </View>
+                ) : items.length === 0 ? (
                     <View style={styles.emptyState}>
                         <Text style={styles.emptyText}>暂无匹配的灵感内容</Text>
                         <TouchableOpacity
@@ -442,17 +503,17 @@ const InspirationScreen = () => {
 };
 
 const styles = StyleSheet.create({
-    container: {
+    safeArea: {
         flex: 1,
-        backgroundColor: '#F3F4F6', // Slightly darker for contrast
+        backgroundColor: '#fff', // 顶部安全区域背景色设为白色，解决断层问题
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 20,
-        paddingTop: Platform.OS === 'ios' ? 12 : 44,
-        paddingBottom: 4,
+        paddingVertical: 12,
         backgroundColor: '#fff',
         zIndex: 20,
     },
@@ -514,12 +575,16 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         zIndex: 1,
-        backgroundColor: '#F3F4F6', // Matching container bg
+        backgroundColor: '#F3F4F6', // 内容区域保持灰色
     },
     scrollContent: {
         paddingHorizontal: 16,
         paddingTop: 16,
-        paddingBottom: 100, // Avoid bottom tab bar
+        paddingBottom: 100,
+    },
+    loadingState: {
+        paddingTop: 50,
+        alignItems: 'center',
     },
     waterfallGrid: {
         flexDirection: 'row',

@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
+    "android": "npm run android:setup && react-native run-android",
+    "android:setup": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8080 tcp:8080 || echo 'Warning: adb reverse failed. Make sure device is connected.'",
+    "android:clean": "npm run android:setup && react-native run-android --reset-cache",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",

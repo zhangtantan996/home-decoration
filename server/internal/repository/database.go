@@ -87,6 +87,10 @@ func autoMigrate() error {
 		&model.AfterSales{},
 		// 安全审计 (2025-12-29)
 		&model.AuditLog{},
+		// 社交功能 (2026-01-21)
+		&model.UserLike{},
+		&model.CaseComment{},
+		&model.SensitiveWord{},
 	)
 }
 

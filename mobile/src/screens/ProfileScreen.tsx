@@ -197,6 +197,8 @@ const ProfileScreen = ({ navigation }: any) => {
                                     navigation.navigate('Pending');
                                 } else if (stat.key === 'projects') {
                                     navigation.navigate('ProjectList');
+                                } else if (stat.key === 'favorites') {
+                                    navigation.navigate('Favorites');
                                 } else {
                                     handleServicePress(stat.label);
                                 }

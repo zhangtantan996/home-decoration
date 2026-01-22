@@ -1,6 +1,18 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+def nodeExecutable = settings.providers.gradleProperty("react.nodeExecutable").orNull
+def cliFile =
+    settings.layout.rootDirectory
+        .file("../node_modules/@react-native-community/cli/build/bin.js")
+        .asFile
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+  if (cliFile.exists()) {
+    def nodeCommand = nodeExecutable ?: "node"
+    ex.autolinkLibrariesFromCommand([nodeCommand, cliFile.absolutePath, "config"])
+  } else {
+    ex.autolinkLibrariesFromCommand()
+  }
+}
 rootProject.name = 'HomeDecorationApp'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')

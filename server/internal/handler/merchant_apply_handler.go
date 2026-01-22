@@ -8,6 +8,7 @@ import (
 	"home-decoration-server/internal/utils/tencentim"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -430,6 +431,14 @@ func AdminApproveApplication(c *gin.Context) {
 	var portfolioCases []PortfolioCaseInput
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
 
+	// 作品风格若未填写，回退到商家擅长风格的第一个选项，保证灵感库筛选字段有值。
+	var fallbackStyles []string
+	_ = json.Unmarshal([]byte(app.Styles), &fallbackStyles)
+	fallbackStyle := ""
+	if len(fallbackStyles) > 0 {
+		fallbackStyle = strings.TrimSpace(fallbackStyles[0])
+	}
+
 	for i, pc := range portfolioCases {
 		imagesJSON, _ := json.Marshal(pc.Images)
 		coverImage := ""
@@ -437,14 +446,28 @@ func AdminApproveApplication(c *gin.Context) {
 			coverImage = pc.Images[0]
 		}
 
+		style := strings.TrimSpace(pc.Style)
+		if style == "" {
+			style = fallbackStyle
+		}
+		if style == "" {
+			// 保底，避免出现空风格导致灵感库筛选无效。
+			style = "现代简约"
+		}
+		layout := "其他"
+
 		providerCase := model.ProviderCase{
 			ProviderID: provider.ID,
 			Title:      pc.Title,
 			CoverImage: coverImage,
-			Style:      pc.Style,
+			Style:      style,
+			Layout:     layout,
 			Area:       pc.Area,
+			Price:      0,
 			Images:     string(imagesJSON),
 			SortOrder:  i,
+			// 审核通过后生成的作品默认可在灵感库展示。
+			ShowInInspiration: true,
 		}
 		tx.Create(&providerCase)
 	}

@@ -42,6 +42,7 @@ import CreateProjectScreen from '../screens/CreateProjectScreen';
 import ProjectListScreen from '../screens/ProjectListScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 import DesignFilesScreen from '../screens/DesignFilesScreen';
+import FavoritesScreen from '../screens/FavoritesScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
@@ -73,6 +74,7 @@ export type RootStackParamList = {
     AfterSales: {
         tab?: 'all' | 'pending' | 'processing' | 'completed';
     };
+    Favorites: undefined;
     [key: string]: any;
 };
 
@@ -335,6 +337,11 @@ const AppNavigator = () => {
                         <Stack.Screen
                             name="Notification"
                             component={NotificationScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="Favorites"
+                            component={FavoritesScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                     </>

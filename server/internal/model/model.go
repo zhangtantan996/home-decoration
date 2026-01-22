@@ -74,20 +74,21 @@ type Provider struct {
 // ProviderCase 服务商案例/作品
 type ProviderCase struct {
 	Base
-	ProviderID     uint64  `json:"providerId" gorm:"index"`
-	Title          string  `json:"title" gorm:"size:100"`
-	CoverImage     string  `json:"coverImage" gorm:"size:500"`
-	Style          string  `json:"style" gorm:"size:50"`                       // 风格
-	Layout         string  `json:"layout" gorm:"size:50"`                      // 户型
-	Area           string  `json:"area" gorm:"size:20"`                        // 面积
-	Price          float64 `json:"price" gorm:"default:0"`                     // 总价(万)
-	QuoteTotalCent int64   `json:"quoteTotalCent" gorm:"default:0"`            // 报价总计（分）
-	QuoteCurrency  string  `json:"quoteCurrency" gorm:"size:10;default:'CNY'"` // 币种
-	QuoteItems     string  `json:"-" gorm:"type:jsonb;default:'[]'"`           // 报价明细（JSONB），通过专用接口返回
-	Year           string  `json:"year" gorm:"size:10"`                        // 年份
-	Description    string  `json:"description" gorm:"type:text"`
-	Images         string  `json:"images" gorm:"type:text"` // JSON数组
-	SortOrder      int     `json:"sortOrder" gorm:"default:0"`
+	ProviderID        uint64  `json:"providerId" gorm:"index"`
+	Title             string  `json:"title" gorm:"size:100"`
+	CoverImage        string  `json:"coverImage" gorm:"size:500"`
+	Style             string  `json:"style" gorm:"size:50"`
+	Layout            string  `json:"layout" gorm:"size:50"`
+	Area              string  `json:"area" gorm:"size:20"`
+	Price             float64 `json:"price" gorm:"default:0"`
+	QuoteTotalCent    int64   `json:"quoteTotalCent" gorm:"default:0"`
+	QuoteCurrency     string  `json:"quoteCurrency" gorm:"size:10;default:'CNY'"`
+	QuoteItems        string  `json:"-" gorm:"type:jsonb;default:'[]'"`
+	Year              string  `json:"year" gorm:"size:10"`
+	Description       string  `json:"description" gorm:"type:text"`
+	Images            string  `json:"images" gorm:"type:text"`
+	SortOrder         int     `json:"sortOrder" gorm:"default:0"`
+	ShowInInspiration bool    `json:"showInInspiration" gorm:"default:false"`
 }
 
 // ProviderReview 服务商评价
@@ -550,4 +551,47 @@ type AuditLog struct {
 // TableName 指定表名
 func (AuditLog) TableName() string {
 	return "audit_logs"
+}
+
+// UserLike 用户点赞
+type UserLike struct {
+	Base
+	UserID     uint64 `json:"userId" gorm:"index"`
+	TargetID   uint64 `json:"targetId" gorm:"index"`
+	TargetType string `json:"targetType" gorm:"size:50;default:'case'"`
+}
+
+func (UserLike) TableName() string {
+	return "user_likes"
+}
+
+// CaseComment 案例评论
+type CaseComment struct {
+	Base
+	CaseID       uint64     `json:"caseId" gorm:"index"`
+	UserID       uint64     `json:"userId" gorm:"index"`
+	Content      string     `json:"content" gorm:"type:text"`
+	Status       string     `json:"status" gorm:"size:20;default:'approved'"`
+	RejectReason string     `json:"rejectReason" gorm:"size:200"`
+	ModeratedBy  *uint64    `json:"moderatedBy"`
+	ModeratedAt  *time.Time `json:"moderatedAt"`
+	ReportCount  int        `json:"reportCount" gorm:"default:0"`
+}
+
+func (CaseComment) TableName() string {
+	return "case_comments"
+}
+
+// SensitiveWord 敏感词
+type SensitiveWord struct {
+	Base
+	Word     string `json:"word" gorm:"size:100;uniqueIndex"`
+	Category string `json:"category" gorm:"size:20"`
+	Level    string `json:"level" gorm:"size:20;default:'normal'"`
+	Action   string `json:"action" gorm:"size:20;default:'block'"`
+	IsRegex  bool   `json:"isRegex" gorm:"default:false"`
+}
+
+func (SensitiveWord) TableName() string {
+	return "sensitive_words"
 }

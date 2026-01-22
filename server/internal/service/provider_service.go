@@ -542,7 +542,7 @@ func (s *ProviderService) GetUserProviderStatus(userID, providerID uint64) (*Use
 	// 检查是否已收藏
 	var favCount int64
 	repository.DB.Model(&model.UserFavorite{}).
-		Where("user_id = ? AND target_id = ?", userID, providerID).
+		Where("user_id = ? AND target_id = ? AND target_type = ?", userID, providerID, "provider").
 		Count(&favCount)
 	status.IsFavorited = favCount > 0
 

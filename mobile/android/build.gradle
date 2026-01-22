@@ -18,4 +18,6 @@ buildscript {
     }
 }
 
+ext.REACT_NATIVE_NODE_MODULES_DIR = file("$rootDir/../node_modules/react-native")
+
 apply plugin: "com.facebook.react.rootproject"

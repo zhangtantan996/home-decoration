@@ -64,7 +64,11 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 		v1.GET("/dictionaries/:category", dictHandler.GetDictOptions)
 
 		// 案例详情 (公开)
-		v1.GET("/cases/:id", handler.GetCaseDetail)
+		v1.GET("/cases/:id", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetCaseDetail)
+
+		// 灵感图库 (公开，支持未登录访问)
+		v1.GET("/inspiration", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetInspirationList)
+		v1.GET("/inspiration/:id/comments", handler.GetCaseComments)
 
 		// 行政区划 API (公开 - 用于级联选择器)
 		regions := v1.Group("/regions")
@@ -98,6 +102,7 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 			{
 				user.GET("/profile", handler.GetProfile)
 				user.PUT("/profile", handler.UpdateProfile)
+				user.GET("/favorites", handler.GetUserFavorites)
 			}
 
 			// 设计师
@@ -218,6 +223,23 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 				providers.GET("/:id/user-status", handler.GetProviderUserStatus)
 			}
 
+			// 灵感图库社交功能
+			inspiration := authorized.Group("/inspiration")
+			{
+				inspiration.POST("/:id/like", handler.LikeCase)
+				inspiration.DELETE("/:id/like", handler.UnlikeCase)
+				inspiration.POST("/:id/favorite", handler.FavoriteCase)
+				inspiration.DELETE("/:id/favorite", handler.UnfavoriteCase)
+				inspiration.POST("/:id/comments", handler.CreateCaseComment)
+			}
+
+			// 建材门店收藏
+			materialShops := authorized.Group("/material-shops")
+			{
+				materialShops.POST("/:id/favorite", handler.FavoriteMaterialShop)
+				materialShops.DELETE("/:id/favorite", handler.UnfavoriteMaterialShop)
+			}
+
 			// 腾讯云 IM（新）
 			im := authorized.Group("/im")
 			{
@@ -319,6 +341,19 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 			admin.POST("/cases", handler.AdminCreateCase)
 			admin.PUT("/cases/:id", handler.AdminUpdateCase)
 			admin.DELETE("/cases/:id", handler.AdminDeleteCase)
+			admin.POST("/cases/batch-delete", handler.AdminBatchDeleteCases)
+			admin.PATCH("/cases/:id/inspiration", handler.AdminToggleCaseInspiration)
+
+			// 评论管理
+			admin.GET("/comments", handler.AdminListComments)
+			admin.PATCH("/comments/:id/status", handler.AdminUpdateCommentStatus)
+
+			// 敏感词管理
+			admin.GET("/sensitive-words", handler.AdminListSensitiveWords)
+			admin.POST("/sensitive-words", handler.AdminCreateSensitiveWord)
+			admin.POST("/sensitive-words/import", handler.AdminImportSensitiveWords)
+			admin.PUT("/sensitive-words/:id", handler.AdminUpdateSensitiveWord)
+			admin.DELETE("/sensitive-words/:id", handler.AdminDeleteSensitiveWord)
 
 			admin.GET("/dictionaries", dictHandler.ListDicts)
 			admin.POST("/dictionaries", dictHandler.CreateDict)

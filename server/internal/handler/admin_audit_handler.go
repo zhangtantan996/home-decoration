@@ -6,6 +6,7 @@ import (
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -169,6 +170,23 @@ func AdminApproveCaseAudit(c *gin.Context) {
 		quoteCurrency = "CNY"
 	}
 
+	style := strings.TrimSpace(audit.Style)
+	if style == "" {
+		tx.Rollback()
+		response.Error(c, 400, "作品风格不能为空")
+		return
+	}
+
+	layout := strings.TrimSpace(audit.Layout)
+	if layout == "" {
+		layout = "其他"
+	}
+
+	price := audit.Price
+	if price < 0 {
+		price = 0
+	}
+
 	// 执行 Action
 	switch audit.ActionType {
 	case "create":
@@ -177,10 +195,10 @@ func AdminApproveCaseAudit(c *gin.Context) {
 			ProviderID:     audit.ProviderID,
 			Title:          audit.Title,
 			CoverImage:     audit.CoverImage,
-			Style:          audit.Style,
-			Layout:         audit.Layout,
+			Style:          style,
+			Layout:         layout,
 			Area:           audit.Area,
-			Price:          audit.Price,
+			Price:          price,
 			QuoteTotalCent: audit.QuoteTotalCent,
 			QuoteCurrency:  quoteCurrency,
 			QuoteItems:     audit.QuoteItems,
@@ -188,6 +206,8 @@ func AdminApproveCaseAudit(c *gin.Context) {
 			Description:    audit.Description,
 			Images:         audit.Images,
 			SortOrder:      0, // 默认
+			// 审核通过即展示到灵感库（符合“审核通过的案例可见”的产品预期）
+			ShowInInspiration: true,
 		}
 		if err := tx.Create(&newCase).Error; err != nil {
 			tx.Rollback()
@@ -207,10 +227,10 @@ func AdminApproveCaseAudit(c *gin.Context) {
 		updates := map[string]interface{}{
 			"title":            audit.Title,
 			"cover_image":      audit.CoverImage,
-			"style":            audit.Style,
-			"layout":           audit.Layout,
+			"style":            style,
+			"layout":           layout,
 			"area":             audit.Area,
-			"price":            audit.Price,
+			"price":            price,
 			"quote_total_cent": audit.QuoteTotalCent,
 			"quote_currency":   quoteCurrency,
 			"quote_items":      audit.QuoteItems,

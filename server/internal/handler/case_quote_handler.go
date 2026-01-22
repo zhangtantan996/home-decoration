@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"home-decoration-server/internal/model"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 
@@ -10,12 +11,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type caseDetailResponse struct {
+	*model.ProviderCase
+	LikeCount    int64 `json:"likeCount"`
+	CommentCount int64 `json:"commentCount"`
+	IsLiked      bool  `json:"isLiked"`
+	IsFavorited  bool  `json:"isFavorited"`
+}
+
 // GetCaseDetail 获取案例详情（公开接口，不含报价明细）
 func GetCaseDetail(c *gin.Context) {
 	caseID := parseUint64(c.Param("id"))
 	if caseID == 0 {
 		response.BadRequest(c, "ID无效")
 		return
+	}
+
+	var userID *uint64
+	if uid := c.GetUint64("userId"); uid > 0 {
+		userID = &uid
 	}
 
 	caseDetail, err := caseService.GetCaseDetail(caseID)
@@ -30,7 +44,15 @@ func GetCaseDetail(c *gin.Context) {
 
 	caseDetail.CoverImage = imgutil.GetFullImageURL(caseDetail.CoverImage)
 	caseDetail.Images = imgutil.NormalizeImageURLsJSON(caseDetail.Images)
-	response.Success(c, caseDetail)
+
+	socialStats := inspirationService.GetCaseSocialStats(caseID, userID)
+	response.Success(c, caseDetailResponse{
+		ProviderCase: caseDetail,
+		LikeCount:    socialStats.LikeCount,
+		CommentCount: socialStats.CommentCount,
+		IsLiked:      socialStats.IsLiked,
+		IsFavorited:  socialStats.IsFavorited,
+	})
 }
 
 // GetCaseQuote 获取案例报价明细（必须登录，不提供下载）

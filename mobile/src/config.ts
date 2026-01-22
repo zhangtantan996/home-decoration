@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 export const getApiBaseUrl = (): string => {
     if (__DEV__) {
         if (Platform.OS === 'android') {
-            return 'http://192.168.110.40:8080';
+            return 'http://192.168.110.128:8080';
         }
         return 'http://localhost:8080';
     }
@@ -19,7 +19,7 @@ export const getApiBaseUrl = (): string => {
 export const getWebUrl = (): string => {
     if (__DEV__) {
         if (Platform.OS === 'android') {
-            return 'http://192.168.110.40:8082'; // 前端 Web 端口 (Vite)
+            return 'http://192.168.110.128:8082'; // 前端 Web 端口 (Vite)
         }
         return 'http://localhost:8082';
     }

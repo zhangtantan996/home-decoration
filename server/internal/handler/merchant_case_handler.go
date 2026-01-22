@@ -139,7 +139,7 @@ func MerchantCaseCreate(c *gin.Context) {
 	var input struct {
 		Title          string          `json:"title" binding:"required"`
 		CoverImage     string          `json:"coverImage" binding:"required"`
-		Style          string          `json:"style"`
+		Style          string          `json:"style" binding:"required"`
 		Layout         string          `json:"layout"`
 		Area           string          `json:"area"`
 		Price          float64         `json:"price"`
@@ -153,6 +153,11 @@ func MerchantCaseCreate(c *gin.Context) {
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
+	}
+
+	if strings.TrimSpace(input.Layout) == "" {
+		// Keep layout always present for downstream filtering & display.
+		input.Layout = "其他"
 	}
 
 	// 检查作品数量限制 (包括待审核的)
@@ -234,7 +239,7 @@ func MerchantCaseUpdate(c *gin.Context) {
 	var input struct {
 		Title          string          `json:"title"`
 		CoverImage     string          `json:"coverImage"`
-		Style          string          `json:"style"`
+		Style          string          `json:"style" binding:"required"`
 		Layout         string          `json:"layout"`
 		Area           string          `json:"area"`
 		Price          float64         `json:"price"`
@@ -248,6 +253,10 @@ func MerchantCaseUpdate(c *gin.Context) {
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
 		return
+	}
+
+	if strings.TrimSpace(input.Layout) == "" {
+		input.Layout = "其他"
 	}
 
 	// 1. 检查是否存在 Pending Audit

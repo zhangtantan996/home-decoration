@@ -177,6 +177,8 @@ export const authApi = {
 export const userApi = {
     getProfile: () => api.get('/user/profile'),
     updateProfile: (data: any) => api.put('/user/profile', data),
+    favorites: (params: { type: 'case' | 'material_shop'; page?: number; pageSize?: number }) =>
+        api.get<any>('/user/favorites', { params }),
 };
 
 export const providerApi = {
@@ -263,6 +265,8 @@ export const materialShopApi = {
     list: (params?: { page?: number; pageSize?: number; sortBy?: string; type?: string }) =>
         api.get<any>('/material-shops', { params }),
     detail: (id: number) => api.get<any>(`/material-shops/${id}`),
+    favorite: (id: number) => api.post<any>(`/material-shops/${id}/favorite`),
+    unfavorite: (id: number) => api.delete<any>(`/material-shops/${id}/favorite`),
 };
 
 // ========== 业务流程扩展 ==========
@@ -361,3 +365,16 @@ export const fileApi = {
 
 export default api;
 
+
+export const inspirationApi = {
+    list: (params?: { page?: number; pageSize?: number; style?: string; layout?: string; priceMin?: number; priceMax?: number }) =>
+        api.get<any>('/inspiration', { params }),
+    like: (id: number) => api.post<any>(`/inspiration/${id}/like`),
+    unlike: (id: number) => api.delete<any>(`/inspiration/${id}/like`),
+    favorite: (id: number) => api.post<any>(`/inspiration/${id}/favorite`),
+    unfavorite: (id: number) => api.delete<any>(`/inspiration/${id}/favorite`),
+    comments: (id: number, params?: { page?: number; pageSize?: number }) =>
+        api.get<any>(`/inspiration/${id}/comments`, { params }),
+    createComment: (id: number, content: string) =>
+        api.post<any>(`/inspiration/${id}/comments`, { content }),
+};

@@ -7,6 +7,7 @@ import (
 	"home-decoration-server/internal/service"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -69,23 +70,24 @@ func AdminListCases(c *gin.Context) {
 		images = imgutil.GetFullImageURLs(images)
 
 		resultList = append(resultList, gin.H{
-			"id":             caseItem.ID,
-			"providerId":     caseItem.ProviderID,
-			"providerName":   providerName,
-			"title":          caseItem.Title,
-			"coverImage":     imgutil.GetFullImageURL(caseItem.CoverImage),
-			"style":          caseItem.Style,
-			"layout":         caseItem.Layout,
-			"area":           caseItem.Area,
-			"price":          caseItem.Price,
-			"quoteTotalCent": caseItem.QuoteTotalCent,
-			"quoteCurrency":  caseItem.QuoteCurrency,
-			"year":           caseItem.Year,
-			"description":    caseItem.Description,
-			"images":         images,
-			"sortOrder":      caseItem.SortOrder,
-			"createdAt":      caseItem.CreatedAt,
-			"updatedAt":      caseItem.UpdatedAt,
+			"id":                caseItem.ID,
+			"providerId":        caseItem.ProviderID,
+			"providerName":      providerName,
+			"title":             caseItem.Title,
+			"coverImage":        imgutil.GetFullImageURL(caseItem.CoverImage),
+			"style":             caseItem.Style,
+			"layout":            caseItem.Layout,
+			"area":              caseItem.Area,
+			"price":             caseItem.Price,
+			"quoteTotalCent":    caseItem.QuoteTotalCent,
+			"quoteCurrency":     caseItem.QuoteCurrency,
+			"year":              caseItem.Year,
+			"description":       caseItem.Description,
+			"images":            images,
+			"sortOrder":         caseItem.SortOrder,
+			"showInInspiration": caseItem.ShowInInspiration,
+			"createdAt":         caseItem.CreatedAt,
+			"updatedAt":         caseItem.UpdatedAt,
 		})
 	}
 
@@ -152,24 +154,30 @@ func AdminGetCase(c *gin.Context) {
 // AdminCreateCase 官方添加作品
 func AdminCreateCase(c *gin.Context) {
 	var input struct {
-		ProviderID     *uint64         `json:"providerId"` // 可选，官方作品为 null 或 0
-		Title          string          `json:"title" binding:"required"`
-		CoverImage     string          `json:"coverImage" binding:"required"`
-		Style          string          `json:"style" binding:"required"`
-		Layout         string          `json:"layout"`
-		Area           string          `json:"area"`
-		Price          float64         `json:"price"`
-		QuoteTotalCent *int64          `json:"quoteTotalCent"`
-		QuoteCurrency  string          `json:"quoteCurrency"`
-		QuoteItems     json.RawMessage `json:"quoteItems"`
-		Year           string          `json:"year"`
-		Description    string          `json:"description"`
-		Images         []string        `json:"images"` // 前端传 JSON 数组
+		ProviderID        *uint64         `json:"providerId"`
+		Title             string          `json:"title" binding:"required"`
+		CoverImage        string          `json:"coverImage" binding:"required"`
+		Style             string          `json:"style" binding:"required"`
+		Layout            string          `json:"layout"`
+		Area              string          `json:"area"`
+		Price             float64         `json:"price"`
+		QuoteTotalCent    *int64          `json:"quoteTotalCent"`
+		QuoteCurrency     string          `json:"quoteCurrency"`
+		QuoteItems        json.RawMessage `json:"quoteItems"`
+		Year              string          `json:"year"`
+		Description       string          `json:"description"`
+		Images            []string        `json:"images"`
+		ShowInInspiration *bool           `json:"showInInspiration"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
+	}
+
+	if strings.TrimSpace(input.Layout) == "" {
+		// Keep layout always present for downstream filtering & display.
+		input.Layout = "其他"
 	}
 
 	// 序列化图片数组
@@ -221,7 +229,14 @@ func AdminCreateCase(c *gin.Context) {
 		Year:           input.Year,
 		Description:    input.Description,
 		Images:         string(imagesJSON),
-		SortOrder:      0, // 默认排序
+		SortOrder:      0,
+		// 管理员创建的作品默认展示到灵感库；如需不展示，前端显式传 false。
+		ShowInInspiration: func() bool {
+			if input.ShowInInspiration != nil {
+				return *input.ShowInInspiration
+			}
+			return true
+		}(),
 	}
 
 	if err := repository.DB.Create(&newCase).Error; err != nil {
@@ -240,24 +255,29 @@ func AdminUpdateCase(c *gin.Context) {
 	caseID := parseUint64(c.Param("id"))
 
 	var input struct {
-		ProviderID     *uint64         `json:"providerId"`
-		Title          string          `json:"title" binding:"required"`
-		CoverImage     string          `json:"coverImage" binding:"required"`
-		Style          string          `json:"style" binding:"required"`
-		Layout         string          `json:"layout"`
-		Area           string          `json:"area"`
-		Price          float64         `json:"price"`
-		QuoteTotalCent *int64          `json:"quoteTotalCent"`
-		QuoteCurrency  string          `json:"quoteCurrency"`
-		QuoteItems     json.RawMessage `json:"quoteItems"`
-		Year           string          `json:"year"`
-		Description    string          `json:"description"`
-		Images         []string        `json:"images"`
+		ProviderID        *uint64         `json:"providerId"`
+		Title             string          `json:"title" binding:"required"`
+		CoverImage        string          `json:"coverImage" binding:"required"`
+		Style             string          `json:"style" binding:"required"`
+		Layout            string          `json:"layout"`
+		Area              string          `json:"area"`
+		Price             float64         `json:"price"`
+		QuoteTotalCent    *int64          `json:"quoteTotalCent"`
+		QuoteCurrency     string          `json:"quoteCurrency"`
+		QuoteItems        json.RawMessage `json:"quoteItems"`
+		Year              string          `json:"year"`
+		Description       string          `json:"description"`
+		Images            []string        `json:"images"`
+		ShowInInspiration *bool           `json:"showInInspiration"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
+	}
+
+	if strings.TrimSpace(input.Layout) == "" {
+		input.Layout = "其他"
 	}
 
 	// 检查作品是否存在
@@ -327,6 +347,9 @@ func AdminUpdateCase(c *gin.Context) {
 	if hasQuoteItems {
 		updates["quote_items"] = quoteItemsJSON
 	}
+	if input.ShowInInspiration != nil {
+		updates["show_in_inspiration"] = *input.ShowInInspiration
+	}
 
 	if err := repository.DB.Model(&model.ProviderCase{}).Where("id = ?", caseID).Updates(updates).Error; err != nil {
 		response.Error(c, 500, "更新失败")
@@ -354,4 +377,49 @@ func AdminDeleteCase(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "删除成功"})
+}
+
+func AdminToggleCaseInspiration(c *gin.Context) {
+	caseID := parseUint64(c.Param("id"))
+	var input struct {
+		ShowInInspiration bool `json:"showInInspiration"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	if err := repository.DB.Model(&model.ProviderCase{}).
+		Where("id = ?", caseID).
+		Update("show_in_inspiration", input.ShowInInspiration).Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "更新成功"})
+}
+
+func AdminBatchDeleteCases(c *gin.Context) {
+	var input struct {
+		IDs []uint64 `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	if len(input.IDs) == 0 {
+		response.BadRequest(c, "请选择要删除的作品")
+		return
+	}
+
+	if err := repository.DB.Where("id IN ?", input.IDs).Delete(&model.ProviderCase{}).Error; err != nil {
+		response.ServerError(c, "批量删除失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "批量删除成功",
+		"count":   len(input.IDs),
+	})
 }
