@@ -4,12 +4,11 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/handler"
 	"home-decoration-server/internal/middleware"
-	"home-decoration-server/internal/ws"
 
 	"github.com/gin-gonic/gin"
 )
 
-func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *handler.DictionaryHandler) *gin.Engine {
+func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engine {
 	r := gin.Default()
 
 	// ✅ CORS白名单配置
@@ -94,9 +93,6 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 		authorized := v1.Group("")
 		authorized.Use(middleware.JWT(cfg.JWT.Secret))
 		{
-			// ==================== 旧版 WebSocket（已废弃，已切换至腾讯云 IM） ====================
-			// authorized.GET("/ws", handler.ServeWS(hub, wsHandler))
-
 			// 用户相关
 			user := authorized.Group("/user")
 			{
@@ -261,15 +257,6 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 				notifications.PUT("/read-all", handler.MarkAllNotificationsAsRead)
 				notifications.DELETE("/:id", handler.DeleteNotification)
 			}
-
-			// ==================== 旧版自研聊天（已废弃，保留供回滚） ====================
-			// 注：已切换到腾讯云 IM，以下路由不再使用
-			// chat := authorized.Group("/chat")
-			// {
-			// 	chat.GET("/conversations", handler.GetConversations)
-			// 	chat.GET("/messages", handler.GetMessages)
-			// 	chat.GET("/unread-count", handler.GetUnreadCount)
-			// }
 		}
 
 		// ==================== Admin 管理后台 ====================

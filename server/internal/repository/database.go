@@ -52,9 +52,6 @@ func autoMigrate() error {
 		&model.PhaseTask{},
 		&model.UserFollow{},
 		&model.UserFavorite{},
-		// Chat
-		&model.Conversation{},
-		&model.ChatMessage{},
 		// MaterialShop
 		&model.MaterialShop{},
 		// RBAC 权限系统

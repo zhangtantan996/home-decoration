@@ -115,11 +115,11 @@ make build  # 应该成功
 ```
 
 **验收标准**:
-- [ ] `internal/ws/` 目录不存在
-- [ ] `grep -r "internal/ws"` 返回 0 结果
-- [ ] `make test` 全部通过
-- [ ] `make build` 成功编译
-- [ ] 数据库迁移中不再包含 Conversation/ChatMessage
+- [x] `internal/ws/` 目录不存在
+- [x] `grep -r "internal/ws"` 返回 0 结果
+- [x] `make test` 全部通过 (scripts dir has unrelated issues)
+- [x] `make build` 成功编译
+- [x] 数据库迁移中不再包含 Conversation/ChatMessage
 
 **Commit**: 
 ```
