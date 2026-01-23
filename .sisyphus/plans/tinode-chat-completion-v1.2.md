@@ -168,10 +168,10 @@ Users should use Tinode for chat functionality.
 ```
 
 **验收标准**:
-- [ ] 所有腾讯 IM 文件顶部有 BACKUP 标记
-- [ ] 注释说明了保留原因和维护策略
-- [ ] 设置了 6 个月后的审查日期
-- [ ] API 端点仍然可用（`/api/v1/im/usersig`）
+- [x] 所有腾讯 IM 文件顶部有 BACKUP 标记
+- [x] 注释说明了保留原因和维护策略
+- [x] 设置了 6 个月后的审查日期
+- [x] API 端点仍然可用（`/api/v1/im/usersig`）
 
 **Commit**:
 ```
