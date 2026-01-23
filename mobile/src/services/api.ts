@@ -261,6 +261,12 @@ export const chatApi = {
     getUnreadCount: () => api.get<any>('/chat/unread-count'),
 };
 
+// Tinode helper endpoints
+export const tinodeApi = {
+    // Maps app user id -> tinode user topic id like `usrXXXX`.
+    getUserId: (userId: number | string) => api.get<any>(`/tinode/userid/${userId}`),
+};
+
 export const materialShopApi = {
     list: (params?: { page?: number; pageSize?: number; sortBy?: string; type?: string }) =>
         api.get<any>('/material-shops', { params }),

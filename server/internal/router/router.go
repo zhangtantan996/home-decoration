@@ -105,6 +105,9 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 				user.GET("/favorites", handler.GetUserFavorites)
 			}
 
+			// Tinode helper endpoints
+			authorized.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
+
 			// 设计师
 			designers := authorized.Group("/designers")
 			{
@@ -458,6 +461,9 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 		merchant := v1.Group("/merchant")
 		merchant.Use(middleware.MerchantJWT(cfg.JWT.Secret))
 		{
+			// Tinode helper endpoints
+			merchant.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
+
 			// 获取当前商家信息
 			merchant.GET("/info", handler.MerchantGetInfo)
 			merchant.PUT("/info", handler.MerchantUpdateInfo)

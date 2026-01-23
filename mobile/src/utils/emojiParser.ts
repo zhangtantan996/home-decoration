@@ -139,7 +139,6 @@ const TENCENT_EMOJI_MAP: Record<string, string> = {
   '[TUIEmoji_Star]': '⭐',
   '[TUIEmoji_Dizzy_Symbol]': '💫',
   '[TUIEmoji_Boom]': '💥',
-  '[TUIEmoji_Zzz]': '💤',
   '[TUIEmoji_Sweat_Drops]': '💦',
 
   // 中文常用表情补充

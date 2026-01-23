@@ -11,6 +11,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/tinode"
 	"home-decoration-server/internal/utils/image"
 	"home-decoration-server/internal/utils/tencentim"
 
@@ -50,6 +51,7 @@ type TokenResponse struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refreshToken"`
 	ExpiresIn    int64  `json:"expiresIn"`
+	TinodeToken  string `json:"tinodeToken,omitempty"`
 }
 
 // Register 用户注册
@@ -123,10 +125,23 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		return nil, nil, err
 	}
 
+	// Tinode token generation + user sync (best-effort; failures don't block register)
+	tinodeToken, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	if err != nil {
+		log.Printf("[Tinode] Token generation failed (register): userID=%d, err=%v", user.ID, err)
+		tinodeToken = ""
+	}
+	// Sync synchronously so the returned tinodeToken works immediately on first login.
+	// This is best-effort: failures are logged but do not block registration.
+	if err := tinode.SyncUserToTinode(user); err != nil {
+		log.Printf("[Tinode] User sync failed (register): userID=%d, err=%v", user.ID, err)
+	}
+
 	return &TokenResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
+		TinodeToken:  tinodeToken,
 	}, user, nil
 }
 
@@ -239,10 +254,23 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		return nil, nil, err
 	}
 
+	// Tinode token generation + user sync (best-effort; failures don't block login)
+	tinodeToken, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	if err != nil {
+		log.Printf("[Tinode] Token generation failed (login): userID=%d, err=%v", user.ID, err)
+		tinodeToken = ""
+	}
+	// Sync synchronously so the returned tinodeToken works immediately on first login.
+	// This is best-effort: failures are logged but do not block login.
+	if err := tinode.SyncUserToTinode(&user); err != nil {
+		log.Printf("[Tinode] User sync failed (login): userID=%d, err=%v", user.ID, err)
+	}
+
 	return &TokenResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
+		TinodeToken:  tinodeToken,
 	}, &user, nil
 }
 

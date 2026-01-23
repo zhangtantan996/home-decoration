@@ -46,6 +46,10 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf
+      - JWT_SECRET=jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI=
+      # Tinode "token" authenticator configuration (must match Tinode container).
+      - TINODE_AUTH_TOKEN_KEY=jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI=
+      - TINODE_UID_ENCRYPTION_KEY=la6YsO+bNX/+XIkOqc5Svw==
     ports:
       - "8080:8080"
     networks:

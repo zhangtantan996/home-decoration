@@ -72,9 +72,14 @@ const MerchantLogin: React.FC = () => {
         try {
             const res = await merchantAuthApi.login(values) as any;
             if (res.code === 0) {
-                const { token, provider } = res.data;
+                const { token, provider, tinodeToken } = res.data;
                 localStorage.setItem('merchant_token', token);
                 localStorage.setItem('merchant_provider', JSON.stringify(provider));
+                if (tinodeToken) {
+                    localStorage.setItem('merchant_tinode_token', tinodeToken);
+                } else {
+                    localStorage.removeItem('merchant_tinode_token');
+                }
                 message.success('登录成功');
                 navigate('/dashboard');
             } else {
@@ -164,4 +169,3 @@ const MerchantLogin: React.FC = () => {
 };
 
 export default MerchantLogin;
-

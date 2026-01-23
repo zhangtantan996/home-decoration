@@ -1,0 +1,28 @@
+services:
+  tinode:
+    image: tinode/tinode-postgres:latest
+    container_name: decorating_tinode
+    restart: unless-stopped
+    ports:
+      - "6060:6060"  # HTTP API
+      - "6061:6061"  # WebSocket
+    environment:
+      - STORE_USE_ADAPTER=postgres
+      - POSTGRES_DSN=postgres://postgres:IXwUBjxFia33XltiY0wFch8n3N68hptI@home_decor_db_local:5432/tinode?sslmode=disable
+      - UID_ENCRYPTION_KEY=la6YsO+bNX/+XIkOqc5Svw==
+      - API_KEY_SALT=T713/rYYgW7g4m3vG6zGRh7+FM1t0T8j13koXScOAj4=
+      # Must match backend JWT_SECRET used to mint tinodeToken.
+      - AUTH_TOKEN_KEY=jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI=
+      - RESET_DB=false
+      - UPGRADE_DB=true
+    volumes:
+      - tinode_data:/data
+    networks:
+      - home_decoration_dev-net
+
+volumes:
+  tinode_data:
+
+networks:
+  home_decoration_dev-net:
+    external: true

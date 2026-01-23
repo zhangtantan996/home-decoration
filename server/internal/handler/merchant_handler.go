@@ -2,10 +2,12 @@ package handler
 
 import (
 	"fmt"
+	"log"
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
+	"home-decoration-server/internal/tinode"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"os"
@@ -89,8 +91,25 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			displayName = "用户" + input.Phone[len(input.Phone)-4:]
 		}
 
+		// 生成 Tinode token（失败不阻塞商家登录）
+		tinodeToken := ""
+		if token, err := tinode.GenerateTinodeToken(user.ID, displayName); err != nil {
+			log.Printf("[Tinode] Token generation failed (merchant login): userID=%d, err=%v", user.ID, err)
+		} else {
+			tinodeToken = token
+			// Ensure this merchant exists in Tinode DB with a usable public profile.
+			u := user
+			if u.Nickname == "" {
+				u.Nickname = displayName
+			}
+			if err := tinode.SyncUserToTinode(&u); err != nil {
+				log.Printf("[Tinode] Sync merchant user failed: userID=%d, err=%v", user.ID, err)
+			}
+		}
+
 		response.Success(c, gin.H{
 			"token": tokenString,
+			"tinodeToken": tinodeToken,
 			"provider": gin.H{
 				"id":           provider.ID,
 				"name":         displayName,

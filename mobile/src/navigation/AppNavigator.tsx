@@ -186,22 +186,6 @@ const AppNavigator = () => {
         if (isAuthenticated) {
             // 登录成功后立即尝试获取数据
             preloadAll();
-
-            // 初始化腾讯云 IM（后台静默，不阻塞主流程）
-            import('../services/TencentIMService').then(({ default: TencentIMService }) => {
-                TencentIMService.init().then((success) => {
-                    if (success) {
-                        console.log('[TencentIM] 初始化成功');
-                    }
-                }).catch(() => {
-                    // 静默失败，WebSocket 作为主要通道
-                });
-            });
-        } else {
-            // 登出时也登出腾讯 IM
-            import('../services/TencentIMService').then(({ default: TencentIMService }) => {
-                TencentIMService.logout();
-            });
         }
     }, [isAuthenticated]);
 

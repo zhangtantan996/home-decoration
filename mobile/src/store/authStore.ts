@@ -12,12 +12,13 @@ interface User {
 interface AuthState {
     token: string | null;
     refreshToken: string | null;
+    tinodeToken: string | null;
     user: User | null;
     isLoading: boolean;
     isAuthenticated: boolean;
 
     // Actions
-    setAuth: (token: string, refreshToken: string, user: User) => Promise<void>;
+    setAuth: (token: string, refreshToken: string, tinodeToken: string, user: User) => Promise<void>;
     logout: () => Promise<void>;
     loadStoredAuth: () => Promise<void>;
     updateToken: (token: string) => Promise<void>;
@@ -26,30 +27,33 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
     token: null,
     refreshToken: null,
+    tinodeToken: null,
     user: null,
     isLoading: true,
     isAuthenticated: false,
 
-    setAuth: async (token, refreshToken, user) => {
+    setAuth: async (token, refreshToken, tinodeToken, user) => {
+        // Update in-memory state first to avoid blocking UX on slow Keychain/Keystore.
+        set({
+            token,
+            refreshToken,
+            tinodeToken,
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+        });
+
         try {
-            // 使用 Keychain 安全存储
+            // Persist in the background; failures should not block app usage.
             await SecureStorage.saveToken(token);
             await SecureStorage.saveRefreshToken(refreshToken);
+            await SecureStorage.saveTinodeToken(tinodeToken);
             await SecureStorage.saveUser(user);
         } catch (error) {
             if (__DEV__) {
                 console.error('Failed to save auth to secure storage:', error);
             }
-            // 即使存储失败，仍然更新内存状态让用户可以使用
         }
-
-        set({
-            token,
-            refreshToken,
-            user,
-            isAuthenticated: true,
-            isLoading: false,
-        });
     },
 
     updateToken: async (token) => {
@@ -76,6 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({
             token: null,
             refreshToken: null,
+            tinodeToken: null,
             user: null,
             isAuthenticated: false,
         });
@@ -85,12 +90,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         try {
             const token = await SecureStorage.getToken();
             const refreshToken = await SecureStorage.getRefreshToken();
+            const tinodeToken = await SecureStorage.getTinodeToken();
             const user = await SecureStorage.getUser();
 
             if (token && user) {
                 set({
                     token,
                     refreshToken,
+                    tinodeToken,
                     user,
                     isAuthenticated: true,
                     isLoading: false,

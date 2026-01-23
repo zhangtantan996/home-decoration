@@ -1,18 +1,23 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
     Platform,
+    useWindowDimensions,
     TextInput,
     KeyboardAvoidingView,
     Image,
     Keyboard,
     Modal,
+    ActivityIndicator,
+    PermissionsAndroid,
+    type NativeScrollEvent,
+    type NativeSyntheticEvent,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     ArrowLeft,
     Send,
@@ -27,13 +32,14 @@ import {
     Info,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
-import TencentIMService from '../services/TencentIMService';
-import TIM from '@tencentcloud/chat';
+// import TencentIMService from '../services/TencentIMService';
+// import TIM from '@tencentcloud/chat';
+import TinodeService from '../services/TinodeService';
 import { parseEmojiText } from '../utils/emojiParser';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import DocumentPicker from '@react-native-documents/picker';
+import * as DocumentPicker from '@react-native-documents/picker';
 import { fileApi } from '../services/api';
-import { getApiUrl } from '../config'; // Use config to get base URL for constructing full image paths if needed
+import { getApiBaseUrl } from '../config';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -56,6 +62,12 @@ interface UIMessage {
     id: string;
     senderId: string;
     content: string;
+    image?: {
+        url: string;
+        width?: number;
+        height?: number;
+        mime?: string;
+    };
     createdAt: number;
     isRead: boolean;
     isMe: boolean;
@@ -68,9 +80,11 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
     // 从 Store 获取数据
     const currentUser = useAuthStore(state => state.user);
+    const tinodeToken = useAuthStore(state => state.tinodeToken);
     const currentUserId = String(currentUser?.id || '');
 
     const [messages, setMessages] = useState<UIMessage[]>([]);
+    const [loadingMessages, setLoadingMessages] = useState(false);
     const [inputText, setInputText] = useState('');
     const [showQuickReplies, setShowQuickReplies] = useState(true);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -83,8 +97,40 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     }>({ visible: false, type: 'info', title: '', message: '' });
     const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
+    const [topic, setTopic] = useState<any>(null);
+    const [topicName, setTopicName] = useState<string>(conversationID || '');
+    const insets = useSafeAreaInsets();
+    const { width: windowWidth } = useWindowDimensions();
 
-    // 解析 TIM 消息为 UI 消息
+    // Chat UX: open conversation at latest message, but don't force-scroll when user is reading history.
+    const isNearBottomRef = useRef(true);
+    const pendingScrollToBottomRef = useRef(false);
+
+    const handleMessageListScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+        const distanceToBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+        // Keep the threshold tight: if the user scrolls up even a bit, don't auto-jump.
+        const isNearBottom = distanceToBottom <= 24;
+        isNearBottomRef.current = isNearBottom;
+
+        // If user scrolls away from the bottom, cancel any pending auto-scroll.
+        // This prevents being pulled to the bottom while reading history.
+        if (!isNearBottom) {
+            pendingScrollToBottomRef.current = false;
+        }
+    }, []);
+
+    useEffect(() => {
+        // Detach handlers to avoid leaks when leaving the screen.
+        return () => {
+            if (topic) {
+                topic.onData = undefined;
+            }
+        };
+    }, [topic]);
+
+    // 解析 TIM 消息为 UI 消息 - Commented out
+    /*
     const parseTIMMessages = (timMessages: any[]): UIMessage[] => {
         return timMessages.map(msg => ({
             id: msg.ID,
@@ -95,9 +141,103 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             isMe: msg.from === currentUserId
         }));
     };
+    */
+
+    // 解析 Tinode 消息
+    const parseTinodeMessages = (tinodeMessages: any[]): UIMessage[] => {
+        const selfTinodeUserId = TinodeService.getCurrentUserID();
+        console.log('[ChatRoom] parseTinodeMessages: input count =', tinodeMessages.length);
+
+        const filtered = tinodeMessages.filter(msg => typeof msg?.seq === 'number' && msg.seq > 0);
+        console.log('[ChatRoom] parseTinodeMessages: after filter count =', filtered.length);
+        
+        if (tinodeMessages.length > 0 && filtered.length === 0) {
+            console.warn('[ChatRoom] All messages filtered out! Sample message:', JSON.stringify(tinodeMessages[0], null, 2));
+        }
+
+        const normalizeMediaUrl = (raw: unknown): string | undefined => {
+            if (typeof raw !== 'string') return undefined;
+            const val = raw.trim();
+            if (!val) return undefined;
+
+            // Relative upload paths.
+            if (val.startsWith('/')) {
+                const base = getApiBaseUrl().replace(/\/$/, '');
+                return `${base}${val}`;
+            }
+
+            // In dev, backend may respond with PublicURL=localhost which is unreachable from Android devices.
+            try {
+                const u = new URL(val);
+                if (__DEV__ && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) {
+                    const base = new URL(getApiBaseUrl());
+                    return `${base.origin}${u.pathname}${u.search}`;
+                }
+            } catch {
+                // ignore
+            }
+
+            return val;
+        };
+
+        return filtered.map((msg) => {
+            const contentAny = msg.content;
+            const contentObj = contentAny && typeof contentAny === 'object' ? (contentAny as any) : null;
+
+            const imageEnt =
+                contentObj && Array.isArray(contentObj.ent)
+                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'IM' && e.data)
+                    : undefined;
+
+            const imageUrl = normalizeMediaUrl(imageEnt?.data?.val);
+
+            const text =
+                typeof contentAny === 'string'
+                    ? parseEmojiText(contentAny)
+                    : typeof contentObj?.txt === 'string'
+                      ? parseEmojiText(contentObj.txt)
+                      : '[非文本消息]';
+
+            return {
+                id: String(msg.seq),
+                // Outgoing local-echo messages may have `from` unset.
+                senderId: msg.from || selfTinodeUserId || '',
+                content: text,
+                image: imageUrl
+                    ? {
+                          url: imageUrl,
+                          width: imageEnt?.data?.width,
+                          height: imageEnt?.data?.height,
+                          mime: imageEnt?.data?.mime,
+                      }
+                    : undefined,
+                createdAt: msg.ts ? new Date(msg.ts).getTime() : Date.now(),
+                isRead: true, // simplified
+                // Tinode SDK may route a locally published message with `from` unset.
+                isMe: !msg.from || (!!selfTinodeUserId && msg.from === selfTinodeUserId),
+            };
+        });
+    };
 
     // 加载历史消息
+    const getCachedTopicMessages = (t: any): any[] => {
+        if (!t || typeof t.messages !== 'function') {
+            console.log('[ChatRoom] getCachedTopicMessages: topic invalid or no messages function');
+            return [];
+        }
+        const history: any[] = [];
+        t.messages((m: any) => {
+            history.push(m);
+        });
+        console.log('[ChatRoom] getCachedTopicMessages: found', history.length, 'messages');
+        if (history.length > 0) {
+            console.log('[ChatRoom] First message sample:', JSON.stringify(history[0], null, 2));
+        }
+        return history;
+    };
+
     const loadMessages = async () => {
+        /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         if (!chat || !conversationID) return;
 
@@ -111,13 +251,166 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         } catch (error) {
             console.error('Failed to load messages:', error);
         }
+        */
+
+        // Tinode Implementation
+        // Message list may have initialized Tinode, but provider details entry might not.
+        if (!TinodeService.isConnected()) {
+            if (!tinodeToken) {
+                setDialogConfig({
+                    visible: true,
+                    type: 'info',
+                    title: 'IM 未登录',
+                    message: '聊天服务未就绪，请重新登录后再试',
+                });
+                setLoadingMessages(false);
+                return;
+            }
+            const ok = await TinodeService.init(tinodeToken);
+            if (!ok) {
+                setDialogConfig({
+                    visible: true,
+                    type: 'info',
+                    title: '连接失败',
+                    message: '无法连接聊天服务，请稍后重试',
+                });
+                setLoadingMessages(false);
+                return;
+            }
+        }
+
+        const asTinodeTopic = (val: unknown): string | null => {
+            if (typeof val !== 'string') return null;
+            const topic = val.trim();
+            if (!topic) return null;
+            if (topic.startsWith('usr') || topic.startsWith('p2p') || topic.startsWith('grp')) {
+                return topic;
+            }
+            return null;
+        };
+
+        let targetTopic = asTinodeTopic(conversationID) || asTinodeTopic(partnerID) || '';
+
+        if (!targetTopic && partnerID) {
+            try {
+                // partnerID is app user id (numeric). Resolve to Tinode `usr...`.
+                const resolved = await TinodeService.resolveTinodeUserId(partnerID);
+                targetTopic = resolved;
+                setTopicName(resolved);
+            } catch (e) {
+                console.error('Failed to resolve Tinode peer user id:', e);
+                setDialogConfig({
+                    visible: true,
+                    type: 'info',
+                    title: '加载失败',
+                    message: '无法解析对方的聊天身份，请稍后重试',
+                });
+                setLoadingMessages(false);
+                return;
+            }
+        }
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '加载失败',
+                message: '缺少会话信息，无法打开聊天',
+            });
+            setLoadingMessages(false);
+            return;
+        }
+
+        setTopicName(targetTopic);
+
+        // Conversation switch should always land on the latest message.
+        pendingScrollToBottomRef.current = true;
+        isNearBottomRef.current = true;
+
+        // If we already have cached messages for this topic (e.g. returning to the chat),
+        // render them immediately and avoid showing the loading state.
+        const cachedTopic = TinodeService.getTinode()?.getTopic?.(targetTopic);
+        const cachedHistory = getCachedTopicMessages(cachedTopic);
+        const cachedUi = parseTinodeMessages(cachedHistory);
+        if (cachedUi.length > 0) {
+            setMessages(cachedUi);
+            setLoadingMessages(false);
+        } else {
+            setLoadingMessages(true);
+        }
+
+        try {
+              // Subscribe to topic (which fetches messages)
+              console.log('[ChatRoom] Subscribing to topic:', targetTopic);
+              const t = await TinodeService.subscribeToConversation(targetTopic);
+              setTopic(t);
+              console.log('[ChatRoom] Subscription complete, topic:', t);
+
+              const history = getCachedTopicMessages(t);
+              console.log('[ChatRoom] History after subscription:', history.length, 'messages');
+
+              setMessages(parseTinodeMessages(history));
+              
+               // Mark read (seq=0 means "mark up to max").
+               const lastSeq = history.length > 0 ? history[history.length - 1].seq : 0;
+               console.log('[ChatRoom] Marking as read up to seq:', lastSeq);
+               TinodeService.markAsRead(targetTopic, lastSeq);
+
+              // Setup listener for new messages
+               t.onData = (data: any) => {
+                    console.log('[ChatRoom] New message:', data);
+                    if (typeof data?.seq !== 'number') return;
+                    setMessages(prev => {
+                        const incoming = parseTinodeMessages([data]);
+                        if (incoming.length === 0) return prev;
+                        const existing = new Set(prev.map(m => m.id));
+                        const unique = incoming.filter(m => !existing.has(m.id));
+                        return unique.length > 0 ? [...prev, ...unique] : prev;
+                    });
+                    TinodeService.markAsRead(targetTopic, data.seq);
+                    if (isNearBottomRef.current) {
+                        pendingScrollToBottomRef.current = true;
+                    }
+               };
+
+              setLoadingMessages(false);
+
+        } catch (error: any) {
+             console.error('Failed to subscribe/load messages:', error);
+             
+             const errorMessage = error?.message || String(error);
+             const is401 = errorMessage.includes('401') || errorMessage.includes('authentication required');
+             
+             if (is401 && tinodeToken) {
+                 try {
+                     console.log('[ChatRoom] 401 error, reinitializing Tinode...');
+                     TinodeService.disconnect();
+                     const ok = await TinodeService.init(tinodeToken);
+                     if (ok) {
+                         console.log('[ChatRoom] Reinitialized, retrying load...');
+                         await loadMessages();
+                         return;
+                     }
+                 } catch (reinitError) {
+                     console.error('[ChatRoom] Reinit failed:', reinitError);
+                 }
+             }
+             
+             setDialogConfig({
+                 visible: true,
+                 type: 'info',
+                 title: '加载失败',
+                 message: '拉取聊天记录失败，请稍后重试',
+             });
+              setLoadingMessages(false);
+        }
     };
 
     useEffect(() => {
         loadMessages();
-    }, [conversationID]);
+    }, [conversationID, partnerID]);
 
-    // 监听新消息
+    // 监听新消息 - Handled in loadMessages via topic.onData for Tinode
+    /*
     useEffect(() => {
         const chat = TencentIMService.getChat();
         if (!chat) return;
@@ -138,22 +431,41 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             chat.off(TIM.EVENT.MESSAGE_RECEIVED, onMessageReceived);
         };
     }, [conversationID]);
+    */
 
     // 滚动到底部
-    const scrollToBottom = () => {
+    const scrollToBottom = (animated = false) => {
+        // Ensure layout has updated before attempting to scroll.
         setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+            requestAnimationFrame(() => {
+                scrollViewRef.current?.scrollToEnd({ animated });
+            });
+        }, 0);
     };
 
+    const handleMessageListContentSizeChange = useCallback(() => {
+        if (!pendingScrollToBottomRef.current) return;
+        // Do not animate on open/switch; it should feel instant.
+        scrollToBottom(false);
+        pendingScrollToBottomRef.current = false;
+        isNearBottomRef.current = true;
+    }, []);
+
     useEffect(() => {
-        scrollToBottom();
-    }, [messages.length]);
+        // Some RN layouts may not fire onContentSizeChange reliably (e.g. same height).
+        // Keep this as a fallback to ensure conversation opens at the latest message.
+        if (loadingMessages) return;
+        if (!pendingScrollToBottomRef.current) return;
+        scrollToBottom(false);
+        pendingScrollToBottomRef.current = false;
+        isNearBottomRef.current = true;
+    }, [messages.length, loadingMessages]);
 
     // 发送消息
     const handleSendMessage = async (text: string) => {
         if (!text.trim()) return;
 
+        /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         console.log('[ChatRoom] handleSendMessage - chat:', !!chat, 'partnerID:', partnerID, 'isLoggedIn:', TencentIMService.getIsLoggedIn());
 
@@ -210,16 +522,6 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
             console.log('✅ [ChatRoom] Send success:', res);
 
-            // 腾讯IM SDK通常会自动触发 MESSAGE_RECEIVED 事件来更新消息状态和ID，
-            // 但如果需要更即时的UI更新，可以根据 res.data.message 更新本地消息列表。
-            // 这里我们依赖 MESSAGE_RECEIVED 事件来处理最终状态。
-            // 如果需要手动更新，可以这样做：
-            // if (res.code === 0 && res.data && res.data.message) {
-            //     setMessages(prev => prev.map(msg =>
-            //         msg.id === uiMsg.id ? { ...msg, id: res.data.message.ID, createdAt: res.data.message.time * 1000 } : msg
-            //     ));
-            // }
-
         } catch (error: any) {
             console.error('❌ [ChatRoom] Send failed:', error);
             // 打印完整的错误对象
@@ -232,6 +534,28 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 message: '消息发送失败，请重试',
             });
         }
+        */
+
+         // Tinode Implementation
+         try {
+             // With Tinode SDK, `topic.publish()` will route the sent message through `topic.onData`.
+             // Avoid adding local placeholders here to prevent duplicates.
+             setInputText('');
+             setShowQuickReplies(false);
+             Keyboard.dismiss();
+
+             const targetTopic = conversationID || topicName;
+             if (!targetTopic) throw new Error('Missing Tinode topic');
+             await TinodeService.sendTextMessage(targetTopic, text.trim());
+         } catch (error) {
+             console.error('Tinode send failed:', error);
+             setDialogConfig({
+                 visible: true,
+                 type: 'info',
+                 title: '发送失败',
+                 message: '消息发送失败，请重试',
+             });
+         }
     };
 
     // 电话按钮点击
@@ -284,6 +608,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
     // 通用文件上传并发送 helper
     const uploadAndSendFile = async (file: { uri: string; type: string; name: string }, msgType: string) => {
+        /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         if (!chat || !partnerID) return;
 
@@ -362,12 +687,49 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 message: '附件发送失败，请重试',
             });
         }
+        */
+       
+        // Tinode Implementation
+        try {
+            // `publishMessage()` will also route the sent message through `topic.onData`.
+            const targetTopic = conversationID || topicName;
+            if (!targetTopic) throw new Error('Missing Tinode topic');
+
+            if (msgType === 'image') {
+                await TinodeService.sendImageMessage(targetTopic, file.uri);
+            } else {
+                // TODO: implement file attachments for Tinode; for now treat as image.
+                console.warn('File message sending not implemented, using sendImageMessage');
+                await TinodeService.sendImageMessage(targetTopic, file.uri);
+            }
+        } catch (error) {
+            console.error('Tinode attachment send failed:', error);
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '附件发送失败，请重试',
+            });
+        }
     };
 
     // 拍照
     const handleCamera = async () => {
         setShowAttachmentMenu(false);
         try {
+            // react-native-image-picker may require runtime permission if CAMERA is declared
+            // (e.g. via manifest merge from other deps). Requesting is safe on Android.
+            const ensureCameraPermission = async (): Promise<boolean> => {
+                if (Platform.OS !== 'android') return true;
+                try {
+                    const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+                    return res === PermissionsAndroid.RESULTS.GRANTED;
+                } catch (e) {
+                    console.error('Camera permission request failed:', e);
+                    return false;
+                }
+            };
+
             const result = await launchCamera({
                 mediaType: 'photo',
                 quality: 0.8,
@@ -376,6 +738,45 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             if (result.didCancel) return;
             if (result.errorCode) {
                 console.error('Camera Error:', result.errorMessage);
+
+                const msg = String(result.errorMessage || '');
+                const needsPermission =
+                    result.errorCode === 'permission' ||
+                    msg.includes('Manifest.permission.CAMERA') ||
+                    msg.includes('CAMERA');
+
+                if (needsPermission) {
+                    const ok = await ensureCameraPermission();
+                    if (!ok) {
+                        setDialogConfig({
+                            visible: true,
+                            type: 'info',
+                            title: '相机权限未授予',
+                            message: '请在系统设置中允许相机权限后重试',
+                        });
+                        return;
+                    }
+
+                    const retry = await launchCamera({
+                        mediaType: 'photo',
+                        quality: 0.8,
+                    });
+                    if (retry.didCancel) return;
+                    if (retry.errorCode) {
+                        console.error('Camera Error (retry):', retry.errorMessage);
+                        return;
+                    }
+
+                    const assetRetry = retry.assets?.[0];
+                    if (assetRetry && assetRetry.uri) {
+                        await uploadAndSendFile({
+                            uri: assetRetry.uri,
+                            type: assetRetry.type || 'image/jpeg',
+                            name: assetRetry.fileName || 'photo.jpg',
+                        }, 'image');
+                    }
+                    return;
+                }
                 return;
             }
 
@@ -385,7 +786,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: asset.uri,
                     type: asset.type || 'image/jpeg',
                     name: asset.fileName || 'photo.jpg',
-                }, TIM.TYPES.MSG_IMAGE);
+                }, 'image'); // Replaced TIM.TYPES.MSG_IMAGE with 'image'
             }
         } catch (error) {
             console.error('Handle Camera Error:', error);
@@ -396,6 +797,21 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     const handleGallery = async () => {
         setShowAttachmentMenu(false);
         try {
+            const ensureReadImagesPermission = async (): Promise<boolean> => {
+                if (Platform.OS !== 'android') return true;
+                const perm =
+                    typeof Platform.Version === 'number' && Platform.Version >= 33
+                        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+                        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+                try {
+                    const res = await PermissionsAndroid.request(perm);
+                    return res === PermissionsAndroid.RESULTS.GRANTED;
+                } catch (e) {
+                    console.error('Gallery permission request failed:', e);
+                    return false;
+                }
+            };
+
             const result = await launchImageLibrary({
                 mediaType: 'photo',
                 quality: 0.8,
@@ -404,6 +820,47 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             if (result.didCancel) return;
             if (result.errorCode) {
                 console.error('Gallery Error:', result.errorMessage);
+
+                const msg = String(result.errorMessage || '');
+                const needsPermission =
+                    result.errorCode === 'permission' ||
+                    msg.includes('permission') ||
+                    msg.includes('READ_MEDIA') ||
+                    msg.includes('READ_EXTERNAL');
+
+                if (needsPermission) {
+                    const ok = await ensureReadImagesPermission();
+                    if (!ok) {
+                        setDialogConfig({
+                            visible: true,
+                            type: 'info',
+                            title: '相册权限未授予',
+                            message: '请在系统设置中允许相册/图片访问权限后重试',
+                        });
+                        return;
+                    }
+
+                    const retry = await launchImageLibrary({
+                        mediaType: 'photo',
+                        quality: 0.8,
+                        selectionLimit: 1,
+                    });
+                    if (retry.didCancel) return;
+                    if (retry.errorCode) {
+                        console.error('Gallery Error (retry):', retry.errorMessage);
+                        return;
+                    }
+
+                    const assetRetry = retry.assets?.[0];
+                    if (assetRetry && assetRetry.uri) {
+                        await uploadAndSendFile({
+                            uri: assetRetry.uri,
+                            type: assetRetry.type || 'image/jpeg',
+                            name: assetRetry.fileName || 'image.jpg',
+                        }, 'image');
+                    }
+                    return;
+                }
                 return;
             }
 
@@ -413,7 +870,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: asset.uri,
                     type: asset.type || 'image/jpeg',
                     name: asset.fileName || 'image.jpg',
-                }, TIM.TYPES.MSG_IMAGE);
+                }, 'image'); // Replaced TIM.TYPES.MSG_IMAGE
             }
         } catch (error) {
             console.error('Handle Gallery Error:', error);
@@ -433,14 +890,17 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: file.uri,
                     type: file.type || 'application/octet-stream',
                     name: file.name || 'document',
-                }, TIM.TYPES.MSG_FILE);
+                }, 'file'); // Replaced TIM.TYPES.MSG_FILE
             }
-        } catch (err) {
-            if (DocumentPicker.isCancel(err)) {
+        } catch (err: unknown) {
+            if (
+                DocumentPicker.isErrorWithCode(err) &&
+                err.code === DocumentPicker.errorCodes.OPERATION_CANCELED
+            ) {
                 // cancelled
-            } else {
-                console.error('DocumentPicker Error:', err);
+                return;
             }
+            console.error('DocumentPicker Error:', err);
         }
     };
 
@@ -450,6 +910,19 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         const msgTime = new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
         const prevMsgTime = index > 0 ? new Date(messages[index - 1]?.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
         const showTime = index === 0 || prevMsgTime !== msgTime;
+
+        const image = message.image;
+        // Limit image bubble width to half of the message area (no more than half the screen).
+        // Message list has horizontal padding=16, so the usable width is (windowWidth - 32).
+        const maxW = Math.max(140, Math.floor((windowWidth - 32) * 0.5));
+        const maxH = Math.min(320, Math.round(maxW * 1.4));
+        const rawW = typeof image?.width === 'number' && image.width > 0 ? image.width : undefined;
+        const rawH = typeof image?.height === 'number' && image.height > 0 ? image.height : undefined;
+        const imageSize = (() => {
+            if (!rawW || !rawH) return { width: maxW, height: maxW };
+            const scale = Math.min(maxW / rawW, maxH / rawH, 1);
+            return { width: Math.round(rawW * scale), height: Math.round(rawH * scale) };
+        })();
 
         return (
             <View key={message.id}>
@@ -466,16 +939,21 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             style={styles.messageAvatar}
                         />
                     )}
-                    <View style={[
-                        styles.messageBubble,
-                        isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-                    ]}>
-                        <Text style={[
-                            styles.messageText,
-                            isMe && styles.messageTextMe,
-                        ]}>
-                            {message.content}
-                        </Text>
+                    <View
+                        style={[
+                            styles.messageBubble,
+                            image ? styles.messageBubbleImage : isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
+                        ]}
+                    >
+                        {image?.url ? (
+                            <Image
+                                source={{ uri: image.url }}
+                                style={[styles.messageImage, { width: imageSize.width, height: imageSize.height }]}
+                                resizeMode="cover"
+                            />
+                        ) : (
+                            <Text style={[styles.messageText, isMe && styles.messageTextMe]}>{message.content}</Text>
+                        )}
                     </View>
                 </View>
             </View>
@@ -483,7 +961,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top']}>
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -504,7 +982,9 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             </View>
 
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                // Android already uses `windowSoftInputMode=adjustResize` (AndroidManifest.xml).
+                // Using KeyboardAvoidingView behavior on Android can cause layout drift after keyboard hides.
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={styles.keyboardView}
                 keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
             >
@@ -514,9 +994,23 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     style={styles.messageList}
                     contentContainerStyle={styles.messageListContent}
                     showsVerticalScrollIndicator={false}
-                    onContentSizeChange={scrollToBottom}
+                    onScroll={handleMessageListScroll}
+                    scrollEventThrottle={16}
+                    onContentSizeChange={handleMessageListContentSizeChange}
                 >
-                    {messages.map((message, index) => renderMessage(message, index))}
+                    {loadingMessages ? (
+                        <View style={styles.emptyState}>
+                            <ActivityIndicator size="small" color={PRIMARY_GOLD} />
+                            <Text style={styles.emptyText}>正在加载聊天记录...</Text>
+                        </View>
+                    ) : messages.length === 0 ? (
+                        <TouchableOpacity style={styles.emptyState} activeOpacity={0.8} onPress={loadMessages}>
+                            <Text style={styles.emptyText}>暂无聊天记录</Text>
+                            <Text style={styles.emptySubtext}>点击刷新</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        messages.map((message, index) => renderMessage(message, index))
+                    )}
                 </ScrollView>
 
                 {/* 快捷回复 */}
@@ -540,34 +1034,40 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 )}
 
                 {/* 输入区域 */}
-                <View style={styles.inputContainer}>
-                    <TouchableOpacity
-                        style={styles.attachBtn}
-                        onPress={() => setShowAttachmentMenu(true)}
-                    >
-                        <Plus size={22} color="#71717A" />
-                    </TouchableOpacity>
-                    <View style={styles.inputWrapper}>
-                        <TextInput
-                            style={styles.textInput}
-                            placeholder="输入消息..."
-                            placeholderTextColor="#A1A1AA"
-                            value={inputText}
-                            onChangeText={setInputText}
-                            multiline
-                            maxLength={500}
-                        />
+                <View style={styles.inputBar}>
+                    <View style={styles.inputContainer}>
+                        <TouchableOpacity
+                            style={styles.attachBtn}
+                            onPress={() => setShowAttachmentMenu(true)}
+                        >
+                            <Plus size={22} color="#71717A" />
+                        </TouchableOpacity>
+                        <View style={styles.inputWrapper}>
+                            <TextInput
+                                style={styles.textInput}
+                                placeholder="输入消息..."
+                                placeholderTextColor="#A1A1AA"
+                                value={inputText}
+                                onChangeText={setInputText}
+                                multiline
+                                maxLength={500}
+                            />
+                        </View>
+                        <TouchableOpacity
+                            style={[
+                                styles.sendBtn,
+                                inputText.trim() && styles.sendBtnActive,
+                            ]}
+                            onPress={() => handleSendMessage(inputText)}
+                            disabled={!inputText.trim()}
+                        >
+                            <Send size={20} color={inputText.trim() ? '#FFFFFF' : '#A1A1AA'} />
+                        </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                        style={[
-                            styles.sendBtn,
-                            inputText.trim() && styles.sendBtnActive,
-                        ]}
-                        onPress={() => handleSendMessage(inputText)}
-                        disabled={!inputText.trim()}
-                    >
-                        <Send size={20} color={inputText.trim() ? '#FFFFFF' : '#A1A1AA'} />
-                    </TouchableOpacity>
+                    {/* Fill the iOS home-indicator safe area without inflating the input row padding. */}
+                    {insets.bottom > 0 ? (
+                        <View style={[styles.safeAreaFill, { height: insets.bottom }]} />
+                    ) : null}
                 </View>
             </KeyboardAvoidingView>
 
@@ -768,6 +1268,26 @@ const styles = StyleSheet.create({
         padding: 16,
         paddingBottom: 8,
     },
+    emptyState: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 80,
+        paddingHorizontal: 24,
+        gap: 10,
+    },
+    emptyText: {
+        marginTop: 8,
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#71717A',
+        textAlign: 'center',
+    },
+    emptySubtext: {
+        fontSize: 13,
+        color: '#A1A1AA',
+        textAlign: 'center',
+    },
     timeLabel: {
         textAlign: 'center',
         fontSize: 12,
@@ -795,6 +1315,13 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         borderRadius: 16,
     },
+    messageBubbleImage: {
+        paddingHorizontal: 0,
+        paddingVertical: 0,
+        backgroundColor: '#E4E4E7',
+        borderRadius: 16,
+        overflow: 'hidden',
+    },
     messageBubbleOther: {
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 4,
@@ -802,6 +1329,10 @@ const styles = StyleSheet.create({
     messageBubbleMe: {
         backgroundColor: PRIMARY_GOLD,
         borderTopRightRadius: 4,
+    },
+    messageImage: {
+        backgroundColor: '#E4E4E7',
+        borderRadius: 16,
     },
     messageText: {
         fontSize: 14,
@@ -834,38 +1365,51 @@ const styles = StyleSheet.create({
         color: '#71717A',
     },
     // 输入区域
-    inputContainer: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        paddingBottom: Platform.OS === 'ios' ? 28 : 20,
+    inputBar: {
         backgroundColor: '#FFFFFF',
         borderTopWidth: 1,
         borderTopColor: '#F4F4F5',
     },
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        // Keep a small consistent bottom padding; SafeAreaView already accounts for iOS insets.
+        paddingBottom: 8,
+        backgroundColor: '#FFFFFF',
+    },
+    safeAreaFill: {
+        backgroundColor: '#FFFFFF',
+    },
     attachBtn: {
-        padding: 6,
-        marginBottom: 4,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     inputWrapper: {
         flex: 1,
         backgroundColor: '#F4F4F5',
-        borderRadius: 16,
+        borderRadius: 22,
         paddingHorizontal: 14,
-        paddingVertical: 1,
+        paddingVertical: 0,
         marginHorizontal: 8,
+        minHeight: 44,
         maxHeight: 100,
+        justifyContent: 'center',
     },
     textInput: {
         fontSize: 14,
         color: '#09090B',
         maxHeight: 80,
+        paddingVertical: 0,
     },
     sendBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: '#E4E4E7',
         alignItems: 'center',
         justifyContent: 'center',

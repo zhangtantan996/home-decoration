@@ -122,4 +122,8 @@ export const regionApi = {
     // 启用/禁用行政区划
     toggle: (id: number, enabled: boolean) =>
         api.put(`/admin/regions/${id}/toggle`, { enabled }),
+
+    // 获取子行政区划 (主要用于获取区县)
+    getChildren: (code: string) => 
+        api.get(`/regions/cities/${code}/districts`) as Promise<Region[]>,
 };

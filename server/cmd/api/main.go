@@ -27,6 +27,13 @@ func main() {
 	}
 	log.Println("Database connected successfully")
 
+	// 初始化 Tinode 数据库（失败不阻塞主流程）
+	if err := repository.InitTinodeDB(&cfg.Database); err != nil {
+		log.Printf("[Tinode] Failed to connect Tinode database: %v", err)
+	} else {
+		log.Println("[Tinode] Tinode database connected successfully")
+	}
+
 	// 初始化Redis
 	if err := repository.InitRedis(&cfg.Redis); err != nil {
 		log.Fatalf("Failed to connect Redis: %v", err)

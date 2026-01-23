@@ -56,6 +56,7 @@ func Register(c *gin.Context) {
 		"token":        tokenResp.Token,
 		"refreshToken": tokenResp.RefreshToken,
 		"expiresIn":    tokenResp.ExpiresIn,
+		"tinodeToken":  tokenResp.TinodeToken,
 		"user": gin.H{
 			"id":       user.ID,
 			"phone":    user.Phone,
@@ -84,6 +85,7 @@ func Login(c *gin.Context) {
 		"token":        tokenResp.Token,
 		"refreshToken": tokenResp.RefreshToken,
 		"expiresIn":    tokenResp.ExpiresIn,
+		"tinodeToken":  tokenResp.TinodeToken,
 		"user": gin.H{
 			"id":       user.ID,
 			"phone":    user.Phone,
