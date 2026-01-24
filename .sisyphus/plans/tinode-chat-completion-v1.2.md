@@ -189,6 +189,11 @@ docs(server): mark Tencent Cloud IM as backup solution
 
 #### 任务 0.3: 删除前端注释代码
 
+**状态**: ⏸️ 暂缓
+
+**原因**: 按用户要求保留腾讯云 IM 作为“随时可切回”的备用方案（至少能编译、能跑）。
+因此本任务不执行“删除注释代码/卸载 @tencentcloud 依赖”的操作，只要求不影响当前 Tinode 主力聊天功能。
+
 **Mobile** (`mobile/src/screens/ChatRoomScreen.tsx`):
 
 删除以下行（腾讯 IM 注释代码）:
@@ -269,11 +274,11 @@ This code was replaced by Tinode integration and is no longer needed.
 **依赖减少**: 8 个 npm 包  
 
 **完成标准**:
-- [ ] 所有 WebSocket 代码已删除
-- [ ] 腾讯 IM 已标记为备用
-- [ ] 前端注释代码已清理
+- [x] 所有 WebSocket 代码已删除
+- [x] 腾讯 IM 已标记为备用
+- [ ] 前端注释代码已清理（暂缓：保留腾讯云 IM 备用）
 - [ ] 所有测试通过
-- [ ] 所有构建成功
+- [ ] 所有构建成功（已验证: `cd server && make build`, `npm -C admin run build`, `npx tsc -p mobile/tsconfig.json --noEmit`）
 - [ ] Git 历史清晰（3 个原子提交）
 
 ---
@@ -287,6 +292,13 @@ This code was replaced by Tinode integration and is no longer needed.
 ### 任务清单
 
 #### 任务 1.1: Admin 图片渲染
+
+**状态**: ✅ 已实现（待手动验收）
+
+**实现说明**: 使用 Ant Design `Image` 渲染 Tinode Drafty `IM` 实体（支持 `data.ref` URL、`data.val` base64 / data URL）。
+
+**自动化验证**:
+- `npm -C admin run build` ✅ (2026-01-24)
 
 **问题**: Admin 商家端只显示"【图片】"文字，不渲染实际图片
 
@@ -369,6 +381,13 @@ Related: Task 1.3 (image preview modal)
 ---
 
 #### 任务 1.2: Mobile 文件附件完整实现
+
+**状态**: ✅ 已实现（待手动验收）
+
+**实现说明**: DocumentPicker 不再强制按“图片”发送；会根据 mime/ext 识别图片与非图片，非图片走 Drafty `EX` 实体 + 文件卡片 UI。
+
+**自动化验证**:
+- `npx tsc -p mobile/tsconfig.json --noEmit` ✅ (2026-01-24)
 
 **问题**: DocumentPicker 选择的所有文件都当图片发送
 
@@ -515,6 +534,11 @@ Fixes: Line 701 TODO (file attachments)
 
 #### 任务 1.3: 图片预览 Modal
 
+**状态**: ✅ 已实现（待手动验收）
+
+**自动化验证**:
+- `npx tsc -p mobile/tsconfig.json --noEmit` ✅ (2026-01-24)
+
 （内容与原计划相同，无需修改）
 
 **预计时间**: 2 小时
@@ -522,6 +546,16 @@ Fixes: Line 701 TODO (file attachments)
 ---
 
 #### 任务 1.4: 更多菜单功能
+
+**状态**: ✅ 已实现（待手动验收）
+
+**实现说明**:
+- "查看个人主页" 使用现有 `DesignerDetail` 路由（id=partnerID）
+- "清空聊天记录" 使用 AsyncStorage 持久化 clear marker（客户端过滤 Tinode 历史；服务端提供日志接口）
+
+**自动化验证**:
+- `npx tsc -p mobile/tsconfig.json --noEmit` ✅ (2026-01-24)
+- `cd server && make build` ✅ (2026-01-24)
 
 🔴 **Momus 重大修复**: 使用现有页面 + 持久化清空
 
@@ -957,4 +991,3 @@ git commit -m "chore(server): remove deprecated WebSocket chat implementation"
 ---
 
 **计划已就绪，可以开始执行。运行 `/start-work` 开始实施。**
-

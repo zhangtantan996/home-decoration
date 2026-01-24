@@ -133,3 +133,9 @@ $ grep -n "^\- \[ \]" .sisyphus/plans/tinode-im-integration-phase1.md | wc -l
 **Result**: All 51 tasks now properly accounted for - either completed or blocked with documentation
 
 **Status**: Plan is now 100% complete in terms of task accounting. All completable work done, all blocked work documented.
+
+## [2026-01-24] Mobile Chat: More Menu (Profile + Clear)
+
+- "查看个人主页": Navigate to existing `DesignerDetail` route with `id=partnerID` (fallback dialog on missing id / navigation failure).
+- "清空聊天记录": Client-only clear marker persisted via AsyncStorage key `chat_clear_${targetTopic}` where `targetTopic = conversationID || topicName`.
+- Tinode history is not deleted on server; UI filters messages with `msg.ts <= clearBeforeTs` and also re-filters in-memory list when marker loads (e.g. after app restart).
