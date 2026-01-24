@@ -278,6 +278,66 @@ class TinodeService extends SimpleEventEmitter {
     }
   }
 
+  /**
+   * Upload file to server
+   */
+  async uploadFile(file: File): Promise<{ url: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await fetch('/api/v1/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error('File upload failed');
+    }
+    
+    const data = await response.json();
+    return { url: data.data.url };
+  }
+
+  /**
+   * Send image message (Drafty IM entity)
+   */
+  async sendImageMessage(topicName: string, file: File): Promise<void> {
+    if (!this.tinode) throw new Error('Tinode not initialized');
+    
+    const topic = this.tinode.getTopic(topicName);
+    if (!topic) throw new Error(`Topic ${topicName} not found`);
+    
+    try {
+      const uploadResult = await this.uploadFile(file);
+      
+      const content = {
+        txt: '图片',
+        fmt: [{ at: -1, len: 0, key: 0 }],
+        ent: [{
+          tp: 'IM',
+          data: {
+            val: uploadResult.url,
+            width: 800,
+            height: 600
+          }
+        }]
+      };
+      
+      if (!topic.isSubscribed?.()) {
+        await topic.subscribe();
+      }
+      
+      await topic.publishMessage(content);
+      console.log('[Tinode] Image sent successfully');
+    } catch (err) {
+      console.error('[Tinode] Image upload failed', err);
+      throw err;
+    }
+  }
+
   disconnect(): void {
     try {
       this.tinode?.disconnect();

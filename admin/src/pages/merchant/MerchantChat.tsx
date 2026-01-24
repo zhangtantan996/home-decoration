@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
-import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image } from 'antd';
-import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined } from '@ant-design/icons';
+import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message } from 'antd';
+import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
 import dayjs from 'dayjs';
 
@@ -333,6 +333,45 @@ const MerchantChat: React.FC = () => {
         }
     };
 
+    const [uploading, setUploading] = useState(false);
+
+    const handleImageUpload = async (file: File) => {
+        if (!file.type.startsWith('image/')) {
+            message.error('请选择图片文件');
+            return false;
+        }
+        
+        if (file.size > 5 * 1024 * 1024) {
+            message.error('图片大小不能超过 5MB');
+            return false;
+        }
+        
+        if (!activeTopicName) {
+            message.error('请先选择一个会话');
+            return false;
+        }
+        
+        setUploading(true);
+        try {
+            await TinodeService.sendImageMessage(activeTopicName, file);
+            message.success('图片已发送');
+            
+            if (activeTopic) {
+                const msgs = TinodeService.listMessages(activeTopic);
+                setMessages(msgs);
+            }
+            
+            scheduleLoadConversations();
+        } catch (error) {
+            console.error('Image send failed:', error);
+            message.error('图片发送失败，请重试');
+        } finally {
+            setUploading(false);
+        }
+        
+        return false;
+    };
+
     const getPeerInfo = (topic: any) => {
         // `p2pPeerDesc()` may return undefined (e.g. non-P2P topics or missing sub cache).
         const peerDesc = typeof topic?.p2pPeerDesc === 'function' ? topic.p2pPeerDesc() : undefined;
@@ -592,7 +631,20 @@ const MerchantChat: React.FC = () => {
                             </div>
                             
                             <div style={{ padding: 20, background: '#fff', borderTop: '1px solid #e8e8e8' }}>
-                                <div style={{ display: 'flex', gap: 10 }}>
+                                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                                    <Upload
+                                        accept="image/*"
+                                        showUploadList={false}
+                                        beforeUpload={handleImageUpload}
+                                    >
+                                        <Button 
+                                            icon={<PictureOutlined />} 
+                                            loading={uploading}
+                                            disabled={sending || !activeTopicName}
+                                        >
+                                            图片
+                                        </Button>
+                                    </Upload>
                                     <TextArea
                                         ref={inputRef}
                                         value={inputValue}
@@ -606,6 +658,7 @@ const MerchantChat: React.FC = () => {
                                             }
                                         }}
                                         disabled={sending}
+                                        style={{ flex: 1 }}
                                     />
                                     <Button 
                                         type="primary" 
