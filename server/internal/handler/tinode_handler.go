@@ -47,3 +47,18 @@ func GetTinodeUserID(c *gin.Context) {
 		"tinodeUserId": tinodeUserID,
 	})
 }
+
+// ClearChatHistory logs chat clear requests.
+//
+// DELETE /api/v1/tinode/topic/:topic/messages
+func ClearChatHistory(c *gin.Context) {
+	userId := c.GetUint64("userId")
+	topic := c.Param("topic")
+	if topic == "" {
+		response.Error(c, 400, "参数错误")
+		return
+	}
+
+	log.Printf("[ClearChat] user=%d topic=%s", userId, topic)
+	response.SuccessWithMessage(c, "聊天记录已清空", nil)
+}

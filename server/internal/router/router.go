@@ -103,6 +103,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// Tinode helper endpoints
 			authorized.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
+			authorized.DELETE("/tinode/topic/:topic/messages", handler.ClearChatHistory)
 
 			// 设计师
 			designers := authorized.Group("/designers")
