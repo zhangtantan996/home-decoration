@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log"
 	"strconv"
 
@@ -48,7 +49,7 @@ func GetTinodeUserID(c *gin.Context) {
 	})
 }
 
-// ClearChatHistory logs chat clear requests.
+// ClearChatHistory deletes all messages in a chat topic.
 //
 // DELETE /api/v1/tinode/topic/:topic/messages
 func ClearChatHistory(c *gin.Context) {
@@ -59,6 +60,42 @@ func ClearChatHistory(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[ClearChat] user=%d topic=%s", userId, topic)
+	// Validate topic format (should be like "usr123_usr456" or "grpXXXX")
+	if len(topic) < 3 {
+		response.Error(c, 400, "无效的话题格式")
+		return
+	}
+
+	// Create message deleter with Tinode DB connection
+	if repository.TinodeDB == nil {
+		log.Printf("[ClearChat] Tinode DB not initialized")
+		response.Error(c, 503, "Tinode 服务不可用")
+		return
+	}
+
+	deleter := tinode.NewMessageDeleter(repository.TinodeDB)
+
+	// Delete messages with timeout
+	ctx := c.Request.Context()
+	err := deleter.DeleteMessages(ctx, topic, userId)
+	if err != nil {
+		log.Printf("[ClearChat] Failed: user=%d topic=%s err=%v", userId, topic, err)
+
+		// Check for specific error types using errors.Is
+		if errors.Is(err, tinode.ErrNotAuthorized) {
+			response.Error(c, 404, "话题不存在或您不是成员")
+			return
+		}
+		if errors.Is(err, tinode.ErrInsufficientPermission) {
+			response.Error(c, 403, "无权删除此话题的消息（需要管理员权限）")
+			return
+		}
+
+		response.Error(c, 500, "清空聊天记录失败")
+		return
+	}
+
+	log.Printf("[ClearChat] Success: user=%d topic=%s", userId, topic)
 	response.SuccessWithMessage(c, "聊天记录已清空", nil)
 }
+

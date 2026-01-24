@@ -52,6 +52,7 @@ type TokenResponse struct {
 	RefreshToken string `json:"refreshToken"`
 	ExpiresIn    int64  `json:"expiresIn"`
 	TinodeToken  string `json:"tinodeToken,omitempty"`
+	TinodeError  string `json:"tinodeError,omitempty"` // Tinode token 生成错误信息
 }
 
 // Register 用户注册
@@ -102,7 +103,21 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		user.Password = hashedPwd
 	}
 
-	if err := repository.DB.Create(user).Error; err != nil {
+	// Transaction for main DB user creation
+	tx := repository.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			log.Printf("[Register] Transaction panic recovered: %v", r)
+		}
+	}()
+
+	if err := tx.Create(user).Error; err != nil {
+		tx.Rollback()
+		return nil, nil, err
+	}
+
+	if err := tx.Commit().Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -126,15 +141,37 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}
 
 	// Tinode token generation + user sync (best-effort; failures don't block register)
-	tinodeToken, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	tinodeToken := ""
+	tinodeError := ""
+	tinodeTokenResult, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
 	if err != nil {
 		log.Printf("[Tinode] Token generation failed (register): userID=%d, err=%v", user.ID, err)
-		tinodeToken = ""
+		// 不向客户端暴露内部错误细节
+		tinodeError = "聊天服务暂时不可用"
+	} else {
+		tinodeToken = tinodeTokenResult
 	}
-	// Sync synchronously so the returned tinodeToken works immediately on first login.
-	// This is best-effort: failures are logged but do not block registration.
-	if err := tinode.SyncUserToTinode(user); err != nil {
-		log.Printf("[Tinode] User sync failed (register): userID=%d, err=%v", user.ID, err)
+
+	// Sync to Tinode DB with separate transaction (best-effort)
+	if repository.TinodeDB != nil {
+		tinodeTx := repository.TinodeDB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tinodeTx.Rollback()
+				log.Printf("[Tinode] Sync transaction panic recovered: %v", r)
+			}
+		}()
+
+		if err := tinode.SyncUserToTinodeWithTx(tinodeTx, user); err != nil {
+			tinodeTx.Rollback()
+			log.Printf("[Tinode] User sync failed (register): userID=%d, err=%v", user.ID, err)
+		} else {
+			if err := tinodeTx.Commit().Error; err != nil {
+				log.Printf("[Tinode] Sync transaction commit failed: userID=%d, err=%v", user.ID, err)
+			}
+		}
+	} else {
+		log.Printf("[Tinode] TinodeDB not initialized, skipping sync for userID=%d", user.ID)
 	}
 
 	return &TokenResponse{
@@ -142,6 +179,7 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		RefreshToken: refreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 		TinodeToken:  tinodeToken,
+		TinodeError:  tinodeError,
 	}, user, nil
 }
 
@@ -185,7 +223,22 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 			UserType: 1,                    // 默认业主
 			Status:   1,
 		}
-		if err := repository.DB.Create(&user).Error; err != nil {
+
+		// Transaction for user creation
+		tx := repository.DB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+				log.Printf("[Login] User creation transaction panic recovered: %v", r)
+			}
+		}()
+
+		if err := tx.Create(&user).Error; err != nil {
+			tx.Rollback()
+			return nil, nil, errors.New("账号创建失败，请稍后重试")
+		}
+
+		if err := tx.Commit().Error; err != nil {
 			return nil, nil, errors.New("账号创建失败，请稍后重试")
 		}
 		// 同步新用户到腾讯云 IM（异步）
@@ -255,15 +308,37 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	}
 
 	// Tinode token generation + user sync (best-effort; failures don't block login)
-	tinodeToken, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	tinodeToken := ""
+	tinodeError := ""
+	tinodeTokenResult, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
 	if err != nil {
 		log.Printf("[Tinode] Token generation failed (login): userID=%d, err=%v", user.ID, err)
-		tinodeToken = ""
+		// 不向客户端暴露内部错误细节
+		tinodeError = "聊天服务暂时不可用"
+	} else {
+		tinodeToken = tinodeTokenResult
 	}
-	// Sync synchronously so the returned tinodeToken works immediately on first login.
-	// This is best-effort: failures are logged but do not block login.
-	if err := tinode.SyncUserToTinode(&user); err != nil {
-		log.Printf("[Tinode] User sync failed (login): userID=%d, err=%v", user.ID, err)
+
+	// Sync to Tinode DB with separate transaction (best-effort)
+	if repository.TinodeDB != nil {
+		tinodeTx := repository.TinodeDB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tinodeTx.Rollback()
+				log.Printf("[Tinode] Sync transaction panic recovered (login): %v", r)
+			}
+		}()
+
+		if err := tinode.SyncUserToTinodeWithTx(tinodeTx, &user); err != nil {
+			tinodeTx.Rollback()
+			log.Printf("[Tinode] User sync failed (login): userID=%d, err=%v", user.ID, err)
+		} else {
+			if err := tinodeTx.Commit().Error; err != nil {
+				log.Printf("[Tinode] Sync transaction commit failed (login): userID=%d, err=%v", user.ID, err)
+			}
+		}
+	} else {
+		log.Printf("[Tinode] TinodeDB not initialized, skipping sync for userID=%d (login)", user.ID)
 	}
 
 	return &TokenResponse{
@@ -271,6 +346,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		RefreshToken: refreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 		TinodeToken:  tinodeToken,
+		TinodeError:  tinodeError,
 	}, &user, nil
 }
 
@@ -341,6 +417,44 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 		RefreshToken: newRefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 	}, nil
+}
+
+// RefreshTinodeToken 刷新 Tinode Token
+func (s *UserService) RefreshTinodeToken(user *model.User) (string, error) {
+	if user == nil {
+		return "", errors.New("用户不存在")
+	}
+
+	// 生成新的 Tinode token
+	tinodeToken, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	if err != nil {
+		log.Printf("[Tinode] Token refresh failed: userID=%d, err=%v", user.ID, err)
+		// 不向客户端暴露内部错误细节
+		return "", errors.New("聊天服务暂时不可用")
+	}
+
+	// 同步用户到 Tinode DB（如果需要）
+	if repository.TinodeDB != nil {
+		tinodeTx := repository.TinodeDB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tinodeTx.Rollback()
+				log.Printf("[Tinode] Sync transaction panic recovered (refresh): %v", r)
+			}
+		}()
+
+		if err := tinode.SyncUserToTinodeWithTx(tinodeTx, user); err != nil {
+			tinodeTx.Rollback()
+			log.Printf("[Tinode] User sync failed (refresh): userID=%d, err=%v", user.ID, err)
+			// 同步失败不影响 token 返回
+		} else {
+			if err := tinodeTx.Commit().Error; err != nil {
+				log.Printf("[Tinode] Sync transaction commit failed (refresh): userID=%d, err=%v", user.ID, err)
+			}
+		}
+	}
+
+	return tinodeToken, nil
 }
 
 // UpdateUser 更新用户信息
