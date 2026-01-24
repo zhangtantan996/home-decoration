@@ -18,9 +18,10 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
     (config) => {
-        // 优先使用管理员token
+        // 优先级：商家token > 管理员token > 普通用户token
+        const merchantToken = localStorage.getItem('merchant_token');
         const adminToken = localStorage.getItem('admin_token');
-        const token = adminToken || localStorage.getItem('token');
+        const token = merchantToken || adminToken || localStorage.getItem('token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }

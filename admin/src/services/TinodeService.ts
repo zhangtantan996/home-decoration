@@ -1,4 +1,5 @@
 import { Tinode } from 'tinode-sdk';
+import api from './api';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -279,26 +280,34 @@ class TinodeService extends SimpleEventEmitter {
   }
 
   /**
-   * Upload file to server
+   * Upload file to server using axios (Merchant endpoint)
    */
   async uploadFile(file: File): Promise<{ url: string }> {
     const formData = new FormData();
     formData.append('file', file);
-    
-    const response = await fetch('/api/v1/upload', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error('File upload failed');
+
+    try {
+      // 使用商家上传接口 /merchant/upload
+      const response = await api.post('/merchant/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      // api 拦截器返回 response.data，格式为：
+      // { code: 0, message: "success", data: { url: "...", path: "..." } }
+      // 所以我们需要访问 response.data.url
+      console.log('[TinodeService] Upload response:', response);
+
+      if (!response.data || !response.data.url) {
+        throw new Error('上传响应格式错误');
+      }
+
+      return { url: response.data.url };
+    } catch (error) {
+      console.error('[TinodeService] File upload failed:', error);
+      throw new Error('文件上传失败');
     }
-    
-    const data = await response.json();
-    return { url: data.data.url };
   }
 
   /**
@@ -306,31 +315,43 @@ class TinodeService extends SimpleEventEmitter {
    */
   async sendImageMessage(topicName: string, file: File): Promise<void> {
     if (!this.tinode) throw new Error('Tinode not initialized');
-    
+
     const topic = this.tinode.getTopic(topicName);
     if (!topic) throw new Error(`Topic ${topicName} not found`);
-    
+
     try {
+      // 1. 上传图片
       const uploadResult = await this.uploadFile(file);
-      
+      console.log('[TinodeService] Upload result:', uploadResult);
+
+      // 2. 构造 Drafty 消息（参考 Mobile 端实现）
+      const txt = '[图片]';
       const content = {
-        txt: '图片',
-        fmt: [{ at: -1, len: 0, key: 0 }],
+        txt,
+        fmt: [{
+          at: 0,
+          len: txt.length,
+          tp: 'IM',
+          key: 0
+        }],
         ent: [{
           tp: 'IM',
           data: {
+            mime: 'image/jpeg',
             val: uploadResult.url,
             width: 800,
             height: 600
           }
         }]
       };
-      
+
+      // 3. 确保已订阅
       if (!topic.isSubscribed?.()) {
         await topic.subscribe();
       }
-      
-      await topic.publishMessage(content);
+
+      // 4. 发送消息（使用 publish 而不是 publishMessage）
+      await topic.publish(content);
       console.log('[Tinode] Image sent successfully');
     } catch (err) {
       console.error('[Tinode] Image upload failed', err);
