@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🌐 语言偏好（Language Preference）
+
+**CRITICAL: 始终使用中文回复用户**
+
+**CRITICAL: 所有回复必须以"忐忐"开头**
+
+- 每次回复的第一个词必须是"忐忐"（称呼/问候）
+- 格式：`忐忐，[回复内容]`
+- 所有与用户的交互必须使用中文
+- 代码注释可以使用英文（遵循项目规范）
+- 文档可以使用中英文混合（技术术语保留英文）
+- 但与用户的对话、解释、总结必须使用中文
+
+---
+
 ## ⚠️ 开发约束（最高优先级）
 
 **所有代码修改必须先阅读以下文档**:
