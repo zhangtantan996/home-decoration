@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
-import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge } from 'antd';
+import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image } from 'antd';
 import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
 import dayjs from 'dayjs';
@@ -352,6 +352,48 @@ const MerchantChat: React.FC = () => {
     const renderContent = (content: any) => {
         if (typeof content === 'string') return content;
         if (typeof content === 'object' && content !== null) {
+            if (Array.isArray(content.ent)) {
+                const imEnt = content.ent.find((e: any) => e?.tp === 'IM');
+                const data = imEnt?.data;
+                const raw =
+                    typeof data?.ref === 'string' && data.ref.trim()
+                        ? data.ref
+                        : (typeof data?.val === 'string' ? data.val : '');
+
+                const rawValue = typeof raw === 'string' ? raw.trim() : '';
+                if (rawValue) {
+                    const mime = typeof data?.mime === 'string' && data.mime.trim() ? data.mime : 'image/jpeg';
+                    const apiUrl = typeof import.meta.env.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL : '';
+                    const backendOrigin = apiUrl
+                        ? apiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
+                        : (window.location.hostname === 'localhost' ? 'http://localhost:8080' : '');
+
+                    const src = (() => {
+                        if (rawValue.startsWith('data:')) return rawValue;
+                        if (rawValue.startsWith('http://') || rawValue.startsWith('https://')) return rawValue;
+                        if (rawValue.startsWith('/')) return backendOrigin ? `${backendOrigin}${rawValue}` : rawValue;
+                        return `data:${mime};base64,${rawValue}`;
+                    })();
+
+                    const fallback =
+                        'data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22200%22%20height=%22150%22%3E%3Crect%20width=%22100%25%22%20height=%22100%25%22%20fill=%22%23f5f5f5%22/%3E%3Ctext%20x=%2250%25%22%20y=%2250%25%22%20dominant-baseline=%22middle%22%20text-anchor=%22middle%22%20fill=%22%23999%22%20font-family=%22Arial%22%20font-size=%2214%22%3EImage%20failed%3C/text%3E%3C/svg%3E';
+
+                    return (
+                        <Image
+                            src={src}
+                            alt="图片"
+                            fallback={fallback}
+                            style={{
+                                maxWidth: 200,
+                                maxHeight: 200,
+                                objectFit: 'cover',
+                                borderRadius: 4,
+                            }}
+                        />
+                    );
+                }
+            }
+
             return content.txt || JSON.stringify(content);
         }
         return '【不支持的消息】';
