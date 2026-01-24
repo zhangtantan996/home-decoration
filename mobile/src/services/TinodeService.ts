@@ -471,11 +471,80 @@ class TinodeService extends SimpleEventEmitter {
         console.log('[Tinode] 图片已发送:', uploadResult.url);
     }
 
-    private async uploadFile(fileUri: string, mimeType: string): Promise<any> {
+    async sendFileMessage(
+        topicName: string,
+        fileUri: string,
+        fileName: string,
+        mimeType: string,
+        fileSize?: number
+    ): Promise<void> {
+        if (!this.tinode) throw new Error('Tinode not initialized');
+
+        const isImage = mimeType.startsWith('image/');
+        const maxNonImageBytes = 10 * 1024 * 1024;
+
+        let size: number | undefined;
+        const isValidProvidedSize = typeof fileSize === 'number' && Number.isFinite(fileSize) && fileSize > 0;
+        if (isValidProvidedSize) {
+            size = Math.floor(fileSize);
+        } else {
+            // Best-effort: try to stat local file path (strip file:// like uploadFile does).
+            try {
+                const normalizedUri = fileUri.startsWith('file://') ? fileUri.replace(/^file:\/\//, '') : fileUri;
+                const stat = await ReactNativeBlobUtil.fs.stat(normalizedUri);
+                const rawSize = (stat as { size?: string | number }).size;
+                const n = typeof rawSize === 'string' ? Number(rawSize) : rawSize;
+                if (typeof n === 'number' && Number.isFinite(n) && n >= 0) {
+                    size = Math.floor(n);
+                }
+            } catch {
+                // Ignore: some URIs (e.g. content://) may not be stat'able.
+            }
+        }
+
+        // Enforce 10MB cap for non-image attachments.
+        if (!isImage && typeof size === 'number' && size > maxNonImageBytes) {
+            throw new Error('文件大小不能超过 10MB');
+        }
+
+        const topic = this.tinode.getTopic(topicName);
+        if (!topic?.isSubscribed?.()) {
+            await topic.subscribe();
+        }
+
+        const safeFileName = fileName.trim() ? fileName.trim() : '[文件]';
+
+        // 1. 上传文件
+        const uploadResult = await this.uploadFile(fileUri, mimeType, safeFileName);
+
+        // 2. 发送文件消息（Drafty 格式）
+        await topic.publish(
+            {
+                txt: safeFileName,
+                fmt: [{ at: 0, len: safeFileName.length, tp: 'EX', key: 0 }],
+                ent: [
+                    {
+                        tp: 'EX',
+                        data: {
+                            mime: mimeType,
+                            val: uploadResult.url,
+                            name: safeFileName,
+                            size: typeof size === 'number' ? size : 0,
+                        },
+                    },
+                ],
+            },
+            true
+        );
+
+        console.log('[Tinode] 文件已发送:', uploadResult.url);
+    }
+
+    private async uploadFile(fileUri: string, mimeType: string, fileName?: string): Promise<any> {
         if (!this.tinode) throw new Error('Tinode not initialized');
 
         const uploadUrl = `${getApiUrl()}/upload`;
-        const fileName = `upload.${mimeType === 'image/jpeg' ? 'jpg' : 'png'}`;
+        const multipartFileName = fileName || `upload.${mimeType === 'image/jpeg' ? 'jpg' : 'png'}`;
 
         // RN fetch/axios may fail for `content://` image URIs with a generic network error.
         // Use react-native-blob-util which can stream files from both file:// and content://.
@@ -494,7 +563,7 @@ class TinodeService extends SimpleEventEmitter {
             const resp = await ReactNativeBlobUtil.fetch('POST', uploadUrl, headers, [
                 {
                     name: 'file',
-                    filename: fileName,
+                    filename: multipartFileName,
                     type: mimeType,
                     data: ReactNativeBlobUtil.wrap(normalizedUri),
                 },

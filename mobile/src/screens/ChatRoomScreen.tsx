@@ -5,6 +5,7 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
+    Linking,
     Platform,
     useWindowDimensions,
     TextInput,
@@ -27,9 +28,11 @@ import {
     Camera,
     Image as ImageIcon,
     File,
+    ChevronRight,
     AlertCircle,
     CheckCircle,
     Info,
+    X,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 // import TencentIMService from '../services/TencentIMService';
@@ -38,7 +41,7 @@ import TinodeService from '../services/TinodeService';
 import { parseEmojiText } from '../utils/emojiParser';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import * as DocumentPicker from '@react-native-documents/picker';
-import { fileApi } from '../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiBaseUrl } from '../config';
 
 // 主色调
@@ -68,6 +71,12 @@ interface UIMessage {
         height?: number;
         mime?: string;
     };
+    file?: {
+        url: string;
+        name: string;
+        size?: number;
+        mime?: string;
+    };
     createdAt: number;
     isRead: boolean;
     isMe: boolean;
@@ -79,9 +88,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     const defaultAvatar = 'https://via.placeholder.com/80/E5E7EB/71717A?text=U';
 
     // 从 Store 获取数据
-    const currentUser = useAuthStore(state => state.user);
     const tinodeToken = useAuthStore(state => state.tinodeToken);
-    const currentUserId = String(currentUser?.id || '');
 
     const [messages, setMessages] = useState<UIMessage[]>([]);
     const [loadingMessages, setLoadingMessages] = useState(false);
@@ -96,11 +103,60 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         onConfirm?: () => void;
     }>({ visible: false, type: 'info', title: '', message: '' });
     const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+    const [previewVisible, setPreviewVisible] = useState(false);
+    const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     const [topic, setTopic] = useState<any>(null);
     const [topicName, setTopicName] = useState<string>(conversationID || '');
+    const [clearBeforeTs, setClearBeforeTs] = useState<number>(0);
+    const clearBeforeTsRef = useRef(0);
     const insets = useSafeAreaInsets();
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+
+    useEffect(() => {
+        clearBeforeTsRef.current = clearBeforeTs;
+    }, [clearBeforeTs]);
+
+    useEffect(() => {
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setClearBeforeTs(0);
+            return;
+        }
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const raw = await AsyncStorage.getItem(`chat_clear_${targetTopic}`);
+                if (cancelled) return;
+                const ts = raw ? Number(raw) : 0;
+                setClearBeforeTs(Number.isFinite(ts) && ts > 0 ? ts : 0);
+            } catch (e) {
+                console.warn('[ChatRoom] Failed to read clearBeforeTs:', e);
+                if (!cancelled) setClearBeforeTs(0);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [conversationID, topicName]);
+
+    useEffect(() => {
+        if (!clearBeforeTs) return;
+        // Ensure UI immediately reflects a persisted clear marker (e.g. after app restart).
+        setMessages(prev => prev.filter(m => m.createdAt > clearBeforeTs));
+    }, [clearBeforeTs]);
+
+    const openImagePreview = (url: string) => {
+        setPreviewImageUrl(url);
+        setPreviewVisible(true);
+    };
+
+    const closeImagePreview = () => {
+        setPreviewVisible(false);
+        setPreviewImageUrl(null);
+    };
 
     // Chat UX: open conversation at latest message, but don't force-scroll when user is reading history.
     const isNearBottomRef = useRef(true);
@@ -148,7 +204,16 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         const selfTinodeUserId = TinodeService.getCurrentUserID();
         console.log('[ChatRoom] parseTinodeMessages: input count =', tinodeMessages.length);
 
-        const filtered = tinodeMessages.filter(msg => typeof msg?.seq === 'number' && msg.seq > 0);
+        const filtered = tinodeMessages
+            .filter(msg => typeof msg?.seq === 'number' && msg.seq > 0)
+            .filter(msg => {
+                const marker = clearBeforeTsRef.current;
+                if (!marker) return true;
+                if (!msg?.ts) return true;
+                const ts = new Date(msg.ts).getTime();
+                if (!Number.isFinite(ts) || ts <= 0) return true;
+                return ts > marker;
+            });
         console.log('[ChatRoom] parseTinodeMessages: after filter count =', filtered.length);
         
         if (tinodeMessages.length > 0 && filtered.length === 0) {
@@ -189,14 +254,33 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'IM' && e.data)
                     : undefined;
 
+            const fileEnt =
+                contentObj && Array.isArray(contentObj.ent)
+                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'EX' && e.data)
+                    : undefined;
+
             const imageUrl = normalizeMediaUrl(imageEnt?.data?.val);
 
-            const text =
+            const fileUrl = normalizeMediaUrl(fileEnt?.data?.val ?? fileEnt?.data?.ref);
+            const fileNameFromEnt = typeof fileEnt?.data?.name === 'string' ? fileEnt.data.name : undefined;
+            const fileNameFromTxt = typeof contentObj?.txt === 'string' ? contentObj.txt : undefined;
+            const fileName = fileNameFromEnt || fileNameFromTxt;
+            const rawFileSize = fileEnt?.data?.size;
+            const fileSize =
+                typeof rawFileSize === 'number' && Number.isFinite(rawFileSize) && rawFileSize > 0
+                    ? Math.floor(rawFileSize)
+                    : undefined;
+            const fileMime = typeof fileEnt?.data?.mime === 'string' ? fileEnt.data.mime : undefined;
+
+            const rawText =
                 typeof contentAny === 'string'
-                    ? parseEmojiText(contentAny)
+                    ? contentAny
                     : typeof contentObj?.txt === 'string'
-                      ? parseEmojiText(contentObj.txt)
-                      : '[非文本消息]';
+                      ? contentObj.txt
+                      : fileNameFromEnt
+                        ? fileNameFromEnt
+                        : undefined;
+            const text = rawText ? parseEmojiText(rawText) : '[非文本消息]';
 
             return {
                 id: String(msg.seq),
@@ -209,6 +293,14 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                           width: imageEnt?.data?.width,
                           height: imageEnt?.data?.height,
                           mime: imageEnt?.data?.mime,
+                      }
+                    : undefined,
+                file: fileUrl
+                    ? {
+                          url: fileUrl,
+                          name: fileName || '[文件]',
+                          size: fileSize,
+                          mime: fileMime,
                       }
                     : undefined,
                 createdAt: msg.ts ? new Date(msg.ts).getTime() : Date.now(),
@@ -405,9 +497,10 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         }
     };
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         loadMessages();
-    }, [conversationID, partnerID]);
+    }, [conversationID, partnerID, tinodeToken]);
 
     // 监听新消息 - Handled in loadMessages via topic.onData for Tinode
     /*
@@ -573,18 +666,58 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         setDialogConfig(prev => ({ ...prev, visible: false }));
     };
 
+    const formatBytes = (bytes?: number): string => {
+        if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '未知大小';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let n = bytes;
+        let i = 0;
+        while (n >= 1024 && i < units.length - 1) {
+            n /= 1024;
+            i += 1;
+        }
+        const fixed = i === 0 ? 0 : n < 10 ? 1 : 0;
+        return `${n.toFixed(fixed)} ${units[i]}`;
+    };
+
+    const openAttachmentUrl = async (url: string) => {
+        try {
+            await Linking.openURL(url);
+        } catch (e) {
+            console.error('Failed to open attachment url:', url, e);
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '打开失败',
+                message: '无法打开该文件，请稍后重试',
+            });
+        }
+    };
+
     // 更多菜单选项
     const handleMenuOption = (option: string) => {
         setShowMoreMenu(false);
         switch (option) {
             case 'profile':
-                // TODO: 跳转逻辑需要根据 role 判断，目前 conversation 对象不完整
-                setDialogConfig({
-                    visible: true,
-                    type: 'info',
-                    title: '提示',
-                    message: '查看资料功能待修复'
-                });
+                if (!partnerID) {
+                    setDialogConfig({
+                        visible: true,
+                        type: 'info',
+                        title: '提示',
+                        message: '无法打开用户资料',
+                    });
+                    break;
+                }
+                try {
+                    navigation.navigate('DesignerDetail', { id: partnerID });
+                } catch (e) {
+                    console.warn('[ChatRoom] Failed to navigate to DesignerDetail:', e);
+                    setDialogConfig({
+                        visible: true,
+                        type: 'info',
+                        title: '提示',
+                        message: '无法打开用户资料',
+                    });
+                }
                 break;
             case 'clear':
                 setDialogConfig({
@@ -592,7 +725,40 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     type: 'confirm',
                     title: '清空聊天记录',
                     message: '确定要清空与该用户的聊天记录吗？此操作不可恢复。',
-                    onConfirm: () => { /* TODO: clear messages API */ },
+                    onConfirm: async () => {
+                        const targetTopic = conversationID || topicName;
+                        if (!targetTopic) {
+                            setTimeout(() => {
+                                setDialogConfig({
+                                    visible: true,
+                                    type: 'info',
+                                    title: '提示',
+                                    message: '清空失败，请稍后重试',
+                                });
+                            }, 0);
+                            return;
+                        }
+
+                        const now = Date.now();
+                        try {
+                            await AsyncStorage.setItem(`chat_clear_${targetTopic}`, String(now));
+                        } catch (e) {
+                            console.warn('[ChatRoom] Failed to persist clear marker:', e);
+                        }
+
+                        setClearBeforeTs(now);
+                        setMessages([]);
+
+                        // `confirm` dialog auto-closes after onConfirm; delay to show success.
+                        setTimeout(() => {
+                            setDialogConfig({
+                                visible: true,
+                                type: 'success',
+                                title: '已清空',
+                                message: '聊天记录已清空',
+                            });
+                        }, 0);
+                    },
                 });
                 break;
             case 'report':
@@ -607,7 +773,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     };
 
     // 通用文件上传并发送 helper
-    const uploadAndSendFile = async (file: { uri: string; type: string; name: string }, msgType: string) => {
+    const uploadAndSendFile = async (file: { uri: string; type: string; name: string; size?: number }) => {
         /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         if (!chat || !partnerID) return;
@@ -695,12 +861,23 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             const targetTopic = conversationID || topicName;
             if (!targetTopic) throw new Error('Missing Tinode topic');
 
-            if (msgType === 'image') {
+            const mime = (file.type || '').trim() || 'application/octet-stream';
+            const name = (file.name || '').trim() || '[文件]';
+            const ext = name.split('.').pop()?.toLowerCase();
+            const isImageByMime = mime.toLowerCase().startsWith('image/');
+            const isImageByExt =
+                !!ext &&
+                ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'svg'].includes(ext);
+            const isImage = isImageByMime || isImageByExt;
+
+            if (isImage) {
                 await TinodeService.sendImageMessage(targetTopic, file.uri);
             } else {
-                // TODO: implement file attachments for Tinode; for now treat as image.
-                console.warn('File message sending not implemented, using sendImageMessage');
-                await TinodeService.sendImageMessage(targetTopic, file.uri);
+                const size =
+                    typeof file.size === 'number' && Number.isFinite(file.size) && file.size > 0
+                        ? Math.floor(file.size)
+                        : undefined;
+                await TinodeService.sendFileMessage(targetTopic, file.uri, name, mime, size);
             }
         } catch (error) {
             console.error('Tinode attachment send failed:', error);
@@ -773,7 +950,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             uri: assetRetry.uri,
                             type: assetRetry.type || 'image/jpeg',
                             name: assetRetry.fileName || 'photo.jpg',
-                        }, 'image');
+                            size: typeof assetRetry.fileSize === 'number' ? assetRetry.fileSize : undefined,
+                        });
                     }
                     return;
                 }
@@ -786,7 +964,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: asset.uri,
                     type: asset.type || 'image/jpeg',
                     name: asset.fileName || 'photo.jpg',
-                }, 'image'); // Replaced TIM.TYPES.MSG_IMAGE with 'image'
+                    size: typeof asset.fileSize === 'number' ? asset.fileSize : undefined,
+                });
             }
         } catch (error) {
             console.error('Handle Camera Error:', error);
@@ -857,7 +1036,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             uri: assetRetry.uri,
                             type: assetRetry.type || 'image/jpeg',
                             name: assetRetry.fileName || 'image.jpg',
-                        }, 'image');
+                            size: typeof assetRetry.fileSize === 'number' ? assetRetry.fileSize : undefined,
+                        });
                     }
                     return;
                 }
@@ -870,7 +1050,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: asset.uri,
                     type: asset.type || 'image/jpeg',
                     name: asset.fileName || 'image.jpg',
-                }, 'image'); // Replaced TIM.TYPES.MSG_IMAGE
+                    size: typeof asset.fileSize === 'number' ? asset.fileSize : undefined,
+                });
             }
         } catch (error) {
             console.error('Handle Gallery Error:', error);
@@ -890,7 +1071,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: file.uri,
                     type: file.type || 'application/octet-stream',
                     name: file.name || 'document',
-                }, 'file'); // Replaced TIM.TYPES.MSG_FILE
+                    size: typeof file.size === 'number' ? file.size : undefined,
+                });
             }
         } catch (err: unknown) {
             if (
@@ -912,6 +1094,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         const showTime = index === 0 || prevMsgTime !== msgTime;
 
         const image = message.image;
+        const file = message.file;
         // Limit image bubble width to half of the message area (no more than half the screen).
         // Message list has horizontal padding=16, so the usable width is (windowWidth - 32).
         const maxW = Math.max(140, Math.floor((windowWidth - 32) * 0.5));
@@ -946,11 +1129,38 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         ]}
                     >
                         {image?.url ? (
-                            <Image
-                                source={{ uri: image.url }}
-                                style={[styles.messageImage, { width: imageSize.width, height: imageSize.height }]}
-                                resizeMode="cover"
-                            />
+                            <TouchableOpacity
+                                activeOpacity={0.9}
+                                onPress={() => openImagePreview(image.url)}
+                            >
+                                <Image
+                                    source={{ uri: image.url }}
+                                    style={[styles.messageImage, { width: imageSize.width, height: imageSize.height }]}
+                                    resizeMode="cover"
+                                />
+                            </TouchableOpacity>
+                        ) : file?.url ? (
+                            <TouchableOpacity
+                                activeOpacity={0.7}
+                                style={styles.fileCard}
+                                onPress={() => openAttachmentUrl(file.url)}
+                            >
+                                <View style={styles.fileCardLeft}>
+                                    <View style={[styles.fileIcon, isMe && styles.fileIconMe]}>
+                                        <File size={18} color={isMe ? '#FFFFFF' : '#71717A'} />
+                                    </View>
+                                    <View style={styles.fileMeta}>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[styles.fileName, isMe && styles.fileNameMe]}
+                                        >
+                                            {file.name}
+                                        </Text>
+                                        <Text style={[styles.fileSize, isMe && styles.fileSizeMe]}>{formatBytes(file.size)}</Text>
+                                    </View>
+                                </View>
+                                <ChevronRight size={18} color={isMe ? '#FFFFFF' : '#A1A1AA'} />
+                            </TouchableOpacity>
                         ) : (
                             <Text style={[styles.messageText, isMe && styles.messageTextMe]}>{message.content}</Text>
                         )}
@@ -1070,6 +1280,45 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     ) : null}
                 </View>
             </KeyboardAvoidingView>
+
+            {/* 图片预览 Modal */}
+            <Modal
+                visible={previewVisible}
+                transparent
+                animationType="fade"
+                statusBarTranslucent
+                onRequestClose={closeImagePreview}
+            >
+                <TouchableOpacity
+                    style={styles.previewOverlay}
+                    activeOpacity={1}
+                    onPress={closeImagePreview}
+                >
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        onPress={() => {}}
+                        style={{
+                            width: Math.max(1, windowWidth - 32),
+                            height: Math.max(1, Math.floor(windowHeight * 0.8)),
+                        }}
+                    >
+                        {previewImageUrl ? (
+                            <Image
+                                source={{ uri: previewImageUrl }}
+                                style={styles.previewImage}
+                                resizeMode="contain"
+                            />
+                        ) : null}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.previewCloseBtn, { top: insets.top + 12 }]}
+                        onPress={closeImagePreview}
+                    >
+                        <X size={28} color="#FFFFFF" />
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
 
             {/* 更多菜单弹窗 */}
             <Modal
@@ -1342,6 +1591,50 @@ const styles = StyleSheet.create({
     messageTextMe: {
         color: '#FFFFFF',
     },
+    fileCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        minWidth: 0,
+        maxWidth: '100%',
+    },
+    fileCardLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 10,
+    },
+    fileIcon: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F4F4F5',
+        marginRight: 10,
+    },
+    fileIconMe: {
+        backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    },
+    fileMeta: {
+        flex: 1,
+    },
+    fileName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#09090B',
+    },
+    fileNameMe: {
+        color: '#FFFFFF',
+    },
+    fileSize: {
+        marginTop: 2,
+        fontSize: 12,
+        color: '#71717A',
+    },
+    fileSizeMe: {
+        color: 'rgba(255, 255, 255, 0.85)',
+    },
     // 快捷回复
     quickRepliesContainer: {
         maxHeight: 44,
@@ -1586,6 +1879,23 @@ const styles = StyleSheet.create({
     attachmentLabel: {
         fontSize: 13,
         color: '#71717A',
+    },
+    // 图片预览
+    previewOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+    },
+    previewCloseBtn: {
+        position: 'absolute',
+        right: 16,
+        zIndex: 10,
+        padding: 8,
     },
 });
 
