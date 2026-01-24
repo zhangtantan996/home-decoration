@@ -156,3 +156,63 @@ openssl rand -base64 32
 - Rotate exposed secrets in production immediately
 
 ---
+
+## [2026-01-25T10:45:00Z] Security Fix: Mobile Hardcoded API Key Removed
+
+### Task: Remove Mobile Hardcoded Tinode API Key (P0)
+**Status**: ✅ COMPLETED
+**Duration**: ~10 minutes
+**Session**: Current session
+
+### Problem
+Critical P0 security issue: Hardcoded Tinode API Key in Mobile app:
+- `mobile/src/config/tinode.ts` line 11: `API_KEY: 'AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K'`
+- API Key exposed in Git history (CRITICAL vulnerability)
+
+### Solution
+Replaced hardcoded API Key with environment variable using `react-native-config`:
+
+**Files Modified:**
+1. `mobile/package.json`:
+   - Added dependency: `react-native-config` (version managed by npm)
+
+2. `mobile/src/config/tinode.ts`:
+   - Added import: `import Config from 'react-native-config';`
+   - Changed `API_KEY: 'AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K'` → `API_KEY: Config.TINODE_API_KEY || ''`
+   - Added runtime validation: warns if `TINODE_API_KEY` is not configured
+   - Updated file docstring to reference `.env.example`
+
+3. `mobile/.env.example`:
+   - Enhanced documentation with security warnings
+   - Added example API Key format (with warning not to use in production)
+   - Added clear instructions to copy to `.env` and fill actual values
+
+### Verification
+- ✅ `react-native-config` installed successfully
+- ✅ TypeScript compilation passes: `npx tsc -p tsconfig.json --noEmit`
+- ✅ No hardcoded API Key remains in source code
+- ✅ Runtime validation added for missing configuration
+
+### Security Impact
+- **Before**: API Key hardcoded and exposed in Git history
+- **After**: API Key externalized to environment variables (secure)
+- **Action Required**: 
+  1. Create `.env` file from `.env.example`
+  2. Fill in actual `TINODE_API_KEY` value
+  3. Rotate exposed API Key in production immediately
+
+### Next Steps for Developers
+1. Copy `.env.example` to `.env`: `cp mobile/.env.example mobile/.env`
+2. Edit `mobile/.env` and replace `your_tinode_api_key_here` with actual API Key
+3. Never commit `mobile/.env` to Git (already in `.gitignore`)
+4. For iOS: Run `cd ios && pod install` to link native module
+5. For Android: Rebuild app to apply native changes
+
+### Technical Notes
+- `react-native-config` requires native linking (auto-linked in RN 0.60+)
+- Environment variables are read at build time, not runtime
+- Changing `.env` requires app rebuild to take effect
+- Runtime warning added to catch missing configuration early
+
+---
+
