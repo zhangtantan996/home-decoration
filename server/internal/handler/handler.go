@@ -57,6 +57,7 @@ func Register(c *gin.Context) {
 		"refreshToken": tokenResp.RefreshToken,
 		"expiresIn":    tokenResp.ExpiresIn,
 		"tinodeToken":  tokenResp.TinodeToken,
+		"tinodeError":  tokenResp.TinodeError,
 		"user": gin.H{
 			"id":       user.ID,
 			"phone":    user.Phone,
@@ -86,6 +87,7 @@ func Login(c *gin.Context) {
 		"refreshToken": tokenResp.RefreshToken,
 		"expiresIn":    tokenResp.ExpiresIn,
 		"tinodeToken":  tokenResp.TinodeToken,
+		"tinodeError":  tokenResp.TinodeError,
 		"user": gin.H{
 			"id":       user.ID,
 			"phone":    user.Phone,
@@ -146,6 +148,32 @@ func RefreshToken(c *gin.Context) {
 		"token":        tokenResp.Token,
 		"refreshToken": tokenResp.RefreshToken,
 		"expiresIn":    tokenResp.ExpiresIn,
+	})
+}
+
+// RefreshTinodeToken 刷新 Tinode Token
+func RefreshTinodeToken(c *gin.Context) {
+	userIdFloat := c.GetFloat64("userId")
+	userId := uint64(userIdFloat)
+
+	user, err := userService.GetUserByID(userId)
+	if err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
+
+	tinodeToken, tinodeErr := userService.RefreshTinodeToken(user)
+	if tinodeErr != nil {
+		response.Success(c, gin.H{
+			"tinodeToken": "",
+			"tinodeError": tinodeErr.Error(),
+		})
+		return
+	}
+
+	response.Success(c, gin.H{
+		"tinodeToken": tinodeToken,
+		"tinodeError": "",
 	})
 }
 

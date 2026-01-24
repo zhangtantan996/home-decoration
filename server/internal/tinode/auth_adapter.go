@@ -18,6 +18,7 @@ import (
 	"home-decoration-server/internal/utils/image"
 
 	"golang.org/x/crypto/xtea"
+	"gorm.io/gorm"
 )
 
 // Tinode auth-token format (server/auth/token/auth_token.go in tinode/chat):
@@ -36,6 +37,21 @@ const (
 	// Default token lifetime: 2 weeks (matches Tinode's default expire_in=1209600).
 	defaultTokenLifetime = 14 * 24 * time.Hour
 )
+
+// ValidateConfig checks that all required Tinode environment variables are set.
+// This should be called at application startup to fail fast if configuration is missing.
+func ValidateConfig() error {
+	required := []string{
+		"TINODE_UID_ENCRYPTION_KEY",
+		"TINODE_AUTH_TOKEN_KEY",
+	}
+	for _, key := range required {
+		if os.Getenv(key) == "" {
+			return fmt.Errorf("required environment variable %s is not set", key)
+		}
+	}
+	return nil
+}
 
 func mustDecodeBase64Env(name string) ([]byte, error) {
 	val := os.Getenv(name)
@@ -151,6 +167,19 @@ func SyncUserToTinode(user *model.User) error {
 		return errors.New("tinode db is not initialized")
 	}
 
+	return SyncUserToTinodeWithTx(repository.TinodeDB, user)
+}
+
+// SyncUserToTinodeWithTx upserts the user into tinode users table within a transaction.
+// This function should be called within a transaction context to ensure atomicity.
+func SyncUserToTinodeWithTx(db *gorm.DB, user *model.User) error {
+	if user == nil {
+		return errors.New("user is nil")
+	}
+	if db == nil {
+		return errors.New("database connection is nil")
+	}
+
 	publicData := map[string]interface{}{
 		"fn":    user.Nickname,
 		"photo": image.GetFullImageURL(user.Avatar),
@@ -175,7 +204,7 @@ func SyncUserToTinode(user *model.User) error {
 			public = $3
 	`
 
-	if err := repository.TinodeDB.Exec(query, user.ID, accessJSON, publicJSON).Error; err != nil {
+	if err := db.Exec(query, user.ID, accessJSON, publicJSON).Error; err != nil {
 		log.Printf("[Tinode] upsert users failed: userID=%d, err=%v", user.ID, err)
 		return err
 	}
