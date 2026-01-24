@@ -142,10 +142,19 @@ const LoginScreen: React.FC = () => {
 
             // 注意：api.ts 拦截器返回的是完整响应对象 { code: 0, data: {...} }
             const res = result as any;
-            const { token, refreshToken, tinodeToken, user } = res.data || {};
+            const { token, refreshToken, tinodeToken, tinodeError, user } = res.data || {};
 
             if (!token || !user) {
                 throw new Error('登录返回数据异常');
+            }
+
+            // 检查 Tinode token 生成是否失败
+            if (tinodeError) {
+                console.warn('[Tinode] Token generation failed:', tinodeError);
+                showToast({
+                    message: '聊天功能暂时不可用，其他功能正常使用',
+                    type: 'warning'
+                });
             }
 
             setAuth(token, refreshToken || '', tinodeToken || '', user);

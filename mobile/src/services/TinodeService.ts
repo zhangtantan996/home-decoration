@@ -3,6 +3,7 @@ import { Tinode } from 'tinode-sdk';
 import { tinodeApi } from './api';
 import { Platform } from 'react-native';
 import { getApiBaseUrl, getApiUrl } from '../config';
+import { TINODE_CONFIG } from '../config/tinode';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
 type Listener = (...args: unknown[]) => void;
@@ -58,8 +59,8 @@ const CONFIG = {
     // Tinode SDK expects host in the form "host:port" (no scheme/path).
     // Tinode server listens on 6060 for HTTP/WebSocket, 6061 is gRPC.
     SERVER_URL: getTinodeHost(),
-    API_KEY: 'AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K',  // Tinode 默认 API Key
-    APP_NAME: 'HomeDecoration',
+    API_KEY: TINODE_CONFIG.API_KEY,
+    APP_NAME: TINODE_CONFIG.APP_NAME,
 };
 
 /**
