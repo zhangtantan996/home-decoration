@@ -1,13 +1,21 @@
 /**
  * Tinode IM Configuration
  *
- * In production, these values should be loaded from environment variables.
- * For now, we use a configuration file to avoid hardcoding in the service.
+ * Loads configuration from environment variables using react-native-config.
+ * See mobile/.env.example for required environment variables.
  */
 
-// TODO: Replace with actual environment variable loading (e.g., react-native-config)
-// For now, read from a local config that can be gitignored
+import Config from 'react-native-config';
+
+// Runtime validation: warn if API key is not configured
+if (!Config.TINODE_API_KEY) {
+    console.warn(
+        '[Tinode Config] TINODE_API_KEY is not set. Please configure it in .env file. ' +
+        'See .env.example for instructions.'
+    );
+}
+
 export const TINODE_CONFIG = {
-    API_KEY: 'AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K',
+    API_KEY: Config.TINODE_API_KEY || '',
     APP_NAME: 'HomeDecoration',
 };
