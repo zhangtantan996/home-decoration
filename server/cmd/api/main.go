@@ -9,6 +9,7 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/router"
 	"home-decoration-server/internal/service"
+	"home-decoration-server/internal/tinode"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +19,13 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// 验证 Tinode 配置（启动时 fail-fast）
+	if err := tinode.ValidateConfig(); err != nil {
+		log.Printf("[Tinode] Configuration validation failed: %v", err)
+		log.Println("[Tinode] Tinode features will be disabled")
+		// 不阻塞启动，但记录警告
 	}
 
 	// 初始化数据库
