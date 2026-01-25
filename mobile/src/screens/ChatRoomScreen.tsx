@@ -46,6 +46,7 @@ import * as DocumentPicker from '@react-native-documents/picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiBaseUrl } from '../config';
 import { VoiceRecorder } from '../components/VoiceRecorder';
+import { AudioPlayer } from '../components/AudioPlayer';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -79,6 +80,10 @@ interface UIMessage {
         name: string;
         size?: number;
         mime?: string;
+    };
+    audio?: {
+        url: string;
+        duration: number;
     };
     createdAt: number;
     isRead: boolean;
@@ -278,7 +283,12 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
             const fileEnt =
                 contentObj && Array.isArray(contentObj.ent)
-                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'EX' && e.data)
+                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'EX' && e.data && !e.data.mime?.startsWith('audio/'))
+                    : undefined;
+
+            const audioEnt =
+                contentObj && Array.isArray(contentObj.ent)
+                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'EX' && e.data && e.data.mime?.startsWith('audio/'))
                     : undefined;
 
             const imageUrl = normalizeMediaUrl(imageEnt?.data?.val);
@@ -293,6 +303,9 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     ? Math.floor(rawFileSize)
                     : undefined;
             const fileMime = typeof fileEnt?.data?.mime === 'string' ? fileEnt.data.mime : undefined;
+
+            const audioUrl = normalizeMediaUrl(audioEnt?.data?.val || audioEnt?.data?.ref);
+            const audioDuration = typeof audioEnt?.data?.duration === 'number' ? audioEnt.data.duration : 0;
 
             const rawText =
                 typeof contentAny === 'string'
@@ -323,6 +336,12 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                           name: fileName || '[文件]',
                           size: fileSize,
                           mime: fileMime,
+                      }
+                    : undefined,
+                audio: audioUrl
+                    ? {
+                          url: audioUrl,
+                          duration: audioDuration,
                       }
                     : undefined,
                 createdAt: msg.ts ? new Date(msg.ts).getTime() : Date.now(),
@@ -1072,6 +1091,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 isMe: true,
                 sendStatus: 'failed',
                 retry: { kind: 'audio', file: { uri: audioPath, duration } },
+                audio: { url: audioPath, duration },
             };
 
             setMessages((prev) => [...prev, failedMsg]);
@@ -1295,6 +1315,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
         const image = message.image;
         const file = message.file;
+        const audio = message.audio;
         // Limit image bubble width to half of the message area (no more than half the screen).
         // Message list has horizontal padding=16, so the usable width is (windowWidth - 32).
         const maxW = Math.max(140, Math.floor((windowWidth - 32) * 0.5));
@@ -1345,6 +1366,14 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                     resizeMode="cover"
                                 />
                             </TouchableOpacity>
+                        ) : audio?.url ? (
+                            <View style={{ width: 240 }}>
+                                <AudioPlayer
+                                    messageId={message.id}
+                                    audioUrl={audio.url}
+                                    duration={audio.duration}
+                                />
+                            </View>
                         ) : file?.url ? (
                             <TouchableOpacity
                                 activeOpacity={0.7}
