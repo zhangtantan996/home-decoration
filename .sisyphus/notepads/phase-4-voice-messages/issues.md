@@ -1,3 +1,2 @@
-## [2026-01-25T11:05:00Z] Peer dependency warning while installing Nitro audio libs
-
-- `npm install` logged a peer dependency warning between `@rneui/base` and `react-native-safe-area-context`, but it came from existing UI kit dependencies and did not block installation; no further changes required.
+### 2026-01-25
+- Observed existing TypeScript hints: `SafeAreaView` deprecated and `setNotifications` declared but unused; unrelated to this change.

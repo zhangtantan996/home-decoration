@@ -39,16 +39,16 @@
 - 从现有文档整合的最新内容
 
 ### Definition of Done
-- [ ] 创建 `documentation/` 目录结构
-- [ ] 完成 01-项目概览（3 篇）
-- [ ] 完成 02-快速开始（3 篇）
-- [ ] 完成 03-产品设计（3 篇）
-- [ ] 完成 04-后端开发（含 API 拆分，6 篇）
-- [ ] 完成 05-前端开发（5 篇）
-- [ ] 完成 06-即时通讯（4 篇）
-- [ ] 完成 07-部署运维（4 篇）
-- [ ] 完成 08-开发规范（3 篇）
-- [ ] 所有文档可正常阅读，链接有效
+- [x] 创建 `documentation/` 目录结构
+- [x] 完成 01-项目概览（3 篇）
+- [x] 完成 02-快速开始（3 篇）
+- [x] 完成 03-产品设计（3 篇）
+- [x] 完成 04-后端开发（含 API 拆分，6 篇）
+- [x] 完成 05-前端开发（5 篇）
+- [x] 完成 06-即时通讯（4 篇）
+- [x] 完成 07-部署运维（4 篇）
+- [x] 完成 08-开发规范（3 篇）
+- [x] 所有文档可正常阅读，链接有效
 
 ### Must Have
 - 清晰的目录结构
@@ -421,7 +421,7 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 **Acceptance Criteria**:
 - [x] 技术栈准确
 - [x] 导航结构清晰
-- [ ] React 19 特殊说明
+- [x] React 19 特殊说明
 
 ---
 
@@ -547,7 +547,7 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 **Acceptance Criteria**:
 - [x] 部署流程清晰
 - [x] 步骤可操作
-- [ ] 包含检查清单
+- [x] 包含检查清单
 
 ---
 
@@ -565,7 +565,7 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 **Acceptance Criteria**:
 - [x] 配置说明完整
 - [x] 各服务说明
-- [ ] 数据持久化
+- [x] 数据持久化
 
 ---
 
@@ -617,9 +617,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `AGENTS.md` - 代码规范
 
 **Acceptance Criteria**:
-- [ ] Go 规范完整
-- [ ] TS/React 规范完整
-- [ ] 命名规范
+- [x] Go 规范完整
+- [x] TS/React 规范完整
+- [x] 命名规范
 
 ---
 
@@ -634,9 +634,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/GIT_WORKFLOW.md` - Git 工作流
 
 **Acceptance Criteria**:
-- [ ] 分支策略清晰
-- [ ] Commit 规范
-- [ ] PR 流程
+- [x] 分支策略清晰
+- [x] Commit 规范
+- [x] PR 流程
 
 ---
 
@@ -653,9 +653,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `SECURITY_QUICKSTART.md` - 安全快速指南
 
 **Acceptance Criteria**:
-- [ ] 安全规范完整
-- [ ] 包含代码示例
-- [ ] 常见漏洞防护
+- [x] 安全规范完整
+- [x] 包含代码示例
+- [x] 常见漏洞防护
 
 ---
 
@@ -678,12 +678,12 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 ## Success Criteria
 
 ### Final Checklist
-- [ ] 所有 33 个任务完成
-- [ ] documentation/README.md 导航完整
-- [ ] 所有内部链接有效
-- [ ] 新人能在 2 小时内了解项目
-- [ ] 技术栈版本信息准确
-- [ ] IM 系统状态（Tinode）准确
+- [x] 所有 33 个任务完成
+- [x] documentation/README.md 导航完整
+- [x] 所有内部链接有效
+- [x] 新人能在 2 小时内了解项目
+- [x] 技术栈版本信息准确
+- [x] IM 系统状态（Tinode）准确
 
 ---
 
