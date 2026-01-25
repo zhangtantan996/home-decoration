@@ -551,3 +551,512 @@ Updated `documentation/04-后端开发/API接口/聊天模块.md` with Tinode in
 - Fields: ID, Phone, Nickname, Avatar, Password, UserType, Status, LoginFailedCount, LockedUntil, LastFailedLoginAt
 - Password field has json:"-" tag (never returned to frontend)
 - Status default: 1 (gorm:"default:1")
+
+## Task 10: Admin Merchant Management Documentation (2026-01-25)
+
+### Endpoints Documented (14 total)
+
+#### Provider Management (5 endpoints)
+1. **GET /api/v1/admin/providers** - Provider list with filters
+   - Supports type filter (1-designer, 2-company, 3-foreman)
+   - Supports verified filter (true/false)
+   - Pagination with max pageSize=100
+   - Handler: admin_handler.go::AdminListProviders
+
+2. **POST /api/v1/admin/providers** - Create provider
+   - Required: providerType, companyName
+   - Default subType: personal
+   - Default status: 1 (active)
+   - Handler: admin_handler.go::AdminCreateProvider
+
+3. **PUT /api/v1/admin/providers/:id** - Update provider
+   - Supports 20+ fields (basic info, ratings, service area, etc.)
+   - Service area validation via RegionService
+   - Auto-converts area names to codes
+   - Handler: admin_handler.go::AdminUpdateProvider
+
+4. **PATCH /api/v1/admin/providers/:id/verify** - Verify provider
+   - Sets verified status (true/false)
+   - Verified providers show certification badge
+   - Handler: admin_handler.go::AdminVerifyProvider
+
+5. **PATCH /api/v1/admin/providers/:id/status** - Update provider status
+   - Status values: 1-active, 2-disabled
+   - Disabled providers cannot accept bookings
+   - Handler: admin_handler.go::AdminUpdateProviderStatus
+
+#### Merchant Application Audit (4 endpoints)
+1. **GET /api/v1/admin/merchant-applications** - Application list
+   - Supports status filter (0-pending, 1-approved, 2-rejected)
+   - Supports type filter (personal/studio/company)
+   - Supports keyword search (phone/realName/companyName)
+   - Handler: merchant_apply_handler.go::AdminListApplications
+
+2. **GET /api/v1/admin/merchant-applications/:id** - Application details
+   - Parses JSON fields (serviceArea, styles, portfolioCases)
+   - Converts area codes to names for display
+   - Returns both codes and names
+   - Handler: merchant_apply_handler.go::AdminGetApplication
+
+3. **POST /api/v1/admin/merchant-applications/:id/approve** - Approve application
+   - Creates User (userType=2, status=1)
+   - Creates Provider (verified=true, status=1)
+   - Migrates portfolio to ProviderCase (showInInspiration=true)
+   - Creates MerchantServiceSetting (acceptBooking=true)
+   - Updates application status to 1
+   - All operations in transaction
+   - Async syncs to Tencent IM
+   - Handler: merchant_apply_handler.go::AdminApproveApplication
+
+4. **POST /api/v1/admin/merchant-applications/:id/reject** - Reject application
+   - Required: reason (rejection reason)
+   - Updates application status to 2
+   - Records auditor and audit time
+   - Merchant can resubmit after rejection
+   - Handler: merchant_apply_handler.go::AdminRejectApplication
+
+#### Material Shop Management (5 endpoints)
+1. **GET /api/v1/admin/material-shops** - Shop list
+   - Supports type filter (瓷砖/地板/卫浴/橱柜/灯具)
+   - Pagination with max pageSize=100
+   - Handler: admin_handler.go::AdminListMaterialShops
+
+2. **POST /api/v1/admin/material-shops** - Create shop
+   - Binds entire MaterialShop model from JSON
+   - Handler: admin_handler.go::AdminCreateMaterialShop
+
+3. **PUT /api/v1/admin/material-shops/:id** - Update shop
+   - Binds entire MaterialShop model from JSON
+   - Uses GORM Save() to update all fields
+   - Handler: admin_handler.go::AdminUpdateMaterialShop
+
+4. **DELETE /api/v1/admin/material-shops/:id** - Delete shop
+   - Physical delete (data cannot be recovered)
+   - Handler: admin_handler.go::AdminDeleteMaterialShop
+
+5. **PATCH /api/v1/admin/material-shops/:id/verify** - Verify shop
+   - Sets is_verified status (true/false)
+   - Verified shops show certification badge
+   - Handler: admin_handler.go::AdminVerifyMaterialShop
+
+### Key Business Logic Discoveries
+
+#### Provider Type System
+- **Type 1 (Designer)**: Individual designers or design studios
+- **Type 2 (Company)**: Renovation construction companies
+- **Type 3 (Foreman)**: Independent foremen or construction teams
+- **SubType**: personal, studio, company (more granular classification)
+
+#### Application Approval Flow
+1. **Status Flow**: pending(0) → approved(1) / rejected(2)
+2. **Approval Actions**:
+   - Create User account (userType=2 for provider)
+   - Create Provider account (verified=true by default)
+   - Migrate portfolio cases (min 3 required)
+   - Create service settings (acceptBooking=true)
+   - Sync to IM system (async)
+3. **Portfolio Migration**:
+   - Fallback to first specialty style if case style empty
+   - Default to "现代简约" if no styles available
+   - Set showInInspiration=true for all cases
+   - Layout defaults to "其他"
+
+#### Service Area Validation
+- **RegionService Integration**: Validates area codes via ValidateRegionCodes()
+- **Auto-Conversion**: Converts area names to codes via ConvertNamesToCodes()
+- **Backward Compatibility**: Supports both codes and names in input
+- **Storage Format**: JSON array of area codes (e.g., ["110101", "110102"])
+
+#### Rating System
+- **rating**: Overall rating (0-5 scale)
+- **restoreRate**: Design restoration accuracy (0-100 scale)
+- **budgetControl**: Budget control capability (0-100 scale)
+- All ratings displayed on provider profile
+
+#### Material Shop Features
+- **Types**: 瓷砖, 地板, 卫浴, 橱柜, 灯具, etc.
+- **Verification**: Verified shops prioritized in listings
+- **Favorites**: Users can favorite shops, favoriteCount tracked
+- **Images**: JSON array of shop images
+- **Business Hours**: String format (e.g., "09:00-18:00")
+
+### Documentation Patterns Applied
+1. **Section Organization**: Three main sections (Provider, Application, Shop)
+2. **Status Tables**: Provider types, application status, verification status
+3. **Endpoint Details**: Path params, request body, response examples, field descriptions
+4. **Business Rules**: Status constraints, approval flow, validation logic
+5. **Usage Examples**: Curl commands for common operations
+6. **Performance Notes**: Pagination limits, DoS prevention, caching strategies
+
+### Implementation References
+- Handlers: admin_handler.go (lines 302-729), merchant_apply_handler.go (lines 296-554)
+- Services: region_service.go (ValidateRegionCodes, ConvertNamesToCodes)
+- Models: provider.go, merchant_application.go, material_shop.go
+- Routes: router.go (admin group)
+
+### Cross-Module Dependencies
+- **Region Service**: Validates and converts service area codes
+- **IM Integration**: Syncs approved merchants to Tencent IM
+- **Order Service**: Creates service settings for booking acceptance
+- **Case Service**: Migrates portfolio to ProviderCase table
+
+### Security Considerations
+1. **Admin Authentication**: All endpoints require admin JWT token
+2. **Audit Trail**: Records auditor ID and timestamp for approvals/rejections
+3. **Transaction Safety**: Approval uses DB transaction to ensure atomicity
+4. **Pagination Limits**: pageSize capped at 100 to prevent DoS
+5. **Sensitive Data**: IDCardNo stored but marked for encryption in production
+
+### Performance Optimizations
+1. **Pagination**: Default page=1, pageSize=10, max 100
+2. **Selective Updates**: Only updates provided fields in PUT requests
+3. **Async IM Sync**: Tencent IM sync runs in goroutine (non-blocking)
+4. **Region Caching**: RegionService likely caches area code mappings
+5. **Index Recommendations**: phone, status, applicantType for applications
+
+
+## Task 11: Admin Content Moderation API Documentation (2026-01-25)
+
+### Endpoints Documented
+Successfully documented 11 endpoints across 3 modules:
+
+**Case Audit (4 endpoints)**:
+- GET /api/v1/admin/audits/cases - List pending audits with status filter
+- GET /api/v1/admin/audits/cases/:id - Get audit details with original case comparison
+- POST /api/v1/admin/audits/cases/:id/approve - Approve audit (create/update/delete case)
+- POST /api/v1/admin/audits/cases/:id/reject - Reject audit with reason
+
+**Comment Management (2 endpoints)**:
+- GET /api/v1/admin/comments - List all comments with status filter
+- PATCH /api/v1/admin/comments/:id/status - Update comment status (approved/pending_review/hidden/deleted)
+
+**Sensitive Word Management (5 endpoints)**:
+- GET /api/v1/admin/sensitive-words - List sensitive words
+- POST /api/v1/admin/sensitive-words - Create single sensitive word
+- POST /api/v1/admin/sensitive-words/import - Batch import (TXT/CSV)
+- PUT /api/v1/admin/sensitive-words/:id - Update sensitive word
+- DELETE /api/v1/admin/sensitive-words/:id - Delete sensitive word
+
+### Key Implementation Details
+
+**Case Audit Status Flow**:
+- 0 (pending) → 1 (approved) or 2 (rejected)
+- ActionType: create/update/delete
+- Approved cases automatically set show_in_inspiration=true
+- Transaction-based approval ensures data consistency
+
+**Comment Status Values**:
+- approved: Normal display
+- pending_review: Hidden, awaiting review
+- hidden: Hidden by admin
+- deleted: Soft delete
+
+**Sensitive Word Import Format**:
+- TXT: One word per line, "re:" prefix for regex, # or // for comments
+- CSV: word,category,level,action,is_regex
+- Uses ON CONFLICT DO NOTHING to preserve manual adjustments
+- Batch insert (1000 records per transaction)
+- Supports large files (1MB per line, unlimited total)
+
+**Data Models**:
+- CaseAudit: Stores case snapshot + audit metadata
+- CaseComment: Stores comment + moderation status
+- SensitiveWord: Stores word + matching rules (regex support)
+
+### Documentation Structure
+- Overview with business flow diagrams
+- 11 endpoint specifications with request/response examples
+- Data model definitions
+- Error code reference
+- Usage examples (curl commands)
+- Import format specifications with examples
+
+### File Location
+`documentation/04-后端开发/API接口/管理后台/内容审核.md` (744 lines)
+
+
+## Task 12: Admin 订单与预约模块文档
+
+### 实现发现
+1. **预约管理端点**（4个）：
+   - `GET /api/v1/admin/bookings` - 预约列表，支持状态筛选和分页
+   - `PATCH /api/v1/admin/bookings/:id/status` - 更新预约状态
+   - `GET /api/v1/admin/bookings/refundable` - 获取可退款预约列表
+   - `POST /api/v1/admin/bookings/:bookingId/refund` - 手动退款意向金
+
+2. **争议处理端点**（3个）：
+   - `GET /api/v1/admin/disputed-bookings` - 争议预约列表
+   - `GET /api/v1/admin/disputed-bookings/:id` - 争议预约详情
+   - `POST /api/v1/admin/disputed-bookings/:id/resolve` - 处理争议
+
+3. **预约状态流转**：
+   - 1 (Pending) → 2 (Confirmed) → 3 (Completed)
+   - 1 (Pending) → 4 (Cancelled)
+   - 1 (Pending) → 5 (Disputed) → 4 (Cancelled)
+
+4. **意向金退款机制**：
+   - **退款条件**：已支付、未退款、未抵扣
+   - **退款场景**：商家超时（48h）、商家拒单、方案连续拒绝3次、管理员手动
+   - **退款流程**：验证条件 → 更新状态 → 发送通知 → 调用支付网关（待接入）
+
+5. **争议解决方案**：
+   - `refund_user` - 全额退款
+   - `refund_partial` - 部分退款（需指定比例）
+   - `cancel_no_refund` - 不退款
+   - `reassign` - 重新分配商家（暂未实现）
+
+6. **关联数据查询**：
+   - 争议列表包含用户信息（姓名、手机）、服务商信息（公司名）
+   - 争议详情包含完整的方案版本历史（按版本倒序）
+   - 方案拒绝次数和最新拒绝原因
+
+### 文档特点
+- 详细说明了意向金退款的条件、场景和流程
+- 清晰描述了争议状态流转和解决方案类型
+- 包含完整的请求/响应示例和错误处理
+- 提供了 Curl 使用示例
+- 遵循现有文档格式（中文、表格、代码块）
+
+### 技术细节
+- 退款服务使用 `RefundService`，支持多种退款场景
+- 争议处理直接在 handler 层实现，包含通知发送
+- 使用 GORM 关联查询获取用户和服务商信息
+- 分页参数有最大值限制（100）防止 DoS
+
+
+## Admin Project Management API Documentation (2026-01-25)
+
+### Key Findings
+- **9 endpoints documented**: Project list/detail/status (3), Phase management (2), Work logs (4)
+- **Project status flow**: -1 (pending creation) → 0 (pending) → 1 (in progress) → 2 (completed), with 3 (suspended) and 4 (cancelled) as special states
+- **7 standard phases**: preparation → demolition → electrical → masonry → painting → installation → inspection
+- **Phase status**: pending → in_progress → completed
+- **Work log management**: Admin can create/update/delete logs for any project phase
+
+### Implementation Details
+- Handler: `server/internal/handler/admin_project_handler.go`
+- Service: `server/internal/service/project_service.go`
+- Models: `model.Project`, `model.ProjectPhase`, `model.PhaseTask`, `model.WorkLog`
+- Admin authentication required for all endpoints
+- Photos stored as JSON array strings
+- Date format: YYYY-MM-DD for all date parameters
+
+### Documentation Structure
+- Followed existing format from `认证模块.md`
+- Included comprehensive status/phase type explanations
+- Added detailed request/response examples for all 9 endpoints
+- Included error codes and curl usage examples
+- Added important notes section for best practices
+
+### Patterns Observed
+- Consistent response format: `{code, data/error, message}`
+- Pagination support: page, pageSize parameters
+- Filtering support: status, keyword, phaseId
+- Admin context: `adminId` from middleware
+- Transaction support for complex operations
+
+## 财务管理 API 文档 (2026-01-25)
+
+### 实现位置
+- 托管账户: `server/internal/handler/admin_new_handler.go` (lines 411-500)
+- 提现管理: `server/internal/handler/admin_withdraw_handler.go` (lines 14-230)
+
+### 核心端点
+1. **托管账户 (3 端点)**:
+   - GET /api/v1/admin/escrow-accounts - 托管账户列表
+   - GET /api/v1/admin/escrow-accounts/:id - 托管账户详情
+   - POST /api/v1/admin/escrow-accounts/:id/release - 释放托管资金
+
+2. **提现管理 (4 端点)**:
+   - GET /api/v1/admin/withdrawals - 提现申请列表
+   - GET /api/v1/admin/withdrawals/:id - 提现申请详情
+   - POST /api/v1/admin/withdrawals/:id/approve - 审核通过提现
+   - POST /api/v1/admin/withdrawals/:id/reject - 审核拒绝提现
+
+### 数据模型
+- `EscrowAccount`: 托管账户 (model.go lines 184-195)
+  - totalAmount, frozenAmount, availableAmount, releasedAmount
+  - status: 0-待激活, 1-正常, 2-冻结, 3-已清算
+- `Transaction`: 交易记录 (model.go lines 198-212)
+  - type: deposit, withdraw, transfer, refund
+  - status: 0-处理中, 1-成功, 2-失败
+- `MerchantWithdraw`: 商家提现记录 (model.go lines 483-495)
+  - status: 0-处理中, 1-成功, 2-失败
+
+### 业务流程
+1. **提现状态流转**: pending (0) → approved (1) / rejected (2)
+2. **审核通过流程**:
+   - 更新提现记录状态为成功
+   - 更新关联收入记录状态为已提现
+   - 调用银行 API 打款 (TODO)
+   - 发送通知给商家
+3. **审核拒绝流程**:
+   - 更新提现记录状态为失败
+   - 记录拒绝原因
+   - 收入记录保持已结算状态 (可重新申请)
+   - 发送通知给商家
+
+### 手续费说明
+- 提现手续费: 0.1%-1% (根据平台配置)
+- 实际到账 = 提现金额 - 手续费
+- 手续费由商家承担
+
+### 文档特点
+- 包含完整的业务流程图和状态流转说明
+- 详细的手续费计算规则
+- 安全建议和风控规则
+- 完整的 curl 示例
+- 7 个端点全部文档化
+
+### 参考格式
+- 遵循 `认证模块.md` 和 `商家管理.md` 的文档结构
+- 包含概述、业务流程、API 列表、错误码、使用示例、注意事项
+- 中文文档，包含"最后更新"日期
+
+## 2026-01-25: Admin System Configuration API Documentation
+
+### Task Completed
+Created comprehensive documentation for Admin system configuration module covering 17 endpoints across 5 categories:
+- System Settings (2 endpoints)
+- System Configs (3 endpoints)
+- Dictionary Management (8 endpoints)
+- Region Management (3 endpoints)
+- Operation Logs (1 endpoint)
+
+### Key Findings
+
+#### Configuration Architecture
+1. **Dual Configuration System**:
+   - `system_settings` table: General key-value settings with category support
+   - `system_configs` table: Typed business configurations with editable flag
+   - Frontend uses `im_tencent_*` format, backend auto-converts to `im.tencent_*`
+
+2. **Configuration Types**:
+   - string, number, boolean, json
+   - Type information helps frontend validation
+   - Editable flag controls admin modification permissions
+
+#### Dictionary System
+1. **Two-Level Structure**:
+   - `dictionary_categories`: Category definitions (code, name, icon)
+   - `system_dictionaries`: Dictionary values with category association
+
+2. **Advanced Features**:
+   - `extraData` (JSONB): Flexible extension data storage
+   - `parentValue`: Supports cascading dictionaries
+   - `sortOrder`: Display order control
+   - `enabled`: Soft enable/disable
+
+#### Region Management
+1. **Three-Level Hierarchy**:
+   - Level 1: Province (省)
+   - Level 2: City (市)
+   - Level 3: District/County (区/县)
+
+2. **Cascade Operations**:
+   - Disabling parent region cascades to all children
+   - Uses recursive function `cascadeUpdateChildren` in handler
+   - Transaction-based to ensure data consistency
+
+#### Operation Logs
+1. **Audit Trail**:
+   - Tracks admin operations with IP, action, resource info
+   - Maps `resource` to `targetType` and `resource_id` to `targetId` for frontend
+   - Supports filtering by adminId and action keyword
+
+### Implementation Patterns
+
+#### Handler Organization
+- `admin_new_handler.go`: System settings and operation logs
+- `admin_handler.go`: System configs (GET/PUT endpoints)
+- `dictionary_handler.go`: Complete dictionary CRUD with category management
+- `region_handler.go`: Region management with cascade operations
+
+#### Cache Management
+- Config updates trigger automatic cache clearing via `ConfigService.ClearCache()`
+- Ensures real-time config changes take effect
+
+#### Response Formats
+- Consistent use of `response.Success()` helper
+- List endpoints return `{list, total}` structure
+- Config endpoints return `{configs, count}` structure
+
+### Documentation Quality
+- 877 lines covering all 17 endpoints
+- Includes configuration type explanations
+- Provides curl examples for common operations
+- Best practices section for each subsystem
+- Error codes and field descriptions
+
+### Patterns to Reuse
+1. **Configuration Documentation**:
+   - Explain dual-table architecture upfront
+   - List common config keys with types and defaults
+   - Note auto-conversion rules (e.g., `im_*` to `im.*`)
+
+2. **Dictionary Documentation**:
+   - Explain category-value relationship
+   - Show extraData usage examples
+   - Document cascading dictionary patterns
+
+3. **Region Documentation**:
+   - Clarify three-level hierarchy
+   - Explain cascade behavior clearly
+   - Note national standard codes usage
+
+
+## Task 16: Admin RBAC Permission API Documentation (2026-01-25)
+
+### Implementation Details
+- Created comprehensive RBAC permission management documentation
+- Documented 14 endpoints across 3 categories:
+  - Admin Management (5 endpoints): list, create, update, delete, password change
+  - Role Management (5 endpoints): list, create, update, delete, assign permissions
+  - Menu Management (4 endpoints): list, create, update, delete
+
+### RBAC Model Architecture
+- **Core Entities**: SysAdmin, SysRole, SysMenu
+- **Relationship**: Admin ←→ sys_admin_roles ←→ Role ←→ sys_role_menus ←→ Menu
+- **Permission Calculation**:
+  - Super admin: `*:*:*` (all permissions)
+  - Regular admin: permissions from all assigned roles' menus
+- **Menu Types**: 1=Directory, 2=Menu, 3=Button
+
+### Key Features Documented
+1. **Permission Assignment Flow**: Role creation → Menu assignment → Admin assignment
+2. **Menu Tree Structure**: Three-level hierarchy (Directory → Menu → Button)
+3. **Security Features**:
+   - bcrypt password encryption
+   - Super admin protection (cannot delete/disable)
+   - Login failure lockout (5 attempts, 30 min)
+   - Token expiry (60 minutes for admin)
+
+### Handler Implementation Patterns
+- **admin_auth_handler.go**: Role/Menu management, permission calculation
+- **admin_new_handler.go**: Admin CRUD operations
+- **Transaction Usage**: Role/menu assignments use DB transactions
+- **Preloading**: Admin queries preload roles for complete data
+
+### Documentation Structure
+- RBAC model explanation with diagrams
+- 14 detailed endpoint specifications
+- Permission assignment workflow
+- Menu tree structure examples
+- Frontend integration examples (TypeScript)
+- Security best practices
+- Permission naming conventions
+
+### Permission Naming Convention
+Format: `module:resource:action`
+Examples:
+- `system:user:list` - View user list
+- `system:role:assign` - Assign role permissions
+- `finance:escrow:release` - Release escrow funds
+- `*:*:*` - All permissions (super admin)
+
+### Frontend Integration Notes
+- Permissions array returned on login
+- Menu tree for navigation rendering
+- Button-level permission control using `hasPermission()` helper
+- Role keys array for role-based UI logic
+
