@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
-import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions } from 'antd';
-import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined, SearchOutlined, UpOutlined, DownOutlined, CloseOutlined } from '@ant-design/icons';
+import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions, Dropdown } from 'antd';
+import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined, SearchOutlined, UpOutlined, DownOutlined, CloseOutlined, CopyOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
 import dayjs from 'dayjs';
 
@@ -575,6 +575,18 @@ const MerchantChat: React.FC = () => {
         return <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#D4AF37' }} >{name.charAt(0).toUpperCase()}</Avatar>;
     };
 
+    const copyMessageText = (content: any) => {
+        const text = typeof content === 'string' 
+            ? content 
+            : content?.txt || JSON.stringify(content);
+        
+        navigator.clipboard.writeText(text).then(() => {
+            message.success('消息已复制');
+        }).catch(() => {
+            message.error('复制失败');
+        });
+    };
+
     const renderContent = (content: any) => {
         if (typeof content === 'string') return content;
         if (typeof content === 'object' && content !== null) {
@@ -923,32 +935,47 @@ const MerchantChat: React.FC = () => {
                                                         )}
                                                     </div>
 
-                                                    <div style={{ maxWidth: '60%' }}>
-                                                        <div style={{
-                                                            background: isMe ? '#FEF3C7' : '#fff',
-                                                            border: isCurrentSearchResult 
-                                                                ? '2px solid #D4AF37' 
-                                                                : isSearchResult 
-                                                                    ? '2px solid #FCD34D'
-                                                                    : isMe ? '1px solid #FCD34D' : '1px solid #e8e8e8',
-                                                            borderRadius: isMe ? '8px 0 8px 8px' : '0 8px 8px 8px',
-                                                            padding: '10px 14px',
-                                                            boxShadow: isCurrentSearchResult 
-                                                                ? '0 2px 8px rgba(212, 175, 55, 0.3)'
-                                                                : '0 1px 2px rgba(0,0,0,0.05)',
-                                                            color: '#333'
-                                                        }}>
-                                                            {renderContent(msg.content)}
+                                                    <Dropdown
+                                                        menu={{
+                                                            items: [
+                                                                {
+                                                                    key: 'copy',
+                                                                    label: '复制消息',
+                                                                    icon: <CopyOutlined />,
+                                                                    onClick: () => copyMessageText(msg.content)
+                                                                }
+                                                            ]
+                                                        }}
+                                                        trigger={['contextMenu']}
+                                                    >
+                                                        <div style={{ maxWidth: '60%' }}>
+                                                            <div style={{
+                                                                background: isMe ? '#FEF3C7' : '#fff',
+                                                                border: isCurrentSearchResult 
+                                                                    ? '2px solid #D4AF37' 
+                                                                    : isSearchResult 
+                                                                        ? '2px solid #FCD34D'
+                                                                        : isMe ? '1px solid #FCD34D' : '1px solid #e8e8e8',
+                                                                borderRadius: isMe ? '8px 0 8px 8px' : '0 8px 8px 8px',
+                                                                padding: '10px 14px',
+                                                                boxShadow: isCurrentSearchResult 
+                                                                    ? '0 2px 8px rgba(212, 175, 55, 0.3)'
+                                                                    : '0 1px 2px rgba(0,0,0,0.05)',
+                                                                color: '#333',
+                                                                cursor: 'context-menu'
+                                                            }}>
+                                                                {renderContent(msg.content)}
+                                                            </div>
+                                                            <div style={{
+                                                                textAlign: isMe ? 'right' : 'left',
+                                                                marginTop: 4,
+                                                                fontSize: 10,
+                                                                color: '#999'
+                                                            }}>
+                                                                {formatTime(msg.ts)}
+                                                            </div>
                                                         </div>
-                                                        <div style={{
-                                                            textAlign: isMe ? 'right' : 'left',
-                                                            marginTop: 4,
-                                                            fontSize: 10,
-                                                            color: '#999'
-                                                        }}>
-                                                            {formatTime(msg.ts)}
-                                                        </div>
-                                                    </div>
+                                                    </Dropdown>
                                                 </div>
                                             );
                                         })}
