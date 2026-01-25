@@ -181,9 +181,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/LOCAL_RUN_GUIDE.md` - 运行指南
 
 **Acceptance Criteria**:
-- [ ] 一键启动命令
-- [ ] 各端启动方式
-- [ ] 包含测试账号
+- [x] 一键启动命令
+- [x] 各端启动方式
+- [x] 包含测试账号
 
 ---
 
