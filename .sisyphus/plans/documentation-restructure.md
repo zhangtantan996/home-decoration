@@ -509,9 +509,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `.sisyphus/notepads/phase-4-voice-messages/` - 语音消息
 
 **Acceptance Criteria**:
-- [ ] 功能清单完整
-- [ ] 实现状态准确
-- [ ] 包含代码示例
+- [x] 功能清单完整
+- [x] 实现状态准确
+- [x] 包含代码示例
 
 ---
 
