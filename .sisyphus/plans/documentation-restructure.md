@@ -581,9 +581,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `.env.example` 文件
 
 **Acceptance Criteria**:
-- [ ] 环境变量完整
-- [ ] 必填/可选标注
-- [ ] 默认值说明
+- [x] 环境变量完整
+- [x] 必填/可选标注
+- [x] 默认值说明
 
 ---
 
