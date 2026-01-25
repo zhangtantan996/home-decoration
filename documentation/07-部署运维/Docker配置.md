@@ -121,21 +121,64 @@ networks:
 
 ## 数据持久化
 
-### Volumes 映射
+在容器化部署中，为了确保容器重启或销毁后数据不丢失，必须配置正确的数据持久化策略。本项目主要涉及数据库数据、缓存数据以及用户上传文件的持久化。
 
-为了保证容器重启或销毁后数据不丢失，必须配置数据卷映射：
+### 持久化方式对比
 
-1.  **数据库持久化**:
-    - 生产环境: 使用具名卷 `db_data_prod` 映射到 `/var/lib/postgresql/data`。
-    - 本地开发: 通常映射到本地目录 `./db_data_local` 以方便查看和备份。
-2.  **Redis 持久化**:
-    - 使用具名卷 `redis_data` 映射到 `/data`。
+| 方式 | 场景 | 优点 | 缺点 |
+| :--- | :--- | :--- | :--- |
+| **具名卷 (Named Volumes)** | 生产环境 (`db_data_prod`) | Docker 管理，性能好，隔离性高。 | 不易直接在宿主机查看文件。 |
+| **路径映射 (Bind Mounts)** | 本地开发 (`./db_data_local`) | 方便宿主机直接查看、备份和调试。 | 依赖宿主机文件系统结构。 |
 
-### 备份建议
+### 1. 数据库持久化 (PostgreSQL)
 
-1.  **数据库备份**: 建议定期在宿主机运行 `docker exec` 执行 `pg_dump`。
-    ```bash
-    docker exec prod_db pg_dump -U postgres home_decoration > backup_$(date +%F).sql
-    ```
-2.  **卷备份**: 可以定期停止容器并对 `/var/lib/docker/volumes` 下的相关目录进行物理备份。
-3.  **云服务推荐**: 在生产环境中，强烈建议使用阿里云 RDS 等托管数据库服务，自带多可用区高可用和自动备份功能。
+PostgreSQL 的数据存储在容器内的 `/var/lib/postgresql/data` 目录。
+
+- **开发环境**: 在 `docker-compose.local.yml` 中使用路径映射，将数据保存在项目根目录下的 `db_data_local/` 中，方便开发者查看数据库状态。
+- **生产环境**: 在 `deploy/docker-compose.prod.yml` 中使用具名卷 `db_data_prod`，确保数据的稳定性和安全性。
+
+### 2. 缓存持久化 (Redis)
+
+Redis 的数据存储在容器内的 `/data` 目录。
+
+- **配置**: 默认镜像开启了 RDB 持久化。
+- **持久化卷**: 建议使用具名卷 `redis_data` 映射到 `/data`。
+- **注意**: 虽然 Redis 主要作为缓存使用，但验证码和部分 Session 数据也存储于此，建议配置持久化以防止重启后用户状态丢失。
+
+### 3. 文件上传持久化 (Uploads)
+
+后端服务接收的用户上传文件（如案例图片、用户头像、聊天附件）默认存储在 API 服务容器内的 `/app/uploads` 目录。
+
+- **映射需求**: **必须** 为 `api` 服务配置 `./uploads` 目录的持久化，否则容器更新时所有上传文件将会丢失。
+- **配置示例**:
+  ```yaml
+  services:
+    api:
+      volumes:
+        - ./uploads:/app/uploads
+  ```
+- **云端方案**: 生产环境下建议通过后端配置使用阿里云 OSS 或腾讯云 COS 等对象存储服务，实现更高的可靠性和 CDN 加速。
+
+### 4. 备份与恢复
+
+#### 数据库定期备份
+建议在宿主机配置 Cron 任务，定期执行 `pg_dump`：
+```bash
+# 备份到宿主机当前目录
+docker exec prod_db pg_dump -U postgres home_decoration > backup_$(date +%F).sql
+```
+
+#### 数据恢复
+如果需要从备份文件恢复数据：
+```bash
+cat backup_xxx.sql | docker exec -i prod_db psql -U postgres -d home_decoration
+```
+
+#### 迁移注意事项
+- 在不同环境间迁移数据时，请确保 PostgreSQL 版本一致（本项目固定使用 `15-alpine`）。
+- 迁移具名卷时，可以使用 `docker run --rm -v db_data_prod:/from -v $(pwd):/to alpine tar -cvf /to/db_data.tar /from` 进行打包。
+
+### 5. 安全建议
+- **不要将数据目录提交到 Git**: 确保 `.gitignore` 中包含 `db_data_local/` 和 `uploads/`。
+- **权限控制**: 生产环境下的路径映射应确保宿主机目录权限正确（通常为 700 或 755）。
+- **托管服务**: 对于生产环境，强烈推荐使用云厂商提供的托管数据库（如阿里云 RDS），它们自带自动备份、多可用区高可用和专业性能优化。
