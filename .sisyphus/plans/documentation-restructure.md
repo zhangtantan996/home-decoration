@@ -455,9 +455,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/WECHAT_MINIPROGRAM_STATUS.md` - 小程序状态
 
 **Acceptance Criteria**:
-- [ ] 技术栈说明
-- [ ] 当前状态标注
-- [ ] 基本结构
+- [x] 技术栈说明
+- [x] 当前状态标注
+- [x] 基本结构
 
 ---
 
