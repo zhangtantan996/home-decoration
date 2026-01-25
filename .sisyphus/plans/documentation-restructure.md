@@ -163,9 +163,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/LOCAL_DEV_GUIDE.md` - 本地开发
 
 **Acceptance Criteria**:
-- [ ] 环境要求清晰
-- [ ] 包含安装命令
-- [ ] 包含验证步骤
+- [x] 环境要求清晰
+- [x] 包含安装命令
+- [x] 包含验证步骤
 
 ---
 
