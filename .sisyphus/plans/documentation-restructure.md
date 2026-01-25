@@ -527,9 +527,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `.sisyphus/plans/tinode-chat-completion-v1.2.md` - 工作计划
 
 **Acceptance Criteria**:
-- [ ] 迁移进度准确
-- [ ] 状态清晰
-- [ ] 回滚方案
+- [x] 迁移进度准确
+- [x] 状态清晰
+- [x] 回滚方案
 
 ---
 
