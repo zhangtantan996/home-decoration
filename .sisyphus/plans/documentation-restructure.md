@@ -269,9 +269,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `server/README.md` - 后端说明
 
 **Acceptance Criteria**:
-- [ ] 分层架构清晰
-- [ ] 包含代码示例
-- [ ] 新人能理解代码组织
+- [x] 分层架构清晰
+- [x] 包含代码示例
+- [x] 新人能理解代码组织
 
 ---
 
