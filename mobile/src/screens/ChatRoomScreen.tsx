@@ -102,6 +102,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     const [inputText, setInputText] = useState('');
     const [showQuickReplies, setShowQuickReplies] = useState(true);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const [partnerTyping, setPartnerTyping] = useState(false);
+    const [partnerOnline, setPartnerOnline] = useState(false);
     const [dialogConfig, setDialogConfig] = useState<{
         visible: boolean;
         type: 'info' | 'confirm' | 'success';
@@ -168,6 +170,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     // Chat UX: open conversation at latest message, but don't force-scroll when user is reading history.
     const isNearBottomRef = useRef(true);
     const pendingScrollToBottomRef = useRef(false);
+    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastTypingSentRef = useRef<number>(0);
 
     const handleMessageListScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -188,6 +192,12 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         return () => {
             if (topic) {
                 topic.onData = undefined;
+                topic.onInfo = undefined;
+                topic.onPres = undefined;
+            }
+            // Clear typing timeout
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
             }
         };
     }, [topic]);
@@ -471,6 +481,28 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     }
                };
 
+               t.onInfo = (info: any) => {
+                    console.log('[ChatRoom] Info event:', info);
+                    if (info?.what === 'kp') {
+                        setPartnerTyping(true);
+                        if (typingTimeoutRef.current) {
+                            clearTimeout(typingTimeoutRef.current);
+                        }
+                        typingTimeoutRef.current = setTimeout(() => {
+                            setPartnerTyping(false);
+                        }, 3000);
+                    }
+               };
+
+               t.onPres = (pres: any) => {
+                    console.log('[ChatRoom] Presence event:', pres);
+                    if (pres?.what === 'on') {
+                        setPartnerOnline(true);
+                    } else if (pres?.what === 'off') {
+                        setPartnerOnline(false);
+                    }
+               };
+
               setLoadingMessages(false);
 
         } catch (error: any) {
@@ -560,6 +592,16 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         pendingScrollToBottomRef.current = false;
         isNearBottomRef.current = true;
     }, [messages.length, loadingMessages]);
+
+    const handleTypingIndicator = useCallback(() => {
+        if (!topic || !topic.isSubscribed?.()) return;
+
+        const now = Date.now();
+        if (now - lastTypingSentRef.current > 3000) {
+            topic.noteKeyPress?.();
+            lastTypingSentRef.current = now;
+        }
+    }, [topic]);
 
     // 发送消息
     const handleSendMessage = async (text: string) => {
@@ -1314,7 +1356,15 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
                     <Text style={styles.headerTitle}>{partnerName}</Text>
-                    {/* 在线状态暂未接入 */}
+                    {partnerOnline && (
+                        <View style={styles.onlineStatus}>
+                            <View style={styles.onlineDot} />
+                            <Text style={styles.onlineText}>在线</Text>
+                        </View>
+                    )}
+                    {partnerTyping && (
+                        <Text style={styles.typingIndicator}>正在输入...</Text>
+                    )}
                 </View>
                 <View style={styles.headerRight}>
                     <TouchableOpacity style={styles.headerBtn} onPress={handlePhonePress}>
@@ -1393,7 +1443,12 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 placeholder="输入消息..."
                                 placeholderTextColor="#A1A1AA"
                                 value={inputText}
-                                onChangeText={setInputText}
+                                onChangeText={(text) => {
+                                    setInputText(text);
+                                    if (text.length > 0) {
+                                        handleTypingIndicator();
+                                    }
+                                }}
                                 multiline
                                 maxLength={500}
                             />
@@ -1629,6 +1684,28 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: '#09090B',
+    },
+    onlineStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 2,
+    },
+    onlineDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#22C55E',
+        marginRight: 4,
+    },
+    onlineText: {
+        fontSize: 11,
+        color: '#22C55E',
+    },
+    typingIndicator: {
+        fontSize: 11,
+        color: '#71717A',
+        marginTop: 2,
+        fontStyle: 'italic',
     },
     headerSubtitle: {
         fontSize: 12,

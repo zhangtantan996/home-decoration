@@ -51,6 +51,7 @@ const MerchantChat: React.FC = () => {
     const [inputValue, setInputValue] = useState('');
     const [sending, setSending] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [peerTyping, setPeerTyping] = useState(false);
     
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -58,6 +59,8 @@ const MerchantChat: React.FC = () => {
     const prefetchedPreviewTopicsRef = useRef<Set<string>>(new Set());
     const openConversationSeqRef = useRef(0);
     const conversationsRefreshScheduledRef = useRef(false);
+    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastTypingSentRef = useRef<number>(0);
 
     // Chat UX: only auto-scroll when user is already near the bottom.
     // When switching conversations, always jump to the latest message.
@@ -288,6 +291,8 @@ const MerchantChat: React.FC = () => {
 
             if (prevTopic) {
                 prevTopic.onData = undefined;
+                prevTopic.onInfo = undefined;
+                prevTopic.onPres = undefined;
             }
 
             // Real-time updates: use topic-level onData which is called after Tinode routes data into caches.
@@ -297,6 +302,26 @@ const MerchantChat: React.FC = () => {
                 // Mark as read while the chat is open.
                 topic.noteRead?.();
                 scheduleLoadConversations();
+            };
+
+            topic.onInfo = (info: any) => {
+                console.log('[MerchantChat] Info event:', info);
+                if (info?.what === 'kp') {
+                    setPeerTyping(true);
+                    if (typingTimeoutRef.current) {
+                        clearTimeout(typingTimeoutRef.current);
+                    }
+                    typingTimeoutRef.current = setTimeout(() => {
+                        setPeerTyping(false);
+                    }, 3000);
+                }
+            };
+
+            topic.onPres = (pres: any) => {
+                console.log('[MerchantChat] Presence event:', pres);
+                if (pres?.what === 'on' || pres?.what === 'off') {
+                    setActiveTopic({ ...topic });
+                }
             };
 
             setActiveTopic(topic);
@@ -318,6 +343,16 @@ const MerchantChat: React.FC = () => {
             if (requestId === openConversationSeqRef.current) {
                 setLoadingHistory(false);
             }
+        }
+    };
+
+    const handleTyping = () => {
+        if (!activeTopic || !activeTopic.isSubscribed?.()) return;
+
+        const now = Date.now();
+        if (now - lastTypingSentRef.current > 3000) {
+            activeTopic.noteKeyPress?.();
+            lastTypingSentRef.current = now;
         }
     };
 
@@ -695,7 +730,13 @@ const MerchantChat: React.FC = () => {
                                         <div style={{ marginLeft: 12 }}>
                                             <Title level={5} style={{ margin: 0 }}>{getPeerInfo(activeTopic).fn}</Title>
                                             <Text type="secondary" style={{ fontSize: 12 }}>
-                                                {activeTopic.online ? <Badge status="success" text="在线" /> : '离线'}
+                                                {peerTyping ? (
+                                                    <span style={{ fontStyle: 'italic', color: '#71717A' }}>正在输入...</span>
+                                                ) : activeTopic.online ? (
+                                                    <Badge status="success" text="在线" />
+                                                ) : (
+                                                    '离线'
+                                                )}
                                             </Text>
                                         </div>
                                     </>
@@ -794,7 +835,12 @@ const MerchantChat: React.FC = () => {
                                     <TextArea
                                         ref={inputRef}
                                         value={inputValue}
-                                        onChange={(e) => setInputValue(e.target.value)}
+                                        onChange={(e) => {
+                                            setInputValue(e.target.value);
+                                            if (e.target.value.length > 0) {
+                                                handleTyping();
+                                            }
+                                        }}
                                         placeholder="输入消息..."
                                         autoSize={{ minRows: 1, maxRows: 4 }}
                                         onPressEnter={(e) => {
