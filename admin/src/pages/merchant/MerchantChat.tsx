@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
-import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message } from 'antd';
-import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions } from 'antd';
+import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
 import dayjs from 'dayjs';
 
@@ -52,6 +52,7 @@ const MerchantChat: React.FC = () => {
     const [sending, setSending] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [peerTyping, setPeerTyping] = useState(false);
+    const [showInfoPanel, setShowInfoPanel] = useState(false);
     
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -739,6 +740,12 @@ const MerchantChat: React.FC = () => {
                                                 )}
                                             </Text>
                                         </div>
+                                        <Button
+                                            type="text"
+                                            icon={<InfoCircleOutlined />}
+                                            onClick={() => setShowInfoPanel(!showInfoPanel)}
+                                            style={{ marginLeft: 'auto' }}
+                                        />
                                     </>
                                 )}
                             </Header>
@@ -805,6 +812,31 @@ const MerchantChat: React.FC = () => {
                             </div>
                             
                                 <div style={{ padding: 20, background: '#fff', borderTop: '1px solid #e8e8e8' }}>
+                                {/* Quick Replies */}
+                                {activeTopicName && (
+                                    <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        {[
+                                            '您好，有什么可以帮您？',
+                                            '我们会尽快为您处理',
+                                            '感谢您的咨询',
+                                            '请稍等，我查询一下',
+                                            '好的，明白了'
+                                        ].map((reply, index) => (
+                                            <Button
+                                                key={index}
+                                                size="small"
+                                                onClick={() => {
+                                                    setInputValue(reply);
+                                                    inputRef.current?.focus();
+                                                }}
+                                                disabled={sending}
+                                                style={{ fontSize: 12 }}
+                                            >
+                                                {reply}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                )}
                                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                                     <Upload
                                         accept="image/*"
@@ -874,6 +906,33 @@ const MerchantChat: React.FC = () => {
                         </div>
                     )}
                 </Content>
+                {showInfoPanel && activeTopic && (
+                    <Sider width={280} style={{ background: '#fff', borderLeft: '1px solid #e8e8e8', overflowY: 'auto' }}>
+                        <div style={{ padding: 20 }}>
+                            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                                {renderAvatar(getPeerInfo(activeTopic).photo, getPeerInfo(activeTopic).fn)}
+                                <Title level={5} style={{ marginTop: 12, marginBottom: 4 }}>{getPeerInfo(activeTopic).fn}</Title>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {activeTopic.online ? <Badge status="success" text="在线" /> : <Badge status="default" text="离线" />}
+                                </Text>
+                            </div>
+                            <Descriptions column={1} size="small" bordered>
+                                <Descriptions.Item label="用户ID">
+                                    <Text copyable style={{ fontSize: 12 }}>{activeTopic.name || '未知'}</Text>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="会话类型">
+                                    {activeTopic.isP2PType?.() ? '单聊' : '群聊'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="未读消息">
+                                    {typeof activeTopic.unread === 'number' ? activeTopic.unread : 0}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="最后活跃">
+                                    {activeTopic.touched ? formatDate(activeTopic.touched) : '未知'}
+                                </Descriptions.Item>
+                            </Descriptions>
+                        </div>
+                    </Sider>
+                )}
             </Layout>
         </Card>
     );
