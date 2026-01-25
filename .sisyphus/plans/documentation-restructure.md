@@ -437,9 +437,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `mobile/android/app/src/main/AndroidManifest.xml` - 权限配置
 
 **Acceptance Criteria**:
-- [ ] 原生模块清单
-- [ ] 权限配置说明
-- [ ] 平台差异说明
+- [x] 原生模块清单
+- [x] 权限配置说明
+- [x] 平台差异说明
 
 ---
 
