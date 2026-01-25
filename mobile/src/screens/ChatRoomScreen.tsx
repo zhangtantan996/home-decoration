@@ -33,6 +33,8 @@ import {
     CheckCircle,
     Info,
     X,
+    Mic,
+    Keyboard as KeyboardIcon,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 // import TencentIMService from '../services/TencentIMService';
@@ -43,6 +45,7 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import * as DocumentPicker from '@react-native-documents/picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiBaseUrl } from '../config';
+import { VoiceRecorder } from '../components/VoiceRecorder';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -86,7 +89,8 @@ interface UIMessage {
     retry?:
         | { kind: 'text'; text: string }
         | { kind: 'image'; file: { uri: string; type: string; name: string; size?: number } }
-        | { kind: 'file'; file: { uri: string; type: string; name: string; size?: number } };
+        | { kind: 'file'; file: { uri: string; type: string; name: string; size?: number } }
+        | { kind: 'audio'; file: { uri: string; duration: number } };
 }
 
 const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) => {
@@ -114,6 +118,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [voiceInputMode, setVoiceInputMode] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
     const [topic, setTopic] = useState<any>(null);
     const [topicName, setTopicName] = useState<string>(conversationID || '');
@@ -738,6 +743,12 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 await TinodeService.sendTextMessage(targetTopic, message.retry.text);
             } else if (message.retry.kind === 'image') {
                 await TinodeService.sendImageMessage(targetTopic, message.retry.file.uri);
+            } else if (message.retry.kind === 'audio') {
+                await TinodeService.sendAudioMessage(
+                    targetTopic,
+                    message.retry.file.uri,
+                    message.retry.file.duration
+                );
             } else {
                 const f = message.retry.file;
                 const size = typeof f.size === 'number' && Number.isFinite(f.size) && f.size > 0 ? Math.floor(f.size) : undefined;
@@ -1033,6 +1044,50 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 message: '附件发送失败，点击该消息可重新发送',
             });
         }
+    };
+
+    const handleVoiceRecordingComplete = async (audioPath: string, duration: number) => {
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '缺少会话信息，无法发送语音',
+            });
+            return;
+        }
+
+        try {
+            await TinodeService.sendAudioMessage(targetTopic, audioPath, duration);
+        } catch (error) {
+            console.error('Voice message send failed:', error);
+
+            const failedMsg: UIMessage = {
+                id: `local_failed_${Date.now()}`,
+                senderId: TinodeService.getCurrentUserID() || '',
+                content: '[语音]',
+                createdAt: Date.now(),
+                isRead: true,
+                isMe: true,
+                sendStatus: 'failed',
+                retry: { kind: 'audio', file: { uri: audioPath, duration } },
+            };
+
+            setMessages((prev) => [...prev, failedMsg]);
+            pendingScrollToBottomRef.current = true;
+
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '语音发送失败，点击该消息可重新发送',
+            });
+        }
+    };
+
+    const handleVoiceRecordingCanceled = () => {
+        console.log('[ChatRoom] Voice recording canceled');
     };
 
     // 拍照
@@ -1437,32 +1492,58 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         >
                             <Plus size={22} color="#71717A" />
                         </TouchableOpacity>
-                        <View style={styles.inputWrapper}>
-                            <TextInput
-                                style={styles.textInput}
-                                placeholder="输入消息..."
-                                placeholderTextColor="#A1A1AA"
-                                value={inputText}
-                                onChangeText={(text) => {
-                                    setInputText(text);
-                                    if (text.length > 0) {
-                                        handleTypingIndicator();
-                                    }
-                                }}
-                                multiline
-                                maxLength={500}
-                            />
-                        </View>
                         <TouchableOpacity
-                            style={[
-                                styles.sendBtn,
-                                inputText.trim() && styles.sendBtnActive,
-                            ]}
-                            onPress={() => handleSendMessage(inputText)}
-                            disabled={!inputText.trim()}
+                            style={styles.voiceToggleBtn}
+                            onPress={() => {
+                                setVoiceInputMode(!voiceInputMode);
+                                if (!voiceInputMode) {
+                                    Keyboard.dismiss();
+                                }
+                            }}
                         >
-                            <Send size={20} color={inputText.trim() ? '#FFFFFF' : '#A1A1AA'} />
+                            {voiceInputMode ? (
+                                <KeyboardIcon size={22} color="#71717A" />
+                            ) : (
+                                <Mic size={22} color="#71717A" />
+                            )}
                         </TouchableOpacity>
+                        {voiceInputMode ? (
+                            <View style={styles.voiceRecorderWrapper}>
+                                <VoiceRecorder
+                                    onRecordingComplete={handleVoiceRecordingComplete}
+                                    onRecordingCanceled={handleVoiceRecordingCanceled}
+                                />
+                            </View>
+                        ) : (
+                            <>
+                                <View style={styles.inputWrapper}>
+                                    <TextInput
+                                        style={styles.textInput}
+                                        placeholder="输入消息..."
+                                        placeholderTextColor="#A1A1AA"
+                                        value={inputText}
+                                        onChangeText={(text) => {
+                                            setInputText(text);
+                                            if (text.length > 0) {
+                                                handleTypingIndicator();
+                                            }
+                                        }}
+                                        multiline
+                                        maxLength={500}
+                                    />
+                                </View>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.sendBtn,
+                                        inputText.trim() && styles.sendBtnActive,
+                                    ]}
+                                    onPress={() => handleSendMessage(inputText)}
+                                    disabled={!inputText.trim()}
+                                >
+                                    <Send size={20} color={inputText.trim() ? '#FFFFFF' : '#A1A1AA'} />
+                                </TouchableOpacity>
+                            </>
+                        )}
                     </View>
                     {/* Fill the iOS home-indicator safe area without inflating the input row padding. */}
                     {insets.bottom > 0 ? (
@@ -1913,6 +1994,17 @@ const styles = StyleSheet.create({
         borderRadius: 22,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    voiceToggleBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    voiceRecorderWrapper: {
+        flex: 1,
+        marginHorizontal: 8,
     },
     inputWrapper: {
         flex: 1,

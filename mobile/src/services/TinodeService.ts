@@ -541,6 +541,75 @@ class TinodeService extends SimpleEventEmitter {
         console.log('[Tinode] 文件已发送:', uploadResult.url);
     }
 
+    async sendAudioMessage(
+        topicName: string,
+        audioPath: string,
+        duration: number
+    ): Promise<void> {
+        if (!this.tinode) throw new Error('Tinode not initialized');
+
+        const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+        const audioMimeTypes: Record<string, string> = {
+            '.m4a': 'audio/mp4',
+            '.aac': 'audio/aac',
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.ogg': 'audio/ogg',
+        };
+
+        const normalizedPath = audioPath.startsWith('file://')
+            ? audioPath.replace(/^file:\/\//, '')
+            : audioPath;
+
+        let fileSize: number;
+        try {
+            const stat = await ReactNativeBlobUtil.fs.stat(normalizedPath);
+            const rawSize = (stat as { size?: string | number }).size;
+            fileSize = typeof rawSize === 'string' ? Number(rawSize) : (rawSize ?? 0);
+        } catch (err) {
+            console.error('[Tinode] Failed to stat audio file:', err);
+            throw new Error('无法读取语音文件');
+        }
+
+        if (fileSize > MAX_FILE_SIZE) {
+            throw new Error('语音文件不能超过5MB');
+        }
+
+        const fileName = normalizedPath.split('/').pop() || 'audio.m4a';
+        const extMatch = fileName.match(/\.[^.]+$/);
+        const ext = extMatch ? extMatch[0].toLowerCase() : '.m4a';
+        const mimeType = audioMimeTypes[ext] || 'audio/mp4';
+
+        const topic = this.tinode.getTopic(topicName);
+        if (!topic?.isSubscribed?.()) {
+            await topic.subscribe();
+        }
+
+        const uploadResult = await this.uploadFile(audioPath, mimeType, fileName);
+
+        const content = {
+            txt: fileName,
+            fmt: [{ at: -1, len: 0, key: 0 }],
+            ent: [
+                {
+                    tp: 'EX',
+                    data: {
+                        mime: mimeType,
+                        val: uploadResult.url,
+                        name: fileName,
+                        size: fileSize,
+                        duration: duration,
+                    },
+                },
+            ],
+        };
+
+        await topic.publish(content, true);
+
+        console.log('[Tinode] 语音消息已发送:', uploadResult.url, `时长: ${duration}ms`);
+    }
+
     private async uploadFile(fileUri: string, mimeType: string, fileName?: string): Promise<any> {
         if (!this.tinode) throw new Error('Tinode not initialized');
 
