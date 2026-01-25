@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions } from 'antd';
-import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined, SearchOutlined, UpOutlined, DownOutlined, CloseOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
 import dayjs from 'dayjs';
 
@@ -54,6 +54,9 @@ const MerchantChat: React.FC = () => {
     const [peerTyping, setPeerTyping] = useState(false);
     const [showInfoPanel, setShowInfoPanel] = useState(false);
     const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<number[]>([]);
+    const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
     
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -140,6 +143,44 @@ const MerchantChat: React.FC = () => {
             console.error('Failed to show notification:', e);
         }
     }, [notificationsEnabled]);
+
+    const handleSearch = useCallback((query: string) => {
+        setSearchQuery(query);
+        
+        if (!query.trim()) {
+            setSearchResults([]);
+            setCurrentSearchIndex(-1);
+            return;
+        }
+
+        const lowerQuery = query.toLowerCase();
+        const results: number[] = [];
+        
+        messages.forEach((msg, index) => {
+            const content = typeof msg.content === 'string' 
+                ? msg.content 
+                : msg.content?.txt || '';
+            if (content.toLowerCase().includes(lowerQuery)) {
+                results.push(index);
+            }
+        });
+
+        setSearchResults(results);
+        setCurrentSearchIndex(results.length > 0 ? 0 : -1);
+    }, [messages]);
+
+    const navigateSearch = useCallback((direction: 'next' | 'prev') => {
+        if (searchResults.length === 0) return;
+
+        let newIndex = currentSearchIndex;
+        if (direction === 'next') {
+            newIndex = (currentSearchIndex + 1) % searchResults.length;
+        } else {
+            newIndex = currentSearchIndex <= 0 ? searchResults.length - 1 : currentSearchIndex - 1;
+        }
+
+        setCurrentSearchIndex(newIndex);
+    }, [searchResults, currentSearchIndex]);
 
     useEffect(() => {
         try {
@@ -798,12 +839,52 @@ const MerchantChat: React.FC = () => {
                                                 )}
                                             </Text>
                                         </div>
-                                        <Button
-                                            type="text"
-                                            icon={<InfoCircleOutlined />}
-                                            onClick={() => setShowInfoPanel(!showInfoPanel)}
-                                            style={{ marginLeft: 'auto' }}
-                                        />
+                                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <Input
+                                                placeholder="搜索消息..."
+                                                prefix={<SearchOutlined />}
+                                                suffix={
+                                                    searchQuery && (
+                                                        <>
+                                                            <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
+                                                                {searchResults.length > 0 
+                                                                    ? `${currentSearchIndex + 1}/${searchResults.length}`
+                                                                    : '0/0'}
+                                                            </Text>
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                icon={<UpOutlined />}
+                                                                onClick={() => navigateSearch('prev')}
+                                                                disabled={searchResults.length === 0}
+                                                            />
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                icon={<DownOutlined />}
+                                                                onClick={() => navigateSearch('next')}
+                                                                disabled={searchResults.length === 0}
+                                                            />
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                icon={<CloseOutlined />}
+                                                                onClick={() => handleSearch('')}
+                                                            />
+                                                        </>
+                                                    )
+                                                }
+                                                value={searchQuery}
+                                                onChange={(e) => handleSearch(e.target.value)}
+                                                style={{ width: 250 }}
+                                                allowClear
+                                            />
+                                            <Button
+                                                type="text"
+                                                icon={<InfoCircleOutlined />}
+                                                onClick={() => setShowInfoPanel(!showInfoPanel)}
+                                            />
+                                        </div>
                                     </>
                                 )}
                             </Header>
@@ -824,9 +905,10 @@ const MerchantChat: React.FC = () => {
                                 ) : (
                                     <Image.PreviewGroup>
                                         {messages.map((msg, idx) => {
-                                            // Outgoing messages may have `from` unset (SDK routes publish ack locally).
                                             const isMe = !msg.from || (myUserId && msg.from === myUserId);
                                             const showAvatar = idx === 0 || messages[idx - 1].from !== msg.from;
+                                            const isSearchResult = searchResults.includes(idx);
+                                            const isCurrentSearchResult = searchResults[currentSearchIndex] === idx;
 
                                             return (
                                                 <div key={msg.seq || idx} style={{
@@ -844,10 +926,16 @@ const MerchantChat: React.FC = () => {
                                                     <div style={{ maxWidth: '60%' }}>
                                                         <div style={{
                                                             background: isMe ? '#FEF3C7' : '#fff',
-                                                            border: isMe ? '1px solid #FCD34D' : '1px solid #e8e8e8',
+                                                            border: isCurrentSearchResult 
+                                                                ? '2px solid #D4AF37' 
+                                                                : isSearchResult 
+                                                                    ? '2px solid #FCD34D'
+                                                                    : isMe ? '1px solid #FCD34D' : '1px solid #e8e8e8',
                                                             borderRadius: isMe ? '8px 0 8px 8px' : '0 8px 8px 8px',
                                                             padding: '10px 14px',
-                                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                                            boxShadow: isCurrentSearchResult 
+                                                                ? '0 2px 8px rgba(212, 175, 55, 0.3)'
+                                                                : '0 1px 2px rgba(0,0,0,0.05)',
                                                             color: '#333'
                                                         }}>
                                                             {renderContent(msg.content)}
