@@ -490,9 +490,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/TINODE_IM_INTEGRATION_GUIDE.md` - Tinode 集成
 
 **Acceptance Criteria**:
-- [ ] 集成步骤清晰
-- [ ] SDK 使用说明
-- [ ] 配置完整
+- [x] 集成步骤清晰
+- [x] SDK 使用说明
+- [x] 配置完整
 
 ---
 
