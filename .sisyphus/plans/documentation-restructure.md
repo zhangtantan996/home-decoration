@@ -419,8 +419,8 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `mobile/README.md` - Mobile 说明
 
 **Acceptance Criteria**:
-- [ ] 技术栈准确
-- [ ] 导航结构清晰
+- [x] 技术栈准确
+- [x] 导航结构清晰
 - [ ] React 19 特殊说明
 
 ---
