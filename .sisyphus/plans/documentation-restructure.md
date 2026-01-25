@@ -563,8 +563,8 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `deploy/README.md` - 部署说明
 
 **Acceptance Criteria**:
-- [ ] 配置说明完整
-- [ ] 各服务说明
+- [x] 配置说明完整
+- [x] 各服务说明
 - [ ] 数据持久化
 
 ---
