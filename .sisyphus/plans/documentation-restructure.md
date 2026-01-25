@@ -402,8 +402,8 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `admin/src/components/` - 组件代码
 
 **Acceptance Criteria**:
-- [ ] 组件使用规范
-- [ ] 样式规范
+- [x] 组件使用规范
+- [x] 样式规范
 
 ---
 
