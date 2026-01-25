@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message } from 'antd';
-import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined } from '@ant-design/icons';
+import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
 import dayjs from 'dayjs';
 
@@ -20,6 +20,19 @@ const formatDate = (ts: string | number) => {
     if (date.isSame(now, 'day')) return date.format('HH:mm');
     if (date.isSame(now.subtract(1, 'day'), 'day')) return '昨天';
     return date.format('M月D日');
+};
+
+const formatBytes = (bytes?: number): string => {
+    if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '未知大小';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let n = bytes;
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+        n /= 1024;
+        i += 1;
+    }
+    const fixed = i === 0 ? 0 : n < 10 ? 1 : 0;
+    return `${n.toFixed(fixed)} ${units[i]}`;
 };
 
 const MerchantChat: React.FC = () => {
@@ -334,6 +347,7 @@ const MerchantChat: React.FC = () => {
     };
 
     const [uploading, setUploading] = useState(false);
+    const [uploadingFile, setUploadingFile] = useState(false);
 
     const handleImageUpload = async (file: File) => {
         if (!file.type.startsWith('image/')) {
@@ -372,6 +386,44 @@ const MerchantChat: React.FC = () => {
         return false;
     };
 
+    const handleFileUpload = async (file: File) => {
+        if (file.type && file.type.startsWith('image/')) {
+            message.error('图片请使用图片按钮上传');
+            return false;
+        }
+
+        // Keep consistent with backend merchant upload limit (20MB).
+        if (file.size > 20 * 1024 * 1024) {
+            message.error('文件大小不能超过 20MB');
+            return false;
+        }
+
+        if (!activeTopicName) {
+            message.error('请先选择一个会话');
+            return false;
+        }
+
+        setUploadingFile(true);
+        try {
+            await TinodeService.sendFileMessage(activeTopicName, file);
+            message.success('文件已发送');
+
+            if (activeTopic) {
+                const msgs = TinodeService.listMessages(activeTopic);
+                setMessages(msgs);
+            }
+
+            scheduleLoadConversations();
+        } catch (error) {
+            console.error('File send failed:', error);
+            message.error('文件发送失败，请重试');
+        } finally {
+            setUploadingFile(false);
+        }
+
+        return false;
+    };
+
     const getPeerInfo = (topic: any) => {
         // `p2pPeerDesc()` may return undefined (e.g. non-P2P topics or missing sub cache).
         const peerDesc = typeof topic?.p2pPeerDesc === 'function' ? topic.p2pPeerDesc() : undefined;
@@ -392,6 +444,11 @@ const MerchantChat: React.FC = () => {
         if (typeof content === 'string') return content;
         if (typeof content === 'object' && content !== null) {
             if (Array.isArray(content.ent)) {
+                const apiUrl = typeof import.meta.env.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL : '';
+                const backendOrigin = apiUrl
+                    ? apiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
+                    : (window.location.hostname === 'localhost' ? 'http://localhost:8080' : '');
+
                 const imEnt = content.ent.find((e: any) => e?.tp === 'IM');
                 const data = imEnt?.data;
                 const raw =
@@ -402,10 +459,6 @@ const MerchantChat: React.FC = () => {
                 const rawValue = typeof raw === 'string' ? raw.trim() : '';
                 if (rawValue) {
                     const mime = typeof data?.mime === 'string' && data.mime.trim() ? data.mime : 'image/jpeg';
-                    const apiUrl = typeof import.meta.env.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL : '';
-                    const backendOrigin = apiUrl
-                        ? apiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
-                        : (window.location.hostname === 'localhost' ? 'http://localhost:8080' : '');
 
                     const src = (() => {
                         if (rawValue.startsWith('data:')) return rawValue;
@@ -431,6 +484,81 @@ const MerchantChat: React.FC = () => {
                         />
                     );
                 }
+
+                const exEnt = content.ent.find((e: any) => e?.tp === 'EX' && e?.data);
+                if (exEnt) {
+                    const fileData = exEnt.data;
+                    const rawUrl = typeof fileData?.val === 'string' && fileData.val.trim()
+                        ? fileData.val.trim()
+                        : (typeof fileData?.ref === 'string' ? fileData.ref.trim() : '');
+
+                    const href = (() => {
+                        if (!rawUrl) return '';
+                        if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) return rawUrl;
+                        if (rawUrl.startsWith('/')) return backendOrigin ? `${backendOrigin}${rawUrl}` : rawUrl;
+                        return rawUrl;
+                    })();
+
+                    const fileName =
+                        (typeof fileData?.name === 'string' && fileData.name.trim())
+                            ? fileData.name.trim()
+                            : (typeof content?.txt === 'string' && content.txt.trim() ? content.txt.trim() : '文件');
+
+                    const rawSize = fileData?.size;
+                    const fileSize = typeof rawSize === 'number' && Number.isFinite(rawSize) && rawSize > 0 ? Math.floor(rawSize) : undefined;
+                    const sizeText = formatBytes(fileSize);
+
+                    return (
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                                if (href) window.open(href, '_blank', 'noopener,noreferrer');
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && href) window.open(href, '_blank', 'noopener,noreferrer');
+                            }}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                padding: '10px 12px',
+                                border: '1px solid #e8e8e8',
+                                borderRadius: 6,
+                                background: '#fff',
+                                cursor: href ? 'pointer' : 'default',
+                                maxWidth: 320,
+                            }}
+                        >
+                            <div style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 8,
+                                background: '#f5f5f5',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                            }}>
+                                <PaperClipOutlined style={{ color: '#999', fontSize: 18 }} />
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{
+                                    fontWeight: 500,
+                                    color: '#333',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                }}>
+                                    {fileName}
+                                </div>
+                                <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                                    {sizeText}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
             }
 
             return content.txt || JSON.stringify(content);
@@ -447,6 +575,9 @@ const MerchantChat: React.FC = () => {
             // Drafty image payload from mobile.
             if (Array.isArray(content.ent) && content.ent.some((e: any) => e?.tp === 'IM')) {
                 return '【图片】';
+            }
+            if (Array.isArray(content.ent) && content.ent.some((e: any) => e?.tp === 'EX')) {
+                return '【文件】';
             }
         }
         return '';
@@ -585,52 +716,54 @@ const MerchantChat: React.FC = () => {
                                         <Text type="secondary">暂无消息，打个招呼吧</Text>
                                     </div>
                                 ) : (
-                                    messages.map((msg, idx) => {
-                                        // Outgoing messages may have `from` unset (SDK routes publish ack locally).
-                                        const isMe = !msg.from || (myUserId && msg.from === myUserId);
-                                        const showAvatar = idx === 0 || messages[idx - 1].from !== msg.from;
-                                        
-                                        return (
-                                            <div key={msg.seq || idx} style={{ 
-                                                display: 'flex', 
-                                                flexDirection: isMe ? 'row-reverse' : 'row',
-                                                marginBottom: 16 
-                                            }}>
-                                                <div style={{ flexShrink: 0, marginLeft: isMe ? 12 : 0, marginRight: isMe ? 0 : 12, width: 32 }}>
-                                                    {showAvatar && (isMe ? 
-                                                        <Avatar style={{ backgroundColor: '#D4AF37' }}>M</Avatar> : 
-                                                        renderAvatar(getPeerInfo(activeTopic).photo, getPeerInfo(activeTopic).fn)
-                                                    )}
-                                                </div>
-                                                
-                                                <div style={{ maxWidth: '60%' }}>
-                                                    <div style={{ 
-                                                        background: isMe ? '#FEF3C7' : '#fff',
-                                                        border: isMe ? '1px solid #FCD34D' : '1px solid #e8e8e8',
-                                                        borderRadius: isMe ? '8px 0 8px 8px' : '0 8px 8px 8px',
-                                                        padding: '10px 14px',
-                                                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                                                        color: '#333'
-                                                    }}>
-                                                        {renderContent(msg.content)}
+                                    <Image.PreviewGroup>
+                                        {messages.map((msg, idx) => {
+                                            // Outgoing messages may have `from` unset (SDK routes publish ack locally).
+                                            const isMe = !msg.from || (myUserId && msg.from === myUserId);
+                                            const showAvatar = idx === 0 || messages[idx - 1].from !== msg.from;
+
+                                            return (
+                                                <div key={msg.seq || idx} style={{
+                                                    display: 'flex',
+                                                    flexDirection: isMe ? 'row-reverse' : 'row',
+                                                    marginBottom: 16
+                                                }}>
+                                                    <div style={{ flexShrink: 0, marginLeft: isMe ? 12 : 0, marginRight: isMe ? 0 : 12, width: 32 }}>
+                                                        {showAvatar && (isMe ?
+                                                            <Avatar style={{ backgroundColor: '#D4AF37' }}>M</Avatar> :
+                                                            renderAvatar(getPeerInfo(activeTopic).photo, getPeerInfo(activeTopic).fn)
+                                                        )}
                                                     </div>
-                                                    <div style={{ 
-                                                        textAlign: isMe ? 'right' : 'left', 
-                                                        marginTop: 4, 
-                                                        fontSize: 10, 
-                                                        color: '#999' 
-                                                    }}>
-                                                        {formatTime(msg.ts)}
+
+                                                    <div style={{ maxWidth: '60%' }}>
+                                                        <div style={{
+                                                            background: isMe ? '#FEF3C7' : '#fff',
+                                                            border: isMe ? '1px solid #FCD34D' : '1px solid #e8e8e8',
+                                                            borderRadius: isMe ? '8px 0 8px 8px' : '0 8px 8px 8px',
+                                                            padding: '10px 14px',
+                                                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                                            color: '#333'
+                                                        }}>
+                                                            {renderContent(msg.content)}
+                                                        </div>
+                                                        <div style={{
+                                                            textAlign: isMe ? 'right' : 'left',
+                                                            marginTop: 4,
+                                                            fontSize: 10,
+                                                            color: '#999'
+                                                        }}>
+                                                            {formatTime(msg.ts)}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })
+                                            );
+                                        })}
+                                    </Image.PreviewGroup>
                                 )}
                                 <div ref={messagesEndRef} />
                             </div>
                             
-                            <div style={{ padding: 20, background: '#fff', borderTop: '1px solid #e8e8e8' }}>
+                                <div style={{ padding: 20, background: '#fff', borderTop: '1px solid #e8e8e8' }}>
                                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                                     <Upload
                                         accept="image/*"
@@ -643,6 +776,19 @@ const MerchantChat: React.FC = () => {
                                             disabled={sending || !activeTopicName}
                                         >
                                             图片
+                                        </Button>
+                                    </Upload>
+                                    <Upload
+                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
+                                        showUploadList={false}
+                                        beforeUpload={handleFileUpload}
+                                    >
+                                        <Button
+                                            icon={<PaperClipOutlined />}
+                                            loading={uploadingFile}
+                                            disabled={sending || !activeTopicName}
+                                        >
+                                            文件
                                         </Button>
                                     </Upload>
                                     <TextArea

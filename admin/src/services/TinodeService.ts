@@ -350,11 +350,57 @@ class TinodeService extends SimpleEventEmitter {
         await topic.subscribe();
       }
 
-      // 4. 发送消息（使用 publish 而不是 publishMessage）
-      await topic.publish(content);
+      // 4. 发送消息（使用 publish 而不是 publishMessage；尽量避免 server echo）
+      await topic.publish(content, true);
       console.log('[Tinode] Image sent successfully');
     } catch (err) {
       console.error('[Tinode] Image upload failed', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Send file attachment message (Drafty EX entity)
+   */
+  async sendFileMessage(topicName: string, file: File): Promise<void> {
+    if (!this.tinode) throw new Error('Tinode not initialized');
+
+    const topic = this.tinode.getTopic(topicName);
+    if (!topic) throw new Error(`Topic ${topicName} not found`);
+
+    const safeFileName = typeof file?.name === 'string' && file.name.trim() ? file.name.trim() : '[文件]';
+    const mimeType = typeof file?.type === 'string' && file.type.trim() ? file.type : 'application/octet-stream';
+
+    try {
+      // 1. Upload file
+      const uploadResult = await this.uploadFile(file);
+
+      // 2. Publish Drafty EX payload (mirror mobile implementation)
+      const content = {
+        txt: safeFileName,
+        fmt: [{ at: 0, len: safeFileName.length, tp: 'EX', key: 0 }],
+        ent: [
+          {
+            tp: 'EX',
+            data: {
+              mime: mimeType,
+              val: uploadResult.url,
+              name: safeFileName,
+              size: typeof file?.size === 'number' && Number.isFinite(file.size) && file.size > 0 ? Math.floor(file.size) : 0,
+            },
+          },
+        ],
+      };
+
+      if (!topic.isSubscribed?.()) {
+        await topic.subscribe();
+      }
+
+      // Avoid server echo where supported.
+      await topic.publish(content, true);
+      console.log('[Tinode] File sent successfully:', safeFileName);
+    } catch (err) {
+      console.error('[Tinode] File upload failed', err);
       throw err;
     }
   }

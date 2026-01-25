@@ -80,6 +80,13 @@ interface UIMessage {
     createdAt: number;
     isRead: boolean;
     isMe: boolean;
+
+    // Client-only send status for retry UX (Tinode publish failures only).
+    sendStatus?: 'sending' | 'failed';
+    retry?:
+        | { kind: 'text'; text: string }
+        | { kind: 'image'; file: { uri: string; type: string; name: string; size?: number } }
+        | { kind: 'file'; file: { uri: string; type: string; name: string; size?: number } };
 }
 
 const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) => {
@@ -630,25 +637,84 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         */
 
          // Tinode Implementation
+         const trimmed = text.trim();
+         const targetTopic = conversationID || topicName;
+
          try {
              // With Tinode SDK, `topic.publish()` will route the sent message through `topic.onData`.
-             // Avoid adding local placeholders here to prevent duplicates.
+             // Avoid adding optimistic placeholders on success-path to prevent duplicates.
              setInputText('');
              setShowQuickReplies(false);
              Keyboard.dismiss();
 
-             const targetTopic = conversationID || topicName;
              if (!targetTopic) throw new Error('Missing Tinode topic');
-             await TinodeService.sendTextMessage(targetTopic, text.trim());
+             await TinodeService.sendTextMessage(targetTopic, trimmed);
          } catch (error) {
              console.error('Tinode send failed:', error);
+
+             // Add a local failed placeholder so user can tap to retry.
+             const failedMsg: UIMessage = {
+                 id: `local_failed_${Date.now()}`,
+                 senderId: TinodeService.getCurrentUserID() || '',
+                 content: parseEmojiText(trimmed),
+                 createdAt: Date.now(),
+                 isRead: true,
+                 isMe: true,
+                 sendStatus: 'failed',
+                 retry: { kind: 'text', text: trimmed },
+             };
+             setMessages((prev) => [...prev, failedMsg]);
+             pendingScrollToBottomRef.current = true;
+
              setDialogConfig({
                  visible: true,
                  type: 'info',
                  title: '发送失败',
-                 message: '消息发送失败，请重试',
+                 message: '消息发送失败，点击该消息可重新发送',
              });
          }
+    };
+
+    const resendFailedMessage = async (message: UIMessage) => {
+        if (!message.retry || message.sendStatus !== 'failed') return;
+
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '重发失败',
+                message: '缺少会话信息，无法重发',
+            });
+            return;
+        }
+
+        const messageId = message.id;
+        setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, sendStatus: 'sending' } : m)));
+        try {
+            if (message.retry.kind === 'text') {
+                await TinodeService.sendTextMessage(targetTopic, message.retry.text);
+            } else if (message.retry.kind === 'image') {
+                await TinodeService.sendImageMessage(targetTopic, message.retry.file.uri);
+            } else {
+                const f = message.retry.file;
+                const size = typeof f.size === 'number' && Number.isFinite(f.size) && f.size > 0 ? Math.floor(f.size) : undefined;
+                await TinodeService.sendFileMessage(targetTopic, f.uri, f.name, f.type, size);
+            }
+
+            // Remove local placeholder; Tinode will add the actual message via onData.
+            setMessages((prev) => prev.filter((m) => m.id !== messageId));
+            pendingScrollToBottomRef.current = true;
+        } catch (e) {
+            console.error('Resend failed:', e);
+            setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, sendStatus: 'failed' } : m)));
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '重发失败',
+                message: '重发失败，请检查网络后重试',
+            });
+        }
     };
 
     // 电话按钮点击
@@ -881,11 +947,48 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             }
         } catch (error) {
             console.error('Tinode attachment send failed:', error);
+
+            const isImage = (() => {
+                const mime = (file.type || '').trim().toLowerCase();
+                const name = (file.name || '').trim();
+                const ext = name.split('.').pop()?.toLowerCase();
+                const byMime = mime.startsWith('image/');
+                const byExt =
+                    !!ext &&
+                    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'svg'].includes(ext);
+                return byMime || byExt;
+            })();
+
+            const retryPayload: UIMessage['retry'] = isImage
+                ? { kind: 'image', file }
+                : { kind: 'file', file };
+
+            const failedMsg: UIMessage = {
+                id: `local_failed_${Date.now()}`,
+                senderId: TinodeService.getCurrentUserID() || '',
+                content: isImage ? '[图片]' : (file.name || '[文件]'),
+                createdAt: Date.now(),
+                isRead: true,
+                isMe: true,
+                sendStatus: 'failed',
+                retry: retryPayload,
+                image: isImage && file.uri ? { url: file.uri } : undefined,
+                file: !isImage ? {
+                    url: file.uri,
+                    name: file.name || '[文件]',
+                    size: typeof file.size === 'number' ? file.size : undefined,
+                    mime: file.type,
+                } : undefined,
+            };
+
+            setMessages((prev) => [...prev, failedMsg]);
+            pendingScrollToBottomRef.current = true;
+
             setDialogConfig({
                 visible: true,
                 type: 'info',
                 title: '发送失败',
-                message: '附件发送失败，请重试',
+                message: '附件发送失败，点击该消息可重新发送',
             });
         }
     };
@@ -1131,7 +1234,13 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         {image?.url ? (
                             <TouchableOpacity
                                 activeOpacity={0.9}
-                                onPress={() => openImagePreview(image.url)}
+                                onPress={() => {
+                                    if (message.sendStatus === 'failed' && message.retry) {
+                                        resendFailedMessage(message);
+                                        return;
+                                    }
+                                    openImagePreview(image.url);
+                                }}
                             >
                                 <Image
                                     source={{ uri: image.url }}
@@ -1143,7 +1252,13 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             <TouchableOpacity
                                 activeOpacity={0.7}
                                 style={styles.fileCard}
-                                onPress={() => openAttachmentUrl(file.url)}
+                                onPress={() => {
+                                    if (message.sendStatus === 'failed' && message.retry) {
+                                        resendFailedMessage(message);
+                                        return;
+                                    }
+                                    openAttachmentUrl(file.url);
+                                }}
                             >
                                 <View style={styles.fileCardLeft}>
                                     <View style={[styles.fileIcon, isMe && styles.fileIconMe]}>
@@ -1162,9 +1277,29 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 <ChevronRight size={18} color={isMe ? '#FFFFFF' : '#A1A1AA'} />
                             </TouchableOpacity>
                         ) : (
-                            <Text style={[styles.messageText, isMe && styles.messageTextMe]}>{message.content}</Text>
+                            message.sendStatus === 'failed' && message.retry ? (
+                                <TouchableOpacity activeOpacity={0.7} onPress={() => resendFailedMessage(message)}>
+                                    <Text style={[styles.messageText, isMe && styles.messageTextMe]}>{message.content}</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <Text style={[styles.messageText, isMe && styles.messageTextMe]}>{message.content}</Text>
+                            )
                         )}
                     </View>
+
+                    {isMe && message.sendStatus ? (
+                        <View style={styles.sendStatus}>
+                            {message.sendStatus === 'sending' ? (
+                                <ActivityIndicator size="small" color="#A1A1AA" />
+                            ) : (
+                                <TouchableOpacity activeOpacity={0.7} onPress={() => resendFailedMessage(message)}>
+                                    <View style={styles.failedDot}>
+                                        <Text style={styles.failedDotText}>!</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    ) : null}
                 </View>
             </View>
         );
@@ -1563,6 +1698,26 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 10,
         borderRadius: 16,
+    },
+    sendStatus: {
+        marginHorizontal: 8,
+        marginBottom: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    failedDot: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: '#EF4444',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    failedDotText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 14,
     },
     messageBubbleImage: {
         paddingHorizontal: 0,

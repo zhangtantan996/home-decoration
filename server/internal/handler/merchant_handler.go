@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"log"
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -10,6 +9,7 @@ import (
 	"home-decoration-server/internal/tinode"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -108,7 +108,7 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		response.Success(c, gin.H{
-			"token": tokenString,
+			"token":       tokenString,
 			"tinodeToken": tinodeToken,
 			"provider": gin.H{
 				"id":           provider.ID,
@@ -164,21 +164,21 @@ func MerchantGetInfo(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"id":              provider.ID,
-		"name":            displayName,
-		"avatar":          imgutil.GetFullImageURL(user.Avatar),
-		"providerType":    provider.ProviderType,
-		"companyName":     provider.CompanyName,
-		"rating":          provider.Rating,
-		"completedCnt":    provider.CompletedCnt,
-		"verified":        provider.Verified,
-		"yearsExperience": provider.YearsExperience,
-		"specialty":       specialty,
-		"serviceArea":     serviceAreaNames, // 返回区域名称数组
+		"id":               provider.ID,
+		"name":             displayName,
+		"avatar":           imgutil.GetFullImageURL(user.Avatar),
+		"providerType":     provider.ProviderType,
+		"companyName":      provider.CompanyName,
+		"rating":           provider.Rating,
+		"completedCnt":     provider.CompletedCnt,
+		"verified":         provider.Verified,
+		"yearsExperience":  provider.YearsExperience,
+		"specialty":        specialty,
+		"serviceArea":      serviceAreaNames, // 返回区域名称数组
 		"serviceAreaCodes": serviceAreaCodes, // 返回区域代码数组（用于编辑）
-		"introduction":    provider.ServiceIntro,
-		"teamSize":        provider.TeamSize,
-		"officeAddress":   provider.OfficeAddress,
+		"introduction":     provider.ServiceIntro,
+		"teamSize":         provider.TeamSize,
+		"officeAddress":    provider.OfficeAddress,
 	})
 }
 
@@ -592,7 +592,8 @@ func MerchantUploadImage(c *gin.Context) {
 	// 验证文件类型
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" &&
-		ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".zip" && ext != ".rar" {
+		ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".xls" && ext != ".xlsx" &&
+		ext != ".ppt" && ext != ".pptx" && ext != ".txt" && ext != ".zip" && ext != ".rar" {
 		response.Error(c, 400, "不支持的文件格式")
 		return
 	}
