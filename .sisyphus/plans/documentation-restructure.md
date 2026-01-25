@@ -251,9 +251,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/BUSINESS_FLOW.md` - 业务流程
 
 **Acceptance Criteria**:
-- [ ] 核心流程清晰
-- [ ] 包含流程图
-- [ ] 状态说明完整
+- [x] 核心流程清晰
+- [x] 包含流程图
+- [x] 状态说明完整
 
 ---
 
