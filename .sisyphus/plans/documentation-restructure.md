@@ -348,8 +348,8 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/TINODE_IM_INTEGRATION_GUIDE.md` - Tinode 集成
 
 **Acceptance Criteria**:
-- [ ] API 列表完整
-- [ ] Tinode 集成说明
+- [x] API 列表完整
+- [x] Tinode 集成说明
 
 ---
 
