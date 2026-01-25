@@ -198,9 +198,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/TROUBLESHOOTING.md` - 问题排查
 
 **Acceptance Criteria**:
-- [ ] 覆盖 Top 10 常见问题
-- [ ] 解决方案可操作
-- [ ] 按类别组织
+- [x] 覆盖 Top 10 常见问题
+- [x] 解决方案可操作
+- [x] 按类别组织
 
 ---
 
