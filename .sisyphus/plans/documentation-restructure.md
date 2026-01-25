@@ -473,9 +473,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/TINODE_IM_INTEGRATION_GUIDE.md` - Tinode 集成
 
 **Acceptance Criteria**:
-- [ ] 架构清晰
-- [ ] 选型理由
-- [ ] 包含架构图
+- [x] 架构清晰
+- [x] 选型理由
+- [x] 包含架构图
 
 ---
 
