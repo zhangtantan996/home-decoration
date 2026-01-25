@@ -332,8 +332,8 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `server/docs/API接口文档.md` - 项目模块
 
 **Acceptance Criteria**:
-- [ ] API 列表完整
-- [ ] 请求/响应示例
+- [x] API 列表完整
+- [x] 请求/响应示例
 
 ---
 
