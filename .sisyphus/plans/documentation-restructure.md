@@ -216,9 +216,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/PENDING_TASKS.md` - 待办功能
 
 **Acceptance Criteria**:
-- [ ] 功能清单完整
-- [ ] 状态标注准确
-- [ ] 反映最新开发进度
+- [x] 功能清单完整
+- [x] 状态标注准确
+- [x] 反映最新开发进度
 
 ---
 
