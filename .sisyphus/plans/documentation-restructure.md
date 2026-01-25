@@ -127,9 +127,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `docs/CLAUDE_DEV_GUIDE.md:20-30` - 版本约束
 
 **Acceptance Criteria**:
-- [ ] 所有技术栈版本准确
-- [ ] React 版本分裂有明确说明
-- [ ] 包含版本约束原因
+- [x] 所有技术栈版本准确
+- [x] React 版本分裂有明确说明
+- [x] 包含版本约束原因
 
 ---
 
