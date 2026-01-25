@@ -53,6 +53,7 @@ const MerchantChat: React.FC = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [peerTyping, setPeerTyping] = useState(false);
     const [showInfoPanel, setShowInfoPanel] = useState(false);
+    const [notificationsEnabled, setNotificationsEnabled] = useState(false);
     
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -94,6 +95,51 @@ const MerchantChat: React.FC = () => {
         forceScrollToBottomRef.current = false;
         isNearBottomRef.current = true;
     }, [messages, loadingHistory, scrollToBottom]);
+
+    const requestNotificationPermission = useCallback(async () => {
+        if (!('Notification' in window)) {
+            console.warn('Browser does not support notifications');
+            return false;
+        }
+
+        if (Notification.permission === 'granted') {
+            setNotificationsEnabled(true);
+            return true;
+        }
+
+        if (Notification.permission !== 'denied') {
+            const permission = await Notification.requestPermission();
+            const granted = permission === 'granted';
+            setNotificationsEnabled(granted);
+            return granted;
+        }
+
+        return false;
+    }, []);
+
+    const showNotification = useCallback((title: string, body: string, topicName: string) => {
+        if (!notificationsEnabled || document.hasFocus()) {
+            return;
+        }
+
+        try {
+            const notification = new Notification(title, {
+                body,
+                icon: '/favicon.ico',
+                tag: topicName,
+                requireInteraction: false,
+            });
+
+            notification.onclick = () => {
+                window.focus();
+                notification.close();
+            };
+
+            setTimeout(() => notification.close(), 5000);
+        } catch (e) {
+            console.error('Failed to show notification:', e);
+        }
+    }, [notificationsEnabled]);
 
     useEffect(() => {
         try {
@@ -147,6 +193,8 @@ const MerchantChat: React.FC = () => {
         };
 
         initTinode();
+        
+        requestNotificationPermission();
         
         const onConnected = () => {
             setIsConnected(true);
@@ -299,6 +347,16 @@ const MerchantChat: React.FC = () => {
             // Real-time updates: use topic-level onData which is called after Tinode routes data into caches.
             topic.onData = (data: any) => {
                 if (typeof data?.seq !== 'number') return;
+                
+                const isFromPeer = data.from && myUserId && data.from !== myUserId;
+                if (isFromPeer) {
+                    const peerInfo = getPeerInfo(topic);
+                    const contentText = typeof data.content === 'string' 
+                        ? data.content 
+                        : data.content?.txt || '新消息';
+                    showNotification(peerInfo.fn, contentText, topic.name);
+                }
+                
                 setMessages(TinodeService.listMessages(topic));
                 // Mark as read while the chat is open.
                 topic.noteRead?.();
