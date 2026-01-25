@@ -213,16 +213,36 @@ const MessageScreen: React.FC = () => {
                     if (typeof obj.txt === 'string') return obj.txt;
 
                     const ent = obj.ent;
-                    const hasImage =
-                        Array.isArray(ent) &&
-                        ent.some((e) => {
-                            if (!e || typeof e !== 'object') return false;
-                            const tp = (e as { tp?: unknown }).tp;
-                            return tp === 'IM';
-                        });
+                    if (Array.isArray(ent)) {
+                        type DraftyEntity = {
+                            tp?: string;
+                            data?: {
+                                mime?: unknown;
+                                duration?: unknown;
+                            };
+                        };
+                        const draftyEntities = ent as DraftyEntity[];
 
-                    if (hasImage) {
-                        return '【图片】';
+                        const audioEntity = draftyEntities.find(
+                            (entity) =>
+                                entity?.tp === 'EX' &&
+                                typeof entity.data?.mime === 'string' &&
+                                entity.data.mime.startsWith('audio/')
+                        );
+
+                        if (audioEntity) {
+                            const durationMs =
+                                typeof audioEntity.data?.duration === 'number'
+                                    ? audioEntity.data.duration
+                                    : 0;
+                            const durationSeconds = Math.floor(durationMs / 1000);
+                            return `【语音 ${durationSeconds}s】`;
+                        }
+
+                        const hasImage = draftyEntities.some((entity) => entity?.tp === 'IM');
+                        if (hasImage) {
+                            return '【图片】';
+                        }
                     }
                 }
                 return '';
