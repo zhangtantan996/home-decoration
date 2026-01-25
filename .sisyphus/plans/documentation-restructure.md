@@ -366,9 +366,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `server/internal/model/` - GORM 模型
 
 **Acceptance Criteria**:
-- [ ] 核心表结构完整
-- [ ] 表关系清晰
-- [ ] 字段说明准确
+- [x] 核心表结构完整
+- [x] 表关系清晰
+- [x] 字段说明准确
 
 ---
 
