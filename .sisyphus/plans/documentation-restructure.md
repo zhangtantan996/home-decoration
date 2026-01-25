@@ -384,9 +384,9 @@ Phase 8 (规范) <── Phase 7 (部署) <── Phase 6 (IM) <── Phase 5 (
 - `admin/README.md` - Admin 说明
 
 **Acceptance Criteria**:
-- [ ] 技术栈准确
-- [ ] 目录结构清晰
-- [ ] 状态管理说明
+- [x] 技术栈准确
+- [x] 目录结构清晰
+- [x] 状态管理说明
 
 ---
 
