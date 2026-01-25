@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
-import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions, Dropdown } from 'antd';
-import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined, SearchOutlined, UpOutlined, DownOutlined, CloseOutlined, CopyOutlined } from '@ant-design/icons';
+import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions, Dropdown, Slider } from 'antd';
+import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined, SearchOutlined, UpOutlined, DownOutlined, CloseOutlined, CopyOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
 import dayjs from 'dayjs';
 
@@ -33,6 +33,88 @@ const formatBytes = (bytes?: number): string => {
     }
     const fixed = i === 0 ? 0 : n < 10 ? 1 : 0;
     return `${n.toFixed(fixed)} ${units[i]}`;
+};
+
+const CustomAudioPlayer: React.FC<{ audioUrl: string; duration?: number }> = ({ audioUrl, duration: initialDuration }) => {
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(initialDuration ? initialDuration / 1000 : 0);
+
+    const togglePlay = () => {
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+        }
+    };
+
+    const handleSeek = (value: number) => {
+        if (audioRef.current) {
+            audioRef.current.currentTime = value;
+            setCurrentTime(value);
+        }
+    };
+
+    const formatAudioTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '8px 12px',
+            background: '#fff',
+            border: '1px solid #e8e8e8',
+            borderRadius: 6,
+            minWidth: 260,
+            maxWidth: 320
+        }}>
+            <audio
+                ref={audioRef}
+                src={audioUrl}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                onLoadedMetadata={(e) => {
+                    const d = e.currentTarget.duration;
+                    if (Number.isFinite(d)) {
+                         setDuration(d);
+                    }
+                }}
+                onEnded={() => {
+                    setIsPlaying(false);
+                    setCurrentTime(0);
+                }}
+            />
+            <Button
+                type="text"
+                shape="circle"
+                icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={togglePlay}
+                style={{ marginRight: 8, color: '#D4AF37' }}
+            />
+            <div style={{ flex: 1, marginRight: 12 }}>
+                <Slider
+                    min={0}
+                    max={duration || 100}
+                    value={currentTime}
+                    onChange={handleSeek}
+                    tooltip={{ formatter: (val) => formatAudioTime(val || 0) }}
+                    style={{ margin: '6px 0' }}
+                    trackStyle={{ backgroundColor: '#D4AF37' }}
+                    handleStyle={{ borderColor: '#D4AF37' }}
+                />
+            </div>
+            <span style={{ fontSize: 12, color: '#999', width: 35, textAlign: 'right', userSelect: 'none' }}>
+                {formatAudioTime(currentTime)}
+            </span>
+        </div>
+    );
 };
 
 const MerchantChat: React.FC = () => {
@@ -635,6 +717,24 @@ const MerchantChat: React.FC = () => {
                 const exEnt = content.ent.find((e: any) => e?.tp === 'EX' && e?.data);
                 if (exEnt) {
                     const fileData = exEnt.data;
+
+                    if (typeof fileData?.mime === 'string' && fileData.mime.startsWith('audio/')) {
+                        const rawUrl = typeof fileData?.val === 'string' && fileData.val.trim()
+                            ? fileData.val.trim()
+                            : (typeof fileData?.ref === 'string' ? fileData.ref.trim() : '');
+
+                        const audioUrl = (() => {
+                            if (!rawUrl) return '';
+                            if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) return rawUrl;
+                            if (rawUrl.startsWith('/')) return backendOrigin ? `${backendOrigin}${rawUrl}` : rawUrl;
+                            return rawUrl;
+                        })();
+
+                        if (audioUrl) {
+                            return <CustomAudioPlayer audioUrl={audioUrl} duration={fileData.duration} />;
+                        }
+                    }
+
                     const rawUrl = typeof fileData?.val === 'string' && fileData.val.trim()
                         ? fileData.val.trim()
                         : (typeof fileData?.ref === 'string' ? fileData.ref.trim() : '');
@@ -724,7 +824,8 @@ const MerchantChat: React.FC = () => {
                 return '【图片】';
             }
             if (Array.isArray(content.ent) && content.ent.some((e: any) => e?.tp === 'EX')) {
-                return '【文件】';
+                const isAudio = content.ent.some((e: any) => e?.tp === 'EX' && e?.data?.mime?.startsWith('audio/'));
+                return isAudio ? '【语音】' : '【文件】';
             }
         }
         return '';
