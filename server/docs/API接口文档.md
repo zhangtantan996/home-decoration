@@ -1,4 +1,5 @@
 # 家装平台 API 接口文档
+> ⚠️ 本文档为历史存档，新接口说明及最新格式请参考 `documentation/04-后端开发/API接口/认证模块.md`，以该目录内容为准。
 
 ## 目录
 - [1. 全局说明](#1-全局说明)
@@ -180,19 +181,19 @@
 
 ---
 
-### 2.5 ????????code ??????
-??: POST /api/v1/auth/wechat/mini/login
-??: ?? wx.login ??? code ???????????????????
-??: ????
-????:
-`json
+### 2.5 微信小程序登录
+**接口**: `POST /api/v1/auth/wechat/mini/login`
+**描述**: 客户端通过 `wx.login` 获取 code，并调用接口让后端通过 `wechatAuthService.Login` 验证，登录成功后返回 JWT；若账号未绑定手机号，则返回绑定凭证。
+**认证**: 无需认证
+**请求参数**:
+```json
 {
-    "code": "wxlogin-code"
+    "code": "wx.login 返回的 code"
 }
-`
+```
 
-????????????:
-`json
+**响应示例（已绑定手机号）**:
+```json
 {
     "code": 0,
     "message": "success",
@@ -203,16 +204,16 @@
         "user": {
             "id": 1,
             "phone": "13800138000",
-            "nickname": "??3800",
-            "avatar": "",
+            "nickname": "小程序用户",
+            "avatar": "https://...",
             "userType": 1
         }
     }
 }
-`
+```
 
-????????????:
-`json
+**响应示例（需绑定手机号）**:
+```json
 {
     "code": 0,
     "message": "success",
@@ -222,7 +223,11 @@
         "expiresIn": 300
     }
 }
-`
+```
+
+**备注**:
+- 若 `wechatAuthService.Login` 返回 `NeedBindPhone`，需要引导用户调用 `POST /api/v1/auth/wechat/mini/bind-phone` 完成手机号绑定并获取最终 Token。
+- 返回的 `bindToken` 仅限短期使用（`expiresIn` 单位为秒）。
 
 ---
 

@@ -1060,3 +1060,63 @@ Examples:
 - Button-level permission control using `hasPermission()` helper
 - Role keys array for role-based UI logic
 
+
+## 业务流程图文档创建 (2026-01-25)
+
+### 完成内容
+- 创建了 `documentation/04-后端开发/API接口/00-业务流程图.md`
+- 使用 Mermaid sequenceDiagram 绘制了 4 个核心业务流程：
+  1. 用户认证流程（注册/登录/Token刷新/微信小程序登录）
+  2. 预约到订单流程（预约→支付意向金→接单→提交方案→确认方案→生成订单→支付）
+  3. 项目进度流程（创建项目→充值托管→施工日志→节点验收→资金释放→项目完工）
+  4. 商家入驻流程（提交申请→查询状态→管理员审核→商家登录→完善资料）
+
+### 技术要点
+- **Mermaid 语法**: 使用 `sequenceDiagram` 绘制时序图，支持 GitHub/GitLab 直接渲染
+- **分阶段展示**: 使用 `rect` 矩形框对业务阶段进行逻辑分组，不同颜色区分不同阶段
+- **条件分支**: 使用 `alt/else` 表示审核通过/拒绝、验收通过/不通过等分支逻辑
+- **循环操作**: 使用 `loop` 表示施工日志等重复操作
+- **API 端点标注**: 在每个请求箭头上标注 HTTP 方法和路径，便于开发人员快速定位接口
+
+### 业务流程关键点
+1. **认证流程**:
+   - 支持验证码登录和密码登录两种方式
+   - Token 刷新机制：旧 RefreshToken 加入黑名单，生成新的 Token 和 RefreshToken
+   - 微信小程序登录：未绑定手机号时返回 tempToken，引导用户授权
+
+2. **预约到订单流程**:
+   - 状态流转：预约 pending → confirmed → in_progress
+   - 方案可被拒绝，商家可重新提交
+   - 意向金在支付首笔大额款项时自动抵扣
+
+3. **项目进度流程**:
+   - 采用里程碑式管理，分阶段验收
+   - 资金托管机制：验收通过后释放对应阶段资金
+   - 验收不通过时要求整改，商家整改后重新申请验收
+
+4. **商家入驻流程**:
+   - 申请状态：pending → approved/rejected
+   - 审核通过后创建商家账号，发送初始密码
+   - 商家首次登录后需修改密码并完善资料
+
+### 文档结构
+- 每个流程图前有文字说明，后有关键状态转换和 API 端点列表
+- 文档末尾提供 Mermaid 在线预览工具链接
+- 添加相关文档交叉引用，便于查阅
+
+### 参考资料
+- `documentation/03-产品设计/业务流程.md` - 业务规则与状态机
+- `server/internal/router/router.go` - API 路由定义
+- `documentation/04-后端开发/API接口/认证模块.md` - 认证接口详细文档
+
+### 提交记录
+- Commit: `docs: add API business flow diagrams`
+- 文件: `documentation/04-后端开发/API接口/00-业务流程图.md`
+
+
+## Task 18: Legacy Auth Doc Cleanup (2026-01-25)
+
+### Updates
+- Added a historical notice at the top of `server/docs/API接口文档.md` pointing readers to `documentation/04-后端开发/API接口/认证模块.md`.
+- Rewrote the 微信小程序登录 section (clear request/response examples and NeedBindPhone guidance) referencing `server/internal/handler/wechat_auth_handler.go` and the new-doc format.
+- Reinforced the legacy doc as an archive while communicating that the documentation centers in `documentation/` hold the current source of truth.
