@@ -4,6 +4,7 @@ import { Dropdown } from 'antd';
 import { ProLayout, PageContainer } from '@ant-design/pro-components';
 import { useAuthStore } from '../stores/authStore';
 import NotificationDropdown from '../components/NotificationDropdown';
+import IdentitySwitcher from '../components/IdentitySwitcher';
 import {
     DashboardOutlined,
     ProjectOutlined,
@@ -90,6 +91,7 @@ const BasicLayout: React.FC = () => {
                 <div onClick={() => item.path && navigate(item.path)}>{dom}</div>
             )}
             actionsRender={() => [
+                <IdentitySwitcher key="identity" />,
                 <NotificationDropdown key="notification" />,
             ]}
             avatarProps={{

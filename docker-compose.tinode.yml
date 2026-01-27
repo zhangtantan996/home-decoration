@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     ports:
       - "6060:6060"  # HTTP API
-      - "6061:6061"  # WebSocket
+      - "6061:6061"  # gRPC
     environment:
       - STORE_USE_ADAPTER=postgres
       - POSTGRES_DSN=${TINODE_DATABASE_DSN}

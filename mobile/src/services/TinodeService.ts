@@ -36,6 +36,11 @@ class SimpleEventEmitter {
 
 // 配置
 const getTinodeHost = (): string => {
+    if (TINODE_CONFIG.HOST) {
+        // Tinode SDK expects host in the form "host:port" (no scheme/path).
+        return TINODE_CONFIG.HOST.includes(':') ? TINODE_CONFIG.HOST : `${TINODE_CONFIG.HOST}:6060`;
+    }
+
     // Prefer using the same host as our backend API (different port).
     // This makes it work on Android emulator/real device where `localhost` is not the dev machine.
     try {
@@ -102,6 +107,15 @@ class TinodeService extends SimpleEventEmitter {
         this.initPromise = (async () => {
             try {
             console.log('[Tinode] 初始化中...');
+
+            if (!CONFIG.API_KEY) {
+                console.error(
+                    '[Tinode] 初始化失败: 未配置 TINODE_API_KEY（Tinode API Key）。' +
+                        '请在 mobile/.env 中设置（参考 mobile/.env.example），然后重新编译 App。'
+                );
+                this.connected = false;
+                return false;
+            }
 
             // If there is a previous instance, disconnect it to avoid multiple sockets.
             try {

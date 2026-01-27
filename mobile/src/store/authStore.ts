@@ -7,6 +7,7 @@ interface User {
     nickname?: string;
     avatar?: string;
     userType: string;
+    activeRole?: string;
 }
 
 interface AuthState {

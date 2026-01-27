@@ -101,6 +101,15 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				user.GET("/favorites", handler.GetUserFavorites)
 			}
 
+			// 身份管理（多身份切换系统）
+			identities := authorized.Group("/identities")
+			{
+				identities.GET("", handler.GetIdentities)                // 获取用户所有身份
+				identities.GET("/current", handler.GetCurrentIdentity)   // 获取当前激活身份
+				identities.POST("/switch", handler.SwitchIdentity)       // 切换身份
+				identities.POST("/apply", handler.ApplyIdentity)         // 申请新身份
+			}
+
 			// Tinode helper endpoints
 			authorized.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
 			authorized.DELETE("/tinode/topic/:topic/messages", handler.ClearChatHistory)

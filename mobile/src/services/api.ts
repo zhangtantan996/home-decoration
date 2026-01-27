@@ -384,3 +384,13 @@ export const inspirationApi = {
     createComment: (id: number, content: string) =>
         api.post<any>(`/inspiration/${id}/comments`, { content }),
 };
+
+// ========== 身份切换系统 ==========
+
+export const identityApi = {
+    list: () => api.get<any>('/identities'),
+    getCurrent: () => api.get<any>('/identities/current'),
+    switch: (identityId: number) => api.post<any>('/identities/switch', { identityId }),
+    apply: (data: { identityType: string; documents?: string[] }) =>
+        api.post<any>('/identities/apply', data),
+};

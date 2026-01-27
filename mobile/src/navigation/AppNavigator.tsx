@@ -43,6 +43,7 @@ import ProjectListScreen from '../screens/ProjectListScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 import DesignFilesScreen from '../screens/DesignFilesScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
+import IdentityApplicationScreen from '../screens/IdentityApplicationScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
@@ -326,6 +327,11 @@ const AppNavigator = () => {
                         <Stack.Screen
                             name="Favorites"
                             component={FavoritesScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="IdentityApplication"
+                            component={IdentityApplicationScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                     </>

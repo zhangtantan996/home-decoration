@@ -2,18 +2,22 @@ import Taro from '@tarojs/taro';
 import { View } from '@tarojs/components';
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/auth';
+import { useIdentityStore } from '@/store/identity';
 import { bindPhone, loginWithWxCode } from '@/services/auth';
 import { listPendingPayments, type PendingPaymentItem } from '@/services/orders';
 import { getUnreadCount } from '@/services/notifications';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { ListItem } from '@/components/ListItem';
+import { IdentitySwitcher } from '@/components/IdentitySwitcher';
 
 export default function Profile() {
   const auth = useAuthStore();
+  const { currentIdentity, fetchIdentities } = useIdentityStore();
   const [bindToken, setBindToken] = useState('');
   const [pendingPayments, setPendingPayments] = useState<PendingPaymentItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showIdentitySwitcher, setShowIdentitySwitcher] = useState(false);
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -30,13 +34,15 @@ export default function Profile() {
         ]);
         setPendingPayments(pending.items || []);
         setUnreadCount(unread.count || 0);
+
+        fetchIdentities().catch(() => {});
       } catch (err) {
         Taro.showToast({ title: err instanceof Error ? err.message : '加载失败', icon: 'none' });
       }
     };
 
     fetchProfileData();
-  }, [auth.token]);
+  }, [auth.token, fetchIdentities]);
 
   const handleWxLogin = async () => {
     try {
@@ -109,6 +115,30 @@ export default function Profile() {
     Taro.showToast({ title: `${title}敬请期待`, icon: 'none' });
   };
 
+  const handleSwitchIdentity = () => {
+    requireAuth(() => {
+      setShowIdentitySwitcher(true);
+    });
+  };
+
+  const handleApplyIdentity = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/identity/apply/index' });
+    });
+  };
+
+  const getIdentityDisplay = () => {
+    if (!currentIdentity) return '业主';
+    const identityNames: Record<string, string> = {
+      homeowner: '业主',
+      designer: '设计师',
+      company: '装修公司',
+      foreman: '工长',
+      worker: '工人'
+    };
+    return identityNames[currentIdentity.identityType] || currentIdentity.identityName;
+  };
+
   return (
     <View className="page">
       <View className="m-md">
@@ -145,7 +175,25 @@ export default function Profile() {
         )}
 
         {auth.user && (
-          <Card title="待支付订单" className="mb-lg">
+          <>
+            <Card title="我的身份" className="mb-lg">
+              <ListItem
+                title="当前身份"
+                description={getIdentityDisplay()}
+                arrow
+                icon={<View>👤</View>}
+                onClick={handleSwitchIdentity}
+              />
+              <ListItem
+                title="申请新身份"
+                description="成为设计师、工长等"
+                arrow
+                icon={<View>➕</View>}
+                onClick={handleApplyIdentity}
+              />
+            </Card>
+
+            <Card title="待支付订单" className="mb-lg">
             {pendingPayments.length === 0 ? (
               <ListItem
                 title="暂无待支付订单"
@@ -165,6 +213,7 @@ export default function Profile() {
               ))
             )}
           </Card>
+          </>
         )}
 
         <View className="mb-lg">
@@ -196,6 +245,8 @@ export default function Profile() {
           </Button>
         )}
       </View>
+
+      <IdentitySwitcher visible={showIdentitySwitcher} onClose={() => setShowIdentitySwitcher(false)} />
     </View>
   );
 }

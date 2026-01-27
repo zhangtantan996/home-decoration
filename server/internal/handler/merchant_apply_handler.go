@@ -388,16 +388,18 @@ func AdminApproveApplication(c *gin.Context) {
 
 	tx := repository.DB.Begin()
 
-	// 1. 创建 User
-	user := model.User{
-		Phone:    app.Phone,
-		Nickname: app.RealName,
-		UserType: 2, // 服务商
-		Status:   1,
-	}
-	if err := tx.Create(&user).Error; err != nil {
+	// 1. 查询现有 User（不再创建新用户）
+	var user model.User
+	if err := tx.Where("phone = ?", app.Phone).First(&user).Error; err != nil {
 		tx.Rollback()
-		response.Error(c, 500, "创建用户失败: "+err.Error())
+		response.Error(c, 400, "用户不存在，请先使用该手机号注册账号")
+		return
+	}
+
+	// 检查用户状态
+	if user.Status != 1 {
+		tx.Rollback()
+		response.Error(c, 400, "该账号已被禁用")
 		return
 	}
 
@@ -424,6 +426,23 @@ func AdminApproveApplication(c *gin.Context) {
 	if err := tx.Create(&provider).Error; err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "创建服务商失败: "+err.Error())
+		return
+	}
+
+	// 3.1. 创建 user_identities 记录（多身份系统）
+	now := time.Now()
+	identity := model.UserIdentity{
+		UserID:        user.ID,
+		IdentityType:  "provider",
+		IdentityRefID: &provider.ID,
+		Status:        1,        // approved
+		Verified:      true,
+		VerifiedAt:    &now,
+		VerifiedBy:    &adminID,
+	}
+	if err := tx.Create(&identity).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "创建身份记录失败: "+err.Error())
 		return
 	}
 
@@ -480,7 +499,6 @@ func AdminApproveApplication(c *gin.Context) {
 	tx.Create(&serviceSetting)
 
 	// 6. 更新申请状态
-	now := time.Now()
 	app.Status = 1
 	app.AuditedBy = adminID
 	app.AuditedAt = &now

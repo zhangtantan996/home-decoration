@@ -128,7 +128,7 @@ func SendCode(c *gin.Context) {
 	})
 }
 
-// RefreshToken 刷新Token
+// RefreshToken 刷新Token（带重放检测）
 func RefreshToken(c *gin.Context) {
 	var req struct {
 		RefreshToken string `json:"refreshToken" binding:"required"`
@@ -138,14 +138,16 @@ func RefreshToken(c *gin.Context) {
 		return
 	}
 
-	tokenResp, err := userService.RefreshToken(req.RefreshToken, jwtConfig)
+	// 使用新的 TokenService（带 Redis 重放检测）
+	tokenService := &service.TokenService{}
+	tokenResp, err := tokenService.RefreshTokens(req.RefreshToken)
 	if err != nil {
 		response.Unauthorized(c, err.Error())
 		return
 	}
 
 	response.Success(c, gin.H{
-		"token":        tokenResp.Token,
+		"token":        tokenResp.AccessToken,
 		"refreshToken": tokenResp.RefreshToken,
 		"expiresIn":    tokenResp.ExpiresIn,
 	})

@@ -306,6 +306,7 @@ adb reverse tcp:8080 tcp:8080
 - Booking, ProviderCase, ProviderReview
 - MaterialShop, Chat (WebSocket messages)
 - Admin, Role, Menu (RBAC system)
+- UserIdentity, IdentityApplication, IdentityAuditLog (multi-identity system)
 
 **Authentication**: JWT-based auth with middleware at `/api/v1/auth/*`
 
@@ -318,6 +319,8 @@ adb reverse tcp:8080 tcp:8080
 **Framework**: React 18.3.1 + TypeScript + Vite + Ant Design Pro Components
 
 **State Management**: Zustand (see `admin/src/stores/`)
+- `authStore` - authentication state with activeRole field
+- `identityStore` - multi-identity switching state
 
 **Routing**: React Router v7 with `/admin` basename
 - Routes defined in `admin/src/router.tsx`
@@ -347,9 +350,10 @@ adb reverse tcp:8080 tcp:8080
 - Main tabs: Home, Inspiration, Progress, Message, Profile
 
 **State Management**: Zustand
-- `authStore` - authentication state
+- `authStore` - authentication state with activeRole field
 - `providerStore` - provider data (designers, companies, foremen)
 - `chatStore` - WebSocket chat integration
+- `identityStore` - multi-identity switching state
 
 **Web Support**: App can run as web app via Vite (`npm run web`)
 
@@ -377,7 +381,8 @@ adb reverse tcp:8080 tcp:8080
 - 5 main tabs: Home, Inspiration, Progress, Message, Profile
 
 **State Management**: Zustand
-- `authStore` - WeChat authentication state (openid, JWT tokens)
+- `authStore` - WeChat authentication state (openid, JWT tokens) with activeRole field
+- `identityStore` - multi-identity switching state
 - Persistent storage via Taro.setStorage
 
 **Key Features**:

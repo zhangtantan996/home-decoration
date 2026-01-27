@@ -280,4 +280,14 @@ export const notificationApi = {
         api.delete(`/admin/notifications/${id}`),
 };
 
+// 身份管理
+export const identityApi = {
+    list: () => api.get('/identities'),
+    getCurrent: () => api.get('/identities/current'),
+    switch: (data: { targetRole: string; currentRole?: string }) =>
+        api.post('/identities/switch', data),
+    apply: (data: { identityType: string; applicationData?: string }) =>
+        api.post('/identities/apply', data),
+};
+
 export default api;

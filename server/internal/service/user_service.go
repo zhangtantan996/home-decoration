@@ -16,6 +16,7 @@ import (
 	"home-decoration-server/internal/utils/tencentim"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -130,12 +131,18 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}(user)
 
 	// 注册成功后自动签发 Token
-	token, err := generateToken(user.ID, user.UserType, cfg.ExpireHour)
+	// 获取用户的 activeRole 和 refID
+	activeRole, refID, err := getUserActiveRoleAndRefID(user)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	refreshToken, err := generateToken(user.ID, user.UserType, cfg.ExpireHour*24)
+	token, err := generateTokenV2(user.ID, activeRole, refID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	refreshToken, err := generateTokenV2(user.ID, activeRole, refID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -296,13 +303,19 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	}
 
 	// 生成Token
-	token, err := generateToken(user.ID, user.UserType, cfg.ExpireHour)
+	// 获取用户的 activeRole 和 refID
+	activeRole, refID, err := getUserActiveRoleAndRefID(&user)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	token, err := generateTokenV2(user.ID, activeRole, refID)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// 生成RefreshToken (有效期更长)
-	refreshToken, err := generateToken(user.ID, user.UserType, cfg.ExpireHour*24)
+	refreshToken, err := generateTokenV2(user.ID, activeRole, refID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -552,6 +565,58 @@ func generateToken(userID uint64, userType int8, expireHour int) (string, error)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
+}
+
+// generateTokenV2 生成JWT Token v2 (支持多身份)
+func generateTokenV2(userID uint64, activeRole string, refID *uint64) (string, error) {
+	claims := jwt.MapClaims{
+		"userId":     userID,
+		"activeRole": activeRole,
+		"providerId": refID,
+		"jti":        uuid.New().String(),
+		"sid":        generateSessionID(),
+		"exp":        time.Now().Add(2 * time.Hour).Unix(),
+		"iat":        time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret)
+}
+
+// generateSessionID 生成会话ID
+func generateSessionID() string {
+	return uuid.New().String()
+}
+
+// getUserActiveRoleAndRefID 根据 UserType 获取 activeRole 和 refID
+func getUserActiveRoleAndRefID(user *model.User) (string, *uint64, error) {
+	var activeRole string
+	var refID *uint64
+
+	switch user.UserType {
+	case 1:
+		activeRole = "owner"
+	case 2:
+		activeRole = "provider"
+		// 查询 provider ID
+		var provider model.Provider
+		if err := repository.DB.Where("user_id = ?", user.ID).First(&provider).Error; err == nil {
+			refID = &provider.ID
+		}
+	case 3:
+		activeRole = "worker"
+		// 查询 worker ID
+		var worker model.Worker
+		if err := repository.DB.Where("user_id = ?", user.ID).First(&worker).Error; err == nil {
+			refID = &worker.ID
+		}
+	case 4:
+		activeRole = "admin"
+	default:
+		activeRole = "owner"
+	}
+
+	return activeRole, refID, nil
 }
 
 // HashPassword 加密密码

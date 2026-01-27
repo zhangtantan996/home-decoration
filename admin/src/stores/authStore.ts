@@ -22,6 +22,7 @@ interface AdminUser {
     avatar?: string;
     isSuperAdmin: boolean;
     roles: string[];
+    activeRole?: string; // 当前激活的身份类型
 }
 
 interface AuthState {

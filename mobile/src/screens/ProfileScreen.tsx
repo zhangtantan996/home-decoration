@@ -29,9 +29,12 @@ import {
     Banknote,
     MoreHorizontal,
     Bell,
+    RefreshCw,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../components/Toast';
+import { IdentitySwitcher } from '../components/IdentitySwitcher';
+import { useIdentityStore } from '../store/identityStore';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -50,6 +53,8 @@ const ProfileScreen = ({ navigation }: any) => {
     const { showConfirm } = useToast();
     const [dialogVisible, setDialogVisible] = useState(false);
     const [dialogMessage, setDialogMessage] = useState('');
+    const [identitySwitcherVisible, setIdentitySwitcherVisible] = useState(false);
+    const { currentIdentity, fetchIdentities } = useIdentityStore();
 
     const handleServicePress = (label: string) => {
         setDialogMessage(`${label}功能正在开发中，敬请期待！`);
@@ -105,15 +110,29 @@ const ProfileScreen = ({ navigation }: any) => {
                 const res = await notificationApi.getUnreadCount();
                 setUnreadNotificationCount(res.data?.count || 0);
             } catch (error) {
-                console.log('Failed to load unread notification count');
+                // Silent fail
             }
         };
         loadUnreadNotifications();
 
-        // 监听焦点变化，每次返回页面都刷新未读数量
         const unsubscribe = navigation.addListener('focus', loadUnreadNotifications);
         return unsubscribe;
     }, [navigation]);
+
+    // 加载当前身份
+    useEffect(() => {
+        fetchIdentities();
+    }, []);
+
+    const getIdentityLabel = (identityType?: string) => {
+        const labels: Record<string, string> = {
+            user: '业主',
+            designer: '设计师',
+            worker: '工人',
+            company: '装修公司',
+        };
+        return labels[identityType || 'user'] || '业主';
+    };
 
     // 快捷统计数据
     const quickStats = [
@@ -155,9 +174,18 @@ const ProfileScreen = ({ navigation }: any) => {
                             )}
                         </View>
                         <View style={styles.userDetails}>
-                            <Text style={styles.userName}>
-                                {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
-                            </Text>
+                            <View style={styles.userNameRow}>
+                                <Text style={styles.userName}>
+                                    {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
+                                </Text>
+                                {currentIdentity && (
+                                    <View style={styles.identityBadge}>
+                                        <Text style={styles.identityBadgeText}>
+                                            {getIdentityLabel(currentIdentity.identityType)}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
                             <View style={styles.memberBadge}>
                                 <Text style={styles.memberBadgeText}>BLACK MEMBER</Text>
                             </View>
@@ -181,6 +209,30 @@ const ProfileScreen = ({ navigation }: any) => {
                             <Settings size={22} color="#71717A" />
                         </TouchableOpacity>
                     </View>
+                </View>
+
+                {/* 身份切换卡片 */}
+                <View style={styles.identityCard}>
+                    <View style={styles.identityCardHeader}>
+                        <Text style={styles.identityCardTitle}>当前身份</Text>
+                        <TouchableOpacity
+                            style={styles.switchIdentityBtn}
+                            onPress={() => setIdentitySwitcherVisible(true)}
+                        >
+                            <RefreshCw size={16} color={PRIMARY_GOLD} />
+                            <Text style={styles.switchIdentityText}>切换身份</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <Text style={styles.currentIdentityText}>
+                        {getIdentityLabel(currentIdentity?.identityType)}
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.applyIdentityBtn}
+                        onPress={() => navigation.navigate('IdentityApplication')}
+                    >
+                        <Text style={styles.applyIdentityText}>申请新身份</Text>
+                        <ChevronRight size={16} color="#71717A" />
+                    </TouchableOpacity>
                 </View>
 
                 {/* 当前项目卡片 - 暂时移除 Mock 数据，等待真实数据接入 */}
@@ -274,6 +326,12 @@ const ProfileScreen = ({ navigation }: any) => {
                 <View style={{ height: 40 }} />
             </ScrollView>
 
+            {/* 身份切换弹窗 */}
+            <IdentitySwitcher
+                visible={identitySwitcherVisible}
+                onClose={() => setIdentitySwitcherVisible(false)}
+            />
+
             {/* 自定义弹窗 */}
             <Modal
                 visible={dialogVisible}
@@ -341,11 +399,27 @@ const styles = StyleSheet.create({
     userDetails: {
         marginLeft: 14,
     },
+    userNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 6,
+    },
     userName: {
         fontSize: 18,
         fontWeight: '700',
         color: '#09090B',
-        marginBottom: 6,
+    },
+    identityBadge: {
+        backgroundColor: PRIMARY_GOLD,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    identityBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 11,
+        fontWeight: '600',
     },
     memberBadge: {
         backgroundColor: '#1C1C1E',
@@ -509,6 +583,60 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#71717A',
         marginTop: 6,
+    },
+
+    // 身份切换卡片
+    identityCard: {
+        backgroundColor: '#FFFFFF',
+        marginHorizontal: 16,
+        marginTop: 16,
+        borderRadius: 16,
+        padding: 20,
+    },
+    identityCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    identityCardTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#71717A',
+    },
+    switchIdentityBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#FFFBEB',
+        borderRadius: 8,
+    },
+    switchIdentityText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: PRIMARY_GOLD,
+        marginLeft: 4,
+    },
+    currentIdentityText: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: '#09090B',
+        marginBottom: 16,
+    },
+    applyIdentityBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        backgroundColor: '#F8F9FA',
+        borderRadius: 10,
+    },
+    applyIdentityText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#09090B',
     },
 
     // 菜单模块 (订单 & 更多服务)

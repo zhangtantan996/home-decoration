@@ -9,6 +9,7 @@ export interface AuthUser {
   nickname: string;
   avatar?: string;
   userType: number;
+  activeRole?: string;
 }
 
 interface AuthState {

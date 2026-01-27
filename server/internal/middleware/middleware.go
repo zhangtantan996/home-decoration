@@ -102,11 +102,26 @@ func JWT(secret string) gin.HandlerFunc {
 			c.Set("is_super", claims["is_super"])
 		}
 		if userID, ok := claims["userId"]; ok {
-			// 普通用户 Token - 转换为 uint64
-			c.Set("userId", uint64(userID.(float64)))
+			// 兼容旧 token(userType 字段)
 			if userType, ok := claims["userType"]; ok {
+				c.Set("userId", uint64(userID.(float64)))
 				c.Set("userType", userType)
+				c.Next()
+				return
 			}
+
+			// 新 token(activeRole 字段)
+			if activeRole, ok := claims["activeRole"]; ok {
+				c.Set("userId", uint64(userID.(float64)))
+				c.Set("activeRole", activeRole)
+				c.Set("providerId", claims["providerId"])
+				c.Next()
+				return
+			}
+
+			response.Unauthorized(c, "Invalid token format")
+			c.Abort()
+			return
 		}
 		c.Next()
 	}

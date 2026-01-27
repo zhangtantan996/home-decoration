@@ -13,7 +13,8 @@ export default {
     'pages/orders/pending/index',
     'pages/orders/list/index',
     'pages/orders/detail/index',
-    'pages/projects/detail/index'
+    'pages/projects/detail/index',
+    'pages/identity/apply/index'
   ],
   tabBar: {
     color: '#71717A',

@@ -47,6 +47,9 @@ export async function request<T>(options: RequestOptions<T>): Promise<T> {
   if (authState.token) {
     headers.Authorization = `Bearer ${authState.token}`;
   }
+  if (authState.user?.activeRole) {
+    headers['X-Active-Role'] = authState.user.activeRole;
+  }
 
   if (options.showLoading) {
     Taro.showLoading({ title: '加载中', mask: true });
