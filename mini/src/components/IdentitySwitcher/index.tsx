@@ -10,7 +10,9 @@ interface IdentitySwitcherProps {
 }
 
 const identityIcons: Record<string, string> = {
+  owner: '🏠',
   homeowner: '🏠',
+  provider: '🏢',
   designer: '🎨',
   company: '🏢',
   foreman: '👷',
@@ -18,11 +20,13 @@ const identityIcons: Record<string, string> = {
 };
 
 const identityNames: Record<string, string> = {
+  owner: '业主',
   homeowner: '业主',
+  provider: '服务商',
   designer: '设计师',
   company: '装修公司',
   foreman: '工长',
-  worker: '工人'
+  worker: '工长'
 };
 
 export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ visible, onClose }) => {

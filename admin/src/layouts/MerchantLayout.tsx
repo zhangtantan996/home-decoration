@@ -28,6 +28,47 @@ const MerchantLayout: React.FC = () => {
 
     const provider = JSON.parse(localStorage.getItem('merchant_provider') || '{}');
 
+    const normalizedProviderSubType = (() => {
+        const raw = String(provider?.providerSubType || '').toLowerCase();
+        if (raw === 'designer' || raw === 'company' || raw === 'foreman') {
+            return raw;
+        }
+        switch (Number(provider?.providerType)) {
+            case 1:
+                return 'designer';
+            case 2:
+                return 'company';
+            case 3:
+                return 'foreman';
+            default:
+                return 'designer';
+        }
+    })();
+
+    const subtypeLabel = normalizedProviderSubType === 'company'
+        ? '装修公司'
+        : normalizedProviderSubType === 'foreman'
+            ? '工长'
+            : '设计师';
+
+    const availableKeys = new Set<string>([
+        '/dashboard',
+        '/bookings',
+        '/orders',
+        '/chat',
+        'finance',
+        '/income',
+        '/withdraw',
+        '/bank-accounts',
+        '/settings',
+    ]);
+    if (normalizedProviderSubType === 'designer' || normalizedProviderSubType === 'company') {
+        availableKeys.add('/proposals');
+    }
+    if (normalizedProviderSubType !== 'foreman') {
+        availableKeys.add('/cases');
+    }
+
     const menuItems = [
         {
             key: '/dashboard',
@@ -78,6 +119,24 @@ const MerchantLayout: React.FC = () => {
             label: '账户设置',
         },
     ];
+
+    const filteredMenuItems = menuItems
+        .map((item: any) => {
+            if (!item?.key) {
+                return item;
+            }
+            if (item.key === 'finance') {
+                const children = (item.children || []).filter((child: any) => availableKeys.has(child.key));
+                if (!children.length) {
+                    return null;
+                }
+                return { ...item, children };
+            }
+            return availableKeys.has(item.key) ? item : null;
+        })
+        .filter(Boolean);
+
+    const fallbackPath = availableKeys.has('/dashboard') ? '/dashboard' : '/settings';
 
     const handleLogout = () => {
         localStorage.removeItem('merchant_token');
@@ -132,15 +191,21 @@ const MerchantLayout: React.FC = () => {
                     transition: 'all 0.2s',
                     cursor: 'pointer'
                 }} onClick={() => navigate('/dashboard')}>
-                    {collapsed ? '商' : '商家中心'}
+                    {collapsed ? '商' : `商家中心 · ${subtypeLabel}`}
                 </div>
                 <Menu
                     theme="dark"
                     mode="inline"
                     selectedKeys={[location.pathname]}
                     defaultOpenKeys={[]}
-                    items={menuItems as any}
-                    onClick={({ key }) => navigate(key)}
+                    items={filteredMenuItems as any}
+                    onClick={({ key }) => {
+                        if (availableKeys.has(key)) {
+                            navigate(key);
+                        } else {
+                            navigate(fallbackPath);
+                        }
+                    }}
                     style={{ borderRight: 0 }}
                 />
             </Sider>

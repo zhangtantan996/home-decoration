@@ -263,8 +263,17 @@ export const chatApi = {
 
 // Tinode helper endpoints
 export const tinodeApi = {
-    // Maps app user id -> tinode user topic id like `usrXXXX`.
-    getUserId: (userId: number | string) => api.get<any>(`/tinode/userid/${userId}`),
+    // Maps app user identifier (id/publicId) -> tinode user topic id like `usrXXXX`.
+    getTinodeUserId: (userIdentifier: number | string) => api.get<any>(`/tinode/userid/${userIdentifier}`),
+    // Backward-compatible alias.
+    getUserId: (userIdentifier: number | string) => api.get<any>(`/tinode/userid/${userIdentifier}`),
+    clearTopicMessages: (topic: string) =>
+        api.delete<any>(`/tinode/topic/${encodeURIComponent(topic)}/messages`),
+};
+
+export const reportApi = {
+    submitChatReport: (data: { topic: string; reason: string; partner?: string }) =>
+        api.post<any>('/reports/chat', data),
 };
 
 export const materialShopApi = {
@@ -390,7 +399,8 @@ export const inspirationApi = {
 export const identityApi = {
     list: () => api.get<any>('/identities'),
     getCurrent: () => api.get<any>('/identities/current'),
-    switch: (identityId: number) => api.post<any>('/identities/switch', { identityId }),
-    apply: (data: { identityType: string; documents?: string[] }) =>
+    switch: (data: { identityId?: number; targetRole?: string; currentRole?: string }) =>
+        api.post<any>('/identities/switch', data),
+    apply: (data: { identityType: 'provider'; providerSubType: 'designer' | 'company' | 'foreman'; applicationData?: string }) =>
         api.post<any>('/identities/apply', data),
 };

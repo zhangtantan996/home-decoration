@@ -34,6 +34,8 @@ const PRIMARY_GOLD = '#D4AF37';
 interface UIConversation {
     conversationID: string;
     partnerID: string;
+    partnerIdentifier?: string;
+    partnerPublicId?: string;
     name: string;
     avatar: string;
     role: 'designer' | 'worker' | 'company' | 'manager';
@@ -116,7 +118,7 @@ const MessageScreen: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'conversations' | 'notifications'>('conversations');
     const [refreshing, setRefreshing] = useState(false);
     const [searchText, setSearchText] = useState('');
-    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+    const [notifications] = useState(MOCK_NOTIFICATIONS);
 
     // IM 状态
     const [conversations, setConversations] = useState<UIConversation[]>([]);
@@ -255,11 +257,21 @@ const MessageScreen: React.FC = () => {
             // For P2P topics, peer description is under `p2pPeerDesc()`.
             const peer = typeof item?.p2pPeerDesc === 'function' ? item.p2pPeerDesc() : undefined;
             const peerPublic = peer?.public || item?.public || {};
+            const peerPublicIdCandidate = (peerPublic as Record<string, unknown>)?.publicId
+                ?? (peerPublic as Record<string, unknown>)?.userPublicId;
+            const peerPublicId =
+                typeof peerPublicIdCandidate === 'number'
+                    ? String(peerPublicIdCandidate)
+                    : typeof peerPublicIdCandidate === 'string'
+                        ? peerPublicIdCandidate.trim() || undefined
+                        : undefined;
 
             return {
                 // In tinode-sdk P2P, the topic name is the peer's `usr...` id.
                 conversationID: item.name,
                 partnerID: item.name,
+                partnerIdentifier: peerPublicId || item.name,
+                partnerPublicId: peerPublicId,
                 name: peerPublic?.fn || '未知用户',
                 avatar: peerPublic?.photo || 'https://via.placeholder.com/100',
                 role: 'designer', // Placeholder
@@ -281,7 +293,7 @@ const MessageScreen: React.FC = () => {
         // Coalesce bursts of events into a single refresh.
         setTimeout(() => {
             conversationsRefreshScheduledRef.current = false;
-            void loadConversations();
+            loadConversations();
         }, 0);
     }, [loadConversations]);
 
@@ -289,7 +301,7 @@ const MessageScreen: React.FC = () => {
     useFocusEffect(
         useCallback(() => {
             // Fire and forget.
-            void loadConversations();
+            loadConversations();
         }, [loadConversations])
     );
 
@@ -424,6 +436,8 @@ const MessageScreen: React.FC = () => {
                 onPress={() => (navigation as any).navigate('ChatRoom', {
                     conversationID: conversation.conversationID,
                     partnerID: conversation.partnerID,
+                    partnerIdentifier: conversation.partnerIdentifier || conversation.partnerPublicId || conversation.partnerID,
+                    partnerPublicId: conversation.partnerPublicId,
                     name: conversation.name,
                     avatar: conversation.avatar,
                 })}
@@ -566,7 +580,7 @@ const MessageScreen: React.FC = () => {
                     )
                 )}
 
-                <View style={{ height: 20 }} />
+                <View style={styles.footerSpacer} />
             </ScrollView>
         </SafeAreaView>
     );
@@ -655,6 +669,9 @@ const styles = StyleSheet.create({
     // 内容区
     content: {
         flex: 1,
+    },
+    footerSpacer: {
+        height: 20,
     },
     // 会话卡片
     conversationCard: {

@@ -115,6 +115,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			authorized.DELETE("/tinode/topic/:topic/messages", handler.ClearChatHistory)
 			authorized.POST("/tinode/refresh-token", handler.RefreshTinodeToken)
 
+			// 用户举报
+			authorized.POST("/reports/chat", handler.SubmitChatReport)
+
 			// 设计师
 			designers := authorized.Group("/designers")
 			{
@@ -419,6 +422,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/merchant-applications/:id", handler.AdminGetApplication)
 			admin.POST("/merchant-applications/:id/approve", handler.AdminApproveApplication)
 			admin.POST("/merchant-applications/:id/reject", handler.AdminRejectApplication)
+
+			// 身份申请审核
+			admin.GET("/identity-applications", handler.AdminListIdentityApplications)
+			admin.GET("/identity-applications/:id", handler.AdminGetIdentityApplication)
+			admin.POST("/identity-applications/:id/approve", handler.AdminApproveIdentityApplication)
+			admin.POST("/identity-applications/:id/reject", handler.AdminRejectIdentityApplication)
 
 			// ========== 项目管理 ==========
 			admin.GET("/projects", handler.AdminListProjects)

@@ -2,28 +2,35 @@ import { request } from '@/utils/request';
 
 export interface Identity {
   id: number;
-  userId: number;
-  identityType: string;
-  identityName: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+  userId?: number;
+  identityType: 'owner' | 'provider' | 'admin';
+  providerSubType?: 'designer' | 'company' | 'foreman';
+  identityName?: string;
+  status: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SwitchIdentityResponse {
   token: string;
   refreshToken: string;
   expiresIn: number;
-  activeRole: string;
+  activeRole: 'owner' | 'provider' | 'admin';
+  providerSubType?: 'designer' | 'company' | 'foreman';
+  providerId?: number;
 }
 
 export interface ApplyIdentityRequest {
-  identityType: string;
-  documents?: string[];
+  identityType: 'provider';
+  providerSubType: 'designer' | 'company' | 'foreman';
+  applicationData?: string;
 }
 
 export const identityService = {
-  list: () => request<Identity[]>({ url: '/identities' }),
+  list: async () => {
+    const data = await request<{ identities: Identity[] }>({ url: '/identities' });
+    return data.identities || [];
+  },
 
   getCurrent: () => request<Identity>({ url: '/identities/current' }),
 
@@ -31,13 +38,13 @@ export const identityService = {
     request<SwitchIdentityResponse>({
       url: '/identities/switch',
       method: 'POST',
-      data: { identityId }
+      data: { identityId },
     }),
 
   apply: (data: ApplyIdentityRequest) =>
     request<Identity>({
       url: '/identities/apply',
       method: 'POST',
-      data
-    })
+      data,
+    }),
 };

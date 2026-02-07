@@ -3,7 +3,9 @@ package handler
 import (
 	"fmt"
 	"home-decoration-server/internal/config"
+	"home-decoration-server/internal/dto"
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/internal/tinode"
@@ -69,6 +71,8 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			"providerType": provider.ProviderType,
 			"userId":       user.ID,
 			"phone":        input.Phone,
+			"token_type":   "merchant",
+			"token_use":    "access",
 			"role":         "merchant",
 			"exp":          time.Now().Add(24 * time.Hour).Unix(),
 		}
@@ -111,12 +115,13 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			"token":       tokenString,
 			"tinodeToken": tinodeToken,
 			"provider": gin.H{
-				"id":           provider.ID,
-				"name":         displayName,
-				"avatar":       imgutil.GetFullImageURL(user.Avatar),
-				"providerType": provider.ProviderType,
-				"phone":        input.Phone,
-				"verified":     provider.Verified,
+				"id":              provider.ID,
+				"name":            displayName,
+				"avatar":          imgutil.GetFullImageURL(user.Avatar),
+				"providerType":    provider.ProviderType,
+				"providerSubType": mapProviderTypeToSubType(provider.ProviderType),
+				"phone":           input.Phone,
+				"verified":        provider.Verified,
 			},
 		})
 	}
@@ -322,6 +327,7 @@ func MerchantListBookings(c *gin.Context) {
 		model.Booking
 		UserNickname string `json:"userNickname"`
 		UserPhone    string `json:"userPhone"`
+		UserPublicID string `json:"userPublicId,omitempty"`
 		HasProposal  bool   `json:"hasProposal"`
 	}
 
@@ -329,6 +335,11 @@ func MerchantListBookings(c *gin.Context) {
 	for _, b := range bookings {
 		item := BookingWithUser{Booking: b}
 		if u, ok := userMap[b.UserID]; ok {
+			identity := dto.NewUserIdentity(&u)
+			item.UserPublicID = identity.UserPublicID
+			if item.UserPublicID == "" {
+				monitor.RecordPublicIDMissing("merchant_booking_list", identity.UserID, "merchant_list_bookings")
+			}
 			item.UserNickname = u.Nickname
 			if item.UserNickname == "" {
 				// 兜底：使用手机号后4位
@@ -370,8 +381,23 @@ func MerchantGetBookingDetail(c *gin.Context) {
 	var proposal model.Proposal
 	hasProposal := repository.DB.Where("booking_id = ?", bookingID).First(&proposal).Error == nil
 
+	var bookingUser model.User
+	_ = repository.DB.Select("id", "public_id").First(&bookingUser, booking.UserID).Error
+	bookingIdentity := dto.NewUserIdentity(&bookingUser)
+	if bookingIdentity.UserPublicID == "" {
+		monitor.RecordPublicIDMissing("merchant_booking_detail", bookingIdentity.UserID, "merchant_booking_detail")
+	}
+
+	type BookingDetailWithIdentity struct {
+		model.Booking
+		UserPublicID string `json:"userPublicId,omitempty"`
+	}
+
 	response.Success(c, gin.H{
-		"booking":     booking,
+		"booking": BookingDetailWithIdentity{
+			Booking:      booking,
+			UserPublicID: bookingIdentity.UserPublicID,
+		},
 		"hasProposal": hasProposal,
 		"proposal":    proposal,
 	})
@@ -657,12 +683,19 @@ func MerchantGetProposal(c *gin.Context) {
 		model.Booking
 		UserNickname string `json:"userNickname"`
 		UserPhone    string `json:"userPhone"`
+		UserPublicID string `json:"userPublicId,omitempty"`
+	}
+
+	bookingIdentity := dto.NewUserIdentity(&user)
+	if bookingIdentity.UserPublicID == "" {
+		monitor.RecordPublicIDMissing("merchant_proposal_detail", bookingIdentity.UserID, "merchant_get_proposal")
 	}
 
 	bookingWithUser := BookingWithUser{
 		Booking:      booking,
 		UserNickname: userNickname,
 		UserPhone:    user.Phone,
+		UserPublicID: bookingIdentity.UserPublicID,
 	}
 
 	response.Success(c, gin.H{

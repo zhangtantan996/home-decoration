@@ -6,56 +6,47 @@ import {
     SafeAreaView,
     TouchableOpacity,
     ScrollView,
-    Alert,
+    Platform,
+    StatusBar,
 } from 'react-native';
-import { ChevronLeft, User, Briefcase, HardHat, Building2 } from 'lucide-react-native';
+import { ChevronLeft, Briefcase, HardHat, Building2 } from 'lucide-react-native';
 import { useIdentityStore } from '../store/identityStore';
+import { useToast } from '../components/Toast';
 
 const PRIMARY_GOLD = '#D4AF37';
 
 const IDENTITY_TYPES = [
     { value: 'designer', label: '设计师', icon: Briefcase, color: '#8B5CF6', description: '提供专业设计服务' },
-    { value: 'worker', label: '工人', icon: HardHat, color: '#F59E0B', description: '提供施工服务' },
+    { value: 'foreman', label: '工长', icon: HardHat, color: '#F59E0B', description: '提供施工组织与管理服务' },
     { value: 'company', label: '装修公司', icon: Building2, color: '#10B981', description: '提供一站式装修服务' },
 ];
 
 const IdentityApplicationScreen = ({ navigation }: any) => {
     const [selectedType, setSelectedType] = useState<string | null>(null);
     const { applyIdentity, loading } = useIdentityStore();
+    const { showToast, showConfirm } = useToast();
 
     const handleSubmit = async () => {
         if (!selectedType) {
-            Alert.alert('提示', '请选择要申请的身份类型');
+            showToast({ message: '请选择要申请的身份类型', type: 'warning' });
             return;
         }
 
-        Alert.alert(
-            '确认申请',
-            `确定要申请成为${IDENTITY_TYPES.find(t => t.value === selectedType)?.label}吗？`,
-            [
-                { text: '取消', style: 'cancel' },
-                {
-                    text: '确认',
-                    onPress: async () => {
-                        try {
-                            await applyIdentity(selectedType);
-                            Alert.alert(
-                                '申请成功',
-                                '您的申请已提交，我们将在1-3个工作日内完成审核',
-                                [
-                                    {
-                                        text: '确定',
-                                        onPress: () => navigation.goBack(),
-                                    },
-                                ]
-                            );
-                        } catch (error: any) {
-                            Alert.alert('申请失败', error.message || '提交申请失败，请稍后重试');
-                        }
-                    },
-                },
-            ]
-        );
+        showConfirm({
+            title: '确认申请',
+            message: `确定要申请成为${IDENTITY_TYPES.find(t => t.value === selectedType)?.label}吗？`,
+            confirmText: '确认',
+            cancelText: '取消',
+            onConfirm: async () => {
+                try {
+                    await applyIdentity(selectedType as "designer" | "company" | "foreman");
+                    showToast({ message: '申请成功，我们将在1-3个工作日内完成审核', type: 'success' });
+                    navigation.goBack();
+                } catch (error: any) {
+                    showToast({ message: error.message || '提交申请失败，请稍后重试', type: 'error' });
+                }
+            },
+        });
     };
 
     return (
@@ -65,7 +56,7 @@ const IdentityApplicationScreen = ({ navigation }: any) => {
                     <ChevronLeft size={24} color="#09090B" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>申请新身份</Text>
-                <View style={{ width: 40 }} />
+                <View style={styles.headerPlaceholder} />
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -145,7 +136,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 8 : 12,
+        paddingBottom: 12,
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
         borderBottomColor: '#F4F4F5',
@@ -157,6 +149,9 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '600',
         color: '#09090B',
+    },
+    headerPlaceholder: {
+        width: 40,
     },
     content: {
         flex: 1,

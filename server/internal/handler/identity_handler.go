@@ -41,31 +41,37 @@ func SwitchIdentity(c *gin.Context) {
 	// 如果没有提供 currentRole，尝试从 context 获取
 	if req.CurrentRole == "" {
 		if activeRole, exists := c.Get("activeRole"); exists {
-			req.CurrentRole = activeRole.(string)
+			if value, ok := activeRole.(string); ok {
+				req.CurrentRole = value
+			}
 		} else if userType, exists := c.Get("userType"); exists {
 			// 兼容旧 token
-			switch int8(userType.(float64)) {
+			switch convertUserType(userType) {
 			case 1:
 				req.CurrentRole = "owner"
 			case 2:
 				req.CurrentRole = "provider"
 			case 3:
-				req.CurrentRole = "worker"
+				req.CurrentRole = "provider"
 			case 4:
 				req.CurrentRole = "admin"
 			}
 		}
 	}
 
-	newToken, err := identityService.SwitchIdentity(userID, &req)
+	result, err := identityService.SwitchIdentity(userID, &req)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
 	response.Success(c, gin.H{
-		"token":     newToken,
-		"expiresIn": 2 * 3600, // 2 hours
+		"token":           result.AccessToken,
+		"refreshToken":    result.RefreshToken,
+		"activeRole":      result.ActiveRole,
+		"providerSubType": result.ProviderSubType,
+		"providerId":      result.ProviderID,
+		"expiresIn":       2 * 3600, // 2 hours
 	})
 }
 
@@ -92,25 +98,25 @@ func GetCurrentIdentity(c *gin.Context) {
 	userID := c.GetUint64("userId")
 
 	// 从 context 获取当前身份类型
-	var identityType string
+	identityType := "owner"
 	if activeRole, exists := c.Get("activeRole"); exists {
-		identityType = activeRole.(string)
+		if value, ok := activeRole.(string); ok {
+			identityType = value
+		}
 	} else if userType, exists := c.Get("userType"); exists {
 		// 兼容旧 token
-		switch int8(userType.(float64)) {
+		switch convertUserType(userType) {
 		case 1:
 			identityType = "owner"
 		case 2:
 			identityType = "provider"
 		case 3:
-			identityType = "worker"
+			identityType = "provider"
 		case 4:
 			identityType = "admin"
 		default:
 			identityType = "owner"
 		}
-	} else {
-		identityType = "owner" // 默认
 	}
 
 	identity, err := identityService.GetIdentityByType(userID, identityType)
@@ -120,34 +126,63 @@ func GetCurrentIdentity(c *gin.Context) {
 	}
 
 	// 构建响应
+	normalizedRole, derivedSubType := service.NormalizeRoleForResponse(identity.IdentityType)
+
 	result := gin.H{
-		"id":           identity.ID,
-		"identityType": identity.IdentityType,
-		"status":       identity.Status,
-		"verified":     identity.Verified,
-		"refId":        identity.IdentityRefID,
+		"id":              identity.ID,
+		"identityType":    normalizedRole,
+		"providerSubType": derivedSubType,
+		"status":          identity.Status,
+		"verified":        identity.Verified,
+		"refId":           identity.IdentityRefID,
 	}
 
 	// 添加关联信息
 	if identity.Provider != nil {
+		providerSubType := service.NormalizeProviderSubTypeForResponse(identity.Provider.SubType)
+		if providerSubType == "" {
+			providerSubType = service.NormalizeProviderSubTypeForResponse(mapProviderTypeToSubType(identity.Provider.ProviderType))
+		}
+		result["providerSubType"] = providerSubType
+		result["refId"] = identity.Provider.ID
 		result["provider"] = gin.H{
 			"id":          identity.Provider.ID,
 			"companyName": identity.Provider.CompanyName,
-			"subType":     identity.Provider.SubType,
+			"subType":     providerSubType,
 		}
 	}
 
-	if identity.Worker != nil {
-		// Worker 没有 Name 字段，使用 SkillType 构建显示名称
-		workerName := "工人"
-		if identity.Worker.SkillType != "" {
-			workerName = identity.Worker.SkillType + "工人"
-		}
-		result["worker"] = gin.H{
-			"id":   identity.Worker.ID,
-			"name": workerName,
-		}
+	if normalizedRole == "provider" && result["providerSubType"] == "" {
+		result["providerSubType"] = "designer"
 	}
 
 	response.Success(c, result)
+}
+
+func mapProviderTypeToSubType(providerType int8) string {
+	switch providerType {
+	case 1:
+		return "designer"
+	case 2:
+		return "company"
+	case 3:
+		return "foreman"
+	default:
+		return ""
+	}
+}
+
+func convertUserType(value interface{}) int8 {
+	switch raw := value.(type) {
+	case int8:
+		return raw
+	case int:
+		return int8(raw)
+	case int64:
+		return int8(raw)
+	case float64:
+		return int8(raw)
+	default:
+		return 0
+	}
 }

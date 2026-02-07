@@ -74,7 +74,7 @@ npm run android # Android 模拟器
 **故障排除**:
 - **如果没有显示"WebSocket 已连接"**: 检查 Tinode 容器状态 `docker ps | grep tinode`
 - **如果"登录成功"失败**: 验证登录 API 响应中是否包含 tinodeToken
-- **如果连接超时**: 检查 mobile/src/config/env.ts 中的 TINODE_SERVER_URL
+- **如果连接超时**: 检查 `mobile/.env` 中的 `TINODE_SERVER_URL`（可选覆盖）以及 `mobile/src/config/tinode.ts` / `mobile/src/services/TinodeService.ts` 的 host 选择逻辑
 
 ---
 

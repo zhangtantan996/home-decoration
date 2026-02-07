@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,9 @@ func OptionalJWT(secret string) gin.HandlerFunc {
 
 		tokenString := parts[1]
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("invalid signing method")
+			}
 			return []byte(secret), nil
 		})
 		if err != nil || !token.Valid {
@@ -38,10 +42,28 @@ func OptionalJWT(secret string) gin.HandlerFunc {
 			return
 		}
 
-		if userID, ok := claims["userId"]; ok {
-			c.Set("userId", uint64(userID.(float64)))
+		if userID, ok := claimToUint64(claims["userId"]); ok {
+			c.Set("userId", userID)
+			if userPublicID, ok := claims["userPublicId"]; ok {
+				c.Set("userPublicId", userPublicID)
+			} else if sub, ok := claims["sub"]; ok {
+				c.Set("userPublicId", sub)
+			}
 			if userType, ok := claims["userType"]; ok {
 				c.Set("userType", userType)
+			}
+			if activeRoleRaw, ok := claims["activeRole"]; ok {
+				if activeRole, ok := activeRoleRaw.(string); ok && activeRole != "" {
+					c.Set("activeRole", activeRole)
+				}
+			}
+			if providerID, ok := claimToUint64(claims["providerId"]); ok {
+				c.Set("providerId", providerID)
+			}
+			if providerSubTypeRaw, ok := claims["providerSubType"]; ok {
+				if providerSubType, ok := providerSubTypeRaw.(string); ok && providerSubType != "" {
+					c.Set("providerSubType", providerSubType)
+				}
 			}
 		}
 

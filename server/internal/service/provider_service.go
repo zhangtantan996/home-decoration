@@ -2,7 +2,9 @@ package service
 
 import (
 	"encoding/json"
+	"home-decoration-server/internal/dto"
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
 )
@@ -30,6 +32,7 @@ type ProviderQuery struct {
 type ProviderListItem struct {
 	ID            uint64  `json:"id"`
 	UserID        uint64  `json:"userId"`
+	UserPublicID  string  `json:"userPublicId,omitempty"`
 	ProviderType  int8    `json:"providerType"`
 	CompanyName   string  `json:"companyName"`
 	Nickname      string  `json:"nickname"`
@@ -161,9 +164,15 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			avatarPath = p.CoverImage
 		}
 
+		identity := dto.NewUserIdentity(&user)
+		if identity.UserPublicID == "" {
+			monitor.RecordPublicIDMissing("provider_list", identity.UserID, "provider_service_list")
+		}
+
 		result[i] = ProviderListItem{
 			ID:              p.ID,
-			UserID:          p.UserID,
+			UserID:          identity.UserID,
+			UserPublicID:    identity.UserPublicID,
 			ProviderType:    p.ProviderType,
 			CompanyName:     p.CompanyName,
 			Nickname:        user.Nickname,
@@ -217,6 +226,7 @@ type ProviderDetail struct {
 	// 服务区域（名称数组 + 代码数组，方便前端展示/编辑）
 	ServiceArea      []string `json:"serviceArea"`
 	ServiceAreaCodes []string `json:"serviceAreaCodes"`
+	UserPublicID     string   `json:"userPublicId,omitempty"`
 }
 
 // ProviderReviewItem 评价列表项
@@ -244,6 +254,9 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	var user model.User
 	if err := repository.DB.First(&user, provider.UserID).Error; err != nil {
 		return nil, err
+	}
+	if user.PublicID == "" {
+		monitor.RecordPublicIDMissing("provider_detail", user.ID, "provider_service_detail")
 	}
 	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
 	// Also fallback to provider cover image for legacy/seeded data.
@@ -316,6 +329,7 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		CaseCount:        caseCount,
 		ServiceArea:      serviceAreaNames,
 		ServiceAreaCodes: serviceAreaCodes,
+		UserPublicID:     user.PublicID,
 	}, nil
 }
 

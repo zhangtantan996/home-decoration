@@ -1,14 +1,17 @@
 import { create } from 'zustand';
 import { identityApi } from '../services/api';
 
-// 身份类型
+export type IdentityType = 'owner' | 'provider' | 'admin';
+export type ProviderSubType = 'designer' | 'company' | 'foreman';
+
 export interface Identity {
     id: number;
-    identityType: 'owner' | 'provider' | 'worker' | 'admin';
+    identityType: IdentityType;
+    providerSubType?: ProviderSubType;
     status: number; // 0=pending, 1=approved, 2=rejected, 3=suspended
     verified: boolean;
     verifiedAt?: string;
-    refId?: number; // provider.id 或 worker.id
+    refId?: number; // provider.id
     displayName: string;
     createdAt: string;
 }
@@ -19,10 +22,9 @@ interface IdentityState {
     loading: boolean;
     error: string | null;
 
-    // Actions
     fetchIdentities: () => Promise<void>;
     fetchCurrentIdentity: () => Promise<void>;
-    switchIdentity: (targetRole: string, currentRole?: string) => Promise<string>;
+    switchIdentity: (identityId: number, currentRole?: string) => Promise<string>;
     clearError: () => void;
 }
 
@@ -42,7 +44,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
         } catch (error: any) {
             set({
                 error: error.response?.data?.message || '获取身份列表失败',
-                loading: false
+                loading: false,
             });
         }
     },
@@ -57,23 +59,23 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
         } catch (error: any) {
             set({
                 error: error.response?.data?.message || '获取当前身份失败',
-                loading: false
+                loading: false,
             });
         }
     },
 
-    switchIdentity: async (targetRole: string, currentRole?: string) => {
+    switchIdentity: async (identityId: number, currentRole?: string) => {
         set({ loading: true, error: null });
         try {
-            const response: any = await identityApi.switch({ targetRole, currentRole });
+            const response: any = await identityApi.switch({ identityId, currentRole });
             const newToken = response.data?.token || response.token;
 
             if (!newToken) {
                 throw new Error('切换身份失败：未返回新 token');
             }
 
-            // 更新 token
-            localStorage.setItem('admin_token', newToken);
+            // Store as user identity token; never overwrite admin session token.
+            localStorage.setItem('token', newToken);
 
             // 重新获取当前身份
             await get().fetchCurrentIdentity();

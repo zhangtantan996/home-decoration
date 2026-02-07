@@ -3,43 +3,88 @@ package handler
 import (
 	"errors"
 	"log"
-	"strconv"
+	"strings"
 
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/tinode"
 	"home-decoration-server/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
-// GetTinodeUserID returns Tinode user topic id for the given app user id.
+// GetTinodeUserID returns Tinode user topic id for the given app user identifier.
 //
 // GET /api/v1/tinode/userid/:userId
+// `userId` can be an internal numeric id or a publicId.
 // Response: { code:0, data:{ tinodeUserId: "usr..." } }
 func GetTinodeUserID(c *gin.Context) {
-	userIDStr := c.Param("userId")
-	userID, err := strconv.ParseUint(userIDStr, 10, 64)
-	if err != nil || userID == 0 {
+	userIdentifier := strings.TrimSpace(c.Param("userId"))
+	if userIdentifier == "" {
 		response.Error(c, 400, "参数错误")
 		return
 	}
 
-	// Ensure the target user exists and has a public profile in Tinode DB.
-	var user model.User
-	if err := repository.DB.First(&user, userID).Error; err != nil {
-		response.Error(c, 404, "用户不存在")
+	platformHeader := strings.TrimSpace(c.GetHeader("X-Client-Platform"))
+	if platformHeader == "" {
+		platformHeader = strings.TrimSpace(c.GetHeader("X-Platform"))
+	}
+	if platformHeader == "" {
+		platformHeader = strings.TrimSpace(c.GetHeader("X-App-Platform"))
+	}
+	clientPlatform := monitor.DetectClientPlatform(platformHeader, c.GetHeader("User-Agent"))
+
+	rollbackDecision := monitor.EvaluatePublicIDRollback(userIdentifier, "tinode_userid_lookup")
+	if rollbackDecision.DrillEnabled {
+		c.Header("X-PublicId-Rollback-Drill", "1")
+	}
+	if rollbackDecision.ForceLegacyLookup {
+		c.Header("X-PublicId-Rollback-Mode", "legacy-id-only")
+	}
+
+	var (
+		user *model.User
+		err  error
+	)
+	if rollbackDecision.ForceLegacyLookup {
+		if !rollbackDecision.LegacyCapable {
+			response.Error(c, 400, "参数错误")
+			return
+		}
+		user, err = userService.GetUserByID(rollbackDecision.LegacyUserID)
+	} else {
+		user, err = userService.GetUserByIdentifier(userIdentifier)
+	}
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, 404, "用户不存在")
+			return
+		}
+		log.Printf("[Tinode] Resolve user failed (userid endpoint): identifier=%s, rollbackLegacy=%t, err=%v", userIdentifier, rollbackDecision.ForceLegacyLookup, err)
+		response.Error(c, 500, "查询用户失败")
 		return
 	}
-	if err := tinode.SyncUserToTinode(&user); err != nil {
-		log.Printf("[Tinode] Sync user failed (userid endpoint): userID=%d, err=%v", userID, err)
+
+	if strings.TrimSpace(user.PublicID) == "" {
+		monitor.RecordPublicIDMissing("tinode_userid_lookup", user.ID, "tinode_userid_endpoint")
+	}
+
+	rolloutDecision := monitor.EvaluatePublicIDRollout(user.ID, "tinode_userid_lookup", clientPlatform)
+	if rolloutDecision.Matched {
+		c.Header("X-PublicId-Rollout", "1")
+	}
+
+	if err := tinode.SyncUserToTinode(user); err != nil {
+		log.Printf("[Tinode] Sync user failed (userid endpoint): userID=%d, err=%v", user.ID, err)
 		response.Error(c, 500, "Tinode 同步失败")
 		return
 	}
 
-	tinodeUserID, err := tinode.UserIDToTinodeUserID(userID)
+	tinodeUserID, err := tinode.UserIDToTinodeUserID(user.ID)
 	if err != nil {
-		log.Printf("[Tinode] Compute user id failed: userID=%d, err=%v", userID, err)
+		log.Printf("[Tinode] Compute user id failed: userID=%d, err=%v", user.ID, err)
 		response.Error(c, 500, "Tinode 用户ID生成失败")
 		return
 	}
@@ -98,4 +143,3 @@ func ClearChatHistory(c *gin.Context) {
 	log.Printf("[ClearChat] Success: user=%d topic=%s", userId, topic)
 	response.SuccessWithMessage(c, "聊天记录已清空", nil)
 }
-

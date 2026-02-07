@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 	"unicode"
 
@@ -21,6 +23,14 @@ import (
 )
 
 var jwtSecret []byte
+
+const (
+	tokenUseAccess  = "access"
+	tokenUseRefresh = "refresh"
+
+	accessTokenTTL  = 2 * time.Hour
+	refreshTokenTTL = 7 * 24 * time.Hour
+)
 
 // InitJWT 初始化JWT密钥
 func InitJWT(secret string) {
@@ -131,18 +141,17 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}(user)
 
 	// 注册成功后自动签发 Token
-	// 获取用户的 activeRole 和 refID
-	activeRole, refID, err := getUserActiveRoleAndRefID(user)
+	roleCtx, err := getUserRoleContext(user)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	token, err := generateTokenV2(user.ID, activeRole, refID)
+	token, err := generateAccessTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	refreshToken, err := generateTokenV2(user.ID, activeRole, refID)
+	refreshToken, err := generateRefreshTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -202,12 +211,9 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		if req.Password == "" {
 			return nil, nil, errors.New("请输入密码")
 		}
-	} else {
+	} else if req.Code == "" {
 		// 默认验证码登录
-		// 验证手机验证码
-		if req.Code != "123456" { // 测试验证码
-			return nil, nil, errors.New("验证码错误")
-		}
+		return nil, nil, errors.New("请输入验证码")
 	}
 
 	// 查找用户
@@ -220,6 +226,11 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	// 如果是密码登录但用户不存在，统一返回错误（避免信息泄露）
 	if userNotFound && req.Type == "password" {
 		return nil, nil, errors.New("手机号或密码错误")
+	}
+
+	// 验证码登录时，用户不存在且验证码错误，直接返回（避免创建账号）
+	if userNotFound && req.Type != "password" && req.Code != "123456" {
+		return nil, nil, errors.New("验证码错误")
 	}
 
 	// 如果是验证码登录且用户不存在，自动创建账号
@@ -290,6 +301,9 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 			// 密码错误，记录失败次数
 			return nil, nil, s.handleLoginFailure(&user, "password")
 		}
+	} else if req.Code != "123456" {
+		// 验证码错误，记录失败次数
+		return nil, nil, s.handleLoginFailure(&user, "code")
 	}
 
 	// 登录成功，重置失败次数
@@ -303,19 +317,18 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	}
 
 	// 生成Token
-	// 获取用户的 activeRole 和 refID
-	activeRole, refID, err := getUserActiveRoleAndRefID(&user)
+	roleCtx, err := getUserRoleContext(&user)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	token, err := generateTokenV2(user.ID, activeRole, refID)
+	token, err := generateAccessTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// 生成RefreshToken (有效期更长)
-	refreshToken, err := generateTokenV2(user.ID, activeRole, refID)
+	refreshToken, err := generateRefreshTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -372,6 +385,26 @@ func (s *UserService) GetUserByID(id uint64) (*model.User, error) {
 	return &user, nil
 }
 
+// GetUserByIdentifier 根据用户标识获取用户（支持内部ID或publicId）
+func (s *UserService) GetUserByIdentifier(identifier string) (*model.User, error) {
+	trimmedIdentifier := strings.TrimSpace(identifier)
+	if trimmedIdentifier == "" {
+		return nil, fmt.Errorf("用户标识不能为空")
+	}
+
+	var user model.User
+	if userID, err := strconv.ParseUint(trimmedIdentifier, 10, 64); err == nil && userID > 0 {
+		if err := repository.DB.First(&user, userID).Error; err == nil {
+			return &user, nil
+		}
+	}
+
+	if err := repository.DB.Where("public_id = ?", trimmedIdentifier).First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // RefreshToken 刷新访问令牌
 func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (*TokenResponse, error) {
 	// 验证 RefreshToken
@@ -398,11 +431,6 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 		return nil, errors.New("刷新令牌格式错误")
 	}
 
-	userType, ok := claims["userType"].(float64)
-	if !ok {
-		return nil, errors.New("刷新令牌格式错误")
-	}
-
 	// 验证用户是否存在且状态正常
 	user, err := s.GetUserByID(uint64(userID))
 	if err != nil {
@@ -413,14 +441,23 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 		return nil, errors.New("账号已被禁用")
 	}
 
+	roleCtx, hasRoleContext := getRoleContextFromClaims(claims)
+	if !hasRoleContext {
+		resolvedCtx, resolveErr := getUserRoleContext(user)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		roleCtx = resolvedCtx
+	}
+
 	// 生成新的 Token
-	newToken, err := generateToken(uint64(userID), int8(userType), cfg.ExpireHour)
+	newToken, err := generateAccessTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, err
 	}
 
 	// 生成新的 RefreshToken
-	newRefreshToken, err := generateToken(uint64(userID), int8(userType), cfg.ExpireHour*24)
+	newRefreshToken, err := generateRefreshTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, err
 	}
@@ -555,28 +592,60 @@ func (s *UserService) handleLoginFailure(user *model.User, loginType string) err
 }
 
 // generateToken 生成JWT Token
-func generateToken(userID uint64, userType int8, expireHour int) (string, error) {
+func generateToken(userID uint64, userPublicID string, userType int8, expireHour int) (string, error) {
+	resolvedPublicID, err := resolveUserPublicID(userID, userPublicID)
+	if err != nil {
+		return "", err
+	}
+
 	claims := jwt.MapClaims{
-		"userId":   userID,
-		"userType": userType,
-		"exp":      time.Now().Add(time.Hour * time.Duration(expireHour)).Unix(),
-		"iat":      time.Now().Unix(),
+		"sub":          resolvedPublicID,
+		"userPublicId": resolvedPublicID,
+		"userId":       userID,
+		"userType":     userType,
+		"exp":          time.Now().Add(time.Hour * time.Duration(expireHour)).Unix(),
+		"iat":          time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
 }
 
+// generateAccessTokenV2 生成访问令牌 (2小时有效)
+func generateAccessTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string) (string, error) {
+	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseAccess, accessTokenTTL)
+}
+
+// generateRefreshTokenV2 生成刷新令牌 (7天有效)
+func generateRefreshTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string) (string, error) {
+	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseRefresh, refreshTokenTTL)
+}
+
 // generateTokenV2 生成JWT Token v2 (支持多身份)
-func generateTokenV2(userID uint64, activeRole string, refID *uint64) (string, error) {
+func generateTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string, tokenUse string, ttl time.Duration) (string, error) {
+	resolvedPublicID, err := resolveUserPublicID(userID, userPublicID)
+	if err != nil {
+		return "", err
+	}
+
+	if activeRole != "provider" {
+		providerSubType = ""
+		refID = nil
+	}
+
 	claims := jwt.MapClaims{
-		"userId":     userID,
-		"activeRole": activeRole,
-		"providerId": refID,
-		"jti":        uuid.New().String(),
-		"sid":        generateSessionID(),
-		"exp":        time.Now().Add(2 * time.Hour).Unix(),
-		"iat":        time.Now().Unix(),
+		"sub":             resolvedPublicID,
+		"userPublicId":    resolvedPublicID,
+		"userId":          userID,
+		"activeRole":      activeRole,
+		"providerId":      refID,
+		"providerSubType": providerSubType,
+		"token_type":      "user",
+		"token_use":       tokenUse,
+		"jti":             uuid.New().String(),
+		"sid":             generateSessionID(),
+		"exp":             time.Now().Add(ttl).Unix(),
+		"iat":             time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -588,35 +657,37 @@ func generateSessionID() string {
 	return uuid.New().String()
 }
 
-// getUserActiveRoleAndRefID 根据 UserType 获取 activeRole 和 refID
-func getUserActiveRoleAndRefID(user *model.User) (string, *uint64, error) {
-	var activeRole string
-	var refID *uint64
-
-	switch user.UserType {
-	case 1:
-		activeRole = "owner"
-	case 2:
-		activeRole = "provider"
-		// 查询 provider ID
-		var provider model.Provider
-		if err := repository.DB.Where("user_id = ?", user.ID).First(&provider).Error; err == nil {
-			refID = &provider.ID
-		}
-	case 3:
-		activeRole = "worker"
-		// 查询 worker ID
-		var worker model.Worker
-		if err := repository.DB.Where("user_id = ?", user.ID).First(&worker).Error; err == nil {
-			refID = &worker.ID
-		}
-	case 4:
-		activeRole = "admin"
-	default:
-		activeRole = "owner"
+// resolveUserPublicID resolves and backfills user public id when needed.
+func resolveUserPublicID(userID uint64, userPublicID string) (string, error) {
+	if userPublicID != "" {
+		return userPublicID, nil
 	}
 
-	return activeRole, refID, nil
+	var user model.User
+	if err := repository.DB.Select("id", "public_id").First(&user, userID).Error; err != nil {
+		return "", fmt.Errorf("查询用户public_id失败: %w", err)
+	}
+
+	if user.PublicID != "" {
+		return user.PublicID, nil
+	}
+
+	generatedPublicID := model.GeneratePublicID()
+	if err := repository.DB.Model(&model.User{}).Where("id = ?", userID).Update("public_id", generatedPublicID).Error; err != nil {
+		return "", fmt.Errorf("补齐用户public_id失败: %w", err)
+	}
+
+	return generatedPublicID, nil
+}
+
+// getUserActiveRoleAndRefID 根据 UserType 获取 activeRole 和 refID
+func getUserActiveRoleAndRefID(user *model.User) (string, *uint64, error) {
+	ctx, err := getUserRoleContext(user)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return ctx.ActiveRole, ctx.ProviderID, nil
 }
 
 // HashPassword 加密密码

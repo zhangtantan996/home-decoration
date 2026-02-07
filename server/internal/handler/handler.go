@@ -52,14 +52,24 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	roleCtx, _ := service.GetRoleContextForResponse(user)
+	providerID := uint64(0)
+	if roleCtx.ProviderID != nil {
+		providerID = *roleCtx.ProviderID
+	}
+
 	response.SuccessWithMessage(c, "注册成功", gin.H{
-		"token":        tokenResp.Token,
-		"refreshToken": tokenResp.RefreshToken,
-		"expiresIn":    tokenResp.ExpiresIn,
-		"tinodeToken":  tokenResp.TinodeToken,
-		"tinodeError":  tokenResp.TinodeError,
+		"token":           tokenResp.Token,
+		"refreshToken":    tokenResp.RefreshToken,
+		"expiresIn":       tokenResp.ExpiresIn,
+		"tinodeToken":     tokenResp.TinodeToken,
+		"tinodeError":     tokenResp.TinodeError,
+		"activeRole":      roleCtx.ActiveRole,
+		"providerId":      providerID,
+		"providerSubType": roleCtx.ProviderSubType,
 		"user": gin.H{
 			"id":       user.ID,
+			"publicId": user.PublicID,
 			"phone":    user.Phone,
 			"nickname": user.Nickname,
 			"avatar":   imgutil.GetFullImageURL(user.Avatar),
@@ -82,14 +92,24 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	roleCtx, _ := service.GetRoleContextForResponse(user)
+	providerID := uint64(0)
+	if roleCtx.ProviderID != nil {
+		providerID = *roleCtx.ProviderID
+	}
+
 	response.Success(c, gin.H{
-		"token":        tokenResp.Token,
-		"refreshToken": tokenResp.RefreshToken,
-		"expiresIn":    tokenResp.ExpiresIn,
-		"tinodeToken":  tokenResp.TinodeToken,
-		"tinodeError":  tokenResp.TinodeError,
+		"token":           tokenResp.Token,
+		"refreshToken":    tokenResp.RefreshToken,
+		"expiresIn":       tokenResp.ExpiresIn,
+		"tinodeToken":     tokenResp.TinodeToken,
+		"tinodeError":     tokenResp.TinodeError,
+		"activeRole":      roleCtx.ActiveRole,
+		"providerId":      providerID,
+		"providerSubType": roleCtx.ProviderSubType,
 		"user": gin.H{
 			"id":       user.ID,
+			"publicId": user.PublicID,
 			"phone":    user.Phone,
 			"nickname": user.Nickname,
 			"avatar":   imgutil.GetFullImageURL(user.Avatar),
@@ -146,17 +166,46 @@ func RefreshToken(c *gin.Context) {
 		return
 	}
 
+	activeRole := "owner"
+	providerSubType := ""
+	providerID := uint64(0)
+
+	if roleContext, ok := service.GetRoleContextFromClaimsForResponse(tokenResp.AccessToken); ok {
+		activeRole = roleContext.ActiveRole
+		providerSubType = roleContext.ProviderSubType
+		if roleContext.ProviderID != nil {
+			providerID = *roleContext.ProviderID
+		}
+	} else if roleContext, ok := service.GetRoleContextFromClaimsForResponse(req.RefreshToken); ok {
+		activeRole = roleContext.ActiveRole
+		providerSubType = roleContext.ProviderSubType
+		if roleContext.ProviderID != nil {
+			providerID = *roleContext.ProviderID
+		}
+	}
+
+	if activeRole != "provider" {
+		providerSubType = ""
+		providerID = 0
+	}
+
 	response.Success(c, gin.H{
-		"token":        tokenResp.AccessToken,
-		"refreshToken": tokenResp.RefreshToken,
-		"expiresIn":    tokenResp.ExpiresIn,
+		"token":           tokenResp.AccessToken,
+		"refreshToken":    tokenResp.RefreshToken,
+		"expiresIn":       tokenResp.ExpiresIn,
+		"activeRole":      activeRole,
+		"providerSubType": providerSubType,
+		"providerId":      providerID,
 	})
 }
 
 // RefreshTinodeToken 刷新 Tinode Token
 func RefreshTinodeToken(c *gin.Context) {
-	userIdFloat := c.GetFloat64("userId")
-	userId := uint64(userIdFloat)
+	userId := c.GetUint64("userId")
+	if userId == 0 {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
 
 	user, err := userService.GetUserByID(userId)
 	if err != nil {
@@ -194,6 +243,7 @@ func GetProfile(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"id":       user.ID,
+		"publicId": user.PublicID,
 		"phone":    user.Phone,
 		"nickname": user.Nickname,
 		"avatar":   imgutil.GetFullImageURL(user.Avatar),

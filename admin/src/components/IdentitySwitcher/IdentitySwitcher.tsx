@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Dropdown, Badge, Button, message, Spin } from 'antd';
 import { UserOutlined, SwapOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
-import { useIdentityStore } from '../../stores/identityStore';
+import { useIdentityStore, type Identity } from '../../stores/identityStore';
 import { useAuthStore } from '../../stores/authStore';
 
 const IdentitySwitcher: React.FC = () => {
@@ -10,77 +10,105 @@ const IdentitySwitcher: React.FC = () => {
     const { admin } = useAuthStore();
 
     useEffect(() => {
-        // 组件挂载时获取身份列表
         if (admin) {
             fetchIdentities();
         }
     }, [admin]);
 
     useEffect(() => {
-        // 显示错误消息
         if (error) {
             message.error(error);
             clearError();
         }
     }, [error]);
 
-    const handleSwitchIdentity = async (targetRole: string) => {
-        if (loading) return;
+    const getIdentityKey = (identity: Identity) => {
+        if (identity.identityType !== 'provider') {
+            return identity.identityType;
+        }
+        return identity.providerSubType || 'provider';
+    };
+
+    const getIdentityLabel = (identity: Identity) => {
+        if (identity.displayName) {
+            return identity.displayName;
+        }
+
+        switch (getIdentityKey(identity)) {
+            case 'owner':
+                return '业主';
+            case 'designer':
+                return '设计师';
+            case 'company':
+                return '装修公司';
+            case 'foreman':
+                return '工长';
+            case 'provider':
+                return '服务商';
+            case 'admin':
+                return '管理员';
+            default:
+                return identity.identityType;
+        }
+    };
+
+    const handleSwitchIdentity = async (identity: Identity) => {
+        if (loading) {
+            return;
+        }
 
         try {
             const currentRole = currentIdentity?.identityType || admin?.activeRole;
-            await switchIdentity(targetRole, currentRole);
+            await switchIdentity(identity.id, currentRole);
             message.success('身份切换成功');
-            // 刷新页面以更新所有数据
             window.location.reload();
         } catch (err: any) {
             message.error(err.message || '切换身份失败');
         }
     };
 
-    // 身份类型图标映射
     const identityIcons: Record<string, React.ReactNode> = {
         owner: '👤',
         provider: '🏢',
-        worker: '👷',
+        designer: '🎨',
+        company: '🏬',
+        foreman: '👷',
         admin: '👨‍💼',
     };
 
-    // 身份类型颜色映射
     const identityColors: Record<string, string> = {
         owner: '#1890ff',
         provider: '#52c41a',
-        worker: '#faad14',
+        designer: '#722ed1',
+        company: '#13c2c2',
+        foreman: '#fa8c16',
         admin: '#f5222d',
     };
 
-    // 构建下拉菜单项
     const menuItems: MenuProps['items'] = identities.map((identity) => {
         const isCurrent = currentIdentity?.id === identity.id;
+        const key = getIdentityKey(identity);
         return {
             key: identity.id,
             label: (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span>
-                        <span style={{ marginRight: 8 }}>{identityIcons[identity.identityType]}</span>
-                        {identity.displayName}
+                        <span style={{ marginRight: 8 }}>{identityIcons[key] || identityIcons.owner}</span>
+                        {getIdentityLabel(identity)}
                     </span>
                     {isCurrent && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
                 </div>
             ),
             onClick: () => {
                 if (!isCurrent) {
-                    handleSwitchIdentity(identity.identityType);
+                    handleSwitchIdentity(identity);
                 }
             },
-            disabled: isCurrent || identity.status !== 1, // 当前身份或未激活的身份不可点击
+            disabled: isCurrent || identity.status !== 1,
         };
     });
 
-    // 添加"申请新身份"选项
-    menuItems.push({
-        type: 'divider',
-    });
+    menuItems.push({ type: 'divider' });
     menuItems.push({
         key: 'apply',
         label: (
@@ -94,10 +122,8 @@ const IdentitySwitcher: React.FC = () => {
         },
     });
 
-    // 当前身份显示
-    const currentDisplayName = currentIdentity?.displayName || admin?.activeRole || '未知身份';
-    const currentType = currentIdentity?.identityType || 'owner';
-    const currentColor = identityColors[currentType];
+    const currentIdentityKey = currentIdentity ? getIdentityKey(currentIdentity) : 'owner';
+    const currentDisplayName = currentIdentity ? getIdentityLabel(currentIdentity) : (admin?.activeRole || '未知身份');
 
     return (
         <Dropdown menu={{ items: menuItems }} placement="bottomRight" disabled={loading}>
@@ -114,7 +140,7 @@ const IdentitySwitcher: React.FC = () => {
                     <Spin size="small" />
                 ) : (
                     <>
-                        <Badge color={currentColor} />
+                        <Badge color={identityColors[currentIdentityKey] || '#1890ff'} />
                         <span>{currentDisplayName}</span>
                     </>
                 )}

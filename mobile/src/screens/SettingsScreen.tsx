@@ -52,6 +52,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         {
             items: [
                 { label: '账号安全', onPress: () => navigation.navigate('AccountSecurity') },
+                { label: '身份管理', onPress: () => navigation.navigate('IdentityManagement') },
                 { label: '隐私设置', onPress: () => showDevModal('隐私设置') },
             ]
         },
@@ -106,7 +107,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
                     <Text style={styles.logoutText}>退出登录</Text>
                 </TouchableOpacity>
 
-                <View style={{ height: 40 }} />
+                <View style={styles.bottomSpacer} />
             </ScrollView>
 
             {/* 开发中弹框 */}
@@ -191,6 +192,9 @@ const styles = StyleSheet.create({
         color: '#EF4444',
         fontSize: 16,
         fontWeight: '500',
+    },
+    bottomSpacer: {
+        height: 40,
     },
     // 弹窗样式
     dialogOverlay: {

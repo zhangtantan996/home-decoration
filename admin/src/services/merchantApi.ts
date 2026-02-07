@@ -163,6 +163,7 @@ export { merchantApi };
 export default {
     ...merchantApi,
     getIMUserSig: () => merchantApi.get('/merchant/im/usersig'),
-    // Tinode helper (maps app user id -> tinode user id like `usrXXXX`).
-    getTinodeUserId: (userId: number) => merchantApi.get(`/merchant/tinode/userid/${userId}`),
+    // Tinode helper (maps app user identifier -> tinode user id like `usrXXXX`).
+    getTinodeUserId: (userIdentifier: number | string) => merchantApi.get(`/merchant/tinode/userid/${encodeURIComponent(String(userIdentifier))}`),
+    resolveTinodeUserId: (userIdentifier: number | string) => merchantApi.get(`/merchant/tinode/userid/${encodeURIComponent(String(userIdentifier))}`),
 };

@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/tinode"
 )
@@ -71,8 +72,8 @@ func setupAppDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := setupSQLiteDB(t)
-	if err := db.AutoMigrate(&model.User{}); err != nil {
-		t.Fatalf("auto migrate user: %v", err)
+	if err := db.AutoMigrate(&model.User{}, &model.SystemConfig{}); err != nil {
+		t.Fatalf("auto migrate models: %v", err)
 	}
 	return db
 }
@@ -100,7 +101,9 @@ func setupTinodeChatDB(t *testing.T, includeMessages bool) *gorm.DB {
 	db := setupSQLiteDB(t)
 	if err := db.Exec(`CREATE TABLE subscriptions (
 		topic TEXT,
-		userid INTEGER
+		userid INTEGER,
+		modegiven TEXT,
+		deletedat TEXT
 	)`).Error; err != nil {
 		t.Fatalf("create subscriptions table: %v", err)
 	}
@@ -122,12 +125,26 @@ func seedUser(t *testing.T, db *gorm.DB, userID uint64) {
 	t.Helper()
 
 	user := model.User{
-		Base: model.Base{ID: userID},
+		Base:     model.Base{ID: userID},
 		Phone:    "13800000000",
 		Nickname: "tester",
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("seed user: %v", err)
+	}
+}
+
+func seedSystemConfig(t *testing.T, db *gorm.DB, key string, value string) {
+	t.Helper()
+
+	config := model.SystemConfig{
+		Key:         key,
+		Value:       value,
+		Description: "test",
+		Editable:    true,
+	}
+	if err := db.Create(&config).Error; err != nil {
+		t.Fatalf("seed system config %s: %v", key, err)
 	}
 }
 
@@ -180,28 +197,30 @@ func TestGetTinodeUserID(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                string
-		userIDParam         string
-		seedUserID          uint64
-		tinodeDBFactory     func(t *testing.T) *gorm.DB
-		setEnv              func(t *testing.T)
-		expectCode          int
-		expectMessage       string
-		expectTinodeUserID  bool
+		name               string
+		userIDParam        string
+		useSeedPublicID    bool
+		seedUserID         uint64
+		tinodeDBFactory    func(t *testing.T) *gorm.DB
+		setEnv             func(t *testing.T)
+		systemConfigs      map[string]string
+		expectCode         int
+		expectMessage      string
+		expectTinodeUserID bool
 	}{
 		{
-			name:          "invalid user id",
+			name:          "user identifier not found",
 			userIDParam:   "abc",
 			setEnv:        setValidEnv,
-			expectCode:    400,
-			expectMessage: "参数错误",
+			expectCode:    404,
+			expectMessage: "用户不存在",
 		},
 		{
 			name:          "zero user id",
 			userIDParam:   "0",
 			setEnv:        setValidEnv,
-			expectCode:    400,
-			expectMessage: "参数错误",
+			expectCode:    404,
+			expectMessage: "用户不存在",
 		},
 		{
 			name:          "user not found",
@@ -237,12 +256,51 @@ func TestGetTinodeUserID(t *testing.T) {
 			expectMessage:      "success",
 			expectTinodeUserID: true,
 		},
+		{
+			name:               "success with public id",
+			useSeedPublicID:    true,
+			seedUserID:         12,
+			tinodeDBFactory:    setupTinodeUsersDB,
+			setEnv:             setValidEnv,
+			expectCode:         0,
+			expectMessage:      "success",
+			expectTinodeUserID: true,
+		},
+		{
+			name:            "force legacy lookup rejects public id",
+			useSeedPublicID: true,
+			seedUserID:      12,
+			setEnv:          setValidEnv,
+			systemConfigs: map[string]string{
+				model.ConfigKeyPublicIDRollbackForceLegacyLookup: "true",
+			},
+			expectCode:    400,
+			expectMessage: "参数错误",
+		},
+		{
+			name:            "force legacy lookup with numeric id",
+			userIDParam:     "12",
+			seedUserID:      12,
+			tinodeDBFactory: setupTinodeUsersDB,
+			setEnv:          setValidEnv,
+			systemConfigs: map[string]string{
+				model.ConfigKeyPublicIDRollbackForceLegacyLookup: "true",
+			},
+			expectCode:         0,
+			expectMessage:      "success",
+			expectTinodeUserID: true,
+		},
 	}
 
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			monitor.ResetPublicIDRollbackForTest()
+
 			appDB := setupAppDB(t)
+			for key, value := range tc.systemConfigs {
+				seedSystemConfig(t, appDB, key, value)
+			}
 			if tc.seedUserID != 0 {
 				seedUser(t, appDB, tc.seedUserID)
 			}
@@ -257,11 +315,20 @@ func TestGetTinodeUserID(t *testing.T) {
 				tc.setEnv(t)
 			}
 
+			requestIdentifier := tc.userIDParam
+			if tc.useSeedPublicID {
+				var seededUser model.User
+				if err := appDB.First(&seededUser, tc.seedUserID).Error; err != nil {
+					t.Fatalf("load seeded user: %v", err)
+				}
+				requestIdentifier = seededUser.PublicID
+			}
+
 			w := performRequest(
 				t,
 				http.MethodGet,
-				"/api/v1/tinode/userid/"+tc.userIDParam,
-				gin.Params{{Key: "userId", Value: tc.userIDParam}},
+				"/api/v1/tinode/userid/"+requestIdentifier,
+				gin.Params{{Key: "userId", Value: requestIdentifier}},
 				nil,
 				GetTinodeUserID,
 			)
@@ -337,33 +404,35 @@ func TestClearChatHistory(t *testing.T) {
 			expectMessage: "Tinode 服务不可用",
 		},
 		{
-			name:  "unauthorized",
-			topic: validTopic,
+			name:   "insufficient permission",
+			topic:  validTopic,
 			userID: 10,
 			tinodeDBFactory: func(t *testing.T) *gorm.DB {
 				db := setupTinodeChatDB(t, true)
 				if err := db.Exec(
-					"INSERT INTO subscriptions (topic, userid) VALUES (?, ?)",
+					"INSERT INTO subscriptions (topic, userid, modegiven) VALUES (?, ?, ?)",
 					validTopic,
-					999,
+					10,
+					"R",
 				).Error; err != nil {
 					t.Fatalf("seed subscription: %v", err)
 				}
 				return db
 			},
 			expectCode:    403,
-			expectMessage: "无权删除此话题的消息",
+			expectMessage: "无权删除此话题的消息（需要管理员权限）",
 		},
 		{
-			name:  "delete error",
-			topic: validTopic,
+			name:   "delete error",
+			topic:  validTopic,
 			userID: 10,
 			tinodeDBFactory: func(t *testing.T) *gorm.DB {
 				db := setupTinodeChatDB(t, false)
 				if err := db.Exec(
-					"INSERT INTO subscriptions (topic, userid) VALUES (?, ?)",
+					"INSERT INTO subscriptions (topic, userid, modegiven) VALUES (?, ?, ?)",
 					validTopic,
 					10,
+					"O",
 				).Error; err != nil {
 					t.Fatalf("seed subscription: %v", err)
 				}
@@ -373,15 +442,16 @@ func TestClearChatHistory(t *testing.T) {
 			expectMessage: "清空聊天记录失败",
 		},
 		{
-			name:  "success",
-			topic: validTopic,
+			name:   "success",
+			topic:  validTopic,
 			userID: 10,
 			tinodeDBFactory: func(t *testing.T) *gorm.DB {
 				db := setupTinodeChatDB(t, true)
 				if err := db.Exec(
-					"INSERT INTO subscriptions (topic, userid) VALUES (?, ?)",
+					"INSERT INTO subscriptions (topic, userid, modegiven) VALUES (?, ?, ?)",
 					validTopic,
 					10,
+					"O",
 				).Error; err != nil {
 					t.Fatalf("seed subscription: %v", err)
 				}

@@ -8,11 +8,10 @@ import { Button } from '@/components/Button';
 
 import './index.scss';
 
-const identityTypes = [
+const identityTypes: Array<{ value: 'designer' | 'company' | 'foreman'; label: string }> = [
   { value: 'designer', label: '设计师' },
   { value: 'company', label: '装修公司' },
-  { value: 'foreman', label: '工长' },
-  { value: 'worker', label: '工人' }
+  { value: 'foreman', label: '工长' }
 ];
 
 export default function IdentityApply() {
@@ -41,9 +40,12 @@ export default function IdentityApply() {
 
   const handleSubmit = async () => {
     const selectedType = identityTypes[selectedIndex].value;
+    const applicationData = documents.length > 0
+      ? JSON.stringify({ documents })
+      : undefined;
 
     try {
-      await applyIdentity(selectedType, documents);
+      await applyIdentity(selectedType, applicationData);
       setTimeout(() => {
         Taro.navigateBack();
       }, 1500);

@@ -245,12 +245,17 @@ func (s *WechatAuthService) findOrCreateUserByPhone(phone string) (*model.User, 
 }
 
 func issueTokenResponse(user *model.User, cfg *config.JWTConfig) (*TokenResponse, error) {
-	token, err := generateToken(user.ID, user.UserType, cfg.ExpireHour)
+	roleCtx, err := getUserRoleContext(user)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := generateToken(user.ID, user.UserType, cfg.ExpireHour*24)
+	token, err := generateAccessTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshToken, err := generateRefreshTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, err
 	}

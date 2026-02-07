@@ -44,6 +44,7 @@ import NotificationScreen from '../screens/NotificationScreen';
 import DesignFilesScreen from '../screens/DesignFilesScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
 import IdentityApplicationScreen from '../screens/IdentityApplicationScreen';
+import IdentityManagementScreen from '../screens/IdentityManagementScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
@@ -334,6 +335,11 @@ const AppNavigator = () => {
                             component={IdentityApplicationScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
+                        <Stack.Screen
+                            name="IdentityManagement"
+                            component={IdentityManagementScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
                     </>
                 ) : (
                     <Stack.Screen name="Login" component={LoginScreen} />
@@ -358,4 +364,3 @@ const styles = StyleSheet.create({
 });
 
 export default AppNavigator;
-

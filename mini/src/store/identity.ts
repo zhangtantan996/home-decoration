@@ -13,7 +13,7 @@ interface IdentityState {
   error: string | null;
   fetchIdentities: () => Promise<void>;
   switchIdentity: (identityId: number) => Promise<void>;
-  applyIdentity: (identityType: string, documents?: string[]) => Promise<void>;
+  applyIdentity: (providerSubType: 'designer' | 'company' | 'foreman', applicationData?: string) => Promise<void>;
   clear: () => void;
 }
 
@@ -28,7 +28,7 @@ const taroStorage = {
 
 export const useIdentityStore = create<IdentityState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       identities: [],
       currentIdentity: undefined,
       loading: false,
@@ -57,7 +57,10 @@ export const useIdentityStore = create<IdentityState>()(
             refreshToken: response.refreshToken,
             expiresIn: response.expiresIn
           });
-          useAuthStore.getState().updateUser({ activeRole: response.activeRole });
+          useAuthStore.getState().updateUser({
+            activeRole: response.activeRole,
+            ...(response.providerSubType ? { providerSubType: response.providerSubType } : {})
+          });
 
           const identities = await identityService.list();
           const current = await identityService.getCurrent();
@@ -72,10 +75,14 @@ export const useIdentityStore = create<IdentityState>()(
         }
       },
 
-      applyIdentity: async (identityType: string, documents?: string[]) => {
+      applyIdentity: async (providerSubType: 'designer' | 'company' | 'foreman', applicationData?: string) => {
         set({ loading: true, error: null });
         try {
-          await identityService.apply({ identityType, documents });
+          await identityService.apply({
+            identityType: 'provider',
+            providerSubType,
+            ...(applicationData ? { applicationData } : {}),
+          });
 
           const identities = await identityService.list();
           set({ identities, loading: false });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Dropdown, Badge, Button, Empty, Spin, message } from 'antd';
 import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import { notificationApi } from '../services/api';
@@ -15,48 +15,90 @@ interface Notification {
     createdAt: string;
 }
 
+type NotificationListResponse = { data?: { list?: Notification[] } };
+type UnreadCountResponse = { data?: { count?: number } };
+
+const getErrorStatus = (error: unknown): number | undefined => {
+    if (typeof error !== 'object' || error === null || !('response' in error)) {
+        return undefined;
+    }
+
+    const response = (error as { response?: { status?: number } }).response;
+    return response?.status;
+};
+
 const NotificationDropdown: React.FC = () => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const [open, setOpen] = useState(false);
+    const [notificationAvailable, setNotificationAvailable] = useState(true);
+    const authErrorNotifiedRef = useRef(false);
+
+    const handleAuthError = useCallback(() => {
+        if (!authErrorNotifiedRef.current) {
+            message.warning('通知权限不可用，已暂停刷新');
+            authErrorNotifiedRef.current = true;
+        }
+
+        setNotificationAvailable(false);
+        setNotifications([]);
+        setUnreadCount(0);
+        setOpen(false);
+    }, []);
 
     // 加载通知列表（最近5条）
-    const loadNotifications = async () => {
+    const loadNotifications = useCallback(async () => {
+        if (!notificationAvailable) return;
+
         try {
             setLoading(true);
-            const res = await notificationApi.list({ page: 1, pageSize: 5 });
-            setNotifications((res as any).data?.list || []);
-        } catch (error) {
+            const res = await notificationApi.list({ page: 1, pageSize: 5 }) as NotificationListResponse;
+            setNotifications(res.data?.list || []);
+        } catch (error: unknown) {
+            const status = getErrorStatus(error);
+            if (status === 401 || status === 403) {
+                handleAuthError();
+                return;
+            }
             console.error('Failed to load notifications', error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [handleAuthError, notificationAvailable]);
 
     // 加载未读数量
-    const loadUnreadCount = async () => {
+    const loadUnreadCount = useCallback(async () => {
+        if (!notificationAvailable) return;
+
         try {
-            const res = await notificationApi.getUnreadCount();
-            setUnreadCount((res as any).data?.count || 0);
-        } catch (error) {
+            const res = await notificationApi.getUnreadCount() as UnreadCountResponse;
+            setUnreadCount(res.data?.count || 0);
+        } catch (error: unknown) {
+            const status = getErrorStatus(error);
+            if (status === 401 || status === 403) {
+                handleAuthError();
+                return;
+            }
             console.error('Failed to load unread count', error);
         }
-    };
+    }, [handleAuthError, notificationAvailable]);
 
     useEffect(() => {
+        if (!notificationAvailable) return;
+
         loadUnreadCount();
         // 每30秒刷新一次未读数量
         const interval = setInterval(loadUnreadCount, 30000);
         return () => clearInterval(interval);
-    }, []);
+    }, [loadUnreadCount, notificationAvailable]);
 
     // 打开下拉框时加载通知
     useEffect(() => {
-        if (open) {
+        if (open && notificationAvailable) {
             loadNotifications();
         }
-    }, [open]);
+    }, [loadNotifications, notificationAvailable, open]);
 
     // 标记为已读
     const handleMarkAsRead = async (id: number, e: React.MouseEvent) => {
@@ -68,7 +110,7 @@ const NotificationDropdown: React.FC = () => {
             );
             setUnreadCount(prev => Math.max(0, prev - 1));
             message.success('已标记为已读');
-        } catch (error) {
+        } catch {
             message.error('操作失败');
         }
     };
@@ -80,7 +122,7 @@ const NotificationDropdown: React.FC = () => {
             setNotifications(prev => prev.map(item => ({ ...item, isRead: true })));
             setUnreadCount(0);
             message.success('已全部标记为已读');
-        } catch (error) {
+        } catch {
             message.error('操作失败');
         }
     };
@@ -93,7 +135,7 @@ const NotificationDropdown: React.FC = () => {
             setNotifications(prev => prev.filter(item => item.id !== id));
             loadUnreadCount();
             message.success('删除成功');
-        } catch (error) {
+        } catch {
             message.error('删除失败');
         }
     };
@@ -116,21 +158,30 @@ const NotificationDropdown: React.FC = () => {
 
     // 点击通知项
     const handleNotificationClick = async (item: Notification) => {
-        // 标记为已读
-        if (!item.isRead) {
-            await notificationApi.markAsRead(item.id);
-            setNotifications(prev =>
-                prev.map(n => (n.id === item.id ? { ...n, isRead: true } : n))
-            );
-            setUnreadCount(prev => Math.max(0, prev - 1));
-        }
+        try {
+            // 标记为已读
+            if (!item.isRead) {
+                await notificationApi.markAsRead(item.id);
+                setNotifications(prev =>
+                    prev.map(n => (n.id === item.id ? { ...n, isRead: true } : n))
+                );
+                setUnreadCount(prev => Math.max(0, prev - 1));
+            }
 
-        // 根据通知类型跳转（可选，根据实际需求扩展）
-        if (item.actionUrl) {
-            window.location.href = item.actionUrl;
+            // 根据通知类型跳转（可选，根据实际需求扩展）
+            if (item.actionUrl) {
+                window.location.href = item.actionUrl;
+            }
+        } catch (error: unknown) {
+            const status = getErrorStatus(error);
+            if (status === 401 || status === 403) {
+                handleAuthError();
+                return;
+            }
+            message.error('操作失败');
+        } finally {
+            setOpen(false);
         }
-
-        setOpen(false);
     };
 
     // 渲染下拉菜单内容
@@ -246,17 +297,19 @@ const NotificationDropdown: React.FC = () => {
     return (
         <Dropdown
             menu={{ items: [] }}
-            dropdownRender={() => dropdownContent}
+            popupRender={() => dropdownContent}
             trigger={['click']}
             open={open}
             onOpenChange={setOpen}
             placement="bottomRight"
+            disabled={!notificationAvailable}
         >
-            <Badge count={unreadCount} offset={[-2, 2]} size="small">
+            <Badge count={notificationAvailable ? unreadCount : 0} offset={[-2, 2]} size="small">
                 <Button
                     type="text"
                     icon={<BellOutlined style={{ fontSize: 18 }} />}
                     style={{ border: 'none', boxShadow: 'none' }}
+                    disabled={!notificationAvailable}
                 />
             </Badge>
         </Dropdown>

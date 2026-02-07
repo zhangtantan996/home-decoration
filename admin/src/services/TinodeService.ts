@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Tinode } from 'tinode-sdk';
 import api from './api';
 
@@ -28,8 +29,15 @@ class SimpleEventEmitter {
   }
 }
 
+const normalizeTinodeHost = (rawHost: string): string => {
+  const trimmed = rawHost.trim();
+  if (!trimmed) return '';
+  const withoutScheme = trimmed.replace(/^(ws|wss|http|https):\/\//i, '');
+  return withoutScheme.split('/')[0] || '';
+};
+
 const DEFAULT_CONFIG = {
-  host: import.meta.env.VITE_TINODE_HOST || 'localhost:6060',
+  host: normalizeTinodeHost(import.meta.env.VITE_TINODE_HOST || 'localhost:6060'),
   apiKey: import.meta.env.VITE_TINODE_API_KEY || 'AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K',
   appName: 'HomeDecoration-Merchant',
 };
@@ -69,7 +77,8 @@ class TinodeService extends SimpleEventEmitter {
     if (this.initPromise) return this.initPromise;
 
     const { host, apiKey, appName } = { ...DEFAULT_CONFIG, ...config };
-    console.log('[Tinode] 初始化中...', { host, appName });
+    const secureTransport = import.meta.env.PROD || window.location.protocol === 'https:';
+    console.log('[Tinode] 初始化中...', { host, appName, secureTransport });
     this.initPromise = (async () => {
       try {
         this.tinode = new Tinode({
@@ -77,7 +86,7 @@ class TinodeService extends SimpleEventEmitter {
           host,
           apiKey,
           transport: 'ws',
-          secure: false,
+          secure: secureTransport,
         }, null);
 
         this.tinode.onConnect = () => {

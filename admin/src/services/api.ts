@@ -18,10 +18,18 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
     (config) => {
-        // 优先级：商家token > 管理员token > 普通用户token
-        const merchantToken = localStorage.getItem('merchant_token');
-        const adminToken = localStorage.getItem('admin_token');
-        const token = merchantToken || adminToken || localStorage.getItem('token');
+        const pathname = window.location.pathname;
+        let token: string | null = null;
+
+        // Keep admin/merchant sessions isolated to avoid cross-token pollution.
+        if (pathname.startsWith('/admin')) {
+            token = localStorage.getItem('admin_token');
+        } else if (pathname.startsWith('/merchant')) {
+            token = localStorage.getItem('merchant_token');
+        } else {
+            token = localStorage.getItem('token') || localStorage.getItem('admin_token') || localStorage.getItem('merchant_token');
+        }
+
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -205,6 +213,29 @@ export const adminMenuApi = {
     delete: (id: number) => api.delete(`/admin/menus/${id}`),
 };
 
+
+
+export interface IdentityApplicationItem {
+    id: number;
+    userId: number;
+    identityType: string;
+    providerSubType?: 'designer' | 'company' | 'foreman';
+    status: number; // 0=pending,1=approved,2=rejected,3=suspended
+    rejectReason?: string;
+    appliedAt: string;
+    reviewedAt?: string;
+    reviewedBy?: number;
+}
+
+// 身份申请审核
+export const adminIdentityApplicationApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: number }) =>
+        api.get('/admin/identity-applications', { params }),
+    detail: (id: number) => api.get(`/admin/identity-applications/${id}`),
+    approve: (id: number) => api.post(`/admin/identity-applications/${id}/approve`),
+    reject: (id: number, reason: string) => api.post(`/admin/identity-applications/${id}/reject`, { reason }),
+};
+
 // 审核管理
 export const adminAuditApi = {
     providers: (params?: { page?: number; pageSize?: number; status?: number }) =>
@@ -284,9 +315,9 @@ export const notificationApi = {
 export const identityApi = {
     list: () => api.get('/identities'),
     getCurrent: () => api.get('/identities/current'),
-    switch: (data: { targetRole: string; currentRole?: string }) =>
+    switch: (data: { identityId?: number; targetRole?: string; currentRole?: string }) =>
         api.post('/identities/switch', data),
-    apply: (data: { identityType: string; applicationData?: string }) =>
+    apply: (data: { identityType: 'provider'; providerSubType: 'designer' | 'company' | 'foreman'; applicationData?: string }) =>
         api.post('/identities/apply', data),
 };
 

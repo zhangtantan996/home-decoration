@@ -1,7 +1,6 @@
 import { SecureStorage } from '../utils/SecureStorage';
 import { Tinode } from 'tinode-sdk';
 import { tinodeApi } from './api';
-import { Platform } from 'react-native';
 import { getApiBaseUrl, getApiUrl } from '../config';
 import { TINODE_CONFIG } from '../config/tinode';
 import ReactNativeBlobUtil from 'react-native-blob-util';
@@ -34,30 +33,63 @@ class SimpleEventEmitter {
     }
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+const hasExplicitPort = (host: string): boolean => /:\d+$/.test(host) || /\]:\d+$/.test(host);
+
+const withDefaultTinodePort = (host: string): string => {
+    const normalized = host.trim();
+    if (!normalized) return '';
+    return hasExplicitPort(normalized) ? normalized : `${normalized}:6060`;
+};
+
+const hostNameOf = (host: string): string => {
+    try {
+        return new URL(`http://${host}`).hostname.toLowerCase();
+    } catch {
+        return host.toLowerCase();
+    }
+};
+
+const deriveTinodeHostFromApi = (): string => {
+    try {
+        const url = new URL(getApiBaseUrl());
+        return url.hostname ? `${url.hostname}:6060` : '';
+    } catch {
+        return '';
+    }
+};
+
 // 配置
 const getTinodeHost = (): string => {
-    if (TINODE_CONFIG.HOST) {
-        // Tinode SDK expects host in the form "host:port" (no scheme/path).
-        return TINODE_CONFIG.HOST.includes(':') ? TINODE_CONFIG.HOST : `${TINODE_CONFIG.HOST}:6060`;
-    }
+    const explicitHost = withDefaultTinodePort(TINODE_CONFIG.HOST);
+    const derivedHost = deriveTinodeHostFromApi();
 
-    // Prefer using the same host as our backend API (different port).
-    // This makes it work on Android emulator/real device where `localhost` is not the dev machine.
-    try {
-        const base = getApiBaseUrl();
-        const url = new URL(base);
-        const hostname = url.hostname;
+    if (explicitHost) {
+        // Guard against a common Android setup pitfall:
+        // API points to LAN/10.0.2.2, but Tinode is hardcoded to localhost in .env.
+        const explicitHostname = hostNameOf(explicitHost);
+        const derivedHostname = hostNameOf(derivedHost);
+        const explicitIsLoopback = LOOPBACK_HOSTS.has(explicitHostname);
+        const derivedIsLoopback = LOOPBACK_HOSTS.has(derivedHostname);
 
-        // Android emulator cannot reach host's localhost.
-        if (__DEV__ && Platform.OS === 'android' && (hostname === 'localhost' || hostname === '127.0.0.1')) {
-            return '10.0.2.2:6060';
+        if (explicitIsLoopback && derivedHost && !derivedIsLoopback) {
+            console.warn(
+                `[Tinode] TINODE_SERVER_URL=${explicitHost} points to loopback, ` +
+                    `but API host is ${derivedHost}. Using API host for Tinode.`
+            );
+            return derivedHost;
         }
 
-        return `${hostname}:6060`;
-    } catch {
-        // Fallback to previous behavior.
-        return __DEV__ ? 'localhost:6060' : 'api.yourdomain.com:6060';
+        return explicitHost;
     }
+
+    if (derivedHost) {
+        return derivedHost;
+    }
+
+    // Fallback to previous behavior.
+    return __DEV__ ? 'localhost:6060' : 'api.yourdomain.com:6060';
 };
 
 const CONFIG = {
@@ -107,6 +139,7 @@ class TinodeService extends SimpleEventEmitter {
         this.initPromise = (async () => {
             try {
             console.log('[Tinode] 初始化中...');
+            console.log('[Tinode] Server:', CONFIG.SERVER_URL, 'secure:', !__DEV__);
 
             if (!CONFIG.API_KEY) {
                 console.error(
@@ -192,6 +225,13 @@ class TinodeService extends SimpleEventEmitter {
             return true;
             } catch (error) {
             console.error('[Tinode] 初始化失败:', error);
+            const msg = String((error as any)?.message || '');
+            if (msg.includes('503')) {
+                console.warn(
+                    '[Tinode] 503 Service Unavailable: 通常是 Tinode 容器未启动/未就绪，或 Tinode 无法连接数据库。' +
+                        '请检查 docker 容器与日志（decorating_tinode），并确认已配置 TINODE_DATABASE_DSN 等环境变量。'
+                );
+            }
             this.connected = false;
             return false;
             } finally {
@@ -414,14 +454,18 @@ class TinodeService extends SimpleEventEmitter {
     }
 
 	/**
-	 * Resolve app user id (numeric) to Tinode user topic id (`usr...`).
+	 * Resolve app user identifier (internal id or publicId) to Tinode user topic id (`usr...`).
 	 */
-	async resolveTinodeUserId(appUserId: number | string): Promise<string> {
-		const key = String(appUserId);
+	async resolveTinodeUserId(appUserIdentifier: number | string): Promise<string> {
+		const key = String(appUserIdentifier).trim();
+		if (!key) {
+			throw new Error('Missing user identifier');
+		}
+
 		const cached = this.userIdCache.get(key);
 		if (cached) return cached;
 
-		const res: any = await tinodeApi.getUserId(key);
+		const res: any = await tinodeApi.getTinodeUserId(key);
 		const tinodeUserId = res?.data?.tinodeUserId;
 		if (!tinodeUserId) {
 			throw new Error('Failed to resolve Tinode user id');

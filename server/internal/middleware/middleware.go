@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,32 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+const tokenUseRefresh = "refresh"
+
+func claimToUint64(raw interface{}) (uint64, bool) {
+	switch v := raw.(type) {
+	case uint64:
+		return v, true
+	case int:
+		if v < 0 {
+			return 0, false
+		}
+		return uint64(v), true
+	case int64:
+		if v < 0 {
+			return 0, false
+		}
+		return uint64(v), true
+	case float64:
+		if v < 0 {
+			return 0, false
+		}
+		return uint64(v), true
+	default:
+		return 0, false
+	}
+}
 
 // Cors 跨域中间件（白名单模式）
 func Cors(allowedOrigins []string) gin.HandlerFunc {
@@ -78,6 +105,9 @@ func JWT(secret string) gin.HandlerFunc {
 
 		tokenString := parts[1]
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("invalid signing method")
+			}
 			return []byte(secret), nil
 		})
 
@@ -94,36 +124,75 @@ func JWT(secret string) gin.HandlerFunc {
 			return
 		}
 
-		// 将用户ID存入上下文（支持普通用户和管理员）
-		if adminID, ok := claims["admin_id"]; ok {
-			// 管理员 Token
-			c.Set("admin_id", uint64(adminID.(float64)))
-			c.Set("username", claims["username"])
-			c.Set("is_super", claims["is_super"])
-		}
-		if userID, ok := claims["userId"]; ok {
-			// 兼容旧 token(userType 字段)
-			if userType, ok := claims["userType"]; ok {
-				c.Set("userId", uint64(userID.(float64)))
-				c.Set("userType", userType)
-				c.Next()
-				return
-			}
-
-			// 新 token(activeRole 字段)
-			if activeRole, ok := claims["activeRole"]; ok {
-				c.Set("userId", uint64(userID.(float64)))
-				c.Set("activeRole", activeRole)
-				c.Set("providerId", claims["providerId"])
-				c.Next()
-				return
-			}
-
-			response.Unauthorized(c, "Invalid token format")
+		// 管理员 Token 不允许访问普通用户路由
+		if _, ok := claims["admin_id"]; ok {
+			response.Unauthorized(c, "Token类型不匹配")
 			c.Abort()
 			return
 		}
-		c.Next()
+
+		// 普通用户 Token
+		userIDRaw, ok := claims["userId"]
+		if !ok {
+			response.Unauthorized(c, "Token解析失败")
+			c.Abort()
+			return
+		}
+
+		tokenUse, _ := claims["token_use"].(string)
+		if tokenUse == tokenUseRefresh {
+			response.Unauthorized(c, "请使用访问令牌")
+			c.Abort()
+			return
+		}
+
+		tokenType, _ := claims["token_type"].(string)
+		if tokenType == "admin" || tokenType == "merchant" {
+			response.Unauthorized(c, "Token类型不匹配")
+			c.Abort()
+			return
+		}
+
+		userID, ok := userIDRaw.(float64)
+		if !ok {
+			response.Unauthorized(c, "Token解析失败")
+			c.Abort()
+			return
+		}
+
+		c.Set("userId", uint64(userID))
+		if userPublicID, ok := claims["userPublicId"]; ok {
+			c.Set("userPublicId", userPublicID)
+		} else if sub, ok := claims["sub"]; ok {
+			c.Set("userPublicId", sub)
+		}
+
+		// 兼容旧 token(userType 字段)
+		if userType, ok := claims["userType"]; ok {
+			c.Set("userType", userType)
+			c.Next()
+			return
+		}
+
+		// 新 token(activeRole 字段)
+		if activeRoleRaw, ok := claims["activeRole"]; ok {
+			if activeRole, ok := activeRoleRaw.(string); ok && activeRole != "" {
+				c.Set("activeRole", activeRole)
+			}
+			if providerID, ok := claimToUint64(claims["providerId"]); ok {
+				c.Set("providerId", providerID)
+			}
+			if providerSubTypeRaw, ok := claims["providerSubType"]; ok {
+				if providerSubType, ok := providerSubTypeRaw.(string); ok && providerSubType != "" {
+					c.Set("providerSubType", providerSubType)
+				}
+			}
+			c.Next()
+			return
+		}
+
+		response.Unauthorized(c, "Invalid token format")
+		c.Abort()
 	}
 }
 
@@ -146,6 +215,9 @@ func AdminJWT(secret string) gin.HandlerFunc {
 
 		tokenString := parts[1]
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("invalid signing method")
+			}
 			return []byte(secret), nil
 		})
 
@@ -162,7 +234,14 @@ func AdminJWT(secret string) gin.HandlerFunc {
 			return
 		}
 
-		// ✅ 验证token类型（必须是admin）
+		tokenUse, _ := claims["token_use"].(string)
+		if tokenUse == tokenUseRefresh {
+			response.Unauthorized(c, "请使用访问令牌")
+			c.Abort()
+			return
+		}
+
+		// 验证 token 类型（必须是 admin）
 		tokenType, _ := claims["token_type"].(string)
 		if tokenType != "admin" {
 			response.Forbidden(c, "无权访问管理接口")
@@ -171,8 +250,9 @@ func AdminJWT(secret string) gin.HandlerFunc {
 		}
 
 		// 存储管理员信息到上下文
-		if adminID, ok := claims["admin_id"]; ok {
-			c.Set("admin_id", uint64(adminID.(float64)))
+		if adminID, ok := claimToUint64(claims["admin_id"]); ok {
+			c.Set("admin_id", adminID)
+			c.Set("adminId", adminID)
 		}
 		if username, ok := claims["username"]; ok {
 			c.Set("username", username)

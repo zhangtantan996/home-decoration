@@ -1,14 +1,15 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"log"
 	"time"
-	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,19 +21,22 @@ var adminRegionService = &service.RegionService{}
 // AdminStatsOverview 概览统计
 func AdminStatsOverview(c *gin.Context) {
 	var stats struct {
-		UserCount         int64   `json:"userCount"`
-		TodayNewUsers     int64   `json:"todayNewUsers"`
-		ProviderCount     int64   `json:"providerCount"`
-		DesignerCount     int64   `json:"designerCount"`
-		CompanyCount      int64   `json:"companyCount"`
-		ForemanCount      int64   `json:"foremanCount"`
-		ProjectCount      int64   `json:"projectCount"`
-		ActiveProjects    int64   `json:"activeProjects"`
-		CompletedProjects int64   `json:"completedProjects"`
-		BookingCount      int64   `json:"bookingCount"`
-		PendingBookings   int64   `json:"pendingBookings"`
-		MaterialShopCount int64   `json:"materialShopCount"`
-		MonthlyGMV        float64 `json:"monthlyGMV"`
+		UserCount         int64                            `json:"userCount"`
+		TodayNewUsers     int64                            `json:"todayNewUsers"`
+		ProviderCount     int64                            `json:"providerCount"`
+		DesignerCount     int64                            `json:"designerCount"`
+		CompanyCount      int64                            `json:"companyCount"`
+		ForemanCount      int64                            `json:"foremanCount"`
+		ProjectCount      int64                            `json:"projectCount"`
+		ActiveProjects    int64                            `json:"activeProjects"`
+		CompletedProjects int64                            `json:"completedProjects"`
+		BookingCount      int64                            `json:"bookingCount"`
+		PendingBookings   int64                            `json:"pendingBookings"`
+		MaterialShopCount int64                            `json:"materialShopCount"`
+		MonthlyGMV        float64                          `json:"monthlyGMV"`
+		PublicIDHealth    monitor.PublicIDHealthSnapshot   `json:"publicIdHealth"`
+		PublicIDRollout   monitor.PublicIDRolloutSnapshot  `json:"publicIdRollout"`
+		PublicIDRollback  monitor.PublicIDRollbackSnapshot `json:"publicIdRollback"`
 	}
 
 	today := time.Now().Truncate(24 * time.Hour)
@@ -65,6 +69,10 @@ func AdminStatsOverview(c *gin.Context) {
 		Where("created_at >= ? AND type = 'deposit' AND status = 1", monthStart).
 		Select("COALESCE(SUM(amount), 0)").
 		Scan(&stats.MonthlyGMV)
+
+	stats.PublicIDHealth = monitor.SnapshotPublicIDHealth()
+	stats.PublicIDRollout = monitor.SnapshotPublicIDRollout()
+	stats.PublicIDRollback = monitor.SnapshotPublicIDRollback()
 
 	response.Success(c, stats)
 }
@@ -393,20 +401,20 @@ func AdminUpdateProvider(c *gin.Context) {
 		return
 	}
 	var req struct {
-		CompanyName     string  `json:"companyName"`
-		SubType         string  `json:"subType"`
-		Specialty       string  `json:"specialty"`
-		YearsExperience int     `json:"yearsExperience"`
-		Status          int8    `json:"status"`
-		Rating          float32 `json:"rating"`          // 综合评分
-		RestoreRate     float32 `json:"restoreRate"`     // 还原度
-		BudgetControl   float32 `json:"budgetControl"`   // 预算控制力
-		WorkTypes       string  `json:"workTypes"`       // 工种类型（逗号分隔）
-		PriceMin        float64 `json:"priceMin"`        // 最低价格
-		PriceMax        float64 `json:"priceMax"`        // 最高价格
-		PriceUnit       string  `json:"priceUnit"`       // 价格单位
-		CoverImage      string  `json:"coverImage"`      // 封面背景图
-		ServiceIntro    string  `json:"serviceIntro"`    // 服务介绍
+		CompanyName     string   `json:"companyName"`
+		SubType         string   `json:"subType"`
+		Specialty       string   `json:"specialty"`
+		YearsExperience int      `json:"yearsExperience"`
+		Status          int8     `json:"status"`
+		Rating          float32  `json:"rating"`          // 综合评分
+		RestoreRate     float32  `json:"restoreRate"`     // 还原度
+		BudgetControl   float32  `json:"budgetControl"`   // 预算控制力
+		WorkTypes       string   `json:"workTypes"`       // 工种类型（逗号分隔）
+		PriceMin        float64  `json:"priceMin"`        // 最低价格
+		PriceMax        float64  `json:"priceMax"`        // 最高价格
+		PriceUnit       string   `json:"priceUnit"`       // 价格单位
+		CoverImage      string   `json:"coverImage"`      // 封面背景图
+		ServiceIntro    string   `json:"serviceIntro"`    // 服务介绍
 		TeamSize        int      `json:"teamSize"`        // 团队规模
 		EstablishedYear int      `json:"establishedYear"` // 成立年份
 		Certifications  string   `json:"certifications"`  // 资质认证（JSON数组）

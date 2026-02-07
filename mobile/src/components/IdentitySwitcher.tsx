@@ -7,10 +7,10 @@ import {
     TouchableOpacity,
     FlatList,
     ActivityIndicator,
-    Alert,
 } from 'react-native';
 import { X, User, Briefcase, HardHat, Building2, CheckCircle2 } from 'lucide-react-native';
 import { useIdentityStore } from '../store/identityStore';
+import { useToast } from './Toast';
 
 interface IdentitySwitcherProps {
     visible: boolean;
@@ -20,49 +20,90 @@ interface IdentitySwitcherProps {
 const PRIMARY_GOLD = '#D4AF37';
 
 const IDENTITY_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
+    owner: { label: '业主', icon: User, color: '#3B82F6' },
     user: { label: '业主', icon: User, color: '#3B82F6' },
+    provider: { label: '服务商', icon: Building2, color: '#10B981' },
     designer: { label: '设计师', icon: Briefcase, color: '#8B5CF6' },
-    worker: { label: '工人', icon: HardHat, color: '#F59E0B' },
+    foreman: { label: '工长', icon: HardHat, color: '#F59E0B' },
+    worker: { label: '工长', icon: HardHat, color: '#F59E0B' },
     company: { label: '装修公司', icon: Building2, color: '#10B981' },
+    admin: { label: '管理员', icon: User, color: '#EF4444' },
+};
+
+const statusLabel = (status: number) => {
+    switch (status) {
+        case 1:
+            return '已认证';
+        case 0:
+            return '审核中';
+        case 2:
+            return '未通过';
+        case 3:
+            return '已停用';
+        default:
+            return '未知状态';
+    }
+};
+
+const normalizeProviderSubType = (value?: string | null): 'designer' | 'company' | 'foreman' | undefined => {
+    const normalized = String(value || '').toLowerCase();
+    if (normalized === 'designer') {
+        return 'designer';
+    }
+    if (normalized === 'company') {
+        return 'company';
+    }
+    if (normalized === 'foreman' || normalized === 'worker') {
+        return 'foreman';
+    }
+    return undefined;
+};
+
+const getIdentityKey = (item: any): string => {
+    const type = String(item?.identityType || '').toLowerCase();
+    if (type === 'provider') {
+        return normalizeProviderSubType(item?.providerSubType) || 'provider';
+    }
+    if (type === 'worker') {
+        return 'foreman';
+    }
+    return type || 'owner';
 };
 
 export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ visible, onClose }) => {
     const { identities, currentIdentity, loading, error, fetchIdentities, switchIdentity, clearError } = useIdentityStore();
+    const { showConfirm, showToast } = useToast();
 
     useEffect(() => {
         if (visible) {
             fetchIdentities();
         }
-    }, [visible]);
+    }, [visible, fetchIdentities]);
 
     const handleSwitch = async (identityId: number) => {
-        Alert.alert(
-            '确认切换',
-            '切换身份后，您将以新身份登录系统',
-            [
-                { text: '取消', style: 'cancel' },
-                {
-                    text: '确认',
-                    onPress: async () => {
-                        try {
-                            await switchIdentity(identityId);
-                            Alert.alert('成功', '身份切换成功', [
-                                { text: '确定', onPress: onClose }
-                            ]);
-                        } catch (err) {
-                            Alert.alert('失败', error || '切换身份失败');
-                        }
-                    },
-                },
-            ]
-        );
+        showConfirm({
+            title: '确认切换',
+            message: '切换身份后，您将以新身份登录系统',
+            confirmText: '确认',
+            cancelText: '取消',
+            onConfirm: async () => {
+                try {
+                    await switchIdentity(identityId);
+                    showToast({ message: '身份切换成功', type: 'success' });
+                    onClose();
+                } catch {
+                    showToast({ message: error || '切换身份失败', type: 'error' });
+                }
+            },
+        });
     };
 
     const renderIdentityCard = ({ item }: { item: any }) => {
-        const config = IDENTITY_CONFIG[item.identityType] || IDENTITY_CONFIG.user;
+        const key = getIdentityKey(item);
+        const config = IDENTITY_CONFIG[key] || IDENTITY_CONFIG.user;
         const Icon = config.icon;
         const isActive = currentIdentity?.id === item.id;
-        const isApproved = item.status === 'approved';
+        const isApproved = item.status === 1;
 
         return (
             <TouchableOpacity
@@ -80,9 +121,7 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ visible, onC
                     </View>
                     <View style={styles.identityInfo}>
                         <Text style={styles.identityLabel}>{config.label}</Text>
-                        <Text style={styles.identityStatus}>
-                            {item.status === 'approved' ? '已认证' : item.status === 'pending' ? '审核中' : '未通过'}
-                        </Text>
+                        <Text style={styles.identityStatus}>{statusLabel(item.status)}</Text>
                     </View>
                     {isActive && (
                         <View style={styles.activeIndicator}>

@@ -301,7 +301,7 @@ func TestUserService_Register(t *testing.T) {
 				}
 			}
 			if tc.wantTinodeError {
-				if token.TinodeError == "" || !strings.Contains(token.TinodeError, "Tinode token generation failed") {
+				if token.TinodeError == "" || !strings.Contains(token.TinodeError, "聊天服务") {
 					t.Fatalf("expected tinode error")
 				}
 				if token.TinodeToken != "" {
@@ -417,10 +417,10 @@ func TestUserService_Login(t *testing.T) {
 				Type:  "code",
 			},
 			setup: func(t *testing.T, db *gorm.DB) {
-				insertUser(t, db, &model.User{
-					Phone:  testPhone,
-					Status: 0,
-				})
+				insertUser(t, db, &model.User{Phone: testPhone, Status: 1})
+				if err := db.Model(&model.User{}).Where("phone = ?", testPhone).Update("status", 0).Error; err != nil {
+					t.Fatalf("disable user: %v", err)
+				}
 			},
 			wantErr: true,
 		},
@@ -544,7 +544,7 @@ func TestUserService_Login(t *testing.T) {
 					}
 				}
 				if tc.wantTinodeError {
-					if token.TinodeError == "" || !strings.Contains(token.TinodeError, "Tinode token generation failed") {
+					if token.TinodeError == "" || !strings.Contains(token.TinodeError, "聊天服务") {
 						t.Fatalf("expected tinode error")
 					}
 					if token.TinodeToken != "" {

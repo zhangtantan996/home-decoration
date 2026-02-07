@@ -8,6 +8,7 @@ interface User {
     avatar?: string;
     userType: string;
     activeRole?: string;
+    providerSubType?: 'designer' | 'company' | 'foreman';
 }
 
 interface AuthState {
@@ -23,9 +24,10 @@ interface AuthState {
     logout: () => Promise<void>;
     loadStoredAuth: () => Promise<void>;
     updateToken: (token: string) => Promise<void>;
+    updateUser: (user: Partial<User>) => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
     token: null,
     refreshToken: null,
     tinodeToken: null,
@@ -64,6 +66,28 @@ export const useAuthStore = create<AuthState>((set) => ({
         } catch (error) {
             if (__DEV__) {
                 console.error('Failed to update token:', error);
+            }
+        }
+    },
+
+    updateUser: async (userUpdates) => {
+        const currentUser = get().user;
+        if (!currentUser) {
+            return;
+        }
+
+        const mergedUser = {
+            ...currentUser,
+            ...userUpdates,
+        };
+
+        set({ user: mergedUser });
+
+        try {
+            await SecureStorage.saveUser(mergedUser);
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Failed to update user:', error);
             }
         }
     },

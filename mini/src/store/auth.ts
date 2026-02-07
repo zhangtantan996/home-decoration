@@ -10,6 +10,7 @@ export interface AuthUser {
   avatar?: string;
   userType: number;
   activeRole?: string;
+  providerSubType?: 'designer' | 'company' | 'foreman';
 }
 
 interface AuthState {

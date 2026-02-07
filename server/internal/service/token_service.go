@@ -51,6 +51,10 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 		return nil, errors.New("刷新令牌格式错误：缺少 userId")
 	}
 
+	if tokenUse, _ := claims["token_use"].(string); tokenUse != tokenUseRefresh {
+		return nil, errors.New("刷新令牌格式错误：token_use 非 refresh")
+	}
+
 	// 获取 jti 和 sid（用于重放检测和会话管理）
 	jti, _ := claims["jti"].(string)
 	sid, _ := claims["sid"].(string)
@@ -98,19 +102,22 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 		return nil, errors.New("账号已被禁用")
 	}
 
-	// 6. 获取用户的 activeRole 和 refID
-	activeRole, refID, err := getUserActiveRoleAndRefID(user)
-	if err != nil {
-		return nil, err
+	roleCtx, hasRoleContext := getRoleContextFromClaims(claims)
+	if !hasRoleContext {
+		resolvedCtx, resolveErr := getUserRoleContext(user)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		roleCtx = resolvedCtx
 	}
 
 	// 7. 生成新的 access token 和 refresh token
-	newAccessToken, err := generateTokenV2(uint64(userID), activeRole, refID)
+	newAccessToken, err := generateAccessTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, err
 	}
 
-	newRefreshToken, err := generateTokenV2(uint64(userID), activeRole, refID)
+	newRefreshToken, err := generateRefreshTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
 	if err != nil {
 		return nil, err
 	}

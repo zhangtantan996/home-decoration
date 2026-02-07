@@ -12,15 +12,8 @@ import {
 } from 'react-native';
 import {
     Settings,
-    FileText,
-    Heart,
-    MapPin,
-    Ticket,
     Calculator,
-    ImageIcon,
     Headphones,
-    Shield,
-    ChevronRight,
     Info,
     ClipboardList,
     CreditCard,
@@ -29,46 +22,22 @@ import {
     Banknote,
     MoreHorizontal,
     Bell,
-    RefreshCw,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
-import { useToast } from '../components/Toast';
-import { IdentitySwitcher } from '../components/IdentitySwitcher';
 import { useIdentityStore } from '../store/identityStore';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
 
-// Mock 当前项目数据
-const MOCK_PROJECT = {
-    name: '上海·汤臣一品 别墅装修',
-    stage: '报价阶段',
-    progress: 30,
-    budget: '280万',
-    estimatedDays: 12,
-};
-
 const ProfileScreen = ({ navigation }: any) => {
-    const { user, logout } = useAuthStore();
-    const { showConfirm } = useToast();
+    const { user } = useAuthStore();
     const [dialogVisible, setDialogVisible] = useState(false);
     const [dialogMessage, setDialogMessage] = useState('');
-    const [identitySwitcherVisible, setIdentitySwitcherVisible] = useState(false);
     const { currentIdentity, fetchIdentities } = useIdentityStore();
 
     const handleServicePress = (label: string) => {
         setDialogMessage(`${label}功能正在开发中，敬请期待！`);
         setDialogVisible(true);
-    };
-
-    const handleLogout = () => {
-        showConfirm({
-            title: '确认退出',
-            message: '确定要退出登录吗？',
-            confirmText: '退出',
-            cancelText: '取消',
-            onConfirm: logout,
-        });
     };
 
     const [pendingCount, setPendingCount] = useState(0);
@@ -91,7 +60,7 @@ const ProfileScreen = ({ navigation }: any) => {
                 const paymentCount = (paymentRes as any).data?.items?.length || 0;
 
                 setPendingCount(proposalCount + paymentCount);
-            } catch (error) {
+            } catch {
                 console.log('Failed to load pending count');
             }
         };
@@ -109,7 +78,7 @@ const ProfileScreen = ({ navigation }: any) => {
                 const { notificationApi } = await import('../services/api');
                 const res = await notificationApi.getUnreadCount();
                 setUnreadNotificationCount(res.data?.count || 0);
-            } catch (error) {
+            } catch {
                 // Silent fail
             }
         };
@@ -122,16 +91,32 @@ const ProfileScreen = ({ navigation }: any) => {
     // 加载当前身份
     useEffect(() => {
         fetchIdentities();
-    }, []);
+    }, [fetchIdentities]);
 
-    const getIdentityLabel = (identityType?: string) => {
+    const getIdentityLabel = (identityType?: string, providerSubType?: string) => {
+        if (identityType === 'provider') {
+            const subtype = String(providerSubType || '').toLowerCase();
+            if (subtype === 'designer') {
+                return '设计师';
+            }
+            if (subtype === 'company') {
+                return '装修公司';
+            }
+            if (subtype === 'foreman' || subtype === 'worker') {
+                return '工长';
+            }
+            return '服务商';
+        }
+
         const labels: Record<string, string> = {
+            owner: '业主',
             user: '业主',
-            designer: '设计师',
-            worker: '工人',
+            foreman: '工长',
+            worker: '工长',
             company: '装修公司',
+            admin: '管理员',
         };
-        return labels[identityType || 'user'] || '业主';
+        return labels[identityType || 'owner'] || '业主';
     };
 
     // 快捷统计数据
@@ -181,7 +166,7 @@ const ProfileScreen = ({ navigation }: any) => {
                                 {currentIdentity && (
                                     <View style={styles.identityBadge}>
                                         <Text style={styles.identityBadgeText}>
-                                            {getIdentityLabel(currentIdentity.identityType)}
+                                            {getIdentityLabel(currentIdentity.identityType, currentIdentity.providerSubType)}
                                         </Text>
                                     </View>
                                 )}
@@ -209,30 +194,6 @@ const ProfileScreen = ({ navigation }: any) => {
                             <Settings size={22} color="#71717A" />
                         </TouchableOpacity>
                     </View>
-                </View>
-
-                {/* 身份切换卡片 */}
-                <View style={styles.identityCard}>
-                    <View style={styles.identityCardHeader}>
-                        <Text style={styles.identityCardTitle}>当前身份</Text>
-                        <TouchableOpacity
-                            style={styles.switchIdentityBtn}
-                            onPress={() => setIdentitySwitcherVisible(true)}
-                        >
-                            <RefreshCw size={16} color={PRIMARY_GOLD} />
-                            <Text style={styles.switchIdentityText}>切换身份</Text>
-                        </TouchableOpacity>
-                    </View>
-                    <Text style={styles.currentIdentityText}>
-                        {getIdentityLabel(currentIdentity?.identityType)}
-                    </Text>
-                    <TouchableOpacity
-                        style={styles.applyIdentityBtn}
-                        onPress={() => navigation.navigate('IdentityApplication')}
-                    >
-                        <Text style={styles.applyIdentityText}>申请新身份</Text>
-                        <ChevronRight size={16} color="#71717A" />
-                    </TouchableOpacity>
                 </View>
 
                 {/* 当前项目卡片 - 暂时移除 Mock 数据，等待真实数据接入 */}
@@ -323,14 +284,8 @@ const ProfileScreen = ({ navigation }: any) => {
                     </View>
                 </View>
 
-                <View style={{ height: 40 }} />
+                <View style={styles.bottomSpacer} />
             </ScrollView>
-
-            {/* 身份切换弹窗 */}
-            <IdentitySwitcher
-                visible={identitySwitcherVisible}
-                onClose={() => setIdentitySwitcherVisible(false)}
-            />
 
             {/* 自定义弹窗 */}
             <Modal
@@ -584,61 +539,6 @@ const styles = StyleSheet.create({
         color: '#71717A',
         marginTop: 6,
     },
-
-    // 身份切换卡片
-    identityCard: {
-        backgroundColor: '#FFFFFF',
-        marginHorizontal: 16,
-        marginTop: 16,
-        borderRadius: 16,
-        padding: 20,
-    },
-    identityCardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    identityCardTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#71717A',
-    },
-    switchIdentityBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        backgroundColor: '#FFFBEB',
-        borderRadius: 8,
-    },
-    switchIdentityText: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: PRIMARY_GOLD,
-        marginLeft: 4,
-    },
-    currentIdentityText: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: '#09090B',
-        marginBottom: 16,
-    },
-    applyIdentityBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        backgroundColor: '#F8F9FA',
-        borderRadius: 10,
-    },
-    applyIdentityText: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: '#09090B',
-    },
-
     // 菜单模块 (订单 & 更多服务)
     menuCard: {
         backgroundColor: '#FFFFFF',
@@ -676,19 +576,8 @@ const styles = StyleSheet.create({
         color: '#18181B',
         fontWeight: '500',
     },
-    // 退出登录
-    logoutBtn: {
-        marginHorizontal: 16,
-        marginTop: 32,
-        backgroundColor: '#FFFFFF',
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    logoutText: {
-        color: '#EF4444',
-        fontSize: 15,
-        fontWeight: '600',
+    bottomSpacer: {
+        height: 40,
     },
     // 弹窗样式
     dialogOverlay: {

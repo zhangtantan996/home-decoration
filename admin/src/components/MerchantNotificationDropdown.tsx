@@ -250,7 +250,7 @@ const MerchantNotificationDropdown: React.FC = () => {
     return (
         <Dropdown
             menu={{ items: [] }}
-            dropdownRender={() => dropdownContent}
+            popupRender={() => dropdownContent}
             trigger={['click']}
             open={open}
             onOpenChange={setOpen}

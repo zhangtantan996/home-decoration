@@ -1,7 +1,10 @@
-import React, { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions, Dropdown, Slider } from 'antd';
 import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined, SearchOutlined, UpOutlined, DownOutlined, CloseOutlined, CopyOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
 import TinodeService from '../../services/TinodeService';
+import merchantApi from '../../services/merchantApi';
+import { useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 
 const { Sider, Content, Header } = Layout;
@@ -33,6 +36,32 @@ const formatBytes = (bytes?: number): string => {
     }
     const fixed = i === 0 ? 0 : n < 10 ? 1 : 0;
     return `${n.toFixed(fixed)} ${units[i]}`;
+};
+
+const isAllowedAbsoluteUrl = (value: string): boolean => {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+};
+
+const resolveSafeAttachmentUrl = (rawUrl: string, backendOrigin: string): string => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return '';
+
+    if (trimmed.startsWith('/')) {
+        if (!backendOrigin) return trimmed;
+        const candidate = `${backendOrigin}${trimmed}`;
+        return isAllowedAbsoluteUrl(candidate) ? candidate : '';
+    }
+
+    return isAllowedAbsoluteUrl(trimmed) ? trimmed : '';
+};
+
+const isSafeInlineImageDataUrl = (value: string): boolean => {
+    return /^data:image\/(png|jpe?g|gif|webp|bmp|avif);base64,/i.test(value);
 };
 
 const CustomAudioPlayer: React.FC<{ audioUrl: string; duration?: number }> = ({ audioUrl, duration: initialDuration }) => {
@@ -118,6 +147,8 @@ const CustomAudioPlayer: React.FC<{ audioUrl: string; duration?: number }> = ({ 
 };
 
 const MerchantChat: React.FC = () => {
+    const [searchParams] = useSearchParams();
+
     const [loading, setLoading] = useState(true);
     const [tinodeToken, setTinodeToken] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -148,6 +179,15 @@ const MerchantChat: React.FC = () => {
     const conversationsRefreshScheduledRef = useRef(false);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastTypingSentRef = useRef<number>(0);
+    const autoOpenedIdentifierRef = useRef<string>('');
+
+    const initialChatIdentifier = useMemo(() => {
+        const value =
+            searchParams.get('userIdentifier') ||
+            searchParams.get('publicId') ||
+            searchParams.get('userId');
+        return typeof value === 'string' ? value.trim() : '';
+    }, [searchParams]);
 
     // Chat UX: only auto-scroll when user is already near the bottom.
     // When switching conversations, always jump to the latest message.
@@ -221,8 +261,8 @@ const MerchantChat: React.FC = () => {
             };
 
             setTimeout(() => notification.close(), 5000);
-        } catch (e) {
-            console.error('Failed to show notification:', e);
+        } catch (error) {
+            console.error('Failed to show notification:', error);
         }
     }, [notificationsEnabled]);
 
@@ -273,7 +313,7 @@ const MerchantChat: React.FC = () => {
                 return;
             }
             setTinodeToken(token);
-        } catch (e) {
+        } catch {
             setError('读取登录凭证失败，请刷新页面重试。');
             setLoading(false);
         }
@@ -288,6 +328,7 @@ const MerchantChat: React.FC = () => {
         };
     }, [activeTopic]);
 
+    // Tinode init sequence intentionally runs on token changes only.
     useEffect(() => {
         if (!tinodeToken) return;
 
@@ -337,6 +378,7 @@ const MerchantChat: React.FC = () => {
             TinodeService.removeListener('disconnected', onDisconnected);
             TinodeService.disconnect();
         };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tinodeToken]);
 
     const loadConversations = useCallback(async (opts?: { showSpinner?: boolean }) => {
@@ -438,7 +480,30 @@ const MerchantChat: React.FC = () => {
         };
     }, [scheduleLoadConversations]);
 
-    const handleSelectConversation = async (topicName: string) => {
+    const asTinodeTopic = useCallback((value: unknown): string | null => {
+        if (typeof value !== 'string') return null;
+        const topic = value.trim();
+        if (!topic) return null;
+        if (topic.startsWith('usr') || topic.startsWith('p2p') || topic.startsWith('grp')) {
+            return topic;
+        }
+        return null;
+    }, []);
+
+    const resolveTinodeTopicByIdentifier = useCallback(async (userIdentifier: string): Promise<string> => {
+        const directTopic = asTinodeTopic(userIdentifier);
+        if (directTopic) return directTopic;
+
+        const res: any = await merchantApi.getTinodeUserId(userIdentifier);
+        const tinodeUserId = res?.data?.tinodeUserId;
+        if (typeof tinodeUserId === 'string' && tinodeUserId.trim()) {
+            return tinodeUserId.trim();
+        }
+
+        throw new Error('Invalid Tinode user id response');
+    }, [asTinodeTopic]);
+
+    const handleSelectConversation = useCallback(async (topicName: string) => {
         if (topicName === activeTopicName) return;
 
         const prevTopic = activeTopic;
@@ -526,7 +591,34 @@ const MerchantChat: React.FC = () => {
                 setLoadingHistory(false);
             }
         }
-    };
+    }, [activeTopic, activeTopicName, messages, myUserId, scheduleLoadConversations, showNotification]);
+
+    useEffect(() => {
+        if (!isLoggedIn || !initialChatIdentifier) return;
+        if (autoOpenedIdentifierRef.current === initialChatIdentifier) return;
+
+        // Avoid repeated auto-open attempts for the same URL parameter on re-renders.
+        autoOpenedIdentifierRef.current = initialChatIdentifier;
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const topicName = await resolveTinodeTopicByIdentifier(initialChatIdentifier);
+                if (cancelled) return;
+
+                await handleSelectConversation(topicName);
+                scheduleLoadConversations();
+            } catch (e) {
+                if (cancelled) return;
+                console.error('[MerchantChat] Failed to open conversation by identifier:', e);
+                message.warning('无法按用户标识定位会话，请稍后重试');
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [handleSelectConversation, initialChatIdentifier, isLoggedIn, resolveTinodeTopicByIdentifier, scheduleLoadConversations]);
 
     const handleTyping = () => {
         if (!activeTopic || !activeTopic.isSubscribed?.()) return;
@@ -645,9 +737,16 @@ const MerchantChat: React.FC = () => {
         // `p2pPeerDesc()` may return undefined (e.g. non-P2P topics or missing sub cache).
         const peerDesc = typeof topic?.p2pPeerDesc === 'function' ? topic.p2pPeerDesc() : undefined;
         const pub = peerDesc?.public || topic?.public || {};
-        const fn = pub?.fn || topic?.name || '未知用户';
+        const identifierCandidate = pub?.publicId ?? pub?.userPublicId;
+        const userIdentifier =
+            typeof identifierCandidate === 'number'
+                ? String(identifierCandidate)
+                : typeof identifierCandidate === 'string' && identifierCandidate.trim()
+                    ? identifierCandidate.trim()
+                    : (typeof topic?.name === 'string' ? topic.name : '');
+        const fn = pub?.fn || userIdentifier || '未知用户';
         const photo = pub?.photo;
-        return { fn, photo };
+        return { fn, photo, userIdentifier };
     };
 
     const renderAvatar = (photo: any, name: string) => {
@@ -690,9 +789,11 @@ const MerchantChat: React.FC = () => {
                     const mime = typeof data?.mime === 'string' && data.mime.trim() ? data.mime : 'image/jpeg';
 
                     const src = (() => {
-                        if (rawValue.startsWith('data:')) return rawValue;
-                        if (rawValue.startsWith('http://') || rawValue.startsWith('https://')) return rawValue;
-                        if (rawValue.startsWith('/')) return backendOrigin ? `${backendOrigin}${rawValue}` : rawValue;
+                        if (isSafeInlineImageDataUrl(rawValue)) return rawValue;
+
+                        const safeUrl = resolveSafeAttachmentUrl(rawValue, backendOrigin);
+                        if (safeUrl) return safeUrl;
+
                         return `data:${mime};base64,${rawValue}`;
                     })();
 
@@ -723,28 +824,20 @@ const MerchantChat: React.FC = () => {
                             ? fileData.val.trim()
                             : (typeof fileData?.ref === 'string' ? fileData.ref.trim() : '');
 
-                        const audioUrl = (() => {
-                            if (!rawUrl) return '';
-                            if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) return rawUrl;
-                            if (rawUrl.startsWith('/')) return backendOrigin ? `${backendOrigin}${rawUrl}` : rawUrl;
-                            return rawUrl;
-                        })();
+                        const audioUrl = rawUrl ? resolveSafeAttachmentUrl(rawUrl, backendOrigin) : '';
 
                         if (audioUrl) {
                             return <CustomAudioPlayer audioUrl={audioUrl} duration={fileData.duration} />;
                         }
+
+                        return <Text type="secondary">音频链接不可用</Text>;
                     }
 
                     const rawUrl = typeof fileData?.val === 'string' && fileData.val.trim()
                         ? fileData.val.trim()
                         : (typeof fileData?.ref === 'string' ? fileData.ref.trim() : '');
 
-                    const href = (() => {
-                        if (!rawUrl) return '';
-                        if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) return rawUrl;
-                        if (rawUrl.startsWith('/')) return backendOrigin ? `${backendOrigin}${rawUrl}` : rawUrl;
-                        return rawUrl;
-                    })();
+                    const href = rawUrl ? resolveSafeAttachmentUrl(rawUrl, backendOrigin) : '';
 
                     const fileName =
                         (typeof fileData?.name === 'string' && fileData.name.trim())
@@ -1191,8 +1284,8 @@ const MerchantChat: React.FC = () => {
                                 </Text>
                             </div>
                             <Descriptions column={1} size="small" bordered>
-                                <Descriptions.Item label="用户ID">
-                                    <Text copyable style={{ fontSize: 12 }}>{activeTopic.name || '未知'}</Text>
+                                <Descriptions.Item label="用户标识">
+                                    <Text copyable style={{ fontSize: 12 }}>{getPeerInfo(activeTopic).userIdentifier || '未知'}</Text>
                                 </Descriptions.Item>
                                 <Descriptions.Item label="会话类型">
                                     {activeTopic.isP2PType?.() ? '单聊' : '群聊'}

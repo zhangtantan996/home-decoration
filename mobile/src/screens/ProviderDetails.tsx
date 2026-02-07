@@ -207,6 +207,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
         name: user.nickname || initialDesigner.name || '设计师',
         avatar: user.avatar || initialDesigner.avatar,
         userId: provider.userId || user.id || initialDesigner.userId,
+        userPublicId: user.publicId || provider.userPublicId || initialDesigner.publicId,
         coverImage: provider.coverImage || provider.avatar || initialDesigner.avatar,
         rating: provider.rating || initialDesigner.rating || 5.0,
         reviewCount: detail?.reviewCount || provider.reviewCount || initialDesigner.reviewCount || 0,
@@ -285,7 +286,8 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            partnerID: String(provider.userId || displayData.userId),
+                            partnerID: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
+                            partnerIdentifier: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
                             name: displayData.name,
                             avatar: displayData.avatar,
                         })}
@@ -564,6 +566,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
         name: user.nickname || initialWorker.name || '工人',
         avatar: user.avatar || initialWorker.avatar,
         userId: provider.userId || user.id || initialWorker.userId,
+        userPublicId: user.publicId || provider.userPublicId || initialWorker.publicId,
         rating: provider.rating || initialWorker.rating || 5.0,
         reviewCount: detail?.reviewCount || provider.reviewCount || initialWorker.reviewCount || 0,
         yearsExperience: provider.yearsExperience || initialWorker.yearsExperience || 0,
@@ -651,7 +654,8 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            partnerID: String(provider.userId || displayData.userId),
+                            partnerID: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
+                            partnerIdentifier: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
                             name: displayData.name,
                             avatar: displayData.avatar,
                         })}
@@ -926,6 +930,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
         name: provider.companyName || initialCompany.name || '装修公司',
         logo: user.avatar || initialCompany.logo,
         userId: provider.userId || user.id || initialCompany.userId,
+        userPublicId: user.publicId || provider.userPublicId || initialCompany.publicId,
         rating: provider.rating || initialCompany.rating || 5.0,
         reviewCount: detail?.reviewCount || provider.reviewCount || initialCompany.reviewCount || 0,
         completedOrders: provider.completedCnt || initialCompany.completedOrders || 0,
@@ -1012,7 +1017,8 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            partnerID: String(provider.userId || displayData.userId), // 注意: displayData 里可能没有 userId，主要靠 provider.userId
+                            partnerID: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
+                            partnerIdentifier: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
                             name: displayData.name,
                             avatar: displayData.logo,
                         })}

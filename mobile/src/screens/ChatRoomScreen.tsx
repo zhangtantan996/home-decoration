@@ -47,6 +47,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiBaseUrl } from '../config';
 import { VoiceRecorder } from '../components/VoiceRecorder';
 import { AudioPlayer } from '../components/AudioPlayer';
+import { tinodeApi, reportApi } from '../services/api';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -58,6 +59,21 @@ const QUICK_REPLIES = [
     '请发详细报价',
     '我再考虑一下',
 ];
+
+const toSafeAttachmentUrl = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return parsed.toString();
+        }
+        return null;
+    } catch {
+        return null;
+    }
+};
 
 interface ChatRoomScreenProps {
     route: any;
@@ -100,8 +116,17 @@ interface UIMessage {
 
 const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) => {
     // 从 MessageScreen 传递的参数
-    const { conversationID, partnerID, name: partnerName, avatar: partnerAvatar } = route.params || {};
+    const {
+        conversationID,
+        partnerID: legacyPartnerID,
+        partnerIdentifier: routePartnerIdentifier,
+        partnerPublicId,
+        name: partnerName,
+        avatar: partnerAvatar,
+        roleLabel: partnerRoleLabel,
+    } = route.params || {};
     const defaultAvatar = 'https://via.placeholder.com/80/E5E7EB/71717A?text=U';
+    const partnerIdentifier = routePartnerIdentifier || partnerPublicId || legacyPartnerID;
 
     // 从 Store 获取数据
     const tinodeToken = useAuthStore(state => state.tinodeToken);
@@ -111,6 +136,9 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     const [inputText, setInputText] = useState('');
     const [showQuickReplies, setShowQuickReplies] = useState(true);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [reportReason, setReportReason] = useState('');
+    const [submittingReport, setSubmittingReport] = useState(false);
     const [partnerTyping, setPartnerTyping] = useState(false);
     const [partnerOnline, setPartnerOnline] = useState(false);
     const [dialogConfig, setDialogConfig] = useState<{
@@ -143,13 +171,38 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             return;
         }
 
+        const keyParts = [targetTopic, conversationID, partnerIdentifier, partnerPublicId, legacyPartnerID]
+            .filter((val): val is string => typeof val === 'string' && val.trim().length > 0)
+            .map((val) => val.trim());
+        const uniqueKeyParts = Array.from(new Set(keyParts));
+
         let cancelled = false;
         (async () => {
             try {
-                const raw = await AsyncStorage.getItem(`chat_clear_${targetTopic}`);
+                const keys = uniqueKeyParts.map((val) => `chat_clear_${val}`);
+
+                let matchedKey = '';
+                let matchedRaw: string | null = null;
+                for (const key of keys) {
+                    const raw = await AsyncStorage.getItem(key);
+                    if (raw) {
+                        matchedKey = key;
+                        matchedRaw = raw;
+                        break;
+                    }
+                }
+
                 if (cancelled) return;
-                const ts = raw ? Number(raw) : 0;
-                setClearBeforeTs(Number.isFinite(ts) && ts > 0 ? ts : 0);
+
+                const ts = matchedRaw ? Number(matchedRaw) : 0;
+                const normalizedTs = Number.isFinite(ts) && ts > 0 ? ts : 0;
+                setClearBeforeTs(normalizedTs);
+
+                // Best-effort migration: once legacy key is found, copy marker to current topic key.
+                const currentKey = `chat_clear_${targetTopic}`;
+                if (normalizedTs > 0 && matchedKey && matchedKey !== currentKey) {
+                    await AsyncStorage.setItem(currentKey, String(normalizedTs));
+                }
             } catch (e) {
                 console.warn('[ChatRoom] Failed to read clearBeforeTs:', e);
                 if (!cancelled) setClearBeforeTs(0);
@@ -159,7 +212,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         return () => {
             cancelled = true;
         };
-    }, [conversationID, topicName]);
+    }, [conversationID, legacyPartnerID, partnerIdentifier, partnerPublicId, topicName]);
 
     useEffect(() => {
         if (!clearBeforeTs) return;
@@ -227,7 +280,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     */
 
     // 解析 Tinode 消息
-    const parseTinodeMessages = (tinodeMessages: any[]): UIMessage[] => {
+    const parseTinodeMessages = useCallback((tinodeMessages: any[]): UIMessage[] => {
         const selfTinodeUserId = TinodeService.getCurrentUserID();
         console.log('[ChatRoom] parseTinodeMessages: input count =', tinodeMessages.length);
 
@@ -350,10 +403,10 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 isMe: !msg.from || (!!selfTinodeUserId && msg.from === selfTinodeUserId),
             };
         });
-    };
+    }, []);
 
     // 加载历史消息
-    const getCachedTopicMessages = (t: any): any[] => {
+    const getCachedTopicMessages = useCallback((t: any): any[] => {
         if (!t || typeof t.messages !== 'function') {
             console.log('[ChatRoom] getCachedTopicMessages: topic invalid or no messages function');
             return [];
@@ -367,9 +420,9 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             console.log('[ChatRoom] First message sample:', JSON.stringify(history[0], null, 2));
         }
         return history;
-    };
+    }, []);
 
-    const loadMessages = async () => {
+    const loadMessages = useCallback(async () => {
         /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         if (!chat || !conversationID) return;
@@ -414,20 +467,20 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
         const asTinodeTopic = (val: unknown): string | null => {
             if (typeof val !== 'string') return null;
-            const topic = val.trim();
-            if (!topic) return null;
-            if (topic.startsWith('usr') || topic.startsWith('p2p') || topic.startsWith('grp')) {
-                return topic;
+            const normalizedTopic = val.trim();
+            if (!normalizedTopic) return null;
+            if (normalizedTopic.startsWith('usr') || normalizedTopic.startsWith('p2p') || normalizedTopic.startsWith('grp')) {
+                return normalizedTopic;
             }
             return null;
         };
 
-        let targetTopic = asTinodeTopic(conversationID) || asTinodeTopic(partnerID) || '';
+        let targetTopic = asTinodeTopic(conversationID) || asTinodeTopic(legacyPartnerID) || '';
 
-        if (!targetTopic && partnerID) {
+        if (!targetTopic && partnerIdentifier) {
             try {
-                // partnerID is app user id (numeric). Resolve to Tinode `usr...`.
-                const resolved = await TinodeService.resolveTinodeUserId(partnerID);
+                // partnerIdentifier may be app internal id or publicId. Resolve to Tinode `usr...`.
+                const resolved = await TinodeService.resolveTinodeUserId(partnerIdentifier);
                 targetTopic = resolved;
                 setTopicName(resolved);
             } catch (e) {
@@ -558,12 +611,11 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
              });
               setLoadingMessages(false);
         }
-    };
+    }, [conversationID, getCachedTopicMessages, legacyPartnerID, parseTinodeMessages, partnerIdentifier, tinodeToken]);
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         loadMessages();
-    }, [conversationID, partnerID, tinodeToken]);
+    }, [loadMessages]);
 
     // 监听新消息 - Handled in loadMessages via topic.onData for Tinode
     /*
@@ -818,8 +870,19 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     };
 
     const openAttachmentUrl = async (url: string) => {
+        const safeUrl = toSafeAttachmentUrl(url);
+        if (!safeUrl) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '链接不可用',
+                message: '该附件链接不安全或格式无效，已阻止打开',
+            });
+            return;
+        }
+
         try {
-            await Linking.openURL(url);
+            await Linking.openURL(safeUrl);
         } catch (e) {
             console.error('Failed to open attachment url:', url, e);
             setDialogConfig({
@@ -831,12 +894,64 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         }
     };
 
+    const handleSubmitReport = async () => {
+        const reason = reportReason.trim();
+        if (!reason) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '请输入举报内容',
+                message: '请填写您要举报的具体原因。',
+            });
+            return;
+        }
+
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '举报失败',
+                message: '缺少会话信息，无法提交举报',
+            });
+            return;
+        }
+
+        setSubmittingReport(true);
+        try {
+            await reportApi.submitChatReport({
+                topic: targetTopic,
+                reason,
+                partner: partnerPublicId ? String(partnerPublicId) : partnerIdentifier ? String(partnerIdentifier) : undefined,
+            });
+
+            setShowReportModal(false);
+            setReportReason('');
+            setDialogConfig({
+                visible: true,
+                type: 'success',
+                title: '举报成功',
+                message: '感谢您的反馈，我们将尽快处理。',
+            });
+        } catch (error) {
+            console.error('[ChatRoom] Failed to submit report:', error);
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '举报失败',
+                message: '提交失败，请稍后重试',
+            });
+        } finally {
+            setSubmittingReport(false);
+        }
+    };
+
     // 更多菜单选项
     const handleMenuOption = (option: string) => {
         setShowMoreMenu(false);
         switch (option) {
             case 'profile':
-                if (!partnerID) {
+                if (!legacyPartnerID) {
                     setDialogConfig({
                         visible: true,
                         type: 'info',
@@ -846,7 +961,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     break;
                 }
                 try {
-                    navigation.navigate('DesignerDetail', { id: partnerID });
+                    navigation.navigate('DesignerDetail', { id: legacyPartnerID });
                 } catch (e) {
                     console.warn('[ChatRoom] Failed to navigate to DesignerDetail:', e);
                     setDialogConfig({
@@ -854,6 +969,34 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         type: 'info',
                         title: '提示',
                         message: '无法打开用户资料',
+                    });
+                }
+                break;
+            case 'settings':
+                try {
+                    const targetTopic = conversationID || topicName || '';
+                    navigation.navigate('ChatSettings', {
+                        topic: targetTopic,
+                        partnerID: legacyPartnerID ? String(legacyPartnerID) : '',
+                        partnerIdentifier: partnerIdentifier ? String(partnerIdentifier) : '',
+                        partnerPublicId: partnerPublicId ? String(partnerPublicId) : '',
+                        conversation: {
+                            conversationID: targetTopic,
+                            partnerID: legacyPartnerID ? String(legacyPartnerID) : '',
+                            partnerIdentifier: partnerIdentifier ? String(partnerIdentifier) : '',
+                            partnerPublicId: partnerPublicId ? String(partnerPublicId) : '',
+                            name: partnerName || '用户',
+                            avatar: partnerAvatar || defaultAvatar,
+                            roleLabel: partnerRoleLabel || '服务商',
+                        },
+                    });
+                } catch (e) {
+                    console.warn('[ChatRoom] Failed to navigate to ChatSettings:', e);
+                    setDialogConfig({
+                        visible: true,
+                        type: 'info',
+                        title: '提示',
+                        message: '无法打开聊天设置',
                     });
                 }
                 break;
@@ -872,6 +1015,21 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                     type: 'info',
                                     title: '提示',
                                     message: '清空失败，请稍后重试',
+                                });
+                            }, 0);
+                            return;
+                        }
+
+                        try {
+                            await tinodeApi.clearTopicMessages(targetTopic);
+                        } catch (error) {
+                            console.error('[ChatRoom] Failed to clear messages on server:', error);
+                            setTimeout(() => {
+                                setDialogConfig({
+                                    visible: true,
+                                    type: 'info',
+                                    title: '清空失败',
+                                    message: '服务端清空失败，请稍后重试',
                                 });
                             }, 0);
                             return;
@@ -900,12 +1058,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 });
                 break;
             case 'report':
-                setDialogConfig({
-                    visible: true,
-                    type: 'success',
-                    title: '举报成功',
-                    message: '感谢您的反馈，我们将尽快处理。',
-                });
+                setReportReason('');
+                setShowReportModal(true);
                 break;
         }
     };
@@ -1367,7 +1521,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 />
                             </TouchableOpacity>
                         ) : audio?.url ? (
-                            <View style={{ width: 240 }}>
+                            <View style={styles.audioMessageContainer}>
                                 <AudioPlayer
                                     messageId={message.id}
                                     audioUrl={audio.url}
@@ -1642,6 +1796,13 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         <View style={styles.menuDivider} />
                         <TouchableOpacity
                             style={styles.menuItem}
+                            onPress={() => handleMenuOption('settings')}
+                        >
+                            <Text style={styles.menuItemText}>聊天信息</Text>
+                        </TouchableOpacity>
+                        <View style={styles.menuDivider} />
+                        <TouchableOpacity
+                            style={styles.menuItem}
                             onPress={() => handleMenuOption('clear')}
                         >
                             <Text style={styles.menuItemText}>清空聊天记录</Text>
@@ -1655,6 +1816,64 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         </TouchableOpacity>
                     </View>
                 </TouchableOpacity>
+            </Modal>
+
+            {/* 举报弹窗 */}
+            <Modal
+                visible={showReportModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => {
+                    if (!submittingReport) {
+                        setShowReportModal(false);
+                    }
+                }}
+            >
+                <View style={styles.reportModalOverlay}>
+                    <View style={styles.reportModalContainer}>
+                        <Text style={styles.reportModalTitle}>举报用户</Text>
+                        <Text style={styles.reportModalSubtitle}>请填写举报原因（100字以内）</Text>
+
+                        <View style={styles.reportInputContainer}>
+                            <TextInput
+                                style={styles.reportInput}
+                                placeholder="请描述您要举报的具体问题..."
+                                placeholderTextColor="#A1A1AA"
+                                value={reportReason}
+                                onChangeText={(text) => setReportReason(text.slice(0, 100))}
+                                multiline
+                                maxLength={100}
+                            />
+                            <Text style={styles.reportCharCount}>{reportReason.length}/100</Text>
+                        </View>
+
+                        <View style={styles.reportActions}>
+                            <TouchableOpacity
+                                style={[styles.reportActionBtn, styles.reportActionCancel]}
+                                onPress={() => {
+                                    setShowReportModal(false);
+                                    setReportReason('');
+                                }}
+                                disabled={submittingReport}
+                            >
+                                <Text style={styles.reportActionCancelText}>取消</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.reportActionBtn,
+                                    styles.reportActionSubmit,
+                                    submittingReport && styles.reportActionDisabled,
+                                ]}
+                                onPress={handleSubmitReport}
+                                disabled={submittingReport}
+                            >
+                                <Text style={styles.reportActionSubmitText}>
+                                    {submittingReport ? '提交中...' : '提交'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
             </Modal>
 
             {/* 自定义弹窗 */}
@@ -1735,7 +1954,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 style={styles.attachmentItem}
                                 onPress={handleCamera}
                             >
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#FEF3C7' }]}>
+                                <View style={[styles.attachmentIcon, styles.attachmentIconCamera]}>
                                     <Camera size={24} color="#F59E0B" />
                                 </View>
                                 <Text style={styles.attachmentLabel}>拍照</Text>
@@ -1744,7 +1963,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 style={styles.attachmentItem}
                                 onPress={handleGallery}
                             >
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#DBEAFE' }]}>
+                                <View style={[styles.attachmentIcon, styles.attachmentIconGallery]}>
                                     <ImageIcon size={24} color="#3B82F6" />
                                 </View>
                                 <Text style={styles.attachmentLabel}>相册</Text>
@@ -1753,7 +1972,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 style={styles.attachmentItem}
                                 onPress={handleFile}
                             >
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#F3E8FF' }]}>
+                                <View style={[styles.attachmentIcon, styles.attachmentIconFile]}>
                                     <File size={24} color="#8B5CF6" />
                                 </View>
                                 <Text style={styles.attachmentLabel}>文件</Text>
@@ -1933,6 +2152,9 @@ const styles = StyleSheet.create({
     messageTextMe: {
         color: '#FFFFFF',
     },
+    audioMessageContainer: {
+        width: 240,
+    },
     fileCard: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -2103,6 +2325,81 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: '#F4F4F5',
     },
+    // 举报弹窗
+    reportModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    reportModalContainer: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 20,
+        width: '100%',
+        maxWidth: 340,
+    },
+    reportModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#09090B',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    reportModalSubtitle: {
+        fontSize: 13,
+        color: '#71717A',
+        textAlign: 'center',
+        marginBottom: 16,
+    },
+    reportInputContainer: {
+        backgroundColor: '#F4F4F5',
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 16,
+    },
+    reportInput: {
+        fontSize: 14,
+        color: '#09090B',
+        minHeight: 100,
+        textAlignVertical: 'top',
+    },
+    reportCharCount: {
+        fontSize: 12,
+        color: '#A1A1AA',
+        textAlign: 'right',
+        marginTop: 8,
+    },
+    reportActions: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    reportActionBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    reportActionCancel: {
+        backgroundColor: '#F4F4F5',
+    },
+    reportActionCancelText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#71717A',
+    },
+    reportActionSubmit: {
+        backgroundColor: PRIMARY_GOLD,
+    },
+    reportActionSubmitText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#FFFFFF',
+    },
+    reportActionDisabled: {
+        opacity: 0.6,
+    },
     // 自定义弹窗
     dialogOverlay: {
         flex: 1,
@@ -2228,6 +2525,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 8,
+    },
+    attachmentIconCamera: {
+        backgroundColor: '#FEF3C7',
+    },
+    attachmentIconGallery: {
+        backgroundColor: '#DBEAFE',
+    },
+    attachmentIconFile: {
+        backgroundColor: '#F3E8FF',
     },
     attachmentLabel: {
         fontSize: 13,

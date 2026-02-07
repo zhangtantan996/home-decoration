@@ -3,6 +3,7 @@
 export interface ProviderDTO {
     id: number;
     userId: number;
+    userPublicId?: string;
     providerType: number; // 1=设计师, 2=公司, 3=工长
     companyName: string;
     nickname: string;
@@ -42,6 +43,7 @@ export interface PageResponse<T> {
 // 前端展示用的设计师类型（兼容现有 UI）
 export interface Designer {
     id: number;
+    userPublicId?: string;
     name: string;
     avatar: string;
     yearsExperience: number;
@@ -62,6 +64,7 @@ export interface Designer {
 // 前端展示用的施工人员类型
 export interface Worker {
     id: number;
+    userPublicId?: string;
     type: 'personal' | 'company';
     name: string;
     avatar?: string;
@@ -118,6 +121,7 @@ export function toDesigner(dto: ProviderDTO): Designer {
 
     return {
         id: dto.id,
+        userPublicId: dto.userPublicId,
         name: dto.nickname || dto.companyName || '未知',
         avatar: dto.avatar || 'https://via.placeholder.com/100',
         yearsExperience: dto.yearsExperience || Math.floor(dto.completedCnt / 50) + 3,
@@ -155,6 +159,7 @@ export function toWorker(dto: ProviderDTO): Worker {
 
     return {
         id: dto.id,
+        userPublicId: dto.userPublicId,
         type: isCompany ? 'company' : 'personal',
         name: dto.nickname || dto.companyName || '未知',
         avatar: isCompany ? undefined : (dto.avatar || 'https://via.placeholder.com/100'),

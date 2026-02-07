@@ -130,11 +130,13 @@ export default function Profile() {
   const getIdentityDisplay = () => {
     if (!currentIdentity) return '业主';
     const identityNames: Record<string, string> = {
+      owner: '业主',
       homeowner: '业主',
+      provider: '服务商',
       designer: '设计师',
       company: '装修公司',
       foreman: '工长',
-      worker: '工人'
+      worker: '工长'
     };
     return identityNames[currentIdentity.identityType] || currentIdentity.identityName;
   };

@@ -551,7 +551,7 @@ const RoleList: React.FC = () => {
                 width={900}
                 okText="保存"
                 cancelText="取消"
-                bodyStyle={{ maxHeight: '70vh', overflowY: 'auto' }}
+                styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
             >
                 <Spin spinning={menuLoading}>
                     {/* 统计信息 */}

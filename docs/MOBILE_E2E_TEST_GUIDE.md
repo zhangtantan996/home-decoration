@@ -74,7 +74,7 @@ npm run android # For Android
 **Troubleshooting**:
 - **If "WebSocket 已连接" doesn't appear**: Check Tinode container status with `docker ps | grep tinode`
 - **If "登录成功" fails**: Verify tinodeToken is present in login API response
-- **If connection timeout**: Check TINODE_SERVER_URL in mobile/src/config/env.ts
+- **If connection timeout**: Check `TINODE_SERVER_URL` in `mobile/.env` (optional override) and `mobile/src/config/tinode.ts` / `mobile/src/services/TinodeService.ts` host selection
 
 ---
 

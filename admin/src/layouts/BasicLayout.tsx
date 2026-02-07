@@ -4,7 +4,6 @@ import { Dropdown } from 'antd';
 import { ProLayout, PageContainer } from '@ant-design/pro-components';
 import { useAuthStore } from '../stores/authStore';
 import NotificationDropdown from '../components/NotificationDropdown';
-import IdentitySwitcher from '../components/IdentitySwitcher';
 import {
     DashboardOutlined,
     ProjectOutlined,
@@ -71,10 +70,7 @@ const BasicLayout: React.FC = () => {
     };
 
     const menuData = React.useMemo(() => {
-        console.log('原始菜单数据:', menus);
-        const transformed = transformMenuData(menus);
-        console.log('转换后的菜单数据:', transformed);
-        return transformed;
+        return transformMenuData(menus);
     }, [menus]);
 
     return (
@@ -91,7 +87,6 @@ const BasicLayout: React.FC = () => {
                 <div onClick={() => item.path && navigate(item.path)}>{dom}</div>
             )}
             actionsRender={() => [
-                <IdentitySwitcher key="identity" />,
                 <NotificationDropdown key="notification" />,
             ]}
             avatarProps={{

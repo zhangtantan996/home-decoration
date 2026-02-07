@@ -27,11 +27,13 @@ const MerchantTypeCard: React.FC<MerchantTypeCardProps> = ({ icon, title, descri
             borderRadius: 12,
             transition: 'all 0.3s',
         }}
-        bodyStyle={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
+        styles={{
+            body: {
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+            },
         }}
     >
         <div style={{
@@ -107,7 +109,7 @@ const MerchantEntry: React.FC = () => {
                             background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
                             borderRadius: 12,
                         }}
-                        bodyStyle={{ padding: 20 }}
+                        styles={{ body: { padding: 20 } }}
                     >
                         <Row align="middle" justify="space-between">
                             <Col>

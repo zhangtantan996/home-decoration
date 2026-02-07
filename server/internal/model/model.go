@@ -1,7 +1,11 @@
 package model
 
 import (
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // Base 基础模型
@@ -14,6 +18,7 @@ type Base struct {
 // User 用户
 type User struct {
 	Base
+	PublicID          string     `json:"publicId" gorm:"size:36;uniqueIndex"`
 	Phone             string     `json:"phone" gorm:"uniqueIndex;size:20"`
 	Nickname          string     `json:"nickname" gorm:"size:50"`
 	Avatar            string     `json:"avatar" gorm:"size:500"`
@@ -23,6 +28,19 @@ type User struct {
 	LoginFailedCount  int        `json:"-" gorm:"default:0"` // 登录失败次数
 	LockedUntil       *time.Time `json:"-"`                  // 锁定到期时间
 	LastFailedLoginAt *time.Time `json:"-"`                  // 最后失败登录时间
+}
+
+// GeneratePublicID 生成对外公开的用户标识
+func GeneratePublicID() string {
+	return uuid.NewString()
+}
+
+// BeforeCreate 确保用户创建时存在 public_id
+func (u *User) BeforeCreate(_ *gorm.DB) error {
+	if strings.TrimSpace(u.PublicID) == "" {
+		u.PublicID = GeneratePublicID()
+	}
+	return nil
 }
 
 // UserWechatBinding 微信小程序绑定关系
