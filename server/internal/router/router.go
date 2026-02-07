@@ -424,10 +424,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/merchant-applications/:id/reject", handler.AdminRejectApplication)
 
 			// 身份申请审核
-			admin.GET("/identity-applications", handler.AdminListIdentityApplications)
-			admin.GET("/identity-applications/:id", handler.AdminGetIdentityApplication)
-			admin.POST("/identity-applications/:id/approve", handler.AdminApproveIdentityApplication)
-			admin.POST("/identity-applications/:id/reject", handler.AdminRejectIdentityApplication)
+			admin.GET("/identity-applications", middleware.RequirePermission("identity:application:audit"), handler.AdminListIdentityApplications)
+			admin.GET("/identity-applications/:id", middleware.RequirePermission("identity:application:audit"), handler.AdminGetIdentityApplication)
+			admin.POST("/identity-applications/:id/approve", middleware.RequirePermission("identity:application:audit"), handler.AdminApproveIdentityApplication)
+			admin.POST("/identity-applications/:id/reject", middleware.RequirePermission("identity:application:audit"), handler.AdminRejectIdentityApplication)
 
 			// ========== 项目管理 ==========
 			admin.GET("/projects", handler.AdminListProjects)
