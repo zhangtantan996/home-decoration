@@ -1,14 +1,28 @@
 import Taro from '@tarojs/taro';
 import { View } from '@tarojs/components';
 import React, { useEffect, useState } from 'react';
+import { SearchBar, Tabs, Cell, Empty, Skeleton, Button } from '@nutui/nutui-react-taro';
+import { Star } from '@nutui/icons-react-taro';
+
 import { Card } from '@/components/Card';
-import { Empty } from '@/components/Empty';
-import { Button } from '@/components/Button';
-import { ListItem } from '@/components/ListItem';
-import { Skeleton } from '@/components/Skeleton';
-import { useAuthStore } from '@/store/auth';
-import { listProviders, type ProviderListItem } from '@/services/providers';
 import { listProjects, type ProjectItem } from '@/services/projects';
+import { listProviders, type ProviderListItem, type ProviderType } from '@/services/providers';
+import { useAuthStore } from '@/store/auth';
+import { showErrorToast } from '@/utils/error';
+
+const getProviderType = (providerType: number): ProviderType => {
+  if (providerType === 2) {
+    return 'company';
+  }
+  if (providerType === 3) {
+    return 'foreman';
+  }
+  return 'designer';
+};
+
+const getProviderName = (provider: ProviderListItem) => {
+  return provider.companyName || provider.nickname || '服务商';
+};
 
 export default function Home() {
   const auth = useAuthStore();
@@ -16,21 +30,35 @@ export default function Home() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(true);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const [activeTab, setActiveTab] = useState('0');
+
+  const providerTypes = [
+    { title: '全部', value: '0' },
+    { title: '设计师', value: '1' },
+    { title: '装修公司', value: '2' },
+    { title: '工长', value: '3' },
+  ];
 
   useEffect(() => {
-    const fetchProviders = async () => {
-      try {
-        const data = await listProviders({ page: 1, pageSize: 3, sortBy: 'rating' });
-        setProviders(data.list || []);
-      } catch (err) {
-        Taro.showToast({ title: err instanceof Error ? err.message : '加载失败', icon: 'none' });
-      } finally {
-        setLoadingProviders(false);
-      }
-    };
-
     fetchProviders();
-  }, []);
+  }, [activeTab]);
+
+  const fetchProviders = async () => {
+    setLoadingProviders(true);
+    try {
+      const params: any = { page: 1, pageSize: 10, sortBy: 'rating' };
+      if (activeTab !== '0') {
+        params.providerType = parseInt(activeTab);
+      }
+      const data = await listProviders(params);
+      setProviders(data.list || []);
+    } catch (err) {
+      showErrorToast(err, '加载失败');
+    } finally {
+      setLoadingProviders(false);
+    }
+  };
 
   useEffect(() => {
     if (!auth.token) {
@@ -44,7 +72,7 @@ export default function Home() {
         const data = await listProjects(1, 3);
         setProjects(data.list || []);
       } catch (err) {
-        Taro.showToast({ title: err instanceof Error ? err.message : '加载失败', icon: 'none' });
+        showErrorToast(err, '加载失败');
       } finally {
         setLoadingProjects(false);
       }
@@ -53,6 +81,24 @@ export default function Home() {
     fetchProjects();
   }, [auth.token]);
 
+  const handleSearch = () => {
+    if (!searchValue.trim()) {
+      Taro.showToast({ title: '请输入搜索关键词', icon: 'none' });
+      return;
+    }
+    Taro.navigateTo({
+      url: `/pages/providers/list/index?keyword=${encodeURIComponent(searchValue)}`,
+    });
+  };
+
+  const handleProviderClick = (provider: ProviderListItem) => {
+    const providerName = encodeURIComponent(getProviderName(provider));
+    const providerType = getProviderType(provider.providerType);
+    Taro.navigateTo({
+      url: `/pages/providers/detail/index?id=${provider.id}&type=${providerType}&providerName=${providerName}`,
+    });
+  };
+
   return (
     <View className="page">
       <View className="m-md">
@@ -60,90 +106,100 @@ export default function Home() {
           精选推荐
         </View>
 
-        <Card
-          title="推荐服务商"
-          extra={
-            <View
-              className="text-brand"
-              onClick={() => Taro.navigateTo({ url: '/pages/providers/list/index' })}
-            >
-              查看更多
-            </View>
-          }
+        {/* 搜索框 */}
+        <View style={{ marginBottom: '24rpx' }}>
+          <SearchBar
+            placeholder="搜索设计师、装修公司、工长"
+            value={searchValue}
+            onChange={(val) => setSearchValue(val)}
+            onSearch={handleSearch}
+          />
+        </View>
+
+        {/* 分类 Tabs */}
+        <Tabs
+          value={activeTab}
+          onChange={(value) => setActiveTab(value as string)}
+          style={{ marginBottom: '24rpx' }}
         >
+          {providerTypes.map((type) => (
+            <Tabs.TabPane key={type.value} title={type.title} value={type.value} />
+          ))}
+        </Tabs>
+
+        {/* 服务商列表 */}
+        <Card title="推荐服务商">
           {loadingProviders ? (
             <View className="p-sm">
-              <View className="mb-sm"><Skeleton width="80%" /></View>
-              <View className="mb-sm"><Skeleton width="60%" /></View>
-              <View><Skeleton width="70%" /></View>
+              <Skeleton rows={3} animated />
             </View>
           ) : providers.length === 0 ? (
             <Empty description="暂无推荐服务商" />
           ) : (
             providers.map((provider) => (
-              <ListItem
+              <Cell
                 key={provider.id}
-                title={provider.companyName || provider.nickname}
+                title={getProviderName(provider)}
                 description={provider.specialty || '暂无介绍'}
-                extra={<View className="text-secondary">{provider.rating?.toFixed(1) || '0.0'}分</View>}
+                extra={
+                  <View style={{ display: 'flex', alignItems: 'center', color: '#D4AF37' }}>
+                    <Star size="14" />
+                    <View style={{ marginLeft: '4rpx' }}>{provider.rating?.toFixed(1) || '0.0'}</View>
+                  </View>
+                }
+                onClick={() => handleProviderClick(provider)}
               />
             ))
           )}
         </Card>
 
-        <Card title="我的项目">
+        {/* 我的项目 */}
+        <Card title="我的项目" style={{ marginTop: '24rpx' }}>
           {!auth.token ? (
-            <ListItem
+            <Cell
               title="您还未登录"
               description="登录后查看项目进度"
-              extra={
-                <Button size="sm" variant="primary">去登录</Button>
-              }
-              onClick={() => Taro.navigateTo({ url: '/pages/profile/index' })}
+              extra={<Button size="small" type="primary">去登录</Button>}
+              onClick={() => Taro.switchTab({ url: '/pages/profile/index' })}
             />
           ) : loadingProjects ? (
             <View className="p-sm">
-              <Skeleton width="70%" />
+              <Skeleton rows={2} animated />
             </View>
           ) : projects.length === 0 ? (
             <Empty description="暂无项目" />
           ) : (
             projects.map((project) => (
-              <ListItem
+              <Cell
                 key={project.id}
                 title={project.name || '项目'}
                 description={project.address || '暂无地址'}
-                arrow
-                onClick={() =>
-                  Taro.navigateTo({ url: `/pages/projects/detail/index?id=${project.id}` })
-                }
+                onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${project.id}` })}
               />
             ))
           )}
         </Card>
 
+        {/* 待支付订单 */}
         <Card
           title="待支付订单"
+          style={{ marginTop: '24rpx' }}
           extra={
-            <View
-              className="text-brand"
-              onClick={() => Taro.navigateTo({ url: '/pages/orders/pending/index' })}
-            >
+            <View className="text-brand" onClick={() => Taro.navigateTo({ url: '/pages/orders/pending/index' })}>
               查看全部
             </View>
           }
         >
           {!auth.token ? (
-            <ListItem
+            <Cell
               title="登录后查看待支付订单"
               description="完成支付后进入施工阶段"
-              onClick={() => Taro.navigateTo({ url: '/pages/profile/index' })}
+              onClick={() => Taro.switchTab({ url: '/pages/profile/index' })}
             />
           ) : (
-            <ListItem
+            <Cell
               title="查看待支付订单"
               description="点击进入待支付列表"
-              arrow
               onClick={() => Taro.navigateTo({ url: '/pages/orders/pending/index' })}
             />
           )}

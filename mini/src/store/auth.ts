@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import { storage } from '@/utils/storage';
+import { taroStorage } from '@/utils/storage';
 
 export interface AuthUser {
   id: number;
@@ -22,15 +22,6 @@ interface AuthState {
   clear: () => void;
   updateUser: (user: Partial<AuthUser>) => void;
 }
-
-const taroStorage = {
-  getItem: (name: string) => {
-    const value = storage.get<string>(name);
-    return value ?? null;
-  },
-  setItem: (name: string, value: string) => storage.set(name, value),
-  removeItem: (name: string) => storage.remove(name)
-};
 
 export const useAuthStore = create<AuthState>()(
   persist(

@@ -3,17 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "dev:h5": "taro build --type h5 --watch --port 5176",
     "dev:weapp": "taro build --type weapp --watch",
-    "build:weapp": "taro build --type weapp",
-    "lint": "eslint --ext .ts,.tsx src",
-    "format": "prettier --write \"src/**/*.{ts,tsx,scss}\""
+    "build:h5": "npm run gen:tab-icons && taro build --type h5",
+    "build:weapp": "npm run gen:tab-icons && taro build --type weapp",
+    "lint": "eslint --ext .ts,.tsx src && npm run check:no-emoji",
+    "format": "prettier --write \"src/**/*.{ts,tsx,scss}\"",
+    "check:no-emoji": "node scripts/check-no-emoji.mjs",
+    "gen:tab-icons": "python3 scripts/generate_tab_icons.py"
   },
   "dependencies": {
+    "@nutui/icons-react-taro": "^3.0.2-cpp.3.beta.5",
+    "@nutui/nutui-react-taro": "^2.7.15-beta.1",
     "@tarojs/components": "3.6.37",
     "@tarojs/helper": "3.6.37",
     "@tarojs/plugin-framework-react": "3.6.37",
+    "@tarojs/plugin-platform-h5": "file:plugins/plugin-platform-h5",
     "@tarojs/plugin-platform-weapp": "3.6.37",
     "@tarojs/react": "3.6.37",
+    "@tarojs/router": "^3.6.37",
     "@tarojs/runtime": "3.6.37",
     "@tarojs/taro": "3.6.37",
     "react": "18.2.0",

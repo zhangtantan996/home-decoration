@@ -26,3 +26,13 @@ export const storage = {
     }
   }
 };
+
+// Zustand persist 适配器（供 auth/identity store 使用）
+export const taroStorage = {
+  getItem: (name: string) => {
+    const value = storage.get<string>(name);
+    return value ?? null;
+  },
+  setItem: (name: string, value: string) => storage.set(name, value),
+  removeItem: (name: string) => storage.remove(name)
+};

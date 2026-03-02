@@ -1,22 +1,29 @@
 import Taro from '@tarojs/taro';
 import { View } from '@tarojs/components';
 import React, { useEffect, useState } from 'react';
+import { Edit } from '@nutui/icons-react-taro';
 import { useAuthStore } from '@/store/auth';
 import { useIdentityStore } from '@/store/identity';
 import { bindPhone, loginWithWxCode } from '@/services/auth';
+import { getWechatH5AuthorizeUrl } from '@/services/auth_h5';
 import { listPendingPayments, type PendingPaymentItem } from '@/services/orders';
 import { getUnreadCount } from '@/services/notifications';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { ListItem } from '@/components/ListItem';
+import { Icon } from '@/components/Icon';
 import { IdentitySwitcher } from '@/components/IdentitySwitcher';
+import { favoriteService } from '@/services/inspiration';
+import { showErrorToast } from '@/utils/error';
 
 export default function Profile() {
+  const isH5 = process.env.TARO_ENV === 'h5';
   const auth = useAuthStore();
   const { currentIdentity, fetchIdentities } = useIdentityStore();
   const [bindToken, setBindToken] = useState('');
   const [pendingPayments, setPendingPayments] = useState<PendingPaymentItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [favoriteCaseCount, setFavoriteCaseCount] = useState(0);
   const [showIdentitySwitcher, setShowIdentitySwitcher] = useState(false);
 
   useEffect(() => {
@@ -24,6 +31,7 @@ export default function Profile() {
       if (!auth.token) {
         setPendingPayments([]);
         setUnreadCount(0);
+        setFavoriteCaseCount(0);
         return;
       }
 
@@ -35,9 +43,12 @@ export default function Profile() {
         setPendingPayments(pending.items || []);
         setUnreadCount(unread.count || 0);
 
+        const favoriteRes = await favoriteService.listCases(1, 1);
+        setFavoriteCaseCount(favoriteRes.total || 0);
+
         fetchIdentities().catch(() => {});
       } catch (err) {
-        Taro.showToast({ title: err instanceof Error ? err.message : '加载失败', icon: 'none' });
+        showErrorToast(err, '加载失败');
       }
     };
 
@@ -60,6 +71,24 @@ export default function Profile() {
       }
     } catch (err) {
       Taro.showToast({ title: err instanceof Error ? err.message : '登录失败', icon: 'none' });
+    }
+  };
+
+  const handlePhoneLogin = () => {
+    Taro.navigateTo({ url: '/pages/auth/login/index' });
+  };
+
+  const handleWechatOAuthLogin = async () => {
+    if (!isH5) {
+      Taro.showToast({ title: '仅支持在 H5 使用微信网页授权', icon: 'none' });
+      return;
+    }
+    try {
+      const { url } = await getWechatH5AuthorizeUrl();
+      // eslint-disable-next-line no-restricted-globals
+      window.location.href = url;
+    } catch (err) {
+      showErrorToast(err, '跳转失败');
     }
   };
 
@@ -111,8 +140,25 @@ export default function Profile() {
     });
   };
 
-  const handleComingSoon = (title: string) => () => {
-    Taro.showToast({ title: `${title}敬请期待`, icon: 'none' });
+  const handleFavorites = () => {
+    requireAuth(() => {
+      Taro.setStorageSync('inspiration_active_tab', 'favorites');
+      Taro.switchTab({ url: '/pages/inspiration/index' });
+    });
+  };
+
+  const handleSettings = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/settings/index' });
+    });
+  };
+
+  const handleSupport = () => {
+    Taro.navigateTo({ url: '/pages/support/index' });
+  };
+
+  const handleAbout = () => {
+    Taro.navigateTo({ url: '/pages/about/index' });
   };
 
   const handleSwitchIdentity = () => {
@@ -124,6 +170,12 @@ export default function Profile() {
   const handleApplyIdentity = () => {
     requireAuth(() => {
       Taro.navigateTo({ url: '/pages/identity/apply/index' });
+    });
+  };
+
+  const handleEditProfile = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/profile/edit/index' });
     });
   };
 
@@ -146,7 +198,7 @@ export default function Profile() {
       <View className="m-md">
         <View className="flex items-center mb-lg pt-md">
           <View style={{ width: '120rpx', height: '120rpx', borderRadius: '60rpx', backgroundColor: '#E4E4E7', marginRight: '32rpx' }} />
-          <View>
+          <View style={{ flex: 1 }}>
             <View className="text-primary font-bold" style={{ fontSize: '36rpx', marginBottom: '8rpx' }}>
               {auth.user ? auth.user.nickname : '未登录用户'}
             </View>
@@ -154,16 +206,40 @@ export default function Profile() {
               {auth.user ? `手机号: ${auth.user.phone}` : '登录体验更多功能'}
             </View>
           </View>
+          {auth.user && (
+            <View
+              onClick={handleEditProfile}
+              style={{
+                width: '64rpx',
+                height: '64rpx',
+                borderRadius: '32rpx',
+                backgroundColor: '#F4F4F5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Edit size="20" color="#71717A" />
+            </View>
+          )}
         </View>
 
         {!auth.user && !bindToken && (
           <Card className="mb-lg">
             <View className="text-center mb-md text-secondary">一键登录，同步您的装修进度</View>
-            <Button onClick={handleWxLogin} variant="primary">微信一键登录</Button>
+            {isH5 ? (
+              <>
+                <Button onClick={handlePhoneLogin} variant="primary">手机号登录</Button>
+                <View className="mt-sm" />
+                <Button onClick={handleWechatOAuthLogin} variant="brand">微信登录（网页授权）</Button>
+              </>
+            ) : (
+              <Button onClick={handleWxLogin} variant="primary">微信一键登录</Button>
+            )}
           </Card>
         )}
 
-        {bindToken && (
+        {bindToken && !isH5 && (
           <Card title="绑定手机号" className="mb-lg">
             <View className="text-secondary mb-md">请授权手机号完成绑定</View>
             <Button
@@ -183,46 +259,56 @@ export default function Profile() {
                 title="当前身份"
                 description={getIdentityDisplay()}
                 arrow
-                icon={<View>👤</View>}
+                icon={<Icon name="identity" size={28} color="#71717A" />}
                 onClick={handleSwitchIdentity}
               />
               <ListItem
                 title="申请新身份"
                 description="成为设计师、工长等"
                 arrow
-                icon={<View>➕</View>}
+                icon={<Icon name="identity-add" size={28} color="#71717A" />}
                 onClick={handleApplyIdentity}
               />
             </Card>
 
             <Card title="待支付订单" className="mb-lg">
-            {pendingPayments.length === 0 ? (
-              <ListItem
-                title="暂无待支付订单"
-                description="您当前没有待支付费用"
-                onClick={() => handlePendingPayments()}
-                arrow
-              />
-            ) : (
-              pendingPayments.map((item) => (
+              {pendingPayments.length === 0 ? (
                 <ListItem
-                  key={`${item.type}-${item.id}`}
-                  title={item.providerName}
-                  description={`待支付金额 ¥${item.amount}`}
+                  title="暂无待支付订单"
+                  description="您当前没有待支付费用"
+                  onClick={() => handlePendingPayments()}
                   arrow
-                  onClick={() => handlePendingPayments(item.type)}
                 />
-              ))
-            )}
-          </Card>
+              ) : (
+                pendingPayments.map((item) => (
+                  <ListItem
+                    key={`${item.type}-${item.id}`}
+                    title={item.providerName}
+                    description={`待支付金额 ¥${item.amount}`}
+                    arrow
+                    onClick={() => handlePendingPayments(item.type)}
+                  />
+                ))
+              )}
+            </Card>
           </>
         )}
 
         <View className="mb-lg">
           <Card>
-            <ListItem title="我的订单" arrow icon={<View>📦</View>} onClick={handleOrders} />
-            <ListItem title="我的收藏" arrow icon={<View>❤️</View>} onClick={handleComingSoon('收藏')} />
-            <ListItem title="浏览记录" arrow icon={<View>🕒</View>} onClick={handleComingSoon('浏览记录')} />
+            <ListItem
+              title="我的订单"
+              arrow
+              icon={<Icon name="orders" size={28} color="#71717A" />}
+              onClick={handleOrders}
+            />
+            <ListItem
+              title="我的收藏"
+              arrow
+              icon={<Icon name="favorites" size={28} color="#71717A" />}
+              extra={<View className="text-secondary">{favoriteCaseCount}</View>}
+              onClick={handleFavorites}
+            />
           </Card>
         </View>
 
@@ -231,13 +317,28 @@ export default function Profile() {
             <ListItem
               title="消息通知"
               arrow
-              icon={<View>🔔</View>}
+              icon={<Icon name="notification" size={28} color="#71717A" />}
               extra={unreadCount > 0 ? <View className="text-brand">{unreadCount}</View> : undefined}
               onClick={handleNotifications}
             />
-            <ListItem title="联系客服" arrow icon={<View>🎧</View>} onClick={handleComingSoon('联系客服')} />
-            <ListItem title="关于我们" arrow icon={<View>ℹ️</View>} onClick={handleComingSoon('关于我们')} />
-            <ListItem title="设置" arrow icon={<View>⚙️</View>} onClick={handleComingSoon('设置')} />
+            <ListItem
+              title="联系客服"
+              arrow
+              icon={<Icon name="support" size={28} color="#71717A" />}
+              onClick={handleSupport}
+            />
+            <ListItem
+              title="关于我们"
+              arrow
+              icon={<Icon name="about" size={28} color="#71717A" />}
+              onClick={handleAbout}
+            />
+            <ListItem
+              title="设置"
+              arrow
+              icon={<Icon name="settings" size={28} color="#71717A" />}
+              onClick={handleSettings}
+            />
           </Card>
         </View>
 

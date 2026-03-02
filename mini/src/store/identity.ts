@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import Taro from '@tarojs/taro';
 
-import { storage } from '@/utils/storage';
+import { taroStorage } from '@/utils/storage';
 import { identityService, type Identity } from '@/services/identity';
 import { useAuthStore } from './auth';
 
@@ -16,15 +16,6 @@ interface IdentityState {
   applyIdentity: (providerSubType: 'designer' | 'company' | 'foreman', applicationData?: string) => Promise<void>;
   clear: () => void;
 }
-
-const taroStorage = {
-  getItem: (name: string) => {
-    const value = storage.get<string>(name);
-    return value ?? null;
-  },
-  setItem: (name: string, value: string) => storage.set(name, value),
-  removeItem: (name: string) => storage.remove(name)
-};
 
 export const useIdentityStore = create<IdentityState>()(
   persist(

@@ -1,6 +1,7 @@
 import { PropsWithChildren, useEffect } from 'react';
 import Taro from '@tarojs/taro';
 
+import '@nutui/nutui-react-taro/dist/style.css';
 import './styles/base.scss';
 import './app.scss';
 

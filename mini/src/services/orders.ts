@@ -1,35 +1,12 @@
 import { request } from '@/utils/request';
 import type { PageData } from './types';
+import type { OrderDTO, PendingPaymentDTO } from './dto';
 
 export type OrderStatus = 0 | 1 | 2 | 3;
 
-export interface OrderItem {
-  id: number;
-  orderNo: string;
-  orderType: string;
-  totalAmount: number;
-  paidAmount: number;
-  discount: number;
-  status: OrderStatus;
-  projectId?: number;
-  proposalId?: number;
-  bookingId?: number;
-  expireAt?: string;
-  paidAt?: string;
-  createdAt?: string;
-}
+export type OrderItem = OrderDTO & { status: OrderStatus };
 
-export interface PendingPaymentItem {
-  type: 'intent_fee' | 'design_fee';
-  id: number;
-  orderNo: string;
-  amount: number;
-  providerId: number;
-  providerName: string;
-  address?: string;
-  expireAt?: string;
-  createdAt?: string;
-}
+export type PendingPaymentItem = PendingPaymentDTO;
 
 export async function listPendingPayments() {
   return request<{ items: PendingPaymentItem[]; total: number }>({
@@ -59,9 +36,11 @@ export async function cancelOrder(id: number) {
   });
 }
 
+// 注意：后端暂无 GET /orders 端点，使用 /orders/pending-payments 代替
+// 如需完整订单列表，需后端新增 GET /orders 端点
 export async function listOrders(page = 1, pageSize = 20) {
   return request<PageData<OrderItem>>({
-    url: '/orders',
+    url: '/orders/pending-payments',
     data: { page, pageSize }
   });
 }
