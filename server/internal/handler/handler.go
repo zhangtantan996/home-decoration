@@ -18,6 +18,7 @@ var (
 	bookingService      = &service.BookingService{}
 	materialShopService = &service.MaterialShopService{}
 	wechatAuthService   *service.WechatAuthService
+	wechatH5AuthService *service.WechatH5AuthService
 	jwtConfig           *config.JWTConfig
 )
 
@@ -26,6 +27,7 @@ func InitHandlers(cfg *config.Config) {
 	jwtConfig = &cfg.JWT
 	service.InitJWT(cfg.JWT.Secret)
 	wechatAuthService = service.NewWechatAuthService(cfg.WechatMini)
+	wechatH5AuthService = service.NewWechatH5AuthService(cfg.WechatH5)
 }
 
 // HealthCheck 健康检查
@@ -131,21 +133,21 @@ func SendCode(c *gin.Context) {
 	// 获取客户端IP
 	clientIP := c.ClientIP()
 
-	// 检查发送频率
-	smsService := service.GetSMSService()
-	if err := smsService.CanSendCode(req.Phone, clientIP); err != nil {
+	debugCode, err := service.SendSMSCode(req.Phone, clientIP)
+	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	// TODO: 实际项目接入短信服务
-	// 发送成功后记录
-	smsService.RecordSent(req.Phone, clientIP)
+	data := gin.H{
+		"expiresIn": 300,
+	}
+	// 非生产环境返回调试验证码，方便联调（生产环境不会返回）
+	if debugCode != "" {
+		data["debugCode"] = debugCode
+	}
 
-	// 测试环境验证码固定为 123456
-	response.SuccessWithMessage(c, "验证码已发送", gin.H{
-		"message": "测试验证码: 123456",
-	})
+	response.SuccessWithMessage(c, "验证码已发送", data)
 }
 
 // RefreshToken 刷新Token（带重放检测）

@@ -1,5 +1,4 @@
 import Taro from '@tarojs/taro';
-import { View, Text } from '@tarojs/components';
 import React, { useEffect } from 'react';
 
 import { useIdentityStore } from '@/store/identity';
@@ -9,14 +8,14 @@ interface IdentitySwitcherProps {
   onClose: () => void;
 }
 
-const identityIcons: Record<string, string> = {
-  owner: '🏠',
-  homeowner: '🏠',
-  provider: '🏢',
-  designer: '🎨',
-  company: '🏢',
-  foreman: '👷',
-  worker: '🔧'
+const identityLabelPrefix: Record<string, string> = {
+  owner: '[业主]',
+  homeowner: '[业主]',
+  provider: '[服务商]',
+  designer: '[设计师]',
+  company: '[装修公司]',
+  foreman: '[工长]',
+  worker: '[工长]'
 };
 
 const identityNames: Record<string, string> = {
@@ -60,10 +59,10 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ visible, onC
     }
 
     const itemList = identities.map((identity) => {
-      const icon = identityIcons[identity.identityType] || '👤';
+      const prefix = identityLabelPrefix[identity.identityType] || '[身份]';
       const name = identityNames[identity.identityType] || identity.identityName;
       const current = currentIdentity?.id === identity.id ? ' (当前)' : '';
-      return `${icon} ${name}${current}`;
+      return `${prefix} ${name}${current}`;
     });
 
     Taro.showActionSheet({
@@ -76,12 +75,11 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ visible, onC
       }
     });
   };
-
   useEffect(() => {
     if (visible && !loading && identities.length > 0) {
       handleActionSheet();
     }
-  }, [visible, loading, identities]);
+  }, [visible, loading, identities]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 };

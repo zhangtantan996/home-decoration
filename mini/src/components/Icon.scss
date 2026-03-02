@@ -1,0 +1,22 @@
+@import "../theme/tokens";
+
+.mini-icon {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999rpx;
+
+  &__image {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  &__glyph {
+    display: block;
+    text-align: center;
+    font-weight: 600;
+  }
+}

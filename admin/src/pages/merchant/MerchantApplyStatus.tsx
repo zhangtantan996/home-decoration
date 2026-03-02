@@ -2,18 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Card, Form, Input, Button, message, Layout, Typography, Result, Spin, Steps, Tag } from 'antd';
 import { PhoneOutlined, ArrowLeftOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { merchantApplyApi, type MerchantApplyStatusData } from '../../services/merchantApi';
 
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
-
-interface ApplicationStatus {
-    applicationId: number;
-    status: number;
-    statusText: string;
-    rejectReason?: string;
-    createdAt: string;
-    auditedAt?: string;
-}
 
 const MerchantApplyStatus: React.FC = () => {
     const [searchParams] = useSearchParams();
@@ -22,31 +14,28 @@ const MerchantApplyStatus: React.FC = () => {
 
     const [loading, setLoading] = useState(false);
     const [queried, setQueried] = useState(false);
-    const [applicationStatus, setApplicationStatus] = useState<ApplicationStatus | null>(null);
+    const [applicationStatus, setApplicationStatus] = useState<MerchantApplyStatusData | null>(null);
     const [form] = Form.useForm();
 
     useEffect(() => {
         if (phoneFromUrl) {
             form.setFieldsValue({ phone: phoneFromUrl });
-            handleQuery({ phone: phoneFromUrl });
+            void handleQuery({ phone: phoneFromUrl });
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [phoneFromUrl]);
 
     const handleQuery = async (values: { phone: string }) => {
         setLoading(true);
         try {
-            const response = await fetch(`/api/v1/merchant/apply/${values.phone}/status`);
-            const result = await response.json();
-
-            if (result.code === 0) {
-                setApplicationStatus(result.data);
-                setQueried(true);
-            } else {
-                message.error(result.message || '查询失败');
-                setApplicationStatus(null);
-            }
-        } catch (error) {
-            message.error('查询失败，请稍后重试');
+            const result = await merchantApplyApi.status(values.phone);
+            setApplicationStatus(result);
+            setQueried(true);
+        } catch (error: unknown) {
+            const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
+            message.error(maybeAxiosError.response?.data?.message || maybeAxiosError.message || '查询失败，请稍后重试');
+            setApplicationStatus(null);
+            setQueried(true);
         } finally {
             setLoading(false);
         }
@@ -101,10 +90,10 @@ const MerchantApplyStatus: React.FC = () => {
                         { title: '平台审核', description: status === 0 ? '审核中...' : '' },
                         {
                             title: status === 2 ? '审核拒绝' : '审核通过',
-                            description: auditedAt ? new Date(auditedAt).toLocaleString() : ''
+                            description: auditedAt ? new Date(auditedAt).toLocaleString() : '',
                         },
                     ]}
-                    style={{ marginBottom: 24 }}
+                    style={{ marginBottom: 32 }}
                 />
 
                 {status === 0 && (
@@ -120,11 +109,11 @@ const MerchantApplyStatus: React.FC = () => {
                         status="success"
                         title="恭喜！审核已通过"
                         subTitle="您可以使用手机号登录商家中心"
-                        extra={
+                        extra={(
                             <Button type="primary" onClick={() => navigate('/login')}>
                                 立即登录
                             </Button>
-                        }
+                        )}
                     />
                 )}
 
@@ -132,20 +121,20 @@ const MerchantApplyStatus: React.FC = () => {
                     <Result
                         status="error"
                         title="审核未通过"
-                        subTitle={
+                        subTitle={(
                             <div>
                                 <Text>拒绝原因：</Text>
                                 <Paragraph type="danger">{rejectReason || '未说明原因'}</Paragraph>
                             </div>
-                        }
-                        extra={
+                        )}
+                        extra={(
                             <Button
                                 type="primary"
-                                onClick={() => navigate(`/register?type=personal&resubmit=${applicationStatus.applicationId}`)}
+                                onClick={() => navigate(`/register?type=${applicationStatus.applicantType || 'personal'}&resubmit=${applicationStatus.applicationId}`)}
                             >
                                 修改后重新提交
                             </Button>
-                        }
+                        )}
                     />
                 )}
             </Card>
@@ -183,7 +172,7 @@ const MerchantApplyStatus: React.FC = () => {
                             label="手机号"
                             rules={[
                                 { required: true, message: '请输入手机号' },
-                                { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' }
+                                { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' },
                             ]}
                         >
                             <Input
@@ -219,11 +208,11 @@ const MerchantApplyStatus: React.FC = () => {
                             status="404"
                             title="未找到申请记录"
                             subTitle="请确认手机号是否正确，或者您尚未提交入驻申请"
-                            extra={
+                            extra={(
                                 <Button type="primary" onClick={() => navigate('/')}>
                                     立即申请入驻
                                 </Button>
-                            }
+                            )}
                         />
                     )}
                 </Card>

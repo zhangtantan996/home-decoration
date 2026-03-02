@@ -1,5 +1,5 @@
 export default definePageConfig({
-  navigationBarTitleText: 'My Proposals',
+  navigationBarTitleText: '我的方案',
   enablePullDownRefresh: true,
   backgroundColor: '#F8F9FA'
 });

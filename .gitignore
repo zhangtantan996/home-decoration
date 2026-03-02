@@ -43,6 +43,7 @@ NUL
 # Agent & IDE Specific
 .agent/
 .claude/
+.codex/
 .cursor/
 .kiro/
 .superdesign/
@@ -58,6 +59,8 @@ mobile/android/.gradle/
 mobile/android/.idea/
 mobile/android/.kotlin/
 mobile/android/app/.cxx/
+server/uploads/
 db_data_local/
 /db_data_local/
+deploy/backups/
 *.pid

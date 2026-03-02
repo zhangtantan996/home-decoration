@@ -1,4 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: 'Provider Details',
-  backgroundColor: '#FFFFFF'
+  navigationBarTitleText: '服务商详情',
+  backgroundColor: '#FFFFFF',
 });

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
@@ -22,7 +23,7 @@ var regionService = &service.RegionService{}
 type MerchantApplyInput struct {
 	Phone         string `json:"phone" binding:"required"`
 	Code          string `json:"code" binding:"required"`
-	ApplicantType string `json:"applicantType" binding:"required,oneof=personal studio company"`
+	ApplicantType string `json:"applicantType" binding:"required,oneof=personal studio company foreman"`
 	RealName      string `json:"realName" binding:"required"`
 	IDCardNo      string `json:"idCardNo" binding:"required"`
 	IDCardFront   string `json:"idCardFront" binding:"required"`
@@ -33,12 +34,15 @@ type MerchantApplyInput struct {
 	LicenseImage  string `json:"licenseImage"`
 	TeamSize      int    `json:"teamSize"`
 	OfficeAddress string `json:"officeAddress"`
+	// 工长专属
+	YearsExperience int      `json:"yearsExperience"`
+	WorkTypes       []string `json:"workTypes"`
 	// 通用
 	ServiceArea  []string `json:"serviceArea" binding:"required,min=1"`
-	Styles       []string `json:"styles" binding:"required,min=1"`
+	Styles       []string `json:"styles"`
 	Introduction string   `json:"introduction"`
 	// 作品集
-	PortfolioCases []PortfolioCaseInput `json:"portfolioCases" binding:"required,min=3"`
+	PortfolioCases []PortfolioCaseInput `json:"portfolioCases" binding:"required,min=1"`
 }
 
 // PortfolioCaseInput 作品集输入
@@ -49,6 +53,97 @@ type PortfolioCaseInput struct {
 	Area   string   `json:"area"`
 }
 
+func normalizeStringSlice(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+
+	for _, item := range values {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+
+	return result
+}
+
+func validatePortfolioCases(cases []PortfolioCaseInput) error {
+	if len(cases) == 0 {
+		return fmt.Errorf("请至少添加1个案例")
+	}
+
+	for index := range cases {
+		cases[index].Title = strings.TrimSpace(cases[index].Title)
+		cases[index].Style = strings.TrimSpace(cases[index].Style)
+		cases[index].Area = strings.TrimSpace(cases[index].Area)
+		cases[index].Images = normalizeStringSlice(cases[index].Images)
+
+		if cases[index].Title == "" {
+			return fmt.Errorf("第%d个案例缺少标题", index+1)
+		}
+		if len(cases[index].Images) == 0 {
+			return fmt.Errorf("第%d个案例至少上传1张图片", index+1)
+		}
+	}
+
+	return nil
+}
+
+func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
+	input.Styles = normalizeStringSlice(input.Styles)
+	input.WorkTypes = normalizeStringSlice(input.WorkTypes)
+
+	if len([]rune(input.Introduction)) > 500 {
+		return fmt.Errorf("个人/公司简介不能超过500个字符")
+	}
+
+	if err := validatePortfolioCases(input.PortfolioCases); err != nil {
+		return err
+	}
+
+	if input.ApplicantType == "company" {
+		if strings.TrimSpace(input.LicenseNo) == "" {
+			return fmt.Errorf("公司类型必须提供营业执照号")
+		}
+		if len(strings.TrimSpace(input.LicenseNo)) > 18 {
+			return fmt.Errorf("营业执照号长度不正确")
+		}
+	}
+
+	if input.ApplicantType == "studio" || input.ApplicantType == "company" {
+		if !utils.ValidateCompanyName(input.CompanyName) {
+			return fmt.Errorf("名称长度应在2-100个字符之间")
+		}
+	}
+
+	if input.ApplicantType == "foreman" {
+		if input.YearsExperience <= 0 || input.YearsExperience > 50 {
+			return fmt.Errorf("工长类型需要填写1-50年的施工经验")
+		}
+		if len(input.WorkTypes) == 0 {
+			return fmt.Errorf("工长类型至少选择1个工种")
+		}
+		if len(input.PortfolioCases) < 1 {
+			return fmt.Errorf("工长类型请至少添加1个施工案例")
+		}
+		return nil
+	}
+
+	if len(input.Styles) == 0 {
+		return fmt.Errorf("请至少选择1个擅长风格")
+	}
+	if len(input.PortfolioCases) < 3 {
+		return fmt.Errorf("请至少添加3个作品案例")
+	}
+
+	return nil
+}
+
 // MerchantApply 提交商家入驻申请
 func MerchantApply(c *gin.Context) {
 	var input MerchantApplyInput
@@ -57,9 +152,9 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
-	// 1. 验证短信验证码（测试环境固定123456）
-	if input.Code != "123456" {
-		response.Error(c, 400, "验证码错误")
+	// 1. 验证短信验证码
+	if err := service.VerifySMSCode(input.Phone, input.Code); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -88,37 +183,12 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
-	// 4. 根据类型校验必填字段
-	if input.ApplicantType == "company" {
-		if input.LicenseNo == "" {
-			response.Error(c, 400, "公司类型必须提供营业执照号")
-			return
-		}
-		if len(input.LicenseNo) > 18 {
-			response.Error(c, 400, "营业执照号长度不正确")
-			return
-		}
-	}
-	if input.ApplicantType == "studio" || input.ApplicantType == "company" {
-		if !utils.ValidateCompanyName(input.CompanyName) {
-			response.Error(c, 400, "名称长度应在2-100个字符之间")
-			return
-		}
-	}
-
-	// 5. 简介长度限制
-	if len([]rune(input.Introduction)) > 500 {
-		response.Error(c, 400, "个人/公司简介不能超过500个字符")
+	if err := validateMerchantApplyBusinessFields(&input); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
-	// 6. 验证作品集数量
-	if len(input.PortfolioCases) < 3 {
-		response.Error(c, 400, "请至少添加3个作品案例")
-		return
-	}
-
-	// 7. 验证服务区域代码是否有效（支持自动转换名称为代码）
+	// 4. 验证服务区域代码是否有效（支持自动转换名称为代码）
 	var serviceAreaCodes []string
 	if err := regionService.ValidateRegionCodes(input.ServiceArea); err != nil {
 		// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
@@ -138,29 +208,32 @@ func MerchantApply(c *gin.Context) {
 		serviceAreaCodes = input.ServiceArea
 	}
 
-	// 8. 序列化 JSON 字段
+	// 5. 序列化 JSON 字段
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
+	workTypesJSON, _ := json.Marshal(input.WorkTypes)
 	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
 
-	// 9. 创建申请记录
+	// 6. 创建申请记录
 	application := model.MerchantApplication{
-		Phone:          input.Phone,
-		ApplicantType:  input.ApplicantType,
-		RealName:       input.RealName,
-		IDCardNo:       input.IDCardNo, // TODO: 生产环境需要加密
-		IDCardFront:    input.IDCardFront,
-		IDCardBack:     input.IDCardBack,
-		CompanyName:    input.CompanyName,
-		LicenseNo:      input.LicenseNo,
-		LicenseImage:   input.LicenseImage,
-		TeamSize:       input.TeamSize,
-		OfficeAddress:  input.OfficeAddress,
-		ServiceArea:    string(serviceAreaJSON),
-		Styles:         string(stylesJSON),
-		Introduction:   input.Introduction,
-		PortfolioCases: string(portfolioJSON),
-		Status:         0, // 待审核
+		Phone:           input.Phone,
+		ApplicantType:   input.ApplicantType,
+		RealName:        input.RealName,
+		IDCardNo:        input.IDCardNo, // TODO: 生产环境需要加密
+		IDCardFront:     input.IDCardFront,
+		IDCardBack:      input.IDCardBack,
+		CompanyName:     input.CompanyName,
+		LicenseNo:       input.LicenseNo,
+		LicenseImage:    input.LicenseImage,
+		TeamSize:        input.TeamSize,
+		OfficeAddress:   input.OfficeAddress,
+		YearsExperience: input.YearsExperience,
+		WorkTypes:       string(workTypesJSON),
+		ServiceArea:     string(serviceAreaJSON),
+		Styles:          string(stylesJSON),
+		Introduction:    input.Introduction,
+		PortfolioCases:  string(portfolioJSON),
+		Status:          0, // 待审核
 	}
 
 	if err := repository.DB.Create(&application).Error; err != nil {
@@ -168,7 +241,7 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
-	// 10. TODO: 发送短信通知
+	// 7. TODO: 发送短信通知
 	// sendSMS(input.Phone, "您的商家入驻申请已提交，预计1-3个工作日内完成审核")
 
 	response.Success(c, gin.H{
@@ -199,6 +272,7 @@ func MerchantApplyStatus(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"applicationId": app.ID,
+		"applicantType": app.ApplicantType,
 		"status":        app.Status,
 		"statusText":    statusText[app.Status],
 		"rejectReason":  app.RejectReason,
@@ -236,6 +310,11 @@ func MerchantResubmit(c *gin.Context) {
 		return
 	}
 
+	if err := validateMerchantApplyBusinessFields(&input); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
 	// 验证服务区域代码（支持自动转换名称为代码）
 	var serviceAreaCodes []string
 	if err := regionService.ValidateRegionCodes(input.ServiceArea); err != nil {
@@ -259,6 +338,7 @@ func MerchantResubmit(c *gin.Context) {
 	// 更新申请信息
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
+	workTypesJSON, _ := json.Marshal(input.WorkTypes)
 	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
 
 	app.ApplicantType = input.ApplicantType
@@ -271,6 +351,8 @@ func MerchantResubmit(c *gin.Context) {
 	app.LicenseImage = input.LicenseImage
 	app.TeamSize = input.TeamSize
 	app.OfficeAddress = input.OfficeAddress
+	app.YearsExperience = input.YearsExperience
+	app.WorkTypes = string(workTypesJSON)
 	app.ServiceArea = string(serviceAreaJSON)
 	app.Styles = string(stylesJSON)
 	app.Introduction = input.Introduction
@@ -337,36 +419,39 @@ func AdminGetApplication(c *gin.Context) {
 	}
 
 	// 解析 JSON 字段
-	var serviceAreaCodes, styles []string
+	var serviceAreaCodes, styles, workTypes []string
 	var portfolioCases []PortfolioCaseInput
 	json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
 	json.Unmarshal([]byte(app.Styles), &styles)
+	json.Unmarshal([]byte(app.WorkTypes), &workTypes)
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
 
 	// 将服务区域代码转换为名称（用于前端展示）
 	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
 	response.Success(c, gin.H{
-		"id":             app.ID,
-		"phone":          app.Phone,
-		"applicantType":  app.ApplicantType,
-		"realName":       app.RealName,
-		"idCardFront":    app.IDCardFront,
-		"idCardBack":     app.IDCardBack,
-		"companyName":    app.CompanyName,
-		"licenseNo":      app.LicenseNo,
-		"licenseImage":   app.LicenseImage,
-		"teamSize":       app.TeamSize,
-		"officeAddress":  app.OfficeAddress,
-		"serviceArea":    serviceAreaNames, // 返回名称数组，方便前端展示
+		"id":               app.ID,
+		"phone":            app.Phone,
+		"applicantType":    app.ApplicantType,
+		"realName":         app.RealName,
+		"idCardFront":      app.IDCardFront,
+		"idCardBack":       app.IDCardBack,
+		"companyName":      app.CompanyName,
+		"licenseNo":        app.LicenseNo,
+		"licenseImage":     app.LicenseImage,
+		"teamSize":         app.TeamSize,
+		"yearsExperience":  app.YearsExperience,
+		"workTypes":        workTypes,
+		"officeAddress":    app.OfficeAddress,
+		"serviceArea":      serviceAreaNames, // 返回名称数组，方便前端展示
 		"serviceAreaCodes": serviceAreaCodes, // 同时返回代码数组
-		"styles":         styles,
-		"introduction":   app.Introduction,
-		"portfolioCases": portfolioCases,
-		"status":         app.Status,
-		"rejectReason":   app.RejectReason,
-		"createdAt":      app.CreatedAt,
-		"auditedAt":      app.AuditedAt,
+		"styles":           styles,
+		"introduction":     app.Introduction,
+		"portfolioCases":   portfolioCases,
+		"status":           app.Status,
+		"rejectReason":     app.RejectReason,
+		"createdAt":        app.CreatedAt,
+		"auditedAt":        app.AuditedAt,
 	})
 }
 
@@ -407,21 +492,34 @@ func AdminApproveApplication(c *gin.Context) {
 	providerType := int8(1) // 默认设计师
 	if app.ApplicantType == "company" {
 		providerType = 2 // 公司
+	} else if app.ApplicantType == "foreman" {
+		providerType = 3 // 工长
+	}
+
+	var workTypes []string
+	_ = json.Unmarshal([]byte(app.WorkTypes), &workTypes)
+	workTypes = normalizeStringSlice(workTypes)
+
+	specialty := app.Styles
+	if app.ApplicantType == "foreman" && len(workTypes) > 0 {
+		specialty = strings.Join(workTypes, ",")
 	}
 
 	// 3. 创建 Provider
 	provider := model.Provider{
-		UserID:       user.ID,
-		ProviderType: providerType,
-		SubType:      app.ApplicantType,
-		CompanyName:  app.CompanyName,
-		LicenseNo:    app.LicenseNo,
-		ServiceArea:  app.ServiceArea,
-		Specialty:    app.Styles,
-		ServiceIntro: app.Introduction,
-		TeamSize:     app.TeamSize,
-		Status:       1,
-		Verified:     true,
+		UserID:          user.ID,
+		ProviderType:    providerType,
+		SubType:         app.ApplicantType,
+		CompanyName:     app.CompanyName,
+		LicenseNo:       app.LicenseNo,
+		ServiceArea:     app.ServiceArea,
+		Specialty:       specialty,
+		WorkTypes:       strings.Join(workTypes, ","),
+		YearsExperience: app.YearsExperience,
+		ServiceIntro:    app.Introduction,
+		TeamSize:        app.TeamSize,
+		Status:          1,
+		Verified:        true,
 	}
 	if err := tx.Create(&provider).Error; err != nil {
 		tx.Rollback()
@@ -435,7 +533,7 @@ func AdminApproveApplication(c *gin.Context) {
 		UserID:        user.ID,
 		IdentityType:  "provider",
 		IdentityRefID: &provider.ID,
-		Status:        1,        // approved
+		Status:        1, // approved
 		Verified:      true,
 		VerifiedAt:    &now,
 		VerifiedBy:    &adminID,

@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS identity_applications (
   reject_reason TEXT NULL,
   applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   reviewed_at TIMESTAMPTZ NULL,
-  reviewed_by BIGINT NULL REFERENCES sys_admins(id)
+  reviewed_by BIGINT NULL REFERENCES sys_admins(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_identity_applications_user_id ON identity_applications(user_id);

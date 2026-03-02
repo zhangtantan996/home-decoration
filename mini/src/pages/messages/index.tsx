@@ -5,8 +5,35 @@ import { Card } from '@/components/Card';
 import { ListItem } from '@/components/ListItem';
 import { Empty } from '@/components/Empty';
 import { Skeleton } from '@/components/Skeleton';
-import { listNotifications, markAllNotificationsRead, type NotificationItem } from '@/services/notifications';
+import {
+  deleteNotification,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type NotificationItem
+} from '@/services/notifications';
 import { useAuthStore } from '@/store/auth';
+import { showErrorToast } from '@/utils/error';
+
+const TAB_PAGE_PATHS = [
+  '/pages/home/index',
+  '/pages/inspiration/index',
+  '/pages/progress/index',
+  '/pages/messages/index',
+  '/pages/profile/index'
+];
+
+const normalizePagePath = (actionUrl: string) => {
+  if (actionUrl.startsWith('/pages/')) {
+    return actionUrl;
+  }
+
+  if (actionUrl.startsWith('pages/')) {
+    return `/${actionUrl}`;
+  }
+
+  return '';
+};
 
 export default function Messages() {
   const auth = useAuthStore();
@@ -25,7 +52,7 @@ export default function Messages() {
         const data = await listNotifications(1, 20);
         setNotifications(data.list || []);
       } catch (err) {
-        Taro.showToast({ title: err instanceof Error ? err.message : '加载失败', icon: 'none' });
+        showErrorToast(err, '加载失败');
       } finally {
         setLoading(false);
       }
@@ -38,8 +65,81 @@ export default function Messages() {
     try {
       await markAllNotificationsRead();
       setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+      Taro.showToast({ title: '已全部标记已读', icon: 'none' });
     } catch (err) {
-      Taro.showToast({ title: err instanceof Error ? err.message : '操作失败', icon: 'none' });
+      showErrorToast(err, '操作失败');
+    }
+  };
+
+  const handleOpenSettings = () => {
+    Taro.navigateTo({ url: '/pages/settings/index' });
+  };
+
+  const handleOpenNotification = async (item: NotificationItem) => {
+    try {
+      if (!item.isRead) {
+        await markNotificationRead(item.id);
+        setNotifications((prev) => prev.map((entry) => (
+          entry.id === item.id ? { ...entry, isRead: true } : entry
+        )));
+      }
+
+      if (!item.actionUrl) {
+        return;
+      }
+
+      const pagePath = normalizePagePath(item.actionUrl);
+      if (!pagePath) {
+        return;
+      }
+
+      if (TAB_PAGE_PATHS.includes(pagePath)) {
+        await Taro.switchTab({ url: pagePath });
+      } else {
+        await Taro.navigateTo({ url: pagePath });
+      }
+    } catch (err) {
+      showErrorToast(err, '打开消息失败');
+    }
+  };
+
+  const handleClearMessages = async () => {
+    if (!auth.token) {
+      Taro.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+
+    if (notifications.length === 0) {
+      Taro.showToast({ title: '当前没有可清理的通知', icon: 'none' });
+      return;
+    }
+
+    const { confirm } = await Taro.showModal({
+      title: '清空通知',
+      content: '确认清空当前列表中的通知吗？'
+    });
+
+    if (!confirm) {
+      return;
+    }
+
+    try {
+      const results = await Promise.allSettled(notifications.map((item) => deleteNotification(item.id)));
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      const failedCount = notifications.length - successCount;
+
+      if (successCount > 0) {
+        setNotifications((prev) => prev.filter((item, index) => results[index].status !== 'fulfilled'));
+      }
+
+      if (failedCount > 0) {
+        Taro.showToast({ title: `已清理${successCount}条，${failedCount}条失败`, icon: 'none' });
+        return;
+      }
+
+      Taro.showToast({ title: '通知已清空', icon: 'none' });
+    } catch (err) {
+      showErrorToast(err, '清理失败');
     }
   };
 
@@ -52,7 +152,7 @@ export default function Messages() {
 
         <Card title="通知" extra={auth.token ? <View className="text-brand" onClick={handleReadAll}>全部已读</View> : undefined}>
           {!auth.token ? (
-            <Empty description="登录后查看通知" />
+            <Empty description="登录后查看通知" action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }} />
           ) : loading ? (
             <View className="p-sm">
               <View className="mb-sm"><Skeleton width="80%" /></View>
@@ -67,6 +167,7 @@ export default function Messages() {
                 description={item.content}
                 extra={<View className="text-secondary" style={{ fontSize: '24rpx' }}>{item.isRead ? '已读' : '未读'}</View>}
                 arrow
+                onClick={() => handleOpenNotification(item)}
               />
             ))
           ) : (
@@ -75,11 +176,11 @@ export default function Messages() {
         </Card>
 
         <View className="mt-lg">
-          <ListItem title="消息设置" arrow className="mb-sm" />
+          <ListItem title="消息设置" arrow className="mb-sm" onClick={handleOpenSettings} />
           <ListItem
-            title="清空消息"
+            title="清空通知"
             className="mb-sm"
-            onClick={auth.token ? handleReadAll : undefined}
+            onClick={handleClearMessages}
           />
         </View>
       </View>

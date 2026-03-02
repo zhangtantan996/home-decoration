@@ -66,8 +66,11 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 	// 3. Redis 重放检测：检查 jti 是否已使用
 	redisClient := repository.GetRedis()
 	if redisClient != nil {
+		ctx, cancel := repository.RedisContext()
+		defer cancel()
+
 		key := fmt.Sprintf("refresh_token:%s", jti)
-		exists, err := redisClient.Exists(repository.Ctx, key).Result()
+		exists, err := redisClient.Exists(ctx, key).Result()
 		if err != nil {
 			// Redis 错误不应阻止 token 刷新，但应记录日志
 			fmt.Printf("[TokenService] Redis error checking jti: %v\n", err)
@@ -76,16 +79,16 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 			if sid != "" {
 				sessionKey := fmt.Sprintf("session:%s:*", sid)
 				// 删除该会话的所有 token
-				keys, _ := redisClient.Keys(repository.Ctx, sessionKey).Result()
+				keys, _ := redisClient.Keys(ctx, sessionKey).Result()
 				if len(keys) > 0 {
-					redisClient.Del(repository.Ctx, keys...)
+					redisClient.Del(ctx, keys...)
 				}
 			}
 			return nil, errors.New("检测到令牌重放攻击，会话已撤销")
 		}
 
 		// 4. 标记当前 jti 为已使用（7 天过期）
-		err = redisClient.Set(repository.Ctx, key, "used", 7*24*time.Hour).Err()
+		err = redisClient.Set(ctx, key, "used", 7*24*time.Hour).Err()
 		if err != nil {
 			fmt.Printf("[TokenService] Redis error marking jti as used: %v\n", err)
 		}
@@ -140,14 +143,17 @@ func (s *TokenService) RevokeSession(sid string) error {
 		return errors.New("Redis 未初始化")
 	}
 
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
 	sessionKey := fmt.Sprintf("session:%s:*", sid)
-	keys, err := redisClient.Keys(repository.Ctx, sessionKey).Result()
+	keys, err := redisClient.Keys(ctx, sessionKey).Result()
 	if err != nil {
 		return fmt.Errorf("查询会话失败: %w", err)
 	}
 
 	if len(keys) > 0 {
-		if err := redisClient.Del(repository.Ctx, keys...).Err(); err != nil {
+		if err := redisClient.Del(ctx, keys...).Err(); err != nil {
 			return fmt.Errorf("撤销会话失败: %w", err)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 // Crypto 加密工具
@@ -24,7 +25,7 @@ var defaultCrypto *Crypto
 // 从环境变量获取密钥，密钥必须是32字节(AES-256)
 // 🔒 安全要求：生产环境必须设置 ENCRYPTION_KEY 环境变量，否则拒绝启动
 func InitCrypto() error {
-	keyStr := os.Getenv("ENCRYPTION_KEY")
+	keyStr := strings.TrimSpace(os.Getenv("ENCRYPTION_KEY"))
 	if keyStr == "" {
 		errMsg := fmt.Sprintf(
 			"❌ 安全错误：ENCRYPTION_KEY 环境变量未设置！\n\n" +
@@ -41,13 +42,22 @@ func InitCrypto() error {
 		return errors.New("ENCRYPTION_KEY not set")
 	}
 
+	// Support both:
+	// 1) raw 32-byte string (len(keyStr)==32)
+	// 2) base64-encoded 32-byte key (recommended; e.g. `openssl rand -base64 32`)
+	if decoded, err := base64.StdEncoding.DecodeString(keyStr); err == nil && len(decoded) == 32 {
+		defaultCrypto = &Crypto{key: decoded}
+		log.Println("✅ 加密工具初始化成功 (AES-256-GCM) [base64 key]")
+		return nil
+	}
+
 	key := []byte(keyStr)
 	if len(key) != 32 {
-		return fmt.Errorf("ENCRYPTION_KEY 长度必须为32字节，当前为 %d 字节", len(key))
+		return fmt.Errorf("ENCRYPTION_KEY 必须为32字节（原始字符串长度=32），或 base64 解码后为32字节。当前长度=%d", len(key))
 	}
 
 	defaultCrypto = &Crypto{key: key}
-	log.Println("✅ 加密工具初始化成功 (AES-256-GCM)")
+	log.Println("✅ 加密工具初始化成功 (AES-256-GCM) [raw key]")
 	return nil
 }
 

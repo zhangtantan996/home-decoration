@@ -1,12 +1,17 @@
 import Taro from '@tarojs/taro';
 import { View } from '@tarojs/components';
 import React, { useEffect, useState } from 'react';
+
+import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import { Empty } from '@/components/Empty';
 import { ListItem } from '@/components/ListItem';
-import { Tag } from '@/components/Tag';
 import { Skeleton } from '@/components/Skeleton';
+import { Tag } from '@/components/Tag';
+import { getProjectPhaseStatus, getProjectStatus } from '@/constants/status';
+import { getProjectPhases, listProjects, type ProjectItem, type ProjectPhase } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
-import { listProjects, getProjectPhases, type ProjectItem, type ProjectPhase } from '@/services/projects';
+import { showErrorToast } from '@/utils/error';
 
 export default function Progress() {
   const auth = useAuthStore();
@@ -23,6 +28,7 @@ export default function Progress() {
     }
 
     const fetchProject = async () => {
+      setLoading(true);
       try {
         const data = await listProjects(1, 1);
         const current = data.list?.[0];
@@ -31,11 +37,12 @@ export default function Progress() {
           setPhases([]);
           return;
         }
+
         setProject(current);
         const phaseData = await getProjectPhases(current.id);
         setPhases(phaseData.phases || []);
       } catch (err) {
-        Taro.showToast({ title: err instanceof Error ? err.message : '加载失败', icon: 'none' });
+        showErrorToast(err, '加载失败');
       } finally {
         setLoading(false);
       }
@@ -44,11 +51,7 @@ export default function Progress() {
     fetchProject();
   }, [auth.token]);
 
-  const renderPhaseStatus = (phase: ProjectPhase) => {
-    if (phase.status === 'completed') return { label: '完成', variant: 'success' as const };
-    if (phase.status === 'in_progress') return { label: '进行中', variant: 'brand' as const };
-    return { label: '待开始', variant: 'default' as const };
-  };
+  const projectStatus = getProjectStatus(project?.status);
 
   return (
     <View className="page">
@@ -57,9 +60,15 @@ export default function Progress() {
           项目进度
         </View>
 
-        <Card title={project ? `当前项目: ${project.name}` : '当前项目'}>
+        <Card
+          title={project ? `当前项目: ${project.name}` : '当前项目'}
+          extra={project ? <Tag variant={projectStatus.variant}>{projectStatus.label}</Tag> : undefined}
+        >
           {!auth.token ? (
-            <ListItem title="您还未登录" description="登录后查看项目进度" />
+            <Empty
+              description="登录后查看项目进度"
+              action={{ text: '去登录', onClick: () => Taro.navigateTo({ url: '/pages/profile/index' }) }}
+            />
           ) : loading ? (
             <View className="p-sm">
               <View className="mb-sm"><Skeleton width="60%" /></View>
@@ -70,7 +79,7 @@ export default function Progress() {
             <ListItem title="暂无进度" description="项目进度将在开工后显示" />
           ) : (
             phases.map((phase) => {
-              const status = renderPhaseStatus(phase);
+              const status = getProjectPhaseStatus(phase.status);
               return (
                 <ListItem
                   key={phase.id}
@@ -83,7 +92,7 @@ export default function Progress() {
           )}
         </Card>
 
-        {project && (
+        {project ? (
           <View className="mt-md">
             <Button
               variant="primary"
@@ -94,14 +103,30 @@ export default function Progress() {
               查看项目详情
             </Button>
           </View>
-        )}
+        ) : null}
 
         <Card title="待办事项">
-          <View className="p-sm">
-            <View className="mb-sm"><Skeleton width="60%" /></View>
-            <View className="mb-sm"><Skeleton width="80%" /></View>
-            <View><Skeleton width="40%" /></View>
-          </View>
+          {!auth.token ? (
+            <Empty description="登录后查看待办事项" />
+          ) : phases.length > 0 ? (
+            phases
+              .flatMap((phase) =>
+                (phase.tasks || [])
+                  .filter((task) => !task.isCompleted)
+                  .slice(0, 3)
+                  .map((task) => ({
+                    id: `${phase.id}-${task.id}`,
+                    title: task.name,
+                    phaseName: phase.name,
+                  })),
+              )
+              .slice(0, 3)
+              .map((task) => (
+                <ListItem key={task.id} title={task.title} description={`所属阶段：${task.phaseName}`} />
+              ))
+          ) : (
+            <Empty description="当前暂无待办事项" />
+          )}
         </Card>
       </View>
     </View>

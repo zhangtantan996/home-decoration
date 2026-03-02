@@ -14,6 +14,8 @@ type Config struct {
 	JWT        JWTConfig        `mapstructure:"jwt"`
 	Log        LogConfig        `mapstructure:"log"`
 	WechatMini WechatMiniConfig `mapstructure:"wechat_mini"`
+	WechatH5   WechatH5Config   `mapstructure:"wechat_h5"`
+	SMS        SMSConfig        `mapstructure:"sms"`
 }
 
 type ServerConfig struct {
@@ -31,13 +33,19 @@ type DatabaseConfig struct {
 	DBName      string `mapstructure:"dbname"`
 	SSLMode     string `mapstructure:"sslmode"`
 	AutoMigrate bool   `mapstructure:"auto_migrate"` // 是否启用自动迁移（默认 false）
+
+	MaxOpenConns           int `mapstructure:"max_open_conns"`
+	MaxIdleConns           int `mapstructure:"max_idle_conns"`
+	ConnMaxLifetimeMinutes int `mapstructure:"conn_max_lifetime_minutes"`
+	ConnMaxIdleTimeMinutes int `mapstructure:"conn_max_idle_time_minutes"`
 }
 
 type RedisConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     string `mapstructure:"port"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
+	Host               string `mapstructure:"host"`
+	Port               string `mapstructure:"port"`
+	Password           string `mapstructure:"password"`
+	DB                 int    `mapstructure:"db"`
+	OperationTimeoutMs int    `mapstructure:"operation_timeout_ms"`
 }
 
 type JWTConfig struct {
@@ -57,6 +65,25 @@ type WechatMiniConfig struct {
 	BindTokenExpireMinutes int    `mapstructure:"bind_token_expire_minutes"`
 }
 
+// WechatH5Config 微信网页授权（公众号）配置
+type WechatH5Config struct {
+	AppID                  string `mapstructure:"app_id"`
+	AppSecret              string `mapstructure:"app_secret"`
+	BindTokenExpireMinutes int    `mapstructure:"bind_token_expire_minutes"`
+	OAuthScope             string `mapstructure:"oauth_scope"`
+	StateSigningSecret     string `mapstructure:"state_signing_secret"`
+}
+
+// SMSConfig 短信服务配置（生产环境建议使用云短信服务，如阿里云短信）
+type SMSConfig struct {
+	Provider        string `mapstructure:"provider"` // mock | aliyun
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	AccessKeySecret string `mapstructure:"access_key_secret"`
+	SignName        string `mapstructure:"sign_name"`
+	TemplateCode    string `mapstructure:"template_code"`
+	RegionID        string `mapstructure:"region_id"` // default: cn-hangzhou
+}
+
 func Load() (*Config, error) {
 	// 根据 APP_ENV 环境变量选择配置文件
 	// local/docker 环境使用 config.docker.yaml
@@ -73,6 +100,14 @@ func Load() (*Config, error) {
 	// 设置环境变量键名替换规则：将 . 替换为 _（如 database.password -> DATABASE_PASSWORD）
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
+	// 兼容历史/文档环境变量别名（推荐仍使用 DATABASE_* / REDIS_*）
+	_ = viper.BindEnv("database.host", "DB_HOST")
+	_ = viper.BindEnv("database.port", "DB_PORT")
+	_ = viper.BindEnv("database.user", "DB_USER")
+	_ = viper.BindEnv("database.password", "DB_PASSWORD")
+	_ = viper.BindEnv("database.dbname", "DB_NAME")
+	_ = viper.BindEnv("database.dbname", "DATABASE_NAME")
+
 	// 设置默认值
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", "8080")
@@ -81,13 +116,22 @@ func Load() (*Config, error) {
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", "5432")
 	viper.SetDefault("database.sslmode", "disable")
+	viper.SetDefault("database.max_open_conns", 25)
+	viper.SetDefault("database.max_idle_conns", 10)
+	viper.SetDefault("database.conn_max_lifetime_minutes", 30)
+	viper.SetDefault("database.conn_max_idle_time_minutes", 5)
 	viper.SetDefault("redis.host", "localhost")
 	viper.SetDefault("redis.port", "6379")
 	viper.SetDefault("redis.db", 0)
+	viper.SetDefault("redis.operation_timeout_ms", 3000)
 	viper.SetDefault("jwt.expire_hour", 72)
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", "logs/backend.log")
 	viper.SetDefault("wechat_mini.bind_token_expire_minutes", 5)
+	viper.SetDefault("wechat_h5.bind_token_expire_minutes", 5)
+	viper.SetDefault("wechat_h5.oauth_scope", "snsapi_base")
+	viper.SetDefault("sms.provider", "mock")
+	viper.SetDefault("sms.region_id", "cn-hangzhou")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

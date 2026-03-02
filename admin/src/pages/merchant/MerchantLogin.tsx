@@ -17,13 +17,13 @@ const MerchantLogin: React.FC = () => {
     // 手机号校验规则
     const phoneRules = [
         { required: true, message: '请输入手机号' },
-        { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的11位手机号' }
+        { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的11位手机号' },
     ];
 
     // 验证码校验规则
     const codeRules = [
         { required: true, message: '请输入验证码' },
-        { pattern: /^\d{6}$/, message: '请输入6位数字验证码' }
+        { pattern: /^\d{6}$/, message: '请输入6位数字验证码' },
     ];
 
     // 只允许输入数字
@@ -48,8 +48,9 @@ const MerchantLogin: React.FC = () => {
         const phone = form.getFieldValue('phone');
         setSendingCode(true);
         try {
-            await merchantAuthApi.sendCode(phone);
-            message.success('验证码已发送 (测试: 123456)');
+            const res = await merchantAuthApi.sendCode(phone);
+            const debugSuffix = import.meta.env.DEV && res?.debugCode ? ` (测试码: ${res.debugCode})` : '';
+            message.success(`验证码已发送${debugSuffix}`);
             setCountdown(60);
             const timer = setInterval(() => {
                 setCountdown((prev) => {
@@ -60,8 +61,9 @@ const MerchantLogin: React.FC = () => {
                     return prev - 1;
                 });
             }, 1000);
-        } catch (error: any) {
-            message.error(error.response?.data?.message || '发送失败');
+        } catch (error: unknown) {
+            const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
+            message.error(maybeAxiosError.response?.data?.message || maybeAxiosError.message || '发送失败');
         } finally {
             setSendingCode(false);
         }
@@ -70,23 +72,20 @@ const MerchantLogin: React.FC = () => {
     const onFinish = async (values: { phone: string; code: string }) => {
         setLoading(true);
         try {
-            const res = await merchantAuthApi.login(values) as any;
-            if (res.code === 0) {
-                const { token, provider, tinodeToken } = res.data;
-                localStorage.setItem('merchant_token', token);
-                localStorage.setItem('merchant_provider', JSON.stringify(provider));
-                if (tinodeToken) {
-                    localStorage.setItem('merchant_tinode_token', tinodeToken);
-                } else {
-                    localStorage.removeItem('merchant_tinode_token');
-                }
-                message.success('登录成功');
-                navigate('/dashboard');
+            const data = await merchantAuthApi.login(values);
+            const { token, provider, tinodeToken } = data;
+            localStorage.setItem('merchant_token', token);
+            localStorage.setItem('merchant_provider', JSON.stringify(provider));
+            if (tinodeToken) {
+                localStorage.setItem('merchant_tinode_token', tinodeToken);
             } else {
-                message.error(res.message || '登录失败');
+                localStorage.removeItem('merchant_tinode_token');
             }
-        } catch (error: any) {
-            message.error(error.response?.data?.message || error.message || '登录失败');
+            message.success('登录成功');
+            navigate('/dashboard');
+        } catch (error: unknown) {
+            const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
+            message.error(maybeAxiosError.response?.data?.message || maybeAxiosError.message || '登录失败');
         } finally {
             setLoading(false);
         }
@@ -95,10 +94,10 @@ const MerchantLogin: React.FC = () => {
     return (
         <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)' }}>
             <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <Card style={{ width: 400, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}>
+                <Card style={{ width: 420, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}>
                     <div style={{ textAlign: 'center', marginBottom: 32 }}>
                         <Title level={3} style={{ marginBottom: 8 }}>商家服务中心</Title>
-                        <Text type="secondary">设计师/工长/装修公司登录</Text>
+                        <Text type="secondary">独立设计师/设计工作室/工长/装修公司登录</Text>
                     </div>
                     <Form
                         form={form}
@@ -132,7 +131,7 @@ const MerchantLogin: React.FC = () => {
                                 maxLength={6}
                                 onChange={handleCodeChange}
                                 inputMode="numeric"
-                                suffix={
+                                suffix={(
                                     <Button
                                         type="link"
                                         size="small"
@@ -142,7 +141,7 @@ const MerchantLogin: React.FC = () => {
                                     >
                                         {countdown > 0 ? `${countdown}s` : '获取验证码'}
                                     </Button>
-                                }
+                                )}
                             />
                         </Form.Item>
 
@@ -154,11 +153,19 @@ const MerchantLogin: React.FC = () => {
 
                         <div style={{ textAlign: 'center', marginTop: 16 }}>
                             <Button type="link" onClick={() => navigate('/register?type=personal')}>
-                                注册成为独立设计师
+                                独立设计师入驻
+                            </Button>
+                            <Divider type="vertical" />
+                            <Button type="link" onClick={() => navigate('/register?type=studio')}>
+                                设计工作室入驻
                             </Button>
                             <Divider type="vertical" />
                             <Button type="link" onClick={() => navigate('/register?type=company')}>
                                 装修公司入驻
+                            </Button>
+                            <Divider type="vertical" />
+                            <Button type="link" onClick={() => navigate('/register?type=foreman')}>
+                                工长入驻
                             </Button>
                         </div>
                     </Form>

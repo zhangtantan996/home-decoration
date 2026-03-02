@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"home-decoration-server/internal/config"
 	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -30,6 +31,39 @@ func InitTinodeDB(cfg *config.DatabaseConfig) error {
 	if err != nil {
 		return err
 	}
+
+	sqlDB, err := TinodeDB.DB()
+	if err != nil {
+		return err
+	}
+
+	maxOpenConns := cfg.MaxOpenConns
+	if maxOpenConns <= 0 {
+		maxOpenConns = 25
+	}
+	maxIdleConns := cfg.MaxIdleConns
+	if maxIdleConns < 0 {
+		maxIdleConns = 0
+	}
+	if maxIdleConns > maxOpenConns {
+		maxIdleConns = maxOpenConns
+	}
+
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	if cfg.ConnMaxLifetimeMinutes > 0 {
+		sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute)
+	}
+	if cfg.ConnMaxIdleTimeMinutes > 0 {
+		sqlDB.SetConnMaxIdleTime(time.Duration(cfg.ConnMaxIdleTimeMinutes) * time.Minute)
+	}
+
+	log.Printf("Tinode database pool configured: max_open_conns=%d max_idle_conns=%d conn_max_lifetime_minutes=%d conn_max_idle_time_minutes=%d",
+		maxOpenConns,
+		maxIdleConns,
+		cfg.ConnMaxLifetimeMinutes,
+		cfg.ConnMaxIdleTimeMinutes,
+	)
 
 	log.Println("Tinode database connected successfully")
 	return nil

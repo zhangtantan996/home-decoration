@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -21,14 +20,12 @@ const (
 // DictCacheService 字典缓存服务
 type DictCacheService struct {
 	rdb *redis.Client
-	ctx context.Context
 }
 
 // NewDictCacheService 创建字典缓存服务实例
 func NewDictCacheService() *DictCacheService {
 	return &DictCacheService{
 		rdb: repository.GetRedis(),
-		ctx: repository.Ctx,
 	}
 }
 
@@ -38,8 +35,11 @@ func (s *DictCacheService) GetDictCache(categoryCode string) ([]model.DictDTO, e
 		return nil, redis.Nil // Redis 不可用
 	}
 
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
 	key := DictCacheKeyPrefix + categoryCode
-	val, err := s.rdb.Get(s.ctx, key).Result()
+	val, err := s.rdb.Get(ctx, key).Result()
 	if err == redis.Nil {
 		return nil, nil // 缓存不存在
 	}
@@ -61,13 +61,16 @@ func (s *DictCacheService) SetDictCache(categoryCode string, data []model.DictDT
 		return nil // Redis 不可用，不影响业务
 	}
 
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
 	key := DictCacheKeyPrefix + categoryCode
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
 
-	return s.rdb.Set(s.ctx, key, jsonData, time.Duration(DictCacheTTL)*time.Second).Err()
+	return s.rdb.Set(ctx, key, jsonData, time.Duration(DictCacheTTL)*time.Second).Err()
 }
 
 // DeleteDictCache 删除字典缓存
@@ -76,8 +79,11 @@ func (s *DictCacheService) DeleteDictCache(categoryCode string) error {
 		return nil // Redis 不可用，不影响业务
 	}
 
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
 	key := DictCacheKeyPrefix + categoryCode
-	return s.rdb.Del(s.ctx, key).Err()
+	return s.rdb.Del(ctx, key).Err()
 }
 
 // DeleteAllDictCache 删除所有字典缓存
@@ -86,11 +92,14 @@ func (s *DictCacheService) DeleteAllDictCache() error {
 		return nil
 	}
 
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
 	pattern := DictCacheKeyPrefix + "*"
-	iter := s.rdb.Scan(s.ctx, 0, pattern, 0).Iterator()
+	iter := s.rdb.Scan(ctx, 0, pattern, 0).Iterator()
 	var keys []string
 
-	for iter.Next(s.ctx) {
+	for iter.Next(ctx) {
 		keys = append(keys, iter.Val())
 	}
 
@@ -99,7 +108,7 @@ func (s *DictCacheService) DeleteAllDictCache() error {
 	}
 
 	if len(keys) > 0 {
-		return s.rdb.Del(s.ctx, keys...).Err()
+		return s.rdb.Del(ctx, keys...).Err()
 	}
 
 	return nil

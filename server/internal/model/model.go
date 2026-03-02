@@ -406,7 +406,7 @@ type MerchantApplication struct {
 	Base
 	// 基础信息
 	Phone         string `json:"phone" gorm:"index;size:20"`
-	ApplicantType string `json:"applicantType" gorm:"size:20"` // personal, studio, company
+	ApplicantType string `json:"applicantType" gorm:"size:20"` // personal, studio, company, foreman
 
 	// 个人/负责人信息
 	RealName    string `json:"realName" gorm:"size:50"`
@@ -420,6 +420,9 @@ type MerchantApplication struct {
 	LicenseImage  string `json:"licenseImage" gorm:"size:500"` // 营业执照照片
 	TeamSize      int    `json:"teamSize" gorm:"default:1"`
 	OfficeAddress string `json:"officeAddress" gorm:"size:200"`
+	// 工长扩展信息
+	YearsExperience int    `json:"yearsExperience" gorm:"default:0"`
+	WorkTypes       string `json:"workTypes" gorm:"type:text;default:'[]'"` // JSON数组：工种类型
 
 	// 服务信息
 	ServiceArea    string `json:"serviceArea" gorm:"type:text"`    // JSON数组：服务区域

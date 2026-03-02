@@ -28,6 +28,83 @@ import (
 var merchantProposalService = &service.ProposalService{}
 var merchantRegionService = &service.RegionService{}
 
+func normalizeMerchantApplicantType(raw string, providerType int8) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+
+	// 兼容历史数据：部分老数据 provider_type 已是工长/公司，但 sub_type 仍是默认 personal。
+	if providerType == 3 && (normalized == "" || normalized == "personal" || normalized == "studio" || normalized == "worker" || normalized == "designer") {
+		return "foreman"
+	}
+	if providerType == 2 && (normalized == "" || normalized == "personal" || normalized == "studio" || normalized == "designer") {
+		return "company"
+	}
+
+	switch normalized {
+	case "personal", "studio", "company", "foreman":
+		return normalized
+	case "designer":
+		return "personal"
+	case "worker":
+		return "foreman"
+	default:
+		switch providerType {
+		case 2:
+			return "company"
+		case 3:
+			return "foreman"
+		default:
+			return "personal"
+		}
+	}
+}
+
+func normalizeMerchantProviderSubType(applicantType string, providerType int8) string {
+	switch strings.ToLower(strings.TrimSpace(applicantType)) {
+	case "company":
+		return "company"
+	case "foreman":
+		return "foreman"
+	case "personal", "studio":
+		return "designer"
+	default:
+		mapped := strings.ToLower(strings.TrimSpace(mapProviderTypeToSubType(providerType)))
+		if mapped == "designer" || mapped == "company" || mapped == "foreman" {
+			return mapped
+		}
+		if providerType == 2 {
+			return "company"
+		}
+		if providerType == 3 {
+			return "foreman"
+		}
+		return "designer"
+	}
+}
+
+func parseProviderWorkTypes(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return []string{}
+	}
+
+	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		var jsonValues []string
+		if err := json.Unmarshal([]byte(trimmed), &jsonValues); err == nil {
+			return normalizeStringSlice(jsonValues)
+		}
+	}
+
+	if strings.Contains(trimmed, " · ") {
+		return normalizeStringSlice(strings.Split(trimmed, " · "))
+	}
+
+	if strings.Contains(trimmed, ",") {
+		return normalizeStringSlice(strings.Split(trimmed, ","))
+	}
+
+	return normalizeStringSlice([]string{trimmed})
+}
+
 // MerchantLogin 商家登录（手机号+验证码）
 func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -40,9 +117,8 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		// 验证码校验（测试环境固定123456）
-		if input.Code != "123456" {
-			response.Error(c, 400, "验证码错误")
+		if err := service.VerifySMSCode(input.Phone, input.Code); err != nil {
+			response.Error(c, 400, err.Error())
 			return
 		}
 
@@ -111,6 +187,9 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			}
 		}
 
+		applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
+		providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
+
 		response.Success(c, gin.H{
 			"token":       tokenString,
 			"tinodeToken": tinodeToken,
@@ -119,7 +198,8 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 				"name":            displayName,
 				"avatar":          imgutil.GetFullImageURL(user.Avatar),
 				"providerType":    provider.ProviderType,
-				"providerSubType": mapProviderTypeToSubType(provider.ProviderType),
+				"applicantType":   applicantType,
+				"providerSubType": providerSubType,
 				"phone":           input.Phone,
 				"verified":        provider.Verified,
 			},
@@ -168,17 +248,24 @@ func MerchantGetInfo(c *gin.Context) {
 		}
 	}
 
+	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
+	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
+	workTypes := parseProviderWorkTypes(provider.WorkTypes)
+
 	response.Success(c, gin.H{
 		"id":               provider.ID,
 		"name":             displayName,
 		"avatar":           imgutil.GetFullImageURL(user.Avatar),
 		"providerType":     provider.ProviderType,
+		"applicantType":    applicantType,
+		"providerSubType":  providerSubType,
 		"companyName":      provider.CompanyName,
 		"rating":           provider.Rating,
 		"completedCnt":     provider.CompletedCnt,
 		"verified":         provider.Verified,
 		"yearsExperience":  provider.YearsExperience,
 		"specialty":        specialty,
+		"workTypes":        workTypes,
 		"serviceArea":      serviceAreaNames, // 返回区域名称数组
 		"serviceAreaCodes": serviceAreaCodes, // 返回区域代码数组（用于编辑）
 		"introduction":     provider.ServiceIntro,
@@ -197,6 +284,7 @@ func MerchantUpdateInfo(c *gin.Context) {
 		CompanyName     string   `json:"companyName"`
 		YearsExperience int      `json:"yearsExperience"`
 		Specialty       []string `json:"specialty"`
+		WorkTypes       []string `json:"workTypes"`
 		ServiceArea     []string `json:"serviceArea"` // 区域代码数组
 		Introduction    string   `json:"introduction"`
 		TeamSize        int      `json:"teamSize"`
@@ -247,10 +335,27 @@ func MerchantUpdateInfo(c *gin.Context) {
 	}
 	updates["years_experience"] = input.YearsExperience
 
-	if len(input.Specialty) > 0 {
-		updates["specialty"] = strings.Join(input.Specialty, " · ")
+	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
+	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
+
+	if providerSubType == "foreman" {
+		if input.WorkTypes != nil {
+			normalizedWorkTypes := normalizeStringSlice(input.WorkTypes)
+			if len(normalizedWorkTypes) == 0 {
+				tx.Rollback()
+				response.Error(c, 400, "工长至少需要保留1个工种")
+				return
+			}
+			updates["work_types"] = strings.Join(normalizedWorkTypes, ",")
+			updates["specialty"] = strings.Join(normalizedWorkTypes, " · ")
+		}
 	} else {
-		updates["specialty"] = ""
+		if len(input.Specialty) > 0 {
+			updates["specialty"] = strings.Join(input.Specialty, " · ")
+		} else {
+			updates["specialty"] = ""
+		}
+		updates["work_types"] = ""
 	}
 
 	if len(serviceAreaCodes) > 0 {
@@ -528,7 +633,34 @@ func MerchantDashboardStats(c *gin.Context) {
 		repository.DB.Model(&model.Order{}).Where("booking_id IN ? AND status = 1", bookingIDs).Count(&paidOrders)
 	}
 
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+
+	var todayBookings int64
+	repository.DB.Model(&model.Booking{}).
+		Where("provider_id = ? AND created_at >= ?", providerID, dayStart).
+		Count(&todayBookings)
+
+	var totalRevenue, monthRevenue float64
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ?", providerID).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&totalRevenue)
+
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ? AND created_at >= ?", providerID, monthStart).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&monthRevenue)
+
+	activeProjects := paidOrders
+
 	response.Success(c, gin.H{
+		"todayBookings":    todayBookings,
+		"pendingProposals": pendingProposals,
+		"activeProjects":   activeProjects,
+		"totalRevenue":     totalRevenue,
+		"monthRevenue":     monthRevenue,
 		"bookings": gin.H{
 			"pending":   pendingBookings,
 			"confirmed": confirmedBookings,

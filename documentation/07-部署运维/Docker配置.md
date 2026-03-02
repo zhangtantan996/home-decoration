@@ -14,6 +14,7 @@
 | `docker-compose.local.yml` | 本地全栈开发 | 支持后端代码热更新（通过 `Dockerfile.api.dev`）和前端开发服务器（Vite）。 |
 | `docker-compose.dev-env.yml` | 基础环境 | 仅启动 PostgreSQL 和 Redis，适用于在宿主机直接运行后端和前端代码的情况。 |
 | `deploy/docker-compose.prod.yml` | 生产环境 | 针对生产环境优化，使用环境变量配置敏感信息，前端使用 Nginx 托管静态文件。 |
+| `deploy/docker-compose.prod.managed.yml` | 生产环境（托管服务） | 推荐：连接 **阿里云 RDS + 阿里云 Redis**，并启动 Tinode IM；Web 容器仅绑定到 `127.0.0.1:8888`，建议宿主机 Nginx 负责 HTTPS。 |
 
 ### 生产环境配置示例 (`deploy/docker-compose.prod.yml`)
 

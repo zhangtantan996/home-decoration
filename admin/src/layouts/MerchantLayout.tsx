@@ -18,6 +18,9 @@ import {
 
 const { Header, Sider, Content } = Layout;
 
+type MerchantApplicantType = 'personal' | 'studio' | 'company' | 'foreman';
+type MerchantProviderSubType = 'designer' | 'company' | 'foreman';
+
 const MerchantLayout: React.FC = () => {
     const [collapsed, setCollapsed] = useState(false);
     const navigate = useNavigate();
@@ -26,48 +29,65 @@ const MerchantLayout: React.FC = () => {
         token: { colorBgContainer },
     } = theme.useToken();
 
-    const provider = JSON.parse(localStorage.getItem('merchant_provider') || '{}');
+    const provider = JSON.parse(localStorage.getItem('merchant_provider') || '{}') as {
+        name?: string;
+        avatar?: string;
+        providerType?: number;
+        applicantType?: string;
+        providerSubType?: string;
+    };
 
-    const normalizedProviderSubType = (() => {
-        const raw = String(provider?.providerSubType || '').toLowerCase();
-        if (raw === 'designer' || raw === 'company' || raw === 'foreman') {
+    const normalizedApplicantType: MerchantApplicantType = (() => {
+        const raw = String(provider?.applicantType || '').toLowerCase();
+        if (raw === 'personal' || raw === 'studio' || raw === 'company' || raw === 'foreman') {
             return raw;
         }
         switch (Number(provider?.providerType)) {
-            case 1:
-                return 'designer';
             case 2:
                 return 'company';
             case 3:
                 return 'foreman';
             default:
-                return 'designer';
+                return 'personal';
         }
     })();
 
-    const subtypeLabel = normalizedProviderSubType === 'company'
-        ? '装修公司'
-        : normalizedProviderSubType === 'foreman'
-            ? '工长'
-            : '设计师';
+    const normalizedProviderSubType: MerchantProviderSubType = (() => {
+        const raw = String(provider?.providerSubType || '').toLowerCase();
+        if (raw === 'designer' || raw === 'company' || raw === 'foreman') {
+            return raw;
+        }
+        if (normalizedApplicantType === 'company') return 'company';
+        if (normalizedApplicantType === 'foreman') return 'foreman';
+        return 'designer';
+    })();
+
+    const subtypeLabel = (() => {
+        switch (normalizedApplicantType) {
+            case 'studio':
+                return '设计工作室';
+            case 'company':
+                return '装修公司';
+            case 'foreman':
+                return '工长';
+            default:
+                return '设计师';
+        }
+    })();
 
     const availableKeys = new Set<string>([
         '/dashboard',
         '/bookings',
+        '/proposals',
         '/orders',
         '/chat',
         'finance',
         '/income',
         '/withdraw',
         '/bank-accounts',
+        '/cases',
         '/settings',
     ]);
-    if (normalizedProviderSubType === 'designer' || normalizedProviderSubType === 'company') {
-        availableKeys.add('/proposals');
-    }
-    if (normalizedProviderSubType !== 'foreman') {
-        availableKeys.add('/cases');
-    }
 
     const menuItems = [
         {
@@ -83,7 +103,7 @@ const MerchantLayout: React.FC = () => {
         {
             key: '/proposals',
             icon: <FileTextOutlined />,
-            label: '方案管理',
+            label: normalizedProviderSubType === 'foreman' ? '报价/施工方案' : '方案管理',
         },
         {
             key: '/orders',
@@ -111,7 +131,7 @@ const MerchantLayout: React.FC = () => {
         {
             key: '/cases',
             icon: <PictureOutlined />,
-            label: '作品集',
+            label: normalizedProviderSubType === 'foreman' ? '施工案例' : '作品集',
         },
         {
             key: '/settings',
@@ -189,7 +209,7 @@ const MerchantLayout: React.FC = () => {
                     overflow: 'hidden',
                     whiteSpace: 'nowrap',
                     transition: 'all 0.2s',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
                 }} onClick={() => navigate('/dashboard')}>
                     {collapsed ? '商' : `商家中心 · ${subtypeLabel}`}
                 </div>
@@ -217,7 +237,7 @@ const MerchantLayout: React.FC = () => {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     boxShadow: '0 1px 4px rgba(0,21,41,.08)',
-                    zIndex: 1
+                    zIndex: 1,
                 }}>
                     <Button
                         type="text"
@@ -249,7 +269,7 @@ const MerchantLayout: React.FC = () => {
                     background: '#f0f2f5',
                     minHeight: 280,
                     overflow: 'auto',
-                    position: 'relative'
+                    position: 'relative',
                 }}>
                     <div style={{ padding: 24, maxWidth: 1600, margin: '0 auto' }}>
                         <Outlet />

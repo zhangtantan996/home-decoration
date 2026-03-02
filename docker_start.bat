@@ -27,6 +27,7 @@ if %ERRORLEVEL% neq 0 (
 echo.
 echo [2/2] 启动成功！
 echo ==========================================
+echo   官网展示: http://localhost:5175
 echo   管理后台: http://localhost:5173
 echo   移动 Web: http://localhost:5174
 echo   API 服务器: http://localhost:8080

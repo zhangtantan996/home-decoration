@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Dropdown, Badge, Button, Empty, Spin, message } from 'antd';
 import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import { notificationApi } from '../services/api';
+import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 
 interface Notification {
     id: number;
@@ -27,13 +28,25 @@ const getErrorStatus = (error: unknown): number | undefined => {
     return response?.status;
 };
 
+const POLL_INTERVAL_MS = 30000;
+const POLL_BUSINESS_KEY = 'admin.notification.unread_poll';
+const POLL_POLICY: AutoRetryPolicy = {
+    maxAutoAttempts: Number.MAX_SAFE_INTEGER,
+    pauseOnConsecutiveFailures: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 30000,
+};
+
 const NotificationDropdown: React.FC = () => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const [open, setOpen] = useState(false);
     const [notificationAvailable, setNotificationAvailable] = useState(true);
+    const [pollingPaused, setPollingPaused] = useState(false);
     const authErrorNotifiedRef = useRef(false);
+    const pollPauseNotifiedRef = useRef(false);
+    const unreadPollGuardRef = useRef(new AutoRetryGuard(POLL_POLICY));
 
     const handleAuthError = useCallback(() => {
         if (!authErrorNotifiedRef.current) {
@@ -68,30 +81,113 @@ const NotificationDropdown: React.FC = () => {
     }, [handleAuthError, notificationAvailable]);
 
     // 加载未读数量
-    const loadUnreadCount = useCallback(async () => {
+    const loadUnreadCount = useCallback(async (trigger: TriggerSource = 'auto') => {
         if (!notificationAvailable) return;
+
+        if (trigger === 'manual') {
+            unreadPollGuardRef.current.resetByManual();
+            setPollingPaused(false);
+            pollPauseNotifiedRef.current = false;
+        } else {
+            if (!unreadPollGuardRef.current.shouldAttempt('auto')) {
+                setPollingPaused(true);
+                if (!pollPauseNotifiedRef.current) {
+                    pollPauseNotifiedRef.current = true;
+                    message.warning('通知自动刷新已暂停，请手动刷新恢复');
+                }
+                const state = unreadPollGuardRef.current.getState();
+                console.warn('[AutoRetry]', {
+                    businessKey: POLL_BUSINESS_KEY,
+                    trigger,
+                    pausedReason: 'guard_blocked',
+                    attempt: state.autoAttempts,
+                });
+                return;
+            }
+
+            unreadPollGuardRef.current.recordAttempt('auto');
+            const state = unreadPollGuardRef.current.getState();
+            console.info('[AutoRetry]', {
+                businessKey: POLL_BUSINESS_KEY,
+                trigger,
+                event: 'attempt',
+                attempt: state.autoAttempts,
+            });
+        }
 
         try {
             const res = await notificationApi.getUnreadCount() as UnreadCountResponse;
             setUnreadCount(res.data?.count || 0);
+            unreadPollGuardRef.current.recordSuccess();
+            if (pollingPaused) {
+                setPollingPaused(false);
+                pollPauseNotifiedRef.current = false;
+                console.info('[AutoRetry]', {
+                    businessKey: POLL_BUSINESS_KEY,
+                    trigger,
+                    event: 'resume_after_success',
+                });
+            }
         } catch (error: unknown) {
             const status = getErrorStatus(error);
             if (status === 401 || status === 403) {
                 handleAuthError();
                 return;
             }
+
+            unreadPollGuardRef.current.recordFailure(error);
+            const state = unreadPollGuardRef.current.getState();
+            console.warn('[AutoRetry]', {
+                businessKey: POLL_BUSINESS_KEY,
+                trigger,
+                event: 'failure',
+                attempt: state.autoAttempts,
+                consecutiveFailures: state.consecutiveFailures,
+                paused: state.paused,
+                pausedReason: state.paused ? 'consecutive_failures_threshold' : undefined,
+            });
+
+            if (state.paused) {
+                setPollingPaused(true);
+                if (!pollPauseNotifiedRef.current) {
+                    pollPauseNotifiedRef.current = true;
+                    message.warning('通知自动刷新已暂停，请点击“重试刷新”恢复');
+                }
+            }
+
             console.error('Failed to load unread count', error);
         }
-    }, [handleAuthError, notificationAvailable]);
+    }, [handleAuthError, notificationAvailable, pollingPaused]);
 
-    useEffect(() => {
+    const handleManualRefresh = useCallback(async () => {
         if (!notificationAvailable) return;
 
-        loadUnreadCount();
+        unreadPollGuardRef.current.resetByManual();
+        setPollingPaused(false);
+        pollPauseNotifiedRef.current = false;
+
+        console.info('[AutoRetry]', {
+            businessKey: POLL_BUSINESS_KEY,
+            trigger: 'manual',
+            event: 'manual_refresh',
+        });
+
+        await Promise.allSettled([
+            loadUnreadCount('manual'),
+            loadNotifications(),
+        ]);
+    }, [loadNotifications, loadUnreadCount, notificationAvailable]);
+
+    useEffect(() => {
+        if (!notificationAvailable || pollingPaused) return;
+
+        void loadUnreadCount('auto');
         // 每30秒刷新一次未读数量
-        const interval = setInterval(loadUnreadCount, 30000);
+        const interval = setInterval(() => {
+            void loadUnreadCount('auto');
+        }, POLL_INTERVAL_MS);
         return () => clearInterval(interval);
-    }, [loadUnreadCount, notificationAvailable]);
+    }, [loadUnreadCount, notificationAvailable, pollingPaused]);
 
     // 打开下拉框时加载通知
     useEffect(() => {
@@ -133,7 +229,7 @@ const NotificationDropdown: React.FC = () => {
         try {
             await notificationApi.delete(id);
             setNotifications(prev => prev.filter(item => item.id !== id));
-            loadUnreadCount();
+            void loadUnreadCount('manual');
             message.success('删除成功');
         } catch {
             message.error('删除失败');
@@ -190,17 +286,32 @@ const NotificationDropdown: React.FC = () => {
             {/* Header */}
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 16, fontWeight: 600, color: '#262626' }}>通知</span>
-                {unreadCount > 0 && (
-                    <Button
-                        type="link"
-                        size="small"
-                        icon={<CheckOutlined />}
-                        onClick={handleMarkAllAsRead}
-                        style={{ fontSize: 12 }}
-                    >
-                        全部已读
-                    </Button>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {pollingPaused && (
+                        <span style={{ fontSize: 12, color: '#fa8c16' }}>自动刷新已暂停</span>
+                    )}
+                    {pollingPaused && (
+                        <Button
+                            type="link"
+                            size="small"
+                            onClick={() => void handleManualRefresh()}
+                            style={{ fontSize: 12 }}
+                        >
+                            重试刷新
+                        </Button>
+                    )}
+                    {unreadCount > 0 && (
+                        <Button
+                            type="link"
+                            size="small"
+                            icon={<CheckOutlined />}
+                            onClick={handleMarkAllAsRead}
+                            style={{ fontSize: 12 }}
+                        >
+                            全部已读
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Notification List */}

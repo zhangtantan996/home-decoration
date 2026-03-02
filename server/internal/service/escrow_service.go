@@ -8,6 +8,7 @@ import (
 	"home-decoration-server/internal/repository"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type EscrowService struct{}
@@ -42,7 +43,7 @@ func (s *EscrowService) Deposit(projectID, userID uint64, amount float64, milest
 
 	return repository.DB.Transaction(func(tx *gorm.DB) error {
 		var escrow model.EscrowAccount
-		if err := tx.Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
 			return errors.New("托管账户不存在")
 		}
 
@@ -81,13 +82,13 @@ func (s *EscrowService) Deposit(projectID, userID uint64, amount float64, milest
 func (s *EscrowService) ReleaseFunds(projectID, userID uint64, milestoneID uint64) error {
 	return repository.DB.Transaction(func(tx *gorm.DB) error {
 		var escrow model.EscrowAccount
-		if err := tx.Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
 			return errors.New("托管账户不存在")
 		}
 
 		// 获取节点信息
 		var milestone model.Milestone
-		if err := tx.First(&milestone, milestoneID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&milestone, milestoneID).Error; err != nil {
 			return errors.New("验收节点不存在")
 		}
 

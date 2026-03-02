@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { identityApi } from '../services/api';
-import { SecureStorage } from '../utils/SecureStorage';
 import { useAuthStore } from './authStore';
 
 export type IdentityType = 'owner' | 'provider' | 'admin';
@@ -190,11 +189,10 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
             const user = response.data?.user;
 
             if (newToken) {
-                await SecureStorage.saveToken(newToken);
                 await useAuthStore.getState().updateToken(newToken);
 
                 if (newRefreshToken) {
-                    await SecureStorage.saveRefreshToken(newRefreshToken);
+                    await useAuthStore.getState().updateRefreshToken(newRefreshToken);
                 }
 
                 if (user) {
@@ -215,11 +213,9 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
 
             set({ loading: false });
         } catch (error: any) {
-            set({
-                error: error.response?.data?.message || '切换身份失败',
-                loading: false,
-            });
-            throw error;
+            const message = error?.response?.data?.message || error?.message || '切换身份失败';
+            set({ loading: false, error: message });
+            throw new Error(message);
         }
     },
 
@@ -236,11 +232,9 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
 
             set({ loading: false });
         } catch (error: any) {
-            set({
-                error: error.response?.data?.message || '申请身份失败',
-                loading: false,
-            });
-            throw error;
+            const message = error?.response?.data?.message || error?.message || '申请身份失败';
+            set({ loading: false, error: message });
+            throw new Error(message);
         }
     },
 

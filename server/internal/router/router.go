@@ -4,6 +4,8 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/handler"
 	"home-decoration-server/internal/middleware"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +21,20 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		"http://localhost:5176",        // Admin开发环境备用端口
 		"http://localhost:3000",        // Mobile开发环境
 		"https://admin.yourdomain.com", // 生产环境（需替换）
+	}
+	if raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); raw != "" {
+		parts := strings.Split(raw, ",")
+		parsed := make([]string, 0, len(parts))
+		for _, p := range parts {
+			v := strings.TrimSpace(p)
+			if v == "" {
+				continue
+			}
+			parsed = append(parsed, v)
+		}
+		if len(parsed) > 0 {
+			allowedOrigins = parsed
+		}
 	}
 
 	// 全局中间件
@@ -46,6 +62,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			auth.POST("/send-code", middleware.LoginRateLimit(), handler.SendCode)
 			auth.POST("/wechat/mini/login", middleware.LoginRateLimit(), handler.WechatMiniLogin)
 			auth.POST("/wechat/mini/bind-phone", middleware.LoginRateLimit(), handler.WechatMiniBindPhone)
+			auth.GET("/wechat/h5/authorize", middleware.LoginRateLimit(), handler.WechatH5Authorize)
+			auth.POST("/wechat/h5/login", middleware.LoginRateLimit(), handler.WechatH5Login)
+			auth.POST("/wechat/h5/bind-phone", middleware.LoginRateLimit(), handler.WechatH5BindPhone)
 			auth.POST("/refresh", handler.RefreshToken)
 		}
 
@@ -104,10 +123,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 身份管理（多身份切换系统）
 			identities := authorized.Group("/identities")
 			{
-				identities.GET("", handler.GetIdentities)                // 获取用户所有身份
-				identities.GET("/current", handler.GetCurrentIdentity)   // 获取当前激活身份
-				identities.POST("/switch", handler.SwitchIdentity)       // 切换身份
-				identities.POST("/apply", handler.ApplyIdentity)         // 申请新身份
+				identities.GET("", handler.GetIdentities)              // 获取用户所有身份
+				identities.GET("/current", handler.GetCurrentIdentity) // 获取当前激活身份
+				identities.POST("/switch", handler.SwitchIdentity)     // 切换身份
+				identities.POST("/apply", handler.ApplyIdentity)       // 申请新身份
 			}
 
 			// Tinode helper endpoints
@@ -476,6 +495,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.PUT("/info", handler.MerchantUpdateInfo)
 			merchant.POST("/avatar", handler.MerchantUploadAvatar)
 			merchant.POST("/upload", handler.MerchantUploadImage)
+			merchant.GET("/service-settings", handler.MerchantGetServiceSettings)
+			merchant.PUT("/service-settings", handler.MerchantUpdateServiceSettings)
 
 			// 预约管理
 			merchant.GET("/bookings", handler.MerchantListBookings)

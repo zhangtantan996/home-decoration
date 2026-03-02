@@ -12,6 +12,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type auditLogEntry struct {
+	operatorType string
+	operatorID   uint64
+	action       string
+	resource     string
+	requestBody  string
+	clientIP     string
+	userAgent    string
+	statusCode   int
+	durationMs   int64
+}
+
 // AuditLogger 敏感操作审计日志中间件
 // 记录关键业务操作，便于事后追溯和安全审计
 func AuditLogger() gin.HandlerFunc {
@@ -46,7 +58,8 @@ func AuditLogger() gin.HandlerFunc {
 		c.Next()
 
 		// 记录审计日志
-		go saveAuditLog(c, path, requestBody, startTime)
+		entry := buildAuditLogEntry(c, path, requestBody, startTime)
+		go saveAuditLog(entry)
 	}
 }
 
@@ -97,8 +110,7 @@ func maskSensitiveFields(body string) string {
 	return string(maskedBody)
 }
 
-// saveAuditLog 保存审计日志
-func saveAuditLog(c *gin.Context, path, requestBody string, startTime time.Time) {
+func buildAuditLogEntry(c *gin.Context, path, requestBody string, startTime time.Time) auditLogEntry {
 	// 获取用户信息
 	userID := c.GetUint64("userId")
 	providerID := c.GetUint64("providerId")
@@ -121,17 +133,31 @@ func saveAuditLog(c *gin.Context, path, requestBody string, startTime time.Time)
 		operatorID = 0
 	}
 
-	// 创建审计日志
+	return auditLogEntry{
+		operatorType: operatorType,
+		operatorID:   operatorID,
+		action:       c.Request.Method + " " + path,
+		resource:     extractResource(path),
+		requestBody:  truncateString(requestBody, 2000),
+		clientIP:     c.ClientIP(),
+		userAgent:    truncateString(c.Request.UserAgent(), 500),
+		statusCode:   c.Writer.Status(),
+		durationMs:   time.Since(startTime).Milliseconds(),
+	}
+}
+
+// saveAuditLog 保存审计日志（异步，不要依赖 gin.Context 生命周期）
+func saveAuditLog(entry auditLogEntry) {
 	auditLog := model.AuditLog{
-		OperatorType: operatorType,
-		OperatorID:   operatorID,
-		Action:       c.Request.Method + " " + path,
-		Resource:     extractResource(path),
-		RequestBody:  truncateString(requestBody, 2000),
-		ClientIP:     c.ClientIP(),
-		UserAgent:    truncateString(c.Request.UserAgent(), 500),
-		StatusCode:   c.Writer.Status(),
-		Duration:     time.Since(startTime).Milliseconds(),
+		OperatorType: entry.operatorType,
+		OperatorID:   entry.operatorID,
+		Action:       entry.action,
+		Resource:     entry.resource,
+		RequestBody:  entry.requestBody,
+		ClientIP:     entry.clientIP,
+		UserAgent:    entry.userAgent,
+		StatusCode:   entry.statusCode,
+		Duration:     entry.durationMs,
 	}
 
 	repository.DB.Create(&auditLog)
@@ -140,8 +166,15 @@ func saveAuditLog(c *gin.Context, path, requestBody string, startTime time.Time)
 // extractResource 提取资源类型
 func extractResource(path string) string {
 	parts := strings.Split(path, "/")
-	if len(parts) >= 4 {
-		return parts[3] // e.g., /api/v1/merchant/withdraw -> withdraw
+	// e.g., /api/v1/merchant/withdraw -> withdraw
+	if len(parts) >= 5 && parts[1] == "api" && parts[2] == "v1" {
+		return parts[4]
+	}
+
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] != "" {
+			return parts[i]
+		}
 	}
 	return path
 }

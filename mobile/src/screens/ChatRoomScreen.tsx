@@ -48,6 +48,7 @@ import { getApiBaseUrl } from '../config';
 import { VoiceRecorder } from '../components/VoiceRecorder';
 import { AudioPlayer } from '../components/AudioPlayer';
 import { tinodeApi, reportApi } from '../services/api';
+import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -59,6 +60,14 @@ const QUICK_REPLIES = [
     '请发详细报价',
     '我再考虑一下',
 ];
+
+const CHATROOM_RELOAD_BUSINESS_KEY = 'mobile.chatroom.history_reload';
+const CHATROOM_RELOAD_POLICY: AutoRetryPolicy = {
+    maxAutoAttempts: 1,
+    pauseOnConsecutiveFailures: 1,
+    baseDelayMs: 0,
+    maxDelayMs: 0,
+};
 
 const toSafeAttachmentUrl = (raw: string): string | null => {
     const trimmed = raw.trim();
@@ -156,7 +165,9 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     const [topic, setTopic] = useState<any>(null);
     const [topicName, setTopicName] = useState<string>(conversationID || '');
     const [clearBeforeTs, setClearBeforeTs] = useState<number>(0);
+    const [historyAutoReloadPaused, setHistoryAutoReloadPaused] = useState(false);
     const clearBeforeTsRef = useRef(0);
+    const historyReloadGuardRef = useRef(new AutoRetryGuard(CHATROOM_RELOAD_POLICY));
     const insets = useSafeAreaInsets();
     const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
@@ -422,7 +433,17 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         return history;
     }, []);
 
-    const loadMessages = useCallback(async () => {
+    const loadMessages = useCallback(async (
+        trigger: TriggerSource = 'auto',
+        options?: { skipManualReset?: boolean; allowReinitRetry?: boolean }
+    ) => {
+        const allowReinitRetry = options?.allowReinitRetry ?? true;
+
+        if (trigger === 'manual' && !options?.skipManualReset) {
+            historyReloadGuardRef.current.resetByManual();
+            setHistoryAutoReloadPaused(false);
+        }
+
         /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         if (!chat || !conversationID) return;
@@ -440,6 +461,37 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         */
 
         // Tinode Implementation
+        if (trigger === 'auto' && !historyReloadGuardRef.current.shouldAttempt('auto')) {
+            setHistoryAutoReloadPaused(true);
+            const state = historyReloadGuardRef.current.getState();
+            console.warn('[AutoRetry]', {
+                businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                trigger,
+                event: 'blocked',
+                attempt: state.autoAttempts,
+                consecutiveFailures: state.consecutiveFailures,
+                pausedReason: 'max_auto_reload_reached',
+            });
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '自动重试已暂停',
+                message: '自动刷新次数已达上限，请点击空白页手动重试',
+            });
+            return;
+        }
+
+        if (trigger === 'auto') {
+            historyReloadGuardRef.current.recordAttempt('auto');
+            const state = historyReloadGuardRef.current.getState();
+            console.info('[AutoRetry]', {
+                businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                trigger,
+                event: 'attempt',
+                attempt: state.autoAttempts,
+            });
+        }
+
         // Message list may have initialized Tinode, but provider details entry might not.
         if (!TinodeService.isConnected()) {
             if (!tinodeToken) {
@@ -454,6 +506,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             }
             const ok = await TinodeService.init(tinodeToken);
             if (!ok) {
+                historyReloadGuardRef.current.recordFailure(new Error('Tinode init failed'));
                 setDialogConfig({
                     visible: true,
                     type: 'info',
@@ -485,6 +538,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 setTopicName(resolved);
             } catch (e) {
                 console.error('Failed to resolve Tinode peer user id:', e);
+                historyReloadGuardRef.current.recordFailure(e);
                 setDialogConfig({
                     visible: true,
                     type: 'info',
@@ -580,6 +634,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     }
                };
 
+              historyReloadGuardRef.current.recordSuccess();
+              setHistoryAutoReloadPaused(false);
               setLoadingMessages(false);
 
         } catch (error: any) {
@@ -589,18 +645,57 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
              const is401 = errorMessage.includes('401') || errorMessage.includes('authentication required');
              
              if (is401 && tinodeToken) {
+                 if (trigger === 'auto' && !historyReloadGuardRef.current.shouldAttempt('auto')) {
+                     setHistoryAutoReloadPaused(true);
+                     const state = historyReloadGuardRef.current.getState();
+                     console.warn('[AutoRetry]', {
+                         businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                         trigger,
+                         event: 'blocked_before_reinit',
+                         attempt: state.autoAttempts,
+                         consecutiveFailures: state.consecutiveFailures,
+                         pausedReason: 'max_auto_reload_reached',
+                     });
+                     setDialogConfig({
+                         visible: true,
+                         type: 'info',
+                         title: '自动重试已暂停',
+                         message: '自动刷新次数已达上限，请点击空白页手动重试',
+                     });
+                     setLoadingMessages(false);
+                     return;
+                 }
+
                  try {
                      console.log('[ChatRoom] 401 error, reinitializing Tinode...');
                      TinodeService.disconnect();
                      const ok = await TinodeService.init(tinodeToken);
-                     if (ok) {
+                     if (ok && allowReinitRetry) {
                          console.log('[ChatRoom] Reinitialized, retrying load...');
-                         await loadMessages();
+                         await loadMessages('manual', {
+                             skipManualReset: true,
+                             allowReinitRetry: false,
+                         });
                          return;
                      }
                  } catch (reinitError) {
                      console.error('[ChatRoom] Reinit failed:', reinitError);
+                     historyReloadGuardRef.current.recordFailure(reinitError);
                  }
+             }
+
+             historyReloadGuardRef.current.recordFailure(error);
+             const state = historyReloadGuardRef.current.getState();
+             if (state.paused) {
+                 setHistoryAutoReloadPaused(true);
+                 console.warn('[AutoRetry]', {
+                     businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                     trigger,
+                     event: 'failure_paused',
+                     attempt: state.autoAttempts,
+                     consecutiveFailures: state.consecutiveFailures,
+                     pausedReason: 'consecutive_failures_threshold',
+                 });
              }
              
              setDialogConfig({
@@ -614,7 +709,9 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     }, [conversationID, getCachedTopicMessages, legacyPartnerID, parseTinodeMessages, partnerIdentifier, tinodeToken]);
 
     useEffect(() => {
-        loadMessages();
+        loadMessages('auto').catch((error) => {
+            console.error('[ChatRoom] Initial auto load failed:', error);
+        });
     }, [loadMessages]);
 
     // 监听新消息 - Handled in loadMessages via topic.onData for Tinode
@@ -1637,9 +1734,19 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             <Text style={styles.emptyText}>正在加载聊天记录...</Text>
                         </View>
                     ) : messages.length === 0 ? (
-                        <TouchableOpacity style={styles.emptyState} activeOpacity={0.8} onPress={loadMessages}>
+                        <TouchableOpacity
+                            style={styles.emptyState}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                                loadMessages('manual').catch((error) => {
+                                    console.error('[ChatRoom] Manual reload failed:', error);
+                                });
+                            }}
+                        >
                             <Text style={styles.emptyText}>暂无聊天记录</Text>
-                            <Text style={styles.emptySubtext}>点击刷新</Text>
+                            <Text style={styles.emptySubtext}>
+                                {historyAutoReloadPaused ? '自动刷新已暂停，点击手动重试' : '点击刷新'}
+                            </Text>
                         </TouchableOpacity>
                     ) : (
                         messages.map((message, index) => renderMessage(message, index))

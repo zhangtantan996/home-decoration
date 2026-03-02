@@ -46,9 +46,12 @@
 
 ## 5. 回滚演练
 - [ ] 已验证回滚脚本可执行：`server/scripts/migrations/004_migrate_worker_to_provider_foreman_rollback.sql`。
+- [ ] 已验证 RBAC 回滚脚本可执行：`server/scripts/migrations/005_add_identity_application_audit_menu_rollback.sql`。
 - [ ] 回滚后可恢复 worker 标识（仅用于应急，不建议长期运行）。
 
 ## 6. 交付物
+- [ ] 上线与回滚 SOP（执行顺序）：`docs/IDENTITY_PHASE1_RELEASE_SOP.md`。
+- [ ] 自动化验收执行文档：`docs/IDENTITY_PHASE1_AUTOMATED_ACCEPTANCE.md`。
 - [ ] 接口变更说明（字段与兼容策略）。
 - [ ] 审核页面操作手册（审核通过/驳回流程）。
 - [ ] 上线后监控项（切换失败率、审核积压、refresh 异常）。

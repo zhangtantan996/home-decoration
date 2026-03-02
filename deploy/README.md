@@ -2,16 +2,20 @@
 
 本指南针对 **阿里云 (Aliyun)** 环境进行了定制。
 
+> 更完整的生产上线落地（托管 RDS/Redis + Tinode + 阿里云短信）请查看：`deploy/ALIYUN_PRODUCTION_LAUNCH.md`。
+
 ## 1. 云资源准备 (Cloud Resources)
 
 请前往 [阿里云官网 (aliyun.com)](https://www.aliyun.com) 购买以下资源：
 
 | 资源组件 | 推荐配置 (MVP) | 购买建议 |
 | :--- | :--- | :--- |
-| **云服务器 ECS** | **2核 4G** (u1 或 e 实例) | **操作系统选 Ubuntu 22.04** (Docker 支持最佳)。<br>网络带宽建议按量付费或包年包月 3M+。 |
-| **云数据库 RDS** | **PostgreSQL** 基础版 | **必选**。选择与 ECS 同一个地域 (Region) 和 可用区 (Zone)，内网互通速度快且免费。 |
-| **对象存储 OSS** | 标准存储包 | 创建 Bucket 时权限设为 **公共读** (Public Read)，用于存放图片。 |
+| **云服务器 ECS** | **4核 8G（推荐）** / 2核 4G（最低） | **操作系统选 Ubuntu 22.04**。<br>带宽建议按量付费，峰值 20M+（图片多建议 50-100M）。 |
+| **云数据库 RDS** | **PostgreSQL 15** 基础版（2核4G/50G） | **必选**。与 ECS 同地域同 VPC，使用内网地址。<br>请创建两个库：`home_decoration` + `tinode`。 |
+| **云数据库 Redis** | ApsaraDB for Redis 1GB 起 | **必选（生产推荐托管）**。与 ECS 同地域同 VPC，开启密码，仅内网访问。 |
+| **对象存储 OSS** | 标准存储 | 用于备份 DB 与 uploads（推荐 Bucket 私有）。后续可用于图片上云 + CDN。 |
 | **域名** | 万网域名 | 购买后需立即进行 ICP 备案 (阿里云提供免费备案服务)。 |
+| **短信服务** | 阿里云短信 | 上线必须接入真实短信验证码（不要使用测试验证码）。签名/模板审核需要时间，尽早提交。 |
 
 ## 2. 环境搭建 (Setup)
 
@@ -62,9 +66,16 @@ sudo systemctl restart docker
 git clone <your-repo-url> /opt/home_decoration
 cd /opt/home_decoration
 
-# 启动
-docker compose -f deploy/docker-compose.prod.yml up -d --build
+# 1) 在 deploy/ 目录创建生产环境变量文件（不要提交到 Git）
+cd deploy
+cp ../.env.example .env
+# 编辑 deploy/.env，填入 RDS/Redis 内网地址、JWT_SECRET、ENCRYPTION_KEY、Tinode 与短信配置等
+
+# 2) 启动（托管 RDS + 托管 Redis + Tinode + Admin）
+docker compose -f docker-compose.prod.managed.yml up -d --build
 ```
+
+> HTTPS 推荐使用 **宿主机 Nginx + Let's Encrypt**，参考模板：`deploy/nginx/host_nginx_prod.conf`。
 
 ## 3. 安全设置 (Security Group)
 进入 ECS 控制台 -> **实例** -> **安全组配置**，添加入方向规则：

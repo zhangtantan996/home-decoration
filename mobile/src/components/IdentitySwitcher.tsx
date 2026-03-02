@@ -91,8 +91,8 @@ export const IdentitySwitcher: React.FC<IdentitySwitcherProps> = ({ visible, onC
                     await switchIdentity(identityId);
                     showToast({ message: '身份切换成功', type: 'success' });
                     onClose();
-                } catch {
-                    showToast({ message: error || '切换身份失败', type: 'error' });
+                } catch (switchError: any) {
+                    showToast({ message: switchError?.message || '切换身份失败', type: 'error' });
                 }
             },
         });

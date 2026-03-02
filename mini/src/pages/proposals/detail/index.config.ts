@@ -1,4 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: 'Proposal Details',
+  navigationBarTitleText: '方案详情',
   backgroundColor: '#FFFFFF'
 });

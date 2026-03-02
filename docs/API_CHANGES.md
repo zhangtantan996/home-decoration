@@ -1,5 +1,56 @@
 # API 接口变更清单
 
+## 2026-02-09 商家中心阶段1契约统一（v1.4.4）
+
+### 变更范围
+- `GET /api/v1/merchant/dashboard`
+- `POST /api/v1/merchant/login`
+- `GET /api/v1/merchant/info`
+- `PUT /api/v1/merchant/info`
+- `GET /api/v1/merchant/service-settings`
+- `PUT /api/v1/merchant/service-settings`
+- `POST /api/v1/merchant/withdraw`
+- `POST /api/v1/merchant/bank-accounts`
+
+### 关键变更
+- `merchant/dashboard` 增加平铺统计字段：`todayBookings`、`pendingProposals`、`activeProjects`、`totalRevenue`、`monthRevenue`，并继续保留 `bookings/proposals/orders` 分组结构。
+- `merchant/login` 的 `data.provider` 增加：`applicantType` 与 `providerSubType`，用于前端角色策略和文案判定。
+- `merchant/info` 查询结果补充：`applicantType`、`providerSubType`、`workTypes`。
+- `merchant/info` 更新支持 `workTypes`，其中工长要求至少 1 项，非工长写入时自动忽略/清空。
+- 新增服务设置读写接口：`merchant/service-settings`，字段包含接单状态、自动确认时长、响应描述、价格区间、服务风格、服务套餐。
+- 高风险资金操作对齐：提现与新增银行卡均要求 `verificationCode`。
+
+### 兼容性说明
+- 旧结构保留兼容：dashboard 旧分组字段未移除；新增字段不会破坏旧前端。
+- 旧商家类型继续可用：`personal/studio/company` 规则保持不变。
+
+---
+
+## 2026-02-07 商家入驻工长类型补齐（v1.4.3）
+
+### 变更范围
+- `POST /api/v1/merchant/apply`
+- `POST /api/v1/merchant/apply/:id/resubmit`
+- `GET /api/v1/merchant/apply/:phone/status`
+
+### 字段变更
+- `applicantType` 枚举由 `personal|studio|company` 扩展为 `personal|studio|company|foreman`。
+- 新增字段：`workTypes: string[]`（`foreman` 必填，其他类型可忽略）。
+- 新增字段：`yearsExperience: number`（`foreman` 建议必填，范围 1-50）。
+- 状态查询新增：`applicantType` 字段，前端用于驳回后保留原类型重新提交。
+
+### 校验规则
+- `foreman`：必须提供至少 1 个 `workTypes`；案例最少 1 个。
+- `personal|studio|company`：保持设计导向规则，案例最少 3 个；公司仍需营业执照。
+
+### 审核映射
+- 审核通过时 `foreman` 映射为：
+  - `providers.provider_type = 3`
+  - `providers.sub_type = 'foreman'`
+  - `providers.work_types` 回填 `workTypes`
+
+---
+
 > **文档版本**: v1.0
 > **创建时间**: 2025-12-30
 > **相关文档**: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)

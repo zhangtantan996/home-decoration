@@ -24,6 +24,7 @@ interface AuthState {
     logout: () => Promise<void>;
     loadStoredAuth: () => Promise<void>;
     updateToken: (token: string) => Promise<void>;
+    updateRefreshToken: (refreshToken: string) => Promise<void>;
     updateUser: (user: Partial<User>) => Promise<void>;
 }
 
@@ -66,6 +67,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         } catch (error) {
             if (__DEV__) {
                 console.error('Failed to update token:', error);
+            }
+        }
+    },
+
+    updateRefreshToken: async (refreshToken) => {
+        try {
+            await SecureStorage.saveRefreshToken(refreshToken);
+            set({ refreshToken });
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Failed to update refresh token:', error);
             }
         }
     },

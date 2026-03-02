@@ -101,8 +101,11 @@ const IdentityManagementScreen: React.FC<IdentityManagementScreenProps> = ({ nav
                 try {
                     await switchIdentity(item.id, item.identityType);
                     showToast({ message: '身份已切换', type: 'success' });
-                } catch {
-                    // error toast handled by store state
+                } catch (switchError: any) {
+                    showToast({
+                        message: switchError?.message || '切换身份失败，请稍后重试',
+                        type: 'error',
+                    });
                 }
             },
         });

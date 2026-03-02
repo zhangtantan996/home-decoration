@@ -1,11 +1,41 @@
 import axios from 'axios';
 import { SecureStorage } from '../utils/SecureStorage';
 import { authEventEmitter } from './AuthEventEmitter';
+import { useAuthStore } from '../store/authStore';
+import { AutoRetryGuard, type AutoRetryPolicy } from '../utils/autoRetryGuard';
 
 // @ts-ignore
 import { getApiUrl } from '../config';
 
 const BASE_URL = getApiUrl();
+
+const normalizeRole = (value?: string | null): 'owner' | 'provider' | 'admin' | undefined => {
+    const normalized = String(value || '').toLowerCase();
+    if (normalized === 'provider' || normalized === 'designer' || normalized === 'company' || normalized === 'foreman' || normalized === 'worker') {
+        return 'provider';
+    }
+    if (normalized === 'admin') {
+        return 'admin';
+    }
+    if (normalized === 'owner' || normalized === 'user' || normalized === 'homeowner') {
+        return 'owner';
+    }
+    return undefined;
+};
+
+const normalizeProviderSubType = (value?: string | null): 'designer' | 'company' | 'foreman' | undefined => {
+    const normalized = String(value || '').toLowerCase();
+    if (normalized === 'designer') {
+        return 'designer';
+    }
+    if (normalized === 'company') {
+        return 'company';
+    }
+    if (normalized === 'foreman' || normalized === 'worker') {
+        return 'foreman';
+    }
+    return undefined;
+};
 
 const api = axios.create({
     baseURL: BASE_URL,
@@ -13,8 +43,36 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
+const AUTH_REFRESH_BUSINESS_KEY = 'mobile.auth.refresh';
+const AUTH_REFRESH_POLICY: AutoRetryPolicy = {
+    maxAutoAttempts: 1,
+    pauseOnConsecutiveFailures: 1,
+    baseDelayMs: 0,
+    maxDelayMs: 0,
+};
+const authRefreshGuard = new AutoRetryGuard(AUTH_REFRESH_POLICY);
+
+export const resetAuthRefreshGuard = () => {
+    authRefreshGuard.resetByManual();
+};
+
 // 刷新 Token 辅助方法：尝试多个后端路径，兼容不同实现
 const tryRefreshToken = async (refreshToken: string) => {
+    if (!authRefreshGuard.shouldAttempt('auto')) {
+        const state = authRefreshGuard.getState();
+        console.warn('[AutoRetry]', {
+            businessKey: AUTH_REFRESH_BUSINESS_KEY,
+            trigger: 'auto',
+            event: 'blocked',
+            attempt: state.autoAttempts,
+            consecutiveFailures: state.consecutiveFailures,
+            pausedReason: 'max_auto_attempts_reached',
+        });
+        throw new Error('Refresh token blocked by guard');
+    }
+
+    authRefreshGuard.recordAttempt('auto');
+
     const candidates = ['/auth/refresh-token', '/auth/refreshToken', '/auth/refresh'];
 
     let lastError: any = null;
@@ -27,19 +85,58 @@ const tryRefreshToken = async (refreshToken: string) => {
             const data = payload?.data ?? payload;
             const token = data?.token;
             const newRefreshToken = data?.refreshToken || data?.refresh_token;
+            const activeRole = normalizeRole(data?.activeRole);
+            const providerSubType = normalizeProviderSubType(data?.providerSubType);
 
             if (!token) throw new Error('Empty token in refresh response');
-            return { token, refreshToken: newRefreshToken };
+
+            authRefreshGuard.recordSuccess();
+            console.info('[AutoRetry]', {
+                businessKey: AUTH_REFRESH_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'success',
+            });
+
+            return {
+                token,
+                refreshToken: newRefreshToken,
+                activeRole,
+                providerSubType,
+            };
         } catch (err: any) {
             lastError = err;
             // 404/405/501 继续尝试下一条，其他错误直接抛出
             const status = err?.response?.status;
             if (status && ![404, 405, 501].includes(status)) {
+                authRefreshGuard.recordFailure(err);
+                const state = authRefreshGuard.getState();
+                console.warn('[AutoRetry]', {
+                    businessKey: AUTH_REFRESH_BUSINESS_KEY,
+                    trigger: 'auto',
+                    event: 'failure',
+                    attempt: state.autoAttempts,
+                    consecutiveFailures: state.consecutiveFailures,
+                    paused: state.paused,
+                });
                 throw err;
             }
         }
     }
-    if (lastError) throw lastError;
+    if (lastError) {
+        authRefreshGuard.recordFailure(lastError);
+        const state = authRefreshGuard.getState();
+        console.warn('[AutoRetry]', {
+            businessKey: AUTH_REFRESH_BUSINESS_KEY,
+            trigger: 'auto',
+            event: 'failure',
+            attempt: state.autoAttempts,
+            consecutiveFailures: state.consecutiveFailures,
+            paused: state.paused,
+        });
+        throw lastError;
+    }
+
+    authRefreshGuard.recordFailure(new Error('Refresh token failed: no candidates succeeded'));
     throw new Error('Refresh token failed: no candidates succeeded');
 };
 
@@ -104,7 +201,7 @@ api.interceptors.response.use(
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
                 }).then(token => {
-                    originalRequest.headers['Authorization'] = 'Bearer ' + token;
+                    originalRequest.headers.Authorization = 'Bearer ' + token;
                     return api(originalRequest);
                 }).catch(err => {
                     return Promise.reject(err);
@@ -122,17 +219,29 @@ api.interceptors.response.use(
                 }
 
                 // 调用刷新 Token 接口
-                const { token, refreshToken: newRefreshToken } = await tryRefreshToken(refreshToken);
+                const {
+                    token,
+                    refreshToken: newRefreshToken,
+                    activeRole,
+                    providerSubType,
+                } = await tryRefreshToken(refreshToken);
 
-                // 保存新的 Token
-                await SecureStorage.saveToken(token);
+                // 保存新的 Token（同步内存状态 + 安全存储）
+                await useAuthStore.getState().updateToken(token);
                 if (newRefreshToken) {
-                    await SecureStorage.saveRefreshToken(newRefreshToken);
+                    await useAuthStore.getState().updateRefreshToken(newRefreshToken);
+                }
+
+                if (activeRole) {
+                    await useAuthStore.getState().updateUser({
+                        activeRole,
+                        providerSubType: activeRole === 'provider' ? (providerSubType || 'designer') : undefined,
+                    });
                 }
 
                 // 更新请求头
-                api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
-                originalRequest.headers['Authorization'] = 'Bearer ' + token;
+                api.defaults.headers.common.Authorization = 'Bearer ' + token;
+                originalRequest.headers.Authorization = 'Bearer ' + token;
 
                 processQueue(null, token);
                 isRefreshing = false;

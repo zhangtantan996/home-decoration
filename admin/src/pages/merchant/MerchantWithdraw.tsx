@@ -1,17 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-    merchantWithdrawApi,
+    merchantAuthApi,
+    merchantBankAccountApi,
     merchantIncomeApi,
-    merchantBankAccountApi
+    merchantWithdrawApi,
+    type MerchantBankAccountInfo,
 } from '../../services/merchantApi';
 import {
-    Card, Table, Tag, Button, Modal, Form, InputNumber, Select,
-    message, Row, Col, Statistic, Empty, Steps
-} from 'antd';
-import {
-    ArrowLeftOutlined, WalletOutlined, BankOutlined,
-    CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined
+    ArrowLeftOutlined,
+    BankOutlined,
+    CheckCircleOutlined,
+    ClockCircleOutlined,
+    CloseCircleOutlined,
+    SafetyOutlined,
+    WalletOutlined,
 } from '@ant-design/icons';
+import {
+    Button,
+    Card,
+    Col,
+    Empty,
+    Form,
+    Input,
+    InputNumber,
+    Modal,
+    Row,
+    Select,
+    Statistic,
+    Steps,
+    Table,
+    Tag,
+    message,
+} from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -28,15 +48,29 @@ interface WithdrawRecord {
     createdAt: string;
 }
 
-interface BankAccount {
-    id: number;
-    accountName: string;
-    accountNo: string;
-    bankName: string;
-    isDefault: boolean;
+interface WithdrawListData {
+    list: WithdrawRecord[];
+    total: number;
+    page: number;
+    pageSize: number;
 }
 
 const formatCurrency = (value: number) => `¥${value.toFixed(2)}`;
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+
+    const maybeAxiosError = error as {
+        response?: {
+            data?: {
+                message?: string;
+            };
+        };
+    };
+    return maybeAxiosError.response?.data?.message || fallback;
+};
 
 const MerchantWithdraw: React.FC = () => {
     const navigate = useNavigate();
@@ -47,34 +81,32 @@ const MerchantWithdraw: React.FC = () => {
     const [modalVisible, setModalVisible] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [availableAmount, setAvailableAmount] = useState(0);
-    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [bankAccounts, setBankAccounts] = useState<MerchantBankAccountInfo[]>([]);
+    const [sendingCode, setSendingCode] = useState(false);
+    const [countdown, setCountdown] = useState(0);
     const [form] = Form.useForm();
 
-
-
     useEffect(() => {
-        fetchWithdrawList();
-        fetchAvailableAmount();
-        fetchBankAccounts();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        void fetchWithdrawList();
+        void fetchAvailableAmount();
+        void fetchBankAccounts();
     }, []);
 
     useEffect(() => {
-        fetchWithdrawList();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        void fetchWithdrawList();
     }, [currentPage]);
 
     const fetchWithdrawList = async () => {
         setLoading(true);
         try {
-            const data = await merchantWithdrawApi.list({
+            const data = await merchantWithdrawApi.list<WithdrawRecord>({
                 page: currentPage,
-                pageSize: 10
-            }) as any;
+                pageSize: 10,
+            }) as WithdrawListData;
             setWithdrawList(data.list || []);
             setTotal(data.total || 0);
         } catch (error) {
-            message.error('获取提现记录失败');
+            message.error(getErrorMessage(error, '获取提现记录失败'));
         } finally {
             setLoading(false);
         }
@@ -82,33 +114,63 @@ const MerchantWithdraw: React.FC = () => {
 
     const fetchAvailableAmount = async () => {
         try {
-            const data = await merchantIncomeApi.summary() as any;
+            const data = await merchantIncomeApi.summary();
             setAvailableAmount(data.availableAmount || 0);
         } catch (error) {
-            message.error('获取可提现金额失败');
+            message.error(getErrorMessage(error, '获取可提现金额失败'));
         }
     };
 
     const fetchBankAccounts = async () => {
         try {
-            const data = await merchantBankAccountApi.list() as any;
+            const data = await merchantBankAccountApi.list();
             setBankAccounts(data.list || []);
         } catch (error) {
-            message.error('获取银行账户失败');
+            message.error(getErrorMessage(error, '获取银行账户失败'));
         }
     };
 
-    const handleWithdraw = async (values: { amount: number; bankAccountId: number }) => {
+    const handleSendCode = async () => {
+        const storedProvider = JSON.parse(localStorage.getItem('merchant_provider') || '{}') as { phone?: string };
+        const phone = storedProvider.phone;
+        if (!phone) {
+            message.error('当前账号缺少手机号，请重新登录后再试');
+            return;
+        }
+
+        setSendingCode(true);
+        try {
+            const res = await merchantAuthApi.sendCode(phone);
+            const debugSuffix = import.meta.env.DEV && res?.debugCode ? ` (测试码: ${res.debugCode})` : '';
+            message.success(`验证码已发送${debugSuffix}`);
+            setCountdown(60);
+            const timer = window.setInterval(() => {
+                setCountdown((prev) => {
+                    if (prev <= 1) {
+                        window.clearInterval(timer);
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        } catch (error) {
+            message.error(getErrorMessage(error, '发送验证码失败'));
+        } finally {
+            setSendingCode(false);
+        }
+    };
+
+    const handleWithdraw = async (values: { amount: number; bankAccountId: number; verificationCode: string }) => {
         setSubmitting(true);
         try {
             await merchantWithdrawApi.apply(values);
             message.success('提现申请已提交');
             setModalVisible(false);
             form.resetFields();
-            fetchWithdrawList();
-            fetchAvailableAmount();
+            setCountdown(0);
+            await Promise.all([fetchWithdrawList(), fetchAvailableAmount()]);
         } catch (error) {
-            message.error('提现失败');
+            message.error(getErrorMessage(error, '提现失败'));
         } finally {
             setSubmitting(false);
         }
@@ -116,10 +178,14 @@ const MerchantWithdraw: React.FC = () => {
 
     const getStatusIcon = (status: number) => {
         switch (status) {
-            case 0: return <ClockCircleOutlined style={{ color: '#faad14' }} />;
-            case 1: return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
-            case 2: return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
-            default: return null;
+            case 0:
+                return <ClockCircleOutlined style={{ color: '#faad14' }} />;
+            case 1:
+                return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+            case 2:
+                return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
+            default:
+                return null;
         }
     };
 
@@ -129,7 +195,11 @@ const MerchantWithdraw: React.FC = () => {
             1: 'success',
             2: 'error',
         };
-        return <Tag color={colors[status]} icon={getStatusIcon(status)}>{label}</Tag>;
+        return (
+            <Tag color={colors[status]} icon={getStatusIcon(status)}>
+                {label}
+            </Tag>
+        );
     };
 
     const columns: ColumnsType<WithdrawRecord> = [
@@ -143,7 +213,7 @@ const MerchantWithdraw: React.FC = () => {
             title: '提现金额',
             dataIndex: 'amount',
             key: 'amount',
-            render: (v) => <span style={{ fontWeight: 'bold' }}>{formatCurrency(v)}</span>,
+            render: (value: number) => <span style={{ fontWeight: 'bold' }}>{formatCurrency(value)}</span>,
             width: 120,
         },
         {
@@ -161,34 +231,33 @@ const MerchantWithdraw: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             key: 'status',
-            render: (status, record) => getStatusTag(status, record.statusLabel),
-            width: 100,
+            render: (status: number, record) => getStatusTag(status, record.statusLabel),
+            width: 120,
         },
         {
             title: '申请时间',
             dataIndex: 'createdAt',
             key: 'createdAt',
-            render: (text) => new Date(text).toLocaleString('zh-CN'),
+            render: (text: string) => new Date(text).toLocaleString('zh-CN'),
             width: 180,
         },
         {
             title: '完成时间',
             dataIndex: 'completedAt',
             key: 'completedAt',
-            render: (text) => text ? new Date(text).toLocaleString('zh-CN') : '-',
+            render: (text: string | null) => (text ? new Date(text).toLocaleString('zh-CN') : '-'),
             width: 180,
         },
         {
             title: '备注',
             dataIndex: 'failReason',
             key: 'failReason',
-            render: (text) => text || '-',
+            render: (text: string | null) => text || '-',
         },
     ];
 
     return (
         <div style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
-            {/* Header */}
             <div style={{ marginBottom: 24 }}>
                 <Button
                     type="link"
@@ -201,7 +270,6 @@ const MerchantWithdraw: React.FC = () => {
                 <h2 style={{ margin: 0 }}>提现管理</h2>
             </div>
 
-            {/* Available Amount Card */}
             <Card style={{ marginBottom: 24 }}>
                 <Row align="middle" justify="space-between">
                     <Col>
@@ -238,7 +306,6 @@ const MerchantWithdraw: React.FC = () => {
                 </Row>
             </Card>
 
-            {/* Withdraw List */}
             <Card title="提现记录">
                 <Table
                     columns={columns}
@@ -247,10 +314,10 @@ const MerchantWithdraw: React.FC = () => {
                     loading={loading}
                     pagination={{
                         current: currentPage,
-                        total: total,
+                        total,
                         pageSize: 10,
                         onChange: (page) => setCurrentPage(page),
-                        showTotal: (t) => `共${t} 条`,
+                        showTotal: (count) => `共${count} 条`,
                     }}
                     scroll={{ x: 1000 }}
                     locale={{
@@ -259,21 +326,18 @@ const MerchantWithdraw: React.FC = () => {
                 />
             </Card>
 
-            {/* Withdraw Modal */}
             <Modal
                 title="申请提现"
                 open={modalVisible}
-                onCancel={() => setModalVisible(false)}
+                onCancel={() => {
+                    setModalVisible(false);
+                    form.resetFields();
+                }}
                 footer={null}
                 width={500}
             >
                 <div style={{ marginBottom: 24, padding: 16, background: '#f5f5f5', borderRadius: 8 }}>
-                    <Statistic
-                        title="可提现金额"
-                        value={availableAmount}
-                        precision={2}
-                        suffix="元"
-                    />
+                    <Statistic title="可提现金额" value={availableAmount} precision={2} suffix="元" />
                 </div>
 
                 <Form form={form} layout="vertical" onFinish={handleWithdraw}>
@@ -296,19 +360,42 @@ const MerchantWithdraw: React.FC = () => {
                         />
                     </Form.Item>
 
-                    <Form.Item
-                        name="bankAccountId"
-                        label="收款账户"
-                        rules={[{ required: true, message: '请选择收款账户' }]}
-                    >
+                    <Form.Item name="bankAccountId" label="收款账户" rules={[{ required: true, message: '请选择收款账户' }]}>
                         <Select size="large" placeholder="请选择收款银行账户">
-                            {bankAccounts.map(acc => (
-                                <Select.Option key={acc.id} value={acc.id}>
-                                    {acc.bankName} - {acc.accountNo}
-                                    {acc.isDefault && <Tag color="blue" style={{ marginLeft: 8 }}>默认</Tag>}
+                            {bankAccounts.map((account) => (
+                                <Select.Option key={account.id} value={account.id}>
+                                    {account.bankName} - {account.accountNo}
+                                    {account.isDefault && <Tag color="blue" style={{ marginLeft: 8 }}>默认</Tag>}
                                 </Select.Option>
                             ))}
                         </Select>
+                    </Form.Item>
+
+                    <Form.Item
+                        name="verificationCode"
+                        label="短信验证码"
+                        rules={[
+                            { required: true, message: '请输入验证码' },
+                            { pattern: /^\d{6}$/, message: '请输入6位数字验证码' },
+                        ]}
+                    >
+                        <Input
+                            size="large"
+                            prefix={<SafetyOutlined />}
+                            placeholder="请输入验证码"
+                            maxLength={6}
+                            suffix={(
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    disabled={countdown > 0 || sendingCode}
+                                    onClick={handleSendCode}
+                                    loading={sendingCode}
+                                >
+                                    {countdown > 0 ? `${countdown}s` : '获取验证码'}
+                                </Button>
+                            )}
+                        />
                     </Form.Item>
 
                     <div style={{ marginTop: 16, padding: 12, background: '#fffbe6', borderRadius: 4 }}>

@@ -4,6 +4,8 @@ import { tinodeApi } from './api';
 import { getApiBaseUrl, getApiUrl } from '../config';
 import { TINODE_CONFIG } from '../config/tinode';
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
+import { resetAuthRefreshGuard } from './api';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -100,6 +102,14 @@ const CONFIG = {
     APP_NAME: TINODE_CONFIG.APP_NAME,
 };
 
+const RECONNECT_BUSINESS_KEY = 'mobile.tinode.reconnect';
+const RECONNECT_POLICY: AutoRetryPolicy = {
+    maxAutoAttempts: 5,
+    pauseOnConsecutiveFailures: 5,
+    baseDelayMs: 3000,
+    maxDelayMs: 30000,
+};
+
 /**
  * Tinode IM 服务（单例）
  */
@@ -110,6 +120,8 @@ class TinodeService extends SimpleEventEmitter {
     private connected: boolean = false;
     private initPromise: Promise<boolean> | null = null;
     private reconnectTimer: any | null = null;
+	private reconnectGuard: AutoRetryGuard = new AutoRetryGuard(RECONNECT_POLICY);
+	private reconnectPaused: boolean = false;
 	private userIdCache: Map<string, string> = new Map();
 	private prefetchInFlight: Map<string, Promise<void>> = new Map();
 
@@ -248,6 +260,14 @@ class TinodeService extends SimpleEventEmitter {
     private onConnect() {
         console.log('[Tinode] ✅ Socket connected');
 
+        this.reconnectGuard.recordSuccess();
+        if (this.reconnectPaused) {
+            this.reconnectPaused = false;
+            this.emit('reconnect-resumed', {
+                businessKey: RECONNECT_BUSINESS_KEY,
+            });
+        }
+
         // 清除重连定时器
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
@@ -263,10 +283,7 @@ class TinodeService extends SimpleEventEmitter {
         this.connected = false;
         this.emit('disconnected', error);
 
-        // 自动重连（3 秒后）
-        if (!this.reconnectTimer) {
-            this.reconnectTimer = setTimeout(() => this.reconnect(), 3000);
-        }
+        this.scheduleReconnect('auto', 'socket_disconnected');
     }
 
     /**
@@ -283,18 +300,184 @@ class TinodeService extends SimpleEventEmitter {
     private async reconnect() {
         if (this.connected) return;
 
+        if (!this.reconnectGuard.shouldAttempt('auto')) {
+            this.reconnectPaused = true;
+            const state = this.reconnectGuard.getState();
+            console.warn('[AutoRetry]', {
+                businessKey: RECONNECT_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'blocked',
+                attempt: state.autoAttempts,
+                consecutiveFailures: state.consecutiveFailures,
+                paused: state.paused,
+                pausedReason: 'max_auto_attempts_reached',
+            });
+            this.emit('reconnect-paused', {
+                businessKey: RECONNECT_BUSINESS_KEY,
+                ...state,
+            });
+            this.clearReconnectTimer();
+            return;
+        }
+
+        this.reconnectGuard.recordAttempt('auto');
+        const attemptState = this.reconnectGuard.getState();
+        this.emit('reconnect-attempt', {
+            businessKey: RECONNECT_BUSINESS_KEY,
+            trigger: 'auto',
+            attempt: attemptState.autoAttempts,
+            consecutiveFailures: attemptState.consecutiveFailures,
+        });
+        console.info('[AutoRetry]', {
+            businessKey: RECONNECT_BUSINESS_KEY,
+            trigger: 'auto',
+            event: 'attempt',
+            attempt: attemptState.autoAttempts,
+        });
+
         console.log('[Tinode] 🔄 尝试重连...');
 
         try {
             const tinodeToken = await SecureStorage.getTinodeToken();
-            if (tinodeToken) {
-                await this.init(tinodeToken);
+            if (!tinodeToken) {
+                throw new Error('Missing Tinode token');
             }
+
+            const ok = await this.init(tinodeToken);
+            if (!ok) {
+                throw new Error('Tinode init failed while reconnecting');
+            }
+
+            this.reconnectGuard.recordSuccess();
+            if (this.reconnectPaused) {
+                this.reconnectPaused = false;
+                this.emit('reconnect-resumed', {
+                    businessKey: RECONNECT_BUSINESS_KEY,
+                    trigger: 'auto',
+                });
+            }
+            this.clearReconnectTimer();
         } catch (error) {
             console.error('[Tinode] 重连失败:', error);
-            // 5 秒后再次尝试
-            this.reconnectTimer = setTimeout(() => this.reconnect(), 5000);
+
+            this.reconnectGuard.recordFailure(error);
+            const state = this.reconnectGuard.getState();
+            console.warn('[AutoRetry]', {
+                businessKey: RECONNECT_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'failure',
+                attempt: state.autoAttempts,
+                consecutiveFailures: state.consecutiveFailures,
+                paused: state.paused,
+                pausedReason: state.paused ? 'max_auto_attempts_reached' : undefined,
+            });
+
+            if (state.paused) {
+                this.reconnectPaused = true;
+                this.emit('reconnect-paused', {
+                    businessKey: RECONNECT_BUSINESS_KEY,
+                    ...state,
+                });
+                this.clearReconnectTimer();
+                return;
+            }
+
+            const delayMs = this.reconnectGuard.getNextDelayMs();
+            this.scheduleReconnectTimer(delayMs);
         }
+    }
+
+    private clearReconnectTimer() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+    }
+
+    private scheduleReconnectTimer(delayMs: number) {
+        if (this.reconnectTimer) {
+            return;
+        }
+
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.reconnect().catch((error) => {
+                console.error('[Tinode] reconnect timer execution failed:', error);
+            });
+        }, delayMs);
+    }
+
+    private scheduleReconnect(trigger: TriggerSource, reason: string) {
+        if (this.connected) {
+            return;
+        }
+
+        if (trigger === 'manual') {
+            resetAuthRefreshGuard();
+            this.reconnectGuard.resetByManual();
+            const previousPaused = this.reconnectPaused;
+            this.reconnectPaused = false;
+
+            if (previousPaused) {
+                this.emit('reconnect-resumed', {
+                    businessKey: RECONNECT_BUSINESS_KEY,
+                    trigger,
+                    reason,
+                });
+            }
+
+            console.info('[AutoRetry]', {
+                businessKey: RECONNECT_BUSINESS_KEY,
+                trigger,
+                event: 'manual_reset',
+                reason,
+            });
+        }
+
+        if (!this.reconnectGuard.shouldAttempt(trigger)) {
+            const state = this.reconnectGuard.getState();
+            this.reconnectPaused = true;
+            console.warn('[AutoRetry]', {
+                businessKey: RECONNECT_BUSINESS_KEY,
+                trigger,
+                event: 'blocked',
+                reason,
+                attempt: state.autoAttempts,
+                consecutiveFailures: state.consecutiveFailures,
+                paused: state.paused,
+            });
+            this.emit('reconnect-paused', {
+                businessKey: RECONNECT_BUSINESS_KEY,
+                ...state,
+            });
+            this.clearReconnectTimer();
+            return;
+        }
+
+        this.clearReconnectTimer();
+
+        const delayMs = trigger === 'manual' ? 0 : this.reconnectGuard.getNextDelayMs();
+        console.info('[AutoRetry]', {
+            businessKey: RECONNECT_BUSINESS_KEY,
+            trigger,
+            event: 'schedule',
+            reason,
+            delayMs,
+        });
+
+        this.scheduleReconnectTimer(delayMs);
+    }
+
+    async reconnectManually(): Promise<void> {
+        this.scheduleReconnect('manual', 'user_manual_trigger');
+    }
+
+    isReconnectPaused(): boolean {
+        return this.reconnectPaused;
+    }
+
+    getReconnectState() {
+        return this.reconnectGuard.getState();
     }
 
     /**
@@ -744,6 +927,8 @@ class TinodeService extends SimpleEventEmitter {
      */
     disconnect() {
         this.connected = false;
+        this.reconnectPaused = false;
+        this.reconnectGuard.recordSuccess();
         if (this.tinode) {
             this.tinode.disconnect();
             this.tinode = null;
@@ -753,10 +938,7 @@ class TinodeService extends SimpleEventEmitter {
 
         this.initPromise = null;
 
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
+        this.clearReconnectTimer();
     }
 
     /**

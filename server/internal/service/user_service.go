@@ -74,8 +74,8 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}
 
 	// 验证手机验证码 (TODO: 实际项目需要接入短信服务)
-	if req.Code != "123456" { // 测试验证码
-		return nil, nil, errors.New("验证码错误")
+	if err := VerifySMSCode(req.Phone, req.Code); err != nil {
+		return nil, nil, err
 	}
 
 	// 检查手机号是否已注册
@@ -228,9 +228,13 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		return nil, nil, errors.New("手机号或密码错误")
 	}
 
-	// 验证码登录时，用户不存在且验证码错误，直接返回（避免创建账号）
-	if userNotFound && req.Type != "password" && req.Code != "123456" {
-		return nil, nil, errors.New("验证码错误")
+	codeVerified := false
+	// 验证码登录时，如果用户不存在，先校验短信验证码，避免无效验证码触发自动创建账号
+	if userNotFound && req.Type != "password" {
+		if err := VerifySMSCode(req.Phone, req.Code); err != nil {
+			return nil, nil, err
+		}
+		codeVerified = true
 	}
 
 	// 如果是验证码登录且用户不存在，自动创建账号
@@ -292,6 +296,17 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		return nil, nil, errors.New("账号已被禁用")
 	}
 
+	// 验证码登录：在锁定检查之后再消费验证码（避免账号被锁定时浪费验证码）
+	if req.Type != "password" && !codeVerified {
+		if err := VerifySMSCode(req.Phone, req.Code); err != nil {
+			if errors.Is(err, errSMSCodeInvalid) {
+				return nil, nil, s.handleLoginFailure(&user, "code")
+			}
+			return nil, nil, err
+		}
+		codeVerified = true
+	}
+
 	// 如果是密码登录，验证密码
 	if req.Type == "password" {
 		if user.Password == "" {
@@ -301,9 +316,6 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 			// 密码错误，记录失败次数
 			return nil, nil, s.handleLoginFailure(&user, "password")
 		}
-	} else if req.Code != "123456" {
-		// 验证码错误，记录失败次数
-		return nil, nil, s.handleLoginFailure(&user, "code")
 	}
 
 	// 登录成功，重置失败次数

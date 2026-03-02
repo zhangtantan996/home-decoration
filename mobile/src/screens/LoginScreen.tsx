@@ -60,6 +60,35 @@ const LoginScreen: React.FC = () => {
         }
     }, [isPhoneValid, isCodeValid, loginMethod, password]);
 
+
+    const normalizeRole = (value?: string | null): 'owner' | 'provider' | 'admin' | undefined => {
+        const normalized = String(value || '').toLowerCase();
+        if (normalized === 'provider' || normalized === 'designer' || normalized === 'company' || normalized === 'foreman' || normalized === 'worker') {
+            return 'provider';
+        }
+        if (normalized === 'admin') {
+            return 'admin';
+        }
+        if (normalized === 'owner' || normalized === 'user' || normalized === 'homeowner') {
+            return 'owner';
+        }
+        return undefined;
+    };
+
+    const normalizeProviderSubType = (value?: string | null): 'designer' | 'company' | 'foreman' | undefined => {
+        const normalized = String(value || '').toLowerCase();
+        if (normalized === 'designer') {
+            return 'designer';
+        }
+        if (normalized === 'company') {
+            return 'company';
+        }
+        if (normalized === 'foreman' || normalized === 'worker') {
+            return 'foreman';
+        }
+        return undefined;
+    };
+
     // 显示内联错误提示（3秒后自动消失）
     const showError = (msg: string) => {
         setErrorMessage(msg);
@@ -88,9 +117,11 @@ const LoginScreen: React.FC = () => {
         if (!canSendCode) return;
 
         try {
-            await authApi.sendCode(phone);
+            const res: any = await authApi.sendCode(phone);
             setCountdown(60);
-            showToast({ message: '验证码已发送 (测试码: 123456)', type: 'success' });
+            const debugCode = __DEV__ ? res?.data?.debugCode : undefined;
+            const suffix = debugCode ? ` (测试码: ${debugCode})` : '';
+            showToast({ message: `验证码已发送${suffix}`, type: 'success' });
         } catch (error: any) {
             showToast({ message: error.response?.data?.message || '发送失败，请稍后重试', type: 'error' });
         }
@@ -142,7 +173,7 @@ const LoginScreen: React.FC = () => {
 
             // 注意：api.ts 拦截器返回的是完整响应对象 { code: 0, data: {...} }
             const res = result as any;
-            const { token, refreshToken, tinodeToken, tinodeError, user } = res.data || {};
+            const { token, refreshToken, tinodeToken, tinodeError, user, activeRole: rawActiveRole, providerSubType: rawProviderSubType } = res.data || {};
 
             if (!token || !user) {
                 throw new Error('登录返回数据异常');
@@ -157,7 +188,15 @@ const LoginScreen: React.FC = () => {
                 });
             }
 
-            setAuth(token, refreshToken || '', tinodeToken || '', user);
+            const activeRole = normalizeRole(rawActiveRole);
+            const providerSubType = normalizeProviderSubType(rawProviderSubType);
+            const normalizedUser = {
+                ...user,
+                ...(activeRole ? { activeRole } : {}),
+                providerSubType: activeRole === 'provider' ? (providerSubType || 'designer') : undefined,
+            };
+
+            setAuth(token, refreshToken || '', tinodeToken || '', normalizedUser);
         } catch (error: any) {
             setErrorMessage(error.response?.data?.message || '登录失败，请检查输入');
         } finally {

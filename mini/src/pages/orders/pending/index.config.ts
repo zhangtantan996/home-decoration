@@ -1,5 +1,5 @@
 export default definePageConfig({
-  navigationBarTitleText: 'Pending Payments',
+  navigationBarTitleText: '待付款',
   enablePullDownRefresh: true,
   backgroundColor: '#F8F9FA'
 });

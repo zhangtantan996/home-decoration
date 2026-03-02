@@ -93,6 +93,8 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
     company: { bg: '#F3E8FF', text: '#7C3AED' },
 };
 
+const IM_RECONNECT_BUSINESS_KEY = 'mobile.message.im_reconnect';
+
 // 格式化时间
 const formatTime = (isoString: string): string => {
     if (!isoString) return '';
@@ -123,11 +125,16 @@ const MessageScreen: React.FC = () => {
     // IM 状态
     const [conversations, setConversations] = useState<UIConversation[]>([]);
     const [imStatus, setImStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
+    const [reconnectPaused, setReconnectPaused] = useState(false);
     const tinodeToken = useAuthStore(state => state.tinodeToken);
     const conversationsRefreshScheduledRef = useRef(false);
 
     // 加载会话列表
-    const loadConversations = useCallback(async () => {
+    const loadConversations = useCallback(async (trigger: 'auto' | 'manual' = 'auto') => {
+        if (trigger === 'auto' && reconnectPaused) {
+            return;
+        }
+
         /* Tencent IM Implementation - Commented out
         const isLoggedIn = TencentIMService.getIsLoggedIn();
         if (!isLoggedIn) {
@@ -172,6 +179,12 @@ const MessageScreen: React.FC = () => {
 
         const isConnected = TinodeService.isConnected();
         if (!isConnected) {
+            if (trigger === 'auto' && TinodeService.isReconnectPaused()) {
+                setReconnectPaused(true);
+                setImStatus('disconnected');
+                return;
+            }
+
             setImStatus('connecting');
             const success = await TinodeService.init(tinodeToken);
             if (!success) {
@@ -285,7 +298,7 @@ const MessageScreen: React.FC = () => {
         });
         
         setConversations(uiList);
-    }, [tinodeToken]);
+    }, [reconnectPaused, tinodeToken]);
 
     const scheduleLoadConversations = useCallback(() => {
         if (conversationsRefreshScheduledRef.current) return;
@@ -293,15 +306,31 @@ const MessageScreen: React.FC = () => {
         // Coalesce bursts of events into a single refresh.
         setTimeout(() => {
             conversationsRefreshScheduledRef.current = false;
-            loadConversations();
+            loadConversations('auto').catch((error) => {
+                console.error('[Message] Scheduled auto load failed:', error);
+            });
         }, 0);
+    }, [loadConversations]);
+
+    const handleManualReconnect = useCallback(async () => {
+        setReconnectPaused(false);
+
+        console.info('[AutoRetry]', {
+            businessKey: IM_RECONNECT_BUSINESS_KEY,
+            trigger: 'manual',
+            event: 'manual_reconnect',
+        });
+
+        await TinodeService.reconnectManually();
+        await loadConversations('manual');
     }, [loadConversations]);
 
     // 页面聚焦时刷新
     useFocusEffect(
         useCallback(() => {
-            // Fire and forget.
-            loadConversations();
+            loadConversations('auto').catch((error) => {
+                console.error('[Message] Focus auto load failed:', error);
+            });
         }, [loadConversations])
     );
 
@@ -325,10 +354,39 @@ const MessageScreen: React.FC = () => {
         // Tinode Implementation
         const onConnected = () => {
             setImStatus('connected');
+            setReconnectPaused(false);
             scheduleLoadConversations();
         };
         const onDisconnected = () => {
             setImStatus('disconnected');
+        };
+        const onReconnectAttempt = (payload: any) => {
+            console.info('[AutoRetry]', {
+                businessKey: IM_RECONNECT_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'attempt',
+                attempt: payload?.attempt,
+            });
+        };
+        const onReconnectPaused = (payload: any) => {
+            setReconnectPaused(true);
+            setImStatus('disconnected');
+            console.warn('[AutoRetry]', {
+                businessKey: IM_RECONNECT_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'paused',
+                attempt: payload?.autoAttempts,
+                consecutiveFailures: payload?.consecutiveFailures,
+                pausedReason: 'max_auto_attempts_reached',
+            });
+        };
+        const onReconnectResumed = () => {
+            setReconnectPaused(false);
+            console.info('[AutoRetry]', {
+                businessKey: IM_RECONNECT_BUSINESS_KEY,
+                trigger: 'manual',
+                event: 'resumed',
+            });
         };
         const onSubsUpdated = () => {
             scheduleLoadConversations();
@@ -354,6 +412,9 @@ const MessageScreen: React.FC = () => {
 
         TinodeService.on('connected', onConnected);
         TinodeService.on('disconnected', onDisconnected);
+        TinodeService.on('reconnect-attempt', onReconnectAttempt);
+        TinodeService.on('reconnect-paused', onReconnectPaused);
+        TinodeService.on('reconnect-resumed', onReconnectResumed);
         TinodeService.on('subs-updated', onSubsUpdated);
         TinodeService.on('contact-update', onContactUpdate);
         TinodeService.on('pres', onPres);
@@ -361,6 +422,9 @@ const MessageScreen: React.FC = () => {
         return () => {
             TinodeService.removeListener('connected', onConnected);
             TinodeService.removeListener('disconnected', onDisconnected);
+            TinodeService.removeListener('reconnect-attempt', onReconnectAttempt);
+            TinodeService.removeListener('reconnect-paused', onReconnectPaused);
+            TinodeService.removeListener('reconnect-resumed', onReconnectResumed);
             TinodeService.removeListener('subs-updated', onSubsUpdated);
             TinodeService.removeListener('contact-update', onContactUpdate);
             TinodeService.removeListener('pres', onPres);
@@ -369,7 +433,7 @@ const MessageScreen: React.FC = () => {
 
     const onRefresh = async () => {
         setRefreshing(true);
-        await loadConversations();
+        await loadConversations('manual');
         setRefreshing(false);
     };
 
@@ -386,10 +450,26 @@ const MessageScreen: React.FC = () => {
 
         if (imStatus === 'disconnected') {
             return (
-                <TouchableOpacity style={styles.emptyContainer} onPress={loadConversations} activeOpacity={0.7}>
+                <TouchableOpacity
+                    style={styles.emptyContainer}
+                    onPress={() => {
+                        if (reconnectPaused) {
+                            handleManualReconnect().catch((error) => {
+                                console.error('[Message] Manual reconnect failed:', error);
+                            });
+                            return;
+                        }
+                        loadConversations('manual').catch((error) => {
+                            console.error('[Message] Manual load failed:', error);
+                        });
+                    }}
+                    activeOpacity={0.7}
+                >
                     <Text style={styles.emptyIcon}>⚠️</Text>
-                    <Text style={styles.emptyText}>IM 未登录</Text>
-                    <Text style={styles.emptySubtext}>点击重试或重新登录后再试</Text>
+                    <Text style={styles.emptyText}>{reconnectPaused ? 'IM 自动重连已暂停' : 'IM 未登录'}</Text>
+                    <Text style={styles.emptySubtext}>
+                        {reconnectPaused ? '点击手动重连' : '点击重试或重新登录后再试'}
+                    </Text>
                 </TouchableOpacity>
             );
         }

@@ -1,0 +1,78 @@
+services:
+  api:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.backend
+    container_name: prod_api
+    restart: always
+    environment:
+      APP_ENV: production
+      SERVER_MODE: release
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      SERVER_PUBLIC_URL: ${SERVER_PUBLIC_URL:?SERVER_PUBLIC_URL not set (e.g. https://api.example.com)}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+
+      DATABASE_HOST: ${DATABASE_HOST:?DATABASE_HOST not set}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_USER: ${DATABASE_USER:?DATABASE_USER not set}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD not set}
+      DATABASE_DBNAME: ${DATABASE_DBNAME:-home_decoration}
+      DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
+
+      REDIS_HOST: ${REDIS_HOST:?REDIS_HOST not set}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD not set}
+      REDIS_DB: ${REDIS_DB:-0}
+
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET not set}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY not set}
+
+      TINODE_UID_ENCRYPTION_KEY: ${TINODE_UID_ENCRYPTION_KEY:?TINODE_UID_ENCRYPTION_KEY not set}
+      TINODE_AUTH_TOKEN_KEY: ${TINODE_AUTH_TOKEN_KEY:?TINODE_AUTH_TOKEN_KEY not set}
+
+      SMS_PROVIDER: ${SMS_PROVIDER:-aliyun}
+      SMS_ACCESS_KEY_ID: ${SMS_ACCESS_KEY_ID:-}
+      SMS_ACCESS_KEY_SECRET: ${SMS_ACCESS_KEY_SECRET:-}
+      SMS_SIGN_NAME: ${SMS_SIGN_NAME:-}
+      SMS_TEMPLATE_CODE: ${SMS_TEMPLATE_CODE:-}
+    volumes:
+      # Persist uploads on ECS disk (recommended). Ensure this directory exists and is backed up.
+      - ../server/uploads:/app/uploads
+    networks:
+      - prod-net
+
+  tinode:
+    image: tinode/tinode-postgres:latest
+    container_name: prod_tinode
+    restart: unless-stopped
+    environment:
+      - STORE_USE_ADAPTER=postgres
+      - POSTGRES_DSN=${TINODE_DATABASE_DSN:?TINODE_DATABASE_DSN not set}
+      - UID_ENCRYPTION_KEY=${TINODE_UID_ENCRYPTION_KEY:?TINODE_UID_ENCRYPTION_KEY not set}
+      - API_KEY_SALT=${TINODE_API_KEY_SALT:?TINODE_API_KEY_SALT not set}
+      # Must match backend TINODE_AUTH_TOKEN_KEY (decoded value).
+      - AUTH_TOKEN_KEY=${TINODE_AUTH_TOKEN_KEY:?TINODE_AUTH_TOKEN_KEY not set}
+      - RESET_DB=false
+      - UPGRADE_DB=true
+    networks:
+      - prod-net
+
+  web:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.frontend.prod
+    container_name: prod_web
+    restart: always
+    ports:
+      # Bind to localhost only. Put host Nginx (80/443) in front of this.
+      - "127.0.0.1:8888:8888"
+    depends_on:
+      - api
+      - tinode
+    networks:
+      - prod-net
+
+networks:
+  prod-net:
+    driver: bridge

@@ -2,11 +2,13 @@ import { View } from '@tarojs/components';
 import React from 'react';
 import './Tag.scss';
 
-interface TagProps {
+export interface TagProps {
   children: React.ReactNode;
   variant?: 'default' | 'primary' | 'secondary' | 'brand' | 'success' | 'warning' | 'error';
   outline?: boolean;
   className?: string;
+  style?: React.CSSProperties;
+  onClick?: () => void;
 }
 
 const buildClassName = (base: string, parts: Array<string | false | undefined>) => {
@@ -17,7 +19,9 @@ export const Tag: React.FC<TagProps> = ({
   children,
   variant = 'default',
   outline = false,
-  className
+  className,
+  style,
+  onClick
 }) => {
   const classes = buildClassName('tag', [
     `tag--${variant}`,
@@ -26,7 +30,7 @@ export const Tag: React.FC<TagProps> = ({
   ]);
 
   return (
-    <View className={classes}>
+    <View className={classes} style={style} onClick={onClick}>
       {children}
     </View>
   );

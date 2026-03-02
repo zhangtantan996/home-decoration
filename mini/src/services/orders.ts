@@ -44,3 +44,28 @@ export async function listOrders(page = 1, pageSize = 20) {
     data: { page, pageSize }
   });
 }
+
+// 分期付款相关接口
+export interface InstallmentPlan {
+  id: number;
+  orderId: number;
+  seq: number;
+  amount: number;
+  dueDate: string;
+  status: 'pending' | 'paid' | 'overdue';
+  paidAt?: string;
+}
+
+export async function getInstallmentPlans(orderId: number) {
+  return request<{ plans: InstallmentPlan[] }>({
+    url: `/orders/${orderId}/plans`
+  });
+}
+
+export async function payInstallment(planId: number) {
+  return request<{ message: string }>({
+    url: `/orders/plans/${planId}/pay`,
+    method: 'POST',
+    showLoading: true
+  });
+}

@@ -1,32 +1,13 @@
 import { request } from '@/utils/request';
 import type { PageData } from './types';
+import type {
+  ProviderCaseDTO,
+  ProviderDTO,
+  ProviderDetailDTO,
+  ProviderType,
+} from './dto';
 
-export type ProviderType = 'designer' | 'company' | 'foreman';
-
-export interface ProviderListItem {
-  id: number;
-  userId: number;
-  providerType: number;
-  companyName: string;
-  nickname: string;
-  avatar: string;
-  rating: number;
-  restoreRate: number;
-  budgetControl: number;
-  completedCnt: number;
-  verified: boolean;
-  latitude: number;
-  longitude: number;
-  distance?: number;
-  subType: string;
-  yearsExperience: number;
-  specialty: string;
-  workTypes: string;
-  reviewCount: number;
-  priceMin: number;
-  priceMax: number;
-  priceUnit: string;
-}
+export type ProviderListItem = ProviderDTO;
 
 export interface ProviderQuery {
   type?: ProviderType | 'all' | '1' | '2' | '3';
@@ -41,37 +22,9 @@ export interface ProviderQuery {
   subType?: string;
 }
 
-export interface ProviderDetail {
-  id: number;
-  userId: number;
-  providerType: number;
-  companyName?: string;
-  nickname?: string;
-  avatar?: string;
-  rating?: number;
-  completedCnt?: number;
-  verified?: boolean;
-  coverImage?: string;
-  serviceIntro?: string;
-  teamSize?: number;
-  establishedYear?: number;
-  certifications?: string;
-  serviceArea?: string;
-  officeAddress?: string;
-  specialty?: string;
-  workTypes?: string;
-  priceMin?: number;
-  priceMax?: number;
-  priceUnit?: string;
-}
+export type ProviderDetail = ProviderDetailDTO;
 
-export interface ProviderCaseItem {
-  id: number;
-  title: string;
-  coverImage: string;
-  style?: string;
-  area?: number;
-}
+export type ProviderCaseItem = ProviderCaseDTO;
 
 export interface ProviderReviewItem {
   id: number;

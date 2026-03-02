@@ -231,20 +231,20 @@
 
 ---
 
-### 2.6 ??????????
-??: POST /api/v1/auth/wechat/mini/bind-phone
-??: ?? bindToken ? wx.getPhoneNumber ??? code ???????? JWT
-??: ????
-????:
-`json
+### 2.6 微信小程序绑定手机号
+**接口**: `POST /api/v1/auth/wechat/mini/bind-phone`
+**描述**: 使用微信登录返回的 `bindToken` 和 `wx.getPhoneNumber` 返回的 code 完成手机号绑定，并返回最终 JWT。
+**认证**: 无需认证
+**请求参数**:
+```json
 {
-    "bindToken": "?????? bindToken",
-    "phoneCode": "wx.getPhoneNumber ??? code"
+    "bindToken": "微信登录阶段返回的 bindToken",
+    "phoneCode": "wx.getPhoneNumber 返回的 code"
 }
-`
+```
 
-????:
-`json
+**响应示例**:
+```json
 {
     "code": 0,
     "message": "success",
@@ -255,13 +255,17 @@
         "user": {
             "id": 2,
             "phone": "13800138000",
-            "nickname": "????3800",
+            "nickname": "用户3800",
             "avatar": "",
             "userType": 1
         }
     }
 }
-`
+```
+
+**备注**:
+- `bindToken` 只可短时使用，建议在 5 分钟内完成绑定。
+- `phoneCode` 只能由小程序端通过微信能力获取，不能重放。
 
 ---
 ## 3. 用户/业主端接口 (User)
@@ -1240,6 +1244,45 @@
 
 > **所有商家端接口均需携带商家 JWT Token**
 
+### 4.0 最新契约补充（2026-02 阶段1）
+
+> 以下内容为阶段1已落地契约，优先级高于本节旧示例字段。
+
+#### 4.0.1 `GET /api/v1/merchant/dashboard`
+- 新增平铺字段：`todayBookings`、`pendingProposals`、`activeProjects`、`totalRevenue`、`monthRevenue`。
+- 兼容保留：`bookings/proposals/orders` 分组统计结构。
+
+#### 4.0.2 `POST /api/v1/merchant/login`
+- `data.provider` 新增：
+  - `applicantType`: `personal|studio|company|foreman`
+  - `providerSubType`: `designer|company|foreman`
+
+#### 4.0.3 `GET /api/v1/merchant/info`
+- 补充返回：`applicantType`、`providerSubType`、`workTypes`。
+
+#### 4.0.4 `PUT /api/v1/merchant/info`
+- 支持入参：`workTypes: string[]`。
+- 校验规则：工长至少 1 项；非工长可忽略并自动清空。
+
+#### 4.0.5 `GET /api/v1/merchant/service-settings`
+**响应字段**：
+- `acceptBooking: boolean`
+- `autoConfirmHours: number`
+- `responseTimeDesc: string`
+- `priceRangeMin: number`
+- `priceRangeMax: number`
+- `serviceStyles: string[]`
+- `servicePackages: array`
+
+#### 4.0.6 `PUT /api/v1/merchant/service-settings`
+**请求字段**：同 `GET` 返回结构。
+
+#### 4.0.7 高风险资金操作字段
+- `POST /api/v1/merchant/withdraw` 新增必填：`verificationCode`。
+- `POST /api/v1/merchant/bank-accounts` 新增必填：`verificationCode`。
+
+---
+
 ### 4.1 商家入驻申请
 
 #### 4.1.1 提交入驻申请
@@ -1260,6 +1303,8 @@
     "licenseNo": "91310000MA1234567X",
     "licenseImage": "https://license.jpg",
     "teamSize": 8,
+    "yearsExperience": 10,
+    "workTypes": ["electrician", "plumber"],
     "officeAddress": "上海市浦东新区张江高科技园区",
     "serviceArea": ["浦东新区", "徐汇区", "黄浦区"],
     "styles": ["现代简约", "北欧", "日式"],
@@ -1282,7 +1327,9 @@
     ]
 }
 ```
-> **applicantType**: `personal`（个人）/ `studio`（工作室）/ `company`（公司）
+> **applicantType**: `personal`（个人）/ `studio`（工作室）/ `company`（公司）/ `foreman`（工长）
+>
+> **workTypes**: 工长类型必填，其他类型可省略。推荐值：`mason`、`electrician`、`carpenter`、`painter`、`plumber`。
 
 **响应数据**:
 ```json
@@ -1703,7 +1750,8 @@
 ```json
 {
     "amount": 10000,
-    "bankAccountId": 1
+    "bankAccountId": 1,
+    "verificationCode": "123456"
 }
 ```
 
@@ -1763,7 +1811,8 @@
     "accountNo": "6222021234567890",
     "bankName": "中国工商银行",
     "branchName": "上海浦东支行",
-    "isDefault": true
+    "isDefault": true,
+    "verificationCode": "123456"
 }
 ```
 
@@ -2408,7 +2457,7 @@
 **认证**: 需要管理员 JWT Token
 **Query 参数**:
 - `status`: pending/approved/rejected
-- `applicantType`: personal/studio/company
+- `applicantType`: personal/studio/company/foreman
 - `page`: 页码
 - `pageSize`: 每页数量
 

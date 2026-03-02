@@ -1,30 +1,12 @@
 import { request } from '@/utils/request';
 import type { PageData } from './types';
+import type { ProjectDTO, ProjectDetailDTO, ProjectPhaseDTO } from './dto';
 
-export interface ProjectItem {
-  id: number;
-  name: string;
-  address: string;
-  area?: number;
-  budget?: number;
-  status?: number;
-  createdAt?: string;
-}
+export type ProjectItem = ProjectDTO;
 
-export interface ProjectPhase {
-  id: number;
-  name: string;
-  status: string;
-  startDate?: string;
-  endDate?: string;
-  tasks?: Array<{ id: number; name: string; isCompleted: boolean }>;
-}
+export type ProjectPhase = ProjectPhaseDTO;
 
-export interface ProjectDetail extends ProjectItem {
-  milestones?: Array<Record<string, unknown>>;
-  logs?: Array<Record<string, unknown>>;
-  escrow?: Record<string, unknown>;
-}
+export type ProjectDetail = ProjectDetailDTO;
 
 export interface CreateProjectPayload {
   proposalId?: number;
@@ -123,3 +105,80 @@ export async function releaseEscrow(id: number, milestoneId: number) {
     showLoading: true
   });
 }
+
+/**
+ * 获取项目验收节点列表
+ */
+export interface Milestone {
+  id: number;
+  projectId: number;
+  seq: number;
+  name: string;
+  description?: string;
+  amount: number;
+  status: 'pending' | 'completed' | 'rejected';
+  acceptedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getProjectMilestones(id: number) {
+  return request<{ milestones: Milestone[] }>({
+    url: `/projects/${id}/milestones`
+  });
+}
+
+/**
+ * 确认验收节点
+ */
+export async function acceptMilestone(projectId: number, milestoneId: number) {
+  return request<{ message: string }>({
+    url: `/projects/${projectId}/accept`,
+    method: 'POST',
+    data: { milestoneId },
+    showLoading: true
+  });
+}
+
+/**
+ * 获取项目账单
+ */
+export interface ProjectBill {
+  projectId: number;
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  items: Array<{
+    id: number;
+    name: string;
+    amount: number;
+    status: 'pending' | 'paid';
+    paidAt?: string;
+  }>;
+}
+
+export async function getProjectBill(id: number) {
+  return request<ProjectBill>({
+    url: `/projects/${id}/bill`
+  });
+}
+
+/**
+ * 获取项目文件列表
+ */
+export interface ProjectFile {
+  id: number;
+  projectId: number;
+  name: string;
+  url: string;
+  type: string;
+  size: number;
+  uploadedAt: string;
+}
+
+export async function getProjectFiles(id: number) {
+  return request<{ files: ProjectFile[] }>({
+    url: `/projects/${id}/files`
+  });
+}
+

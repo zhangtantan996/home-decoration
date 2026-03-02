@@ -196,15 +196,18 @@ func (s *IdentityService) SwitchIdentity(userID uint64, req *SwitchIdentityReque
 	// 2. Redis 限流检查（5 次/分钟）
 	redisClient := repository.GetRedis()
 	if redisClient != nil {
+		ctx, cancel := repository.RedisContext()
+		defer cancel()
+
 		key := fmt.Sprintf("identity_switch:%d", userID)
-		count, err := redisClient.Incr(repository.Ctx, key).Result()
+		count, err := redisClient.Incr(ctx, key).Result()
 		if err != nil {
 			// Redis 错误不应阻止切换，但应记录日志
 			fmt.Printf("[IdentityService] Redis error: %v\n", err)
 		} else {
 			if count == 1 {
 				// 第一次访问，设置过期时间
-				redisClient.Expire(repository.Ctx, key, time.Minute)
+				redisClient.Expire(ctx, key, time.Minute)
 			}
 			if count > 5 {
 				return nil, errors.New("切换过于频繁，请稍后再试")
@@ -261,6 +264,11 @@ func (s *IdentityService) ApplyIdentity(userID uint64, req *ApplyIdentityRequest
 	normalizedRole := normalizeRoleInput(req.IdentityType)
 	if normalizedRole != "provider" {
 		return errors.New("当前仅支持申请服务商身份")
+	}
+
+	rawProviderSubType := strings.ToLower(strings.TrimSpace(req.ProviderSubType))
+	if rawProviderSubType == "worker" {
+		return errors.New("providerSubType 无效，worker 已弃用，请使用 foreman")
 	}
 
 	providerSubType := normalizeProviderSubType(req.ProviderSubType)

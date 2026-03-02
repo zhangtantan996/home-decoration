@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Button, Layout, Typography, Row, Col, Space } from 'antd';
-import { UserOutlined, TeamOutlined, BankOutlined, SearchOutlined } from '@ant-design/icons';
+import { UserOutlined, TeamOutlined, BankOutlined, ToolOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
 const { Content } = Layout;
@@ -73,6 +73,12 @@ const MerchantEntry: React.FC = () => {
             title: '装修公司',
             description: '企业资质入驻',
             type: 'company',
+        },
+        {
+            icon: <ToolOutlined />,
+            title: '工长/项目经理',
+            description: '施工团队负责人入驻',
+            type: 'foreman',
         },
     ];
 
@@ -158,7 +164,7 @@ const MerchantEntry: React.FC = () => {
                     {/* 入驻类型选择 */}
                     <Row gutter={[16, 16]}>
                         {merchantTypes.map((item) => (
-                            <Col xs={24} sm={8} key={item.type}>
+                            <Col xs={24} sm={12} key={item.type}>
                                 <MerchantTypeCard
                                     icon={item.icon}
                                     title={item.title}

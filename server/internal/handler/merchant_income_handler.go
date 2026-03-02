@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"math/rand"
 	"strconv"
@@ -12,6 +14,22 @@ import (
 )
 
 // ==================== 商家收入中心 Handler ====================
+
+func resolveProviderPhone(providerID uint64) (string, error) {
+	var provider model.Provider
+	if err := repository.DB.Select("user_id").Where("id = ?", providerID).First(&provider).Error; err != nil {
+		return "", err
+	}
+
+	var user model.User
+	if err := repository.DB.Select("phone").Where("id = ?", provider.UserID).First(&user).Error; err != nil {
+		return "", err
+	}
+	if user.Phone == "" {
+		return "", errors.New("手机号未绑定")
+	}
+	return user.Phone, nil
+}
 
 // MerchantIncomeSummary 收入概览
 func MerchantIncomeSummary(c *gin.Context) {
@@ -220,8 +238,13 @@ func MerchantWithdrawCreate(c *gin.Context) {
 	}
 
 	// 二次验证：验证码检查（高风险操作）
-	if input.VerificationCode != "123456" {
-		response.Error(c, 400, "验证码错误")
+	phone, err := resolveProviderPhone(providerID)
+	if err != nil {
+		response.Error(c, 400, "验证码校验失败")
+		return
+	}
+	if err := service.VerifySMSCode(phone, input.VerificationCode); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -329,8 +352,13 @@ func MerchantBankAccountCreate(c *gin.Context) {
 	}
 
 	// 二次验证：验证码检查（高风险操作）
-	if input.VerificationCode != "123456" {
-		response.Error(c, 400, "验证码错误")
+	phone, err := resolveProviderPhone(providerID)
+	if err != nil {
+		response.Error(c, 400, "验证码校验失败")
+		return
+	}
+	if err := service.VerifySMSCode(phone, input.VerificationCode); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 

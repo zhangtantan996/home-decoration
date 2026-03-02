@@ -1,5 +1,5 @@
 export default definePageConfig({
-  navigationBarTitleText: 'Find Professionals',
+  navigationBarTitleText: '服务商列表',
   enablePullDownRefresh: true,
-  backgroundColor: '#F8F9FA'
+  backgroundColor: '#F8F9FA',
 });

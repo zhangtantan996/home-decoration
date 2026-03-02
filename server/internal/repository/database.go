@@ -4,6 +4,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"log"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -23,6 +24,41 @@ func InitDB(cfg *config.DatabaseConfig) error {
 	if err != nil {
 		return err
 	}
+
+	// Configure sql.DB connection pool (production safety default; configurable via config/env).
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return err
+	}
+
+	maxOpenConns := cfg.MaxOpenConns
+	if maxOpenConns <= 0 {
+		maxOpenConns = 25
+	}
+	maxIdleConns := cfg.MaxIdleConns
+	if maxIdleConns < 0 {
+		maxIdleConns = 0
+	}
+	if maxIdleConns > maxOpenConns {
+		maxIdleConns = maxOpenConns
+	}
+
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+
+	if cfg.ConnMaxLifetimeMinutes > 0 {
+		sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute)
+	}
+	if cfg.ConnMaxIdleTimeMinutes > 0 {
+		sqlDB.SetConnMaxIdleTime(time.Duration(cfg.ConnMaxIdleTimeMinutes) * time.Minute)
+	}
+
+	log.Printf("Database pool configured: max_open_conns=%d max_idle_conns=%d conn_max_lifetime_minutes=%d conn_max_idle_time_minutes=%d",
+		maxOpenConns,
+		maxIdleConns,
+		cfg.ConnMaxLifetimeMinutes,
+		cfg.ConnMaxIdleTimeMinutes,
+	)
 
 	// 自动迁移表结构
 	// FIXME: GORM 1.30.0 与 PostgreSQL 驱动存在兼容性问题
