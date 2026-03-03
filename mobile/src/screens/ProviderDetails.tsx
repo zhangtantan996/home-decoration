@@ -463,7 +463,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                                     <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
                                     <View style={{ flex: 1 }} />
                                     <View style={styles.flexRow}>
-                                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                                        <Star size={10} color={colors.warning} fill={colors.warning} />
                                         <Text style={styles.miniRating}>{review.rating}</Text>
                                     </View>
                                 </View>
@@ -827,7 +827,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                                     <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
                                     <View style={{ flex: 1 }} />
                                     <View style={styles.flexRow}>
-                                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                                        <Star size={10} color={colors.warning} fill={colors.warning} />
                                         <Text style={styles.miniRating}>{review.rating}</Text>
                                     </View>
                                 </View>
@@ -1117,7 +1117,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                 <View style={styles.certsContainer}>
                     {displayData.certifications?.map((cert: string, idx: number) => (
                         <View key={idx} style={styles.certBadge}>
-                            <Award size={14} color="#059669" />
+                            <Award size={14} color={colors.success} />
                             <Text style={styles.certText}>{cert}</Text>
                         </View>
                     ))}
@@ -1189,7 +1189,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                                     <Text style={styles.magReviewName}>{review.userName || '匿名用户'}</Text>
                                     <View style={{ flex: 1 }} />
                                     <View style={styles.flexRow}>
-                                        <Star size={10} color="#F59E0B" fill="#F59E0B" />
+                                        <Star size={10} color={colors.warning} fill={colors.warning} />
                                         <Text style={styles.miniRating}>{review.rating}</Text>
                                     </View>
                                 </View>
@@ -1483,7 +1483,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: 12,
-        backgroundColor: '#FFFBEB',
+        backgroundColor: colors.gray50,
         alignSelf: 'flex-start',
         paddingHorizontal: 12,
         paddingVertical: 6,
@@ -1491,13 +1491,13 @@ const styles = StyleSheet.create({
     },
     priceTagLabel: {
         fontSize: 12,
-        color: '#B45309',
+        color: colors.warning,
         marginRight: 6,
     },
     priceTagValue: {
         fontSize: 16,
         fontWeight: 'bold',
-        color: '#B45309',
+        color: colors.warning,
     },
 
     // Portfolio
@@ -1705,8 +1705,8 @@ const styles = StyleSheet.create({
 
     // ... Additional legacy styles ... 
     workTypeBadges: { flexDirection: 'row', flexWrap: 'wrap' },
-    workTypeBadge: { backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-    workTypeBadgeText: { fontSize: 11, color: '#D97706' },
+    workTypeBadge: { backgroundColor: colors.gray100, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+    workTypeBadgeText: { fontSize: 11, color: colors.warning },
     priceSection: {
         padding: 20,
         borderBottomWidth: 8,
@@ -1780,7 +1780,7 @@ const styles = StyleSheet.create({
     certBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#ECFDF5',
+        backgroundColor: colors.gray50,
         paddingHorizontal: 10,
         paddingVertical: 6,
         borderRadius: 6,
@@ -1789,7 +1789,7 @@ const styles = StyleSheet.create({
     },
     certText: {
         fontSize: 12,
-        color: '#059669',
+        color: colors.success,
         marginLeft: 4,
     },
     // Header actions for Worker/Company screens
