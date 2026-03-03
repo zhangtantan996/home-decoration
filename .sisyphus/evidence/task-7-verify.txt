@@ -1,0 +1,5 @@
+mobile/src/components/DateRangePicker.tsx:419:        shadowColor: '#000',
+mobile/src/components/RejectionReasonModal.tsx:142:        shadowColor: '#000',
+mobile/src/components/InfoModal.tsx:178:        shadowColor: '#000',
+mobile/src/components/CancelOrderModal.tsx:138:        shadowColor: '#000',
+mobile/src/components/AudioPlayer.tsx:179:        shadowColor: "#000",

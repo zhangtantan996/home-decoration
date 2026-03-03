@@ -115,9 +115,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ messageId, audioUrl, d
         <View style={styles.container}>
             <TouchableOpacity onPress={handlePlayPause} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 {state.isPlaying ? (
-                    <Pause size={20} color="#333" fill="#333" />
+                    <Pause size={20} color={colors.gray700} fill={colors.gray700} />
                 ) : (
-                    <Play size={20} color="#333" fill="#333" />
+                    <Play size={20} color={colors.gray700} fill={colors.gray700} />
                 )}
             </TouchableOpacity>
 
