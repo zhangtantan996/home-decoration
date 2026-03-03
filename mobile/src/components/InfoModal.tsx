@@ -10,6 +10,7 @@ import {
     Platform,
 } from 'react-native';
 import { AlertCircle, CheckCircle, Info } from 'lucide-react-native';
+import { colors } from '../theme/tokens';
 
 const { width } = Dimensions.get('window');
 
@@ -61,33 +62,33 @@ const InfoModal: React.FC<InfoModalProps> = ({
     const getIcon = () => {
         switch (type) {
             case 'success':
-                return <CheckCircle size={32} color="#10B981" strokeWidth={2.5} />;
+                return <CheckCircle size={32} color={colors.success} strokeWidth={2.5} />;
             case 'error':
-                return <AlertCircle size={32} color="#EF4444" strokeWidth={2.5} />;
+                return <AlertCircle size={32} color={colors.error} strokeWidth={2.5} />;
             default:
-                return <Info size={32} color="#3B82F6" strokeWidth={2.5} />;
+                return <Info size={32} color={colors.info} strokeWidth={2.5} />;
         }
     };
 
     const getIconBgColor = () => {
         switch (type) {
             case 'success':
-                return '#ECFDF5';
+                return colors.success + '20';
             case 'error':
-                return '#FEE2E2';
+                return colors.error + '20';
             default:
-                return '#EFF6FF';
+                return colors.info + '20';
         }
     };
 
     const getButtonBgColor = () => {
         switch (type) {
             case 'success':
-                return '#10B981';
+                return colors.success;
             case 'error':
-                return '#EF4444';
+                return colors.error;
             default:
-                return '#09090B';
+                return colors.primary;
         }
     };
 
@@ -170,7 +171,7 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         width: width * 0.8,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.bgCard,
         borderRadius: 24,
         padding: 24,
         alignItems: 'center',
@@ -191,13 +192,13 @@ const styles = StyleSheet.create({
     modalTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#18181B',
+        color: colors.gray900,
         marginBottom: 8,
         textAlign: 'center',
     },
     modalMessage: {
         fontSize: 15,
-        color: '#71717A',
+        color: colors.secondary,
         textAlign: 'center',
         lineHeight: 22,
         marginBottom: 24,
@@ -216,7 +217,7 @@ const styles = StyleSheet.create({
     modalButtonText: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#FFFFFF',
+        color: colors.white,
     },
 });
 

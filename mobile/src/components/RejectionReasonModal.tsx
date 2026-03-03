@@ -9,8 +9,9 @@ import {
     KeyboardAvoidingView,
     Platform,
 } from 'react-native';
+import { colors } from '../theme/tokens';
 
-const PRIMARY_GOLD = '#D4AF37';
+const PRIMARY_GOLD = colors.brand;
 
 interface RejectionReasonModalProps {
     visible: boolean;
@@ -73,8 +74,8 @@ const RejectionReasonModal: React.FC<RejectionReasonModalProps> = ({
                         <View style={styles.inputContainer}>
                             <TextInput
                                 style={[styles.textInput, error ? styles.inputError : null]}
-                                placeholder="例如：配色不满意，希望调整为现代简约风格"
-                                placeholderTextColor="#A1A1AA"
+                                placeholder="例如:配色不满意,希望调整为现代简约风格"
+                                placeholderTextColor={colors.placeholder}
                                 multiline
                                 numberOfLines={4}
                                 maxLength={500}
@@ -135,7 +136,7 @@ const styles = StyleSheet.create({
         maxWidth: 400,
     },
     modalContent: {
-        backgroundColor: '#FFF',
+        backgroundColor: colors.bgCard,
         borderRadius: 16,
         padding: 24,
         shadowColor: '#000',
@@ -150,12 +151,12 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 20,
         fontWeight: '600',
-        color: '#18181B',
+        color: colors.gray900,
         marginBottom: 8,
     },
     subtitle: {
         fontSize: 14,
-        color: '#71717A',
+        color: colors.secondary,
         lineHeight: 20,
     },
     inputContainer: {
@@ -163,16 +164,16 @@ const styles = StyleSheet.create({
     },
     textInput: {
         borderWidth: 1,
-        borderColor: '#E4E4E7',
+        borderColor: colors.border,
         borderRadius: 12,
         padding: 12,
         fontSize: 15,
-        color: '#18181B',
+        color: colors.gray900,
         minHeight: 120,
-        backgroundColor: '#FAFAFA',
+        backgroundColor: colors.bgPage,
     },
     inputError: {
-        borderColor: '#EF4444',
+        borderColor: colors.error,
     },
     inputFooter: {
         marginTop: 8,
@@ -180,11 +181,11 @@ const styles = StyleSheet.create({
     },
     charCount: {
         fontSize: 12,
-        color: '#A1A1AA',
+        color: colors.placeholder,
     },
     errorText: {
         fontSize: 12,
-        color: '#EF4444',
+        color: colors.error,
     },
     buttonContainer: {
         flexDirection: 'row',
@@ -198,12 +199,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     cancelButton: {
-        backgroundColor: '#F4F4F5',
+        backgroundColor: colors.gray100,
     },
     cancelButtonText: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#71717A',
+        color: colors.secondary,
     },
     submitButton: {
         backgroundColor: PRIMARY_GOLD,
@@ -211,7 +212,7 @@ const styles = StyleSheet.create({
     submitButtonText: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#FFF',
+        color: colors.white,
     },
     buttonDisabled: {
         opacity: 0.5,

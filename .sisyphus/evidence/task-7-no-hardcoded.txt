@@ -1,0 +1,3 @@
+mobile/src/components/AudioPlayer.tsx:190:        color: '#666',
+mobile/src/components/VoiceRecorder.tsx:309:      color: '#333',
+mobile/src/components/VoiceRecorder.tsx:314:      color: '#333',
