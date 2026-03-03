@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MapPinned, Star } from 'lucide-react-native';
 import { Designer } from '../types/provider';
+import { colors as tokens, spacing, radii, typography } from '../theme/tokens';
 
 interface DesignerCardProps {
     designer: Designer;
@@ -61,14 +62,14 @@ export const DesignerCard = memo(({ designer, onPress, onBookPress }: DesignerCa
 const styles = StyleSheet.create({
     designerCard: {
         flexDirection: 'column',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 16,
-        marginHorizontal: 16,
+        backgroundColor: tokens.white,
+        borderRadius: radii.lg,
+        padding: spacing.md,
+        marginBottom: spacing.md,
+        marginHorizontal: spacing.md,
         ...Platform.select({
             ios: {
-                shadowColor: '#000',
+                shadowColor: tokens.black,
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: 0.1,
                 shadowRadius: 12,
@@ -80,74 +81,74 @@ const styles = StyleSheet.create({
     },
     designerCardHeader: {
         flexDirection: 'row',
-        marginBottom: 12,
+        marginBottom: spacing.sm,
     },
     designerCardBody: {
-        marginBottom: 12,
+        marginBottom: spacing.sm,
     },
     designerAvatar: {
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: '#F4F4F5',
+        backgroundColor: tokens.bgSecondary,
     },
     designerInfo: {
         flex: 1,
-        marginLeft: 12,
+        marginLeft: spacing.sm,
     },
     designerName: {
-        fontSize: 16,
+        fontSize: typography.lg,
         fontWeight: '700',
-        color: '#09090B',
-        marginBottom: 4,
+        color: tokens.primary,
+        marginBottom: spacing.xs,
     },
     designerMeta: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 6,
+        marginBottom: spacing.xs + 2,
     },
     experienceText: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
     },
     divider: {
-        marginHorizontal: 4,
-        color: '#E4E4E7',
+        marginHorizontal: spacing.xs,
+        color: tokens.border,
     },
     ratingText: {
-        fontSize: 12,
+        fontSize: typography.caption,
         fontWeight: '600',
-        color: '#09090B',
-        marginLeft: 4,
+        color: tokens.primary,
+        marginLeft: spacing.xs,
     },
     reviewCountText: {
-        fontSize: 12,
-        color: '#A1A1AA',
+        fontSize: typography.caption,
+        color: tokens.tertiary,
         marginLeft: 2,
     },
     designerOrg: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: spacing.xs,
     },
     orgBadge: {
-        paddingHorizontal: 6,
+        paddingHorizontal: spacing.xs + 2,
         paddingVertical: 2,
-        borderRadius: 4,
-        marginRight: 6,
+        borderRadius: radii.xs,
+        marginRight: spacing.xs + 2,
     },
     personal: { backgroundColor: '#F0F9FF' },
     studio: { backgroundColor: '#F5F3FF' },
     company: { backgroundColor: '#ECFDF5' },
     orgBadgeText: {
-        fontSize: 10,
+        fontSize: typography.xs,
         fontWeight: '600',
-        color: '#09090B',
+        color: tokens.primary,
     },
     orgName: {
         flex: 1,
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
     },
     designerTagsRow: {
         flexDirection: 'row',
@@ -155,29 +156,29 @@ const styles = StyleSheet.create({
         // justifyContent: 'space-between', // Removed to control layout better
     },
     priceText: {
-        fontSize: 14,
+        fontSize: typography.body,
         fontWeight: '700',
-        color: '#EF4444',
-        marginRight: 12,
+        color: tokens.error,
+        marginRight: spacing.sm,
     },
     priceUnitText: {
-        fontSize: 12,
+        fontSize: typography.caption,
         fontWeight: '400',
-        color: '#71717A',
+        color: tokens.secondary,
     },
     distanceInfo: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     distanceText: {
-        fontSize: 12,
-        color: '#71717A',
-        marginLeft: 4,
+        fontSize: typography.caption,
+        color: tokens.secondary,
+        marginLeft: spacing.xs,
     },
     specialtyText: {
         flex: 1,
-        fontSize: 12,
-        color: '#A1A1AA',
+        fontSize: typography.caption,
+        color: tokens.tertiary,
         textAlign: 'right',
     },
 

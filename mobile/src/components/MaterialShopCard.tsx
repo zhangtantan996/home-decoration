@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MapPin, Star, Clock, Store } from 'lucide-react-native';
 import { MaterialShop } from '../types/provider';
+import { colors as tokens, spacing, radii, typography } from '../theme/tokens';
 
 interface MaterialShopCardProps {
     shop: MaterialShop;
@@ -78,14 +79,14 @@ export const MaterialShopCard = memo(({ shop, onPress }: MaterialShopCardProps) 
 
 const styles = StyleSheet.create({
     card: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        marginBottom: 12,
-        marginHorizontal: 16,
-        padding: 12,
+        backgroundColor: tokens.white,
+        borderRadius: radii.md,
+        marginBottom: spacing.sm,
+        marginHorizontal: spacing.md,
+        padding: spacing.sm,
         ...Platform.select({
             ios: {
-                shadowColor: '#000',
+                shadowColor: tokens.black,
                 shadowOffset: { width: 0, height: 2 },
                 shadowOpacity: 0.08,
                 shadowRadius: 8,
@@ -97,17 +98,17 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         flexDirection: 'row',
-        marginBottom: 12,
+        marginBottom: spacing.sm,
     },
     coverImage: {
         width: 100,
         height: 100,
-        borderRadius: 8,
-        backgroundColor: '#F4F4F5',
+        borderRadius: spacing.xs,
+        backgroundColor: tokens.bgSecondary,
     },
     infoContainer: {
         flex: 1,
-        marginLeft: 12,
+        marginLeft: spacing.sm,
         justifyContent: 'space-between',
     },
     headerRow: {
@@ -121,26 +122,26 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     shopName: {
-        fontSize: 16,
+        fontSize: typography.lg,
         fontWeight: '600',
-        color: '#09090B',
-        marginRight: 6,
+        color: tokens.primary,
+        marginRight: spacing.xs + 2,
         flexShrink: 1,
     },
     brandLogo: {
         width: 16,
         height: 16,
-        borderRadius: 4,
+        borderRadius: radii.xs,
     },
     metaRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 4,
+        marginTop: spacing.xs,
     },
     typeBadge: {
-        paddingHorizontal: 4,
+        paddingHorizontal: spacing.xs,
         paddingVertical: 1,
-        borderRadius: 4,
+        borderRadius: radii.xs,
     },
     brandBadge: {
         backgroundColor: '#FEF2F2',
@@ -149,73 +150,73 @@ const styles = StyleSheet.create({
         backgroundColor: '#EFF6FF',
     },
     typeText: {
-        fontSize: 10,
+        fontSize: typography.xs,
         fontWeight: '500',
     },
     brandText: {
-        color: '#EF4444',
+        color: tokens.error,
     },
     showroomText: {
-        color: '#3B82F6',
+        color: tokens.info,
     },
     divider: {
-        marginHorizontal: 4,
-        color: '#E4E4E7',
-        fontSize: 10,
+        marginHorizontal: spacing.xs,
+        color: tokens.border,
+        fontSize: typography.xs,
     },
     ratingText: {
-        fontSize: 12,
+        fontSize: typography.caption,
         fontWeight: '600',
-        color: '#09090B',
+        color: tokens.primary,
         marginLeft: 2,
     },
     reviewCountText: {
-        fontSize: 12,
-        color: '#A1A1AA',
+        fontSize: typography.caption,
+        color: tokens.tertiary,
         marginLeft: 2,
     },
     productsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 6,
+        marginTop: spacing.xs + 2,
     },
     productLabel: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
     },
     productText: {
         flex: 1,
-        fontSize: 12,
-        color: '#09090B',
+        fontSize: typography.caption,
+        color: tokens.primary,
     },
     addressRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginTop: 6,
+        marginTop: spacing.xs + 2,
     },
     addressInfo: {
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
-        marginRight: 8,
+        marginRight: spacing.xs,
     },
     addressText: {
         fontSize: 11,
-        color: '#A1A1AA',
+        color: tokens.tertiary,
         marginLeft: 2,
         flex: 1,
     },
     distanceText: {
         fontSize: 11,
-        color: '#71717A',
+        color: tokens.secondary,
     },
     footer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingTop: 8,
+        paddingTop: spacing.xs,
         borderTopWidth: 1,
-        borderTopColor: '#F4F4F5',
+        borderTopColor: tokens.bgSecondary,
     },
     tagsContainer: {
         flexDirection: 'row',
@@ -223,15 +224,15 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     tag: {
-        backgroundColor: '#F4F4F5',
-        paddingHorizontal: 6,
+        backgroundColor: tokens.bgSecondary,
+        paddingHorizontal: spacing.xs + 2,
         paddingVertical: 2,
-        borderRadius: 4,
-        marginRight: 6,
-        marginBottom: 4,
+        borderRadius: radii.xs,
+        marginRight: spacing.xs + 2,
+        marginBottom: spacing.xs,
     },
     tagText: {
-        fontSize: 10,
-        color: '#52525B',
+        fontSize: typography.xs,
+        color: tokens.gray600,
     },
 });
