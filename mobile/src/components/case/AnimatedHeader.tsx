@@ -110,6 +110,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.black,
   },
 });

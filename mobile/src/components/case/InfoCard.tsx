@@ -59,12 +59,12 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: typography.caption,
-    color: '#999999',
+    color: colors.gray400,
     marginBottom: 6,
   },
   value: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.black,
   },
 });

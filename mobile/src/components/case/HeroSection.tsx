@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
   heroPrice: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#FF6B35',
+    color: colors.warning,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,

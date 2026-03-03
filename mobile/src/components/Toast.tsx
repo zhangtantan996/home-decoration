@@ -48,10 +48,10 @@ const ToastContext = createContext<ToastContextType | null>(null);
 
 // 新版设计配置：轻量化、现代感
 const TOAST_THEME: Record<ToastType, { bg: string; border: string; iconColor: string; textColor: string }> = {
-    info: { bg: colors.white, border: colors.info, iconColor: colors.info, textColor: '#1F2937' },
-    success: { bg: colors.white, border: colors.success, iconColor: colors.success, textColor: '#1F2937' },
-    warning: { bg: colors.white, border: colors.warning, iconColor: colors.warning, textColor: '#1F2937' },
-    error: { bg: colors.white, border: colors.error, iconColor: colors.error, textColor: '#1F2937' },
+    info: { bg: colors.white, border: colors.info, iconColor: colors.info, textColor: colors.gray800 },
+    success: { bg: colors.white, border: colors.success, iconColor: colors.success, textColor: colors.gray800 },
+    warning: { bg: colors.white, border: colors.warning, iconColor: colors.warning, textColor: colors.gray800 },
+    error: { bg: colors.white, border: colors.error, iconColor: colors.error, textColor: colors.gray800 },
 };
 
 // 图标组件
@@ -285,13 +285,13 @@ const styles = StyleSheet.create({
     modalTitle: {
         fontSize: typography.h2,
         fontWeight: '700',
-        color: '#1A1A1A',
+        color: colors.black,
         textAlign: 'center',
         marginBottom: spacing.sm,
     },
     modalMessage: {
         fontSize: 15,
-        color: '#666',
+        color: colors.gray600,
         textAlign: 'center',
         lineHeight: 22,
         marginBottom: spacing.lg,
@@ -307,12 +307,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     cancelButton: {
-        backgroundColor: '#F5F5F5',
+        backgroundColor: colors.gray100,
     },
     cancelButtonText: {
         fontSize: typography.h3,
         fontWeight: '600',
-        color: '#666',
+        color: colors.gray600,
     },
     confirmButton: {
         backgroundColor: colors.black,
@@ -351,13 +351,13 @@ const styles = StyleSheet.create({
     },
     agreementText: {
         fontSize: 15,
-        color: '#666',
+        color: colors.gray600,
         textAlign: 'center',
         lineHeight: 24,
         marginBottom: spacing.lg,
     },
     agreementLink: {
-        color: '#1890FF',
+        color: colors.info,
     },
     agreeButton: {
         backgroundColor: colors.black,
@@ -377,6 +377,6 @@ const styles = StyleSheet.create({
     },
     disagreeButtonText: {
         fontSize: 15,
-        color: '#999',
+        color: colors.gray400,
     },
 });

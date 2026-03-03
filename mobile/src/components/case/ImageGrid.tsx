@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: typography.h2,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.black,
     marginBottom: spacing.md,
   },
   grid: {

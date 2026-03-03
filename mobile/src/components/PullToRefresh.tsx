@@ -352,7 +352,6 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        // backgroundColor: '#fff', // 移除背景色限制，由子组件决定
     },
 });
 
