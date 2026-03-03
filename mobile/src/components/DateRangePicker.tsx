@@ -416,7 +416,7 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
         overflow: 'hidden',
         backgroundColor: colors.bgCard,
-        shadowColor: '#000',
+        shadowColor: colors.black,
         shadowOffset: { width: 0, height: -2 },
         shadowOpacity: 0.1,
         shadowRadius: 10,

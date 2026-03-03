@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
         backgroundColor: colors.bgCard,
         borderRadius: 16,
         padding: 24,
-        shadowColor: '#000',
+        shadowColor: colors.black,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
         shadowRadius: 8,

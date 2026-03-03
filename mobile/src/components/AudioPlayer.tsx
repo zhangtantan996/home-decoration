@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
         backgroundColor: PRIMARY_GOLD,
         top: -4,
         marginLeft: -6,
-        shadowColor: "#000",
+        shadowColor: colors.black,
         shadowOffset: {
             width: 0,
             height: 1,
