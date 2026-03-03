@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Inbox, Search, FileQuestion } from 'lucide-react-native';
+import { colors, spacing, radii, typography } from '../theme/tokens';
 
 interface EmptyViewProps {
     type?: 'default' | 'search' | 'data';
@@ -41,7 +42,7 @@ export const EmptyView: React.FC<EmptyViewProps> = ({
     return (
         <View style={styles.container}>
             <View style={styles.iconContainer}>
-                <IconComponent size={40} color="#D4D4D8" strokeWidth={1.5} />
+                <IconComponent size={40} color={colors.gray300} strokeWidth={1.5} />
             </View>
             <Text style={styles.title}>{title || config.title}</Text>
             <Text style={styles.subtitle}>{subtitle || config.subtitle}</Text>
@@ -66,33 +67,33 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 40,
-        backgroundColor: '#FAFAFA',
+        backgroundColor: colors.gray50,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: spacing.lg - 4,
     },
     title: {
-        fontSize: 16,
+        fontSize: typography.h3,
         fontWeight: '600',
-        color: '#3F3F46',
-        marginBottom: 8,
+        color: colors.gray700,
+        marginBottom: spacing.xs,
     },
     subtitle: {
-        fontSize: 14,
-        color: '#A1A1AA',
+        fontSize: typography.body,
+        color: colors.gray400,
         textAlign: 'center',
     },
     actionButton: {
-        marginTop: 24,
-        paddingHorizontal: 20,
+        marginTop: spacing.lg,
+        paddingHorizontal: spacing.lg - 4,
         paddingVertical: 10,
-        borderRadius: 20,
+        borderRadius: spacing.lg - 4,
         borderWidth: 1,
-        borderColor: '#E4E4E7',
+        borderColor: colors.border,
     },
     actionText: {
-        fontSize: 14,
-        color: '#52525B',
+        fontSize: typography.body,
+        color: colors.gray600,
     },
 });
 

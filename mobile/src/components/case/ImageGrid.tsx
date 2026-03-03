@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import { colors, spacing, radii, typography } from '../../theme/tokens';
 
 interface ImageGridProps {
   images: string[];
@@ -7,9 +8,9 @@ interface ImageGridProps {
 }
 
 // 布局常量：精确计算图片尺寸
-const OUTER_MARGIN = 16; // 容器外边距
-const INNER_PADDING = 16; // 容器内边距
-const COLUMN_GAP = 12; // 列间距
+const OUTER_MARGIN = 16;
+const INNER_PADDING = 16;
+const COLUMN_GAP = spacing.sm;
 
 export const ImageGrid: React.FC<ImageGridProps> = ({ images, onImagePress }) => {
   // 使用 useWindowDimensions 支持屏幕旋转和动态尺寸
@@ -49,17 +50,17 @@ export const ImageGrid: React.FC<ImageGridProps> = ({ images, onImagePress }) =>
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
+    marginTop: spacing.md,
+    marginHorizontal: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: spacing.lg + 4,
+    padding: spacing.md,
   },
   title: {
-    fontSize: 18,
+    fontSize: typography.h2,
     fontWeight: '600',
     color: '#1A1A1A',
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   grid: {
     flexDirection: 'row',
@@ -67,14 +68,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   imageWrapper: {
-    // 宽高由组件动态计算传入
-    marginBottom: 12,
-    borderRadius: 16,
+    marginBottom: spacing.sm,
+    borderRadius: radii.lg,
     overflow: 'hidden',
   },
   image: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.gray100,
   },
 });

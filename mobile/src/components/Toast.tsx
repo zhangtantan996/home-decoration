@@ -11,6 +11,7 @@ import {
     Easing,
 } from 'react-native';
 import { Check, X, Info, AlertTriangle } from 'lucide-react-native';
+import { colors, spacing, radii, typography } from '../theme/tokens';
 
 const { width } = Dimensions.get('window');
 
@@ -47,10 +48,10 @@ const ToastContext = createContext<ToastContextType | null>(null);
 
 // 新版设计配置：轻量化、现代感
 const TOAST_THEME: Record<ToastType, { bg: string; border: string; iconColor: string; textColor: string }> = {
-    info: { bg: '#FFFFFF', border: '#3B82F6', iconColor: '#3B82F6', textColor: '#1F2937' },
-    success: { bg: '#FFFFFF', border: '#10B981', iconColor: '#10B981', textColor: '#1F2937' },
-    warning: { bg: '#FFFFFF', border: '#F59E0B', iconColor: '#F59E0B', textColor: '#1F2937' },
-    error: { bg: '#FFFFFF', border: '#EF4444', iconColor: '#EF4444', textColor: '#1F2937' },
+    info: { bg: colors.white, border: colors.info, iconColor: colors.info, textColor: '#1F2937' },
+    success: { bg: colors.white, border: colors.success, iconColor: colors.success, textColor: '#1F2937' },
+    warning: { bg: colors.white, border: colors.warning, iconColor: colors.warning, textColor: '#1F2937' },
+    error: { bg: colors.white, border: colors.error, iconColor: colors.error, textColor: '#1F2937' },
 };
 
 // 图标组件
@@ -242,31 +243,31 @@ const styles = StyleSheet.create({
     toastContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 8, // 减小垂直内边距
-        paddingHorizontal: 12, // 减小水平内边距
-        borderRadius: 50,
-        maxWidth: width - 60, // 限制最大宽度，更小巧
+        paddingVertical: spacing.xs,
+        paddingHorizontal: spacing.sm,
+        borderRadius: radii.full,
+        maxWidth: width - 60,
         alignSelf: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
         shadowRadius: 12,
         elevation: 6,
-        borderLeftWidth: 3, // 稍微减细强调线
-        backgroundColor: '#FFFFFF',
+        borderLeftWidth: 3,
+        backgroundColor: colors.white,
     },
     iconContainer: {
-        width: 24, // 减小图标容器
+        width: 24,
         height: 24,
-        borderRadius: 12,
+        borderRadius: radii.md,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 8,
+        marginRight: spacing.xs,
     },
     toastText: {
-        fontSize: 13, // 稍微减小字号
+        fontSize: typography.caption,
         fontWeight: '600',
-        flexShrink: 1, // 允许文字换行但保持紧凑
+        flexShrink: 1,
     },
     // Modal Styles ...
     modalOverlay: {
@@ -277,27 +278,27 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         width: width - 60,
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 24,
+        backgroundColor: colors.white,
+        borderRadius: radii.lg,
+        padding: spacing.lg,
     },
     modalTitle: {
-        fontSize: 18,
+        fontSize: typography.h2,
         fontWeight: '700',
         color: '#1A1A1A',
         textAlign: 'center',
-        marginBottom: 12,
+        marginBottom: spacing.sm,
     },
     modalMessage: {
         fontSize: 15,
         color: '#666',
         textAlign: 'center',
         lineHeight: 22,
-        marginBottom: 24,
+        marginBottom: spacing.lg,
     },
     modalButtons: {
         flexDirection: 'row',
-        gap: 12,
+        gap: spacing.sm,
     },
     modalButton: {
         flex: 1,
@@ -309,17 +310,17 @@ const styles = StyleSheet.create({
         backgroundColor: '#F5F5F5',
     },
     cancelButtonText: {
-        fontSize: 16,
+        fontSize: typography.h3,
         fontWeight: '600',
         color: '#666',
     },
     confirmButton: {
-        backgroundColor: '#000',
+        backgroundColor: colors.black,
     },
     confirmButtonText: {
-        fontSize: 16,
+        fontSize: typography.h3,
         fontWeight: '600',
-        color: '#fff',
+        color: colors.white,
     },
     agreementOverlay: {
         flex: 1,
@@ -334,44 +335,44 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
     },
     agreementSheet: {
-        backgroundColor: '#fff',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingHorizontal: 24,
+        backgroundColor: colors.white,
+        borderTopLeftRadius: spacing.lg + 4,
+        borderTopRightRadius: spacing.lg + 4,
+        paddingHorizontal: spacing.lg,
         paddingTop: 28,
         paddingBottom: 40,
     },
     agreementTitle: {
-        fontSize: 18,
+        fontSize: typography.h2,
         fontWeight: '700',
-        color: '#000',
+        color: colors.black,
         textAlign: 'center',
-        marginBottom: 16,
+        marginBottom: spacing.md,
     },
     agreementText: {
         fontSize: 15,
         color: '#666',
         textAlign: 'center',
         lineHeight: 24,
-        marginBottom: 24,
+        marginBottom: spacing.lg,
     },
     agreementLink: {
         color: '#1890FF',
     },
     agreeButton: {
-        backgroundColor: '#000',
-        paddingVertical: 16,
+        backgroundColor: colors.black,
+        paddingVertical: spacing.md,
         borderRadius: 28,
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: spacing.sm,
     },
     agreeButtonText: {
         fontSize: 17,
         fontWeight: '600',
-        color: '#fff',
+        color: colors.white,
     },
     disagreeButton: {
-        paddingVertical: 12,
+        paddingVertical: spacing.sm,
         alignItems: 'center',
     },
     disagreeButtonText: {
