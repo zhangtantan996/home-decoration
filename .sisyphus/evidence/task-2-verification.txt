@@ -1,0 +1,7 @@
+✅ Generated files verification:
+- tokens.ts:       66 lines
+- tokens.raw.ts:       34 lines
+- colors.primary: 
+- colorsRaw.primary: 
+- typography.body: 
+✅ All files generated successfully

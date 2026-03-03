@@ -8,6 +8,7 @@
     "dev:mobile": "cd mobile && npm run web",
     "dev:website": "cd website && npx vite --port 5175",
     "dev": "npm run infra && concurrently -n \"API,ADMIN,MOBILE\" -c \"magenta,blue,green\" \"npm run dev:server\" \"npm run dev:admin\" \"npm run dev:mobile\"",
+    "gen:tokens": "node shared/design-tokens/scripts/generate-rn.js",
     "test:e2e": "npx playwright test",
     "test:identity:acceptance": "node scripts/identity-acceptance-runner.mjs",
     "test:identity:acceptance:api": "npx playwright test -c playwright.identity.config.ts --project=identity-api",
