@@ -29,6 +29,8 @@ import { ChevronDown, MapPin, Search, Maximize2, ArrowLeft, X, Star, MapPinned, 
 import { DesignerCard } from '../components/DesignerCard';
 import { WorkerCard } from '../components/WorkerCard';
 import { MaterialShopCard } from '../components/MaterialShopCard';
+import { colors as tokens, spacing, radii, typography } from '../theme/tokens';
+import { colorsRaw } from '../theme/tokens.raw';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -288,9 +290,9 @@ const HomeScreen: React.FC = () => {
                     height: Platform.OS === 'ios' ? 88 : 70,
                     paddingBottom: Platform.OS === 'ios' ? 28 : 18,
                     paddingTop: 6,
-                    backgroundColor: '#FFFFFF',
+                    backgroundColor: tokens.white,
                     borderTopWidth: 1,
-                    borderTopColor: '#F4F4F5',
+                    borderTopColor: tokens.borderSoft,
                 }
         });
     }, [isSearchFocused, navigation]);
@@ -609,7 +611,7 @@ const HomeScreen: React.FC = () => {
                                 }}
                             >
                                 <Text style={styles.sortBtnText}>{currentSortLabel}</Text>
-                                <ChevronDown size={14} color="#71717A" />
+                                <ChevronDown size={14} color={tokens.secondary} />
                             </TouchableOpacity>
                         </View>
                         <View style={styles.filterRight}>
@@ -640,7 +642,7 @@ const HomeScreen: React.FC = () => {
                                 left: filterButtonLayout.x,
                                 width: filterButtonLayout.width + 100,
                                 zIndex: 1001,
-                                borderRadius: 8,
+                                borderRadius: radii.sm,
                                 ...Platform.select({
                                     ios: {
                                         shadowColor: '#000',
@@ -661,7 +663,7 @@ const HomeScreen: React.FC = () => {
                                     onPress={() => { setDesignerSortBy(option.id); setShowDesignerSortMenu(false); }}
                                 >
                                     <Text style={[styles.sortDropdownText, designerSortBy === option.id && styles.sortDropdownTextActive]}>{option.label}</Text>
-                                    {designerSortBy === option.id && <Check size={16} color="#09090B" />}
+                                    {designerSortBy === option.id && <Check size={16} color={tokens.primary} />}
                                 </TouchableOpacity>
                             ))}
                         </View>
@@ -700,7 +702,7 @@ const HomeScreen: React.FC = () => {
                                 }}
                             >
                                 <Text style={styles.sortBtnText}>{CONSTRUCTION_SORT_OPTIONS.find(o => o.id === constructionSortBy)?.label}</Text>
-                                <ChevronDown size={14} color="#71717A" />
+                                <ChevronDown size={14} color={tokens.secondary} />
                             </TouchableOpacity>
                         </View>
                         <View style={styles.filterRight}>
@@ -729,7 +731,7 @@ const HomeScreen: React.FC = () => {
                                 left: filterButtonLayout.x,
                                 width: filterButtonLayout.width + 100,
                                 zIndex: 1001,
-                                borderRadius: 8,
+                                borderRadius: radii.sm,
                                 ...Platform.select({
                                     ios: {
                                         shadowColor: '#000',
@@ -750,7 +752,7 @@ const HomeScreen: React.FC = () => {
                                     onPress={() => { setConstructionSortBy(option.id); setShowConstructionSortMenu(false); }}
                                 >
                                     <Text style={[styles.sortDropdownText, constructionSortBy === option.id && styles.sortDropdownTextActive]}>{option.label}</Text>
-                                    {constructionSortBy === option.id && <Check size={16} color="#09090B" />}
+                                    {constructionSortBy === option.id && <Check size={16} color={tokens.primary} />}
                                 </TouchableOpacity>
                             ))}
                         </View>
@@ -809,14 +811,14 @@ const HomeScreen: React.FC = () => {
                                 }}
                             >
                                 <Text style={styles.sortBtnText}>{MATERIAL_SORT_OPTIONS.find(o => o.id === materialSortBy)?.label}</Text>
-                                <ChevronDown size={14} color="#71717A" />
+                                <ChevronDown size={14} color={tokens.secondary} />
                             </TouchableOpacity>
                         </View>
                         <TouchableOpacity
                             style={[styles.filterIconBtn, hasActiveFilter && styles.filterIconBtnActive]}
                             onPress={toggleMaterialFilterPanel}
                         >
-                            <SlidersHorizontal size={16} color={hasActiveFilter ? '#FFFFFF' : '#71717A'} />
+                            <SlidersHorizontal size={16} color={hasActiveFilter ? tokens.white : tokens.secondary} />
                             <Text style={[styles.filterIconText, hasActiveFilter && styles.filterIconTextActive]}>
                                 {hasActiveFilter ? categoryLabel : '筛选'}
                             </Text>
@@ -837,7 +839,7 @@ const HomeScreen: React.FC = () => {
                                 left: filterButtonLayout.x,
                                 width: filterButtonLayout.width + 100,
                                 zIndex: 1001,
-                                borderRadius: 8,
+                                borderRadius: radii.sm,
                                 ...Platform.select({
                                     ios: {
                                         shadowColor: '#000',
@@ -858,7 +860,7 @@ const HomeScreen: React.FC = () => {
                                     onPress={() => { setMaterialSortBy(option.id); setShowMaterialSortMenu(false); }}
                                 >
                                     <Text style={[styles.sortDropdownText, materialSortBy === option.id && styles.sortDropdownTextActive]}>{option.label}</Text>
-                                    {materialSortBy === option.id && <Check size={16} color="#09090B" />}
+                                    {materialSortBy === option.id && <Check size={16} color={tokens.primary} />}
                                 </TouchableOpacity>
                             ))}
                         </View>
@@ -963,7 +965,7 @@ const HomeScreen: React.FC = () => {
         <SafeAreaView style={styles.container}>
             <StatusBar
                 barStyle="dark-content"
-                backgroundColor="#FFFFFF"
+                backgroundColor={tokens.white}
                 translucent={Platform.OS === 'android'}
             />
             <TouchableWithoutFeedback onPress={handleBackdropPress}>
@@ -973,14 +975,14 @@ const HomeScreen: React.FC = () => {
                         {isSearchFocused ? (
                             <>
                                 <TouchableOpacity style={styles.backBtn} onPress={() => { setIsSearchFocused(false); setIsSearching(false); setSearchText(''); }}>
-                                    <ArrowLeft size={20} color="#09090B" />
+                                    <ArrowLeft size={20} color={tokens.primary} />
                                 </TouchableOpacity>
                                 <View style={[styles.searchBar, { flex: 1, marginRight: 0 }]}>
-                                    <Search size={16} color="#A1A1AA" />
+                                    <Search size={16} color={tokens.placeholder} />
                                     <TextInput
                                         style={styles.searchInput}
                                         placeholder="搜索设计师 / 施工队"
-                                        placeholderTextColor="#A1A1AA"
+                                        placeholderTextColor={tokens.placeholder}
                                         value={searchText}
                                         onChangeText={(text) => { setSearchText(text); if (!text.trim() && isSearching) setIsSearching(false); }}
                                         returnKeyType="search"
@@ -989,7 +991,7 @@ const HomeScreen: React.FC = () => {
                                     />
                                     {searchText.length > 0 && (
                                         <TouchableOpacity onPress={() => { setSearchText(''); setIsSearching(false); }} style={styles.clearSearchBtn}>
-                                            <X size={16} color="#71717A" />
+                                            <X size={16} color={tokens.secondary} />
                                         </TouchableOpacity>
                                     )}
                                 </View>
@@ -997,15 +999,15 @@ const HomeScreen: React.FC = () => {
                         ) : (
                             <>
                                 <TouchableOpacity style={styles.locationBtn} onPress={handleLocationPress}>
-                                    <MapPin size={16} color="#71717A" />
+                                    <MapPin size={16} color={tokens.secondary} />
                                     <Text style={styles.locationText}>{currentCity}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.searchBar} activeOpacity={0.7} onPress={() => setIsSearchFocused(true)}>
-                                    <Search size={16} color="#A1A1AA" />
+                                    <Search size={16} color={tokens.placeholder} />
                                     <Text style={styles.searchPlaceholder} numberOfLines={1}>{searchText || '搜索设计师 / 施工队'}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('ScanQR' as never)}>
-                                    <Maximize2 size={20} color="#09090B" />
+                                    <Maximize2 size={20} color={tokens.primary} />
                                 </TouchableOpacity>
                             </>
                         )}
@@ -1029,8 +1031,8 @@ const HomeScreen: React.FC = () => {
                                 <View style={styles.listSection}>
                                     {unifiedSearchResults.length === 0 ? (
                                         <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                                            <Text style={{ fontSize: 16, color: '#71717A' }}>未找到相关结果</Text>
-                                            <Text style={{ fontSize: 13, color: '#A1A1AA', marginTop: 8 }}>试试其他关键词</Text>
+                                            <Text style={{ fontSize: typography.h3, color: tokens.secondary }}>未找到相关结果</Text>
+                                            <Text style={{ fontSize: typography.body - 1, color: tokens.placeholder, marginTop: spacing.xs }}>试试其他关键词</Text>
                                         </View>
                                      ) : (
                                          unifiedSearchResults.map((item, index) => (
@@ -1064,8 +1066,8 @@ const HomeScreen: React.FC = () => {
                                                                 {item._type === 'designer' ? '设计师' : item._type === 'construction' ? '施工' : '主材'}
                                                             </Text>
                                                         </View>
-                                                        <Star size={12} color="#F59E0B" fill="#F59E0B" />
-                                                        <Text style={{ fontSize: 12, color: '#09090B', marginLeft: 2 }}>{item.rating}</Text>
+                                                        <Star size={12} color={tokens.warning} fill={tokens.warning} />
+                                                        <Text style={{ fontSize: typography.caption, color: tokens.primary, marginLeft: 2 }}>{item.rating}</Text>
                                                     </View>
                                                     <Text style={styles.searchResultDesc} numberOfLines={1}>
                                                         {item._type === 'material' ? `${item.brand} · ¥${item.price}/${item.unit}` : item.specialty || item.workTypeLabels}
@@ -1104,7 +1106,7 @@ const HomeScreen: React.FC = () => {
                                         onRefresh={handleRefresh}
                                         onEndReached={() => { if (activeCategory === 'designer') handleLoadMore(); }}
                                         onEndReachedThreshold={0.2}
-                                        ListFooterComponent={loadingMoreDesigners ? <ActivityIndicator style={{ paddingVertical: 16 }} size="small" color="#A1A1AA" /> : <View style={{ height: 100 }} />}
+                                        ListFooterComponent={loadingMoreDesigners ? <ActivityIndicator style={{ paddingVertical: spacing.md }} size="small" color={tokens.placeholder} /> : <View style={{ height: 100 }} />}
                                         showsVerticalScrollIndicator={false}
                                     />
                                 </Animated.View>
@@ -1132,7 +1134,7 @@ const HomeScreen: React.FC = () => {
                                         onRefresh={handleRefresh}
                                         onEndReached={() => { if (activeCategory === 'construction') handleLoadMore(); }}
                                         onEndReachedThreshold={0.2}
-                                        ListFooterComponent={loadingMoreWorkers ? <ActivityIndicator style={{ paddingVertical: 16 }} size="small" color="#A1A1AA" /> : <View style={{ height: 100 }} />}
+                                        ListFooterComponent={loadingMoreWorkers ? <ActivityIndicator style={{ paddingVertical: spacing.md }} size="small" color={tokens.placeholder} /> : <View style={{ height: 100 }} />}
                                         showsVerticalScrollIndicator={false}
                                     />
                                 </Animated.View>
@@ -1178,7 +1180,7 @@ const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: tokens.white,
     },
     tabPane: {
         ...StyleSheet.absoluteFillObject,
@@ -1186,12 +1188,12 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
+        paddingHorizontal: spacing.md,
         paddingTop: Platform.OS === 'ios' ? 12 : 44, // 适配沉浸式状态栏
         paddingBottom: 12,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: tokens.white,
         borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
+        borderBottomColor: tokens.borderSoft,
         zIndex: 100,
     },
     locationBtn: {
@@ -1200,60 +1202,60 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     locationText: {
-        fontSize: 14,
+        fontSize: typography.body,
         fontWeight: '500',
-        color: '#09090B',
+        color: tokens.primary,
         marginLeft: 4,
     },
     searchBar: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#F4F4F5',
+        backgroundColor: tokens.borderSoft,
         borderRadius: 20,
         paddingHorizontal: 12,
         height: 36,
-        marginRight: 8,
+        marginRight: spacing.xs,
         overflow: 'hidden',
     },
     searchInput: {
         flex: 1,
-        fontSize: 13,
-        color: '#09090B',
-        marginLeft: 8,
+        fontSize: typography.body - 1,
+        color: tokens.primary,
+        marginLeft: spacing.xs,
         padding: 0, // Android fix
     },
     searchPlaceholder: {
         flex: 1,
-        fontSize: 13,
-        color: '#A1A1AA',
-        marginLeft: 8,
+        fontSize: typography.body - 1,
+        color: tokens.placeholder,
+        marginLeft: spacing.xs,
     },
     hotSearchSection: {
-        padding: 16,
-        backgroundColor: '#FFFFFF',
+        padding: spacing.md,
+        backgroundColor: tokens.white,
     },
     hotSearchTitle: {
-        fontSize: 14,
+        fontSize: typography.body,
         fontWeight: '600',
-        color: '#09090B',
-        marginBottom: 12,
+        color: tokens.primary,
+        marginBottom: spacing.sm,
     },
     hotSearchTags: {
         flexDirection: 'row',
         flexWrap: 'wrap',
     },
     hotSearchTag: {
-        backgroundColor: '#F4F4F5',
+        backgroundColor: tokens.borderSoft,
         paddingHorizontal: 14,
-        paddingVertical: 8,
+        paddingVertical: spacing.xs,
         borderRadius: 16,
-        marginRight: 8,
+        marginRight: spacing.xs,
         marginBottom: 8,
     },
     hotSearchTagText: {
-        fontSize: 13,
-        color: '#52525B',
+        fontSize: typography.body - 1,
+        color: tokens.gray600,
     },
     clearSearchBtn: {
         padding: 4,
@@ -1263,29 +1265,29 @@ const styles = StyleSheet.create({
         height: 40,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 8,
+        marginRight: spacing.xs,
     },
     searchResultsHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        backgroundColor: '#FFFFFF',
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        backgroundColor: tokens.white,
         borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
+        borderBottomColor: tokens.borderSoft,
     },
     searchResultsInfo: {
-        fontSize: 13,
-        color: '#71717A',
+        fontSize: typography.body - 1,
+        color: tokens.secondary,
     },
     searchResultCard: {
         flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
+        backgroundColor: tokens.white,
+        borderRadius: radii.md,
         padding: 12,
         marginHorizontal: 16,
-        marginBottom: 12,
+        marginBottom: spacing.sm,
         ...Platform.select({
             ios: {
                 shadowColor: '#000',
@@ -1302,22 +1304,22 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: '#F4F4F5',
+        backgroundColor: tokens.borderSoft,
     },
     searchResultImage: {
         width: 80,
         height: 80,
-        borderRadius: 8,
-        backgroundColor: '#F4F4F5',
+        borderRadius: radii.sm,
+        backgroundColor: tokens.borderSoft,
     },
     searchResultInfo: {
         flex: 1,
         marginLeft: 12,
     },
     searchResultName: {
-        fontSize: 15,
+        fontSize: typography.h3 - 1,
         fontWeight: '600',
-        color: '#09090B',
+        color: tokens.primary,
         marginBottom: 4,
     },
     searchResultMeta: {
@@ -1328,21 +1330,21 @@ const styles = StyleSheet.create({
     searchResultTypeBadge: {
         paddingHorizontal: 6,
         paddingVertical: 2,
-        borderRadius: 4,
-        marginRight: 8,
+        borderRadius: radii.xs,
+        marginRight: spacing.xs,
     },
     searchResultTypeBadgeText: {
-        fontSize: 10,
+        fontSize: typography.xs,
         fontWeight: '600',
     },
     searchResultDesc: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
     },
     searchResultPrice: {
-        fontSize: 16,
+        fontSize: typography.h3,
         fontWeight: '700',
-        color: '#EF4444',
+        color: tokens.error,
     },
     iconBtn: {
         width: 36,
@@ -1358,8 +1360,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-around',
         paddingVertical: 20,
-        paddingHorizontal: 16,
-        backgroundColor: '#FFFFFF',
+        paddingHorizontal: spacing.md,
+        backgroundColor: tokens.white,
     },
     categoryTab: {
         alignItems: 'center',
@@ -1375,33 +1377,33 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     categoryIconBoxInactive: {
-        backgroundColor: '#F8F9FA',
+        backgroundColor: tokens.bgPage,
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.03)',
     },
     categoryIconBoxActive: {
-        backgroundColor: '#09090B',
+        backgroundColor: tokens.primary,
     },
     categoryLabel: {
-        fontSize: 13,
+        fontSize: typography.body - 1,
         fontWeight: '500',
-        color: '#71717A',
+        color: tokens.secondary,
     },
     categoryLabelActive: {
-        color: '#09090B',
+        color: tokens.primary,
         fontWeight: '700',
     },
     filterSectionWrapper: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: tokens.white,
         zIndex: 90,
     },
     filterSection: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        backgroundColor: '#FFFFFF',
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        backgroundColor: tokens.white,
     },
     filterLeft: {
         flexDirection: 'row',
@@ -1414,74 +1416,74 @@ const styles = StyleSheet.create({
     sortBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        backgroundColor: '#F4F4F5',
-        borderRadius: 6,
+        paddingVertical: spacing.xs - 2,
+        paddingHorizontal: spacing.xs + 2,
+        backgroundColor: tokens.borderSoft,
+        borderRadius: radii.xs,
     },
     sortBtnText: {
-        fontSize: 13,
-        color: '#09090B',
+        fontSize: typography.body - 1,
+        color: tokens.primary,
         marginRight: 4,
     },
     orgFilterBtn: {
         paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 6,
-        marginLeft: 8,
-        backgroundColor: '#F4F4F5',
+        paddingVertical: spacing.xs - 2,
+        borderRadius: radii.xs,
+        marginLeft: spacing.xs,
+        backgroundColor: tokens.borderSoft,
     },
     orgFilterBtnActive: {
-        backgroundColor: '#09090B',
+        backgroundColor: tokens.primary,
     },
     orgFilterText: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
     },
     orgFilterTextActive: {
-        color: '#FFFFFF',
+        color: tokens.white,
     },
     filterBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        backgroundColor: '#F4F4F5',
-        borderRadius: 6,
-        marginLeft: 8,
+        paddingHorizontal: spacing.xs + 2,
+        paddingVertical: spacing.xs - 2,
+        backgroundColor: tokens.borderSoft,
+        borderRadius: radii.xs,
+        marginLeft: spacing.xs,
     },
     filterBtnActive: {
-        backgroundColor: '#E4E4E7',
+        backgroundColor: tokens.border,
     },
     filterBtnText: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
         marginLeft: 4,
     },
     filterBtnTextActive: {
-        color: '#09090B',
+        color: tokens.primary,
     },
     filterIconBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 12,
-        paddingVertical: 6,
-        backgroundColor: '#F4F4F5',
-        borderRadius: 6,
+        paddingVertical: spacing.xs - 2,
+        backgroundColor: tokens.borderSoft,
+        borderRadius: radii.xs,
     },
     filterIconBtnActive: {
-        backgroundColor: '#09090B',
+        backgroundColor: tokens.primary,
     },
     filterIconText: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
         marginLeft: 4,
     },
     filterIconTextActive: {
-        color: '#FFFFFF',
+        color: tokens.white,
     },
     listSection: {
-        padding: 16,
+        padding: spacing.md,
     },
 
     emptyState: {
@@ -1490,49 +1492,49 @@ const styles = StyleSheet.create({
         paddingVertical: 60,
     },
     emptyStateTitle: {
-        fontSize: 18,
+        fontSize: typography.h2,
         fontWeight: '700',
-        color: '#09090B',
+        color: tokens.primary,
         marginTop: 16,
         marginBottom: 8,
     },
     emptyStateSub: {
-        fontSize: 14,
-        color: '#71717A',
+        fontSize: typography.body,
+        color: tokens.secondary,
     },
     comingSoonText: {
-        fontSize: 14,
-        color: '#A1A1AA',
+        fontSize: typography.body,
+        color: tokens.placeholder,
         textAlign: 'center',
         width: '100%',
     },
 
     // 排序下拉菜单样式
     sortDropdown: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: tokens.white,
         borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
+        borderBottomColor: tokens.borderSoft,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
     },
     sortDropdownItem: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 12,
+        paddingVertical: spacing.sm,
         paddingHorizontal: 12,
-        borderRadius: 8,
+        borderRadius: radii.sm,
         marginVertical: 2,
     },
     sortDropdownItemActive: {
-        backgroundColor: '#F4F4F5',
+        backgroundColor: tokens.borderSoft,
     },
     sortDropdownText: {
-        fontSize: 14,
-        color: '#71717A',
+        fontSize: typography.body,
+        color: tokens.secondary,
     },
     sortDropdownTextActive: {
-        color: '#09090B',
+        color: tokens.primary,
         fontWeight: '600',
     },
     // Modal 样式
@@ -1542,7 +1544,7 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     categoryModalContent: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: tokens.white,
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         paddingBottom: 40,
@@ -1551,37 +1553,37 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 16,
+        padding: spacing.md,
         borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
+        borderBottomColor: tokens.borderSoft,
     },
     categoryModalTitle: {
-        fontSize: 16,
+        fontSize: typography.h3,
         fontWeight: '600',
-        color: '#09090B',
+        color: tokens.primary,
     },
     categoryGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        padding: 16,
+        padding: spacing.md,
     },
     categoryGridItem: {
         width: (SCREEN_WIDTH - 32 - 24) / 4,
-        paddingVertical: 12,
+        paddingVertical: spacing.sm,
         margin: 4,
-        backgroundColor: '#F4F4F5',
-        borderRadius: 8,
+        backgroundColor: tokens.borderSoft,
+        borderRadius: radii.sm,
         alignItems: 'center',
     },
     categoryGridItemActive: {
-        backgroundColor: '#09090B',
+        backgroundColor: tokens.primary,
     },
     categoryGridText: {
-        fontSize: 13,
-        color: '#71717A',
+        fontSize: typography.body - 1,
+        color: tokens.secondary,
     },
     categoryGridTextActive: {
-        color: '#FFFFFF',
+        color: tokens.white,
         fontWeight: '600',
     },
     // 工种筛选下拉菜单样式
@@ -1593,9 +1595,9 @@ const styles = StyleSheet.create({
     },
     // 主材分类下拉菜单样式
     categoryDropdown: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: tokens.white,
         borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
+        borderBottomColor: tokens.borderSoft,
     },
     categoryDropdownGrid: {
         flexDirection: 'row',
@@ -1604,21 +1606,21 @@ const styles = StyleSheet.create({
     },
     categoryDropdownItem: {
         width: (SCREEN_WIDTH - 32 - 48) / 4,
-        paddingVertical: 10,
+        paddingVertical: spacing.xs + 2,
         margin: 4,
-        backgroundColor: '#F4F4F5',
-        borderRadius: 6,
+        backgroundColor: tokens.borderSoft,
+        borderRadius: radii.xs,
         alignItems: 'center',
     },
     categoryDropdownItemActive: {
-        backgroundColor: '#09090B',
+        backgroundColor: tokens.primary,
     },
     categoryDropdownText: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
     },
     categoryDropdownTextActive: {
-        color: '#FFFFFF',
+        color: tokens.white,
         fontWeight: '600',
     },
     workTypeDropdownItem: {
@@ -1626,57 +1628,57 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 10,
+        paddingVertical: spacing.xs + 2,
         margin: 4,
-        backgroundColor: '#F4F4F5',
-        borderRadius: 8,
+        backgroundColor: tokens.borderSoft,
+        borderRadius: radii.sm,
         borderWidth: 1,
         borderColor: 'transparent',
     },
     workTypeDropdownItemActive: {
-        backgroundColor: '#FFFFFF',
-        borderColor: '#09090B',
+        backgroundColor: tokens.white,
+        borderColor: tokens.primary,
     },
     workTypeDropdownText: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
         marginRight: 4,
     },
     workTypeDropdownTextActive: {
-        color: '#09090B',
+        color: tokens.primary,
         fontWeight: '600',
     },
     dropdownFooter: {
         flexDirection: 'row',
         padding: 12,
         borderTopWidth: 1,
-        borderTopColor: '#F4F4F5',
+        borderTopColor: tokens.borderSoft,
     },
     dropdownResetBtn: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
-        paddingVertical: 12,
-        borderRadius: 8,
+        backgroundColor: tokens.white,
+        paddingVertical: spacing.sm,
+        borderRadius: radii.sm,
         alignItems: 'center',
-        marginRight: 8,
+        marginRight: spacing.xs,
         borderWidth: 1,
-        borderColor: '#E4E4E7',
+        borderColor: tokens.border,
     },
     dropdownResetBtnText: {
-        color: '#71717A',
-        fontSize: 14,
+        color: tokens.secondary,
+        fontSize: typography.body,
         fontWeight: '600',
     },
     dropdownConfirmBtn: {
         flex: 2,
-        backgroundColor: '#09090B',
-        paddingVertical: 12,
-        borderRadius: 8,
+        backgroundColor: tokens.primary,
+        paddingVertical: spacing.sm,
+        borderRadius: radii.sm,
         alignItems: 'center',
     },
     dropdownConfirmBtnText: {
-        color: '#FFFFFF',
-        fontSize: 14,
+        color: tokens.white,
+        fontSize: typography.body,
         fontWeight: '600',
     },
     // 加载、错误、空状态样式
@@ -1687,8 +1689,8 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         marginTop: 12,
-        fontSize: 14,
-        color: '#71717A',
+        fontSize: typography.body,
+        color: tokens.secondary,
     },
     errorContainer: {
         paddingVertical: 60,
@@ -1696,19 +1698,19 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     errorText: {
-        fontSize: 14,
-        color: '#EF4444',
+        fontSize: typography.body,
+        color: tokens.error,
         marginBottom: 16,
     },
     retryBtn: {
-        backgroundColor: '#09090B',
+        backgroundColor: tokens.primary,
         paddingHorizontal: 24,
-        paddingVertical: 10,
-        borderRadius: 8,
+        paddingVertical: spacing.xs + 2,
+        borderRadius: radii.sm,
     },
     retryBtnText: {
-        color: '#FFFFFF',
-        fontSize: 14,
+        color: tokens.white,
+        fontSize: typography.body,
         fontWeight: '600',
     },
     emptyContainer: {
@@ -1717,13 +1719,13 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     emptyText: {
-        fontSize: 14,
-        color: '#A1A1AA',
+        fontSize: typography.body,
+        color: tokens.placeholder,
     },
     // 自定义刷新指示器样式
     customRefreshIndicator: {
         overflow: 'hidden',
-        backgroundColor: '#F8F8F8',
+        backgroundColor: tokens.gray50,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -1734,8 +1736,8 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     refreshText: {
-        fontSize: 13,
-        color: '#71717A',
+        fontSize: typography.body - 1,
+        color: tokens.secondary,
     },
     // 下拉菜单背景遮罩（用于点击关闭）
     dropdownBackdrop: {
@@ -1748,20 +1750,20 @@ const styles = StyleSheet.create({
     },
     // 主材筛选面板样式
     materialFilterPanel: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: tokens.white,
         borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
+        borderBottomColor: tokens.borderSoft,
         paddingBottom: 12,
     },
     filterPanelSection: {
-        paddingHorizontal: 16,
+        paddingHorizontal: spacing.md,
         paddingTop: 16,
     },
     filterPanelTitle: {
-        fontSize: 14,
+        fontSize: typography.body,
         fontWeight: '600',
-        color: '#09090B',
-        marginBottom: 12,
+        color: tokens.primary,
+        marginBottom: spacing.sm,
     },
     filterPanelGrid: {
         flexDirection: 'row',
@@ -1770,53 +1772,53 @@ const styles = StyleSheet.create({
     },
     filterPanelItem: {
         width: (SCREEN_WIDTH - 32 - 24) / 4,
-        paddingVertical: 10,
+        paddingVertical: spacing.xs + 2,
         margin: 4,
-        backgroundColor: '#F4F4F5',
-        borderRadius: 6,
+        backgroundColor: tokens.borderSoft,
+        borderRadius: radii.xs,
         alignItems: 'center',
     },
     filterPanelItemActive: {
-        backgroundColor: '#09090B',
+        backgroundColor: tokens.primary,
     },
     filterPanelItemText: {
-        fontSize: 12,
-        color: '#71717A',
+        fontSize: typography.caption,
+        color: tokens.secondary,
     },
     filterPanelItemTextActive: {
-        color: '#FFFFFF',
+        color: tokens.white,
         fontWeight: '600',
     },
     filterPanelFooter: {
         flexDirection: 'row',
-        paddingHorizontal: 16,
+        paddingHorizontal: spacing.md,
         paddingTop: 16,
         gap: 12,
     },
     filterPanelResetBtn: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
-        paddingVertical: 12,
-        borderRadius: 8,
+        backgroundColor: tokens.white,
+        paddingVertical: spacing.sm,
+        borderRadius: radii.sm,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: '#E4E4E7',
+        borderColor: tokens.border,
     },
     filterPanelResetText: {
-        color: '#71717A',
-        fontSize: 14,
+        color: tokens.secondary,
+        fontSize: typography.body,
         fontWeight: '600',
     },
     filterPanelConfirmBtn: {
         flex: 2,
-        backgroundColor: '#09090B',
-        paddingVertical: 12,
-        borderRadius: 8,
+        backgroundColor: tokens.primary,
+        paddingVertical: spacing.sm,
+        borderRadius: radii.sm,
         alignItems: 'center',
     },
     filterPanelConfirmText: {
-        color: '#FFFFFF',
-        fontSize: 14,
+        color: tokens.white,
+        fontSize: typography.body,
         fontWeight: '600',
     },
 });
@@ -1858,7 +1860,7 @@ function CategoryTab({ item, isActive, onPress }: { item: any, isActive: boolean
     // Interpolations
     const containerBg = selectionAnim.interpolate({
         inputRange: [0, 1],
-        outputRange: ['#F8F9FA', '#09090B']
+        outputRange: [colorsRaw.bgPage, colorsRaw.primary]
     });
 
     const containerBorder = selectionAnim.interpolate({
@@ -1868,7 +1870,7 @@ function CategoryTab({ item, isActive, onPress }: { item: any, isActive: boolean
 
     const labelColor = selectionAnim.interpolate({
         inputRange: [0, 1],
-        outputRange: ['#71717A', '#09090B']
+        outputRange: [colorsRaw.secondary, colorsRaw.primary]
     });
 
     // For icon color, we crossfade opacity of two icons because native icon doesn't support animated color string easily
@@ -1896,12 +1898,12 @@ function CategoryTab({ item, isActive, onPress }: { item: any, isActive: boolean
                 ]}>
                     {/* Inactive Icon (Gray) */}
                     <Animated.View style={{ position: 'absolute', opacity: inactiveIconOpacity }}>
-                        <IconComponent size={24} color="#71717A" strokeWidth={1.5} />
+                        <IconComponent size={24} color={tokens.secondary} strokeWidth={1.5} />
                     </Animated.View>
 
                     {/* Active Icon (White) */}
                     <Animated.View style={{ opacity: activeIconOpacity }}>
-                        <IconComponent size={24} color="#FFFFFF" strokeWidth={1.5} />
+                        <IconComponent size={24} color={tokens.white} strokeWidth={1.5} />
                     </Animated.View>
                 </Animated.View>
 
