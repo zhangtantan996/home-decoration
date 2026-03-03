@@ -21,6 +21,7 @@ import { useToast } from '../components/Toast';
 import { getWebUrl } from '../config';
 import { providerApi } from '../services/api';
 import UserProfileCache from '../services/UserProfileCache';
+import { colors, spacing, radii } from '../theme/tokens';
 
 const { width } = Dimensions.get('window');
 
@@ -263,7 +264,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         <Animated.Text
                             numberOfLines={1}
                             ellipsizeMode="tail"
-                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: '#111' }}
+                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: colors.black }}
                         >
                             {displayData.name}
                         </Animated.Text>
@@ -390,7 +391,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         onPress={() => setIsIntroExpanded(!isIntroExpanded)}
                         style={{ marginTop: 4, alignSelf: 'flex-end' }}
                     >
-                        <Text style={{ color: '#6B7280', fontSize: 13 }}>
+                        <Text style={{ color: colors.gray500, fontSize: 13 }}>
                             {isIntroExpanded ? '收起' : '展开'}
                         </Text>
                     </TouchableOpacity>
@@ -631,7 +632,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         <Animated.Text
                             numberOfLines={1}
                             ellipsizeMode="tail"
-                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: '#111' }}
+                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: colors.black }}
                         >
                             {displayData.name}
                         </Animated.Text>
@@ -994,7 +995,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         <Animated.Text
                             numberOfLines={1}
                             ellipsizeMode="tail"
-                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: '#111' }}
+                            style={{ opacity: navOpacity, fontSize: 16, fontWeight: '600', color: colors.black }}
                         >
                             {displayData.name}
                         </Animated.Text>
@@ -1215,7 +1216,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
     },
     // Common
     content: {
@@ -1280,7 +1281,7 @@ const styles = StyleSheet.create({
         height: 80,
         borderRadius: 40,
         borderWidth: 2,
-        borderColor: '#fff',
+        borderColor: colors.white,
         marginRight: 16,
     },
     heroInfo: {
@@ -1291,7 +1292,7 @@ const styles = StyleSheet.create({
     heroName: {
         fontSize: 26,
         fontWeight: 'bold',
-        color: '#fff',
+        color: colors.white,
         // marginBottom: 8,
         textShadowColor: 'rgba(0,0,0,0.5)',
         textShadowOffset: { width: 0, height: 1 },
@@ -1301,27 +1302,27 @@ const styles = StyleSheet.create({
         marginLeft: 12,
         paddingHorizontal: 14,
         paddingVertical: 6,
-        backgroundColor: '#111',
+        backgroundColor: colors.black,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
     },
     followedBtn: {
-        backgroundColor: '#E5E7EB',
+        backgroundColor: colors.gray200,
     },
     followText: {
         fontSize: 12,
         fontWeight: 'bold',
-        color: '#fff',
+        color: colors.white,
     },
     followedText: {
-        color: '#374151',
+        color: colors.gray700,
     },
     heroBadgeRow: {
         flexDirection: 'row',
     },
     heroBadge: {
-        backgroundColor: '#D4AF37', // Gold
+        backgroundColor: colors.brand,
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 4,
@@ -1329,14 +1330,14 @@ const styles = StyleSheet.create({
     },
     heroBadgeText: {
         fontSize: 12,
-        color: '#fff',
+        color: colors.white,
         fontWeight: '600',
     },
 
     // Floating Dashboard
     dashboardCard: {
         flexDirection: 'row',
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
         marginHorizontal: 16,
         marginTop: -40, // Overlap Hero
         borderRadius: 16,
@@ -1351,7 +1352,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     designerDashboardCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
         borderRadius: 16,
         padding: 16,
         shadowColor: '#000',
@@ -1368,9 +1369,9 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: '#F4F4F5',
+        backgroundColor: colors.gray100,
         borderWidth: 1,
-        borderColor: '#E5E7EB',
+        borderColor: colors.gray200,
     },
     designerDashHeaderInfo: {
         flex: 1,
@@ -1384,16 +1385,16 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 18,
         fontWeight: '700',
-        color: '#111827',
+        color: colors.gray900,
     },
     designerDashExperienceText: {
         marginTop: 4,
         fontSize: 12,
-        color: '#6B7280',
+        color: colors.gray500,
     },
     specialtyPill: {
         marginTop: 6,
-        backgroundColor: '#F3F4F6',
+        backgroundColor: colors.gray100,
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 12,
@@ -1401,32 +1402,32 @@ const styles = StyleSheet.create({
     },
     specialtyPillText: {
         fontSize: 11,
-        color: '#4B5563',
+        color: colors.gray600,
         fontWeight: '500',
     },
     designerDashFollowBtn: {
         marginLeft: 12,
         paddingHorizontal: 12,
         paddingVertical: 6,
-        backgroundColor: '#111',
+        backgroundColor: colors.black,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
     },
     designerDashFollowedBtn: {
-        backgroundColor: '#E5E7EB',
+        backgroundColor: colors.gray200,
     },
     designerDashFollowText: {
         fontSize: 12,
         fontWeight: '700',
-        color: '#fff',
+        color: colors.white,
     },
     designerDashFollowedText: {
-        color: '#111827',
+        color: colors.gray900,
     },
     designerDashSeparator: {
         height: 1,
-        backgroundColor: '#F3F4F6',
+        backgroundColor: colors.gray100,
         marginTop: 12,
         marginBottom: 12,
     },
@@ -1443,7 +1444,7 @@ const styles = StyleSheet.create({
     dashValue: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#1F2937',
+        color: colors.gray800,
         marginBottom: 4,
     },
     dashLabelRow: {
@@ -1452,13 +1453,13 @@ const styles = StyleSheet.create({
     },
     dashLabel: {
         fontSize: 12,
-        color: '#6B7280',
+        color: colors.gray500,
         marginLeft: 4,
     },
     dashDivider: {
         width: 1,
         height: 24,
-        backgroundColor: '#F3F4F6',
+        backgroundColor: colors.gray100,
     },
 
     // Magazine Content Sections
@@ -1469,13 +1470,13 @@ const styles = StyleSheet.create({
     magSectionTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: '#111',
+        color: colors.black,
         marginBottom: 12,
         letterSpacing: 0.5,
     },
     magDescText: {
         fontSize: 15,
-        color: '#4B5563',
+        color: colors.gray600,
         lineHeight: 24,
     },
     priceTagRow: {
@@ -1508,7 +1509,7 @@ const styles = StyleSheet.create({
     },
     moreLink: {
         fontSize: 14,
-        color: '#9CA3AF',
+        color: colors.gray400,
     },
     magPortfolioList: {
         // paddingRight: 20,
@@ -1523,7 +1524,7 @@ const styles = StyleSheet.create({
     magCaseImg: {
         width: '100%',
         height: '100%',
-        backgroundColor: '#E5E7EB',
+        backgroundColor: colors.gray200,
     },
     magCaseOverlay: {
         position: 'absolute',
@@ -1536,7 +1537,7 @@ const styles = StyleSheet.create({
     magCaseTitle: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#fff',
+        color: colors.white,
         marginBottom: 2,
     },
     magCaseMeta: {
@@ -1547,7 +1548,7 @@ const styles = StyleSheet.create({
         width: '100%',
         padding: 24,
         alignItems: 'center',
-        backgroundColor: '#F3F4F6',
+        backgroundColor: colors.gray100,
         borderRadius: 12,
     },
 
@@ -1556,12 +1557,12 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     magReviewCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
         padding: 16,
         borderRadius: 12,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: '#F3F4F6',
+        borderColor: colors.gray100,
     },
     magReviewHeader: {
         flexDirection: 'row',
@@ -1573,34 +1574,34 @@ const styles = StyleSheet.create({
         height: 32,
         borderRadius: 16,
         marginRight: 10,
-        backgroundColor: '#F3F4F6',
+        backgroundColor: colors.gray100,
     },
     magReviewName: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#374151',
+        color: colors.gray700,
     },
     miniRating: {
         fontSize: 12,
-        color: '#F59E0B',
+        color: colors.warning,
         marginLeft: 4,
         fontWeight: '600',
     },
     magReviewContent: {
         fontSize: 14,
-        color: '#4B5563',
+        color: colors.gray600,
         lineHeight: 20,
     },
     checkAllReviewsBtn: {
         marginTop: 8,
         paddingVertical: 12,
-        backgroundColor: '#F9FAFB',
+        backgroundColor: colors.gray50,
         borderRadius: 8,
         alignItems: 'center',
     },
     checkAllReviewsText: {
         fontSize: 14,
-        color: '#6B7280',
+        color: colors.gray500,
         fontWeight: '500',
     },
     emptyReview: {
@@ -1608,7 +1609,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     emptyText: {
-        color: '#9CA3AF',
+        color: colors.gray400,
     },
 
     // Floating Bottom Bar
@@ -1623,7 +1624,7 @@ const styles = StyleSheet.create({
     },
     floatBottomBar: {
         flexDirection: 'row',
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
         borderRadius: 32,
         padding: 6,
         paddingHorizontal: 8,
@@ -1645,11 +1646,11 @@ const styles = StyleSheet.create({
         marginLeft: 6,
         fontSize: 15,
         fontWeight: '600',
-        color: '#1F2937',
+        color: colors.gray800,
     },
     floatPrimaryBtn: {
         flex: 1,
-        backgroundColor: '#111',
+        backgroundColor: colors.black,
         borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
@@ -1657,7 +1658,7 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
     },
     floatPrimaryText: {
-        color: '#fff',
+        color: colors.white,
         fontSize: 15,
         fontWeight: '600',
     },
@@ -1670,37 +1671,37 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingTop: Platform.OS === 'ios' ? 12 : 44,
         paddingBottom: 12,
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
         borderBottomWidth: 1,
-        borderBottomColor: '#F3F4F6',
+        borderBottomColor: colors.gray100,
     },
-    headerTitle: { fontSize: 17, fontWeight: '600', color: '#111' },
+    headerTitle: { fontSize: 17, fontWeight: '600', color: colors.black },
     backBtn: { padding: 4 },
     shareBtn: { padding: 4 },
     profileSection: { flexDirection: 'row', padding: 20 },
     avatar: { width: 80, height: 80, borderRadius: 8, marginRight: 16 },
     profileInfo: { flex: 1, justifyContent: 'center' },
-    name: { fontSize: 20, fontWeight: 'bold', color: '#111', marginBottom: 6 },
+    name: { fontSize: 20, fontWeight: 'bold', color: colors.black, marginBottom: 6 },
     ratingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-    ratingText: { fontSize: 14, fontWeight: 'bold', color: '#F59E0B', marginHorizontal: 4 },
-    reviewCount: { fontSize: 12, color: '#9CA3AF' },
+    ratingText: { fontSize: 14, fontWeight: 'bold', color: colors.warning, marginHorizontal: 4 },
+    reviewCount: { fontSize: 12, color: colors.gray400 },
     metaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-    metaText: { fontSize: 13, color: '#6B7280' },
-    metaDivider: { marginHorizontal: 8, color: '#D1D5DB' },
+    metaText: { fontSize: 13, color: colors.gray500 },
+    metaDivider: { marginHorizontal: 8, color: colors.gray300 },
     orgRow: { flexDirection: 'row', alignItems: 'center' },
-    orgBadge: { backgroundColor: '#F3F4F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 8 },
-    orgBadgeText: { fontSize: 11, color: '#6B7280' },
-    orgName: { fontSize: 13, color: '#4B5563' },
-    statsSection: { flexDirection: 'row', padding: 20, borderTopWidth: 8, borderTopColor: '#F3F4F6', borderBottomWidth: 8, borderBottomColor: '#F3F4F6', backgroundColor: '#fff' },
+    orgBadge: { backgroundColor: colors.gray100, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginRight: 8 },
+    orgBadgeText: { fontSize: 11, color: colors.gray500 },
+    orgName: { fontSize: 13, color: colors.gray600 },
+    statsSection: { flexDirection: 'row', padding: 20, borderTopWidth: 8, borderTopColor: colors.gray100, borderBottomWidth: 8, borderBottomColor: colors.gray100, backgroundColor: colors.white },
     statItem: { flex: 1, alignItems: 'center' },
-    statValue: { fontSize: 18, fontWeight: 'bold', color: '#111', marginBottom: 4 },
-    statLabel: { fontSize: 12, color: '#6B7280' },
-    statDivider: { width: 1, height: 30, backgroundColor: '#F3F4F6' },
-    section: { padding: 20, borderBottomWidth: 8, borderBottomColor: '#F3F4F6', backgroundColor: '#fff' },
-    sectionTitle: { fontSize: 18, fontWeight: '600', color: '#111', marginBottom: 16 },
-    companyPrice: { fontSize: 24, fontWeight: 'bold', color: '#EF4444', marginTop: 8 },
+    statValue: { fontSize: 18, fontWeight: 'bold', color: colors.black, marginBottom: 4 },
+    statLabel: { fontSize: 12, color: colors.gray500 },
+    statDivider: { width: 1, height: 30, backgroundColor: colors.gray100 },
+    section: { padding: 20, borderBottomWidth: 8, borderBottomColor: colors.gray100, backgroundColor: colors.white },
+    sectionTitle: { fontSize: 18, fontWeight: '600', color: colors.black, marginBottom: 16 },
+    companyPrice: { fontSize: 24, fontWeight: 'bold', color: colors.error, marginTop: 8 },
     moreBtn: { flexDirection: 'row', alignItems: 'center' },
-    moreText: { fontSize: 13, color: '#9CA3AF' },
+    moreText: { fontSize: 13, color: colors.gray400 },
 
     // ... Additional legacy styles ... 
     workTypeBadges: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -1709,7 +1710,7 @@ const styles = StyleSheet.create({
     priceSection: {
         padding: 20,
         borderBottomWidth: 8,
-        borderBottomColor: '#F3F4F6',
+        borderBottomColor: colors.gray100,
     },
     priceRow: {
         flexDirection: 'row',
@@ -1719,56 +1720,56 @@ const styles = StyleSheet.create({
     },
     priceLabel: {
         fontSize: 14,
-        color: '#6B7280',
+        color: colors.gray500,
     },
     priceValue: {
         fontSize: 22,
         fontWeight: 'bold',
-        color: '#EF4444',
+        color: colors.error,
     },
     priceUnit: {
         fontSize: 13,
         fontWeight: 'normal',
-        color: '#9CA3AF',
+        color: colors.gray400,
     },
-    bottomBar: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, paddingBottom: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6', backgroundColor: '#fff' },
-    consultBtn: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff', paddingVertical: 10, borderRadius: 8, marginRight: 12, borderWidth: 1, borderColor: '#E5E7EB' },
-    consultBtnText: { color: '#111', fontSize: 14, fontWeight: '600', marginLeft: 6 },
-    bookBtn: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111', paddingVertical: 10, borderRadius: 8 },
-    bookBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+    bottomBar: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, paddingBottom: 24, borderTopWidth: 1, borderTopColor: colors.gray100, backgroundColor: colors.white },
+    consultBtn: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.white, paddingVertical: 10, borderRadius: 8, marginRight: 12, borderWidth: 1, borderColor: colors.gray200 },
+    consultBtnText: { color: colors.black, fontSize: 14, fontWeight: '600', marginLeft: 6 },
+    bookBtn: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.black, paddingVertical: 10, borderRadius: 8 },
+    bookBtnText: { color: colors.white, fontSize: 14, fontWeight: '600' },
     portfolioScroll: { marginTop: 12 },
-    portfolioImage: { width: 140, height: 100, borderRadius: 8, marginRight: 12, backgroundColor: '#E5E7EB' },
-    descText: { fontSize: 14, color: '#4B5563', lineHeight: 22, marginTop: 12, },
-    reviewCard: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 16, marginTop: 12 },
+    portfolioImage: { width: 140, height: 100, borderRadius: 8, marginRight: 12, backgroundColor: colors.gray200 },
+    descText: { fontSize: 14, color: colors.gray600, lineHeight: 22, marginTop: 12, },
+    reviewCard: { backgroundColor: colors.gray50, borderRadius: 12, padding: 16, marginTop: 12 },
     reviewHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-    reviewAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E5E7EB', marginRight: 12 },
-    reviewUser: { fontSize: 14, fontWeight: '600', color: '#111' },
+    reviewAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.gray200, marginRight: 12 },
+    reviewUser: { fontSize: 14, fontWeight: '600', color: colors.black },
     reviewStars: { flexDirection: 'row', marginTop: 2 },
-    reviewDate: { marginLeft: 'auto', fontSize: 12, color: '#9CA3AF' },
-    reviewText: { fontSize: 14, color: '#4B5563', lineHeight: 20 },
+    reviewDate: { marginLeft: 'auto', fontSize: 12, color: colors.gray400 },
+    reviewText: { fontSize: 14, color: colors.gray600, lineHeight: 20 },
     // Company specific
     companyHeaderSection: {
         alignItems: 'center',
         padding: 24,
         borderBottomWidth: 8,
-        borderBottomColor: '#F3F4F6',
+        borderBottomColor: colors.gray100,
     },
     companyLogo: {
         width: 80,
         height: 80,
         borderRadius: 12,
-        backgroundColor: '#E5E7EB',
+        backgroundColor: colors.gray200,
         marginBottom: 16,
     },
     companyName: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#111',
+        color: colors.black,
         marginBottom: 8,
     },
     companyEstablished: {
         fontSize: 13,
-        color: '#9CA3AF',
+        color: colors.gray400,
         marginTop: 8,
     },
     certsContainer: {
@@ -1820,18 +1821,18 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.72)',
     },
     navFollowPillDark: {
-        backgroundColor: '#111',
-        borderColor: '#111',
+        backgroundColor: colors.black,
+        borderColor: colors.black,
     },
     navFollowText: {
         fontSize: 12,
         fontWeight: '700',
     },
     navFollowTextLight: {
-        color: '#fff',
+        color: colors.white,
     },
     navFollowTextDark: {
-        color: '#fff',
+        color: colors.white,
     },
 
     // Tags
@@ -1841,7 +1842,7 @@ const styles = StyleSheet.create({
         marginTop: 12,
     },
     tag: {
-        backgroundColor: '#F3F4F6',
+        backgroundColor: colors.gray100,
         paddingHorizontal: 10,
         paddingVertical: 6,
         borderRadius: 6,
@@ -1850,24 +1851,24 @@ const styles = StyleSheet.create({
     },
     tagText: {
         fontSize: 12,
-        color: '#4B5563',
+        color: colors.gray600,
     },
     profileFollowBtn: {
-        backgroundColor: '#111',
+        backgroundColor: colors.black,
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 16,
         marginLeft: 12,
     },
     profileFollowedText: {
-        color: '#6B7280',
+        color: colors.gray500,
     },
     // ===========================
     // Parallax Header Styles
     // ===========================
     parallaxContainer: {
         flex: 1,
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
     },
     parallaxHeader: {
         position: 'absolute',
@@ -1885,7 +1886,7 @@ const styles = StyleSheet.create({
         zIndex: 2,
     },
     contentCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         paddingTop: 24,
@@ -1902,9 +1903,9 @@ const styles = StyleSheet.create({
     },
     stickyNavBg: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: '#fff',
+        backgroundColor: colors.white,
         borderBottomWidth: 0.5,
-        borderBottomColor: '#E5E7EB',
+        borderBottomColor: colors.gray200,
     },
     stickyNavContent: {
         flexDirection: 'row',
