@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { Tabs, Button, Dialog, Toast } from '@nutui/nutui-react-taro';
-import { CheckCircle, CloseCircle } from '@nutui/icons-react-taro';
+import { Success } from '@nutui/icons-react-taro';
 import { Skeleton } from '@/components/Skeleton';
 import { getProjectDetail, getProjectPhases, getProjectMilestones, acceptMilestone, type ProjectDetail as ProjectDetailType, type ProjectPhase, type Milestone } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
@@ -242,7 +242,7 @@ const ProjectDetailPage: React.FC = () => {
                                 onClick={() => handleAcceptMilestone(milestone.id)}
                               >
                                 <View className="flex items-center">
-                                  <CheckCircle size={14} className="mr-xs" />
+                                  <Success size={14} className="mr-xs" />
                                   <Text>确认验收</Text>
                                 </View>
                               </Button>

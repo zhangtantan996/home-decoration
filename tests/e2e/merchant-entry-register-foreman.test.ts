@@ -1,19 +1,23 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Merchant Entry Foreman Flow', () => {
-  test('entry page shows foreman option and register form works', async ({ page }) => {
+  test('entry page unified onboarding can select foreman flow', async ({ page }) => {
     const origin = process.env.MERCHANT_ORIGIN || 'http://localhost:5173';
 
     await page.goto(`${origin}/merchant/`, { waitUntil: 'domcontentloaded' });
 
-    const foremanCard = page.getByText('工长/项目经理');
-    await expect(foremanCard).toBeVisible();
+    await expect(page.getByRole('button', { name: '我要入驻' })).toBeVisible();
+    await page.getByRole('button', { name: '我要入驻' }).click();
 
-    await foremanCard.click();
-    await expect(page).toHaveURL(/\/merchant\/register\?type=foreman/);
+    const selectorModal = page.locator('.ant-modal-content').last();
+    await expect(selectorModal).toBeVisible();
 
-    await expect(page.getByText('工长/项目经理入驻申请')).toBeVisible();
+    await selectorModal.getByText('工长入驻').click();
+    await selectorModal.getByRole('radio', { name: '个人' }).click();
+    await selectorModal.getByRole('button', { name: '下一步' }).click();
+
+    await expect(page).toHaveURL(/\/merchant\/register\?role=foreman&entityType=personal/);
+    await expect(page.getByText('工长入驻申请（个人主体）')).toBeVisible();
     await expect(page.getByText('施工案例')).toBeVisible();
   });
 });
-

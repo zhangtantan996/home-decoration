@@ -243,7 +243,7 @@ func MerchantWithdrawCreate(c *gin.Context) {
 		response.Error(c, 400, "验证码校验失败")
 		return
 	}
-	if err := service.VerifySMSCode(phone, input.VerificationCode); err != nil {
+	if err := service.VerifySMSCode(phone, service.SMSPurposeMerchantWithdraw, input.VerificationCode); err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}
@@ -357,7 +357,7 @@ func MerchantBankAccountCreate(c *gin.Context) {
 		response.Error(c, 400, "验证码校验失败")
 		return
 	}
-	if err := service.VerifySMSCode(phone, input.VerificationCode); err != nil {
+	if err := service.VerifySMSCode(phone, service.SMSPurposeMerchantBankBind, input.VerificationCode); err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}

@@ -47,6 +47,7 @@ type RegisterRequest struct {
 	Password string `json:"password"`
 	Nickname string `json:"nickname"`
 	UserType int8   `json:"userType"` // 1业主 2服务商 3工人
+	ClientIP string `json:"-"`
 }
 
 // LoginRequest 登录请求
@@ -55,6 +56,7 @@ type LoginRequest struct {
 	Code     string `json:"code"`     // 验证码登录时必填
 	Password string `json:"password"` // 密码登录时必填
 	Type     string `json:"type"`     // login type: code or password
+	ClientIP string `json:"-"`
 }
 
 // TokenResponse Token响应
@@ -73,8 +75,8 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		return nil, nil, err
 	}
 
-	// 验证手机验证码 (TODO: 实际项目需要接入短信服务)
-	if err := VerifySMSCode(req.Phone, req.Code); err != nil {
+	// 验证手机验证码
+	if err := VerifySMSCode(req.Phone, SMSPurposeRegister, req.Code); err != nil {
 		return nil, nil, err
 	}
 
@@ -98,11 +100,15 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}
 
 	// 创建用户
+	now := time.Now()
 	user := &model.User{
 		Phone:    req.Phone,
 		Nickname: req.Nickname,
 		UserType: userType,
 		Status:   1,
+		// 注册后默认视为一次登录，补齐审计字段。
+		LastLoginAt: &now,
+		LastLoginIP: strings.TrimSpace(req.ClientIP),
 	}
 
 	// 如果提供了密码，加密存储
@@ -146,12 +152,7 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		return nil, nil, err
 	}
 
-	token, err := generateAccessTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	refreshToken, err := generateRefreshTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -191,8 +192,8 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}
 
 	return &TokenResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
+		Token:        tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 		TinodeToken:  tinodeToken,
 		TinodeError:  tinodeError,
@@ -231,7 +232,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	codeVerified := false
 	// 验证码登录时，如果用户不存在，先校验短信验证码，避免无效验证码触发自动创建账号
 	if userNotFound && req.Type != "password" {
-		if err := VerifySMSCode(req.Phone, req.Code); err != nil {
+		if err := VerifySMSCode(req.Phone, SMSPurposeLogin, req.Code); err != nil {
 			return nil, nil, err
 		}
 		codeVerified = true
@@ -298,7 +299,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 
 	// 验证码登录：在锁定检查之后再消费验证码（避免账号被锁定时浪费验证码）
 	if req.Type != "password" && !codeVerified {
-		if err := VerifySMSCode(req.Phone, req.Code); err != nil {
+		if err := VerifySMSCode(req.Phone, SMSPurposeLogin, req.Code); err != nil {
 			if errors.Is(err, errSMSCodeInvalid) {
 				return nil, nil, s.handleLoginFailure(&user, "code")
 			}
@@ -318,15 +319,22 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		}
 	}
 
-	// 登录成功，重置失败次数
-	if user.LoginFailedCount > 0 {
-		repository.DB.Model(&user).Updates(map[string]interface{}{
-			"login_failed_count":   0,
-			"last_failed_login_at": nil,
-		})
-		user.LoginFailedCount = 0
-		user.LastFailedLoginAt = nil
+	// 登录成功，重置失败次数并记录最近登录审计字段。
+	loginUpdates := map[string]interface{}{
+		"last_login_at": time.Now(),
+		"last_login_ip": strings.TrimSpace(req.ClientIP),
 	}
+	if user.LoginFailedCount > 0 {
+		loginUpdates["login_failed_count"] = 0
+		loginUpdates["last_failed_login_at"] = nil
+	}
+	repository.DB.Model(&user).Updates(loginUpdates)
+	user.LoginFailedCount = 0
+	user.LastFailedLoginAt = nil
+	if loginAt, ok := loginUpdates["last_login_at"].(time.Time); ok {
+		user.LastLoginAt = &loginAt
+	}
+	user.LastLoginIP = strings.TrimSpace(req.ClientIP)
 
 	// 生成Token
 	roleCtx, err := getUserRoleContext(&user)
@@ -334,13 +342,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		return nil, nil, err
 	}
 
-	token, err := generateAccessTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// 生成RefreshToken (有效期更长)
-	refreshToken, err := generateRefreshTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -380,8 +382,8 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	}
 
 	return &TokenResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
+		Token:        tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 		TinodeToken:  tinodeToken,
 		TinodeError:  tinodeError,
@@ -462,21 +464,15 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 		roleCtx = resolvedCtx
 	}
 
-	// 生成新的 Token
-	newToken, err := generateAccessTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
-	if err != nil {
-		return nil, err
-	}
-
-	// 生成新的 RefreshToken
-	newRefreshToken, err := generateRefreshTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
+	sessionID, _ := claims["sid"].(string)
+	tokenPair, err := issueTokenPairV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &TokenResponse{
-		Token:        newToken,
-		RefreshToken: newRefreshToken,
+		Token:        tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 	}, nil
 }
@@ -623,27 +619,123 @@ func generateToken(userID uint64, userPublicID string, userType int8, expireHour
 	return token.SignedString(jwtSecret)
 }
 
+type issuedToken struct {
+	Token     string
+	JTI       string
+	SessionID string
+	ExpiresAt time.Time
+}
+
+type tokenPair struct {
+	AccessToken      string
+	AccessJTI        string
+	AccessExpiresAt  time.Time
+	RefreshToken     string
+	RefreshJTI       string
+	RefreshExpiresAt time.Time
+	SessionID        string
+}
+
 // generateAccessTokenV2 生成访问令牌 (2小时有效)
-func generateAccessTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string) (string, error) {
-	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseAccess, accessTokenTTL)
+func generateAccessTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*issuedToken, error) {
+	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseAccess, accessTokenTTL, sessionID)
 }
 
 // generateRefreshTokenV2 生成刷新令牌 (7天有效)
-func generateRefreshTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string) (string, error) {
-	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseRefresh, refreshTokenTTL)
+func generateRefreshTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*issuedToken, error) {
+	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseRefresh, refreshTokenTTL, sessionID)
+}
+
+func issueTokenPairV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*tokenPair, error) {
+	accessIssued, err := generateAccessTokenV2(userID, userPublicID, activeRole, refID, providerSubType, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshIssued, err := generateRefreshTokenV2(userID, userPublicID, activeRole, refID, providerSubType, accessIssued.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	pair := &tokenPair{
+		AccessToken:      accessIssued.Token,
+		AccessJTI:        accessIssued.JTI,
+		AccessExpiresAt:  accessIssued.ExpiresAt,
+		RefreshToken:     refreshIssued.Token,
+		RefreshJTI:       refreshIssued.JTI,
+		RefreshExpiresAt: refreshIssued.ExpiresAt,
+		SessionID:        accessIssued.SessionID,
+	}
+
+	if err := registerSessionTokenPair(pair); err != nil {
+		return nil, err
+	}
+
+	return pair, nil
+}
+
+func registerSessionTokenPair(pair *tokenPair) error {
+	if pair == nil {
+		return nil
+	}
+	if err := registerSessionToken(pair.SessionID, pair.AccessJTI, tokenUseAccess, pair.AccessExpiresAt); err != nil {
+		return err
+	}
+	if err := registerSessionToken(pair.SessionID, pair.RefreshJTI, tokenUseRefresh, pair.RefreshExpiresAt); err != nil {
+		return err
+	}
+	return nil
+}
+
+func registerSessionToken(sessionID, jti, tokenUse string, expiresAt time.Time) error {
+	sessionID = strings.TrimSpace(sessionID)
+	jti = strings.TrimSpace(jti)
+	tokenUse = strings.TrimSpace(tokenUse)
+	if sessionID == "" || jti == "" || tokenUse == "" {
+		return nil
+	}
+
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return nil
+	}
+
+	ttl := time.Until(expiresAt)
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
+	key := sessionTokenKey(sessionID, jti)
+	if err := redisClient.Set(ctx, key, tokenUse, ttl).Err(); err != nil {
+		return fmt.Errorf("记录会话令牌失败: %w", err)
+	}
+	return nil
+}
+
+func sessionTokenKey(sessionID, jti string) string {
+	return fmt.Sprintf("session:%s:%s", strings.TrimSpace(sessionID), strings.TrimSpace(jti))
 }
 
 // generateTokenV2 生成JWT Token v2 (支持多身份)
-func generateTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string, tokenUse string, ttl time.Duration) (string, error) {
+func generateTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string, tokenUse string, ttl time.Duration, sessionID string) (*issuedToken, error) {
 	resolvedPublicID, err := resolveUserPublicID(userID, userPublicID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if activeRole != "provider" {
 		providerSubType = ""
 		refID = nil
 	}
+
+	if strings.TrimSpace(sessionID) == "" {
+		sessionID = generateSessionID()
+	}
+	jti := uuid.New().String()
+	expiresAt := time.Now().Add(ttl)
 
 	claims := jwt.MapClaims{
 		"sub":             resolvedPublicID,
@@ -654,14 +746,24 @@ func generateTokenV2(userID uint64, userPublicID string, activeRole string, refI
 		"providerSubType": providerSubType,
 		"token_type":      "user",
 		"token_use":       tokenUse,
-		"jti":             uuid.New().String(),
-		"sid":             generateSessionID(),
-		"exp":             time.Now().Add(ttl).Unix(),
+		"jti":             jti,
+		"sid":             sessionID,
+		"exp":             expiresAt.Unix(),
 		"iat":             time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	signedToken, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	return &issuedToken{
+		Token:     signedToken,
+		JTI:       jti,
+		SessionID: sessionID,
+		ExpiresAt: expiresAt,
+	}, nil
 }
 
 // generateSessionID 生成会话ID

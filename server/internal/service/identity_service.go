@@ -235,14 +235,9 @@ func (s *IdentityService) SwitchIdentity(userID uint64, req *SwitchIdentityReque
 		return nil, fmt.Errorf("解析目标身份失败: %w", err)
 	}
 
-	newToken, err := generateAccessTokenV2(userID, "", ctx.ActiveRole, ctx.ProviderID, ctx.ProviderSubType)
+	tokenPair, err := issueTokenPairV2(userID, "", ctx.ActiveRole, ctx.ProviderID, ctx.ProviderSubType, "")
 	if err != nil {
 		return nil, fmt.Errorf("生成 token 失败: %w", err)
-	}
-
-	newRefreshToken, err := generateRefreshTokenV2(userID, "", ctx.ActiveRole, ctx.ProviderID, ctx.ProviderSubType)
-	if err != nil {
-		return nil, fmt.Errorf("生成刷新 token 失败: %w", err)
 	}
 
 	providerID := uint64(0)
@@ -251,8 +246,8 @@ func (s *IdentityService) SwitchIdentity(userID uint64, req *SwitchIdentityReque
 	}
 
 	return &SwitchIdentityResult{
-		AccessToken:     newToken,
-		RefreshToken:    newRefreshToken,
+		AccessToken:     tokenPair.AccessToken,
+		RefreshToken:    tokenPair.RefreshToken,
 		ActiveRole:      ctx.ActiveRole,
 		ProviderSubType: ctx.ProviderSubType,
 		ProviderID:      providerID,

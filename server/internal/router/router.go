@@ -441,6 +441,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/merchant-applications/:id", handler.AdminGetApplication)
 			admin.POST("/merchant-applications/:id/approve", handler.AdminApproveApplication)
 			admin.POST("/merchant-applications/:id/reject", handler.AdminRejectApplication)
+			admin.GET("/material-shop-applications", handler.AdminListMaterialShopApplications)
+			admin.GET("/material-shop-applications/:id", handler.AdminGetMaterialShopApplication)
+			admin.POST("/material-shop-applications/:id/approve", handler.AdminApproveMaterialShopApplication)
+			admin.POST("/material-shop-applications/:id/reject", handler.AdminRejectMaterialShopApplication)
 
 			// 身份申请审核
 			admin.GET("/identity-applications", middleware.RequirePermission("identity:application:audit"), handler.AdminListIdentityApplications)
@@ -479,9 +483,13 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		v1.POST("/merchant/apply", handler.MerchantApply)
 		v1.GET("/merchant/apply/:phone/status", handler.MerchantApplyStatus)
 		v1.POST("/merchant/apply/:id/resubmit", handler.MerchantResubmit)
+		v1.POST("/merchant/change-application", handler.MerchantApplyIdentityChange)
+		v1.POST("/material-shop/apply", handler.MaterialShopApply)
+		v1.GET("/material-shop/apply/:phone/status", handler.MaterialShopApplyStatus)
+		v1.POST("/material-shop/apply/:id/resubmit", handler.MaterialShopApplyResubmit)
 
 		// 商家登录 (无需认证)
-		v1.POST("/merchant/login", handler.MerchantLogin(cfg))
+		v1.POST("/merchant/login", middleware.LoginRateLimit(), handler.MerchantLogin(cfg))
 
 		// 商家端路由（使用 MerchantJWT 中间件验证 token 类型）
 		merchant := v1.Group("/merchant")
@@ -551,6 +559,17 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 腾讯云 IM
 			merchant.GET("/im/usersig", handler.MerchantGetIMUserSig)
+		}
+
+		materialShop := v1.Group("/material-shop")
+		materialShop.Use(middleware.MerchantJWT(cfg.JWT.Secret))
+		{
+			materialShop.GET("/me", handler.MaterialShopGetMe)
+			materialShop.PUT("/me", handler.MaterialShopUpdateMe)
+			materialShop.GET("/me/products", handler.MaterialShopListProducts)
+			materialShop.POST("/me/products", handler.MaterialShopCreateProduct)
+			materialShop.PUT("/me/products/:id", handler.MaterialShopUpdateProduct)
+			materialShop.DELETE("/me/products/:id", handler.MaterialShopDeleteProduct)
 		}
 	}
 

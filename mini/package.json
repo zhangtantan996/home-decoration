@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev:h5": "taro build --type h5 --watch --port 5176",
-    "dev:weapp": "taro build --type weapp --watch",
-    "build:h5": "npm run gen:tab-icons && taro build --type h5",
-    "build:weapp": "npm run gen:tab-icons && taro build --type weapp",
+    "clean:weapp": "rm -rf dist",
+    "dev:h5": "NODE_ENV=development taro build --type h5 --watch --port 5176",
+    "dev:weapp": "npm run clean:weapp && NODE_ENV=development taro build --type weapp --watch",
+    "build:h5": "npm run gen:tab-icons && NODE_ENV=production taro build --type h5",
+    "build:weapp": "npm run clean:weapp && npm run gen:tab-icons && NODE_ENV=production taro build --type weapp",
     "lint": "eslint --ext .ts,.tsx src && npm run check:no-emoji",
     "format": "prettier --write \"src/**/*.{ts,tsx,scss}\"",
     "check:no-emoji": "node scripts/check-no-emoji.mjs",
@@ -26,6 +27,7 @@
     "@tarojs/taro": "3.6.37",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "tinode-sdk": "^0.25.1",
     "zustand": "4.5.2"
   },
   "devDependencies": {

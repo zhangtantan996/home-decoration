@@ -14,6 +14,7 @@ export default {
     'pages/inspiration/quote/index',
     'pages/progress/index',
     'pages/messages/index',
+    'pages/chat/index',
     'pages/profile/index',
     'pages/profile/edit/index',
     'pages/providers/list/index',

@@ -106,7 +106,8 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	var providers []model.Provider
 	var total int64
 
-	db := repository.DB.Model(&model.Provider{})
+	db := repository.DB.Model(&model.Provider{}).
+		Where("verified = ?", true)
 
 	if len(providerTypes) > 0 {
 		db = db.Where("provider_type IN ?", providerTypes)

@@ -16,13 +16,20 @@ export interface ProviderDTO {
   longitude: number;
   distance?: number;
   subType: string;
+  entityType?: 'personal' | 'company';
+  applicantType?: 'personal' | 'studio' | 'company' | 'foreman';
   yearsExperience: number;
   specialty: string;
   workTypes: string;
+  highlightTags?: string;
+  pricingJson?: string;
+  graduateSchool?: string;
+  designPhilosophy?: string;
   reviewCount: number;
   priceMin: number;
   priceMax: number;
   priceUnit: string;
+  serviceArea?: string;
 }
 
 export interface ProviderDetailDTO {

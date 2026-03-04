@@ -1,4 +1,5 @@
 import { useAuthStore, type AuthUser } from '@/store/auth';
+import { refreshTinodeToken } from '@/services/tinode';
 import { request } from '@/utils/request';
 
 interface TokenPayload {
@@ -17,6 +18,19 @@ interface WechatLoginResult {
   user?: AuthUser;
 }
 
+async function refreshTinodeAuthBestEffort() {
+  try {
+    const result = await refreshTinodeToken();
+    useAuthStore.getState().updateTinodeAuth({
+      tinodeToken: result.tinodeToken || '',
+      tinodeError: result.tinodeError || '',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Tinode token 获取失败';
+    useAuthStore.getState().updateTinodeAuth({ tinodeToken: '', tinodeError: message });
+  }
+}
+
 export async function loginWithWxCode(code: string) {
   const data = await request<WechatLoginResult>({
     url: '/auth/wechat/mini/login',
@@ -31,6 +45,8 @@ export async function loginWithWxCode(code: string) {
       expiresIn: data.expiresIn || 0,
       user: data.user
     });
+
+    await refreshTinodeAuthBestEffort();
   }
 
   return data;
@@ -44,5 +60,6 @@ export async function bindPhone(bindToken: string, phoneCode: string) {
     showLoading: true
   });
   useAuthStore.getState().setAuth(data);
+  await refreshTinodeAuthBestEffort();
   return data;
 }

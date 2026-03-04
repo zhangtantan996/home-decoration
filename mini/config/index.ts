@@ -40,6 +40,9 @@ export default defineConfig(async (merge) => {
       enable: true
     },
     mini: {
+      miniCssExtractPluginOption: {
+        ignoreOrder: true
+      },
       postcss: {
         pxtransform: {
           enable: true,
@@ -91,8 +94,9 @@ export default defineConfig(async (merge) => {
     }
   };
 
-  if (process.env.NODE_ENV === 'development') {
-    return merge({}, baseConfig, devConfig);
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    return merge({}, baseConfig, prodConfig);
   }
-  return merge({}, baseConfig, prodConfig);
+  return merge({}, baseConfig, devConfig);
 });

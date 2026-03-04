@@ -4,6 +4,6 @@ package service
 // It pretends SMS delivery succeeded without contacting any external service.
 type MockSMSProvider struct{}
 
-func (p *MockSMSProvider) SendVerificationCode(_ string, _ string) error {
-	return nil
+func (p *MockSMSProvider) SendVerificationCode(_ string, _ string) (SMSProviderResult, error) {
+	return SMSProviderResult{Provider: "mock"}, nil
 }

@@ -60,7 +60,11 @@ api.interceptors.response.use(
 // API 接口定义
 export const authApi = {
     login: (data: { phone: string; code: string }) => api.post('/auth/login', data),
-    sendCode: (phone: string) => api.post('/auth/send-code', { phone }),
+    sendCode: (
+        phone: string,
+        purpose: 'login' | 'register' | 'merchant_withdraw' | 'merchant_bank_bind' | 'identity_apply' = 'login',
+        captchaToken?: string,
+    ) => api.post('/auth/send-code', { phone, purpose, captchaToken }),
 };
 
 // ==================== Admin 管理员认证 ====================

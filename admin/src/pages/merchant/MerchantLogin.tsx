@@ -1,17 +1,23 @@
-import React, { useState } from 'react';
-import { Card, Form, Input, Button, message, Layout, Typography, Divider } from 'antd';
+import React, { useState, useRef, useEffect } from 'react';
+import { Card, Form, Input, Button, message, Layout, Typography, Divider, Grid } from 'antd';
 import { PhoneOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { merchantAuthApi } from '../../services/merchantApi';
+import axios from 'axios';
+import { MerchantApiError, merchantAuthApi, type MerchantLoginGuideData, type MerchantLoginNextAction } from '../../services/merchantApi';
+import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
+import { MERCHANT_THEME } from '../../constants/merchantTheme';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const MerchantLogin: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
+    const timerRef = useRef<number | null>(null);
     const navigate = useNavigate();
+    const screens = useBreakpoint();
     const [form] = Form.useForm();
 
     // 手机号校验规则
@@ -37,6 +43,14 @@ const MerchantLogin: React.FC = () => {
         form.setFieldsValue({ code: value });
     };
 
+    useEffect(() => {
+        return () => {
+            if (timerRef.current !== null) {
+                clearInterval(timerRef.current);
+            }
+        };
+    }, []);
+
     const handleSendCode = async () => {
         // 先触发手机号校验
         try {
@@ -48,68 +62,129 @@ const MerchantLogin: React.FC = () => {
         const phone = form.getFieldValue('phone');
         setSendingCode(true);
         try {
-            const res = await merchantAuthApi.sendCode(phone);
-            const debugSuffix = import.meta.env.DEV && res?.debugCode ? ` (测试码: ${res.debugCode})` : '';
-            message.success(`验证码已发送${debugSuffix}`);
+            const res = await merchantAuthApi.sendCode(phone, 'login');
+            if (import.meta.env.DEV && res?.debugCode) {
+                console.debug(`[DEV] 验证码: ${res.debugCode}`);
+            }
+            message.success('验证码已发送');
             setCountdown(60);
-            const timer = setInterval(() => {
+            if (timerRef.current !== null) {
+                clearInterval(timerRef.current);
+            }
+            timerRef.current = window.setInterval(() => {
                 setCountdown((prev) => {
                     if (prev <= 1) {
-                        clearInterval(timer);
+                        if (timerRef.current !== null) {
+                            clearInterval(timerRef.current);
+                            timerRef.current = null;
+                        }
                         return 0;
                     }
                     return prev - 1;
                 });
             }, 1000);
         } catch (error: unknown) {
-            const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
-            message.error(maybeAxiosError.response?.data?.message || maybeAxiosError.message || '发送失败');
+            if (error instanceof MerchantApiError) {
+                message.error(error.message || '发送失败');
+                return;
+            }
+            if (axios.isAxiosError(error)) {
+                message.error(error.response?.data?.message || error.message || '发送失败');
+                return;
+            }
+            message.error('发送失败');
         } finally {
             setSendingCode(false);
         }
+    };
+
+    const handleLoginGuide = (phone: string, nextAction: MerchantLoginNextAction, guide?: MerchantLoginGuideData['applyStatus']) => {
+        if (nextAction === 'PENDING') {
+            message.warning('入驻申请审核中，正在跳转审核进度页', 1.2);
+            navigate(`/apply-status?phone=${encodeURIComponent(phone)}&from=login_pending`);
+            return;
+        }
+
+        if (nextAction === 'RESUBMIT') {
+            message.warning('入驻申请被驳回，正在跳转重提页面', 1.2);
+            const applicationId = guide?.applicationId;
+            if (guide?.kind === 'material_shop') {
+                navigate(`/material-shop/register?from=login_resubmit&phone=${encodeURIComponent(phone)}${applicationId ? `&resubmit=${applicationId}` : ''}`);
+                return;
+            }
+            const role = guide?.role || 'designer';
+            const entityType = guide?.entityType || (
+                guide?.applicantType === 'studio' || guide?.applicantType === 'company'
+                    ? 'company'
+                    : 'personal'
+            );
+            navigate(`/register?from=login_resubmit&phone=${encodeURIComponent(phone)}&role=${role}&entityType=${entityType}${applicationId ? `&resubmit=${applicationId}` : ''}`);
+            return;
+        }
+
+        if (nextAction === 'CHANGE_ROLE') {
+            message.warning('当前账号已入驻其他商家身份，请提交角色变更申请', 1.6);
+            return;
+        }
+
+        message.warning('该手机号尚未入驻，正在为你跳转入驻页', 1.2);
+        navigate(`/register?from=login_unregistered&phone=${encodeURIComponent(phone)}`);
     };
 
     const onFinish = async (values: { phone: string; code: string }) => {
         setLoading(true);
         try {
             const data = await merchantAuthApi.login(values);
-            const { token, provider, tinodeToken } = data;
-            localStorage.setItem('merchant_token', token);
-            localStorage.setItem('merchant_provider', JSON.stringify(provider));
-            if (tinodeToken) {
-                localStorage.setItem('merchant_tinode_token', tinodeToken);
-            } else {
-                localStorage.removeItem('merchant_tinode_token');
-            }
+            const { token, provider, tinodeToken, merchantKind } = data;
+            useMerchantAuthStore.getState().login({ token, provider, tinodeToken });
             message.success('登录成功');
-            navigate('/dashboard');
+            if (merchantKind === 'material_shop' || provider?.merchantKind === 'material_shop') {
+                navigate('/material-shop/settings');
+            } else {
+                navigate('/dashboard');
+            }
         } catch (error: unknown) {
-            const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
-            message.error(maybeAxiosError.response?.data?.message || maybeAxiosError.message || '登录失败');
+            if (error instanceof MerchantApiError) {
+                const guideData = error.data as MerchantLoginGuideData | undefined;
+                if (error.code === 409 && guideData?.nextAction) {
+                    handleLoginGuide(values.phone, guideData.nextAction, guideData.applyStatus);
+                    return;
+                }
+                message.error(error.message || '登录失败');
+                return;
+            }
+
+            if (axios.isAxiosError(error)) {
+                message.error(error.response?.data?.message || error.message || '登录失败');
+                return;
+            }
+            message.error('登录失败');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)' }}>
-            <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <Card style={{ width: 420, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}>
-                    <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <Layout style={{ minHeight: '100vh', background: MERCHANT_THEME.pageBgGradient }}>
+            <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: screens.xs ? 16 : 24 }}>
+                <Card 
+                    style={{ width: MERCHANT_THEME.cardWidth, maxWidth: MERCHANT_THEME.cardMaxWidth, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}
+                    styles={{ body: { padding: screens.xs ? 24 : 32 } }}
+                >
+                    <div style={{ textAlign: 'center', marginBottom: screens.xs ? 24 : 32 }}>
                         <Title level={3} style={{ marginBottom: 8 }}>商家服务中心</Title>
-                        <Text type="secondary">独立设计师/设计工作室/工长/装修公司登录</Text>
+                        <Text type="secondary">设计师/工长/装修公司/主材商统一登录</Text>
                     </div>
                     <Form
                         form={form}
                         name="merchant_login"
                         onFinish={onFinish}
                         size="large"
-                        validateTrigger={['onBlur', 'onChange']}
+                        validateTrigger="onBlur"
                     >
                         <Form.Item
                             name="phone"
                             rules={phoneRules}
-                            validateTrigger={['onBlur', 'onChange']}
                         >
                             <Input
                                 prefix={<PhoneOutlined />}
@@ -123,7 +198,6 @@ const MerchantLogin: React.FC = () => {
                         <Form.Item
                             name="code"
                             rules={codeRules}
-                            validateTrigger={['onBlur', 'onChange']}
                         >
                             <Input
                                 prefix={<SafetyOutlined />}
@@ -152,20 +226,12 @@ const MerchantLogin: React.FC = () => {
                         </Form.Item>
 
                         <div style={{ textAlign: 'center', marginTop: 16 }}>
-                            <Button type="link" onClick={() => navigate('/register?type=personal')}>
-                                独立设计师入驻
+                            <Button type="link" onClick={() => navigate('/')}>
+                                我要入驻
                             </Button>
                             <Divider type="vertical" />
-                            <Button type="link" onClick={() => navigate('/register?type=studio')}>
-                                设计工作室入驻
-                            </Button>
-                            <Divider type="vertical" />
-                            <Button type="link" onClick={() => navigate('/register?type=company')}>
-                                装修公司入驻
-                            </Button>
-                            <Divider type="vertical" />
-                            <Button type="link" onClick={() => navigate('/register?type=foreman')}>
-                                工长入驻
+                            <Button type="link" onClick={() => navigate('/apply-status')}>
+                                查询审核进度
                             </Button>
                         </div>
                     </Form>

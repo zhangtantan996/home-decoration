@@ -76,7 +76,7 @@ func WechatH5Login(c *gin.Context) {
 	}
 	redirectURI := origin + "/#/pages/auth/wechat-callback/index"
 
-	result, err := wechatH5AuthService.Login(req.Code, req.State, redirectURI, jwtConfig)
+	result, err := wechatH5AuthService.Login(req.Code, req.State, redirectURI, c.ClientIP(), jwtConfig)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -132,7 +132,7 @@ func WechatH5BindPhone(c *gin.Context) {
 		return
 	}
 
-	tokenResp, user, err := wechatH5AuthService.BindPhone(req.BindToken, req.Phone, req.Code, jwtConfig)
+	tokenResp, user, err := wechatH5AuthService.BindPhone(req.BindToken, req.Phone, req.Code, c.ClientIP(), jwtConfig)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

@@ -52,7 +52,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         {
             items: [
                 { label: '账号安全', onPress: () => navigation.navigate('AccountSecurity') },
-                { label: '身份管理', onPress: () => navigation.navigate('IdentityManagement') },
                 { label: '隐私设置', onPress: () => showDevModal('隐私设置') },
             ]
         },

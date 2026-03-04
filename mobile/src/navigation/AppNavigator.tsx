@@ -43,8 +43,6 @@ import ProjectListScreen from '../screens/ProjectListScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 import DesignFilesScreen from '../screens/DesignFilesScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
-import IdentityApplicationScreen from '../screens/IdentityApplicationScreen';
-import IdentityManagementScreen from '../screens/IdentityManagementScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
@@ -182,14 +180,14 @@ const AppNavigator = () => {
         loadStoredAuth();
         // 应用启动时预加载首页数据，用户进入首页时数据已就绪
         preloadAll();
-    }, []);
+    }, [loadStoredAuth, preloadAll]);
 
     useEffect(() => {
         if (isAuthenticated) {
             // 登录成功后立即尝试获取数据
             preloadAll();
         }
-    }, [isAuthenticated]);
+    }, [isAuthenticated, preloadAll]);
 
     if (isLoading) {
         return <LoadingScreen />;
@@ -328,16 +326,6 @@ const AppNavigator = () => {
                         <Stack.Screen
                             name="Favorites"
                             component={FavoritesScreen}
-                            options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
-                            name="IdentityApplication"
-                            component={IdentityApplicationScreen}
-                            options={{ animation: 'slide_from_right' }}
-                        />
-                        <Stack.Screen
-                            name="IdentityManagement"
-                            component={IdentityManagementScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                     </>

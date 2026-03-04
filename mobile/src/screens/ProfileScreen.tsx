@@ -24,7 +24,6 @@ import {
     Bell,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
-import { useIdentityStore } from '../store/identityStore';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -33,7 +32,6 @@ const ProfileScreen = ({ navigation }: any) => {
     const { user } = useAuthStore();
     const [dialogVisible, setDialogVisible] = useState(false);
     const [dialogMessage, setDialogMessage] = useState('');
-    const { currentIdentity, fetchIdentities } = useIdentityStore();
 
     const handleServicePress = (label: string) => {
         setDialogMessage(`${label}功能正在开发中，敬请期待！`);
@@ -88,37 +86,6 @@ const ProfileScreen = ({ navigation }: any) => {
         return unsubscribe;
     }, [navigation]);
 
-    // 加载当前身份
-    useEffect(() => {
-        fetchIdentities();
-    }, [fetchIdentities]);
-
-    const getIdentityLabel = (identityType?: string, providerSubType?: string) => {
-        if (identityType === 'provider') {
-            const subtype = String(providerSubType || '').toLowerCase();
-            if (subtype === 'designer') {
-                return '设计师';
-            }
-            if (subtype === 'company') {
-                return '装修公司';
-            }
-            if (subtype === 'foreman' || subtype === 'worker') {
-                return '工长';
-            }
-            return '服务商';
-        }
-
-        const labels: Record<string, string> = {
-            owner: '业主',
-            user: '业主',
-            foreman: '工长',
-            worker: '工长',
-            company: '装修公司',
-            admin: '管理员',
-        };
-        return labels[identityType || 'owner'] || '业主';
-    };
-
     // 快捷统计数据
     const quickStats = [
         { label: '我的收藏', value: 12, key: 'favorites' },
@@ -163,13 +130,9 @@ const ProfileScreen = ({ navigation }: any) => {
                                 <Text style={styles.userName}>
                                     {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
                                 </Text>
-                                {currentIdentity && (
-                                    <View style={styles.identityBadge}>
-                                        <Text style={styles.identityBadgeText}>
-                                            {getIdentityLabel(currentIdentity.identityType, currentIdentity.providerSubType)}
-                                        </Text>
-                                    </View>
-                                )}
+                                <View style={styles.identityBadge}>
+                                    <Text style={styles.identityBadgeText}>业主</Text>
+                                </View>
                             </View>
                             <View style={styles.memberBadge}>
                                 <Text style={styles.memberBadgeText}>BLACK MEMBER</Text>

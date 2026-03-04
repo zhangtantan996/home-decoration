@@ -84,8 +84,9 @@ func TestMerchantInfoAndUpdateWorkTypes_ForForeman(t *testing.T) {
 		t.Fatalf("query provider: %v", err)
 	}
 
-	if provider.WorkTypes != "plumber,mason" {
-		t.Fatalf("work_types mismatch: got=%s want=plumber,mason", provider.WorkTypes)
+	parsedWorkTypes := parseProviderWorkTypes(provider.WorkTypes)
+	if len(parsedWorkTypes) != 2 || parsedWorkTypes[0] != "plumber" || parsedWorkTypes[1] != "mason" {
+		t.Fatalf("work_types mismatch: got=%v want=[plumber mason]", parsedWorkTypes)
 	}
 	if provider.Specialty != "plumber · mason" {
 		t.Fatalf("specialty mismatch: got=%s want=plumber · mason", provider.Specialty)
@@ -159,8 +160,9 @@ func TestMerchantInfoAndUpdateWorkTypes_ForLegacyForemanSubType(t *testing.T) {
 		t.Fatalf("query provider: %v", err)
 	}
 
-	if provider.WorkTypes != "mason" {
-		t.Fatalf("work_types mismatch: got=%s want=mason", provider.WorkTypes)
+	parsedWorkTypes := parseProviderWorkTypes(provider.WorkTypes)
+	if len(parsedWorkTypes) != 1 || parsedWorkTypes[0] != "mason" {
+		t.Fatalf("work_types mismatch: got=%v want=[mason]", parsedWorkTypes)
 	}
 	if provider.Specialty != "mason" {
 		t.Fatalf("specialty mismatch: got=%s want=mason", provider.Specialty)

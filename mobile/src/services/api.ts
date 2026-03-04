@@ -9,34 +9,6 @@ import { getApiUrl } from '../config';
 
 const BASE_URL = getApiUrl();
 
-const normalizeRole = (value?: string | null): 'owner' | 'provider' | 'admin' | undefined => {
-    const normalized = String(value || '').toLowerCase();
-    if (normalized === 'provider' || normalized === 'designer' || normalized === 'company' || normalized === 'foreman' || normalized === 'worker') {
-        return 'provider';
-    }
-    if (normalized === 'admin') {
-        return 'admin';
-    }
-    if (normalized === 'owner' || normalized === 'user' || normalized === 'homeowner') {
-        return 'owner';
-    }
-    return undefined;
-};
-
-const normalizeProviderSubType = (value?: string | null): 'designer' | 'company' | 'foreman' | undefined => {
-    const normalized = String(value || '').toLowerCase();
-    if (normalized === 'designer') {
-        return 'designer';
-    }
-    if (normalized === 'company') {
-        return 'company';
-    }
-    if (normalized === 'foreman' || normalized === 'worker') {
-        return 'foreman';
-    }
-    return undefined;
-};
-
 const api = axios.create({
     baseURL: BASE_URL,
     timeout: 10000,
@@ -85,8 +57,6 @@ const tryRefreshToken = async (refreshToken: string) => {
             const data = payload?.data ?? payload;
             const token = data?.token;
             const newRefreshToken = data?.refreshToken || data?.refresh_token;
-            const activeRole = normalizeRole(data?.activeRole);
-            const providerSubType = normalizeProviderSubType(data?.providerSubType);
 
             if (!token) throw new Error('Empty token in refresh response');
 
@@ -100,8 +70,6 @@ const tryRefreshToken = async (refreshToken: string) => {
             return {
                 token,
                 refreshToken: newRefreshToken,
-                activeRole,
-                providerSubType,
             };
         } catch (err: any) {
             lastError = err;
@@ -222,21 +190,12 @@ api.interceptors.response.use(
                 const {
                     token,
                     refreshToken: newRefreshToken,
-                    activeRole,
-                    providerSubType,
                 } = await tryRefreshToken(refreshToken);
 
                 // 保存新的 Token（同步内存状态 + 安全存储）
                 await useAuthStore.getState().updateToken(token);
                 if (newRefreshToken) {
                     await useAuthStore.getState().updateRefreshToken(newRefreshToken);
-                }
-
-                if (activeRole) {
-                    await useAuthStore.getState().updateUser({
-                        activeRole,
-                        providerSubType: activeRole === 'provider' ? (providerSubType || 'designer') : undefined,
-                    });
                 }
 
                 // 更新请求头
@@ -278,7 +237,11 @@ api.interceptors.response.use(
 // API 接口
 export const authApi = {
     login: (data: { phone: string; code?: string; password?: string; type?: 'code' | 'password' }) => api.post('/auth/login', data),
-    sendCode: (phone: string) => api.post('/auth/send-code', { phone }),
+    sendCode: (
+        phone: string,
+        purpose: 'login' | 'register' | 'merchant_withdraw' | 'merchant_bank_bind' | 'identity_apply' = 'login',
+        captchaToken?: string,
+    ) => api.post('/auth/send-code', { phone, purpose, captchaToken }),
     register: (data: { phone: string; code: string; nickname?: string }) =>
         api.post('/auth/register', data),
 };
@@ -501,15 +464,4 @@ export const inspirationApi = {
         api.get<any>(`/inspiration/${id}/comments`, { params }),
     createComment: (id: number, content: string) =>
         api.post<any>(`/inspiration/${id}/comments`, { content }),
-};
-
-// ========== 身份切换系统 ==========
-
-export const identityApi = {
-    list: () => api.get<any>('/identities'),
-    getCurrent: () => api.get<any>('/identities/current'),
-    switch: (data: { identityId?: number; targetRole?: string; currentRole?: string }) =>
-        api.post<any>('/identities/switch', data),
-    apply: (data: { identityType: 'provider'; providerSubType: 'designer' | 'company' | 'foreman'; applicationData?: string }) =>
-        api.post<any>('/identities/apply', data),
 };

@@ -74,8 +74,14 @@ func MerchantJWT(secret string) gin.HandlerFunc {
 		if providerID, ok := claims["providerId"]; ok {
 			c.Set("providerId", uint64(providerID.(float64)))
 		}
+		if materialShopID, ok := claims["materialShopId"]; ok {
+			c.Set("materialShopId", uint64(materialShopID.(float64)))
+		}
 		if providerType, ok := claims["providerType"]; ok {
 			c.Set("providerType", int8(providerType.(float64)))
+		}
+		if merchantKind, ok := claims["merchantKind"]; ok {
+			c.Set("merchantKind", merchantKind)
 		}
 		if userId, ok := claims["userId"]; ok {
 			c.Set("userId", uint64(userId.(float64)))

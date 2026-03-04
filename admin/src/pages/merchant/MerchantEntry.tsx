@@ -1,16 +1,20 @@
-import React from 'react';
-import { Card, Button, Layout, Typography, Row, Col, Space } from 'antd';
-import { UserOutlined, TeamOutlined, BankOutlined, ToolOutlined, SearchOutlined } from '@ant-design/icons';
+import React, { useState } from 'react';
+import { Card, Button, Layout, Typography, Row, Col, Space, Modal, Radio, Grid } from 'antd';
+import { UserOutlined, BankOutlined, ToolOutlined, ShopOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { MERCHANT_THEME } from '../../constants/merchantTheme';
 
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
+const { useBreakpoint } = Grid;
+
+type MerchantApplyRole = 'designer' | 'foreman' | 'company' | 'material_shop';
+type MerchantEntityType = 'personal' | 'company';
 
 interface MerchantTypeCardProps {
     icon: React.ReactNode;
     title: string;
     description: string;
-    type: string;
     onClick: () => void;
 }
 
@@ -20,7 +24,7 @@ const MerchantTypeCard: React.FC<MerchantTypeCardProps> = ({ icon, title, descri
         onClick={onClick}
         style={{
             textAlign: 'center',
-            height: 200,
+            height: MERCHANT_THEME.roleCardMinHeight,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
@@ -36,11 +40,7 @@ const MerchantTypeCard: React.FC<MerchantTypeCardProps> = ({ icon, title, descri
             },
         }}
     >
-        <div style={{
-            fontSize: 48,
-            marginBottom: 16,
-            color: '#1890ff',
-        }}>
+        <div style={{ fontSize: 48, marginBottom: 16, color: MERCHANT_THEME.primaryColor }}>
             {icon}
         </div>
         <Title level={5} style={{ marginBottom: 8 }}>{title}</Title>
@@ -50,84 +50,133 @@ const MerchantTypeCard: React.FC<MerchantTypeCardProps> = ({ icon, title, descri
 
 const MerchantEntry: React.FC = () => {
     const navigate = useNavigate();
+    const screens = useBreakpoint();
+    const [applyModalOpen, setApplyModalOpen] = useState(false);
+    const [selectedRole, setSelectedRole] = useState<MerchantApplyRole | ''>('');
+    const [entityType, setEntityType] = useState<MerchantEntityType>('personal');
 
-    const handleSelectType = (type: string) => {
-        navigate(`/register?type=${type}`);
-    };
-
-    const merchantTypes = [
+    const merchantRoles: Array<{
+        icon: React.ReactNode;
+        title: string;
+        description: string;
+        role: MerchantApplyRole;
+    }> = [
         {
             icon: <UserOutlined />,
-            title: '独立设计师',
-            description: '个人设计师入驻',
-            type: 'personal',
-        },
-        {
-            icon: <TeamOutlined />,
-            title: '设计工作室',
-            description: '小型设计团队入驻',
-            type: 'studio',
-        },
-        {
-            icon: <BankOutlined />,
-            title: '装修公司',
-            description: '企业资质入驻',
-            type: 'company',
+            title: '设计师入驻',
+            description: '独立设计师或设计工作室，提供专业设计服务',
+            role: 'designer',
         },
         {
             icon: <ToolOutlined />,
-            title: '工长/项目经理',
-            description: '施工团队负责人入驻',
-            type: 'foreman',
+            title: '工长入驻',
+            description: '个人工长或施工团队，承接装修施工项目',
+            role: 'foreman',
+        },
+        {
+            icon: <BankOutlined />,
+            title: '装修公司入驻',
+            description: '具备企业资质的装修公司，提供一站式服务',
+            role: 'company',
+        },
+        {
+            icon: <ShopOutlined />,
+            title: '主材商入驻',
+            description: '主材门店或供应商，提供建材产品销售',
+            role: 'material_shop',
         },
     ];
 
+    const openApplyFlow = (role?: MerchantApplyRole) => {
+        if (role) {
+            setSelectedRole(role);
+            if (role === 'company' || role === 'material_shop') {
+                setEntityType('company');
+            } else {
+                setEntityType('personal');
+            }
+        } else {
+            setSelectedRole('');
+            setEntityType('personal');
+        }
+        setApplyModalOpen(true);
+    };
+
+    const handleRoleSelect = (role: MerchantApplyRole) => {
+        setSelectedRole(role);
+        if (role === 'company' || role === 'material_shop') {
+            setEntityType('company');
+        } else {
+            setEntityType('personal');
+        }
+    };
+
+    const handleStartApply = () => {
+        if (!selectedRole) {
+            return;
+        }
+
+        if (selectedRole === 'material_shop') {
+            navigate('/material-shop/register?entityType=company');
+            return;
+        }
+
+        if (selectedRole === 'company') {
+            navigate('/register?role=company&entityType=company');
+            return;
+        }
+
+        navigate(`/register?role=${selectedRole}&entityType=${entityType}`);
+    };
+
     return (
-        <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-            <Content style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                padding: 24,
-            }}>
+        <Layout style={{ minHeight: '100vh', background: MERCHANT_THEME.pageBgGradient }}>
+            <Content
+                style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: screens.xs ? 16 : 24,
+                }}
+            >
                 <Card
                     style={{
                         width: '100%',
-                        maxWidth: 600,
+                        maxWidth: 760,
                         boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
                         borderRadius: 16,
                     }}
+                    styles={{ body: { padding: screens.xs ? 16 : 24 } }}
                 >
-                    {/* Header */}
                     <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                        <Title level={2} style={{ marginBottom: 8, color: '#1890ff' }}>
+                        <Title level={2} style={{ marginBottom: 8, color: MERCHANT_THEME.primaryColor }}>
                             🏠 装修平台商家中心
                         </Title>
-                        <Paragraph type="secondary">
-                            入驻成为服务商，获取更多订单
-                        </Paragraph>
+                        <Paragraph type="secondary">统一入口：我要入驻 / 已有账号登录</Paragraph>
                     </div>
 
-                    {/* 已有账号登录 */}
                     <Card
                         style={{
                             marginBottom: 24,
-                            background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+                            background: MERCHANT_THEME.primaryGradient,
                             borderRadius: 12,
                         }}
-                        styles={{ body: { padding: 20 } }}
+                        styles={{ body: { padding: screens.xs ? 16 : 20 } }}
                     >
-                        <Row align="middle" justify="space-between">
-                            <Col>
-                                <Text style={{ color: 'white', fontSize: 16 }}>已有账号？</Text>
+                        <Row align="middle" justify="space-between" gutter={[12, 12]}>
+                            <Col xs={24} sm={12}>
+                                <Text style={{ color: 'white', fontSize: 16 }}>开始商家流程</Text>
                             </Col>
-                            <Col>
+                            <Col xs={24} sm={12} style={{ display: 'flex', gap: 8, justifyContent: screens.xs ? 'flex-start' : 'flex-end', flexWrap: 'wrap' }}>
+                                <Button type="primary" size={screens.xs ? "middle" : "large"} onClick={() => openApplyFlow()} style={{ flex: screens.xs ? 1 : undefined }}>
+                                    我要入驻
+                                </Button>
                                 <Button
                                     type="primary"
                                     ghost
-                                    size="large"
+                                    size={screens.xs ? "middle" : "large"}
                                     onClick={() => navigate('/login')}
-                                    style={{ borderColor: 'white', color: 'white' }}
+                                    style={{ borderColor: 'white', color: 'white', flex: screens.xs ? 1 : undefined }}
                                 >
                                     登录商家中心
                                 </Button>
@@ -135,62 +184,76 @@ const MerchantEntry: React.FC = () => {
                         </Row>
                     </Card>
 
-                    {/* 分隔线 */}
-                    <div style={{
-                        textAlign: 'center',
-                        margin: '24px 0',
-                        position: 'relative',
-                    }}>
-                        <div style={{
-                            position: 'absolute',
-                            top: '50%',
-                            left: 0,
-                            right: 0,
-                            height: 1,
-                            background: '#e8e8e8',
-                        }} />
-                        <Text
-                            type="secondary"
-                            style={{
-                                background: 'white',
-                                padding: '0 16px',
-                                position: 'relative',
-                            }}
-                        >
-                            或选择入驻类型
-                        </Text>
-                    </div>
-
-                    {/* 入驻类型选择 */}
                     <Row gutter={[16, 16]}>
-                        {merchantTypes.map((item) => (
-                            <Col xs={24} sm={12} key={item.type}>
+                        {merchantRoles.map((item) => (
+                            <Col xs={24} sm={12} key={item.role}>
                                 <MerchantTypeCard
                                     icon={item.icon}
                                     title={item.title}
                                     description={item.description}
-                                    type={item.type}
-                                    onClick={() => handleSelectType(item.type)}
+                                    onClick={() => openApplyFlow(item.role)}
                                 />
                             </Col>
                         ))}
                     </Row>
 
-                    {/* 查询审核进度 */}
                     <div style={{ textAlign: 'center', marginTop: 32 }}>
                         <Space>
                             <Text type="secondary">已提交申请？</Text>
-                            <Button
-                                type="link"
-                                icon={<SearchOutlined />}
-                                onClick={() => navigate('/apply-status')}
-                            >
+                            <Button type="link" icon={<SearchOutlined />} onClick={() => navigate('/apply-status')}>
                                 查询审核进度
                             </Button>
                         </Space>
                     </div>
                 </Card>
             </Content>
+
+            <Modal
+                title="选择入驻方式"
+                open={applyModalOpen}
+                onCancel={() => setApplyModalOpen(false)}
+                onOk={handleStartApply}
+                okText="下一步"
+                cancelText="取消"
+                okButtonProps={{ disabled: !selectedRole }}
+            >
+                <Row gutter={[12, 12]}>
+                    {merchantRoles.map((item) => (
+                        <Col span={12} key={item.role}>
+                            <Card
+                                hoverable
+                                size="small"
+                                onClick={() => handleRoleSelect(item.role)}
+                                style={{ borderColor: selectedRole === item.role ? '#1677ff' : undefined }}
+                            >
+                                <Space direction="vertical" size={4}>
+                                    <Space>
+                                        {item.icon}
+                                        <Text strong>{item.title}</Text>
+                                    </Space>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>
+                                </Space>
+                            </Card>
+                        </Col>
+                    ))}
+                </Row>
+
+                {(selectedRole === 'designer' || selectedRole === 'foreman') && (
+                    <div style={{ marginTop: 16 }}>
+                        <Text style={{ display: 'block', marginBottom: 8 }}>主体类型</Text>
+                        <Radio.Group
+                            value={entityType}
+                            onChange={(event) => setEntityType(event.target.value)}
+                            optionType="button"
+                            buttonStyle="solid"
+                            options={[
+                                { label: '个人', value: 'personal' },
+                                { label: '公司', value: 'company' },
+                            ]}
+                        />
+                    </div>
+                )}
+            </Modal>
         </Layout>
     );
 };

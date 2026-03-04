@@ -3,7 +3,9 @@ import { request } from '@/utils/request';
 
 interface SendCodeResult {
   expiresIn: number;
+  requestId?: string;
   debugCode?: string;
+  debugOnly?: boolean;
 }
 
 interface LoginTokenPayload {
@@ -35,7 +37,7 @@ export async function sendLoginCode(phone: string) {
   return request<SendCodeResult>({
     url: '/auth/send-code',
     method: 'POST',
-    data: { phone },
+    data: { phone, purpose: 'login' },
     showLoading: true,
   });
 }
@@ -115,4 +117,3 @@ export async function wechatH5BindPhone(bindToken: string, phone: string, code: 
 
   return data;
 }
-

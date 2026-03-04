@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -37,6 +38,32 @@ func claimToUint64(raw interface{}) (uint64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func isSessionTokenActive(claims jwt.MapClaims) bool {
+	jti, _ := claims["jti"].(string)
+	sid, _ := claims["sid"].(string)
+	jti = strings.TrimSpace(jti)
+	sid = strings.TrimSpace(sid)
+	if jti == "" || sid == "" {
+		return true
+	}
+
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return true
+	}
+
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
+	key := fmt.Sprintf("session:%s:%s", sid, jti)
+	exists, err := redisClient.Exists(ctx, key).Result()
+	if err != nil {
+		// Redis 不可用时降级为放行，避免全站鉴权受影响。
+		return true
+	}
+	return exists > 0
 }
 
 // Cors 跨域中间件（白名单模式）
@@ -153,6 +180,12 @@ func JWT(secret string) gin.HandlerFunc {
 		tokenType, _ := claims["token_type"].(string)
 		if tokenType == "admin" || tokenType == "merchant" {
 			response.Unauthorized(c, "Token类型不匹配")
+			c.Abort()
+			return
+		}
+
+		if !isSessionTokenActive(claims) {
+			response.Unauthorized(c, "会话已失效，请重新登录")
 			c.Abort()
 			return
 		}

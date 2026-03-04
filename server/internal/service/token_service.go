@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"home-decoration-server/internal/repository"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 )
 
 // TokenService Token 服务
@@ -27,9 +29,7 @@ type RefreshTokensResponse struct {
 
 // RefreshTokens 刷新 Token（带重放检测）
 func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensResponse, error) {
-	// 1. 解析 refresh token
 	token, err := jwt.Parse(refreshToken, func(token *jwt.Token) (interface{}, error) {
-		// 验证签名方法
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("无效的签名方法")
 		}
@@ -45,7 +45,6 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 		return nil, errors.New("刷新令牌格式错误")
 	}
 
-	// 2. 提取 token 信息
 	userID, ok := claims["userId"].(float64)
 	if !ok {
 		return nil, errors.New("刷新令牌格式错误：缺少 userId")
@@ -55,46 +54,39 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 		return nil, errors.New("刷新令牌格式错误：token_use 非 refresh")
 	}
 
-	// 获取 jti 和 sid（用于重放检测和会话管理）
 	jti, _ := claims["jti"].(string)
 	sid, _ := claims["sid"].(string)
-
-	if jti == "" {
-		return nil, errors.New("刷新令牌格式错误：缺少 jti")
+	if jti == "" || sid == "" {
+		return nil, errors.New("刷新令牌格式错误")
 	}
 
-	// 3. Redis 重放检测：检查 jti 是否已使用
 	redisClient := repository.GetRedis()
 	if redisClient != nil {
 		ctx, cancel := repository.RedisContext()
 		defer cancel()
 
-		key := fmt.Sprintf("refresh_token:%s", jti)
-		exists, err := redisClient.Exists(ctx, key).Result()
-		if err != nil {
-			// Redis 错误不应阻止 token 刷新，但应记录日志
-			fmt.Printf("[TokenService] Redis error checking jti: %v\n", err)
-		} else if exists > 0 {
-			// 检测到重放攻击！撤销整个会话
-			if sid != "" {
-				sessionKey := fmt.Sprintf("session:%s:*", sid)
-				// 删除该会话的所有 token
-				keys, _ := redisClient.Keys(ctx, sessionKey).Result()
-				if len(keys) > 0 {
-					redisClient.Del(ctx, keys...)
-				}
-			}
+		sessionKey := sessionTokenKey(sid, jti)
+		exists, existsErr := redisClient.Exists(ctx, sessionKey).Result()
+		if existsErr != nil {
+			fmt.Printf("[TokenService] Redis error checking session token: %v\n", existsErr)
+		} else if exists == 0 {
+			return nil, errors.New("会话已失效，请重新登录")
+		}
+
+		usedKey := fmt.Sprintf("refresh_token:used:%s", jti)
+		usedTTL := ttlFromTokenClaims(claims)
+		usedMarked, markErr := redisClient.SetNX(ctx, usedKey, "1", usedTTL).Result()
+		if markErr != nil {
+			fmt.Printf("[TokenService] Redis error marking jti as used: %v\n", markErr)
+		} else if !usedMarked {
+			_ = s.revokeSessionWithRedis(ctx, redisClient, sid)
 			return nil, errors.New("检测到令牌重放攻击，会话已撤销")
 		}
 
-		// 4. 标记当前 jti 为已使用（7 天过期）
-		err = redisClient.Set(ctx, key, "used", 7*24*time.Hour).Err()
-		if err != nil {
-			fmt.Printf("[TokenService] Redis error marking jti as used: %v\n", err)
-		}
+		// 消费掉旧 refresh token 的会话映射（单次可用）。
+		_ = redisClient.Del(ctx, sessionKey).Err()
 	}
 
-	// 5. 获取用户信息以生成新 token
 	userService := &UserService{}
 	user, err := userService.GetUserByID(uint64(userID))
 	if err != nil {
@@ -114,20 +106,14 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 		roleCtx = resolvedCtx
 	}
 
-	// 7. 生成新的 access token 和 refresh token
-	newAccessToken, err := generateAccessTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
-	if err != nil {
-		return nil, err
-	}
-
-	newRefreshToken, err := generateRefreshTokenV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
+	tokenPair, err := issueTokenPairV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, sid)
 	if err != nil {
 		return nil, err
 	}
 
 	return &RefreshTokensResponse{
-		AccessToken:  newAccessToken,
-		RefreshToken: newRefreshToken,
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    2 * 3600, // 2 hours
 	}, nil
 }
@@ -146,17 +132,51 @@ func (s *TokenService) RevokeSession(sid string) error {
 	ctx, cancel := repository.RedisContext()
 	defer cancel()
 
-	sessionKey := fmt.Sprintf("session:%s:*", sid)
-	keys, err := redisClient.Keys(ctx, sessionKey).Result()
-	if err != nil {
-		return fmt.Errorf("查询会话失败: %w", err)
-	}
+	return s.revokeSessionWithRedis(ctx, redisClient, sid)
+}
 
-	if len(keys) > 0 {
-		if err := redisClient.Del(ctx, keys...).Err(); err != nil {
-			return fmt.Errorf("撤销会话失败: %w", err)
+func (s *TokenService) revokeSessionWithRedis(ctx context.Context, redisClient *redis.Client, sid string) error {
+	pattern := fmt.Sprintf("session:%s:*", sid)
+	var cursor uint64
+	for {
+		keys, nextCursor, err := redisClient.Scan(ctx, cursor, pattern, 200).Result()
+		if err != nil {
+			return fmt.Errorf("查询会话失败: %w", err)
+		}
+		if len(keys) > 0 {
+			if err := redisClient.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("撤销会话失败: %w", err)
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
 		}
 	}
-
 	return nil
+}
+
+func ttlFromTokenClaims(claims jwt.MapClaims) time.Duration {
+	expRaw, exists := claims["exp"]
+	if !exists {
+		return 7 * 24 * time.Hour
+	}
+
+	var expUnix int64
+	switch value := expRaw.(type) {
+	case float64:
+		expUnix = int64(value)
+	case int64:
+		expUnix = value
+	case int:
+		expUnix = int64(value)
+	default:
+		return 7 * 24 * time.Hour
+	}
+
+	ttl := time.Until(time.Unix(expUnix, 0))
+	if ttl <= 0 {
+		return 5 * time.Minute
+	}
+	return ttl
 }

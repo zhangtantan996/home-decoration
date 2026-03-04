@@ -9,7 +9,7 @@
 项目默认 API 地址由环境变量控制：
 
 ```
-默认 API 地址: http://localhost:8080/api/v1
+默认 API 地址: http://127.0.0.1:8080/api/v1
 ```
 
 在局域网真机/开发者工具联调场景，请使用可访问的宿主机 IP 注入 `TARO_APP_API_BASE`。
@@ -37,6 +37,36 @@ ifconfig | grep "inet " | grep -v 127.0.0.1
 
 ```bash
 export TARO_APP_API_BASE=http://YOUR_IP:8080/api/v1
+npm run dev:weapp
+```
+
+## Tinode（IM）配置说明
+
+小程序聊天基于 Tinode WebSocket 连接，默认端口为 `6060`。
+
+### 必需环境变量
+
+- `TARO_APP_TINODE_API_KEY`：Tinode API Key（用于连接时的 `apikey` 参数）
+
+### 可选环境变量
+
+- `TARO_APP_TINODE_URL`：形如 `ws://YOUR_IP:6060/v0/channels`（生产环境使用 `wss://`）
+
+如果不设置 `TARO_APP_TINODE_URL`，小程序会从 `TARO_APP_API_BASE` 解析 host，并自动推导 Tinode 地址：
+- `http://<host>:8080/api/v1` → `ws://<host>:6060/v0/channels`
+- `https://<host>/api/v1` → `wss://<host>:6060/v0/channels`
+
+### 开发者工具注意事项
+
+1. 确保 Tinode 服务端口 `6060` 在同一网络可访问
+2. 开发环境需允许 WebSocket（同时配合“不校验合法域名”）
+
+示例：
+
+```bash
+export TARO_APP_API_BASE=http://YOUR_IP:8080/api/v1
+export TARO_APP_TINODE_API_KEY=YOUR_TINODE_API_KEY
+export TARO_APP_TINODE_URL=ws://YOUR_IP:6060/v0/channels
 npm run dev:weapp
 ```
 

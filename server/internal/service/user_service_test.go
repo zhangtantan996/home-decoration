@@ -160,6 +160,9 @@ func int8Ptr(v int8) *int8 {
 }
 
 func TestUserService_Register(t *testing.T) {
+	t.Setenv("APP_ENV", "local")
+	t.Setenv("SMS_DEBUG_BYPASS", "true")
+
 	svc := &UserService{}
 	cfg := &config.JWTConfig{ExpireHour: 1}
 
@@ -330,6 +333,9 @@ func TestUserService_Register(t *testing.T) {
 }
 
 func TestUserService_Login(t *testing.T) {
+	t.Setenv("APP_ENV", "local")
+	t.Setenv("SMS_DEBUG_BYPASS", "true")
+
 	svc := &UserService{}
 	cfg := &config.JWTConfig{ExpireHour: 1}
 

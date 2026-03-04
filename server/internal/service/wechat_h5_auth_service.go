@@ -75,7 +75,7 @@ func (s *WechatH5AuthService) AuthorizeURL(redirectURI string) (*WechatH5Authori
 	}, nil
 }
 
-func (s *WechatH5AuthService) Login(code, state, redirectURI string, jwtCfg *config.JWTConfig) (*WechatH5LoginResult, error) {
+func (s *WechatH5AuthService) Login(code, state, redirectURI, clientIP string, jwtCfg *config.JWTConfig) (*WechatH5LoginResult, error) {
 	if s.client == nil || s.client.unconfiguredForLogin() {
 		return nil, errors.New("微信H5未配置")
 	}
@@ -126,6 +126,16 @@ func (s *WechatH5AuthService) Login(code, state, redirectURI string, jwtCfg *con
 			return nil, err
 		}
 
+		trimmedIP := strings.TrimSpace(clientIP)
+		_ = repository.DB.Model(&model.User{}).
+			Where("id = ?", user.ID).
+			Updates(map[string]interface{}{
+				"last_login_at": now,
+				"last_login_ip": trimmedIP,
+			}).Error
+		user.LastLoginAt = &now
+		user.LastLoginIP = trimmedIP
+
 		_ = repository.DB.Model(&model.UserWechatBinding{}).
 			Where("id = ?", binding.ID).
 			Updates(map[string]interface{}{
@@ -151,7 +161,7 @@ func (s *WechatH5AuthService) Login(code, state, redirectURI string, jwtCfg *con
 	}, nil
 }
 
-func (s *WechatH5AuthService) BindPhone(bindToken, phone, smsCode string, jwtCfg *config.JWTConfig) (*TokenResponse, *model.User, error) {
+func (s *WechatH5AuthService) BindPhone(bindToken, phone, smsCode, clientIP string, jwtCfg *config.JWTConfig) (*TokenResponse, *model.User, error) {
 	if s.client == nil || s.client.unconfiguredForLogin() {
 		return nil, nil, errors.New("微信H5未配置")
 	}
@@ -175,7 +185,7 @@ func (s *WechatH5AuthService) BindPhone(bindToken, phone, smsCode string, jwtCfg
 		return nil, nil, err
 	}
 
-	if err := VerifySMSCode(phone, smsCode); err != nil {
+	if err := VerifySMSCode(phone, SMSPurposeLogin, smsCode); err != nil {
 		return nil, nil, err
 	}
 
@@ -241,6 +251,16 @@ func (s *WechatH5AuthService) BindPhone(bindToken, phone, smsCode string, jwtCfg
 	if err != nil {
 		return nil, nil, err
 	}
+
+	trimmedIP := strings.TrimSpace(clientIP)
+	_ = repository.DB.Model(&model.User{}).
+		Where("id = ?", user.ID).
+		Updates(map[string]interface{}{
+			"last_login_at": now,
+			"last_login_ip": trimmedIP,
+		}).Error
+	user.LastLoginAt = &now
+	user.LastLoginIP = trimmedIP
 
 	return tokenResp, user, nil
 }

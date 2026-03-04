@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useMerchantAuthStore } from '../stores/merchantAuthStore';
 
 // 优先使用环境变量 (本地 Docker 开发)
 // 其次根据运行环境动态判断 (生产部署)
@@ -13,10 +14,10 @@ const merchantApi = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
-// 请求拦截器 - 使用 merchant_token
+// 请求拦截器 - 使用 merchantAuthStore
 merchantApi.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('merchant_token');
+        const token = useMerchantAuthStore.getState().getToken();
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -31,9 +32,8 @@ merchantApi.interceptors.response.use(
     (error) => {
         if (error.response?.status === 401) {
             if (!window.location.pathname.includes('/login')) {
-                localStorage.removeItem('merchant_token');
-                localStorage.removeItem('merchant_provider');
-                window.location.href = '/merchant/login';
+                useMerchantAuthStore.getState().logout();
+                window.dispatchEvent(new CustomEvent('merchant-auth-expired'));
             }
         }
         return Promise.reject(error);
@@ -44,6 +44,18 @@ export interface ApiEnvelope<T> {
     code: number;
     message?: string;
     data?: T;
+}
+
+export class MerchantApiError<T = unknown> extends Error {
+    code: number;
+    data?: T;
+
+    constructor(code: number, message: string, data?: T) {
+        super(message);
+        this.name = 'MerchantApiError';
+        this.code = code;
+        this.data = data;
+    }
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -64,19 +76,41 @@ const unwrapEnvelope = <T,>(payload: unknown): ApiEnvelope<T> => {
 const unwrapData = <T,>(payload: unknown, fallbackMessage: string): T => {
     const envelope = unwrapEnvelope<T>(payload);
     if (envelope.code !== 0) {
-        throw new Error(envelope.message || fallbackMessage);
+        throw new MerchantApiError(envelope.code, envelope.message || fallbackMessage, envelope.data);
     }
     return (envelope.data as T) ?? ({} as T);
 };
 
 export type MerchantApplicantType = 'personal' | 'studio' | 'company' | 'foreman';
 export type MerchantProviderSubType = 'designer' | 'company' | 'foreman';
+export type MerchantKind = 'provider' | 'material_shop';
+export type MerchantRole = 'designer' | 'foreman' | 'company' | 'material_shop';
+export type MerchantEntityType = 'personal' | 'company' | 'individual_business';
+export type MerchantLoginNextAction = 'APPLY' | 'PENDING' | 'RESUBMIT' | 'CHANGE_ROLE';
+
+export interface MerchantLoginApplyStatus {
+    kind?: MerchantKind;
+    applicationId?: number;
+    status?: number;
+    rejectReason?: string;
+    role?: MerchantRole;
+    entityType?: MerchantEntityType;
+    applicantType?: MerchantApplicantType;
+}
+
+export interface MerchantLoginGuideData {
+    nextAction: MerchantLoginNextAction;
+    applyStatus?: MerchantLoginApplyStatus;
+}
 
 export interface MerchantProviderSession {
     id: number;
     name: string;
     avatar?: string;
     providerType: number;
+    merchantKind?: MerchantKind;
+    role?: MerchantRole;
+    entityType?: MerchantEntityType;
     applicantType?: MerchantApplicantType;
     providerSubType?: MerchantProviderSubType;
     phone: string;
@@ -85,6 +119,9 @@ export interface MerchantProviderSession {
 
 export interface MerchantLoginData {
     token: string;
+    merchantKind?: MerchantKind;
+    role?: MerchantRole;
+    entityType?: MerchantEntityType;
     provider: MerchantProviderSession;
     tinodeToken?: string;
 }
@@ -94,6 +131,9 @@ export interface MerchantProviderInfo {
     name: string;
     avatar?: string;
     providerType: number;
+    merchantKind?: MerchantKind;
+    role?: MerchantRole;
+    entityType?: MerchantEntityType;
     applicantType?: MerchantApplicantType;
     providerSubType?: MerchantProviderSubType;
     companyName: string;
@@ -103,6 +143,10 @@ export interface MerchantProviderInfo {
     yearsExperience: number;
     specialty: string[];
     workTypes?: string[];
+    highlightTags?: string[];
+    pricing?: Record<string, number>;
+    graduateSchool?: string;
+    designPhilosophy?: string;
     serviceArea: string[];
     serviceAreaCodes?: string[];
     introduction: string;
@@ -128,9 +172,13 @@ export const merchantAuthApi = {
         unwrapData<MerchantProviderInfo>(await merchantApi.get('/merchant/info'), '获取商家信息失败'),
     updateInfo: async (data: Record<string, unknown>) =>
         unwrapData<{ status?: string }>(await merchantApi.put('/merchant/info', data), '更新商家信息失败'),
-    sendCode: async (phone: string) =>
-        unwrapData<{ expiresIn?: number; debugCode?: string }>(
-            await merchantApi.post('/auth/send-code', { phone }),
+    sendCode: async (
+        phone: string,
+        purpose: 'login' | 'register' | 'merchant_withdraw' | 'merchant_bank_bind' | 'identity_apply' = 'login',
+        captchaToken?: string,
+    ) =>
+        unwrapData<{ expiresIn?: number; requestId?: string; debugCode?: string; debugOnly?: boolean }>(
+            await merchantApi.post('/auth/send-code', { phone, purpose, captchaToken }),
             '发送验证码失败'
         ),
     getServiceSettings: async () =>
@@ -149,7 +197,9 @@ export interface MerchantPortfolioCase {
 export interface MerchantApplyPayload {
     phone: string;
     code: string;
-    applicantType: MerchantApplicantType;
+    role: Exclude<MerchantRole, 'material_shop'>;
+    entityType: Exclude<MerchantEntityType, 'individual_business'>;
+    applicantType?: MerchantApplicantType; // 兼容旧接口
     realName: string;
     idCardNo: string;
     idCardFront: string;
@@ -161,6 +211,10 @@ export interface MerchantApplyPayload {
     officeAddress?: string;
     yearsExperience?: number;
     workTypes?: string[];
+    highlightTags?: string[];
+    pricing?: Record<string, number>;
+    graduateSchool?: string;
+    designPhilosophy?: string;
     serviceArea: string[];
     styles?: string[];
     introduction?: string;
@@ -169,6 +223,8 @@ export interface MerchantApplyPayload {
 
 export interface MerchantApplyStatusData {
     applicationId: number;
+    role?: Exclude<MerchantRole, 'material_shop'>;
+    entityType?: Exclude<MerchantEntityType, 'individual_business'>;
     applicantType?: MerchantApplicantType;
     status: number;
     statusText: string;
@@ -186,6 +242,93 @@ export const merchantApplyApi = {
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/merchant/apply/${id}/resubmit`, data), '重新提交申请失败'),
 };
 
+export interface MaterialShopApplyProductPayload {
+    name: string;
+    params: Record<string, string | number | boolean>;
+    price: number;
+    images: string[];
+}
+
+export interface MaterialShopApplyPayload {
+    phone: string;
+    code: string;
+    entityType: 'company' | 'individual_business';
+    shopName: string;
+    shopDescription?: string;
+    businessLicenseNo: string;
+    businessLicense: string;
+    businessHours?: string;
+    contactPhone?: string;
+    contactName?: string;
+    address?: string;
+    products: MaterialShopApplyProductPayload[];
+}
+
+export interface MaterialShopApplyStatusData {
+    applicationId: number;
+    merchantKind: 'material_shop';
+    role: 'material_shop';
+    entityType: 'company' | 'individual_business';
+    status: number;
+    statusText: string;
+    rejectReason?: string;
+    productCount?: number;
+    createdAt: string;
+    auditedAt?: string;
+}
+
+export const materialShopApplyApi = {
+    apply: async (data: MaterialShopApplyPayload) =>
+        unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post('/material-shop/apply', data), '提交主材商入驻失败'),
+    status: async (phone: string) =>
+        unwrapData<MaterialShopApplyStatusData>(await merchantApi.get(`/material-shop/apply/${encodeURIComponent(phone)}/status`), '查询主材商申请状态失败'),
+    resubmit: async (id: number, data: MaterialShopApplyPayload) =>
+        unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/material-shop/apply/${id}/resubmit`, data), '重新提交主材商申请失败'),
+};
+
+export interface MaterialShopProfile {
+    id: number;
+    merchantKind: 'material_shop';
+    entityType: 'company' | 'individual_business';
+    shopName: string;
+    shopDescription?: string;
+    businessLicenseNo?: string;
+    businessLicense?: string;
+    businessHours?: string;
+    contactPhone?: string;
+    contactName?: string;
+    address?: string;
+    isVerified?: boolean;
+}
+
+export interface MaterialShopProduct {
+    id: number;
+    name: string;
+    params: Record<string, string | number | boolean>;
+    price: number;
+    images: string[];
+    coverImage?: string;
+    status?: number;
+    sortOrder?: number;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+export const materialShopCenterApi = {
+    getMe: async () =>
+        unwrapData<MaterialShopProfile>(await merchantApi.get('/material-shop/me'), '获取主材商资料失败'),
+    updateMe: async (data: Partial<MaterialShopProfile>) =>
+        unwrapData<{ status?: string }>(await merchantApi.put('/material-shop/me', data), '更新主材商资料失败'),
+    listProducts: async () =>
+        unwrapData<{ list: MaterialShopProduct[]; total: number }>(await merchantApi.get('/material-shop/me/products'), '获取主材商商品失败'),
+    createProduct: async (data: Omit<MaterialShopProduct, 'id'>) =>
+        unwrapData<{ id: number; message?: string }>(await merchantApi.post('/material-shop/me/products', data), '创建主材商商品失败'),
+    updateProduct: async (id: number, data: Omit<MaterialShopProduct, 'id'>) =>
+        unwrapData<{ message?: string }>(await merchantApi.put(`/material-shop/me/products/${id}`, data), '更新主材商商品失败'),
+    deleteProduct: async (id: number) =>
+        unwrapData<{ message?: string }>(await merchantApi.delete(`/material-shop/me/products/${id}`), '删除主材商商品失败'),
+};
+
 export interface MerchantUploadResult {
     url: string;
     path?: string;
@@ -198,6 +341,7 @@ export const merchantUploadApi = {
         formData.append('file', file);
         return merchantApi.post('/merchant/upload', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 60000,
         });
     },
     uploadImageData: async (file: File) => {
@@ -206,6 +350,7 @@ export const merchantUploadApi = {
         return unwrapData<MerchantUploadResult>(
             await merchantApi.post('/merchant/upload', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 60000,
             }),
             '上传失败'
         );
@@ -344,10 +489,10 @@ export const merchantBankAccountApi = {
 
 // 作品集管理
 export const merchantCaseApi = {
-    list: (params?: any) => merchantApi.get('/merchant/cases', { params }),
+    list: (params?: Record<string, unknown>) => merchantApi.get('/merchant/cases', { params }),
     detail: (id: number) => merchantApi.get(`/merchant/cases/${id}`),
-    create: (data: any) => merchantApi.post('/merchant/cases', data),
-    update: (id: number, data: any) => merchantApi.put(`/merchant/cases/${id}`, data),
+    create: (data: MerchantPortfolioCase) => merchantApi.post('/merchant/cases', data),
+    update: (id: number, data: Partial<MerchantPortfolioCase>) => merchantApi.put(`/merchant/cases/${id}`, data),
     delete: (id: number) => merchantApi.delete(`/merchant/cases/${id}`),
     reorder: (orders: { id: number; sortOrder: number }[]) => merchantApi.put('/merchant/cases/reorder', { orders }),
     cancelAudit: (auditId: number) => merchantApi.delete(`/merchant/cases/audit/${auditId}`), // 取消审核

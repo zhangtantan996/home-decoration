@@ -9,7 +9,37 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
+
+	"gorm.io/gorm"
 )
+
+const minVisibleMaterialShopProducts = 5
+
+func applyVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
+	filtered := db.Where("is_verified = ?", true)
+
+	migrator := repository.DB.Migrator()
+	if !migrator.HasTable(&model.MaterialShopProduct{}) {
+		return filtered
+	}
+
+	if migrator.HasColumn(&model.MaterialShopProduct{}, "status") {
+		return filtered.Where(
+			`(SELECT COUNT(1)
+			    FROM material_shop_products msp
+			   WHERE msp.shop_id = material_shops.id
+			     AND msp.status = 1) >= ?`,
+			minVisibleMaterialShopProducts,
+		)
+	}
+
+	return filtered.Where(
+		`(SELECT COUNT(1)
+		    FROM material_shop_products msp
+		   WHERE msp.shop_id = material_shops.id) >= ?`,
+		minVisibleMaterialShopProducts,
+	)
+}
 
 // MaterialShopService 主材门店服务
 type MaterialShopService struct{}
@@ -55,7 +85,7 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 	var shops []model.MaterialShop
 	var total int64
 
-	db := repository.DB.Model(&model.MaterialShop{})
+	db := applyVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{}))
 
 	// 类型筛选
 	if query.Type != "" && query.Type != "all" {
@@ -135,7 +165,9 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 // GetMaterialShopByID 获取门店详情
 func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListItem, error) {
 	var shop model.MaterialShop
-	if err := repository.DB.First(&shop, id).Error; err != nil {
+	if err := applyVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).
+		Where("id = ?", id).
+		First(&shop).Error; err != nil {
 		return nil, err
 	}
 

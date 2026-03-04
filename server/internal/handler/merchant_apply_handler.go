@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -9,10 +10,13 @@ import (
 	"home-decoration-server/internal/utils/tencentim"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
+	"log"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ==================== 商家入驻 Handler ====================
@@ -23,7 +27,9 @@ var regionService = &service.RegionService{}
 type MerchantApplyInput struct {
 	Phone         string `json:"phone" binding:"required"`
 	Code          string `json:"code" binding:"required"`
-	ApplicantType string `json:"applicantType" binding:"required,oneof=personal studio company foreman"`
+	ApplicantType string `json:"applicantType"` // 兼容旧字段
+	Role          string `json:"role"`          // designer, foreman, company
+	EntityType    string `json:"entityType"`    // personal, company
 	RealName      string `json:"realName" binding:"required"`
 	IDCardNo      string `json:"idCardNo" binding:"required"`
 	IDCardFront   string `json:"idCardFront" binding:"required"`
@@ -38,9 +44,13 @@ type MerchantApplyInput struct {
 	YearsExperience int      `json:"yearsExperience"`
 	WorkTypes       []string `json:"workTypes"`
 	// 通用
-	ServiceArea  []string `json:"serviceArea" binding:"required,min=1"`
-	Styles       []string `json:"styles"`
-	Introduction string   `json:"introduction"`
+	ServiceArea      []string           `json:"serviceArea" binding:"required,min=1"`
+	Styles           []string           `json:"styles"`
+	HighlightTags    []string           `json:"highlightTags"`
+	Pricing          map[string]float64 `json:"pricing"`
+	Introduction     string             `json:"introduction"`
+	GraduateSchool   string             `json:"graduateSchool"`
+	DesignPhilosophy string             `json:"designPhilosophy"`
 	// 作品集
 	PortfolioCases []PortfolioCaseInput `json:"portfolioCases" binding:"required,min=1"`
 }
@@ -51,6 +61,215 @@ type PortfolioCaseInput struct {
 	Images []string `json:"images" binding:"required,min=1"`
 	Style  string   `json:"style"`
 	Area   string   `json:"area"`
+}
+
+func normalizeApplyRoleAndEntity(input *MerchantApplyInput) error {
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	entityType := strings.ToLower(strings.TrimSpace(input.EntityType))
+	applicantType := strings.ToLower(strings.TrimSpace(input.ApplicantType))
+
+	if role == "" {
+		switch applicantType {
+		case "personal":
+			role = "designer"
+			entityType = "personal"
+		case "studio":
+			role = "designer"
+			entityType = "company"
+		case "company":
+			role = "company"
+			entityType = "company"
+		case "foreman":
+			role = "foreman"
+		}
+	}
+
+	if role != "designer" && role != "foreman" && role != "company" {
+		return fmt.Errorf("入驻角色无效")
+	}
+
+	if entityType == "" {
+		if role == "company" {
+			entityType = "company"
+		} else {
+			entityType = "personal"
+		}
+	}
+
+	if entityType != "personal" && entityType != "company" {
+		return fmt.Errorf("主体类型无效")
+	}
+
+	if role == "company" {
+		entityType = "company"
+	}
+
+	compatApplicantType := "personal"
+	switch role {
+	case "designer":
+		if entityType == "company" {
+			compatApplicantType = "studio"
+		} else {
+			compatApplicantType = "personal"
+		}
+	case "foreman":
+		compatApplicantType = "foreman"
+	case "company":
+		compatApplicantType = "company"
+	}
+
+	input.Role = role
+	input.EntityType = entityType
+	input.ApplicantType = compatApplicantType
+	return nil
+}
+
+func validatePricingValue(pricing map[string]float64, key string) bool {
+	if pricing == nil {
+		return false
+	}
+	value, ok := pricing[key]
+	return ok && value > 0
+}
+
+func parseJSONOrDelimitedSlice(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return []string{}
+	}
+
+	var values []string
+	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		if err := json.Unmarshal([]byte(trimmed), &values); err == nil {
+			return normalizeStringSlice(values)
+		}
+	}
+
+	if strings.Contains(trimmed, " · ") {
+		return normalizeStringSlice(strings.Split(trimmed, " · "))
+	}
+	if strings.Contains(trimmed, ",") {
+		return normalizeStringSlice(strings.Split(trimmed, ","))
+	}
+
+	return normalizeStringSlice([]string{trimmed})
+}
+
+func parsePricingObject(raw string) map[string]float64 {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return map[string]float64{}
+	}
+
+	var pricing map[string]float64
+	if err := json.Unmarshal([]byte(trimmed), &pricing); err != nil {
+		return map[string]float64{}
+	}
+	return pricing
+}
+
+func getPricingRange(pricing map[string]float64) (float64, float64) {
+	minVal := 0.0
+	maxVal := 0.0
+
+	for _, value := range pricing {
+		if value <= 0 {
+			continue
+		}
+		if minVal == 0 || value < minVal {
+			minVal = value
+		}
+		if value > maxVal {
+			maxVal = value
+		}
+	}
+
+	return minVal, maxVal
+}
+
+func normalizeApprovedApplicationMeta(app *model.MerchantApplication) (int8, string, string, string, error) {
+	role := strings.ToLower(strings.TrimSpace(app.Role))
+	entityType := strings.ToLower(strings.TrimSpace(app.EntityType))
+	applicantType := strings.ToLower(strings.TrimSpace(app.ApplicantType))
+
+	if role == "" {
+		switch applicantType {
+		case "studio":
+			role = "designer"
+			entityType = "company"
+		case "company":
+			role = "company"
+			entityType = "company"
+		case "foreman":
+			role = "foreman"
+		default:
+			role = "designer"
+			entityType = "personal"
+		}
+	}
+
+	if entityType == "" {
+		if role == "company" {
+			entityType = "company"
+		} else if applicantType == "studio" {
+			entityType = "company"
+		} else {
+			entityType = "personal"
+		}
+	}
+
+	if entityType != "personal" && entityType != "company" {
+		return 0, "", "", "", fmt.Errorf("主体类型无效")
+	}
+
+	var (
+		providerType int8
+		subType      string
+		compatType   string
+	)
+
+	switch role {
+	case "designer":
+		providerType = 1
+		if entityType == "company" {
+			subType = "studio"
+			compatType = "studio"
+		} else {
+			subType = "personal"
+			compatType = "personal"
+		}
+	case "foreman":
+		providerType = 3
+		subType = "foreman"
+		compatType = "foreman"
+	case "company":
+		providerType = 2
+		entityType = "company"
+		subType = "company"
+		compatType = "company"
+	default:
+		return 0, "", "", "", fmt.Errorf("入驻角色无效")
+	}
+
+	return providerType, subType, entityType, compatType, nil
+}
+
+func encryptSensitiveOrPlain(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+
+	if strings.TrimSpace(os.Getenv("ENCRYPTION_KEY")) == "" {
+		return value
+	}
+
+	encrypted, err := utils.Encrypt(value)
+	if err != nil {
+		log.Printf("[MerchantApply] encrypt failed, fallback plain value: %v", err)
+		return value
+	}
+	return encrypted
 }
 
 func normalizeStringSlice(values []string) []string {
@@ -72,7 +291,7 @@ func normalizeStringSlice(values []string) []string {
 	return result
 }
 
-func validatePortfolioCases(cases []PortfolioCaseInput) error {
+func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 	if len(cases) == 0 {
 		return fmt.Errorf("请至少添加1个案例")
 	}
@@ -89,56 +308,102 @@ func validatePortfolioCases(cases []PortfolioCaseInput) error {
 		if len(cases[index].Images) == 0 {
 			return fmt.Errorf("第%d个案例至少上传1张图片", index+1)
 		}
+
+		switch role {
+		case "designer":
+			if len(cases[index].Images) < 3 || len(cases[index].Images) > 6 {
+				return fmt.Errorf("设计师第%d个案例需上传3-6张图片", index+1)
+			}
+		case "foreman":
+			if len(cases[index].Images) < 8 || len(cases[index].Images) > 12 {
+				return fmt.Errorf("工长第%d个施工案例需上传8-12张图片", index+1)
+			}
+		case "company":
+			if len(cases[index].Images) < 3 {
+				return fmt.Errorf("装修公司第%d个案例至少上传3张图片", index+1)
+			}
+		}
 	}
 
 	return nil
 }
 
 func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
-	input.Styles = normalizeStringSlice(input.Styles)
-	input.WorkTypes = normalizeStringSlice(input.WorkTypes)
-
-	if len([]rune(input.Introduction)) > 500 {
-		return fmt.Errorf("个人/公司简介不能超过500个字符")
-	}
-
-	if err := validatePortfolioCases(input.PortfolioCases); err != nil {
+	if err := normalizeApplyRoleAndEntity(input); err != nil {
 		return err
 	}
 
-	if input.ApplicantType == "company" {
+	input.Styles = normalizeStringSlice(input.Styles)
+	input.WorkTypes = normalizeStringSlice(input.WorkTypes)
+	input.HighlightTags = normalizeStringSlice(input.HighlightTags)
+	input.GraduateSchool = strings.TrimSpace(input.GraduateSchool)
+	input.DesignPhilosophy = strings.TrimSpace(input.DesignPhilosophy)
+	input.Introduction = strings.TrimSpace(input.Introduction)
+
+	if len([]rune(input.Introduction)) > 5000 {
+		return fmt.Errorf("个人/公司简介不能超过5000个字符")
+	}
+
+	if len([]rune(input.DesignPhilosophy)) > 5000 {
+		return fmt.Errorf("设计理念不能超过5000个字符")
+	}
+
+	if err := validatePortfolioCases(input.Role, input.PortfolioCases); err != nil {
+		return err
+	}
+
+	if input.EntityType == "company" {
 		if strings.TrimSpace(input.LicenseNo) == "" {
-			return fmt.Errorf("公司类型必须提供营业执照号")
+			return fmt.Errorf("公司主体必须提供营业执照号")
 		}
 		if len(strings.TrimSpace(input.LicenseNo)) > 18 {
 			return fmt.Errorf("营业执照号长度不正确")
 		}
+		if strings.TrimSpace(input.LicenseImage) == "" {
+			return fmt.Errorf("公司主体必须上传营业执照图片")
+		}
 	}
 
-	if input.ApplicantType == "studio" || input.ApplicantType == "company" {
+	if input.EntityType == "company" || input.Role == "company" {
 		if !utils.ValidateCompanyName(input.CompanyName) {
 			return fmt.Errorf("名称长度应在2-100个字符之间")
 		}
 	}
 
-	if input.ApplicantType == "foreman" {
+	switch input.Role {
+	case "designer":
+		if len(input.Styles) < 1 || len(input.Styles) > 3 {
+			return fmt.Errorf("设计师擅长风格需选择1-3个")
+		}
+		if len(input.PortfolioCases) < 3 {
+			return fmt.Errorf("设计师请至少添加3个作品案例")
+		}
+		if !validatePricingValue(input.Pricing, "flat") || !validatePricingValue(input.Pricing, "duplex") || !validatePricingValue(input.Pricing, "other") {
+			return fmt.Errorf("设计师需填写平层/复式/其他三个报价（元/㎡）")
+		}
+	case "foreman":
 		if input.YearsExperience <= 0 || input.YearsExperience > 50 {
 			return fmt.Errorf("工长类型需要填写1-50年的施工经验")
 		}
-		if len(input.WorkTypes) == 0 {
+		if len(input.WorkTypes) < 1 {
 			return fmt.Errorf("工长类型至少选择1个工种")
 		}
-		if len(input.PortfolioCases) < 1 {
-			return fmt.Errorf("工长类型请至少添加1个施工案例")
+		if len(input.HighlightTags) < 1 || len(input.HighlightTags) > 3 {
+			return fmt.Errorf("工长施工亮点需选择1-3个")
 		}
-		return nil
-	}
-
-	if len(input.Styles) == 0 {
-		return fmt.Errorf("请至少选择1个擅长风格")
-	}
-	if len(input.PortfolioCases) < 3 {
-		return fmt.Errorf("请至少添加3个作品案例")
+		if len(input.PortfolioCases) < 3 {
+			return fmt.Errorf("工长类型请至少添加3个施工案例")
+		}
+		if !validatePricingValue(input.Pricing, "perSqm") {
+			return fmt.Errorf("工长需填写施工报价（元/㎡）")
+		}
+	case "company":
+		if len(input.PortfolioCases) < 3 {
+			return fmt.Errorf("装修公司请至少添加3个案例")
+		}
+		if !validatePricingValue(input.Pricing, "fullPackage") || !validatePricingValue(input.Pricing, "halfPackage") {
+			return fmt.Errorf("装修公司需填写全包/半包报价（元/㎡）")
+		}
 	}
 
 	return nil
@@ -153,7 +418,7 @@ func MerchantApply(c *gin.Context) {
 	}
 
 	// 1. 验证短信验证码
-	if err := service.VerifySMSCode(input.Phone, input.Code); err != nil {
+	if err := service.VerifySMSCode(input.Phone, service.SMSPurposeIdentityApply, input.Code); err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}
@@ -172,6 +437,11 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
+	if err := validateMerchantApplyBusinessFields(&input); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
 	// 3. 检查是否已有申请
 	var existingApp model.MerchantApplication
 	if err := repository.DB.Where("phone = ? AND status IN (0, 1)", input.Phone).First(&existingApp).Error; err == nil {
@@ -180,11 +450,6 @@ func MerchantApply(c *gin.Context) {
 		} else {
 			response.Error(c, 400, "您已是入驻商家，请直接登录")
 		}
-		return
-	}
-
-	if err := validateMerchantApplyBusinessFields(&input); err != nil {
-		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -212,41 +477,93 @@ func MerchantApply(c *gin.Context) {
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
 	workTypesJSON, _ := json.Marshal(input.WorkTypes)
+	highlightTagsJSON, _ := json.Marshal(input.HighlightTags)
+	pricingJSON, _ := json.Marshal(input.Pricing)
 	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
 
-	// 6. 创建申请记录
-	application := model.MerchantApplication{
-		Phone:           input.Phone,
-		ApplicantType:   input.ApplicantType,
-		RealName:        input.RealName,
-		IDCardNo:        input.IDCardNo, // TODO: 生产环境需要加密
-		IDCardFront:     input.IDCardFront,
-		IDCardBack:      input.IDCardBack,
-		CompanyName:     input.CompanyName,
-		LicenseNo:       input.LicenseNo,
-		LicenseImage:    input.LicenseImage,
-		TeamSize:        input.TeamSize,
-		OfficeAddress:   input.OfficeAddress,
-		YearsExperience: input.YearsExperience,
-		WorkTypes:       string(workTypesJSON),
-		ServiceArea:     string(serviceAreaJSON),
-		Styles:          string(stylesJSON),
-		Introduction:    input.Introduction,
-		PortfolioCases:  string(portfolioJSON),
-		Status:          0, // 待审核
+	tx := repository.DB.Begin()
+
+	// 6. 入驻内隐式建号（或复用已有用户）
+	var user model.User
+	if err := tx.Where("phone = ?", input.Phone).First(&user).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			tx.Rollback()
+			response.Error(c, 500, "提交失败: 查询用户异常")
+			return
+		}
+
+		user = model.User{
+			Phone:    input.Phone,
+			Nickname: input.RealName,
+			UserType: 1,
+			Status:   1,
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "提交失败: 创建账号失败")
+			return
+		}
 	}
 
-	if err := repository.DB.Create(&application).Error; err != nil {
+	// 7. 单一商家身份限制：已有商家身份需走变更申请
+	var existingProvider model.Provider
+	if err := tx.Where("user_id = ?", user.ID).First(&existingProvider).Error; err == nil {
+		tx.Rollback()
+		c.JSON(200, response.Response{
+			Code:    409,
+			Message: "您已拥有商家身份，如需切换角色请提交角色变更申请",
+			Data: gin.H{
+				"nextAction": "CHANGE_ROLE",
+				"userId":     user.ID,
+			},
+		})
+		return
+	}
+
+	// 8. 创建申请记录
+	application := model.MerchantApplication{
+		UserID:           user.ID,
+		Phone:            input.Phone,
+		ApplicantType:    input.ApplicantType,
+		Role:             input.Role,
+		EntityType:       input.EntityType,
+		RealName:         input.RealName,
+		IDCardNo:         encryptSensitiveOrPlain(input.IDCardNo),
+		IDCardFront:      input.IDCardFront,
+		IDCardBack:       input.IDCardBack,
+		CompanyName:      input.CompanyName,
+		LicenseNo:        encryptSensitiveOrPlain(input.LicenseNo),
+		LicenseImage:     input.LicenseImage,
+		TeamSize:         input.TeamSize,
+		OfficeAddress:    input.OfficeAddress,
+		YearsExperience:  input.YearsExperience,
+		WorkTypes:        string(workTypesJSON),
+		ServiceArea:      string(serviceAreaJSON),
+		Styles:           string(stylesJSON),
+		HighlightTags:    string(highlightTagsJSON),
+		PricingJSON:      string(pricingJSON),
+		Introduction:     input.Introduction,
+		GraduateSchool:   input.GraduateSchool,
+		DesignPhilosophy: input.DesignPhilosophy,
+		PortfolioCases:   string(portfolioJSON),
+		Status:           0, // 待审核
+	}
+
+	if err := tx.Create(&application).Error; err != nil {
+		tx.Rollback()
 		response.Error(c, 500, "提交失败: "+err.Error())
 		return
 	}
 
-	// 7. TODO: 发送短信通知
+	tx.Commit()
+
+	// 9. TODO: 发送短信通知
 	// sendSMS(input.Phone, "您的商家入驻申请已提交，预计1-3个工作日内完成审核")
 
 	response.Success(c, gin.H{
 		"applicationId": application.ID,
-		"message":       "申请已提交，请等待审核",
+		"userCreated":   true,
+		"message":       "申请已提交，账号已创建，审核通过后可登录商家中心",
 	})
 }
 
@@ -273,6 +590,8 @@ func MerchantApplyStatus(c *gin.Context) {
 	response.Success(c, gin.H{
 		"applicationId": app.ID,
 		"applicantType": app.ApplicantType,
+		"role":          app.Role,
+		"entityType":    app.EntityType,
 		"status":        app.Status,
 		"statusText":    statusText[app.Status],
 		"rejectReason":  app.RejectReason,
@@ -310,6 +629,11 @@ func MerchantResubmit(c *gin.Context) {
 		return
 	}
 
+	if err := normalizeApplyRoleAndEntity(&input); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
 	if err := validateMerchantApplyBusinessFields(&input); err != nil {
 		response.Error(c, 400, err.Error())
 		return
@@ -339,15 +663,19 @@ func MerchantResubmit(c *gin.Context) {
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
 	workTypesJSON, _ := json.Marshal(input.WorkTypes)
+	highlightTagsJSON, _ := json.Marshal(input.HighlightTags)
+	pricingJSON, _ := json.Marshal(input.Pricing)
 	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
 
+	app.Role = input.Role
+	app.EntityType = input.EntityType
 	app.ApplicantType = input.ApplicantType
 	app.RealName = input.RealName
-	app.IDCardNo = input.IDCardNo
+	app.IDCardNo = encryptSensitiveOrPlain(input.IDCardNo)
 	app.IDCardFront = input.IDCardFront
 	app.IDCardBack = input.IDCardBack
 	app.CompanyName = input.CompanyName
-	app.LicenseNo = input.LicenseNo
+	app.LicenseNo = encryptSensitiveOrPlain(input.LicenseNo)
 	app.LicenseImage = input.LicenseImage
 	app.TeamSize = input.TeamSize
 	app.OfficeAddress = input.OfficeAddress
@@ -355,7 +683,11 @@ func MerchantResubmit(c *gin.Context) {
 	app.WorkTypes = string(workTypesJSON)
 	app.ServiceArea = string(serviceAreaJSON)
 	app.Styles = string(stylesJSON)
+	app.HighlightTags = string(highlightTagsJSON)
+	app.PricingJSON = string(pricingJSON)
 	app.Introduction = input.Introduction
+	app.GraduateSchool = input.GraduateSchool
+	app.DesignPhilosophy = input.DesignPhilosophy
 	app.PortfolioCases = string(portfolioJSON)
 	app.Status = 0 // 重置为待审核
 	app.RejectReason = ""
@@ -388,7 +720,23 @@ func AdminListApplications(c *gin.Context) {
 
 	// 筛选类型
 	if appType := c.Query("type"); appType != "" {
-		query = query.Where("applicant_type = ?", appType)
+		appType = strings.ToLower(strings.TrimSpace(appType))
+		switch appType {
+		case "designer", "foreman", "company":
+			query = query.Where("role = ?", appType)
+		default:
+			query = query.Where("applicant_type = ?", appType)
+		}
+	}
+
+	// 筛选角色
+	if role := c.Query("role"); role != "" {
+		query = query.Where("role = ?", strings.ToLower(strings.TrimSpace(role)))
+	}
+
+	// 筛选主体
+	if entityType := c.Query("entityType"); entityType != "" {
+		query = query.Where("entity_type = ?", strings.ToLower(strings.TrimSpace(entityType)))
 	}
 
 	// 搜索
@@ -419,11 +767,14 @@ func AdminGetApplication(c *gin.Context) {
 	}
 
 	// 解析 JSON 字段
-	var serviceAreaCodes, styles, workTypes []string
+	var serviceAreaCodes, styles, workTypes, highlightTags []string
+	var pricing map[string]float64
 	var portfolioCases []PortfolioCaseInput
 	json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
 	json.Unmarshal([]byte(app.Styles), &styles)
 	json.Unmarshal([]byte(app.WorkTypes), &workTypes)
+	json.Unmarshal([]byte(app.HighlightTags), &highlightTags)
+	json.Unmarshal([]byte(app.PricingJSON), &pricing)
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
 
 	// 将服务区域代码转换为名称（用于前端展示）
@@ -433,6 +784,8 @@ func AdminGetApplication(c *gin.Context) {
 		"id":               app.ID,
 		"phone":            app.Phone,
 		"applicantType":    app.ApplicantType,
+		"role":             app.Role,
+		"entityType":       app.EntityType,
 		"realName":         app.RealName,
 		"idCardFront":      app.IDCardFront,
 		"idCardBack":       app.IDCardBack,
@@ -446,7 +799,11 @@ func AdminGetApplication(c *gin.Context) {
 		"serviceArea":      serviceAreaNames, // 返回名称数组，方便前端展示
 		"serviceAreaCodes": serviceAreaCodes, // 同时返回代码数组
 		"styles":           styles,
+		"highlightTags":    highlightTags,
+		"pricing":          pricing,
 		"introduction":     app.Introduction,
+		"graduateSchool":   app.GraduateSchool,
+		"designPhilosophy": app.DesignPhilosophy,
 		"portfolioCases":   portfolioCases,
 		"status":           app.Status,
 		"rejectReason":     app.RejectReason,
@@ -473,9 +830,16 @@ func AdminApproveApplication(c *gin.Context) {
 
 	tx := repository.DB.Begin()
 
-	// 1. 查询现有 User（不再创建新用户）
+	// 1. 查询现有 User（优先按 user_id，兼容按手机号兜底）
 	var user model.User
-	if err := tx.Where("phone = ?", app.Phone).First(&user).Error; err != nil {
+	userQueryErr := gorm.ErrRecordNotFound
+	if app.UserID > 0 {
+		userQueryErr = tx.First(&user, app.UserID).Error
+	}
+	if errors.Is(userQueryErr, gorm.ErrRecordNotFound) {
+		userQueryErr = tx.Where("phone = ?", app.Phone).First(&user).Error
+	}
+	if userQueryErr != nil {
 		tx.Rollback()
 		response.Error(c, 400, "用户不存在，请先使用该手机号注册账号")
 		return
@@ -488,38 +852,60 @@ func AdminApproveApplication(c *gin.Context) {
 		return
 	}
 
-	// 2. 确定 ProviderType
-	providerType := int8(1) // 默认设计师
-	if app.ApplicantType == "company" {
-		providerType = 2 // 公司
-	} else if app.ApplicantType == "foreman" {
-		providerType = 3 // 工长
+	// 2. 解析申请角色映射
+	providerType, subType, entityType, compatApplicantType, normalizeErr := normalizeApprovedApplicationMeta(&app)
+	if normalizeErr != nil {
+		tx.Rollback()
+		response.Error(c, 400, normalizeErr.Error())
+		return
 	}
 
-	var workTypes []string
-	_ = json.Unmarshal([]byte(app.WorkTypes), &workTypes)
-	workTypes = normalizeStringSlice(workTypes)
+	// 2.1 单一商家身份限制（防止重复创建）
+	var existingProvider model.Provider
+	if err := tx.Where("user_id = ?", user.ID).First(&existingProvider).Error; err == nil {
+		tx.Rollback()
+		response.Error(c, 409, "该用户已拥有商家身份，无法重复审核通过")
+		return
+	}
 
-	specialty := app.Styles
-	if app.ApplicantType == "foreman" && len(workTypes) > 0 {
-		specialty = strings.Join(workTypes, ",")
+	workTypes := parseJSONOrDelimitedSlice(app.WorkTypes)
+	styles := parseJSONOrDelimitedSlice(app.Styles)
+	highlightTags := normalizeStringSlice(parseJSONOrDelimitedSlice(app.HighlightTags))
+	pricing := parsePricingObject(app.PricingJSON)
+	priceMin, priceMax := getPricingRange(pricing)
+
+	workTypesJSON, _ := json.Marshal(workTypes)
+	highlightTagsJSON, _ := json.Marshal(highlightTags)
+	pricingJSON, _ := json.Marshal(pricing)
+
+	specialty := strings.Join(styles, " · ")
+	if providerType == 3 && len(workTypes) > 0 {
+		specialty = strings.Join(workTypes, " · ")
 	}
 
 	// 3. 创建 Provider
 	provider := model.Provider{
-		UserID:          user.ID,
-		ProviderType:    providerType,
-		SubType:         app.ApplicantType,
-		CompanyName:     app.CompanyName,
-		LicenseNo:       app.LicenseNo,
-		ServiceArea:     app.ServiceArea,
-		Specialty:       specialty,
-		WorkTypes:       strings.Join(workTypes, ","),
-		YearsExperience: app.YearsExperience,
-		ServiceIntro:    app.Introduction,
-		TeamSize:        app.TeamSize,
-		Status:          1,
-		Verified:        true,
+		UserID:           user.ID,
+		ProviderType:     providerType,
+		SubType:          subType,
+		EntityType:       entityType,
+		CompanyName:      app.CompanyName,
+		LicenseNo:        app.LicenseNo,
+		ServiceArea:      app.ServiceArea,
+		Specialty:        specialty,
+		WorkTypes:        string(workTypesJSON),
+		HighlightTags:    string(highlightTagsJSON),
+		PricingJSON:      string(pricingJSON),
+		GraduateSchool:   app.GraduateSchool,
+		DesignPhilosophy: app.DesignPhilosophy,
+		YearsExperience:  app.YearsExperience,
+		ServiceIntro:     app.Introduction,
+		TeamSize:         app.TeamSize,
+		OfficeAddress:    app.OfficeAddress,
+		PriceMin:         priceMin,
+		PriceMax:         priceMax,
+		Status:           1,
+		Verified:         true,
 	}
 	if err := tx.Create(&provider).Error; err != nil {
 		tx.Rollback()
@@ -529,19 +915,39 @@ func AdminApproveApplication(c *gin.Context) {
 
 	// 3.1. 创建 user_identities 记录（多身份系统）
 	now := time.Now()
-	identity := model.UserIdentity{
-		UserID:        user.ID,
-		IdentityType:  "provider",
-		IdentityRefID: &provider.ID,
-		Status:        1, // approved
-		Verified:      true,
-		VerifiedAt:    &now,
-		VerifiedBy:    &adminID,
-	}
-	if err := tx.Create(&identity).Error; err != nil {
-		tx.Rollback()
-		response.Error(c, 500, "创建身份记录失败: "+err.Error())
-		return
+	var identity model.UserIdentity
+	if err := tx.Where("user_id = ? AND identity_type = ?", user.ID, "provider").First(&identity).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			tx.Rollback()
+			response.Error(c, 500, "创建身份记录失败: "+err.Error())
+			return
+		}
+
+		identity = model.UserIdentity{
+			UserID:        user.ID,
+			IdentityType:  "provider",
+			IdentityRefID: &provider.ID,
+			Status:        1,
+			Verified:      true,
+			VerifiedAt:    &now,
+			VerifiedBy:    &adminID,
+		}
+		if err := tx.Create(&identity).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "创建身份记录失败: "+err.Error())
+			return
+		}
+	} else {
+		identity.IdentityRefID = &provider.ID
+		identity.Status = 1
+		identity.Verified = true
+		identity.VerifiedAt = &now
+		identity.VerifiedBy = &adminID
+		if err := tx.Save(&identity).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "更新身份记录失败: "+err.Error())
+			return
+		}
 	}
 
 	// 4. 迁移作品集到 ProviderCase
@@ -549,8 +955,7 @@ func AdminApproveApplication(c *gin.Context) {
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
 
 	// 作品风格若未填写，回退到商家擅长风格的第一个选项，保证灵感库筛选字段有值。
-	var fallbackStyles []string
-	_ = json.Unmarshal([]byte(app.Styles), &fallbackStyles)
+	fallbackStyles := styles
 	fallbackStyle := ""
 	if len(fallbackStyles) > 0 {
 		fallbackStyle = strings.TrimSpace(fallbackStyles[0])
@@ -586,7 +991,11 @@ func AdminApproveApplication(c *gin.Context) {
 			// 审核通过后生成的作品默认可在灵感库展示。
 			ShowInInspiration: true,
 		}
-		tx.Create(&providerCase)
+		if err := tx.Create(&providerCase).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "迁移案例失败: "+err.Error())
+			return
+		}
 	}
 
 	// 5. 创建服务设置
@@ -594,17 +1003,37 @@ func AdminApproveApplication(c *gin.Context) {
 		ProviderID:    provider.ID,
 		AcceptBooking: true,
 	}
-	tx.Create(&serviceSetting)
+	if err := tx.Create(&serviceSetting).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "创建服务设置失败: "+err.Error())
+		return
+	}
 
 	// 6. 更新申请状态
+	normalizedRole := "designer"
+	if providerType == 3 {
+		normalizedRole = "foreman"
+	} else if providerType == 2 {
+		normalizedRole = "company"
+	}
+	app.Role = normalizedRole
+	app.EntityType = entityType
+	app.ApplicantType = compatApplicantType
 	app.Status = 1
 	app.AuditedBy = adminID
 	app.AuditedAt = &now
 	app.UserID = user.ID
 	app.ProviderID = provider.ID
-	tx.Save(&app)
+	if err := tx.Save(&app).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "更新申请状态失败: "+err.Error())
+		return
+	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		response.Error(c, 500, "审核提交失败: "+err.Error())
+		return
+	}
 
 	// 同步商家到腾讯云 IM（异步）
 	go func() {

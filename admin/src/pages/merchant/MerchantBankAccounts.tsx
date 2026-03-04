@@ -96,7 +96,7 @@ const MerchantBankAccounts: React.FC = () => {
 
         setSendingCode(true);
         try {
-            const res = await merchantAuthApi.sendCode(phone);
+            const res = await merchantAuthApi.sendCode(phone, 'merchant_bank_bind');
             const debugSuffix = import.meta.env.DEV && res?.debugCode ? ` (测试码: ${res.debugCode})` : '';
             message.success(`验证码已发送${debugSuffix}`);
             setCountdown(60);

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,7 +43,7 @@ func NewWechatAuthService(cfg config.WechatMiniConfig) *WechatAuthService {
 }
 
 // Login 使用 wx.login code 登录
-func (s *WechatAuthService) Login(code string, jwtCfg *config.JWTConfig) (*WechatLoginResult, error) {
+func (s *WechatAuthService) Login(code, clientIP string, jwtCfg *config.JWTConfig) (*WechatLoginResult, error) {
 	if s.client == nil || s.client.unconfigured() {
 		return nil, errors.New("微信小程序未配置")
 	}
@@ -76,6 +77,16 @@ func (s *WechatAuthService) Login(code string, jwtCfg *config.JWTConfig) (*Wecha
 			return nil, err
 		}
 
+		trimmedIP := strings.TrimSpace(clientIP)
+		_ = repository.DB.Model(&model.User{}).
+			Where("id = ?", user.ID).
+			Updates(map[string]interface{}{
+				"last_login_at": now,
+				"last_login_ip": trimmedIP,
+			}).Error
+		user.LastLoginAt = &now
+		user.LastLoginIP = trimmedIP
+
 		_ = repository.DB.Model(&model.UserWechatBinding{}).
 			Where("id = ?", binding.ID).
 			Updates(map[string]interface{}{
@@ -102,7 +113,7 @@ func (s *WechatAuthService) Login(code string, jwtCfg *config.JWTConfig) (*Wecha
 }
 
 // BindPhone 绑定手机号并登录
-func (s *WechatAuthService) BindPhone(bindToken, phoneCode string, jwtCfg *config.JWTConfig) (*TokenResponse, *model.User, error) {
+func (s *WechatAuthService) BindPhone(bindToken, phoneCode, clientIP string, jwtCfg *config.JWTConfig) (*TokenResponse, *model.User, error) {
 	if s.client == nil || s.client.unconfigured() {
 		return nil, nil, errors.New("微信小程序未配置")
 	}
@@ -180,6 +191,16 @@ func (s *WechatAuthService) BindPhone(bindToken, phoneCode string, jwtCfg *confi
 		return nil, nil, err
 	}
 
+	trimmedIP := strings.TrimSpace(clientIP)
+	_ = repository.DB.Model(&model.User{}).
+		Where("id = ?", user.ID).
+		Updates(map[string]interface{}{
+			"last_login_at": now,
+			"last_login_ip": trimmedIP,
+		}).Error
+	user.LastLoginAt = &now
+	user.LastLoginIP = trimmedIP
+
 	return tokenResp, user, nil
 }
 
@@ -250,19 +271,14 @@ func issueTokenResponse(user *model.User, cfg *config.JWTConfig) (*TokenResponse
 		return nil, err
 	}
 
-	token, err := generateAccessTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
-	if err != nil {
-		return nil, err
-	}
-
-	refreshToken, err := generateRefreshTokenV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType)
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
 	if err != nil {
 		return nil, err
 	}
 
 	return &TokenResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
+		Token:        tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 	}, nil
 }

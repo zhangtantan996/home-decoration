@@ -1,8 +1,10 @@
 {
-  "active_plan": "/Volumes/tantan/AI_project/home-decoration/.sisyphus/plans/api-documentation-completion.md",
-  "started_at": "2026-01-25T13:57:07.000Z",
-  "completed_at": "2026-01-25T15:15:00.000Z",
-  "session_ids": ["ses_40ad3f8dbffep6OoX4IWjc62xS", "ses_40ad3f8dbffep6OoX4IWjc62xS"],
-  "plan_name": "api-documentation-completion",
-  "status": "completed"
+  "active_plan": "/Volumes/tantan/AI_project/home-decoration/.sisyphus/plans/merchant-auth-flow-fix.md",
+  "started_at": "2026-03-04T03:42:44.947Z",
+  "session_ids": [
+    "ses_34e060073ffeyeZxidKcYcZhlI",
+    "ses_34935592dffeVOGQcSTGuuf6BC"
+  ],
+  "plan_name": "merchant-auth-flow-fix",
+  "worktree_path": "/Volumes/tantan/AI_project/home-decoration"
 }

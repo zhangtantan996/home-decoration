@@ -76,12 +76,23 @@ type WechatH5Config struct {
 
 // SMSConfig 短信服务配置（生产环境建议使用云短信服务，如阿里云短信）
 type SMSConfig struct {
-	Provider        string `mapstructure:"provider"` // mock | aliyun
-	AccessKeyID     string `mapstructure:"access_key_id"`
-	AccessKeySecret string `mapstructure:"access_key_secret"`
-	SignName        string `mapstructure:"sign_name"`
-	TemplateCode    string `mapstructure:"template_code"`
-	RegionID        string `mapstructure:"region_id"` // default: cn-hangzhou
+	Provider         string  `mapstructure:"provider"` // mock | aliyun
+	AccessKeyID      string  `mapstructure:"access_key_id"`
+	AccessKeySecret  string  `mapstructure:"access_key_secret"`
+	SignName         string  `mapstructure:"sign_name"`
+	TemplateCode     string  `mapstructure:"template_code"`
+	RegionID         string  `mapstructure:"region_id"` // default: cn-hangzhou
+	DebugBypass      bool    `mapstructure:"debug_bypass"`
+	RiskEnabled      bool    `mapstructure:"risk_enabled"`
+	CodeMaxAttempts  int     `mapstructure:"code_max_attempts"`
+	PhoneDailyLimit  int     `mapstructure:"phone_daily_limit"`
+	IPDailyLimit     int     `mapstructure:"ip_daily_limit"`
+	CaptchaEnabled   bool    `mapstructure:"captcha_enabled"`
+	CaptchaProvider  string  `mapstructure:"captcha_provider"` // turnstile | hcaptcha | recaptcha
+	CaptchaVerifyURL string  `mapstructure:"captcha_verify_url"`
+	CaptchaSecretKey string  `mapstructure:"captcha_secret_key"`
+	CaptchaTimeoutMs int     `mapstructure:"captcha_timeout_ms"`
+	CaptchaMinScore  float64 `mapstructure:"captcha_min_score"`
 }
 
 func Load() (*Config, error) {
@@ -132,6 +143,17 @@ func Load() (*Config, error) {
 	viper.SetDefault("wechat_h5.oauth_scope", "snsapi_base")
 	viper.SetDefault("sms.provider", "mock")
 	viper.SetDefault("sms.region_id", "cn-hangzhou")
+	viper.SetDefault("sms.debug_bypass", false)
+	viper.SetDefault("sms.risk_enabled", true)
+	viper.SetDefault("sms.code_max_attempts", 5)
+	viper.SetDefault("sms.phone_daily_limit", 10)
+	viper.SetDefault("sms.ip_daily_limit", 20)
+	viper.SetDefault("sms.captcha_enabled", false)
+	viper.SetDefault("sms.captcha_provider", "turnstile")
+	viper.SetDefault("sms.captcha_verify_url", "")
+	viper.SetDefault("sms.captcha_secret_key", "")
+	viper.SetDefault("sms.captcha_timeout_ms", 3000)
+	viper.SetDefault("sms.captcha_min_score", 0.0)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

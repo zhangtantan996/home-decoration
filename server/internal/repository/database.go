@@ -133,10 +133,15 @@ func autoMigrate() error {
 		&model.MerchantWithdraw{},
 		&model.MerchantBankAccount{},
 		&model.MerchantServiceSetting{},
+		&model.MaterialShopApplication{},
+		&model.MaterialShopApplicationProduct{},
+		&model.MaterialShopProduct{},
+		&model.MerchantIdentityChangeApplication{},
 		// 售后
 		&model.AfterSales{},
 		// 安全审计 (2025-12-29)
 		&model.AuditLog{},
+		&model.SMSAuditLog{},
 		// 社交功能 (2026-01-21)
 		&model.UserLike{},
 		&model.CaseComment{},

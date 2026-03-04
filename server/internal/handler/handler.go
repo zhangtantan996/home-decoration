@@ -47,6 +47,7 @@ func Register(c *gin.Context) {
 		response.BadRequest(c, "参数错误: "+err.Error())
 		return
 	}
+	req.ClientIP = c.ClientIP()
 
 	tokenResp, user, err := userService.Register(&req, jwtConfig)
 	if err != nil {
@@ -87,6 +88,7 @@ func Login(c *gin.Context) {
 		response.BadRequest(c, "参数错误: "+err.Error())
 		return
 	}
+	req.ClientIP = c.ClientIP()
 
 	tokenResp, user, err := userService.Login(&req, jwtConfig)
 	if err != nil {
@@ -123,17 +125,25 @@ func Login(c *gin.Context) {
 // SendCode 发送验证码
 func SendCode(c *gin.Context) {
 	var req struct {
-		Phone string `json:"phone" binding:"required"`
+		Phone        string `json:"phone" binding:"required"`
+		Purpose      string `json:"purpose" binding:"required"`
+		CaptchaToken string `json:"captchaToken"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "请输入手机号")
+		response.BadRequest(c, "请输入手机号和验证码用途")
+		return
+	}
+
+	purpose, err := service.NormalizeSMSPurpose(req.Purpose)
+	if err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 
 	// 获取客户端IP
 	clientIP := c.ClientIP()
 
-	debugCode, err := service.SendSMSCode(req.Phone, clientIP)
+	sendResult, err := service.SendSMSCode(req.Phone, purpose, clientIP, req.CaptchaToken)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -141,10 +151,11 @@ func SendCode(c *gin.Context) {
 
 	data := gin.H{
 		"expiresIn": 300,
+		"requestId": sendResult.RequestID,
 	}
-	// 非生产环境返回调试验证码，方便联调（生产环境不会返回）
-	if debugCode != "" {
-		data["debugCode"] = debugCode
+	if sendResult.DebugOnly && sendResult.DebugCode != "" {
+		data["debugCode"] = sendResult.DebugCode
+		data["debugOnly"] = true
 	}
 
 	response.SuccessWithMessage(c, "验证码已发送", data)

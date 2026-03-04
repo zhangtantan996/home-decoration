@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Layout, Menu, Dropdown, Avatar, theme, Button } from 'antd';
+import type { MenuProps } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import MerchantNotificationDropdown from '../components/MerchantNotificationDropdown';
+import { useMerchantAuthStore } from '../stores/merchantAuthStore';
 import {
     DashboardOutlined,
     CalendarOutlined,
@@ -10,6 +12,8 @@ import {
     MessageOutlined,
     PictureOutlined,
     SettingOutlined,
+    ShopOutlined,
+    AppstoreOutlined,
     UserOutlined,
     LogoutOutlined,
     MenuFoldOutlined,
@@ -20,6 +24,7 @@ const { Header, Sider, Content } = Layout;
 
 type MerchantApplicantType = 'personal' | 'studio' | 'company' | 'foreman';
 type MerchantProviderSubType = 'designer' | 'company' | 'foreman';
+type MerchantKind = 'provider' | 'material_shop';
 
 const MerchantLayout: React.FC = () => {
     const [collapsed, setCollapsed] = useState(false);
@@ -29,13 +34,12 @@ const MerchantLayout: React.FC = () => {
         token: { colorBgContainer },
     } = theme.useToken();
 
-    const provider = JSON.parse(localStorage.getItem('merchant_provider') || '{}') as {
-        name?: string;
-        avatar?: string;
-        providerType?: number;
-        applicantType?: string;
-        providerSubType?: string;
-    };
+    const provider = useMerchantAuthStore(s => s.provider);
+
+    const merchantKind: MerchantKind = provider?.merchantKind === 'material_shop' || provider?.role === 'material_shop'
+        ? 'material_shop'
+        : 'provider';
+    const isMaterialShop = merchantKind === 'material_shop';
 
     const normalizedApplicantType: MerchantApplicantType = (() => {
         const raw = String(provider?.applicantType || '').toLowerCase();
@@ -63,6 +67,9 @@ const MerchantLayout: React.FC = () => {
     })();
 
     const subtypeLabel = (() => {
+        if (isMaterialShop) {
+            return '主材商';
+        }
         switch (normalizedApplicantType) {
             case 'studio':
                 return '设计工作室';
@@ -75,102 +82,132 @@ const MerchantLayout: React.FC = () => {
         }
     })();
 
-    const availableKeys = new Set<string>([
-        '/dashboard',
-        '/bookings',
-        '/proposals',
-        '/orders',
-        '/chat',
-        'finance',
-        '/income',
-        '/withdraw',
-        '/bank-accounts',
-        '/cases',
-        '/settings',
-    ]);
+    const availableKeys = isMaterialShop
+        ? new Set<string>(['/material-shop/products', '/material-shop/settings'])
+        : new Set<string>([
+            '/dashboard',
+            '/bookings',
+            '/proposals',
+            '/orders',
+            '/chat',
+            '/im-test',
+            'finance',
+            '/income',
+            '/withdraw',
+            '/bank-accounts',
+            '/cases',
+            '/settings',
+        ]);
 
-    const menuItems = [
-        {
-            key: '/dashboard',
-            icon: <DashboardOutlined />,
-            label: '工作台',
-        },
-        {
-            key: '/bookings',
-            icon: <CalendarOutlined />,
-            label: '预约管理',
-        },
-        {
-            key: '/proposals',
-            icon: <FileTextOutlined />,
-            label: normalizedProviderSubType === 'foreman' ? '报价/施工方案' : '方案管理',
-        },
-        {
-            key: '/orders',
-            icon: <DollarOutlined />,
-            label: '订单管理',
-        },
-        {
-            key: '/chat',
-            icon: <MessageOutlined />,
-            label: '客户消息',
-        },
-        {
-            type: 'divider',
-        },
-        {
-            key: 'finance',
-            icon: <DollarOutlined />,
-            label: '财务中心',
-            children: [
-                { key: '/income', label: '收入明细' },
-                { key: '/withdraw', label: '提现管理' },
-                { key: '/bank-accounts', label: '银行卡' },
-            ],
-        },
-        {
-            key: '/cases',
-            icon: <PictureOutlined />,
-            label: normalizedProviderSubType === 'foreman' ? '施工案例' : '作品集',
-        },
-        {
-            key: '/settings',
-            icon: <SettingOutlined />,
-            label: '账户设置',
-        },
-    ];
+    const menuItems = isMaterialShop
+        ? [
+            {
+                key: '/material-shop/products',
+                icon: <AppstoreOutlined />,
+                label: '商品管理',
+            },
+            {
+                key: '/material-shop/settings',
+                icon: <ShopOutlined />,
+                label: '资料中心',
+            },
+        ]
+        : [
+            {
+                key: '/dashboard',
+                icon: <DashboardOutlined />,
+                label: '工作台',
+            },
+            {
+                key: '/bookings',
+                icon: <CalendarOutlined />,
+                label: '预约管理',
+            },
+            {
+                key: '/proposals',
+                icon: <FileTextOutlined />,
+                label: normalizedProviderSubType === 'foreman' ? '报价/施工方案' : '方案管理',
+            },
+            {
+                key: '/orders',
+                icon: <DollarOutlined />,
+                label: '订单管理',
+            },
+            {
+                key: '/chat',
+                icon: <MessageOutlined />,
+                label: '客户消息',
+            },
+            {
+                type: 'divider',
+            },
+            {
+                key: 'finance',
+                icon: <DollarOutlined />,
+                label: '财务中心',
+                children: [
+                    { key: '/income', label: '收入明细' },
+                    { key: '/withdraw', label: '提现管理' },
+                    { key: '/bank-accounts', label: '银行卡' },
+                ],
+            },
+            {
+                key: '/cases',
+                icon: <PictureOutlined />,
+                label: normalizedProviderSubType === 'foreman' ? '施工案例' : '作品集',
+            },
+            {
+                key: '/settings',
+                icon: <SettingOutlined />,
+                label: '账户设置',
+            },
+        ];
 
     const filteredMenuItems = menuItems
-        .map((item: any) => {
-            if (!item?.key) {
+        .map((item) => {
+            if (!item || typeof item !== 'object' || !('key' in item)) {
                 return item;
             }
-            if (item.key === 'finance') {
-                const children = (item.children || []).filter((child: any) => availableKeys.has(child.key));
+            if (item.key === 'finance' && 'children' in item) {
+                const children = (item.children || []).filter((child) => 
+                    child && typeof child === 'object' && 'key' in child && typeof child.key === 'string' && availableKeys.has(child.key)
+                );
                 if (!children.length) {
                     return null;
                 }
                 return { ...item, children };
             }
-            return availableKeys.has(item.key) ? item : null;
+            return typeof item.key === 'string' && availableKeys.has(item.key) ? item : null;
         })
-        .filter(Boolean);
+        .filter(Boolean) as MenuProps['items'];
 
-    const fallbackPath = availableKeys.has('/dashboard') ? '/dashboard' : '/settings';
+    const fallbackPath = isMaterialShop ? '/material-shop/settings' : '/dashboard';
+    const isPathAllowed = availableKeys.has(location.pathname);
+
+    useEffect(() => {
+        if (!isPathAllowed) {
+            navigate(fallbackPath, { replace: true });
+        }
+    }, [fallbackPath, isPathAllowed, navigate]);
+
+    useEffect(() => {
+        const handler = () => navigate('/login', { replace: true });
+        window.addEventListener('merchant-auth-expired', handler);
+        return () => window.removeEventListener('merchant-auth-expired', handler);
+    }, [navigate]);
 
     const handleLogout = () => {
-        localStorage.removeItem('merchant_token');
-        localStorage.removeItem('merchant_provider');
+        useMerchantAuthStore.getState().logout();
         navigate('/login');
     };
 
-    const userMenu = {
+    const userMenu: MenuProps = {
         items: [
             {
                 key: 'profile',
                 label: '个人资料',
                 icon: <UserOutlined />,
-                onClick: () => navigate('/settings'),
+                onClick: () => navigate(isMaterialShop ? '/material-shop/settings' : '/settings'),
             },
             {
                 type: 'divider',
@@ -210,15 +247,15 @@ const MerchantLayout: React.FC = () => {
                     whiteSpace: 'nowrap',
                     transition: 'all 0.2s',
                     cursor: 'pointer',
-                }} onClick={() => navigate('/dashboard')}>
-                    {collapsed ? '商' : `商家中心 · ${subtypeLabel}`}
+                }} onClick={() => navigate(fallbackPath)}>
+                    {collapsed ? '商' : `${isMaterialShop ? '主材商中心' : '商家中心'} · ${subtypeLabel}`}
                 </div>
                 <Menu
                     theme="dark"
                     mode="inline"
                     selectedKeys={[location.pathname]}
                     defaultOpenKeys={[]}
-                    items={filteredMenuItems as any}
+                    items={filteredMenuItems}
                     onClick={({ key }) => {
                         if (availableKeys.has(key)) {
                             navigate(key);
@@ -251,15 +288,15 @@ const MerchantLayout: React.FC = () => {
                     />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
                         <MerchantNotificationDropdown />
-                        <Dropdown menu={userMenu as any} placement="bottomRight">
+                        <Dropdown menu={userMenu} placement="bottomRight">
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
                                 <Avatar
                                     size="large"
-                                    src={provider.avatar}
+                                    src={provider?.avatar}
                                     icon={<UserOutlined />}
                                     style={{ backgroundColor: '#1890ff' }}
                                 />
-                                <span style={{ fontWeight: 500 }}>{provider.name || 'Merchant'}</span>
+                                <span style={{ fontWeight: 500 }}>{provider?.name || 'Merchant'}</span>
                             </div>
                         </Dropdown>
                     </div>

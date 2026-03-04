@@ -7,8 +7,6 @@ interface User {
     nickname?: string;
     avatar?: string;
     userType: string;
-    activeRole?: string;
-    providerSubType?: 'designer' | 'company' | 'foreman';
 }
 
 interface AuthState {

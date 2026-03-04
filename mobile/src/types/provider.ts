@@ -18,9 +18,15 @@ export interface ProviderDTO {
     distance?: number;
     // 新增字段
     subType?: string; // personal, studio, company - 注册时选择的类型
+    entityType?: 'personal' | 'company';
+    applicantType?: 'personal' | 'studio' | 'company' | 'foreman';
     yearsExperience: number;
     specialty: string;
     workTypes: string;  // 逗号分隔：mason,electrician,carpenter,painter,plumber
+    highlightTags?: string;
+    pricingJson?: string;
+    graduateSchool?: string;
+    designPhilosophy?: string;
     reviewCount: number;
     priceMin: number;
     priceMax: number;
@@ -59,6 +65,28 @@ export interface Designer {
     priceUnit: string; // 如: /m²
     // Service Area
     serviceArea: string[];
+}
+
+function parseWorkTypesValue(raw?: string): string[] {
+    const value = (raw || '').trim();
+    if (!value) {
+        return ['general'];
+    }
+
+    if (value.startsWith('[') && value.endsWith(']')) {
+        try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+                const normalized = parsed.map((item) => String(item).trim()).filter(Boolean);
+                return normalized.length ? normalized : ['general'];
+            }
+        } catch {
+            // fallback to delimiter parsing
+        }
+    }
+
+    const normalized = value.split(',').map((item) => item.trim()).filter(Boolean);
+    return normalized.length ? normalized : ['general'];
 }
 
 // 前端展示用的施工人员类型
@@ -135,7 +163,14 @@ export function toDesigner(dto: ProviderDTO): Designer {
         priceRange,
         priceUnit,
         serviceArea: dto.serviceArea
-            ? JSON.parse(dto.serviceArea)
+            ? (() => {
+                try {
+                    const parsed = JSON.parse(dto.serviceArea || '[]');
+                    return Array.isArray(parsed) ? parsed : ['雁塔区', '曲江新区', '高新区'];
+                } catch {
+                    return ['雁塔区', '曲江新区', '高新区'];
+                }
+            })()
             : ['雁塔区', '曲江新区', '高新区'],
     };
 }
@@ -144,7 +179,7 @@ export function toWorker(dto: ProviderDTO): Worker {
     const isCompany = dto.providerType === 2 || (dto.companyName && dto.companyName.includes('公司'));
 
     // 解析工种类型
-    const workTypesArray = dto.workTypes ? dto.workTypes.split(',').filter(Boolean) : ['general'];
+    const workTypesArray = parseWorkTypesValue(dto.workTypes);
 
     // 工种标签映射
     const workTypeMap: Record<string, string> = {

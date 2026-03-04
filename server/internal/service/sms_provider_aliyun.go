@@ -59,10 +59,10 @@ func NewAliyunSMSProvider(cfg config.SMSConfig) (*AliyunSMSProvider, error) {
 	}, nil
 }
 
-func (p *AliyunSMSProvider) SendVerificationCode(phone, code string) error {
+func (p *AliyunSMSProvider) SendVerificationCode(phone, code string) (SMSProviderResult, error) {
 	templateParamBytes, err := json.Marshal(map[string]string{"code": code})
 	if err != nil {
-		return fmt.Errorf("encode sms template param: %w", err)
+		return SMSProviderResult{Provider: "aliyun"}, fmt.Errorf("encode sms template param: %w", err)
 	}
 
 	params := map[string]string{
@@ -94,13 +94,13 @@ func (p *AliyunSMSProvider) SendVerificationCode(phone, code string) error {
 
 	resp, err := p.httpClient.Get(reqURL)
 	if err != nil {
-		return fmt.Errorf("aliyun sms request failed: %w", err)
+		return SMSProviderResult{Provider: "aliyun"}, fmt.Errorf("aliyun sms request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read aliyun sms response: %w", err)
+		return SMSProviderResult{Provider: "aliyun"}, fmt.Errorf("read aliyun sms response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -109,19 +109,29 @@ func (p *AliyunSMSProvider) SendVerificationCode(phone, code string) error {
 		if len(msg) > 256 {
 			msg = msg[:256]
 		}
-		return fmt.Errorf("aliyun sms http status=%d body=%s", resp.StatusCode, msg)
+		return SMSProviderResult{Provider: "aliyun"}, &SMSProviderError{
+			Code:    fmt.Sprintf("HTTP_%d", resp.StatusCode),
+			Message: msg,
+		}
 	}
 
 	var parsed aliyunSendSMSResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return fmt.Errorf("parse aliyun sms response: %w", err)
+		return SMSProviderResult{Provider: "aliyun"}, fmt.Errorf("parse aliyun sms response: %w", err)
 	}
 
 	if strings.ToUpper(strings.TrimSpace(parsed.Code)) != "OK" {
-		return fmt.Errorf("aliyun sms failed: code=%s message=%s requestId=%s", parsed.Code, parsed.Message, parsed.RequestID)
+		return SMSProviderResult{Provider: "aliyun"}, &SMSProviderError{
+			Code:    strings.TrimSpace(parsed.Code),
+			Message: strings.TrimSpace(parsed.Message),
+		}
 	}
 
-	return nil
+	return SMSProviderResult{
+		Provider:  "aliyun",
+		MessageID: strings.TrimSpace(parsed.BizID),
+		RequestID: strings.TrimSpace(parsed.RequestID),
+	}, nil
 }
 
 func mustNonce() string {

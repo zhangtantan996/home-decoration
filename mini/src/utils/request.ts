@@ -19,7 +19,7 @@ export interface RequestOptions<T> {
   retry?: boolean;
 }
 
-const API_BASE = process.env.TARO_APP_API_BASE || 'http://localhost:8080/api/v1';
+const API_BASE = process.env.TARO_APP_API_BASE || 'http://127.0.0.1:8080/api/v1';
 
 const AUTH_REFRESH_BUSINESS_KEY = 'mini.auth.refresh';
 const AUTH_REFRESH_POLICY: AutoRetryPolicy = {
@@ -128,11 +128,20 @@ export async function request<T>(options: RequestOptions<T>): Promise<T> {
       throw new Error('登录已过期，请重新登录');
     }
 
-    if (res.statusCode !== 200 || res.data.code !== 0) {
-      throw new Error(res.data?.message || '请求失败');
+    if (res.statusCode !== 200) {
+      throw new Error(`请求失败(${res.statusCode})`);
     }
 
-    return res.data.data;
+    if (!res.data || typeof res.data !== 'object') {
+      throw new Error('响应格式错误');
+    }
+
+    const apiResponse = res.data as ApiResponse<T>;
+    if (apiResponse.code !== 0) {
+      throw new Error(apiResponse.message || `请求失败(code=${apiResponse.code})`);
+    }
+
+    return apiResponse.data;
   } finally {
     if (options.showLoading) {
       Taro.hideLoading();

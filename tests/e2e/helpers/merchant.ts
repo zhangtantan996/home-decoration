@@ -16,6 +16,9 @@ export interface ApiEnvelope<T = any> {
 
 export interface MerchantLoginApiData {
   token: string;
+  merchantKind?: 'provider' | 'material_shop';
+  role?: string;
+  entityType?: string;
   tinodeToken?: string;
   provider: {
     id: number;
@@ -34,6 +37,12 @@ export function getMerchantTestEnv(): MerchantTestEnv {
     foremanPhone: process.env.MERCHANT_FOREMAN_PHONE || process.env.MERCHANT_PHONE || '13800000001',
     code: process.env.MERCHANT_CODE || '123456',
   };
+}
+
+export function buildRandomMainlandPhone(prefix = '19'): string {
+  const normalizedPrefix = /^1\d$/.test(prefix) ? prefix : '19';
+  const entropy = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  return `${normalizedPrefix}${entropy.slice(-9)}`.slice(0, 11);
 }
 
 function normalizePath(path: string) {
@@ -143,8 +152,12 @@ export async function loginMerchantByUi(
   await page.getByPlaceholder('请输入11位手机号').fill(phone);
   await page.getByPlaceholder('请输入6位验证码').fill(code);
 
-  await Promise.all([
-    page.waitForURL('**/merchant/dashboard', { timeout: 30_000 }),
-    page.getByRole('button', { name: /登\s*录/ }).click(),
-  ]);
+  await page.getByRole('button', { name: /登\s*录/ }).click();
+  await page.waitForURL(
+    (url) => {
+      const path = url.pathname;
+      return path.endsWith('/merchant/dashboard') || path.endsWith('/merchant/material-shop/settings');
+    },
+    { timeout: 30_000 },
+  );
 }

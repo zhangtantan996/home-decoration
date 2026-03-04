@@ -5,7 +5,9 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { Button } from '@/components/Button';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
+import TinodeService from '@/services/TinodeService';
 import { getProviderDetail, type ProviderDetail, type ProviderType } from '@/services/providers';
+import { refreshTinodeToken } from '@/services/tinode';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 
@@ -28,6 +30,7 @@ const ProviderDetailPage: React.FC = () => {
   const auth = useAuthStore();
   const [detail, setDetail] = useState<ProviderDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [consulting, setConsulting] = useState(false);
   const [params, setParams] = useState<ProviderDetailParams>({ id: '', type: 'designer' });
 
   useLoad((options) => {
@@ -63,16 +66,29 @@ const ProviderDetailPage: React.FC = () => {
     if (!detail?.workTypes) {
       return [];
     }
-    return detail.workTypes
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
+    const raw = detail.workTypes.trim();
+    if (!raw) {
+      return [];
+    }
+
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item) => String(item).trim()).filter(Boolean);
+        }
+      } catch {
+        // fallback to split parsing
+      }
+    }
+
+    return raw.split(',').map((item) => item.trim()).filter(Boolean);
   }, [detail?.workTypes]);
 
   const handleBook = () => {
     if (!auth.token) {
       Taro.showToast({ title: '请先登录', icon: 'none' });
-      Taro.navigateTo({ url: '/pages/profile/index' });
+      Taro.switchTab({ url: '/pages/profile/index' });
       return;
     }
 
@@ -85,6 +101,48 @@ const ProviderDetailPage: React.FC = () => {
     Taro.navigateTo({
       url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}`,
     });
+  };
+
+  const handleConsult = async () => {
+    if (!auth.token) {
+      Taro.showToast({ title: '请先登录', icon: 'none' });
+      Taro.switchTab({ url: '/pages/profile/index' });
+      return;
+    }
+
+    if (!detail?.userId) {
+      Taro.showToast({ title: '服务商信息异常', icon: 'none' });
+      return;
+    }
+
+    setConsulting(true);
+    try {
+      let tinodeToken = auth.tinodeToken;
+      if (!tinodeToken) {
+        const res = await refreshTinodeToken();
+        useAuthStore.getState().updateTinodeAuth(res);
+        tinodeToken = res.tinodeToken;
+        if (!tinodeToken) {
+          Taro.showToast({ title: res.tinodeError || '聊天暂不可用', icon: 'none' });
+          return;
+        }
+      }
+
+      const tinodeUserId = await TinodeService.resolveTinodeUserId(detail.userId);
+      const providerName = detail.nickname || detail.companyName || '服务商';
+      const avatarUrl = detail.avatar || detail.coverImage || '';
+
+      const parts = [`topic=${encodeURIComponent(tinodeUserId)}`, `name=${encodeURIComponent(providerName)}`];
+      if (avatarUrl) {
+        parts.push(`avatar=${encodeURIComponent(avatarUrl)}`);
+      }
+
+      Taro.navigateTo({ url: `/pages/chat/index?${parts.join('&')}` });
+    } catch (error) {
+      showErrorToast(error, '打开聊天失败');
+    } finally {
+      setConsulting(false);
+    }
   };
 
   if (loading) {
@@ -189,9 +247,20 @@ const ProviderDetailPage: React.FC = () => {
       </ScrollView>
 
       <View className="fixed bottom-0 left-0 right-0 bg-white p-md shadow-top safe-area-bottom">
-        <Button onClick={handleBook} size="lg" className="w-full">
-          立即预约
-        </Button>
+        <View className="flex flex-row gap-sm">
+          <Button
+            onClick={handleConsult}
+            size="lg"
+            variant="outline"
+            loading={consulting}
+            className="flex-1"
+          >
+            在线咨询
+          </Button>
+          <Button onClick={handleBook} size="lg" variant="brand" className="flex-1">
+            立即预约
+          </Button>
+        </View>
       </View>
     </View>
   );

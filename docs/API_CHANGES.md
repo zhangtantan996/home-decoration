@@ -1,5 +1,56 @@
 # API 接口变更清单
 
+## 2026-03-03 商家入驻与登录统一改版（v1.5.0）
+
+### 变更范围
+- `POST /api/v1/merchant/login`
+- `POST /api/v1/merchant/apply`
+- `POST /api/v1/merchant/apply/:id/resubmit`
+- `GET /api/v1/merchant/apply/:phone/status`
+- `POST /api/v1/merchant/change-application`（新增）
+- `POST /api/v1/material-shop/apply`（新增）
+- `GET /api/v1/material-shop/apply/:phone/status`（新增）
+- `POST /api/v1/material-shop/apply/:id/resubmit`（新增）
+- `GET /api/v1/material-shop/me`（新增）
+- `PUT /api/v1/material-shop/me`（新增）
+- `GET /api/v1/material-shop/me/products`（新增）
+- `POST /api/v1/material-shop/me/products`（新增）
+- `PUT /api/v1/material-shop/me/products/:id`（新增）
+- `DELETE /api/v1/material-shop/me/products/:id`（新增）
+
+### 关键变更
+- `merchant/login` 成功时返回新增：
+  - `merchantKind: provider|material_shop`
+  - `role`
+  - `entityType`
+  - 兼容字段 `provider.applicantType/provider.providerSubType`
+- `merchant/login` 失败时支持结构化引导：
+  - `data.nextAction: APPLY|PENDING|RESUBMIT|CHANGE_ROLE`
+  - `data.applyStatus`（可选）
+- 服务商申请模型升级：
+  - 新增 `role: designer|foreman|company`
+  - 新增 `entityType: personal|company`
+  - 新增 `highlightTags: string[]`
+  - 新增 `pricing: object`
+  - 新增 `graduateSchool?: string`
+  - 新增 `designPhilosophy?: string`
+  - 继续兼容旧字段 `applicantType`
+- 主材商申请改为独立通道，不再并入 `merchant/apply`。
+
+### 校验规则
+- 服务商规则由后端硬校验：
+  - 设计师：3套案例，每套3-6图，风格1-3，报价需平层/复式/其他
+  - 工长：3套案例，每套8-12图，亮点1-3，工种>=1，报价需 `perSqm`
+  - 装修公司：3套案例，报价需全包/半包，企业执照必填
+- 主材商规则由后端硬校验：
+  - 商品数 5-20
+  - 每个商品至少1图，且必须包含参数对象与价格
+  - 营业执照号与执照图片必填
+
+### 兼容性说明
+- 旧 `applicantType` 仍保留并在服务端映射到新模型。
+- `providers.work_types` 支持 JSON 数组与逗号串双格式读取，保证 C 端兼容。
+
 ## 2026-02-09 商家中心阶段1契约统一（v1.4.4）
 
 ### 变更范围

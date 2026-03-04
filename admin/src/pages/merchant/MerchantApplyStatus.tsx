@@ -1,35 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Layout, Typography, Result, Spin, Steps, Tag } from 'antd';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Card, Form, Input, Button, message, Layout, Typography, Result, Spin, Steps, Tag, Grid } from 'antd';
 import { PhoneOutlined, ArrowLeftOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { merchantApplyApi, type MerchantApplyStatusData } from '../../services/merchantApi';
+import {
+    materialShopApplyApi,
+    merchantApplyApi,
+    type MaterialShopApplyStatusData,
+    type MerchantApplyStatusData,
+} from '../../services/merchantApi';
+import { MERCHANT_THEME } from '../../constants/merchantTheme';
 
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
+const { useBreakpoint } = Grid;
 
 const MerchantApplyStatus: React.FC = () => {
     const [searchParams] = useSearchParams();
     const phoneFromUrl = searchParams.get('phone') || '';
     const navigate = useNavigate();
+    const screens = useBreakpoint();
 
     const [loading, setLoading] = useState(false);
     const [queried, setQueried] = useState(false);
-    const [applicationStatus, setApplicationStatus] = useState<MerchantApplyStatusData | null>(null);
+    const [applicationStatus, setApplicationStatus] = useState<(MerchantApplyStatusData | MaterialShopApplyStatusData) | null>(null);
     const [form] = Form.useForm();
+    const pollingTimerRef = useRef<number | null>(null);
 
-    useEffect(() => {
-        if (phoneFromUrl) {
-            form.setFieldsValue({ phone: phoneFromUrl });
-            void handleQuery({ phone: phoneFromUrl });
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [phoneFromUrl]);
-
-    const handleQuery = async (values: { phone: string }) => {
+    const handleQuery = useCallback(async (values: { phone: string }) => {
         setLoading(true);
         try {
-            const result = await merchantApplyApi.status(values.phone);
-            setApplicationStatus(result);
+            const [providerResult, materialResult] = await Promise.allSettled([
+                merchantApplyApi.status(values.phone),
+                materialShopApplyApi.status(values.phone),
+            ]);
+
+            if (providerResult.status === 'fulfilled') {
+                setApplicationStatus(providerResult.value);
+            } else if (materialResult.status === 'fulfilled') {
+                setApplicationStatus(materialResult.value);
+            } else {
+                throw new Error('查询失败，请稍后重试');
+            }
             setQueried(true);
         } catch (error: unknown) {
             const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
@@ -39,7 +50,32 @@ const MerchantApplyStatus: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        if (phoneFromUrl) {
+            form.setFieldsValue({ phone: phoneFromUrl });
+            void handleQuery({ phone: phoneFromUrl });
+        }
+    }, [phoneFromUrl, form, handleQuery]);
+
+    useEffect(() => {
+        if (applicationStatus?.status === 0) {
+            pollingTimerRef.current = window.setInterval(() => {
+                const currentPhone = form.getFieldValue('phone') || phoneFromUrl;
+                if (currentPhone) {
+                    void handleQuery({ phone: currentPhone });
+                }
+            }, 30000);
+        }
+
+        return () => {
+            if (pollingTimerRef.current !== null) {
+                clearInterval(pollingTimerRef.current);
+                pollingTimerRef.current = null;
+            }
+        };
+    }, [applicationStatus?.status, form, phoneFromUrl, handleQuery]);
 
     const getStatusIcon = (status: number) => {
         switch (status) {
@@ -71,6 +107,9 @@ const MerchantApplyStatus: React.FC = () => {
         if (!applicationStatus) return null;
 
         const { status, statusText, rejectReason, createdAt, auditedAt } = applicationStatus;
+        const role = (applicationStatus as { role?: string }).role;
+        const entityType = (applicationStatus as { entityType?: string }).entityType;
+        const isMaterialShop = role === 'material_shop' || (applicationStatus as { merchantKind?: string }).merchantKind === 'material_shop';
 
         return (
             <Card style={{ marginTop: 24 }}>
@@ -94,6 +133,8 @@ const MerchantApplyStatus: React.FC = () => {
                         },
                     ]}
                     style={{ marginBottom: 32 }}
+                    direction={screens.xs ? 'vertical' : 'horizontal'}
+                    size={screens.xs ? 'small' : 'default'}
                 />
 
                 {status === 0 && (
@@ -130,27 +171,61 @@ const MerchantApplyStatus: React.FC = () => {
                         extra={(
                             <Button
                                 type="primary"
-                                onClick={() => navigate(`/register?type=${applicationStatus.applicantType || 'personal'}&resubmit=${applicationStatus.applicationId}`)}
+                                onClick={() => {
+                                    const currentPhone = form.getFieldValue('phone') || phoneFromUrl || '';
+                                    if (isMaterialShop) {
+                                        navigate(`/material-shop/register?resubmit=${applicationStatus.applicationId}&phone=${encodeURIComponent(currentPhone)}`);
+                                        return;
+                                    }
+
+                                    const providerStatus = applicationStatus as MerchantApplyStatusData;
+                                    const targetRole = providerStatus.role || (
+                                        providerStatus.applicantType === 'foreman'
+                                            ? 'foreman'
+                                            : providerStatus.applicantType === 'company'
+                                                ? 'company'
+                                                : providerStatus.applicantType === 'studio'
+                                                    ? 'designer'
+                                                    : providerStatus.applicantType === 'personal'
+                                                        ? 'designer'
+                                                        : 'designer'
+                                    );
+                                    const targetEntity = providerStatus.entityType || (
+                                        providerStatus.applicantType === 'studio' || providerStatus.applicantType === 'company'
+                                            ? 'company'
+                                            : 'personal'
+                                    );
+                                    navigate(`/register?role=${targetRole}&entityType=${targetEntity}&resubmit=${providerStatus.applicationId}&phone=${encodeURIComponent(currentPhone)}`);
+                                }}
                             >
                                 修改后重新提交
                             </Button>
                         )}
                     />
                 )}
+
+                <div style={{ textAlign: 'center', marginTop: 8 }}>
+                    <Text type="secondary">
+                        当前申请类型：{isMaterialShop ? '主材商' : `${role === 'company' ? '装修公司' : role === 'foreman' ? '工长' : '设计师'}${entityType ? ` · ${entityType === 'company' ? '公司主体' : '个人主体'}` : ''}`}
+                    </Text>
+                </div>
             </Card>
         );
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+        <Layout style={{ minHeight: '100vh', background: MERCHANT_THEME.pageBgGradient }}>
             <Content style={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'flex-start',
-                padding: 24,
-                paddingTop: 48,
+                padding: screens.xs ? 16 : 24,
+                paddingTop: screens.xs ? 24 : 48,
             }}>
-                <Card style={{ width: '100%', maxWidth: 600 }}>
+                <Card 
+                    style={{ width: '100%', maxWidth: 600, borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
+                    styles={{ body: { padding: screens.xs ? 16 : 24 } }}
+                >
                     <div style={{ marginBottom: 24 }}>
                         <Button
                             type="link"

@@ -24,7 +24,7 @@ func WechatMiniLogin(c *gin.Context) {
 		return
 	}
 
-	result, err := wechatAuthService.Login(req.Code, jwtConfig)
+	result, err := wechatAuthService.Login(req.Code, c.ClientIP(), jwtConfig)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -80,7 +80,7 @@ func WechatMiniBindPhone(c *gin.Context) {
 		return
 	}
 
-	tokenResp, user, err := wechatAuthService.BindPhone(req.BindToken, req.PhoneCode, jwtConfig)
+	tokenResp, user, err := wechatAuthService.BindPhone(req.BindToken, req.PhoneCode, c.ClientIP(), jwtConfig)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
