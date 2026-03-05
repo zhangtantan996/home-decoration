@@ -49,10 +49,12 @@ NUL
 .superdesign/
 .windsurfrules
 stitch/
+.playwright-cli/
 playwright-report/
 test-results/
 
 # Project specific
+output/playwright/
 mobile/android/app/build/
 mobile/ios/build/
 mobile/android/.gradle/
