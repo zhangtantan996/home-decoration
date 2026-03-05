@@ -5,20 +5,32 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 	"unicode"
 
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/tinode"
 	"home-decoration-server/internal/utils/image"
 	"home-decoration-server/internal/utils/tencentim"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 var jwtSecret []byte
+
+const (
+	tokenUseAccess  = "access"
+	tokenUseRefresh = "refresh"
+
+	accessTokenTTL  = 2 * time.Hour
+	refreshTokenTTL = 7 * 24 * time.Hour
+)
 
 // InitJWT 初始化JWT密钥
 func InitJWT(secret string) {
@@ -35,6 +47,7 @@ type RegisterRequest struct {
 	Password string `json:"password"`
 	Nickname string `json:"nickname"`
 	UserType int8   `json:"userType"` // 1业主 2服务商 3工人
+	ClientIP string `json:"-"`
 }
 
 // LoginRequest 登录请求
@@ -43,6 +56,7 @@ type LoginRequest struct {
 	Code     string `json:"code"`     // 验证码登录时必填
 	Password string `json:"password"` // 密码登录时必填
 	Type     string `json:"type"`     // login type: code or password
+	ClientIP string `json:"-"`
 }
 
 // TokenResponse Token响应
@@ -50,6 +64,8 @@ type TokenResponse struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refreshToken"`
 	ExpiresIn    int64  `json:"expiresIn"`
+	TinodeToken  string `json:"tinodeToken,omitempty"`
+	TinodeError  string `json:"tinodeError,omitempty"` // Tinode token 生成错误信息
 }
 
 // Register 用户注册
@@ -59,9 +75,9 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		return nil, nil, err
 	}
 
-	// 验证手机验证码 (TODO: 实际项目需要接入短信服务)
-	if req.Code != "123456" { // 测试验证码
-		return nil, nil, errors.New("验证码错误")
+	// 验证手机验证码
+	if err := VerifySMSCode(req.Phone, SMSPurposeRegister, req.Code); err != nil {
+		return nil, nil, err
 	}
 
 	// 检查手机号是否已注册
@@ -84,11 +100,15 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}
 
 	// 创建用户
+	now := time.Now()
 	user := &model.User{
 		Phone:    req.Phone,
 		Nickname: req.Nickname,
 		UserType: userType,
 		Status:   1,
+		// 注册后默认视为一次登录，补齐审计字段。
+		LastLoginAt: &now,
+		LastLoginIP: strings.TrimSpace(req.ClientIP),
 	}
 
 	// 如果提供了密码，加密存储
@@ -100,7 +120,21 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		user.Password = hashedPwd
 	}
 
-	if err := repository.DB.Create(user).Error; err != nil {
+	// Transaction for main DB user creation
+	tx := repository.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			log.Printf("[Register] Transaction panic recovered: %v", r)
+		}
+	}()
+
+	if err := tx.Create(user).Error; err != nil {
+		tx.Rollback()
+		return nil, nil, err
+	}
+
+	if err := tx.Commit().Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -113,20 +147,56 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	}(user)
 
 	// 注册成功后自动签发 Token
-	token, err := generateToken(user.ID, user.UserType, cfg.ExpireHour)
+	roleCtx, err := getUserRoleContext(user)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	refreshToken, err := generateToken(user.ID, user.UserType, cfg.ExpireHour*24)
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Tinode token generation + user sync (best-effort; failures don't block register)
+	tinodeToken := ""
+	tinodeError := ""
+	tinodeTokenResult, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	if err != nil {
+		log.Printf("[Tinode] Token generation failed (register): userID=%d, err=%v", user.ID, err)
+		// 不向客户端暴露内部错误细节
+		tinodeError = "聊天服务暂时不可用"
+	} else {
+		tinodeToken = tinodeTokenResult
+	}
+
+	// Sync to Tinode DB with separate transaction (best-effort)
+	if repository.TinodeDB != nil {
+		tinodeTx := repository.TinodeDB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tinodeTx.Rollback()
+				log.Printf("[Tinode] Sync transaction panic recovered: %v", r)
+			}
+		}()
+
+		if err := tinode.SyncUserToTinodeWithTx(tinodeTx, user); err != nil {
+			tinodeTx.Rollback()
+			log.Printf("[Tinode] User sync failed (register): userID=%d, err=%v", user.ID, err)
+		} else {
+			if err := tinodeTx.Commit().Error; err != nil {
+				log.Printf("[Tinode] Sync transaction commit failed: userID=%d, err=%v", user.ID, err)
+			}
+		}
+	} else {
+		log.Printf("[Tinode] TinodeDB not initialized, skipping sync for userID=%d", user.ID)
 	}
 
 	return &TokenResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
+		Token:        tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
+		TinodeToken:  tinodeToken,
+		TinodeError:  tinodeError,
 	}, user, nil
 }
 
@@ -142,12 +212,9 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		if req.Password == "" {
 			return nil, nil, errors.New("请输入密码")
 		}
-	} else {
+	} else if req.Code == "" {
 		// 默认验证码登录
-		// 验证手机验证码
-		if req.Code != "123456" { // 测试验证码
-			return nil, nil, errors.New("验证码错误")
-		}
+		return nil, nil, errors.New("请输入验证码")
 	}
 
 	// 查找用户
@@ -162,6 +229,15 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		return nil, nil, errors.New("手机号或密码错误")
 	}
 
+	codeVerified := false
+	// 验证码登录时，如果用户不存在，先校验短信验证码，避免无效验证码触发自动创建账号
+	if userNotFound && req.Type != "password" {
+		if err := VerifySMSCode(req.Phone, SMSPurposeLogin, req.Code); err != nil {
+			return nil, nil, err
+		}
+		codeVerified = true
+	}
+
 	// 如果是验证码登录且用户不存在，自动创建账号
 	if userNotFound && req.Type != "password" {
 		user = model.User{
@@ -170,7 +246,22 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 			UserType: 1,                    // 默认业主
 			Status:   1,
 		}
-		if err := repository.DB.Create(&user).Error; err != nil {
+
+		// Transaction for user creation
+		tx := repository.DB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+				log.Printf("[Login] User creation transaction panic recovered: %v", r)
+			}
+		}()
+
+		if err := tx.Create(&user).Error; err != nil {
+			tx.Rollback()
+			return nil, nil, errors.New("账号创建失败，请稍后重试")
+		}
+
+		if err := tx.Commit().Error; err != nil {
 			return nil, nil, errors.New("账号创建失败，请稍后重试")
 		}
 		// 同步新用户到腾讯云 IM（异步）
@@ -206,6 +297,17 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		return nil, nil, errors.New("账号已被禁用")
 	}
 
+	// 验证码登录：在锁定检查之后再消费验证码（避免账号被锁定时浪费验证码）
+	if req.Type != "password" && !codeVerified {
+		if err := VerifySMSCode(req.Phone, SMSPurposeLogin, req.Code); err != nil {
+			if errors.Is(err, errSMSCodeInvalid) {
+				return nil, nil, s.handleLoginFailure(&user, "code")
+			}
+			return nil, nil, err
+		}
+		codeVerified = true
+	}
+
 	// 如果是密码登录，验证密码
 	if req.Type == "password" {
 		if user.Password == "" {
@@ -217,32 +319,74 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		}
 	}
 
-	// 登录成功，重置失败次数
-	if user.LoginFailedCount > 0 {
-		repository.DB.Model(&user).Updates(map[string]interface{}{
-			"login_failed_count":   0,
-			"last_failed_login_at": nil,
-		})
-		user.LoginFailedCount = 0
-		user.LastFailedLoginAt = nil
+	// 登录成功，重置失败次数并记录最近登录审计字段。
+	loginUpdates := map[string]interface{}{
+		"last_login_at": time.Now(),
+		"last_login_ip": strings.TrimSpace(req.ClientIP),
 	}
+	if user.LoginFailedCount > 0 {
+		loginUpdates["login_failed_count"] = 0
+		loginUpdates["last_failed_login_at"] = nil
+	}
+	repository.DB.Model(&user).Updates(loginUpdates)
+	user.LoginFailedCount = 0
+	user.LastFailedLoginAt = nil
+	if loginAt, ok := loginUpdates["last_login_at"].(time.Time); ok {
+		user.LastLoginAt = &loginAt
+	}
+	user.LastLoginIP = strings.TrimSpace(req.ClientIP)
 
 	// 生成Token
-	token, err := generateToken(user.ID, user.UserType, cfg.ExpireHour)
+	roleCtx, err := getUserRoleContext(&user)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// 生成RefreshToken (有效期更长)
-	refreshToken, err := generateToken(user.ID, user.UserType, cfg.ExpireHour*24)
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Tinode token generation + user sync (best-effort; failures don't block login)
+	tinodeToken := ""
+	tinodeError := ""
+	tinodeTokenResult, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	if err != nil {
+		log.Printf("[Tinode] Token generation failed (login): userID=%d, err=%v", user.ID, err)
+		// 不向客户端暴露内部错误细节
+		tinodeError = "聊天服务暂时不可用"
+	} else {
+		tinodeToken = tinodeTokenResult
+	}
+
+	// Sync to Tinode DB with separate transaction (best-effort)
+	if repository.TinodeDB != nil {
+		tinodeTx := repository.TinodeDB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tinodeTx.Rollback()
+				log.Printf("[Tinode] Sync transaction panic recovered (login): %v", r)
+			}
+		}()
+
+		if err := tinode.SyncUserToTinodeWithTx(tinodeTx, &user); err != nil {
+			tinodeTx.Rollback()
+			log.Printf("[Tinode] User sync failed (login): userID=%d, err=%v", user.ID, err)
+		} else {
+			if err := tinodeTx.Commit().Error; err != nil {
+				log.Printf("[Tinode] Sync transaction commit failed (login): userID=%d, err=%v", user.ID, err)
+			}
+		}
+	} else {
+		log.Printf("[Tinode] TinodeDB not initialized, skipping sync for userID=%d (login)", user.ID)
 	}
 
 	return &TokenResponse{
-		Token:        token,
-		RefreshToken: refreshToken,
+		Token:        tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
+		TinodeToken:  tinodeToken,
+		TinodeError:  tinodeError,
 	}, &user, nil
 }
 
@@ -250,6 +394,26 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 func (s *UserService) GetUserByID(id uint64) (*model.User, error) {
 	var user model.User
 	if err := repository.DB.First(&user, id).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUserByIdentifier 根据用户标识获取用户（支持内部ID或publicId）
+func (s *UserService) GetUserByIdentifier(identifier string) (*model.User, error) {
+	trimmedIdentifier := strings.TrimSpace(identifier)
+	if trimmedIdentifier == "" {
+		return nil, fmt.Errorf("用户标识不能为空")
+	}
+
+	var user model.User
+	if userID, err := strconv.ParseUint(trimmedIdentifier, 10, 64); err == nil && userID > 0 {
+		if err := repository.DB.First(&user, userID).Error; err == nil {
+			return &user, nil
+		}
+	}
+
+	if err := repository.DB.Where("public_id = ?", trimmedIdentifier).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -281,11 +445,6 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 		return nil, errors.New("刷新令牌格式错误")
 	}
 
-	userType, ok := claims["userType"].(float64)
-	if !ok {
-		return nil, errors.New("刷新令牌格式错误")
-	}
-
 	// 验证用户是否存在且状态正常
 	user, err := s.GetUserByID(uint64(userID))
 	if err != nil {
@@ -296,23 +455,64 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 		return nil, errors.New("账号已被禁用")
 	}
 
-	// 生成新的 Token
-	newToken, err := generateToken(uint64(userID), int8(userType), cfg.ExpireHour)
-	if err != nil {
-		return nil, err
+	roleCtx, hasRoleContext := getRoleContextFromClaims(claims)
+	if !hasRoleContext {
+		resolvedCtx, resolveErr := getUserRoleContext(user)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		roleCtx = resolvedCtx
 	}
 
-	// 生成新的 RefreshToken
-	newRefreshToken, err := generateToken(uint64(userID), int8(userType), cfg.ExpireHour*24)
+	sessionID, _ := claims["sid"].(string)
+	tokenPair, err := issueTokenPairV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &TokenResponse{
-		Token:        newToken,
-		RefreshToken: newRefreshToken,
+		Token:        tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
 		ExpiresIn:    int64(cfg.ExpireHour * 3600),
 	}, nil
+}
+
+// RefreshTinodeToken 刷新 Tinode Token
+func (s *UserService) RefreshTinodeToken(user *model.User) (string, error) {
+	if user == nil {
+		return "", errors.New("用户不存在")
+	}
+
+	// 生成新的 Tinode token
+	tinodeToken, err := tinode.GenerateTinodeToken(user.ID, user.Nickname)
+	if err != nil {
+		log.Printf("[Tinode] Token refresh failed: userID=%d, err=%v", user.ID, err)
+		// 不向客户端暴露内部错误细节
+		return "", errors.New("聊天服务暂时不可用")
+	}
+
+	// 同步用户到 Tinode DB（如果需要）
+	if repository.TinodeDB != nil {
+		tinodeTx := repository.TinodeDB.Begin()
+		defer func() {
+			if r := recover(); r != nil {
+				tinodeTx.Rollback()
+				log.Printf("[Tinode] Sync transaction panic recovered (refresh): %v", r)
+			}
+		}()
+
+		if err := tinode.SyncUserToTinodeWithTx(tinodeTx, user); err != nil {
+			tinodeTx.Rollback()
+			log.Printf("[Tinode] User sync failed (refresh): userID=%d, err=%v", user.ID, err)
+			// 同步失败不影响 token 返回
+		} else {
+			if err := tinodeTx.Commit().Error; err != nil {
+				log.Printf("[Tinode] Sync transaction commit failed (refresh): userID=%d, err=%v", user.ID, err)
+			}
+		}
+	}
+
+	return tinodeToken, nil
 }
 
 // UpdateUser 更新用户信息
@@ -400,16 +600,208 @@ func (s *UserService) handleLoginFailure(user *model.User, loginType string) err
 }
 
 // generateToken 生成JWT Token
-func generateToken(userID uint64, userType int8, expireHour int) (string, error) {
+func generateToken(userID uint64, userPublicID string, userType int8, expireHour int) (string, error) {
+	resolvedPublicID, err := resolveUserPublicID(userID, userPublicID)
+	if err != nil {
+		return "", err
+	}
+
 	claims := jwt.MapClaims{
-		"userId":   userID,
-		"userType": userType,
-		"exp":      time.Now().Add(time.Hour * time.Duration(expireHour)).Unix(),
-		"iat":      time.Now().Unix(),
+		"sub":          resolvedPublicID,
+		"userPublicId": resolvedPublicID,
+		"userId":       userID,
+		"userType":     userType,
+		"exp":          time.Now().Add(time.Hour * time.Duration(expireHour)).Unix(),
+		"iat":          time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(jwtSecret)
+}
+
+type issuedToken struct {
+	Token     string
+	JTI       string
+	SessionID string
+	ExpiresAt time.Time
+}
+
+type tokenPair struct {
+	AccessToken      string
+	AccessJTI        string
+	AccessExpiresAt  time.Time
+	RefreshToken     string
+	RefreshJTI       string
+	RefreshExpiresAt time.Time
+	SessionID        string
+}
+
+// generateAccessTokenV2 生成访问令牌 (2小时有效)
+func generateAccessTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*issuedToken, error) {
+	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseAccess, accessTokenTTL, sessionID)
+}
+
+// generateRefreshTokenV2 生成刷新令牌 (7天有效)
+func generateRefreshTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*issuedToken, error) {
+	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseRefresh, refreshTokenTTL, sessionID)
+}
+
+func issueTokenPairV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*tokenPair, error) {
+	accessIssued, err := generateAccessTokenV2(userID, userPublicID, activeRole, refID, providerSubType, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshIssued, err := generateRefreshTokenV2(userID, userPublicID, activeRole, refID, providerSubType, accessIssued.SessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	pair := &tokenPair{
+		AccessToken:      accessIssued.Token,
+		AccessJTI:        accessIssued.JTI,
+		AccessExpiresAt:  accessIssued.ExpiresAt,
+		RefreshToken:     refreshIssued.Token,
+		RefreshJTI:       refreshIssued.JTI,
+		RefreshExpiresAt: refreshIssued.ExpiresAt,
+		SessionID:        accessIssued.SessionID,
+	}
+
+	if err := registerSessionTokenPair(pair); err != nil {
+		return nil, err
+	}
+
+	return pair, nil
+}
+
+func registerSessionTokenPair(pair *tokenPair) error {
+	if pair == nil {
+		return nil
+	}
+	if err := registerSessionToken(pair.SessionID, pair.AccessJTI, tokenUseAccess, pair.AccessExpiresAt); err != nil {
+		return err
+	}
+	if err := registerSessionToken(pair.SessionID, pair.RefreshJTI, tokenUseRefresh, pair.RefreshExpiresAt); err != nil {
+		return err
+	}
+	return nil
+}
+
+func registerSessionToken(sessionID, jti, tokenUse string, expiresAt time.Time) error {
+	sessionID = strings.TrimSpace(sessionID)
+	jti = strings.TrimSpace(jti)
+	tokenUse = strings.TrimSpace(tokenUse)
+	if sessionID == "" || jti == "" || tokenUse == "" {
+		return nil
+	}
+
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return nil
+	}
+
+	ttl := time.Until(expiresAt)
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
+	key := sessionTokenKey(sessionID, jti)
+	if err := redisClient.Set(ctx, key, tokenUse, ttl).Err(); err != nil {
+		return fmt.Errorf("记录会话令牌失败: %w", err)
+	}
+	return nil
+}
+
+func sessionTokenKey(sessionID, jti string) string {
+	return fmt.Sprintf("session:%s:%s", strings.TrimSpace(sessionID), strings.TrimSpace(jti))
+}
+
+// generateTokenV2 生成JWT Token v2 (支持多身份)
+func generateTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string, tokenUse string, ttl time.Duration, sessionID string) (*issuedToken, error) {
+	resolvedPublicID, err := resolveUserPublicID(userID, userPublicID)
+	if err != nil {
+		return nil, err
+	}
+
+	if activeRole != "provider" {
+		providerSubType = ""
+		refID = nil
+	}
+
+	if strings.TrimSpace(sessionID) == "" {
+		sessionID = generateSessionID()
+	}
+	jti := uuid.New().String()
+	expiresAt := time.Now().Add(ttl)
+
+	claims := jwt.MapClaims{
+		"sub":             resolvedPublicID,
+		"userPublicId":    resolvedPublicID,
+		"userId":          userID,
+		"activeRole":      activeRole,
+		"providerId":      refID,
+		"providerSubType": providerSubType,
+		"token_type":      "user",
+		"token_use":       tokenUse,
+		"jti":             jti,
+		"sid":             sessionID,
+		"exp":             expiresAt.Unix(),
+		"iat":             time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	return &issuedToken{
+		Token:     signedToken,
+		JTI:       jti,
+		SessionID: sessionID,
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// generateSessionID 生成会话ID
+func generateSessionID() string {
+	return uuid.New().String()
+}
+
+// resolveUserPublicID resolves and backfills user public id when needed.
+func resolveUserPublicID(userID uint64, userPublicID string) (string, error) {
+	if userPublicID != "" {
+		return userPublicID, nil
+	}
+
+	var user model.User
+	if err := repository.DB.Select("id", "public_id").First(&user, userID).Error; err != nil {
+		return "", fmt.Errorf("查询用户public_id失败: %w", err)
+	}
+
+	if user.PublicID != "" {
+		return user.PublicID, nil
+	}
+
+	generatedPublicID := model.GeneratePublicID()
+	if err := repository.DB.Model(&model.User{}).Where("id = ?", userID).Update("public_id", generatedPublicID).Error; err != nil {
+		return "", fmt.Errorf("补齐用户public_id失败: %w", err)
+	}
+
+	return generatedPublicID, nil
+}
+
+// getUserActiveRoleAndRefID 根据 UserType 获取 activeRole 和 refID
+func getUserActiveRoleAndRefID(user *model.User) (string, *uint64, error) {
+	ctx, err := getUserRoleContext(user)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return ctx.ActiveRole, ctx.ProviderID, nil
 }
 
 // HashPassword 加密密码

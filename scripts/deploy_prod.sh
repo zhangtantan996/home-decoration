@@ -11,7 +11,9 @@ set -e  # 遇到错误立即退出
 
 # ========== 配置区 ==========
 PROJECT_NAME="prod"
-COMPOSE_FILE="deploy/docker-compose.prod.yml"
+# 默认使用“托管 RDS + 托管 Redis + Tinode”的生产编排文件
+# 允许通过环境变量覆盖：COMPOSE_FILE=deploy/docker-compose.prod.yml ./scripts/deploy_prod.sh
+COMPOSE_FILE="${COMPOSE_FILE:-deploy/docker-compose.prod.managed.yml}"
 # ============================
 
 echo "============================================"
@@ -63,9 +65,9 @@ echo "✅ 正式环境发布成功!"
 echo "============================================"
 echo ""
 echo "📍 访问地址:"
-echo "   - 后台管理: http://您的域名/admin/"
-echo "   - 移动端Web: http://您的域名/mobile/"
-echo "   - API接口:   http://您的域名/api/"
+echo "   - 后台管理: https://admin.<domain>/"
+echo "   - API接口:   https://api.<domain>/api/v1/health"
+echo "   - Tinode:    https://api.<domain>/tinode/v0/version"
 echo ""
 echo "📋 常用命令:"
 echo "   查看日志:   docker compose -p $PROJECT_NAME -f $COMPOSE_FILE logs -f"

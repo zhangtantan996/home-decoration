@@ -18,9 +18,18 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
     (config) => {
-        // 优先使用管理员token
-        const adminToken = localStorage.getItem('admin_token');
-        const token = adminToken || localStorage.getItem('token');
+        const pathname = window.location.pathname;
+        let token: string | null = null;
+
+        // Keep admin/merchant sessions isolated to avoid cross-token pollution.
+        if (pathname.startsWith('/admin')) {
+            token = localStorage.getItem('admin_token');
+        } else if (pathname.startsWith('/merchant')) {
+            token = localStorage.getItem('merchant_token');
+        } else {
+            token = localStorage.getItem('token') || localStorage.getItem('admin_token') || localStorage.getItem('merchant_token');
+        }
+
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -51,7 +60,11 @@ api.interceptors.response.use(
 // API 接口定义
 export const authApi = {
     login: (data: { phone: string; code: string }) => api.post('/auth/login', data),
-    sendCode: (phone: string) => api.post('/auth/send-code', { phone }),
+    sendCode: (
+        phone: string,
+        purpose: 'login' | 'register' | 'merchant_withdraw' | 'merchant_bank_bind' | 'identity_apply' = 'login',
+        captchaToken?: string,
+    ) => api.post('/auth/send-code', { phone, purpose, captchaToken }),
 };
 
 // ==================== Admin 管理员认证 ====================
@@ -204,6 +217,77 @@ export const adminMenuApi = {
     delete: (id: number) => api.delete(`/admin/menus/${id}`),
 };
 
+
+
+export interface IdentityApplicationItem {
+    id: number;
+    userId: number;
+    identityType: string;
+    providerSubType?: 'designer' | 'company' | 'foreman';
+    status: number; // 0=pending,1=approved,2=rejected,3=suspended
+    rejectReason?: string;
+    appliedAt: string;
+    reviewedAt?: string;
+    reviewedBy?: number;
+
+    // 商家入驻扩展字段（仅当 identityType=provider 时存在）
+    merchantDetails?: MerchantApplicationDetails;
+}
+
+// 作品案例展示
+export interface PortfolioCaseDisplay {
+    title: string;
+    images: string[];
+    style: string;
+    area: number;
+}
+
+// 商家入驻详细信息
+export interface MerchantApplicationDetails {
+    // 基础信息
+    phone: string;
+    applicantType: string; // personal, studio, company, foreman
+    role: string;          // designer, foreman, company
+    entityType: string;    // personal, company
+
+    // 个人/负责人信息
+    realName: string;
+    idCardNo: string;      // 已脱敏
+    idCardFront: string;   // 身份证正面 URL
+    idCardBack: string;    // 身份证反面 URL
+
+    // 公司信息
+    companyName?: string;
+    licenseNo?: string;
+    licenseImage?: string;
+    teamSize?: number;
+    officeAddress?: string;
+
+    // 工长扩展信息
+    yearsExperience?: number;
+    workTypes?: string[];
+
+    // 服务信息
+    serviceArea?: string[];      // 服务区域名称数组
+    serviceAreaCodes?: string[]; // 服务区域代码数组
+    styles?: string[];
+    highlightTags?: string[];
+    pricing?: Record<string, number>;
+    introduction?: string;
+    graduateSchool?: string;
+    designPhilosophy?: string;
+    portfolioCases?: PortfolioCaseDisplay[];
+}
+
+// 身份申请审核
+export const adminIdentityApplicationApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: number }) =>
+        api.get('/admin/identity-applications', { params }),
+    detail: (id: number) => api.get(`/admin/identity-applications/${id}`),
+    approve: (id: number) => api.post(`/admin/identity-applications/${id}/approve`),
+    reject: (id: number, reason: string) => api.post(`/admin/identity-applications/${id}/reject`, { reason }),
+};
+
 // 审核管理
 export const adminAuditApi = {
     providers: (params?: { page?: number; pageSize?: number; status?: number }) =>
@@ -277,6 +361,16 @@ export const notificationApi = {
         api.put('/admin/notifications/read-all'),
     delete: (id: number) =>
         api.delete(`/admin/notifications/${id}`),
+};
+
+// 身份管理
+export const identityApi = {
+    list: () => api.get('/identities'),
+    getCurrent: () => api.get('/identities/current'),
+    switch: (data: { identityId?: number; targetRole?: string; currentRole?: string }) =>
+        api.post('/identities/switch', data),
+    apply: (data: { identityType: 'provider'; providerSubType: 'designer' | 'company' | 'foreman'; applicationData?: string }) =>
+        api.post('/identities/apply', data),
 };
 
 export default api;

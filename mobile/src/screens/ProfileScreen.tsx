@@ -12,15 +12,8 @@ import {
 } from 'react-native';
 import {
     Settings,
-    FileText,
-    Heart,
-    MapPin,
-    Ticket,
     Calculator,
-    ImageIcon,
     Headphones,
-    Shield,
-    ChevronRight,
     Info,
     ClipboardList,
     CreditCard,
@@ -31,39 +24,18 @@ import {
     Bell,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
-import { useToast } from '../components/Toast';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
 
-// Mock 当前项目数据
-const MOCK_PROJECT = {
-    name: '上海·汤臣一品 别墅装修',
-    stage: '报价阶段',
-    progress: 30,
-    budget: '280万',
-    estimatedDays: 12,
-};
-
 const ProfileScreen = ({ navigation }: any) => {
-    const { user, logout } = useAuthStore();
-    const { showConfirm } = useToast();
+    const { user } = useAuthStore();
     const [dialogVisible, setDialogVisible] = useState(false);
     const [dialogMessage, setDialogMessage] = useState('');
 
     const handleServicePress = (label: string) => {
         setDialogMessage(`${label}功能正在开发中，敬请期待！`);
         setDialogVisible(true);
-    };
-
-    const handleLogout = () => {
-        showConfirm({
-            title: '确认退出',
-            message: '确定要退出登录吗？',
-            confirmText: '退出',
-            cancelText: '取消',
-            onConfirm: logout,
-        });
     };
 
     const [pendingCount, setPendingCount] = useState(0);
@@ -86,7 +58,7 @@ const ProfileScreen = ({ navigation }: any) => {
                 const paymentCount = (paymentRes as any).data?.items?.length || 0;
 
                 setPendingCount(proposalCount + paymentCount);
-            } catch (error) {
+            } catch {
                 console.log('Failed to load pending count');
             }
         };
@@ -104,13 +76,12 @@ const ProfileScreen = ({ navigation }: any) => {
                 const { notificationApi } = await import('../services/api');
                 const res = await notificationApi.getUnreadCount();
                 setUnreadNotificationCount(res.data?.count || 0);
-            } catch (error) {
-                console.log('Failed to load unread notification count');
+            } catch {
+                // Silent fail
             }
         };
         loadUnreadNotifications();
 
-        // 监听焦点变化，每次返回页面都刷新未读数量
         const unsubscribe = navigation.addListener('focus', loadUnreadNotifications);
         return unsubscribe;
     }, [navigation]);
@@ -155,9 +126,14 @@ const ProfileScreen = ({ navigation }: any) => {
                             )}
                         </View>
                         <View style={styles.userDetails}>
-                            <Text style={styles.userName}>
-                                {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
-                            </Text>
+                            <View style={styles.userNameRow}>
+                                <Text style={styles.userName}>
+                                    {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
+                                </Text>
+                                <View style={styles.identityBadge}>
+                                    <Text style={styles.identityBadgeText}>业主</Text>
+                                </View>
+                            </View>
                             <View style={styles.memberBadge}>
                                 <Text style={styles.memberBadgeText}>BLACK MEMBER</Text>
                             </View>
@@ -271,7 +247,7 @@ const ProfileScreen = ({ navigation }: any) => {
                     </View>
                 </View>
 
-                <View style={{ height: 40 }} />
+                <View style={styles.bottomSpacer} />
             </ScrollView>
 
             {/* 自定义弹窗 */}
@@ -341,11 +317,27 @@ const styles = StyleSheet.create({
     userDetails: {
         marginLeft: 14,
     },
+    userNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 6,
+    },
     userName: {
         fontSize: 18,
         fontWeight: '700',
         color: '#09090B',
-        marginBottom: 6,
+    },
+    identityBadge: {
+        backgroundColor: PRIMARY_GOLD,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    identityBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 11,
+        fontWeight: '600',
     },
     memberBadge: {
         backgroundColor: '#1C1C1E',
@@ -510,7 +502,6 @@ const styles = StyleSheet.create({
         color: '#71717A',
         marginTop: 6,
     },
-
     // 菜单模块 (订单 & 更多服务)
     menuCard: {
         backgroundColor: '#FFFFFF',
@@ -548,19 +539,8 @@ const styles = StyleSheet.create({
         color: '#18181B',
         fontWeight: '500',
     },
-    // 退出登录
-    logoutBtn: {
-        marginHorizontal: 16,
-        marginTop: 32,
-        backgroundColor: '#FFFFFF',
-        paddingVertical: 14,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    logoutText: {
-        color: '#EF4444',
-        fontSize: 15,
-        fontWeight: '600',
+    bottomSpacer: {
+        height: 40,
     },
     // 弹窗样式
     dialogOverlay: {

@@ -1,18 +1,24 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     ScrollView,
     TouchableOpacity,
+    Linking,
     Platform,
+    useWindowDimensions,
     TextInput,
     KeyboardAvoidingView,
     Image,
     Keyboard,
     Modal,
+    ActivityIndicator,
+    PermissionsAndroid,
+    type NativeScrollEvent,
+    type NativeSyntheticEvent,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
     ArrowLeft,
     Send,
@@ -22,18 +28,27 @@ import {
     Camera,
     Image as ImageIcon,
     File,
+    ChevronRight,
     AlertCircle,
     CheckCircle,
     Info,
+    X,
+    Mic,
+    Keyboard as KeyboardIcon,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
-import TencentIMService from '../services/TencentIMService';
-import TIM from '@tencentcloud/chat';
+// import TencentIMService from '../services/TencentIMService';
+// import TIM from '@tencentcloud/chat';
+import TinodeService from '../services/TinodeService';
 import { parseEmojiText } from '../utils/emojiParser';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import DocumentPicker from '@react-native-documents/picker';
-import { fileApi } from '../services/api';
-import { getApiUrl } from '../config'; // Use config to get base URL for constructing full image paths if needed
+import * as DocumentPicker from '@react-native-documents/picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiBaseUrl } from '../config';
+import { VoiceRecorder } from '../components/VoiceRecorder';
+import { AudioPlayer } from '../components/AudioPlayer';
+import { tinodeApi, reportApi } from '../services/api';
+import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -46,6 +61,29 @@ const QUICK_REPLIES = [
     '我再考虑一下',
 ];
 
+const CHATROOM_RELOAD_BUSINESS_KEY = 'mobile.chatroom.history_reload';
+const CHATROOM_RELOAD_POLICY: AutoRetryPolicy = {
+    maxAutoAttempts: 1,
+    pauseOnConsecutiveFailures: 1,
+    baseDelayMs: 0,
+    maxDelayMs: 0,
+};
+
+const toSafeAttachmentUrl = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return parsed.toString();
+        }
+        return null;
+    } catch {
+        return null;
+    }
+};
+
 interface ChatRoomScreenProps {
     route: any;
     navigation: any;
@@ -56,24 +94,62 @@ interface UIMessage {
     id: string;
     senderId: string;
     content: string;
+    image?: {
+        url: string;
+        width?: number;
+        height?: number;
+        mime?: string;
+    };
+    file?: {
+        url: string;
+        name: string;
+        size?: number;
+        mime?: string;
+    };
+    audio?: {
+        url: string;
+        duration: number;
+    };
     createdAt: number;
     isRead: boolean;
     isMe: boolean;
+
+    // Client-only send status for retry UX (Tinode publish failures only).
+    sendStatus?: 'sending' | 'failed';
+    retry?:
+        | { kind: 'text'; text: string }
+        | { kind: 'image'; file: { uri: string; type: string; name: string; size?: number } }
+        | { kind: 'file'; file: { uri: string; type: string; name: string; size?: number } }
+        | { kind: 'audio'; file: { uri: string; duration: number } };
 }
 
 const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) => {
     // 从 MessageScreen 传递的参数
-    const { conversationID, partnerID, name: partnerName, avatar: partnerAvatar } = route.params || {};
+    const {
+        conversationID,
+        partnerID: legacyPartnerID,
+        partnerIdentifier: routePartnerIdentifier,
+        partnerPublicId,
+        name: partnerName,
+        avatar: partnerAvatar,
+        roleLabel: partnerRoleLabel,
+    } = route.params || {};
     const defaultAvatar = 'https://via.placeholder.com/80/E5E7EB/71717A?text=U';
+    const partnerIdentifier = routePartnerIdentifier || partnerPublicId || legacyPartnerID;
 
     // 从 Store 获取数据
-    const currentUser = useAuthStore(state => state.user);
-    const currentUserId = String(currentUser?.id || '');
+    const tinodeToken = useAuthStore(state => state.tinodeToken);
 
     const [messages, setMessages] = useState<UIMessage[]>([]);
+    const [loadingMessages, setLoadingMessages] = useState(false);
     const [inputText, setInputText] = useState('');
     const [showQuickReplies, setShowQuickReplies] = useState(true);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [reportReason, setReportReason] = useState('');
+    const [submittingReport, setSubmittingReport] = useState(false);
+    const [partnerTyping, setPartnerTyping] = useState(false);
+    const [partnerOnline, setPartnerOnline] = useState(false);
     const [dialogConfig, setDialogConfig] = useState<{
         visible: boolean;
         type: 'info' | 'confirm' | 'success';
@@ -82,9 +158,126 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         onConfirm?: () => void;
     }>({ visible: false, type: 'info', title: '', message: '' });
     const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+    const [previewVisible, setPreviewVisible] = useState(false);
+    const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [voiceInputMode, setVoiceInputMode] = useState(false);
     const scrollViewRef = useRef<ScrollView>(null);
+    const [topic, setTopic] = useState<any>(null);
+    const [topicName, setTopicName] = useState<string>(conversationID || '');
+    const [clearBeforeTs, setClearBeforeTs] = useState<number>(0);
+    const [historyAutoReloadPaused, setHistoryAutoReloadPaused] = useState(false);
+    const clearBeforeTsRef = useRef(0);
+    const historyReloadGuardRef = useRef(new AutoRetryGuard(CHATROOM_RELOAD_POLICY));
+    const insets = useSafeAreaInsets();
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-    // 解析 TIM 消息为 UI 消息
+    useEffect(() => {
+        clearBeforeTsRef.current = clearBeforeTs;
+    }, [clearBeforeTs]);
+
+    useEffect(() => {
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setClearBeforeTs(0);
+            return;
+        }
+
+        const keyParts = [targetTopic, conversationID, partnerIdentifier, partnerPublicId, legacyPartnerID]
+            .filter((val): val is string => typeof val === 'string' && val.trim().length > 0)
+            .map((val) => val.trim());
+        const uniqueKeyParts = Array.from(new Set(keyParts));
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const keys = uniqueKeyParts.map((val) => `chat_clear_${val}`);
+
+                let matchedKey = '';
+                let matchedRaw: string | null = null;
+                for (const key of keys) {
+                    const raw = await AsyncStorage.getItem(key);
+                    if (raw) {
+                        matchedKey = key;
+                        matchedRaw = raw;
+                        break;
+                    }
+                }
+
+                if (cancelled) return;
+
+                const ts = matchedRaw ? Number(matchedRaw) : 0;
+                const normalizedTs = Number.isFinite(ts) && ts > 0 ? ts : 0;
+                setClearBeforeTs(normalizedTs);
+
+                // Best-effort migration: once legacy key is found, copy marker to current topic key.
+                const currentKey = `chat_clear_${targetTopic}`;
+                if (normalizedTs > 0 && matchedKey && matchedKey !== currentKey) {
+                    await AsyncStorage.setItem(currentKey, String(normalizedTs));
+                }
+            } catch (e) {
+                console.warn('[ChatRoom] Failed to read clearBeforeTs:', e);
+                if (!cancelled) setClearBeforeTs(0);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [conversationID, legacyPartnerID, partnerIdentifier, partnerPublicId, topicName]);
+
+    useEffect(() => {
+        if (!clearBeforeTs) return;
+        // Ensure UI immediately reflects a persisted clear marker (e.g. after app restart).
+        setMessages(prev => prev.filter(m => m.createdAt > clearBeforeTs));
+    }, [clearBeforeTs]);
+
+    const openImagePreview = (url: string) => {
+        setPreviewImageUrl(url);
+        setPreviewVisible(true);
+    };
+
+    const closeImagePreview = () => {
+        setPreviewVisible(false);
+        setPreviewImageUrl(null);
+    };
+
+    // Chat UX: open conversation at latest message, but don't force-scroll when user is reading history.
+    const isNearBottomRef = useRef(true);
+    const pendingScrollToBottomRef = useRef(false);
+    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastTypingSentRef = useRef<number>(0);
+
+    const handleMessageListScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+        const distanceToBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+        // Keep the threshold tight: if the user scrolls up even a bit, don't auto-jump.
+        const isNearBottom = distanceToBottom <= 24;
+        isNearBottomRef.current = isNearBottom;
+
+        // If user scrolls away from the bottom, cancel any pending auto-scroll.
+        // This prevents being pulled to the bottom while reading history.
+        if (!isNearBottom) {
+            pendingScrollToBottomRef.current = false;
+        }
+    }, []);
+
+    useEffect(() => {
+        // Detach handlers to avoid leaks when leaving the screen.
+        return () => {
+            if (topic) {
+                topic.onData = undefined;
+                topic.onInfo = undefined;
+                topic.onPres = undefined;
+            }
+            // Clear typing timeout
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+            }
+        };
+    }, [topic]);
+
+    // 解析 TIM 消息为 UI 消息 - Commented out
+    /*
     const parseTIMMessages = (timMessages: any[]): UIMessage[] => {
         return timMessages.map(msg => ({
             id: msg.ID,
@@ -95,9 +288,163 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             isMe: msg.from === currentUserId
         }));
     };
+    */
+
+    // 解析 Tinode 消息
+    const parseTinodeMessages = useCallback((tinodeMessages: any[]): UIMessage[] => {
+        const selfTinodeUserId = TinodeService.getCurrentUserID();
+        console.log('[ChatRoom] parseTinodeMessages: input count =', tinodeMessages.length);
+
+        const filtered = tinodeMessages
+            .filter(msg => typeof msg?.seq === 'number' && msg.seq > 0)
+            .filter(msg => {
+                const marker = clearBeforeTsRef.current;
+                if (!marker) return true;
+                if (!msg?.ts) return true;
+                const ts = new Date(msg.ts).getTime();
+                if (!Number.isFinite(ts) || ts <= 0) return true;
+                return ts > marker;
+            });
+        console.log('[ChatRoom] parseTinodeMessages: after filter count =', filtered.length);
+        
+        if (tinodeMessages.length > 0 && filtered.length === 0) {
+            console.warn('[ChatRoom] All messages filtered out! Sample message:', JSON.stringify(tinodeMessages[0], null, 2));
+        }
+
+        const normalizeMediaUrl = (raw: unknown): string | undefined => {
+            if (typeof raw !== 'string') return undefined;
+            const val = raw.trim();
+            if (!val) return undefined;
+
+            // Relative upload paths.
+            if (val.startsWith('/')) {
+                const base = getApiBaseUrl().replace(/\/$/, '');
+                return `${base}${val}`;
+            }
+
+            // In dev, backend may respond with PublicURL=localhost which is unreachable from Android devices.
+            try {
+                const u = new URL(val);
+                if (__DEV__ && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')) {
+                    const base = new URL(getApiBaseUrl());
+                    return `${base.origin}${u.pathname}${u.search}`;
+                }
+            } catch {
+                // ignore
+            }
+
+            return val;
+        };
+
+        return filtered.map((msg) => {
+            const contentAny = msg.content;
+            const contentObj = contentAny && typeof contentAny === 'object' ? (contentAny as any) : null;
+
+            const imageEnt =
+                contentObj && Array.isArray(contentObj.ent)
+                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'IM' && e.data)
+                    : undefined;
+
+            const fileEnt =
+                contentObj && Array.isArray(contentObj.ent)
+                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'EX' && e.data && !e.data.mime?.startsWith('audio/'))
+                    : undefined;
+
+            const audioEnt =
+                contentObj && Array.isArray(contentObj.ent)
+                    ? contentObj.ent.find((e: any) => e && typeof e === 'object' && e.tp === 'EX' && e.data && e.data.mime?.startsWith('audio/'))
+                    : undefined;
+
+            const imageUrl = normalizeMediaUrl(imageEnt?.data?.val);
+
+            const fileUrl = normalizeMediaUrl(fileEnt?.data?.val ?? fileEnt?.data?.ref);
+            const fileNameFromEnt = typeof fileEnt?.data?.name === 'string' ? fileEnt.data.name : undefined;
+            const fileNameFromTxt = typeof contentObj?.txt === 'string' ? contentObj.txt : undefined;
+            const fileName = fileNameFromEnt || fileNameFromTxt;
+            const rawFileSize = fileEnt?.data?.size;
+            const fileSize =
+                typeof rawFileSize === 'number' && Number.isFinite(rawFileSize) && rawFileSize > 0
+                    ? Math.floor(rawFileSize)
+                    : undefined;
+            const fileMime = typeof fileEnt?.data?.mime === 'string' ? fileEnt.data.mime : undefined;
+
+            const audioUrl = normalizeMediaUrl(audioEnt?.data?.val || audioEnt?.data?.ref);
+            const audioDuration = typeof audioEnt?.data?.duration === 'number' ? audioEnt.data.duration : 0;
+
+            const rawText =
+                typeof contentAny === 'string'
+                    ? contentAny
+                    : typeof contentObj?.txt === 'string'
+                      ? contentObj.txt
+                      : fileNameFromEnt
+                        ? fileNameFromEnt
+                        : undefined;
+            const text = rawText ? parseEmojiText(rawText) : '[非文本消息]';
+
+            return {
+                id: String(msg.seq),
+                // Outgoing local-echo messages may have `from` unset.
+                senderId: msg.from || selfTinodeUserId || '',
+                content: text,
+                image: imageUrl
+                    ? {
+                          url: imageUrl,
+                          width: imageEnt?.data?.width,
+                          height: imageEnt?.data?.height,
+                          mime: imageEnt?.data?.mime,
+                      }
+                    : undefined,
+                file: fileUrl
+                    ? {
+                          url: fileUrl,
+                          name: fileName || '[文件]',
+                          size: fileSize,
+                          mime: fileMime,
+                      }
+                    : undefined,
+                audio: audioUrl
+                    ? {
+                          url: audioUrl,
+                          duration: audioDuration,
+                      }
+                    : undefined,
+                createdAt: msg.ts ? new Date(msg.ts).getTime() : Date.now(),
+                isRead: true, // simplified
+                // Tinode SDK may route a locally published message with `from` unset.
+                isMe: !msg.from || (!!selfTinodeUserId && msg.from === selfTinodeUserId),
+            };
+        });
+    }, []);
 
     // 加载历史消息
-    const loadMessages = async () => {
+    const getCachedTopicMessages = useCallback((t: any): any[] => {
+        if (!t || typeof t.messages !== 'function') {
+            console.log('[ChatRoom] getCachedTopicMessages: topic invalid or no messages function');
+            return [];
+        }
+        const history: any[] = [];
+        t.messages((m: any) => {
+            history.push(m);
+        });
+        console.log('[ChatRoom] getCachedTopicMessages: found', history.length, 'messages');
+        if (history.length > 0) {
+            console.log('[ChatRoom] First message sample:', JSON.stringify(history[0], null, 2));
+        }
+        return history;
+    }, []);
+
+    const loadMessages = useCallback(async (
+        trigger: TriggerSource = 'auto',
+        options?: { skipManualReset?: boolean; allowReinitRetry?: boolean }
+    ) => {
+        const allowReinitRetry = options?.allowReinitRetry ?? true;
+
+        if (trigger === 'manual' && !options?.skipManualReset) {
+            historyReloadGuardRef.current.resetByManual();
+            setHistoryAutoReloadPaused(false);
+        }
+
+        /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         if (!chat || !conversationID) return;
 
@@ -111,13 +458,264 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         } catch (error) {
             console.error('Failed to load messages:', error);
         }
-    };
+        */
+
+        // Tinode Implementation
+        if (trigger === 'auto' && !historyReloadGuardRef.current.shouldAttempt('auto')) {
+            setHistoryAutoReloadPaused(true);
+            const state = historyReloadGuardRef.current.getState();
+            console.warn('[AutoRetry]', {
+                businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                trigger,
+                event: 'blocked',
+                attempt: state.autoAttempts,
+                consecutiveFailures: state.consecutiveFailures,
+                pausedReason: 'max_auto_reload_reached',
+            });
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '自动重试已暂停',
+                message: '自动刷新次数已达上限，请点击空白页手动重试',
+            });
+            return;
+        }
+
+        if (trigger === 'auto') {
+            historyReloadGuardRef.current.recordAttempt('auto');
+            const state = historyReloadGuardRef.current.getState();
+            console.info('[AutoRetry]', {
+                businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                trigger,
+                event: 'attempt',
+                attempt: state.autoAttempts,
+            });
+        }
+
+        // Message list may have initialized Tinode, but provider details entry might not.
+        if (!TinodeService.isConnected()) {
+            if (!tinodeToken) {
+                setDialogConfig({
+                    visible: true,
+                    type: 'info',
+                    title: 'IM 未登录',
+                    message: '聊天服务未就绪，请重新登录后再试',
+                });
+                setLoadingMessages(false);
+                return;
+            }
+            const ok = await TinodeService.init(tinodeToken);
+            if (!ok) {
+                historyReloadGuardRef.current.recordFailure(new Error('Tinode init failed'));
+                setDialogConfig({
+                    visible: true,
+                    type: 'info',
+                    title: '连接失败',
+                    message: '无法连接聊天服务，请稍后重试',
+                });
+                setLoadingMessages(false);
+                return;
+            }
+        }
+
+        const asTinodeTopic = (val: unknown): string | null => {
+            if (typeof val !== 'string') return null;
+            const normalizedTopic = val.trim();
+            if (!normalizedTopic) return null;
+            if (normalizedTopic.startsWith('usr') || normalizedTopic.startsWith('p2p') || normalizedTopic.startsWith('grp')) {
+                return normalizedTopic;
+            }
+            return null;
+        };
+
+        let targetTopic = asTinodeTopic(conversationID) || asTinodeTopic(legacyPartnerID) || '';
+
+        if (!targetTopic && partnerIdentifier) {
+            try {
+                // partnerIdentifier may be app internal id or publicId. Resolve to Tinode `usr...`.
+                const resolved = await TinodeService.resolveTinodeUserId(partnerIdentifier);
+                targetTopic = resolved;
+                setTopicName(resolved);
+            } catch (e) {
+                console.error('Failed to resolve Tinode peer user id:', e);
+                historyReloadGuardRef.current.recordFailure(e);
+                setDialogConfig({
+                    visible: true,
+                    type: 'info',
+                    title: '加载失败',
+                    message: '无法解析对方的聊天身份，请稍后重试',
+                });
+                setLoadingMessages(false);
+                return;
+            }
+        }
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '加载失败',
+                message: '缺少会话信息，无法打开聊天',
+            });
+            setLoadingMessages(false);
+            return;
+        }
+
+        setTopicName(targetTopic);
+
+        // Conversation switch should always land on the latest message.
+        pendingScrollToBottomRef.current = true;
+        isNearBottomRef.current = true;
+
+        // If we already have cached messages for this topic (e.g. returning to the chat),
+        // render them immediately and avoid showing the loading state.
+        const cachedTopic = TinodeService.getTinode()?.getTopic?.(targetTopic);
+        const cachedHistory = getCachedTopicMessages(cachedTopic);
+        const cachedUi = parseTinodeMessages(cachedHistory);
+        if (cachedUi.length > 0) {
+            setMessages(cachedUi);
+            setLoadingMessages(false);
+        } else {
+            setLoadingMessages(true);
+        }
+
+        try {
+              // Subscribe to topic (which fetches messages)
+              console.log('[ChatRoom] Subscribing to topic:', targetTopic);
+              const t = await TinodeService.subscribeToConversation(targetTopic);
+              setTopic(t);
+              console.log('[ChatRoom] Subscription complete, topic:', t);
+
+              const history = getCachedTopicMessages(t);
+              console.log('[ChatRoom] History after subscription:', history.length, 'messages');
+
+              setMessages(parseTinodeMessages(history));
+              
+               // Mark read (seq=0 means "mark up to max").
+               const lastSeq = history.length > 0 ? history[history.length - 1].seq : 0;
+               console.log('[ChatRoom] Marking as read up to seq:', lastSeq);
+               TinodeService.markAsRead(targetTopic, lastSeq);
+
+              // Setup listener for new messages
+               t.onData = (data: any) => {
+                    console.log('[ChatRoom] New message:', data);
+                    if (typeof data?.seq !== 'number') return;
+                    setMessages(prev => {
+                        const incoming = parseTinodeMessages([data]);
+                        if (incoming.length === 0) return prev;
+                        const existing = new Set(prev.map(m => m.id));
+                        const unique = incoming.filter(m => !existing.has(m.id));
+                        return unique.length > 0 ? [...prev, ...unique] : prev;
+                    });
+                    TinodeService.markAsRead(targetTopic, data.seq);
+                    if (isNearBottomRef.current) {
+                        pendingScrollToBottomRef.current = true;
+                    }
+               };
+
+               t.onInfo = (info: any) => {
+                    console.log('[ChatRoom] Info event:', info);
+                    if (info?.what === 'kp') {
+                        setPartnerTyping(true);
+                        if (typingTimeoutRef.current) {
+                            clearTimeout(typingTimeoutRef.current);
+                        }
+                        typingTimeoutRef.current = setTimeout(() => {
+                            setPartnerTyping(false);
+                        }, 3000);
+                    }
+               };
+
+               t.onPres = (pres: any) => {
+                    console.log('[ChatRoom] Presence event:', pres);
+                    if (pres?.what === 'on') {
+                        setPartnerOnline(true);
+                    } else if (pres?.what === 'off') {
+                        setPartnerOnline(false);
+                    }
+               };
+
+              historyReloadGuardRef.current.recordSuccess();
+              setHistoryAutoReloadPaused(false);
+              setLoadingMessages(false);
+
+        } catch (error: any) {
+             console.error('Failed to subscribe/load messages:', error);
+             
+             const errorMessage = error?.message || String(error);
+             const is401 = errorMessage.includes('401') || errorMessage.includes('authentication required');
+             
+             if (is401 && tinodeToken) {
+                 if (trigger === 'auto' && !historyReloadGuardRef.current.shouldAttempt('auto')) {
+                     setHistoryAutoReloadPaused(true);
+                     const state = historyReloadGuardRef.current.getState();
+                     console.warn('[AutoRetry]', {
+                         businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                         trigger,
+                         event: 'blocked_before_reinit',
+                         attempt: state.autoAttempts,
+                         consecutiveFailures: state.consecutiveFailures,
+                         pausedReason: 'max_auto_reload_reached',
+                     });
+                     setDialogConfig({
+                         visible: true,
+                         type: 'info',
+                         title: '自动重试已暂停',
+                         message: '自动刷新次数已达上限，请点击空白页手动重试',
+                     });
+                     setLoadingMessages(false);
+                     return;
+                 }
+
+                 try {
+                     console.log('[ChatRoom] 401 error, reinitializing Tinode...');
+                     TinodeService.disconnect();
+                     const ok = await TinodeService.init(tinodeToken);
+                     if (ok && allowReinitRetry) {
+                         console.log('[ChatRoom] Reinitialized, retrying load...');
+                         await loadMessages('manual', {
+                             skipManualReset: true,
+                             allowReinitRetry: false,
+                         });
+                         return;
+                     }
+                 } catch (reinitError) {
+                     console.error('[ChatRoom] Reinit failed:', reinitError);
+                     historyReloadGuardRef.current.recordFailure(reinitError);
+                 }
+             }
+
+             historyReloadGuardRef.current.recordFailure(error);
+             const state = historyReloadGuardRef.current.getState();
+             if (state.paused) {
+                 setHistoryAutoReloadPaused(true);
+                 console.warn('[AutoRetry]', {
+                     businessKey: CHATROOM_RELOAD_BUSINESS_KEY,
+                     trigger,
+                     event: 'failure_paused',
+                     attempt: state.autoAttempts,
+                     consecutiveFailures: state.consecutiveFailures,
+                     pausedReason: 'consecutive_failures_threshold',
+                 });
+             }
+             
+             setDialogConfig({
+                 visible: true,
+                 type: 'info',
+                 title: '加载失败',
+                 message: '拉取聊天记录失败，请稍后重试',
+             });
+              setLoadingMessages(false);
+        }
+    }, [conversationID, getCachedTopicMessages, legacyPartnerID, parseTinodeMessages, partnerIdentifier, tinodeToken]);
 
     useEffect(() => {
-        loadMessages();
-    }, [conversationID]);
+        loadMessages('auto').catch((error) => {
+            console.error('[ChatRoom] Initial auto load failed:', error);
+        });
+    }, [loadMessages]);
 
-    // 监听新消息
+    // 监听新消息 - Handled in loadMessages via topic.onData for Tinode
+    /*
     useEffect(() => {
         const chat = TencentIMService.getChat();
         if (!chat) return;
@@ -138,22 +736,51 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             chat.off(TIM.EVENT.MESSAGE_RECEIVED, onMessageReceived);
         };
     }, [conversationID]);
+    */
 
     // 滚动到底部
-    const scrollToBottom = () => {
+    const scrollToBottom = (animated = false) => {
+        // Ensure layout has updated before attempting to scroll.
         setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+            requestAnimationFrame(() => {
+                scrollViewRef.current?.scrollToEnd({ animated });
+            });
+        }, 0);
     };
 
+    const handleMessageListContentSizeChange = useCallback(() => {
+        if (!pendingScrollToBottomRef.current) return;
+        // Do not animate on open/switch; it should feel instant.
+        scrollToBottom(false);
+        pendingScrollToBottomRef.current = false;
+        isNearBottomRef.current = true;
+    }, []);
+
     useEffect(() => {
-        scrollToBottom();
-    }, [messages.length]);
+        // Some RN layouts may not fire onContentSizeChange reliably (e.g. same height).
+        // Keep this as a fallback to ensure conversation opens at the latest message.
+        if (loadingMessages) return;
+        if (!pendingScrollToBottomRef.current) return;
+        scrollToBottom(false);
+        pendingScrollToBottomRef.current = false;
+        isNearBottomRef.current = true;
+    }, [messages.length, loadingMessages]);
+
+    const handleTypingIndicator = useCallback(() => {
+        if (!topic || !topic.isSubscribed?.()) return;
+
+        const now = Date.now();
+        if (now - lastTypingSentRef.current > 3000) {
+            topic.noteKeyPress?.();
+            lastTypingSentRef.current = now;
+        }
+    }, [topic]);
 
     // 发送消息
     const handleSendMessage = async (text: string) => {
         if (!text.trim()) return;
 
+        /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         console.log('[ChatRoom] handleSendMessage - chat:', !!chat, 'partnerID:', partnerID, 'isLoggedIn:', TencentIMService.getIsLoggedIn());
 
@@ -210,16 +837,6 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
 
             console.log('✅ [ChatRoom] Send success:', res);
 
-            // 腾讯IM SDK通常会自动触发 MESSAGE_RECEIVED 事件来更新消息状态和ID，
-            // 但如果需要更即时的UI更新，可以根据 res.data.message 更新本地消息列表。
-            // 这里我们依赖 MESSAGE_RECEIVED 事件来处理最终状态。
-            // 如果需要手动更新，可以这样做：
-            // if (res.code === 0 && res.data && res.data.message) {
-            //     setMessages(prev => prev.map(msg =>
-            //         msg.id === uiMsg.id ? { ...msg, id: res.data.message.ID, createdAt: res.data.message.time * 1000 } : msg
-            //     ));
-            // }
-
         } catch (error: any) {
             console.error('❌ [ChatRoom] Send failed:', error);
             // 打印完整的错误对象
@@ -230,6 +847,93 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 type: 'info',
                 title: '发送失败',
                 message: '消息发送失败，请重试',
+            });
+        }
+        */
+
+         // Tinode Implementation
+         const trimmed = text.trim();
+         const targetTopic = conversationID || topicName;
+
+         try {
+             // With Tinode SDK, `topic.publish()` will route the sent message through `topic.onData`.
+             // Avoid adding optimistic placeholders on success-path to prevent duplicates.
+             setInputText('');
+             setShowQuickReplies(false);
+             Keyboard.dismiss();
+
+             if (!targetTopic) throw new Error('Missing Tinode topic');
+             await TinodeService.sendTextMessage(targetTopic, trimmed);
+         } catch (error) {
+             console.error('Tinode send failed:', error);
+
+             // Add a local failed placeholder so user can tap to retry.
+             const failedMsg: UIMessage = {
+                 id: `local_failed_${Date.now()}`,
+                 senderId: TinodeService.getCurrentUserID() || '',
+                 content: parseEmojiText(trimmed),
+                 createdAt: Date.now(),
+                 isRead: true,
+                 isMe: true,
+                 sendStatus: 'failed',
+                 retry: { kind: 'text', text: trimmed },
+             };
+             setMessages((prev) => [...prev, failedMsg]);
+             pendingScrollToBottomRef.current = true;
+
+             setDialogConfig({
+                 visible: true,
+                 type: 'info',
+                 title: '发送失败',
+                 message: '消息发送失败，点击该消息可重新发送',
+             });
+         }
+    };
+
+    const resendFailedMessage = async (message: UIMessage) => {
+        if (!message.retry || message.sendStatus !== 'failed') return;
+
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '重发失败',
+                message: '缺少会话信息，无法重发',
+            });
+            return;
+        }
+
+        const messageId = message.id;
+        setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, sendStatus: 'sending' } : m)));
+        try {
+            if (message.retry.kind === 'text') {
+                await TinodeService.sendTextMessage(targetTopic, message.retry.text);
+            } else if (message.retry.kind === 'image') {
+                await TinodeService.sendImageMessage(targetTopic, message.retry.file.uri);
+            } else if (message.retry.kind === 'audio') {
+                await TinodeService.sendAudioMessage(
+                    targetTopic,
+                    message.retry.file.uri,
+                    message.retry.file.duration
+                );
+            } else {
+                const f = message.retry.file;
+                const size = typeof f.size === 'number' && Number.isFinite(f.size) && f.size > 0 ? Math.floor(f.size) : undefined;
+                await TinodeService.sendFileMessage(targetTopic, f.uri, f.name, f.type, size);
+            }
+
+            // Remove local placeholder; Tinode will add the actual message via onData.
+            setMessages((prev) => prev.filter((m) => m.id !== messageId));
+            pendingScrollToBottomRef.current = true;
+        } catch (e) {
+            console.error('Resend failed:', e);
+            setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, sendStatus: 'failed' } : m)));
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '重发失败',
+                message: '重发失败，请检查网络后重试',
             });
         }
     };
@@ -249,18 +953,149 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         setDialogConfig(prev => ({ ...prev, visible: false }));
     };
 
+    const formatBytes = (bytes?: number): string => {
+        if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '未知大小';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let n = bytes;
+        let i = 0;
+        while (n >= 1024 && i < units.length - 1) {
+            n /= 1024;
+            i += 1;
+        }
+        const fixed = i === 0 ? 0 : n < 10 ? 1 : 0;
+        return `${n.toFixed(fixed)} ${units[i]}`;
+    };
+
+    const openAttachmentUrl = async (url: string) => {
+        const safeUrl = toSafeAttachmentUrl(url);
+        if (!safeUrl) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '链接不可用',
+                message: '该附件链接不安全或格式无效，已阻止打开',
+            });
+            return;
+        }
+
+        try {
+            await Linking.openURL(safeUrl);
+        } catch (e) {
+            console.error('Failed to open attachment url:', url, e);
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '打开失败',
+                message: '无法打开该文件，请稍后重试',
+            });
+        }
+    };
+
+    const handleSubmitReport = async () => {
+        const reason = reportReason.trim();
+        if (!reason) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '请输入举报内容',
+                message: '请填写您要举报的具体原因。',
+            });
+            return;
+        }
+
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '举报失败',
+                message: '缺少会话信息，无法提交举报',
+            });
+            return;
+        }
+
+        setSubmittingReport(true);
+        try {
+            await reportApi.submitChatReport({
+                topic: targetTopic,
+                reason,
+                partner: partnerPublicId ? String(partnerPublicId) : partnerIdentifier ? String(partnerIdentifier) : undefined,
+            });
+
+            setShowReportModal(false);
+            setReportReason('');
+            setDialogConfig({
+                visible: true,
+                type: 'success',
+                title: '举报成功',
+                message: '感谢您的反馈，我们将尽快处理。',
+            });
+        } catch (error) {
+            console.error('[ChatRoom] Failed to submit report:', error);
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '举报失败',
+                message: '提交失败，请稍后重试',
+            });
+        } finally {
+            setSubmittingReport(false);
+        }
+    };
+
     // 更多菜单选项
     const handleMenuOption = (option: string) => {
         setShowMoreMenu(false);
         switch (option) {
             case 'profile':
-                // TODO: 跳转逻辑需要根据 role 判断，目前 conversation 对象不完整
-                setDialogConfig({
-                    visible: true,
-                    type: 'info',
-                    title: '提示',
-                    message: '查看资料功能待修复'
-                });
+                if (!legacyPartnerID) {
+                    setDialogConfig({
+                        visible: true,
+                        type: 'info',
+                        title: '提示',
+                        message: '无法打开用户资料',
+                    });
+                    break;
+                }
+                try {
+                    navigation.navigate('DesignerDetail', { id: legacyPartnerID });
+                } catch (e) {
+                    console.warn('[ChatRoom] Failed to navigate to DesignerDetail:', e);
+                    setDialogConfig({
+                        visible: true,
+                        type: 'info',
+                        title: '提示',
+                        message: '无法打开用户资料',
+                    });
+                }
+                break;
+            case 'settings':
+                try {
+                    const targetTopic = conversationID || topicName || '';
+                    navigation.navigate('ChatSettings', {
+                        topic: targetTopic,
+                        partnerID: legacyPartnerID ? String(legacyPartnerID) : '',
+                        partnerIdentifier: partnerIdentifier ? String(partnerIdentifier) : '',
+                        partnerPublicId: partnerPublicId ? String(partnerPublicId) : '',
+                        conversation: {
+                            conversationID: targetTopic,
+                            partnerID: legacyPartnerID ? String(legacyPartnerID) : '',
+                            partnerIdentifier: partnerIdentifier ? String(partnerIdentifier) : '',
+                            partnerPublicId: partnerPublicId ? String(partnerPublicId) : '',
+                            name: partnerName || '用户',
+                            avatar: partnerAvatar || defaultAvatar,
+                            roleLabel: partnerRoleLabel || '服务商',
+                        },
+                    });
+                } catch (e) {
+                    console.warn('[ChatRoom] Failed to navigate to ChatSettings:', e);
+                    setDialogConfig({
+                        visible: true,
+                        type: 'info',
+                        title: '提示',
+                        message: '无法打开聊天设置',
+                    });
+                }
                 break;
             case 'clear':
                 setDialogConfig({
@@ -268,22 +1103,67 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     type: 'confirm',
                     title: '清空聊天记录',
                     message: '确定要清空与该用户的聊天记录吗？此操作不可恢复。',
-                    onConfirm: () => { /* TODO: clear messages API */ },
+                    onConfirm: async () => {
+                        const targetTopic = conversationID || topicName;
+                        if (!targetTopic) {
+                            setTimeout(() => {
+                                setDialogConfig({
+                                    visible: true,
+                                    type: 'info',
+                                    title: '提示',
+                                    message: '清空失败，请稍后重试',
+                                });
+                            }, 0);
+                            return;
+                        }
+
+                        try {
+                            await tinodeApi.clearTopicMessages(targetTopic);
+                        } catch (error) {
+                            console.error('[ChatRoom] Failed to clear messages on server:', error);
+                            setTimeout(() => {
+                                setDialogConfig({
+                                    visible: true,
+                                    type: 'info',
+                                    title: '清空失败',
+                                    message: '服务端清空失败，请稍后重试',
+                                });
+                            }, 0);
+                            return;
+                        }
+
+                        const now = Date.now();
+                        try {
+                            await AsyncStorage.setItem(`chat_clear_${targetTopic}`, String(now));
+                        } catch (e) {
+                            console.warn('[ChatRoom] Failed to persist clear marker:', e);
+                        }
+
+                        setClearBeforeTs(now);
+                        setMessages([]);
+
+                        // `confirm` dialog auto-closes after onConfirm; delay to show success.
+                        setTimeout(() => {
+                            setDialogConfig({
+                                visible: true,
+                                type: 'success',
+                                title: '已清空',
+                                message: '聊天记录已清空',
+                            });
+                        }, 0);
+                    },
                 });
                 break;
             case 'report':
-                setDialogConfig({
-                    visible: true,
-                    type: 'success',
-                    title: '举报成功',
-                    message: '感谢您的反馈，我们将尽快处理。',
-                });
+                setReportReason('');
+                setShowReportModal(true);
                 break;
         }
     };
 
     // 通用文件上传并发送 helper
-    const uploadAndSendFile = async (file: { uri: string; type: string; name: string }, msgType: string) => {
+    const uploadAndSendFile = async (file: { uri: string; type: string; name: string; size?: number }) => {
+        /* Tencent IM Implementation
         const chat = TencentIMService.getChat();
         if (!chat || !partnerID) return;
 
@@ -362,12 +1242,142 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 message: '附件发送失败，请重试',
             });
         }
+        */
+       
+        // Tinode Implementation
+        try {
+            // `publishMessage()` will also route the sent message through `topic.onData`.
+            const targetTopic = conversationID || topicName;
+            if (!targetTopic) throw new Error('Missing Tinode topic');
+
+            const mime = (file.type || '').trim() || 'application/octet-stream';
+            const name = (file.name || '').trim() || '[文件]';
+            const ext = name.split('.').pop()?.toLowerCase();
+            const isImageByMime = mime.toLowerCase().startsWith('image/');
+            const isImageByExt =
+                !!ext &&
+                ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'svg'].includes(ext);
+            const isImage = isImageByMime || isImageByExt;
+
+            if (isImage) {
+                await TinodeService.sendImageMessage(targetTopic, file.uri);
+            } else {
+                const size =
+                    typeof file.size === 'number' && Number.isFinite(file.size) && file.size > 0
+                        ? Math.floor(file.size)
+                        : undefined;
+                await TinodeService.sendFileMessage(targetTopic, file.uri, name, mime, size);
+            }
+        } catch (error) {
+            console.error('Tinode attachment send failed:', error);
+
+            const isImage = (() => {
+                const mime = (file.type || '').trim().toLowerCase();
+                const name = (file.name || '').trim();
+                const ext = name.split('.').pop()?.toLowerCase();
+                const byMime = mime.startsWith('image/');
+                const byExt =
+                    !!ext &&
+                    ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'svg'].includes(ext);
+                return byMime || byExt;
+            })();
+
+            const retryPayload: UIMessage['retry'] = isImage
+                ? { kind: 'image', file }
+                : { kind: 'file', file };
+
+            const failedMsg: UIMessage = {
+                id: `local_failed_${Date.now()}`,
+                senderId: TinodeService.getCurrentUserID() || '',
+                content: isImage ? '[图片]' : (file.name || '[文件]'),
+                createdAt: Date.now(),
+                isRead: true,
+                isMe: true,
+                sendStatus: 'failed',
+                retry: retryPayload,
+                image: isImage && file.uri ? { url: file.uri } : undefined,
+                file: !isImage ? {
+                    url: file.uri,
+                    name: file.name || '[文件]',
+                    size: typeof file.size === 'number' ? file.size : undefined,
+                    mime: file.type,
+                } : undefined,
+            };
+
+            setMessages((prev) => [...prev, failedMsg]);
+            pendingScrollToBottomRef.current = true;
+
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '附件发送失败，点击该消息可重新发送',
+            });
+        }
+    };
+
+    const handleVoiceRecordingComplete = async (audioPath: string, duration: number) => {
+        const targetTopic = conversationID || topicName;
+        if (!targetTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '缺少会话信息，无法发送语音',
+            });
+            return;
+        }
+
+        try {
+            await TinodeService.sendAudioMessage(targetTopic, audioPath, duration);
+        } catch (error) {
+            console.error('Voice message send failed:', error);
+
+            const failedMsg: UIMessage = {
+                id: `local_failed_${Date.now()}`,
+                senderId: TinodeService.getCurrentUserID() || '',
+                content: '[语音]',
+                createdAt: Date.now(),
+                isRead: true,
+                isMe: true,
+                sendStatus: 'failed',
+                retry: { kind: 'audio', file: { uri: audioPath, duration } },
+                audio: { url: audioPath, duration },
+            };
+
+            setMessages((prev) => [...prev, failedMsg]);
+            pendingScrollToBottomRef.current = true;
+
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '发送失败',
+                message: '语音发送失败，点击该消息可重新发送',
+            });
+        }
+    };
+
+    const handleVoiceRecordingCanceled = () => {
+        console.log('[ChatRoom] Voice recording canceled');
     };
 
     // 拍照
     const handleCamera = async () => {
         setShowAttachmentMenu(false);
         try {
+            // react-native-image-picker may require runtime permission if CAMERA is declared
+            // (e.g. via manifest merge from other deps). Requesting is safe on Android.
+            const ensureCameraPermission = async (): Promise<boolean> => {
+                if (Platform.OS !== 'android') return true;
+                try {
+                    const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.CAMERA);
+                    return res === PermissionsAndroid.RESULTS.GRANTED;
+                } catch (e) {
+                    console.error('Camera permission request failed:', e);
+                    return false;
+                }
+            };
+
             const result = await launchCamera({
                 mediaType: 'photo',
                 quality: 0.8,
@@ -376,6 +1386,46 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             if (result.didCancel) return;
             if (result.errorCode) {
                 console.error('Camera Error:', result.errorMessage);
+
+                const msg = String(result.errorMessage || '');
+                const needsPermission =
+                    result.errorCode === 'permission' ||
+                    msg.includes('Manifest.permission.CAMERA') ||
+                    msg.includes('CAMERA');
+
+                if (needsPermission) {
+                    const ok = await ensureCameraPermission();
+                    if (!ok) {
+                        setDialogConfig({
+                            visible: true,
+                            type: 'info',
+                            title: '相机权限未授予',
+                            message: '请在系统设置中允许相机权限后重试',
+                        });
+                        return;
+                    }
+
+                    const retry = await launchCamera({
+                        mediaType: 'photo',
+                        quality: 0.8,
+                    });
+                    if (retry.didCancel) return;
+                    if (retry.errorCode) {
+                        console.error('Camera Error (retry):', retry.errorMessage);
+                        return;
+                    }
+
+                    const assetRetry = retry.assets?.[0];
+                    if (assetRetry && assetRetry.uri) {
+                        await uploadAndSendFile({
+                            uri: assetRetry.uri,
+                            type: assetRetry.type || 'image/jpeg',
+                            name: assetRetry.fileName || 'photo.jpg',
+                            size: typeof assetRetry.fileSize === 'number' ? assetRetry.fileSize : undefined,
+                        });
+                    }
+                    return;
+                }
                 return;
             }
 
@@ -385,7 +1435,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: asset.uri,
                     type: asset.type || 'image/jpeg',
                     name: asset.fileName || 'photo.jpg',
-                }, TIM.TYPES.MSG_IMAGE);
+                    size: typeof asset.fileSize === 'number' ? asset.fileSize : undefined,
+                });
             }
         } catch (error) {
             console.error('Handle Camera Error:', error);
@@ -396,6 +1447,21 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
     const handleGallery = async () => {
         setShowAttachmentMenu(false);
         try {
+            const ensureReadImagesPermission = async (): Promise<boolean> => {
+                if (Platform.OS !== 'android') return true;
+                const perm =
+                    typeof Platform.Version === 'number' && Platform.Version >= 33
+                        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+                        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+                try {
+                    const res = await PermissionsAndroid.request(perm);
+                    return res === PermissionsAndroid.RESULTS.GRANTED;
+                } catch (e) {
+                    console.error('Gallery permission request failed:', e);
+                    return false;
+                }
+            };
+
             const result = await launchImageLibrary({
                 mediaType: 'photo',
                 quality: 0.8,
@@ -404,6 +1470,48 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             if (result.didCancel) return;
             if (result.errorCode) {
                 console.error('Gallery Error:', result.errorMessage);
+
+                const msg = String(result.errorMessage || '');
+                const needsPermission =
+                    result.errorCode === 'permission' ||
+                    msg.includes('permission') ||
+                    msg.includes('READ_MEDIA') ||
+                    msg.includes('READ_EXTERNAL');
+
+                if (needsPermission) {
+                    const ok = await ensureReadImagesPermission();
+                    if (!ok) {
+                        setDialogConfig({
+                            visible: true,
+                            type: 'info',
+                            title: '相册权限未授予',
+                            message: '请在系统设置中允许相册/图片访问权限后重试',
+                        });
+                        return;
+                    }
+
+                    const retry = await launchImageLibrary({
+                        mediaType: 'photo',
+                        quality: 0.8,
+                        selectionLimit: 1,
+                    });
+                    if (retry.didCancel) return;
+                    if (retry.errorCode) {
+                        console.error('Gallery Error (retry):', retry.errorMessage);
+                        return;
+                    }
+
+                    const assetRetry = retry.assets?.[0];
+                    if (assetRetry && assetRetry.uri) {
+                        await uploadAndSendFile({
+                            uri: assetRetry.uri,
+                            type: assetRetry.type || 'image/jpeg',
+                            name: assetRetry.fileName || 'image.jpg',
+                            size: typeof assetRetry.fileSize === 'number' ? assetRetry.fileSize : undefined,
+                        });
+                    }
+                    return;
+                }
                 return;
             }
 
@@ -413,7 +1521,8 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: asset.uri,
                     type: asset.type || 'image/jpeg',
                     name: asset.fileName || 'image.jpg',
-                }, TIM.TYPES.MSG_IMAGE);
+                    size: typeof asset.fileSize === 'number' ? asset.fileSize : undefined,
+                });
             }
         } catch (error) {
             console.error('Handle Gallery Error:', error);
@@ -433,14 +1542,18 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     uri: file.uri,
                     type: file.type || 'application/octet-stream',
                     name: file.name || 'document',
-                }, TIM.TYPES.MSG_FILE);
+                    size: typeof file.size === 'number' ? file.size : undefined,
+                });
             }
-        } catch (err) {
-            if (DocumentPicker.isCancel(err)) {
+        } catch (err: unknown) {
+            if (
+                DocumentPicker.isErrorWithCode(err) &&
+                err.code === DocumentPicker.errorCodes.OPERATION_CANCELED
+            ) {
                 // cancelled
-            } else {
-                console.error('DocumentPicker Error:', err);
+                return;
             }
+            console.error('DocumentPicker Error:', err);
         }
     };
 
@@ -450,6 +1563,21 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
         const msgTime = new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
         const prevMsgTime = index > 0 ? new Date(messages[index - 1]?.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
         const showTime = index === 0 || prevMsgTime !== msgTime;
+
+        const image = message.image;
+        const file = message.file;
+        const audio = message.audio;
+        // Limit image bubble width to half of the message area (no more than half the screen).
+        // Message list has horizontal padding=16, so the usable width is (windowWidth - 32).
+        const maxW = Math.max(140, Math.floor((windowWidth - 32) * 0.5));
+        const maxH = Math.min(320, Math.round(maxW * 1.4));
+        const rawW = typeof image?.width === 'number' && image.width > 0 ? image.width : undefined;
+        const rawH = typeof image?.height === 'number' && image.height > 0 ? image.height : undefined;
+        const imageSize = (() => {
+            if (!rawW || !rawH) return { width: maxW, height: maxW };
+            const scale = Math.min(maxW / rawW, maxH / rawH, 1);
+            return { width: Math.round(rawW * scale), height: Math.round(rawH * scale) };
+        })();
 
         return (
             <View key={message.id}>
@@ -466,24 +1594,96 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                             style={styles.messageAvatar}
                         />
                     )}
-                    <View style={[
-                        styles.messageBubble,
-                        isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-                    ]}>
-                        <Text style={[
-                            styles.messageText,
-                            isMe && styles.messageTextMe,
-                        ]}>
-                            {message.content}
-                        </Text>
+                    <View
+                        style={[
+                            styles.messageBubble,
+                            image ? styles.messageBubbleImage : isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
+                        ]}
+                    >
+                        {image?.url ? (
+                            <TouchableOpacity
+                                activeOpacity={0.9}
+                                onPress={() => {
+                                    if (message.sendStatus === 'failed' && message.retry) {
+                                        resendFailedMessage(message);
+                                        return;
+                                    }
+                                    openImagePreview(image.url);
+                                }}
+                            >
+                                <Image
+                                    source={{ uri: image.url }}
+                                    style={[styles.messageImage, { width: imageSize.width, height: imageSize.height }]}
+                                    resizeMode="cover"
+                                />
+                            </TouchableOpacity>
+                        ) : audio?.url ? (
+                            <View style={styles.audioMessageContainer}>
+                                <AudioPlayer
+                                    messageId={message.id}
+                                    audioUrl={audio.url}
+                                    duration={audio.duration}
+                                />
+                            </View>
+                        ) : file?.url ? (
+                            <TouchableOpacity
+                                activeOpacity={0.7}
+                                style={styles.fileCard}
+                                onPress={() => {
+                                    if (message.sendStatus === 'failed' && message.retry) {
+                                        resendFailedMessage(message);
+                                        return;
+                                    }
+                                    openAttachmentUrl(file.url);
+                                }}
+                            >
+                                <View style={styles.fileCardLeft}>
+                                    <View style={[styles.fileIcon, isMe && styles.fileIconMe]}>
+                                        <File size={18} color={isMe ? '#FFFFFF' : '#71717A'} />
+                                    </View>
+                                    <View style={styles.fileMeta}>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[styles.fileName, isMe && styles.fileNameMe]}
+                                        >
+                                            {file.name}
+                                        </Text>
+                                        <Text style={[styles.fileSize, isMe && styles.fileSizeMe]}>{formatBytes(file.size)}</Text>
+                                    </View>
+                                </View>
+                                <ChevronRight size={18} color={isMe ? '#FFFFFF' : '#A1A1AA'} />
+                            </TouchableOpacity>
+                        ) : (
+                            message.sendStatus === 'failed' && message.retry ? (
+                                <TouchableOpacity activeOpacity={0.7} onPress={() => resendFailedMessage(message)}>
+                                    <Text style={[styles.messageText, isMe && styles.messageTextMe]}>{message.content}</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <Text style={[styles.messageText, isMe && styles.messageTextMe]}>{message.content}</Text>
+                            )
+                        )}
                     </View>
+
+                    {isMe && message.sendStatus ? (
+                        <View style={styles.sendStatus}>
+                            {message.sendStatus === 'sending' ? (
+                                <ActivityIndicator size="small" color="#A1A1AA" />
+                            ) : (
+                                <TouchableOpacity activeOpacity={0.7} onPress={() => resendFailedMessage(message)}>
+                                    <View style={styles.failedDot}>
+                                        <Text style={styles.failedDotText}>!</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    ) : null}
                 </View>
             </View>
         );
     };
 
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top']}>
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -491,7 +1691,15 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
                     <Text style={styles.headerTitle}>{partnerName}</Text>
-                    {/* 在线状态暂未接入 */}
+                    {partnerOnline && (
+                        <View style={styles.onlineStatus}>
+                            <View style={styles.onlineDot} />
+                            <Text style={styles.onlineText}>在线</Text>
+                        </View>
+                    )}
+                    {partnerTyping && (
+                        <Text style={styles.typingIndicator}>正在输入...</Text>
+                    )}
                 </View>
                 <View style={styles.headerRight}>
                     <TouchableOpacity style={styles.headerBtn} onPress={handlePhonePress}>
@@ -504,7 +1712,9 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
             </View>
 
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                // Android already uses `windowSoftInputMode=adjustResize` (AndroidManifest.xml).
+                // Using KeyboardAvoidingView behavior on Android can cause layout drift after keyboard hides.
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={styles.keyboardView}
                 keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
             >
@@ -514,9 +1724,33 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                     style={styles.messageList}
                     contentContainerStyle={styles.messageListContent}
                     showsVerticalScrollIndicator={false}
-                    onContentSizeChange={scrollToBottom}
+                    onScroll={handleMessageListScroll}
+                    scrollEventThrottle={16}
+                    onContentSizeChange={handleMessageListContentSizeChange}
                 >
-                    {messages.map((message, index) => renderMessage(message, index))}
+                    {loadingMessages ? (
+                        <View style={styles.emptyState}>
+                            <ActivityIndicator size="small" color={PRIMARY_GOLD} />
+                            <Text style={styles.emptyText}>正在加载聊天记录...</Text>
+                        </View>
+                    ) : messages.length === 0 ? (
+                        <TouchableOpacity
+                            style={styles.emptyState}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                                loadMessages('manual').catch((error) => {
+                                    console.error('[ChatRoom] Manual reload failed:', error);
+                                });
+                            }}
+                        >
+                            <Text style={styles.emptyText}>暂无聊天记录</Text>
+                            <Text style={styles.emptySubtext}>
+                                {historyAutoReloadPaused ? '自动刷新已暂停，点击手动重试' : '点击刷新'}
+                            </Text>
+                        </TouchableOpacity>
+                    ) : (
+                        messages.map((message, index) => renderMessage(message, index))
+                    )}
                 </ScrollView>
 
                 {/* 快捷回复 */}
@@ -540,36 +1774,112 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                 )}
 
                 {/* 输入区域 */}
-                <View style={styles.inputContainer}>
-                    <TouchableOpacity
-                        style={styles.attachBtn}
-                        onPress={() => setShowAttachmentMenu(true)}
-                    >
-                        <Plus size={22} color="#71717A" />
-                    </TouchableOpacity>
-                    <View style={styles.inputWrapper}>
-                        <TextInput
-                            style={styles.textInput}
-                            placeholder="输入消息..."
-                            placeholderTextColor="#A1A1AA"
-                            value={inputText}
-                            onChangeText={setInputText}
-                            multiline
-                            maxLength={500}
-                        />
+                <View style={styles.inputBar}>
+                    <View style={styles.inputContainer}>
+                        <TouchableOpacity
+                            style={styles.attachBtn}
+                            onPress={() => setShowAttachmentMenu(true)}
+                        >
+                            <Plus size={22} color="#71717A" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.voiceToggleBtn}
+                            onPress={() => {
+                                setVoiceInputMode(!voiceInputMode);
+                                if (!voiceInputMode) {
+                                    Keyboard.dismiss();
+                                }
+                            }}
+                        >
+                            {voiceInputMode ? (
+                                <KeyboardIcon size={22} color="#71717A" />
+                            ) : (
+                                <Mic size={22} color="#71717A" />
+                            )}
+                        </TouchableOpacity>
+                        {voiceInputMode ? (
+                            <View style={styles.voiceRecorderWrapper}>
+                                <VoiceRecorder
+                                    onRecordingComplete={handleVoiceRecordingComplete}
+                                    onRecordingCanceled={handleVoiceRecordingCanceled}
+                                />
+                            </View>
+                        ) : (
+                            <>
+                                <View style={styles.inputWrapper}>
+                                    <TextInput
+                                        style={styles.textInput}
+                                        placeholder="输入消息..."
+                                        placeholderTextColor="#A1A1AA"
+                                        value={inputText}
+                                        onChangeText={(text) => {
+                                            setInputText(text);
+                                            if (text.length > 0) {
+                                                handleTypingIndicator();
+                                            }
+                                        }}
+                                        multiline
+                                        maxLength={500}
+                                    />
+                                </View>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.sendBtn,
+                                        inputText.trim() && styles.sendBtnActive,
+                                    ]}
+                                    onPress={() => handleSendMessage(inputText)}
+                                    disabled={!inputText.trim()}
+                                >
+                                    <Send size={20} color={inputText.trim() ? '#FFFFFF' : '#A1A1AA'} />
+                                </TouchableOpacity>
+                            </>
+                        )}
                     </View>
-                    <TouchableOpacity
-                        style={[
-                            styles.sendBtn,
-                            inputText.trim() && styles.sendBtnActive,
-                        ]}
-                        onPress={() => handleSendMessage(inputText)}
-                        disabled={!inputText.trim()}
-                    >
-                        <Send size={20} color={inputText.trim() ? '#FFFFFF' : '#A1A1AA'} />
-                    </TouchableOpacity>
+                    {/* Fill the iOS home-indicator safe area without inflating the input row padding. */}
+                    {insets.bottom > 0 ? (
+                        <View style={[styles.safeAreaFill, { height: insets.bottom }]} />
+                    ) : null}
                 </View>
             </KeyboardAvoidingView>
+
+            {/* 图片预览 Modal */}
+            <Modal
+                visible={previewVisible}
+                transparent
+                animationType="fade"
+                statusBarTranslucent
+                onRequestClose={closeImagePreview}
+            >
+                <TouchableOpacity
+                    style={styles.previewOverlay}
+                    activeOpacity={1}
+                    onPress={closeImagePreview}
+                >
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        onPress={() => {}}
+                        style={{
+                            width: Math.max(1, windowWidth - 32),
+                            height: Math.max(1, Math.floor(windowHeight * 0.8)),
+                        }}
+                    >
+                        {previewImageUrl ? (
+                            <Image
+                                source={{ uri: previewImageUrl }}
+                                style={styles.previewImage}
+                                resizeMode="contain"
+                            />
+                        ) : null}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.previewCloseBtn, { top: insets.top + 12 }]}
+                        onPress={closeImagePreview}
+                    >
+                        <X size={28} color="#FFFFFF" />
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
 
             {/* 更多菜单弹窗 */}
             <Modal
@@ -593,6 +1903,13 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         <View style={styles.menuDivider} />
                         <TouchableOpacity
                             style={styles.menuItem}
+                            onPress={() => handleMenuOption('settings')}
+                        >
+                            <Text style={styles.menuItemText}>聊天信息</Text>
+                        </TouchableOpacity>
+                        <View style={styles.menuDivider} />
+                        <TouchableOpacity
+                            style={styles.menuItem}
                             onPress={() => handleMenuOption('clear')}
                         >
                             <Text style={styles.menuItemText}>清空聊天记录</Text>
@@ -606,6 +1923,64 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                         </TouchableOpacity>
                     </View>
                 </TouchableOpacity>
+            </Modal>
+
+            {/* 举报弹窗 */}
+            <Modal
+                visible={showReportModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => {
+                    if (!submittingReport) {
+                        setShowReportModal(false);
+                    }
+                }}
+            >
+                <View style={styles.reportModalOverlay}>
+                    <View style={styles.reportModalContainer}>
+                        <Text style={styles.reportModalTitle}>举报用户</Text>
+                        <Text style={styles.reportModalSubtitle}>请填写举报原因（100字以内）</Text>
+
+                        <View style={styles.reportInputContainer}>
+                            <TextInput
+                                style={styles.reportInput}
+                                placeholder="请描述您要举报的具体问题..."
+                                placeholderTextColor="#A1A1AA"
+                                value={reportReason}
+                                onChangeText={(text) => setReportReason(text.slice(0, 100))}
+                                multiline
+                                maxLength={100}
+                            />
+                            <Text style={styles.reportCharCount}>{reportReason.length}/100</Text>
+                        </View>
+
+                        <View style={styles.reportActions}>
+                            <TouchableOpacity
+                                style={[styles.reportActionBtn, styles.reportActionCancel]}
+                                onPress={() => {
+                                    setShowReportModal(false);
+                                    setReportReason('');
+                                }}
+                                disabled={submittingReport}
+                            >
+                                <Text style={styles.reportActionCancelText}>取消</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.reportActionBtn,
+                                    styles.reportActionSubmit,
+                                    submittingReport && styles.reportActionDisabled,
+                                ]}
+                                onPress={handleSubmitReport}
+                                disabled={submittingReport}
+                            >
+                                <Text style={styles.reportActionSubmitText}>
+                                    {submittingReport ? '提交中...' : '提交'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
             </Modal>
 
             {/* 自定义弹窗 */}
@@ -686,7 +2061,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 style={styles.attachmentItem}
                                 onPress={handleCamera}
                             >
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#FEF3C7' }]}>
+                                <View style={[styles.attachmentIcon, styles.attachmentIconCamera]}>
                                     <Camera size={24} color="#F59E0B" />
                                 </View>
                                 <Text style={styles.attachmentLabel}>拍照</Text>
@@ -695,7 +2070,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 style={styles.attachmentItem}
                                 onPress={handleGallery}
                             >
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#DBEAFE' }]}>
+                                <View style={[styles.attachmentIcon, styles.attachmentIconGallery]}>
                                     <ImageIcon size={24} color="#3B82F6" />
                                 </View>
                                 <Text style={styles.attachmentLabel}>相册</Text>
@@ -704,7 +2079,7 @@ const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({ route, navigation }) =>
                                 style={styles.attachmentItem}
                                 onPress={handleFile}
                             >
-                                <View style={[styles.attachmentIcon, { backgroundColor: '#F3E8FF' }]}>
+                                <View style={[styles.attachmentIcon, styles.attachmentIconFile]}>
                                     <File size={24} color="#8B5CF6" />
                                 </View>
                                 <Text style={styles.attachmentLabel}>文件</Text>
@@ -746,6 +2121,28 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#09090B',
     },
+    onlineStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 2,
+    },
+    onlineDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#22C55E',
+        marginRight: 4,
+    },
+    onlineText: {
+        fontSize: 11,
+        color: '#22C55E',
+    },
+    typingIndicator: {
+        fontSize: 11,
+        color: '#71717A',
+        marginTop: 2,
+        fontStyle: 'italic',
+    },
     headerSubtitle: {
         fontSize: 12,
         color: '#22C55E',
@@ -767,6 +2164,26 @@ const styles = StyleSheet.create({
     messageListContent: {
         padding: 16,
         paddingBottom: 8,
+    },
+    emptyState: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 80,
+        paddingHorizontal: 24,
+        gap: 10,
+    },
+    emptyText: {
+        marginTop: 8,
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#71717A',
+        textAlign: 'center',
+    },
+    emptySubtext: {
+        fontSize: 13,
+        color: '#A1A1AA',
+        textAlign: 'center',
     },
     timeLabel: {
         textAlign: 'center',
@@ -795,6 +2212,33 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         borderRadius: 16,
     },
+    sendStatus: {
+        marginHorizontal: 8,
+        marginBottom: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    failedDot: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: '#EF4444',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    failedDotText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 14,
+    },
+    messageBubbleImage: {
+        paddingHorizontal: 0,
+        paddingVertical: 0,
+        backgroundColor: '#E4E4E7',
+        borderRadius: 16,
+        overflow: 'hidden',
+    },
     messageBubbleOther: {
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 4,
@@ -803,6 +2247,10 @@ const styles = StyleSheet.create({
         backgroundColor: PRIMARY_GOLD,
         borderTopRightRadius: 4,
     },
+    messageImage: {
+        backgroundColor: '#E4E4E7',
+        borderRadius: 16,
+    },
     messageText: {
         fontSize: 14,
         color: '#09090B',
@@ -810,6 +2258,53 @@ const styles = StyleSheet.create({
     },
     messageTextMe: {
         color: '#FFFFFF',
+    },
+    audioMessageContainer: {
+        width: 240,
+    },
+    fileCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        minWidth: 0,
+        maxWidth: '100%',
+    },
+    fileCardLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 10,
+    },
+    fileIcon: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F4F4F5',
+        marginRight: 10,
+    },
+    fileIconMe: {
+        backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    },
+    fileMeta: {
+        flex: 1,
+    },
+    fileName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#09090B',
+    },
+    fileNameMe: {
+        color: '#FFFFFF',
+    },
+    fileSize: {
+        marginTop: 2,
+        fontSize: 12,
+        color: '#71717A',
+    },
+    fileSizeMe: {
+        color: 'rgba(255, 255, 255, 0.85)',
     },
     // 快捷回复
     quickRepliesContainer: {
@@ -834,38 +2329,62 @@ const styles = StyleSheet.create({
         color: '#71717A',
     },
     // 输入区域
-    inputContainer: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        paddingBottom: Platform.OS === 'ios' ? 28 : 20,
+    inputBar: {
         backgroundColor: '#FFFFFF',
         borderTopWidth: 1,
         borderTopColor: '#F4F4F5',
     },
+    inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        // Keep a small consistent bottom padding; SafeAreaView already accounts for iOS insets.
+        paddingBottom: 8,
+        backgroundColor: '#FFFFFF',
+    },
+    safeAreaFill: {
+        backgroundColor: '#FFFFFF',
+    },
     attachBtn: {
-        padding: 6,
-        marginBottom: 4,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    voiceToggleBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    voiceRecorderWrapper: {
+        flex: 1,
+        marginHorizontal: 8,
     },
     inputWrapper: {
         flex: 1,
         backgroundColor: '#F4F4F5',
-        borderRadius: 16,
+        borderRadius: 22,
         paddingHorizontal: 14,
-        paddingVertical: 1,
+        paddingVertical: 0,
         marginHorizontal: 8,
+        minHeight: 44,
         maxHeight: 100,
+        justifyContent: 'center',
     },
     textInput: {
         fontSize: 14,
         color: '#09090B',
         maxHeight: 80,
+        paddingVertical: 0,
     },
     sendBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: '#E4E4E7',
         alignItems: 'center',
         justifyContent: 'center',
@@ -912,6 +2431,81 @@ const styles = StyleSheet.create({
     menuDivider: {
         height: 1,
         backgroundColor: '#F4F4F5',
+    },
+    // 举报弹窗
+    reportModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+    reportModalContainer: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 20,
+        width: '100%',
+        maxWidth: 340,
+    },
+    reportModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#09090B',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    reportModalSubtitle: {
+        fontSize: 13,
+        color: '#71717A',
+        textAlign: 'center',
+        marginBottom: 16,
+    },
+    reportInputContainer: {
+        backgroundColor: '#F4F4F5',
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 16,
+    },
+    reportInput: {
+        fontSize: 14,
+        color: '#09090B',
+        minHeight: 100,
+        textAlignVertical: 'top',
+    },
+    reportCharCount: {
+        fontSize: 12,
+        color: '#A1A1AA',
+        textAlign: 'right',
+        marginTop: 8,
+    },
+    reportActions: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    reportActionBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    reportActionCancel: {
+        backgroundColor: '#F4F4F5',
+    },
+    reportActionCancelText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#71717A',
+    },
+    reportActionSubmit: {
+        backgroundColor: PRIMARY_GOLD,
+    },
+    reportActionSubmitText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#FFFFFF',
+    },
+    reportActionDisabled: {
+        opacity: 0.6,
     },
     // 自定义弹窗
     dialogOverlay: {
@@ -1039,9 +2633,35 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         marginBottom: 8,
     },
+    attachmentIconCamera: {
+        backgroundColor: '#FEF3C7',
+    },
+    attachmentIconGallery: {
+        backgroundColor: '#DBEAFE',
+    },
+    attachmentIconFile: {
+        backgroundColor: '#F3E8FF',
+    },
     attachmentLabel: {
         fontSize: 13,
         color: '#71717A',
+    },
+    // 图片预览
+    previewOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+    },
+    previewCloseBtn: {
+        position: 'absolute',
+        right: 16,
+        zIndex: 10,
+        padding: 8,
     },
 });
 

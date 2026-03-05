@@ -4,12 +4,13 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/handler"
 	"home-decoration-server/internal/middleware"
-	"home-decoration-server/internal/ws"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *handler.DictionaryHandler) *gin.Engine {
+func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engine {
 	r := gin.Default()
 
 	// ✅ CORS白名单配置
@@ -20,6 +21,20 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 		"http://localhost:5176",        // Admin开发环境备用端口
 		"http://localhost:3000",        // Mobile开发环境
 		"https://admin.yourdomain.com", // 生产环境（需替换）
+	}
+	if raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); raw != "" {
+		parts := strings.Split(raw, ",")
+		parsed := make([]string, 0, len(parts))
+		for _, p := range parts {
+			v := strings.TrimSpace(p)
+			if v == "" {
+				continue
+			}
+			parsed = append(parsed, v)
+		}
+		if len(parsed) > 0 {
+			allowedOrigins = parsed
+		}
 	}
 
 	// 全局中间件
@@ -47,6 +62,9 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 			auth.POST("/send-code", middleware.LoginRateLimit(), handler.SendCode)
 			auth.POST("/wechat/mini/login", middleware.LoginRateLimit(), handler.WechatMiniLogin)
 			auth.POST("/wechat/mini/bind-phone", middleware.LoginRateLimit(), handler.WechatMiniBindPhone)
+			auth.GET("/wechat/h5/authorize", middleware.LoginRateLimit(), handler.WechatH5Authorize)
+			auth.POST("/wechat/h5/login", middleware.LoginRateLimit(), handler.WechatH5Login)
+			auth.POST("/wechat/h5/bind-phone", middleware.LoginRateLimit(), handler.WechatH5BindPhone)
 			auth.POST("/refresh", handler.RefreshToken)
 		}
 
@@ -94,16 +112,46 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 		authorized := v1.Group("")
 		authorized.Use(middleware.JWT(cfg.JWT.Secret))
 		{
-			// ==================== 旧版 WebSocket（已废弃，已切换至腾讯云 IM） ====================
-			// authorized.GET("/ws", handler.ServeWS(hub, wsHandler))
-
 			// 用户相关
 			user := authorized.Group("/user")
 			{
 				user.GET("/profile", handler.GetProfile)
 				user.PUT("/profile", handler.UpdateProfile)
 				user.GET("/favorites", handler.GetUserFavorites)
+				// 账号安全
+				user.POST("/change-password", handler.ChangePassword)
+				user.POST("/change-phone", handler.ChangePhone)
+				user.POST("/delete-account", handler.DeleteAccount)
+				// 实名认证
+				user.GET("/verification", handler.GetVerification)
+				user.POST("/verification", handler.SubmitVerification)
+				// 登录设备管理
+				user.GET("/devices", handler.GetDevices)
+				user.DELETE("/devices/:id", handler.RemoveDevice)
+				user.DELETE("/devices", handler.RemoveAllDevices)
+				// 偏好设置
+				user.GET("/settings", handler.GetUserSettings)
+				user.PUT("/settings", handler.UpdateUserSettings)
+				// 意见反馈
+				user.POST("/feedback", handler.SubmitFeedback)
 			}
+
+			// 身份管理（多身份切换系统）
+			identities := authorized.Group("/identities")
+			{
+				identities.GET("", handler.GetIdentities)              // 获取用户所有身份
+				identities.GET("/current", handler.GetCurrentIdentity) // 获取当前激活身份
+				identities.POST("/switch", handler.SwitchIdentity)     // 切换身份
+				identities.POST("/apply", handler.ApplyIdentity)       // 申请新身份
+			}
+
+			// Tinode helper endpoints
+			authorized.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
+			authorized.DELETE("/tinode/topic/:topic/messages", handler.ClearChatHistory)
+			authorized.POST("/tinode/refresh-token", handler.RefreshTinodeToken)
+
+			// 用户举报
+			authorized.POST("/reports/chat", handler.SubmitChatReport)
 
 			// 设计师
 			designers := authorized.Group("/designers")
@@ -258,15 +306,6 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 				notifications.PUT("/read-all", handler.MarkAllNotificationsAsRead)
 				notifications.DELETE("/:id", handler.DeleteNotification)
 			}
-
-			// ==================== 旧版自研聊天（已废弃，保留供回滚） ====================
-			// 注：已切换到腾讯云 IM，以下路由不再使用
-			// chat := authorized.Group("/chat")
-			// {
-			// 	chat.GET("/conversations", handler.GetConversations)
-			// 	chat.GET("/messages", handler.GetMessages)
-			// 	chat.GET("/unread-count", handler.GetUnreadCount)
-			// }
 		}
 
 		// ==================== Admin 管理后台 ====================
@@ -418,6 +457,16 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 			admin.GET("/merchant-applications/:id", handler.AdminGetApplication)
 			admin.POST("/merchant-applications/:id/approve", handler.AdminApproveApplication)
 			admin.POST("/merchant-applications/:id/reject", handler.AdminRejectApplication)
+			admin.GET("/material-shop-applications", handler.AdminListMaterialShopApplications)
+			admin.GET("/material-shop-applications/:id", handler.AdminGetMaterialShopApplication)
+			admin.POST("/material-shop-applications/:id/approve", handler.AdminApproveMaterialShopApplication)
+			admin.POST("/material-shop-applications/:id/reject", handler.AdminRejectMaterialShopApplication)
+
+			// 身份申请审核
+			admin.GET("/identity-applications", middleware.RequirePermission("identity:application:audit"), handler.AdminListIdentityApplications)
+			admin.GET("/identity-applications/:id", middleware.RequirePermission("identity:application:audit"), handler.AdminGetIdentityApplication)
+			admin.POST("/identity-applications/:id/approve", middleware.RequirePermission("identity:application:audit"), handler.AdminApproveIdentityApplication)
+			admin.POST("/identity-applications/:id/reject", middleware.RequirePermission("identity:application:audit"), handler.AdminRejectIdentityApplication)
 
 			// ========== 项目管理 ==========
 			admin.GET("/projects", handler.AdminListProjects)
@@ -450,19 +499,29 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 		v1.POST("/merchant/apply", handler.MerchantApply)
 		v1.GET("/merchant/apply/:phone/status", handler.MerchantApplyStatus)
 		v1.POST("/merchant/apply/:id/resubmit", handler.MerchantResubmit)
+		v1.POST("/merchant/change-application", handler.MerchantApplyIdentityChange)
+		v1.POST("/merchant/upload-public", handler.MerchantUploadImage)
+		v1.POST("/material-shop/apply", handler.MaterialShopApply)
+		v1.GET("/material-shop/apply/:phone/status", handler.MaterialShopApplyStatus)
+		v1.POST("/material-shop/apply/:id/resubmit", handler.MaterialShopApplyResubmit)
 
 		// 商家登录 (无需认证)
-		v1.POST("/merchant/login", handler.MerchantLogin(cfg))
+		v1.POST("/merchant/login", middleware.LoginRateLimit(), handler.MerchantLogin(cfg))
 
 		// 商家端路由（使用 MerchantJWT 中间件验证 token 类型）
 		merchant := v1.Group("/merchant")
 		merchant.Use(middleware.MerchantJWT(cfg.JWT.Secret))
 		{
+			// Tinode helper endpoints
+			merchant.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
+
 			// 获取当前商家信息
 			merchant.GET("/info", handler.MerchantGetInfo)
 			merchant.PUT("/info", handler.MerchantUpdateInfo)
 			merchant.POST("/avatar", handler.MerchantUploadAvatar)
 			merchant.POST("/upload", handler.MerchantUploadImage)
+			merchant.GET("/service-settings", handler.MerchantGetServiceSettings)
+			merchant.PUT("/service-settings", handler.MerchantUpdateServiceSettings)
 
 			// 预约管理
 			merchant.GET("/bookings", handler.MerchantListBookings)
@@ -517,6 +576,17 @@ func Setup(cfg *config.Config, hub *ws.Hub, wsHandler *ws.Handler, dictHandler *
 
 			// 腾讯云 IM
 			merchant.GET("/im/usersig", handler.MerchantGetIMUserSig)
+		}
+
+		materialShop := v1.Group("/material-shop")
+		materialShop.Use(middleware.MerchantJWT(cfg.JWT.Secret))
+		{
+			materialShop.GET("/me", handler.MaterialShopGetMe)
+			materialShop.PUT("/me", handler.MaterialShopUpdateMe)
+			materialShop.GET("/me/products", handler.MaterialShopListProducts)
+			materialShop.POST("/me/products", handler.MaterialShopCreateProduct)
+			materialShop.PUT("/me/products/:id", handler.MaterialShopUpdateProduct)
+			materialShop.DELETE("/me/products/:id", handler.MaterialShopDeleteProduct)
 		}
 	}
 

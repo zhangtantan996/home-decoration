@@ -1,4 +1,5 @@
 # 家装平台 API 接口文档
+> ⚠️ 本文档为历史存档，新接口说明及最新格式请参考 `documentation/04-后端开发/API接口/认证模块.md`，以该目录内容为准。
 
 ## 目录
 - [1. 全局说明](#1-全局说明)
@@ -63,9 +64,13 @@
 **请求参数**:
 ```json
 {
-    "phone": "13800138000"
+    "phone": "13800138000",
+    "purpose": "login",
+    "captchaToken": "captcha-token-from-client"
 }
 ```
+
+`purpose` 枚举值: `login` / `register` / `merchant_withdraw` / `merchant_bank_bind` / `identity_apply`（必填）
 
 **响应数据**:
 ```json
@@ -73,7 +78,8 @@
     "code": 0,
     "message": "验证码已发送",
     "data": {
-        "message": "测试环境验证码: 123456"
+        "expiresIn": 300,
+        "requestId": "b4f3e2c9-2fb6-4f8f-a2f9-7fda44b3d272"
     }
 }
 ```
@@ -180,19 +186,19 @@
 
 ---
 
-### 2.5 ????????code ??????
-??: POST /api/v1/auth/wechat/mini/login
-??: ?? wx.login ??? code ???????????????????
-??: ????
-????:
-`json
+### 2.5 微信小程序登录
+**接口**: `POST /api/v1/auth/wechat/mini/login`
+**描述**: 客户端通过 `wx.login` 获取 code，并调用接口让后端通过 `wechatAuthService.Login` 验证，登录成功后返回 JWT；若账号未绑定手机号，则返回绑定凭证。
+**认证**: 无需认证
+**请求参数**:
+```json
 {
-    "code": "wxlogin-code"
+    "code": "wx.login 返回的 code"
 }
-`
+```
 
-????????????:
-`json
+**响应示例（已绑定手机号）**:
+```json
 {
     "code": 0,
     "message": "success",
@@ -203,16 +209,16 @@
         "user": {
             "id": 1,
             "phone": "13800138000",
-            "nickname": "??3800",
-            "avatar": "",
+            "nickname": "小程序用户",
+            "avatar": "https://...",
             "userType": 1
         }
     }
 }
-`
+```
 
-????????????:
-`json
+**响应示例（需绑定手机号）**:
+```json
 {
     "code": 0,
     "message": "success",
@@ -222,24 +228,28 @@
         "expiresIn": 300
     }
 }
-`
+```
+
+**备注**:
+- 若 `wechatAuthService.Login` 返回 `NeedBindPhone`，需要引导用户调用 `POST /api/v1/auth/wechat/mini/bind-phone` 完成手机号绑定并获取最终 Token。
+- 返回的 `bindToken` 仅限短期使用（`expiresIn` 单位为秒）。
 
 ---
 
-### 2.6 ??????????
-??: POST /api/v1/auth/wechat/mini/bind-phone
-??: ?? bindToken ? wx.getPhoneNumber ??? code ???????? JWT
-??: ????
-????:
-`json
+### 2.6 微信小程序绑定手机号
+**接口**: `POST /api/v1/auth/wechat/mini/bind-phone`
+**描述**: 使用微信登录返回的 `bindToken` 和 `wx.getPhoneNumber` 返回的 code 完成手机号绑定，并返回最终 JWT。
+**认证**: 无需认证
+**请求参数**:
+```json
 {
-    "bindToken": "?????? bindToken",
-    "phoneCode": "wx.getPhoneNumber ??? code"
+    "bindToken": "微信登录阶段返回的 bindToken",
+    "phoneCode": "wx.getPhoneNumber 返回的 code"
 }
-`
+```
 
-????:
-`json
+**响应示例**:
+```json
 {
     "code": 0,
     "message": "success",
@@ -250,13 +260,17 @@
         "user": {
             "id": 2,
             "phone": "13800138000",
-            "nickname": "????3800",
+            "nickname": "用户3800",
             "avatar": "",
             "userType": 1
         }
     }
 }
-`
+```
+
+**备注**:
+- `bindToken` 只可短时使用，建议在 5 分钟内完成绑定。
+- `phoneCode` 只能由小程序端通过微信能力获取，不能重放。
 
 ---
 ## 3. 用户/业主端接口 (User)
@@ -1235,6 +1249,123 @@
 
 > **所有商家端接口均需携带商家 JWT Token**
 
+### 4.0 最新契约补充（2026-03，v1.5.0）
+
+> 以下内容优先级高于本节旧示例字段。旧字段保留兼容一版迭代周期。
+
+#### 4.0.1 `GET /api/v1/merchant/dashboard`
+- 平铺字段：`todayBookings`、`pendingProposals`、`activeProjects`、`totalRevenue`、`monthRevenue`。
+- 兼容保留：`bookings/proposals/orders` 分组统计结构。
+
+#### 4.0.2 `POST /api/v1/merchant/login`
+- 成功返回新增：
+  - `merchantKind: provider|material_shop`
+  - `role`
+  - `entityType`
+  - `provider.applicantType: personal|studio|company|foreman`（兼容）
+  - `provider.providerSubType: designer|company|foreman`（兼容）
+- 失败返回结构化引导：
+  - `data.nextAction: APPLY|PENDING|RESUBMIT|CHANGE_ROLE`
+  - `data.applyStatus`（可选）
+
+#### 4.0.3 `POST /api/v1/merchant/apply`
+- 新增字段：
+  - `role: designer|foreman|company`
+  - `entityType: personal|company`
+  - `highlightTags: string[]`
+  - `pricing: object`
+  - `graduateSchool?: string`
+  - `designPhilosophy?: string`
+- 兼容字段：`applicantType`（`personal|studio|company|foreman`）继续支持。
+
+#### 4.0.4 `POST /api/v1/merchant/apply/:id/resubmit`
+- 与 `merchant/apply` 使用相同字段与校验规则。
+
+#### 4.0.5 `GET /api/v1/merchant/info`
+- 补充返回：
+  - `role`
+  - `entityType`
+  - `workTypes: string[]`
+  - `highlightTags: string[]`
+  - `pricing: object`
+  - `graduateSchool`
+  - `designPhilosophy`
+
+#### 4.0.6 `PUT /api/v1/merchant/info`
+- 支持入参：`workTypes`、`highlightTags`、`pricing`、`graduateSchool`、`designPhilosophy`。
+- 校验规则：工长 `workTypes` 至少 1 项；非工长写入时自动清空。
+
+#### 4.0.7 `GET /api/v1/merchant/service-settings` & `PUT /api/v1/merchant/service-settings`
+**字段**：
+- `acceptBooking: boolean`
+- `autoConfirmHours: number`
+- `responseTimeDesc: string`
+- `priceRangeMin: number`
+- `priceRangeMax: number`
+- `serviceStyles: string[]`
+- `servicePackages: array`
+
+#### 4.0.8 高风险资金操作字段
+- `POST /api/v1/merchant/withdraw` 必填：`verificationCode`。
+- `POST /api/v1/merchant/bank-accounts` 必填：`verificationCode`。
+
+#### 4.0.9 主材商独立入驻与中心接口（新增）
+- 申请链路：
+  - `POST /api/v1/material-shop/apply`
+  - `GET /api/v1/material-shop/apply/:phone/status`
+  - `POST /api/v1/material-shop/apply/:id/resubmit`
+- 主材商中心：
+  - `GET /api/v1/material-shop/me`
+  - `PUT /api/v1/material-shop/me`
+  - `GET /api/v1/material-shop/me/products`
+  - `POST /api/v1/material-shop/me/products`
+  - `PUT /api/v1/material-shop/me/products/:id`
+  - `DELETE /api/v1/material-shop/me/products/:id`
+
+#### 4.0.10 单一身份与变更申请
+- 新增：`POST /api/v1/merchant/change-application`。
+- 已入驻用户再次申请时返回 `nextAction=CHANGE_ROLE`，引导提交变更申请单。
+
+#### 4.0.11 v1.5.1 入驻字段强校验升级
+- 服务商申请（`merchant/apply` + `resubmit`）新增硬校验：
+  - `avatar` 必填；
+  - 设计师 `yearsExperience` 必填，范围 `1-50`；
+  - `portfolioCases[].description` 必填，长度 `1-5000`。
+- 主材商申请（`material-shop/apply` + `resubmit`）新增硬校验：
+  - `contactName`、`contactPhone`、`businessHours`、`address` 必填；
+  - `contactPhone` 必须为合法手机号。
+- 资质核验适配层（默认 manual）：
+  - `ID_CARD_VERIFY_PROVIDER=manual|xxx`
+  - `LICENSE_VERIFY_PROVIDER=manual|xxx`
+  - `VERIFY_TIMEOUT_MS`
+
+#### 4.0.12 v1.5.2 入驻条款勾选留痕
+- 入驻提交接口（服务商与主材商，含 resubmit）新增必填：
+  - `legalAcceptance.accepted: boolean`
+  - `legalAcceptance.onboardingAgreementVersion: string`
+  - `legalAcceptance.platformRulesVersion: string`
+  - `legalAcceptance.privacyDataProcessingVersion: string`
+- 后端硬校验：
+  - `accepted` 必须为 `true`
+  - 三个版本字段不能为空，长度范围 `1-64`
+- 留痕字段落库：
+  - `legal_acceptance_json`
+  - `legal_accepted_at`
+  - `legal_accept_source`（默认 `merchant_web`）
+
+#### 4.0.13 条款版本管理规则（实施要求）
+- 条款版本号统一采用：`v主版本.次版本.修订-YYYYMMDD`。
+- 当条款正文变更时，必须同步更新：
+  1. 商家前端常量（`admin/src/constants/merchantLegal.ts`）
+  2. 本接口文档与 `docs/API_CHANGES.md`
+  3. `docs/legal/` 对应条款模板
+- 留痕字段说明：
+  - `legal_acceptance_json`：原始勾选快照（含 accepted 与三个版本号）
+  - `legal_accepted_at`：服务端确认勾选时间
+  - `legal_accept_source`：勾选来源（当前 `merchant_web`）
+
+---
+
 ### 4.1 商家入驻申请
 
 #### 4.1.1 提交入驻申请
@@ -1246,8 +1377,11 @@
 {
     "phone": "13800138000",
     "code": "123456",
+    "role": "designer",
+    "entityType": "company",
     "applicantType": "studio",
     "realName": "张三",
+    "avatar": "https://avatar.jpg",
     "idCardNo": "310101199001011234",
     "idCardFront": "https://id-front.jpg",
     "idCardBack": "https://id-back.jpg",
@@ -1255,29 +1389,62 @@
     "licenseNo": "91310000MA1234567X",
     "licenseImage": "https://license.jpg",
     "teamSize": 8,
+    "yearsExperience": 10,
+    "workTypes": ["electrician", "plumber"],
     "officeAddress": "上海市浦东新区张江高科技园区",
     "serviceArea": ["浦东新区", "徐汇区", "黄浦区"],
     "styles": ["现代简约", "北欧", "日式"],
+    "highlightTags": ["工期可控"],
+    "pricing": {
+        "flat": 1200,
+        "duplex": 1600,
+        "other": 1000
+    },
+    "graduateSchool": "同济大学",
+    "designPhilosophy": "设计源于生活",
     "introduction": "专注高品质室内设计，拥有8年从业经验...",
     "portfolioCases": [
         {
             "title": "现代简约风格案例",
-            "images": ["https://case1-1.jpg", "https://case1-2.jpg"],
+            "description": "三居室改造，优化采光与动线",
+            "images": ["https://case1-1.jpg", "https://case1-2.jpg", "https://case1-3.jpg"],
             "style": "现代简约",
-            "area": "120㎡",
-            "year": "2024"
+            "area": "120㎡"
         },
         {
             "title": "北欧风格案例",
-            "images": ["https://case2-1.jpg"],
+            "description": "小户型收纳体系重构",
+            "images": ["https://case2-1.jpg", "https://case2-2.jpg", "https://case2-3.jpg"],
             "style": "北欧",
-            "area": "95㎡",
-            "year": "2024"
+            "area": "95㎡"
         }
-    ]
+    ],
+    "legalAcceptance": {
+        "accepted": true,
+        "onboardingAgreementVersion": "v1.0.0-20260305",
+        "platformRulesVersion": "v1.0.0-20260305",
+        "privacyDataProcessingVersion": "v1.0.0-20260305"
+    }
 }
 ```
-> **applicantType**: `personal`（个人）/ `studio`（工作室）/ `company`（公司）
+> **role**: `designer` / `foreman` / `company`
+>
+> **entityType**: `personal` / `company`
+>
+> **applicantType**（兼容）: `personal`（个人）/ `studio`（工作室）/ `company`（公司）/ `foreman`（工长）
+>
+> **workTypes**: 工长类型必填，其他类型可省略。推荐值：`mason`、`electrician`、`carpenter`、`painter`、`plumber`。
+>
+> **必填强化（v1.5.1）**:
+> - `avatar` 必填；
+> - 设计师/工长 `yearsExperience` 必填（1-50）；
+> - 每个 `portfolioCases` 均需 `description`；
+> - 文本字段统一上限 5000 字符（防滥用）。
+>
+> **条款留痕强化（v1.5.2）**:
+> - `legalAcceptance` 必填；
+> - `accepted` 必须为 `true`；
+> - 三个版本字段不能为空，长度 `1-64`。
 
 **响应数据**:
 ```json
@@ -1327,6 +1494,48 @@
 
 ---
 
+#### 4.1.4 主材商独立入驻
+
+1) **提交申请**：`POST /api/v1/material-shop/apply`  
+2) **查询状态**：`GET /api/v1/material-shop/apply/:phone/status`  
+3) **重新提交**：`POST /api/v1/material-shop/apply/:id/resubmit`  
+
+**申请示例**:
+```json
+{
+    "phone": "13800138000",
+    "code": "123456",
+    "entityType": "company",
+    "shopName": "某某主材馆",
+    "shopDescription": "主营瓷砖、木地板、卫浴",
+    "businessLicenseNo": "91310000MA1234567X",
+    "businessLicense": "https://license.jpg",
+    "businessHours": "09:00-18:00",
+    "contactPhone": "13800138000",
+    "contactName": "王五",
+    "address": "上海市浦东新区XX路88号",
+    "legalAcceptance": {
+        "accepted": true,
+        "onboardingAgreementVersion": "v1.0.0-20260305",
+        "platformRulesVersion": "v1.0.0-20260305",
+        "privacyDataProcessingVersion": "v1.0.0-20260305"
+    },
+    "products": [
+        {
+            "name": "800x800 通体砖",
+            "params": { "品牌": "XX", "规格": "800x800" },
+            "price": 128,
+            "images": ["https://p1.jpg"]
+        }
+    ]
+}
+```
+> 主材商后端硬校验：商品总数 5-20、每商品至少 1 图、参数对象与价格必填。
+>
+> **必填强化（v1.5.1）**：`contactName`、`contactPhone`、`businessHours`、`address` 不可缺失，且 `contactPhone` 必须合法。
+
+---
+
 ### 4.2 商家认证
 
 #### 4.2.1 商家登录
@@ -1348,16 +1557,37 @@
     "message": "登录成功",
     "data": {
         "token": "eyJhbGciOiJIUzI1NiIs...",
-        "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
-        "merchant": {
+        "merchantKind": "provider",
+        "role": "designer",
+        "entityType": "company",
+        "provider": {
             "id": 1,
-            "userId": 50,
+            "name": "XX设计工作室",
             "providerType": 1,
-            "companyName": "XX设计工作室",
+            "applicantType": "studio",
+            "providerSubType": "designer",
+            "merchantKind": "provider",
+            "role": "designer",
+            "entityType": "company",
             "avatar": "https://...",
             "phone": "13800138000",
-            "verified": true,
-            "status": 1
+            "verified": true
+        }
+    }
+}
+```
+
+**失败引导示例**:
+```json
+{
+    "code": 409,
+    "message": "该手机号尚未入驻，请先完成入驻申请",
+    "data": {
+        "nextAction": "APPLY",
+        "applyStatus": {
+            "kind": "provider",
+            "applicationId": 100,
+            "status": 2
         }
     }
 }
@@ -1379,23 +1609,52 @@
     "message": "success",
     "data": {
         "id": 1,
-        "userId": 50,
+        "name": "XX设计工作室",
         "providerType": 1,
+        "applicantType": "studio",
+        "providerSubType": "designer",
+        "role": "designer",
+        "entityType": "company",
         "companyName": "XX设计工作室",
         "avatar": "https://...",
-        "phone": "13800138000",
         "rating": 4.8,
-        "reviewCount": 120,
+        "completedCnt": 120,
         "yearsExperience": 8,
-        "specialty": "现代简约,北欧风格",
+        "specialty": ["现代简约", "北欧风格"],
+        "workTypes": ["mason", "electrician"],
+        "highlightTags": ["工期可控", "节点验收"],
+        "pricing": {
+            "flat": 1200,
+            "duplex": 1600,
+            "other": 1000
+        },
+        "graduateSchool": "同济大学",
+        "designPhilosophy": "设计服务于生活动线",
         "verified": true,
-        "status": 1,
         "serviceArea": ["浦东新区", "徐汇区"],
+        "serviceAreaCodes": ["310115", "310104"],
+        "introduction": "专注高品质室内设计，拥有8年从业经验",
         "teamSize": 8,
         "officeAddress": "上海市浦东新区张江高科技园区"
     }
 }
 ```
+
+---
+
+#### 4.3.2 主材商资料与商品管理
+
+**资料中心**
+- `GET /api/v1/material-shop/me`
+- `PUT /api/v1/material-shop/me`
+
+**商品管理**
+- `GET /api/v1/material-shop/me/products`
+- `POST /api/v1/material-shop/me/products`
+- `PUT /api/v1/material-shop/me/products/:id`
+- `DELETE /api/v1/material-shop/me/products/:id`
+
+> 认证要求：商家 JWT，且 `merchantKind=material_shop`。
 
 ---
 
@@ -1698,7 +1957,8 @@
 ```json
 {
     "amount": 10000,
-    "bankAccountId": 1
+    "bankAccountId": 1,
+    "verificationCode": "123456"
 }
 ```
 
@@ -1758,7 +2018,8 @@
     "accountNo": "6222021234567890",
     "bankName": "中国工商银行",
     "branchName": "上海浦东支行",
-    "isDefault": true
+    "isDefault": true,
+    "verificationCode": "123456"
 }
 ```
 
@@ -2403,7 +2664,7 @@
 **认证**: 需要管理员 JWT Token
 **Query 参数**:
 - `status`: pending/approved/rejected
-- `applicantType`: personal/studio/company
+- `applicantType`: personal/studio/company/foreman
 - `page`: 页码
 - `pageSize`: 每页数量
 

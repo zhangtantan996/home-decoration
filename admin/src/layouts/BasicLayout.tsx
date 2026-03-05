@@ -70,10 +70,7 @@ const BasicLayout: React.FC = () => {
     };
 
     const menuData = React.useMemo(() => {
-        console.log('原始菜单数据:', menus);
-        const transformed = transformMenuData(menus);
-        console.log('转换后的菜单数据:', transformed);
-        return transformed;
+        return transformMenuData(menus);
     }, [menus]);
 
     return (

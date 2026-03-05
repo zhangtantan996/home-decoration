@@ -1,0 +1,10 @@
+{
+  "name": "@tarojs/plugin-platform-h5",
+  "version": "3.6.37",
+  "description": "Local fallback h5 platform plugin for offline environments",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@tarojs/service": "3.6.37"
+  }
+}

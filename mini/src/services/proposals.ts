@@ -1,23 +1,13 @@
 import { request } from '@/utils/request';
+
+import type { OrderDTO, ProposalDTO } from './dto';
 import type { PageData } from './types';
 
-export interface ProposalItem {
-  id: number;
-  bookingId: number;
-  designerId: number;
-  summary: string;
-  designFee: number;
-  constructionFee: number;
-  materialFee: number;
-  estimatedDays: number;
-  attachments: string;
-  status: number;
-  version: number;
-  parentProposalId?: number;
-  rejectionCount: number;
-  rejectionReason?: string;
-  submittedAt?: string;
-  userResponseDeadline?: string;
+export type ProposalItem = ProposalDTO;
+
+export interface ConfirmProposalResponse {
+  order?: OrderDTO;
+  message?: string;
 }
 
 export async function listProposals(page = 1, pageSize = 20) {
@@ -34,7 +24,7 @@ export async function getProposalDetail(id: number) {
 }
 
 export async function confirmProposal(id: number) {
-  return request<Record<string, unknown>>({
+  return request<ConfirmProposalResponse>({
     url: `/proposals/${id}/confirm`,
     method: 'POST',
     showLoading: true

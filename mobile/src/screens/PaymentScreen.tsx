@@ -11,12 +11,12 @@ import {
     Animated,
     Dimensions,
     Platform,
-    Alert,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, CreditCard, Shield, CheckCircle, Clock } from 'lucide-react-native';
+import { ArrowLeft, CreditCard, Shield, CheckCircle } from 'lucide-react-native';
 import { bookingApi } from '../services/api';
+import { useToast } from '../components/Toast';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import CancelOrderModal from '../components/CancelOrderModal';
 
@@ -25,11 +25,15 @@ const { width } = Dimensions.get('window');
 type PaymentScreenRouteProp = RouteProp<RootStackParamList, 'Payment'>;
 type PaymentScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const PaymentScreen = () => {
-    const navigation = useNavigation<PaymentScreenNavigationProp>();
-    const route = useRoute<PaymentScreenRouteProp>();
+interface PaymentScreenProps {
+    route: PaymentScreenRouteProp;
+    navigation: PaymentScreenNavigationProp;
+}
 
-    const { bookingId, amount, providerName } = route.params || {};
+const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
+    const { showAlert } = useToast();
+
+    const { bookingId, amount, providerName } = route.params;
 
     const [isLoading, setIsLoading] = useState(false);
     const [isPaying, setIsPaying] = useState(false);
@@ -62,8 +66,9 @@ const PaymentScreen = () => {
 
         } catch (error: any) {
             console.error('Payment Error:', error);
+            showAlert('支付失败', '请重试');
+        } finally {
             setIsPaying(false);
-            Alert.alert('支付失败', '请重试');
         }
     };
 
@@ -82,7 +87,7 @@ const PaymentScreen = () => {
             navigation.goBack();
         } catch (error: any) {
             const msg = error?.response?.data?.message || '取消失败，请重试';
-            Alert.alert('错误', msg);
+            showAlert('错误', msg);
         }
     };
 

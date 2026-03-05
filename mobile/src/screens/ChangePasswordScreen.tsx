@@ -7,9 +7,10 @@ import {
     TouchableOpacity,
     Platform,
     TextInput,
-    Alert,
 } from 'react-native';
-import { ArrowLeft, Eye, EyeOff, Lock } from 'lucide-react-native';
+import { ArrowLeft, Eye, EyeOff, Lock, ShieldAlert } from 'lucide-react-native';
+import { useToast } from '../components/Toast';
+import { userSettingsApi } from '../services/api';
 
 const PRIMARY_GOLD = '#D4AF37';
 
@@ -18,28 +19,44 @@ interface ChangePasswordScreenProps {
 }
 
 const ChangePasswordScreen: React.FC<ChangePasswordScreenProps> = ({ navigation }) => {
+    const { showAlert } = useToast();
+    const [oldPassword, setOldPassword] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showOldPassword, setShowOldPassword] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
+        if (!oldPassword) {
+            showAlert('提示', '请输入旧密码');
+            return;
+        }
         if (!password) {
-            Alert.alert('提示', '请输入新密码');
+            showAlert('提示', '请输入新密码');
             return;
         }
         if (password.length < 6) {
-            Alert.alert('提示', '密码长度不能少于6位');
+            showAlert('提示', '密码长度不能少于6位');
             return;
         }
         if (password !== confirmPassword) {
-            Alert.alert('提示', '两次输入的密码不一致');
+            showAlert('提示', '两次输入的新密码不一致');
             return;
         }
-        // TODO: 调用API修改密码
-        Alert.alert('成功', '密码修改成功', [
-            { text: '确定', onPress: () => navigation.goBack() }
-        ]);
+
+        setIsSubmitting(true);
+        try {
+            await userSettingsApi.changePassword({ oldPassword, newPassword: password });
+            showAlert('成功', '密码修改成功，请妥善保管', [
+                { text: '知道了', onPress: () => navigation.goBack() }
+            ]);
+        } catch (error: any) {
+            showAlert('修改失败', error.response?.data?.message || '无法修改密码，请检查旧密码是否正确');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -54,7 +71,37 @@ const ChangePasswordScreen: React.FC<ChangePasswordScreenProps> = ({ navigation 
             </View>
 
             <View style={styles.content}>
-                {/* 密码输入 */}
+                <View style={styles.tipCard}>
+                    <ShieldAlert size={16} color={PRIMARY_GOLD} />
+                    <Text style={styles.tipText}>
+                        密码长度需至少6位，建议使用字母、数字的组合以提高安全性。
+                    </Text>
+                </View>
+
+                {/* 旧密码输入 */}
+                <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>旧密码</Text>
+                    <View style={styles.inputWrapper}>
+                        <Lock size={20} color="#A1A1AA" />
+                        <TextInput
+                            style={styles.input}
+                            value={oldPassword}
+                            onChangeText={setOldPassword}
+                            placeholder="请输入当前密码"
+                            placeholderTextColor="#A1A1AA"
+                            secureTextEntry={!showOldPassword}
+                        />
+                        <TouchableOpacity onPress={() => setShowOldPassword(!showOldPassword)}>
+                            {showOldPassword ? (
+                                <EyeOff size={20} color="#A1A1AA" />
+                            ) : (
+                                <Eye size={20} color="#A1A1AA" />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* 新密码输入 */}
                 <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>新密码</Text>
                     <View style={styles.inputWrapper}>
@@ -101,8 +148,14 @@ const ChangePasswordScreen: React.FC<ChangePasswordScreenProps> = ({ navigation 
                 </View>
 
                 {/* 提交按钮 */}
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
-                    <Text style={styles.submitBtnText}>确认修改</Text>
+                <TouchableOpacity
+                    style={[styles.submitBtn, (!oldPassword || !password || !confirmPassword || isSubmitting) && styles.submitBtnDisabled]}
+                    onPress={handleSubmit}
+                    disabled={!oldPassword || !password || !confirmPassword || isSubmitting}
+                >
+                    <Text style={styles.submitBtnText}>
+                        {isSubmitting ? '正在提交...' : '确认修改'}
+                    </Text>
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
@@ -167,15 +220,40 @@ const styles = StyleSheet.create({
     },
     submitBtn: {
         backgroundColor: PRIMARY_GOLD,
-        borderRadius: 10,
-        paddingVertical: 14,
+        borderRadius: 14,
+        paddingVertical: 16,
         alignItems: 'center',
-        marginTop: 20,
+        marginTop: 24,
+        shadowColor: PRIMARY_GOLD,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    submitBtnDisabled: {
+        backgroundColor: '#D4D4D8',
+        shadowOpacity: 0,
+        elevation: 0,
     },
     submitBtnText: {
         color: '#FFFFFF',
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '700',
+    },
+    tipCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        backgroundColor: '#F5ECD0',
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 24,
+        gap: 10,
+    },
+    tipText: {
+        flex: 1,
+        fontSize: 13,
+        color: '#78550A',
+        lineHeight: 20
     },
 });
 

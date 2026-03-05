@@ -10,12 +10,15 @@ import {
     SafeAreaView,
     Platform,
     Easing,
-    Alert,
+    ActivityIndicator,
     Linking,
-    PermissionsAndroid
+    PermissionsAndroid,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { X, Zap, Image as ImageIcon, ChevronRight, ScanLine } from 'lucide-react-native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
+import {
+    X, Zap, Image as ImageIcon, Camera as CameraIcon,
+} from 'lucide-react-native';
+import { useToast } from '../components/Toast';
 import { Camera, CameraType } from 'react-native-camera-kit';
 import ImageCropPicker from 'react-native-image-crop-picker';
 
@@ -24,6 +27,8 @@ const SCAN_SIZE = width * 0.7; // 扫描框大小
 
 export const ScanQRScreen: React.FC = () => {
     const navigation = useNavigation();
+    const { showAlert } = useToast();
+    const isFocused = useIsFocused();
     const lineAnim = useRef(new Animated.Value(0)).current;
 
     // 相机状态
@@ -92,9 +97,7 @@ export const ScanQRScreen: React.FC = () => {
         const { codeStringValue, codeFormat } = event.nativeEvent;
         if (codeStringValue) {
             setScanned(true);
-            Alert.alert('扫描成功', `类型: ${codeFormat}\n内容: ${codeStringValue}`, [
-                { text: '确定', onPress: () => setScanned(false) }
-            ]);
+            showAlert('扫描成功', `类型: ${codeFormat}\n内容: ${codeStringValue}`, [{ text: '确定', onPress: () => setScanned(false) }]);
         }
     };
 
@@ -109,14 +112,15 @@ export const ScanQRScreen: React.FC = () => {
 
             if (image && image.path) {
                 // 注意：从图片解析二维码需要额外的解码库如 'rn-qr-generator'
-                Alert.alert('图片已选择', '（图片解析功能需额外集成解码库）\n\n' + image.path);
+                showAlert('图片已选择', '（图片解析功能需额外集成解码库）\n\n' + image.path);
             }
         } catch (error: any) {
             // 用户取消选择不需要报错
             if (error.code === 'E_PICKER_CANCELLED') {
                 return;
             }
-            Alert.alert('错误', '无法访问相册');
+            console.error('Pick image error:', error);
+            showAlert('错误', '无法访问相册');
         }
     };
 

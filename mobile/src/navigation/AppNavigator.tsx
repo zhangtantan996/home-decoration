@@ -43,6 +43,16 @@ import ProjectListScreen from '../screens/ProjectListScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 import DesignFilesScreen from '../screens/DesignFilesScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
+import RealNameAuthScreen from '../screens/RealNameAuthScreen';
+import LoginDevicesScreen from '../screens/LoginDevicesScreen';
+import DeleteAccountScreen from '../screens/DeleteAccountScreen';
+import PrivacySettingsScreen from '../screens/PrivacySettingsScreen';
+import PaymentSettingsScreen from '../screens/PaymentSettingsScreen';
+import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import GeneralSettingsScreen from '../screens/GeneralSettingsScreen';
+import AboutScreen from '../screens/AboutScreen';
+import FeedbackScreen from '../screens/FeedbackScreen';
+import ChangePhoneScreen from '../screens/ChangePhoneScreen';
 
 // 导入状态管理
 import { useAuthStore } from '../store/authStore';
@@ -180,30 +190,14 @@ const AppNavigator = () => {
         loadStoredAuth();
         // 应用启动时预加载首页数据，用户进入首页时数据已就绪
         preloadAll();
-    }, []);
+    }, [loadStoredAuth, preloadAll]);
 
     useEffect(() => {
         if (isAuthenticated) {
             // 登录成功后立即尝试获取数据
             preloadAll();
-
-            // 初始化腾讯云 IM（后台静默，不阻塞主流程）
-            import('../services/TencentIMService').then(({ default: TencentIMService }) => {
-                TencentIMService.init().then((success) => {
-                    if (success) {
-                        console.log('[TencentIM] 初始化成功');
-                    }
-                }).catch(() => {
-                    // 静默失败，WebSocket 作为主要通道
-                });
-            });
-        } else {
-            // 登出时也登出腾讯 IM
-            import('../services/TencentIMService').then(({ default: TencentIMService }) => {
-                TencentIMService.logout();
-            });
         }
-    }, [isAuthenticated]);
+    }, [isAuthenticated, preloadAll]);
 
     if (isLoading) {
         return <LoadingScreen />;
@@ -256,6 +250,7 @@ const AppNavigator = () => {
                         <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
                         <Stack.Screen name="Settings" component={SettingsScreen} />
                         <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+                        <Stack.Screen name="ChangePhone" component={ChangePhoneScreen} />
                         <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
                         <Stack.Screen name="AccountSecurity" component={AccountSecurityScreen} />
                         <Stack.Screen name="PullToRefreshDemo" component={PullToRefreshDemo} />
@@ -344,6 +339,52 @@ const AppNavigator = () => {
                             component={FavoritesScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
+                        {/* 设置子页面 */}
+                        <Stack.Screen
+                            name="RealNameAuth"
+                            component={RealNameAuthScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="LoginDevices"
+                            component={LoginDevicesScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="DeleteAccount"
+                            component={DeleteAccountScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="PrivacySettings"
+                            component={PrivacySettingsScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="PaymentSettings"
+                            component={PaymentSettingsScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="NotificationSettings"
+                            component={NotificationSettingsScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="GeneralSettings"
+                            component={GeneralSettingsScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="About"
+                            component={AboutScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="Feedback"
+                            component={FeedbackScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
                     </>
                 ) : (
                     <Stack.Screen name="Login" component={LoginScreen} />
@@ -368,4 +409,3 @@ const styles = StyleSheet.create({
 });
 
 export default AppNavigator;
-

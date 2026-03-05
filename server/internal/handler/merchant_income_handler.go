@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"math/rand"
 	"strconv"
@@ -12,6 +14,22 @@ import (
 )
 
 // ==================== 商家收入中心 Handler ====================
+
+func resolveProviderPhone(providerID uint64) (string, error) {
+	var provider model.Provider
+	if err := repository.DB.Select("user_id").Where("id = ?", providerID).First(&provider).Error; err != nil {
+		return "", err
+	}
+
+	var user model.User
+	if err := repository.DB.Select("phone").Where("id = ?", provider.UserID).First(&user).Error; err != nil {
+		return "", err
+	}
+	if user.Phone == "" {
+		return "", errors.New("手机号未绑定")
+	}
+	return user.Phone, nil
+}
 
 // MerchantIncomeSummary 收入概览
 func MerchantIncomeSummary(c *gin.Context) {
@@ -205,16 +223,28 @@ func maskBankAccount(account string) string {
 	return account[:4] + "****" + account[len(account)-4:]
 }
 
-// MerchantWithdrawCreate 申请提现
+// MerchantWithdrawCreate 申请提现（需要二次验证）
 func MerchantWithdrawCreate(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 
 	var input struct {
-		Amount        float64 `json:"amount" binding:"required,gt=0"`
-		BankAccountID uint64  `json:"bankAccountId" binding:"required"`
+		Amount           float64 `json:"amount" binding:"required,gt=0"`
+		BankAccountID    uint64  `json:"bankAccountId" binding:"required"`
+		VerificationCode string  `json:"verificationCode" binding:"required"` // 二次验证码
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+
+	// 二次验证：验证码检查（高风险操作）
+	phone, err := resolveProviderPhone(providerID)
+	if err != nil {
+		response.Error(c, 400, "验证码校验失败")
+		return
+	}
+	if err := service.VerifySMSCode(phone, service.SMSPurposeMerchantWithdraw, input.VerificationCode); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -304,19 +334,31 @@ func MerchantBankAccountList(c *gin.Context) {
 	response.Success(c, gin.H{"list": list})
 }
 
-// MerchantBankAccountCreate 添加银行账户
+// MerchantBankAccountCreate 添加银行账户（需要二次验证）
 func MerchantBankAccountCreate(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 
 	var input struct {
-		AccountName string `json:"accountName" binding:"required"`
-		AccountNo   string `json:"accountNo" binding:"required"`
-		BankName    string `json:"bankName" binding:"required"`
-		BranchName  string `json:"branchName"`
-		IsDefault   bool   `json:"isDefault"`
+		AccountName      string `json:"accountName" binding:"required"`
+		AccountNo        string `json:"accountNo" binding:"required"`
+		BankName         string `json:"bankName" binding:"required"`
+		BranchName       string `json:"branchName"`
+		IsDefault        bool   `json:"isDefault"`
+		VerificationCode string `json:"verificationCode" binding:"required"` // 二次验证码
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
+		return
+	}
+
+	// 二次验证：验证码检查（高风险操作）
+	phone, err := resolveProviderPhone(providerID)
+	if err != nil {
+		response.Error(c, 400, "验证码校验失败")
+		return
+	}
+	if err := service.VerifySMSCode(phone, service.SMSPurposeMerchantBankBind, input.VerificationCode); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 

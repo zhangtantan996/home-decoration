@@ -43,21 +43,27 @@ NUL
 # Agent & IDE Specific
 .agent/
 .claude/
+.codex/
 .cursor/
 .kiro/
 .superdesign/
 .windsurfrules
 stitch/
+.playwright-cli/
 playwright-report/
 test-results/
 
 # Project specific
+output/playwright/
 mobile/android/app/build/
 mobile/ios/build/
 mobile/android/.gradle/
 mobile/android/.idea/
 mobile/android/.kotlin/
 mobile/android/app/.cxx/
+server/uploads/
 db_data_local/
 /db_data_local/
+deploy/backups/
+deploy/nginx/admin.htpasswd
 *.pid

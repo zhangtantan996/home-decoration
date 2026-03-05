@@ -18,6 +18,7 @@ var (
 	bookingService      = &service.BookingService{}
 	materialShopService = &service.MaterialShopService{}
 	wechatAuthService   *service.WechatAuthService
+	wechatH5AuthService *service.WechatH5AuthService
 	jwtConfig           *config.JWTConfig
 )
 
@@ -26,6 +27,7 @@ func InitHandlers(cfg *config.Config) {
 	jwtConfig = &cfg.JWT
 	service.InitJWT(cfg.JWT.Secret)
 	wechatAuthService = service.NewWechatAuthService(cfg.WechatMini)
+	wechatH5AuthService = service.NewWechatH5AuthService(cfg.WechatH5)
 }
 
 // HealthCheck 健康检查
@@ -45,6 +47,7 @@ func Register(c *gin.Context) {
 		response.BadRequest(c, "参数错误: "+err.Error())
 		return
 	}
+	req.ClientIP = c.ClientIP()
 
 	tokenResp, user, err := userService.Register(&req, jwtConfig)
 	if err != nil {
@@ -52,12 +55,24 @@ func Register(c *gin.Context) {
 		return
 	}
 
+	roleCtx, _ := service.GetRoleContextForResponse(user)
+	providerID := uint64(0)
+	if roleCtx.ProviderID != nil {
+		providerID = *roleCtx.ProviderID
+	}
+
 	response.SuccessWithMessage(c, "注册成功", gin.H{
-		"token":        tokenResp.Token,
-		"refreshToken": tokenResp.RefreshToken,
-		"expiresIn":    tokenResp.ExpiresIn,
+		"token":           tokenResp.Token,
+		"refreshToken":    tokenResp.RefreshToken,
+		"expiresIn":       tokenResp.ExpiresIn,
+		"tinodeToken":     tokenResp.TinodeToken,
+		"tinodeError":     tokenResp.TinodeError,
+		"activeRole":      roleCtx.ActiveRole,
+		"providerId":      providerID,
+		"providerSubType": roleCtx.ProviderSubType,
 		"user": gin.H{
 			"id":       user.ID,
+			"publicId": user.PublicID,
 			"phone":    user.Phone,
 			"nickname": user.Nickname,
 			"avatar":   imgutil.GetFullImageURL(user.Avatar),
@@ -73,6 +88,7 @@ func Login(c *gin.Context) {
 		response.BadRequest(c, "参数错误: "+err.Error())
 		return
 	}
+	req.ClientIP = c.ClientIP()
 
 	tokenResp, user, err := userService.Login(&req, jwtConfig)
 	if err != nil {
@@ -80,12 +96,24 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	roleCtx, _ := service.GetRoleContextForResponse(user)
+	providerID := uint64(0)
+	if roleCtx.ProviderID != nil {
+		providerID = *roleCtx.ProviderID
+	}
+
 	response.Success(c, gin.H{
-		"token":        tokenResp.Token,
-		"refreshToken": tokenResp.RefreshToken,
-		"expiresIn":    tokenResp.ExpiresIn,
+		"token":           tokenResp.Token,
+		"refreshToken":    tokenResp.RefreshToken,
+		"expiresIn":       tokenResp.ExpiresIn,
+		"tinodeToken":     tokenResp.TinodeToken,
+		"tinodeError":     tokenResp.TinodeError,
+		"activeRole":      roleCtx.ActiveRole,
+		"providerId":      providerID,
+		"providerSubType": roleCtx.ProviderSubType,
 		"user": gin.H{
 			"id":       user.ID,
+			"publicId": user.PublicID,
 			"phone":    user.Phone,
 			"nickname": user.Nickname,
 			"avatar":   imgutil.GetFullImageURL(user.Avatar),
@@ -97,34 +125,43 @@ func Login(c *gin.Context) {
 // SendCode 发送验证码
 func SendCode(c *gin.Context) {
 	var req struct {
-		Phone string `json:"phone" binding:"required"`
+		Phone        string `json:"phone" binding:"required"`
+		Purpose      string `json:"purpose" binding:"required"`
+		CaptchaToken string `json:"captchaToken"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "请输入手机号")
+		response.BadRequest(c, "请输入手机号和验证码用途")
+		return
+	}
+
+	purpose, err := service.NormalizeSMSPurpose(req.Purpose)
+	if err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 
 	// 获取客户端IP
 	clientIP := c.ClientIP()
 
-	// 检查发送频率
-	smsService := service.GetSMSService()
-	if err := smsService.CanSendCode(req.Phone, clientIP); err != nil {
+	sendResult, err := service.SendSMSCode(req.Phone, purpose, clientIP, req.CaptchaToken)
+	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	// TODO: 实际项目接入短信服务
-	// 发送成功后记录
-	smsService.RecordSent(req.Phone, clientIP)
+	data := gin.H{
+		"expiresIn": 300,
+		"requestId": sendResult.RequestID,
+	}
+	if sendResult.DebugOnly && sendResult.DebugCode != "" {
+		data["debugCode"] = sendResult.DebugCode
+		data["debugOnly"] = true
+	}
 
-	// 测试环境验证码固定为 123456
-	response.SuccessWithMessage(c, "验证码已发送", gin.H{
-		"message": "测试验证码: 123456",
-	})
+	response.SuccessWithMessage(c, "验证码已发送", data)
 }
 
-// RefreshToken 刷新Token
+// RefreshToken 刷新Token（带重放检测）
 func RefreshToken(c *gin.Context) {
 	var req struct {
 		RefreshToken string `json:"refreshToken" binding:"required"`
@@ -134,16 +171,73 @@ func RefreshToken(c *gin.Context) {
 		return
 	}
 
-	tokenResp, err := userService.RefreshToken(req.RefreshToken, jwtConfig)
+	// 使用新的 TokenService（带 Redis 重放检测）
+	tokenService := &service.TokenService{}
+	tokenResp, err := tokenService.RefreshTokens(req.RefreshToken)
 	if err != nil {
 		response.Unauthorized(c, err.Error())
 		return
 	}
 
+	activeRole := "owner"
+	providerSubType := ""
+	providerID := uint64(0)
+
+	if roleContext, ok := service.GetRoleContextFromClaimsForResponse(tokenResp.AccessToken); ok {
+		activeRole = roleContext.ActiveRole
+		providerSubType = roleContext.ProviderSubType
+		if roleContext.ProviderID != nil {
+			providerID = *roleContext.ProviderID
+		}
+	} else if roleContext, ok := service.GetRoleContextFromClaimsForResponse(req.RefreshToken); ok {
+		activeRole = roleContext.ActiveRole
+		providerSubType = roleContext.ProviderSubType
+		if roleContext.ProviderID != nil {
+			providerID = *roleContext.ProviderID
+		}
+	}
+
+	if activeRole != "provider" {
+		providerSubType = ""
+		providerID = 0
+	}
+
 	response.Success(c, gin.H{
-		"token":        tokenResp.Token,
-		"refreshToken": tokenResp.RefreshToken,
-		"expiresIn":    tokenResp.ExpiresIn,
+		"token":           tokenResp.AccessToken,
+		"refreshToken":    tokenResp.RefreshToken,
+		"expiresIn":       tokenResp.ExpiresIn,
+		"activeRole":      activeRole,
+		"providerSubType": providerSubType,
+		"providerId":      providerID,
+	})
+}
+
+// RefreshTinodeToken 刷新 Tinode Token
+func RefreshTinodeToken(c *gin.Context) {
+	userId := c.GetUint64("userId")
+	if userId == 0 {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
+
+	user, err := userService.GetUserByID(userId)
+	if err != nil {
+		response.NotFound(c, "用户不存在")
+		return
+	}
+
+	tinodeToken, tinodeErr := userService.RefreshTinodeToken(user)
+	if tinodeErr != nil {
+		response.Success(c, gin.H{
+			"tinodeToken": "",
+			"tinodeError": tinodeErr.Error(),
+		})
+		return
+	}
+
+	response.Success(c, gin.H{
+		"tinodeToken": tinodeToken,
+		"tinodeError": "",
 	})
 }
 
@@ -162,6 +256,7 @@ func GetProfile(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"id":       user.ID,
+		"publicId": user.PublicID,
 		"phone":    user.Phone,
 		"nickname": user.Nickname,
 		"avatar":   imgutil.GetFullImageURL(user.Avatar),

@@ -126,6 +126,11 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		{model.ConfigKeyIntentFeeRefundable, "false", "意向金是否可退（用户放弃时）"},
 		{model.ConfigKeyDesignFeeUnlockDownload, "true", "支付设计费后解锁图纸下载"},
 		{model.ConfigKeyConstructionMilestones, `[{"name":"开工款","percentage":30},{"name":"水电款","percentage":35},{"name":"中期款","percentage":30},{"name":"尾款","percentage":5}]`, "施工分期付款比例"},
+		{model.ConfigKeyPublicIDRolloutEnabled, "false", "是否启用 publicId 灰度策略"},
+		{model.ConfigKeyPublicIDRolloutMobilePercent, "5", "publicId 移动端灰度百分比(0-100)"},
+		{model.ConfigKeyPublicIDRolloutDefaultPercent, "0", "publicId 其他端灰度百分比(0-100)"},
+		{model.ConfigKeyPublicIDRollbackDrillEnabled, "false", "是否启用 publicId 回滚演练观测"},
+		{model.ConfigKeyPublicIDRollbackForceLegacyLookup, "false", "紧急回滚: 强制仅按内部ID查询"},
 	}
 
 	for _, d := range defaults {

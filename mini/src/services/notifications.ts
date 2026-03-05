@@ -1,15 +1,8 @@
 import { request } from '@/utils/request';
 import type { PageData } from './types';
+import type { NotificationDTO } from './dto';
 
-export interface NotificationItem {
-  id: number;
-  title: string;
-  content: string;
-  type: string;
-  isRead: boolean;
-  createdAt?: string;
-  actionUrl?: string;
-}
+export type NotificationItem = NotificationDTO;
 
 export async function listNotifications(page = 1, pageSize = 20) {
   return request<PageData<NotificationItem>>({

@@ -8,17 +8,25 @@ import {
     FlatList,
     ActivityIndicator,
     RefreshControl,
-    Alert,
     Platform,
+    Modal,
+    PermissionsAndroid,
+    Linking,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ArrowLeft, Plus, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react-native';
 import { afterSalesApi } from '../services/api';
+import { useToast } from '../components/Toast';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
 type AfterSalesScreenRouteProp = RouteProp<RootStackParamList, 'AfterSales'>;
 type AfterSalesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+interface AfterSalesScreenProps {
+    route: AfterSalesScreenRouteProp;
+    navigation: AfterSalesScreenNavigationProp;
+}
 
 // 状态配置
 const STATUS_CONFIG = {
@@ -60,6 +68,7 @@ interface AfterSalesItem {
 const AfterSalesScreen = () => {
     const navigation = useNavigation<AfterSalesScreenNavigationProp>();
     const route = useRoute<AfterSalesScreenRouteProp>();
+    const { showAlert, showConfirm } = useToast();
 
     const initialTab = route.params?.tab || 'all';
 
@@ -67,6 +76,8 @@ const AfterSalesScreen = () => {
     const [items, setItems] = useState<AfterSalesItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [submitting, setSubmitting] = useState(false); // Added for cancellation loading state
+    const [currentApplicationId, setCurrentApplicationId] = useState<number | null>(null); // To store the ID of the item being cancelled
 
     // 加载数据
     const loadData = useCallback(async (showLoading = true) => {
@@ -110,26 +121,21 @@ const AfterSalesScreen = () => {
     const handleCancel = (item: AfterSalesItem) => {
         if (item.status !== 0 && item.status !== 1) return;
 
-        Alert.alert(
-            '取消申请',
-            '确定要取消此售后申请吗？',
-            [
-                { text: '再想想', style: 'cancel' },
-                {
-                    text: '确认取消',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await afterSalesApi.cancel(item.id);
-                            Alert.alert('提示', '申请已取消');
-                            loadData(false);
-                        } catch (error: any) {
-                            Alert.alert('错误', error?.response?.data?.message || '操作失败');
-                        }
-                    },
-                },
-            ]
-        );
+        showConfirm({
+            title: '取消申请',
+            message: '确定要取消此售后申请吗？',
+            confirmText: '确认取消',
+            cancelText: '再想想',
+            onConfirm: async () => {
+                try {
+                    await afterSalesApi.cancel(item.id);
+                    showAlert('提示', '申请已取消');
+                    loadData(false);
+                } catch (error: any) {
+                    showAlert('错误', error?.response?.data?.message || '操作失败');
+                }
+            },
+        });
     };
 
     // 渲染列表项

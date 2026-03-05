@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -21,8 +21,10 @@ import {
     Wifi,
     WifiOff,
 } from 'lucide-react-native';
-import TencentIMService from '../services/TencentIMService';
-import TIM from '@tencentcloud/chat';
+// import TencentIMService from '../services/TencentIMService';
+// import TIM from '@tencentcloud/chat';
+import TinodeService from '../services/TinodeService';
+import { useAuthStore } from '../store/authStore';
 import { parseEmojiText } from '../utils/emojiParser';
 
 // 主色调
@@ -32,6 +34,8 @@ const PRIMARY_GOLD = '#D4AF37';
 interface UIConversation {
     conversationID: string;
     partnerID: string;
+    partnerIdentifier?: string;
+    partnerPublicId?: string;
     name: string;
     avatar: string;
     role: 'designer' | 'worker' | 'company' | 'manager';
@@ -89,6 +93,8 @@ const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
     company: { bg: '#F3E8FF', text: '#7C3AED' },
 };
 
+const IM_RECONNECT_BUSINESS_KEY = 'mobile.message.im_reconnect';
+
 // 格式化时间
 const formatTime = (isoString: string): string => {
     if (!isoString) return '';
@@ -114,14 +120,22 @@ const MessageScreen: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'conversations' | 'notifications'>('conversations');
     const [refreshing, setRefreshing] = useState(false);
     const [searchText, setSearchText] = useState('');
-    const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+    const [notifications] = useState(MOCK_NOTIFICATIONS);
 
     // IM 状态
     const [conversations, setConversations] = useState<UIConversation[]>([]);
     const [imStatus, setImStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
+    const [reconnectPaused, setReconnectPaused] = useState(false);
+    const tinodeToken = useAuthStore(state => state.tinodeToken);
+    const conversationsRefreshScheduledRef = useRef(false);
 
     // 加载会话列表
-    const loadConversations = async () => {
+    const loadConversations = useCallback(async (trigger: 'auto' | 'manual' = 'auto') => {
+        if (trigger === 'auto' && reconnectPaused) {
+            return;
+        }
+
+        /* Tencent IM Implementation - Commented out
         const isLoggedIn = TencentIMService.getIsLoggedIn();
         if (!isLoggedIn) {
             setImStatus('connecting');
@@ -155,17 +169,174 @@ const MessageScreen: React.FC = () => {
         });
 
         setConversations(uiList);
-    };
+        */
+
+        // Tinode Implementation
+        if (!tinodeToken) {
+            setImStatus('disconnected');
+            return;
+        }
+
+        const isConnected = TinodeService.isConnected();
+        if (!isConnected) {
+            if (trigger === 'auto' && TinodeService.isReconnectPaused()) {
+                setReconnectPaused(true);
+                setImStatus('disconnected');
+                return;
+            }
+
+            setImStatus('connecting');
+            const success = await TinodeService.init(tinodeToken);
+            if (!success) {
+                setImStatus('disconnected');
+                return;
+            }
+        }
+        setImStatus('connected');
+
+        const list = await TinodeService.getConversationList();
+
+        // React Native does not have Tinode persistent cache enabled by default,
+        // so P2P topics may have stale/empty last message until we fetch it explicitly.
+        // If a topic shows unread count but preview is still the old message, we also need a prefetch.
+        const candidates = list
+            .filter((t: any) => typeof t?.name === 'string')
+            .filter((t: any) => {
+                const latest = typeof t?.latestMessage === 'function' ? t.latestMessage() : undefined;
+                const unread = typeof t?.unread === 'number' ? t.unread : 0;
+                return unread > 0 || !latest?.content;
+            })
+            .slice(0, 20);
+
+        if (candidates.length > 0) {
+            await Promise.allSettled(
+                candidates.map((t: any) => TinodeService.prefetchLastMessage(t.name))
+            );
+        }
+
+        const selfTinodeUserId = TinodeService.getCurrentUserID();
+
+        const uiList: UIConversation[] = list.map((item: any) => {
+            // `item` is a Tinode Topic (likely P2P). The SDK stores last message in `latestMessage()`.
+            const latest = typeof item?.latestMessage === 'function' ? item.latestMessage() : undefined;
+
+            const rawLastMessage = (() => {
+                const content = latest?.content;
+                if (typeof content === 'string') return content;
+                if (content && typeof content === 'object') {
+                    const obj = content as Record<string, unknown>;
+                    if (typeof obj.txt === 'string') return obj.txt;
+
+                    const ent = obj.ent;
+                    if (Array.isArray(ent)) {
+                        type DraftyEntity = {
+                            tp?: string;
+                            data?: {
+                                mime?: unknown;
+                                duration?: unknown;
+                            };
+                        };
+                        const draftyEntities = ent as DraftyEntity[];
+
+                        const audioEntity = draftyEntities.find(
+                            (entity) =>
+                                entity?.tp === 'EX' &&
+                                typeof entity.data?.mime === 'string' &&
+                                entity.data.mime.startsWith('audio/')
+                        );
+
+                        if (audioEntity) {
+                            const durationMs =
+                                typeof audioEntity.data?.duration === 'number'
+                                    ? audioEntity.data.duration
+                                    : 0;
+                            const durationSeconds = Math.floor(durationMs / 1000);
+                            return `【语音 ${durationSeconds}s】`;
+                        }
+
+                        const hasImage = draftyEntities.some((entity) => entity?.tp === 'IM');
+                        if (hasImage) {
+                            return '【图片】';
+                        }
+                    }
+                }
+                return '';
+            })();
+
+            const from = latest?.from;
+            const isMe = !from || (!!selfTinodeUserId && from === selfTinodeUserId);
+            const preview = rawLastMessage ? (isMe ? `我：${rawLastMessage}` : rawLastMessage) : '';
+
+            // For P2P topics, peer description is under `p2pPeerDesc()`.
+            const peer = typeof item?.p2pPeerDesc === 'function' ? item.p2pPeerDesc() : undefined;
+            const peerPublic = peer?.public || item?.public || {};
+            const peerPublicIdCandidate = (peerPublic as Record<string, unknown>)?.publicId
+                ?? (peerPublic as Record<string, unknown>)?.userPublicId;
+            const peerPublicId =
+                typeof peerPublicIdCandidate === 'number'
+                    ? String(peerPublicIdCandidate)
+                    : typeof peerPublicIdCandidate === 'string'
+                        ? peerPublicIdCandidate.trim() || undefined
+                        : undefined;
+
+            return {
+                // In tinode-sdk P2P, the topic name is the peer's `usr...` id.
+                conversationID: item.name,
+                partnerID: item.name,
+                partnerIdentifier: peerPublicId || item.name,
+                partnerPublicId: peerPublicId,
+                name: peerPublic?.fn || '未知用户',
+                avatar: peerPublic?.photo || 'https://via.placeholder.com/100',
+                role: 'designer', // Placeholder
+                roleLabel: '服务商',
+                lastMessage: preview ? parseEmojiText(preview) : '',
+                time: formatTime(item.touched || latest?.ts || ''),
+                unreadCount: typeof item.unread === 'number' ? item.unread : 0,
+                isOnline: false,
+                isRead: (typeof item.unread === 'number' ? item.unread : 0) === 0,
+            };
+        });
+        
+        setConversations(uiList);
+    }, [reconnectPaused, tinodeToken]);
+
+    const scheduleLoadConversations = useCallback(() => {
+        if (conversationsRefreshScheduledRef.current) return;
+        conversationsRefreshScheduledRef.current = true;
+        // Coalesce bursts of events into a single refresh.
+        setTimeout(() => {
+            conversationsRefreshScheduledRef.current = false;
+            loadConversations('auto').catch((error) => {
+                console.error('[Message] Scheduled auto load failed:', error);
+            });
+        }, 0);
+    }, [loadConversations]);
+
+    const handleManualReconnect = useCallback(async () => {
+        setReconnectPaused(false);
+
+        console.info('[AutoRetry]', {
+            businessKey: IM_RECONNECT_BUSINESS_KEY,
+            trigger: 'manual',
+            event: 'manual_reconnect',
+        });
+
+        await TinodeService.reconnectManually();
+        await loadConversations('manual');
+    }, [loadConversations]);
 
     // 页面聚焦时刷新
     useFocusEffect(
         useCallback(() => {
-            loadConversations();
-        }, [])
+            loadConversations('auto').catch((error) => {
+                console.error('[Message] Focus auto load failed:', error);
+            });
+        }, [loadConversations])
     );
 
     // 监听 IM SDK 事件（简化版，仅监听新消息以刷新列表）
     useEffect(() => {
+        /* Tencent IM Implementation - Commented out
         const chat = TencentIMService.getChat();
         if (!chat) return;
 
@@ -178,11 +349,91 @@ const MessageScreen: React.FC = () => {
         return () => {
             chat.off(TIM.EVENT.MESSAGE_RECEIVED, onMessageReceived);
         };
-    }, [imStatus]);
+        */
+
+        // Tinode Implementation
+        const onConnected = () => {
+            setImStatus('connected');
+            setReconnectPaused(false);
+            scheduleLoadConversations();
+        };
+        const onDisconnected = () => {
+            setImStatus('disconnected');
+        };
+        const onReconnectAttempt = (payload: any) => {
+            console.info('[AutoRetry]', {
+                businessKey: IM_RECONNECT_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'attempt',
+                attempt: payload?.attempt,
+            });
+        };
+        const onReconnectPaused = (payload: any) => {
+            setReconnectPaused(true);
+            setImStatus('disconnected');
+            console.warn('[AutoRetry]', {
+                businessKey: IM_RECONNECT_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'paused',
+                attempt: payload?.autoAttempts,
+                consecutiveFailures: payload?.consecutiveFailures,
+                pausedReason: 'max_auto_attempts_reached',
+            });
+        };
+        const onReconnectResumed = () => {
+            setReconnectPaused(false);
+            console.info('[AutoRetry]', {
+                businessKey: IM_RECONNECT_BUSINESS_KEY,
+                trigger: 'manual',
+                event: 'resumed',
+            });
+        };
+        const onSubsUpdated = () => {
+            scheduleLoadConversations();
+        };
+        const onPres = (pres: any) => {
+            if (pres?.what === 'msg' && typeof pres?.src === 'string') {
+                TinodeService.prefetchLastMessage(pres.src).finally(scheduleLoadConversations);
+                return;
+            }
+            if (pres?.what === 'read' || pres?.what === 'recv') {
+                scheduleLoadConversations();
+            }
+        };
+        const onContactUpdate = (payload: any) => {
+            const what = payload?.what;
+            const topicName = payload?.cont?.name;
+            if (what === 'msg' && typeof topicName === 'string') {
+                TinodeService.prefetchLastMessage(topicName).finally(scheduleLoadConversations);
+                return;
+            }
+            scheduleLoadConversations();
+        };
+
+        TinodeService.on('connected', onConnected);
+        TinodeService.on('disconnected', onDisconnected);
+        TinodeService.on('reconnect-attempt', onReconnectAttempt);
+        TinodeService.on('reconnect-paused', onReconnectPaused);
+        TinodeService.on('reconnect-resumed', onReconnectResumed);
+        TinodeService.on('subs-updated', onSubsUpdated);
+        TinodeService.on('contact-update', onContactUpdate);
+        TinodeService.on('pres', onPres);
+
+        return () => {
+            TinodeService.removeListener('connected', onConnected);
+            TinodeService.removeListener('disconnected', onDisconnected);
+            TinodeService.removeListener('reconnect-attempt', onReconnectAttempt);
+            TinodeService.removeListener('reconnect-paused', onReconnectPaused);
+            TinodeService.removeListener('reconnect-resumed', onReconnectResumed);
+            TinodeService.removeListener('subs-updated', onSubsUpdated);
+            TinodeService.removeListener('contact-update', onContactUpdate);
+            TinodeService.removeListener('pres', onPres);
+        };
+    }, [scheduleLoadConversations]);
 
     const onRefresh = async () => {
         setRefreshing(true);
-        await loadConversations();
+        await loadConversations('manual');
         setRefreshing(false);
     };
 
@@ -199,10 +450,26 @@ const MessageScreen: React.FC = () => {
 
         if (imStatus === 'disconnected') {
             return (
-                <TouchableOpacity style={styles.emptyContainer} onPress={loadConversations} activeOpacity={0.7}>
+                <TouchableOpacity
+                    style={styles.emptyContainer}
+                    onPress={() => {
+                        if (reconnectPaused) {
+                            handleManualReconnect().catch((error) => {
+                                console.error('[Message] Manual reconnect failed:', error);
+                            });
+                            return;
+                        }
+                        loadConversations('manual').catch((error) => {
+                            console.error('[Message] Manual load failed:', error);
+                        });
+                    }}
+                    activeOpacity={0.7}
+                >
                     <Text style={styles.emptyIcon}>⚠️</Text>
-                    <Text style={styles.emptyText}>IM 未登录</Text>
-                    <Text style={styles.emptySubtext}>点击重试或重新登录后再试</Text>
+                    <Text style={styles.emptyText}>{reconnectPaused ? 'IM 自动重连已暂停' : 'IM 未登录'}</Text>
+                    <Text style={styles.emptySubtext}>
+                        {reconnectPaused ? '点击手动重连' : '点击重试或重新登录后再试'}
+                    </Text>
                 </TouchableOpacity>
             );
         }
@@ -249,6 +516,8 @@ const MessageScreen: React.FC = () => {
                 onPress={() => (navigation as any).navigate('ChatRoom', {
                     conversationID: conversation.conversationID,
                     partnerID: conversation.partnerID,
+                    partnerIdentifier: conversation.partnerIdentifier || conversation.partnerPublicId || conversation.partnerID,
+                    partnerPublicId: conversation.partnerPublicId,
                     name: conversation.name,
                     avatar: conversation.avatar,
                 })}
@@ -391,7 +660,7 @@ const MessageScreen: React.FC = () => {
                     )
                 )}
 
-                <View style={{ height: 20 }} />
+                <View style={styles.footerSpacer} />
             </ScrollView>
         </SafeAreaView>
     );
@@ -480,6 +749,9 @@ const styles = StyleSheet.create({
     // 内容区
     content: {
         flex: 1,
+    },
+    footerSpacer: {
+        height: 20,
     },
     // 会话卡片
     conversationCard: {

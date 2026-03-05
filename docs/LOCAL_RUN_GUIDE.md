@@ -28,6 +28,22 @@
 docker-compose -f docker-compose.local.yml up -d --build
 ```
 
+### ⚠️ 不要混跑多套 Compose 栈
+
+本仓库存在多套 Compose 配置（`docker-compose.local.yml` 与 `docker-compose.yml`）。  
+本地开发请固定使用 `docker-compose.local.yml`，不要与默认栈同时运行，否则可能出现：
+- API 容器端口存在，但请求 `ERR_EMPTY_RESPONSE`
+- `db/redis/api` 不在同一网络，`air` 进程在但 Go 子进程已退出
+
+如果已经混跑，可执行：
+```bash
+# 1) 停掉默认栈
+docker compose -f docker-compose.yml down
+
+# 2) 重新拉起本地栈
+docker compose -f docker-compose.local.yml up -d db redis api admin
+```
+
 ## 3. 服务访问地址
 
 容器启动成功后，可以通过以下地址访问各模块：
@@ -58,6 +74,77 @@ docker-compose -f docker-compose.local.yml up -d --build
 | **停止环境** | `docker-compose -f docker-compose.local.yml down` |
 | **重置数据库** | `docker-compose -f docker-compose.local.yml down -v` (会删除数据卷) |
 | **进入 API 容器** | `docker exec -it home_decor_api_local /bin/sh` |
+
+## 6. 商家入驻链路启动前检查（5分钟）
+
+为避免本地出现 `column does not exist`（例如 `merchant_applications.role`）导致入驻提交失败，建议在首次拉起或切分支后执行以下检查。
+
+### Step 1: 执行幂等 schema 对齐迁移（仅需执行一次，可重复执行）
+
+```bash
+docker exec -i home_decor_db_local psql -U postgres -d home_decoration \
+  < server/scripts/migrations/v1.5.3_reconcile_unified_onboarding_schema.sql
+```
+
+### Step 2: 校验关键字段存在
+
+```bash
+docker exec -i home_decor_db_local psql -U postgres -d home_decoration -At -c \
+"SELECT table_name, column_name
+ FROM information_schema.columns
+ WHERE table_schema='public'
+   AND table_name IN ('merchant_applications','providers','material_shop_applications')
+   AND column_name IN ('role','entity_type','avatar','work_types','highlight_tags','pricing_json','graduate_school','design_philosophy','legal_acceptance_json','legal_accepted_at','legal_accept_source')
+ ORDER BY table_name, column_name;"
+```
+
+### Step 3: 重启 API（清理 prepared statement 缓存）
+
+```bash
+docker restart home_decor_api_local
+curl -sS http://127.0.0.1:8080/api/v1/health
+```
+
+### Step 4: 入驻冒烟（固定验证码）
+
+默认测试模式验证码为 `123456`。若需要显式开启，可在 API 启动环境中设置：
+- `SMS_FIXED_CODE_MODE=true`
+- `SMS_FIXED_CODE=123456`
+
+可先用接口验证：
+- `POST /api/v1/merchant/apply` 提交申请
+- `GET /api/v1/merchant/apply/:phone/status` 查询状态
+- 管理端审核通过后校验 `GET /api/v1/foremen/:id` / `designers/:id` / `companies/:id`
+
+## 7. 商家入驻链路 E2E 统一入口
+
+四个核心回归用例已统一为一个命令入口（含设计师/工长/主材商必填校验与审核后可见性）：
+
+```bash
+cd /Volumes/tantan/AI_project/home-decoration
+E2E_API_BASE_URL=http://127.0.0.1:8080/api/v1 npm run test:e2e:merchant:onboarding
+```
+
+仅查看用例列表（不执行）：
+
+```bash
+cd /Volumes/tantan/AI_project/home-decoration
+npm run test:e2e:merchant:onboarding:list
+```
+
+商家链路“全量烟测”入口（包含旧用例与 UI 冒烟，环境依赖更强）：
+
+```bash
+cd /Volumes/tantan/AI_project/home-decoration
+E2E_API_BASE_URL=http://127.0.0.1:8080/api/v1 MERCHANT_ORIGIN=http://127.0.0.1:5173 npm run test:e2e:merchant:smoke
+```
+
+仅查看列表：
+
+```bash
+cd /Volumes/tantan/AI_project/home-decoration
+npm run test:e2e:merchant:smoke:list
+```
 
 ---
 

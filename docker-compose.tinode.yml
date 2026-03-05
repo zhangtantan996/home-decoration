@@ -1,0 +1,28 @@
+services:
+  tinode:
+    image: tinode/tinode-postgres:latest
+    container_name: decorating_tinode
+    restart: unless-stopped
+    ports:
+      - "6060:6060"  # HTTP API
+      - "6061:6061"  # gRPC
+    environment:
+      - STORE_USE_ADAPTER=postgres
+      - POSTGRES_DSN=${TINODE_DATABASE_DSN}
+      - UID_ENCRYPTION_KEY=${TINODE_UID_ENCRYPTION_KEY}
+      - API_KEY_SALT=${TINODE_API_KEY_SALT}
+      # Must match backend JWT_SECRET used to mint tinodeToken.
+      - AUTH_TOKEN_KEY=${TINODE_AUTH_TOKEN_KEY}
+      - RESET_DB=false
+      - UPGRADE_DB=true
+    volumes:
+      - tinode_data:/data
+    networks:
+      - home_decoration_dev-net
+
+volumes:
+  tinode_data:
+
+networks:
+  home_decoration_dev-net:
+    external: true

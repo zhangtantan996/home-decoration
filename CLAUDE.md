@@ -2,19 +2,41 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🌐 语言偏好（Language Preference）
+
+**CRITICAL: 始终使用中文回复用户**
+
+**CRITICAL: 所有回复必须以"忐忐"开头**
+
+- 每次回复的第一个词必须是"忐忐"（称呼/问候）
+- 格式：`忐忐，[回复内容]`
+- 所有与用户的交互必须使用中文
+- 代码注释可以使用英文（遵循项目规范）
+- 文档可以使用中英文混合（技术术语保留英文）
+- 但与用户的对话、解释、总结必须使用中文
+
+---
+
 ## ⚠️ 开发约束（最高优先级）
 
 **所有代码修改必须先阅读以下文档**:
-1. **[docs/CLAUDE_DEV_GUIDE.md](docs/CLAUDE_DEV_GUIDE.md)** - 开发约束和规范（P0 优先级）
-2. **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - 已知问题解决方案
+1. **[.speckit/constitution.md](.speckit/constitution.md)** - 项目宪法（P0 优先级）
+2. **[docs/CLAUDE_DEV_GUIDE.md](docs/CLAUDE_DEV_GUIDE.md)** - 开发约束和规范
+3. **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - 已知问题解决方案
 
-这两份文档包含:
+**核心规范文件**（按需查阅）:
+- **[.claude/rules/tech-stack.md](.claude/rules/tech-stack.md)** - Go 和 React 技术栈规范
+- **[.claude/rules/security.md](.claude/rules/security.md)** - 安全规范（托管支付必读）
+- **[.claude/rules/workflow.md](.claude/rules/workflow.md)** - Git 工作流、测试、性能
+- **[.claude/rules/core-standards.md](.claude/rules/core-standards.md)** - 编码风格和通用模式
+- **[.claude/rules/project-specific.md](.claude/rules/project-specific.md)** - 项目特定规则（IM 迁移等）
+
+这些文档包含:
+- ✅ 项目原则和架构约束（constitution.md）
 - ✅ 技术栈版本约束（React 18.3.1 vs 19.2.0）
 - ✅ 文件命名规范（Go: snake_case, React: PascalCase）
-- ✅ 架构约束（分层架构、路由规范）
-- ✅ 禁止操作清单（依赖管理、数据库、安全）
-- ✅ 问题排查流程（5 步闭环）
-- ✅ 常见问题解决方案
+- ✅ 分层架构和安全规范（托管支付）
+- ✅ 禁止操作清单和问题排查流程
 
 ---
 
@@ -291,6 +313,7 @@ adb reverse tcp:8080 tcp:8080
 - Booking, ProviderCase, ProviderReview
 - MaterialShop, Chat (WebSocket messages)
 - Admin, Role, Menu (RBAC system)
+- UserIdentity, IdentityApplication, IdentityAuditLog (multi-identity system)
 
 **Authentication**: JWT-based auth with middleware at `/api/v1/auth/*`
 
@@ -303,6 +326,8 @@ adb reverse tcp:8080 tcp:8080
 **Framework**: React 18.3.1 + TypeScript + Vite + Ant Design Pro Components
 
 **State Management**: Zustand (see `admin/src/stores/`)
+- `authStore` - authentication state with activeRole field
+- `identityStore` - multi-identity switching state
 
 **Routing**: React Router v7 with `/admin` basename
 - Routes defined in `admin/src/router.tsx`
@@ -332,9 +357,10 @@ adb reverse tcp:8080 tcp:8080
 - Main tabs: Home, Inspiration, Progress, Message, Profile
 
 **State Management**: Zustand
-- `authStore` - authentication state
+- `authStore` - authentication state with activeRole field
 - `providerStore` - provider data (designers, companies, foremen)
 - `chatStore` - WebSocket chat integration
+- `identityStore` - multi-identity switching state
 
 **Web Support**: App can run as web app via Vite (`npm run web`)
 
@@ -362,7 +388,8 @@ adb reverse tcp:8080 tcp:8080
 - 5 main tabs: Home, Inspiration, Progress, Message, Profile
 
 **State Management**: Zustand
-- `authStore` - WeChat authentication state (openid, JWT tokens)
+- `authStore` - WeChat authentication state (openid, JWT tokens) with activeRole field
+- `identityStore` - multi-identity switching state
 - Persistent storage via Taro.setStorage
 
 **Key Features**:

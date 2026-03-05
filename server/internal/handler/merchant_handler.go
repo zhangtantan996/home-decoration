@@ -1,13 +1,18 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"home-decoration-server/internal/config"
+	"home-decoration-server/internal/dto"
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
+	"home-decoration-server/internal/tinode"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,12 +22,253 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
 )
 
 // ========== 商家端 Handler ==========
 
 var merchantProposalService = &service.ProposalService{}
 var merchantRegionService = &service.RegionService{}
+
+func normalizeMerchantApplicantType(raw string, providerType int8) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+
+	// 兼容历史数据：部分老数据 provider_type 已是工长/公司，但 sub_type 仍是默认 personal。
+	if providerType == 3 && (normalized == "" || normalized == "personal" || normalized == "studio" || normalized == "worker" || normalized == "designer") {
+		return "foreman"
+	}
+	if providerType == 2 && (normalized == "" || normalized == "personal" || normalized == "studio" || normalized == "designer") {
+		return "company"
+	}
+
+	switch normalized {
+	case "personal", "studio", "company", "foreman":
+		return normalized
+	case "designer":
+		return "personal"
+	case "worker":
+		return "foreman"
+	default:
+		switch providerType {
+		case 2:
+			return "company"
+		case 3:
+			return "foreman"
+		default:
+			return "personal"
+		}
+	}
+}
+
+func normalizeMerchantProviderSubType(applicantType string, providerType int8) string {
+	switch strings.ToLower(strings.TrimSpace(applicantType)) {
+	case "company":
+		return "company"
+	case "foreman":
+		return "foreman"
+	case "personal", "studio":
+		return "designer"
+	default:
+		mapped := strings.ToLower(strings.TrimSpace(mapProviderTypeToSubType(providerType)))
+		if mapped == "designer" || mapped == "company" || mapped == "foreman" {
+			return mapped
+		}
+		if providerType == 2 {
+			return "company"
+		}
+		if providerType == 3 {
+			return "foreman"
+		}
+		return "designer"
+	}
+}
+
+func parseProviderWorkTypes(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return []string{}
+	}
+
+	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+		var jsonValues []string
+		if err := json.Unmarshal([]byte(trimmed), &jsonValues); err == nil {
+			return normalizeStringSlice(jsonValues)
+		}
+	}
+
+	if strings.Contains(trimmed, " · ") {
+		return normalizeStringSlice(strings.Split(trimmed, " · "))
+	}
+
+	if strings.Contains(trimmed, ",") {
+		return normalizeStringSlice(strings.Split(trimmed, ","))
+	}
+
+	return normalizeStringSlice([]string{trimmed})
+}
+
+func providerRoleFromSubType(providerSubType string) string {
+	switch providerSubType {
+	case "company":
+		return "company"
+	case "foreman":
+		return "foreman"
+	default:
+		return "designer"
+	}
+}
+
+func normalizeProviderEntityType(raw string, applicantType string) string {
+	entityType := strings.ToLower(strings.TrimSpace(raw))
+	if entityType == "personal" || entityType == "company" {
+		return entityType
+	}
+	if applicantType == "studio" || applicantType == "company" {
+		return "company"
+	}
+	return "personal"
+}
+
+type merchantApplyGuide struct {
+	kind          string
+	applicationID uint64
+	status        int8
+	rejectReason  string
+	createdAt     time.Time
+	role          string
+	entityType    string
+	applicantType string
+}
+
+func resolveMaterialShopEntityType(shopID, userID uint64) string {
+	var app model.MaterialShopApplication
+	query := repository.DB.Where("status = ?", 1).Order("audited_at DESC, created_at DESC")
+
+	if shopID > 0 && userID > 0 {
+		query = query.Where("shop_id = ? OR user_id = ?", shopID, userID)
+	} else if shopID > 0 {
+		query = query.Where("shop_id = ?", shopID)
+	} else if userID > 0 {
+		query = query.Where("user_id = ?", userID)
+	} else {
+		return "company"
+	}
+
+	if err := query.First(&app).Error; err != nil {
+		return "company"
+	}
+
+	return normalizeMaterialEntityType(app.EntityType)
+}
+
+func resolveMerchantNextAction(status int8) string {
+	switch status {
+	case 0:
+		return "PENDING"
+	case 1:
+		return "PENDING"
+	case 2:
+		return "RESUBMIT"
+	default:
+		return "APPLY"
+	}
+}
+
+func latestMerchantApplyGuide(userID uint64, phone string) (*merchantApplyGuide, error) {
+	phone = strings.TrimSpace(phone)
+
+	var providerApp model.MerchantApplication
+	providerQuery := repository.DB.Order("created_at DESC")
+	if userID > 0 && phone != "" {
+		providerQuery = providerQuery.Where("user_id = ? OR phone = ?", userID, phone)
+	} else if userID > 0 {
+		providerQuery = providerQuery.Where("user_id = ?", userID)
+	} else if phone != "" {
+		providerQuery = providerQuery.Where("phone = ?", phone)
+	}
+	providerErr := providerQuery.First(&providerApp).Error
+
+	var materialApp model.MaterialShopApplication
+	materialQuery := repository.DB.Order("created_at DESC")
+	if userID > 0 && phone != "" {
+		materialQuery = materialQuery.Where("user_id = ? OR phone = ?", userID, phone)
+	} else if userID > 0 {
+		materialQuery = materialQuery.Where("user_id = ?", userID)
+	} else if phone != "" {
+		materialQuery = materialQuery.Where("phone = ?", phone)
+	}
+	materialErr := materialQuery.First(&materialApp).Error
+
+	if providerErr != nil && !errors.Is(providerErr, gorm.ErrRecordNotFound) {
+		return nil, providerErr
+	}
+	if materialErr != nil && !errors.Is(materialErr, gorm.ErrRecordNotFound) {
+		return nil, materialErr
+	}
+
+	providerExists := providerErr == nil
+	materialExists := materialErr == nil
+	if !providerExists && !materialExists {
+		return nil, nil
+	}
+
+	if providerExists && (!materialExists || !materialApp.CreatedAt.After(providerApp.CreatedAt)) {
+		providerType, _, normalizedEntityType, compatApplicantType, normalizeErr := normalizeApprovedApplicationMeta(&providerApp)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		role := "designer"
+		if providerType == 3 {
+			role = "foreman"
+		} else if providerType == 2 {
+			role = "company"
+		}
+
+		return &merchantApplyGuide{
+			kind:          "provider",
+			applicationID: providerApp.ID,
+			status:        providerApp.Status,
+			rejectReason:  providerApp.RejectReason,
+			createdAt:     providerApp.CreatedAt,
+			role:          role,
+			entityType:    normalizedEntityType,
+			applicantType: compatApplicantType,
+		}, nil
+	}
+
+	return &merchantApplyGuide{
+		kind:          "material_shop",
+		applicationID: materialApp.ID,
+		status:        materialApp.Status,
+		rejectReason:  materialApp.RejectReason,
+		createdAt:     materialApp.CreatedAt,
+		role:          "material_shop",
+		entityType:    normalizeMaterialEntityType(materialApp.EntityType),
+	}, nil
+}
+
+func merchantLoginDenied(c *gin.Context, messageText string, nextAction string, guide *merchantApplyGuide) {
+	data := gin.H{
+		"nextAction": nextAction,
+	}
+	if guide != nil {
+		data["applyStatus"] = gin.H{
+			"kind":          guide.kind,
+			"applicationId": guide.applicationID,
+			"status":        guide.status,
+			"rejectReason":  guide.rejectReason,
+			"role":          guide.role,
+			"entityType":    guide.entityType,
+			"applicantType": guide.applicantType,
+		}
+	}
+
+	c.JSON(200, response.Response{
+		Code:    409,
+		Message: messageText,
+		Data:    data,
+	})
+}
 
 // MerchantLogin 商家登录（手机号+验证码）
 func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
@@ -36,70 +282,209 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		// 验证码校验（测试环境固定123456）
-		if input.Code != "123456" {
-			response.Error(c, 400, "验证码错误")
+		if err := service.VerifySMSCode(input.Phone, service.SMSPurposeLogin, input.Code); err != nil {
+			response.Error(c, 400, err.Error())
 			return
 		}
 
-		// 先找 User
 		var user model.User
 		if err := repository.DB.Where("phone = ?", input.Phone).First(&user).Error; err != nil {
-			response.Error(c, 404, "用户不存在，请先注册")
-			return
-		}
-
-		// 查找关联的 Provider
-		var provider model.Provider
-		if err := repository.DB.Where("user_id = ?", user.ID).First(&provider).Error; err != nil {
-			response.Error(c, 404, "您不是服务商，请先申请入驻")
-			return
-		}
-
-		if provider.Status != 1 {
-			response.Error(c, 403, "账号已被禁用")
-			return
-		}
-
-		// 生成 JWT Token
-		claims := jwt.MapClaims{
-			"providerId":   provider.ID,
-			"providerType": provider.ProviderType,
-			"userId":       user.ID,
-			"phone":        input.Phone,
-			"role":         "merchant",
-			"exp":          time.Now().Add(24 * time.Hour).Unix(),
-		}
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-		tokenString, err := token.SignedString([]byte(cfg.JWT.Secret))
-		if err != nil {
-			response.Error(c, 500, "生成Token失败")
-			return
-		}
-
-		// 获取显示名称：个人设计师优先显示昵称，工作室/公司显示公司名
-		displayName := user.Nickname
-		if provider.ProviderType != 1 || provider.SubType == "company" || provider.SubType == "studio" {
-			if provider.CompanyName != "" {
-				displayName = provider.CompanyName
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				merchantLoginDenied(c, "该手机号尚未入驻，请先完成入驻申请", "APPLY", nil)
+				return
 			}
-		}
-		// 兜底：如果昵称也为空，使用手机号后4位
-		if displayName == "" {
-			displayName = "用户" + input.Phone[len(input.Phone)-4:]
+			response.Error(c, 500, "登录失败，请稍后重试")
+			return
 		}
 
-		response.Success(c, gin.H{
-			"token": tokenString,
-			"provider": gin.H{
-				"id":           provider.ID,
-				"name":         displayName,
-				"avatar":       imgutil.GetFullImageURL(user.Avatar),
+		var provider model.Provider
+		providerErr := repository.DB.Where("user_id = ?", user.ID).First(&provider).Error
+
+		if providerErr == nil {
+			if provider.Status != 1 {
+				response.Error(c, 403, "账号已被禁用")
+				return
+			}
+
+			claims := jwt.MapClaims{
+				"providerId":   provider.ID,
 				"providerType": provider.ProviderType,
+				"merchantKind": "provider",
+				"userId":       user.ID,
 				"phone":        input.Phone,
-				"verified":     provider.Verified,
-			},
-		})
+				"token_type":   "merchant",
+				"token_use":    "access",
+				"role":         "merchant",
+				"exp":          time.Now().Add(24 * time.Hour).Unix(),
+			}
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+			tokenString, err := token.SignedString([]byte(cfg.JWT.Secret))
+			if err != nil {
+				response.Error(c, 500, "生成Token失败")
+				return
+			}
+
+			// 获取显示名称：个人设计师优先显示昵称，工作室/公司显示公司名
+			displayName := user.Nickname
+			if provider.ProviderType != 1 || provider.SubType == "company" || provider.SubType == "studio" {
+				if provider.CompanyName != "" {
+					displayName = provider.CompanyName
+				}
+			}
+			// 兜底：如果昵称也为空，使用手机号后4位
+			if displayName == "" {
+				displayName = "用户" + input.Phone[len(input.Phone)-4:]
+			}
+
+			// 生成 Tinode token（失败不阻塞商家登录）
+			tinodeToken := ""
+			if tokenValue, err := tinode.GenerateTinodeToken(user.ID, displayName); err != nil {
+				log.Printf("[Tinode] Token generation failed (merchant login): userID=%d, err=%v", user.ID, err)
+			} else {
+				tinodeToken = tokenValue
+				// Ensure this merchant exists in Tinode DB with a usable public profile.
+				u := user
+				if u.Nickname == "" {
+					u.Nickname = displayName
+				}
+				if err := tinode.SyncUserToTinode(&u); err != nil {
+					log.Printf("[Tinode] Sync merchant user failed: userID=%d, err=%v", user.ID, err)
+				}
+			}
+
+			applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
+			providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
+			role := providerRoleFromSubType(providerSubType)
+			entityType := normalizeProviderEntityType(provider.EntityType, applicantType)
+			avatar := strings.TrimSpace(provider.Avatar)
+			if avatar == "" {
+				avatar = user.Avatar
+			}
+
+			response.Success(c, gin.H{
+				"token":        tokenString,
+				"tinodeToken":  tinodeToken,
+				"merchantKind": "provider",
+				"role":         role,
+				"entityType":   entityType,
+				"provider": gin.H{
+					"id":              provider.ID,
+					"name":            displayName,
+					"avatar":          imgutil.GetFullImageURL(avatar),
+					"providerType":    provider.ProviderType,
+					"applicantType":   applicantType,
+					"providerSubType": providerSubType,
+					"merchantKind":    "provider",
+					"role":            role,
+					"entityType":      entityType,
+					"phone":           input.Phone,
+					"verified":        provider.Verified,
+				},
+			})
+			return
+		}
+
+		if providerErr != nil && !errors.Is(providerErr, gorm.ErrRecordNotFound) {
+			response.Error(c, 500, "登录失败，请稍后重试")
+			return
+		}
+
+		var materialShop model.MaterialShop
+		materialErr := repository.DB.Where("user_id = ?", user.ID).Order("id DESC").First(&materialShop).Error
+		if materialErr == nil && materialShop.IsVerified {
+			entityType := resolveMaterialShopEntityType(materialShop.ID, user.ID)
+
+			claims := jwt.MapClaims{
+				"materialShopId": materialShop.ID,
+				"merchantKind":   "material_shop",
+				"userId":         user.ID,
+				"phone":          input.Phone,
+				"token_type":     "merchant",
+				"token_use":      "access",
+				"role":           "merchant",
+				"exp":            time.Now().Add(24 * time.Hour).Unix(),
+			}
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+			tokenString, err := token.SignedString([]byte(cfg.JWT.Secret))
+			if err != nil {
+				response.Error(c, 500, "生成Token失败")
+				return
+			}
+
+			displayName := strings.TrimSpace(materialShop.Name)
+			if displayName == "" {
+				displayName = user.Nickname
+			}
+			if displayName == "" {
+				displayName = "商家" + input.Phone[len(input.Phone)-4:]
+			}
+
+			tinodeToken := ""
+			if tokenValue, err := tinode.GenerateTinodeToken(user.ID, displayName); err != nil {
+				log.Printf("[Tinode] Token generation failed (material login): userID=%d, err=%v", user.ID, err)
+			} else {
+				tinodeToken = tokenValue
+				u := user
+				if u.Nickname == "" {
+					u.Nickname = displayName
+				}
+				if err := tinode.SyncUserToTinode(&u); err != nil {
+					log.Printf("[Tinode] Sync material merchant user failed: userID=%d, err=%v", user.ID, err)
+				}
+			}
+
+			avatar := materialShop.BrandLogo
+			if strings.TrimSpace(avatar) == "" {
+				avatar = materialShop.Cover
+			}
+
+			response.Success(c, gin.H{
+				"token":        tokenString,
+				"tinodeToken":  tinodeToken,
+				"merchantKind": "material_shop",
+				"role":         "material_shop",
+				"entityType":   entityType,
+				"provider": gin.H{
+					"id":              materialShop.ID,
+					"name":            displayName,
+					"avatar":          imgutil.GetFullImageURL(avatar),
+					"providerType":    4,
+					"applicantType":   "company",
+					"providerSubType": "company",
+					"merchantKind":    "material_shop",
+					"role":            "material_shop",
+					"entityType":      entityType,
+					"phone":           input.Phone,
+					"verified":        materialShop.IsVerified,
+				},
+			})
+			return
+		}
+
+		if materialErr != nil && !errors.Is(materialErr, gorm.ErrRecordNotFound) {
+			response.Error(c, 500, "登录失败，请稍后重试")
+			return
+		}
+
+		guide, err := latestMerchantApplyGuide(user.ID, input.Phone)
+		if err != nil {
+			response.Error(c, 500, "登录失败，请稍后重试")
+			return
+		}
+		if guide == nil {
+			merchantLoginDenied(c, "该手机号尚未入驻，请先完成入驻申请", "APPLY", nil)
+			return
+		}
+
+		nextAction := resolveMerchantNextAction(guide.status)
+		switch nextAction {
+		case "PENDING":
+			merchantLoginDenied(c, "入驻申请审核中，请耐心等待审核结果", nextAction, guide)
+		case "RESUBMIT":
+			merchantLoginDenied(c, "入驻申请未通过，请修改后重新提交", nextAction, guide)
+		default:
+			merchantLoginDenied(c, "该手机号尚未入驻，请先完成入驻申请", "APPLY", guide)
+		}
 	}
 }
 
@@ -144,22 +529,43 @@ func MerchantGetInfo(c *gin.Context) {
 		}
 	}
 
+	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
+	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
+	role := providerRoleFromSubType(providerSubType)
+	entityType := normalizeProviderEntityType(provider.EntityType, applicantType)
+	workTypes := parseProviderWorkTypes(provider.WorkTypes)
+	highlightTags := parseJSONOrDelimitedSlice(provider.HighlightTags)
+	pricing := parsePricingObject(provider.PricingJSON)
+	avatar := strings.TrimSpace(provider.Avatar)
+	if avatar == "" {
+		avatar = user.Avatar
+	}
+
 	response.Success(c, gin.H{
-		"id":              provider.ID,
-		"name":            displayName,
-		"avatar":          imgutil.GetFullImageURL(user.Avatar),
-		"providerType":    provider.ProviderType,
-		"companyName":     provider.CompanyName,
-		"rating":          provider.Rating,
-		"completedCnt":    provider.CompletedCnt,
-		"verified":        provider.Verified,
-		"yearsExperience": provider.YearsExperience,
-		"specialty":       specialty,
-		"serviceArea":     serviceAreaNames, // 返回区域名称数组
+		"id":               provider.ID,
+		"name":             displayName,
+		"avatar":           imgutil.GetFullImageURL(avatar),
+		"providerType":     provider.ProviderType,
+		"applicantType":    applicantType,
+		"providerSubType":  providerSubType,
+		"role":             role,
+		"entityType":       entityType,
+		"companyName":      provider.CompanyName,
+		"rating":           provider.Rating,
+		"completedCnt":     provider.CompletedCnt,
+		"verified":         provider.Verified,
+		"yearsExperience":  provider.YearsExperience,
+		"specialty":        specialty,
+		"workTypes":        workTypes,
+		"highlightTags":    highlightTags,
+		"pricing":          pricing,
+		"graduateSchool":   provider.GraduateSchool,
+		"designPhilosophy": provider.DesignPhilosophy,
+		"serviceArea":      serviceAreaNames, // 返回区域名称数组
 		"serviceAreaCodes": serviceAreaCodes, // 返回区域代码数组（用于编辑）
-		"introduction":    provider.ServiceIntro,
-		"teamSize":        provider.TeamSize,
-		"officeAddress":   provider.OfficeAddress,
+		"introduction":     provider.ServiceIntro,
+		"teamSize":         provider.TeamSize,
+		"officeAddress":    provider.OfficeAddress,
 	})
 }
 
@@ -169,14 +575,19 @@ func MerchantUpdateInfo(c *gin.Context) {
 	userID := c.GetUint64("userId")
 
 	var input struct {
-		Name            string   `json:"name"` // 显示名称
-		CompanyName     string   `json:"companyName"`
-		YearsExperience int      `json:"yearsExperience"`
-		Specialty       []string `json:"specialty"`
-		ServiceArea     []string `json:"serviceArea"` // 区域代码数组
-		Introduction    string   `json:"introduction"`
-		TeamSize        int      `json:"teamSize"`
-		OfficeAddress   string   `json:"officeAddress"`
+		Name             string             `json:"name"` // 显示名称
+		CompanyName      string             `json:"companyName"`
+		YearsExperience  int                `json:"yearsExperience"`
+		Specialty        []string           `json:"specialty"`
+		WorkTypes        []string           `json:"workTypes"`
+		HighlightTags    []string           `json:"highlightTags"`
+		Pricing          map[string]float64 `json:"pricing"`
+		GraduateSchool   string             `json:"graduateSchool"`
+		DesignPhilosophy string             `json:"designPhilosophy"`
+		ServiceArea      []string           `json:"serviceArea"` // 区域代码数组
+		Introduction     string             `json:"introduction"`
+		TeamSize         int                `json:"teamSize"`
+		OfficeAddress    string             `json:"officeAddress"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -223,10 +634,47 @@ func MerchantUpdateInfo(c *gin.Context) {
 	}
 	updates["years_experience"] = input.YearsExperience
 
-	if len(input.Specialty) > 0 {
-		updates["specialty"] = strings.Join(input.Specialty, " · ")
+	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
+	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
+
+	if providerSubType == "foreman" {
+		if input.WorkTypes != nil {
+			normalizedWorkTypes := normalizeStringSlice(input.WorkTypes)
+			if len(normalizedWorkTypes) == 0 {
+				tx.Rollback()
+				response.Error(c, 400, "工长至少需要保留1个工种")
+				return
+			}
+			workTypesJSON, _ := json.Marshal(normalizedWorkTypes)
+			updates["work_types"] = string(workTypesJSON)
+			updates["specialty"] = strings.Join(normalizedWorkTypes, " · ")
+		}
 	} else {
-		updates["specialty"] = ""
+		if len(input.Specialty) > 0 {
+			updates["specialty"] = strings.Join(normalizeStringSlice(input.Specialty), " · ")
+		} else {
+			updates["specialty"] = ""
+		}
+		updates["work_types"] = ""
+	}
+
+	if input.HighlightTags != nil {
+		highlightTags := normalizeStringSlice(input.HighlightTags)
+		highlightTagsJSON, _ := json.Marshal(highlightTags)
+		updates["highlight_tags"] = string(highlightTagsJSON)
+	}
+	if input.Pricing != nil {
+		pricingJSON, _ := json.Marshal(input.Pricing)
+		priceMin, priceMax := getPricingRange(input.Pricing)
+		updates["pricing_json"] = string(pricingJSON)
+		updates["price_min"] = priceMin
+		updates["price_max"] = priceMax
+	}
+	if input.GraduateSchool != "" {
+		updates["graduate_school"] = strings.TrimSpace(input.GraduateSchool)
+	}
+	if input.DesignPhilosophy != "" {
+		updates["design_philosophy"] = strings.TrimSpace(input.DesignPhilosophy)
 	}
 
 	if len(serviceAreaCodes) > 0 {
@@ -234,6 +682,17 @@ func MerchantUpdateInfo(c *gin.Context) {
 		updates["service_area"] = string(jsonBytes)
 	} else {
 		updates["service_area"] = "[]"
+	}
+
+	if len([]rune(input.Introduction)) > 5000 {
+		tx.Rollback()
+		response.Error(c, 400, "简介不能超过5000个字符")
+		return
+	}
+	if len([]rune(input.DesignPhilosophy)) > 5000 {
+		tx.Rollback()
+		response.Error(c, 400, "设计理念不能超过5000个字符")
+		return
 	}
 
 	updates["service_intro"] = input.Introduction
@@ -303,6 +762,7 @@ func MerchantListBookings(c *gin.Context) {
 		model.Booking
 		UserNickname string `json:"userNickname"`
 		UserPhone    string `json:"userPhone"`
+		UserPublicID string `json:"userPublicId,omitempty"`
 		HasProposal  bool   `json:"hasProposal"`
 	}
 
@@ -310,6 +770,11 @@ func MerchantListBookings(c *gin.Context) {
 	for _, b := range bookings {
 		item := BookingWithUser{Booking: b}
 		if u, ok := userMap[b.UserID]; ok {
+			identity := dto.NewUserIdentity(&u)
+			item.UserPublicID = identity.UserPublicID
+			if item.UserPublicID == "" {
+				monitor.RecordPublicIDMissing("merchant_booking_list", identity.UserID, "merchant_list_bookings")
+			}
 			item.UserNickname = u.Nickname
 			if item.UserNickname == "" {
 				// 兜底：使用手机号后4位
@@ -351,8 +816,23 @@ func MerchantGetBookingDetail(c *gin.Context) {
 	var proposal model.Proposal
 	hasProposal := repository.DB.Where("booking_id = ?", bookingID).First(&proposal).Error == nil
 
+	var bookingUser model.User
+	_ = repository.DB.Select("id", "public_id").First(&bookingUser, booking.UserID).Error
+	bookingIdentity := dto.NewUserIdentity(&bookingUser)
+	if bookingIdentity.UserPublicID == "" {
+		monitor.RecordPublicIDMissing("merchant_booking_detail", bookingIdentity.UserID, "merchant_booking_detail")
+	}
+
+	type BookingDetailWithIdentity struct {
+		model.Booking
+		UserPublicID string `json:"userPublicId,omitempty"`
+	}
+
 	response.Success(c, gin.H{
-		"booking":     booking,
+		"booking": BookingDetailWithIdentity{
+			Booking:      booking,
+			UserPublicID: bookingIdentity.UserPublicID,
+		},
 		"hasProposal": hasProposal,
 		"proposal":    proposal,
 	})
@@ -483,7 +963,34 @@ func MerchantDashboardStats(c *gin.Context) {
 		repository.DB.Model(&model.Order{}).Where("booking_id IN ? AND status = 1", bookingIDs).Count(&paidOrders)
 	}
 
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+
+	var todayBookings int64
+	repository.DB.Model(&model.Booking{}).
+		Where("provider_id = ? AND created_at >= ?", providerID, dayStart).
+		Count(&todayBookings)
+
+	var totalRevenue, monthRevenue float64
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ?", providerID).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&totalRevenue)
+
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ? AND created_at >= ?", providerID, monthStart).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&monthRevenue)
+
+	activeProjects := paidOrders
+
 	response.Success(c, gin.H{
+		"todayBookings":    todayBookings,
+		"pendingProposals": pendingProposals,
+		"activeProjects":   activeProjects,
+		"totalRevenue":     totalRevenue,
+		"monthRevenue":     monthRevenue,
 		"bookings": gin.H{
 			"pending":   pendingBookings,
 			"confirmed": confirmedBookings,
@@ -573,7 +1080,8 @@ func MerchantUploadImage(c *gin.Context) {
 	// 验证文件类型
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" &&
-		ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".zip" && ext != ".rar" {
+		ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".xls" && ext != ".xlsx" &&
+		ext != ".ppt" && ext != ".pptx" && ext != ".txt" && ext != ".zip" && ext != ".rar" {
 		response.Error(c, 400, "不支持的文件格式")
 		return
 	}
@@ -637,12 +1145,19 @@ func MerchantGetProposal(c *gin.Context) {
 		model.Booking
 		UserNickname string `json:"userNickname"`
 		UserPhone    string `json:"userPhone"`
+		UserPublicID string `json:"userPublicId,omitempty"`
+	}
+
+	bookingIdentity := dto.NewUserIdentity(&user)
+	if bookingIdentity.UserPublicID == "" {
+		monitor.RecordPublicIDMissing("merchant_proposal_detail", bookingIdentity.UserID, "merchant_get_proposal")
 	}
 
 	bookingWithUser := BookingWithUser{
 		Booking:      booking,
 		UserNickname: userNickname,
 		UserPhone:    user.Phone,
+		UserPublicID: bookingIdentity.UserPublicID,
 	}
 
 	response.Success(c, gin.H{

@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
 /**
  * 环境配置
@@ -27,16 +27,56 @@ import { Platform } from 'react-native';
 type NetworkMode = 'adb-reverse' | 'emulator-ip' | 'lan-ip';
 
 // 选择你的网络模式
-const NETWORK_MODE: NetworkMode = 'adb-reverse'; // 默认使用 adb reverse
+let NETWORK_MODE: NetworkMode = 'adb-reverse'; // 默认使用 adb reverse
 
 // 如果使用 LAN IP 模式，请在这里填写你的 Mac IP 地址
 // 获取方法: 在终端执行 ifconfig | grep "inet " | grep -v 127.0.0.1
 const MAC_LAN_IP = '192.168.1.100'; // 请替换为你的实际 IP
 
 /**
+ * 在开发环境下，优先从 Metro 的 scriptURL 推导出 host。
+ * 这样 API/分享链接能自动跟随「Debug server host & port」配置，
+ * 避免手动硬编码 IP 导致网络错误。
+ */
+function getScriptURL(): string | null {
+    if (!__DEV__) return null;
+    try {
+        const url = (NativeModules as any)?.SourceCode?.scriptURL;
+        return typeof url === 'string' ? url : null;
+    } catch {
+        return null;
+    }
+}
+
+function getMetroBaseUrlFromScriptURL(): string | null {
+    const scriptURL = getScriptURL();
+    if (!scriptURL) return null;
+    const match = scriptURL.match(/^(https?:\/\/[^/]+)/);
+    return match ? match[1] : null;
+}
+
+function getMetroHostFromScriptURL(): string | null {
+    const scriptURL = getScriptURL();
+    if (!scriptURL) return null;
+    const match = scriptURL.match(/^https?:\/\/([^:/]+)(?::\d+)?(?:\/|$)/);
+    return match ? match[1] : null;
+}
+
+/**
  * 获取 API 基础 URL
  */
 function getApiBaseUrl(): string {
+    // 生产环境：连接到测试/生产服务器（避免打包后仍指向 localhost）
+    if (!__DEV__) {
+        return 'http://47.99.105.195:8888';
+    }
+
+    // 开发环境：优先跟随 Metro host（最不容易配错）
+    const metroHost = getMetroHostFromScriptURL();
+    if (metroHost) {
+        return `http://${metroHost}:8080`;
+    }
+
     if (Platform.OS === 'ios') {
         // iOS 模拟器直接使用 localhost
         return 'http://localhost:8080';
@@ -65,6 +105,9 @@ function getApiBaseUrl(): string {
  * 获取 Metro Bundler URL (用于开发调试)
  */
 function getMetroUrl(): string {
+    const metroBaseUrl = getMetroBaseUrlFromScriptURL();
+    if (metroBaseUrl) return metroBaseUrl;
+
     if (Platform.OS === 'ios') {
         return 'http://localhost:8081';
     }
@@ -92,7 +135,7 @@ export const ENV = {
 
     // 网络模式信息（用于调试）
     NETWORK_MODE,
-    MAC_LAN_IP: NETWORK_MODE === 'lan-ip' ? MAC_LAN_IP : undefined,
+    MAC_LAN_IP,
 
     // 环境标识
     IS_DEV: __DEV__,
@@ -108,10 +151,17 @@ if (__DEV__) {
         '平台': ENV.PLATFORM,
     });
 
-    if (Platform.OS === 'android' && NETWORK_MODE === 'adb-reverse') {
-        console.log('💡 提示: 当前使用 adb reverse 模式，请确保已执行:');
-        console.log('   adb reverse tcp:8080 tcp:8080');
-        console.log('   adb reverse tcp:8081 tcp:8081');
+    if (Platform.OS === 'android') {
+        const isLocalhost =
+            ENV.API_BASE_URL.includes('http://localhost:8080') ||
+            ENV.API_BASE_URL.includes('http://127.0.0.1:8080');
+        if (isLocalhost) {
+            console.log('💡 提示: Android 使用 localhost 时，需要 ADB 反向代理:');
+            console.log('   adb reverse tcp:8080 tcp:8080');
+            console.log('   adb reverse tcp:8081 tcp:8081');
+        } else {
+            console.log('💡 提示: 当前为直连模式，请确保设备能访问该 IP，并且后端在 8080 端口运行。');
+        }
     }
 }
 

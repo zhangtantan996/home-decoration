@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"strings"
 
 	"home-decoration-server/pkg/response"
@@ -28,6 +29,9 @@ func MerchantJWT(secret string) gin.HandlerFunc {
 
 		tokenString := parts[1]
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("invalid signing method")
+			}
 			return []byte(secret), nil
 		})
 
@@ -45,6 +49,20 @@ func MerchantJWT(secret string) gin.HandlerFunc {
 		}
 
 		// 验证是商家 Token
+		tokenUse, _ := claims["token_use"].(string)
+		if tokenUse == tokenUseRefresh {
+			response.Unauthorized(c, "请使用访问令牌")
+			c.Abort()
+			return
+		}
+
+		tokenType, _ := claims["token_type"].(string)
+		if tokenType != "merchant" {
+			response.Forbidden(c, "无权访问商家接口")
+			c.Abort()
+			return
+		}
+
 		role, _ := claims["role"].(string)
 		if role != "merchant" {
 			response.Forbidden(c, "无权访问商家接口")
@@ -56,11 +74,22 @@ func MerchantJWT(secret string) gin.HandlerFunc {
 		if providerID, ok := claims["providerId"]; ok {
 			c.Set("providerId", uint64(providerID.(float64)))
 		}
+		if materialShopID, ok := claims["materialShopId"]; ok {
+			c.Set("materialShopId", uint64(materialShopID.(float64)))
+		}
 		if providerType, ok := claims["providerType"]; ok {
 			c.Set("providerType", int8(providerType.(float64)))
 		}
+		if merchantKind, ok := claims["merchantKind"]; ok {
+			c.Set("merchantKind", merchantKind)
+		}
 		if userId, ok := claims["userId"]; ok {
 			c.Set("userId", uint64(userId.(float64)))
+		}
+		if userPublicID, ok := claims["userPublicId"]; ok {
+			c.Set("userPublicId", userPublicID)
+		} else if sub, ok := claims["sub"]; ok {
+			c.Set("userPublicId", sub)
 		}
 		if phone, ok := claims["phone"]; ok {
 			c.Set("phone", phone)

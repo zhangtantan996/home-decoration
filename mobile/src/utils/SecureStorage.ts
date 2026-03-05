@@ -4,6 +4,24 @@ const TOKEN_SERVICE = 'home_decoration_auth';
 
 export const SecureStorage = {
   /**
+   * 保存 Tinode Token 到 Keychain
+   */
+  async saveTinodeToken(token: string): Promise<boolean> {
+    try {
+      await Keychain.setGenericPassword('tinodeToken', token, {
+        service: `${TOKEN_SERVICE}_tinode`,
+        accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED,
+      });
+      return true;
+    } catch (error) {
+      if (__DEV__) {
+        console.error('Failed to save tinode token to Keychain:', error);
+      }
+      return false;
+    }
+  },
+
+  /**
    * 保存 Token 到 Keychain
    */
   async saveToken(token: string): Promise<boolean> {
@@ -54,6 +72,26 @@ export const SecureStorage = {
         console.error('Failed to save user to Keychain:', error);
       }
       return false;
+    }
+  },
+
+  /**
+   * 从 Keychain 获取 Tinode Token
+   */
+  async getTinodeToken(): Promise<string | null> {
+    try {
+      const credentials = await Keychain.getGenericPassword({
+        service: `${TOKEN_SERVICE}_tinode`,
+      });
+      if (credentials && credentials.password) {
+        return credentials.password;
+      }
+      return null;
+    } catch (error) {
+      if (__DEV__) {
+        console.error('Failed to get tinode token from Keychain:', error);
+      }
+      return null;
     }
   },
 
@@ -125,6 +163,7 @@ export const SecureStorage = {
       await Keychain.resetGenericPassword({ service: TOKEN_SERVICE });
       await Keychain.resetGenericPassword({ service: `${TOKEN_SERVICE}_refresh` });
       await Keychain.resetGenericPassword({ service: `${TOKEN_SERVICE}_user` });
+      await Keychain.resetGenericPassword({ service: `${TOKEN_SERVICE}_tinode` });
       return true;
     } catch (error) {
       if (__DEV__) {

@@ -1,5 +1,22 @@
 package handler
 
+// Package handler provides Tencent Cloud IM integration for merchants.
+//
+// STATUS: BACKUP SOLUTION (Not currently used in production)
+//
+// Primary IM System: Tinode
+// This code is kept as a backup solution for potential future migration
+// or emergency fallback scenarios.
+//
+// Maintenance Policy:
+// - Code is preserved but not actively maintained
+// - No new features will be added
+// - Critical security fixes only
+// - Scheduled for review: 2026-07-24 (6 months)
+//
+// Last Updated: 2026-01-24
+// Maintainer: Backend Team
+
 import (
 	"fmt"
 	"log"

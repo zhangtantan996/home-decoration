@@ -20,6 +20,8 @@ import {
     CheckCircle,
     Info,
 } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { reportApi, tinodeApi } from '../services/api';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -30,11 +32,21 @@ interface ChatSettingsScreenProps {
 }
 
 const ChatSettingsScreen: React.FC<ChatSettingsScreenProps> = ({ route, navigation }) => {
-    const { conversation } = route.params || {};
+    const params = route.params || {};
+    const conversation = params.conversation || {};
+    const chatTopic: string =
+        params.topic || conversation?.conversationID || conversation?.topic || '';
+    const chatPartner: string =
+        params.partnerID || conversation?.partnerID || '';
+    const chatPartnerIdentifier: string =
+        params.partnerIdentifier || conversation?.partnerIdentifier || chatPartner;
+    const chatPartnerPublicId: string =
+        params.partnerPublicId || conversation?.partnerPublicId || '';
     const [isPinned, setIsPinned] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
     const [showReportModal, setShowReportModal] = useState(false);
     const [reportContent, setReportContent] = useState('');
+    const [submittingReport, setSubmittingReport] = useState(false);
     const [dialogConfig, setDialogConfig] = useState<{
         visible: boolean;
         type: 'info' | 'confirm' | 'success';
@@ -65,21 +77,57 @@ const ChatSettingsScreen: React.FC<ChatSettingsScreenProps> = ({ route, navigati
             type: 'confirm',
             title: '清空聊天记录',
             message: '确定要清空与该用户的聊天记录吗？此操作不可恢复。',
-            onConfirm: () => {
-                // 这里可以添加实际清空逻辑
-                setDialogConfig({
-                    visible: true,
-                    type: 'success',
-                    title: '清空成功',
-                    message: '聊天记录已清空。',
-                });
+            onConfirm: async () => {
+                if (!chatTopic) {
+                    setTimeout(() => {
+                        setDialogConfig({
+                            visible: true,
+                            type: 'info',
+                            title: '清空失败',
+                            message: '缺少会话信息，无法清空聊天记录。',
+                        });
+                    }, 0);
+                    return;
+                }
+
+                try {
+                    await tinodeApi.clearTopicMessages(chatTopic);
+                } catch (error) {
+                    console.error('[ChatSettings] Failed to clear messages on server:', error);
+                    setTimeout(() => {
+                        setDialogConfig({
+                            visible: true,
+                            type: 'info',
+                            title: '清空失败',
+                            message: '服务端清空失败，请稍后重试。',
+                        });
+                    }, 0);
+                    return;
+                }
+
+                const now = Date.now();
+                try {
+                    await AsyncStorage.setItem(`chat_clear_${chatTopic}`, String(now));
+                } catch (e) {
+                    console.warn('[ChatSettings] Failed to persist clear marker:', e);
+                }
+
+                setTimeout(() => {
+                    setDialogConfig({
+                        visible: true,
+                        type: 'success',
+                        title: '清空成功',
+                        message: '聊天记录已清空。',
+                    });
+                }, 0);
             },
         });
     };
 
     // 提交举报
-    const handleSubmitReport = () => {
-        if (!reportContent.trim()) {
+    const handleSubmitReport = async () => {
+        const reason = reportContent.trim();
+        if (!reason) {
             setDialogConfig({
                 visible: true,
                 type: 'info',
@@ -89,14 +137,43 @@ const ChatSettingsScreen: React.FC<ChatSettingsScreenProps> = ({ route, navigati
             return;
         }
 
-        setShowReportModal(false);
-        setReportContent('');
-        setDialogConfig({
-            visible: true,
-            type: 'success',
-            title: '举报成功',
-            message: '感谢您的反馈，我们将尽快处理。',
-        });
+        if (!chatTopic) {
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '举报失败',
+                message: '缺少会话信息，无法提交举报。',
+            });
+            return;
+        }
+
+        setSubmittingReport(true);
+        try {
+            await reportApi.submitChatReport({
+                topic: chatTopic,
+                reason,
+                partner: chatPartnerPublicId ? String(chatPartnerPublicId) : chatPartnerIdentifier ? String(chatPartnerIdentifier) : undefined,
+            });
+
+            setShowReportModal(false);
+            setReportContent('');
+            setDialogConfig({
+                visible: true,
+                type: 'success',
+                title: '举报成功',
+                message: '感谢您的反馈，我们将尽快处理。',
+            });
+        } catch (error) {
+            console.error('[ChatSettings] Failed to submit report:', error);
+            setDialogConfig({
+                visible: true,
+                type: 'info',
+                title: '举报失败',
+                message: '提交失败，请稍后重试。',
+            });
+        } finally {
+            setSubmittingReport(false);
+        }
     };
 
     return (
@@ -208,14 +285,22 @@ const ChatSettingsScreen: React.FC<ChatSettingsScreenProps> = ({ route, navigati
                                     setShowReportModal(false);
                                     setReportContent('');
                                 }}
+                                disabled={submittingReport}
                             >
                                 <Text style={styles.reportBtnCancelText}>取消</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.reportBtn, styles.reportBtnSubmit]}
+                                style={[
+                                    styles.reportBtn,
+                                    styles.reportBtnSubmit,
+                                    submittingReport && styles.reportBtnDisabled,
+                                ]}
                                 onPress={handleSubmitReport}
+                                disabled={submittingReport}
                             >
-                                <Text style={styles.reportBtnSubmitText}>提交</Text>
+                                <Text style={styles.reportBtnSubmitText}>
+                                    {submittingReport ? '提交中...' : '提交'}
+                                </Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -457,6 +542,9 @@ const styles = StyleSheet.create({
     },
     reportBtnSubmit: {
         backgroundColor: PRIMARY_GOLD,
+    },
+    reportBtnDisabled: {
+        opacity: 0.6,
     },
     reportBtnSubmitText: {
         fontSize: 15,

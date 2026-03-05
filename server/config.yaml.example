@@ -32,11 +32,23 @@ oss:
 
 # 短信服务配置 (可选)
 sms:
-  provider: "aliyun"  # aliyun | tencent
+  provider: "aliyun"  # mock | aliyun
   access_key_id: ""
   access_key_secret: ""
   sign_name: ""
   template_code: ""
+  region_id: "cn-hangzhou"
+  debug_bypass: false
+  risk_enabled: true
+  code_max_attempts: 5
+  phone_daily_limit: 10
+  ip_daily_limit: 20
+  captcha_enabled: false
+  captcha_provider: "turnstile" # turnstile | hcaptcha | recaptcha
+  captcha_verify_url: "" # 可留空，按 provider 使用默认验证地址
+  captcha_secret_key: ""
+  captcha_timeout_ms: 3000
+  captcha_min_score: 0.0
 
 # 地图服务配置
 map:

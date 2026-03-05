@@ -33,10 +33,16 @@ func AdminLogin(c *gin.Context) {
 
 	// ✅ 检查失败次数
 	failKey := fmt.Sprintf("admin_login_fail:%s", req.Username)
-	failCountStr, _ := repository.RedisClient.Get(repository.Ctx, failKey).Result()
 	failCount := 0
-	if failCountStr != "" {
-		fmt.Sscanf(failCountStr, "%d", &failCount)
+	rdb := repository.GetRedis()
+	if rdb != nil {
+		ctx, cancel := repository.RedisContext()
+		defer cancel()
+
+		failCountStr, _ := rdb.Get(ctx, failKey).Result()
+		if failCountStr != "" {
+			fmt.Sscanf(failCountStr, "%d", &failCount)
+		}
 	}
 
 	if failCount >= 5 {
@@ -48,8 +54,13 @@ func AdminLogin(c *gin.Context) {
 	var admin model.SysAdmin
 	if err := repository.DB.Where("username = ?", req.Username).First(&admin).Error; err != nil {
 		// ✅ 记录失败
-		repository.RedisClient.Incr(repository.Ctx, failKey)
-		repository.RedisClient.Expire(repository.Ctx, failKey, 30*time.Minute)
+		if rdb != nil {
+			ctx, cancel := repository.RedisContext()
+			defer cancel()
+
+			rdb.Incr(ctx, failKey)
+			rdb.Expire(ctx, failKey, 30*time.Minute)
+		}
 
 		response.Unauthorized(c, "用户名或密码错误")
 		return
@@ -64,15 +75,25 @@ func AdminLogin(c *gin.Context) {
 	// 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(req.Password)); err != nil {
 		// ✅ 记录失败
-		repository.RedisClient.Incr(repository.Ctx, failKey)
-		repository.RedisClient.Expire(repository.Ctx, failKey, 30*time.Minute)
+		if rdb != nil {
+			ctx, cancel := repository.RedisContext()
+			defer cancel()
+
+			rdb.Incr(ctx, failKey)
+			rdb.Expire(ctx, failKey, 30*time.Minute)
+		}
 
 		response.Unauthorized(c, "用户名或密码错误")
 		return
 	}
 
 	// ✅ 登录成功，清除失败记录
-	repository.RedisClient.Del(repository.Ctx, failKey)
+	if rdb != nil {
+		ctx, cancel := repository.RedisContext()
+		defer cancel()
+
+		rdb.Del(ctx, failKey)
+	}
 
 	// 更新登录信息
 	now := time.Now()

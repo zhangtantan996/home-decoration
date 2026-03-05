@@ -9,3 +9,5 @@ export * from './notifications';
 export * from './dictionaries';
 export * from './regions';
 export * from './uploads';
+export * from './inspiration';
+export * from './dto';

@@ -28,40 +28,49 @@ const (
 	ConfigKeyConstructionMilestones  = "order.construction_milestones"    // 施工分期比例 JSON
 
 	// 平台抽成配置
-	ConfigKeyIntentFeeRate        = "fee.platform.intent_fee_rate"        // 意向金抽成比例
-	ConfigKeyDesignFeeRate        = "fee.platform.design_fee_rate"        // 设计费抽成比例
-	ConfigKeyConstructionFeeRate  = "fee.platform.construction_fee_rate"  // 施工费抽成比例
-	ConfigKeyMaterialFeeRate      = "fee.platform.material_fee_rate"      // 材料费抽成比例
-	ConfigKeyWithdrawMinAmount    = "withdraw.min_amount"                 // 最小提现金额
-	ConfigKeyWithdrawFee          = "withdraw.fee"                        // 提现手续费
-	ConfigKeySettlementAutoDays   = "settlement.auto_days"                // 自动结算天数
+	ConfigKeyIntentFeeRate       = "fee.platform.intent_fee_rate"       // 意向金抽成比例
+	ConfigKeyDesignFeeRate       = "fee.platform.design_fee_rate"       // 设计费抽成比例
+	ConfigKeyConstructionFeeRate = "fee.platform.construction_fee_rate" // 施工费抽成比例
+	ConfigKeyMaterialFeeRate     = "fee.platform.material_fee_rate"     // 材料费抽成比例
+	ConfigKeyWithdrawMinAmount   = "withdraw.min_amount"                // 最小提现金额
+	ConfigKeyWithdrawFee         = "withdraw.fee"                       // 提现手续费
+	ConfigKeySettlementAutoDays  = "settlement.auto_days"               // 自动结算天数
 
 	// 腾讯云 IM 配置
 	ConfigKeyTencentIMSDKAppID  = "im.tencent_sdk_app_id" // 腾讯云 IM SDKAppID
 	ConfigKeyTencentIMSecretKey = "im.tencent_secret_key" // 腾讯云 IM SecretKey
 	ConfigKeyTencentIMEnabled   = "im.tencent_enabled"    // 是否启用腾讯云 IM
+
+	// publicId 灰度策略配置
+	ConfigKeyPublicIDRolloutEnabled        = "id.public_id_rollout_enabled"         // 是否启用 publicId 灰度
+	ConfigKeyPublicIDRolloutMobilePercent  = "id.public_id_rollout_mobile_percent"  // 移动端灰度百分比 (0-100)
+	ConfigKeyPublicIDRolloutDefaultPercent = "id.public_id_rollout_default_percent" // 其他端灰度百分比 (0-100)
+
+	// publicId 回滚演练配置
+	ConfigKeyPublicIDRollbackDrillEnabled      = "id.public_id_rollback_drill_enabled"       // 是否启用回滚演练观测
+	ConfigKeyPublicIDRollbackForceLegacyLookup = "id.public_id_rollback_force_legacy_lookup" // 紧急回滚: 强制仅按内部ID查询
 )
 
 // Proposal 设计方案
 type Proposal struct {
 	Base
-	BookingID              uint64     `json:"bookingId" gorm:"index"`
-	DesignerID             uint64     `json:"designerId" gorm:"index"`      // Provider ID
-	Summary                string     `json:"summary" gorm:"type:text"`     // 方案概述
-	DesignFee              float64    `json:"designFee"`                    // 设计费
-	ConstructionFee        float64    `json:"constructionFee"`              // 施工费预估
-	MaterialFee            float64    `json:"materialFee"`                  // 主材费预估
-	EstimatedDays          int        `json:"estimatedDays"`                // 预计工期
-	Attachments            string     `json:"attachments" gorm:"type:text"` // JSON: 附件列表
-	Status                 int8       `json:"status" gorm:"default:1"`      // 1:待确认 2:已确认 3:已拒绝 4:已被新版本替代
-	ConfirmedAt            *time.Time `json:"confirmedAt"`
-	Version                int        `json:"version" gorm:"default:1"`                  // 版本号（v1, v2, v3...）
-	ParentProposalID       uint64     `json:"parentProposalId" gorm:"index"`             // 上一版本方案ID
-	RejectionCount         int        `json:"rejectionCount" gorm:"default:0"`           // 该预约的累计拒绝次数
-	RejectionReason        string     `json:"rejectionReason" gorm:"type:text"`          // 拒绝原因
-	RejectedAt             *time.Time `json:"rejectedAt"`                                // 拒绝时间
-	SubmittedAt            *time.Time `json:"submittedAt"`                               // 提交时间
-	UserResponseDeadline   *time.Time `json:"userResponseDeadline"`                      // 用户确认/拒绝的截止时间（14天）
+	BookingID            uint64     `json:"bookingId" gorm:"index"`
+	DesignerID           uint64     `json:"designerId" gorm:"index"`      // Provider ID
+	Summary              string     `json:"summary" gorm:"type:text"`     // 方案概述
+	DesignFee            float64    `json:"designFee"`                    // 设计费
+	ConstructionFee      float64    `json:"constructionFee"`              // 施工费预估
+	MaterialFee          float64    `json:"materialFee"`                  // 主材费预估
+	EstimatedDays        int        `json:"estimatedDays"`                // 预计工期
+	Attachments          string     `json:"attachments" gorm:"type:text"` // JSON: 附件列表
+	Status               int8       `json:"status" gorm:"default:1"`      // 1:待确认 2:已确认 3:已拒绝 4:已被新版本替代
+	ConfirmedAt          *time.Time `json:"confirmedAt"`
+	Version              int        `json:"version" gorm:"default:1"`         // 版本号（v1, v2, v3...）
+	ParentProposalID     uint64     `json:"parentProposalId" gorm:"index"`    // 上一版本方案ID
+	RejectionCount       int        `json:"rejectionCount" gorm:"default:0"`  // 该预约的累计拒绝次数
+	RejectionReason      string     `json:"rejectionReason" gorm:"type:text"` // 拒绝原因
+	RejectedAt           *time.Time `json:"rejectedAt"`                       // 拒绝时间
+	SubmittedAt          *time.Time `json:"submittedAt"`                      // 提交时间
+	UserResponseDeadline *time.Time `json:"userResponseDeadline"`             // 用户确认/拒绝的截止时间（14天）
 }
 
 // TableName 指定表名

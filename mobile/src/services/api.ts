@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { SecureStorage } from '../utils/SecureStorage';
 import { authEventEmitter } from './AuthEventEmitter';
+import { useAuthStore } from '../store/authStore';
+import { AutoRetryGuard, type AutoRetryPolicy } from '../utils/autoRetryGuard';
 
 // @ts-ignore
 import { getApiUrl } from '../config';
@@ -13,8 +15,36 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
+const AUTH_REFRESH_BUSINESS_KEY = 'mobile.auth.refresh';
+const AUTH_REFRESH_POLICY: AutoRetryPolicy = {
+    maxAutoAttempts: 1,
+    pauseOnConsecutiveFailures: 1,
+    baseDelayMs: 0,
+    maxDelayMs: 0,
+};
+const authRefreshGuard = new AutoRetryGuard(AUTH_REFRESH_POLICY);
+
+export const resetAuthRefreshGuard = () => {
+    authRefreshGuard.resetByManual();
+};
+
 // 刷新 Token 辅助方法：尝试多个后端路径，兼容不同实现
 const tryRefreshToken = async (refreshToken: string) => {
+    if (!authRefreshGuard.shouldAttempt('auto')) {
+        const state = authRefreshGuard.getState();
+        console.warn('[AutoRetry]', {
+            businessKey: AUTH_REFRESH_BUSINESS_KEY,
+            trigger: 'auto',
+            event: 'blocked',
+            attempt: state.autoAttempts,
+            consecutiveFailures: state.consecutiveFailures,
+            pausedReason: 'max_auto_attempts_reached',
+        });
+        throw new Error('Refresh token blocked by guard');
+    }
+
+    authRefreshGuard.recordAttempt('auto');
+
     const candidates = ['/auth/refresh-token', '/auth/refreshToken', '/auth/refresh'];
 
     let lastError: any = null;
@@ -29,17 +59,52 @@ const tryRefreshToken = async (refreshToken: string) => {
             const newRefreshToken = data?.refreshToken || data?.refresh_token;
 
             if (!token) throw new Error('Empty token in refresh response');
-            return { token, refreshToken: newRefreshToken };
+
+            authRefreshGuard.recordSuccess();
+            console.info('[AutoRetry]', {
+                businessKey: AUTH_REFRESH_BUSINESS_KEY,
+                trigger: 'auto',
+                event: 'success',
+            });
+
+            return {
+                token,
+                refreshToken: newRefreshToken,
+            };
         } catch (err: any) {
             lastError = err;
             // 404/405/501 继续尝试下一条，其他错误直接抛出
             const status = err?.response?.status;
             if (status && ![404, 405, 501].includes(status)) {
+                authRefreshGuard.recordFailure(err);
+                const state = authRefreshGuard.getState();
+                console.warn('[AutoRetry]', {
+                    businessKey: AUTH_REFRESH_BUSINESS_KEY,
+                    trigger: 'auto',
+                    event: 'failure',
+                    attempt: state.autoAttempts,
+                    consecutiveFailures: state.consecutiveFailures,
+                    paused: state.paused,
+                });
                 throw err;
             }
         }
     }
-    if (lastError) throw lastError;
+    if (lastError) {
+        authRefreshGuard.recordFailure(lastError);
+        const state = authRefreshGuard.getState();
+        console.warn('[AutoRetry]', {
+            businessKey: AUTH_REFRESH_BUSINESS_KEY,
+            trigger: 'auto',
+            event: 'failure',
+            attempt: state.autoAttempts,
+            consecutiveFailures: state.consecutiveFailures,
+            paused: state.paused,
+        });
+        throw lastError;
+    }
+
+    authRefreshGuard.recordFailure(new Error('Refresh token failed: no candidates succeeded'));
     throw new Error('Refresh token failed: no candidates succeeded');
 };
 
@@ -104,7 +169,7 @@ api.interceptors.response.use(
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
                 }).then(token => {
-                    originalRequest.headers['Authorization'] = 'Bearer ' + token;
+                    originalRequest.headers.Authorization = 'Bearer ' + token;
                     return api(originalRequest);
                 }).catch(err => {
                     return Promise.reject(err);
@@ -122,17 +187,20 @@ api.interceptors.response.use(
                 }
 
                 // 调用刷新 Token 接口
-                const { token, refreshToken: newRefreshToken } = await tryRefreshToken(refreshToken);
+                const {
+                    token,
+                    refreshToken: newRefreshToken,
+                } = await tryRefreshToken(refreshToken);
 
-                // 保存新的 Token
-                await SecureStorage.saveToken(token);
+                // 保存新的 Token（同步内存状态 + 安全存储）
+                await useAuthStore.getState().updateToken(token);
                 if (newRefreshToken) {
-                    await SecureStorage.saveRefreshToken(newRefreshToken);
+                    await useAuthStore.getState().updateRefreshToken(newRefreshToken);
                 }
 
                 // 更新请求头
-                api.defaults.headers.common['Authorization'] = 'Bearer ' + token;
-                originalRequest.headers['Authorization'] = 'Bearer ' + token;
+                api.defaults.headers.common.Authorization = 'Bearer ' + token;
+                originalRequest.headers.Authorization = 'Bearer ' + token;
 
                 processQueue(null, token);
                 isRefreshing = false;
@@ -169,7 +237,11 @@ api.interceptors.response.use(
 // API 接口
 export const authApi = {
     login: (data: { phone: string; code?: string; password?: string; type?: 'code' | 'password' }) => api.post('/auth/login', data),
-    sendCode: (phone: string) => api.post('/auth/send-code', { phone }),
+    sendCode: (
+        phone: string,
+        purpose: 'login' | 'register' | 'merchant_withdraw' | 'merchant_bank_bind' | 'identity_apply' = 'login',
+        captchaToken?: string,
+    ) => api.post('/auth/send-code', { phone, purpose, captchaToken }),
     register: (data: { phone: string; code: string; nickname?: string }) =>
         api.post('/auth/register', data),
 };
@@ -259,6 +331,21 @@ export const chatApi = {
     getMessages: (conversationId: string, page = 1, pageSize = 20) =>
         api.get<any>('/chat/messages', { params: { conversationId, page, pageSize } }),
     getUnreadCount: () => api.get<any>('/chat/unread-count'),
+};
+
+// Tinode helper endpoints
+export const tinodeApi = {
+    // Maps app user identifier (id/publicId) -> tinode user topic id like `usrXXXX`.
+    getTinodeUserId: (userIdentifier: number | string) => api.get<any>(`/tinode/userid/${userIdentifier}`),
+    // Backward-compatible alias.
+    getUserId: (userIdentifier: number | string) => api.get<any>(`/tinode/userid/${userIdentifier}`),
+    clearTopicMessages: (topic: string) =>
+        api.delete<any>(`/tinode/topic/${encodeURIComponent(topic)}/messages`),
+};
+
+export const reportApi = {
+    submitChatReport: (data: { topic: string; reason: string; partner?: string }) =>
+        api.post<any>('/reports/chat', data),
 };
 
 export const materialShopApi = {
@@ -377,4 +464,23 @@ export const inspirationApi = {
         api.get<any>(`/inspiration/${id}/comments`, { params }),
     createComment: (id: number, content: string) =>
         api.post<any>(`/inspiration/${id}/comments`, { content }),
+};
+
+// ========== 用户设置 ==========
+export const userSettingsApi = {
+    changePassword: (data: { oldPassword?: string; newPassword: string }) =>
+        api.post('/user/change-password', data),
+    changePhone: (data: { newPhone: string; code: string }) =>
+        api.post('/user/change-phone', data),
+    deleteAccount: (data: { code: string }) =>
+        api.post('/user/delete-account', data),
+    getVerification: () => api.get<any>('/user/verification'),
+    submitVerification: (data: any) => api.post('/user/verification', data),
+    getDevices: () => api.get<any>('/user/devices'),
+    removeDevice: (id: number) => api.delete(`/user/devices/${id}`),
+    removeAllDevices: () => api.delete('/user/devices'),
+    getSettings: () => api.get<any>('/user/settings'),
+    updateSettings: (data: any) => api.put('/user/settings', data),
+    submitFeedback: (data: { type: string; content: string; contact?: string; images?: string }) =>
+        api.post('/user/feedback', data),
 };

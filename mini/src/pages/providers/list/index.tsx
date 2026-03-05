@@ -1,72 +1,104 @@
-import Taro, { useReachBottom, useRouter } from '@tarojs/taro';
+import Taro, { usePullDownRefresh, useReachBottom, useRouter } from '@tarojs/taro';
 import { View } from '@tarojs/components';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+
 import { Card } from '@/components/Card';
-import { ListItem } from '@/components/ListItem';
 import { Empty } from '@/components/Empty';
+import { Input } from '@/components/Input';
+import { ListItem } from '@/components/ListItem';
 import { Skeleton } from '@/components/Skeleton';
 import { Tabs } from '@/components/Tabs';
 import { listProviders, type ProviderListItem, type ProviderType } from '@/services/providers';
-import { Input } from '@/components/Input';
 import { useAuthStore } from '@/store/auth';
+import { showErrorToast } from '@/utils/error';
+
+const normalizeProviderType = (value?: string): ProviderType => {
+  if (value === 'company' || value === '2') {
+    return 'company';
+  }
+  if (value === 'foreman' || value === '3') {
+    return 'foreman';
+  }
+  return 'designer';
+};
 
 export default function ProviderList() {
   const router = useRouter();
   const auth = useAuthStore();
-  const [activeTab, setActiveTab] = useState<string>(router.params.type || 'designer');
+  const [activeTab, setActiveTab] = useState<ProviderType>(normalizeProviderType(router.params.type));
   const [providers, setProviders] = useState<ProviderListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState('');
+  const requestIdRef = useRef(0);
+  const skipSearchFirstRunRef = useRef(true);
 
   const providerTypes = [
     { label: '设计师', value: 'designer' },
     { label: '装修公司', value: 'company' },
-    { label: '工长', value: 'foreman' }
+    { label: '工长', value: 'foreman' },
   ];
 
   const fetchProviders = async (reset = false) => {
-    if (loading && !reset) return;
+    if (loading && !reset) {
+      return;
+    }
 
     setLoading(true);
     const currentPage = reset ? 1 : page;
+    const requestId = Date.now();
+    requestIdRef.current = requestId;
 
     try {
       const data = await listProviders({
         page: currentPage,
         pageSize: 10,
-        type: activeTab as ProviderType,
-        keyword: search
+        type: activeTab,
+        keyword: search.trim(),
       });
+
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
 
       const newList = data.list || [];
       if (reset) {
         setProviders(newList);
       } else {
-        setProviders(prev => [...prev, ...newList]);
+        setProviders((prev) => [...prev, ...newList]);
       }
 
       setHasMore(newList.length === 10);
       setPage(currentPage + 1);
     } catch (err) {
-      Taro.showToast({ title: err instanceof Error ? err.message : '加载失败', icon: 'none' });
+      showErrorToast(err, '加载失败');
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) {
+        setLoading(false);
+      }
     }
   };
-
   useEffect(() => {
     fetchProviders(true);
-  }, [activeTab]);
-
-  // Debounce search
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (skipSearchFirstRunRef.current) {
+      skipSearchFirstRunRef.current = false;
+      return;
+    }
+
     const timer = setTimeout(() => {
       fetchProviders(true);
-    }, 500);
+    }, 350);
     return () => clearTimeout(timer);
-  }, [search]);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  usePullDownRefresh(() => {
+    fetchProviders(true).finally(() => {
+      Taro.stopPullDownRefresh();
+    });
+  });
 
   useReachBottom(() => {
     if (hasMore && !loading) {
@@ -76,32 +108,44 @@ export default function ProviderList() {
 
   const handleCardClick = (id: number) => {
     Taro.navigateTo({
-      url: `/pages/providers/detail/index?id=${id}&type=${activeTab}`
+      url: `/pages/providers/detail/index?id=${id}&type=${activeTab}`,
     });
   };
 
-  const handleBookingEntry = () => {
-    if (auth.token) {
-      Taro.navigateTo({ url: '/pages/proposals/list/index' });
+  const handleEmptyAction = () => {
+    if (search.trim()) {
+      setSearch('');
       return;
     }
+
+    if (auth.token) {
+      Taro.switchTab({ url: '/pages/home/index' });
+      return;
+    }
+
     Taro.navigateTo({ url: '/pages/profile/index' });
   };
+
+  const emptyActionText = search.trim()
+    ? '清空搜索'
+    : auth.token
+      ? '返回首页'
+      : '去登录';
 
   return (
     <View className="page bg-gray-50 min-h-screen">
       <View className="sticky top-0 z-10 bg-white shadow-sm">
         <View className="p-md">
-          <Input 
-            value={search} 
-            onChange={setSearch} 
-            placeholder="搜索服务商..." 
+          <Input
+            value={search}
+            onChange={setSearch}
+            placeholder="搜索服务商..."
           />
         </View>
-        <Tabs 
-          options={providerTypes} 
-          value={activeTab} 
-          onChange={(val) => setActiveTab(val as string)} 
+        <Tabs
+          options={providerTypes}
+          value={activeTab}
+          onChange={(val) => setActiveTab(val as ProviderType)}
         />
       </View>
 
@@ -115,7 +159,7 @@ export default function ProviderList() {
         ) : providers.length === 0 ? (
           <Empty
             description="暂无服务商"
-            action={{ text: '查看我的方案', onClick: handleBookingEntry }}
+            action={{ text: emptyActionText, onClick: handleEmptyAction }}
           />
         ) : (
           providers.map((provider) => (

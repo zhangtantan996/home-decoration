@@ -12,29 +12,31 @@ import {
     StatusBar,
     Platform,
     ActivityIndicator,
-    Alert,
     Modal,
     Pressable,
     Keyboard,
     Animated,
+    KeyboardAvoidingView,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import {
     ArrowLeft,
     Star,
-    MapPin,
-    Calendar,
     Home,
     Ruler,
     DollarSign,
     Phone,
-    FileText,
     ChevronDown,
     Check,
     X,
+    User,
+    FileText,
+    MapPin,
+    Calendar,
     CheckCircle,
 } from 'lucide-react-native';
 import { bookingApi } from '../services/api';
+import { useToast } from '../components/Toast';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -42,6 +44,11 @@ import { RootStackParamList } from '../navigation/AppNavigator';
 
 type BookingScreenRouteProp = RouteProp<RootStackParamList, 'Booking'>;
 type BookingScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+interface BookingScreenProps {
+    route: BookingScreenRouteProp;
+    navigation: BookingScreenNavigationProp;
+}
 
 // 装修类型选项
 const RENOVATION_TYPES = [
@@ -98,9 +105,8 @@ const maskPhone = (phone: string): string => {
     return phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
 };
 
-const BookingScreen = () => {
-    const navigation = useNavigation<BookingScreenNavigationProp>();
-    const route = useRoute<BookingScreenRouteProp>();
+const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
+    const { showAlert } = useToast();
 
     // Navigation passes { provider: DesignerObject, providerType: 'designer' }
     const params = route.params || {};
@@ -287,15 +293,17 @@ const BookingScreen = () => {
             const bookingData = result?.data || result;
 
             // 跳转到付款页面（使用 replace 避免返回到此页面）
-            navigation.replace('Payment', {
-                bookingId: bookingData.id,
-                amount: bookingData.intentFee || 99,
-                providerName: provider.name,
-            });
+            setTimeout(() => {
+                navigation.replace('Payment', {
+                    bookingId: bookingData.id,
+                    amount: bookingData.intentFee || 99,
+                    providerName: provider.name,
+                });
+            }, 2000);
         } catch (error: any) {
-            console.error('Booking Error:', error.response?.data || error.message);
+            console.error('Submit booking error:', error);
             const errorMessage = error.response?.data?.message || error.message || '请稍后重试';
-            Alert.alert('预约失败', typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
+            showAlert('预约失败', typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
         } finally {
             setIsSubmitting(false);
         }

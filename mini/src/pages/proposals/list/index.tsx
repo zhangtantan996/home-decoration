@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text } from '@tarojs/components';
+import { Text, View } from '@tarojs/components';
 import Taro, { usePullDownRefresh, useReachBottom } from '@tarojs/taro';
+
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
-import { Tag } from '@/components/Tag';
 import { Skeleton } from '@/components/Skeleton';
+import { Tag } from '@/components/Tag';
+import { getProposalStatus } from '@/constants/status';
 import { listProposals, type ProposalItem } from '@/services/proposals';
 import { useAuthStore } from '@/store/auth';
+import { showErrorToast } from '@/utils/error';
 
 const ProposalList: React.FC = () => {
   const auth = useAuthStore();
@@ -23,49 +26,45 @@ const ProposalList: React.FC = () => {
       Taro.stopPullDownRefresh();
       return;
     }
-    if (loading && !reset) return;
-    
+
+    if (loading && !reset) {
+      return;
+    }
+
     setLoading(true);
     const currentPage = reset ? 1 : page;
-    
+
     try {
       const res = await listProposals(currentPage, 10);
       const newList = res.list || [];
-      
+
       if (reset) {
         setList(newList);
       } else {
-        setList(prev => [...prev, ...newList]);
+        setList((prev) => [...prev, ...newList]);
       }
-      
+
       setHasMore(newList.length === 10);
       setPage(currentPage + 1);
     } catch (error) {
-      console.error(error);
-      Taro.showToast({ title: '加载失败', icon: 'none' });
+      showErrorToast(error, '加载失败');
     } finally {
       setLoading(false);
       Taro.stopPullDownRefresh();
     }
   };
-
   useEffect(() => {
     fetchList(true);
-  }, [auth.token]);
-
-  useEffect(() => {
-    if (!auth.token) {
-      setList([]);
-      setHasMore(false);
-    }
-  }, [auth.token]);
+  }, [auth.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   usePullDownRefresh(() => {
     fetchList(true);
   });
-  
+
   useReachBottom(() => {
-    if (hasMore) fetchList();
+    if (hasMore && !loading) {
+      fetchList();
+    }
   });
 
   const handleDetail = (id: number) => {
@@ -74,20 +73,13 @@ const ProposalList: React.FC = () => {
     });
   };
 
-  const getStatusConfig = (status: number) => {
-    switch(status) {
-      case 0: return { label: '待确认', variant: 'warning' as const };
-      case 1: return { label: '已接受', variant: 'success' as const };
-      case 2: return { label: '已拒绝', variant: 'error' as const };
-      case 3: return { label: '修改中', variant: 'brand' as const };
-      default: return { label: '未知状态', variant: 'default' as const };
-    }
-  };
-
   return (
     <View className="page bg-gray-50 min-h-screen p-md">
       {!auth.token ? (
-        <Empty description="登录后查看设计方案" />
+        <Empty
+          description="登录后查看设计方案"
+          action={{ text: '去登录', onClick: () => Taro.navigateTo({ url: '/pages/profile/index' }) }}
+        />
       ) : loading && list.length === 0 ? (
         <View>
           <View className="mb-md"><Skeleton height={200} /></View>
@@ -95,7 +87,7 @@ const ProposalList: React.FC = () => {
         </View>
       ) : list.length > 0 ? (
         list.map((item) => {
-          const status = getStatusConfig(item.status);
+          const status = getProposalStatus(item.status);
           const totalFee = (item.designFee || 0) + (item.constructionFee || 0) + (item.materialFee || 0);
 
           return (
@@ -128,9 +120,9 @@ const ProposalList: React.FC = () => {
       ) : (
         <Empty description="暂无设计方案" />
       )}
-      
+
       {loading && list.length > 0 && (
-         <View className="text-center text-gray-400 text-xs py-md">加载中...</View>
+        <View className="text-center text-gray-400 text-xs py-md">加载中...</View>
       )}
     </View>
   );

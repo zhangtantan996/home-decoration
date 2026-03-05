@@ -37,6 +37,7 @@ func UploadFile(c *gin.Context) {
 		".pdf": true, ".doc": true, ".docx": true, ".xls": true, ".xlsx": true,
 		".ppt": true, ".pptx": true, ".txt": true, ".zip": true, ".rar": true,
 		".mp4": true, ".mov": true, ".avi": true,
+		".m4a": true, ".aac": true, ".mp3": true, ".wav": true, ".ogg": true,
 	}
 
 	if !allowedExts[ext] {

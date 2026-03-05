@@ -29,6 +29,7 @@ export const Button: React.FC<ButtonProps> = ({
   openType,
   onGetPhoneNumber
 }) => {
+  const isWeapp = process.env.TARO_ENV === 'weapp';
   const classes = buildClassName('btn', [
     `btn--${variant}`,
     `btn--${size}`,
@@ -42,8 +43,7 @@ export const Button: React.FC<ButtonProps> = ({
       disabled={disabled}
       loading={loading}
       onClick={onClick}
-      openType={openType}
-      onGetPhoneNumber={onGetPhoneNumber}
+      {...(isWeapp ? { openType, onGetPhoneNumber } : {})}
     >
       {children}
     </TaroButton>

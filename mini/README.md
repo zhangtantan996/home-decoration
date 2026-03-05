@@ -1,28 +1,53 @@
 # Home Decoration Mini Program (Taro + React)
 
 ## Quick start
-1. 使用 Node.js 20+，进入 `mini/` 目录执行依赖安装：
+1. Use Node.js 20+ and install dependencies in `mini/`:
    ```bash
    npm install
    ```
-2. 确认后端已配置微信小程序 AppID/Secret，并启动 API (`/api/v1` 可访问)。
-3. 本地开发：
+2. Ensure backend API is reachable and WeChat mini program app credentials are configured.
+3. Start local compile:
    ```bash
    npm run dev:weapp
    ```
-   将生成的 `dist/` 目录导入微信开发者工具（填入实际小程序 AppID）。
+4. Import the `mini/` project into WeChat DevTools.
 
-## 环境变量
-- `TARO_APP_API_BASE`：API 基地址，dev 默认 `http://localhost:8080/api/v1`。
-- 微信后台需开启获取手机号能力，前端登录流程使用：
-  - `POST /auth/wechat/mini/login`（wx.login code）
-  - `POST /auth/wechat/mini/bind-phone`（bindToken + wx.getPhoneNumber code）
+## Environment variables
+- `TARO_APP_API_BASE`: API base URL, default `http://localhost:8080/api/v1`.
+- `TARO_APP_H5_URL`: H5 base URL used by the weapp WebView container. In real devices/production it should be an **HTTPS domain** and must be whitelisted in WeChat mini program settings.
 
-## 目录要点
-- `src/pages/*`：5 个 Tab 壳子（首页/灵感/进度/消息/我的）
-- `src/services/auth.ts`：微信登录/绑定 API 封装
-- `src/utils/request.ts`：Taro.request 包装，内置 refresh token 逻辑
-- `src/store/auth.ts`：Zustand 持久化存储 token + 用户信息
-- `src/theme/*`：品牌色、圆角、基础样式
+Example:
+```bash
+TARO_APP_API_BASE=http://192.168.1.10:8080/api/v1 npm run dev:weapp
+```
 
-后续可按 `docs/WECHAT_MINIPROGRAM_DEV_PLAN.md` 逐步填充业务页面与 IM/支付。
+## Icon and quality gates
+- Tab icons are generated from vector sources:
+  - SVG source: `src/assets/tab/svg/*.svg`
+  - Output PNG: `src/assets/tab/*.png`
+- Generate tab icons manually:
+  ```bash
+  npm run gen:tab-icons
+  ```
+- Emoji gate (must pass):
+  ```bash
+  npm run check:no-emoji
+  ```
+
+## Development scripts
+- `npm run lint`: ESLint + emoji gate
+- `npm run build:weapp`: generate tab icons + compile weapp bundle
+- `npm run dev:h5`: build H5 bundle (hash router) and watch on `http://localhost:5176`
+- `npm run build:h5`: generate tab icons + compile h5 bundle
+- `npm run format`: format source styles and TS files
+
+## Core flow (phase 1)
+- WeChat login + bind phone
+- Browse providers → booking
+- Proposal confirmation/rejection
+- Pending payment + order/project detail
+- Notifications and profile center essentials
+- Inspiration list/detail + social interactions (like/favorite/comment)
+
+## Phase 2 (not included in phase 1)
+- Full IM conversation and chat room capabilities

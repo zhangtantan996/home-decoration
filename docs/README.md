@@ -2,7 +2,7 @@
 
 > 装修设计一体化平台 - 完整文档索引
 
-**最后更新**: 2026-01-07 | **文档总数**: 31
+**最后更新**: 2026-02-07 | **文档总数**: 77
 
 ---
 
@@ -60,13 +60,14 @@
 
 ---
 
-### 🚀 部署运维（12 篇）
+### 🚀 部署运维（13 篇）
 
 | 文档 | 说明 | 更新时间 |
 |-----|------|---------|
 | [DEPLOYMENT_GUIDE_ZH.md](DEPLOYMENT_GUIDE_ZH.md) | 完整部署指南（Git→测试→生产） | 2025-12 ⭐ |
 | [全栈部署指南.md](全栈部署指南.md) | Docker 配置和架构总览 | 2025-12 |
 | [版本发布与回滚指南.md](版本发布与回滚指南.md) | Git Tag 发布流程 | 2025-12 |
+| [IDENTITY_PHASE1_RELEASE_SOP.md](IDENTITY_PHASE1_RELEASE_SOP.md) | 多身份一期上线与回滚执行SOP | 2026-02 |
 | [GIT_WORKFLOW.md](GIT_WORKFLOW.md) | 双分支工作流（dev/main） | 2025-12 |
 | [LOCAL_RUN_GUIDE.md](LOCAL_RUN_GUIDE.md) | 本地 Docker 快速启动 | 2025-11 |
 | [LOCAL_DEV_GUIDE.md](LOCAL_DEV_GUIDE.md) | 极速开发模式（Air+Vite） | 2025-12 |
@@ -89,12 +90,13 @@
 
 ---
 
-### 🧪 测试与质量（2 篇）
+### 🧪 测试与质量（3 篇）
 
 | 文档 | 说明 | 更新时间 |
 |-----|------|---------|
 | [P0_TEST_PLAN.md](P0_TEST_PLAN.md) | P0 核心功能测试计划 | 2025-12 |
 | [LOCAL_TESTING_GUIDE.md](LOCAL_TESTING_GUIDE.md) | 本地测试环境配置 | 2025-12 |
+| [IDENTITY_PHASE1_AUTOMATED_ACCEPTANCE.md](IDENTITY_PHASE1_AUTOMATED_ACCEPTANCE.md) | 多身份一期自动化验收执行指南 | 2026-02 |
 
 ---
 
@@ -139,12 +141,14 @@
 1. [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) - 部署前检查
 2. [DEPLOYMENT_GUIDE_ZH.md](DEPLOYMENT_GUIDE_ZH.md) - 完整部署流程
 3. [版本发布与回滚指南.md](版本发布与回滚指南.md) - 版本管理
-4. [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md) - 安全检查
+4. [IDENTITY_PHASE1_RELEASE_SOP.md](IDENTITY_PHASE1_RELEASE_SOP.md) - 多身份一期上线与回滚SOP
+5. [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md) - 安全检查
 
 ### 场景 5: 编写测试
 1. [P0_TEST_PLAN.md](P0_TEST_PLAN.md) - 参考测试用例
 2. [LOCAL_TESTING_GUIDE.md](LOCAL_TESTING_GUIDE.md) - 配置测试环境
-3. [BUSINESS_FLOW.md](BUSINESS_FLOW.md) - 理解测试场景
+3. [IDENTITY_PHASE1_AUTOMATED_ACCEPTANCE.md](IDENTITY_PHASE1_AUTOMATED_ACCEPTANCE.md) - 多身份一期自动化验收
+4. [BUSINESS_FLOW.md](BUSINESS_FLOW.md) - 理解测试场景
 
 ---
 

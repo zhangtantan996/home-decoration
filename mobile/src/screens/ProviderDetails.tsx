@@ -53,6 +53,57 @@ const translateWorkType = (workType: string): string => {
     return map[workType] || workType;
 };
 
+const parseStringArray = (raw?: string): string[] => {
+    const text = String(raw || '').trim();
+    if (!text) {
+        return [];
+    }
+    if (text.startsWith('[') && text.endsWith(']')) {
+        try {
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+                return parsed.map((item) => String(item).trim()).filter(Boolean);
+            }
+        } catch {
+            // fallback
+        }
+    }
+    if (text.includes(' · ')) {
+        return text.split(' · ').map((item) => item.trim()).filter(Boolean);
+    }
+    return text.split(',').map((item) => item.trim()).filter(Boolean);
+};
+
+const buildPricingLabel = (pricingJson: unknown, fallbackMin: number | string, fallbackMax: number | string, fallbackUnit?: string): string => {
+    const raw = String(pricingJson || '').trim();
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw) as Record<string, unknown>;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                const segments = Object.entries(parsed)
+                    .map(([key, value]) => {
+                        const amount = Number(value);
+                        if (!Number.isFinite(amount) || amount <= 0) {
+                            return '';
+                        }
+                        return `${key}:¥${amount}`;
+                    })
+                    .filter(Boolean);
+                if (segments.length > 0) {
+                    return segments.join(' / ');
+                }
+            }
+        } catch {
+            // use fallback range
+        }
+    }
+
+    const min = Number(fallbackMin);
+    const max = Number(fallbackMax);
+    const suffix = fallbackUnit ? String(fallbackUnit).replace('平米', 'm²') : '/m²';
+    return `¥${min}-${max}${suffix}`;
+};
+
 
 // ========== Parallax Scroll Layout ==========
 const ParallaxScrollLayout = ({
@@ -207,6 +258,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
         name: user.nickname || initialDesigner.name || '设计师',
         avatar: user.avatar || initialDesigner.avatar,
         userId: provider.userId || user.id || initialDesigner.userId,
+        userPublicId: user.publicId || provider.userPublicId || initialDesigner.publicId,
         coverImage: provider.coverImage || provider.avatar || initialDesigner.avatar,
         rating: provider.rating || initialDesigner.rating || 5.0,
         reviewCount: detail?.reviewCount || provider.reviewCount || initialDesigner.reviewCount || 0,
@@ -218,9 +270,18 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
         completedCnt: provider.completedCnt || 0,
         followersCount: provider.followersCount || 0,
         serviceIntro: provider.serviceIntro || '专注现代简约、北欧风格设计，擅长空间规划与色彩搭配。提供从平面布局、效果图设计到软装搭配的全流程服务。',
+        highlightTags: parseStringArray(provider.highlightTags),
+        graduateSchool: provider.graduateSchool || '',
+        designPhilosophy: provider.designPhilosophy || '',
         priceMin: provider.priceMin || 300,
         priceMax: provider.priceMax || 500,
+        pricingLabel: buildPricingLabel(provider.pricingJson, provider.priceMin || 300, provider.priceMax || 500, '/m²'),
     };
+
+    const serviceAreaTags = (() => {
+        const parsed = parseStringArray(provider.serviceArea);
+        return parsed.length > 0 ? parsed : ['雁塔区', '曲江新区', '高新区'];
+    })();
 
 
 
@@ -285,7 +346,8 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            partnerID: String(provider.userId || displayData.userId),
+                            partnerID: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
+                            partnerIdentifier: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
                             name: displayData.name,
                             avatar: displayData.avatar,
                         })}
@@ -368,7 +430,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.magazineSection}>
                 <Text style={styles.magSectionTitle}>服务区域</Text>
                 <View style={styles.tagsContainer}>
-                    {(provider.serviceArea ? JSON.parse(provider.serviceArea) : ['雁塔区', '曲江新区', '高新区']).map((area: string, idx: number) => (
+                    {serviceAreaTags.map((area: string, idx: number) => (
                         <View key={idx} style={styles.tag}>
                             <Text style={styles.tagText}>{area}</Text>
                         </View>
@@ -381,7 +443,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                 <Text style={styles.magSectionTitle}>设计理念</Text>
 
                 <Text style={styles.magDescText} numberOfLines={isIntroExpanded ? undefined : 3}>
-                    {displayData.serviceIntro}
+                    {displayData.designPhilosophy || displayData.serviceIntro}
                 </Text>
                 {displayData.serviceIntro && displayData.serviceIntro.length > 60 && (
                     <TouchableOpacity
@@ -394,9 +456,23 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     </TouchableOpacity>
                 )}
 
+                {displayData.graduateSchool ? (
+                    <Text style={[styles.magDescText, { marginTop: 8 }]}>毕业院校：{displayData.graduateSchool}</Text>
+                ) : null}
+
+                {displayData.highlightTags.length > 0 ? (
+                    <View style={styles.tagsContainer}>
+                        {displayData.highlightTags.map((tag: string, idx: number) => (
+                            <View key={`${tag}-${idx}`} style={styles.tag}>
+                                <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                        ))}
+                    </View>
+                ) : null}
+
                 <View style={styles.priceTagRow}>
                     <Text style={styles.priceTagLabel}>设计费</Text>
-                    <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}/m²</Text>
+                    <Text style={styles.priceTagValue}>{displayData.pricingLabel}</Text>
                 </View>
             </View>
 
@@ -564,17 +640,24 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
         name: user.nickname || initialWorker.name || '工人',
         avatar: user.avatar || initialWorker.avatar,
         userId: provider.userId || user.id || initialWorker.userId,
+        userPublicId: user.publicId || provider.userPublicId || initialWorker.publicId,
         rating: provider.rating || initialWorker.rating || 5.0,
         reviewCount: detail?.reviewCount || provider.reviewCount || initialWorker.reviewCount || 0,
         yearsExperience: provider.yearsExperience || initialWorker.yearsExperience || 0,
         completedOrders: provider.completedCnt || initialWorker.completedOrders || 0,
         workTypeLabels: translateWorkType(provider.workTypes || initialWorker.workTypeLabels || '水电工'),
-        tags: initialWorker.tags || ['准时守信', '技术过硬', '收费透明'],
+        tags: parseStringArray(provider.highlightTags).length > 0 ? parseStringArray(provider.highlightTags) : (initialWorker.tags || ['准时守信', '技术过硬', '收费透明']),
         serviceIntro: provider.serviceIntro || `专注${initialWorker.workTypeLabels || '施工'}服务${initialWorker.yearsExperience || 5}年，经验丰富，做工细致。`,
         priceMin: provider.priceMin || initialWorker.priceRange?.split('-')[0] || 200,
         priceMax: provider.priceMax || initialWorker.priceRange?.split('-')[1] || 400,
         priceUnit: provider.priceUnit || initialWorker.priceUnit || '/m²',
+        pricingLabel: buildPricingLabel(provider.pricingJson, provider.priceMin || initialWorker.priceRange?.split('-')[0] || 200, provider.priceMax || initialWorker.priceRange?.split('-')[1] || 400, provider.priceUnit || initialWorker.priceUnit || '/m²'),
     };
+
+    const serviceAreaTags = (() => {
+        const parsed = parseStringArray(provider.serviceArea);
+        return parsed.length > 0 ? parsed : ['雁塔区', '曲江新区', '高新区'];
+    })();
 
     // 案例图片（优先使用API数据）
     const caseImages = cases.length > 0
@@ -651,7 +734,8 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            partnerID: String(provider.userId || displayData.userId),
+                            partnerID: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
+                            partnerIdentifier: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
                             name: displayData.name,
                             avatar: displayData.avatar,
                         })}
@@ -734,7 +818,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.magazineSection}>
                 <Text style={styles.magSectionTitle}>服务区域</Text>
                 <View style={styles.tagsContainer}>
-                    {(provider.serviceArea ? JSON.parse(provider.serviceArea) : ['雁塔区', '曲江新区', '高新区']).map((area: string, idx: number) => (
+                    {serviceAreaTags.map((area: string, idx: number) => (
                         <View key={idx} style={styles.tag}>
                             <Text style={styles.tagText}>{area}</Text>
                         </View>
@@ -758,7 +842,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
 
                 <View style={styles.priceTagRow}>
                     <Text style={styles.priceTagLabel}>施工费</Text>
-                    <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}{displayData.priceUnit?.replace('平米', 'm²') || '/m²'}</Text>
+                    <Text style={styles.priceTagValue}>{displayData.pricingLabel}</Text>
                 </View>
             </View>
 
@@ -926,6 +1010,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
         name: provider.companyName || initialCompany.name || '装修公司',
         logo: user.avatar || initialCompany.logo,
         userId: provider.userId || user.id || initialCompany.userId,
+        userPublicId: user.publicId || provider.userPublicId || initialCompany.publicId,
         rating: provider.rating || initialCompany.rating || 5.0,
         reviewCount: detail?.reviewCount || provider.reviewCount || initialCompany.reviewCount || 0,
         completedOrders: provider.completedCnt || initialCompany.completedOrders || 0,
@@ -937,7 +1022,15 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
         priceMin: provider.priceMin || 800,
         priceMax: provider.priceMax || 1500,
         priceUnit: provider.priceUnit || '/m²',
+        pricingLabel: buildPricingLabel(provider.pricingJson, provider.priceMin || 800, provider.priceMax || 1500, provider.priceUnit || '/m²'),
+        highlightTags: parseStringArray(provider.highlightTags),
+        designPhilosophy: provider.designPhilosophy || '',
     };
+
+    const serviceAreaTags = (() => {
+        const parsed = parseStringArray(provider.serviceArea);
+        return parsed.length > 0 ? parsed : ['雁塔区', '曲江新区', '高新区'];
+    })();
 
     // 案例图片（优先使用API数据）
     const caseImages = cases.length > 0
@@ -1012,7 +1105,8 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     <TouchableOpacity
                         style={styles.floatIconBtn}
                         onPress={() => navigation.navigate('ChatRoom', {
-                            partnerID: String(provider.userId || displayData.userId), // 注意: displayData 里可能没有 userId，主要靠 provider.userId
+                            partnerID: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
+                            partnerIdentifier: String(displayData.userPublicId || provider.userPublicId || provider.userId || displayData.userId),
                             name: displayData.name,
                             avatar: displayData.logo,
                         })}
@@ -1090,7 +1184,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.magazineSection}>
                 <Text style={styles.magSectionTitle}>服务区域</Text>
                 <View style={styles.tagsContainer}>
-                    {(provider.serviceArea ? JSON.parse(provider.serviceArea) : ['雁塔区', '曲江新区', '高新区']).map((area: string, idx: number) => (
+                    {serviceAreaTags.map((area: string, idx: number) => (
                         <View key={idx} style={styles.tag}>
                             <Text style={styles.tagText}>{area}</Text>
                         </View>
@@ -1104,6 +1198,19 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                 <Text style={styles.magDescText}>
                     {displayData.serviceIntro}
                 </Text>
+                {displayData.designPhilosophy ? (
+                    <Text style={[styles.magDescText, { marginTop: 8 }]}>理念说明：{displayData.designPhilosophy}</Text>
+                ) : null}
+
+                {displayData.highlightTags.length > 0 ? (
+                    <View style={styles.tagsContainer}>
+                        {displayData.highlightTags.map((tag: string, idx: number) => (
+                            <View key={`${tag}-${idx}`} style={styles.tag}>
+                                <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                        ))}
+                    </View>
+                ) : null}
 
                 <View style={{ height: 16 }} />
                 <Text style={[styles.magSectionTitle, { fontSize: 16 }]}>资质认证</Text>
@@ -1118,7 +1225,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
 
                 <View style={styles.priceTagRow}>
                     <Text style={styles.priceTagLabel}>参考均价</Text>
-                    <Text style={styles.priceTagValue}>¥{displayData.priceMin}-{displayData.priceMax}{displayData.priceUnit?.replace('平米', 'm²')}</Text>
+                    <Text style={styles.priceTagValue}>{displayData.pricingLabel}</Text>
                 </View>
             </View>
 

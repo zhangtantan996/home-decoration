@@ -454,6 +454,7 @@ docker-compose -f docker-compose.local.yml logs db
 # Android设备需要配置adb端口转发
 adb reverse tcp:8080 tcp:8080
 adb reverse tcp:8081 tcp:8081
+adb reverse tcp:6060 tcp:6060
 ```
 
 ---

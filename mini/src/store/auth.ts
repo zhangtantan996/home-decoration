@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-import { storage } from '@/utils/storage';
+import { taroStorage } from '@/utils/storage';
 
 export interface AuthUser {
   id: number;
@@ -9,6 +9,8 @@ export interface AuthUser {
   nickname: string;
   avatar?: string;
   userType: number;
+  activeRole?: string;
+  providerSubType?: 'designer' | 'company' | 'foreman';
 }
 
 interface AuthState {
@@ -16,19 +18,13 @@ interface AuthState {
   refreshToken: string;
   expiresIn: number;
   user?: AuthUser;
+  tinodeToken: string;
+  tinodeError: string;
   setAuth: (payload: { token: string; refreshToken: string; expiresIn: number; user?: AuthUser }) => void;
+  updateTinodeAuth: (payload: { tinodeToken?: string; tinodeError?: string }) => void;
   clear: () => void;
   updateUser: (user: Partial<AuthUser>) => void;
 }
-
-const taroStorage = {
-  getItem: (name: string) => {
-    const value = storage.get<string>(name);
-    return value ?? null;
-  },
-  setItem: (name: string, value: string) => storage.set(name, value),
-  removeItem: (name: string) => storage.remove(name)
-};
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -37,6 +33,8 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: '',
       expiresIn: 0,
       user: undefined,
+      tinodeToken: '',
+      tinodeError: '',
       setAuth: ({ token, refreshToken, expiresIn, user }) =>
         set((state) => ({
           token,
@@ -44,7 +42,20 @@ export const useAuthStore = create<AuthState>()(
           expiresIn,
           user: user ?? state.user
         })),
-      clear: () => set({ token: '', refreshToken: '', expiresIn: 0, user: undefined }),
+      updateTinodeAuth: ({ tinodeToken, tinodeError }) =>
+        set((state) => ({
+          tinodeToken: typeof tinodeToken === 'string' ? tinodeToken : state.tinodeToken,
+          tinodeError: typeof tinodeError === 'string' ? tinodeError : state.tinodeError,
+        })),
+      clear: () =>
+        set({
+          token: '',
+          refreshToken: '',
+          expiresIn: 0,
+          user: undefined,
+          tinodeToken: '',
+          tinodeError: '',
+        }),
       updateUser: (user) => set({ user: { ...get().user, ...user } as AuthUser })
     }),
     {

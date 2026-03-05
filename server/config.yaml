@@ -35,3 +35,28 @@ wechat_mini:
   app_secret: "${WECHAT_MINI_SECRET}"
   bind_token_expire_minutes: 5
 
+wechat_h5:
+  app_id: "${WECHAT_H5_APP_ID}"
+  app_secret: "${WECHAT_H5_APP_SECRET}"
+  bind_token_expire_minutes: 5
+  oauth_scope: "${WECHAT_H5_OAUTH_SCOPE}"
+  state_signing_secret: "${WECHAT_H5_STATE_SIGNING_SECRET}"
+
+sms:
+  provider: "${SMS_PROVIDER}" # mock | aliyun
+  access_key_id: "${SMS_ACCESS_KEY_ID}"
+  access_key_secret: "${SMS_ACCESS_KEY_SECRET}"
+  sign_name: "${SMS_SIGN_NAME}"
+  template_code: "${SMS_TEMPLATE_CODE}"
+  region_id: "${SMS_REGION_ID}"
+  debug_bypass: false
+  risk_enabled: true
+  code_max_attempts: 5
+  phone_daily_limit: 10
+  ip_daily_limit: 20
+  captcha_enabled: false
+  captcha_provider: "turnstile"
+  captcha_verify_url: ""
+  captcha_secret_key: ""
+  captcha_timeout_ms: 3000
+  captcha_min_score: 0.0

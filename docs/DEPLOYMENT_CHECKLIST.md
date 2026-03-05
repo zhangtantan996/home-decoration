@@ -4,6 +4,9 @@
 **预计时间**: 30-45 分钟
 **难度**: ⭐⭐ (中等)
 
+> 阿里云（托管 RDS + 托管 Redis + Tinode + 阿里云短信）推荐落地文档：`deploy/ALIYUN_PRODUCTION_LAUNCH.md`  
+> 对应 Docker Compose：`deploy/docker-compose.prod.managed.yml`（容器绑定 `127.0.0.1:8888`，建议宿主机 Nginx 负责 80/443）。
+
 ---
 
 ## 📋 准备工作

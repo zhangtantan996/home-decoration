@@ -1,28 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text } from '@tarojs/components';
+import { Text, View } from '@tarojs/components';
 import Taro, { usePullDownRefresh, useReachBottom } from '@tarojs/taro';
+
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
+import { getOrderStatus, getOrderTypeLabel } from '@/constants/status';
 import { listOrders, type OrderItem } from '@/services/orders';
 import { useAuthStore } from '@/store/auth';
-
-const getStatusConfig = (status: number) => {
-  switch (status) {
-    case 0:
-      return { label: '待付款', variant: 'warning' as const };
-    case 1:
-      return { label: '进行中', variant: 'brand' as const };
-    case 2:
-      return { label: '已完成', variant: 'success' as const };
-    case 3:
-      return { label: '已取消', variant: 'default' as const };
-    default:
-      return { label: '未知状态', variant: 'default' as const };
-  }
-};
+import { showErrorToast } from '@/utils/error';
 
 const OrdersList: React.FC = () => {
   const auth = useAuthStore();
@@ -37,6 +25,7 @@ const OrdersList: React.FC = () => {
       setList([]);
       setLoading(false);
       setHasMore(false);
+      setInit(false);
       Taro.stopPullDownRefresh();
       return;
     }
@@ -49,14 +38,13 @@ const OrdersList: React.FC = () => {
       if (reset) {
         setList(newItems);
       } else {
-        setList(prev => [...prev, ...newItems]);
+        setList((prev) => [...prev, ...newItems]);
       }
 
       setHasMore(newItems.length === 10);
       setPage(pageNum + 1);
     } catch (error) {
-      console.error(error);
-      Taro.showToast({ title: '加载失败', icon: 'none' });
+      showErrorToast(error, '加载失败');
     } finally {
       setLoading(false);
       setInit(false);
@@ -79,20 +67,33 @@ const OrdersList: React.FC = () => {
     }
   });
 
-  const handlePay = (event: { stopPropagation: () => void }) => {
-    event.stopPropagation();
-    Taro.navigateTo({ url: '/pages/orders/pending/index' });
-  };
-
-  const handleCardClick = (id: number) => {
+  const openOrderDetail = (id: number) => {
     Taro.navigateTo({ url: `/pages/orders/detail/index?id=${id}` });
   };
 
-  return (
+  const handlePay = (event: { stopPropagation: () => void }, item: OrderItem) => {
+    event.stopPropagation();
 
+    if (item.orderType === 'design') {
+      Taro.navigateTo({ url: '/pages/orders/pending/index?type=design_fee' });
+      return;
+    }
+
+    if (item.orderType === 'construction') {
+      Taro.navigateTo({ url: '/pages/orders/pending/index?type=construction_fee' });
+      return;
+    }
+
+    openOrderDetail(item.id);
+  };
+
+  return (
     <View className="page bg-gray-50 min-h-screen p-md">
       {!auth.token ? (
-        <Empty description="登录后查看订单" />
+        <Empty
+          description="登录后查看订单"
+          action={{ text: '去登录', onClick: () => Taro.navigateTo({ url: '/pages/profile/index' }) }}
+        />
       ) : init && loading ? (
         <View>
           <Skeleton height={180} className="mb-md" />
@@ -102,16 +103,15 @@ const OrdersList: React.FC = () => {
       ) : list.length > 0 ? (
         <View>
           {list.map((item) => {
-            const statusConfig = getStatusConfig(item.status);
+            const statusConfig = getOrderStatus(item.status);
             return (
               <Card
                 key={item.id}
                 title={`订单号 ${item.orderNo}`}
                 extra={<Tag variant={statusConfig.variant}>{statusConfig.label}</Tag>}
                 className="mb-md"
-                onClick={() => handleCardClick(item.id)}
+                onClick={() => openOrderDetail(item.id)}
               >
-
                 <View className="flex flex-col gap-sm mt-sm">
                   <View className="flex justify-between text-sm">
                     <Text className="text-gray-500">下单时间</Text>
@@ -119,34 +119,35 @@ const OrdersList: React.FC = () => {
                   </View>
                   <View className="flex justify-between text-sm">
                     <Text className="text-gray-500">订单类型</Text>
-                    <Text>{item.orderType || '普通订单'}</Text>
+                    <Text>{getOrderTypeLabel(item.orderType)}</Text>
                   </View>
 
                   <View className="mt-sm pt-sm border-t border-gray-100 flex justify-between items-center">
                     <View>
-                      <Text className="text-gray-500 text-sm mr-xs">总金额</Text>
-                      <Text className="text-lg font-bold">¥{item.totalAmount.toLocaleString()}</Text>
+                      <Text className="text-gray-500 text-sm mr-xs">应付金额</Text>
+                      <Text className="text-lg font-bold">¥{Math.max(0, item.totalAmount - item.discount).toLocaleString()}</Text>
                     </View>
-                    {item.status === 0 && (
-                      <Button size="sm" variant="primary" onClick={handlePay}>
+                    {item.status === 0 ? (
+                      <Button size="sm" variant="primary" onClick={(event) => handlePay(event, item)}>
                         去支付
                       </Button>
-                    )}
+                    ) : null}
                   </View>
                 </View>
               </Card>
             );
           })}
-          {loading && (
+
+          {loading ? (
             <View className="p-md text-center text-gray-500 text-sm">
               加载中...
             </View>
-          )}
-          {!hasMore && list.length > 0 && (
+          ) : null}
+          {!hasMore && list.length > 0 ? (
             <View className="p-md text-center text-gray-400 text-sm">
               没有更多了
             </View>
-          )}
+          ) : null}
         </View>
       ) : (
         <Empty description="暂无订单" />
@@ -156,4 +157,3 @@ const OrdersList: React.FC = () => {
 };
 
 export default OrdersList;
-

@@ -88,9 +88,11 @@ const LoginScreen: React.FC = () => {
         if (!canSendCode) return;
 
         try {
-            await authApi.sendCode(phone);
+            const res: any = await authApi.sendCode(phone, 'login');
             setCountdown(60);
-            showToast({ message: '验证码已发送 (测试码: 123456)', type: 'success' });
+            const debugCode = __DEV__ ? res?.data?.debugCode : undefined;
+            const suffix = debugCode ? ` (测试码: ${debugCode})` : '';
+            showToast({ message: `验证码已发送${suffix}`, type: 'success' });
         } catch (error: any) {
             showToast({ message: error.response?.data?.message || '发送失败，请稍后重试', type: 'error' });
         }
@@ -142,13 +144,22 @@ const LoginScreen: React.FC = () => {
 
             // 注意：api.ts 拦截器返回的是完整响应对象 { code: 0, data: {...} }
             const res = result as any;
-            const { token, refreshToken, user } = res.data || {};
+            const { token, refreshToken, tinodeToken, tinodeError, user } = res.data || {};
 
             if (!token || !user) {
                 throw new Error('登录返回数据异常');
             }
 
-            setAuth(token, refreshToken || '', user);
+            // 检查 Tinode token 生成是否失败
+            if (tinodeError) {
+                console.warn('[Tinode] Token generation failed:', tinodeError);
+                showToast({
+                    message: '聊天功能暂时不可用，其他功能正常使用',
+                    type: 'warning'
+                });
+            }
+
+            setAuth(token, refreshToken || '', tinodeToken || '', user);
         } catch (error: any) {
             setErrorMessage(error.response?.data?.message || '登录失败，请检查输入');
         } finally {

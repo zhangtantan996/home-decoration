@@ -1,4 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: 'Request Booking',
-  backgroundColor: '#FFFFFF'
+  navigationBarTitleText: '预约服务',
+  backgroundColor: '#FFFFFF',
 });

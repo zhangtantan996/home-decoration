@@ -4,7 +4,7 @@
 截止当前，商家中心已完成核心 MVP 功能开发，实现了服务商从入驻到业务管理的基础闭环。
 
 ### ✅ 已完成功能
-- **入驻流程**: 支持独立设计师/装修公司多角色入驻，包含多步骤表单、资质上传及状态查询。
+- **入驻流程**: 支持设计师（个人/公司）/工长（个人/公司）/装修公司/主材商四类入驻，包含多步骤表单、资质上传及状态查询。
 - **认证体系**: 基于 JWT 的商家独立登录体系，含短信验证码流程（目前为 mock）。
 - **业务管理**:
   - **工作台**: 核心数据看板（预约、订单、财务概览）。
@@ -19,6 +19,59 @@
   - 全局及敏感接口限流 (`RateLimit`).
   - 基础数据权限隔离 (基于 `provider_id`).
   - 入驻信息严格校验 (前端正则+后端验证).
+
+### 🔄 本次统一改版范围（2026-03，v1.5.0）
+- 商家入口合并为「我要入驻」，登录与入驻双主路径统一。
+- 服务商申请升级为 `role + entityType` 模型，兼容旧 `applicantType`。
+- `merchant/login` 新增结构化引导：`nextAction=APPLY|PENDING|RESUBMIT|CHANGE_ROLE`。
+- 引入主材商独立通道：
+  - 申请：`POST /api/v1/material-shop/apply`
+  - 状态：`GET /api/v1/material-shop/apply/:phone/status`
+  - 重提：`POST /api/v1/material-shop/apply/:id/resubmit`
+  - 中心：`/api/v1/material-shop/me` + 商品 CRUD
+- 单一商家身份策略落地：已有商家身份时返回 `CHANGE_ROLE`，并新增变更申请单接口。
+- C 端字段兼容同步：`workTypes` 支持 JSON 数组/逗号串双格式解析。
+
+### 🔄 本次全量缺口补齐（2026-03，v1.5.1）
+- 服务商入驻字段升级为强校验：
+  - `avatar` 必填；
+  - 设计师 `yearsExperience` 必填（1-50）；
+  - `portfolioCases[].description` 必填（1-5000）。
+- 主材商入驻基础资料强制必填：
+  - `contactName/contactPhone/businessHours/address`；
+  - `contactPhone` 必须合法。
+- 商家资料中心补齐扩展字段维护：
+  - `highlightTags`、`pricing`、`graduateSchool`、`designPhilosophy`。
+- C 端详情消费补齐：
+  - `highlightTags`、`pricingJson`、`graduateSchool`、`designPhilosophy` 空值隐藏展示。
+- 资质核验适配层接入：
+  - `ID_CARD_VERIFY_PROVIDER`、`LICENSE_VERIFY_PROVIDER`（默认 `manual`），保留人工审核主流程。
+
+### 🔄 本次条款合规留痕补齐（2026-03，v1.5.2）
+- 商家入驻新增线上必勾选条款：
+  - 《平台入驻协议（线上勾选版）》
+  - 《平台规则》
+  - 《隐私与数据处理条款》
+- 服务商与主材商申请接口新增 `legalAcceptance` 入参并强校验：
+  - `accepted=true`
+  - 三个版本字段不能为空（长度 1-64）
+- 申请表新增留痕字段：
+  - `legal_acceptance_json`
+  - `legal_accepted_at`
+  - `legal_accept_source=merchant_web`
+
+### 🔄 本次补齐范围（2026-02）
+- 商家入口页补齐“工长/项目经理”入驻入口，修复“可登录不可入驻”断层。
+- 商家注册流程新增 `foreman` 类型及施工导向字段（`workTypes`、`yearsExperience`）。
+- 后端 `merchant/apply` 与 `merchant/apply/:id/resubmit` 增加 `foreman` 枚举支持。
+- 审核通过映射补齐：`foreman -> provider_type=3, sub_type=foreman`，并回填 `providers.work_types`。
+
+### ✅ 阶段1执行状态（2026-02-09）
+- 后端契约统一完成：`dashboard/login/info/service-settings` 已对齐最新 Web 消费结构。
+- 商家 Web 已切换到统一 API 解包与强类型调用，减少页面级响应解析分叉。
+- 工长经营闭环完成：入驻、登录、设置、案例菜单（“施工案例”）可达。
+- 财务高风险操作补齐：提现与银行卡新增均接入短信验证码字段与交互。
+- 文档同步进行中：以 `API_CHANGES.md` 与本报告作为阶段1落地基线。
 
 ---
 

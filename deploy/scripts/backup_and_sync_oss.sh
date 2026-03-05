@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# One-shot backup pipeline:
+# 1) dump PostgreSQL databases to ./backups/*.sql.gz
+# 2) archive uploads to ./backups/uploads_*.tar.gz
+# 3) sync all backups to OSS
+#
+# Required env:
+#   DATABASE_HOST, DATABASE_PORT, DATABASE_USER, DATABASE_PASSWORD
+#   OSS_BUCKET
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${DEPLOY_DIR}"
+
+bash "${SCRIPT_DIR}/backup_postgres.sh"
+bash "${SCRIPT_DIR}/backup_uploads.sh"
+bash "${SCRIPT_DIR}/oss_sync_backups.sh"
+
+echo "All backup steps completed."

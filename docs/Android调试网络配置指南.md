@@ -48,8 +48,8 @@ adb reverse tcp:8080 tcp:8080
 {
   "scripts": {
     "android": "npm run android:setup && react-native run-android",
-    "android:setup": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8080 tcp:8080",
-    "android:clean": "npm run android:setup && react-native run-android --reset-cache"
+    "android:setup": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8080 tcp:8080 && adb reverse tcp:6060 tcp:6060 || echo 'Warning: adb reverse failed. Make sure device is connected.'",
+    "android:clean": "npm run android:setup && cd android && ./gradlew clean && cd .. && react-native run-android"
   }
 }
 ```

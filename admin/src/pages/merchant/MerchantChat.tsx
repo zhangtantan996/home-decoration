@@ -1,160 +1,941 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Card, Spin, Alert } from 'antd';
-import { MessageOutlined } from '@ant-design/icons';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { Card, Spin, Alert, Layout, List, Avatar, Input, Button, Typography, Empty, Badge, Image, Upload, message, Descriptions, Dropdown, Slider } from 'antd';
+import { MessageOutlined, SendOutlined, UserOutlined, SyncOutlined, PictureOutlined, PaperClipOutlined, InfoCircleOutlined, SearchOutlined, UpOutlined, DownOutlined, CloseOutlined, CopyOutlined, PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
+import TinodeService from '../../services/TinodeService';
 import merchantApi from '../../services/merchantApi';
-import { TUILogin } from '@tencentcloud/tui-core-lite';
-import TUIChatEngine, { TUIConversationService, TUIStore, StoreName } from '@tencentcloud/chat-uikit-engine-lite';
-import { UIKitProvider, ConversationList, Chat, ChatHeader, MessageList, MessageInput } from '@tencentcloud/chat-uikit-react';
-import '../../styles/tuikit-theme.css';
-import TIM from '@tencentcloud/chat';
+import { useSearchParams } from 'react-router-dom';
+import dayjs from 'dayjs';
 
-interface IMCredentials {
-    sdkAppId: number;
-    userId: string;
-    userSig: string;
-}
+const { Sider, Content, Header } = Layout;
+const { Text, Title } = Typography;
+const { TextArea } = Input;
 
-// 单例，避免重复创建
-let globalChatInstance: any = null;
-let globalLoginPromise: Promise<any> | null = null;
+const formatTime = (ts: string | number) => {
+    if (!ts) return '';
+    return dayjs(ts).format('HH:mm');
+};
+
+const formatDate = (ts: string | number) => {
+    if (!ts) return '';
+    const date = dayjs(ts);
+    const now = dayjs();
+    if (date.isSame(now, 'day')) return date.format('HH:mm');
+    if (date.isSame(now.subtract(1, 'day'), 'day')) return '昨天';
+    return date.format('M月D日');
+};
+
+const formatBytes = (bytes?: number): string => {
+    if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes <= 0) return '未知大小';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let n = bytes;
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+        n /= 1024;
+        i += 1;
+    }
+    const fixed = i === 0 ? 0 : n < 10 ? 1 : 0;
+    return `${n.toFixed(fixed)} ${units[i]}`;
+};
+
+const isAllowedAbsoluteUrl = (value: string): boolean => {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+};
+
+const resolveSafeAttachmentUrl = (rawUrl: string, backendOrigin: string): string => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return '';
+
+    if (trimmed.startsWith('/')) {
+        if (!backendOrigin) return trimmed;
+        const candidate = `${backendOrigin}${trimmed}`;
+        return isAllowedAbsoluteUrl(candidate) ? candidate : '';
+    }
+
+    return isAllowedAbsoluteUrl(trimmed) ? trimmed : '';
+};
+
+const isSafeInlineImageDataUrl = (value: string): boolean => {
+    return /^data:image\/(png|jpe?g|gif|webp|bmp|avif);base64,/i.test(value);
+};
+
+const CustomAudioPlayer: React.FC<{ audioUrl: string; duration?: number }> = ({ audioUrl, duration: initialDuration }) => {
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(initialDuration ? initialDuration / 1000 : 0);
+
+    const togglePlay = () => {
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+        }
+    };
+
+    const handleSeek = (value: number) => {
+        if (audioRef.current) {
+            audioRef.current.currentTime = value;
+            setCurrentTime(value);
+        }
+    };
+
+    const formatAudioTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '8px 12px',
+            background: '#fff',
+            border: '1px solid #e8e8e8',
+            borderRadius: 6,
+            minWidth: 260,
+            maxWidth: 320
+        }}>
+            <audio
+                ref={audioRef}
+                src={audioUrl}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                onLoadedMetadata={(e) => {
+                    const d = e.currentTarget.duration;
+                    if (Number.isFinite(d)) {
+                         setDuration(d);
+                    }
+                }}
+                onEnded={() => {
+                    setIsPlaying(false);
+                    setCurrentTime(0);
+                }}
+            />
+            <Button
+                type="text"
+                shape="circle"
+                icon={isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={togglePlay}
+                style={{ marginRight: 8, color: '#D4AF37' }}
+            />
+            <div style={{ flex: 1, marginRight: 12 }}>
+                <Slider
+                    min={0}
+                    max={duration || 100}
+                    value={currentTime}
+                    onChange={handleSeek}
+                    tooltip={{ formatter: (val) => formatAudioTime(val || 0) }}
+                    style={{ margin: '6px 0' }}
+                    trackStyle={{ backgroundColor: '#D4AF37' }}
+                    handleStyle={{ borderColor: '#D4AF37' }}
+                />
+            </div>
+            <span style={{ fontSize: 12, color: '#999', width: 35, textAlign: 'right', userSelect: 'none' }}>
+                {formatAudioTime(currentTime)}
+            </span>
+        </div>
+    );
+};
 
 const MerchantChat: React.FC = () => {
+    const [searchParams] = useSearchParams();
+
     const [loading, setLoading] = useState(true);
-    const [credentials, setCredentials] = useState<IMCredentials | null>(null);
+    const [tinodeToken, setTinodeToken] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [isConnected, setIsConnected] = useState(false);
+    const [myUserId, setMyUserId] = useState<string | null>(null);
+    
+    const [conversations, setConversations] = useState<any[]>([]);
+    const [activeTopicName, setActiveTopicName] = useState<string | null>(null);
+    const [activeTopic, setActiveTopic] = useState<any | null>(null);
+    const [messages, setMessages] = useState<any[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [inputValue, setInputValue] = useState('');
+    const [sending, setSending] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [peerTyping, setPeerTyping] = useState(false);
+    const [showInfoPanel, setShowInfoPanel] = useState(false);
+    const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<number[]>([]);
+    const [currentSearchIndex, setCurrentSearchIndex] = useState(-1);
+    
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<any>(null);
+    const prefetchedPreviewTopicsRef = useRef<Set<string>>(new Set());
+    const openConversationSeqRef = useRef(0);
+    const conversationsRefreshScheduledRef = useRef(false);
+    const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastTypingSentRef = useRef<number>(0);
+    const autoOpenedIdentifierRef = useRef<string>('');
 
-    const chatRef = useRef<any>(null);
-    const initCalledRef = useRef(false);
+    const initialChatIdentifier = useMemo(() => {
+        const value =
+            searchParams.get('userIdentifier') ||
+            searchParams.get('publicId') ||
+            searchParams.get('userId');
+        return typeof value === 'string' ? value.trim() : '';
+    }, [searchParams]);
 
-    // 获取 IM 凭证
+    // Chat UX: only auto-scroll when user is already near the bottom.
+    // When switching conversations, always jump to the latest message.
+    const isNearBottomRef = useRef(true);
+    const forceScrollToBottomRef = useRef(false);
+
+    const handleMessagesScroll = useCallback(() => {
+        const el = messagesContainerRef.current;
+        if (!el) return;
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        // Allow a small threshold to account for rounding and padding.
+        isNearBottomRef.current = distance <= 120;
+    }, []);
+
+    const scrollToBottom = useCallback(() => {
+        // Use `auto` (no animation) to avoid a jarring top-to-bottom scroll on conversation switch.
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+    }, []);
+
+    useLayoutEffect(() => {
+        // While loading, the message list may not be rendered; don't attempt to scroll.
+        if (loadingHistory) return;
+        if (!messagesEndRef.current) return;
+
+        const shouldForce = forceScrollToBottomRef.current;
+        const shouldAuto = isNearBottomRef.current;
+        if (!shouldForce && !shouldAuto) return;
+
+        scrollToBottom();
+        forceScrollToBottomRef.current = false;
+        isNearBottomRef.current = true;
+    }, [messages, loadingHistory, scrollToBottom]);
+
+    const requestNotificationPermission = useCallback(async () => {
+        if (!('Notification' in window)) {
+            console.warn('Browser does not support notifications');
+            return false;
+        }
+
+        if (Notification.permission === 'granted') {
+            setNotificationsEnabled(true);
+            return true;
+        }
+
+        if (Notification.permission !== 'denied') {
+            const permission = await Notification.requestPermission();
+            const granted = permission === 'granted';
+            setNotificationsEnabled(granted);
+            return granted;
+        }
+
+        return false;
+    }, []);
+
+    const showNotification = useCallback((title: string, body: string, topicName: string) => {
+        if (!notificationsEnabled || document.hasFocus()) {
+            return;
+        }
+
+        try {
+            const notification = new Notification(title, {
+                body,
+                icon: '/favicon.ico',
+                tag: topicName,
+                requireInteraction: false,
+            });
+
+            notification.onclick = () => {
+                window.focus();
+                notification.close();
+            };
+
+            setTimeout(() => notification.close(), 5000);
+        } catch (error) {
+            console.error('Failed to show notification:', error);
+        }
+    }, [notificationsEnabled]);
+
+    const handleSearch = useCallback((query: string) => {
+        setSearchQuery(query);
+        
+        if (!query.trim()) {
+            setSearchResults([]);
+            setCurrentSearchIndex(-1);
+            return;
+        }
+
+        const lowerQuery = query.toLowerCase();
+        const results: number[] = [];
+        
+        messages.forEach((msg, index) => {
+            const content = typeof msg.content === 'string' 
+                ? msg.content 
+                : msg.content?.txt || '';
+            if (content.toLowerCase().includes(lowerQuery)) {
+                results.push(index);
+            }
+        });
+
+        setSearchResults(results);
+        setCurrentSearchIndex(results.length > 0 ? 0 : -1);
+    }, [messages]);
+
+    const navigateSearch = useCallback((direction: 'next' | 'prev') => {
+        if (searchResults.length === 0) return;
+
+        let newIndex = currentSearchIndex;
+        if (direction === 'next') {
+            newIndex = (currentSearchIndex + 1) % searchResults.length;
+        } else {
+            newIndex = currentSearchIndex <= 0 ? searchResults.length - 1 : currentSearchIndex - 1;
+        }
+
+        setCurrentSearchIndex(newIndex);
+    }, [searchResults, currentSearchIndex]);
+
     useEffect(() => {
-        const fetchCredentials = async () => {
+        try {
+            const token = localStorage.getItem('merchant_tinode_token');
+            if (!token) {
+                setError('缺少 Tinode 登录凭证，请重新登录商家端。');
+                setLoading(false);
+                return;
+            }
+            setTinodeToken(token);
+        } catch {
+            setError('读取登录凭证失败，请刷新页面重试。');
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        // Cleanup topic handlers on unmount.
+        return () => {
+            if (activeTopic) {
+                activeTopic.onData = undefined;
+            }
+        };
+    }, [activeTopic]);
+
+    // Tinode init sequence intentionally runs on token changes only.
+    useEffect(() => {
+        if (!tinodeToken) return;
+
+        const initTinode = async () => {
             try {
-                setLoading(true);
-                const res = await merchantApi.getIMUserSig() as any;
-                if (res.code === 0 && res.data) {
-                    setCredentials(res.data);
+                const ok = await TinodeService.init(tinodeToken);
+                if (!ok) {
+                    if (TinodeService.isConnected()) {
+                         setIsLoggedIn(true);
+                    } else {
+                        throw new Error('Tinode init failed');
+                    }
                 } else {
-                    setError(res.message || 'IM 服务未配置');
+                    setIsLoggedIn(true);
                 }
+                setIsConnected(TinodeService.isConnected());
+                setMyUserId(TinodeService.getCurrentUserID());
+                // Ensure list is loaded after `me` subscription is ready.
+                await loadConversations();
             } catch (err: any) {
-                setError('获取 IM 凭证失败: ' + (err.message || '网络错误'));
+                console.error('[MerchantChat] Tinode init failed', err);
+                setError(`Tinode 初始化失败: ${err.message || '未知错误'}`);
             } finally {
                 setLoading(false);
             }
         };
-        fetchCredentials();
+
+        initTinode();
+        
+        requestNotificationPermission();
+        
+        const onConnected = () => {
+            setIsConnected(true);
+            setMyUserId(TinodeService.getCurrentUserID());
+        };
+        const onDisconnected = () => {
+            setIsConnected(false);
+            setIsLoggedIn(false);
+            setMyUserId(null);
+        };
+
+        TinodeService.on('connected', onConnected);
+        TinodeService.on('disconnected', onDisconnected);
+        
+        return () => {
+            TinodeService.removeListener('connected', onConnected);
+            TinodeService.removeListener('disconnected', onDisconnected);
+            TinodeService.disconnect();
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tinodeToken]);
+
+    const loadConversations = useCallback(async (opts?: { showSpinner?: boolean }) => {
+        const showSpinner = opts?.showSpinner === true;
+        if (showSpinner) setRefreshing(true);
+        try {
+            const list = await TinodeService.getConversationList();
+            setConversations([...list]);
+
+            // After a page reload, Tinode has subs but lacks per-topic message cache.
+            // Prefetch latest message for a small batch so the preview can show real text.
+            const candidates = list
+                .filter((t: any) => typeof t?.name === 'string')
+                .filter((t: any) => {
+                    const name = t.name as string;
+                    if (prefetchedPreviewTopicsRef.current.has(name)) return false;
+                    const latest = typeof t?.latestMessage === 'function' ? t.latestMessage() : undefined;
+                    return !latest?.content;
+                })
+                .slice(0, 20);
+
+            if (candidates.length > 0) {
+                candidates.forEach((t: any) => {
+                    if (typeof t?.name === 'string') {
+                        prefetchedPreviewTopicsRef.current.add(t.name);
+                    }
+                });
+                await Promise.allSettled(candidates.map((t: any) => TinodeService.prefetchLastMessage(t.name)));
+                const updated = await TinodeService.getConversationList();
+                setConversations([...updated]);
+            }
+        } catch (e) {
+            console.error('Failed to load conversations', e);
+        } finally {
+            if (showSpinner) setRefreshing(false);
+        }
     }, []);
 
-    // 初始化 TUIKit
+    const scheduleLoadConversations = useCallback(() => {
+        if (conversationsRefreshScheduledRef.current) return;
+        conversationsRefreshScheduledRef.current = true;
+        // Coalesce bursts of events (pres/contact-update/topic data) into a single refresh.
+        setTimeout(() => {
+            conversationsRefreshScheduledRef.current = false;
+            void loadConversations();
+        }, 0);
+    }, [loadConversations]);
+
     useEffect(() => {
-        if (!credentials || initCalledRef.current) return;
-        initCalledRef.current = true;
+        if (isLoggedIn) {
+            void loadConversations();
+        }
+    }, [isLoggedIn, loadConversations]);
 
-        const initChat = async () => {
-            try {
-                if (globalChatInstance) {
-                    chatRef.current = globalChatInstance;
-                    if (globalLoginPromise) {
-                        await globalLoginPromise;
-                    }
-                    setIsLoggedIn(true);
-                    return;
-                }
-
-                globalLoginPromise = TUILogin.login({
-                    SDKAppID: Number(credentials.sdkAppId),
-                    userID: String(credentials.userId),
-                    userSig: credentials.userSig,
-                });
-                await globalLoginPromise;
-
-                const chat = TUILogin.getContext().chat;
-                if (!chat) {
-                    throw new Error('TUILogin 未返回 chat 实例');
-                }
-
-                await TUIChatEngine.login({
-                    chat,
-                    SDKAppID: Number(credentials.sdkAppId),
-                    userID: String(credentials.userId),
-                    userSig: credentials.userSig,
-                });
-
-                globalChatInstance = chat;
-                chatRef.current = chat;
-
-                // 拉取会话并切换首个会话，确保列表/聊天窗有上下文
-                try {
-                    const res = await chat.getConversationList();
-                    const list = res?.data?.conversationList || [];
-                    if (list.length > 0 && list[0].conversationID) {
-                        TUIStore.update(StoreName.CONV, 'conversationList', list);
-                        TUIConversationService.switchConversation(list[0].conversationID);
-                    }
-                } catch (convErr) {
-                    console.warn('[MerchantChat] 拉取会话失败', convErr);
-                }
-
-                // 监听消息事件 (使用 TIM SDK 的事件)
-                try {
-                    chat.on(TIM.EVENT.MESSAGE_RECEIVED, (event: any) => {
-                        console.log('[MerchantChat] MESSAGE_RECEIVED', event);
-                    });
-                    chat.on(TIM.EVENT.SDK_READY, () => {
-                        console.log('[MerchantChat] SDK_READY');
-                    });
-                } catch (eventErr) {
-                    console.warn('[MerchantChat] 事件监听失败', eventErr);
-                }
-
-                setIsLoggedIn(true);
-            } catch (err: any) {
-                if (err?.message?.toLowerCase?.().includes('duplicate') || err?.message?.includes?.('already logged')) {
-                    setIsLoggedIn(true);
-                    return;
-                }
-                console.error('[MerchantChat] init failed', err);
-                setError(`IM 初始化失败: ${err.message || '未知错误'}`);
+    useEffect(() => {
+        // Use `me.onPres` (emitted by TinodeService as `pres`) to refresh conversation list.
+        const handlePres = (pres: any) => {
+            if (pres?.what === 'msg' && typeof pres?.src === 'string') {
+                // Prefetch last message for preview.
+                TinodeService.prefetchLastMessage(pres.src).finally(scheduleLoadConversations);
+                return;
+            }
+            if (pres?.what === 'read' || pres?.what === 'recv') {
+                scheduleLoadConversations();
             }
         };
 
-        initChat();
-    }, [credentials]);
+        // Tinode SDK reliably fires `me.onContactUpdate` when subs (unread/touched/preview) change.
+        // This is critical for real-time conversation list updates without manual refresh.
+        const handleContactUpdate = (payload: any) => {
+            const what = payload?.what;
+            const topicName = payload?.cont?.name;
+            if (what === 'msg' && typeof topicName === 'string') {
+                TinodeService.prefetchLastMessage(topicName).finally(scheduleLoadConversations);
+                return;
+            }
+            scheduleLoadConversations();
+        };
+
+        TinodeService.on('pres', handlePres);
+        TinodeService.on('contact-update', handleContactUpdate);
+        return () => {
+            TinodeService.removeListener('pres', handlePres);
+            TinodeService.removeListener('contact-update', handleContactUpdate);
+        };
+    }, [scheduleLoadConversations]);
+
+    useEffect(() => {
+        // After a full page reload, `me.subscribe({get:{sub}})` delivers the subscription list
+        // asynchronously; refresh the UI when Tinode finishes processing it.
+        const handleSubsUpdated = () => {
+            // Next tick: ensure SDK caches are updated before reading `me.contacts`.
+            scheduleLoadConversations();
+        };
+
+        TinodeService.on('subs-updated', handleSubsUpdated);
+        return () => {
+            TinodeService.removeListener('subs-updated', handleSubsUpdated);
+        };
+    }, [scheduleLoadConversations]);
+
+    const asTinodeTopic = useCallback((value: unknown): string | null => {
+        if (typeof value !== 'string') return null;
+        const topic = value.trim();
+        if (!topic) return null;
+        if (topic.startsWith('usr') || topic.startsWith('p2p') || topic.startsWith('grp')) {
+            return topic;
+        }
+        return null;
+    }, []);
+
+    const resolveTinodeTopicByIdentifier = useCallback(async (userIdentifier: string): Promise<string> => {
+        const directTopic = asTinodeTopic(userIdentifier);
+        if (directTopic) return directTopic;
+
+        const res: any = await merchantApi.getTinodeUserId(userIdentifier);
+        const tinodeUserId = res?.data?.tinodeUserId;
+        if (typeof tinodeUserId === 'string' && tinodeUserId.trim()) {
+            return tinodeUserId.trim();
+        }
+
+        throw new Error('Invalid Tinode user id response');
+    }, [asTinodeTopic]);
+
+    const handleSelectConversation = useCallback(async (topicName: string) => {
+        if (topicName === activeTopicName) return;
+
+        const prevTopic = activeTopic;
+        const prevTopicName = activeTopicName;
+        const prevMessages = messages;
+        const requestId = ++openConversationSeqRef.current;
+
+        // Conversation switch should always land on the latest message.
+        forceScrollToBottomRef.current = true;
+        isNearBottomRef.current = true;
+
+        setActiveTopicName(topicName);
+        setLoadingHistory(true);
+        
+        try {
+            const topic = await TinodeService.openConversation(topicName);
+
+            if (requestId !== openConversationSeqRef.current) {
+                topic.leaveDelayed?.(false, 500);
+                return;
+            }
+
+            if (prevTopic) {
+                prevTopic.onData = undefined;
+                prevTopic.onInfo = undefined;
+                prevTopic.onPres = undefined;
+            }
+
+            // Real-time updates: use topic-level onData which is called after Tinode routes data into caches.
+            topic.onData = (data: any) => {
+                if (typeof data?.seq !== 'number') return;
+                
+                const isFromPeer = data.from && myUserId && data.from !== myUserId;
+                if (isFromPeer) {
+                    const peerInfo = getPeerInfo(topic);
+                    const contentText = typeof data.content === 'string' 
+                        ? data.content 
+                        : data.content?.txt || '新消息';
+                    showNotification(peerInfo.fn, contentText, topic.name);
+                }
+                
+                setMessages(TinodeService.listMessages(topic));
+                // Mark as read while the chat is open.
+                topic.noteRead?.();
+                scheduleLoadConversations();
+            };
+
+            topic.onInfo = (info: any) => {
+                console.log('[MerchantChat] Info event:', info);
+                if (info?.what === 'kp') {
+                    setPeerTyping(true);
+                    if (typingTimeoutRef.current) {
+                        clearTimeout(typingTimeoutRef.current);
+                    }
+                    typingTimeoutRef.current = setTimeout(() => {
+                        setPeerTyping(false);
+                    }, 3000);
+                }
+            };
+
+            topic.onPres = (pres: any) => {
+                console.log('[MerchantChat] Presence event:', pres);
+                if (pres?.what === 'on' || pres?.what === 'off') {
+                    setActiveTopic({ ...topic });
+                }
+            };
+
+            setActiveTopic(topic);
+            const msgs = TinodeService.listMessages(topic);
+            setMessages(msgs);
+
+            // Mark existing history as read right after opening.
+            topic.noteRead?.();
+        } catch (e) {
+            console.error('Failed to open conversation', e);
+
+            if (requestId === openConversationSeqRef.current) {
+                forceScrollToBottomRef.current = false;
+                setActiveTopicName(prevTopicName);
+                setActiveTopic(prevTopic);
+                setMessages(prevMessages);
+            }
+        } finally {
+            if (requestId === openConversationSeqRef.current) {
+                setLoadingHistory(false);
+            }
+        }
+    }, [activeTopic, activeTopicName, messages, myUserId, scheduleLoadConversations, showNotification]);
+
+    useEffect(() => {
+        if (!isLoggedIn || !initialChatIdentifier) return;
+        if (autoOpenedIdentifierRef.current === initialChatIdentifier) return;
+
+        // Avoid repeated auto-open attempts for the same URL parameter on re-renders.
+        autoOpenedIdentifierRef.current = initialChatIdentifier;
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const topicName = await resolveTinodeTopicByIdentifier(initialChatIdentifier);
+                if (cancelled) return;
+
+                await handleSelectConversation(topicName);
+                scheduleLoadConversations();
+            } catch (e) {
+                if (cancelled) return;
+                console.error('[MerchantChat] Failed to open conversation by identifier:', e);
+                message.warning('无法按用户标识定位会话，请稍后重试');
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [handleSelectConversation, initialChatIdentifier, isLoggedIn, resolveTinodeTopicByIdentifier, scheduleLoadConversations]);
+
+    const handleTyping = () => {
+        if (!activeTopic || !activeTopic.isSubscribed?.()) return;
+
+        const now = Date.now();
+        if (now - lastTypingSentRef.current > 3000) {
+            activeTopic.noteKeyPress?.();
+            lastTypingSentRef.current = now;
+        }
+    };
+
+    const handleSend = async () => {
+        if (!inputValue.trim() || !activeTopicName) return;
+        
+        setSending(true);
+        try {
+            await TinodeService.sendText(activeTopicName, inputValue);
+            setInputValue('');
+            
+             if (activeTopic) {
+                  const msgs = TinodeService.listMessages(activeTopic);
+                  setMessages(msgs);
+             }
+
+            scheduleLoadConversations();
+            
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 0);
+        } catch (e) {
+            console.error('Failed to send message', e);
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const [uploading, setUploading] = useState(false);
+    const [uploadingFile, setUploadingFile] = useState(false);
+
+    const handleImageUpload = async (file: File) => {
+        if (!file.type.startsWith('image/')) {
+            message.error('请选择图片文件');
+            return false;
+        }
+        
+        if (file.size > 5 * 1024 * 1024) {
+            message.error('图片大小不能超过 5MB');
+            return false;
+        }
+        
+        if (!activeTopicName) {
+            message.error('请先选择一个会话');
+            return false;
+        }
+        
+        setUploading(true);
+        try {
+            await TinodeService.sendImageMessage(activeTopicName, file);
+            message.success('图片已发送');
+            
+            if (activeTopic) {
+                const msgs = TinodeService.listMessages(activeTopic);
+                setMessages(msgs);
+            }
+            
+            scheduleLoadConversations();
+        } catch (error) {
+            console.error('Image send failed:', error);
+            message.error('图片发送失败，请重试');
+        } finally {
+            setUploading(false);
+        }
+        
+        return false;
+    };
+
+    const handleFileUpload = async (file: File) => {
+        if (file.type && file.type.startsWith('image/')) {
+            message.error('图片请使用图片按钮上传');
+            return false;
+        }
+
+        // Keep consistent with backend merchant upload limit (20MB).
+        if (file.size > 20 * 1024 * 1024) {
+            message.error('文件大小不能超过 20MB');
+            return false;
+        }
+
+        if (!activeTopicName) {
+            message.error('请先选择一个会话');
+            return false;
+        }
+
+        setUploadingFile(true);
+        try {
+            await TinodeService.sendFileMessage(activeTopicName, file);
+            message.success('文件已发送');
+
+            if (activeTopic) {
+                const msgs = TinodeService.listMessages(activeTopic);
+                setMessages(msgs);
+            }
+
+            scheduleLoadConversations();
+        } catch (error) {
+            console.error('File send failed:', error);
+            message.error('文件发送失败，请重试');
+        } finally {
+            setUploadingFile(false);
+        }
+
+        return false;
+    };
+
+    const getPeerInfo = (topic: any) => {
+        // `p2pPeerDesc()` may return undefined (e.g. non-P2P topics or missing sub cache).
+        const peerDesc = typeof topic?.p2pPeerDesc === 'function' ? topic.p2pPeerDesc() : undefined;
+        const pub = peerDesc?.public || topic?.public || {};
+        const identifierCandidate = pub?.publicId ?? pub?.userPublicId;
+        const userIdentifier =
+            typeof identifierCandidate === 'number'
+                ? String(identifierCandidate)
+                : typeof identifierCandidate === 'string' && identifierCandidate.trim()
+                    ? identifierCandidate.trim()
+                    : (typeof topic?.name === 'string' ? topic.name : '');
+        const fn = pub?.fn || userIdentifier || '未知用户';
+        const photo = pub?.photo;
+        return { fn, photo, userIdentifier };
+    };
+
+    const renderAvatar = (photo: any, name: string) => {
+        if (photo?.data) {
+             return <Avatar src={`data:${photo.type || 'image/jpeg'};base64,${photo.data}`} />;
+        }
+        return <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#D4AF37' }} >{name.charAt(0).toUpperCase()}</Avatar>;
+    };
+
+    const copyMessageText = (content: any) => {
+        const text = typeof content === 'string' 
+            ? content 
+            : content?.txt || JSON.stringify(content);
+        
+        navigator.clipboard.writeText(text).then(() => {
+            message.success('消息已复制');
+        }).catch(() => {
+            message.error('复制失败');
+        });
+    };
+
+    const renderContent = (content: any) => {
+        if (typeof content === 'string') return content;
+        if (typeof content === 'object' && content !== null) {
+            if (Array.isArray(content.ent)) {
+                const apiUrl = typeof import.meta.env.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL : '';
+                const backendOrigin = apiUrl
+                    ? apiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
+                    : (window.location.hostname === 'localhost' ? 'http://localhost:8080' : '');
+
+                const imEnt = content.ent.find((e: any) => e?.tp === 'IM');
+                const data = imEnt?.data;
+                const raw =
+                    typeof data?.ref === 'string' && data.ref.trim()
+                        ? data.ref
+                        : (typeof data?.val === 'string' ? data.val : '');
+
+                const rawValue = typeof raw === 'string' ? raw.trim() : '';
+                if (rawValue) {
+                    const mime = typeof data?.mime === 'string' && data.mime.trim() ? data.mime : 'image/jpeg';
+
+                    const src = (() => {
+                        if (isSafeInlineImageDataUrl(rawValue)) return rawValue;
+
+                        const safeUrl = resolveSafeAttachmentUrl(rawValue, backendOrigin);
+                        if (safeUrl) return safeUrl;
+
+                        return `data:${mime};base64,${rawValue}`;
+                    })();
+
+                    const fallback =
+                        'data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22200%22%20height=%22150%22%3E%3Crect%20width=%22100%25%22%20height=%22100%25%22%20fill=%22%23f5f5f5%22/%3E%3Ctext%20x=%2250%25%22%20y=%2250%25%22%20dominant-baseline=%22middle%22%20text-anchor=%22middle%22%20fill=%22%23999%22%20font-family=%22Arial%22%20font-size=%2214%22%3EImage%20failed%3C/text%3E%3C/svg%3E';
+
+                    return (
+                        <Image
+                            src={src}
+                            alt="图片"
+                            fallback={fallback}
+                            style={{
+                                maxWidth: 200,
+                                maxHeight: 200,
+                                objectFit: 'cover',
+                                borderRadius: 4,
+                            }}
+                        />
+                    );
+                }
+
+                const exEnt = content.ent.find((e: any) => e?.tp === 'EX' && e?.data);
+                if (exEnt) {
+                    const fileData = exEnt.data;
+
+                    if (typeof fileData?.mime === 'string' && fileData.mime.startsWith('audio/')) {
+                        const rawUrl = typeof fileData?.val === 'string' && fileData.val.trim()
+                            ? fileData.val.trim()
+                            : (typeof fileData?.ref === 'string' ? fileData.ref.trim() : '');
+
+                        const audioUrl = rawUrl ? resolveSafeAttachmentUrl(rawUrl, backendOrigin) : '';
+
+                        if (audioUrl) {
+                            return <CustomAudioPlayer audioUrl={audioUrl} duration={fileData.duration} />;
+                        }
+
+                        return <Text type="secondary">音频链接不可用</Text>;
+                    }
+
+                    const rawUrl = typeof fileData?.val === 'string' && fileData.val.trim()
+                        ? fileData.val.trim()
+                        : (typeof fileData?.ref === 'string' ? fileData.ref.trim() : '');
+
+                    const href = rawUrl ? resolveSafeAttachmentUrl(rawUrl, backendOrigin) : '';
+
+                    const fileName =
+                        (typeof fileData?.name === 'string' && fileData.name.trim())
+                            ? fileData.name.trim()
+                            : (typeof content?.txt === 'string' && content.txt.trim() ? content.txt.trim() : '文件');
+
+                    const rawSize = fileData?.size;
+                    const fileSize = typeof rawSize === 'number' && Number.isFinite(rawSize) && rawSize > 0 ? Math.floor(rawSize) : undefined;
+                    const sizeText = formatBytes(fileSize);
+
+                    return (
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                                if (href) window.open(href, '_blank', 'noopener,noreferrer');
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && href) window.open(href, '_blank', 'noopener,noreferrer');
+                            }}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                padding: '10px 12px',
+                                border: '1px solid #e8e8e8',
+                                borderRadius: 6,
+                                background: '#fff',
+                                cursor: href ? 'pointer' : 'default',
+                                maxWidth: 320,
+                            }}
+                        >
+                            <div style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 8,
+                                background: '#f5f5f5',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                            }}>
+                                <PaperClipOutlined style={{ color: '#999', fontSize: 18 }} />
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{
+                                    fontWeight: 500,
+                                    color: '#333',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                }}>
+                                    {fileName}
+                                </div>
+                                <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>
+                                    {sizeText}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+            }
+
+            return content.txt || JSON.stringify(content);
+        }
+        return '【不支持的消息】';
+    };
+
+    const renderPreviewText = (content: any): string => {
+        if (typeof content === 'string') return content;
+        if (content && typeof content === 'object') {
+            if (typeof content.txt === 'string' && content.txt.trim()) {
+                return content.txt;
+            }
+            // Drafty image payload from mobile.
+            if (Array.isArray(content.ent) && content.ent.some((e: any) => e?.tp === 'IM')) {
+                return '【图片】';
+            }
+            if (Array.isArray(content.ent) && content.ent.some((e: any) => e?.tp === 'EX')) {
+                const isAudio = content.ent.some((e: any) => e?.tp === 'EX' && e?.data?.mime?.startsWith('audio/'));
+                return isAudio ? '【语音】' : '【文件】';
+            }
+        }
+        return '';
+    };
+
+    const getConversationPreview = (topic: any): string => {
+        const latest = typeof topic?.latestMessage === 'function' ? topic.latestMessage() : undefined;
+        const text = latest?.content ? renderPreviewText(latest.content) : '';
+        if (!text.trim()) return '暂无消息';
+
+        // Outgoing messages may have `from` unset (SDK routes publish ack locally).
+        const from = latest?.from;
+        const isMe = !from || (myUserId && from === myUserId);
+        return isMe ? `我：${text}` : text;
+    };
 
     if (loading) {
-        return (
-            <Card>
-                <div style={{ textAlign: 'center', padding: 60 }}>
-                    <Spin size="large" />
-                    <p style={{ marginTop: 16, color: '#666' }}>正在加载聊天服务...</p>
-                </div>
-            </Card>
-        );
-    }
-
-    if (error || !credentials) {
-        return (
-            <Card title="客户消息">
-                <Alert
-                    message="聊天服务未就绪"
-                    description={
-                        <div>
-                            <p>{error || 'IM 服务未配置'}</p>
-                            <p style={{ marginTop: 8, color: '#666' }}>
-                                请确认后台已配置 SDKAppID / SecretKey，并已开通 IM 服务。
-                            </p>
-                        </div>
-                    }
-                    type="warning"
-                    showIcon
-                />
-            </Card>
-        );
-    }
-
-    if (!isLoggedIn || !chatRef.current) {
         return (
             <Card>
                 <div style={{ textAlign: 'center', padding: 60 }}>
@@ -165,70 +946,361 @@ const MerchantChat: React.FC = () => {
         );
     }
 
+    if (error) {
+         return (
+            <Card title="客户消息">
+                <Alert
+                    message="聊天服务不可用"
+                    description={error}
+                    type="error"
+                    showIcon
+                />
+            </Card>
+        );
+    }
+
     return (
         <Card
             title={
-                <span>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
                     <MessageOutlined style={{ marginRight: 8, color: '#D4AF37' }} />
-                    客户消息
-                </span>
-            }
-            styles={{ body: { padding: 0 } }}
-        >
-            <UIKitProvider
-                key={`uikit-${credentials.userId}`}
-                chat={chatRef.current}
-                language="zh-CN"
-                theme="light"
-            >
-                <div
-                    style={{
-                        display: 'flex',
-                        height: 'calc(100vh - 140px)',
-                        borderRadius: '0 0 8px 8px',
-                        overflow: 'hidden',
-                    }}
-                >
-                    <div
-                        style={{
-                            width: 300,
-                            borderRight: '1px solid #e8e8e8',
-                            overflow: 'auto',
-                        }}
-                    >
-                        <ConversationList
-                            key={isLoggedIn ? 'logged-in' : 'not-logged-in'}
-                            onSelectConversation={(conversation: any) => {
-                                console.log('[ConversationList] 会话被点击:', conversation);
-                                if (conversation?.conversationID) {
-                                    TUIConversationService.switchConversation(conversation.conversationID);
-                                }
-                            }}
-                        />
-                    </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-                        {/* Chat 组件需要显式传递子组件 */}
-                        <Chat
-                            PlaceholderEmpty={
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    height: '100%',
-                                    color: '#999',
-                                    fontSize: 14
-                                }}>
-                                    请选择一个会话开始聊天
-                                </div>
-                            }
-                        >
-                            <ChatHeader />
-                            <MessageList />
-                            <MessageInput />
-                        </Chat>
-                    </div>
+                    <span>客户消息</span>
+                    {isConnected ? (
+                        <Badge status="success" text="已连接" style={{ marginLeft: 16 }} />
+                    ) : (
+                        <Badge status="error" text="未连接" style={{ marginLeft: 16 }} />
+                    )}
                 </div>
-            </UIKitProvider>
+            }
+            styles={{ body: { padding: 0, height: 'calc(100vh - 200px)', minHeight: '500px' } }}
+            bordered={false}
+            style={{ overflow: 'hidden' }}
+        >
+            <Layout style={{ height: '100%', background: '#fff' }}>
+                <Sider width={300} style={{ background: '#f5f5f5', borderRight: '1px solid #e8e8e8', overflowY: 'auto' }}>
+                    <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8e8e8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                         <Text strong>会话列表</Text>
+                         <Button
+                             type="text"
+                             icon={<SyncOutlined spin={refreshing} />}
+                             onClick={() => void loadConversations({ showSpinner: true })}
+                             size="small"
+                         />
+                    </div>
+                    <List
+                        itemLayout="horizontal"
+                        dataSource={conversations}
+                        locale={{ emptyText: '暂无会话' }}
+                        renderItem={(item) => {
+                            const { fn, photo } = getPeerInfo(item);
+                            const unread = typeof item?.unread === 'number' ? item.unread : 0;
+                            const preview = getConversationPreview(item);
+                            const isActive = item.name === activeTopicName;
+                            
+                            return (
+                                <List.Item 
+                                    onClick={() => handleSelectConversation(item.name)}
+                                    style={{ 
+                                        padding: '12px 16px', 
+                                        cursor: 'pointer',
+                                        background: isActive ? '#fff' : 'transparent',
+                                        borderLeft: isActive ? '4px solid #D4AF37' : '4px solid transparent',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    className="conversation-item"
+                                >
+                                    <List.Item.Meta
+                                        avatar={
+                                            <Badge count={unread} size="small" offset={[-4, 4]}>
+                                                {renderAvatar(photo, fn)}
+                                            </Badge>
+                                        }
+                                        title={<div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <Text strong ellipsis style={{ maxWidth: 140 }}>{fn}</Text>
+                                            {item.touched && <Text type="secondary" style={{ fontSize: 11 }}>{formatDate(item.touched)}</Text>}
+                                        </div>}
+                                        description={<Text type="secondary" ellipsis>{preview}</Text>}
+                                    />
+                                </List.Item>
+                            );
+                        }}
+                    />
+                </Sider>
+                <Content style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    {activeTopicName ? (
+                        <>
+                            <Header style={{ background: '#fff', borderBottom: '1px solid #e8e8e8', padding: '0 20px', height: 60, display: 'flex', alignItems: 'center' }}>
+                                {activeTopic && (
+                                    <>
+                                        {renderAvatar(getPeerInfo(activeTopic).photo, getPeerInfo(activeTopic).fn)}
+                                        <div style={{ marginLeft: 12 }}>
+                                            <Title level={5} style={{ margin: 0 }}>{getPeerInfo(activeTopic).fn}</Title>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                {peerTyping ? (
+                                                    <span style={{ fontStyle: 'italic', color: '#71717A' }}>正在输入...</span>
+                                                ) : activeTopic.online ? (
+                                                    <Badge status="success" text="在线" />
+                                                ) : (
+                                                    '离线'
+                                                )}
+                                            </Text>
+                                        </div>
+                                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                                            <Input
+                                                placeholder="搜索消息..."
+                                                prefix={<SearchOutlined />}
+                                                suffix={
+                                                    searchQuery && (
+                                                        <>
+                                                            <Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
+                                                                {searchResults.length > 0 
+                                                                    ? `${currentSearchIndex + 1}/${searchResults.length}`
+                                                                    : '0/0'}
+                                                            </Text>
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                icon={<UpOutlined />}
+                                                                onClick={() => navigateSearch('prev')}
+                                                                disabled={searchResults.length === 0}
+                                                            />
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                icon={<DownOutlined />}
+                                                                onClick={() => navigateSearch('next')}
+                                                                disabled={searchResults.length === 0}
+                                                            />
+                                                            <Button
+                                                                type="text"
+                                                                size="small"
+                                                                icon={<CloseOutlined />}
+                                                                onClick={() => handleSearch('')}
+                                                            />
+                                                        </>
+                                                    )
+                                                }
+                                                value={searchQuery}
+                                                onChange={(e) => handleSearch(e.target.value)}
+                                                style={{ width: 250 }}
+                                                allowClear
+                                            />
+                                            <Button
+                                                type="text"
+                                                icon={<InfoCircleOutlined />}
+                                                onClick={() => setShowInfoPanel(!showInfoPanel)}
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                            </Header>
+                            
+                            <div
+                                ref={messagesContainerRef}
+                                onScroll={handleMessagesScroll}
+                                style={{ flex: 1, padding: 20, overflowY: 'auto', background: '#fafafa' }}
+                            >
+                                {loadingHistory ? (
+                                    <div style={{ textAlign: 'center', marginTop: 100 }}>
+                                        <Spin />
+                                    </div>
+                                ) : messages.length === 0 ? (
+                                    <div style={{ textAlign: 'center', marginTop: 100 }}>
+                                        <Text type="secondary">暂无消息，打个招呼吧</Text>
+                                    </div>
+                                ) : (
+                                    <Image.PreviewGroup>
+                                        {messages.map((msg, idx) => {
+                                            const isMe = !msg.from || (myUserId && msg.from === myUserId);
+                                            const showAvatar = idx === 0 || messages[idx - 1].from !== msg.from;
+                                            const isSearchResult = searchResults.includes(idx);
+                                            const isCurrentSearchResult = searchResults[currentSearchIndex] === idx;
+
+                                            return (
+                                                <div key={msg.seq || idx} style={{
+                                                    display: 'flex',
+                                                    flexDirection: isMe ? 'row-reverse' : 'row',
+                                                    marginBottom: 16
+                                                }}>
+                                                    <div style={{ flexShrink: 0, marginLeft: isMe ? 12 : 0, marginRight: isMe ? 0 : 12, width: 32 }}>
+                                                        {showAvatar && (isMe ?
+                                                            <Avatar style={{ backgroundColor: '#D4AF37' }}>M</Avatar> :
+                                                            renderAvatar(getPeerInfo(activeTopic).photo, getPeerInfo(activeTopic).fn)
+                                                        )}
+                                                    </div>
+
+                                                    <Dropdown
+                                                        menu={{
+                                                            items: [
+                                                                {
+                                                                    key: 'copy',
+                                                                    label: '复制消息',
+                                                                    icon: <CopyOutlined />,
+                                                                    onClick: () => copyMessageText(msg.content)
+                                                                }
+                                                            ]
+                                                        }}
+                                                        trigger={['contextMenu']}
+                                                    >
+                                                        <div style={{ maxWidth: '60%' }}>
+                                                            <div style={{
+                                                                background: isMe ? '#FEF3C7' : '#fff',
+                                                                border: isCurrentSearchResult 
+                                                                    ? '2px solid #D4AF37' 
+                                                                    : isSearchResult 
+                                                                        ? '2px solid #FCD34D'
+                                                                        : isMe ? '1px solid #FCD34D' : '1px solid #e8e8e8',
+                                                                borderRadius: isMe ? '8px 0 8px 8px' : '0 8px 8px 8px',
+                                                                padding: '10px 14px',
+                                                                boxShadow: isCurrentSearchResult 
+                                                                    ? '0 2px 8px rgba(212, 175, 55, 0.3)'
+                                                                    : '0 1px 2px rgba(0,0,0,0.05)',
+                                                                color: '#333',
+                                                                cursor: 'context-menu'
+                                                            }}>
+                                                                {renderContent(msg.content)}
+                                                            </div>
+                                                            <div style={{
+                                                                textAlign: isMe ? 'right' : 'left',
+                                                                marginTop: 4,
+                                                                fontSize: 10,
+                                                                color: '#999'
+                                                            }}>
+                                                                {formatTime(msg.ts)}
+                                                            </div>
+                                                        </div>
+                                                    </Dropdown>
+                                                </div>
+                                            );
+                                        })}
+                                    </Image.PreviewGroup>
+                                )}
+                                <div ref={messagesEndRef} />
+                            </div>
+                            
+                                <div style={{ padding: 20, background: '#fff', borderTop: '1px solid #e8e8e8' }}>
+                                {/* Quick Replies */}
+                                {activeTopicName && (
+                                    <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        {[
+                                            '您好，有什么可以帮您？',
+                                            '我们会尽快为您处理',
+                                            '感谢您的咨询',
+                                            '请稍等，我查询一下',
+                                            '好的，明白了'
+                                        ].map((reply, index) => (
+                                            <Button
+                                                key={index}
+                                                size="small"
+                                                onClick={() => {
+                                                    setInputValue(reply);
+                                                    inputRef.current?.focus();
+                                                }}
+                                                disabled={sending}
+                                                style={{ fontSize: 12 }}
+                                            >
+                                                {reply}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                                    <Upload
+                                        accept="image/*"
+                                        showUploadList={false}
+                                        beforeUpload={handleImageUpload}
+                                    >
+                                        <Button 
+                                            icon={<PictureOutlined />} 
+                                            loading={uploading}
+                                            disabled={sending || !activeTopicName}
+                                        >
+                                            图片
+                                        </Button>
+                                    </Upload>
+                                    <Upload
+                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
+                                        showUploadList={false}
+                                        beforeUpload={handleFileUpload}
+                                    >
+                                        <Button
+                                            icon={<PaperClipOutlined />}
+                                            loading={uploadingFile}
+                                            disabled={sending || !activeTopicName}
+                                        >
+                                            文件
+                                        </Button>
+                                    </Upload>
+                                    <TextArea
+                                        ref={inputRef}
+                                        value={inputValue}
+                                        onChange={(e) => {
+                                            setInputValue(e.target.value);
+                                            if (e.target.value.length > 0) {
+                                                handleTyping();
+                                            }
+                                        }}
+                                        placeholder="输入消息..."
+                                        autoSize={{ minRows: 1, maxRows: 4 }}
+                                        onPressEnter={(e) => {
+                                            if (!e.shiftKey) {
+                                                e.preventDefault();
+                                                handleSend();
+                                            }
+                                        }}
+                                        disabled={sending}
+                                        style={{ flex: 1 }}
+                                    />
+                                    <Button 
+                                        type="primary" 
+                                        icon={<SendOutlined />} 
+                                        onClick={handleSend}
+                                        loading={sending}
+                                        style={{ 
+                                            background: '#D4AF37', 
+                                            borderColor: '#D4AF37',
+                                            height: 'auto'
+                                        }}
+                                    >
+                                        发送
+                                    </Button>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', background: '#f5f5f5' }}>
+                            <Empty description="请选择一个会话开始聊天" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                        </div>
+                    )}
+                </Content>
+                {showInfoPanel && activeTopic && (
+                    <Sider width={280} style={{ background: '#fff', borderLeft: '1px solid #e8e8e8', overflowY: 'auto' }}>
+                        <div style={{ padding: 20 }}>
+                            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                                {renderAvatar(getPeerInfo(activeTopic).photo, getPeerInfo(activeTopic).fn)}
+                                <Title level={5} style={{ marginTop: 12, marginBottom: 4 }}>{getPeerInfo(activeTopic).fn}</Title>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {activeTopic.online ? <Badge status="success" text="在线" /> : <Badge status="default" text="离线" />}
+                                </Text>
+                            </div>
+                            <Descriptions column={1} size="small" bordered>
+                                <Descriptions.Item label="用户标识">
+                                    <Text copyable style={{ fontSize: 12 }}>{getPeerInfo(activeTopic).userIdentifier || '未知'}</Text>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="会话类型">
+                                    {activeTopic.isP2PType?.() ? '单聊' : '群聊'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="未读消息">
+                                    {typeof activeTopic.unread === 'number' ? activeTopic.unread : 0}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="最后活跃">
+                                    {activeTopic.touched ? formatDate(activeTopic.touched) : '未知'}
+                                </Descriptions.Item>
+                            </Descriptions>
+                        </div>
+                    </Sider>
+                )}
+            </Layout>
         </Card>
     );
 };

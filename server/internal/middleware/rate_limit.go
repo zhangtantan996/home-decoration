@@ -1,11 +1,15 @@
 package middleware
 
 import (
+	"fmt"
+	"home-decoration-server/internal/repository"
 	"home-decoration-server/pkg/response"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // RateLimitConfig 限流配置
@@ -17,6 +21,7 @@ type RateLimitConfig struct {
 
 // rateLimiter 限流器实例
 type rateLimiter struct {
+	name     string
 	config   RateLimitConfig
 	requests map[string][]time.Time
 	mu       sync.RWMutex
@@ -24,10 +29,24 @@ type rateLimiter struct {
 
 var defaultLimiter *rateLimiter
 var once sync.Once
+var loginLimiter *rateLimiter
+var loginOnce sync.Once
+var sensitiveLimiter *rateLimiter
+var sensitiveOnce sync.Once
+var customLimiterID uint64
+
+var redisIncrExpireScript = redis.NewScript(`
+local current = redis.call('INCR', KEYS[1])
+if current == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return current
+`)
 
 // initDefaultLimiter 初始化默认限流器
 func initDefaultLimiter() {
 	defaultLimiter = &rateLimiter{
+		name: "api",
 		config: RateLimitConfig{
 			MaxRequests:   100, // 每分钟100次
 			WindowSize:    time.Minute,
@@ -47,7 +66,9 @@ func RateLimit() gin.HandlerFunc {
 
 // RateLimitWithConfig 使用自定义配置的限流中间件
 func RateLimitWithConfig(config RateLimitConfig) gin.HandlerFunc {
+	id := atomic.AddUint64(&customLimiterID, 1)
 	limiter := &rateLimiter{
+		name:     fmt.Sprintf("custom:%d:%d:%dms", id, config.MaxRequests, config.WindowSize.Milliseconds()),
 		config:   config,
 		requests: make(map[string][]time.Time),
 	}
@@ -73,6 +94,35 @@ func (rl *rateLimiter) middleware() gin.HandlerFunc {
 
 // allow 检查是否允许请求
 func (rl *rateLimiter) allow(clientID string) bool {
+	if redisClient := repository.GetRedis(); redisClient != nil {
+		allowed, err := rl.allowWithRedis(redisClient, clientID)
+		if err == nil {
+			return allowed
+		}
+	}
+
+	return rl.allowInMemory(clientID)
+}
+
+func (rl *rateLimiter) allowWithRedis(redisClient *redis.Client, clientID string) (bool, error) {
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+
+	windowMs := rl.config.WindowSize.Milliseconds()
+	if windowMs <= 0 {
+		windowMs = time.Minute.Milliseconds()
+	}
+
+	key := fmt.Sprintf("rate_limit:%s:%d:%dms:%s", rl.name, rl.config.MaxRequests, windowMs, clientID)
+	count, err := redisIncrExpireScript.Run(ctx, redisClient, []string{key}, windowMs).Int64()
+	if err != nil {
+		return false, err
+	}
+
+	return count <= int64(rl.config.MaxRequests), nil
+}
+
+func (rl *rateLimiter) allowInMemory(clientID string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -134,19 +184,35 @@ func (rl *rateLimiter) cleanup() {
 // SensitiveRateLimit 敏感操作限流（更严格）
 // 用于提现、银行账户等敏感操作
 func SensitiveRateLimit() gin.HandlerFunc {
-	return RateLimitWithConfig(RateLimitConfig{
-		MaxRequests:   10, // 每分钟10次
-		WindowSize:    time.Minute,
-		CleanupPeriod: 5 * time.Minute,
+	sensitiveOnce.Do(func() {
+		sensitiveLimiter = &rateLimiter{
+			name: "sensitive",
+			config: RateLimitConfig{
+				MaxRequests:   10, // 每分钟10次
+				WindowSize:    time.Minute,
+				CleanupPeriod: 5 * time.Minute,
+			},
+			requests: make(map[string][]time.Time),
+		}
+		go sensitiveLimiter.cleanup()
 	})
+	return sensitiveLimiter.middleware()
 }
 
 // LoginRateLimit 登录限流
 // 防止暴力破解
 func LoginRateLimit() gin.HandlerFunc {
-	return RateLimitWithConfig(RateLimitConfig{
-		MaxRequests:   5, // 每分钟5次
-		WindowSize:    time.Minute,
-		CleanupPeriod: 5 * time.Minute,
+	loginOnce.Do(func() {
+		loginLimiter = &rateLimiter{
+			name: "login",
+			config: RateLimitConfig{
+				MaxRequests:   5, // 每分钟5次
+				WindowSize:    time.Minute,
+				CleanupPeriod: 5 * time.Minute,
+			},
+			requests: make(map[string][]time.Time),
+		}
+		go loginLimiter.cleanup()
 	})
+	return loginLimiter.middleware()
 }

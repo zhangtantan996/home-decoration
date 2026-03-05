@@ -25,6 +25,7 @@ import MenuList from './pages/permissions/MenuList';
 import CaseManagement from './pages/cases/CaseManagement';
 import DictionaryManagement from './pages/system/DictionaryManagement';
 import RegionManagement from './pages/system/RegionManagement';
+import IdentityApplicationAudit from './pages/audits/IdentityApplicationAudit';
 
 
 const router = createBrowserRouter([
@@ -49,6 +50,8 @@ const router = createBrowserRouter([
             { path: 'providers/companies', element: <ProviderList /> },
             { path: 'providers/foremen', element: <ProviderList /> },
             { path: 'providers/audit', element: <ProviderAudit /> },
+            { path: 'providers/identity-applications', element: <IdentityApplicationAudit /> },
+            { path: 'audits/identity-applications', element: <IdentityApplicationAudit /> },
 
             // Materials
             { path: 'materials', element: <Navigate to="/materials/list" replace /> },

@@ -1,7 +1,11 @@
 package model
 
 import (
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // Base 基础模型
@@ -14,15 +18,31 @@ type Base struct {
 // User 用户
 type User struct {
 	Base
+	PublicID          string     `json:"publicId" gorm:"size:36;uniqueIndex"`
 	Phone             string     `json:"phone" gorm:"uniqueIndex;size:20"`
 	Nickname          string     `json:"nickname" gorm:"size:50"`
 	Avatar            string     `json:"avatar" gorm:"size:500"`
 	Password          string     `json:"-" gorm:"size:255"` // 密码，不返回给前端
 	UserType          int8       `json:"userType"`          // 1业主 2服务商 3工人 4管理员
 	Status            int8       `json:"status" gorm:"default:1"`
+	LastLoginAt       *time.Time `json:"-"`
+	LastLoginIP       string     `json:"-" gorm:"size:50"`
 	LoginFailedCount  int        `json:"-" gorm:"default:0"` // 登录失败次数
 	LockedUntil       *time.Time `json:"-"`                  // 锁定到期时间
 	LastFailedLoginAt *time.Time `json:"-"`                  // 最后失败登录时间
+}
+
+// GeneratePublicID 生成对外公开的用户标识
+func GeneratePublicID() string {
+	return uuid.NewString()
+}
+
+// BeforeCreate 确保用户创建时存在 public_id
+func (u *User) BeforeCreate(_ *gorm.DB) error {
+	if strings.TrimSpace(u.PublicID) == "" {
+		u.PublicID = GeneratePublicID()
+	}
+	return nil
 }
 
 // UserWechatBinding 微信小程序绑定关系
@@ -42,6 +62,7 @@ type Provider struct {
 	UserID        uint64  `json:"userId" gorm:"index"`
 	ProviderType  int8    `json:"providerType"` // 1设计师 2公司 3工长
 	CompanyName   string  `json:"companyName" gorm:"size:100"`
+	Avatar        string  `json:"avatar" gorm:"size:500"`
 	LicenseNo     string  `json:"licenseNo" gorm:"size:50"`
 	Rating        float32 `json:"rating" gorm:"default:0"`
 	RestoreRate   float32 `json:"restoreRate"`   // 还原度
@@ -52,14 +73,19 @@ type Provider struct {
 	Latitude      float64 `json:"latitude"`
 	Longitude     float64 `json:"longitude"`
 	// 新增字段
-	SubType         string  `json:"subType" gorm:"size:20;default:'personal'"` // 子类型：personal, studio, company
-	YearsExperience int     `json:"yearsExperience" gorm:"default:0"`          // 从业年限
-	Specialty       string  `json:"specialty" gorm:"size:200"`                 // 专长/风格描述
-	WorkTypes       string  `json:"workTypes" gorm:"size:100"`                 // 工种类型，逗号分隔：mason,electrician,carpenter,painter,plumber
-	ReviewCount     int     `json:"reviewCount" gorm:"default:0"`              // 评价数量
-	PriceMin        float64 `json:"priceMin" gorm:"default:0"`                 // 最低价格
-	PriceMax        float64 `json:"priceMax" gorm:"default:0"`                 // 最高价格
-	PriceUnit       string  `json:"priceUnit" gorm:"size:20;default:'元/天'"`    // 价格单位
+	SubType          string  `json:"subType" gorm:"size:20;default:'personal'"` // 子类型：personal, studio, company
+	EntityType       string  `json:"entityType" gorm:"size:20;default:'personal'"`
+	YearsExperience  int     `json:"yearsExperience" gorm:"default:0"`       // 从业年限
+	Specialty        string  `json:"specialty" gorm:"size:200"`              // 专长/风格描述
+	WorkTypes        string  `json:"workTypes" gorm:"type:text"`             // 工种类型，逗号分隔：mason,electrician,carpenter,painter,plumber
+	HighlightTags    string  `json:"highlightTags" gorm:"type:text"`         // JSON数组：亮点标签
+	PricingJSON      string  `json:"pricingJson" gorm:"type:text"`           // JSON对象：结构化报价
+	GraduateSchool   string  `json:"graduateSchool" gorm:"size:100"`         // 毕业院校（选填）
+	DesignPhilosophy string  `json:"designPhilosophy" gorm:"type:text"`      // 设计理念（选填）
+	ReviewCount      int     `json:"reviewCount" gorm:"default:0"`           // 评价数量
+	PriceMin         float64 `json:"priceMin" gorm:"default:0"`              // 最低价格
+	PriceMax         float64 `json:"priceMax" gorm:"default:0"`              // 最高价格
+	PriceUnit        string  `json:"priceUnit" gorm:"size:20;default:'元/天'"` // 价格单位
 	// 详情页扩展字段
 	CoverImage      string `json:"coverImage" gorm:"size:500"`          // 封面背景图
 	FollowersCount  int    `json:"followersCount" gorm:"default:0"`     // 粉丝/关注数
@@ -297,8 +323,14 @@ func (UserFavorite) TableName() string {
 // MaterialShop 主材门店
 type MaterialShop struct {
 	Base
+	UserID            uint64  `json:"userId" gorm:"index"`
 	Type              string  `json:"type" gorm:"size:20"` // showroom | brand
 	Name              string  `json:"name" gorm:"size:100"`
+	Description       string  `json:"description" gorm:"type:text"`
+	BusinessLicenseNo string  `json:"businessLicenseNo" gorm:"size:50"`
+	BusinessLicense   string  `json:"businessLicense" gorm:"size:500"`
+	ContactPhone      string  `json:"contactPhone" gorm:"size:20"`
+	ContactName       string  `json:"contactName" gorm:"size:50"`
 	Cover             string  `json:"cover" gorm:"size:500"`     // 封面图
 	BrandLogo         string  `json:"brandLogo" gorm:"size:500"` // 品牌 Logo
 	Rating            float32 `json:"rating" gorm:"default:0"`
@@ -316,6 +348,66 @@ type MaterialShop struct {
 // TableName 指定表名
 func (MaterialShop) TableName() string {
 	return "material_shops"
+}
+
+// MaterialShopApplication 主材商入驻申请
+type MaterialShopApplication struct {
+	Base
+	UserID              uint64     `json:"userId" gorm:"index"`
+	Phone               string     `json:"phone" gorm:"index;size:20"`
+	EntityType          string     `json:"entityType" gorm:"size:20;default:'company'"` // company
+	ShopName            string     `json:"shopName" gorm:"size:100"`
+	ShopDescription     string     `json:"shopDescription" gorm:"type:text"`
+	BusinessLicenseNo   string     `json:"businessLicenseNo" gorm:"size:50"`
+	BusinessLicense     string     `json:"businessLicense" gorm:"size:500"`
+	BusinessHours       string     `json:"businessHours" gorm:"size:100"`
+	ContactPhone        string     `json:"contactPhone" gorm:"size:20"`
+	ContactName         string     `json:"contactName" gorm:"size:50"`
+	Address             string     `json:"address" gorm:"size:300"`
+	LegalAcceptanceJSON string     `json:"legalAcceptanceJson" gorm:"type:text"`
+	LegalAcceptedAt     *time.Time `json:"legalAcceptedAt"`
+	LegalAcceptSource   string     `json:"legalAcceptSource" gorm:"size:50;default:'merchant_web'"`
+	Status              int8       `json:"status" gorm:"default:0"` // 0:待审核 1:审核通过 2:审核拒绝
+	RejectReason        string     `json:"rejectReason" gorm:"size:500"`
+	AuditedBy           uint64     `json:"auditedBy"`
+	AuditedAt           *time.Time `json:"auditedAt"`
+	ShopID              uint64     `json:"shopId" gorm:"index"`
+}
+
+func (MaterialShopApplication) TableName() string {
+	return "material_shop_applications"
+}
+
+// MaterialShopApplicationProduct 主材商入驻申请商品
+type MaterialShopApplicationProduct struct {
+	Base
+	ApplicationID uint64  `json:"applicationId" gorm:"index"`
+	Name          string  `json:"name" gorm:"size:120"`
+	ParamsJSON    string  `json:"paramsJson" gorm:"type:text"` // JSON对象
+	Price         float64 `json:"price"`
+	ImagesJSON    string  `json:"imagesJson" gorm:"type:text"` // JSON数组
+	SortOrder     int     `json:"sortOrder" gorm:"default:0"`
+}
+
+func (MaterialShopApplicationProduct) TableName() string {
+	return "material_shop_application_products"
+}
+
+// MaterialShopProduct 主材商品
+type MaterialShopProduct struct {
+	Base
+	ShopID     uint64  `json:"shopId" gorm:"index"`
+	Name       string  `json:"name" gorm:"size:120"`
+	ParamsJSON string  `json:"paramsJson" gorm:"type:text"` // JSON对象
+	Price      float64 `json:"price"`
+	ImagesJSON string  `json:"imagesJson" gorm:"type:text"` // JSON数组
+	CoverImage string  `json:"coverImage" gorm:"size:500"`
+	Status     int8    `json:"status" gorm:"default:1"` // 1=on 0=off
+	SortOrder  int     `json:"sortOrder" gorm:"default:0"`
+}
+
+func (MaterialShopProduct) TableName() string {
+	return "material_shop_products"
 }
 
 // AfterSales 售后申请
@@ -388,10 +480,13 @@ type MerchantApplication struct {
 	Base
 	// 基础信息
 	Phone         string `json:"phone" gorm:"index;size:20"`
-	ApplicantType string `json:"applicantType" gorm:"size:20"` // personal, studio, company
+	ApplicantType string `json:"applicantType" gorm:"size:20"` // personal, studio, company, foreman
+	Role          string `json:"role" gorm:"size:20"`          // designer, foreman, company
+	EntityType    string `json:"entityType" gorm:"size:20"`    // personal, company
 
 	// 个人/负责人信息
 	RealName    string `json:"realName" gorm:"size:50"`
+	Avatar      string `json:"avatar" gorm:"size:500"`
 	IDCardNo    string `json:"idCardNo" gorm:"size:100"`    // AES加密存储
 	IDCardFront string `json:"idCardFront" gorm:"size:500"` // 身份证正面
 	IDCardBack  string `json:"idCardBack" gorm:"size:500"`  // 身份证反面
@@ -402,12 +497,22 @@ type MerchantApplication struct {
 	LicenseImage  string `json:"licenseImage" gorm:"size:500"` // 营业执照照片
 	TeamSize      int    `json:"teamSize" gorm:"default:1"`
 	OfficeAddress string `json:"officeAddress" gorm:"size:200"`
+	// 工长扩展信息
+	YearsExperience int    `json:"yearsExperience" gorm:"default:0"`
+	WorkTypes       string `json:"workTypes" gorm:"type:text;default:'[]'"` // JSON数组：工种类型
 
 	// 服务信息
-	ServiceArea    string `json:"serviceArea" gorm:"type:text"`    // JSON数组：服务区域
-	Styles         string `json:"styles" gorm:"type:text"`         // JSON数组：擅长风格
-	Introduction   string `json:"introduction" gorm:"type:text"`   // 个人/公司简介
-	PortfolioCases string `json:"portfolioCases" gorm:"type:text"` // JSON数组：[{title, images, style, area}]
+	ServiceArea         string     `json:"serviceArea" gorm:"type:text"`      // JSON数组：服务区域
+	Styles              string     `json:"styles" gorm:"type:text"`           // JSON数组：擅长风格
+	HighlightTags       string     `json:"highlightTags" gorm:"type:text"`    // JSON数组：亮点标签
+	PricingJSON         string     `json:"pricingJson" gorm:"type:text"`      // JSON对象：结构化报价
+	Introduction        string     `json:"introduction" gorm:"type:text"`     // 个人/公司简介
+	GraduateSchool      string     `json:"graduateSchool" gorm:"size:100"`    // 毕业院校（选填）
+	DesignPhilosophy    string     `json:"designPhilosophy" gorm:"type:text"` // 设计理念（选填）
+	PortfolioCases      string     `json:"portfolioCases" gorm:"type:text"`   // JSON数组：[{title, images, style, area}]
+	LegalAcceptanceJSON string     `json:"legalAcceptanceJson" gorm:"type:text"`
+	LegalAcceptedAt     *time.Time `json:"legalAcceptedAt"`
+	LegalAcceptSource   string     `json:"legalAcceptSource" gorm:"size:50;default:'merchant_web'"`
 
 	// 审核状态
 	Status       int8       `json:"status" gorm:"default:0"` // 0:待审核 1:审核通过 2:审核拒绝
@@ -423,6 +528,25 @@ type MerchantApplication struct {
 // TableName 指定表名
 func (MerchantApplication) TableName() string {
 	return "merchant_applications"
+}
+
+// MerchantIdentityChangeApplication 商家角色变更申请
+type MerchantIdentityChangeApplication struct {
+	Base
+	UserID          uint64     `json:"userId" gorm:"index"`
+	Phone           string     `json:"phone" gorm:"size:20;index"`
+	CurrentRole     string     `json:"currentRole" gorm:"size:20"`
+	TargetRole      string     `json:"targetRole" gorm:"size:20"`
+	TargetEntity    string     `json:"targetEntity" gorm:"size:20"`
+	ApplicationData string     `json:"applicationData" gorm:"type:text"` // JSON 申请材料
+	Status          int8       `json:"status" gorm:"default:0"`          // 0:待审核 1:通过 2:拒绝
+	RejectReason    string     `json:"rejectReason" gorm:"size:500"`
+	ReviewedBy      uint64     `json:"reviewedBy"`
+	ReviewedAt      *time.Time `json:"reviewedAt"`
+}
+
+func (MerchantIdentityChangeApplication) TableName() string {
+	return "merchant_identity_change_applications"
 }
 
 // CaseAudit 作品审核/草稿
@@ -553,6 +677,25 @@ func (AuditLog) TableName() string {
 	return "audit_logs"
 }
 
+// SMSAuditLog 短信发送审计日志
+type SMSAuditLog struct {
+	Base
+	RequestID         string `json:"requestId" gorm:"size:64;uniqueIndex"`
+	Purpose           string `json:"purpose" gorm:"size:32;index"`
+	PhoneHash         string `json:"phoneHash" gorm:"size:64;index"`
+	ClientIP          string `json:"clientIp" gorm:"size:64"`
+	Provider          string `json:"provider" gorm:"size:32"`
+	MessageID         string `json:"messageId" gorm:"size:128"`
+	ProviderRequestID string `json:"providerRequestId" gorm:"size:128"`
+	Status            string `json:"status" gorm:"size:32;index"`
+	ErrorCode         string `json:"errorCode" gorm:"size:64"`
+	ErrorMessage      string `json:"errorMessage" gorm:"size:500"`
+}
+
+func (SMSAuditLog) TableName() string {
+	return "sms_audit_logs"
+}
+
 // UserLike 用户点赞
 type UserLike struct {
 	Base
@@ -594,4 +737,76 @@ type SensitiveWord struct {
 
 func (SensitiveWord) TableName() string {
 	return "sensitive_words"
+}
+
+// UserSettings 用户偏好设置
+type UserSettings struct {
+	Base
+	UserID               uint64 `json:"userId" gorm:"uniqueIndex"`
+	PersonalizedRecommend bool  `json:"personalizedRecommend" gorm:"default:true"`
+	LocationTracking     bool   `json:"locationTracking" gorm:"default:false"`
+	PhoneVisible         bool   `json:"phoneVisible" gorm:"default:false"`
+	NotifySystem         bool   `json:"notifySystem" gorm:"default:true"`
+	NotifyProject        bool   `json:"notifyProject" gorm:"default:true"`
+	NotifyPayment        bool   `json:"notifyPayment" gorm:"default:true"`
+	NotifyPromo          bool   `json:"notifyPromo" gorm:"default:false"`
+	NotifySound          bool   `json:"notifySound" gorm:"default:true"`
+	NotifyVibrate        bool   `json:"notifyVibrate" gorm:"default:true"`
+	DarkMode             bool   `json:"darkMode" gorm:"default:false"`
+	FontSize             string `json:"fontSize" gorm:"size:10;default:'medium'"`
+	Language             string `json:"language" gorm:"size:5;default:'zh'"`
+}
+
+func (UserSettings) TableName() string {
+	return "user_settings"
+}
+
+// UserVerification 实名认证
+type UserVerification struct {
+	Base
+	UserID       uint64     `json:"userId" gorm:"index"`
+	RealName     string     `json:"realName" gorm:"size:50"`
+	IDCard       string     `json:"idCard" gorm:"size:20"`
+	IDFrontImage string     `json:"idFrontImage" gorm:"size:500"`
+	IDBackImage  string     `json:"idBackImage" gorm:"size:500"`
+	Status       int8       `json:"status" gorm:"default:0"` // 0=待审核 1=已通过 2=已拒绝
+	RejectReason string     `json:"rejectReason" gorm:"size:200"`
+	VerifiedAt   *time.Time `json:"verifiedAt"`
+}
+
+func (UserVerification) TableName() string {
+	return "user_verifications"
+}
+
+// UserLoginDevice 登录设备记录
+type UserLoginDevice struct {
+	Base
+	UserID      uint64     `json:"userId" gorm:"index"`
+	DeviceName  string     `json:"deviceName" gorm:"size:100"`
+	DeviceType  string     `json:"deviceType" gorm:"size:20"`
+	DeviceID    string     `json:"deviceId" gorm:"size:200"`
+	IPAddress   string     `json:"ipAddress" gorm:"size:50"`
+	Location    string     `json:"location" gorm:"size:100"`
+	LastLoginAt *time.Time `json:"lastLoginAt"`
+	IsCurrent   bool       `json:"isCurrent" gorm:"default:false"`
+}
+
+func (UserLoginDevice) TableName() string {
+	return "user_login_devices"
+}
+
+// UserFeedback 用户反馈
+type UserFeedback struct {
+	Base
+	UserID     uint64 `json:"userId" gorm:"index"`
+	Type       string `json:"type" gorm:"size:20"`
+	Content    string `json:"content" gorm:"type:text"`
+	Contact    string `json:"contact" gorm:"size:100"`
+	Images     string `json:"images" gorm:"type:text"`
+	Status     int8   `json:"status" gorm:"default:0"` // 0=待处理 1=处理中 2=已处理
+	AdminReply string `json:"adminReply" gorm:"type:text"`
+}
+
+func (UserFeedback) TableName() string {
+	return "user_feedbacks"
 }

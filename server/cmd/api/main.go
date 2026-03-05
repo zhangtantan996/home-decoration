@@ -9,7 +9,7 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/router"
 	"home-decoration-server/internal/service"
-	"home-decoration-server/internal/ws"
+	"home-decoration-server/internal/tinode"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,25 +21,31 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	// 验证 Tinode 配置（启动时 fail-fast）
+	if err := tinode.ValidateConfig(); err != nil {
+		log.Printf("[Tinode] Configuration validation failed: %v", err)
+		log.Println("[Tinode] Tinode features will be disabled")
+		// 不阻塞启动，但记录警告
+	}
+
 	// 初始化数据库
 	if err := repository.InitDB(&cfg.Database); err != nil {
 		log.Fatalf("Failed to connect database: %v", err)
 	}
 	log.Println("Database connected successfully")
 
+	// 初始化 Tinode 数据库（失败不阻塞主流程）
+	if err := repository.InitTinodeDB(&cfg.Database); err != nil {
+		log.Printf("[Tinode] Failed to connect Tinode database: %v", err)
+	} else {
+		log.Println("[Tinode] Tinode database connected successfully")
+	}
+
 	// 初始化Redis
 	if err := repository.InitRedis(&cfg.Redis); err != nil {
 		log.Fatalf("Failed to connect Redis: %v", err)
 	}
 	log.Println("Redis connected successfully")
-
-	// 初始化 WebSocket Hub
-	hub := ws.NewHub()
-	go hub.Run()
-	log.Println("WebSocket Hub started")
-
-	// 创建 WebSocket 消息处理器
-	wsHandler := ws.NewHandler(repository.DB, hub)
 
 	// 初始化处理器
 	handler.InitHandlers(cfg)
@@ -65,8 +71,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// 初始化路由 (传入 WS 相关依赖)
-	r := router.Setup(cfg, hub, wsHandler, dictHandler)
+	// 初始化路由
+	r := router.Setup(cfg, dictHandler)
 
 	// 启动服务
 	addr := cfg.Server.Host + ":" + cfg.Server.Port

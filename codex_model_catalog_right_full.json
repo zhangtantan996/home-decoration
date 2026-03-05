@@ -1,0 +1,100 @@
+{
+  "data": [
+    {
+      "id": "gpt-5.3-codex",
+      "model": "gpt-5.3-codex",
+      "upgrade": null,
+      "displayName": "GPT-5.3 Codex",
+      "description": "Custom model catalog for right.codes relay.",
+      "hidden": false,
+      "supportedReasoningEfforts": [
+        { "reasoningEffort": "minimal", "description": "Fastest; least reasoning." },
+        { "reasoningEffort": "low", "description": "Light reasoning." },
+        { "reasoningEffort": "medium", "description": "Balanced reasoning." },
+        { "reasoningEffort": "high", "description": "More thorough reasoning." },
+        { "reasoningEffort": "xhigh", "description": "Most thorough; slowest." }
+      ],
+      "defaultReasoningEffort": "high",
+      "inputModalities": ["text", "image"],
+      "supportsPersonality": true,
+      "isDefault": true
+    },
+    {
+      "id": "gpt-5.2-codex",
+      "model": "gpt-5.2-codex",
+      "upgrade": null,
+      "displayName": "GPT-5.2 Codex",
+      "description": "Custom model catalog for right.codes relay.",
+      "hidden": false,
+      "supportedReasoningEfforts": [
+        { "reasoningEffort": "minimal", "description": "Fastest; least reasoning." },
+        { "reasoningEffort": "low", "description": "Light reasoning." },
+        { "reasoningEffort": "medium", "description": "Balanced reasoning." },
+        { "reasoningEffort": "high", "description": "More thorough reasoning." },
+        { "reasoningEffort": "xhigh", "description": "Most thorough; slowest." }
+      ],
+      "defaultReasoningEffort": "high",
+      "inputModalities": ["text", "image"],
+      "supportsPersonality": true,
+      "isDefault": false
+    },
+    {
+      "id": "gpt-5.1-codex-max",
+      "model": "gpt-5.1-codex-max",
+      "upgrade": null,
+      "displayName": "GPT-5.1 Codex Max",
+      "description": "Custom model catalog for right.codes relay.",
+      "hidden": false,
+      "supportedReasoningEfforts": [
+        { "reasoningEffort": "minimal", "description": "Fastest; least reasoning." },
+        { "reasoningEffort": "low", "description": "Light reasoning." },
+        { "reasoningEffort": "medium", "description": "Balanced reasoning." },
+        { "reasoningEffort": "high", "description": "More thorough reasoning." },
+        { "reasoningEffort": "xhigh", "description": "Most thorough; slowest." }
+      ],
+      "defaultReasoningEffort": "high",
+      "inputModalities": ["text", "image"],
+      "supportsPersonality": true,
+      "isDefault": false
+    },
+    {
+      "id": "gpt-5.1-codex-mini",
+      "model": "gpt-5.1-codex-mini",
+      "upgrade": null,
+      "displayName": "GPT-5.1 Codex Mini",
+      "description": "Custom model catalog for right.codes relay.",
+      "hidden": false,
+      "supportedReasoningEfforts": [
+        { "reasoningEffort": "minimal", "description": "Fastest; least reasoning." },
+        { "reasoningEffort": "low", "description": "Light reasoning." },
+        { "reasoningEffort": "medium", "description": "Balanced reasoning." },
+        { "reasoningEffort": "high", "description": "More thorough reasoning." },
+        { "reasoningEffort": "xhigh", "description": "Most thorough; slowest." }
+      ],
+      "defaultReasoningEffort": "high",
+      "inputModalities": ["text", "image"],
+      "supportsPersonality": true,
+      "isDefault": false
+    },
+    {
+      "id": "gpt-5.2",
+      "model": "gpt-5.2",
+      "upgrade": null,
+      "displayName": "GPT-5.2",
+      "description": "Custom model catalog for right.codes relay.",
+      "hidden": false,
+      "supportedReasoningEfforts": [
+        { "reasoningEffort": "minimal", "description": "Fastest; least reasoning." },
+        { "reasoningEffort": "low", "description": "Light reasoning." },
+        { "reasoningEffort": "medium", "description": "Balanced reasoning." },
+        { "reasoningEffort": "high", "description": "More thorough reasoning." },
+        { "reasoningEffort": "xhigh", "description": "Most thorough; slowest." }
+      ],
+      "defaultReasoningEffort": "high",
+      "inputModalities": ["text", "image"],
+      "supportsPersonality": true,
+      "isDefault": false
+    }
+  ],
+  "nextCursor": null
+}

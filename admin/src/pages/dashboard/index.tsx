@@ -9,7 +9,6 @@ import {
     ShopOutlined,
     RiseOutlined,
     ArrowUpOutlined,
-    ArrowDownOutlined,
 } from '@ant-design/icons';
 import { Line, Column, Pie } from '@ant-design/charts';
 import { adminStatsApi } from '../../services/api';
