@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { colors, spacing, radii, typography } from '../../theme/tokens';
 
 interface InfoCardProps {
   houseLayout: string;
@@ -35,13 +36,13 @@ export const InfoCard: React.FC<InfoCardProps> = ({ houseLayout, area, style, ye
 
 const styles = StyleSheet.create({
   card: {
-    marginTop: 0, // 不使用负margin，避免与Hero视差效果冲突
-    transform: [{ translateY: -40 }], // 使用transform实现覆盖效果，支持GPU加速
-    zIndex: 2, // 确保卡片在Hero之上
-    marginHorizontal: 16,
+    marginTop: 0,
+    transform: [{ translateY: -40 }],
+    zIndex: 2,
+    marginHorizontal: spacing.md,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: spacing.lg + 4,
+    padding: spacing.lg - 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -57,13 +58,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   label: {
-    fontSize: 13,
-    color: '#999999',
+    fontSize: typography.caption,
+    color: colors.gray400,
     marginBottom: 6,
   },
   value: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.black,
   },
 });

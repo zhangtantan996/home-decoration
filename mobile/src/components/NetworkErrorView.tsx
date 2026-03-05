@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { WifiOff, ServerCrash, RefreshCw } from 'lucide-react-native';
+import { colors, spacing, radii, typography } from '../theme/tokens';
 
 interface NetworkErrorViewProps {
     type?: 'network' | 'server' | 'timeout' | 'unknown';
@@ -42,13 +43,13 @@ export const NetworkErrorView: React.FC<NetworkErrorViewProps> = ({
     return (
         <View style={styles.container}>
             <View style={styles.iconContainer}>
-                <IconComponent size={48} color="#A1A1AA" strokeWidth={1.5} />
+                <IconComponent size={48} color={colors.gray400} strokeWidth={1.5} />
             </View>
             <Text style={styles.title}>{config.title}</Text>
             <Text style={styles.subtitle}>{message || config.subtitle}</Text>
             {onRetry && (
                 <TouchableOpacity style={styles.retryButton} onPress={onRetry} activeOpacity={0.8}>
-                    <RefreshCw size={16} color="#FFFFFF" />
+                    <RefreshCw size={16} color={colors.white} />
                     <Text style={styles.retryText}>点击重试</Text>
                 </TouchableOpacity>
             )}
@@ -68,37 +69,37 @@ const styles = StyleSheet.create({
         width: 100,
         height: 100,
         borderRadius: 50,
-        backgroundColor: '#F4F4F5',
+        backgroundColor: colors.gray100,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 24,
+        marginBottom: spacing.lg,
     },
     title: {
-        fontSize: 18,
+        fontSize: typography.h2,
         fontWeight: '600',
-        color: '#18181B',
-        marginBottom: 8,
+        color: colors.gray900,
+        marginBottom: spacing.xs,
     },
     subtitle: {
-        fontSize: 14,
-        color: '#71717A',
+        fontSize: typography.body,
+        color: colors.gray500,
         textAlign: 'center',
         lineHeight: 20,
-        marginBottom: 32,
+        marginBottom: spacing.xl,
     },
     retryButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#18181B',
-        paddingHorizontal: 24,
-        paddingVertical: 12,
-        borderRadius: 24,
-        gap: 8,
+        backgroundColor: colors.gray900,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+        borderRadius: spacing.lg,
+        gap: spacing.xs,
     },
     retryText: {
-        fontSize: 14,
+        fontSize: typography.body,
         fontWeight: '600',
-        color: '#FFFFFF',
+        color: colors.white,
     },
 });
 

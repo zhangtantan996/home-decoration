@@ -8,6 +8,7 @@
     "dev:mobile": "cd mobile && npm run web",
     "dev:website": "cd website && npx vite --port 5175",
     "dev": "npm run infra && concurrently -n \"API,ADMIN,MOBILE\" -c \"magenta,blue,green\" \"npm run dev:server\" \"npm run dev:admin\" \"npm run dev:mobile\"",
+    "gen:tokens": "node shared/design-tokens/scripts/generate-rn.js",
     "test:e2e": "npx playwright test",
     "test:e2e:merchant:onboarding": "npx playwright test tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-extended-fields.test.ts",
     "test:e2e:merchant:onboarding:list": "npx playwright test --list tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-extended-fields.test.ts",

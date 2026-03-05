@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TouchableOpacity, StyleSheet, Animated, Platform, StatusBar, Dimensions } from 'react-native';
 import { ArrowLeft, Share2 } from 'lucide-react-native';
+import { colors, spacing } from '../../theme/tokens';
 
 interface AnimatedHeaderProps {
   scrollY: Animated.Value;
@@ -56,7 +57,7 @@ export const AnimatedHeader: React.FC<AnimatedHeaderProps> = ({ scrollY, onBack,
       <StatusBar barStyle={barStyle} backgroundColor="transparent" translucent />
 
       <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-        <ArrowLeft size={24} color="#fff" />
+        <ArrowLeft size={24} color={colors.white} />
       </TouchableOpacity>
 
       <Animated.Text style={[styles.headerTitle, { opacity: titleOpacity }]}>
@@ -64,7 +65,7 @@ export const AnimatedHeader: React.FC<AnimatedHeaderProps> = ({ scrollY, onBack,
       </Animated.Text>
 
       <TouchableOpacity onPress={onShare} style={styles.shareBtn}>
-        <Share2 size={20} color="#fff" />
+        <Share2 size={20} color={colors.white} />
       </TouchableOpacity>
     </Animated.View>
   );
@@ -82,13 +83,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: STATUSBAR_HEIGHT + 8,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
+    paddingTop: STATUSBAR_HEIGHT + spacing.xs,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   headerBackground: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.white,
   },
   backBtn: {
     width: 40,
@@ -109,6 +110,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.black,
   },
 });

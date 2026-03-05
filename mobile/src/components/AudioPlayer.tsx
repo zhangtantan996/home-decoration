@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, TouchableOpacity, Pressable } from 'react-nativ
 import { useSound } from 'react-native-nitro-sound';
 import { Play, Pause } from 'lucide-react-native';
 import { useAudioPlayerStore } from '../store/audioPlayerStore';
+import { colors } from '../theme/tokens';
 
-const PRIMARY_GOLD = '#D4AF37';
+const PRIMARY_GOLD = colors.brand;
 
 interface AudioPlayerProps {
     messageId: string;
@@ -114,9 +115,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({ messageId, audioUrl, d
         <View style={styles.container}>
             <TouchableOpacity onPress={handlePlayPause} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 {state.isPlaying ? (
-                    <Pause size={20} color="#333" fill="#333" />
+                    <Pause size={20} color={colors.gray700} fill={colors.gray700} />
                 ) : (
-                    <Play size={20} color="#333" fill="#333" />
+                    <Play size={20} color={colors.gray700} fill={colors.gray700} />
                 )}
             </TouchableOpacity>
 
@@ -142,7 +143,7 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#F5F5F5',
+        backgroundColor: colors.gray100,
         borderRadius: 8,
         padding: 8,
         paddingHorizontal: 12,
@@ -157,7 +158,7 @@ const styles = StyleSheet.create({
     },
     progressBar: {
         height: 4,
-        backgroundColor: '#E0E0E0',
+        backgroundColor: colors.gray300,
         borderRadius: 2,
         width: '100%',
         position: 'relative',
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
         backgroundColor: PRIMARY_GOLD,
         top: -4,
         marginLeft: -6,
-        shadowColor: "#000",
+        shadowColor: colors.black,
         shadowOffset: {
             width: 0,
             height: 1,
@@ -186,7 +187,7 @@ const styles = StyleSheet.create({
     },
     duration: {
         fontSize: 12,
-        color: '#666',
+        color: colors.gray600,
         fontVariant: ['tabular-nums'],
     },
 });

@@ -16,6 +16,7 @@ import {
   AudioEncoderAndroidType,
   AudioSourceAndroidType,
 } from 'react-native-nitro-sound';
+import { colors } from '../theme/tokens';
 
 export interface VoiceRecorderProps {
   onRecordingComplete: (audioPath: string, duration: number) => void;
@@ -289,31 +290,31 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.gray100,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#E5E5E5',
+    borderColor: colors.border,
   },
   recordButtonPressed: {
-      backgroundColor: '#C8C8C8',
+      backgroundColor: colors.gray300,
   },
   recordButtonCancel: {
-      backgroundColor: '#FFEBEE', // Light red
+      backgroundColor: colors.error + '20',
   },
   buttonIcon: {
       fontSize: 16,
       marginRight: 8,
-      color: '#333',
+      color: colors.gray700,
   },
   buttonText: {
       fontSize: 16,
       fontWeight: 'bold',
-      color: '#333',
+      color: colors.gray700,
   },
   buttonTextCancel: {
-      color: '#D32F2F',
+      color: colors.error,
   },
   // Overlay styles
   overlay: {

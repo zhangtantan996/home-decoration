@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Animated, StyleSheet, LayoutChangeEvent, ViewStyle, Dimensions } from 'react-native';
+import { colors, spacing, radii } from '../theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -109,14 +110,14 @@ export const WorkerSkeletonCard = () => {
 
 const styles = StyleSheet.create({
     skeleton: {
-        backgroundColor: '#E4E4E7',
+        backgroundColor: colors.border,
     },
     card: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 12,
-        marginHorizontal: 16,
-        marginBottom: 12,
+        backgroundColor: colors.bgCard,
+        borderRadius: radii.md,
+        padding: spacing.sm,
+        marginHorizontal: spacing.md,
+        marginBottom: spacing.sm,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
@@ -126,14 +127,14 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: spacing.sm,
     },
     info: {
         flex: 1,
-        marginLeft: 12,
+        marginLeft: spacing.sm,
     },
     body: {
-        marginBottom: 12,
+        marginBottom: spacing.sm,
     },
     tagsRow: {
         flexDirection: 'row',

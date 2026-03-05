@@ -8,6 +8,7 @@ import {
     Dimensions,
 } from 'react-native';
 import { AlertCircle } from 'lucide-react-native';
+import { colors } from '../theme/tokens';
 
 const { width } = Dimensions.get('window');
 
@@ -84,7 +85,7 @@ const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
                 ]}
             >
                 <View style={styles.modalIconContainer}>
-                    <AlertCircle size={32} color="#EF4444" strokeWidth={2.5} />
+                    <AlertCircle size={32} color={colors.error} strokeWidth={2.5} />
                 </View>
                 <Text style={styles.modalTitle}>{title}</Text>
                 <Text style={styles.modalMessage}>{message}</Text>
@@ -130,11 +131,11 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         width: width * 0.85,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.bgCard,
         borderRadius: 24,
         padding: 24,
         alignItems: 'center',
-        shadowColor: '#000',
+        shadowColor: colors.black,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
         shadowRadius: 12,
@@ -144,7 +145,7 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: '#FEE2E2',
+        backgroundColor: colors.error + '20',
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 16,
@@ -152,12 +153,12 @@ const styles = StyleSheet.create({
     modalTitle: {
         fontSize: 20,
         fontWeight: '700',
-        color: '#18181B',
+        color: colors.gray900,
         marginBottom: 8,
     },
     modalMessage: {
         fontSize: 15,
-        color: '#71717A',
+        color: colors.secondary,
         textAlign: 'center',
         lineHeight: 22,
         marginBottom: 24,
@@ -171,25 +172,25 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingVertical: 14,
         borderRadius: 12,
-        backgroundColor: '#F4F4F5',
+        backgroundColor: colors.gray100,
         alignItems: 'center',
     },
     modalCancelButtonText: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#52525B',
+        color: colors.gray600,
     },
     modalConfirmButton: {
         flex: 1,
         paddingVertical: 14,
         borderRadius: 12,
-        backgroundColor: '#EF4444',
+        backgroundColor: colors.error,
         alignItems: 'center',
     },
     modalConfirmButtonText: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#FFFFFF',
+        color: colors.white,
     },
 });
 

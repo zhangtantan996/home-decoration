@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, ImageBackground, StyleSheet, Dimensions, Animated } from 'react-native';
+import { colors, spacing, typography } from '../../theme/tokens';
 
 // 尝试导入 LinearGradient，如果失败则使用降级方案
 let LinearGradient: any;
@@ -91,15 +92,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.4)', // 降级方案：使用半透明黑色背景
   },
   heroContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg - 4,
     paddingBottom: 60,
   },
   heroTitle: {
     fontSize: 28,
     fontWeight: '700',
     lineHeight: 36,
-    color: '#FFFFFF',
-    marginBottom: 8,
+    color: colors.white,
+    marginBottom: spacing.xs,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
   heroPrice: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#FF6B35',
+    color: colors.warning,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,

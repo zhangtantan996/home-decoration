@@ -1,0 +1,3 @@
+Task 7 final cleanup complete. Zero hex literals remain in all target files.
+All shadowColor properties now use colors.black token.
+Verification: 0 matches for #[0-9A-Fa-f]{3,8} pattern.

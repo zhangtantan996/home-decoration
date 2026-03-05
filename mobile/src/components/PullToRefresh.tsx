@@ -9,6 +9,7 @@ import {
     Text,
 } from 'react-native';
 import { Check, AlertCircle, RefreshCw } from 'lucide-react-native';
+import { colors, spacing, radii, typography } from '../theme/tokens';
 
 // 状态枚举
 export enum RefreshState {
@@ -238,7 +239,7 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({
                     return {
                         icon: (
                             <Animated.View style={{ transform: [{ rotate: pullRotation }] }}>
-                                <RefreshCw size={18} color="#18181B" />
+                                <RefreshCw size={18} color={colors.gray900} />
                             </Animated.View>
                         ),
                         text: '下拉刷新',
@@ -247,19 +248,19 @@ export const PullToRefresh: React.FC<PullToRefreshProps> = ({
                     return {
                         icon: (
                             <Animated.View style={{ transform: [{ rotate: spin }] }}>
-                                <RefreshCw size={18} color="#18181B" />
+                                <RefreshCw size={18} color={colors.gray900} />
                             </Animated.View>
                         ),
                         text: '刷新中...',
                     };
                 case RefreshState.SUCCESS:
                     return {
-                        icon: <Check size={20} color="#18181B" />,
+                        icon: <Check size={20} color={colors.gray900} />,
                         text: '已更新',
                     };
                 case RefreshState.FAIL:
                     return {
-                        icon: <AlertCircle size={20} color="#EF4444" />, // 失败保持红色
+                        icon: <AlertCircle size={20} color={colors.error} />,
                         text: '失败',
                     };
                 default:
@@ -336,28 +337,21 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#F4F4F5', // Zinc-100 (高级浅灰)
-        paddingHorizontal: 16,
+        backgroundColor: colors.gray100,
+        paddingHorizontal: spacing.md,
         paddingVertical: 10,
-        borderRadius: 100,
-        // 浅灰背景通常不需要明显的阴影，或者非常淡
-        // shadowColor: '#000',
-        // shadowOffset: { width: 0, height: 2 },
-        // shadowOpacity: 0.05,
-        // shadowRadius: 4,
-        // elevation: 2,
-        gap: 8,
+        borderRadius: radii.full,
+        gap: spacing.xs,
         minWidth: 120,
     },
     capsuleText: {
-        color: '#18181B',      // 深色文字
-        fontSize: 13,
+        color: colors.gray900,
+        fontSize: typography.caption,
         fontWeight: '600',
         letterSpacing: 0.5,
     },
     content: {
         flex: 1,
-        // backgroundColor: '#fff', // 移除背景色限制，由子组件决定
     },
 });
 

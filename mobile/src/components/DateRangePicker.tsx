@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Calendar, ChevronRight, X } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
+import { colors } from '../theme/tokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -227,7 +228,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
             <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>选择进场时间范围</Text>
                 <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
-                    <X size={24} color="#71717A" />
+                    <X size={24} color={colors.secondary} />
                 </TouchableOpacity>
             </View>
 
@@ -238,7 +239,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
                         {tempRange.start ? formatDisplayDate(tempRange.start) : '请选择'}
                     </Text>
                 </View>
-                <ChevronRight size={20} color="#E4E4E7" />
+                <ChevronRight size={20} color={colors.border} />
                 <View style={styles.selectionItem}>
                     <Text style={styles.selectionLabel}>结束日期</Text>
                     <Text style={[styles.selectionValue, tempRange.end && styles.valueActive]}>
@@ -294,8 +295,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
             <TouchableOpacity style={styles.triggerContainer} onPress={openModal}>
                 <View style={styles.triggerContent}>
                     <View style={styles.triggerItem}>
-                        <View style={[styles.iconBox, { backgroundColor: '#ECFDF5' }]}>
-                            <Calendar size={18} color="#059669" />
+                        <View style={[styles.iconBox, { backgroundColor: colors.success + '20' }]}>
+                            <Calendar size={18} color={colors.success} />
                         </View>
                         <View>
                             <Text style={styles.triggerLabel}>最早进场</Text>
@@ -306,8 +307,8 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
                     </View>
                     <View style={styles.connectorLine} />
                     <View style={styles.triggerItem}>
-                        <View style={[styles.iconBox, { backgroundColor: '#FFFBEB' }]}>
-                            <Calendar size={18} color="#D97706" />
+                        <View style={[styles.iconBox, { backgroundColor: colors.warning + '20' }]}>
+                            <Calendar size={18} color={colors.warning} />
                         </View>
                         <View>
                             <Text style={styles.triggerLabel}>最晚进场</Text>
@@ -353,11 +354,11 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
 const styles = StyleSheet.create({
     triggerContainer: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.bgCard,
         borderRadius: 16,
         padding: 16,
         borderWidth: 1,
-        borderColor: '#E4E4E7',
+        borderColor: colors.border,
     },
     triggerContent: {
         flexDirection: 'row',
@@ -379,23 +380,23 @@ const styles = StyleSheet.create({
     },
     triggerLabel: {
         fontSize: 12,
-        color: '#71717A',
+        color: colors.secondary,
         marginBottom: 2,
     },
     triggerValue: {
         fontSize: 15,
         fontWeight: '600',
-        color: '#09090B',
+        color: colors.primary,
     },
     triggerPlaceholder: {
-        color: '#A1A1AA',
+        color: colors.placeholder,
         fontWeight: '400',
         fontSize: 14,
     },
     connectorLine: {
         width: 12,
         height: 1,
-        backgroundColor: '#E4E4E7',
+        backgroundColor: colors.border,
         marginHorizontal: 16,
     },
 
@@ -414,8 +415,8 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         overflow: 'hidden',
-        backgroundColor: '#FFFFFF',
-        shadowColor: '#000',
+        backgroundColor: colors.bgCard,
+        shadowColor: colors.black,
         shadowOffset: { width: 0, height: -2 },
         shadowOpacity: 0.1,
         shadowRadius: 10,
@@ -426,7 +427,7 @@ const styles = StyleSheet.create({
     },
     androidContent: {
         flex: 1,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.bgCard,
     },
     contentWrapper: {
         flex: 1,
@@ -442,16 +443,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingTop: 20,
         paddingBottom: 16,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.bgCard,
     },
     modalTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#09090B',
+        color: colors.primary,
     },
     closeButton: {
         padding: 4,
-        backgroundColor: '#F4F4F5',
+        backgroundColor: colors.gray100,
         borderRadius: 12,
     },
 
@@ -461,7 +462,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginHorizontal: 20,
         padding: 16,
-        backgroundColor: '#F8FAFC',
+        backgroundColor: colors.gray50,
         borderRadius: 16,
         marginBottom: 16,
     },
@@ -471,35 +472,35 @@ const styles = StyleSheet.create({
     },
     selectionLabel: {
         fontSize: 12,
-        color: '#64748B',
+        color: colors.gray500,
         marginBottom: 4,
     },
     selectionValue: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#94A3B8',
+        color: colors.gray400,
     },
     valueActive: {
-        color: '#0F172A',
+        color: colors.gray900,
     },
 
     // Calendar List
     weekRow: {
         flexDirection: 'row',
         paddingVertical: 12,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.bgCard,
         borderBottomWidth: 1,
-        borderBottomColor: '#F1F5F9',
+        borderBottomColor: colors.borderSoft,
     },
     weekText: {
         flex: 1,
         textAlign: 'center',
         fontSize: 13,
-        color: '#64748B',
+        color: colors.gray500,
         fontWeight: '500',
     },
     weekendText: {
-        color: '#F43F5E',
+        color: colors.error,
     },
     flatList: {
         flex: 1,
@@ -515,7 +516,7 @@ const styles = StyleSheet.create({
     monthTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#0F172A',
+        color: colors.gray900,
         marginLeft: 20,
         marginBottom: 16,
     },
@@ -541,7 +542,7 @@ const styles = StyleSheet.create({
         right: 0,
     },
     dayInRange: {
-        backgroundColor: '#ECFDF5',
+        backgroundColor: colors.success + '20',
         marginLeft: -1,
         marginRight: -1,
         width: '120%',
@@ -571,8 +572,8 @@ const styles = StyleSheet.create({
         zIndex: 2,
     },
     dayContentSelected: {
-        backgroundColor: '#0F172A',
-        shadowColor: '#0F172A',
+        backgroundColor: colors.gray900,
+        shadowColor: colors.gray900,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
         shadowRadius: 8,
@@ -580,29 +581,29 @@ const styles = StyleSheet.create({
     },
     dayContentToday: {
         borderWidth: 1,
-        borderColor: '#10B981',
+        borderColor: colors.success,
     },
 
     dayText: {
         fontSize: 15,
-        color: '#334155',
+        color: colors.gray600,
         fontWeight: '500',
     },
     dayTextDisabled: {
-        color: '#CBD5E1',
+        color: colors.disabled,
     },
     dayTextSelected: {
-        color: '#FFFFFF',
+        color: colors.white,
         fontWeight: '700',
         fontSize: 16,
         marginBottom: 2,
     },
     dayTextInRange: {
-        color: '#059669',
+        color: colors.success,
         fontWeight: '600',
     },
     dayTextToday: {
-        color: '#10B981',
+        color: colors.success,
         fontWeight: '600',
     },
 
@@ -616,16 +617,16 @@ const styles = StyleSheet.create({
     },
     labelToday: {
         fontSize: 8,
-        color: '#10B981',
+        color: colors.success,
         position: 'absolute',
         bottom: 2,
     },
 
     // Footer
     footerSafe: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: colors.bgCard,
         borderTopWidth: 1,
-        borderTopColor: '#F1F5F9',
+        borderTopColor: colors.borderSoft,
     },
     modalFooter: {
         paddingHorizontal: 20,
@@ -633,23 +634,23 @@ const styles = StyleSheet.create({
         paddingBottom: Platform.OS === 'android' ? 20 : 0,
     },
     confirmButton: {
-        backgroundColor: '#0F172A',
+        backgroundColor: colors.gray900,
         paddingVertical: 16,
         borderRadius: 14,
         alignItems: 'center',
-        shadowColor: '#0F172A',
+        shadowColor: colors.gray900,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
         shadowRadius: 10,
         elevation: 4,
     },
     confirmButtonDisabled: {
-        backgroundColor: '#E2E8F0',
+        backgroundColor: colors.disabled,
         shadowOpacity: 0,
         elevation: 0,
     },
     confirmText: {
-        color: '#FFFFFF',
+        color: colors.white,
         fontSize: 16,
         fontWeight: '600',
     },
