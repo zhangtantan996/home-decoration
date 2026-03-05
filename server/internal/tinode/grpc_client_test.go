@@ -16,11 +16,13 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 	// Create test tables
 	err = db.Exec(`
-		CREATE TABLE subscriptions (
-			topic TEXT,
-			userid INTEGER
-		)
-	`).Error
+			CREATE TABLE subscriptions (
+				topic TEXT,
+				userid INTEGER,
+				modegiven TEXT,
+				deletedat DATETIME
+			)
+		`).Error
 	if err != nil {
 		t.Fatalf("failed to create subscriptions table: %v", err)
 	}
@@ -47,7 +49,7 @@ func TestMessageDeleter_DeleteMessages_Success(t *testing.T) {
 	topic := "usr123_usr456"
 	userID := uint64(123)
 
-	db.Exec("INSERT INTO subscriptions (topic, userid) VALUES (?, ?)", topic, userID)
+	db.Exec("INSERT INTO subscriptions (topic, userid, modegiven, deletedat) VALUES (?, ?, ?, NULL)", topic, userID, "O")
 	db.Exec("INSERT INTO messages (topic, content) VALUES (?, ?)", topic, "message 1")
 	db.Exec("INSERT INTO messages (topic, content) VALUES (?, ?)", topic, "message 2")
 	db.Exec("INSERT INTO messages (topic, content) VALUES (?, ?)", topic, "message 3")
@@ -85,7 +87,7 @@ func TestMessageDeleter_DeleteMessages_Unauthorized(t *testing.T) {
 	topic := "usr123_usr456"
 	userID := uint64(999) // Different user
 
-	db.Exec("INSERT INTO subscriptions (topic, userid) VALUES (?, ?)", topic, 123)
+	db.Exec("INSERT INTO subscriptions (topic, userid, modegiven, deletedat) VALUES (?, ?, ?, NULL)", topic, 123, "O")
 	db.Exec("INSERT INTO messages (topic, content) VALUES (?, ?)", topic, "message 1")
 
 	// Attempt to delete messages
@@ -112,7 +114,7 @@ func TestMessageDeleter_DeleteMessages_EmptyTopic(t *testing.T) {
 	topic := "usr123_usr456"
 	userID := uint64(123)
 
-	db.Exec("INSERT INTO subscriptions (topic, userid) VALUES (?, ?)", topic, userID)
+	db.Exec("INSERT INTO subscriptions (topic, userid, modegiven, deletedat) VALUES (?, ?, ?, NULL)", topic, userID, "O")
 
 	// Delete messages (should succeed even if no messages)
 	err := deleter.DeleteMessages(context.Background(), topic, userID)
