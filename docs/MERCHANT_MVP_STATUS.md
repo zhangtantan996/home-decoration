@@ -32,6 +32,34 @@
 - 单一商家身份策略落地：已有商家身份时返回 `CHANGE_ROLE`，并新增变更申请单接口。
 - C 端字段兼容同步：`workTypes` 支持 JSON 数组/逗号串双格式解析。
 
+### 🔄 本次全量缺口补齐（2026-03，v1.5.1）
+- 服务商入驻字段升级为强校验：
+  - `avatar` 必填；
+  - 设计师 `yearsExperience` 必填（1-50）；
+  - `portfolioCases[].description` 必填（1-5000）。
+- 主材商入驻基础资料强制必填：
+  - `contactName/contactPhone/businessHours/address`；
+  - `contactPhone` 必须合法。
+- 商家资料中心补齐扩展字段维护：
+  - `highlightTags`、`pricing`、`graduateSchool`、`designPhilosophy`。
+- C 端详情消费补齐：
+  - `highlightTags`、`pricingJson`、`graduateSchool`、`designPhilosophy` 空值隐藏展示。
+- 资质核验适配层接入：
+  - `ID_CARD_VERIFY_PROVIDER`、`LICENSE_VERIFY_PROVIDER`（默认 `manual`），保留人工审核主流程。
+
+### 🔄 本次条款合规留痕补齐（2026-03，v1.5.2）
+- 商家入驻新增线上必勾选条款：
+  - 《平台入驻协议（线上勾选版）》
+  - 《平台规则》
+  - 《隐私与数据处理条款》
+- 服务商与主材商申请接口新增 `legalAcceptance` 入参并强校验：
+  - `accepted=true`
+  - 三个版本字段不能为空（长度 1-64）
+- 申请表新增留痕字段：
+  - `legal_acceptance_json`
+  - `legal_accepted_at`
+  - `legal_accept_source=merchant_web`
+
 ### 🔄 本次补齐范围（2026-02）
 - 商家入口页补齐“工长/项目经理”入驻入口，修复“可登录不可入驻”断层。
 - 商家注册流程新增 `foreman` 类型及施工导向字段（`workTypes`、`yearsExperience`）。

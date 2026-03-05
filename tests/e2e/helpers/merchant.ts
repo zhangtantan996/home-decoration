@@ -29,6 +29,36 @@ export interface MerchantLoginApiData {
   };
 }
 
+export interface MerchantAdminTestEnv {
+  username: string;
+  password: string;
+}
+
+interface AdminLoginApiData {
+  token: string;
+}
+
+interface MerchantApplyStatusData {
+  applicationId: number;
+  status: number;
+  role?: string;
+  entityType?: string;
+}
+
+interface MaterialShopApplyStatusData {
+  applicationId: number;
+  status: number;
+  role?: string;
+  entityType?: string;
+}
+
+export interface LegalAcceptancePayload {
+  accepted: boolean;
+  onboardingAgreementVersion: string;
+  platformRulesVersion: string;
+  privacyDataProcessingVersion: string;
+}
+
 export function getMerchantTestEnv(): MerchantTestEnv {
   return {
     origin: process.env.MERCHANT_ORIGIN || 'http://localhost:5173',
@@ -36,6 +66,22 @@ export function getMerchantTestEnv(): MerchantTestEnv {
     phone: process.env.MERCHANT_PHONE || '13800000001',
     foremanPhone: process.env.MERCHANT_FOREMAN_PHONE || process.env.MERCHANT_PHONE || '13800000001',
     code: process.env.MERCHANT_CODE || '123456',
+  };
+}
+
+export function getMerchantAdminTestEnv(): MerchantAdminTestEnv {
+  return {
+    username: process.env.E2E_ADMIN_USER || 'admin',
+    password: process.env.E2E_ADMIN_PASS || 'admin123',
+  };
+}
+
+export function buildLegalAcceptancePayload(): LegalAcceptancePayload {
+  return {
+    accepted: true,
+    onboardingAgreementVersion: 'v1.0.0-20260305',
+    platformRulesVersion: 'v1.0.0-20260305',
+    privacyDataProcessingVersion: 'v1.0.0-20260305',
   };
 }
 
@@ -139,6 +185,102 @@ export async function loginMerchantByApi(
   expect(result.body.data?.token, 'merchant login should return token').toBeTruthy();
 
   return result.body.data;
+}
+
+export async function loginAdminByApi(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  username: string,
+  password: string,
+): Promise<string> {
+  const result = await merchantApiPost<AdminLoginApiData>(request, apiBaseUrl, '/admin/login', {
+    username,
+    password,
+  });
+
+  expect(result.status, 'admin login should return HTTP 200').toBe(200);
+  expect(result.body.code, `admin login business code should be 0, message=${result.body.message}`).toBe(0);
+  expect(result.body.data?.token, 'admin login should return token').toBeTruthy();
+
+  return result.body.data.token;
+}
+
+export async function getMerchantApplyStatusByPhone(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  phone: string,
+) {
+  return merchantApiGet<MerchantApplyStatusData>(request, apiBaseUrl, `/merchant/apply/${phone}/status`);
+}
+
+export async function getMaterialShopApplyStatusByPhone(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  phone: string,
+) {
+  return merchantApiGet<MaterialShopApplyStatusData>(request, apiBaseUrl, `/material-shop/apply/${phone}/status`);
+}
+
+export async function approveMerchantApplication(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  adminToken: string,
+  applicationId: number,
+) {
+  return merchantApiPost<{ providerId: number }>(
+    request,
+    apiBaseUrl,
+    `/admin/merchant-applications/${applicationId}/approve`,
+    {},
+    adminToken,
+  );
+}
+
+export async function rejectMerchantApplication(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  adminToken: string,
+  applicationId: number,
+  reason = 'E2E reject for resubmit validation',
+) {
+  return merchantApiPost<{ message: string }>(
+    request,
+    apiBaseUrl,
+    `/admin/merchant-applications/${applicationId}/reject`,
+    { reason },
+    adminToken,
+  );
+}
+
+export async function approveMaterialShopApplication(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  adminToken: string,
+  applicationId: number,
+) {
+  return merchantApiPost<{ shopId: number }>(
+    request,
+    apiBaseUrl,
+    `/admin/material-shop-applications/${applicationId}/approve`,
+    {},
+    adminToken,
+  );
+}
+
+export async function rejectMaterialShopApplication(
+  request: APIRequestContext,
+  apiBaseUrl: string,
+  adminToken: string,
+  applicationId: number,
+  reason = 'E2E reject for resubmit validation',
+) {
+  return merchantApiPost<{ message: string }>(
+    request,
+    apiBaseUrl,
+    `/admin/material-shop-applications/${applicationId}/reject`,
+    { reason },
+    adminToken,
+  );
 }
 
 export async function loginMerchantByUi(

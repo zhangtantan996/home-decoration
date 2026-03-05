@@ -4,6 +4,7 @@ import {
     Alert,
     Button,
     Card,
+    Checkbox,
     Col,
     Divider,
     Form,
@@ -20,6 +21,12 @@ import {
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+    MERCHANT_LEGAL_ROUTES,
+    ONBOARDING_AGREEMENT_VERSION,
+    PLATFORM_RULES_VERSION,
+    PRIVACY_DATA_PROCESSING_VERSION,
+} from '../../constants/merchantLegal';
 import { materialShopApplyApi, merchantAuthApi, merchantUploadApi, type MaterialShopApplyPayload } from '../../services/merchantApi';
 
 const { Content } = Layout;
@@ -85,6 +92,109 @@ const MaterialShopRegister: React.FC = () => {
         });
     }, [entityType, form, phoneFromUrl]);
 
+
+    useEffect(() => {
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .register-page-bg {
+                background: linear-gradient(135deg, #f6f8fb 0%, #e9f0f9 100%);
+                position: relative;
+                overflow: auto;
+                min-height: 100vh;
+            }
+            .register-page-bg::before {
+                content: '';
+                position: absolute;
+                top: -10%;
+                left: -10%;
+                width: 60%;
+                height: 60%;
+                border-radius: 50%;
+                background: radial-gradient(circle, rgba(24,144,255,0.08) 0%, rgba(24,144,255,0) 70%);
+                z-index: 0;
+            }
+            .register-page-bg::after {
+                content: '';
+                position: absolute;
+                bottom: -10%;
+                right: -5%;
+                width: 50%;
+                height: 70%;
+                border-radius: 50%;
+                background: radial-gradient(circle, rgba(114,46,209,0.05) 0%, rgba(114,46,209,0) 70%);
+                z-index: 0;
+            }
+            .glassmorphism-card {
+                background: rgba(255, 255, 255, 0.75);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.5);
+                box-shadow: 0 24px 48px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+                border-radius: 24px;
+                position: relative;
+                z-index: 1;
+            }
+            .premium-input .ant-input, .premium-input .ant-input-number-input, .premium-input .ant-select-selector {
+                border-radius: 8px !important;
+            }
+            .glassmorphism-form .ant-form-item-label > label {
+                font-weight: 500;
+                color: #334155;
+            }
+            .animate-fade-in {
+                animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(16px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .premium-steps-dark .ant-steps-item-title {
+                color: rgba(255,255,255,0.7) !important;
+            }
+            .premium-steps-dark .ant-steps-item-process .ant-steps-item-title,
+            .premium-steps-dark .ant-steps-item-finish .ant-steps-item-title {
+                color: #ffffff !important;
+                font-weight: 600;
+            }
+            .premium-steps-dark .ant-steps-item-process .ant-steps-item-icon {
+                background: #fff;
+                border-color: #fff;
+            }
+            .premium-steps-dark .ant-steps-item-process .ant-steps-icon {
+                color: #1890ff !important;
+            }
+            .premium-steps-dark .ant-steps-item-wait .ant-steps-item-icon {
+                background: transparent;
+                border-color: rgba(255,255,255,0.4);
+            }
+            .premium-steps-dark .ant-steps-item-wait .ant-steps-icon {
+                color: rgba(255,255,255,0.6) !important;
+            }
+            .premium-form .ant-form-item-label > label {
+                font-size: 15px;
+            }
+            .premium-product-card {
+                border-radius: 16px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+                border: 1px solid #f0f0f0;
+                transition: transform 0.3s;
+                background: #ffffff;
+            }
+            .premium-product-card:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 12px 32px rgba(0,0,0,0.08);
+            }
+            .premium-product-card .ant-card-head {
+                background: #f8fafc;
+                border-bottom: 1px solid #f1f5f9;
+                border-radius: 16px 16px 0 0;
+            }
+        `;
+        document.head.appendChild(style);
+        return () => { document.head.removeChild(style); };
+    }, []);
+
+
     useEffect(() => {
         const savedDraft = sessionStorage.getItem(DRAFT_KEY);
         if (savedDraft) {
@@ -125,7 +235,7 @@ const MaterialShopRegister: React.FC = () => {
 
     const createSingleUploadHandler = (fieldName: 'businessLicense'): UploadProps['customRequest'] => async (options) => {
         try {
-            const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
+            const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             form.setFieldsValue({ [fieldName]: uploaded.url });
             options.onSuccess?.(uploaded);
         } catch (error) {
@@ -135,9 +245,21 @@ const MaterialShopRegister: React.FC = () => {
         }
     };
 
+    const toSingleUploadFileList = (value?: string): UploadFile[] => {
+        if (!value) {
+            return [];
+        }
+        return [{
+            uid: value,
+            name: value.split('/').pop() || 'uploaded-image',
+            status: 'done',
+            url: value,
+        }];
+    };
+
     const createProductUploadHandler = (productIndex: number): UploadProps['customRequest'] => async (options) => {
         try {
-            const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
+            const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             options.onSuccess?.(uploaded);
             setProducts((prev) => {
                 const next = [...prev];
@@ -201,8 +323,10 @@ const MaterialShopRegister: React.FC = () => {
                     'shopName',
                     'businessLicenseNo',
                     'businessLicense',
+                    'businessHours',
                     'contactName',
                     'contactPhone',
+                    'address',
                 ]);
                 if (showRedirectAlert) {
                     setShowRedirectAlert(false);
@@ -300,6 +424,12 @@ const MaterialShopRegister: React.FC = () => {
     };
 
     const handleSubmit = async () => {
+        try {
+            await form.validateFields(['legalAccepted']);
+        } catch {
+            return;
+        }
+
         if (!validateProducts()) {
             return;
         }
@@ -331,18 +461,24 @@ const MaterialShopRegister: React.FC = () => {
                         });
 
                     const payload: MaterialShopApplyPayload = {
-                        phone: values.phone as string,
-                        code: values.code as string,
+                        phone: String(values.phone || '').trim(),
+                        code: String(values.code || '').trim(),
                         entityType,
-                        shopName: values.shopName as string,
-                        shopDescription: values.shopDescription as string | undefined,
-                        businessLicenseNo: values.businessLicenseNo as string,
-                        businessLicense: values.businessLicense as string,
-                        businessHours: values.businessHours as string | undefined,
-                        contactPhone: values.contactPhone as string,
-                        contactName: values.contactName as string,
-                        address: values.address as string | undefined,
+                        shopName: String(values.shopName || '').trim(),
+                        shopDescription: values.shopDescription ? String(values.shopDescription).trim() : undefined,
+                        businessLicenseNo: String(values.businessLicenseNo || '').trim(),
+                        businessLicense: String(values.businessLicense || '').trim(),
+                        businessHours: String(values.businessHours || '').trim(),
+                        contactPhone: String(values.contactPhone || '').trim(),
+                        contactName: String(values.contactName || '').trim(),
+                        address: String(values.address || '').trim(),
                         products: validProducts,
+                        legalAcceptance: {
+                            accepted: true,
+                            onboardingAgreementVersion: ONBOARDING_AGREEMENT_VERSION,
+                            platformRulesVersion: PLATFORM_RULES_VERSION,
+                            privacyDataProcessingVersion: PRIVACY_DATA_PROCESSING_VERSION,
+                        },
                     };
 
                     const result = resubmitId
@@ -367,9 +503,9 @@ const MaterialShopRegister: React.FC = () => {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
-            <Content style={{ padding: screens.xs ? 16 : 24, maxWidth: 960, margin: '0 auto', width: '100%' }}>
-                <Card styles={{ body: { padding: screens.xs ? 16 : 24 } }}>
+        <Layout className="register-page-bg">
+            <Content style={{ padding: screens.xs ? 16 : 64, maxWidth: 960, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
+                <div className="glassmorphism-card" style={{ padding: screens.xs ? 24 : 48 }}>
                     <div style={{ marginBottom: 24 }}>
                         <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} style={{ padding: 0 }}>
                             返回
@@ -400,7 +536,7 @@ const MaterialShopRegister: React.FC = () => {
                         size={screens.xs ? 'small' : 'default'}
                     />
 
-                    <Form form={form} layout="vertical">
+                    <Form form={form} layout="vertical" className="glassmorphism-form">
                         {currentStep === 0 && (
                             <div>
                                 <Form.Item
@@ -411,7 +547,7 @@ const MaterialShopRegister: React.FC = () => {
                                         { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
                                     ]}
                                 >
-                                    <Input placeholder="请输入11位手机号" maxLength={11} />
+                                    <Input className="premium-input" placeholder="请输入11位手机号" maxLength={11} />
                                 </Form.Item>
 
                                 <Form.Item
@@ -422,7 +558,7 @@ const MaterialShopRegister: React.FC = () => {
                                         { pattern: /^\d{6}$/, message: '请输入6位验证码' },
                                     ]}
                                 >
-                                    <Input
+                                    <Input className="premium-input"
                                         prefix={<SafetyOutlined />}
                                         placeholder="请输入6位验证码"
                                         maxLength={6}
@@ -448,11 +584,11 @@ const MaterialShopRegister: React.FC = () => {
                                 </div>
 
                                 <Form.Item name="shopName" label="店铺名称" rules={[{ required: true, message: '请输入店铺名称' }]}>
-                                    <Input maxLength={100} placeholder="请输入店铺名称" />
+                                    <Input className="premium-input" maxLength={100} placeholder="请输入店铺名称" />
                                 </Form.Item>
 
                                 <Form.Item name="shopDescription" label="店铺描述">
-                                    <Input.TextArea rows={3} maxLength={5000} showCount placeholder="填写店铺经营范围、服务特色等" />
+                                    <Input.TextArea className="premium-input" rows={3} maxLength={5000} showCount placeholder="填写店铺经营范围、服务特色等" />
                                 </Form.Item>
 
                                 <Row gutter={16}>
@@ -462,12 +598,12 @@ const MaterialShopRegister: React.FC = () => {
                                             label="营业执照号"
                                             rules={[{ required: true, message: '请输入营业执照号' }]}
                                         >
-                                            <Input maxLength={50} placeholder="请输入营业执照号" />
+                                            <Input className="premium-input" maxLength={50} placeholder="请输入营业执照号" />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} sm={12}>
-                                        <Form.Item name="businessHours" label="营业时间">
-                                            <Input maxLength={100} placeholder="例如：09:00-18:00" />
+                                        <Form.Item name="businessHours" label="营业时间" rules={[{ required: true, message: '请输入营业时间' }]}>
+                                            <Input className="premium-input" maxLength={100} placeholder="例如：09:00-18:00" />
                                         </Form.Item>
                                     </Col>
                                 </Row>
@@ -475,6 +611,11 @@ const MaterialShopRegister: React.FC = () => {
                                 <Form.Item
                                     name="businessLicense"
                                     label="营业执照图片"
+                                    valuePropName="fileList"
+                                    getValueProps={(value: unknown) => ({
+                                        fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
+                                    })}
+                                    getValueFromEvent={() => form.getFieldValue('businessLicense')}
                                     rules={[{ required: true, message: '请上传营业执照图片' }]}
                                 >
                                     <Upload
@@ -495,7 +636,7 @@ const MaterialShopRegister: React.FC = () => {
                                 <Row gutter={16}>
                                     <Col xs={24} sm={12}>
                                         <Form.Item name="contactName" label="联系人" rules={[{ required: true, message: '请输入联系人姓名' }]}>
-                                            <Input maxLength={50} placeholder="请输入联系人姓名" />
+                                            <Input className="premium-input" maxLength={50} placeholder="请输入联系人姓名" />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} sm={12}>
@@ -507,13 +648,13 @@ const MaterialShopRegister: React.FC = () => {
                                                 { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
                                             ]}
                                         >
-                                            <Input maxLength={11} placeholder="请输入联系电话" />
+                                            <Input className="premium-input" maxLength={11} placeholder="请输入联系电话" />
                                         </Form.Item>
                                     </Col>
                                 </Row>
 
-                                <Form.Item name="address" label="门店地址">
-                                    <Input placeholder="请输入门店地址" maxLength={300} />
+                                <Form.Item name="address" label="门店地址" rules={[{ required: true, message: '请输入门店地址' }]}>
+                                    <Input className="premium-input" placeholder="请输入门店地址" maxLength={300} />
                                 </Form.Item>
                             </div>
                         )}
@@ -533,9 +674,7 @@ const MaterialShopRegister: React.FC = () => {
                                     </Space>
                                 </Space>
                                 {products.map((product, index) => (
-                                    <Card
-                                        key={product.id}
-                                        size="small"
+                                    <Card key={product.id} size="small" className="premium-product-card"
                                         title={`商品 ${index + 1}`}
                                         extra={
                                             products.length > 1 && (
@@ -554,7 +693,7 @@ const MaterialShopRegister: React.FC = () => {
                                     >
                                         <Row gutter={[12, 12]}>
                                             <Col xs={24} sm={12}>
-                                                <Input
+                                                <Input className="premium-input"
                                                     placeholder="商品名称"
                                                     value={product.name}
                                                     maxLength={120}
@@ -562,7 +701,7 @@ const MaterialShopRegister: React.FC = () => {
                                                 />
                                             </Col>
                                             <Col xs={24} sm={12}>
-                                                <InputNumber
+                                                <InputNumber className="premium-input"
                                                     style={{ width: '100%' }}
                                                     min={1}
                                                     placeholder="价格（元）"
@@ -576,7 +715,7 @@ const MaterialShopRegister: React.FC = () => {
                                             {product.params.map((param, paramIndex) => (
                                                 <Row key={param.id} gutter={[8, 8]} style={{ marginBottom: 8 }}>
                                                     <Col xs={24} sm={10}>
-                                                        <Input
+                                                        <Input className="premium-input"
                                                             placeholder="参数名（如：品牌）"
                                                             value={param.key}
                                                             maxLength={50}
@@ -588,7 +727,7 @@ const MaterialShopRegister: React.FC = () => {
                                                         />
                                                     </Col>
                                                     <Col xs={24} sm={10}>
-                                                        <Input
+                                                        <Input className="premium-input"
                                                             placeholder="参数值（如：某品牌）"
                                                             value={param.value}
                                                             maxLength={100}
@@ -658,6 +797,38 @@ const MaterialShopRegister: React.FC = () => {
                                 </Button>
                             </div>
                         )}
+
+                        {currentStep === 1 && (
+                            <Form.Item
+                                name="legalAccepted"
+                                valuePropName="checked"
+                                style={{ marginTop: 16, marginBottom: 0 }}
+                                rules={[
+                                    {
+                                        validator: (_, value) =>
+                                            value
+                                                ? Promise.resolve()
+                                                : Promise.reject(new Error('请先阅读并同意平台入驻相关条款')),
+                                    },
+                                ]}
+                            >
+                                <Checkbox aria-label="同意平台入驻相关条款">
+                                    我已阅读并同意
+                                    {' '}
+                                    <a href={MERCHANT_LEGAL_ROUTES.onboardingAgreement} target="_blank" rel="noreferrer">
+                                        《平台入驻协议（线上勾选版）》
+                                    </a>
+                                    {' '}
+                                    <a href={MERCHANT_LEGAL_ROUTES.platformRules} target="_blank" rel="noreferrer">
+                                        《平台规则》
+                                    </a>
+                                    {' '}
+                                    <a href={MERCHANT_LEGAL_ROUTES.privacyDataProcessing} target="_blank" rel="noreferrer">
+                                        《隐私与数据处理条款》
+                                    </a>
+                                </Checkbox>
+                            </Form.Item>
+                        )}
                     </Form>
 
                     <Divider />
@@ -680,7 +851,7 @@ const MaterialShopRegister: React.FC = () => {
                             )}
                         </div>
                     </Space>
-                </Card>
+                </div>
             </Content>
         </Layout>
     );

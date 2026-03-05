@@ -21,6 +21,53 @@ const normalizeProviderType = (value?: string): ProviderType => {
   return 'designer';
 };
 
+const parseStringList = (raw?: string): string[] => {
+  if (!raw) {
+    return [];
+  }
+  const text = raw.trim();
+  if (!text) {
+    return [];
+  }
+  if (text.startsWith('[') && text.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item).trim()).filter(Boolean);
+      }
+    } catch {
+      // fallback
+    }
+  }
+  if (text.includes(' · ')) {
+    return text.split(' · ').map((item) => item.trim()).filter(Boolean);
+  }
+  return text.split(',').map((item) => item.trim()).filter(Boolean);
+};
+
+const formatPricingLabel = (pricingJson?: string, priceMin?: number, priceMax?: number, priceUnit?: string): string => {
+  const normalizedUnit = priceUnit ? `/${priceUnit.replace('平米', '㎡')}` : '';
+  if (pricingJson) {
+    try {
+      const parsed = JSON.parse(pricingJson) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const entries = Object.entries(parsed)
+          .map(([key, value]) => ({ key, value: Number(value) }))
+          .filter((item) => Number.isFinite(item.value) && item.value > 0);
+        if (entries.length > 0) {
+          return entries.map((item) => `${item.key}: ¥${item.value}`).join(' / ');
+        }
+      }
+    } catch {
+      // fallback to range
+    }
+  }
+  if (priceMin !== undefined && priceMax !== undefined) {
+    return `¥${priceMin} - ¥${priceMax}${normalizedUnit}`;
+  }
+  return '';
+};
+
 interface ProviderDetailParams {
   id: string;
   type: ProviderType;
@@ -62,11 +109,14 @@ const ProviderDetailPage: React.FC = () => {
     fetchDetail();
   }, [params.id, params.type]);
 
+  const providerDetail = useMemo(() => ((detail as { provider?: ProviderDetail })?.provider || detail || null), [detail]);
+  const userDetail = useMemo(() => ((detail as { user?: { id?: number; publicId?: string; nickname?: string; avatar?: string } })?.user || null), [detail]);
+
   const workTypeTags = useMemo(() => {
-    if (!detail?.workTypes) {
+    if (!providerDetail?.workTypes) {
       return [];
     }
-    const raw = detail.workTypes.trim();
+    const raw = providerDetail.workTypes.trim();
     if (!raw) {
       return [];
     }
@@ -83,7 +133,22 @@ const ProviderDetailPage: React.FC = () => {
     }
 
     return raw.split(',').map((item) => item.trim()).filter(Boolean);
-  }, [detail?.workTypes]);
+  }, [providerDetail?.workTypes]);
+
+  const serviceAreaTags = useMemo(() => {
+    const parsed = parseStringList(providerDetail?.serviceArea);
+    return parsed.length > 0 ? parsed : ['本地服务'];
+  }, [providerDetail?.serviceArea]);
+
+  const highlightTags = useMemo(
+    () => parseStringList(providerDetail?.highlightTags),
+    [providerDetail?.highlightTags]
+  );
+
+  const pricingLabel = useMemo(
+    () => formatPricingLabel(providerDetail?.pricingJson, providerDetail?.priceMin, providerDetail?.priceMax, providerDetail?.priceUnit),
+    [providerDetail?.pricingJson, providerDetail?.priceMax, providerDetail?.priceMin, providerDetail?.priceUnit]
+  );
 
   const handleBook = () => {
     if (!auth.token) {
@@ -97,7 +162,7 @@ const ProviderDetailPage: React.FC = () => {
       return;
     }
 
-    const providerName = encodeURIComponent(detail.nickname || detail.companyName || '服务商');
+    const providerName = encodeURIComponent(userDetail?.nickname || providerDetail?.nickname || providerDetail?.companyName || '服务商');
     Taro.navigateTo({
       url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}`,
     });
@@ -110,7 +175,8 @@ const ProviderDetailPage: React.FC = () => {
       return;
     }
 
-    if (!detail?.userId) {
+    const providerUserID = providerDetail?.userId || userDetail?.id;
+    if (!providerUserID) {
       Taro.showToast({ title: '服务商信息异常', icon: 'none' });
       return;
     }
@@ -128,9 +194,9 @@ const ProviderDetailPage: React.FC = () => {
         }
       }
 
-      const tinodeUserId = await TinodeService.resolveTinodeUserId(detail.userId);
-      const providerName = detail.nickname || detail.companyName || '服务商';
-      const avatarUrl = detail.avatar || detail.coverImage || '';
+      const tinodeUserId = await TinodeService.resolveTinodeUserId(providerUserID);
+      const providerName = userDetail?.nickname || providerDetail?.nickname || providerDetail?.companyName || '服务商';
+      const avatarUrl = userDetail?.avatar || providerDetail?.avatar || providerDetail?.coverImage || '';
 
       const parts = [`topic=${encodeURIComponent(tinodeUserId)}`, `name=${encodeURIComponent(providerName)}`];
       if (avatarUrl) {
@@ -164,9 +230,10 @@ const ProviderDetailPage: React.FC = () => {
     return <View className="p-md text-center text-gray-500">未找到服务商信息</View>;
   }
 
-  const avatarUrl = detail.avatar || detail.coverImage || '';
-  const establishedYears = detail.establishedYear
-    ? Math.max(1, new Date().getFullYear() - detail.establishedYear)
+  const displayName = userDetail?.nickname || providerDetail?.nickname || providerDetail?.companyName || '服务商';
+  const avatarUrl = userDetail?.avatar || providerDetail?.avatar || providerDetail?.coverImage || detail.coverImage || '';
+  const establishedYears = providerDetail?.establishedYear
+    ? Math.max(1, new Date().getFullYear() - providerDetail.establishedYear)
     : undefined;
 
   return (
@@ -189,19 +256,22 @@ const ProviderDetailPage: React.FC = () => {
             )}
 
             <View className="ml-md flex-1">
-              <View className="text-lg font-bold mb-xs">{detail.nickname || detail.companyName}</View>
+              <View className="text-lg font-bold mb-xs">{displayName}</View>
               <View className="flex flex-row items-center text-sm text-gray-500">
-                <Text className="text-primary font-bold mr-sm">{detail.rating?.toFixed(1) || '5.0'}分</Text>
+                <Text className="text-primary font-bold mr-sm">{providerDetail?.rating?.toFixed(1) || '5.0'}分</Text>
                 <Text className="mr-sm">·</Text>
-                <Text>{detail.completedCnt || 0} 单成交</Text>
+                <Text>{providerDetail?.completedCnt || 0} 单成交</Text>
               </View>
             </View>
           </View>
 
           <View className="mt-md flex flex-wrap gap-xs">
-            {detail.verified ? <Tag variant="primary">已认证</Tag> : null}
+            {providerDetail?.verified ? <Tag variant="primary">已认证</Tag> : null}
             {workTypeTags.map((type) => (
               <Tag key={type} variant="secondary">{type}</Tag>
+            ))}
+            {highlightTags.map((tag) => (
+              <Tag key={`highlight-${tag}`} variant="secondary">{tag}</Tag>
             ))}
           </View>
         </View>
@@ -209,7 +279,7 @@ const ProviderDetailPage: React.FC = () => {
         <View className="bg-white p-md mb-sm">
           <View className="font-bold mb-md text-base">服务介绍</View>
           <View className="text-gray-600 leading-relaxed text-sm">
-            {detail.serviceIntro || '暂无详细介绍'}
+            {providerDetail?.serviceIntro || '暂无详细介绍'}
           </View>
         </View>
 
@@ -218,12 +288,24 @@ const ProviderDetailPage: React.FC = () => {
           <View className="space-y-sm">
             <View className="flex justify-between text-sm py-xs border-b border-gray-100">
               <Text className="text-gray-500">擅长风格</Text>
-              <Text>{detail.specialty || '-'}</Text>
+              <Text>{providerDetail?.specialty || '-'}</Text>
             </View>
             <View className="flex justify-between text-sm py-xs border-b border-gray-100">
               <Text className="text-gray-500">服务区域</Text>
-              <Text>{detail.serviceArea || '本地'}</Text>
+              <Text>{serviceAreaTags.join('、')}</Text>
             </View>
+            {providerDetail?.graduateSchool ? (
+              <View className="flex justify-between text-sm py-xs border-b border-gray-100">
+                <Text className="text-gray-500">毕业院校</Text>
+                <Text>{providerDetail.graduateSchool}</Text>
+              </View>
+            ) : null}
+            {providerDetail?.designPhilosophy ? (
+              <View className="text-sm py-xs border-b border-gray-100">
+                <Text className="text-gray-500 mb-xs">理念说明</Text>
+                <Text>{providerDetail.designPhilosophy}</Text>
+              </View>
+            ) : null}
             {establishedYears ? (
               <View className="flex justify-between text-sm py-xs border-b border-gray-100">
                 <Text className="text-gray-500">从业年限</Text>
@@ -233,14 +315,11 @@ const ProviderDetailPage: React.FC = () => {
           </View>
         </View>
 
-        {detail.priceMin !== undefined ? (
+        {pricingLabel ? (
           <View className="bg-white p-md mb-xl">
             <View className="font-bold mb-md text-base">参考价格</View>
             <View className="text-brand font-bold text-lg">
-              ¥{detail.priceMin} - ¥{detail.priceMax}
-              <Text className="text-sm text-gray-500 font-normal ml-xs">
-                {detail.priceUnit ? `/${detail.priceUnit}` : ''}
-              </Text>
+              {pricingLabel}
             </View>
           </View>
         ) : null}

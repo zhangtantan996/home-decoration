@@ -51,8 +51,13 @@ const MerchantDashboard: React.FC = () => {
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 400 }}>
+            <div
+                style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 400 }}
+                role="status"
+                aria-live="polite"
+            >
                 <Spin size="large" />
+                <span className="sr-only">正在加载工作台数据</span>
             </div>
         );
     }
@@ -69,31 +74,64 @@ const MerchantDashboard: React.FC = () => {
         title: string;
         data: Array<{ label: string; value: number | string; color?: string }>;
         path: string;
-    }) => (
-        <div className={styles.statCard} onClick={() => navigate(path)} style={{ cursor: 'pointer' }}>
-            <div className={styles.statHeader}>
-                <div className={`${styles.statIcon} ${styles[iconClass]}`}>
-                    {icon}
-                </div>
-                <div className={styles.statTitle}>{title}</div>
-            </div>
-            <div className={styles.statContent}>
-                {data.map((item, index) => (
-                    <div key={index} className={styles.statItem}>
-                        <div className={styles.statLabel}>{item.label}</div>
-                        <div className={styles.statValue} style={{ color: item.color }}>{item.value}</div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
+    }) => {
+        const handleKeyPress = (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                navigate(path);
+            }
+        };
 
-    const QuickAction = ({ icon, label, path }: { icon: React.ReactNode; label: string; path: string }) => (
-        <div className={styles.actionButton} onClick={() => navigate(path)}>
-            <div className={styles.actionIcon}>{icon}</div>
-            <div className={styles.actionText}>{label}</div>
-        </div>
-    );
+        return (
+            <div
+                className={styles.statCard}
+                onClick={() => navigate(path)}
+                onKeyPress={handleKeyPress}
+                tabIndex={0}
+                role="button"
+                aria-label={`${title}：${data.map(d => `${d.label} ${d.value}`).join('，')}`}
+                style={{ cursor: 'pointer' }}
+            >
+                <div className={styles.statHeader}>
+                    <div className={`${styles.statIcon} ${styles[iconClass]}`} aria-hidden="true">
+                        {icon}
+                    </div>
+                    <div className={styles.statTitle}>{title}</div>
+                </div>
+                <div className={styles.statContent}>
+                    {data.map((item, index) => (
+                        <div key={index} className={styles.statItem}>
+                            <div className={styles.statLabel}>{item.label}</div>
+                            <div className={styles.statValue} style={{ color: item.color }}>{item.value}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    const QuickAction = ({ icon, label, path }: { icon: React.ReactNode; label: string; path: string }) => {
+        const handleKeyPress = (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                navigate(path);
+            }
+        };
+
+        return (
+            <div
+                className={styles.actionButton}
+                onClick={() => navigate(path)}
+                onKeyPress={handleKeyPress}
+                tabIndex={0}
+                role="button"
+                aria-label={label}
+            >
+                <div className={styles.actionIcon} aria-hidden="true">{icon}</div>
+                <div className={styles.actionText}>{label}</div>
+            </div>
+        );
+    };
 
     const isForeman = String(provider?.providerSubType || '').toLowerCase() === 'foreman';
 

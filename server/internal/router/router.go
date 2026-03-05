@@ -118,6 +118,22 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				user.GET("/profile", handler.GetProfile)
 				user.PUT("/profile", handler.UpdateProfile)
 				user.GET("/favorites", handler.GetUserFavorites)
+				// 账号安全
+				user.POST("/change-password", handler.ChangePassword)
+				user.POST("/change-phone", handler.ChangePhone)
+				user.POST("/delete-account", handler.DeleteAccount)
+				// 实名认证
+				user.GET("/verification", handler.GetVerification)
+				user.POST("/verification", handler.SubmitVerification)
+				// 登录设备管理
+				user.GET("/devices", handler.GetDevices)
+				user.DELETE("/devices/:id", handler.RemoveDevice)
+				user.DELETE("/devices", handler.RemoveAllDevices)
+				// 偏好设置
+				user.GET("/settings", handler.GetUserSettings)
+				user.PUT("/settings", handler.UpdateUserSettings)
+				// 意见反馈
+				user.POST("/feedback", handler.SubmitFeedback)
 			}
 
 			// 身份管理（多身份切换系统）
@@ -484,6 +500,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		v1.GET("/merchant/apply/:phone/status", handler.MerchantApplyStatus)
 		v1.POST("/merchant/apply/:id/resubmit", handler.MerchantResubmit)
 		v1.POST("/merchant/change-application", handler.MerchantApplyIdentityChange)
+		v1.POST("/merchant/upload-public", handler.MerchantUploadImage)
 		v1.POST("/material-shop/apply", handler.MaterialShopApply)
 		v1.GET("/material-shop/apply/:phone/status", handler.MaterialShopApplyStatus)
 		v1.POST("/material-shop/apply/:id/resubmit", handler.MaterialShopApplyResubmit)

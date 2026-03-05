@@ -1326,6 +1326,44 @@
 - 新增：`POST /api/v1/merchant/change-application`。
 - 已入驻用户再次申请时返回 `nextAction=CHANGE_ROLE`，引导提交变更申请单。
 
+#### 4.0.11 v1.5.1 入驻字段强校验升级
+- 服务商申请（`merchant/apply` + `resubmit`）新增硬校验：
+  - `avatar` 必填；
+  - 设计师 `yearsExperience` 必填，范围 `1-50`；
+  - `portfolioCases[].description` 必填，长度 `1-5000`。
+- 主材商申请（`material-shop/apply` + `resubmit`）新增硬校验：
+  - `contactName`、`contactPhone`、`businessHours`、`address` 必填；
+  - `contactPhone` 必须为合法手机号。
+- 资质核验适配层（默认 manual）：
+  - `ID_CARD_VERIFY_PROVIDER=manual|xxx`
+  - `LICENSE_VERIFY_PROVIDER=manual|xxx`
+  - `VERIFY_TIMEOUT_MS`
+
+#### 4.0.12 v1.5.2 入驻条款勾选留痕
+- 入驻提交接口（服务商与主材商，含 resubmit）新增必填：
+  - `legalAcceptance.accepted: boolean`
+  - `legalAcceptance.onboardingAgreementVersion: string`
+  - `legalAcceptance.platformRulesVersion: string`
+  - `legalAcceptance.privacyDataProcessingVersion: string`
+- 后端硬校验：
+  - `accepted` 必须为 `true`
+  - 三个版本字段不能为空，长度范围 `1-64`
+- 留痕字段落库：
+  - `legal_acceptance_json`
+  - `legal_accepted_at`
+  - `legal_accept_source`（默认 `merchant_web`）
+
+#### 4.0.13 条款版本管理规则（实施要求）
+- 条款版本号统一采用：`v主版本.次版本.修订-YYYYMMDD`。
+- 当条款正文变更时，必须同步更新：
+  1. 商家前端常量（`admin/src/constants/merchantLegal.ts`）
+  2. 本接口文档与 `docs/API_CHANGES.md`
+  3. `docs/legal/` 对应条款模板
+- 留痕字段说明：
+  - `legal_acceptance_json`：原始勾选快照（含 accepted 与三个版本号）
+  - `legal_accepted_at`：服务端确认勾选时间
+  - `legal_accept_source`：勾选来源（当前 `merchant_web`）
+
 ---
 
 ### 4.1 商家入驻申请
@@ -1343,6 +1381,7 @@
     "entityType": "company",
     "applicantType": "studio",
     "realName": "张三",
+    "avatar": "https://avatar.jpg",
     "idCardNo": "310101199001011234",
     "idCardFront": "https://id-front.jpg",
     "idCardBack": "https://id-back.jpg",
@@ -1367,19 +1406,25 @@
     "portfolioCases": [
         {
             "title": "现代简约风格案例",
-            "images": ["https://case1-1.jpg", "https://case1-2.jpg"],
+            "description": "三居室改造，优化采光与动线",
+            "images": ["https://case1-1.jpg", "https://case1-2.jpg", "https://case1-3.jpg"],
             "style": "现代简约",
-            "area": "120㎡",
-            "year": "2024"
+            "area": "120㎡"
         },
         {
             "title": "北欧风格案例",
-            "images": ["https://case2-1.jpg"],
+            "description": "小户型收纳体系重构",
+            "images": ["https://case2-1.jpg", "https://case2-2.jpg", "https://case2-3.jpg"],
             "style": "北欧",
-            "area": "95㎡",
-            "year": "2024"
+            "area": "95㎡"
         }
-    ]
+    ],
+    "legalAcceptance": {
+        "accepted": true,
+        "onboardingAgreementVersion": "v1.0.0-20260305",
+        "platformRulesVersion": "v1.0.0-20260305",
+        "privacyDataProcessingVersion": "v1.0.0-20260305"
+    }
 }
 ```
 > **role**: `designer` / `foreman` / `company`
@@ -1389,6 +1434,17 @@
 > **applicantType**（兼容）: `personal`（个人）/ `studio`（工作室）/ `company`（公司）/ `foreman`（工长）
 >
 > **workTypes**: 工长类型必填，其他类型可省略。推荐值：`mason`、`electrician`、`carpenter`、`painter`、`plumber`。
+>
+> **必填强化（v1.5.1）**:
+> - `avatar` 必填；
+> - 设计师/工长 `yearsExperience` 必填（1-50）；
+> - 每个 `portfolioCases` 均需 `description`；
+> - 文本字段统一上限 5000 字符（防滥用）。
+>
+> **条款留痕强化（v1.5.2）**:
+> - `legalAcceptance` 必填；
+> - `accepted` 必须为 `true`；
+> - 三个版本字段不能为空，长度 `1-64`。
 
 **响应数据**:
 ```json
@@ -1458,6 +1514,12 @@
     "contactPhone": "13800138000",
     "contactName": "王五",
     "address": "上海市浦东新区XX路88号",
+    "legalAcceptance": {
+        "accepted": true,
+        "onboardingAgreementVersion": "v1.0.0-20260305",
+        "platformRulesVersion": "v1.0.0-20260305",
+        "privacyDataProcessingVersion": "v1.0.0-20260305"
+    },
     "products": [
         {
             "name": "800x800 通体砖",
@@ -1469,6 +1531,8 @@
 }
 ```
 > 主材商后端硬校验：商品总数 5-20、每商品至少 1 图、参数对象与价格必填。
+>
+> **必填强化（v1.5.1）**：`contactName`、`contactPhone`、`businessHours`、`address` 不可缺失，且 `contactPhone` 必须合法。
 
 ---
 
@@ -1545,18 +1609,31 @@
     "message": "success",
     "data": {
         "id": 1,
-        "userId": 50,
+        "name": "XX设计工作室",
         "providerType": 1,
+        "applicantType": "studio",
+        "providerSubType": "designer",
+        "role": "designer",
+        "entityType": "company",
         "companyName": "XX设计工作室",
         "avatar": "https://...",
-        "phone": "13800138000",
         "rating": 4.8,
-        "reviewCount": 120,
+        "completedCnt": 120,
         "yearsExperience": 8,
-        "specialty": "现代简约,北欧风格",
+        "specialty": ["现代简约", "北欧风格"],
+        "workTypes": ["mason", "electrician"],
+        "highlightTags": ["工期可控", "节点验收"],
+        "pricing": {
+            "flat": 1200,
+            "duplex": 1600,
+            "other": 1000
+        },
+        "graduateSchool": "同济大学",
+        "designPhilosophy": "设计服务于生活动线",
         "verified": true,
-        "status": 1,
         "serviceArea": ["浦东新区", "徐汇区"],
+        "serviceAreaCodes": ["310115", "310104"],
+        "introduction": "专注高品质室内设计，拥有8年从业经验",
         "teamSize": 8,
         "officeAddress": "上海市浦东新区张江高科技园区"
     }

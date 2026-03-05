@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { adminIdentityApplicationApi, type IdentityApplicationItem } from '../../services/api';
+import MerchantApplicationDetail from './components/MerchantApplicationDetail';
 
 const statusMap: Record<number, { text: string; color: string }> = {
     0: { text: '待审核', color: 'orange' },
@@ -283,40 +284,48 @@ const IdentityApplicationAudit: React.FC = () => {
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
                 footer={null}
-                width={760}
+                width={900}
             >
                 {detailLoading && <div style={{ marginBottom: 12 }}>加载详情中...</div>}
                 {currentItem && (
-                    <Descriptions bordered column={2} size="small">
-                        <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
-                        <Descriptions.Item label="用户ID">{currentItem.userId}</Descriptions.Item>
-                        <Descriptions.Item label="身份类型">
-                            {currentItem.identityType === 'provider' ? '服务商' : currentItem.identityType}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="服务商子类型">
-                            {providerSubTypeTag(currentItem.providerSubType)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="状态">{statusTag(currentItem.status)}</Descriptions.Item>
-                        <Descriptions.Item label="审核人">{currentItem.reviewedBy || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="申请时间">{formatDateTime(currentItem.appliedAt)}</Descriptions.Item>
-                        <Descriptions.Item label="审核时间">{formatDateTime(currentItem.reviewedAt)}</Descriptions.Item>
-                        {currentItem.rejectReason && (
-                            <Descriptions.Item label="驳回原因" span={2}>
-                                {currentItem.rejectReason}
+                    <>
+                        <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
+                            <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
+                            <Descriptions.Item label="用户ID">{currentItem.userId}</Descriptions.Item>
+                            <Descriptions.Item label="身份类型">
+                                {currentItem.identityType === 'provider' ? '服务商' : currentItem.identityType}
                             </Descriptions.Item>
-                        )}
-                    </Descriptions>
-                )}
+                            <Descriptions.Item label="服务商子类型">
+                                {providerSubTypeTag(currentItem.providerSubType)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="状态">{statusTag(currentItem.status)}</Descriptions.Item>
+                            <Descriptions.Item label="审核人">{currentItem.reviewedBy || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="申请时间">{formatDateTime(currentItem.appliedAt)}</Descriptions.Item>
+                            <Descriptions.Item label="审核时间">{formatDateTime(currentItem.reviewedAt)}</Descriptions.Item>
+                            {currentItem.rejectReason && (
+                                <Descriptions.Item label="驳回原因" span={2}>
+                                    {currentItem.rejectReason}
+                                </Descriptions.Item>
+                            )}
+                        </Descriptions>
 
-                {currentItem?.status === 0 && (
-                    <Space style={{ marginTop: 16 }}>
-                        <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => approve(currentItem)}>
-                            审核通过
-                        </Button>
-                        <Button danger icon={<CloseCircleOutlined />} onClick={() => openReject(currentItem)}>
-                            驳回申请
-                        </Button>
-                    </Space>
+                        {currentItem.merchantDetails && (
+                            <Card title="商家入驻详细信息" size="small" style={{ marginBottom: 16 }}>
+                                <MerchantApplicationDetail details={currentItem.merchantDetails} />
+                            </Card>
+                        )}
+
+                        {currentItem.status === 0 && (
+                            <Space style={{ marginTop: 16 }}>
+                                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => approve(currentItem)}>
+                                    审核通过
+                                </Button>
+                                <Button danger icon={<CloseCircleOutlined />} onClick={() => openReject(currentItem)}>
+                                    驳回申请
+                                </Button>
+                            </Space>
+                        )}
+                    </>
                 )}
             </Modal>
 

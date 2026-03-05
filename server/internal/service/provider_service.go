@@ -261,6 +261,8 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	}
 	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
 	// Also fallback to provider cover image for legacy/seeded data.
+	provider.Avatar = imgutil.GetFullImageURL(provider.Avatar)
+	provider.CoverImage = imgutil.GetFullImageURL(provider.CoverImage)
 	if user.Avatar == "" {
 		user.Avatar = provider.CoverImage
 	}

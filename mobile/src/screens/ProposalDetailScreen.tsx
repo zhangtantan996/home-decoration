@@ -7,10 +7,9 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     Dimensions,
-
     Platform,
+    Alert,
 } from 'react-native';
 import {
     ArrowLeft,
@@ -24,6 +23,7 @@ import {
     CheckCircle,
 } from 'lucide-react-native';
 import { proposalApi } from '../services/api';
+import { useToast } from '../components/Toast';
 import { Proposal, ProposalStatus, getProposalStatusText, Order } from '../types/businessFlow';
 import RejectionReasonModal from '../components/RejectionReasonModal';
 
@@ -35,6 +35,7 @@ interface ProposalDetailScreenProps {
 }
 
 const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navigation }) => {
+    const { showAlert } = useToast();
     const { proposalId } = route.params;
 
     const [proposal, setProposal] = useState<Proposal | null>(null);
@@ -64,7 +65,7 @@ const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navi
                 setProposal(res.data);
             }
         } catch (error: any) {
-            Alert.alert('加载失败', error.message || '请稍后重试');
+            showAlert('加载失败', error.message || '请稍后重试');
         } finally {
             setLoading(false);
         }
@@ -85,7 +86,7 @@ const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navi
                 proposalId: proposalId,
             });
         } catch (error: any) {
-            Alert.alert('操作失败', error.message || '请稍后重试');
+            showAlert('操作失败', error.message || '请稍后重试');
         } finally {
             setConfirming(false);
         }
@@ -107,7 +108,7 @@ const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navi
             setResultProjectId(null);
             setSuccessModalVisible(true);
         } catch (error: any) {
-            Alert.alert('操作失败', error.message || '请稍后重试');
+            showAlert('操作失败', error.message || '请稍后重试');
         } finally {
             setRejecting(false);
         }

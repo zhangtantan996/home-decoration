@@ -31,6 +31,7 @@ type MerchantApplyInput struct {
 	Role          string `json:"role"`          // designer, foreman, company
 	EntityType    string `json:"entityType"`    // personal, company
 	RealName      string `json:"realName" binding:"required"`
+	Avatar        string `json:"avatar" binding:"required"`
 	IDCardNo      string `json:"idCardNo" binding:"required"`
 	IDCardFront   string `json:"idCardFront" binding:"required"`
 	IDCardBack    string `json:"idCardBack" binding:"required"`
@@ -53,14 +54,24 @@ type MerchantApplyInput struct {
 	DesignPhilosophy string             `json:"designPhilosophy"`
 	// 作品集
 	PortfolioCases []PortfolioCaseInput `json:"portfolioCases" binding:"required,min=1"`
+	// 条款勾选留痕
+	LegalAcceptance LegalAcceptanceInput `json:"legalAcceptance" binding:"required"`
 }
 
 // PortfolioCaseInput 作品集输入
 type PortfolioCaseInput struct {
-	Title  string   `json:"title" binding:"required"`
-	Images []string `json:"images" binding:"required,min=1"`
-	Style  string   `json:"style"`
-	Area   string   `json:"area"`
+	Title       string   `json:"title" binding:"required"`
+	Description string   `json:"description" binding:"required"`
+	Images      []string `json:"images" binding:"required,min=1"`
+	Style       string   `json:"style"`
+	Area        string   `json:"area"`
+}
+
+type LegalAcceptanceInput struct {
+	Accepted                     bool   `json:"accepted"`
+	OnboardingAgreementVersion   string `json:"onboardingAgreementVersion"`
+	PlatformRulesVersion         string `json:"platformRulesVersion"`
+	PrivacyDataProcessingVersion string `json:"privacyDataProcessingVersion"`
 }
 
 func normalizeApplyRoleAndEntity(input *MerchantApplyInput) error {
@@ -129,7 +140,113 @@ func validatePricingValue(pricing map[string]float64, key string) bool {
 		return false
 	}
 	value, ok := pricing[key]
-	return ok && value > 0
+	return ok && value >= 1 && value <= 99999
+}
+
+func validateOptionalPricingValue(pricing map[string]float64, key string) bool {
+	if pricing == nil {
+		return true
+	}
+	value, ok := pricing[key]
+	if !ok {
+		return true
+	}
+	return value >= 1 && value <= 99999
+}
+
+func validateLegalAcceptance(input *LegalAcceptanceInput) error {
+	input.OnboardingAgreementVersion = strings.TrimSpace(input.OnboardingAgreementVersion)
+	input.PlatformRulesVersion = strings.TrimSpace(input.PlatformRulesVersion)
+	input.PrivacyDataProcessingVersion = strings.TrimSpace(input.PrivacyDataProcessingVersion)
+
+	if !input.Accepted {
+		return fmt.Errorf("请先同意平台入驻相关条款")
+	}
+	if input.OnboardingAgreementVersion == "" {
+		return fmt.Errorf("缺少入驻协议版本信息")
+	}
+	if input.PlatformRulesVersion == "" {
+		return fmt.Errorf("缺少平台规则版本信息")
+	}
+	if input.PrivacyDataProcessingVersion == "" {
+		return fmt.Errorf("缺少隐私与数据处理条款版本信息")
+	}
+	if len(input.OnboardingAgreementVersion) > 64 || len(input.PlatformRulesVersion) > 64 || len(input.PrivacyDataProcessingVersion) > 64 {
+		return fmt.Errorf("条款版本长度超出限制")
+	}
+
+	return nil
+}
+
+func buildLegalAcceptanceJSON(input LegalAcceptanceInput) string {
+	snapshot := map[string]interface{}{
+		"accepted":                     input.Accepted,
+		"onboardingAgreementVersion":   input.OnboardingAgreementVersion,
+		"platformRulesVersion":         input.PlatformRulesVersion,
+		"privacyDataProcessingVersion": input.PrivacyDataProcessingVersion,
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
+}
+
+func isUserPhoneDuplicateError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "duplicate key value") &&
+		(strings.Contains(message, "users_phone") || strings.Contains(message, "(phone)"))
+}
+
+func createMerchantUserWithCompatibility(tx *gorm.DB, phone, realName string) (model.User, error) {
+	now := time.Now()
+	createData := map[string]interface{}{
+		"phone":      phone,
+		"nickname":   realName,
+		"user_type":  1,
+		"status":     1,
+		"created_at": now,
+		"updated_at": now,
+	}
+
+	if tx.Migrator().HasColumn(&model.User{}, "public_id") {
+		createData["public_id"] = model.GeneratePublicID()
+	}
+	if tx.Migrator().HasColumn(&model.User{}, "login_failed_count") {
+		createData["login_failed_count"] = 0
+	}
+	if tx.Migrator().HasColumn(&model.User{}, "last_login_ip") {
+		createData["last_login_ip"] = ""
+	}
+	if tx.Migrator().HasColumn(&model.User{}, "password") {
+		createData["password"] = ""
+	}
+	if tx.Migrator().HasColumn(&model.User{}, "avatar") {
+		createData["avatar"] = ""
+	}
+
+	if err := tx.Table("users").Create(createData).Error; err != nil {
+		return model.User{}, err
+	}
+
+	var user model.User
+	if err := tx.Where("phone = ?", phone).First(&user).Error; err != nil {
+		return model.User{}, err
+	}
+	return user, nil
+}
+
+func buildUserCreateFailMessage(err error) string {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "prod") {
+		return "提交失败: 创建账号失败"
+	}
+	if err == nil {
+		return "提交失败: 创建账号失败"
+	}
+	return "提交失败: 创建账号失败 (" + err.Error() + ")"
 }
 
 func parseJSONOrDelimitedSlice(raw string) []string {
@@ -298,12 +415,19 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 
 	for index := range cases {
 		cases[index].Title = strings.TrimSpace(cases[index].Title)
+		cases[index].Description = strings.TrimSpace(cases[index].Description)
 		cases[index].Style = strings.TrimSpace(cases[index].Style)
 		cases[index].Area = strings.TrimSpace(cases[index].Area)
 		cases[index].Images = normalizeStringSlice(cases[index].Images)
 
 		if cases[index].Title == "" {
 			return fmt.Errorf("第%d个案例缺少标题", index+1)
+		}
+		if cases[index].Description == "" {
+			return fmt.Errorf("第%d个案例缺少说明", index+1)
+		}
+		if len([]rune(cases[index].Description)) > 5000 {
+			return fmt.Errorf("第%d个案例说明不能超过5000个字符", index+1)
 		}
 		if len(cases[index].Images) == 0 {
 			return fmt.Errorf("第%d个案例至少上传1张图片", index+1)
@@ -329,6 +453,10 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 }
 
 func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
+	if err := validateLegalAcceptance(&input.LegalAcceptance); err != nil {
+		return err
+	}
+
 	if err := normalizeApplyRoleAndEntity(input); err != nil {
 		return err
 	}
@@ -336,9 +464,20 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	input.Styles = normalizeStringSlice(input.Styles)
 	input.WorkTypes = normalizeStringSlice(input.WorkTypes)
 	input.HighlightTags = normalizeStringSlice(input.HighlightTags)
+	input.Avatar = strings.TrimSpace(input.Avatar)
 	input.GraduateSchool = strings.TrimSpace(input.GraduateSchool)
 	input.DesignPhilosophy = strings.TrimSpace(input.DesignPhilosophy)
 	input.Introduction = strings.TrimSpace(input.Introduction)
+
+	if input.Avatar == "" {
+		return fmt.Errorf("请上传头像")
+	}
+	if len([]rune(input.Avatar)) > 500 {
+		return fmt.Errorf("头像地址长度超过限制")
+	}
+	if err := service.VerifyIDCardForApply(input.IDCardNo, input.RealName); err != nil {
+		return err
+	}
 
 	if len([]rune(input.Introduction)) > 5000 {
 		return fmt.Errorf("个人/公司简介不能超过5000个字符")
@@ -353,6 +492,9 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	}
 
 	if input.EntityType == "company" {
+		if err := service.VerifyLicenseForApply(input.LicenseNo, input.CompanyName); err != nil {
+			return err
+		}
 		if strings.TrimSpace(input.LicenseNo) == "" {
 			return fmt.Errorf("公司主体必须提供营业执照号")
 		}
@@ -372,14 +514,20 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 
 	switch input.Role {
 	case "designer":
+		if input.YearsExperience <= 0 || input.YearsExperience > 50 {
+			return fmt.Errorf("设计师类型需要填写1-50年的从业经验")
+		}
 		if len(input.Styles) < 1 || len(input.Styles) > 3 {
 			return fmt.Errorf("设计师擅长风格需选择1-3个")
 		}
 		if len(input.PortfolioCases) < 3 {
 			return fmt.Errorf("设计师请至少添加3个作品案例")
 		}
-		if !validatePricingValue(input.Pricing, "flat") || !validatePricingValue(input.Pricing, "duplex") || !validatePricingValue(input.Pricing, "other") {
-			return fmt.Errorf("设计师需填写平层/复式/其他三个报价（元/㎡）")
+		if !validatePricingValue(input.Pricing, "flat") {
+			return fmt.Errorf("设计师需填写平层报价（元/㎡，1-99999）")
+		}
+		if !validateOptionalPricingValue(input.Pricing, "duplex") || !validateOptionalPricingValue(input.Pricing, "other") {
+			return fmt.Errorf("设计师复式/其他报价需在1-99999之间（元/㎡）")
 		}
 	case "foreman":
 		if input.YearsExperience <= 0 || input.YearsExperience > 50 {
@@ -416,6 +564,12 @@ func MerchantApply(c *gin.Context) {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
 	}
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.Code = strings.TrimSpace(input.Code)
+	input.RealName = strings.TrimSpace(input.RealName)
+	input.IDCardNo = strings.TrimSpace(input.IDCardNo)
+	input.IDCardFront = strings.TrimSpace(input.IDCardFront)
+	input.IDCardBack = strings.TrimSpace(input.IDCardBack)
 
 	// 1. 验证短信验证码
 	if err := service.VerifySMSCode(input.Phone, service.SMSPurposeIdentityApply, input.Code); err != nil {
@@ -434,6 +588,10 @@ func MerchantApply(c *gin.Context) {
 	}
 	if !utils.ValidateIDCard(input.IDCardNo) {
 		response.Error(c, 400, "身份证号格式不正确")
+		return
+	}
+	if err := service.VerifyIDCardForApply(input.IDCardNo, input.RealName); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -492,15 +650,29 @@ func MerchantApply(c *gin.Context) {
 			return
 		}
 
-		user = model.User{
-			Phone:    input.Phone,
-			Nickname: input.RealName,
-			UserType: 1,
-			Status:   1,
+		createdUser, err := createMerchantUserWithCompatibility(tx, input.Phone, input.RealName)
+		if err != nil {
+			if isUserPhoneDuplicateError(err) {
+				if findErr := tx.Where("phone = ?", input.Phone).First(&user).Error; findErr != nil {
+					tx.Rollback()
+					log.Printf("[MerchantApply] duplicate user phone but query existing failed, phone=%s, err=%v", input.Phone, findErr)
+					response.Error(c, 500, buildUserCreateFailMessage(findErr))
+					return
+				}
+			} else {
+				tx.Rollback()
+				log.Printf("[MerchantApply] create user failed, phone=%s, err=%v", input.Phone, err)
+				response.Error(c, 500, buildUserCreateFailMessage(err))
+				return
+			}
+		} else {
+			user = createdUser
 		}
-		if err := tx.Create(&user).Error; err != nil {
+	}
+	if input.Avatar != "" && user.Avatar != input.Avatar {
+		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("avatar", input.Avatar).Error; err != nil {
 			tx.Rollback()
-			response.Error(c, 500, "提交失败: 创建账号失败")
+			response.Error(c, 500, "提交失败: 更新用户头像失败")
 			return
 		}
 	}
@@ -521,32 +693,37 @@ func MerchantApply(c *gin.Context) {
 	}
 
 	// 8. 创建申请记录
+	acceptedAt := time.Now()
 	application := model.MerchantApplication{
-		UserID:           user.ID,
-		Phone:            input.Phone,
-		ApplicantType:    input.ApplicantType,
-		Role:             input.Role,
-		EntityType:       input.EntityType,
-		RealName:         input.RealName,
-		IDCardNo:         encryptSensitiveOrPlain(input.IDCardNo),
-		IDCardFront:      input.IDCardFront,
-		IDCardBack:       input.IDCardBack,
-		CompanyName:      input.CompanyName,
-		LicenseNo:        encryptSensitiveOrPlain(input.LicenseNo),
-		LicenseImage:     input.LicenseImage,
-		TeamSize:         input.TeamSize,
-		OfficeAddress:    input.OfficeAddress,
-		YearsExperience:  input.YearsExperience,
-		WorkTypes:        string(workTypesJSON),
-		ServiceArea:      string(serviceAreaJSON),
-		Styles:           string(stylesJSON),
-		HighlightTags:    string(highlightTagsJSON),
-		PricingJSON:      string(pricingJSON),
-		Introduction:     input.Introduction,
-		GraduateSchool:   input.GraduateSchool,
-		DesignPhilosophy: input.DesignPhilosophy,
-		PortfolioCases:   string(portfolioJSON),
-		Status:           0, // 待审核
+		UserID:              user.ID,
+		Phone:               input.Phone,
+		ApplicantType:       input.ApplicantType,
+		Role:                input.Role,
+		EntityType:          input.EntityType,
+		RealName:            input.RealName,
+		Avatar:              input.Avatar,
+		IDCardNo:            encryptSensitiveOrPlain(input.IDCardNo),
+		IDCardFront:         input.IDCardFront,
+		IDCardBack:          input.IDCardBack,
+		CompanyName:         input.CompanyName,
+		LicenseNo:           encryptSensitiveOrPlain(input.LicenseNo),
+		LicenseImage:        input.LicenseImage,
+		TeamSize:            input.TeamSize,
+		OfficeAddress:       input.OfficeAddress,
+		YearsExperience:     input.YearsExperience,
+		WorkTypes:           string(workTypesJSON),
+		ServiceArea:         string(serviceAreaJSON),
+		Styles:              string(stylesJSON),
+		HighlightTags:       string(highlightTagsJSON),
+		PricingJSON:         string(pricingJSON),
+		Introduction:        input.Introduction,
+		GraduateSchool:      input.GraduateSchool,
+		DesignPhilosophy:    input.DesignPhilosophy,
+		PortfolioCases:      string(portfolioJSON),
+		LegalAcceptanceJSON: buildLegalAcceptanceJSON(input.LegalAcceptance),
+		LegalAcceptedAt:     &acceptedAt,
+		LegalAcceptSource:   "merchant_web",
+		Status:              0, // 待审核
 	}
 
 	if err := tx.Create(&application).Error; err != nil {
@@ -592,6 +769,7 @@ func MerchantApplyStatus(c *gin.Context) {
 		"applicantType": app.ApplicantType,
 		"role":          app.Role,
 		"entityType":    app.EntityType,
+		"avatar":        app.Avatar,
 		"status":        app.Status,
 		"statusText":    statusText[app.Status],
 		"rejectReason":  app.RejectReason,
@@ -671,6 +849,7 @@ func MerchantResubmit(c *gin.Context) {
 	app.EntityType = input.EntityType
 	app.ApplicantType = input.ApplicantType
 	app.RealName = input.RealName
+	app.Avatar = input.Avatar
 	app.IDCardNo = encryptSensitiveOrPlain(input.IDCardNo)
 	app.IDCardFront = input.IDCardFront
 	app.IDCardBack = input.IDCardBack
@@ -689,6 +868,10 @@ func MerchantResubmit(c *gin.Context) {
 	app.GraduateSchool = input.GraduateSchool
 	app.DesignPhilosophy = input.DesignPhilosophy
 	app.PortfolioCases = string(portfolioJSON)
+	app.LegalAcceptanceJSON = buildLegalAcceptanceJSON(input.LegalAcceptance)
+	app.LegalAcceptSource = "merchant_web"
+	acceptedAt := time.Now()
+	app.LegalAcceptedAt = &acceptedAt
 	app.Status = 0 // 重置为待审核
 	app.RejectReason = ""
 	app.AuditedBy = 0
@@ -787,6 +970,7 @@ func AdminGetApplication(c *gin.Context) {
 		"role":             app.Role,
 		"entityType":       app.EntityType,
 		"realName":         app.RealName,
+		"avatar":           app.Avatar,
 		"idCardFront":      app.IDCardFront,
 		"idCardBack":       app.IDCardBack,
 		"companyName":      app.CompanyName,
@@ -851,6 +1035,14 @@ func AdminApproveApplication(c *gin.Context) {
 		response.Error(c, 400, "该账号已被禁用")
 		return
 	}
+	if app.Avatar != "" && user.Avatar != app.Avatar {
+		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("avatar", app.Avatar).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "更新用户头像失败: "+err.Error())
+			return
+		}
+		user.Avatar = app.Avatar
+	}
 
 	// 2. 解析申请角色映射
 	providerType, subType, entityType, compatApplicantType, normalizeErr := normalizeApprovedApplicationMeta(&app)
@@ -890,6 +1082,7 @@ func AdminApproveApplication(c *gin.Context) {
 		SubType:          subType,
 		EntityType:       entityType,
 		CompanyName:      app.CompanyName,
+		Avatar:           app.Avatar,
 		LicenseNo:        app.LicenseNo,
 		ServiceArea:      app.ServiceArea,
 		Specialty:        specialty,
@@ -979,15 +1172,16 @@ func AdminApproveApplication(c *gin.Context) {
 		layout := "其他"
 
 		providerCase := model.ProviderCase{
-			ProviderID: provider.ID,
-			Title:      pc.Title,
-			CoverImage: coverImage,
-			Style:      style,
-			Layout:     layout,
-			Area:       pc.Area,
-			Price:      0,
-			Images:     string(imagesJSON),
-			SortOrder:  i,
+			ProviderID:  provider.ID,
+			Title:       pc.Title,
+			Description: pc.Description,
+			CoverImage:  coverImage,
+			Style:       style,
+			Layout:      layout,
+			Area:        pc.Area,
+			Price:       0,
+			Images:      string(imagesJSON),
+			SortOrder:   i,
 			// 审核通过后生成的作品默认可在灵感库展示。
 			ShowInInspiration: true,
 		}

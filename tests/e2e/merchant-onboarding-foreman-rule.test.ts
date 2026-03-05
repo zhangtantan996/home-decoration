@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-import { buildRandomMainlandPhone, getMerchantTestEnv, merchantApiPost } from './helpers/merchant';
+import {
+  buildLegalAcceptancePayload,
+  buildRandomMainlandPhone,
+  getMerchantTestEnv,
+  merchantApiPost,
+} from './helpers/merchant';
 
 interface MerchantApplyResponseData {
   applicationId?: number;
@@ -10,6 +15,7 @@ const createForemanCase = (index: number, imageCount: number) => ({
   title: `施工案例-${index + 1}`,
   style: '现代简约',
   area: '100㎡',
+  description: `施工说明-${index + 1}`,
   images: Array.from({ length: imageCount }, (_, imageIndex) => `https://example.com/foreman-${index + 1}-${imageIndex + 1}.jpg`),
 });
 
@@ -20,6 +26,7 @@ const buildForemanPayload = (phone: string) => ({
   entityType: 'personal',
   applicantType: 'foreman',
   realName: '李四',
+  avatar: 'https://example.com/avatar.jpg',
   idCardNo: '11010519491231002X',
   idCardFront: 'https://example.com/id-front.jpg',
   idCardBack: 'https://example.com/id-back.jpg',
@@ -31,6 +38,7 @@ const buildForemanPayload = (phone: string) => ({
     perSqm: 280,
   },
   introduction: '施工说明',
+  legalAcceptance: buildLegalAcceptancePayload(),
   portfolioCases: [
     createForemanCase(0, 8),
     createForemanCase(1, 8),

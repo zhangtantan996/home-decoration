@@ -4,9 +4,39 @@ import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { adminAuthApi } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
+import type { AdminUser, MenuItem } from '../../stores/authStore';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
+
+interface AdminLoginResponse {
+    code: number;
+    message?: string;
+    data?: {
+        token: string;
+        admin: AdminUser;
+        permissions?: string[];
+        menus?: MenuItem[];
+    };
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+
+const parseAdminLoginResponse = (payload: unknown): AdminLoginResponse | null => {
+    if (!isRecord(payload)) {
+        return null;
+    }
+    const code = payload.code;
+    if (typeof code !== 'number') {
+        return null;
+    }
+    return {
+        code,
+        message: typeof payload.message === 'string' ? payload.message : undefined,
+        data: isRecord(payload.data) ? (payload.data as AdminLoginResponse['data']) : undefined,
+    };
+};
 
 const Login: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -16,38 +46,41 @@ const Login: React.FC = () => {
     const onFinish = async (values: { username: string; password: string }) => {
         setLoading(true);
         try {
-            console.log('开始登录...', values);
-
             // 1. 登录获取 token
-            const loginRes = await adminAuthApi.login({
+            const rawResponse: unknown = await adminAuthApi.login({
                 username: values.username,
                 password: values.password
-            }) as any;
+            });
+            const loginRes = parseAdminLoginResponse(rawResponse);
 
-            console.log('登录响应:', loginRes);
+            if (!loginRes) {
+                message.error('登录响应格式异常');
+                return;
+            }
 
-            if (loginRes.code === 0) {
+            if (loginRes.code === 0 && loginRes.data) {
                 const { token, admin, permissions, menus } = loginRes.data;
 
                 // 保存 token 和用户信息
                 login(token, admin);
-                console.log('Token已保存, admin:', admin);
 
                 // 保存权限和菜单 (登录接口已返回)
                 if (permissions && menus) {
                     setPermissions(permissions, menus);
-                    console.log('权限和菜单已保存:', { permissions, menus });
                 }
 
                 message.success('登录成功');
-                console.log('准备跳转到 /dashboard');
                 navigate('/dashboard');
             } else {
                 message.error(loginRes.message || '登录失败');
             }
-        } catch (error: any) {
-            console.error('登录错误:', error);
-            message.error(error.response?.data?.message || error.message || '用户名或密码错误');
+        } catch (error: unknown) {
+            const statusCode = (error as { response?: { status?: number } })?.response?.status;
+            if (statusCode === 401 || statusCode === 403) {
+                message.error('用户名或密码错误');
+            } else {
+                message.error('登录失败，请稍后重试');
+            }
         } finally {
             setLoading(false);
         }

@@ -28,6 +28,26 @@ export const MERCHANT_THEME = {
     tablet: 768,
     desktop: 992,
   },
+
+  // Icon usage guidelines
+  icons: {
+    // 禁止使用 Emoji，必须使用 Ant Design Icons
+    // 示例：
+    // import { HomeOutlined, UserOutlined } from '@ant-design/icons';
+    primaryColor: '#1890ff',
+    size: {
+      small: 14,
+      default: 16,
+      large: 20,
+    },
+  },
+
+  // Accessibility configuration
+  accessibility: {
+    minTouchTarget: 44, // 最小触摸目标尺寸（WCAG 2.5.5）
+    focusOutlineColor: '#1890ff',
+    focusOutlineWidth: 2,
+  },
 } as const;
 
 // Type export for consuming components

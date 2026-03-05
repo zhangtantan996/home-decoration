@@ -1,13 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Layout, Typography, Divider, Grid } from 'antd';
-import { PhoneOutlined, SafetyOutlined } from '@ant-design/icons';
+import { Form, Input, Button, message, Layout, Typography, Divider, Grid } from 'antd';
+import { PhoneOutlined, SafetyOutlined, ArrowRightOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { MerchantApiError, merchantAuthApi, type MerchantLoginGuideData, type MerchantLoginNextAction } from '../../services/merchantApi';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
-import { MERCHANT_THEME } from '../../constants/merchantTheme';
 
-const { Content } = Layout;
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
@@ -44,15 +42,52 @@ const MerchantLogin: React.FC = () => {
     };
 
     useEffect(() => {
+        // Init inject style for animated elements and custom ant overrides
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .premium-login-btn {
+                background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+                border: none;
+                height: 48px;
+                font-size: 16px;
+                font-weight: 500;
+                box-shadow: 0 4px 14px rgba(24, 144, 255, 0.3);
+                transition: all 0.3s ease;
+                border-radius: 8px;
+            }
+            .premium-login-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(24, 144, 255, 0.4);
+            }
+            .premium-input .ant-input-affix-wrapper {
+                padding: 12px 16px;
+                border-radius: 8px;
+                border-color: #e2e8f0;
+                transition: all 0.3s ease;
+            }
+            .premium-input .ant-input-affix-wrapper:hover,
+            .premium-input .ant-input-affix-wrapper-focused {
+                border-color: #1890ff;
+                box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+            }
+            .welcome-fade-in {
+                animation: fadeInUp 0.8s ease-out;
+            }
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+        `;
+        document.head.appendChild(style);
         return () => {
             if (timerRef.current !== null) {
                 clearInterval(timerRef.current);
             }
+            document.head.removeChild(style);
         };
     }, []);
 
     const handleSendCode = async () => {
-        // 先触发手机号校验
         try {
             await form.validateFields(['phone']);
         } catch {
@@ -165,30 +200,104 @@ const MerchantLogin: React.FC = () => {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: MERCHANT_THEME.pageBgGradient }}>
-            <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: screens.xs ? 16 : 24 }}>
-                <Card 
-                    style={{ width: MERCHANT_THEME.cardWidth, maxWidth: MERCHANT_THEME.cardMaxWidth, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}
-                    styles={{ body: { padding: screens.xs ? 24 : 32 } }}
-                >
-                    <div style={{ textAlign: 'center', marginBottom: screens.xs ? 24 : 32 }}>
-                        <Title level={3} style={{ marginBottom: 8 }}>商家服务中心</Title>
-                        <Text type="secondary">设计师/工长/装修公司/主材商统一登录</Text>
+        <Layout style={{ minHeight: '100vh', flexDirection: 'row', background: '#f8fafc' }}>
+            {/* Left Panel - Image & Branding (hidden on mobile) */}
+            {screens.md && (
+                <div style={{
+                    flex: 1,
+                    background: 'url("https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?q=80&w=2000&auto=format&fit=crop") center/cover no-repeat',
+                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    padding: '60px',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'linear-gradient(135deg, rgba(24,144,255,0.7) 0%, rgba(9,109,217,0.4) 100%)',
+                        mixBlendMode: 'multiply'
+                    }} />
+                    <div style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'linear-gradient(to right, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.1) 100%)'
+                    }} />
+
+                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                            width: 40, height: 40, borderRadius: 8,
+                            background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                        }}>
+                            <Title level={4} style={{ margin: 0, color: '#1890ff', lineHeight: 1 }}>禾</Title>
+                        </div>
+                        <Title level={4} style={{ margin: 0, color: '#fff', letterSpacing: '1px' }}>禾泽云平台</Title>
                     </div>
+
+                    <div className="welcome-fade-in" style={{ position: 'relative', zIndex: 1, color: '#fff', maxWidth: 540 }}>
+                        <Title style={{ color: '#fff', fontSize: '3.5rem', fontWeight: 700, marginBottom: '24px', letterSpacing: '-1px', lineHeight: 1.2 }}>
+                            共筑家的<br /><span style={{ color: '#69b1ff' }}>无限可能</span>
+                        </Title>
+                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: '1.25rem', lineHeight: 1.6, display: 'block' }}>
+                            禾泽云商家服务中心，连接优质设计师与可靠施工团队。在这里，发现更多客户，提升品牌价值。
+                        </Text>
+                    </div>
+
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.875rem' }}>
+                            © {new Date().getFullYear()} 禾泽云 Hezeyun. 保留所有权利.
+                        </Text>
+                    </div>
+                </div>
+            )}
+
+            {/* Right Panel - Login Form */}
+            <div style={{
+                width: screens.md ? '520px' : '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                background: '#ffffff',
+                padding: screens.xs ? '32px 24px' : '64px',
+                boxShadow: screens.md ? '-20px 0 40px rgba(0,0,0,0.08)' : 'none',
+                zIndex: 2,
+                position: 'relative'
+            }}>
+                <div className="welcome-fade-in" style={{ maxWidth: '380px', width: '100%', margin: '0 auto' }}>
+                    <div style={{ marginBottom: '40px' }}>
+                        {!screens.md && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
+                                <div style={{
+                                    width: 32, height: 32, borderRadius: 6,
+                                    background: '#1890ff', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                }}>
+                                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>禾</Text>
+                                </div>
+                                <Text strong style={{ fontSize: 18, color: '#1a1a1a' }}>禾泽云平台</Text>
+                            </div>
+                        )}
+                        <Title level={2} style={{ fontWeight: 600, marginBottom: '8px', color: '#1a1a1a' }}>欢迎回来</Title>
+                        <Text style={{ color: '#64748b', fontSize: '1rem' }}>登录商家服务中心，追踪您的业务动态</Text>
+                    </div>
+
                     <Form
                         form={form}
                         name="merchant_login"
                         onFinish={onFinish}
                         size="large"
                         validateTrigger="onBlur"
+                        className="premium-input"
                     >
                         <Form.Item
                             name="phone"
                             rules={phoneRules}
+                            style={{ marginBottom: 24 }}
                         >
                             <Input
-                                prefix={<PhoneOutlined />}
-                                placeholder="请输入11位手机号"
+                                prefix={<PhoneOutlined style={{ color: '#94a3b8', marginRight: 8 }} />}
+                                placeholder="输入您的11位手机号"
                                 maxLength={11}
                                 onChange={handlePhoneChange}
                                 inputMode="numeric"
@@ -198,45 +307,72 @@ const MerchantLogin: React.FC = () => {
                         <Form.Item
                             name="code"
                             rules={codeRules}
+                            style={{ marginBottom: 32 }}
                         >
                             <Input
-                                prefix={<SafetyOutlined />}
-                                placeholder="请输入6位验证码"
+                                prefix={<SafetyOutlined style={{ color: '#94a3b8', marginRight: 8 }} />}
+                                placeholder="输入6位验证码"
                                 maxLength={6}
                                 onChange={handleCodeChange}
                                 inputMode="numeric"
                                 suffix={(
                                     <Button
-                                        type="link"
+                                        type="text"
                                         size="small"
                                         disabled={countdown > 0 || sendingCode}
                                         onClick={handleSendCode}
                                         loading={sendingCode}
+                                        style={{ color: countdown > 0 ? '#94a3b8' : '#1890ff', fontWeight: 500 }}
                                     >
-                                        {countdown > 0 ? `${countdown}s` : '获取验证码'}
+                                        {countdown > 0 ? `${countdown}s 后重新获取` : '获取验证码'}
                                     </Button>
                                 )}
                             />
                         </Form.Item>
 
                         <Form.Item>
-                            <Button type="primary" htmlType="submit" block loading={loading}>
-                                登 录
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                block
+                                loading={loading}
+                                className="premium-login-btn"
+                                icon={<ArrowRightOutlined />}
+                                iconPosition="end"
+                            >
+                                立即登录
                             </Button>
                         </Form.Item>
 
-                        <div style={{ textAlign: 'center', marginTop: 16 }}>
-                            <Button type="link" onClick={() => navigate('/')}>
-                                我要入驻
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginTop: 32,
+                            padding: '16px',
+                            background: '#f8fafc',
+                            borderRadius: '8px'
+                        }}>
+                            <Text style={{ color: '#64748b', marginRight: 8 }}>还没有账号极速入驻？</Text>
+                            <Button
+                                type="link"
+                                onClick={() => navigate('/')}
+                                style={{ padding: 0, fontWeight: 500 }}
+                            >
+                                免费入驻
                             </Button>
-                            <Divider type="vertical" />
-                            <Button type="link" onClick={() => navigate('/apply-status')}>
-                                查询审核进度
+                            <Divider type="vertical" style={{ margin: '0 12px' }} />
+                            <Button
+                                type="link"
+                                onClick={() => navigate('/apply-status')}
+                                style={{ padding: 0, color: '#64748b' }}
+                            >
+                                审核进度查询
                             </Button>
                         </div>
                     </Form>
-                </Card>
-            </Content>
+                </div>
+            </div>
         </Layout>
     );
 };

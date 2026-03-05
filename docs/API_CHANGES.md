@@ -1,5 +1,119 @@
 # API 接口变更清单
 
+## 2026-03-05 入驻 schema 对齐修复（v1.5.3）
+
+### 背景
+- 部分环境未完整执行 `v1.5.0/v1.5.1/v1.5.2`，会在提交入驻时触发 `column "role" of relation "merchant_applications" does not exist`。
+- 原因不是接口降级，而是数据库结构滞后于代码契约。
+
+### 变更范围
+- 新增幂等迁移脚本（双目录同步）：
+  - `server/scripts/migrations/v1.5.3_reconcile_unified_onboarding_schema.sql`
+  - `server/migrations/v1.5.3_reconcile_unified_onboarding_schema.sql`
+
+### 修复内容
+- 补齐 `merchant_applications` 扩展字段（`role/entity_type/avatar/work_types/highlight_tags/pricing_json/graduate_school/design_philosophy/legal_*`）。
+- 补齐 `providers` 扩展字段（含 `work_types` 统一为 `TEXT`）。
+- 补齐 `material_shops` 扩展字段。
+- 创建/补齐 `material_shop_applications`、`material_shop_application_products`、`material_shop_products`、`merchant_identity_change_applications` 及索引。
+- 兼容处理 `current_role` 标识符（使用 `"current_role"`）。
+
+### 执行建议
+- 线上/测试环境优先执行 `v1.5.3`（幂等，可重复执行）。
+- 执行后重启 API 进程，避免 PostgreSQL prepared statement 缓存导致的 `cached plan must not change result type`。
+
+## 2026-03-05 验证码测试固定模式（临时）
+
+### 变更范围
+- `POST /api/v1/auth/send-code`
+- 所有使用 `VerifySMSCode` 的接口（登录/注册/商家入驻/主材商入驻/提现/绑卡等）
+
+### 行为变更
+- 在测试固定模式下，验证码统一为固定值（默认 `123456`）。
+- `send-code` 在固定模式下不再依赖风控、图形验证或 Redis 存储，直接返回成功。
+- 固定模式下校验逻辑统一：输入验证码与固定值一致即通过，否则返回“验证码错误”。
+
+### 开关与默认
+- `SMS_FIXED_CODE_MODE`:
+  - 显式设置 `true/1` 时开启
+  - 未设置时在非 release 或本地环境默认开启
+- `SMS_FIXED_CODE`:
+  - 固定验证码值，默认 `123456`
+
+## 2026-03-05 入驻条款勾选留痕（v1.5.2）
+
+### 变更范围
+- `POST /api/v1/merchant/apply`
+- `POST /api/v1/merchant/apply/:id/resubmit`
+- `POST /api/v1/material-shop/apply`
+- `POST /api/v1/material-shop/apply/:id/resubmit`
+- `merchant_applications` 表结构
+- `material_shop_applications` 表结构
+
+### 请求字段新增
+所有入驻提交接口新增必填字段：
+
+```json
+"legalAcceptance": {
+  "accepted": true,
+  "onboardingAgreementVersion": "v1.0.0-20260305",
+  "platformRulesVersion": "v1.0.0-20260305",
+  "privacyDataProcessingVersion": "v1.0.0-20260305"
+}
+```
+
+### 后端硬校验
+- `accepted` 必须为 `true`。
+- 三个条款版本字段不能为空，且长度限制为 `1-64`。
+- 任意不满足时返回 `400` 与明确错误信息。
+
+### 留痕字段
+两张申请表新增：
+- `legal_acceptance_json`（TEXT，存版本快照）
+- `legal_accepted_at`（TIMESTAMP，记录服务端确认时间）
+- `legal_accept_source`（VARCHAR，默认 `merchant_web`）
+
+### 版本管理规则
+- 条款版本号由前端常量统一维护（本期：`v1.0.0-20260305`）。
+- 条款正文更新时，需同步更新：
+  - `admin/src/constants/merchantLegal.ts`
+  - `docs/legal/*.md`
+  - `server/docs/API接口文档.md`
+
+## 2026-03-05 商家入驻字段全量补齐（v1.5.1）
+
+### 变更范围
+- `POST /api/v1/merchant/apply`
+- `POST /api/v1/merchant/apply/:id/resubmit`
+- `POST /api/v1/material-shop/apply`
+- `POST /api/v1/material-shop/apply/:id/resubmit`
+- `GET /api/v1/merchant/info`
+- `PUT /api/v1/merchant/info`
+- `GET /api/v1/designers/:id` / `GET /api/v1/foremen/:id` / `GET /api/v1/companies/:id`（字段消费对齐）
+
+### 服务商入驻升级
+- 新增并强制必填：`avatar: string`。
+- `yearsExperience` 强化为设计师/工长必填，范围 `1-50`。
+- `portfolioCases[].description` 改为必填，长度 `1-5000`。
+- 审核通过映射补齐：`avatar/highlightTags/pricing/graduateSchool/designPhilosophy` 写入 `providers`。
+
+### 主材商入驻升级
+- 强制必填：`contactName`、`contactPhone`、`businessHours`、`address`。
+- `contactPhone` 必须通过手机号格式校验。
+- 继续维持主材商品硬校验：`products` 数量 `5-20`，每商品至少 1 图，参数对象与价格必填。
+
+### 校验与安全
+- 服务端硬校验优先，前端仅做提前校验与提示。
+- 新增资质核验适配层（默认 `manual`）：
+  - `ID_CARD_VERIFY_PROVIDER=manual|xxx`
+  - `LICENSE_VERIFY_PROVIDER=manual|xxx`
+  - `VERIFY_TIMEOUT_MS`
+- 证件号继续走加密存储逻辑（`encryptSensitiveOrPlain`），日志禁止明文输出证件号与手机号。
+
+### 兼容性说明
+- 旧字段 `applicantType` 继续兼容，灰度期内与 `role/entityType` 并存。
+- C 端接口结构不破坏，新增字段按“有值显示、空值隐藏”策略消费。
+
 ## 2026-03-03 商家入驻与登录统一改版（v1.5.0）
 
 ### 变更范围

@@ -26,6 +26,7 @@ RUN apk add --no-cache tzdata
 ENV TZ=Asia/Shanghai
 
 COPY deploy/nginx/nginx.prod.conf /etc/nginx/nginx.conf
+COPY deploy/nginx/admin_allowlist.conf /etc/nginx/admin_allowlist.conf
 
 # Serve admin build at /usr/share/nginx/html/admin
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
@@ -33,4 +34,3 @@ COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
 EXPOSE 8888
 
 CMD ["nginx", "-g", "daemon off;"]
-

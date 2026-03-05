@@ -189,9 +189,17 @@ export const merchantAuthApi = {
 
 export interface MerchantPortfolioCase {
     title: string;
+    description: string;
     images: string[];
     style?: string;
     area?: string;
+}
+
+export interface MerchantLegalAcceptancePayload {
+    accepted: boolean;
+    onboardingAgreementVersion: string;
+    platformRulesVersion: string;
+    privacyDataProcessingVersion: string;
 }
 
 export interface MerchantApplyPayload {
@@ -201,6 +209,7 @@ export interface MerchantApplyPayload {
     entityType: Exclude<MerchantEntityType, 'individual_business'>;
     applicantType?: MerchantApplicantType; // 兼容旧接口
     realName: string;
+    avatar: string;
     idCardNo: string;
     idCardFront: string;
     idCardBack: string;
@@ -219,6 +228,7 @@ export interface MerchantApplyPayload {
     styles?: string[];
     introduction?: string;
     portfolioCases: MerchantPortfolioCase[];
+    legalAcceptance: MerchantLegalAcceptancePayload;
 }
 
 export interface MerchantApplyStatusData {
@@ -257,11 +267,12 @@ export interface MaterialShopApplyPayload {
     shopDescription?: string;
     businessLicenseNo: string;
     businessLicense: string;
-    businessHours?: string;
-    contactPhone?: string;
-    contactName?: string;
-    address?: string;
+    businessHours: string;
+    contactPhone: string;
+    contactName: string;
+    address: string;
     products: MaterialShopApplyProductPayload[];
+    legalAcceptance: MerchantLegalAcceptancePayload;
 }
 
 export interface MaterialShopApplyStatusData {
@@ -349,6 +360,17 @@ export const merchantUploadApi = {
         formData.append('file', file);
         return unwrapData<MerchantUploadResult>(
             await merchantApi.post('/merchant/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 60000,
+            }),
+            '上传失败'
+        );
+    },
+    uploadOnboardingImageData: async (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return unwrapData<MerchantUploadResult>(
+            await merchantApi.post('/merchant/upload-public', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
                 timeout: 60000,
             }),

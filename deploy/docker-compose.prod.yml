@@ -59,6 +59,10 @@ services:
     ports:
       - "8888:8888"
       - "443:443"
+    volumes:
+      # Manually maintain admin access rules/credentials without rebuilding image.
+      - ./nginx/admin_allowlist.conf:/etc/nginx/admin_allowlist.conf:ro
+      - ./nginx/admin.htpasswd:/etc/nginx/admin.htpasswd:ro
     depends_on:
       - api
     networks:

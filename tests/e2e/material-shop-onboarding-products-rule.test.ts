@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-import { buildRandomMainlandPhone, getMerchantTestEnv, merchantApiPost } from './helpers/merchant';
+import {
+  buildLegalAcceptancePayload,
+  buildRandomMainlandPhone,
+  getMerchantTestEnv,
+  merchantApiPost,
+} from './helpers/merchant';
 
 interface MaterialShopApplyResponseData {
   applicationId?: number;
@@ -28,6 +33,7 @@ const buildMaterialShopPayload = (phone: string, productCount: number) => ({
   contactPhone: phone,
   contactName: '主材负责人',
   address: '西安市高新区测试路 1 号',
+  legalAcceptance: buildLegalAcceptancePayload(),
   products: Array.from({ length: productCount }, (_, index) => createProduct(index)),
 });
 

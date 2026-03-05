@@ -4,6 +4,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, Input, Button, List, message as antMessage } from 'antd';
+import { UnorderedListOutlined, ToolOutlined } from '@ant-design/icons';
 import TIM from '@tencentcloud/chat';
 import merchantApi from '../../services/merchantApi';
 
@@ -36,13 +37,13 @@ const IMTest: React.FC = () => {
             log('获取 IM 凭证...');
             const res = await merchantApi.getIMUserSig() as any;
             if (res.code !== 0 || !res.data) {
-                log('❌ 获取凭证失败: ' + (res.message || '未知错误'));
+                log('获取凭证失败: ' + (res.message || '未知错误'));
                 setStatus('凭证获取失败');
                 return;
             }
 
             const { sdkAppId, userId: uid, userSig } = res.data;
-            log(`✅ 凭证获取成功: SDKAppID=${sdkAppId}, UserID=${uid}`);
+            log(`凭证获取成功: SDKAppID=${sdkAppId}, UserID=${uid}`);
             setUserId(uid);
 
             // 创建 SDK 实例 - 禁用 Worker 模式
@@ -57,26 +58,26 @@ const IMTest: React.FC = () => {
 
             // 注册所有关键事件监听
             chat.on(TIM.EVENT.SDK_READY, () => {
-                log('🟢 SDK_READY 事件触发');
+                log('SDK_READY 事件触发');
             });
 
             chat.on(TIM.EVENT.SDK_NOT_READY, () => {
-                log('🔴 SDK_NOT_READY 事件触发');
+                log('SDK_NOT_READY 事件触发');
             });
 
             chat.on(TIM.EVENT.MESSAGE_RECEIVED, (event: any) => {
-                log('🔥🔥🔥 MESSAGE_RECEIVED 事件触发!');
+                log('MESSAGE_RECEIVED 事件触发!');
                 event.data.forEach((msg: any) => {
                     log(`   收到消息: From=${msg.from}, Text=${msg.payload?.text || '[非文本]'}`);
                 });
             });
 
             chat.on(TIM.EVENT.CONVERSATION_LIST_UPDATED, () => {
-                log('📋 CONVERSATION_LIST_UPDATED 事件触发');
+                log('CONVERSATION_LIST_UPDATED 事件触发');
             });
 
             chat.on(TIM.EVENT.ERROR, (event: any) => {
-                log('❌ ERROR 事件: ' + JSON.stringify(event.data));
+                log('ERROR 事件: ' + JSON.stringify(event.data));
             });
 
             chatRef.current = chat;
@@ -87,15 +88,15 @@ const IMTest: React.FC = () => {
             const loginRes = await chat.login({ userID: String(uid), userSig });
 
             if (loginRes.code === 0) {
-                log('✅ 登录成功! UserID=' + uid);
+                log('登录成功! UserID=' + uid);
                 setStatus('已连接: ' + uid);
             } else {
-                log('❌ 登录失败: ' + JSON.stringify(loginRes));
+                log('登录失败: ' + JSON.stringify(loginRes));
                 setStatus('登录失败');
             }
 
         } catch (err: any) {
-            log('❌ 初始化异常: ' + err.message);
+            log('初始化异常: ' + err.message);
             setStatus('初始化失败');
         }
     };
@@ -116,13 +117,13 @@ const IMTest: React.FC = () => {
             });
             const res = await chat.sendMessage(msg);
             if (res.code === 0) {
-                log('✅ 发送成功');
+                log('发送成功');
             } else {
-                log('❌ 发送失败: ' + JSON.stringify(res));
+                log('发送失败: ' + JSON.stringify(res));
             }
             setInputText('');
         } catch (err: any) {
-            log('❌ 发送异常: ' + err.message);
+            log('发送异常: ' + err.message);
         }
     };
 
@@ -138,9 +139,9 @@ const IMTest: React.FC = () => {
                 payload: { text: 'SelfTest ' + Date.now() }
             });
             const res = await chat.sendMessage(msg);
-            log(res.code === 0 ? '✅ 自测发送成功' : '❌ 自测发送失败');
+            log(res.code === 0 ? '自测发送成功' : '自测发送失败');
         } catch (err: any) {
-            log('❌ 自测发送异常: ' + err.message);
+            log('自测发送异常: ' + err.message);
         }
     };
 
@@ -150,17 +151,17 @@ const IMTest: React.FC = () => {
 
         try {
             const res = await chat.getConversationList();
-            log('📋 会话列表: ' + JSON.stringify(res.data.conversationList.map((c: any) => c.conversationID)));
+            log('会话列表: ' + JSON.stringify(res.data.conversationList.map((c: any) => c.conversationID)));
         } catch (err: any) {
-            log('❌ 获取会话列表失败: ' + err.message);
+            log('获取会话列表失败: ' + err.message);
         }
     };
 
     return (
         <Card title={`IM SDK 纯净测试 - ${status}`} style={{ margin: 20 }}>
             <div style={{ marginBottom: 16, display: 'flex', gap: 10 }}>
-                <Button type="primary" danger onClick={sendToSelf}>🛠️ 自测消息</Button>
-                <Button onClick={getConversations}>📋 获取会话列表</Button>
+                <Button type="primary" danger icon={<ToolOutlined />} onClick={sendToSelf}>自测消息</Button>
+                <Button icon={<UnorderedListOutlined />} onClick={getConversations}>获取会话列表</Button>
             </div>
 
             <div style={{ marginBottom: 16, display: 'flex', gap: 10 }}>
@@ -187,9 +188,9 @@ const IMTest: React.FC = () => {
                     renderItem={item => (
                         <List.Item style={{
                             padding: '4px 0',
-                            color: item.includes('🔥') ? '#ff6b6b' :
-                                item.includes('✅') ? '#51cf66' :
-                                    item.includes('❌') ? '#ff8787' : '#e0e0e0',
+                            color: item.includes('MESSAGE_RECEIVED') ? '#ff6b6b' :
+                                item.includes('成功') ? '#51cf66' :
+                                    item.includes('失败') || item.includes('异常') ? '#ff8787' : '#e0e0e0',
                             fontFamily: 'monospace',
                             fontSize: 12,
                             borderBottom: '1px solid #333'

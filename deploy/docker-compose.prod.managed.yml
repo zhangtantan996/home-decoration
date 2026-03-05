@@ -67,6 +67,10 @@ services:
     ports:
       # Bind to localhost only. Put host Nginx (80/443) in front of this.
       - "127.0.0.1:8888:8888"
+    volumes:
+      # Manually maintain admin access rules/credentials without rebuilding image.
+      - ./nginx/admin_allowlist.conf:/etc/nginx/admin_allowlist.conf:ro
+      - ./nginx/admin.htpasswd:/etc/nginx/admin.htpasswd:ro
     depends_on:
       - api
       - tinode

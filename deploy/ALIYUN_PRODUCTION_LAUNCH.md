@@ -133,6 +133,44 @@ Tinode（后端用于生成 Tinode token）：
 - `TINODE_UID_ENCRYPTION_KEY=...`（与后端一致）
 - `TINODE_AUTH_TOKEN_KEY=...`（与后端一致）
 
+### 2.3 管理后台访问加固（IP 白名单 + BasicAuth）
+
+生产镜像已内置以下 Nginx 规则（`deploy/nginx/nginx.prod.conf`）：
+- `/admin/` 路径启用 IP 白名单（`/etc/nginx/admin_allowlist.conf`）
+- `/admin/` 路径启用 BasicAuth（`/etc/nginx/admin.htpasswd`）
+- 根路径 `/` 默认重定向到 `/merchant`
+
+`docker-compose.prod.managed.yml` 已将这两个文件映射为宿主机可维护文件：
+- `deploy/nginx/admin_allowlist.conf`
+- `deploy/nginx/admin.htpasswd`
+
+部署前请先配置：
+
+1) 编辑白名单 `deploy/nginx/admin_allowlist.conf`，加入办公出口 IP
+```nginx
+allow 203.0.113.10;
+allow 198.51.100.24;
+deny all;
+```
+
+2) 生成 BasicAuth 密码文件（示例用户 `admin`）
+```bash
+cd /opt/home_decoration
+printf "admin:$(openssl passwd -apr1 'ReplaceWithStrongPassword')\n" > deploy/nginx/admin.htpasswd
+chmod 600 deploy/nginx/admin.htpasswd
+```
+
+3) 热更新配置
+```bash
+cd /opt/home_decoration/deploy
+docker compose -f docker-compose.prod.managed.yml up -d web
+```
+
+4) 验证
+- 白名单 IP + 正确账号密码：可访问 `/admin/login`
+- 非白名单 IP：403
+- 白名单 IP + 错误密码：401
+
 ---
 
 ## 3. 一键启动（Docker）
@@ -199,3 +237,5 @@ bash ./scripts/backup_uploads.sh
 ```
 
 将生成的 `deploy/backups/*` 上传到 OSS（可用 ossutil/aliyun-cli 或阿里云控制台）。
+
+> 如果你当前是“本地上传 + 先用 OSS 免费包做备份”，可直接按 `deploy/OSS_FREE_PLAN_SETUP.md` 执行（含 `crontab` 示例与一键脚本）。

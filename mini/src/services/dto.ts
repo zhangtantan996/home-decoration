@@ -33,6 +33,37 @@ export interface ProviderDTO {
 }
 
 export interface ProviderDetailDTO {
+  provider?: {
+    id?: number;
+    userId?: number;
+    providerType?: number;
+    companyName?: string;
+    avatar?: string;
+    verified?: boolean;
+    completedCnt?: number;
+    rating?: number;
+    yearsExperience?: number;
+    specialty?: string;
+    workTypes?: string;
+    highlightTags?: string;
+    pricingJson?: string;
+    graduateSchool?: string;
+    designPhilosophy?: string;
+    serviceArea?: string;
+    serviceIntro?: string;
+    teamSize?: number;
+    establishedYear?: number;
+    priceMin?: number;
+    priceMax?: number;
+    priceUnit?: string;
+    coverImage?: string;
+  };
+  user?: {
+    id?: number;
+    publicId?: string;
+    nickname?: string;
+    avatar?: string;
+  };
   id: number;
   userId: number;
   providerType: number;
@@ -51,6 +82,10 @@ export interface ProviderDetailDTO {
   officeAddress?: string;
   specialty?: string;
   workTypes?: string;
+  highlightTags?: string;
+  pricingJson?: string;
+  graduateSchool?: string;
+  designPhilosophy?: string;
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;

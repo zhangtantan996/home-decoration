@@ -36,6 +36,7 @@ type materialShopApplyInput struct {
 	ContactName       string                          `json:"contactName"`
 	Address           string                          `json:"address"`
 	Products          []materialShopApplyProductInput `json:"products" binding:"required,min=1"`
+	LegalAcceptance   LegalAcceptanceInput            `json:"legalAcceptance" binding:"required"`
 }
 
 type materialShopUpdateInput struct {
@@ -109,6 +110,10 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 	input.Address = strings.TrimSpace(input.Address)
 	input.EntityType = normalizeMaterialEntityType(input.EntityType)
 
+	if err := validateLegalAcceptance(&input.LegalAcceptance); err != nil {
+		return err
+	}
+
 	if len([]rune(input.ShopName)) < 2 || len([]rune(input.ShopName)) > 100 {
 		return fmt.Errorf("店铺名称长度需为2-100个字符")
 	}
@@ -118,14 +123,29 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 	if input.BusinessLicenseNo == "" {
 		return fmt.Errorf("请填写营业执照号")
 	}
+	if err := service.VerifyLicenseForApply(input.BusinessLicenseNo, input.ShopName); err != nil {
+		return err
+	}
 	if len([]rune(input.BusinessLicenseNo)) > 50 {
 		return fmt.Errorf("营业执照号长度不能超过50个字符")
 	}
 	if input.BusinessLicense == "" {
 		return fmt.Errorf("请上传营业执照")
 	}
-	if input.ContactPhone != "" && !utils.ValidatePhone(input.ContactPhone) {
+	if input.ContactName == "" {
+		return fmt.Errorf("请填写联系人姓名")
+	}
+	if input.ContactPhone == "" {
+		return fmt.Errorf("请填写联系人手机号")
+	}
+	if !utils.ValidatePhone(input.ContactPhone) {
 		return fmt.Errorf("联系人手机号格式不正确")
+	}
+	if input.BusinessHours == "" {
+		return fmt.Errorf("请填写营业时间")
+	}
+	if input.Address == "" {
+		return fmt.Errorf("请填写门店地址")
 	}
 	if err := validateMaterialProducts(input.Products); err != nil {
 		return err
@@ -143,15 +163,17 @@ func createOrLoadUserForMaterialApply(tx *gorm.DB, phone, nickname string) (*mod
 		return nil, err
 	}
 
-	user = model.User{
-		Phone:    phone,
-		Nickname: nickname,
-		UserType: 1,
-		Status:   1,
+	createdUser, createErr := createMerchantUserWithCompatibility(tx, phone, nickname)
+	if createErr != nil {
+		if isUserPhoneDuplicateError(createErr) {
+			if findErr := tx.Where("phone = ?", phone).First(&user).Error; findErr == nil {
+				return &user, nil
+			}
+		}
+		return nil, createErr
 	}
-	if err := tx.Create(&user).Error; err != nil {
-		return nil, err
-	}
+
+	user = createdUser
 	return &user, nil
 }
 
@@ -229,19 +251,23 @@ func MaterialShopApply(c *gin.Context) {
 		return
 	}
 
+	acceptedAt := time.Now()
 	application := model.MaterialShopApplication{
-		UserID:            user.ID,
-		Phone:             input.Phone,
-		EntityType:        input.EntityType,
-		ShopName:          input.ShopName,
-		ShopDescription:   input.ShopDescription,
-		BusinessLicenseNo: encryptSensitiveOrPlain(input.BusinessLicenseNo),
-		BusinessLicense:   input.BusinessLicense,
-		BusinessHours:     input.BusinessHours,
-		ContactPhone:      input.ContactPhone,
-		ContactName:       input.ContactName,
-		Address:           input.Address,
-		Status:            0,
+		UserID:              user.ID,
+		Phone:               input.Phone,
+		EntityType:          input.EntityType,
+		ShopName:            input.ShopName,
+		ShopDescription:     input.ShopDescription,
+		BusinessLicenseNo:   encryptSensitiveOrPlain(input.BusinessLicenseNo),
+		BusinessLicense:     input.BusinessLicense,
+		BusinessHours:       input.BusinessHours,
+		ContactPhone:        input.ContactPhone,
+		ContactName:         input.ContactName,
+		Address:             input.Address,
+		LegalAcceptanceJSON: buildLegalAcceptanceJSON(input.LegalAcceptance),
+		LegalAcceptedAt:     &acceptedAt,
+		LegalAcceptSource:   "merchant_web",
+		Status:              0,
 	}
 	if err := tx.Create(&application).Error; err != nil {
 		tx.Rollback()
@@ -350,6 +376,10 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 	app.ContactPhone = input.ContactPhone
 	app.ContactName = input.ContactName
 	app.Address = input.Address
+	app.LegalAcceptanceJSON = buildLegalAcceptanceJSON(input.LegalAcceptance)
+	app.LegalAcceptSource = "merchant_web"
+	acceptedAt := time.Now()
+	app.LegalAcceptedAt = &acceptedAt
 	app.Status = 0
 	app.RejectReason = ""
 	app.AuditedBy = 0

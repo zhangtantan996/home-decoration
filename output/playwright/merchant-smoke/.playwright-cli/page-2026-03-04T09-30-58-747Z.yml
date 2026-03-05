@@ -1,0 +1,39 @@
+- main [ref=e5]:
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - heading "🏠 装修平台商家中心" [level=2] [ref=e9]
+      - generic [ref=e10]: 统一入口：我要入驻 / 已有账号登录
+    - generic [ref=e13]:
+      - generic [ref=e14]: 开始商家流程
+      - generic [ref=e15]:
+        - button "我要入驻" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: 我要入驻
+        - button "登录商家中心" [ref=e18] [cursor=pointer]:
+          - generic [ref=e19]: 登录商家中心
+    - generic [ref=e20]:
+      - generic [ref=e23] [cursor=pointer]:
+        - img "user" [ref=e25]:
+          - img [ref=e26]
+        - heading "设计师入驻" [level=5] [ref=e28]
+        - generic [ref=e29]: 独立设计师或设计工作室，提供专业设计服务
+      - generic [ref=e32] [cursor=pointer]:
+        - img "tool" [ref=e34]:
+          - img [ref=e35]
+        - heading "工长入驻" [level=5] [ref=e37]
+        - generic [ref=e38]: 个人工长或施工团队，承接装修施工项目
+      - generic [ref=e41] [cursor=pointer]:
+        - img "bank" [ref=e43]:
+          - img [ref=e44]
+        - heading "装修公司入驻" [level=5] [ref=e46]
+        - generic [ref=e47]: 具备企业资质的装修公司，提供一站式服务
+      - generic [ref=e50] [cursor=pointer]:
+        - img "shop" [ref=e52]:
+          - img [ref=e53]
+        - heading "主材商入驻" [level=5] [ref=e55]
+        - generic [ref=e56]: 主材门店或供应商，提供建材产品销售
+    - generic [ref=e58]:
+      - generic [ref=e59]: 已提交申请？
+      - button "search 查询审核进度" [ref=e61] [cursor=pointer]:
+        - img "search" [ref=e63]:
+          - img [ref=e64]
+        - generic [ref=e66]: 查询审核进度

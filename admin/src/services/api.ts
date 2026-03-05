@@ -229,6 +229,54 @@ export interface IdentityApplicationItem {
     appliedAt: string;
     reviewedAt?: string;
     reviewedBy?: number;
+
+    // 商家入驻扩展字段（仅当 identityType=provider 时存在）
+    merchantDetails?: MerchantApplicationDetails;
+}
+
+// 作品案例展示
+export interface PortfolioCaseDisplay {
+    title: string;
+    images: string[];
+    style: string;
+    area: number;
+}
+
+// 商家入驻详细信息
+export interface MerchantApplicationDetails {
+    // 基础信息
+    phone: string;
+    applicantType: string; // personal, studio, company, foreman
+    role: string;          // designer, foreman, company
+    entityType: string;    // personal, company
+
+    // 个人/负责人信息
+    realName: string;
+    idCardNo: string;      // 已脱敏
+    idCardFront: string;   // 身份证正面 URL
+    idCardBack: string;    // 身份证反面 URL
+
+    // 公司信息
+    companyName?: string;
+    licenseNo?: string;
+    licenseImage?: string;
+    teamSize?: number;
+    officeAddress?: string;
+
+    // 工长扩展信息
+    yearsExperience?: number;
+    workTypes?: string[];
+
+    // 服务信息
+    serviceArea?: string[];      // 服务区域名称数组
+    serviceAreaCodes?: string[]; // 服务区域代码数组
+    styles?: string[];
+    highlightTags?: string[];
+    pricing?: Record<string, number>;
+    introduction?: string;
+    graduateSchool?: string;
+    designPhilosophy?: string;
+    portfolioCases?: PortfolioCaseDisplay[];
 }
 
 // 身份申请审核

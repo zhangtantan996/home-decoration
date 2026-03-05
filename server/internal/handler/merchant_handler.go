@@ -356,6 +356,10 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
 			role := providerRoleFromSubType(providerSubType)
 			entityType := normalizeProviderEntityType(provider.EntityType, applicantType)
+			avatar := strings.TrimSpace(provider.Avatar)
+			if avatar == "" {
+				avatar = user.Avatar
+			}
 
 			response.Success(c, gin.H{
 				"token":        tokenString,
@@ -366,7 +370,7 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 				"provider": gin.H{
 					"id":              provider.ID,
 					"name":            displayName,
-					"avatar":          imgutil.GetFullImageURL(user.Avatar),
+					"avatar":          imgutil.GetFullImageURL(avatar),
 					"providerType":    provider.ProviderType,
 					"applicantType":   applicantType,
 					"providerSubType": providerSubType,
@@ -532,11 +536,15 @@ func MerchantGetInfo(c *gin.Context) {
 	workTypes := parseProviderWorkTypes(provider.WorkTypes)
 	highlightTags := parseJSONOrDelimitedSlice(provider.HighlightTags)
 	pricing := parsePricingObject(provider.PricingJSON)
+	avatar := strings.TrimSpace(provider.Avatar)
+	if avatar == "" {
+		avatar = user.Avatar
+	}
 
 	response.Success(c, gin.H{
 		"id":               provider.ID,
 		"name":             displayName,
-		"avatar":           imgutil.GetFullImageURL(user.Avatar),
+		"avatar":           imgutil.GetFullImageURL(avatar),
 		"providerType":     provider.ProviderType,
 		"applicantType":    applicantType,
 		"providerSubType":  providerSubType,

@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 
-import { buildRandomMainlandPhone, getMerchantTestEnv, merchantApiPost } from './helpers/merchant';
+import {
+  buildLegalAcceptancePayload,
+  buildRandomMainlandPhone,
+  getMerchantTestEnv,
+  merchantApiPost,
+} from './helpers/merchant';
 
 interface MerchantApplyResponseData {
   applicationId?: number;
@@ -10,6 +15,7 @@ const createPortfolioCase = (index: number, imageCount: number) => ({
   title: `设计案例-${index + 1}`,
   style: '现代简约',
   area: '120㎡',
+  description: `案例说明-${index + 1}`,
   images: Array.from({ length: imageCount }, (_, imageIndex) => `https://example.com/designer-${index + 1}-${imageIndex + 1}.jpg`),
 });
 
@@ -20,9 +26,11 @@ const buildDesignerPayload = (phone: string) => ({
   entityType: 'personal',
   applicantType: 'personal',
   realName: '张三',
+  avatar: 'https://example.com/avatar.jpg',
   idCardNo: '11010519491231002X',
   idCardFront: 'https://example.com/id-front.jpg',
   idCardBack: 'https://example.com/id-back.jpg',
+  yearsExperience: 6,
   serviceArea: ['雁塔区'],
   styles: ['现代简约'],
   pricing: {
@@ -31,6 +39,7 @@ const buildDesignerPayload = (phone: string) => ({
     other: 259,
   },
   introduction: '设计说明',
+  legalAcceptance: buildLegalAcceptancePayload(),
   portfolioCases: [
     createPortfolioCase(0, 3),
     createPortfolioCase(1, 3),

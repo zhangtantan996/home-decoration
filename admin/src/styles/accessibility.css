@@ -1,0 +1,46 @@
+/* 屏幕阅读器专用文本（视觉隐藏） */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* 焦点可见性增强 */
+*:focus-visible {
+    outline: 2px solid #1890ff;
+    outline-offset: 2px;
+}
+
+/* 跳过导航链接 */
+.skip-to-content {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #1890ff;
+    color: white;
+    padding: 8px;
+    text-decoration: none;
+    z-index: 100;
+}
+
+.skip-to-content:focus {
+    top: 0;
+}
+
+/* 确保按钮和链接有足够的触摸目标尺寸 */
+button,
+a {
+    min-height: 44px;
+    min-width: 44px;
+}
+
+/* 提高对比度 */
+.high-contrast {
+    filter: contrast(1.2);
+}

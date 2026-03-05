@@ -62,8 +62,29 @@ const deriveTinodeHostFromApi = (): string => {
     }
 };
 
-// 配置
+/**
+ * 在生产环境中，移动端通过 Nginx（API host:8888）访问 Tinode。
+ * Nginx 将 /v0/channels 代理到 Tinode 的 WebSocket 端点。
+ * 这样避免了移动端直连 Tinode 6060 时的 WSS/WS 不匹配问题。
+ * TLS 由 Nginx 处理，Tinode 本身不启用 TLS。
+ *
+ * 开发环境：直连 Tinode localhost:6060。
+ */
 const getTinodeHost = (): string => {
+    // 生产环境：使用 API host，让 Nginx 代理 Tinode WebSocket
+    if (!__DEV__) {
+        try {
+            const url = new URL(getApiBaseUrl());
+            if (url.host) {
+                console.log('[Tinode] Production mode: routing via Nginx proxy at', url.host);
+                return url.host; // e.g. "47.99.105.195:8888"
+            }
+        } catch {
+            // fall through to default
+        }
+    }
+
+    // 开发环境：优先使用 .env 中的 TINODE_SERVER_URL
     const explicitHost = withDefaultTinodePort(TINODE_CONFIG.HOST);
     const derivedHost = deriveTinodeHostFromApi();
 
@@ -78,7 +99,7 @@ const getTinodeHost = (): string => {
         if (explicitIsLoopback && derivedHost && !derivedIsLoopback) {
             console.warn(
                 `[Tinode] TINODE_SERVER_URL=${explicitHost} points to loopback, ` +
-                    `but API host is ${derivedHost}. Using API host for Tinode.`
+                `but API host is ${derivedHost}. Using API host for Tinode.`
             );
             return derivedHost;
         }
@@ -90,8 +111,8 @@ const getTinodeHost = (): string => {
         return derivedHost;
     }
 
-    // Fallback to previous behavior.
-    return __DEV__ ? 'localhost:6060' : 'api.yourdomain.com:6060';
+    // Fallback.
+    return 'localhost:6060';
 };
 
 const CONFIG = {
@@ -120,10 +141,10 @@ class TinodeService extends SimpleEventEmitter {
     private connected: boolean = false;
     private initPromise: Promise<boolean> | null = null;
     private reconnectTimer: any | null = null;
-	private reconnectGuard: AutoRetryGuard = new AutoRetryGuard(RECONNECT_POLICY);
-	private reconnectPaused: boolean = false;
-	private userIdCache: Map<string, string> = new Map();
-	private prefetchInFlight: Map<string, Promise<void>> = new Map();
+    private reconnectGuard: AutoRetryGuard = new AutoRetryGuard(RECONNECT_POLICY);
+    private reconnectPaused: boolean = false;
+    private userIdCache: Map<string, string> = new Map();
+    private prefetchInFlight: Map<string, Promise<void>> = new Map();
 
     private constructor() {
         super();
@@ -150,102 +171,105 @@ class TinodeService extends SimpleEventEmitter {
 
         this.initPromise = (async () => {
             try {
-            console.log('[Tinode] 初始化中...');
-            console.log('[Tinode] Server:', CONFIG.SERVER_URL, 'secure:', !__DEV__);
+                console.log('[Tinode] 初始化中...');
+                console.log('[Tinode] Server:', CONFIG.SERVER_URL, 'secure:', !__DEV__);
 
-            if (!CONFIG.API_KEY) {
-                console.error(
-                    '[Tinode] 初始化失败: 未配置 TINODE_API_KEY（Tinode API Key）。' +
+                if (!CONFIG.API_KEY) {
+                    console.error(
+                        '[Tinode] 初始化失败: 未配置 TINODE_API_KEY（Tinode API Key）。' +
                         '请在 mobile/.env 中设置（参考 mobile/.env.example），然后重新编译 App。'
-                );
+                    );
+                    this.connected = false;
+                    return false;
+                }
+
+                // If there is a previous instance, disconnect it to avoid multiple sockets.
+                try {
+                    this.tinode?.disconnect?.();
+                } catch {
+                    // ignore
+                }
+                this.connected = false;
+                this.tinode = null;
+                this.me = null;
+
+                // 创建 Tinode 实例
+                // secure 始终为 false：TLS 由 Nginx 在外层处理，Tinode 本身不启用 TLS。
+                // 生产环境：SDK 连接到 API host（Nginx），Nginx 代理 /v0/channels 到 Tinode 6060。
+                // 开发环境：SDK 直连 Tinode localhost:6060，无需 TLS。
+                this.tinode = new Tinode({
+                    appName: CONFIG.APP_NAME,
+                    host: CONFIG.SERVER_URL,
+                    apiKey: CONFIG.API_KEY,
+                    transport: 'ws',
+                    secure: false,
+                });
+
+                // 绑定事件监听器
+                this.tinode.onConnect = this.onConnect.bind(this);
+                this.tinode.onDisconnect = this.onDisconnect.bind(this);
+                this.tinode.onMessage = this.onMessage.bind(this);
+
+                // 连接到服务器
+                await this.tinode.connect();
+                console.log('[Tinode] WebSocket 已连接');
+
+                // 使用 Token 登录
+                const loginResult = await this.tinode.loginToken(tinodeToken);
+                console.log('[Tinode] 登录成功:', loginResult);
+
+                // 订阅 "me" topic（必需，用于接收会话列表）
+                this.me = this.tinode.getMeTopic();
+
+                // `me.subscribe(getParams)` resolves on ctrl ack; the actual meta{sub} may arrive later.
+                // Attach handlers BEFORE subscribing so we can refresh the UI when subs are processed.
+                let subsResolved = false;
+                let resolveSubs!: () => void;
+                const waitSubs = new Promise<void>((resolve) => {
+                    resolveSubs = resolve;
+                });
+
+                this.me.onPres = (pres: unknown) => {
+                    this.emit('pres', pres);
+                };
+                this.me.onContactUpdate = (what: unknown, cont: unknown) => {
+                    this.emit('contact-update', { what, cont });
+                };
+                this.me.onSubsUpdated = (keys: unknown, count?: unknown) => {
+                    this.emit('subs-updated', { keys, count });
+                    if (!subsResolved) {
+                        subsResolved = true;
+                        resolveSubs();
+                    }
+                };
+
+                // Fetch topic description and subscriptions.
+                // Tinode SDK expects `get` params object (no nested `get:`).
+                const getParams = this.me.startMetaQuery().withDesc().withSub(undefined, 200).build();
+                await this.me.subscribe(getParams);
+
+                // Best-effort: wait briefly for the initial subs list to be processed.
+                await Promise.race([
+                    waitSubs,
+                    new Promise((resolve) => setTimeout(resolve, 1500)),
+                ]);
+
+                this.connected = true;
+                this.emit('connected');
+                console.log('[Tinode] 初始化成功');
+
+                return true;
+            } catch (error) {
+                console.error('[Tinode] 初始化失败:', error);
+                const msg = String((error as any)?.message || '');
+                if (msg.includes('503')) {
+                    console.warn(
+                        '[Tinode] 503 Service Unavailable: 通常是 Tinode 容器未启动/未就绪，或 Tinode 无法连接数据库。' +
+                        '请检查 docker 容器与日志（decorating_tinode），并确认已配置 TINODE_DATABASE_DSN 等环境变量。'
+                    );
+                }
                 this.connected = false;
                 return false;
-            }
-
-            // If there is a previous instance, disconnect it to avoid multiple sockets.
-            try {
-                this.tinode?.disconnect?.();
-            } catch {
-                // ignore
-            }
-            this.connected = false;
-            this.tinode = null;
-            this.me = null;
-
-            // 创建 Tinode 实例
-            this.tinode = new Tinode({
-                appName: CONFIG.APP_NAME,
-                host: CONFIG.SERVER_URL,
-                apiKey: CONFIG.API_KEY,
-                transport: 'ws',
-                secure: !__DEV__,  // 生产环境使用 WSS
-            });
-
-            // 绑定事件监听器
-            this.tinode.onConnect = this.onConnect.bind(this);
-            this.tinode.onDisconnect = this.onDisconnect.bind(this);
-            this.tinode.onMessage = this.onMessage.bind(this);
-
-            // 连接到服务器
-            await this.tinode.connect();
-            console.log('[Tinode] WebSocket 已连接');
-
-            // 使用 Token 登录
-            const loginResult = await this.tinode.loginToken(tinodeToken);
-            console.log('[Tinode] 登录成功:', loginResult);
-
-            // 订阅 "me" topic（必需，用于接收会话列表）
-            this.me = this.tinode.getMeTopic();
-
-            // `me.subscribe(getParams)` resolves on ctrl ack; the actual meta{sub} may arrive later.
-            // Attach handlers BEFORE subscribing so we can refresh the UI when subs are processed.
-            let subsResolved = false;
-            let resolveSubs!: () => void;
-            const waitSubs = new Promise<void>((resolve) => {
-                resolveSubs = resolve;
-            });
-
-            this.me.onPres = (pres: unknown) => {
-                this.emit('pres', pres);
-            };
-            this.me.onContactUpdate = (what: unknown, cont: unknown) => {
-                this.emit('contact-update', { what, cont });
-            };
-            this.me.onSubsUpdated = (keys: unknown, count?: unknown) => {
-                this.emit('subs-updated', { keys, count });
-                if (!subsResolved) {
-                    subsResolved = true;
-                    resolveSubs();
-                }
-            };
-
-            // Fetch topic description and subscriptions.
-            // Tinode SDK expects `get` params object (no nested `get:`).
-            const getParams = this.me.startMetaQuery().withDesc().withSub(undefined, 200).build();
-            await this.me.subscribe(getParams);
-
-            // Best-effort: wait briefly for the initial subs list to be processed.
-            await Promise.race([
-                waitSubs,
-                new Promise((resolve) => setTimeout(resolve, 1500)),
-            ]);
-
-            this.connected = true;
-            this.emit('connected');
-            console.log('[Tinode] 初始化成功');
-
-            return true;
-            } catch (error) {
-            console.error('[Tinode] 初始化失败:', error);
-            const msg = String((error as any)?.message || '');
-            if (msg.includes('503')) {
-                console.warn(
-                    '[Tinode] 503 Service Unavailable: 通常是 Tinode 容器未启动/未就绪，或 Tinode 无法连接数据库。' +
-                        '请检查 docker 容器与日志（decorating_tinode），并确认已配置 TINODE_DATABASE_DSN 等环境变量。'
-                );
-            }
-            this.connected = false;
-            return false;
             } finally {
                 this.initPromise = null;
             }
@@ -594,7 +618,7 @@ class TinodeService extends SimpleEventEmitter {
                 await topic.subscribe();
                 console.log('[Tinode] Subscribe complete');
             }
-            
+
             console.log('[Tinode] Fetching meta with limit:', limit);
             await topic.getMeta(getParams);
             console.log('[Tinode] getMeta complete');
@@ -620,7 +644,7 @@ class TinodeService extends SimpleEventEmitter {
             // of data packet routing. If server reported data but cache is still empty, wait one more tick.
             const messageCount = typeof topic?.messageCount === 'function' ? topic.messageCount() : 0;
             console.log('[Tinode] Topic message count:', messageCount, 'receivedCount:', receivedCount);
-            
+
             if (receivedCount > 0 && messageCount === 0) {
                 console.log('[Tinode] Waiting one more tick for messages to populate...');
                 await new Promise((resolve) => setTimeout(resolve, 0));
@@ -636,26 +660,26 @@ class TinodeService extends SimpleEventEmitter {
         return topic;
     }
 
-	/**
-	 * Resolve app user identifier (internal id or publicId) to Tinode user topic id (`usr...`).
-	 */
-	async resolveTinodeUserId(appUserIdentifier: number | string): Promise<string> {
-		const key = String(appUserIdentifier).trim();
-		if (!key) {
-			throw new Error('Missing user identifier');
-		}
+    /**
+     * Resolve app user identifier (internal id or publicId) to Tinode user topic id (`usr...`).
+     */
+    async resolveTinodeUserId(appUserIdentifier: number | string): Promise<string> {
+        const key = String(appUserIdentifier).trim();
+        if (!key) {
+            throw new Error('Missing user identifier');
+        }
 
-		const cached = this.userIdCache.get(key);
-		if (cached) return cached;
+        const cached = this.userIdCache.get(key);
+        if (cached) return cached;
 
-		const res: any = await tinodeApi.getTinodeUserId(key);
-		const tinodeUserId = res?.data?.tinodeUserId;
-		if (!tinodeUserId) {
-			throw new Error('Failed to resolve Tinode user id');
-		}
-		this.userIdCache.set(key, tinodeUserId);
-		return tinodeUserId;
-	}
+        const res: any = await tinodeApi.getTinodeUserId(key);
+        const tinodeUserId = res?.data?.tinodeUserId;
+        if (!tinodeUserId) {
+            throw new Error('Failed to resolve Tinode user id');
+        }
+        this.userIdCache.set(key, tinodeUserId);
+        return tinodeUserId;
+    }
 
     /**
      * 发送文本消息

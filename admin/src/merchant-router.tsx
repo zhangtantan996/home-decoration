@@ -19,6 +19,9 @@ import MaterialShopSettings from './pages/merchant/MaterialShopSettings';
 import MaterialShopProducts from './pages/merchant/MaterialShopProducts';
 import MerchantChat from './pages/merchant/MerchantChat';
 import IMTest from './pages/merchant/IMTest';
+import OnboardingAgreementPage from './pages/merchant/legal/OnboardingAgreementPage';
+import PlatformRulesPage from './pages/merchant/legal/PlatformRulesPage';
+import PrivacyDataProcessingPage from './pages/merchant/legal/PrivacyDataProcessingPage';
 import MerchantLayout from './layouts/MerchantLayout';
 import MerchantAuthGuard from './components/MerchantAuthGuard';
 
@@ -30,6 +33,9 @@ const merchantRouter = createBrowserRouter([
     { path: '/register', element: <MerchantRegister /> },
     { path: '/material-shop/register', element: <MaterialShopRegister /> },
     { path: '/apply-status', element: <MerchantApplyStatus /> },
+    { path: '/legal/onboarding-agreement', element: <OnboardingAgreementPage /> },
+    { path: '/legal/platform-rules', element: <PlatformRulesPage /> },
+    { path: '/legal/privacy-data-processing', element: <PrivacyDataProcessingPage /> },
 
     // 商家中心（需要登录）
     {

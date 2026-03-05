@@ -3,6 +3,7 @@
 本指南针对 **阿里云 (Aliyun)** 环境进行了定制。
 
 > 更完整的生产上线落地（托管 RDS/Redis + Tinode + 阿里云短信）请查看：`deploy/ALIYUN_PRODUCTION_LAUNCH.md`。
+> OSS 免费包快速配置（本地上传 + 定时备份到 OSS）请查看：`deploy/OSS_FREE_PLAN_SETUP.md`。
 
 ## 1. 云资源准备 (Cloud Resources)
 

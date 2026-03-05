@@ -268,7 +268,7 @@
           <h2 class="section-title" data-i18n="join.title">加入禾泽云，一起成长</h2>
           <p class="section-desc" data-i18n="join.desc">面向设计师、施工团队和建材商开放入驻，共享平台流量与商机。</p>
           <div style="margin-top: 32px;">
-            <a href="#join" class="btn-primary" data-i18n="join.cta" data-track="cta_join_primary">申请入驻</a>
+            <a href="/merchant/login" class="btn-primary" data-i18n="join.cta" data-track="cta_join_primary">申请入驻</a>
           </div>
         </div>
         <div class="join-cards animate-on-scroll">
@@ -378,7 +378,7 @@
         <div class="footer-col" id="footer-company">
           <h4 data-i18n="footer.company">公司</h4>
           <a href="#about" data-i18n="footer.company.about">关于我们</a>
-          <a href="#join" data-i18n="footer.company.join">入驻合作</a>
+          <a href="/merchant/login" data-i18n="footer.company.join">入驻合作</a>
           <a href="#footer-company" data-i18n="footer.company.careers" data-track="cta_footer_company_careers">加入团队</a>
           <a href="#footer-company" data-i18n="footer.company.contact" data-track="cta_footer_company_contact">联系我们</a>
         </div>
@@ -405,6 +405,16 @@
   </footer>
 
   <script type="module" src="/scripts/main.js"></script>
+
+  <!-- Dev Redirect Script for local dev environment jumps to admin Vite server on 5173 -->
+  <script>
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      const merchantLinks = document.querySelectorAll('a[href="/merchant/login"]');
+      merchantLinks.forEach(link => {
+        link.href = 'http://localhost:5173/merchant/login';
+      });
+    }
+  </script>
 </body>
 
 </html>

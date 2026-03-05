@@ -7,7 +7,6 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     Platform,
 } from 'react-native';
 import {
@@ -22,8 +21,10 @@ import {
     ChevronRight,
     CheckCircle,
     AlertCircle,
+    Camera,
 } from 'lucide-react-native';
 import { projectApi, billApi } from '../services/api';
+import { useToast } from '../components/Toast';
 
 interface Project {
     id: number;
@@ -54,6 +55,7 @@ const PROJECT_STATUS_MAP: Record<number, { label: string; color: string }> = {
 };
 
 const ProjectDetailScreen: React.FC<ProjectDetailScreenProps> = ({ route, navigation }) => {
+    const { showAlert } = useToast();
     const { projectId } = route.params;
 
     const [project, setProject] = useState<Project | null>(null);
@@ -69,7 +71,7 @@ const ProjectDetailScreen: React.FC<ProjectDetailScreenProps> = ({ route, naviga
             const res = await projectApi.detail(String(projectId));
             setProject(res.data);
         } catch (error: any) {
-            Alert.alert('加载失败', error.message || '请稍后重试');
+            showAlert('加载失败', error.message || '请稍后重试');
         } finally {
             setLoading(false);
         }

@@ -39,6 +39,8 @@ const (
 	SMSPurposeMerchantWithdraw SMSPurpose = "merchant_withdraw"
 	SMSPurposeMerchantBankBind SMSPurpose = "merchant_bank_bind"
 	SMSPurposeIdentityApply    SMSPurpose = "identity_apply"
+	SMSPurposeChangePhone      SMSPurpose = "change_phone"
+	SMSPurposeDeleteAccount    SMSPurpose = "delete_account"
 )
 
 var (
@@ -49,7 +51,7 @@ var (
 	errSMSNotReady          = errors.New("验证码服务未就绪")
 	errSMSServiceError      = errors.New("验证码服务异常")
 	errSMSPurposeInvalid    = errors.New("验证码业务场景无效")
-	validSMSPurposes        = map[SMSPurpose]struct{}{SMSPurposeLogin: {}, SMSPurposeRegister: {}, SMSPurposeMerchantWithdraw: {}, SMSPurposeMerchantBankBind: {}, SMSPurposeIdentityApply: {}}
+	validSMSPurposes        = map[SMSPurpose]struct{}{SMSPurposeLogin: {}, SMSPurposeRegister: {}, SMSPurposeMerchantWithdraw: {}, SMSPurposeMerchantBankBind: {}, SMSPurposeIdentityApply: {}, SMSPurposeChangePhone: {}, SMSPurposeDeleteAccount: {}}
 	smsCodeVerifyConsumeLua = redis.NewScript(`
 local codeKey = KEYS[1]
 local lockKey = KEYS[2]
@@ -120,6 +122,23 @@ func isDebugBypassEnabled() bool {
 		enabled = strings.EqualFold(raw, "true") || raw == "1"
 	}
 	return enabled && strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "local")
+}
+
+func isFixedCodeModeEnabled() bool {
+	raw := strings.TrimSpace(os.Getenv("SMS_FIXED_CODE_MODE"))
+	if raw != "" {
+		return strings.EqualFold(raw, "true") || raw == "1"
+	}
+
+	return !isReleaseMode() || isLocalLikeEnv()
+}
+
+func fixedSMSCodeValue() string {
+	code := strings.TrimSpace(os.Getenv("SMS_FIXED_CODE"))
+	if code == "" {
+		return devBypassCode
+	}
+	return code
 }
 
 func smsCodeKey(phone string, purpose SMSPurpose) string {
@@ -271,6 +290,15 @@ func SendSMSCode(phone string, purpose SMSPurpose, clientIP, captchaToken string
 		return nil, errors.New("手机号格式不正确")
 	}
 
+	if isFixedCodeModeEnabled() {
+		logSMSAudit(requestID, purpose, phone, clientIP, SMSProviderResult{Provider: "fixed_code"}, "sent", "", "")
+		return &SendSMSCodeResult{
+			RequestID: requestID,
+			DebugCode: fixedSMSCodeValue(),
+			DebugOnly: true,
+		}, nil
+	}
+
 	if err := smsService.CanSendCode(phone, clientIP, string(purpose)); err != nil {
 		logSMSAudit(requestID, purpose, phone, clientIP, SMSProviderResult{Provider: "risk_guard"}, "risk_blocked", "SMS_RATE_LIMIT", err.Error())
 		return nil, err
@@ -365,6 +393,13 @@ func VerifySMSCode(phone string, purpose SMSPurpose, code string) error {
 	}
 	if code == "" {
 		return errSMSCodeRequired
+	}
+
+	if isFixedCodeModeEnabled() {
+		if code == fixedSMSCodeValue() {
+			return nil
+		}
+		return errSMSCodeInvalid
 	}
 
 	if isDebugBypassEnabled() && code == devBypassCode {

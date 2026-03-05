@@ -37,9 +37,17 @@ interface AgreementConfig {
     onDisagree?: () => void;
 }
 
+type AlertButtonStyle = 'default' | 'cancel' | 'destructive';
+interface AlertButton {
+    text?: string;
+    onPress?: () => void;
+    style?: AlertButtonStyle;
+}
+
 interface ToastContextType {
     showToast: (config: ToastConfig | string) => void;
     showConfirm: (config: ConfirmConfig) => void;
+    showAlert: (title: string, message?: string, buttons?: AlertButton[]) => void;
     showAgreementModal: (config: AgreementConfig) => void;
 }
 
@@ -74,8 +82,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [toastConfig, setToastConfig] = useState<ToastConfig>({ message: '' });
 
     // 弹窗相关状态
+    const [alertVisible, setAlertVisible] = useState(false);
+    const [alertConfig, setAlertConfig] = useState<{ title: string; message?: string; buttons?: AlertButton[] }>({ title: '' });
+
+    // 向前兼容的 Confirm
     const [confirmVisible, setConfirmVisible] = useState(false);
     const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ title: '', message: '' });
+
     const [agreementVisible, setAgreementVisible] = useState(false);
     const [agreementConfig, setAgreementConfig] = useState<AgreementConfig>({ onAgree: () => { } });
 
@@ -122,7 +135,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
     };
 
-    // Confirm & Agreement Handlers (保持原有逻辑)
+    // Confirm & Agreement Handlers
+    const showAlert = useCallback((title: string, message?: string, buttons?: AlertButton[]) => {
+        setAlertConfig({ title, message, buttons });
+        setAlertVisible(true);
+    }, []);
+
     const showConfirm = useCallback((config: ConfirmConfig) => {
         setConfirmConfig({ confirmText: '确定', cancelText: '取消', ...config });
         setConfirmVisible(true);
@@ -132,6 +150,16 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setAgreementConfig(config);
         setAgreementVisible(true);
     }, []);
+
+    const handleAlertBtnPress = (btn: AlertButton) => {
+        setAlertVisible(false);
+        // 使弹窗消失动画有时间执行，再触发回调
+        setTimeout(() => btn.onPress?.(), 100);
+    };
+
+    const handleAlertClose = () => {
+        setAlertVisible(false);
+    };
 
     const handleConfirm = () => { confirmConfig.onConfirm?.(); setConfirmVisible(false); };
     const handleCancel = () => { confirmConfig.onCancel?.(); setConfirmVisible(false); };
@@ -157,7 +185,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     return (
-        <ToastContext.Provider value={{ showToast, showConfirm, showAgreementModal }}>
+        <ToastContext.Provider value={{ showToast, showConfirm, showAlert, showAgreementModal }}>
             {children}
 
             {/* Toast 容器 */}
@@ -184,7 +212,47 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 </View>
             )}
 
-            {/* Confirm Modal */}
+            {/* 统一 Alert Modal */}
+            <Modal visible={alertVisible} transparent animationType="fade" onRequestClose={handleAlertClose}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>{alertConfig.title}</Text>
+                        {!!alertConfig.message && (
+                            <Text style={styles.modalMessage}>{alertConfig.message}</Text>
+                        )}
+                        <View style={styles.modalButtons}>
+                            {(!alertConfig.buttons || alertConfig.buttons.length === 0) ? (
+                                <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleAlertClose}>
+                                    <Text style={styles.confirmButtonText}>确定</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                alertConfig.buttons.map((btn, idx) => (
+                                    <TouchableOpacity
+                                        key={idx}
+                                        style={[
+                                            styles.modalButton,
+                                            btn.style === 'cancel' ? styles.cancelButton :
+                                                btn.style === 'destructive' ? styles.destructiveButton :
+                                                    styles.confirmButton
+                                        ]}
+                                        onPress={() => handleAlertBtnPress(btn)}
+                                    >
+                                        <Text style={[
+                                            btn.style === 'cancel' ? styles.cancelButtonText :
+                                                btn.style === 'destructive' ? styles.destructiveButtonText :
+                                                    styles.confirmButtonText
+                                        ]}>
+                                            {btn.text || '确定'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))
+                            )}
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* 兼容旧的 Confirm Modal */}
             <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={handleCancel}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
@@ -314,12 +382,20 @@ const styles = StyleSheet.create({
         color: '#666',
     },
     confirmButton: {
-        backgroundColor: '#000',
+        backgroundColor: '#D4AF37',
     },
     confirmButtonText: {
         fontSize: 16,
         fontWeight: '600',
         color: '#fff',
+    },
+    destructiveButton: {
+        backgroundColor: '#FEE2E2',
+    },
+    destructiveButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#DC2626',
     },
     agreementOverlay: {
         flex: 1,

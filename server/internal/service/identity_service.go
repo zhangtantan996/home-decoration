@@ -65,6 +65,59 @@ type IdentityApplicationListItem struct {
 	ReviewedBy      *uint64    `json:"reviewedBy,omitempty"`
 }
 
+// IdentityApplicationDetail 身份申请详情（包含商家入驻完整信息）
+type IdentityApplicationDetail struct {
+	IdentityApplicationListItem
+
+	// 商家入驻扩展字段（仅当 identityType=provider 时返回）
+	MerchantDetails *MerchantApplicationDetails `json:"merchantDetails,omitempty"`
+}
+
+// MerchantApplicationDetails 商家入驻详细信息
+type MerchantApplicationDetails struct {
+	// 基础信息
+	Phone         string `json:"phone"`
+	ApplicantType string `json:"applicantType"` // personal, studio, company, foreman
+	Role          string `json:"role"`          // designer, foreman, company
+	EntityType    string `json:"entityType"`    // personal, company
+
+	// 个人/负责人信息
+	RealName    string `json:"realName"`
+	IDCardNo    string `json:"idCardNo"`    // 脱敏显示
+	IDCardFront string `json:"idCardFront"` // 身份证正面 URL
+	IDCardBack  string `json:"idCardBack"`  // 身份证反面 URL
+
+	// 公司信息
+	CompanyName   string `json:"companyName,omitempty"`
+	LicenseNo     string `json:"licenseNo,omitempty"`
+	LicenseImage  string `json:"licenseImage,omitempty"`
+	TeamSize      int    `json:"teamSize,omitempty"`
+	OfficeAddress string `json:"officeAddress,omitempty"`
+
+	// 工长扩展信息
+	YearsExperience int      `json:"yearsExperience,omitempty"`
+	WorkTypes       []string `json:"workTypes,omitempty"` // JSON 数组
+
+	// 服务信息
+	ServiceArea      []string               `json:"serviceArea,omitempty"`      // 服务区域名称数组
+	ServiceAreaCodes []string               `json:"serviceAreaCodes,omitempty"` // 服务区域代码数组
+	Styles           []string               `json:"styles,omitempty"`
+	HighlightTags    []string               `json:"highlightTags,omitempty"`
+	Pricing          map[string]float64     `json:"pricing,omitempty"`
+	Introduction     string                 `json:"introduction,omitempty"`
+	GraduateSchool   string                 `json:"graduateSchool,omitempty"`
+	DesignPhilosophy string                 `json:"designPhilosophy,omitempty"`
+	PortfolioCases   []PortfolioCaseDisplay `json:"portfolioCases,omitempty"`
+}
+
+// PortfolioCaseDisplay 作品案例展示
+type PortfolioCaseDisplay struct {
+	Title  string   `json:"title"`
+	Images []string `json:"images"`
+	Style  string   `json:"style"`
+	Area   float64  `json:"area"`
+}
+
 // ListIdentities 获取用户所有身份
 func (s *IdentityService) ListIdentities(userID uint64) ([]IdentityDTO, error) {
 	var identities []model.UserIdentity
@@ -421,25 +474,36 @@ func (s *IdentityService) ListIdentityApplications(status *int8, page, pageSize 
 	return result, total, nil
 }
 
-func (s *IdentityService) GetIdentityApplication(applicationID uint64) (*IdentityApplicationListItem, error) {
+func (s *IdentityService) GetIdentityApplication(applicationID uint64) (*IdentityApplicationDetail, error) {
 	var row model.IdentityApplication
 	if err := repository.DB.First(&row, applicationID).Error; err != nil {
 		return nil, err
 	}
 
-	item := &IdentityApplicationListItem{
-		ID:              row.ID,
-		UserID:          row.UserID,
-		IdentityType:    row.IdentityType,
-		ProviderSubType: extractProviderSubType(row.ApplicationData),
-		Status:          row.Status,
-		RejectReason:    row.RejectReason,
-		AppliedAt:       row.AppliedAt,
-		ReviewedAt:      row.ReviewedAt,
-		ReviewedBy:      row.ReviewedBy,
+	detail := &IdentityApplicationDetail{
+		IdentityApplicationListItem: IdentityApplicationListItem{
+			ID:              row.ID,
+			UserID:          row.UserID,
+			IdentityType:    row.IdentityType,
+			ProviderSubType: extractProviderSubType(row.ApplicationData),
+			Status:          row.Status,
+			RejectReason:    row.RejectReason,
+			AppliedAt:       row.AppliedAt,
+			ReviewedAt:      row.ReviewedAt,
+			ReviewedBy:      row.ReviewedBy,
+		},
 	}
 
-	return item, nil
+	// 如果是服务商申请，关联查询 MerchantApplication
+	if row.IdentityType == "provider" {
+		merchantDetails, err := s.getMerchantApplicationDetails(row.UserID, row.AppliedAt)
+		if err == nil {
+			detail.MerchantDetails = merchantDetails
+		}
+		// 如果查询失败，不影响基础信息返回（降级处理）
+	}
+
+	return detail, nil
 }
 
 func (s *IdentityService) ApproveIdentityApplication(applicationID, adminID uint64) error {
@@ -640,4 +704,78 @@ func buildIdentityAuditMetadata(payload map[string]any) string {
 	}
 
 	return string(raw)
+}
+
+// getMerchantApplicationDetails 获取商家入驻详细信息
+func (s *IdentityService) getMerchantApplicationDetails(userID uint64, appliedAt time.Time) (*MerchantApplicationDetails, error) {
+	var app model.MerchantApplication
+
+	// 根据 userID 和申请时间查找最近的商家申请（±5分钟时间窗口）
+	err := repository.DB.Where("user_id = ? AND created_at BETWEEN ? AND ?",
+		userID,
+		appliedAt.Add(-5*time.Minute),
+		appliedAt.Add(5*time.Minute)).
+		Order("created_at DESC").
+		First(&app).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 解析 JSON 字段
+	var serviceAreaCodes, styles, workTypes, highlightTags []string
+	var pricing map[string]float64
+	var portfolioCases []PortfolioCaseDisplay
+
+	json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
+	json.Unmarshal([]byte(app.Styles), &styles)
+	json.Unmarshal([]byte(app.WorkTypes), &workTypes)
+	json.Unmarshal([]byte(app.HighlightTags), &highlightTags)
+	json.Unmarshal([]byte(app.PricingJSON), &pricing)
+	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
+
+	// 转换服务区域代码为名称
+	var serviceAreaNames []string
+	if len(serviceAreaCodes) > 0 {
+		regionSvc := &RegionService{}
+		serviceAreaNames, _ = regionSvc.ConvertCodesToNames(serviceAreaCodes)
+	}
+
+	// 脱敏身份证号（仅显示前6位和后4位）
+	maskedIDCardNo := maskIDCardNo(app.IDCardNo)
+
+	return &MerchantApplicationDetails{
+		Phone:            app.Phone,
+		ApplicantType:    app.ApplicantType,
+		Role:             app.Role,
+		EntityType:       app.EntityType,
+		RealName:         app.RealName,
+		IDCardNo:         maskedIDCardNo,
+		IDCardFront:      app.IDCardFront,
+		IDCardBack:       app.IDCardBack,
+		CompanyName:      app.CompanyName,
+		LicenseNo:        app.LicenseNo,
+		LicenseImage:     app.LicenseImage,
+		TeamSize:         app.TeamSize,
+		OfficeAddress:    app.OfficeAddress,
+		YearsExperience:  app.YearsExperience,
+		WorkTypes:        workTypes,
+		ServiceArea:      serviceAreaNames,
+		ServiceAreaCodes: serviceAreaCodes,
+		Styles:           styles,
+		HighlightTags:    highlightTags,
+		Pricing:          pricing,
+		Introduction:     app.Introduction,
+		GraduateSchool:   app.GraduateSchool,
+		DesignPhilosophy: app.DesignPhilosophy,
+		PortfolioCases:   portfolioCases,
+	}, nil
+}
+
+// maskIDCardNo 脱敏身份证号
+func maskIDCardNo(idCardNo string) string {
+	if len(idCardNo) < 10 {
+		return "***"
+	}
+	return idCardNo[:6] + "********" + idCardNo[len(idCardNo)-4:]
 }

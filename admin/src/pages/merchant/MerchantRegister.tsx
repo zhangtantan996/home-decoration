@@ -3,6 +3,7 @@ import {
     ArrowLeftOutlined,
     ArrowRightOutlined,
     CheckOutlined,
+    DeleteOutlined,
     EnvironmentOutlined,
     IdcardOutlined,
     PhoneOutlined,
@@ -15,6 +16,7 @@ import {
     Alert,
     Button,
     Card,
+    Checkbox,
     Col,
     Divider,
     Form,
@@ -32,6 +34,12 @@ import {
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+    MERCHANT_LEGAL_ROUTES,
+    ONBOARDING_AGREEMENT_VERSION,
+    PLATFORM_RULES_VERSION,
+    PRIVACY_DATA_PROCESSING_VERSION,
+} from '../../constants/merchantLegal';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import {
     merchantApplyApi,
@@ -66,6 +74,9 @@ const FOREMAN_HIGHLIGHT_OPTIONS = [
     '自有工班',
     '售后保障',
 ];
+const CASE_AREA_OPTIONS = ['60㎡以下', '60-90㎡', '90-120㎡', '120-150㎡', '150-200㎡', '200㎡以上'];
+const PRICING_MIN: number = 1;
+const PRICING_MAX: number = 99999;
 
 const DEFAULT_CITY_CODE = '610100';
 const DRAFT_STORAGE_KEY = 'merchant_register_draft';
@@ -74,6 +85,7 @@ const DRAFT_EXPIRY_MS = 2 * 60 * 60 * 1000;
 interface PortfolioCase {
     id: string;
     title: string;
+    description: string;
     images: string[];
     style: string;
     area: string;
@@ -138,6 +150,35 @@ const caseImageRuleText = (role: MerchantApplyRole) => {
     return '每套至少 3 张图';
 };
 
+const isValidChineseIDCard = (raw: string): boolean => {
+    const id = raw.trim().toUpperCase();
+    if (!/^\d{17}[\dX]$/.test(id)) {
+        return false;
+    }
+
+    const year = Number(id.slice(6, 10));
+    const month = Number(id.slice(10, 12));
+    const day = Number(id.slice(12, 14));
+    const date = new Date(year, month - 1, day);
+    if (
+        Number.isNaN(date.getTime()) ||
+        date.getFullYear() !== year ||
+        date.getMonth() + 1 !== month ||
+        date.getDate() !== day
+    ) {
+        return false;
+    }
+
+    const weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+    const checkMap = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'];
+    const sum = id
+        .slice(0, 17)
+        .split('')
+        .reduce((acc, char, index) => acc + Number(char) * weights[index], 0);
+
+    return checkMap[sum % 11] === id[17];
+};
+
 const MerchantRegister: React.FC = () => {
     const [searchParams] = useSearchParams();
     const phoneFromUrl = searchParams.get('phone') || '';
@@ -156,16 +197,135 @@ const MerchantRegister: React.FC = () => {
     const [showRedirectAlert, setShowRedirectAlert] = useState(fromLogin.startsWith('login_'));
     const [form] = Form.useForm();
     const [portfolioCases, setPortfolioCases] = useState<PortfolioCase[]>([
-        { id: crypto.randomUUID(), title: '', images: [], style: '', area: '' },
-        { id: crypto.randomUUID(), title: '', images: [], style: '', area: '' },
-        { id: crypto.randomUUID(), title: '', images: [], style: '', area: '' },
+        { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' },
+        { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' },
+        { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' },
     ]);
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
     const [areaOptions, setAreaOptions] = useState<string[]>([]);
+    const [uploadingCaseCountMap, setUploadingCaseCountMap] = useState<Record<number, number>>({});
+    const [previewVisible, setPreviewVisible] = useState(false);
+    const [previewImage, setPreviewImage] = useState('');
     const countdownTimerRef = useRef<number | null>(null);
 
     const isForeman = role === 'foreman';
     const isCompanyRole = role === 'company';
+    const hasPendingCaseUploads = useMemo(
+        () => Object.values(uploadingCaseCountMap).some((count) => count > 0),
+        [uploadingCaseCountMap],
+    );
+
+    useEffect(() => {
+        const style = document.createElement('style');
+        style.innerHTML = `
+            .register-page-bg {
+                background: linear-gradient(135deg, #f6f8fb 0%, #e9f0f9 100%);
+                position: relative;
+                overflow: auto;
+                min-height: 100vh;
+            }
+            .register-page-bg::before {
+                content: '';
+                position: absolute;
+                top: -10%;
+                left: -10%;
+                width: 60%;
+                height: 60%;
+                border-radius: 50%;
+                background: radial-gradient(circle, rgba(24,144,255,0.08) 0%, rgba(24,144,255,0) 70%);
+                z-index: 0;
+            }
+            .register-page-bg::after {
+                content: '';
+                position: absolute;
+                bottom: -10%;
+                right: -5%;
+                width: 50%;
+                height: 70%;
+                border-radius: 50%;
+                background: radial-gradient(circle, rgba(114,46,209,0.05) 0%, rgba(114,46,209,0) 70%);
+                z-index: 0;
+            }
+            .glassmorphism-card {
+                background: rgba(255, 255, 255, 0.75);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.5);
+                box-shadow: 0 24px 48px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+                border-radius: 24px;
+                position: relative;
+                z-index: 1;
+            }
+            .premium-input .ant-input, .premium-input .ant-input-number-input, .premium-input .ant-select-selector {
+                border-radius: 8px !important;
+            }
+            .glassmorphism-form .ant-form-item-label > label {
+                font-weight: 500;
+                color: #334155;
+            }
+            .step-title-gradient {
+                background: -webkit-linear-gradient(45deg, #1890ff, #722ed1);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                font-weight: 700;
+            }
+            .premium-btn {
+                border-radius: 8px;
+                font-weight: 500;
+                box-shadow: 0 4px 12px rgba(24,144,255,0.2);
+            }
+            .premium-case-card {
+                border-radius: 16px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+                border: 1px solid #f0f0f0;
+                transition: transform 0.3s;
+            }
+            .premium-case-card:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 12px 32px rgba(0,0,0,0.08);
+            }
+            .animate-fade-in {
+                animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(16px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .premium-steps-dark .ant-steps-item-title {
+                color: rgba(255,255,255,0.7) !important;
+            }
+            .premium-steps-dark .ant-steps-item-process .ant-steps-item-title,
+            .premium-steps-dark .ant-steps-item-finish .ant-steps-item-title {
+                color: #ffffff !important;
+                font-weight: 600;
+            }
+            .premium-steps-dark .ant-steps-item-process .ant-steps-item-icon {
+                background: #fff;
+                border-color: #fff;
+            }
+            .premium-steps-dark .ant-steps-item-process .ant-steps-icon {
+                color: #1890ff !important;
+            }
+            .premium-steps-dark .ant-steps-item-wait .ant-steps-item-icon {
+                background: transparent;
+                border-color: rgba(255,255,255,0.4);
+            }
+            .premium-steps-dark .ant-steps-item-wait .ant-steps-icon {
+                color: rgba(255,255,255,0.6) !important;
+            }
+            .premium-form .ant-form-item-label > label {
+                font-size: 15px;
+            }
+            .premium-case-card .ant-card-head {
+                background: #f8fafc;
+                border-bottom: 1px solid #f1f5f9;
+                border-radius: 16px 16px 0 0;
+            }
+        `;
+        document.head.appendChild(style);
+        return () => { document.head.removeChild(style); };
+    }, []);
+
     const requiresCompanyLicense = entityType === 'company' || isCompanyRole;
     const caseMinCount = 3;
     const caseMaxImages = role === 'designer' ? 6 : 12;
@@ -226,7 +386,21 @@ const MerchantRegister: React.FC = () => {
                 onOk: () => {
                     form.setFieldsValue(draft.formValues);
                     setCurrentStep(draft.currentStep);
-                    setPortfolioCases(draft.portfolioCases);
+                    const restoredCases = Array.isArray(draft.portfolioCases)
+                        ? draft.portfolioCases.map((caseItem) => ({
+                            id: caseItem?.id || crypto.randomUUID(),
+                            title: String(caseItem?.title || ''),
+                            description: String(caseItem?.description || ''),
+                            images: Array.isArray(caseItem?.images)
+                                ? caseItem.images.map((image) => String(image)).filter(Boolean)
+                                : [],
+                            style: String(caseItem?.style || ''),
+                            area: String(caseItem?.area || ''),
+                        }))
+                        : [];
+                    if (restoredCases.length > 0) {
+                        setPortfolioCases(restoredCases);
+                    }
                 },
                 onCancel: () => {
                     sessionStorage.removeItem(DRAFT_STORAGE_KEY);
@@ -258,7 +432,7 @@ const MerchantRegister: React.FC = () => {
     }, []);
 
     const saveDraft = () => {
-        const values = form.getFieldsValue();
+        const values = form.getFieldsValue(true);
         const draft = {
             timestamp: Date.now(),
             currentStep,
@@ -288,10 +462,10 @@ const MerchantRegister: React.FC = () => {
     };
 
     const createSingleUploadHandler = (
-        fieldName: 'idCardFront' | 'idCardBack' | 'licenseImage',
+        fieldName: 'avatar' | 'idCardFront' | 'idCardBack' | 'licenseImage',
     ): UploadProps['customRequest'] => async (options) => {
         try {
-            const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
+            const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             form.setFieldsValue({ [fieldName]: uploaded.url });
             options.onSuccess?.(uploaded);
         } catch (error) {
@@ -301,24 +475,140 @@ const MerchantRegister: React.FC = () => {
         }
     };
 
+    const toSingleUploadFileList = (value?: string): UploadFile[] => {
+        if (!value) {
+            return [];
+        }
+        return [{
+            uid: value,
+            name: value.split('/').pop() || 'uploaded-image',
+            status: 'done',
+            url: value,
+        }];
+    };
+
+    const toCaseUploadFileList = (urls: string[]): UploadFile[] => (
+        urls.map((url, index) => ({
+            uid: `${url}-${index}`,
+            name: url.split('/').pop() || `case-image-${index + 1}`,
+            status: 'done',
+            url,
+        }))
+    );
+
+    const adjustCaseUploadingCount = (caseIndex: number, delta: number) => {
+        setUploadingCaseCountMap((prev) => {
+            const current = prev[caseIndex] || 0;
+            const nextCount = Math.max(0, current + delta);
+            if (nextCount === 0) {
+                const { [caseIndex]: _, ...rest } = prev;
+                return rest;
+            }
+            return {
+                ...prev,
+                [caseIndex]: nextCount,
+            };
+        });
+    };
+
+    const getCaseImageCountError = (imageCount: number) => {
+        if (role === 'designer') {
+            if (imageCount < 3) return `至少上传 3 张，当前 ${imageCount} 张`;
+            if (imageCount > 6) return `最多上传 6 张，当前 ${imageCount} 张`;
+            return '';
+        }
+        if (role === 'foreman') {
+            if (imageCount < 8) return `至少上传 8 张，当前 ${imageCount} 张`;
+            if (imageCount > 12) return `最多上传 12 张，当前 ${imageCount} 张`;
+            return '';
+        }
+        if (imageCount < 3) {
+            return `至少上传 3 张，当前 ${imageCount} 张`;
+        }
+        return '';
+    };
+
+    const handleCasePreview = (file: UploadFile) => {
+        const previewUrl = typeof file.url === 'string'
+            ? file.url
+            : (file.response as { url?: string } | undefined)?.url;
+        if (!previewUrl) {
+            message.error('该图片暂不可预览，请等待上传完成后重试');
+            return;
+        }
+        setPreviewImage(previewUrl);
+        setPreviewVisible(true);
+    };
+
+    const handleSinglePreview = (file: UploadFile, fieldName: 'avatar' | 'idCardFront' | 'idCardBack' | 'licenseImage') => {
+        const previewUrl = typeof file.url === 'string'
+            ? file.url
+            : (file.response as { url?: string } | undefined)?.url
+                || form.getFieldValue(fieldName);
+        if (!previewUrl) {
+            message.error('该图片暂不可预览，请等待上传完成后重试');
+            return;
+        }
+        setPreviewImage(previewUrl);
+        setPreviewVisible(true);
+    };
+
+    const createCaseBeforeUpload = (caseIndex: number): UploadProps['beforeUpload'] => (file, fileList) => {
+        const basicValidation = validateImageBeforeUpload(file as File, 5);
+        if (basicValidation !== true) {
+            return basicValidation;
+        }
+
+        const existingCount = portfolioCases[caseIndex]?.images.length || 0;
+        const remaining = caseMaxImages - existingCount;
+        if (remaining <= 0) {
+            message.warning(`单套案例最多上传 ${caseMaxImages} 张，已达到上限`);
+            return Upload.LIST_IGNORE;
+        }
+
+        const currentIndexInBatch = fileList.findIndex((item) => item.uid === file.uid);
+        if (currentIndexInBatch >= remaining) {
+            message.warning(`单套案例最多上传 ${caseMaxImages} 张，超出图片将被忽略`);
+            return Upload.LIST_IGNORE;
+        }
+
+        return true;
+    };
+
     const createCaseUploadHandler = (caseIndex: number): UploadProps['customRequest'] => async (options) => {
+        const currentImages = portfolioCases[caseIndex]?.images || [];
+        if (currentImages.length >= caseMaxImages) {
+            message.warning(`单套案例最多上传 ${caseMaxImages} 张`);
+            options.onError?.(new Error('已超过图片数量上限'));
+            return;
+        }
+
+        adjustCaseUploadingCount(caseIndex, 1);
         try {
-            const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
+            const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             options.onSuccess?.(uploaded);
 
-            const currentImages = portfolioCases[caseIndex]?.images || [];
-            if (!currentImages.includes(uploaded.url)) {
-                updatePortfolioCase(caseIndex, 'images', [...currentImages, uploaded.url]);
+            const latestImages = portfolioCases[caseIndex]?.images || [];
+            if (!latestImages.includes(uploaded.url)) {
+                const nextImages = [...latestImages, uploaded.url].slice(0, caseMaxImages);
+                updatePortfolioCase(caseIndex, 'images', nextImages);
+                if (nextImages.length === caseMaxImages) {
+                    message.info(`已达到单套案例图片上限（${caseMaxImages} 张）`);
+                }
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
             message.error(errorMessage);
             options.onError?.(new Error(errorMessage));
+        } finally {
+            adjustCaseUploadingCount(caseIndex, -1);
         }
     };
 
     const validatePortfolioCases = () => {
-        const validCases = portfolioCases.filter((caseItem) => caseItem.title.trim() && caseItem.images.length > 0);
+        const validCases = portfolioCases.filter((caseItem) =>
+            caseItem.title.trim() && caseItem.description.trim() && caseItem.images.length > 0
+        );
         if (validCases.length < caseMinCount) {
             message.error(`请至少添加 ${caseMinCount} 套案例`);
             return false;
@@ -326,6 +616,14 @@ const MerchantRegister: React.FC = () => {
 
         for (let index = 0; index < validCases.length; index += 1) {
             const caseItem = validCases[index];
+            if (!caseItem.description.trim()) {
+                message.error(`第 ${index + 1} 套案例请填写说明`);
+                return false;
+            }
+            if (caseItem.description.length > 5000) {
+                message.error(`第 ${index + 1} 套案例说明不能超过5000字`);
+                return false;
+            }
             if (role === 'designer' && (caseItem.images.length < 3 || caseItem.images.length > 6)) {
                 message.error(`第 ${index + 1} 套案例图片数量需为 3-6 张`);
                 return false;
@@ -344,18 +642,29 @@ const MerchantRegister: React.FC = () => {
     };
 
     const validatePricing = (values: Record<string, number | undefined>) => {
+        const inRange = (value: number | undefined) =>
+            typeof value === 'number' && Number.isFinite(value) && value >= PRICING_MIN && value <= PRICING_MAX;
+
         if (role === 'designer') {
-            if (!values.priceFlat || !values.priceDuplex || !values.priceOther) {
-                message.error('请填写平层 / 复式 / 其他三个报价');
+            if (!inRange(values.priceFlat)) {
+                message.error(`请填写平层报价（${PRICING_MIN}-${PRICING_MAX}）`);
+                return false;
+            }
+            if (values.priceDuplex !== undefined && values.priceDuplex !== null && !inRange(values.priceDuplex)) {
+                message.error(`复式报价需在 ${PRICING_MIN}-${PRICING_MAX} 之间`);
+                return false;
+            }
+            if (values.priceOther !== undefined && values.priceOther !== null && !inRange(values.priceOther)) {
+                message.error(`其他报价需在 ${PRICING_MIN}-${PRICING_MAX} 之间`);
                 return false;
             }
         } else if (role === 'foreman') {
-            if (!values.pricePerSqm) {
-                message.error('请填写施工报价（元/㎡）');
+            if (!inRange(values.pricePerSqm)) {
+                message.error(`请填写施工报价（${PRICING_MIN}-${PRICING_MAX}）`);
                 return false;
             }
-        } else if (!values.priceFullPackage || !values.priceHalfPackage) {
-            message.error('请填写全包 / 半包报价（元/㎡）');
+        } else if (!inRange(values.priceFullPackage) || !inRange(values.priceHalfPackage)) {
+            message.error(`请填写全包 / 半包报价（${PRICING_MIN}-${PRICING_MAX}）`);
             return false;
         }
 
@@ -400,7 +709,7 @@ const MerchantRegister: React.FC = () => {
     const handleNext = async () => {
         try {
             if (currentStep === 0) {
-                const fields = ['phone', 'code', 'realName'];
+                const fields = ['phone', 'code', 'realName', 'avatar'];
                 if (entityType === 'company' || role === 'company') {
                     fields.push('companyName');
                 }
@@ -416,9 +725,18 @@ const MerchantRegister: React.FC = () => {
                 if (isForeman) {
                     fields.push('yearsExperience', 'workTypes');
                 }
+                if (role === 'designer') {
+                    fields.push('yearsExperience');
+                }
                 await form.validateFields(fields);
-            } else if (currentStep === 2 && !validatePortfolioCases()) {
-                return;
+            } else if (currentStep === 2) {
+                if (hasPendingCaseUploads) {
+                    message.warning('案例图片仍在上传中，请等待上传完成后再进入下一步');
+                    return;
+                }
+                if (!validatePortfolioCases()) {
+                    return;
+                }
             }
             setCurrentStep((prev) => prev + 1);
             saveDraft();
@@ -432,12 +750,20 @@ const MerchantRegister: React.FC = () => {
     };
 
     const buildPricingPayload = (values: Record<string, number | undefined>): Record<string, number> => {
+        const hasNumber = (value: number | undefined): value is number =>
+            typeof value === 'number' && Number.isFinite(value);
+
         if (role === 'designer') {
-            return {
+            const pricing: Record<string, number> = {
                 flat: Number(values.priceFlat),
-                duplex: Number(values.priceDuplex),
-                other: Number(values.priceOther),
             };
+            if (hasNumber(values.priceDuplex)) {
+                pricing.duplex = Number(values.priceDuplex);
+            }
+            if (hasNumber(values.priceOther)) {
+                pricing.other = Number(values.priceOther);
+            }
+            return pricing;
         }
         if (role === 'foreman') {
             return {
@@ -451,21 +777,36 @@ const MerchantRegister: React.FC = () => {
     };
 
     const handleSubmit = async () => {
-        const fields = ['serviceArea'];
+        const fields = ['phone', 'code', 'realName', 'avatar', 'idCardNo', 'idCardFront', 'idCardBack', 'serviceArea', 'legalAccepted'];
+        if (requiresCompanyLicense) {
+            fields.push('companyName', 'licenseNo', 'licenseImage');
+        }
         if (role === 'designer') {
-            fields.push('styles');
+            fields.push('yearsExperience', 'styles', 'priceFlat');
         }
         if (role === 'foreman') {
-            fields.push('highlightTags');
+            fields.push('yearsExperience', 'workTypes', 'highlightTags', 'pricePerSqm');
+        }
+        if (role === 'company') {
+            fields.push('priceFullPackage', 'priceHalfPackage');
         }
 
+        let validatedValues: Record<string, unknown>;
         try {
-            await form.validateFields(fields);
+            validatedValues = await form.validateFields(fields);
         } catch {
             return;
         }
 
-        const values = form.getFieldsValue();
+        const values = {
+            ...form.getFieldsValue(true),
+            ...validatedValues,
+        };
+
+        if (hasPendingCaseUploads) {
+            message.warning('案例图片仍在上传中，请等待上传完成后再提交');
+            return;
+        }
 
         if (!validatePortfolioCases()) {
             return;
@@ -499,20 +840,21 @@ const MerchantRegister: React.FC = () => {
                 setLoading(true);
                 try {
                     const payload: MerchantApplyPayload = {
-                        phone: values.phone,
-                        code: values.code,
+                        phone: String(values.phone || '').trim(),
+                        code: String(values.code || '').trim(),
                         role,
                         entityType,
                         applicantType,
-                        realName: values.realName,
-                        idCardNo: values.idCardNo,
-                        idCardFront: values.idCardFront,
-                        idCardBack: values.idCardBack,
-                        companyName: values.companyName,
-                        licenseNo: values.licenseNo,
-                        licenseImage: values.licenseImage,
+                        realName: String(values.realName || '').trim(),
+                        avatar: String(values.avatar || '').trim(),
+                        idCardNo: String(values.idCardNo || '').trim(),
+                        idCardFront: String(values.idCardFront || '').trim(),
+                        idCardBack: String(values.idCardBack || '').trim(),
+                        companyName: values.companyName ? String(values.companyName).trim() : undefined,
+                        licenseNo: values.licenseNo ? String(values.licenseNo).trim() : undefined,
+                        licenseImage: values.licenseImage ? String(values.licenseImage).trim() : undefined,
                         teamSize: values.teamSize,
-                        officeAddress: values.officeAddress,
+                        officeAddress: values.officeAddress ? String(values.officeAddress).trim() : undefined,
                         yearsExperience: values.yearsExperience,
                         workTypes: isForeman ? values.workTypes || [] : [],
                         serviceArea: values.serviceArea || [],
@@ -522,7 +864,21 @@ const MerchantRegister: React.FC = () => {
                         introduction: values.introduction,
                         graduateSchool: values.graduateSchool,
                         designPhilosophy: values.designPhilosophy,
-                        portfolioCases: portfolioCases.filter((caseItem) => caseItem.title.trim() && caseItem.images.length > 0),
+                        portfolioCases: portfolioCases.filter((caseItem) =>
+                            caseItem.title.trim() && caseItem.description.trim() && caseItem.images.length > 0
+                        ).map((caseItem) => ({
+                            title: caseItem.title.trim(),
+                            description: caseItem.description.trim(),
+                            images: caseItem.images,
+                            style: caseItem.style,
+                            area: caseItem.area,
+                        })),
+                        legalAcceptance: {
+                            accepted: true,
+                            onboardingAgreementVersion: ONBOARDING_AGREEMENT_VERSION,
+                            platformRulesVersion: PLATFORM_RULES_VERSION,
+                            privacyDataProcessingVersion: PRIVACY_DATA_PROCESSING_VERSION,
+                        },
                     };
 
                     const result = resubmitId
@@ -558,15 +914,25 @@ const MerchantRegister: React.FC = () => {
     };
 
     const addPortfolioCase = () => {
-        setPortfolioCases((prev) => [...prev, { id: crypto.randomUUID(), title: '', images: [], style: '', area: '' }]);
+        setPortfolioCases((prev) => [...prev, { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' }]);
+    };
+
+    const removePortfolioCase = (index: number) => {
+        setPortfolioCases((prev) => {
+            if (prev.length <= caseMinCount) {
+                message.warning(`至少保留 ${caseMinCount} 套案例`);
+                return prev;
+            }
+            return prev.filter((_, currentIndex) => currentIndex !== index);
+        });
     };
 
     const renderStepContent = () => {
         switch (currentStep) {
             case 0:
                 return (
-                    <div>
-                        <Title level={5}>基础信息</Title>
+                    <div className="animate-fade-in glassmorphism-form">
+                        <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>基础信息</Title>
                         <Form.Item
                             name="phone"
                             label="手机号"
@@ -575,7 +941,13 @@ const MerchantRegister: React.FC = () => {
                                 { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' },
                             ]}
                         >
-                            <Input prefix={<PhoneOutlined />} placeholder="请输入11位手机号" maxLength={11} />
+                            <Input className="premium-input"
+                                prefix={<PhoneOutlined aria-hidden="true" />}
+                                placeholder="请输入11位手机号"
+                                maxLength={11}
+                                aria-label="手机号"
+                                aria-required="true"
+                            />
                         </Form.Item>
                         <Form.Item
                             name="code"
@@ -585,10 +957,12 @@ const MerchantRegister: React.FC = () => {
                                 { pattern: /^\d{6}$/, message: '请输入6位验证码' },
                             ]}
                         >
-                            <Input
-                                prefix={<SafetyOutlined />}
+                            <Input className="premium-input"
+                                prefix={<SafetyOutlined aria-hidden="true" />}
                                 placeholder="请输入6位验证码"
                                 maxLength={6}
+                                aria-label="验证码"
+                                aria-required="true"
                                 suffix={(
                                     <Button
                                         type="link"
@@ -596,6 +970,7 @@ const MerchantRegister: React.FC = () => {
                                         disabled={countdown > 0 || sendingCode}
                                         onClick={handleSendCode}
                                         loading={sendingCode}
+                                        aria-label={countdown > 0 ? `${countdown}秒后可重新获取验证码` : '获取验证码'}
                                     >
                                         {countdown > 0 ? `${countdown}s` : '获取验证码'}
                                     </Button>
@@ -610,7 +985,42 @@ const MerchantRegister: React.FC = () => {
                                 { max: 20, message: '姓名最多20个字符' },
                             ]}
                         >
-                            <Input prefix={<UserOutlined />} placeholder="请输入姓名" maxLength={20} />
+                            <Input className="premium-input"
+                                prefix={<UserOutlined aria-hidden="true" />}
+                                placeholder="请输入姓名"
+                                maxLength={20}
+                                aria-label={isForeman ? '工长姓名' : '负责人姓名'}
+                                aria-required="true"
+                            />
+                        </Form.Item>
+                        <Form.Item
+                            name="avatar"
+                            label="头像"
+                            valuePropName="fileList"
+                            getValueProps={(value: unknown) => ({
+                                fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
+                            })}
+                            getValueFromEvent={() => form.getFieldValue('avatar')}
+                            rules={[{ required: true, message: '请上传头像' }]}
+                        >
+                            <Upload
+                                listType="picture-card"
+                                maxCount={1}
+                                accept=".jpg,.jpeg,.png"
+                                beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
+                                customRequest={createSingleUploadHandler('avatar')}
+                                onPreview={(file) => handleSinglePreview(file, 'avatar')}
+                                onRemove={() => {
+                                    form.setFieldsValue({ avatar: undefined });
+                                    return true;
+                                }}
+                                aria-label="上传头像"
+                            >
+                                <div>
+                                    <PictureOutlined style={{ fontSize: 24 }} aria-hidden="true" />
+                                    <div style={{ marginTop: 8 }}>上传头像</div>
+                                </div>
+                            </Upload>
                         </Form.Item>
 
                         {(entityType === 'company' || role === 'company') && (
@@ -623,11 +1033,19 @@ const MerchantRegister: React.FC = () => {
                                         { max: 100, message: '名称最多100个字符' },
                                     ]}
                                 >
-                                    <Input placeholder="请输入公司名称" maxLength={100} />
+                                    <Input className="premium-input"
+                                        placeholder="请输入公司名称"
+                                        maxLength={100}
+                                        aria-label={role === 'designer' ? '工作室或公司名称' : '公司名称'}
+                                        aria-required="true"
+                                    />
                                 </Form.Item>
 
                                 <Form.Item name="teamSize" label="团队规模">
-                                    <Select placeholder="选择团队规模">
+                                    <Select className="premium-input"
+                                        placeholder="选择团队规模"
+                                        aria-label="团队规模"
+                                    >
                                         <Select.Option value={1}>1人</Select.Option>
                                         <Select.Option value={5}>2-5人</Select.Option>
                                         <Select.Option value={10}>6-10人</Select.Option>
@@ -637,7 +1055,12 @@ const MerchantRegister: React.FC = () => {
                                 </Form.Item>
 
                                 <Form.Item name="officeAddress" label="办公地址">
-                                    <Input prefix={<EnvironmentOutlined />} placeholder="请输入办公地址" maxLength={200} />
+                                    <Input className="premium-input"
+                                        prefix={<EnvironmentOutlined aria-hidden="true" />}
+                                        placeholder="请输入办公地址"
+                                        maxLength={200}
+                                        aria-label="办公地址"
+                                    />
                                 </Form.Item>
                             </>
                         )}
@@ -646,17 +1069,33 @@ const MerchantRegister: React.FC = () => {
 
             case 1:
                 return (
-                    <div>
-                        <Title level={5}>资质上传</Title>
+                    <div className="animate-fade-in glassmorphism-form">
+                        <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>资质上传</Title>
                         <Form.Item
                             name="idCardNo"
                             label="身份证号"
                             rules={[
                                 { required: true, message: '请输入身份证号' },
                                 { pattern: /^\d{17}[\dXx]$/, message: '请输入正确的18位身份证号' },
+                                {
+                                    validator: (_, value) => {
+                                        const id = String(value || '').trim();
+                                        if (!id) {
+                                            return Promise.resolve();
+                                        }
+                                        return isValidChineseIDCard(id)
+                                            ? Promise.resolve()
+                                            : Promise.reject(new Error('身份证号校验失败，请检查号码是否有效'));
+                                    },
+                                },
                             ]}
                         >
-                            <Input placeholder="请输入身份证号" maxLength={18} />
+                            <Input className="premium-input"
+                                placeholder="请输入身份证号"
+                                maxLength={18}
+                                aria-label="身份证号"
+                                aria-required="true"
+                            />
                         </Form.Item>
 
                         <Row gutter={16}>
@@ -664,6 +1103,11 @@ const MerchantRegister: React.FC = () => {
                                 <Form.Item
                                     name="idCardFront"
                                     label="身份证正面"
+                                    valuePropName="fileList"
+                                    getValueProps={(value: unknown) => ({
+                                        fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
+                                    })}
+                                    getValueFromEvent={() => form.getFieldValue('idCardFront')}
                                     rules={[{ required: true, message: '请上传身份证正面' }]}
                                 >
                                     <Upload
@@ -672,13 +1116,15 @@ const MerchantRegister: React.FC = () => {
                                         accept=".jpg,.jpeg,.png"
                                         beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
                                         customRequest={createSingleUploadHandler('idCardFront')}
+                                        onPreview={(file) => handleSinglePreview(file, 'idCardFront')}
                                         onRemove={() => {
                                             form.setFieldsValue({ idCardFront: undefined });
                                             return true;
                                         }}
+                                        aria-label="上传身份证正面照片"
                                     >
                                         <div>
-                                            <IdcardOutlined style={{ fontSize: 24 }} />
+                                            <IdcardOutlined style={{ fontSize: 24 }} aria-hidden="true" />
                                             <div style={{ marginTop: 8 }}>上传正面</div>
                                         </div>
                                     </Upload>
@@ -688,6 +1134,11 @@ const MerchantRegister: React.FC = () => {
                                 <Form.Item
                                     name="idCardBack"
                                     label="身份证反面"
+                                    valuePropName="fileList"
+                                    getValueProps={(value: unknown) => ({
+                                        fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
+                                    })}
+                                    getValueFromEvent={() => form.getFieldValue('idCardBack')}
                                     rules={[{ required: true, message: '请上传身份证反面' }]}
                                 >
                                     <Upload
@@ -696,13 +1147,15 @@ const MerchantRegister: React.FC = () => {
                                         accept=".jpg,.jpeg,.png"
                                         beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
                                         customRequest={createSingleUploadHandler('idCardBack')}
+                                        onPreview={(file) => handleSinglePreview(file, 'idCardBack')}
                                         onRemove={() => {
                                             form.setFieldsValue({ idCardBack: undefined });
                                             return true;
                                         }}
+                                        aria-label="上传身份证反面照片"
                                     >
                                         <div>
-                                            <IdcardOutlined style={{ fontSize: 24 }} />
+                                            <IdcardOutlined style={{ fontSize: 24 }} aria-hidden="true" />
                                             <div style={{ marginTop: 8 }}>上传反面</div>
                                         </div>
                                     </Upload>
@@ -712,17 +1165,27 @@ const MerchantRegister: React.FC = () => {
 
                         {requiresCompanyLicense && (
                             <>
-                                <Divider>企业资质</Divider>
+                                <Divider aria-hidden="true">企业资质</Divider>
                                 <Form.Item
                                     name="licenseNo"
                                     label="营业执照号"
                                     rules={[{ required: true, message: '请输入营业执照号' }]}
                                 >
-                                    <Input placeholder="请输入统一社会信用代码" maxLength={18} />
+                                    <Input className="premium-input"
+                                        placeholder="请输入统一社会信用代码"
+                                        maxLength={18}
+                                        aria-label="营业执照号"
+                                        aria-required="true"
+                                    />
                                 </Form.Item>
                                 <Form.Item
                                     name="licenseImage"
                                     label="营业执照照片"
+                                    valuePropName="fileList"
+                                    getValueProps={(value: unknown) => ({
+                                        fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
+                                    })}
+                                    getValueFromEvent={() => form.getFieldValue('licenseImage')}
                                     rules={[{ required: true, message: '请上传营业执照' }]}
                                 >
                                     <Upload
@@ -731,13 +1194,15 @@ const MerchantRegister: React.FC = () => {
                                         accept=".jpg,.jpeg,.png"
                                         beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
                                         customRequest={createSingleUploadHandler('licenseImage')}
+                                        onPreview={(file) => handleSinglePreview(file, 'licenseImage')}
                                         onRemove={() => {
                                             form.setFieldsValue({ licenseImage: undefined });
                                             return true;
                                         }}
+                                        aria-label="上传营业执照照片"
                                     >
                                         <div>
-                                            <PictureOutlined style={{ fontSize: 24 }} />
+                                            <PictureOutlined style={{ fontSize: 24 }} aria-hidden="true" />
                                             <div style={{ marginTop: 8 }}>上传执照</div>
                                         </div>
                                     </Upload>
@@ -747,13 +1212,17 @@ const MerchantRegister: React.FC = () => {
 
                         {isForeman && (
                             <>
-                                <Divider>施工信息</Divider>
+                                <Divider aria-hidden="true">施工信息</Divider>
                                 <Form.Item
                                     name="yearsExperience"
                                     label="施工经验（年）"
                                     rules={[{ required: true, message: '请选择施工经验' }]}
                                 >
-                                    <Select placeholder="选择施工经验">
+                                    <Select className="premium-input"
+                                        placeholder="选择施工经验"
+                                        aria-label="施工经验年限"
+                                        aria-required="true"
+                                    >
                                         {[1, 2, 3, 5, 8, 10, 15, 20, 30].map((year) => (
                                             <Select.Option key={year} value={year}>{year}年以上</Select.Option>
                                         ))}
@@ -764,7 +1233,29 @@ const MerchantRegister: React.FC = () => {
                                     label="工种类型"
                                     rules={[{ required: true, message: '请至少选择1个工种' }]}
                                 >
-                                    <Select mode="multiple" placeholder="选择可承接工种" options={WORK_TYPE_OPTIONS} />
+                                    <Select className="premium-input"
+                                        mode="multiple"
+                                        placeholder="选择可承接工种"
+                                        options={WORK_TYPE_OPTIONS}
+                                        aria-label="工种类型"
+                                        aria-required="true"
+                                    />
+                                </Form.Item>
+                            </>
+                        )}
+                        {role === 'designer' && (
+                            <>
+                                <Divider aria-hidden="true">从业信息</Divider>
+                                <Form.Item
+                                    name="yearsExperience"
+                                    label="从业经验（年）"
+                                    rules={[{ required: true, message: '请选择从业经验' }]}
+                                >
+                                    <Select className="premium-input" placeholder="选择从业经验" aria-label="从业经验年限" aria-required="true">
+                                        {[1, 2, 3, 5, 8, 10, 15, 20, 30, 40, 50].map((year) => (
+                                            <Select.Option key={year} value={year}>{year}年以上</Select.Option>
+                                        ))}
+                                    </Select>
                                 </Form.Item>
                             </>
                         )}
@@ -773,27 +1264,59 @@ const MerchantRegister: React.FC = () => {
 
             case 2:
                 return (
-                    <div>
-                        <Title level={5}>
-                            案例上传（至少 {caseMinCount} 套，{caseImageRuleText(role)}）
+                    <div className="animate-fade-in glassmorphism-form">
+                        <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>
+                            案例上传 <Text type="secondary" style={{ fontSize: 14, fontWeight: 'normal' }}>（至少 {caseMinCount} 套，{caseImageRuleText(role)}）</Text>
                         </Title>
-                        {portfolioCases.map((caseItem) => (
-                            <Card key={caseItem.id} size="small" title={`案例 ${portfolioCases.indexOf(caseItem) + 1}`} style={{ marginBottom: 16 }}>
+                        {portfolioCases.map((caseItem, index) => (
+                            <Card key={caseItem.id} size="small" className="premium-case-card"
+                                title={`案例 ${index + 1}`}
+                                extra={(
+                                    <Button
+                                        type="link"
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        onClick={() => removePortfolioCase(index)}
+                                        disabled={portfolioCases.length <= caseMinCount}
+                                        aria-label={`删除案例 ${index + 1}`}
+                                    >
+                                        删除案例
+                                    </Button>
+                                )}
+                                style={{ marginBottom: 16 }}
+                                role="region"
+                                aria-label={`案例 ${index + 1}`}
+                            >
                                 <Form.Item label="案例标题" required>
-                                    <Input
+                                    <Input className="premium-input"
                                         placeholder="例如：现代简约三居室"
                                         value={caseItem.title}
                                         maxLength={50}
-                                        onChange={(event) => updatePortfolioCase(portfolioCases.indexOf(caseItem), 'title', event.target.value)}
+                                        onChange={(event) => updatePortfolioCase(index, 'title', event.target.value)}
+                                        aria-label={`案例 ${index + 1} 标题`}
+                                        aria-required="true"
+                                    />
+                                </Form.Item>
+                                <Form.Item label="案例说明" required>
+                                    <TextArea className="premium-input"
+                                        rows={3}
+                                        placeholder="请输入案例说明"
+                                        value={caseItem.description}
+                                        maxLength={5000}
+                                        showCount
+                                        onChange={(event) => updatePortfolioCase(index, 'description', event.target.value)}
+                                        aria-label={`案例 ${index + 1} 说明`}
+                                        aria-required="true"
                                     />
                                 </Form.Item>
                                 <Row gutter={16}>
                                     <Col xs={24} sm={12}>
                                         <Form.Item label="风格">
-                                            <Select
+                                            <Select className="premium-input"
                                                 placeholder="选择风格"
                                                 value={caseItem.style || undefined}
-                                                onChange={(value) => updatePortfolioCase(portfolioCases.indexOf(caseItem), 'style', value)}
+                                                onChange={(value) => updatePortfolioCase(index, 'style', value)}
+                                                aria-label={`案例 ${index + 1} 风格`}
                                             >
                                                 {styleOptions.map((style) => (
                                                     <Select.Option key={style} value={style}>{style}</Select.Option>
@@ -803,12 +1326,13 @@ const MerchantRegister: React.FC = () => {
                                     </Col>
                                     <Col xs={24} sm={12}>
                                         <Form.Item label="面积">
-                                            <Select
-                                                placeholder="选择区域"
+                                            <Select className="premium-input"
+                                                placeholder="选择面积区间"
                                                 value={caseItem.area || undefined}
-                                                onChange={(value) => updatePortfolioCase(portfolioCases.indexOf(caseItem), 'area', value)}
+                                                onChange={(value) => updatePortfolioCase(index, 'area', value)}
+                                                aria-label={`案例 ${index + 1} 面积`}
                                             >
-                                                {areaOptions.map((area) => (
+                                                {CASE_AREA_OPTIONS.map((area) => (
                                                     <Select.Option key={area} value={area}>{area}</Select.Option>
                                                 ))}
                                             </Select>
@@ -820,28 +1344,40 @@ const MerchantRegister: React.FC = () => {
                                         listType="picture-card"
                                         multiple
                                         maxCount={caseMaxImages}
+                                        fileList={toCaseUploadFileList(caseItem.images)}
                                         accept=".jpg,.jpeg,.png"
-                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
-                                        customRequest={createCaseUploadHandler(portfolioCases.indexOf(caseItem))}
-                                        onChange={(uploadInfo) => {
-                                            const urls = uploadInfo.fileList
-                                                .map((uploadFile: UploadFile) => {
-                                                    const response = uploadFile.response as { url?: string } | undefined;
-                                                    return response?.url || uploadFile.url || '';
-                                                })
-                                                .filter((url): url is string => Boolean(url));
-                                            updatePortfolioCase(portfolioCases.indexOf(caseItem), 'images', urls);
+                                        beforeUpload={createCaseBeforeUpload(index)}
+                                        customRequest={createCaseUploadHandler(index)}
+                                        onPreview={handleCasePreview}
+                                        onRemove={(file) => {
+                                            const url = file.url || (file.response as { url?: string } | undefined)?.url;
+                                            if (!url) {
+                                                return false;
+                                            }
+                                            updatePortfolioCase(index, 'images', caseItem.images.filter((image) => image !== url));
+                                            return true;
                                         }}
+                                        aria-label={`上传案例 ${index + 1} 图片`}
                                     >
-                                        <div>
-                                            <PictureOutlined />
-                                            <div style={{ marginTop: 8 }}>上传图片</div>
-                                        </div>
+                                        {caseItem.images.length < caseMaxImages ? (
+                                            <div>
+                                                <PictureOutlined aria-hidden="true" />
+                                                <div style={{ marginTop: 8 }}>上传图片</div>
+                                            </div>
+                                        ) : null}
                                     </Upload>
+                                    <div style={{ marginTop: 8, color: getCaseImageCountError(caseItem.images.length) ? '#ff4d4f' : '#8c8c8c' }}>
+                                        {getCaseImageCountError(caseItem.images.length) || `已上传 ${caseItem.images.length} 张，可一次选择多张`}
+                                    </div>
                                 </Form.Item>
                             </Card>
                         ))}
-                        <Button type="dashed" block onClick={addPortfolioCase}>
+                        <Button
+                            type="dashed"
+                            block
+                            onClick={addPortfolioCase}
+                            aria-label="添加更多案例"
+                        >
                             + 添加更多案例
                         </Button>
                     </div>
@@ -849,14 +1385,19 @@ const MerchantRegister: React.FC = () => {
 
             case 3:
                 return (
-                    <div>
-                        <Title level={5}>服务与报价</Title>
+                    <div className="animate-fade-in glassmorphism-form">
+                        <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>服务与报价</Title>
                         <Form.Item
                             name="serviceArea"
                             label="服务区域"
                             rules={[{ required: true, message: '请选择服务区域' }]}
                         >
-                            <Select mode="multiple" placeholder="选择可服务区域">
+                            <Select className="premium-input"
+                                mode="multiple"
+                                placeholder="选择可服务区域"
+                                aria-label="服务区域"
+                                aria-required="true"
+                            >
                                 {areaOptions.map((area) => (
                                     <Select.Option key={area} value={area}>{area}</Select.Option>
                                 ))}
@@ -869,7 +1410,14 @@ const MerchantRegister: React.FC = () => {
                                 label="擅长风格（1-3个）"
                                 rules={[{ required: true, message: '请选择擅长风格' }]}
                             >
-                                <Select mode="multiple" placeholder="选择擅长风格" maxTagCount={3}>
+                                <Select className="premium-input"
+                                    mode="multiple"
+                                    placeholder="选择擅长风格"
+                                    maxCount={3}
+                                    maxTagCount={3}
+                                    aria-label="擅长风格"
+                                    aria-required="true"
+                                >
                                     {styleOptions.map((style) => (
                                         <Select.Option key={style} value={style}>{style}</Select.Option>
                                     ))}
@@ -883,7 +1431,14 @@ const MerchantRegister: React.FC = () => {
                                 label="施工亮点（1-3个）"
                                 rules={[{ required: true, message: '请选择施工亮点' }]}
                             >
-                                <Select mode="multiple" placeholder="选择施工亮点" maxTagCount={3}>
+                                <Select className="premium-input"
+                                    mode="multiple"
+                                    placeholder="选择施工亮点"
+                                    maxCount={3}
+                                    maxTagCount={3}
+                                    aria-label="施工亮点"
+                                    aria-required="true"
+                                >
                                     {FOREMAN_HIGHLIGHT_OPTIONS.map((tag) => (
                                         <Select.Option key={tag} value={tag}>{tag}</Select.Option>
                                     ))}
@@ -891,60 +1446,126 @@ const MerchantRegister: React.FC = () => {
                             </Form.Item>
                         )}
 
-                        <Divider>报价（元/㎡）</Divider>
+                        <Divider aria-hidden="true">报价（元/㎡）</Divider>
                         {role === 'designer' && (
                             <Row gutter={16}>
                                 <Col xs={24} sm={8}>
                                     <Form.Item name="priceFlat" label="平层报价" rules={[{ required: true, message: '必填' }]}>
-                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                        <InputNumber className="premium-input"
+                                            controls={false}
+                                            min={PRICING_MIN}
+                                            max={PRICING_MAX}
+                                            precision={0}
+                                            placeholder={`请输入 ${PRICING_MIN}-${PRICING_MAX}`}
+                                            style={{ width: '100%' }}
+                                            aria-label="平层报价"
+                                            aria-required="true"
+                                        />
                                     </Form.Item>
                                 </Col>
                                 <Col xs={24} sm={8}>
-                                    <Form.Item name="priceDuplex" label="复式报价" rules={[{ required: true, message: '必填' }]}>
-                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    <Form.Item name="priceDuplex" label="复式报价">
+                                        <InputNumber className="premium-input"
+                                            controls={false}
+                                            min={PRICING_MIN}
+                                            max={PRICING_MAX}
+                                            precision={0}
+                                            placeholder={`可选，${PRICING_MIN}-${PRICING_MAX}`}
+                                            style={{ width: '100%' }}
+                                            aria-label="复式报价"
+                                        />
                                     </Form.Item>
                                 </Col>
                                 <Col xs={24} sm={8}>
-                                    <Form.Item name="priceOther" label="其他报价" rules={[{ required: true, message: '必填' }]}>
-                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                    <Form.Item name="priceOther" label="其他报价">
+                                        <InputNumber className="premium-input"
+                                            controls={false}
+                                            min={PRICING_MIN}
+                                            max={PRICING_MAX}
+                                            precision={0}
+                                            placeholder={`可选，${PRICING_MIN}-${PRICING_MAX}`}
+                                            style={{ width: '100%' }}
+                                            aria-label="其他报价"
+                                        />
                                     </Form.Item>
                                 </Col>
                             </Row>
                         )}
                         {role === 'foreman' && (
                             <Form.Item name="pricePerSqm" label="施工报价" rules={[{ required: true, message: '请填写施工报价' }]}>
-                                <InputNumber min={1} style={{ width: '100%' }} />
+                                <InputNumber className="premium-input"
+                                    controls={false}
+                                    min={PRICING_MIN}
+                                    max={PRICING_MAX}
+                                    precision={0}
+                                    placeholder={`请输入 ${PRICING_MIN}-${PRICING_MAX}`}
+                                    style={{ width: '100%' }}
+                                    aria-label="施工报价（元每平方米）"
+                                    aria-required="true"
+                                />
                             </Form.Item>
                         )}
                         {role === 'company' && (
                             <Row gutter={16}>
                                 <Col xs={24} sm={12}>
                                     <Form.Item name="priceFullPackage" label="全包报价" rules={[{ required: true, message: '请填写全包报价' }]}>
-                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                        <InputNumber className="premium-input"
+                                            controls={false}
+                                            min={PRICING_MIN}
+                                            max={PRICING_MAX}
+                                            precision={0}
+                                            placeholder={`请输入 ${PRICING_MIN}-${PRICING_MAX}`}
+                                            style={{ width: '100%' }}
+                                            aria-label="全包报价"
+                                            aria-required="true"
+                                        />
                                     </Form.Item>
                                 </Col>
                                 <Col xs={24} sm={12}>
                                     <Form.Item name="priceHalfPackage" label="半包报价" rules={[{ required: true, message: '请填写半包报价' }]}>
-                                        <InputNumber min={1} style={{ width: '100%' }} />
+                                        <InputNumber className="premium-input"
+                                            controls={false}
+                                            min={PRICING_MIN}
+                                            max={PRICING_MAX}
+                                            precision={0}
+                                            placeholder={`请输入 ${PRICING_MIN}-${PRICING_MAX}`}
+                                            style={{ width: '100%' }}
+                                            aria-label="半包报价"
+                                            aria-required="true"
+                                        />
                                     </Form.Item>
                                 </Col>
                             </Row>
                         )}
 
                         <Form.Item name="introduction" label={isForeman ? '施工简介' : '个人/公司简介'}>
-                            <TextArea rows={4} placeholder="可填写服务亮点、经验、团队说明等" maxLength={5000} showCount />
+                            <TextArea className="premium-input"
+                                rows={4}
+                                placeholder="可填写服务亮点、经验、团队说明等"
+                                maxLength={5000}
+                                showCount
+                                aria-label={isForeman ? '施工简介' : '个人或公司简介'}
+                            />
                         </Form.Item>
 
                         {role === 'designer' && (
                             <Row gutter={16}>
                                 <Col xs={24} sm={12}>
                                     <Form.Item name="graduateSchool" label="毕业院校（选填）">
-                                        <Input placeholder="如：西安建筑科技大学" maxLength={100} />
+                                        <Input className="premium-input"
+                                            placeholder="如：西安建筑科技大学"
+                                            maxLength={100}
+                                            aria-label="毕业院校"
+                                        />
                                     </Form.Item>
                                 </Col>
                                 <Col xs={24} sm={12}>
                                     <Form.Item name="designPhilosophy" label="设计理念（选填）">
-                                        <Input placeholder="一句话描述您的理念" maxLength={200} />
+                                        <Input className="premium-input"
+                                            placeholder="一句话描述您的理念"
+                                            maxLength={200}
+                                            aria-label="设计理念"
+                                        />
                                     </Form.Item>
                                 </Col>
                             </Row>
@@ -958,18 +1579,114 @@ const MerchantRegister: React.FC = () => {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
-            <Content style={{ padding: screens.xs ? 16 : 24, maxWidth: 900, margin: '0 auto', width: '100%' }}>
-                <Card styles={{ body: { padding: screens.xs ? 16 : 24 } }}>
-                    <div style={{ marginBottom: 24 }}>
-                        <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} style={{ padding: 0 }}>
+        <Layout className="register-page-bg" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'row' }}>
+            {/* Left Hero Panel */}
+            {screens.md && (
+                <div style={{
+                    width: '400px',
+                    background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+                    position: 'sticky',
+                    top: 0,
+                    height: '100vh',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    padding: '64px 48px',
+                    color: '#fff',
+                    boxShadow: '4px 0 24px rgba(0,0,0,0.1)'
+                }}>
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                        <Button
+                            type="text"
+                            icon={<ArrowLeftOutlined aria-hidden="true" />}
+                            onClick={() => navigate('/')}
+                            style={{ padding: 0, color: 'rgba(255,255,255,0.8)', marginBottom: 48 }}
+                            aria-label="返回商家入驻首页"
+                        >
                             返回
                         </Button>
-                        <Title level={4} style={{ marginTop: 8 }}>
-                            {pageTitle}
+                        <Title level={2} style={{ color: '#fff', fontWeight: 700, marginBottom: 16 }}>
+                            {pageTitle.replace('（公司主体）', '').replace('（个人主体）', '')}
                         </Title>
-                        <Text type="secondary">入驻即注册。审核通过后可登录商家中心。</Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 16, display: 'block', marginBottom: 64 }}>
+                            入驻即注册。开启数字化业务新篇章。
+                        </Text>
+
+                        <Steps
+                            current={currentStep}
+                            items={steps}
+                            direction="vertical"
+                            className="premium-steps-dark"
+                            style={{ marginTop: 24 }}
+                            aria-label="商家入驻申请流程步骤"
+                        />
                     </div>
+                    {/* Decorative Elements */}
+                    <div style={{
+                        position: 'absolute',
+                        bottom: '-10%',
+                        left: '-20%',
+                        width: '300px',
+                        height: '300px',
+                        borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.1)',
+                        filter: 'blur(40px)',
+                    }} />
+                    <div style={{
+                        position: 'absolute',
+                        top: '20%',
+                        right: '-20%',
+                        width: '200px',
+                        height: '200px',
+                        borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.15)',
+                        filter: 'blur(30px)',
+                    }} />
+                </div>
+            )}
+
+            {/* Right Content Panel */}
+            <Content style={{
+                flex: 1,
+                padding: screens.xs ? '24px 16px' : '48px 64px',
+                position: 'relative',
+                zIndex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center'
+            }}>
+                <div
+                    className="glassmorphism-card"
+                    style={{
+                        width: '100%',
+                        maxWidth: 720,
+                        padding: screens.xs ? 24 : 48,
+                        marginTop: screens.xs ? 0 : 32
+                    }}
+                >
+                    {!screens.md && (
+                        <div style={{ marginBottom: 32 }}>
+                            <Button
+                                type="link"
+                                icon={<ArrowLeftOutlined aria-hidden="true" />}
+                                onClick={() => navigate('/')}
+                                style={{ padding: 0 }}
+                                aria-label="返回商家入驻首页"
+                            >
+                                返回
+                            </Button>
+                            <Title level={3} style={{ marginTop: 8 }}>
+                                {pageTitle}
+                            </Title>
+                            <Steps
+                                current={currentStep}
+                                items={steps}
+                                size="small"
+                                style={{ marginTop: 24 }}
+                                aria-label="商家入驻申请流程步骤"
+                            />
+                        </div>
+                    )}
 
                     {showRedirectAlert && (
                         <Alert
@@ -978,45 +1695,111 @@ const MerchantRegister: React.FC = () => {
                             closable
                             onClose={() => setShowRedirectAlert(false)}
                             message="该手机号尚未入驻，请先完成入驻申请后再登录"
-                            style={{ marginBottom: 16 }}
+                            style={{ marginBottom: 24, borderRadius: 8 }}
+                            role="alert"
                         />
                     )}
 
-                    <Steps 
-                        current={currentStep} 
-                        items={steps} 
-                        style={{ marginBottom: 32 }} 
-                        direction={screens.xs ? 'vertical' : 'horizontal'}
-                        size={screens.xs ? 'small' : 'default'}
-                    />
-
-                    <Form form={form} layout="vertical">
+                    <Form
+                        form={form}
+                        layout="vertical"
+                        preserve
+                        aria-label="商家入驻申请表单"
+                        size="large"
+                        className="premium-form"
+                    >
                         {renderStepContent()}
+
+                        {currentStep === steps.length - 1 && (
+                            <Form.Item
+                                name="legalAccepted"
+                                valuePropName="checked"
+                                style={{ marginTop: 16, marginBottom: 0 }}
+                                rules={[
+                                    {
+                                        validator: (_, value) =>
+                                            value
+                                                ? Promise.resolve()
+                                                : Promise.reject(new Error('请先阅读并同意平台入驻相关条款')),
+                                    },
+                                ]}
+                            >
+                                <Checkbox aria-label="同意平台入驻相关条款">
+                                    我已阅读并同意
+                                    {' '}
+                                    <a href={MERCHANT_LEGAL_ROUTES.onboardingAgreement} target="_blank" rel="noreferrer">
+                                        《平台入驻协议（线上勾选版）》
+                                    </a>
+                                    {' '}
+                                    <a href={MERCHANT_LEGAL_ROUTES.platformRules} target="_blank" rel="noreferrer">
+                                        《平台规则》
+                                    </a>
+                                    {' '}
+                                    <a href={MERCHANT_LEGAL_ROUTES.privacyDataProcessing} target="_blank" rel="noreferrer">
+                                        《隐私与数据处理条款》
+                                    </a>
+                                </Checkbox>
+                            </Form.Item>
+                        )}
                     </Form>
 
-                    <Divider />
+                    <Divider aria-hidden="true" style={{ margin: '40px 0' }} />
 
-                    <Row justify="space-between">
-                        <Col>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
                             {currentStep > 0 && (
-                                <Button icon={<ArrowLeftOutlined />} onClick={handlePrev}>
+                                <Button
+                                    size="large"
+                                    icon={<ArrowLeftOutlined aria-hidden="true" />}
+                                    onClick={handlePrev}
+                                    style={{ borderRadius: 8 }}
+                                    aria-label="返回上一步"
+                                >
                                     上一步
                                 </Button>
                             )}
-                        </Col>
-                        <Col>
+                        </div>
+                        <div>
                             {currentStep < steps.length - 1 ? (
-                                <Button type="primary" onClick={handleNext}>
-                                    下一步 <ArrowRightOutlined />
+                                <Button
+                                    type="primary"
+                                    size="large"
+                                    onClick={handleNext}
+                                    style={{ borderRadius: 8, padding: '0 32px' }}
+                                    aria-label="进入下一步"
+                                >
+                                    下一步 <ArrowRightOutlined aria-hidden="true" />
                                 </Button>
                             ) : (
-                                <Button type="primary" loading={loading} onClick={handleSubmit} icon={<CheckOutlined />}>
+                                <Button
+                                    type="primary"
+                                    size="large"
+                                    loading={loading}
+                                    onClick={handleSubmit}
+                                    icon={<CheckOutlined aria-hidden="true" />}
+                                    style={{ borderRadius: 8, padding: '0 32px' }}
+                                    aria-label="提交商家入驻申请"
+                                >
                                     提交申请
                                 </Button>
                             )}
-                        </Col>
-                    </Row>
-                </Card>
+                        </div>
+                    </div>
+
+                    <Modal
+                        open={previewVisible}
+                        footer={null}
+                        onCancel={() => {
+                            setPreviewVisible(false);
+                            setPreviewImage('');
+                        }}
+                        title="图片预览"
+                        width={720}
+                        destroyOnClose
+                    >
+                        <img src={previewImage} alt="案例图片预览" style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
+                    </Modal>
+                </div>
             </Content>
         </Layout>
     );

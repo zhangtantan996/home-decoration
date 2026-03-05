@@ -465,3 +465,22 @@ export const inspirationApi = {
     createComment: (id: number, content: string) =>
         api.post<any>(`/inspiration/${id}/comments`, { content }),
 };
+
+// ========== 用户设置 ==========
+export const userSettingsApi = {
+    changePassword: (data: { oldPassword?: string; newPassword: string }) =>
+        api.post('/user/change-password', data),
+    changePhone: (data: { newPhone: string; code: string }) =>
+        api.post('/user/change-phone', data),
+    deleteAccount: (data: { code: string }) =>
+        api.post('/user/delete-account', data),
+    getVerification: () => api.get<any>('/user/verification'),
+    submitVerification: (data: any) => api.post('/user/verification', data),
+    getDevices: () => api.get<any>('/user/devices'),
+    removeDevice: (id: number) => api.delete(`/user/devices/${id}`),
+    removeAllDevices: () => api.delete('/user/devices'),
+    getSettings: () => api.get<any>('/user/settings'),
+    updateSettings: (data: any) => api.put('/user/settings', data),
+    submitFeedback: (data: { type: string; content: string; contact?: string; images?: string }) =>
+        api.post('/user/feedback', data),
+};

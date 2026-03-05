@@ -33,6 +33,14 @@ const WORK_TYPE_OPTIONS = [
     { value: 'painter', label: '油漆工' },
     { value: 'plumber', label: '水暖工' },
 ];
+const FOREMAN_HIGHLIGHT_OPTIONS = [
+    '工期可控',
+    '工地整洁',
+    '节点验收',
+    '材料透明',
+    '自有工班',
+    '售后保障',
+];
 
 const DEFAULT_SERVICE_SETTINGS: MerchantServiceSetting = {
     acceptBooking: true,
@@ -76,6 +84,27 @@ const parsePackagesFromRaw = (raw: string): Array<Record<string, unknown>> => {
         }
         return item as Record<string, unknown>;
     });
+};
+
+const parsePricingFromRaw = (raw: string): Record<string, number> => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+        return {};
+    }
+
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error('报价信息必须是 JSON 对象');
+    }
+
+    const pricing: Record<string, number> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+        const numericValue = Number(value);
+        if (Number.isFinite(numericValue) && numericValue > 0) {
+            pricing[key] = numericValue;
+        }
+    });
+    return pricing;
 };
 
 const MerchantSettings: React.FC = () => {
@@ -143,6 +172,10 @@ const MerchantSettings: React.FC = () => {
                 yearsExperience: info.yearsExperience,
                 specialty: info.specialty,
                 workTypes: info.workTypes || [],
+                highlightTags: info.highlightTags || [],
+                pricingRaw: JSON.stringify(info.pricing || {}, null, 2),
+                graduateSchool: info.graduateSchool || '',
+                designPhilosophy: info.designPhilosophy || '',
                 serviceArea: info.serviceArea,
                 introduction: info.introduction,
                 teamSize: info.teamSize,
@@ -178,6 +211,10 @@ const MerchantSettings: React.FC = () => {
         yearsExperience?: number;
         specialty?: string[];
         workTypes?: string[];
+        highlightTags?: string[];
+        pricingRaw?: string;
+        graduateSchool?: string;
+        designPhilosophy?: string;
         serviceArea?: string[];
         introduction?: string;
         teamSize?: number;
@@ -185,10 +222,15 @@ const MerchantSettings: React.FC = () => {
     }) => {
         setSavingInfo(true);
         try {
+            const pricing = parsePricingFromRaw(values.pricingRaw || '');
             const payload: Record<string, unknown> = {
                 name: values.name,
                 companyName: values.companyName || '',
                 yearsExperience: values.yearsExperience || 0,
+                highlightTags: values.highlightTags || [],
+                pricing,
+                graduateSchool: values.graduateSchool || '',
+                designPhilosophy: values.designPhilosophy || '',
                 serviceArea: values.serviceArea || [],
                 introduction: values.introduction || '',
                 teamSize: values.teamSize || 1,
@@ -213,6 +255,10 @@ const MerchantSettings: React.FC = () => {
                     yearsExperience: values.yearsExperience || 0,
                     specialty: values.specialty || [],
                     workTypes: values.workTypes || [],
+                    highlightTags: values.highlightTags || [],
+                    pricing,
+                    graduateSchool: values.graduateSchool || '',
+                    designPhilosophy: values.designPhilosophy || '',
                     serviceArea: values.serviceArea || [],
                     introduction: values.introduction || '',
                     teamSize: values.teamSize || 1,
@@ -448,6 +494,20 @@ const MerchantSettings: React.FC = () => {
                                 </Col>
                             </Row>
 
+                            {isForeman && (
+                                <Form.Item
+                                    name="highlightTags"
+                                    label="施工亮点"
+                                    rules={[{ type: 'array', min: 1, max: 3, message: '请选择1-3个施工亮点' }]}
+                                >
+                                    <Select
+                                        mode="multiple"
+                                        placeholder="选择施工亮点"
+                                        options={FOREMAN_HIGHLIGHT_OPTIONS.map((item) => ({ value: item, label: item }))}
+                                    />
+                                </Form.Item>
+                            )}
+
                             <Form.Item name="serviceArea" label="服务区域">
                                 <Select mode="multiple" placeholder="选择可服务的区域">
                                     {areaOptions.map((area) => (
@@ -475,7 +535,30 @@ const MerchantSettings: React.FC = () => {
                                 <Input.TextArea
                                     rows={4}
                                     placeholder={isForeman ? '介绍施工经验、团队优势、服务特色等' : '介绍设计理念、服务特色等'}
-                                    maxLength={500}
+                                    maxLength={5000}
+                                    showCount
+                                />
+                            </Form.Item>
+
+                            <Form.Item
+                                name="pricingRaw"
+                                label="结构化报价（JSON）"
+                                extra={'例如：设计师 {"flat":1200,"duplex":1600,"other":1000}；工长 {"perSqm":900}'}
+                            >
+                                <Input.TextArea rows={4} placeholder="{}" />
+                            </Form.Item>
+
+                            {!isForeman && (
+                                <Form.Item name="graduateSchool" label="毕业院校">
+                                    <Input placeholder="请输入毕业院校（选填）" maxLength={100} />
+                                </Form.Item>
+                            )}
+
+                            <Form.Item name="designPhilosophy" label={isForeman ? '施工理念' : '设计理念'}>
+                                <Input.TextArea
+                                    rows={3}
+                                    placeholder={isForeman ? '请填写施工理念（选填）' : '请填写设计理念（选填）'}
+                                    maxLength={5000}
                                     showCount
                                 />
                             </Form.Item>

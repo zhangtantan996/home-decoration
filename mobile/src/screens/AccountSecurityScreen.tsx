@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -7,12 +7,22 @@ import {
     ScrollView,
     TouchableOpacity,
     Platform,
-    Modal,
 } from 'react-native';
-import { ArrowLeft, ChevronRight, Info } from 'lucide-react-native';
+import {
+    ArrowLeft,
+    ChevronRight,
+    Smartphone,
+    Lock,
+    ShieldCheck,
+    ShieldOff,
+    UserCheck,
+} from 'lucide-react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuthStore } from '../store/authStore';
+import { userSettingsApi } from '../services/api';
 
 const PRIMARY_GOLD = '#D4AF37';
+const GOLD_LIGHT = '#F5ECD0';
 
 interface AccountSecurityScreenProps {
     navigation: any;
@@ -20,14 +30,69 @@ interface AccountSecurityScreenProps {
 
 const AccountSecurityScreen: React.FC<AccountSecurityScreenProps> = ({ navigation }) => {
     const { user } = useAuthStore();
-    const [devModalVisible, setDevModalVisible] = useState(false);
-    const [devMessage, setDevMessage] = useState('');
+    const [verificationStatus, setVerificationStatus] = useState<string>('未认证');
 
-    // 显示开发中弹框
-    const showDevModal = (feature: string) => {
-        setDevMessage(`${feature}功能正在开发中，敬请期待！`);
-        setDevModalVisible(true);
+    useFocusEffect(
+        useCallback(() => {
+            fetchVerificationStatus();
+        }, [])
+    );
+
+    const fetchVerificationStatus = async () => {
+        try {
+            const res = await userSettingsApi.getVerification();
+            if (res.data) {
+                if (res.data.status === 0) setVerificationStatus('审核中');
+                else if (res.data.status === 1) setVerificationStatus('已认证');
+                else if (res.data.status === 2) setVerificationStatus('未通过');
+                else setVerificationStatus('未认证');
+            } else {
+                setVerificationStatus('未认证');
+            }
+        } catch (error) {
+            console.error('Failed to fetch verification status', error);
+        }
     };
+
+    const menuItems = [
+        {
+            label: '修改手机号',
+            icon: <Smartphone size={18} color="#3B82F6" />,
+            iconBg: '#EFF6FF',
+            value: user?.phone?.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') || '未绑定',
+            onPress: () => navigation.navigate('ChangePhone'),
+        },
+        {
+            label: '修改登录密码',
+            icon: <Lock size={18} color="#8B5CF6" />,
+            iconBg: '#F3F0FF',
+            value: null,
+            onPress: () => navigation.navigate('ChangePassword'),
+        },
+        {
+            label: '实名认证',
+            icon: <UserCheck size={18} color={PRIMARY_GOLD} />,
+            iconBg: GOLD_LIGHT,
+            value: verificationStatus,
+            onPress: () => navigation.navigate('RealNameAuth'),
+        },
+        {
+            label: '登录设备管理',
+            icon: <ShieldCheck size={18} color="#10B981" />,
+            iconBg: '#ECFDF5',
+            value: null,
+            onPress: () => navigation.navigate('LoginDevices'),
+        },
+        {
+            label: '注销账号',
+            icon: <ShieldOff size={18} color="#EF4444" />,
+            iconBg: '#FFF5F5',
+            value: null,
+            danger: true,
+            hint: '注销后无法恢复，请谨慎操作',
+            onPress: () => navigation.navigate('DeleteAccount'),
+        },
+    ];
 
     return (
         <SafeAreaView style={styles.container}>
@@ -41,74 +106,42 @@ const AccountSecurityScreen: React.FC<AccountSecurityScreenProps> = ({ navigatio
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                <View style={styles.section}>
-                    {/* 修改手机号 */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => showDevModal('修改手机号')}>
-                        <Text style={styles.menuLabel}>修改手机号</Text>
-                        <View style={styles.menuRight}>
-                            <Text style={styles.menuValue}>
-                                {user?.phone?.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') || '未绑定'}
-                            </Text>
-                            <ChevronRight size={18} color="#A1A1AA" />
+                <Text style={styles.sectionLabel}>安全设置</Text>
+                <View style={styles.card}>
+                    {menuItems.map((item, index) => (
+                        <View key={item.label}>
+                            <TouchableOpacity style={styles.menuItem} onPress={item.onPress}>
+                                <View style={[styles.iconBox, { backgroundColor: item.iconBg }]}>
+                                    {item.icon}
+                                </View>
+                                <View style={styles.labelContainer}>
+                                    <Text style={[styles.menuLabel, item.danger && styles.menuLabelDanger]}>
+                                        {item.label}
+                                    </Text>
+                                    {item.hint && (
+                                        <Text style={styles.dangerHint}>{item.hint}</Text>
+                                    )}
+                                </View>
+                                {item.value && (
+                                    <Text style={styles.menuValue}>{item.value}</Text>
+                                )}
+                                <ChevronRight size={18} color="#A1A1AA" />
+                            </TouchableOpacity>
+                            {index !== menuItems.length - 1 && (
+                                <View style={styles.divider} />
+                            )}
                         </View>
-                    </TouchableOpacity>
-
-                    {/* 修改登录密码 */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('ChangePassword')}>
-                        <Text style={styles.menuLabel}>修改登录密码</Text>
-                        <ChevronRight size={18} color="#A1A1AA" />
-                    </TouchableOpacity>
-
-                    {/* 实名认证 */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => showDevModal('实名认证')}>
-                        <Text style={styles.menuLabel}>实名认证</Text>
-                        <View style={styles.menuRight}>
-                            <Text style={styles.menuValue}>未认证</Text>
-                            <ChevronRight size={18} color="#A1A1AA" />
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* 登录设备管理 */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => showDevModal('登录设备管理')}>
-                        <Text style={styles.menuLabel}>登录设备管理</Text>
-                        <ChevronRight size={18} color="#A1A1AA" />
-                    </TouchableOpacity>
-
-                    {/* 注销账号 */}
-                    <TouchableOpacity style={[styles.menuItem, styles.menuItemLast]} onPress={() => showDevModal('注销账号')}>
-                        <View>
-                            <Text style={styles.menuLabel}>注销账号</Text>
-                            <Text style={styles.dangerHint}>注销后无法恢复，请谨慎操作</Text>
-                        </View>
-                        <ChevronRight size={18} color="#A1A1AA" />
-                    </TouchableOpacity>
+                    ))}
                 </View>
+
+                <View style={styles.bottomSpacer} />
             </ScrollView>
-
-            {/* 开发中弹框 */}
-            <Modal visible={devModalVisible} transparent animationType="fade">
-                <View style={styles.dialogOverlay}>
-                    <View style={styles.dialogContainer}>
-                        <View style={styles.dialogIconContainer}>
-                            <Info size={32} color={PRIMARY_GOLD} />
-                        </View>
-                        <Text style={styles.dialogTitle}>功能开发中</Text>
-                        <Text style={styles.dialogMessage}>{devMessage}</Text>
-                        <TouchableOpacity style={styles.dialogBtn} onPress={() => setDevModalVisible(false)}>
-                            <Text style={styles.dialogBtnText}>知道了</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
         </SafeAreaView>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F5F5F5',
-    },
+    container: { flex: 1, backgroundColor: '#F5F7FA' },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -116,108 +149,55 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingTop: Platform.OS === 'ios' ? 12 : 44,
         paddingBottom: 12,
-        backgroundColor: '#F5F5F5',
-    },
-    backBtn: {
-        padding: 4,
-    },
-    headerTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: '#09090B',
-    },
-    placeholder: {
-        width: 32,
-    },
-    content: {
-        flex: 1,
-        paddingHorizontal: 16,
-    },
-    section: {
         backgroundColor: '#FFFFFF',
-        marginTop: 12,
-        borderRadius: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: '#E4E4E7',
+    },
+    backBtn: { padding: 4 },
+    headerTitle: { fontSize: 17, fontWeight: '600', color: '#09090B' },
+    placeholder: { width: 32 },
+    content: { flex: 1, paddingHorizontal: 16 },
+    sectionLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#71717A',
+        marginTop: 22,
+        marginBottom: 10,
+        marginLeft: 4,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    card: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
         overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 3,
     },
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
         paddingVertical: 14,
         paddingHorizontal: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#F0F0F0',
+        gap: 14,
     },
-    menuItemLast: {
-        borderBottomWidth: 0,
-    },
-    menuLabel: {
-        fontSize: 16,
-        color: '#09090B',
-    },
-    menuRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    menuValue: {
-        fontSize: 14,
-        color: '#A1A1AA',
-        marginRight: 6,
-    },
-    dangerHint: {
-        fontSize: 11,
-        color: '#EF4444',
-        marginTop: 2,
-    },
-    // 弹窗样式
-    dialogOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 40,
-    },
-    dialogContainer: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 20,
-        padding: 24,
-        alignItems: 'center',
-        width: '100%',
-        maxWidth: 320,
-    },
-    dialogIconContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        backgroundColor: '#FFFBEB',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 16,
-    },
-    dialogTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#09090B',
-        marginBottom: 8,
-    },
-    dialogMessage: {
-        fontSize: 14,
-        color: '#71717A',
-        textAlign: 'center',
-        marginBottom: 24,
-    },
-    dialogBtn: {
-        width: '100%',
-        paddingVertical: 12,
+    iconBox: {
+        width: 38,
+        height: 38,
         borderRadius: 10,
         alignItems: 'center',
-        backgroundColor: PRIMARY_GOLD,
+        justifyContent: 'center',
     },
-    dialogBtnText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#FFFFFF',
-    },
+    labelContainer: { flex: 1 },
+    menuLabel: { fontSize: 16, color: '#09090B' },
+    menuLabelDanger: { color: '#EF4444' },
+    menuValue: { fontSize: 14, color: '#A1A1AA', marginRight: 4 },
+    dangerHint: { fontSize: 11, color: '#EF4444', marginTop: 2 },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#F0F0F0', marginLeft: 68 },
+    bottomSpacer: { height: 40 },
 });
 
 export default AccountSecurityScreen;

@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS merchant_identity_change_applications (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     user_id BIGINT NOT NULL DEFAULT 0,
     phone VARCHAR(20) NOT NULL,
-    current_role VARCHAR(20) NOT NULL DEFAULT '',
+    "current_role" VARCHAR(20) NOT NULL DEFAULT '',
     target_role VARCHAR(20) NOT NULL DEFAULT '',
     target_entity VARCHAR(20) NOT NULL DEFAULT '',
     application_data TEXT NOT NULL DEFAULT '{}',
@@ -113,4 +113,3 @@ CREATE INDEX IF NOT EXISTS idx_merchant_identity_change_apps_status
     ON merchant_identity_change_applications(status);
 
 COMMIT;
-
