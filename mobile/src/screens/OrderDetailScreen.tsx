@@ -27,6 +27,7 @@ import {
 } from 'lucide-react-native';
 import { bookingApi } from '../services/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { getApiBaseUrl } from '../config';
 
 type OrderDetailScreenRouteProp = RouteProp<RootStackParamList, 'OrderDetail'>;
 type OrderDetailScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;

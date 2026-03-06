@@ -10,8 +10,9 @@ const playwrightConfig = 'playwright.identity.config.ts';
 const cleanupSqlPath = path.resolve(rootDir, 'server/scripts/testdata/identity_acceptance_cleanup.sql');
 
 const runId = process.env.E2E_RUN_ID || `identity_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
-const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:8080/api/v1';
-const adminOrigin = process.env.E2E_ADMIN_ORIGIN || 'http://localhost:5173';
+const baseApiOrigin = process.env.API_BASE_URL || 'http://localhost:8080';
+const apiBaseUrl = process.env.E2E_API_BASE_URL || `${baseApiOrigin.replace(/\/$/, '')}/api/v1`;
+const adminOrigin = process.env.E2E_ADMIN_ORIGIN || process.env.ADMIN_BASE_URL || 'http://localhost:5173';
 const phonePrefix = process.env.E2E_PHONE_PREFIX || '19999';
 const uiStrict = process.env.E2E_UI_STRICT === '1';
 const dbCleanup = process.env.E2E_DB_CLEANUP === '1';

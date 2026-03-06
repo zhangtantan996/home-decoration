@@ -1,15 +1,18 @@
 #!/bin/bash
 
-# ==================== 快速生成本地 .env 文件 ====================
-# 用途：一键生成包含随机密钥的 .env 文件用于本地测试
+# ==================== 快速生成本地环境配置 ====================
+# 用途：一键生成统一环境契约下的 env/local.env
 # 使用：bash generate_local_env.sh
+
+TARGET_FILE="env/local.env"
+
+mkdir -p env
 
 echo "🔐 生成本地测试环境配置文件..."
 echo ""
 
-# 检查是否已存在 .env 文件
-if [ -f "server/.env" ]; then
-    echo "⚠️  警告: server/.env 文件已存在"
+if [ -f "${TARGET_FILE}" ]; then
+    echo "⚠️  警告: ${TARGET_FILE} 文件已存在"
     read -p "是否覆盖? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -18,7 +21,6 @@ if [ -f "server/.env" ]; then
     fi
 fi
 
-# 生成随机密钥
 echo "🔑 生成随机密钥..."
 JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
 ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')
@@ -28,46 +30,40 @@ REDIS_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
 echo "✅ 密钥生成完成"
 echo ""
 
-# 创建 .env 文件
-cat > server/.env << EOF
-# ==================== 本地测试环境配置 ====================
+cat > "${TARGET_FILE}" << EOF2
+# ==================== 本地统一环境配置 ====================
 # ⚠️ 此文件仅用于本地测试，不要提交到 Git！
 # 生成日期: $(date)
 
-# 应用环境
 APP_ENV=local
-SERVER_MODE=debug
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8080
+API_BASE_URL=http://localhost:8080
+ADMIN_BASE_URL=http://localhost:5173
+WEB_BASE_URL=http://localhost:5175
+TINODE_SERVER_URL=ws://localhost:6060
+TINODE_API_KEY=
+SERVER_PUBLIC_URL=http://localhost:8080
 
-# 安全密钥（已自动生成）
-JWT_SECRET=$JWT_SECRET
-ENCRYPTION_KEY=$ENCRYPTION_KEY
-
-# 数据库配置（本地）
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_USER=postgres
 DATABASE_PASSWORD=$DB_PASSWORD
-DATABASE_NAME=home_decoration
+DATABASE_DBNAME=home_decoration
+DATABASE_SSLMODE=disable
 
-# Redis 配置（本地）
 REDIS_HOST=localhost
 REDIS_PORT=6380
 REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_DB=0
 
-# CORS 白名单（本地开发）
-CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+JWT_SECRET=$JWT_SECRET
+ENCRYPTION_KEY=$ENCRYPTION_KEY
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5175,http://localhost:5176
+SMS_PROVIDER=mock
+EOF2
 
-# 日志配置
-LOG_LEVEL=debug
-LOG_FILE=logs/backend.log
-EOF
+chmod 600 "${TARGET_FILE}"
 
-# 设置文件权限
-chmod 600 server/.env
-
-echo "✅ server/.env 文件创建成功！"
+echo "✅ ${TARGET_FILE} 文件创建成功！"
 echo ""
 echo "📋 生成的配置信息："
 echo "   JWT_SECRET 长度: ${#JWT_SECRET} 字符"
@@ -82,6 +78,6 @@ echo "   3. 数据库密码需要与本地 PostgreSQL 密码一致"
 echo "   4. Redis 密码需要与本地 Redis 密码一致（或留空）"
 echo ""
 echo "🚀 下一步："
-echo "   1. 修改 DATABASE_PASSWORD 为你的本地数据库密码"
-echo "   2. 启动服务: cd server && go run ./cmd/api"
-echo "   3. 运行测试: bash test_security.sh"
+echo "   1. 检查并调整 ${TARGET_FILE}"
+echo "   2. 查看解析结果: npm run env:print:local"
+echo "   3. 启动后端: npm run dev:server"

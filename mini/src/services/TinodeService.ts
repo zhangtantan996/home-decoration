@@ -2,6 +2,7 @@ import { Tinode } from 'tinode-sdk';
 
 import TaroWebSocketAdapter from './TaroWebSocketAdapter';
 import { getTinodeUserId } from './tinode';
+import { MINI_ENV } from '@/config/env';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -52,7 +53,7 @@ const parseTinodeUrl = (value: string): { host: string; secure: boolean } | null
 };
 
 const deriveTinodeUrlFromApiBase = (): { host: string; secure: boolean } | null => {
-  const apiBase = (process.env.TARO_APP_API_BASE || '').trim();
+  const apiBase = MINI_ENV.API_BASE_URL.trim();
   if (!apiBase) return null;
 
   try {
@@ -68,7 +69,7 @@ const deriveTinodeUrlFromApiBase = (): { host: string; secure: boolean } | null 
 };
 
 const getTinodeServerHost = (): { host: string; secure: boolean } => {
-  const explicit = parseTinodeUrl(process.env.TARO_APP_TINODE_URL || '');
+  const explicit = parseTinodeUrl(MINI_ENV.TINODE_URL);
   if (explicit) return explicit;
 
   const derived = deriveTinodeUrlFromApiBase();
@@ -149,7 +150,7 @@ class TinodeService extends SimpleEventEmitter {
 
     this.initPromise = (async () => {
       try {
-        const apiKey = (process.env.TARO_APP_TINODE_API_KEY || '').trim();
+        const apiKey = MINI_ENV.TINODE_API_KEY;
         if (!apiKey) {
           console.warn('[Tinode] Missing TARO_APP_TINODE_API_KEY');
           this.connected = false;

@@ -14,8 +14,8 @@ export interface IdentityAcceptanceEnv {
 }
 
 const DEFAULT_ENV: IdentityAcceptanceEnv = {
-  apiBaseUrl: process.env.E2E_API_BASE_URL || 'http://localhost:8080/api/v1',
-  adminOrigin: process.env.E2E_ADMIN_ORIGIN || 'http://localhost:5173',
+  apiBaseUrl: process.env.E2E_API_BASE_URL || `${(process.env.API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '')}/api/v1`,
+  adminOrigin: process.env.E2E_ADMIN_ORIGIN || process.env.ADMIN_BASE_URL || 'http://localhost:5173',
   adminUser: process.env.E2E_ADMIN_USER || 'admin',
   adminPass: process.env.E2E_ADMIN_PASS || 'admin123',
   phonePrefix: process.env.E2E_PHONE_PREFIX || '19999',

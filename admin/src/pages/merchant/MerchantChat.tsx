@@ -6,6 +6,7 @@ import TinodeService from '../../services/TinodeService';
 import merchantApi from '../../services/merchantApi';
 import { useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
+import { getApiOrigin } from '../../utils/env';
 
 const { Sider, Content, Header } = Layout;
 const { Text, Title } = Typography;
@@ -772,10 +773,7 @@ const MerchantChat: React.FC = () => {
         if (typeof content === 'string') return content;
         if (typeof content === 'object' && content !== null) {
             if (Array.isArray(content.ent)) {
-                const apiUrl = typeof import.meta.env.VITE_API_URL === 'string' ? import.meta.env.VITE_API_URL : '';
-                const backendOrigin = apiUrl
-                    ? apiUrl.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '')
-                    : (window.location.hostname === 'localhost' ? 'http://localhost:8080' : '');
+                const backendOrigin = getApiOrigin();
 
                 const imEnt = content.ent.find((e: any) => e?.tp === 'IM');
                 const data = imEnt?.data;

@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:8080/api/v1';
-const adminOrigin = process.env.E2E_ADMIN_ORIGIN || 'http://localhost:5173';
+const baseApiOrigin = process.env.API_BASE_URL || 'http://localhost:8080';
+const apiBaseUrl = process.env.E2E_API_BASE_URL || `${baseApiOrigin.replace(/\/$/, '')}/api/v1`;
+const adminOrigin = process.env.E2E_ADMIN_ORIGIN || process.env.ADMIN_BASE_URL || 'http://localhost:5173';
 
 export default defineConfig({
   testDir: './tests/e2e/identity',

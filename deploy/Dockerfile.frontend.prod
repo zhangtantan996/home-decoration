@@ -16,7 +16,10 @@ RUN npm install --legacy-peer-deps
 
 COPY admin/ ./
 
-# Increase Node.js heap size for Vite build (adjust if needed)
+ARG VITE_APP_ENV=production
+ARG VITE_API_URL=/api/v1
+ENV VITE_APP_ENV=${VITE_APP_ENV}
+ENV VITE_API_URL=${VITE_API_URL}
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 

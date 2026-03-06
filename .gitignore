@@ -68,3 +68,5 @@ deploy/backups/
 deploy/nginx/admin.htpasswd
 tmp/
 *.pid
+# Unified env templates and generated env files
+env/*.env

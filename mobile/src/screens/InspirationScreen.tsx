@@ -20,6 +20,7 @@ import { Heart, ChevronDown, ChevronUp, Check } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { inspirationApi } from '../services/api';
 import { useToast } from '../components/Toast';
+import { getInspirationAvatarUrl, getInspirationCoverImage } from '../utils/inspirationImages';
 
 const { height } = Dimensions.get('window');
 const HALF_SCREEN_HEIGHT = height / 2;
@@ -135,7 +136,7 @@ const InspirationScreen = () => {
 
             // 预计算图片高度，避免布局抖动
             const decoratedList = await Promise.all(list.map(async (item: any) => {
-                const uri = item.coverImage || item.image;
+                const uri = getInspirationCoverImage(item);
                 let ratio = DEFAULT_RATIO;
 
                 if (uri) {
@@ -156,10 +157,12 @@ const InspirationScreen = () => {
                         }
                     }
 				}
-                
-                return { 
-                    ...item, 
-                    _displayHeight: CARD_WIDTH * ratio 
+
+                return {
+                    ...item,
+                    _coverImage: uri,
+                    _authorAvatar: getInspirationAvatarUrl(item.author?.avatar),
+                    _displayHeight: CARD_WIDTH * ratio
                 };
             }));
 
@@ -192,10 +195,10 @@ const InspirationScreen = () => {
 
         items.forEach((item) => {
             const cardHeight = item._displayHeight || CARD_WIDTH * DEFAULT_RATIO;
-            
+
             // 估算卡片总高度 (Image + Content)
             // Title (max 2 lines ~40px + margin 10) + Padding (24) + Footer (20) = ~100px
-            const totalItemHeight = cardHeight + 100; 
+            const totalItemHeight = cardHeight + 100;
 
             if (leftH <= rightH) {
                 left.push(item);
@@ -315,7 +318,7 @@ const InspirationScreen = () => {
             onPress={() => navigation.navigate('InspirationDetail', { item })}
         >
             <Image
-                source={{ uri: item.coverImage || item.image }}
+                source={{ uri: item._coverImage || getInspirationCoverImage(item) }}
                 style={[styles.cardImage, { height: item._displayHeight || 200 }]}
                 resizeMode="cover"
             />
@@ -323,13 +326,13 @@ const InspirationScreen = () => {
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
                 <View style={styles.cardFooter}>
                     <View style={styles.authorInfo}>
-                        <Image 
-                            source={{ uri: item.author?.avatar || 'https://via.placeholder.com/40' }} 
-                            style={styles.authorAvatar} 
+                        <Image
+                            source={{ uri: item._authorAvatar || getInspirationAvatarUrl(item.author?.avatar) }}
+                            style={styles.authorAvatar}
                         />
                         <Text style={styles.authorName} numberOfLines={1}>{item.author?.name || '未知作者'}</Text>
                     </View>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.likeInfo}
                         onPress={() => handleLike(item)}
                         activeOpacity={0.7}
@@ -372,7 +375,7 @@ const InspirationScreen = () => {
     return (
         <SafeAreaView style={styles.safeArea}>
             <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-            
+
             {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>灵感图库</Text>

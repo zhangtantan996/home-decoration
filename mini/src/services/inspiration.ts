@@ -1,4 +1,9 @@
 import { request } from '@/utils/request';
+import {
+  getInspirationAvatarUrl,
+  getInspirationCoverImage,
+  getInspirationGalleryImages,
+} from '@/utils/inspirationImages';
 
 import type {
   FavoriteItemDTO,
@@ -41,55 +46,61 @@ interface InspirationDetailRaw {
   author?: InspirationAuthorDTO;
 }
 
-const normalizeImages = (images: InspirationDetailRaw['images']) => {
-  if (Array.isArray(images)) {
-    return images.filter((item): item is string => typeof item === 'string' && item.length > 0);
-  }
+const normalizeAuthor = (author?: InspirationAuthorDTO): InspirationAuthorDTO => ({
+  id: author?.id || 0,
+  name: author?.name || '官方',
+  avatar: getInspirationAvatarUrl(author?.avatar),
+});
 
-  if (typeof images !== 'string' || !images) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(images);
-    if (Array.isArray(parsed)) {
-      return parsed.filter((item): item is string => typeof item === 'string' && item.length > 0);
-    }
-  } catch (error) {
-    if (images.startsWith('http://') || images.startsWith('https://') || images.startsWith('/')) {
-      return [images];
-    }
-  }
-
-  return [];
-};
+const normalizeListItem = (raw: Partial<InspirationItemDTO>): InspirationItemDTO => ({
+  id: raw.id || 0,
+  title: raw.title || '未命名案例',
+  coverImage: getInspirationCoverImage(raw),
+  style: raw.style || '',
+  layout: raw.layout || '',
+  area: raw.area || '',
+  price: raw.price || 0,
+  likeCount: raw.likeCount || 0,
+  commentCount: raw.commentCount || 0,
+  isLiked: Boolean(raw.isLiked),
+  isFavorited: Boolean(raw.isFavorited),
+  author: normalizeAuthor(raw.author),
+});
 
 const normalizeDetail = (raw: InspirationDetailRaw): InspirationDetailDTO => {
+  const galleryImages = getInspirationGalleryImages(raw);
+
   return {
     id: raw.id,
     providerId: raw.providerId,
     title: raw.title || '未命名案例',
-    coverImage: raw.coverImage || '',
+    coverImage: galleryImages[0],
     style: raw.style || '',
     layout: raw.layout || '',
     area: raw.area || '',
     price: raw.price || 0,
     description: raw.description || '',
-    images: normalizeImages(raw.images),
+    images: galleryImages.slice(1),
     likeCount: raw.likeCount || 0,
     commentCount: raw.commentCount || 0,
     isLiked: Boolean(raw.isLiked),
     isFavorited: Boolean(raw.isFavorited),
-    author: raw.author,
+    author: normalizeAuthor(raw.author),
   };
 };
 
 export const inspirationService = {
-  list: (query: InspirationListQuery = {}) =>
-    request<PageData<InspirationItemDTO>>({
+  list: async (query: InspirationListQuery = {}) => {
+    const pageData = await request<PageData<InspirationItemDTO>>({
       url: '/inspiration',
       data: query,
-    }),
+    });
+
+    return {
+      ...pageData,
+      list: (pageData.list || []).map((item) => normalizeListItem(item)),
+    };
+  },
 
   detail: async (id: number) => {
     const raw = await request<InspirationDetailRaw>({

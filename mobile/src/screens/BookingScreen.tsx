@@ -39,6 +39,7 @@ import { bookingApi } from '../services/api';
 import { useToast } from '../components/Toast';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { getApiBaseUrl } from '../config';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 

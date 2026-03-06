@@ -33,6 +33,7 @@ import {
     ChevronLeft,
 } from 'lucide-react-native';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { getApiBaseUrl } from '../config';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 

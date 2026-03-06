@@ -11,7 +11,15 @@
     "start": "react-native start",
     "test": "jest",
     "web": "echo 'Web build disabled for native-only app. Use android/ios instead.'",
-    "build": "echo 'Production build for native apps - use Android Studio or Xcode'"
+    "build": "echo 'Production build for native apps - use Android Studio or Xcode'",
+    "android:local": "bash ../scripts/env/mobile-run.sh local android",
+    "android:test": "bash ../scripts/env/mobile-run.sh test android",
+    "android:staging": "bash ../scripts/env/mobile-run.sh staging android",
+    "android:production": "bash ../scripts/env/mobile-run.sh production android",
+    "ios:local": "bash ../scripts/env/mobile-run.sh local ios",
+    "ios:test": "bash ../scripts/env/mobile-run.sh test ios",
+    "ios:staging": "bash ../scripts/env/mobile-run.sh staging ios",
+    "ios:production": "bash ../scripts/env/mobile-run.sh production ios"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

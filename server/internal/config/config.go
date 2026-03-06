@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -96,10 +95,7 @@ type SMSConfig struct {
 }
 
 func Load() (*Config, error) {
-	// 根据 APP_ENV 环境变量选择配置文件
-	// local/docker 环境使用 config.docker.yaml
-	appEnv := os.Getenv("APP_ENV")
-	if appEnv == "local" || appEnv == "docker" {
+	if UsesLegacyDockerConfig() {
 		viper.SetConfigName("config.docker")
 	} else {
 		viper.SetConfigName("config")
@@ -108,7 +104,6 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 	viper.AutomaticEnv()
-	// 设置环境变量键名替换规则：将 . 替换为 _（如 database.password -> DATABASE_PASSWORD）
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	// 兼容历史/文档环境变量别名（推荐仍使用 DATABASE_* / REDIS_*）
@@ -166,13 +161,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	// 保存到全局变量
 	globalConfig = &cfg
-
 	return &cfg, nil
 }
 
-// 全局配置
 var globalConfig *Config
 
 // GetConfig 获取全局配置

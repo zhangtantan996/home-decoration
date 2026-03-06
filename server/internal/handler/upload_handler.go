@@ -12,6 +12,48 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func saveCaseUpload(c *gin.Context, ownerID uint64, filenamePrefix string) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		response.Error(c, 400, "请选择要上传的文件")
+		return
+	}
+
+	if file.Size > 20*1024*1024 {
+		response.Error(c, 400, "文件大小不能超过20MB")
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" &&
+		ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".xls" && ext != ".xlsx" &&
+		ext != ".ppt" && ext != ".pptx" && ext != ".txt" && ext != ".zip" && ext != ".rar" {
+		response.Error(c, 400, "不支持的文件格式")
+		return
+	}
+
+	filename := fmt.Sprintf("%s_%d_%d%s", filenamePrefix, ownerID, time.Now().UnixNano(), ext)
+	uploadDir := "./uploads/cases"
+
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		response.Error(c, 500, "创建目录失败")
+		return
+	}
+
+	dst := filepath.Join(uploadDir, filename)
+	if err := c.SaveUploadedFile(file, dst); err != nil {
+		response.Error(c, 500, "保存文件失败")
+		return
+	}
+
+	imageURL := fmt.Sprintf("/uploads/cases/%s", filename)
+
+	response.Success(c, gin.H{
+		"url":  imgutil.GetFullImageURL(imageURL),
+		"path": imageURL,
+	})
+}
+
 // UploadFile 通用文件上传 (用于聊天、头像等)
 func UploadFile(c *gin.Context) {
 	// 获取当前登录用户ID
@@ -80,4 +122,10 @@ func UploadFile(c *gin.Context) {
 		"size":     file.Size,
 		"type":     ext,
 	})
+}
+
+// AdminUploadImage 管理员上传作品图片 (封面/详情图)
+func AdminUploadImage(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
+	saveCaseUpload(c, adminID, "admin_case")
 }

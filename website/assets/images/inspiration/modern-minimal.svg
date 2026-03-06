@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Modern Minimal Inspiration</title>
+  <desc id="desc">A clean interior scene with soft neutral blocks and a large window.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f4ede4"/>
+      <stop offset="100%" stop-color="#ddd2c4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect x="96" y="96" width="1008" height="608" rx="28" fill="#fbf7f1"/>
+  <rect x="152" y="132" width="360" height="420" rx="18" fill="#efe6da"/>
+  <rect x="182" y="166" width="300" height="168" rx="12" fill="#d6c6b3"/>
+  <rect x="544" y="148" width="480" height="228" rx="18" fill="#f1ece5"/>
+  <rect x="576" y="180" width="192" height="164" rx="12" fill="#d9c9b5"/>
+  <rect x="792" y="180" width="200" height="164" rx="12" fill="#f7f1e8"/>
+  <rect x="540" y="430" width="460" height="120" rx="26" fill="#cbb39c"/>
+  <rect x="564" y="458" width="184" height="64" rx="18" fill="#f6f0e7"/>
+  <rect x="772" y="456" width="204" height="18" rx="9" fill="#ebdfd0"/>
+  <rect x="772" y="492" width="146" height="18" rx="9" fill="#ebdfd0"/>
+  <text x="152" y="648" fill="#7b6653" font-family="Arial, sans-serif" font-size="42" font-weight="700">Modern Minimal</text>
+</svg>

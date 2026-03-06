@@ -9,19 +9,12 @@ import {
     EyeOutlined, CheckOutlined, CloseOutlined, UploadOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { caseApi, caseAuditApi } from '../../services/api';
+import { adminUploadApi, caseApi, caseAuditApi } from '../../services/api';
 import type { RcFile, UploadProps } from 'antd/es/upload/interface';
 import { DictSelect } from '../../components/DictSelect';
+import { toAbsoluteAssetUrl } from '../../utils/env';
 
-const API_BASE_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:8080'
-    : '';
-
-const getFullUrl = (path: string) => {
-    if (!path) return '';
-    if (path.startsWith('http')) return path;
-    return `${API_BASE_URL}${path}`;
-};
+const getFullUrl = toAbsoluteAssetUrl;
 
 interface CaseItem {
     id: number;
@@ -362,25 +355,20 @@ const CaseManagement: React.FC = () => {
 
     // 上传图片
     const uploadImage = async (file: RcFile): Promise<string> => {
-        const formData = new FormData();
-        formData.append('file', file);
-
         try {
-            const token = localStorage.getItem('admin_token');
-            const response = await fetch(`${API_BASE_URL}/api/v1/upload`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: formData,
-            });
+            const result = await adminUploadApi.uploadImage(file as File) as unknown as {
+                code: number;
+                message?: string;
+                data?: {
+                    url?: string;
+                };
+            };
 
-            const result = await response.json();
-            if (result.code === 0) {
+            if (result.code === 0 && result.data?.url) {
                 return result.data.url;
-            } else {
-                throw new Error(result.message || '上传失败');
             }
+
+            throw new Error(result.message || '上传失败');
         } catch (error) {
             message.error('图片上传失败');
             throw error;

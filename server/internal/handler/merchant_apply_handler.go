@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/internal/utils/tencentim"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
@@ -244,7 +246,7 @@ func createMerchantUserWithCompatibility(tx *gorm.DB, phone, realName string) (m
 }
 
 func buildUserCreateFailMessage(err error) string {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "prod") {
+	if config.GetAppEnv() == config.AppEnvProduction {
 		return "提交失败: 创建账号失败"
 	}
 	if err == nil {
@@ -391,6 +393,59 @@ func encryptSensitiveOrPlain(raw string) string {
 		return value
 	}
 	return encrypted
+}
+
+func decryptSensitiveOrPlain(raw string) (string, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", true
+	}
+	if strings.TrimSpace(os.Getenv("ENCRYPTION_KEY")) == "" {
+		return value, true
+	}
+	decrypted, err := utils.Decrypt(value)
+	if err != nil {
+		return "", false
+	}
+	return decrypted, true
+}
+
+func displayMaskedSensitive(raw string, mask func(string) string) string {
+	value, ok := decryptSensitiveOrPlain(raw)
+	if !ok || strings.TrimSpace(value) == "" {
+		return "***"
+	}
+	return mask(value)
+}
+
+func displayReadableSensitive(raw string) string {
+	value, ok := decryptSensitiveOrPlain(raw)
+	if !ok {
+		return "***"
+	}
+	return value
+}
+
+func maskSensitiveID(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) < 10 {
+		return "***"
+	}
+	return trimmed[:6] + "********" + trimmed[len(trimmed)-4:]
+}
+
+func normalizePortfolioCaseDisplays(cases []PortfolioCaseInput) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(cases))
+	for _, caseItem := range cases {
+		result = append(result, map[string]interface{}{
+			"title":       caseItem.Title,
+			"description": caseItem.Description,
+			"images":      imgutil.GetFullImageURLs(caseItem.Images),
+			"style":       caseItem.Style,
+			"area":        caseItem.Area,
+		})
+	}
+	return result
 }
 
 func normalizeStringSlice(values []string) []string {
@@ -936,16 +991,21 @@ func MerchantResubmit(c *gin.Context) {
 
 // AdminListApplications 获取入驻申请列表
 func AdminListApplications(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("pageSize"), 10)
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 10
+	}
+
 	var apps []model.MerchantApplication
+	query := repository.DB.Model(&model.MerchantApplication{}).Order("created_at DESC")
 
-	query := repository.DB.Order("created_at DESC")
-
-	// 筛选状态
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
 	}
-
-	// 筛选类型
 	if appType := c.Query("type"); appType != "" {
 		appType = strings.ToLower(strings.TrimSpace(appType))
 		switch appType {
@@ -955,31 +1015,46 @@ func AdminListApplications(c *gin.Context) {
 			query = query.Where("applicant_type = ?", appType)
 		}
 	}
-
-	// 筛选角色
 	if role := c.Query("role"); role != "" {
 		query = query.Where("role = ?", strings.ToLower(strings.TrimSpace(role)))
 	}
-
-	// 筛选主体
 	if entityType := c.Query("entityType"); entityType != "" {
 		query = query.Where("entity_type = ?", strings.ToLower(strings.TrimSpace(entityType)))
 	}
-
-	// 搜索
-	if keyword := c.Query("keyword"); keyword != "" {
-		query = query.Where("phone LIKE ? OR real_name LIKE ? OR company_name LIKE ?",
-			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where("phone LIKE ? OR real_name LIKE ? OR company_name LIKE ?", pattern, pattern, pattern)
 	}
 
-	if err := query.Find(&apps).Error; err != nil {
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&apps).Error; err != nil {
 		response.Error(c, 500, "查询失败")
 		return
 	}
 
+	list := make([]gin.H, 0, len(apps))
+	for _, app := range apps {
+		list = append(list, gin.H{
+			"id":           app.ID,
+			"phone":        app.Phone,
+			"role":         app.Role,
+			"entityType":   app.EntityType,
+			"realName":     app.RealName,
+			"companyName":  app.CompanyName,
+			"status":       app.Status,
+			"rejectReason": app.RejectReason,
+			"createdAt":    app.CreatedAt,
+			"auditedAt":    app.AuditedAt,
+		})
+	}
+
 	response.Success(c, gin.H{
-		"list":  apps,
-		"total": len(apps),
+		"list":  list,
+		"total": total,
 	})
 }
 
@@ -993,7 +1068,6 @@ func AdminGetApplication(c *gin.Context) {
 		return
 	}
 
-	// 解析 JSON 字段
 	var serviceAreaCodes, styles, workTypes, highlightTags []string
 	var pricing map[string]float64
 	var portfolioCases []PortfolioCaseInput
@@ -1004,7 +1078,6 @@ func AdminGetApplication(c *gin.Context) {
 	json.Unmarshal([]byte(app.PricingJSON), &pricing)
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
 
-	// 将服务区域代码转换为名称（用于前端展示）
 	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
 	response.Success(c, gin.H{
@@ -1014,29 +1087,31 @@ func AdminGetApplication(c *gin.Context) {
 		"role":             app.Role,
 		"entityType":       app.EntityType,
 		"realName":         app.RealName,
-		"avatar":           app.Avatar,
-		"idCardFront":      app.IDCardFront,
-		"idCardBack":       app.IDCardBack,
+		"avatar":           imgutil.GetFullImageURL(app.Avatar),
+		"idCardNo":         displayMaskedSensitive(app.IDCardNo, maskSensitiveID),
+		"idCardFront":      imgutil.GetFullImageURL(app.IDCardFront),
+		"idCardBack":       imgutil.GetFullImageURL(app.IDCardBack),
 		"companyName":      app.CompanyName,
-		"licenseNo":        app.LicenseNo,
-		"licenseImage":     app.LicenseImage,
+		"licenseNo":        displayReadableSensitive(app.LicenseNo),
+		"licenseImage":     imgutil.GetFullImageURL(app.LicenseImage),
 		"teamSize":         app.TeamSize,
 		"yearsExperience":  app.YearsExperience,
 		"workTypes":        workTypes,
 		"officeAddress":    app.OfficeAddress,
-		"serviceArea":      serviceAreaNames, // 返回名称数组，方便前端展示
-		"serviceAreaCodes": serviceAreaCodes, // 同时返回代码数组
+		"serviceArea":      serviceAreaNames,
+		"serviceAreaCodes": serviceAreaCodes,
 		"styles":           styles,
 		"highlightTags":    highlightTags,
 		"pricing":          pricing,
 		"introduction":     app.Introduction,
 		"graduateSchool":   app.GraduateSchool,
 		"designPhilosophy": app.DesignPhilosophy,
-		"portfolioCases":   portfolioCases,
+		"portfolioCases":   normalizePortfolioCaseDisplays(portfolioCases),
 		"status":           app.Status,
 		"rejectReason":     app.RejectReason,
 		"createdAt":        app.CreatedAt,
 		"auditedAt":        app.AuditedAt,
+		"auditedBy":        app.AuditedBy,
 	})
 }
 

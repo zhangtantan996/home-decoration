@@ -47,6 +47,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 	// 静态文件服务 (上传文件)
 	r.Static("/uploads", "./uploads")
+	r.Static("/static/inspiration", "./static/inspiration")
 
 	// API版本分组
 	v1 := r.Group("/api/v1")
@@ -319,6 +320,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		{
 			// 获取当前管理员信息和权限
 			admin.GET("/info", handler.AdminGetInfo)
+			admin.POST("/upload", handler.AdminUploadImage)
 
 			// 统计（无需权限）
 			admin.GET("/stats/overview", handler.AdminStatsOverview)

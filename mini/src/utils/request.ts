@@ -2,6 +2,7 @@ import Taro from '@tarojs/taro';
 import type { TaroGeneral } from '@tarojs/taro';
 
 import { useAuthStore } from '@/store/auth';
+import { MINI_ENV } from '@/config/env';
 import { AutoRetryGuard, type AutoRetryPolicy } from '@/utils/autoRetryGuard';
 
 interface ApiResponse<T> {
@@ -19,7 +20,7 @@ export interface RequestOptions<T> {
   retry?: boolean;
 }
 
-const API_BASE = process.env.TARO_APP_API_BASE || 'http://127.0.0.1:8080/api/v1';
+const API_BASE = MINI_ENV.API_BASE_URL;
 
 const AUTH_REFRESH_BUSINESS_KEY = 'mini.auth.refresh';
 const AUTH_REFRESH_POLICY: AutoRetryPolicy = {

@@ -1552,3 +1552,39 @@ body.menu-open {
     justify-content: center;
   }
 }
+
+.footer-legal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer-icp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.92rem;
+}
+
+.icp-link {
+  color: var(--text-main);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+  transition: color 0.25s var(--easing), border-color 0.25s var(--easing);
+}
+
+.icp-link:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+@media (max-width: 768px) {
+  .footer-legal {
+    align-items: center;
+  }
+
+  .footer-icp {
+    justify-content: center;
+  }
+}

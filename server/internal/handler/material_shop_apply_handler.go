@@ -7,6 +7,7 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
 	"strings"
@@ -757,8 +758,17 @@ func MaterialShopDeleteProduct(c *gin.Context) {
 }
 
 func AdminListMaterialShopApplications(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("pageSize"), 10)
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 10
+	}
+
 	var apps []model.MaterialShopApplication
-	query := repository.DB.Order("created_at DESC")
+	query := repository.DB.Model(&model.MaterialShopApplication{}).Order("created_at DESC")
 
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		query = query.Where("status = ?", status)
@@ -768,14 +778,36 @@ func AdminListMaterialShopApplications(c *gin.Context) {
 		query = query.Where("phone LIKE ? OR shop_name LIKE ? OR company_name LIKE ? OR contact_name LIKE ? OR legal_person_name LIKE ?", pattern, pattern, pattern, pattern, pattern)
 	}
 
-	if err := query.Find(&apps).Error; err != nil {
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&apps).Error; err != nil {
 		response.Error(c, 500, "查询失败")
 		return
 	}
 
+	list := make([]gin.H, 0, len(apps))
+	for _, app := range apps {
+		list = append(list, gin.H{
+			"id":           app.ID,
+			"phone":        app.Phone,
+			"entityType":   app.EntityType,
+			"shopName":     app.ShopName,
+			"companyName":  app.CompanyName,
+			"contactName":  app.ContactName,
+			"contactPhone": app.ContactPhone,
+			"status":       app.Status,
+			"rejectReason": app.RejectReason,
+			"createdAt":    app.CreatedAt,
+			"auditedAt":    app.AuditedAt,
+		})
+	}
+
 	response.Success(c, gin.H{
-		"list":  apps,
-		"total": len(apps),
+		"list":  list,
+		"total": total,
 	})
 }
 
@@ -803,7 +835,7 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 			"name":      product.Name,
 			"params":    params,
 			"price":     product.Price,
-			"images":    images,
+			"images":    imgutil.GetFullImageURLs(images),
 			"sortOrder": product.SortOrder,
 		})
 	}
@@ -815,12 +847,12 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		"shopName":               app.ShopName,
 		"shopDescription":        app.ShopDescription,
 		"companyName":            app.CompanyName,
-		"businessLicenseNo":      app.BusinessLicenseNo,
-		"businessLicense":        app.BusinessLicense,
+		"businessLicenseNo":      displayReadableSensitive(app.BusinessLicenseNo),
+		"businessLicense":        imgutil.GetFullImageURL(app.BusinessLicense),
 		"legalPersonName":        app.LegalPersonName,
-		"legalPersonIdCardNo":    app.LegalPersonIDCardNo,
-		"legalPersonIdCardFront": app.LegalPersonIDCardFront,
-		"legalPersonIdCardBack":  app.LegalPersonIDCardBack,
+		"legalPersonIdCardNo":    displayMaskedSensitive(app.LegalPersonIDCardNo, maskSensitiveID),
+		"legalPersonIdCardFront": imgutil.GetFullImageURL(app.LegalPersonIDCardFront),
+		"legalPersonIdCardBack":  imgutil.GetFullImageURL(app.LegalPersonIDCardBack),
 		"businessHours":          app.BusinessHours,
 		"contactPhone":           app.ContactPhone,
 		"contactName":            app.ContactName,
@@ -829,6 +861,7 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		"rejectReason":           app.RejectReason,
 		"createdAt":              app.CreatedAt,
 		"auditedAt":              app.AuditedAt,
+		"auditedBy":              app.AuditedBy,
 		"products":               productList,
 	})
 }

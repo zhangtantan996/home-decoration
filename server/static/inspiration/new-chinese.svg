@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">New Chinese Inspiration</title>
+  <desc id="desc">A calm interior scene with ink green, warm wood, and a moon gate.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e9e2d6"/>
+      <stop offset="100%" stop-color="#d5ccb9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect x="88" y="90" width="1024" height="620" rx="30" fill="#f7f2ea"/>
+  <circle cx="330" cy="350" r="154" fill="#5f7462"/>
+  <circle cx="330" cy="350" r="102" fill="#f7f2ea"/>
+  <rect x="520" y="146" width="472" height="170" rx="20" fill="#e7ddd0"/>
+  <rect x="560" y="188" width="150" height="88" rx="12" fill="#b28f66"/>
+  <rect x="742" y="188" width="214" height="88" rx="12" fill="#d9c6af"/>
+  <rect x="522" y="404" width="452" height="128" rx="28" fill="#70553a"/>
+  <rect x="556" y="438" width="164" height="60" rx="16" fill="#efe3d4"/>
+  <rect x="746" y="438" width="178" height="16" rx="8" fill="#d7c3ac"/>
+  <rect x="746" y="472" width="126" height="16" rx="8" fill="#d7c3ac"/>
+  <text x="138" y="650" fill="#6d563d" font-family="Arial, sans-serif" font-size="42" font-weight="700">New Chinese</text>
+</svg>

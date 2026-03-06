@@ -3,6 +3,9 @@
 jest.mock('react-native-config', () => ({
   __esModule: true,
   default: {
+    APP_ENV: 'test',
+    API_BASE_URL: 'http://127.0.0.1:8080',
+    WEB_BASE_URL: 'http://127.0.0.1:8082',
     TINODE_API_KEY: 'test-key',
     TINODE_SERVER_URL: 'ws://localhost:6060',
   },

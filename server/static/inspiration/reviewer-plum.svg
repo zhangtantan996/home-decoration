@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="title desc">
+  <title id="title">Reviewer Plum Avatar</title>
+  <desc id="desc">A plum reviewer avatar.</desc>
+  <circle cx="100" cy="100" r="100" fill="#8e7a93"/>
+  <circle cx="100" cy="78" r="34" fill="#f4eef5"/>
+  <path d="M42 178c12-34 36-52 58-52s46 18 58 52" fill="#f4eef5"/>
+</svg>

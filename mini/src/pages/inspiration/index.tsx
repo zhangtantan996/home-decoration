@@ -12,6 +12,7 @@ import type { FavoriteItemDTO, InspirationItemDTO } from '@/services/dto';
 import { favoriteService, inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { getInspirationCoverImage } from '@/utils/inspirationImages';
 
 const STYLES = ['现代', '原木', '极简', '侘寂', '美式', '法式'];
 const PAGE_SIZE = 10;
@@ -515,7 +516,7 @@ export default function Inspiration() {
                 />
                 {item.coverImage ? (
                   <Image
-                    src={item.coverImage}
+                    src={getInspirationCoverImage(item)}
                     mode="aspectFill"
                     style={{ width: '100%', height: '260rpx', borderRadius: '12rpx', marginTop: '12rpx' }}
                   />

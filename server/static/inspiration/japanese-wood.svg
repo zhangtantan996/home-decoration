@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Japanese Wood Inspiration</title>
+  <desc id="desc">A low-profile wood room with paper screens and warm sunlight.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f2eadc"/>
+      <stop offset="100%" stop-color="#dfd1bb"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect x="94" y="94" width="1012" height="612" rx="28" fill="#faf6ef"/>
+  <rect x="142" y="142" width="344" height="424" rx="18" fill="#eadfcf"/>
+  <path d="M166 494h296v48H166z" fill="#b18756"/>
+  <rect x="560" y="150" width="454" height="250" rx="22" fill="#f4ecde"/>
+  <path d="M594 182h170v186H594z" fill="#dbc7a6"/>
+  <path d="M792 182h188v186H792z" fill="#fefcf7"/>
+  <path d="M560 448h430v92q0 28-28 28H588q-28 0-28-28z" fill="#c19662"/>
+  <circle cx="886" cy="496" r="38" fill="#d7e0d0"/>
+  <text x="142" y="648" fill="#7a5e35" font-family="Arial, sans-serif" font-size="42" font-weight="700">Japanese Wood</text>
+</svg>

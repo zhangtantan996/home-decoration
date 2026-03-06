@@ -13,6 +13,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { RcFile, UploadFile, UploadProps } from 'antd/es/upload/interface';
 import { merchantCaseApi, merchantUploadApi } from '../../services/merchantApi';
 import { dictionaryApi } from '../../services/dictionaryApi';
+import { toAbsoluteAssetUrl } from '../../utils/env';
 
 interface CaseItem {
     id: number;
@@ -50,15 +51,7 @@ const generateYearOptions = () => {
 };
 const YEAR_OPTIONS = generateYearOptions();
 
-const API_BASE_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:8080'
-    : '';
-
-const getFullUrl = (path: string) => {
-    if (!path) return '';
-    if (path.startsWith('http')) return path;
-    return `${API_BASE_URL}${path}`;
-};
+const getFullUrl = toAbsoluteAssetUrl;
 
 type QuoteAmountFields = {
     quoteDesignFee?: number;

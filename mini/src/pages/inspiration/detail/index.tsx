@@ -10,6 +10,7 @@ import type { InspirationCommentDTO, InspirationDetailDTO } from '@/services/dto
 import { inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { getInspirationCoverImage, getInspirationGalleryImages } from '@/utils/inspirationImages';
 
 import './index.scss';
 
@@ -60,10 +61,15 @@ export default function InspirationDetailPage() {
       return [];
     }
 
-    const combined = [detail.coverImage, ...detail.images]
-      .filter((item): item is string => Boolean(item));
+    return getInspirationGalleryImages(detail);
+  }, [detail]);
 
-    return Array.from(new Set(combined));
+  const coverImage = useMemo(() => {
+    if (!detail) {
+      return '';
+    }
+
+    return getInspirationCoverImage(detail);
   }, [detail]);
 
   const handlePreviewImage = (current: string) => {
@@ -297,12 +303,12 @@ export default function InspirationDetailPage() {
         onScrollToLower={() => void loadMoreComments()}
       >
         <Card className="m-md" title={detail.title}>
-          {detail.coverImage ? (
+          {coverImage ? (
             <Image
-              src={detail.coverImage}
+              src={coverImage}
               mode="aspectFill"
               style={{ width: '100%', height: '320rpx', borderRadius: '12rpx' }}
-              onClick={() => handlePreviewImage(detail.coverImage)}
+              onClick={() => handlePreviewImage(coverImage)}
             />
           ) : null}
           <View className="mt-md text-gray-500 text-sm">

@@ -44,6 +44,8 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD not set}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET not set}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY not set}
+    volumes:
+      - ../server/uploads:/app/uploads
     depends_on:
       - db
       - redis
@@ -57,8 +59,7 @@ services:
     container_name: prod_web
     restart: always
     ports:
-      - "8888:8888"
-      - "443:443"
+      - "127.0.0.1:8888:8888"
     volumes:
       # Manually maintain admin access rules/credentials without rebuilding image.
       - ./nginx/admin_allowlist.conf:/etc/nginx/admin_allowlist.conf:ro

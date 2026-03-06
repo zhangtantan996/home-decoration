@@ -1,6 +1,8 @@
 import Taro from '@tarojs/taro';
 
-const API_BASE = process.env.TARO_APP_API_BASE || 'http://localhost:8080/api/v1';
+import { MINI_ENV } from '@/config/env';
+
+const API_BASE = MINI_ENV.API_BASE_URL;
 
 export async function uploadFile(filePath: string, formData?: Record<string, string>) {
   const res = await Taro.uploadFile({

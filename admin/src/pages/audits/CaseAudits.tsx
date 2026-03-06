@@ -6,6 +6,7 @@ import {
 import { CheckOutlined, CloseOutlined, EyeOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { caseAuditApi } from '../../services/api';
+import { toAbsoluteAssetUrl } from '../../utils/env';
 
 interface CaseAudit {
     id: number;
@@ -32,15 +33,7 @@ interface AuditDetail extends CaseAudit {
     images: string[]; // JSON array
 }
 
-const API_BASE_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:8080'
-    : '';
-
-const getFullUrl = (path: string) => {
-    if (!path) return '';
-    if (path.startsWith('http')) return path;
-    return `${API_BASE_URL}${path}`;
-};
+const getFullUrl = toAbsoluteAssetUrl;
 
 const QUOTE_CATEGORY_ORDER = ['设计费', '施工费', '主材费', '软装费', '其他'] as const;
 

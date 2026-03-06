@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -20,6 +20,7 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import { getWebUrl } from '../config';
 import { useToast } from '../components/Toast';
 import { inspirationApi, caseApi } from '../services/api';
+import { getInspirationAvatarUrl, getInspirationGalleryImages } from '../utils/inspirationImages';
 
 const { width } = Dimensions.get('window');
 
@@ -28,25 +29,26 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
     // 初始数据可能只包含部分信息
     const { item: initialItem } = route.params;
     const { showToast } = useToast();
-    
+
     // 状态管理
     const [item, setItem] = useState<any>(initialItem);
     const [comments, setComments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [commentText, setCommentText] = useState('');
     const [submittingComment, setSubmittingComment] = useState(false);
-    
+
     // 交互状态
     const [liked, setLiked] = useState(initialItem.isLiked || false);
     const [likeCount, setLikeCount] = useState<number>(initialItem.likeCount || initialItem.likes || 0);
     const [bookmarked, setBookmarked] = useState(initialItem.isFavorited || false);
-    
+
     // 图片浏览
     const [showImageViewer, setShowImageViewer] = useState(false);
     const [viewerIndex, setViewerIndex] = useState(0);
     const flatListRef = useRef<FlatList>(null);
 
-    const images = item.images || (item.image ? [item.image] : []) || [];
+    const galleryImages = useMemo(() => getInspirationGalleryImages(item), [item]);
+    const authorAvatar = getInspirationAvatarUrl(item.author?.avatar);
 
     // 获取详情和评论
     useEffect(() => {
@@ -56,7 +58,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                 const [detailRes, commentsRes] = await Promise.all([
                     caseApi.getDetail(item.id).catch(err => {
                         console.log('Fetch detail error (using initial data):', err);
-                        return { data: initialItem }; 
+                        return { data: initialItem };
                     }),
                     inspirationApi.comments(item.id).catch(err => {
                         console.log('Fetch comments error:', err);
@@ -66,16 +68,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
 
                 // 合并详情数据
                 const detailData = detailRes.data || initialItem;
-                
-                // Parse images if needed (sometimes backend returns stringified JSON)
-                if (typeof detailData.images === 'string') {
-                    try {
-                        detailData.images = JSON.parse(detailData.images);
-				} catch {
-					detailData.images = [detailData.image || initialItem.image];
-				}
-			}
-                
+
                 // Keep author info from the list item (case detail API doesn't include author today).
                 const mergedItem = {
                     ...initialItem,
@@ -152,7 +145,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
 
     const handleSubmitComment = async () => {
         if (!commentText.trim()) return;
-        
+
         setSubmittingComment(true);
         try {
             await inspirationApi.createComment(item.id, commentText);
@@ -171,9 +164,9 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
 
     const renderCommentItem = (comment: any, index: number) => (
         <View key={comment.id || index} style={styles.commentItem}>
-            <Image 
-                source={{ uri: comment.user?.avatar || 'https://via.placeholder.com/40' }} 
-                style={styles.commentAvatar} 
+            <Image
+                source={{ uri: getInspirationAvatarUrl(comment.user?.avatar) }}
+                style={styles.commentAvatar}
             />
             <View style={styles.commentContent}>
                 <View style={styles.commentHeader}>
@@ -259,9 +252,9 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                     {/* Module 2: Author */}
                     <View style={styles.moduleCard}>
                         <View style={styles.authorRow}>
-                            <Image 
-                                source={{ uri: item.author?.avatar || 'https://via.placeholder.com/40' }} 
-                                style={styles.avatar} 
+                            <Image
+                                source={{ uri: authorAvatar }}
+                                style={styles.avatar}
                             />
                             <View style={styles.authorInfo}>
                                 <Text style={styles.authorName}>{item.author?.name || '未知作者'}</Text>
@@ -283,9 +276,9 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
 
                     {/* Module 4: Gallery */}
                     <View style={styles.moduleCard}>
-                        <Text style={styles.sectionTitle}>图片展示 ({images.length})</Text>
+                        <Text style={styles.sectionTitle}>图片展示 ({galleryImages.length})</Text>
                         <View style={styles.verticalGallery}>
-                            {images.map((img: string, idx: number) => (
+                            {galleryImages.map((img: string, idx: number) => (
                                 <TouchableOpacity
                                     key={idx}
                                     onPress={() => openImageViewer(idx)}
@@ -332,7 +325,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                             onSubmitEditing={handleSubmitComment}
                         />
                         {commentText.length > 0 && (
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.sendBtn}
                                 onPress={handleSubmitComment}
                                 disabled={submittingComment}
@@ -345,7 +338,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                             </TouchableOpacity>
                         )}
                     </View>
-                    
+
                     <TouchableOpacity style={styles.bottomAction} onPress={handleLike}>
                         <Heart
                             size={22}
@@ -354,12 +347,12 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                         />
                         <Text style={styles.bottomActionText}>{likeCount}</Text>
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity style={styles.bottomAction}>
                         <MessageCircle size={22} color="#666" />
                         <Text style={styles.bottomActionText}>{comments.length}</Text>
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity style={styles.bottomAction} onPress={handleBookmark}>
                         <Bookmark
                             size={22}
@@ -378,7 +371,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                     </TouchableOpacity>
                     <FlatList
                         ref={flatListRef}
-                        data={images}
+                        data={galleryImages}
                         horizontal
                         pagingEnabled
                         showsHorizontalScrollIndicator={false}
@@ -408,7 +401,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                         keyExtractor={(imgUri, index) => index.toString()}
                     />
                     <View style={styles.viewerIndicator}>
-                        <Text style={styles.viewerCounter}>{viewerIndex + 1} / {images.length}</Text>
+                        <Text style={styles.viewerCounter}>{viewerIndex + 1} / {galleryImages.length}</Text>
                     </View>
                 </View>
             </Modal>

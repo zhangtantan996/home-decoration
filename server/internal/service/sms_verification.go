@@ -102,12 +102,7 @@ func isReleaseMode() bool {
 }
 
 func isLocalLikeEnv() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV"))) {
-	case "local", "docker", "dev", "development", "test":
-		return true
-	default:
-		return false
-	}
+	return config.IsLocalLikeAppEnv()
 }
 
 func isStrictProductionMode() bool {
@@ -121,7 +116,7 @@ func isDebugBypassEnabled() bool {
 		raw := strings.TrimSpace(os.Getenv("SMS_DEBUG_BYPASS"))
 		enabled = strings.EqualFold(raw, "true") || raw == "1"
 	}
-	return enabled && strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "local")
+	return enabled && config.GetAppEnv() == config.AppEnvLocal
 }
 
 func isFixedCodeModeEnabled() bool {

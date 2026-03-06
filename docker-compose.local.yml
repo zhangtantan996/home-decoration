@@ -37,6 +37,7 @@ services:
       - ./server:/app
     environment:
       - APP_ENV=local
+      - SERVER_PUBLIC_URL=http://localhost:8080
       - DATABASE_HOST=db
       - DATABASE_PORT=5432
       - DATABASE_USER=postgres
@@ -67,6 +68,11 @@ services:
     ports:
       - "5173:5173"
     environment:
+      - APP_ENV=local
+      - API_BASE_URL=http://localhost:8080
+      - ADMIN_BASE_URL=http://localhost:5173
+      - WEB_BASE_URL=http://localhost:5175
+      - VITE_APP_ENV=local
       - VITE_API_URL=http://localhost:8080/api/v1
     command: sh -c "npm install --registry=https://registry.npmmirror.com/ --legacy-peer-deps && npm run dev -- --host"
     networks:

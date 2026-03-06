@@ -62,6 +62,9 @@ services:
     build:
       context: ../
       dockerfile: deploy/Dockerfile.frontend.prod
+      args:
+        VITE_APP_ENV: ${VITE_APP_ENV:-production}
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
     container_name: prod_web
     restart: always
     ports:

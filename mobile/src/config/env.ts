@@ -1,21 +1,24 @@
+import Config from 'react-native-config';
 import { NativeModules, Platform } from 'react-native';
+
+export type AppEnv = 'local' | 'test' | 'staging' | 'production';
 
 /**
  * 环境配置
- * 
+ *
  * Android 调试时的网络配置说明：
- * 
+ *
  * 方案 1: 使用 adb reverse (推荐用于模拟器)
  * - 执行: adb reverse tcp:8080 tcp:8080
  * - 使用: localhost:8080
  * - 优点: 配置简单，与 iOS 保持一致
  * - 缺点: 需要每次手动执行或在脚本中自动执行
- * 
+ *
  * 方案 2: 使用 Android 模拟器特殊 IP
  * - 使用: 10.0.2.2:8080
  * - 优点: 不需要 adb reverse
  * - 缺点: 仅适用于模拟器，真机无法使用
- * 
+ *
  * 方案 3: 使用 Mac 局域网 IP
  * - 获取 IP: ifconfig | grep "inet " | grep -v 127.0.0.1
  * - 使用: 192.168.x.x:8080
@@ -23,21 +26,48 @@ import { NativeModules, Platform } from 'react-native';
  * - 缺点: IP 可能变化，需要手动更新
  */
 
-// 配置选项
 type NetworkMode = 'adb-reverse' | 'emulator-ip' | 'lan-ip';
 
-// 选择你的网络模式
-let NETWORK_MODE: NetworkMode = 'adb-reverse'; // Android 开发默认优先使用 adb reverse，兼容当前真机调试链路
+const NETWORK_MODE: NetworkMode = 'adb-reverse';
+const MAC_LAN_IP = '192.168.1.100';
+const configValues = Config as Record<string, string | undefined>;
 
-// 如果使用 LAN IP 模式，请在这里填写你的 Mac IP 地址
-// 获取方法: 在终端执行 ifconfig | grep "inet " | grep -v 127.0.0.1
-const MAC_LAN_IP = '192.168.1.100'; // 请替换为你的实际 IP
+const normalizeAppEnv = (raw?: string): AppEnv => {
+    const value = (raw || '').trim().toLowerCase();
+    switch (value) {
+        case '':
+        case 'local':
+        case 'dev':
+        case 'development':
+        case 'docker':
+            return 'local';
+        case 'test':
+        case 'testing':
+            return 'test';
+        case 'stage':
+        case 'staging':
+        case 'pre':
+        case 'preprod':
+        case 'pre-production':
+            return 'staging';
+        case 'prod':
+        case 'production':
+        case 'release':
+            return 'production';
+        default:
+            return 'local';
+    }
+};
 
-/**
- * 在开发环境下，优先从 Metro 的 scriptURL 推导出 host。
- * 这样 API/分享链接能自动跟随「Debug server host & port」配置，
- * 避免手动硬编码 IP 导致网络错误。
- */
+const trimTrailingSlash = (raw: string): string => raw.replace(/\/+$/, '');
+
+const getConfigValue = (key: string): string => {
+    const raw = configValues[key];
+    return typeof raw === 'string' ? raw.trim() : '';
+};
+
+const APP_ENV = normalizeAppEnv(getConfigValue('APP_ENV') || (__DEV__ ? 'local' : 'production'));
+
 function getScriptURL(): string | null {
     if (!__DEV__) return null;
     try {
@@ -62,48 +92,41 @@ function getMetroHostFromScriptURL(): string | null {
     return match ? match[1] : null;
 }
 
-/**
- * 获取 API 基础 URL
- */
-function getApiBaseUrl(): string {
-    // 生产环境：连接到测试/生产服务器（避免打包后仍指向 localhost）
-    if (!__DEV__) {
-        return 'http://47.99.105.195:8888';
-    }
-
-    // 开发环境：优先跟随 Metro host（最不容易配错）
+function getLocalApiBaseUrl(): string {
     const metroHost = getMetroHostFromScriptURL();
     if (metroHost) {
         return `http://${metroHost}:8080`;
     }
 
+    if (APP_ENV === 'test') {
+        return 'http://127.0.0.1:8080';
+    }
+
     if (Platform.OS === 'ios') {
-        // iOS 模拟器直接使用 localhost
         return 'http://localhost:8080';
     }
 
-    // Android 根据配置的网络模式选择
     switch (NETWORK_MODE) {
         case 'adb-reverse':
-            // 使用 adb reverse，需要执行: adb reverse tcp:8080 tcp:8080
             return 'http://localhost:8080';
-
         case 'emulator-ip':
-            // 使用 Android 模拟器特殊 IP（仅模拟器可用）
             return 'http://10.0.2.2:8080';
-
         case 'lan-ip':
-            // 使用 Mac 的局域网 IP（模拟器和真机都可用）
             return `http://${MAC_LAN_IP}:8080`;
-
         default:
             return 'http://localhost:8080';
     }
 }
 
-/**
- * 获取 Metro Bundler URL (用于开发调试)
- */
+function getApiBaseUrl(): string {
+    const configured = trimTrailingSlash(getConfigValue('API_BASE_URL'));
+    if (configured) {
+        return configured;
+    }
+
+    return getLocalApiBaseUrl();
+}
+
 function getMetroUrl(): string {
     const metroBaseUrl = getMetroBaseUrlFromScriptURL();
     if (metroBaseUrl) return metroBaseUrl;
@@ -124,28 +147,36 @@ function getMetroUrl(): string {
     }
 }
 
-// 导出配置
+function getWebBaseUrl(): string {
+    const configured = trimTrailingSlash(getConfigValue('WEB_BASE_URL'));
+    if (configured) {
+        return configured;
+    }
+
+    if (APP_ENV === 'local' || APP_ENV === 'test') {
+        return getApiBaseUrl().replace(/:8080\/?$/, ':8082');
+    }
+
+    return getApiBaseUrl();
+}
+
 export const ENV = {
-    // API 配置
+    APP_ENV,
     API_BASE_URL: getApiBaseUrl(),
     API_TIMEOUT: 10000,
-
-    // Metro 配置
+    WEB_BASE_URL: getWebBaseUrl(),
     METRO_URL: getMetroUrl(),
-
-    // 网络模式信息（用于调试）
     NETWORK_MODE,
     MAC_LAN_IP,
-
-    // 环境标识
     IS_DEV: __DEV__,
     PLATFORM: Platform.OS,
 };
 
-// 开发环境下打印配置信息
 if (__DEV__) {
     console.log('🌐 环境配置:', {
+        'APP_ENV': ENV.APP_ENV,
         'API URL': ENV.API_BASE_URL,
+        'Web URL': ENV.WEB_BASE_URL,
         'Metro URL': ENV.METRO_URL,
         '网络模式': ENV.NETWORK_MODE,
         '平台': ENV.PLATFORM,

@@ -11,6 +11,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 )
 
 func main() {
@@ -46,16 +47,8 @@ func main() {
 }
 
 func updateProviderProfile(p *model.Provider) {
-	coverImages := []string{
-		"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200", // Living Room
-		"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200", // Modern
-		"https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1200", // Villa
-		"https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?w=1200", // Kitchen
-		"https://images.unsplash.com/photo-1600573472592-401b489a3cdc?w=1200", // Staircase
-	}
-
 	updates := map[string]interface{}{
-		"cover_image":      coverImages[p.ID%uint64(len(coverImages))],
+		"cover_image":      imgutil.ControlledInspirationCover(p.ID),
 		"followers_count":  100 + int(p.ID)*10,
 		"team_size":        1,
 		"established_year": 2020,
@@ -152,20 +145,13 @@ func createCases(providerID uint64, providerType int8) {
 		}
 	}
 
-	// 案例图片（使用 Unsplash 图片）
-	images := []string{
-		"https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-		"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-		"https://images.unsplash.com/photo-1616486338812-3dadae4b4f9d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-		"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-	}
-	imagesJSON, _ := json.Marshal(images)
-
 	for i, c := range casesData {
+		seed := providerID + uint64(i)
+		imagesJSON, _ := json.Marshal(imgutil.ControlledInspirationGallery(seed))
 		providerCase := model.ProviderCase{
 			ProviderID:  providerID,
 			Title:       c.Title,
-			CoverImage:  images[i%len(images)],
+			CoverImage:  imgutil.ControlledInspirationCover(seed),
 			Style:       c.Style,
 			Area:        c.Area,
 			Year:        "2024",
@@ -196,10 +182,10 @@ func createReviews(providerID uint64) {
 		// 如果没有业主用户，创建一些
 		userNames := []string{"王女士", "李先生", "张女士", "刘先生", "陈小姐", "赵先生", "周女士", "吴先生"}
 		avatars := []string{
-			"https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100",
-			"https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100",
-			"https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100",
-			"https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100",
+			imgutil.DefaultInspirationAvatarPath,
+			imgutil.DefaultInspirationAvatarPath,
+			imgutil.DefaultInspirationAvatarPath,
+			imgutil.DefaultInspirationAvatarPath,
 		}
 		for i := 0; i < 8; i++ {
 			user := model.User{
@@ -232,22 +218,6 @@ func createReviews(providerID uint64) {
 		{4.5, "从选材到施工都很专业，每个节点都会主动汇报进度。唯一不足是周末联系不太方便，但瑕不掩瑜。", false, "半包", "130㎡", "轻奢风格", []string{"专业", "进度透明"}},
 	}
 
-	// 评价配图
-	reviewImages := [][]string{
-		{
-			"https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=400",
-			"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=400",
-			"https://images.unsplash.com/photo-1616486338812-3dadae4b4f9d?w=400",
-		},
-		{
-			"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400",
-			"https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?w=400",
-		},
-		{
-			"https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?w=400",
-		},
-	}
-
 	// 根据 providerID 打乱评价顺序，使每个 Provider 的评价不同
 	numReviews := 3 + int(providerID%4) // 3, 4, 5, 6
 	startIdx := int(providerID % 6)     // 从不同位置开始
@@ -263,7 +233,7 @@ func createReviews(providerID uint64) {
 		// 处理 images
 		var imagesJSON string
 		if r.HasImages {
-			imgData, _ := json.Marshal(reviewImages[(startIdx+i)%len(reviewImages)])
+			imgData, _ := json.Marshal(imgutil.ControlledInspirationGallery(providerID + uint64(reviewIdx) + uint64(i)))
 			imagesJSON = string(imgData)
 		}
 

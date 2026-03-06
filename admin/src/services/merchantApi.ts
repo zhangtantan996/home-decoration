@@ -1,12 +1,8 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '../utils/env';
 import { useMerchantAuthStore } from '../stores/merchantAuthStore';
 
-// 优先使用环境变量 (本地 Docker 开发)
-// 其次根据运行环境动态判断 (生产部署)
-const API_BASE_URL = import.meta.env.VITE_API_URL ||
-    (window.location.hostname === 'localhost'
-        ? 'http://localhost:8080/api/v1'
-        : '/api/v1');
+const API_BASE_URL = getApiBaseUrl();
 
 const merchantApi = axios.create({
     baseURL: API_BASE_URL,

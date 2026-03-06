@@ -1,11 +1,7 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '../utils/env';
 
-// 优先使用环境变量 (本地 Docker 开发)
-// 其次根据运行环境动态判断 (生产部署)
-const API_BASE_URL = import.meta.env.VITE_API_URL ||
-    (window.location.hostname === 'localhost'
-        ? 'http://localhost:8080/api/v1'
-        : '/api/v1');
+const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
     baseURL: API_BASE_URL,
@@ -237,9 +233,10 @@ export interface IdentityApplicationItem {
 // 作品案例展示
 export interface PortfolioCaseDisplay {
     title: string;
+    description?: string;
     images: string[];
     style: string;
-    area: number;
+    area: string | number;
 }
 
 // 商家入驻详细信息
@@ -278,6 +275,77 @@ export interface MerchantApplicationDetails {
     designPhilosophy?: string;
     portfolioCases?: PortfolioCaseDisplay[];
 }
+
+
+export interface AdminMerchantApplicationListItem {
+    id: number;
+    phone: string;
+    role: string;
+    entityType: string;
+    realName: string;
+    companyName?: string;
+    status: number;
+    rejectReason?: string;
+    createdAt: string;
+    auditedAt?: string;
+}
+
+export interface AdminMerchantApplicationDetail extends AdminMerchantApplicationListItem, MerchantApplicationDetails {
+    auditedBy?: number;
+}
+
+export interface MaterialShopApplicationProductItem {
+    id: number;
+    name: string;
+    params: Record<string, unknown>;
+    price: number;
+    images: string[];
+    sortOrder: number;
+}
+
+export interface AdminMaterialShopApplicationListItem {
+    id: number;
+    phone: string;
+    entityType: string;
+    shopName: string;
+    companyName?: string;
+    contactName: string;
+    contactPhone: string;
+    status: number;
+    rejectReason?: string;
+    createdAt: string;
+    auditedAt?: string;
+}
+
+export interface AdminMaterialShopApplicationDetail extends AdminMaterialShopApplicationListItem {
+    businessLicenseNo?: string;
+    businessLicense: string;
+    legalPersonName: string;
+    legalPersonIdCardNo?: string;
+    legalPersonIdCardFront: string;
+    legalPersonIdCardBack: string;
+    businessHours?: string;
+    address?: string;
+    shopDescription?: string;
+    auditedBy?: number;
+    products: MaterialShopApplicationProductItem[];
+}
+
+export const adminMerchantApplicationApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: number; keyword?: string }) =>
+        api.get('/admin/merchant-applications', { params }),
+    detail: (id: number) => api.get(`/admin/merchant-applications/${id}`),
+    approve: (id: number) => api.post(`/admin/merchant-applications/${id}/approve`),
+    reject: (id: number, reason: string) => api.post(`/admin/merchant-applications/${id}/reject`, { reason }),
+};
+
+export const adminMaterialShopApplicationApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: number; keyword?: string }) =>
+        api.get('/admin/material-shop-applications', { params }),
+    detail: (id: number) => api.get(`/admin/material-shop-applications/${id}`),
+    approve: (id: number) => api.post(`/admin/material-shop-applications/${id}/approve`),
+    reject: (id: number, reason: string) => api.post(`/admin/material-shop-applications/${id}/reject`, { reason }),
+};
 
 // 身份申请审核
 export const adminIdentityApplicationApi = {
@@ -346,6 +414,24 @@ export const caseApi = {
     create: (data: any) => api.post('/admin/cases', data),
     update: (id: number, data: any) => api.put(`/admin/cases/${id}`, data),
     delete: (id: number) => api.delete(`/admin/cases/${id}`),
+};
+
+export interface AdminUploadResult {
+    url: string;
+    path: string;
+}
+
+export const adminUploadApi = {
+    uploadImage: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        return api.post('/admin/upload', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+        });
+    },
 };
 
 
