@@ -1,7 +1,7 @@
 import { SecureStorage } from '../utils/SecureStorage';
 import { Tinode } from 'tinode-sdk';
 import { tinodeApi } from './api';
-import { getApiBaseUrl, getApiUrl } from '../config';
+import { getApiBaseUrl, getApiUrl, getTinodeHostCandidates } from '../config';
 import { TINODE_CONFIG } from '../config/tinode';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
@@ -53,14 +53,7 @@ const hostNameOf = (host: string): string => {
     }
 };
 
-const deriveTinodeHostFromApi = (): string => {
-    try {
-        const url = new URL(getApiBaseUrl());
-        return url.hostname ? `${url.hostname}:6060` : '';
-    } catch {
-        return '';
-    }
-};
+const deriveTinodeHostsFromApi = (): string[] => getTinodeHostCandidates();
 
 /**
  * 在生产环境中，移动端通过 Nginx（API host:8888）访问 Tinode。
@@ -70,55 +63,47 @@ const deriveTinodeHostFromApi = (): string => {
  *
  * 开发环境：直连 Tinode localhost:6060。
  */
-const getTinodeHost = (): string => {
-    // 生产环境：使用 API host，让 Nginx 代理 Tinode WebSocket
+const getTinodeHosts = (): string[] => {
     if (!__DEV__) {
         try {
             const url = new URL(getApiBaseUrl());
             if (url.host) {
                 console.log('[Tinode] Production mode: routing via Nginx proxy at', url.host);
-                return url.host; // e.g. "47.99.105.195:8888"
+                return [url.host];
             }
         } catch {
             // fall through to default
         }
     }
 
-    // 开发环境：优先使用 .env 中的 TINODE_SERVER_URL
     const explicitHost = withDefaultTinodePort(TINODE_CONFIG.HOST);
-    const derivedHost = deriveTinodeHostFromApi();
+    const derivedHosts = deriveTinodeHostsFromApi();
 
     if (explicitHost) {
-        // Guard against a common Android setup pitfall:
-        // API points to LAN/10.0.2.2, but Tinode is hardcoded to localhost in .env.
         const explicitHostname = hostNameOf(explicitHost);
-        const derivedHostname = hostNameOf(derivedHost);
         const explicitIsLoopback = LOOPBACK_HOSTS.has(explicitHostname);
-        const derivedIsLoopback = LOOPBACK_HOSTS.has(derivedHostname);
+        const nonLoopbackDerivedHosts = derivedHosts.filter((host) => !LOOPBACK_HOSTS.has(hostNameOf(host)));
 
-        if (explicitIsLoopback && derivedHost && !derivedIsLoopback) {
+        if (explicitIsLoopback && nonLoopbackDerivedHosts.length > 0) {
             console.warn(
                 `[Tinode] TINODE_SERVER_URL=${explicitHost} points to loopback, ` +
-                `but API host is ${derivedHost}. Using API host for Tinode.`
+                `but API host candidates are ${nonLoopbackDerivedHosts.join(', ')}. Keeping loopback first and using others as fallback.`
             );
-            return derivedHost;
+            return [explicitHost, ...nonLoopbackDerivedHosts, ...derivedHosts.filter((host) => host !== explicitHost)];
         }
 
-        return explicitHost;
+        return [explicitHost, ...derivedHosts.filter((host) => host !== explicitHost)];
     }
 
-    if (derivedHost) {
-        return derivedHost;
+    if (derivedHosts.length > 0) {
+        return derivedHosts;
     }
 
-    // Fallback.
-    return 'localhost:6060';
+    return ['localhost:6060'];
 };
 
 const CONFIG = {
-    // Tinode SDK expects host in the form "host:port" (no scheme/path).
-    // Tinode server listens on 6060 for HTTP/WebSocket, 6061 is gRPC.
-    SERVER_URL: getTinodeHost(),
+    SERVER_URLS: getTinodeHosts(),
     API_KEY: TINODE_CONFIG.API_KEY,
     APP_NAME: TINODE_CONFIG.APP_NAME,
 };
@@ -145,6 +130,7 @@ class TinodeService extends SimpleEventEmitter {
     private reconnectPaused: boolean = false;
     private userIdCache: Map<string, string> = new Map();
     private prefetchInFlight: Map<string, Promise<void>> = new Map();
+    private suppressDisconnectEvents = false;
 
     private constructor() {
         super();
@@ -172,7 +158,7 @@ class TinodeService extends SimpleEventEmitter {
         this.initPromise = (async () => {
             try {
                 console.log('[Tinode] 初始化中...');
-                console.log('[Tinode] Server:', CONFIG.SERVER_URL, 'secure:', !__DEV__);
+                console.log('[Tinode] Server candidates:', CONFIG.SERVER_URLS, 'secure:', !__DEV__);
 
                 if (!CONFIG.API_KEY) {
                     console.error(
@@ -193,30 +179,47 @@ class TinodeService extends SimpleEventEmitter {
                 this.tinode = null;
                 this.me = null;
 
-                // 创建 Tinode 实例
-                // secure 始终为 false：TLS 由 Nginx 在外层处理，Tinode 本身不启用 TLS。
-                // 生产环境：SDK 连接到 API host（Nginx），Nginx 代理 /v0/channels 到 Tinode 6060。
-                // 开发环境：SDK 直连 Tinode localhost:6060，无需 TLS。
-                this.tinode = new Tinode({
-                    appName: CONFIG.APP_NAME,
-                    host: CONFIG.SERVER_URL,
-                    apiKey: CONFIG.API_KEY,
-                    transport: 'ws',
-                    secure: false,
-                });
+                let loginResult: any = null;
+                let lastError: any = null;
 
-                // 绑定事件监听器
-                this.tinode.onConnect = this.onConnect.bind(this);
-                this.tinode.onDisconnect = this.onDisconnect.bind(this);
-                this.tinode.onMessage = this.onMessage.bind(this);
+                for (const candidateHost of CONFIG.SERVER_URLS) {
+                    try {
+                        this.suppressDisconnectEvents = true;
+                        this.tinode = new Tinode({
+                            appName: CONFIG.APP_NAME,
+                            host: candidateHost,
+                            apiKey: CONFIG.API_KEY,
+                            transport: 'ws',
+                            secure: false,
+                        });
 
-                // 连接到服务器
-                await this.tinode.connect();
-                console.log('[Tinode] WebSocket 已连接');
+                        this.tinode.onConnect = this.onConnect.bind(this);
+                        this.tinode.onDisconnect = this.onDisconnect.bind(this);
+                        this.tinode.onMessage = this.onMessage.bind(this);
 
-                // 使用 Token 登录
-                const loginResult = await this.tinode.loginToken(tinodeToken);
-                console.log('[Tinode] 登录成功:', loginResult);
+                        await this.tinode.connect();
+                        console.log('[Tinode] WebSocket 已连接:', candidateHost);
+
+                        loginResult = await this.tinode.loginToken(tinodeToken);
+                        console.log('[Tinode] 登录成功:', loginResult, 'host:', candidateHost);
+                        this.suppressDisconnectEvents = false;
+                        break;
+                    } catch (candidateError) {
+                        lastError = candidateError;
+                        console.warn('[Tinode] Host connect failed:', candidateHost, candidateError);
+                        try {
+                            this.tinode?.disconnect?.();
+                        } catch {
+                            // ignore
+                        }
+                        this.tinode = null;
+                    }
+                }
+
+                if (!loginResult) {
+                    this.suppressDisconnectEvents = false;
+                    throw lastError || new Error('Tinode connect failed for all hosts');
+                }
 
                 // 订阅 "me" topic（必需，用于接收会话列表）
                 this.me = this.tinode.getMeTopic();
@@ -303,6 +306,9 @@ class TinodeService extends SimpleEventEmitter {
      * 断开连接回调
      */
     private onDisconnect(error?: any) {
+        if (this.suppressDisconnectEvents) {
+            return;
+        }
         console.log('[Tinode] ❌ 已断开:', error);
         this.connected = false;
         this.emit('disconnected', error);

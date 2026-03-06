@@ -570,6 +570,10 @@ const HomeScreen: React.FC = () => {
             return [{ id: 'FILTER_SECTION' }, { id: 'skeleton-1' }, { id: 'skeleton-2' }, { id: 'skeleton-3' }];
         }
 
+        if (materialError && materialShops.length === 0) {
+            return [{ id: 'FILTER_SECTION' }, { id: 'material-error', _type: 'error', message: materialError }];
+        }
+
         let sorted = [...materialShops];
 
         // 按门店类型筛选
@@ -766,6 +770,16 @@ const HomeScreen: React.FC = () => {
             return <WorkerSkeletonCard />;
         }
 
+        if (item._type === 'error') {
+            return (
+                <NetworkErrorView
+                    type="network"
+                    message={item.message || '主材数据加载失败，请检查当前开发环境网络配置后重试'}
+                    onRetry={() => storeFetchMaterialShops(1, true, materialSortBy, materialFilter)}
+                />
+            );
+        }
+
         return (
             <WorkerCard
                 worker={item}
@@ -943,13 +957,23 @@ const HomeScreen: React.FC = () => {
             return <WorkerSkeletonCard />;
         }
 
+        if (item._type === 'error') {
+            return (
+                <NetworkErrorView
+                    type="network"
+                    message={item.message || '主材数据加载失败，请检查当前开发环境网络配置后重试'}
+                    onRetry={() => storeFetchMaterialShops(1, true, materialSortBy, materialFilter)}
+                />
+            );
+        }
+
         return (
             <MaterialShopCard
                 shop={item}
                 onPress={(shop) => (navigation as any).navigate('MaterialShopDetail', { shop })}
             />
         );
-    }, [materialSortBy, showMaterialSortMenu, showMaterialFilterPanel, selectedMaterialCategory, selectedMaterialType, toggleMaterialSort, toggleMaterialFilterPanel, filterButtonLayout]);
+    }, [materialFilter, materialSortBy, showMaterialSortMenu, showMaterialFilterPanel, selectedMaterialCategory, selectedMaterialType, storeFetchMaterialShops, toggleMaterialSort, toggleMaterialFilterPanel, filterButtonLayout]);
 
     // 点击外部关闭所有筛选弹窗
     const handleBackdropPress = useCallback(() => {
@@ -1159,7 +1183,7 @@ const HomeScreen: React.FC = () => {
                                                 ))}
                                             </View>
                                         }
-                                        refreshing={isMaterialLoading}
+                                        refreshing={activeCategory === 'material' && isMaterialLoading && materialShops.length > 0}
                                         onRefresh={handleRefresh}
                                         onEndReached={() => { if (activeCategory === 'material') handleLoadMore(); }}
                                         onEndReachedThreshold={0.2}

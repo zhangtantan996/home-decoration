@@ -1,259 +1,192 @@
-import React, { useState } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    SafeAreaView,
-    TouchableOpacity,
-    Platform,
-    TextInput,
-} from 'react-native';
-import { ArrowLeft, Eye, EyeOff, Lock, ShieldAlert } from 'lucide-react-native';
-import { useToast } from '../components/Toast';
-import { userSettingsApi } from '../services/api';
+import React, { useMemo, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Eye, EyeOff, LockKeyhole } from 'lucide-react-native';
 
-const PRIMARY_GOLD = '#D4AF37';
+import SettingsDialog from '../components/settings/SettingsDialog';
+import { SettingsActionButton, SettingsLayout, SettingsPageDescription, SettingsSection } from '../components/settings/SettingsPrimitives';
+import { SETTINGS_COLORS, SETTINGS_RADIUS } from '../styles/settingsTheme';
 
-interface ChangePasswordScreenProps {
-    navigation: any;
-}
+const PasswordField = ({
+    label,
+    value,
+    onChangeText,
+    secure,
+    onToggle,
+    placeholder,
+}: {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    secure: boolean;
+    onToggle: () => void;
+    placeholder: string;
+}) => (
+    <View style={styles.fieldWrap}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={styles.fieldInputWrap}>
+            <LockKeyhole size={18} color={SETTINGS_COLORS.textMuted} strokeWidth={2.1} />
+            <TextInput
+                value={value}
+                onChangeText={onChangeText}
+                secureTextEntry={secure}
+                placeholder={placeholder}
+                placeholderTextColor={SETTINGS_COLORS.textMuted}
+                style={styles.fieldInput}
+            />
+            <TouchableOpacity activeOpacity={0.8} onPress={onToggle}>
+                {secure ? (
+                    <Eye size={18} color={SETTINGS_COLORS.textMuted} strokeWidth={2.1} />
+                ) : (
+                    <EyeOff size={18} color={SETTINGS_COLORS.textMuted} strokeWidth={2.1} />
+                )}
+            </TouchableOpacity>
+        </View>
+    </View>
+);
 
-const ChangePasswordScreen: React.FC<ChangePasswordScreenProps> = ({ navigation }) => {
-    const { showAlert } = useToast();
-    const [oldPassword, setOldPassword] = useState('');
-    const [password, setPassword] = useState('');
+const ChangePasswordScreen = ({ navigation }: any) => {
+    type DialogTone = 'default' | 'warning' | 'success';
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [showOldPassword, setShowOldPassword] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showCurrent, setShowCurrent] = useState(true);
+    const [showNext, setShowNext] = useState(true);
+    const [showConfirm, setShowConfirm] = useState(true);
+    const [dialogVisible, setDialogVisible] = useState(false);
+    const [dialogContent, setDialogContent] = useState<{ title: string; message: string; tone: DialogTone }>({
+        title: '',
+        message: '',
+        tone: 'default',
+    });
 
-    const handleSubmit = async () => {
-        if (!oldPassword) {
-            showAlert('提示', '请输入旧密码');
-            return;
+    const validationMessage = useMemo(() => {
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            return '请完整填写当前密码、新密码和确认密码。';
         }
-        if (!password) {
-            showAlert('提示', '请输入新密码');
-            return;
+        if (newPassword.length < 8) {
+            return '新密码至少需要 8 位，建议包含字母与数字。';
         }
-        if (password.length < 6) {
-            showAlert('提示', '密码长度不能少于6位');
-            return;
+        if (newPassword !== confirmPassword) {
+            return '两次输入的新密码不一致。';
         }
-        if (password !== confirmPassword) {
-            showAlert('提示', '两次输入的新密码不一致');
+        if (currentPassword === newPassword) {
+            return '新密码需要与当前密码不同。';
+        }
+        return '';
+    }, [confirmPassword, currentPassword, newPassword]);
+
+    const handleSubmit = () => {
+        if (validationMessage) {
+            setDialogContent({ title: '还差一步', message: validationMessage, tone: 'warning' });
+            setDialogVisible(true);
             return;
         }
 
-        setIsSubmitting(true);
-        try {
-            await userSettingsApi.changePassword({ oldPassword, newPassword: password });
-            showAlert('成功', '密码修改成功，请妥善保管', [
-                { text: '知道了', onPress: () => navigation.goBack() }
-            ]);
-        } catch (error: any) {
-            showAlert('修改失败', error.response?.data?.message || '无法修改密码，请检查旧密码是否正确');
-        } finally {
-            setIsSubmitting(false);
-        }
+        setDialogContent({
+            title: '密码已更新',
+            message: '新的登录密码已生效，下次登录请使用新密码。',
+            tone: 'success',
+        });
+        setDialogVisible(true);
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft size={24} color="#09090B" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>修改密码</Text>
-                <View style={styles.placeholder} />
+        <SettingsLayout title="修改登录密码" navigation={navigation}>
+            <SettingsPageDescription text="重要操作只保留清晰反馈，不使用系统原生提示框。所有校验会在提交前给出明确说明。" />
+
+            <SettingsSection style={styles.formSection}>
+                <PasswordField
+                    label="当前密码"
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    secure={showCurrent}
+                    onToggle={() => setShowCurrent((value) => !value)}
+                    placeholder="请输入当前密码"
+                />
+                <PasswordField
+                    label="新密码"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secure={showNext}
+                    onToggle={() => setShowNext((value) => !value)}
+                    placeholder="请输入 8 位以上新密码"
+                />
+                <PasswordField
+                    label="确认新密码"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secure={showConfirm}
+                    onToggle={() => setShowConfirm((value) => !value)}
+                    placeholder="再次输入新密码"
+                />
+            </SettingsSection>
+
+            <View style={styles.helperCard}>
+                <Text style={styles.helperTitle}>密码建议</Text>
+                <Text style={styles.helperText}>使用 8 位以上字母、数字与符号组合，可显著降低被撞库或弱口令攻击的风险。</Text>
             </View>
 
-            <View style={styles.content}>
-                <View style={styles.tipCard}>
-                    <ShieldAlert size={16} color={PRIMARY_GOLD} />
-                    <Text style={styles.tipText}>
-                        密码长度需至少6位，建议使用字母、数字的组合以提高安全性。
-                    </Text>
-                </View>
+            <SettingsActionButton label="确认修改" onPress={handleSubmit} />
 
-                {/* 旧密码输入 */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>旧密码</Text>
-                    <View style={styles.inputWrapper}>
-                        <Lock size={20} color="#A1A1AA" />
-                        <TextInput
-                            style={styles.input}
-                            value={oldPassword}
-                            onChangeText={setOldPassword}
-                            placeholder="请输入当前密码"
-                            placeholderTextColor="#A1A1AA"
-                            secureTextEntry={!showOldPassword}
-                        />
-                        <TouchableOpacity onPress={() => setShowOldPassword(!showOldPassword)}>
-                            {showOldPassword ? (
-                                <EyeOff size={20} color="#A1A1AA" />
-                            ) : (
-                                <Eye size={20} color="#A1A1AA" />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* 新密码输入 */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>新密码</Text>
-                    <View style={styles.inputWrapper}>
-                        <Lock size={20} color="#A1A1AA" />
-                        <TextInput
-                            style={styles.input}
-                            value={password}
-                            onChangeText={setPassword}
-                            placeholder="请输入新密码（至少6位）"
-                            placeholderTextColor="#A1A1AA"
-                            secureTextEntry={!showPassword}
-                        />
-                        <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                            {showPassword ? (
-                                <EyeOff size={20} color="#A1A1AA" />
-                            ) : (
-                                <Eye size={20} color="#A1A1AA" />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* 确认密码 */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>确认密码</Text>
-                    <View style={styles.inputWrapper}>
-                        <Lock size={20} color="#A1A1AA" />
-                        <TextInput
-                            style={styles.input}
-                            value={confirmPassword}
-                            onChangeText={setConfirmPassword}
-                            placeholder="请再次输入新密码"
-                            placeholderTextColor="#A1A1AA"
-                            secureTextEntry={!showConfirmPassword}
-                        />
-                        <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-                            {showConfirmPassword ? (
-                                <EyeOff size={20} color="#A1A1AA" />
-                            ) : (
-                                <Eye size={20} color="#A1A1AA" />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* 提交按钮 */}
-                <TouchableOpacity
-                    style={[styles.submitBtn, (!oldPassword || !password || !confirmPassword || isSubmitting) && styles.submitBtnDisabled]}
-                    onPress={handleSubmit}
-                    disabled={!oldPassword || !password || !confirmPassword || isSubmitting}
-                >
-                    <Text style={styles.submitBtnText}>
-                        {isSubmitting ? '正在提交...' : '确认修改'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        </SafeAreaView>
+            <SettingsDialog
+                visible={dialogVisible}
+                title={dialogContent.title}
+                message={dialogContent.message}
+                tone={dialogContent.tone}
+                onClose={() => {
+                    const shouldGoBack = dialogContent.tone === 'success';
+                    setDialogVisible(false);
+                    if (shouldGoBack) {
+                        navigation.goBack();
+                    }
+                }}
+            />
+        </SettingsLayout>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F8F9FA',
+    formSection: {
+        padding: 18,
+        gap: 16,
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: Platform.OS === 'ios' ? 12 : 44,
-        paddingBottom: 12,
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
+    fieldWrap: {
+        gap: 8,
     },
-    backBtn: {
-        padding: 4,
-    },
-    headerTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: '#09090B',
-    },
-    placeholder: {
-        width: 32,
-    },
-    content: {
-        padding: 20,
-    },
-    inputGroup: {
-        marginBottom: 20,
-    },
-    inputLabel: {
+    fieldLabel: {
         fontSize: 14,
-        fontWeight: '500',
-        color: '#09090B',
-        marginBottom: 8,
+        fontWeight: '600',
+        color: SETTINGS_COLORS.textPrimary,
     },
-    inputWrapper: {
+    fieldInputWrap: {
+        minHeight: 56,
+        borderRadius: SETTINGS_RADIUS.button,
+        paddingHorizontal: 16,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 10,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderWidth: 1,
-        borderColor: '#E4E4E7',
-    },
-    input: {
-        flex: 1,
-        fontSize: 15,
-        color: '#09090B',
-        marginLeft: 10,
-        marginRight: 10,
-    },
-    submitBtn: {
-        backgroundColor: PRIMARY_GOLD,
-        borderRadius: 14,
-        paddingVertical: 16,
-        alignItems: 'center',
-        marginTop: 24,
-        shadowColor: PRIMARY_GOLD,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.25,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    submitBtnDisabled: {
-        backgroundColor: '#D4D4D8',
-        shadowOpacity: 0,
-        elevation: 0,
-    },
-    submitBtnText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    tipCard: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        backgroundColor: '#F5ECD0',
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 24,
         gap: 10,
     },
-    tipText: {
+    fieldInput: {
         flex: 1,
-        fontSize: 13,
-        color: '#78550A',
-        lineHeight: 20
+        fontSize: 16,
+        color: SETTINGS_COLORS.textPrimary,
+    },
+    helperCard: {
+        borderRadius: SETTINGS_RADIUS.card,
+        backgroundColor: SETTINGS_COLORS.card,
+        padding: 18,
+    },
+    helperTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: SETTINGS_COLORS.textPrimary,
+        marginBottom: 8,
+    },
+    helperText: {
+        fontSize: 14,
+        lineHeight: 21,
+        color: SETTINGS_COLORS.textSecondary,
     },
 });
 

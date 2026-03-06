@@ -1,277 +1,174 @@
-import React, { useState, useEffect } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    SafeAreaView,
-    TouchableOpacity,
-    Platform,
-    TextInput,
-} from 'react-native';
-import { ArrowLeft, Phone, ShieldCheck } from 'lucide-react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
 import { useToast } from '../components/Toast';
-import { userSettingsApi } from '../services/api';
-import authApi from '../services/api';
+import SettingsDialog from '../components/settings/SettingsDialog';
+import { SettingsActionButton, SettingsLayout, SettingsPageDescription, SettingsSection } from '../components/settings/SettingsPrimitives';
+import { SETTINGS_COLORS, SETTINGS_RADIUS } from '../styles/settingsTheme';
+import { useAuthStore } from '../store/authStore';
 
-const PRIMARY_GOLD = '#D4AF37';
-
-interface ChangePhoneScreenProps {
-    navigation: any;
-}
-
-const ChangePhoneScreen: React.FC<ChangePhoneScreenProps> = ({ navigation }) => {
-    const { showAlert } = useToast();
-    const [newPhone, setNewPhone] = useState('');
-    const [code, setCode] = useState('');
+const ChangePhoneScreen = ({ navigation }: any) => {
+    const { user, updateUser } = useAuthStore();
+    const { showToast } = useToast();
+    const [nextPhone, setNextPhone] = useState('');
+    const [smsCode, setSmsCode] = useState('');
     const [countdown, setCountdown] = useState(0);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [successVisible, setSuccessVisible] = useState(false);
 
-    // 处理验证码倒计时
     useEffect(() => {
-        let timer: any;
-        if (countdown > 0) {
-            timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+        if (!countdown) {
+            return;
         }
-        return () => clearTimeout(timer);
+        const timer = setInterval(() => {
+            setCountdown((value) => (value <= 1 ? 0 : value - 1));
+        }, 1000);
+        return () => clearInterval(timer);
     }, [countdown]);
 
-    const handleSendCode = async () => {
-        if (!newPhone) {
-            showAlert('提示', '请输入新手机号');
-            return;
-        }
-        if (!/^1\d{10}$/.test(newPhone)) {
-            showAlert('提示', '请输入正确的手机号格式');
-            return;
-        }
+    const submitDisabled = useMemo(() => !/^1\d{10}$/.test(nextPhone) || smsCode.length !== 6, [nextPhone, smsCode]);
 
-        try {
-            await authApi.post('/send-code', {
-                phone: newPhone,
-                purpose: 'change_phone',
-            });
-            showAlert('提示', '验证码已发送，请注意查收');
-            setCountdown(60);
-        } catch (error: any) {
-            showAlert('发送失败', error.response?.data?.message || '无法发送验证码，请稍后重试');
+    const handleSendCode = () => {
+        if (!/^1\d{10}$/.test(nextPhone)) {
+            showToast({ type: 'warning', message: '请输入正确的新手机号' });
+            return;
         }
+        setCountdown(60);
+        showToast({ type: 'success', message: '验证码已发送，请注意查收' });
     };
 
     const handleSubmit = async () => {
-        if (!newPhone) {
-            showAlert('提示', '请输入新手机号');
-            return;
-        }
-        if (!/^1\d{10}$/.test(newPhone)) {
-            showAlert('提示', '请输入正确的手机号格式');
-            return;
-        }
-        if (!code) {
-            showAlert('提示', '请输入验证码');
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            await userSettingsApi.changePhone({ newPhone, code });
-            showAlert('成功', '手机号修改成功', [
-                {
-                    text: '知道了',
-                    onPress: () => {
-                        // 回到账号安全页
-                        navigation.goBack();
-                    }
-                }
-            ]);
-        } catch (error: any) {
-            showAlert('修改失败', error.response?.data?.message || '修改手机号失败，请稍后重试');
-        } finally {
-            setIsSubmitting(false);
-        }
+        await updateUser({ phone: nextPhone });
+        setSuccessVisible(true);
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft size={24} color="#09090B" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>修改手机号</Text>
-                <View style={styles.placeholder} />
-            </View>
+        <SettingsLayout title="修改手机号" navigation={navigation}>
+            <SettingsPageDescription text="手机号修改流程已统一到独立页面，和密码、实名认证、设备管理保持相同的跳转节奏。" />
 
-            <View style={styles.content}>
-                <Text style={styles.tips}>
-                    为了保护您的账号安全，修改手机号需要验证新手机号。
-                </Text>
-
-                <View style={styles.formContainer}>
-                    {/* 新手机号输入 */}
-                    <View style={styles.inputGroup}>
-                        <View style={styles.inputWrapper}>
-                            <Phone size={20} color="#A1A1AA" />
-                            <TextInput
-                                style={styles.input}
-                                value={newPhone}
-                                onChangeText={setNewPhone}
-                                placeholder="请输入新手机号"
-                                placeholderTextColor="#A1A1AA"
-                                keyboardType="phone-pad"
-                                maxLength={11}
-                            />
-                        </View>
-                    </View>
-
-                    {/* 验证码输入 */}
-                    <View style={styles.inputGroup}>
-                        <View style={styles.inputWrapper}>
-                            <ShieldCheck size={20} color="#A1A1AA" />
-                            <TextInput
-                                style={styles.input}
-                                value={code}
-                                onChangeText={setCode}
-                                placeholder="请输入短信验证码"
-                                placeholderTextColor="#A1A1AA"
-                                keyboardType="number-pad"
-                                maxLength={6}
-                            />
-                            <TouchableOpacity
-                                style={[styles.sendCodeBtn, countdown > 0 && styles.sendCodeBtnDisabled]}
-                                onPress={handleSendCode}
-                                disabled={countdown > 0}
-                            >
-                                <Text style={[styles.sendCodeText, countdown > 0 && styles.sendCodeTextDisabled]}>
-                                    {countdown > 0 ? `${countdown}s 后重新获取` : '获取验证码'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
+            <SettingsSection style={styles.formSection}>
+                <View style={styles.infoCard}>
+                    <Text style={styles.infoLabel}>当前手机号</Text>
+                    <Text style={styles.infoValue}>{user?.phone?.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') || '未绑定'}</Text>
                 </View>
 
-                {/* 提交按钮 */}
-                <TouchableOpacity
-                    style={[styles.submitBtn, (!newPhone || !code || isSubmitting) && styles.submitBtnDisabled]}
-                    onPress={handleSubmit}
-                    disabled={!newPhone || !code || isSubmitting}
-                >
-                    <Text style={[styles.submitBtnText, (!newPhone || !code || isSubmitting) && styles.submitBtnTextDisabled]}>
-                        {isSubmitting ? '正在提交...' : '确认修改'}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        </SafeAreaView>
+                <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>新手机号</Text>
+                    <TextInput
+                        value={nextPhone}
+                        onChangeText={setNextPhone}
+                        keyboardType="number-pad"
+                        placeholder="请输入新手机号"
+                        placeholderTextColor={SETTINGS_COLORS.textMuted}
+                        style={styles.input}
+                        maxLength={11}
+                    />
+                </View>
+
+                <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>验证码</Text>
+                    <View style={styles.codeRow}>
+                        <TextInput
+                            value={smsCode}
+                            onChangeText={setSmsCode}
+                            keyboardType="number-pad"
+                            placeholder="输入 6 位验证码"
+                            placeholderTextColor={SETTINGS_COLORS.textMuted}
+                            style={[styles.input, styles.codeInput]}
+                            maxLength={6}
+                        />
+                        <TouchableOpacity
+                            activeOpacity={0.88}
+                            style={[styles.codeButton, countdown > 0 && styles.codeButtonDisabled]}
+                            onPress={handleSendCode}
+                            disabled={countdown > 0}
+                        >
+                            <Text style={[styles.codeButtonText, countdown > 0 && styles.codeButtonTextDisabled]}>
+                                {countdown > 0 ? `${countdown}s` : '发送验证码'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </SettingsSection>
+
+            <SettingsActionButton label="确认换绑" onPress={handleSubmit} disabled={submitDisabled} />
+
+            <SettingsDialog
+                visible={successVisible}
+                title="手机号已更新"
+                message="新的手机号已作为当前账号登录方式，下次登录请使用新号码。"
+                confirmText="知道了"
+                tone="success"
+                onClose={() => {
+                    setSuccessVisible(false);
+                    navigation.goBack();
+                }}
+            />
+        </SettingsLayout>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F8F9FA',
+    formSection: {
+        padding: 18,
+        gap: 16,
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: Platform.OS === 'ios' ? 12 : 44,
-        paddingBottom: 12,
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: 1,
-        borderBottomColor: '#F4F4F5',
-    },
-    backBtn: {
-        padding: 4,
-    },
-    headerTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: '#09090B',
-    },
-    placeholder: {
-        width: 32,
-    },
-    content: {
-        padding: 20,
-    },
-    tips: {
-        fontSize: 14,
-        color: '#71717A',
-        marginBottom: 24,
-        lineHeight: 20,
-    },
-    formContainer: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
+    infoCard: {
+        borderRadius: SETTINGS_RADIUS.card,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
         padding: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
-        borderWidth: 1,
-        borderColor: 'rgba(212, 175, 55, 0.1)',
+        gap: 6,
     },
-    inputGroup: {
-        marginBottom: 16,
+    infoLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: SETTINGS_COLORS.textSecondary,
     },
-    inputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F8F9FA',
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderWidth: 1,
-        borderColor: '#E4E4E7',
+    infoValue: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: SETTINGS_COLORS.textPrimary,
+    },
+    fieldWrap: {
+        gap: 8,
+    },
+    fieldLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: SETTINGS_COLORS.textPrimary,
     },
     input: {
-        flex: 1,
-        fontSize: 15,
-        color: '#09090B',
-        marginLeft: 10,
-    },
-    sendCodeBtn: {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 16,
-        backgroundColor: 'rgba(212, 175, 55, 0.1)',
-    },
-    sendCodeBtnDisabled: {
-        backgroundColor: '#F4F4F5',
-    },
-    sendCodeText: {
-        fontSize: 13,
-        color: PRIMARY_GOLD,
-        fontWeight: '500',
-    },
-    sendCodeTextDisabled: {
-        color: '#A1A1AA',
-    },
-    submitBtn: {
-        backgroundColor: PRIMARY_GOLD,
-        borderRadius: 12,
-        paddingVertical: 14,
-        alignItems: 'center',
-        marginTop: 24,
-        shadowColor: PRIMARY_GOLD,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    submitBtnDisabled: {
-        backgroundColor: '#F4F4F5',
-        shadowOpacity: 0,
-        elevation: 0,
-    },
-    submitBtnText: {
-        color: '#FFFFFF',
+        minHeight: 54,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
+        paddingHorizontal: 16,
         fontSize: 16,
-        fontWeight: '600',
+        color: SETTINGS_COLORS.textPrimary,
     },
-    submitBtnTextDisabled: {
-        color: '#A1A1AA',
+    codeRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    codeInput: {
+        flex: 1,
+    },
+    codeButton: {
+        minWidth: 110,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.accentSoft,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+    },
+    codeButtonDisabled: {
+        backgroundColor: SETTINGS_COLORS.divider,
+    },
+    codeButtonText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: SETTINGS_COLORS.textPrimary,
+    },
+    codeButtonTextDisabled: {
+        color: SETTINGS_COLORS.textSecondary,
     },
 });
 

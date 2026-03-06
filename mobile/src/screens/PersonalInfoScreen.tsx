@@ -1,477 +1,454 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+import { Camera, Eraser, UserCircle2 } from 'lucide-react-native';
+
+import { useToast } from '../components/Toast';
+import SettingsBottomSheet from '../components/settings/SettingsBottomSheet';
 import {
-    View,
-    Text,
-    StyleSheet,
-    SafeAreaView,
-    ScrollView,
-    TouchableOpacity,
-    Platform,
-    Image,
-    Modal,
-    TextInput,
-} from 'react-native';
-import { ArrowLeft, ChevronRight, User, Info } from 'lucide-react-native';
+    SettingsLayout,
+    SettingsPageDescription,
+    SettingsRow,
+    SettingsSection,
+} from '../components/settings/SettingsPrimitives';
+import { SETTINGS_COLORS, SETTINGS_RADIUS } from '../styles/settingsTheme';
 import { useAuthStore } from '../store/authStore';
+import { useSettingsStore } from '../store/settingsStore';
 
-const PRIMARY_GOLD = '#D4AF37';
+type SheetType = 'avatar' | 'nickname' | 'bio' | 'birthday' | null;
 
-// 生成年份列表
-const YEARS = Array.from({ length: 100 }, (_, i) => 2024 - i);
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+type BirthdayPickerColumnProps = {
+    label: string;
+    options: string[];
+    selectedValue: string;
+    onSelect: (value: string) => void;
+};
 
-interface PersonalInfoScreenProps {
-    navigation: any;
-}
+const currentYear = new Date().getFullYear();
+const YEARS = Array.from({ length: currentYear - 1949 }, (_, index) => String(currentYear - index));
+const MONTHS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
+const PICKER_ITEM_HEIGHT = 44;
+const PICKER_VISIBLE_ROWS = 5;
+const PICKER_HEIGHT = PICKER_ITEM_HEIGHT * PICKER_VISIBLE_ROWS;
+const PICKER_SPACER_HEIGHT = PICKER_ITEM_HEIGHT * 2;
 
-const PersonalInfoScreen: React.FC<PersonalInfoScreenProps> = ({ navigation }) => {
-    const { user } = useAuthStore();
+const getDaysInMonth = (year: string, month: string) => {
+    const yearNumber = Number(year);
+    const monthNumber = Number(month);
+    if (!yearNumber || !monthNumber) {
+        return 31;
+    }
+    return new Date(yearNumber, monthNumber, 0).getDate();
+};
 
-    // 弹框状态
-    const [avatarModalVisible, setAvatarModalVisible] = useState(false);
-    const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
-    const [bioModalVisible, setBioModalVisible] = useState(false);
-    const [birthdayModalVisible, setBirthdayModalVisible] = useState(false);
+const BirthdayPickerColumn = ({ label, options, selectedValue, onSelect }: BirthdayPickerColumnProps) => {
+    const scrollRef = useRef<ScrollView | null>(null);
+    const isProgrammaticRef = useRef(false);
+    const selectedIndex = Math.max(options.indexOf(selectedValue), 0);
 
-    // 编辑状态
-    const [editNickname, setEditNickname] = useState(user?.nickname || '');
-    const [editBio, setEditBio] = useState('');
-    const [selectedYear, setSelectedYear] = useState(1990);
-    const [selectedMonth, setSelectedMonth] = useState(1);
-    const [selectedDay, setSelectedDay] = useState(1);
-
-    // 保存昵称
-    const saveNickname = () => {
-        // TODO: 调用API保存
-        setNicknameModalVisible(false);
+    const alignToIndex = (index: number, animated: boolean) => {
+        const safeIndex = Math.max(index, 0);
+        isProgrammaticRef.current = true;
+        scrollRef.current?.scrollTo({ y: safeIndex * PICKER_ITEM_HEIGHT, animated });
+        setTimeout(() => {
+            isProgrammaticRef.current = false;
+        }, animated ? 220 : 0);
     };
 
-    // 保存简介
-    const saveBio = () => {
-        // TODO: 调用API保存
-        setBioModalVisible(false);
-    };
+    useEffect(() => {
+        alignToIndex(selectedIndex, false);
+    }, [selectedIndex]);
 
-    // 保存生日
-    const saveBirthday = () => {
-        // TODO: 调用API保存
-        setBirthdayModalVisible(false);
+    const handleSnap = (offsetY: number) => {
+        if (isProgrammaticRef.current) {
+            return;
+        }
+        const nextIndex = Math.min(
+            options.length - 1,
+            Math.max(0, Math.round(offsetY / PICKER_ITEM_HEIGHT))
+        );
+        const nextValue = options[nextIndex];
+        if (nextValue !== selectedValue) {
+            onSelect(nextValue);
+            return;
+        }
+        alignToIndex(nextIndex, true);
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft size={24} color="#09090B" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>个人信息</Text>
-                <View style={styles.placeholder} />
+        <View style={styles.pickerColumnWrap}>
+            <Text style={styles.pickerLabel}>{label}</Text>
+            <View style={styles.pickerViewport}>
+                <View pointerEvents="none" style={styles.pickerCenterHighlight} />
+                <ScrollView
+                    ref={scrollRef}
+                    showsVerticalScrollIndicator={false}
+                    snapToInterval={PICKER_ITEM_HEIGHT}
+                    decelerationRate="fast"
+                    bounces={false}
+                    onMomentumScrollEnd={(event) => handleSnap(event.nativeEvent.contentOffset.y)}
+                    contentContainerStyle={styles.pickerContent}
+                >
+                    <View style={styles.pickerSpacer} />
+                    {options.map((option) => {
+                        const selected = option === selectedValue;
+                        return (
+                            <TouchableOpacity
+                                key={`${label}-${option}`}
+                                activeOpacity={0.86}
+                                style={styles.pickerItem}
+                                onPress={() => {
+                                    onSelect(option);
+                                    alignToIndex(options.indexOf(option), true);
+                                }}
+                            >
+                                <Text style={[styles.pickerItemText, selected && styles.pickerItemTextActive]}>
+                                    {option}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                    <View style={styles.pickerSpacer} />
+                </ScrollView>
             </View>
+        </View>
+    );
+};
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                <View style={styles.section}>
-                    {/* 头像 */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => setAvatarModalVisible(true)}>
-                        <Text style={styles.menuLabel}>头像</Text>
-                        <View style={styles.menuRight}>
-                            <View style={styles.avatarSmall}>
-                                {user?.avatar ? (
-                                    <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
-                                ) : (
-                                    <User size={20} color="#71717A" />
-                                )}
-                            </View>
-                            <ChevronRight size={18} color="#A1A1AA" />
-                        </View>
-                    </TouchableOpacity>
+const PersonalInfoScreen = ({ navigation }: any) => {
+    const { user, updateUser } = useAuthStore();
+    const { showToast } = useToast();
+    const { personalProfile, updatePersonalProfile } = useSettingsStore();
 
-                    {/* 昵称 */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => setNicknameModalVisible(true)}>
-                        <Text style={styles.menuLabel}>昵称</Text>
-                        <View style={styles.menuRight}>
-                            <Text style={styles.menuValue}>{user?.nickname || '未设置'}</Text>
-                            <ChevronRight size={18} color="#A1A1AA" />
-                        </View>
-                    </TouchableOpacity>
+    const initialBirthday = personalProfile.birthday.split('-');
+    const [sheetType, setSheetType] = useState<SheetType>(null);
+    const [nicknameDraft, setNicknameDraft] = useState(user?.nickname || '');
+    const [bioDraft, setBioDraft] = useState(personalProfile.bio);
+    const [yearDraft, setYearDraft] = useState(initialBirthday[0] || '1992');
+    const [monthDraft, setMonthDraft] = useState(initialBirthday[1] || '08');
+    const [dayDraft, setDayDraft] = useState(initialBirthday[2] || '18');
 
-                    {/* 用户ID */}
-                    <View style={styles.menuItem}>
-                        <Text style={styles.menuLabel}>用户ID</Text>
-                        <Text style={styles.menuValue}>88888888</Text>
-                    </View>
+    const availableDays = useMemo(() => {
+        const count = getDaysInMonth(yearDraft, monthDraft);
+        return Array.from({ length: count }, (_, index) => String(index + 1).padStart(2, '0'));
+    }, [monthDraft, yearDraft]);
 
-                    {/* 简介 */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => setBioModalVisible(true)}>
-                        <Text style={styles.menuLabel}>简介</Text>
-                        <View style={styles.menuRight}>
-                            <Text style={styles.menuValue} numberOfLines={1}>
-                                {editBio || '一句话介绍自己'}
-                            </Text>
-                            <ChevronRight size={18} color="#A1A1AA" />
-                        </View>
-                    </TouchableOpacity>
+    const birthdayValue = useMemo(
+        () => `${yearDraft.padStart(4, '0')}-${monthDraft.padStart(2, '0')}-${dayDraft.padStart(2, '0')}`,
+        [dayDraft, monthDraft, yearDraft]
+    );
 
-                    {/* 生日 */}
-                    <TouchableOpacity style={[styles.menuItem, styles.menuItemLast]} onPress={() => setBirthdayModalVisible(true)}>
-                        <Text style={styles.menuLabel}>生日</Text>
-                        <View style={styles.menuRight}>
-                            <Text style={styles.menuValue}>
-                                {`${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`}
-                            </Text>
-                            <ChevronRight size={18} color="#A1A1AA" />
-                        </View>
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
+    useEffect(() => {
+        if (!availableDays.includes(dayDraft)) {
+            setDayDraft(availableDays[availableDays.length - 1]);
+        }
+    }, [availableDays, dayDraft]);
 
-            {/* 头像开发中弹框 */}
-            <Modal visible={avatarModalVisible} transparent animationType="fade">
-                <View style={styles.dialogOverlay}>
-                    <View style={styles.dialogContainer}>
-                        <View style={styles.dialogIconContainer}>
-                            <Info size={32} color={PRIMARY_GOLD} />
-                        </View>
-                        <Text style={styles.dialogTitle}>功能开发中</Text>
-                        <Text style={styles.dialogMessage}>头像修改功能正在开发中，敬请期待！</Text>
-                        <TouchableOpacity style={styles.dialogBtn} onPress={() => setAvatarModalVisible(false)}>
-                            <Text style={styles.dialogBtnText}>知道了</Text>
+    const handlePickAvatar = async () => {
+        const result = await launchImageLibrary({
+            mediaType: 'photo',
+            selectionLimit: 1,
+            quality: 0.8,
+        });
+
+        if (result.didCancel) {
+            return;
+        }
+
+        if (result.errorCode) {
+            showToast({ type: 'error', message: result.errorMessage || '图片选择失败，请稍后重试' });
+            return;
+        }
+
+        const asset = result.assets?.[0];
+        if (!asset?.uri) {
+            showToast({ type: 'warning', message: '未获取到可用图片，请重新选择' });
+            return;
+        }
+
+        await updateUser({ avatar: asset.uri });
+        setSheetType(null);
+        showToast({ type: 'success', message: '头像已更新' });
+    };
+
+    const handleSaveNickname = async () => {
+        const nextNickname = nicknameDraft.trim();
+        if (nextNickname.length < 2) {
+            showToast({ type: 'warning', message: '昵称至少 2 个字' });
+            return;
+        }
+        await updateUser({ nickname: nextNickname });
+        setSheetType(null);
+        showToast({ type: 'success', message: '昵称已保存' });
+    };
+
+    const handleSaveBio = () => {
+        updatePersonalProfile({ bio: bioDraft.trim() || '让装修过程更省心一点。' });
+        setSheetType(null);
+        showToast({ type: 'success', message: '简介已保存' });
+    };
+
+    const handleSaveBirthday = () => {
+        updatePersonalProfile({ birthday: birthdayValue });
+        setSheetType(null);
+        showToast({ type: 'success', message: '生日已保存' });
+    };
+
+    const renderSheet = () => {
+        switch (sheetType) {
+            case 'avatar':
+                return (
+                    <>
+                        <Text style={styles.sheetTitle}>修改头像</Text>
+                        <Text style={styles.sheetSubtitle}>尽量使用清晰正面照片，头像会同步到消息和项目协作页。</Text>
+                        <TouchableOpacity activeOpacity={0.86} style={styles.actionRow} onPress={handlePickAvatar}>
+                            <Camera size={18} color={SETTINGS_COLORS.textPrimary} strokeWidth={2.1} />
+                            <Text style={styles.actionLabel}>从相册选择</Text>
                         </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* 昵称编辑弹框 */}
-            <Modal visible={nicknameModalVisible} transparent animationType="slide">
-                <View style={styles.bottomSheetOverlay}>
-                    <TouchableOpacity style={styles.overlayBg} onPress={() => setNicknameModalVisible(false)} />
-                    <View style={styles.bottomSheet}>
-                        <View style={styles.sheetHeader}>
-                            <Text style={styles.sheetTitle}>修改昵称</Text>
-                            <TouchableOpacity onPress={() => setNicknameModalVisible(false)}>
-                                <Text style={styles.sheetCancel}>取消</Text>
-                            </TouchableOpacity>
-                        </View>
+                        <TouchableOpacity
+                            activeOpacity={0.86}
+                            style={styles.actionRow}
+                            onPress={async () => {
+                                await updateUser({ avatar: '' });
+                                setSheetType(null);
+                                showToast({ type: 'success', message: '已恢复默认头像' });
+                            }}
+                        >
+                            <Eraser size={18} color={SETTINGS_COLORS.textPrimary} strokeWidth={2.1} />
+                            <Text style={styles.actionLabel}>恢复默认头像</Text>
+                        </TouchableOpacity>
+                    </>
+                );
+            case 'nickname':
+                return (
+                    <>
+                        <Text style={styles.sheetTitle}>编辑昵称</Text>
+                        <Text style={styles.sheetSubtitle}>昵称会展示在消息、项目和订单相关页面，建议简洁易识别。</Text>
                         <TextInput
-                            style={styles.sheetInput}
-                            value={editNickname}
-                            onChangeText={setEditNickname}
+                            value={nicknameDraft}
+                            onChangeText={setNicknameDraft}
                             placeholder="请输入昵称"
-                            placeholderTextColor="#A1A1AA"
-                            maxLength={20}
+                            placeholderTextColor={SETTINGS_COLORS.textMuted}
+                            style={styles.sheetInput}
+                            maxLength={16}
                         />
-                        <TouchableOpacity style={styles.sheetSaveBtn} onPress={saveNickname}>
-                            <Text style={styles.sheetSaveBtnText}>保存</Text>
+                        <TouchableOpacity activeOpacity={0.88} style={styles.saveButton} onPress={handleSaveNickname}>
+                            <Text style={styles.saveButtonText}>保存昵称</Text>
                         </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* 简介编辑弹框 */}
-            <Modal visible={bioModalVisible} transparent animationType="slide">
-                <View style={styles.bottomSheetOverlay}>
-                    <TouchableOpacity style={styles.overlayBg} onPress={() => setBioModalVisible(false)} />
-                    <View style={styles.bottomSheet}>
-                        <View style={styles.sheetHeader}>
-                            <Text style={styles.sheetTitle}>编辑简介</Text>
-                            <TouchableOpacity onPress={() => setBioModalVisible(false)}>
-                                <Text style={styles.sheetCancel}>取消</Text>
-                            </TouchableOpacity>
-                        </View>
+                    </>
+                );
+            case 'bio':
+                return (
+                    <>
+                        <Text style={styles.sheetTitle}>编辑简介</Text>
+                        <Text style={styles.sheetSubtitle}>一句话说明你的偏好或装修状态，便于合作方快速了解你的需求。</Text>
                         <TextInput
-                            style={[styles.sheetInput, styles.bioInput]}
-                            value={editBio}
-                            onChangeText={setEditBio}
-                            placeholder="一句话介绍自己（最多50字）"
-                            placeholderTextColor="#A1A1AA"
-                            maxLength={50}
+                            value={bioDraft}
+                            onChangeText={setBioDraft}
+                            placeholder="例如：偏爱自然木质风，正在准备全屋改造。"
+                            placeholderTextColor={SETTINGS_COLORS.textMuted}
+                            style={[styles.sheetInput, styles.sheetInputMulti]}
+                            maxLength={60}
                             multiline
-                            numberOfLines={3}
                         />
-                        <Text style={styles.charCount}>{editBio.length}/50</Text>
-                        <TouchableOpacity style={styles.sheetSaveBtn} onPress={saveBio}>
-                            <Text style={styles.sheetSaveBtnText}>保存</Text>
+                        <Text style={styles.counterText}>{bioDraft.length}/60</Text>
+                        <TouchableOpacity activeOpacity={0.88} style={styles.saveButton} onPress={handleSaveBio}>
+                            <Text style={styles.saveButtonText}>保存简介</Text>
                         </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
+                    </>
+                );
+            case 'birthday':
+                return (
+                    <>
+                        <Text style={styles.sheetTitle}>编辑生日</Text>
+                        <View style={styles.pickerRow}>
+                            <BirthdayPickerColumn label="年" options={YEARS} selectedValue={yearDraft} onSelect={setYearDraft} />
+                            <BirthdayPickerColumn label="月" options={MONTHS} selectedValue={monthDraft} onSelect={setMonthDraft} />
+                            <BirthdayPickerColumn label="日" options={availableDays} selectedValue={dayDraft} onSelect={setDayDraft} />
+                        </View>
+                        <Text style={styles.previewText}>{birthdayValue}</Text>
+                        <TouchableOpacity activeOpacity={0.88} style={styles.saveButton} onPress={handleSaveBirthday}>
+                            <Text style={styles.saveButtonText}>保存生日</Text>
+                        </TouchableOpacity>
+                    </>
+                );
+            default:
+                return null;
+        }
+    };
 
-            {/* 生日选择弹框 */}
-            <Modal visible={birthdayModalVisible} transparent animationType="slide">
-                <View style={styles.bottomSheetOverlay}>
-                    <TouchableOpacity style={styles.overlayBg} onPress={() => setBirthdayModalVisible(false)} />
-                    <View style={styles.bottomSheet}>
-                        <View style={styles.sheetHeader}>
-                            <Text style={styles.sheetTitle}>选择生日</Text>
-                            <TouchableOpacity onPress={() => setBirthdayModalVisible(false)}>
-                                <Text style={styles.sheetCancel}>取消</Text>
-                            </TouchableOpacity>
+    return (
+        <SettingsLayout title="个人信息" navigation={navigation}>
+            <SettingsPageDescription text="个人信息页跟随设置中心统一改成轻量卡片，常用编辑动作都收进底部弹层。" />
+
+            <SettingsSection>
+                <SettingsRow
+                    label="头像"
+                    rightNode={
+                        <View style={styles.avatarWrap}>
+                            {user?.avatar ? (
+                                <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
+                            ) : (
+                                <View style={styles.avatarPlaceholder}>
+                                    <UserCircle2 size={24} color={SETTINGS_COLORS.textMuted} strokeWidth={1.8} />
+                                </View>
+                            )}
                         </View>
-                        <View style={styles.pickerContainer}>
-                            {/* 年 */}
-                            <ScrollView style={styles.pickerColumn} showsVerticalScrollIndicator={false}>
-                                {YEARS.map(year => (
-                                    <TouchableOpacity
-                                        key={year}
-                                        style={[styles.pickerItem, selectedYear === year && styles.pickerItemSelected]}
-                                        onPress={() => setSelectedYear(year)}
-                                    >
-                                        <Text style={[styles.pickerText, selectedYear === year && styles.pickerTextSelected]}>
-                                            {year}年
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                            {/* 月 */}
-                            <ScrollView style={styles.pickerColumn} showsVerticalScrollIndicator={false}>
-                                {MONTHS.map(month => (
-                                    <TouchableOpacity
-                                        key={month}
-                                        style={[styles.pickerItem, selectedMonth === month && styles.pickerItemSelected]}
-                                        onPress={() => setSelectedMonth(month)}
-                                    >
-                                        <Text style={[styles.pickerText, selectedMonth === month && styles.pickerTextSelected]}>
-                                            {month}月
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                            {/* 日 */}
-                            <ScrollView style={styles.pickerColumn} showsVerticalScrollIndicator={false}>
-                                {DAYS.map(day => (
-                                    <TouchableOpacity
-                                        key={day}
-                                        style={[styles.pickerItem, selectedDay === day && styles.pickerItemSelected]}
-                                        onPress={() => setSelectedDay(day)}
-                                    >
-                                        <Text style={[styles.pickerText, selectedDay === day && styles.pickerTextSelected]}>
-                                            {day}日
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </ScrollView>
-                        </View>
-                        <TouchableOpacity style={styles.sheetSaveBtn} onPress={saveBirthday}>
-                            <Text style={styles.sheetSaveBtnText}>保存</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </Modal>
-        </SafeAreaView>
+                    }
+                    onPress={() => setSheetType('avatar')}
+                />
+                <SettingsRow label="昵称" value={user?.nickname || '未设置'} onPress={() => setSheetType('nickname')} />
+                <SettingsRow label="用户 ID" value={String(user?.id || '--')} withChevron={false} />
+                <SettingsRow label="手机号" value={user?.phone || '未绑定'} withChevron={false} />
+                <SettingsRow label="简介" value={personalProfile.bio} onPress={() => setSheetType('bio')} />
+                <SettingsRow label="生日" value={personalProfile.birthday} onPress={() => setSheetType('birthday')} last />
+            </SettingsSection>
+
+            <SettingsBottomSheet visible={sheetType !== null} onClose={() => setSheetType(null)}>
+                {renderSheet()}
+            </SettingsBottomSheet>
+        </SettingsLayout>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F5F5F5',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: Platform.OS === 'ios' ? 12 : 44,
-        paddingBottom: 12,
-        backgroundColor: '#F5F5F5',
-    },
-    backBtn: {
-        padding: 4,
-    },
-    headerTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: '#09090B',
-    },
-    placeholder: {
-        width: 32,
-    },
-    content: {
-        flex: 1,
-        paddingHorizontal: 16,
-    },
-    section: {
-        backgroundColor: '#FFFFFF',
-        marginTop: 12,
-        borderRadius: 12,
-        overflow: 'hidden',
-    },
-    menuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#F0F0F0',
-    },
-    menuItemLast: {
-        borderBottomWidth: 0,
-    },
-    menuLabel: {
-        fontSize: 16,
-        color: '#09090B',
-    },
-    menuRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    menuValue: {
-        fontSize: 14,
-        color: '#A1A1AA',
+    avatarWrap: {
         marginRight: 6,
-        maxWidth: 180,
-    },
-    avatarSmall: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: '#F4F4F5',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 8,
-        overflow: 'hidden',
     },
     avatarImage: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
     },
-    // 底部弹框
-    bottomSheetOverlay: {
-        flex: 1,
-        justifyContent: 'flex-end',
-    },
-    overlayBg: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    },
-    bottomSheet: {
-        backgroundColor: '#FFFFFF',
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingHorizontal: 20,
-        paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-        paddingTop: 16,
-    },
-    sheetHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+    avatarPlaceholder: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
         alignItems: 'center',
-        marginBottom: 20,
+        justifyContent: 'center',
     },
     sheetTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: '#09090B',
+        fontSize: 22,
+        fontWeight: '700',
+        color: SETTINGS_COLORS.textPrimary,
+        marginBottom: 12,
+        textAlign: 'center',
     },
-    sheetCancel: {
-        fontSize: 15,
-        color: '#71717A',
+    sheetSubtitle: {
+        fontSize: 14,
+        lineHeight: 21,
+        color: SETTINGS_COLORS.textSecondary,
+        marginBottom: 18,
+    },
+    actionRow: {
+        minHeight: 54,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
+        paddingHorizontal: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 10,
+    },
+    actionLabel: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: SETTINGS_COLORS.textPrimary,
     },
     sheetInput: {
-        backgroundColor: '#F4F4F5',
-        borderRadius: 10,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        fontSize: 15,
-        color: '#09090B',
+        minHeight: 56,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
+        paddingHorizontal: 16,
+        fontSize: 16,
+        color: SETTINGS_COLORS.textPrimary,
     },
-    bioInput: {
-        height: 80,
+    sheetInputMulti: {
+        minHeight: 120,
+        paddingTop: 16,
         textAlignVertical: 'top',
     },
-    charCount: {
-        textAlign: 'right',
-        color: '#A1A1AA',
-        fontSize: 12,
-        marginTop: 6,
-    },
-    sheetSaveBtn: {
-        backgroundColor: PRIMARY_GOLD,
-        borderRadius: 10,
-        paddingVertical: 14,
+    saveButton: {
+        minHeight: 56,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.accent,
         alignItems: 'center',
-        marginTop: 20,
+        justifyContent: 'center',
+        marginTop: 12,
     },
-    sheetSaveBtnText: {
-        color: '#FFFFFF',
+    saveButtonText: {
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
-    // 日期选择器
-    pickerContainer: {
+    counterText: {
+        marginTop: 8,
+        fontSize: 13,
+        color: SETTINGS_COLORS.textSecondary,
+        textAlign: 'right',
+    },
+    pickerRow: {
         flexDirection: 'row',
-        height: 200,
+        gap: 10,
     },
-    pickerColumn: {
+    pickerColumnWrap: {
         flex: 1,
+        gap: 8,
+    },
+    pickerLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: SETTINGS_COLORS.textSecondary,
+        textAlign: 'center',
+    },
+    pickerViewport: {
+        height: PICKER_HEIGHT,
+        borderRadius: SETTINGS_RADIUS.card,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    pickerCenterHighlight: {
+        position: 'absolute',
+        top: PICKER_ITEM_HEIGHT * 2,
+        left: 10,
+        right: 10,
+        height: PICKER_ITEM_HEIGHT,
+        borderRadius: SETTINGS_RADIUS.button,
+        borderTopWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: SETTINGS_COLORS.border,
+        backgroundColor: 'transparent',
+        zIndex: 1,
+    },
+    pickerContent: {
+        paddingHorizontal: 8,
+    },
+    pickerSpacer: {
+        height: PICKER_SPACER_HEIGHT,
     },
     pickerItem: {
-        paddingVertical: 10,
+        height: PICKER_ITEM_HEIGHT,
         alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 2,
     },
-    pickerItemSelected: {
-        backgroundColor: '#FFFBEB',
-        borderRadius: 8,
-    },
-    pickerText: {
+    pickerItemText: {
         fontSize: 16,
-        color: '#71717A',
+        fontWeight: '500',
+        color: SETTINGS_COLORS.textSecondary,
     },
-    pickerTextSelected: {
-        color: PRIMARY_GOLD,
-        fontWeight: '600',
-    },
-    // 弹窗样式
-    dialogOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 40,
-    },
-    dialogContainer: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 20,
-        padding: 24,
-        alignItems: 'center',
-        width: '100%',
-        maxWidth: 320,
-    },
-    dialogIconContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        backgroundColor: '#FFFBEB',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 16,
-    },
-    dialogTitle: {
-        fontSize: 18,
+    pickerItemTextActive: {
+        fontSize: 20,
         fontWeight: '700',
-        color: '#09090B',
-        marginBottom: 8,
+        color: SETTINGS_COLORS.textPrimary,
     },
-    dialogMessage: {
-        fontSize: 14,
-        color: '#71717A',
+    previewText: {
+        marginTop: 14,
         textAlign: 'center',
-        marginBottom: 24,
-    },
-    dialogBtn: {
-        width: '100%',
-        paddingVertical: 12,
-        borderRadius: 10,
-        alignItems: 'center',
-        backgroundColor: PRIMARY_GOLD,
-    },
-    dialogBtnText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#FFFFFF',
+        fontSize: 14,
+        color: SETTINGS_COLORS.textSecondary,
     },
 });
 

@@ -1,422 +1,267 @@
-import React, { useState } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    SafeAreaView,
-    ScrollView,
-    TouchableOpacity,
-    TextInput,
-    Platform,
-} from 'react-native';
-import {
-    ArrowLeft,
-    Wrench,
-    FileText,
-    Lightbulb,
-    MoreHorizontal,
-    Image as ImageIcon,
-    Plus,
-    X,
-    Phone,
-    Send,
-    CheckCircle,
-} from 'lucide-react-native';
+import React, { useMemo, useState } from 'react';
+import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+import { ImagePlus, X } from 'lucide-react-native';
+
 import { useToast } from '../components/Toast';
-import { userSettingsApi } from '../services/api';
+import SettingsBottomSheet from '../components/settings/SettingsBottomSheet';
+import SettingsDialog from '../components/settings/SettingsDialog';
+import { SettingsActionButton, SettingsLayout, SettingsPageDescription, SettingsRow, SettingsSection } from '../components/settings/SettingsPrimitives';
+import { settingsService } from '../services/settingsService';
+import { SETTINGS_COLORS, SETTINGS_RADIUS } from '../styles/settingsTheme';
+import { useSettingsStore } from '../store/settingsStore';
 
-const PRIMARY_GOLD = '#D4AF37';
-const GOLD_LIGHT = '#F5ECD0';
+const CATEGORY_OPTIONS = ['产品建议', '功能异常', '体验问题', '其他'];
 
-type FeedbackType = 'bug' | 'content' | 'suggestion' | 'other';
+const FeedbackScreen = ({ navigation }: any) => {
+    const { showToast } = useToast();
+    const { feedbackDraft, updateFeedbackDraft } = useSettingsStore();
+    const [categoryVisible, setCategoryVisible] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [successTicket, setSuccessTicket] = useState('');
 
-interface FeedbackScreenProps {
-    navigation: any;
-}
+    const submitDisabled = useMemo(() => feedbackDraft.content.trim().length < 10, [feedbackDraft.content]);
 
-const FEEDBACK_TYPES: { id: FeedbackType; label: string; icon: React.ReactNode; color: string; bg: string }[] = [
-    { id: 'bug', label: '功能问题', icon: <Wrench size={16} color="#EF4444" />, color: '#EF4444', bg: '#FFF5F5' },
-    { id: 'content', label: '内容问题', icon: <FileText size={16} color="#F97316" />, color: '#F97316', bg: '#FFF7ED' },
-    { id: 'suggestion', label: '改进建议', icon: <Lightbulb size={16} color="#22C55E" />, color: '#22C55E', bg: '#F0FDF4' },
-    { id: 'other', label: '其他', icon: <MoreHorizontal size={16} color="#71717A" />, color: '#71717A', bg: '#F4F4F5' },
-];
+    const handlePickImages = async () => {
+        const result = await launchImageLibrary({
+            mediaType: 'photo',
+            selectionLimit: 4,
+            quality: 0.8,
+        });
 
-const MAX_CHARS = 500;
-const MAX_IMAGES = 3;
-
-const FeedbackScreen: React.FC<FeedbackScreenProps> = ({ navigation }) => {
-    const { showAlert } = useToast();
-    const [type, setType] = useState<FeedbackType | null>(null);
-    const [content, setContent] = useState('');
-    const [contact, setContact] = useState('');
-    const [images, setImages] = useState<string[]>([]);
-    const [submitted, setSubmitted] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const handleAddImage = () => {
-        if (images.length >= MAX_IMAGES) {
-            showAlert('提示', `最多上传 ${MAX_IMAGES} 张图片`);
+        if (result.didCancel) {
             return;
         }
-        // 模拟添加图片
-        setImages(prev => [...prev, `placeholder_${Date.now()}`]);
-        showAlert('提示', '图片已选取（模拟）');
-    };
 
-    const handleRemoveImage = (index: number) => {
-        setImages(prev => prev.filter((_, i) => i !== index));
-    };
+        if (result.errorCode) {
+            showToast({ type: 'error', message: result.errorMessage || '截图选择失败，请稍后重试' });
+            return;
+        }
 
-    const canSubmit = type !== null && content.trim().length >= 10;
+        const screenshots = result.assets?.map((asset) => asset.uri).filter((uri): uri is string => Boolean(uri)) || [];
+        updateFeedbackDraft({ screenshots: [...feedbackDraft.screenshots, ...screenshots].slice(0, 4) });
+    };
 
     const handleSubmit = async () => {
-        if (!canSubmit || isSubmitting) return;
-
-        setIsSubmitting(true);
+        if (submitDisabled) {
+            showToast({ type: 'warning', message: '请至少填写 10 个字，方便我们快速定位问题' });
+            return;
+        }
+        setSubmitting(true);
         try {
-            await userSettingsApi.submitFeedback({
-                type: type as string,
-                content,
-                contact,
-                images: images.join(',') // API expects a string, so join array
-            });
-            setSubmitted(true);
-            setType(null);
-            setContent('');
-            setContact('');
-            setImages([]);
-        } catch (error: any) {
-            showAlert('提交失败', error.response?.data?.message || '无法提交反馈，请稍后重试');
+            const result = await settingsService.submitFeedback(feedbackDraft);
+            setSuccessTicket(result.ticketId);
         } finally {
-            setIsSubmitting(false);
+            setSubmitting(false);
         }
     };
 
-    if (submitted) {
-        return (
-            <SafeAreaView style={styles.container}>
-                <View style={styles.header}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                        <ArrowLeft size={24} color="#09090B" />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>意见反馈</Text>
-                    <View style={styles.placeholder} />
-                </View>
-                <View style={styles.successState}>
-                    <View style={styles.successIconBox}>
-                        <CheckCircle size={52} color="#22C55E" />
-                    </View>
-                    <Text style={styles.successTitle}>反馈已提交</Text>
-                    <Text style={styles.successDesc}>
-                        感谢您的宝贵意见！{'\n'}我们会在 1-3 个工作日内处理您的反馈
-                    </Text>
-                    <TouchableOpacity style={styles.successBtn} onPress={() => navigation.goBack()}>
-                        <Text style={styles.successBtnText}>返回</Text>
-                    </TouchableOpacity>
-                </View>
-            </SafeAreaView>
-        );
-    }
-
     return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft size={24} color="#09090B" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>意见反馈</Text>
-                <View style={styles.placeholder} />
-            </View>
+        <SettingsLayout title="意见反馈" navigation={navigation}>
+            <SettingsPageDescription text="反馈页走“少字段、高信息密度”的方式：一眼能看清分类、问题描述和截图附件，不堆多余说明。" />
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                {/* 类型选择 */}
-                <Text style={styles.sectionLabel}>反馈类型</Text>
-                <View style={styles.typeGrid}>
-                    {FEEDBACK_TYPES.map(t => (
-                        <TouchableOpacity
-                            key={t.id}
-                            style={[
-                                styles.typeCard,
-                                type === t.id && { borderColor: t.color, backgroundColor: t.bg },
-                            ]}
-                            onPress={() => setType(t.id)}
-                        >
-                            <View style={[styles.typeIcon, { backgroundColor: type === t.id ? t.bg : '#F5F5F5' }]}>
-                                {t.icon}
-                            </View>
-                            <Text style={[styles.typeLabel, type === t.id && { color: t.color, fontWeight: '600' }]}>
-                                {t.label}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
+            <SettingsSection>
+                <SettingsRow label="问题类型" value={feedbackDraft.category} onPress={() => setCategoryVisible(true)} last />
+            </SettingsSection>
 
-                {/* 内容输入 */}
-                <Text style={styles.sectionLabel}>详细描述</Text>
-                <View style={styles.textareaCard}>
+            <SettingsSection style={styles.formSection}>
+                <View style={styles.block}>
+                    <Text style={styles.label}>问题描述</Text>
                     <TextInput
-                        style={styles.textarea}
-                        placeholder="请详细描述您遇到的问题或建议（至少10个字）"
-                        placeholderTextColor="#A1A1AA"
+                        value={feedbackDraft.content}
+                        onChangeText={(content) => updateFeedbackDraft({ content })}
+                        placeholder="例如：设置页里想更快切到账号安全，或者某个开关文案不够清晰。"
+                        placeholderTextColor={SETTINGS_COLORS.textMuted}
+                        style={styles.textArea}
                         multiline
-                        maxLength={MAX_CHARS}
-                        value={content}
-                        onChangeText={setContent}
-                        textAlignVertical="top"
+                        maxLength={300}
                     />
-                    <Text style={styles.charCount}>
-                        {content.length}/{MAX_CHARS}
-                    </Text>
+                    <Text style={styles.counterText}>{feedbackDraft.content.length}/300</Text>
                 </View>
 
-                {/* 图片上传 */}
-                <Text style={styles.sectionLabel}>上传截图（选填）</Text>
-                <View style={styles.imageGrid}>
-                    {images.map((_, index) => (
-                        <View key={index} style={styles.imagePlaceholder}>
-                            <ImageIcon size={24} color="#A1A1AA" />
-                            <Text style={styles.imagePlaceholderText}>图片 {index + 1}</Text>
-                            <TouchableOpacity
-                                style={styles.removeImageBtn}
-                                onPress={() => handleRemoveImage(index)}
-                            >
-                                <X size={12} color="#FFFFFF" />
-                            </TouchableOpacity>
-                        </View>
-                    ))}
-                    {images.length < MAX_IMAGES && (
-                        <TouchableOpacity style={styles.addImageBtn} onPress={handleAddImage}>
-                            <Plus size={24} color="#A1A1AA" />
-                            <Text style={styles.addImageText}>
-                                {images.length}/{MAX_IMAGES}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-
-                {/* 联系方式 */}
-                <Text style={styles.sectionLabel}>联系方式（选填）</Text>
-                <View style={styles.contactCard}>
-                    <View style={styles.contactIconBox}>
-                        <Phone size={16} color="#A1A1AA" />
-                    </View>
+                <View style={styles.block}>
+                    <Text style={styles.label}>联系方式</Text>
                     <TextInput
-                        style={styles.contactInput}
-                        placeholder="手机号或邮箱，方便我们联系您"
-                        placeholderTextColor="#A1A1AA"
-                        value={contact}
-                        onChangeText={setContact}
-                        keyboardType="default"
+                        value={feedbackDraft.contact}
+                        onChangeText={(contact) => updateFeedbackDraft({ contact })}
+                        placeholder="手机号 / 微信号（选填）"
+                        placeholderTextColor={SETTINGS_COLORS.textMuted}
+                        style={styles.textInput}
                     />
                 </View>
 
-                {/* 提交 */}
-                <TouchableOpacity
-                    style={[styles.submitBtn, (!canSubmit || isSubmitting) && styles.submitBtnDisabled]}
-                    onPress={handleSubmit}
-                    disabled={!canSubmit || isSubmitting}
-                >
-                    <Send size={18} color={canSubmit ? '#FFFFFF' : '#A1A1AA'} />
-                    <Text style={[styles.submitBtnText, !canSubmit && styles.submitBtnTextDisabled]}>
-                        {isSubmitting ? '提交中...' : '提交反馈'}
-                    </Text>
-                </TouchableOpacity>
+                <View style={styles.block}>
+                    <Text style={styles.label}>辅助截图</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.imageList}>
+                        {feedbackDraft.screenshots.map((uri: string, index: number) => (
+                            <View key={`${uri}-${index}`} style={styles.imageCard}>
+                                <Image source={{ uri }} style={styles.previewImage} />
+                                <TouchableOpacity
+                                    activeOpacity={0.86}
+                                    style={styles.removeImageButton}
+                                    onPress={() => updateFeedbackDraft({ screenshots: feedbackDraft.screenshots.filter((item: string) => item !== uri) })}
+                                >
+                                    <X size={14} color="#FFFFFF" strokeWidth={2.4} />
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                        {feedbackDraft.screenshots.length < 4 ? (
+                            <TouchableOpacity activeOpacity={0.88} style={styles.addImageCard} onPress={handlePickImages}>
+                                <ImagePlus size={22} color={SETTINGS_COLORS.textSecondary} strokeWidth={2.1} />
+                                <Text style={styles.addImageText}>添加截图</Text>
+                            </TouchableOpacity>
+                        ) : null}
+                    </ScrollView>
+                </View>
+            </SettingsSection>
 
-                {!canSubmit && (
-                    <Text style={styles.submitHint}>
-                        请选择反馈类型并输入至少 10 个字的描述
-                    </Text>
-                )}
+            <SettingsActionButton label={submitting ? '提交中...' : '提交反馈'} onPress={handleSubmit} disabled={submitting || submitDisabled} />
 
-                <View style={styles.bottomSpacer} />
-            </ScrollView>
-        </SafeAreaView>
+            <SettingsBottomSheet visible={categoryVisible} onClose={() => setCategoryVisible(false)}>
+                <Text style={styles.sheetTitle}>选择反馈类型</Text>
+                <Text style={styles.sheetSubtitle}>按类型归档后，产品和设计会更快定位你的问题。</Text>
+                <View style={styles.optionList}>
+                    {CATEGORY_OPTIONS.map((option) => (
+                        <TouchableOpacity
+                            key={option}
+                            activeOpacity={0.88}
+                            style={[styles.optionItem, feedbackDraft.category === option && styles.optionItemActive]}
+                            onPress={() => {
+                                updateFeedbackDraft({ category: option });
+                                setCategoryVisible(false);
+                            }}
+                        >
+                            <Text style={[styles.optionText, feedbackDraft.category === option && styles.optionTextActive]}>{option}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </SettingsBottomSheet>
+
+            <SettingsDialog
+                visible={Boolean(successTicket)}
+                title="反馈已收到"
+                message={`我们已收到你的反馈，单号 ${successTicket}。后续如果需要补充说明，可继续提交新的记录。`}
+                tone="success"
+                onClose={() => {
+                    setSuccessTicket('');
+                    navigation.goBack();
+                }}
+            />
+        </SettingsLayout>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F5F7FA' },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: Platform.OS === 'ios' ? 12 : 44,
-        paddingBottom: 12,
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#E4E4E7',
+    formSection: {
+        padding: 18,
+        gap: 16,
     },
-    backBtn: { padding: 4 },
-    headerTitle: { fontSize: 17, fontWeight: '600', color: '#09090B' },
-    placeholder: { width: 32 },
-    content: { flex: 1, paddingHorizontal: 16 },
-    sectionLabel: {
+    block: {
+        gap: 8,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: SETTINGS_COLORS.textPrimary,
+    },
+    textArea: {
+        minHeight: 140,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        textAlignVertical: 'top',
+        fontSize: 16,
+        color: SETTINGS_COLORS.textPrimary,
+    },
+    textInput: {
+        minHeight: 56,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
+        paddingHorizontal: 16,
+        fontSize: 16,
+        color: SETTINGS_COLORS.textPrimary,
+    },
+    counterText: {
         fontSize: 13,
-        fontWeight: '600',
-        color: '#71717A',
-        marginTop: 22,
-        marginBottom: 10,
-        marginLeft: 4,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        color: SETTINGS_COLORS.textSecondary,
+        textAlign: 'right',
     },
-    typeGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 10,
-    },
-    typeCard: {
-        flexBasis: '47%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 14,
-        borderWidth: 1.5,
-        borderColor: '#E4E4E7',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    typeIcon: {
-        width: 32,
-        height: 32,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    typeLabel: { fontSize: 14, color: '#52525B', fontWeight: '500' },
-    textareaCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 14,
-        padding: 14,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    textarea: { minHeight: 140, fontSize: 15, color: '#09090B', lineHeight: 24 },
-    charCount: { fontSize: 12, color: '#A1A1AA', textAlign: 'right', marginTop: 8 },
-    imageGrid: {
-        flexDirection: 'row',
-        gap: 10,
-        flexWrap: 'wrap',
-    },
-    imagePlaceholder: {
-        width: 90,
-        height: 90,
-        borderRadius: 12,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#E4E4E7',
-        gap: 4,
-    },
-    imagePlaceholderText: { fontSize: 11, color: '#A1A1AA' },
-    removeImageBtn: {
-        position: 'absolute',
-        top: 6,
-        right: 6,
-        width: 18,
-        height: 18,
-        borderRadius: 9,
-        backgroundColor: '#71717A',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    addImageBtn: {
-        width: 90,
-        height: 90,
-        borderRadius: 12,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1.5,
-        borderColor: '#D4D4D8',
-        borderStyle: 'dashed',
-        gap: 4,
-    },
-    addImageText: { fontSize: 11, color: '#A1A1AA' },
-    contactCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    imageList: {
         gap: 12,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 14,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-        elevation: 2,
     },
-    contactIconBox: {
-        width: 30,
-        height: 30,
-        borderRadius: 8,
-        backgroundColor: '#F4F4F5',
+    imageCard: {
+        width: 104,
+        height: 104,
+        borderRadius: 20,
+        overflow: 'hidden',
+        position: 'relative',
+        backgroundColor: SETTINGS_COLORS.cardMuted,
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+    },
+    removeImageButton: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(17, 17, 17, 0.72)',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    contactInput: { flex: 1, fontSize: 15, color: '#09090B' },
-    submitBtn: {
-        flexDirection: 'row',
+    addImageCard: {
+        width: 104,
+        height: 104,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: SETTINGS_COLORS.border,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: PRIMARY_GOLD,
-        borderRadius: 14,
-        paddingVertical: 16,
-        marginTop: 28,
-        shadowColor: PRIMARY_GOLD,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
     },
-    submitBtnDisabled: { backgroundColor: '#E4E4E7', shadowOpacity: 0, elevation: 0 },
-    submitBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-    submitBtnTextDisabled: { color: '#A1A1AA' },
-    submitHint: { textAlign: 'center', fontSize: 12, color: '#A1A1AA', marginTop: 10 },
-    bottomSpacer: { height: 40 },
-    // Success state
-    successState: {
-        flex: 1,
+    addImageText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: SETTINGS_COLORS.textSecondary,
+    },
+    sheetTitle: {
+        fontSize: 22,
+        fontWeight: '700',
+        color: SETTINGS_COLORS.textPrimary,
+        marginBottom: 8,
+    },
+    sheetSubtitle: {
+        fontSize: 14,
+        lineHeight: 21,
+        color: SETTINGS_COLORS.textSecondary,
+        marginBottom: 18,
+    },
+    optionList: {
+        gap: 10,
+    },
+    optionItem: {
+        minHeight: 54,
+        borderRadius: SETTINGS_RADIUS.button,
+        backgroundColor: SETTINGS_COLORS.cardMuted,
         justifyContent: 'center',
-        alignItems: 'center',
-        padding: 40,
+        paddingHorizontal: 16,
     },
-    successIconBox: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: '#F0FDF4',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 24,
+    optionItemActive: {
+        backgroundColor: SETTINGS_COLORS.accent,
     },
-    successTitle: { fontSize: 22, fontWeight: '700', color: '#09090B', marginBottom: 12 },
-    successDesc: {
-        fontSize: 15,
-        color: '#71717A',
-        textAlign: 'center',
-        lineHeight: 24,
-        marginBottom: 36,
+    optionText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: SETTINGS_COLORS.textPrimary,
     },
-    successBtn: {
-        backgroundColor: PRIMARY_GOLD,
-        paddingHorizontal: 48,
-        paddingVertical: 14,
-        borderRadius: 14,
+    optionTextActive: {
+        color: '#FFFFFF',
     },
-    successBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
 });
 
 export default FeedbackScreen;

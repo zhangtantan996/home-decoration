@@ -43,15 +43,16 @@ import ProjectListScreen from '../screens/ProjectListScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 import DesignFilesScreen from '../screens/DesignFilesScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
-import RealNameAuthScreen from '../screens/RealNameAuthScreen';
-import LoginDevicesScreen from '../screens/LoginDevicesScreen';
-import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import PrivacySettingsScreen from '../screens/PrivacySettingsScreen';
 import PaymentSettingsScreen from '../screens/PaymentSettingsScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
 import GeneralSettingsScreen from '../screens/GeneralSettingsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import FeedbackScreen from '../screens/FeedbackScreen';
+import RealNameVerificationScreen from '../screens/RealNameVerificationScreen';
+import DeviceManagementScreen from '../screens/DeviceManagementScreen';
+import AccountCancellationScreen from '../screens/AccountCancellationScreen';
+import LegalDocumentScreen from '../screens/LegalDocumentScreen';
 import ChangePhoneScreen from '../screens/ChangePhoneScreen';
 
 // 导入状态管理
@@ -85,11 +86,34 @@ export type RootStackParamList = {
         tab?: 'all' | 'pending' | 'processing' | 'completed';
     };
     Favorites: undefined;
+    LegalDocument: {
+        documentType: 'collection' | 'sharing' | 'privacy' | 'terms';
+    };
     [key: string]: any;
 };
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const homeTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+    <Home size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+);
+
+const inspirationTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+    <Sparkles size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+);
+
+const progressTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+    <FileText size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+);
+
+const messageTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+    <MessageSquare size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+);
+
+const profileTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+    <User size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+);
 
 // 底部Tab导航
 const MainTabs = () => {
@@ -121,9 +145,7 @@ const MainTabs = () => {
                 component={HomeScreen}
                 options={{
                     tabBarLabel: '首页',
-                    tabBarIcon: ({ focused, color }) => (
-                        <Home size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
-                    ),
+                    tabBarIcon: homeTabIcon,
                 }}
             />
             <Tab.Screen
@@ -131,9 +153,7 @@ const MainTabs = () => {
                 component={InspirationScreen}
                 options={{
                     tabBarLabel: '灵感',
-                    tabBarIcon: ({ focused, color }) => (
-                        <Sparkles size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
-                    ),
+                    tabBarIcon: inspirationTabIcon,
                 }}
             />
             <Tab.Screen
@@ -141,9 +161,7 @@ const MainTabs = () => {
                 component={MySiteScreen}
                 options={{
                     tabBarLabel: '进度',
-                    tabBarIcon: ({ focused, color }) => (
-                        <FileText size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
-                    ),
+                    tabBarIcon: progressTabIcon,
                 }}
             />
             <Tab.Screen
@@ -151,9 +169,7 @@ const MainTabs = () => {
                 component={MessageScreen}
                 options={{
                     tabBarLabel: '消息',
-                    tabBarIcon: ({ focused, color }) => (
-                        <MessageSquare size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
-                    ),
+                    tabBarIcon: messageTabIcon,
                 }}
             />
             <Tab.Screen
@@ -161,9 +177,7 @@ const MainTabs = () => {
                 component={ProfileScreen}
                 options={{
                     tabBarLabel: '我的',
-                    tabBarIcon: ({ focused, color }) => (
-                        <User size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
-                    ),
+                    tabBarIcon: profileTabIcon,
                 }}
             />
         </Tab.Navigator>
@@ -249,8 +263,8 @@ const AppNavigator = () => {
                         <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
                         <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
                         <Stack.Screen name="Settings" component={SettingsScreen} />
-                        <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
                         <Stack.Screen name="ChangePhone" component={ChangePhoneScreen} />
+                        <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
                         <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
                         <Stack.Screen name="AccountSecurity" component={AccountSecurityScreen} />
                         <Stack.Screen name="PullToRefreshDemo" component={PullToRefreshDemo} />
@@ -341,18 +355,18 @@ const AppNavigator = () => {
                         />
                         {/* 设置子页面 */}
                         <Stack.Screen
-                            name="RealNameAuth"
-                            component={RealNameAuthScreen}
+                            name="RealNameVerification"
+                            component={RealNameVerificationScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                         <Stack.Screen
-                            name="LoginDevices"
-                            component={LoginDevicesScreen}
+                            name="DeviceManagement"
+                            component={DeviceManagementScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                         <Stack.Screen
-                            name="DeleteAccount"
-                            component={DeleteAccountScreen}
+                            name="AccountCancellation"
+                            component={AccountCancellationScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                         <Stack.Screen
@@ -383,6 +397,11 @@ const AppNavigator = () => {
                         <Stack.Screen
                             name="Feedback"
                             component={FeedbackScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="LegalDocument"
+                            component={LegalDocumentScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                     </>

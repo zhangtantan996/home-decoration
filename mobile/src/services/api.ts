@@ -5,12 +5,13 @@ import { useAuthStore } from '../store/authStore';
 import { AutoRetryGuard, type AutoRetryPolicy } from '../utils/autoRetryGuard';
 
 // @ts-ignore
-import { getApiUrl } from '../config';
+import { getApiUrl, getApiUrlCandidates } from '../config';
 
-const BASE_URL = getApiUrl();
+const BASE_URL_CANDIDATES = getApiUrlCandidates();
+let activeBaseUrl = BASE_URL_CANDIDATES[0] || getApiUrl();
 
 const api = axios.create({
-    baseURL: BASE_URL,
+    baseURL: activeBaseUrl,
     timeout: 10000,
     headers: { 'Content-Type': 'application/json' },
 });
@@ -46,11 +47,13 @@ const tryRefreshToken = async (refreshToken: string) => {
     authRefreshGuard.recordAttempt('auto');
 
     const candidates = ['/auth/refresh-token', '/auth/refreshToken', '/auth/refresh'];
+    const baseUrls = [activeBaseUrl, ...BASE_URL_CANDIDATES.filter((url) => url !== activeBaseUrl)];
 
     let lastError: any = null;
-    for (const path of candidates) {
+    for (const baseUrl of baseUrls) {
+        for (const path of candidates) {
         try {
-            const response = await axios.post(`${BASE_URL}${path}`, { refreshToken });
+            const response = await axios.post(`${baseUrl}${path}`, { refreshToken });
             const payload = response.data;
 
             // 兼容两种返回：1) { code:0, data:{ token, refreshToken } } 2) { token, refreshToken }
@@ -60,6 +63,8 @@ const tryRefreshToken = async (refreshToken: string) => {
 
             if (!token) throw new Error('Empty token in refresh response');
 
+            activeBaseUrl = baseUrl;
+            api.defaults.baseURL = baseUrl;
             authRefreshGuard.recordSuccess();
             console.info('[AutoRetry]', {
                 businessKey: AUTH_REFRESH_BUSINESS_KEY,
@@ -73,7 +78,6 @@ const tryRefreshToken = async (refreshToken: string) => {
             };
         } catch (err: any) {
             lastError = err;
-            // 404/405/501 继续尝试下一条，其他错误直接抛出
             const status = err?.response?.status;
             if (status && ![404, 405, 501].includes(status)) {
                 authRefreshGuard.recordFailure(err);
@@ -89,6 +93,7 @@ const tryRefreshToken = async (refreshToken: string) => {
                 throw err;
             }
         }
+    }
     }
     if (lastError) {
         authRefreshGuard.recordFailure(lastError);
@@ -123,6 +128,37 @@ const processQueue = (error: any, token: string | null = null) => {
     });
 
     failedQueue = [];
+};
+
+
+const getRetryBaseUrl = (currentBaseUrl?: string): string | null => {
+    const current = currentBaseUrl || activeBaseUrl;
+    const currentIndex = BASE_URL_CANDIDATES.indexOf(current);
+    if (currentIndex < 0) {
+        return BASE_URL_CANDIDATES.length > 1 ? BASE_URL_CANDIDATES[1] : null;
+    }
+    return BASE_URL_CANDIDATES[currentIndex + 1] || null;
+};
+
+const shouldRetryWithAlternateBaseUrl = (error: any, request: any): boolean => {
+    if (!request || request._hostRetried) {
+        return false;
+    }
+
+    const method = String(request.method || 'get').toLowerCase();
+    if (method !== 'get') {
+        return false;
+    }
+
+    if (BASE_URL_CANDIDATES.length < 2) {
+        return false;
+    }
+
+    if (!error.response) {
+        return true;
+    }
+
+    return error.response.status >= 500;
 };
 
 // 请求拦截器 - 自动添加 Token
@@ -161,6 +197,24 @@ api.interceptors.response.use(
     },
     async (error) => {
         const originalRequest = error.config;
+
+        if (shouldRetryWithAlternateBaseUrl(error, originalRequest)) {
+            const retryBaseUrl = getRetryBaseUrl(originalRequest?.baseURL);
+            if (retryBaseUrl) {
+                try {
+                    const retryResponse = await api({
+                        ...originalRequest,
+                        _hostRetried: true,
+                        baseURL: retryBaseUrl,
+                    });
+                    activeBaseUrl = retryBaseUrl;
+                    api.defaults.baseURL = retryBaseUrl;
+                    return retryResponse;
+                } catch (retryError) {
+                    error = retryError;
+                }
+            }
+        }
 
         // 如果是 401 错误且不是刷新 Token 请求
         if (error.response?.status === 401 && !originalRequest._retry) {

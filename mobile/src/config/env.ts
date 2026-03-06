@@ -27,7 +27,7 @@ import { NativeModules, Platform } from 'react-native';
 type NetworkMode = 'adb-reverse' | 'emulator-ip' | 'lan-ip';
 
 // 选择你的网络模式
-let NETWORK_MODE: NetworkMode = 'adb-reverse'; // 默认使用 adb reverse
+let NETWORK_MODE: NetworkMode = 'adb-reverse'; // Android 开发默认优先使用 adb reverse，兼容当前真机调试链路
 
 // 如果使用 LAN IP 模式，请在这里填写你的 Mac IP 地址
 // 获取方法: 在终端执行 ifconfig | grep "inet " | grep -v 127.0.0.1

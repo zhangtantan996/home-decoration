@@ -115,7 +115,11 @@ const ProfileScreen = ({ navigation }: any) => {
             <ScrollView showsVerticalScrollIndicator={false}>
                 {/* 用户信息区 */}
                 <View style={styles.userSection}>
-                    <View style={styles.userInfo}>
+                    <TouchableOpacity
+                        activeOpacity={0.82}
+                        style={styles.userInfo}
+                        onPress={() => navigation.navigate('PersonalInfo')}
+                    >
                         <View style={styles.avatar}>
                             {user?.avatar ? (
                                 <Image source={{ uri: user.avatar }} style={styles.avatarImage} />
@@ -127,18 +131,12 @@ const ProfileScreen = ({ navigation }: any) => {
                         </View>
                         <View style={styles.userDetails}>
                             <View style={styles.userNameRow}>
-                                <Text style={styles.userName}>
+                                <Text style={styles.userName} numberOfLines={1} ellipsizeMode="tail">
                                     {user?.nickname || `用户${user?.phone?.slice(-4) || ''}`}
                                 </Text>
-                                <View style={styles.identityBadge}>
-                                    <Text style={styles.identityBadgeText}>业主</Text>
-                                </View>
-                            </View>
-                            <View style={styles.memberBadge}>
-                                <Text style={styles.memberBadgeText}>BLACK MEMBER</Text>
                             </View>
                         </View>
-                    </View>
+                    </TouchableOpacity>
                     <View style={styles.headerActions}>
                         <TouchableOpacity
                             style={styles.notificationBtn}
@@ -293,8 +291,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
     },
     userInfo: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
+        minWidth: 0,
     },
     avatar: {
         width: 56,
@@ -315,41 +315,23 @@ const styles = StyleSheet.create({
         color: '#71717A',
     },
     userDetails: {
+        flex: 1,
+        minWidth: 0,
         marginLeft: 14,
+        marginRight: 12,
     },
     userNameRow: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 6,
+        minWidth: 0,
     },
     userName: {
+        flexShrink: 1,
+        maxWidth: '100%',
         fontSize: 18,
         fontWeight: '700',
         color: '#09090B',
-    },
-    identityBadge: {
-        backgroundColor: PRIMARY_GOLD,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 4,
-        marginLeft: 8,
-    },
-    identityBadgeText: {
-        color: '#FFFFFF',
-        fontSize: 11,
-        fontWeight: '600',
-    },
-    memberBadge: {
-        backgroundColor: '#1C1C1E',
-        paddingHorizontal: 10,
-        paddingVertical: 3,
-        borderRadius: 4,
-    },
-    memberBadgeText: {
-        color: '#FFFFFF',
-        fontSize: 10,
-        fontWeight: '600',
-        letterSpacing: 0.5,
     },
     settingsBtn: {
         padding: 8,
@@ -358,6 +340,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+        flexShrink: 0,
     },
     notificationBtn: {
         padding: 8,
