@@ -25,16 +25,20 @@ var regionService = &service.RegionService{}
 
 // MerchantApplyInput 入驻申请输入
 type MerchantApplyInput struct {
-	Phone         string `json:"phone" binding:"required"`
-	Code          string `json:"code" binding:"required"`
-	ApplicantType string `json:"applicantType"` // 兼容旧字段
-	Role          string `json:"role"`          // designer, foreman, company
-	EntityType    string `json:"entityType"`    // personal, company
-	RealName      string `json:"realName" binding:"required"`
-	Avatar        string `json:"avatar" binding:"required"`
-	IDCardNo      string `json:"idCardNo" binding:"required"`
-	IDCardFront   string `json:"idCardFront" binding:"required"`
-	IDCardBack    string `json:"idCardBack" binding:"required"`
+	Phone                  string `json:"phone" binding:"required"`
+	Code                   string `json:"code" binding:"required"`
+	ApplicantType          string `json:"applicantType"` // 兼容旧字段
+	Role                   string `json:"role"`          // designer, foreman, company
+	EntityType             string `json:"entityType"`    // personal, company
+	RealName               string `json:"realName"`
+	Avatar                 string `json:"avatar" binding:"required"`
+	IDCardNo               string `json:"idCardNo"`
+	IDCardFront            string `json:"idCardFront"`
+	IDCardBack             string `json:"idCardBack"`
+	LegalPersonName        string `json:"legalPersonName"`
+	LegalPersonIDCardNo    string `json:"legalPersonIdCardNo"`
+	LegalPersonIDCardFront string `json:"legalPersonIdCardFront"`
+	LegalPersonIDCardBack  string `json:"legalPersonIdCardBack"`
 	// 工作室/公司专属
 	CompanyName   string `json:"companyName"`
 	LicenseNo     string `json:"licenseNo"`
@@ -465,9 +469,67 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	input.WorkTypes = normalizeStringSlice(input.WorkTypes)
 	input.HighlightTags = normalizeStringSlice(input.HighlightTags)
 	input.Avatar = strings.TrimSpace(input.Avatar)
+	input.RealName = strings.TrimSpace(input.RealName)
+	input.IDCardNo = strings.TrimSpace(input.IDCardNo)
+	input.IDCardFront = strings.TrimSpace(input.IDCardFront)
+	input.IDCardBack = strings.TrimSpace(input.IDCardBack)
+	input.CompanyName = strings.TrimSpace(input.CompanyName)
+	input.LicenseNo = utils.NormalizeLicenseNo(input.LicenseNo)
+	input.LicenseImage = strings.TrimSpace(input.LicenseImage)
+	input.LegalPersonName = strings.TrimSpace(input.LegalPersonName)
+	input.LegalPersonIDCardNo = strings.TrimSpace(input.LegalPersonIDCardNo)
+	input.LegalPersonIDCardFront = strings.TrimSpace(input.LegalPersonIDCardFront)
+	input.LegalPersonIDCardBack = strings.TrimSpace(input.LegalPersonIDCardBack)
 	input.GraduateSchool = strings.TrimSpace(input.GraduateSchool)
 	input.DesignPhilosophy = strings.TrimSpace(input.DesignPhilosophy)
 	input.Introduction = strings.TrimSpace(input.Introduction)
+
+	if input.EntityType == "company" {
+		if input.LegalPersonName != "" {
+			input.RealName = input.LegalPersonName
+		}
+		if input.LegalPersonIDCardNo != "" {
+			input.IDCardNo = strings.ToUpper(input.LegalPersonIDCardNo)
+		}
+		if input.LegalPersonIDCardFront != "" {
+			input.IDCardFront = input.LegalPersonIDCardFront
+		}
+		if input.LegalPersonIDCardBack != "" {
+			input.IDCardBack = input.LegalPersonIDCardBack
+		}
+	}
+
+	if input.RealName == "" {
+		if input.EntityType == "company" {
+			return fmt.Errorf("请填写法人/经营者姓名")
+		}
+		return fmt.Errorf("请填写姓名")
+	}
+	if !utils.ValidateRealName(input.RealName) {
+		return fmt.Errorf("姓名长度应在2-20个字符之间")
+	}
+	if input.IDCardNo == "" {
+		if input.EntityType == "company" {
+			return fmt.Errorf("请填写法人/经营者身份证号")
+		}
+		return fmt.Errorf("请填写身份证号")
+	}
+	if !utils.ValidateIDCard(strings.ToUpper(input.IDCardNo)) {
+		return fmt.Errorf("身份证号格式不正确")
+	}
+	input.IDCardNo = strings.ToUpper(input.IDCardNo)
+	if strings.TrimSpace(input.IDCardFront) == "" {
+		if input.EntityType == "company" {
+			return fmt.Errorf("请上传法人/经营者身份证正面")
+		}
+		return fmt.Errorf("请上传身份证正面")
+	}
+	if strings.TrimSpace(input.IDCardBack) == "" {
+		if input.EntityType == "company" {
+			return fmt.Errorf("请上传法人/经营者身份证反面")
+		}
+		return fmt.Errorf("请上传身份证反面")
+	}
 
 	if input.Avatar == "" {
 		return fmt.Errorf("请上传头像")
@@ -492,23 +554,17 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	}
 
 	if input.EntityType == "company" {
+		if !utils.ValidateCompanyName(input.CompanyName) {
+			return fmt.Errorf("名称长度应在2-100个字符之间")
+		}
+		if input.LicenseNo == "" {
+			return fmt.Errorf("公司主体必须提供统一社会信用代码/营业执照号")
+		}
 		if err := service.VerifyLicenseForApply(input.LicenseNo, input.CompanyName); err != nil {
 			return err
 		}
-		if strings.TrimSpace(input.LicenseNo) == "" {
-			return fmt.Errorf("公司主体必须提供营业执照号")
-		}
-		if len(strings.TrimSpace(input.LicenseNo)) > 18 {
-			return fmt.Errorf("营业执照号长度不正确")
-		}
 		if strings.TrimSpace(input.LicenseImage) == "" {
 			return fmt.Errorf("公司主体必须上传营业执照图片")
-		}
-	}
-
-	if input.EntityType == "company" || input.Role == "company" {
-		if !utils.ValidateCompanyName(input.CompanyName) {
-			return fmt.Errorf("名称长度应在2-100个字符之间")
 		}
 	}
 
@@ -580,18 +636,6 @@ func MerchantApply(c *gin.Context) {
 	// 2. 严格校验输入格式
 	if !utils.ValidatePhone(input.Phone) {
 		response.Error(c, 400, "手机号格式不正确")
-		return
-	}
-	if !utils.ValidateRealName(input.RealName) {
-		response.Error(c, 400, "姓名长度应在2-20个字符之间")
-		return
-	}
-	if !utils.ValidateIDCard(input.IDCardNo) {
-		response.Error(c, 400, "身份证号格式不正确")
-		return
-	}
-	if err := service.VerifyIDCardForApply(input.IDCardNo, input.RealName); err != nil {
-		response.Error(c, 400, err.Error())
 		return
 	}
 

@@ -3,7 +3,6 @@ package service
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
 	"home-decoration-server/pkg/utils"
@@ -33,16 +32,15 @@ func (ManualIDCardVerifier) Verify(idNo, _ string) VerificationResult {
 
 type ManualLicenseVerifier struct{}
 
-var licenseNoPattern = regexp.MustCompile(`^[0-9A-Za-z]{8,50}$`)
-
 func (ManualLicenseVerifier) Verify(licenseNo, companyName string) VerificationResult {
 	licenseNo = strings.TrimSpace(licenseNo)
 	companyName = strings.TrimSpace(companyName)
 	if licenseNo == "" {
 		return VerificationResult{Passed: false, Reason: "请填写营业执照号"}
 	}
-	if !licenseNoPattern.MatchString(licenseNo) {
-		return VerificationResult{Passed: false, Reason: "营业执照号格式不正确"}
+	normalized := utils.NormalizeLicenseNo(licenseNo)
+	if !utils.ValidateBusinessLicenseNo(normalized) {
+		return VerificationResult{Passed: false, Reason: "统一社会信用代码/营业执照号格式不正确"}
 	}
 	if companyName != "" && !utils.ValidateCompanyName(companyName) {
 		return VerificationResult{Passed: false, Reason: "名称长度应在2-100个字符之间"}

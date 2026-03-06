@@ -501,6 +501,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		v1.POST("/merchant/apply/:id/resubmit", handler.MerchantResubmit)
 		v1.POST("/merchant/change-application", handler.MerchantApplyIdentityChange)
 		v1.POST("/merchant/upload-public", handler.MerchantUploadImage)
+		v1.POST("/merchant/onboarding/validate-license", handler.MerchantValidateOnboardingLicense)
+		v1.POST("/merchant/onboarding/validate-id-card", handler.MerchantValidateOnboardingIDCard)
 		v1.POST("/material-shop/apply", handler.MaterialShopApply)
 		v1.GET("/material-shop/apply/:phone/status", handler.MaterialShopApplyStatus)
 		v1.POST("/material-shop/apply/:id/resubmit", handler.MaterialShopApplyResubmit)

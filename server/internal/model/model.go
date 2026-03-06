@@ -323,26 +323,31 @@ func (UserFavorite) TableName() string {
 // MaterialShop 主材门店
 type MaterialShop struct {
 	Base
-	UserID            uint64  `json:"userId" gorm:"index"`
-	Type              string  `json:"type" gorm:"size:20"` // showroom | brand
-	Name              string  `json:"name" gorm:"size:100"`
-	Description       string  `json:"description" gorm:"type:text"`
-	BusinessLicenseNo string  `json:"businessLicenseNo" gorm:"size:50"`
-	BusinessLicense   string  `json:"businessLicense" gorm:"size:500"`
-	ContactPhone      string  `json:"contactPhone" gorm:"size:20"`
-	ContactName       string  `json:"contactName" gorm:"size:50"`
-	Cover             string  `json:"cover" gorm:"size:500"`     // 封面图
-	BrandLogo         string  `json:"brandLogo" gorm:"size:500"` // 品牌 Logo
-	Rating            float32 `json:"rating" gorm:"default:0"`
-	ReviewCount       int     `json:"reviewCount" gorm:"default:0"`
-	MainProducts      string  `json:"mainProducts" gorm:"type:text"`     // JSON 数组
-	ProductCategories string  `json:"productCategories" gorm:"size:200"` // 逗号分隔
-	Address           string  `json:"address" gorm:"size:300"`
-	Latitude          float64 `json:"latitude"`
-	Longitude         float64 `json:"longitude"`
-	OpenTime          string  `json:"openTime" gorm:"size:50"`
-	Tags              string  `json:"tags" gorm:"type:text"` // JSON 数组
-	IsVerified        bool    `json:"isVerified" gorm:"default:false"`
+	UserID                 uint64  `json:"userId" gorm:"index"`
+	Type                   string  `json:"type" gorm:"size:20"` // showroom | brand
+	Name                   string  `json:"name" gorm:"size:100"`
+	CompanyName            string  `json:"companyName" gorm:"size:100"`
+	Description            string  `json:"description" gorm:"type:text"`
+	BusinessLicenseNo      string  `json:"businessLicenseNo" gorm:"size:50"`
+	BusinessLicense        string  `json:"businessLicense" gorm:"size:500"`
+	LegalPersonName        string  `json:"legalPersonName" gorm:"size:50"`
+	LegalPersonIDCardNo    string  `json:"legalPersonIdCardNo" gorm:"size:100"`
+	LegalPersonIDCardFront string  `json:"legalPersonIdCardFront" gorm:"size:500"`
+	LegalPersonIDCardBack  string  `json:"legalPersonIdCardBack" gorm:"size:500"`
+	ContactPhone           string  `json:"contactPhone" gorm:"size:20"`
+	ContactName            string  `json:"contactName" gorm:"size:50"`
+	Cover                  string  `json:"cover" gorm:"size:500"`     // 封面图
+	BrandLogo              string  `json:"brandLogo" gorm:"size:500"` // 品牌 Logo
+	Rating                 float32 `json:"rating" gorm:"default:0"`
+	ReviewCount            int     `json:"reviewCount" gorm:"default:0"`
+	MainProducts           string  `json:"mainProducts" gorm:"type:text"`     // JSON 数组
+	ProductCategories      string  `json:"productCategories" gorm:"size:200"` // 逗号分隔
+	Address                string  `json:"address" gorm:"size:300"`
+	Latitude               float64 `json:"latitude"`
+	Longitude              float64 `json:"longitude"`
+	OpenTime               string  `json:"openTime" gorm:"size:50"`
+	Tags                   string  `json:"tags" gorm:"type:text"` // JSON 数组
+	IsVerified             bool    `json:"isVerified" gorm:"default:false"`
 }
 
 // TableName 指定表名
@@ -353,25 +358,30 @@ func (MaterialShop) TableName() string {
 // MaterialShopApplication 主材商入驻申请
 type MaterialShopApplication struct {
 	Base
-	UserID              uint64     `json:"userId" gorm:"index"`
-	Phone               string     `json:"phone" gorm:"index;size:20"`
-	EntityType          string     `json:"entityType" gorm:"size:20;default:'company'"` // company
-	ShopName            string     `json:"shopName" gorm:"size:100"`
-	ShopDescription     string     `json:"shopDescription" gorm:"type:text"`
-	BusinessLicenseNo   string     `json:"businessLicenseNo" gorm:"size:50"`
-	BusinessLicense     string     `json:"businessLicense" gorm:"size:500"`
-	BusinessHours       string     `json:"businessHours" gorm:"size:100"`
-	ContactPhone        string     `json:"contactPhone" gorm:"size:20"`
-	ContactName         string     `json:"contactName" gorm:"size:50"`
-	Address             string     `json:"address" gorm:"size:300"`
-	LegalAcceptanceJSON string     `json:"legalAcceptanceJson" gorm:"type:text"`
-	LegalAcceptedAt     *time.Time `json:"legalAcceptedAt"`
-	LegalAcceptSource   string     `json:"legalAcceptSource" gorm:"size:50;default:'merchant_web'"`
-	Status              int8       `json:"status" gorm:"default:0"` // 0:待审核 1:审核通过 2:审核拒绝
-	RejectReason        string     `json:"rejectReason" gorm:"size:500"`
-	AuditedBy           uint64     `json:"auditedBy"`
-	AuditedAt           *time.Time `json:"auditedAt"`
-	ShopID              uint64     `json:"shopId" gorm:"index"`
+	UserID                 uint64     `json:"userId" gorm:"index"`
+	Phone                  string     `json:"phone" gorm:"index;size:20"`
+	EntityType             string     `json:"entityType" gorm:"size:20;default:'company'"` // company
+	ShopName               string     `json:"shopName" gorm:"size:100"`
+	ShopDescription        string     `json:"shopDescription" gorm:"type:text"`
+	CompanyName            string     `json:"companyName" gorm:"size:100"`
+	BusinessLicenseNo      string     `json:"businessLicenseNo" gorm:"size:50"`
+	BusinessLicense        string     `json:"businessLicense" gorm:"size:500"`
+	LegalPersonName        string     `json:"legalPersonName" gorm:"size:50"`
+	LegalPersonIDCardNo    string     `json:"legalPersonIdCardNo" gorm:"size:100"`
+	LegalPersonIDCardFront string     `json:"legalPersonIdCardFront" gorm:"size:500"`
+	LegalPersonIDCardBack  string     `json:"legalPersonIdCardBack" gorm:"size:500"`
+	BusinessHours          string     `json:"businessHours" gorm:"size:100"`
+	ContactPhone           string     `json:"contactPhone" gorm:"size:20"`
+	ContactName            string     `json:"contactName" gorm:"size:50"`
+	Address                string     `json:"address" gorm:"size:300"`
+	LegalAcceptanceJSON    string     `json:"legalAcceptanceJson" gorm:"type:text"`
+	LegalAcceptedAt        *time.Time `json:"legalAcceptedAt"`
+	LegalAcceptSource      string     `json:"legalAcceptSource" gorm:"size:50;default:'merchant_web'"`
+	Status                 int8       `json:"status" gorm:"default:0"` // 0:待审核 1:审核通过 2:审核拒绝
+	RejectReason           string     `json:"rejectReason" gorm:"size:500"`
+	AuditedBy              uint64     `json:"auditedBy"`
+	AuditedAt              *time.Time `json:"auditedAt"`
+	ShopID                 uint64     `json:"shopId" gorm:"index"`
 }
 
 func (MaterialShopApplication) TableName() string {
@@ -742,19 +752,19 @@ func (SensitiveWord) TableName() string {
 // UserSettings 用户偏好设置
 type UserSettings struct {
 	Base
-	UserID               uint64 `json:"userId" gorm:"uniqueIndex"`
-	PersonalizedRecommend bool  `json:"personalizedRecommend" gorm:"default:true"`
-	LocationTracking     bool   `json:"locationTracking" gorm:"default:false"`
-	PhoneVisible         bool   `json:"phoneVisible" gorm:"default:false"`
-	NotifySystem         bool   `json:"notifySystem" gorm:"default:true"`
-	NotifyProject        bool   `json:"notifyProject" gorm:"default:true"`
-	NotifyPayment        bool   `json:"notifyPayment" gorm:"default:true"`
-	NotifyPromo          bool   `json:"notifyPromo" gorm:"default:false"`
-	NotifySound          bool   `json:"notifySound" gorm:"default:true"`
-	NotifyVibrate        bool   `json:"notifyVibrate" gorm:"default:true"`
-	DarkMode             bool   `json:"darkMode" gorm:"default:false"`
-	FontSize             string `json:"fontSize" gorm:"size:10;default:'medium'"`
-	Language             string `json:"language" gorm:"size:5;default:'zh'"`
+	UserID                uint64 `json:"userId" gorm:"uniqueIndex"`
+	PersonalizedRecommend bool   `json:"personalizedRecommend" gorm:"default:true"`
+	LocationTracking      bool   `json:"locationTracking" gorm:"default:false"`
+	PhoneVisible          bool   `json:"phoneVisible" gorm:"default:false"`
+	NotifySystem          bool   `json:"notifySystem" gorm:"default:true"`
+	NotifyProject         bool   `json:"notifyProject" gorm:"default:true"`
+	NotifyPayment         bool   `json:"notifyPayment" gorm:"default:true"`
+	NotifyPromo           bool   `json:"notifyPromo" gorm:"default:false"`
+	NotifySound           bool   `json:"notifySound" gorm:"default:true"`
+	NotifyVibrate         bool   `json:"notifyVibrate" gorm:"default:true"`
+	DarkMode              bool   `json:"darkMode" gorm:"default:false"`
+	FontSize              string `json:"fontSize" gorm:"size:10;default:'medium'"`
+	Language              string `json:"language" gorm:"size:5;default:'zh'"`
 }
 
 func (UserSettings) TableName() string {

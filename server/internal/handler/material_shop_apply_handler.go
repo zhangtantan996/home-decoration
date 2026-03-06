@@ -24,27 +24,34 @@ type materialShopApplyProductInput struct {
 }
 
 type materialShopApplyInput struct {
-	Phone             string                          `json:"phone" binding:"required"`
-	Code              string                          `json:"code" binding:"required"`
-	EntityType        string                          `json:"entityType"`
-	ShopName          string                          `json:"shopName" binding:"required"`
-	ShopDescription   string                          `json:"shopDescription"`
-	BusinessLicenseNo string                          `json:"businessLicenseNo" binding:"required"`
-	BusinessLicense   string                          `json:"businessLicense" binding:"required"`
-	BusinessHours     string                          `json:"businessHours"`
-	ContactPhone      string                          `json:"contactPhone"`
-	ContactName       string                          `json:"contactName"`
-	Address           string                          `json:"address"`
-	Products          []materialShopApplyProductInput `json:"products" binding:"required,min=1"`
-	LegalAcceptance   LegalAcceptanceInput            `json:"legalAcceptance" binding:"required"`
+	Phone                  string                          `json:"phone" binding:"required"`
+	Code                   string                          `json:"code" binding:"required"`
+	EntityType             string                          `json:"entityType"`
+	ShopName               string                          `json:"shopName" binding:"required"`
+	ShopDescription        string                          `json:"shopDescription"`
+	CompanyName            string                          `json:"companyName"`
+	BusinessLicenseNo      string                          `json:"businessLicenseNo" binding:"required"`
+	BusinessLicense        string                          `json:"businessLicense" binding:"required"`
+	LegalPersonName        string                          `json:"legalPersonName"`
+	LegalPersonIDCardNo    string                          `json:"legalPersonIdCardNo"`
+	LegalPersonIDCardFront string                          `json:"legalPersonIdCardFront"`
+	LegalPersonIDCardBack  string                          `json:"legalPersonIdCardBack"`
+	BusinessHours          string                          `json:"businessHours"`
+	ContactPhone           string                          `json:"contactPhone"`
+	ContactName            string                          `json:"contactName"`
+	Address                string                          `json:"address"`
+	Products               []materialShopApplyProductInput `json:"products" binding:"required,min=1"`
+	LegalAcceptance        LegalAcceptanceInput            `json:"legalAcceptance" binding:"required"`
 }
 
 type materialShopUpdateInput struct {
 	Name              string `json:"name"`
+	CompanyName       string `json:"companyName"`
 	Description       string `json:"description"`
 	BusinessHours     string `json:"businessHours"`
 	ContactPhone      string `json:"contactPhone"`
 	ContactName       string `json:"contactName"`
+	LegalPersonName   string `json:"legalPersonName"`
 	Address           string `json:"address"`
 	BusinessLicenseNo string `json:"businessLicenseNo"`
 	BusinessLicense   string `json:"businessLicense"`
@@ -102,8 +109,13 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 
 	input.ShopName = strings.TrimSpace(input.ShopName)
 	input.ShopDescription = strings.TrimSpace(input.ShopDescription)
-	input.BusinessLicenseNo = strings.TrimSpace(input.BusinessLicenseNo)
+	input.CompanyName = strings.TrimSpace(input.CompanyName)
+	input.BusinessLicenseNo = utils.NormalizeLicenseNo(input.BusinessLicenseNo)
 	input.BusinessLicense = strings.TrimSpace(input.BusinessLicense)
+	input.LegalPersonName = strings.TrimSpace(input.LegalPersonName)
+	input.LegalPersonIDCardNo = strings.ToUpper(strings.TrimSpace(input.LegalPersonIDCardNo))
+	input.LegalPersonIDCardFront = strings.TrimSpace(input.LegalPersonIDCardFront)
+	input.LegalPersonIDCardBack = strings.TrimSpace(input.LegalPersonIDCardBack)
 	input.BusinessHours = strings.TrimSpace(input.BusinessHours)
 	input.ContactPhone = strings.TrimSpace(input.ContactPhone)
 	input.ContactName = strings.TrimSpace(input.ContactName)
@@ -120,26 +132,44 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 	if len([]rune(input.ShopDescription)) > 5000 {
 		return fmt.Errorf("店铺描述不能超过5000个字符")
 	}
-	if input.BusinessLicenseNo == "" {
-		return fmt.Errorf("请填写营业执照号")
+	if !utils.ValidateCompanyName(input.CompanyName) {
+		return fmt.Errorf("公司/个体名称长度应在2-100个字符之间")
 	}
-	if err := service.VerifyLicenseForApply(input.BusinessLicenseNo, input.ShopName); err != nil {
+	if input.BusinessLicenseNo == "" {
+		return fmt.Errorf("请填写统一社会信用代码/营业执照号")
+	}
+	if err := service.VerifyLicenseForApply(input.BusinessLicenseNo, input.CompanyName); err != nil {
 		return err
 	}
-	if len([]rune(input.BusinessLicenseNo)) > 50 {
-		return fmt.Errorf("营业执照号长度不能超过50个字符")
-	}
 	if input.BusinessLicense == "" {
-		return fmt.Errorf("请上传营业执照")
+		return fmt.Errorf("请上传营业执照图片")
 	}
-	if input.ContactName == "" {
-		return fmt.Errorf("请填写联系人姓名")
+	if input.LegalPersonName == "" {
+		return fmt.Errorf("请填写法人/经营者姓名")
+	}
+	if !utils.ValidateRealName(input.LegalPersonName) {
+		return fmt.Errorf("法人/经营者姓名长度应在2-20个字符之间")
+	}
+	if input.LegalPersonIDCardNo == "" {
+		return fmt.Errorf("请填写法人/经营者身份证号")
+	}
+	if err := service.VerifyIDCardForApply(input.LegalPersonIDCardNo, input.LegalPersonName); err != nil {
+		return err
+	}
+	if input.LegalPersonIDCardFront == "" {
+		return fmt.Errorf("请上传法人/经营者身份证正面")
+	}
+	if input.LegalPersonIDCardBack == "" {
+		return fmt.Errorf("请上传法人/经营者身份证反面")
 	}
 	if input.ContactPhone == "" {
-		return fmt.Errorf("请填写联系人手机号")
+		return fmt.Errorf("请填写联系手机号")
 	}
 	if !utils.ValidatePhone(input.ContactPhone) {
-		return fmt.Errorf("联系人手机号格式不正确")
+		return fmt.Errorf("联系手机号格式不正确")
+	}
+	if input.ContactName == "" {
+		input.ContactName = input.LegalPersonName
 	}
 	if input.BusinessHours == "" {
 		return fmt.Errorf("请填写营业时间")
@@ -223,7 +253,7 @@ func MaterialShopApply(c *gin.Context) {
 	}
 
 	tx := repository.DB.Begin()
-	user, err := createOrLoadUserForMaterialApply(tx, input.Phone, input.ContactName)
+	user, err := createOrLoadUserForMaterialApply(tx, input.Phone, input.LegalPersonName)
 	if err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "提交失败: 创建账号失败")
@@ -253,21 +283,26 @@ func MaterialShopApply(c *gin.Context) {
 
 	acceptedAt := time.Now()
 	application := model.MaterialShopApplication{
-		UserID:              user.ID,
-		Phone:               input.Phone,
-		EntityType:          input.EntityType,
-		ShopName:            input.ShopName,
-		ShopDescription:     input.ShopDescription,
-		BusinessLicenseNo:   encryptSensitiveOrPlain(input.BusinessLicenseNo),
-		BusinessLicense:     input.BusinessLicense,
-		BusinessHours:       input.BusinessHours,
-		ContactPhone:        input.ContactPhone,
-		ContactName:         input.ContactName,
-		Address:             input.Address,
-		LegalAcceptanceJSON: buildLegalAcceptanceJSON(input.LegalAcceptance),
-		LegalAcceptedAt:     &acceptedAt,
-		LegalAcceptSource:   "merchant_web",
-		Status:              0,
+		UserID:                 user.ID,
+		Phone:                  input.Phone,
+		EntityType:             input.EntityType,
+		ShopName:               input.ShopName,
+		ShopDescription:        input.ShopDescription,
+		CompanyName:            input.CompanyName,
+		BusinessLicenseNo:      encryptSensitiveOrPlain(input.BusinessLicenseNo),
+		BusinessLicense:        input.BusinessLicense,
+		LegalPersonName:        input.LegalPersonName,
+		LegalPersonIDCardNo:    encryptSensitiveOrPlain(input.LegalPersonIDCardNo),
+		LegalPersonIDCardFront: input.LegalPersonIDCardFront,
+		LegalPersonIDCardBack:  input.LegalPersonIDCardBack,
+		BusinessHours:          input.BusinessHours,
+		ContactPhone:           input.ContactPhone,
+		ContactName:            input.ContactName,
+		Address:                input.Address,
+		LegalAcceptanceJSON:    buildLegalAcceptanceJSON(input.LegalAcceptance),
+		LegalAcceptedAt:        &acceptedAt,
+		LegalAcceptSource:      "merchant_web",
+		Status:                 0,
 	}
 	if err := tx.Create(&application).Error; err != nil {
 		tx.Rollback()
@@ -370,8 +405,13 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 	app.EntityType = input.EntityType
 	app.ShopName = input.ShopName
 	app.ShopDescription = input.ShopDescription
+	app.CompanyName = input.CompanyName
 	app.BusinessLicenseNo = encryptSensitiveOrPlain(input.BusinessLicenseNo)
 	app.BusinessLicense = input.BusinessLicense
+	app.LegalPersonName = input.LegalPersonName
+	app.LegalPersonIDCardNo = encryptSensitiveOrPlain(input.LegalPersonIDCardNo)
+	app.LegalPersonIDCardFront = input.LegalPersonIDCardFront
+	app.LegalPersonIDCardBack = input.LegalPersonIDCardBack
 	app.BusinessHours = input.BusinessHours
 	app.ContactPhone = input.ContactPhone
 	app.ContactName = input.ContactName
@@ -466,9 +506,11 @@ func MaterialShopGetMe(c *gin.Context) {
 		"merchantKind":      "material_shop",
 		"entityType":        entityType,
 		"shopName":          shop.Name,
+		"companyName":       shop.CompanyName,
 		"shopDescription":   shop.Description,
 		"businessLicenseNo": shop.BusinessLicenseNo,
 		"businessLicense":   shop.BusinessLicense,
+		"legalPersonName":   shop.LegalPersonName,
 		"businessHours":     shop.OpenTime,
 		"contactPhone":      shop.ContactPhone,
 		"contactName":       shop.ContactName,
@@ -499,6 +541,14 @@ func MaterialShopUpdateMe(c *gin.Context) {
 		updates["name"] = name
 	}
 
+	if strings.TrimSpace(input.CompanyName) != "" {
+		companyName := strings.TrimSpace(input.CompanyName)
+		if !utils.ValidateCompanyName(companyName) {
+			response.Error(c, 400, "公司/个体名称长度应在2-100个字符之间")
+			return
+		}
+		updates["company_name"] = companyName
+	}
 	if input.Description != "" {
 		desc := strings.TrimSpace(input.Description)
 		if len([]rune(desc)) > 5000 {
@@ -520,6 +570,14 @@ func MaterialShopUpdateMe(c *gin.Context) {
 	}
 	if input.ContactName != "" {
 		updates["contact_name"] = strings.TrimSpace(input.ContactName)
+	}
+	if input.LegalPersonName != "" {
+		legalPersonName := strings.TrimSpace(input.LegalPersonName)
+		if !utils.ValidateRealName(legalPersonName) {
+			response.Error(c, 400, "法人/经营者姓名长度应在2-20个字符之间")
+			return
+		}
+		updates["legal_person_name"] = legalPersonName
 	}
 	if input.Address != "" {
 		updates["address"] = strings.TrimSpace(input.Address)
@@ -707,7 +765,7 @@ func AdminListMaterialShopApplications(c *gin.Context) {
 	}
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		pattern := "%" + keyword + "%"
-		query = query.Where("phone LIKE ? OR shop_name LIKE ? OR contact_name LIKE ?", pattern, pattern, pattern)
+		query = query.Where("phone LIKE ? OR shop_name LIKE ? OR company_name LIKE ? OR contact_name LIKE ? OR legal_person_name LIKE ?", pattern, pattern, pattern, pattern, pattern)
 	}
 
 	if err := query.Find(&apps).Error; err != nil {
@@ -751,22 +809,27 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"id":                app.ID,
-		"phone":             app.Phone,
-		"entityType":        app.EntityType,
-		"shopName":          app.ShopName,
-		"shopDescription":   app.ShopDescription,
-		"businessLicenseNo": app.BusinessLicenseNo,
-		"businessLicense":   app.BusinessLicense,
-		"businessHours":     app.BusinessHours,
-		"contactPhone":      app.ContactPhone,
-		"contactName":       app.ContactName,
-		"address":           app.Address,
-		"status":            app.Status,
-		"rejectReason":      app.RejectReason,
-		"createdAt":         app.CreatedAt,
-		"auditedAt":         app.AuditedAt,
-		"products":          productList,
+		"id":                     app.ID,
+		"phone":                  app.Phone,
+		"entityType":             app.EntityType,
+		"shopName":               app.ShopName,
+		"shopDescription":        app.ShopDescription,
+		"companyName":            app.CompanyName,
+		"businessLicenseNo":      app.BusinessLicenseNo,
+		"businessLicense":        app.BusinessLicense,
+		"legalPersonName":        app.LegalPersonName,
+		"legalPersonIdCardNo":    app.LegalPersonIDCardNo,
+		"legalPersonIdCardFront": app.LegalPersonIDCardFront,
+		"legalPersonIdCardBack":  app.LegalPersonIDCardBack,
+		"businessHours":          app.BusinessHours,
+		"contactPhone":           app.ContactPhone,
+		"contactName":            app.ContactName,
+		"address":                app.Address,
+		"status":                 app.Status,
+		"rejectReason":           app.RejectReason,
+		"createdAt":              app.CreatedAt,
+		"auditedAt":              app.AuditedAt,
+		"products":               productList,
 	})
 }
 
@@ -833,18 +896,23 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 	mainProductsJSON, _ := json.Marshal(mainProducts)
 
 	shop := model.MaterialShop{
-		UserID:            user.ID,
-		Type:              "showroom",
-		Name:              app.ShopName,
-		Description:       app.ShopDescription,
-		BusinessLicenseNo: app.BusinessLicenseNo,
-		BusinessLicense:   app.BusinessLicense,
-		ContactPhone:      app.ContactPhone,
-		ContactName:       app.ContactName,
-		Address:           app.Address,
-		OpenTime:          app.BusinessHours,
-		MainProducts:      string(mainProductsJSON),
-		IsVerified:        true,
+		UserID:                 user.ID,
+		Type:                   "showroom",
+		Name:                   app.ShopName,
+		CompanyName:            app.CompanyName,
+		Description:            app.ShopDescription,
+		BusinessLicenseNo:      app.BusinessLicenseNo,
+		BusinessLicense:        app.BusinessLicense,
+		LegalPersonName:        app.LegalPersonName,
+		LegalPersonIDCardNo:    app.LegalPersonIDCardNo,
+		LegalPersonIDCardFront: app.LegalPersonIDCardFront,
+		LegalPersonIDCardBack:  app.LegalPersonIDCardBack,
+		ContactPhone:           app.ContactPhone,
+		ContactName:            app.ContactName,
+		Address:                app.Address,
+		OpenTime:               app.BusinessHours,
+		MainProducts:           string(mainProductsJSON),
+		IsVerified:             true,
 	}
 	if err := tx.Create(&shop).Error; err != nil {
 		tx.Rollback()
