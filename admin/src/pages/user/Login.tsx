@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { adminAuthApi } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import type { AdminUser, MenuItem } from '../../stores/authStore';
+import merchantAppIcon from '../../assets/branding/company-logo.png';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -91,8 +92,13 @@ const Login: React.FC = () => {
             <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <Card style={{ width: 400, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}>
                     <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                        <Title level={3} style={{ marginBottom: 8 }}>装修平台管理后台</Title>
-                        <Text type="secondary">RBAC 权限管理系统</Text>
+                        <img
+                            src={merchantAppIcon}
+                            alt="禾泽云"
+                            style={{ width: 64, height: 64, borderRadius: 18, marginBottom: 16, boxShadow: '0 10px 28px rgba(24,144,255,0.24)' }}
+                        />
+                        <Title level={3} style={{ marginBottom: 8 }}>禾泽云管理后台</Title>
+                        <Text type="secondary">平台运营与审核中心</Text>
                     </div>
                     <Form
                         name="admin_login"

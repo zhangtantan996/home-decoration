@@ -32,11 +32,12 @@ const MaterialShopSettings: React.FC = () => {
             const profile = await materialShopCenterApi.getMe();
             form.setFieldsValue({
                 shopName: profile.shopName,
+                companyName: profile.companyName,
                 shopDescription: profile.shopDescription,
                 businessLicenseNo: profile.businessLicenseNo,
                 businessLicense: profile.businessLicense,
+                legalPersonName: profile.legalPersonName,
                 businessHours: profile.businessHours,
-                contactName: profile.contactName,
                 contactPhone: profile.contactPhone,
                 address: profile.address,
             });
@@ -86,11 +87,15 @@ const MaterialShopSettings: React.FC = () => {
                             <Input maxLength={100} />
                         </Form.Item>
 
+                        <Form.Item name="companyName" label="公司/个体名称" rules={[{ required: true, message: '请输入公司/个体名称' }]}>
+                            <Input maxLength={100} />
+                        </Form.Item>
+
                         <Form.Item name="shopDescription" label="店铺描述">
                             <TextArea rows={4} maxLength={5000} showCount />
                         </Form.Item>
 
-                        <Form.Item name="businessLicenseNo" label="营业执照号" rules={[{ required: true, message: '请输入营业执照号' }]}>
+                        <Form.Item name="businessLicenseNo" label="统一社会信用代码 / 营业执照号" rules={[{ required: true, message: '请输入统一社会信用代码 / 营业执照号' }]}>
                             <Input maxLength={50} />
                         </Form.Item>
 
@@ -112,13 +117,13 @@ const MaterialShopSettings: React.FC = () => {
                             <Input maxLength={100} placeholder="例如：09:00-18:00" />
                         </Form.Item>
 
-                        <Form.Item name="contactName" label="联系人" rules={[{ required: true, message: '请输入联系人' }]}>
+                        <Form.Item name="legalPersonName" label="法人/经营者姓名" rules={[{ required: true, message: '请输入法人/经营者姓名' }]}>
                             <Input maxLength={50} />
                         </Form.Item>
 
                         <Form.Item
                             name="contactPhone"
-                            label="联系电话"
+                            label="联系手机号"
                             rules={[
                                 { required: true, message: '请输入联系电话' },
                                 { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },

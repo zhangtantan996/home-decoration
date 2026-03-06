@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftOutlined, CheckOutlined, DeleteOutlined, MinusCircleOutlined, PlusOutlined, SafetyOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, CheckOutlined, DeleteOutlined, MinusCircleOutlined, PlusOutlined, SafetyOutlined } from '@ant-design/icons';
 import {
     Alert,
     Button,
@@ -10,14 +10,11 @@ import {
     Form,
     Input,
     InputNumber,
-    Layout,
     Modal,
     Row,
-    Space,
-    Steps,
+    Typography,
     Upload,
     message,
-    Grid,
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -27,10 +24,11 @@ import {
     PLATFORM_RULES_VERSION,
     PRIVACY_DATA_PROCESSING_VERSION,
 } from '../../constants/merchantLegal';
-import { materialShopApplyApi, merchantAuthApi, merchantUploadApi, type MaterialShopApplyPayload } from '../../services/merchantApi';
+import { materialShopApplyApi, merchantAuthApi, merchantUploadApi, onboardingValidationApi, type MaterialShopApplyPayload } from '../../services/merchantApi';
+import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
+import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
-const { Content } = Layout;
-const { useBreakpoint } = Grid;
+const { Title, Text } = Typography;
 
 const DRAFT_KEY = 'material_shop_register_draft';
 
@@ -74,8 +72,9 @@ const MaterialShopRegister: React.FC = () => {
     const [countdown, setCountdown] = useState(0);
     const [showRedirectAlert, setShowRedirectAlert] = useState((searchParams.get('from') || '').startsWith('login_'));
     const [products, setProducts] = useState<MaterialProductForm[]>([createEmptyProduct()]);
+    const [previewVisible, setPreviewVisible] = useState(false);
+    const [previewImage, setPreviewImage] = useState('');
     const timerRef = useRef<number | null>(null);
-    const screens = useBreakpoint();
 
     const phoneFromUrl = searchParams.get('phone') || '';
     const resubmitId = searchParams.get('resubmit');
@@ -84,6 +83,40 @@ const MaterialShopRegister: React.FC = () => {
         const raw = (searchParams.get('entityType') || 'company').toLowerCase();
         return raw === 'individual_business' ? 'individual_business' : 'company';
     }, [searchParams]);
+
+    const steps = useMemo(() => ([
+        { title: '基础信息' },
+        { title: '商品信息' },
+    ]), []);
+
+    const validateLicenseRemote = async (licenseNo: string, companyName?: string) => {
+        const normalized = normalizeLicenseNo(licenseNo);
+        if (!normalized) return;
+        if (!isValidBusinessLicenseNo(normalized)) {
+            throw new Error('请输入正确的统一社会信用代码/营业执照号');
+        }
+        const result = await onboardingValidationApi.validateLicense({
+            licenseNo: normalized,
+            companyName: companyName?.trim() || undefined,
+        });
+        if (!result.ok) {
+            throw new Error(result.message || '统一社会信用代码/营业执照号校验失败');
+        }
+    };
+
+    const validateIdCardRemote = async (idNo: string, realName: string) => {
+        const normalizedId = String(idNo || '').trim().toUpperCase();
+        const normalizedName = String(realName || '').trim();
+        if (!normalizedId) return;
+        if (!isValidChineseIDCard(normalizedId)) {
+            throw new Error('身份证号校验失败，请检查号码是否有效');
+        }
+        if (!normalizedName) return;
+        const result = await onboardingValidationApi.validateIdCard({ idNo: normalizedId, realName: normalizedName });
+        if (!result.ok) {
+            throw new Error(result.message || '身份证号校验失败');
+        }
+    };
 
     useEffect(() => {
         form.setFieldsValue({
@@ -99,7 +132,9 @@ const MaterialShopRegister: React.FC = () => {
             .register-page-bg {
                 background: linear-gradient(135deg, #f6f8fb 0%, #e9f0f9 100%);
                 position: relative;
-                overflow: auto;
+                overflow-x: hidden;
+                overflow-y: visible;
+                width: 100%;
                 min-height: 100vh;
             }
             .register-page-bg::before {
@@ -233,7 +268,7 @@ const MaterialShopRegister: React.FC = () => {
         return true;
     };
 
-    const createSingleUploadHandler = (fieldName: 'businessLicense'): UploadProps['customRequest'] => async (options) => {
+    const createSingleUploadHandler = (fieldName: 'businessLicense' | 'legalPersonIdCardFront' | 'legalPersonIdCardBack'): UploadProps['customRequest'] => async (options) => {
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             form.setFieldsValue({ [fieldName]: uploaded.url });
@@ -255,6 +290,25 @@ const MaterialShopRegister: React.FC = () => {
             status: 'done',
             url: value,
         }];
+    };
+
+    const toProductUploadFileList = (product: MaterialProductForm): UploadFile[] =>
+        product.images.map((url, imageIndex) => ({
+            uid: `${product.id}_${imageIndex}`,
+            name: url.split('/').pop() || `product-image-${imageIndex + 1}`,
+            status: 'done',
+            url,
+        }));
+
+    const handleUploadPreview = async (file: UploadFile) => {
+        const previewUrl = typeof file.url === 'string'
+            ? file.url
+            : (file.response as { url?: string } | undefined)?.url;
+        if (!previewUrl) {
+            return;
+        }
+        setPreviewImage(previewUrl);
+        setPreviewVisible(true);
     };
 
     const createProductUploadHandler = (productIndex: number): UploadProps['customRequest'] => async (options) => {
@@ -321,10 +375,14 @@ const MaterialShopRegister: React.FC = () => {
                     'phone',
                     'code',
                     'shopName',
+                    'companyName',
                     'businessLicenseNo',
                     'businessLicense',
+                    'legalPersonName',
+                    'legalPersonIdCardNo',
+                    'legalPersonIdCardFront',
+                    'legalPersonIdCardBack',
                     'businessHours',
-                    'contactName',
                     'contactPhone',
                     'address',
                 ]);
@@ -466,11 +524,16 @@ const MaterialShopRegister: React.FC = () => {
                         entityType,
                         shopName: String(values.shopName || '').trim(),
                         shopDescription: values.shopDescription ? String(values.shopDescription).trim() : undefined,
-                        businessLicenseNo: String(values.businessLicenseNo || '').trim(),
+                        companyName: String(values.companyName || '').trim(),
+                        businessLicenseNo: normalizeLicenseNo(String(values.businessLicenseNo || '')),
                         businessLicense: String(values.businessLicense || '').trim(),
+                        legalPersonName: String(values.legalPersonName || '').trim(),
+                        legalPersonIdCardNo: String(values.legalPersonIdCardNo || '').trim().toUpperCase(),
+                        legalPersonIdCardFront: String(values.legalPersonIdCardFront || '').trim(),
+                        legalPersonIdCardBack: String(values.legalPersonIdCardBack || '').trim(),
                         businessHours: String(values.businessHours || '').trim(),
                         contactPhone: String(values.contactPhone || '').trim(),
-                        contactName: String(values.contactName || '').trim(),
+                        contactName: String(values.legalPersonName || '').trim(),
                         address: String(values.address || '').trim(),
                         products: validProducts,
                         legalAcceptance: {
@@ -503,42 +566,33 @@ const MaterialShopRegister: React.FC = () => {
     };
 
     return (
-        <Layout className="register-page-bg">
-            <Content style={{ padding: screens.xs ? 16 : 64, maxWidth: 960, margin: '0 auto', width: '100%', position: 'relative', zIndex: 1 }}>
-                <div className="glassmorphism-card" style={{ padding: screens.xs ? 24 : 48 }}>
-                    <div style={{ marginBottom: 24 }}>
-                        <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate('/')} style={{ padding: 0 }}>
-                            返回
-                        </Button>
-                        <h2 style={{ marginTop: 8, marginBottom: 8 }}>主材商入驻申请</h2>
-                        <div style={{ color: '#999' }}>主材商独立通道：资料中心 + 商品管理</div>
-                    </div>
-
-                    {showRedirectAlert && (
-                        <Alert
-                            type="warning"
-                            showIcon
-                            closable
-                            onClose={() => setShowRedirectAlert(false)}
-                            message="该手机号尚未入驻，请先完成入驻申请后再登录"
-                            style={{ marginBottom: 16 }}
-                        />
-                    )}
-
-                    <Steps
-                        current={currentStep}
-                        items={[
-                            { title: '基础信息' },
-                            { title: '商品信息' },
-                        ]}
-                        style={{ marginBottom: 24 }}
-                        direction={screens.xs ? 'vertical' : 'horizontal'}
-                        size={screens.xs ? 'small' : 'default'}
-                    />
-
-                    <Form form={form} layout="vertical" className="glassmorphism-form">
+        <MerchantOnboardingShell
+            pageTitle="主材商入驻申请"
+            pageSubtitle="主材商独立通道：资料中心 + 商品管理。"
+            heroTitle="主材商入驻"
+            heroSubtitle="完善店铺、资质与商品资料，让门店信息与商品能力在同一条入驻链路中完成展示与审核。"
+            currentStep={currentStep}
+            steps={steps}
+            onBack={() => navigate('/')}
+            maxWidth={820}
+            alertNode={showRedirectAlert ? (
+                <Alert
+                    type="warning"
+                    showIcon
+                    closable
+                    onClose={() => setShowRedirectAlert(false)}
+                    message="该手机号尚未入驻，请先完成入驻申请后再登录"
+                    style={{ marginBottom: 24, borderRadius: 8 }}
+                />
+            ) : undefined}
+        >
+            <Form form={form} layout="vertical" className="glassmorphism-form premium-form">
                         {currentStep === 0 && (
                             <div>
+                                <div style={{ marginBottom: 28 }}>
+                                    <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>基础信息</Title>
+                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>填写店铺、资质与联系人信息，确保审核通过后能完整展示在平台内。</Text>
+                                </div>
                                 <Form.Item
                                     name="phone"
                                     label="手机号"
@@ -591,14 +645,68 @@ const MaterialShopRegister: React.FC = () => {
                                     <Input.TextArea className="premium-input" rows={3} maxLength={5000} showCount placeholder="填写店铺经营范围、服务特色等" />
                                 </Form.Item>
 
+                                <Form.Item
+                                    name="companyName"
+                                    label="公司/个体名称"
+                                    validateTrigger="onBlur"
+                                    rules={[
+                                        { required: true, message: '请输入公司/个体名称' },
+                                        { max: 100, message: '名称最多100个字符' },
+                                        {
+                                            validator: (_, value) => {
+                                                const companyName = String(value || '').trim();
+                                                if (!companyName) {
+                                                    return Promise.resolve();
+                                                }
+                                                const currentLicenseNo = String(form.getFieldValue('businessLicenseNo') || '').trim();
+                                                if (!currentLicenseNo || !isValidBusinessLicenseNo(currentLicenseNo)) {
+                                                    return Promise.resolve();
+                                                }
+                                                return validateLicenseRemote(currentLicenseNo, companyName);
+                                            },
+                                        },
+                                    ]}
+                                >
+                                    <Input className="premium-input" maxLength={100} placeholder="请输入公司/个体名称" />
+                                </Form.Item>
+
                                 <Row gutter={16}>
                                     <Col xs={24} sm={12}>
                                         <Form.Item
                                             name="businessLicenseNo"
-                                            label="营业执照号"
-                                            rules={[{ required: true, message: '请输入营业执照号' }]}
+                                            label="统一社会信用代码 / 营业执照号"
+                                            validateTrigger="onBlur"
+                                            rules={[
+                                                { required: true, message: '请输入统一社会信用代码 / 营业执照号' },
+                                                {
+                                                    validator: (_, value) => {
+                                                        const licenseNo = normalizeLicenseNo(String(value || ''));
+                                                        if (!licenseNo) {
+                                                            return Promise.resolve();
+                                                        }
+                                                        if (!isValidBusinessLicenseNo(licenseNo)) {
+                                                            return Promise.reject(new Error('请输入正确的统一社会信用代码/营业执照号'));
+                                                        }
+                                                        const companyName = String(form.getFieldValue('companyName') || '').trim();
+                                                        if (!companyName) {
+                                                            return Promise.resolve();
+                                                        }
+                                                        return validateLicenseRemote(licenseNo, companyName);
+                                                    },
+                                                },
+                                            ]}
                                         >
-                                            <Input className="premium-input" maxLength={50} placeholder="请输入营业执照号" />
+                                            <Input
+                                                className="premium-input"
+                                                maxLength={18}
+                                                placeholder="请输入18位统一社会信用代码或15位旧营业执照号"
+                                                onBlur={(event) => {
+                                                    const normalized = normalizeLicenseNo(event.target.value);
+                                                    if (normalized !== event.target.value) {
+                                                        form.setFieldsValue({ businessLicenseNo: normalized });
+                                                    }
+                                                }}
+                                            />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} sm={12}>
@@ -624,6 +732,7 @@ const MaterialShopRegister: React.FC = () => {
                                         accept=".jpg,.jpeg,.png"
                                         beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
                                         customRequest={createSingleUploadHandler('businessLicense')}
+                                        onPreview={handleUploadPreview}
                                         onRemove={() => {
                                             form.setFieldsValue({ businessLicense: undefined });
                                             return true;
@@ -635,20 +744,126 @@ const MaterialShopRegister: React.FC = () => {
 
                                 <Row gutter={16}>
                                     <Col xs={24} sm={12}>
-                                        <Form.Item name="contactName" label="联系人" rules={[{ required: true, message: '请输入联系人姓名' }]}>
-                                            <Input className="premium-input" maxLength={50} placeholder="请输入联系人姓名" />
+                                        <Form.Item
+                                            name="legalPersonName"
+                                            label="法人/经营者姓名"
+                                            validateTrigger="onBlur"
+                                            rules={[
+                                                { required: true, message: '请输入法人/经营者姓名' },
+                                                { max: 20, message: '姓名最多20个字符' },
+                                                {
+                                                    validator: (_, value) => {
+                                                        const realName = String(value || '').trim();
+                                                        if (!realName) {
+                                                            return Promise.resolve();
+                                                        }
+                                                        const currentIdNo = String(form.getFieldValue('legalPersonIdCardNo') || '').trim();
+                                                        if (!currentIdNo || !isValidChineseIDCard(currentIdNo)) {
+                                                            return Promise.resolve();
+                                                        }
+                                                        return validateIdCardRemote(currentIdNo, realName);
+                                                    },
+                                                },
+                                            ]}
+                                        >
+                                            <Input className="premium-input" maxLength={20} placeholder="请输入法人/经营者姓名" />
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} sm={12}>
                                         <Form.Item
                                             name="contactPhone"
-                                            label="联系电话"
+                                            label="联系手机号"
                                             rules={[
-                                                { required: true, message: '请输入联系电话' },
+                                                { required: true, message: '请输入联系手机号' },
                                                 { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
                                             ]}
                                         >
-                                            <Input className="premium-input" maxLength={11} placeholder="请输入联系电话" />
+                                            <Input className="premium-input" maxLength={11} placeholder="请输入联系手机号" />
+                                        </Form.Item>
+                                    </Col>
+                                </Row>
+
+                                <Form.Item
+                                    name="legalPersonIdCardNo"
+                                    label="法人/经营者身份证号"
+                                    validateTrigger="onBlur"
+                                    rules={[
+                                        { required: true, message: '请输入法人/经营者身份证号' },
+                                        { pattern: /^\d{17}[\dXx]$/, message: '请输入正确的18位身份证号' },
+                                        {
+                                            validator: (_, value) => {
+                                                const id = String(value || '').trim().toUpperCase();
+                                                if (!id) {
+                                                    return Promise.resolve();
+                                                }
+                                                if (!isValidChineseIDCard(id)) {
+                                                    return Promise.reject(new Error('身份证号校验失败，请检查号码是否有效'));
+                                                }
+                                                const realName = String(form.getFieldValue('legalPersonName') || '').trim();
+                                                if (!realName) {
+                                                    return Promise.resolve();
+                                                }
+                                                return validateIdCardRemote(id, realName);
+                                            },
+                                        },
+                                    ]}
+                                >
+                                    <Input className="premium-input" maxLength={18} placeholder="请输入法人/经营者身份证号" />
+                                </Form.Item>
+
+                                <Row gutter={16}>
+                                    <Col xs={24} sm={12}>
+                                        <Form.Item
+                                            name="legalPersonIdCardFront"
+                                            label="法人/经营者身份证正面"
+                                            valuePropName="fileList"
+                                            getValueProps={(value: unknown) => ({
+                                                fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
+                                            })}
+                                            getValueFromEvent={() => form.getFieldValue('legalPersonIdCardFront')}
+                                            rules={[{ required: true, message: '请上传法人/经营者身份证正面' }]}
+                                        >
+                                            <Upload
+                                                listType="picture-card"
+                                                maxCount={1}
+                                                accept=".jpg,.jpeg,.png"
+                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
+                                                customRequest={createSingleUploadHandler('legalPersonIdCardFront')}
+                                                onPreview={handleUploadPreview}
+                                                onRemove={() => {
+                                                    form.setFieldsValue({ legalPersonIdCardFront: undefined });
+                                                    return true;
+                                                }}
+                                            >
+                                                <div>上传正面</div>
+                                            </Upload>
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24} sm={12}>
+                                        <Form.Item
+                                            name="legalPersonIdCardBack"
+                                            label="法人/经营者身份证反面"
+                                            valuePropName="fileList"
+                                            getValueProps={(value: unknown) => ({
+                                                fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
+                                            })}
+                                            getValueFromEvent={() => form.getFieldValue('legalPersonIdCardBack')}
+                                            rules={[{ required: true, message: '请上传法人/经营者身份证反面' }]}
+                                        >
+                                            <Upload
+                                                listType="picture-card"
+                                                maxCount={1}
+                                                accept=".jpg,.jpeg,.png"
+                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
+                                                customRequest={createSingleUploadHandler('legalPersonIdCardBack')}
+                                                onPreview={handleUploadPreview}
+                                                onRemove={() => {
+                                                    form.setFieldsValue({ legalPersonIdCardBack: undefined });
+                                                    return true;
+                                                }}
+                                            >
+                                                <div>上传反面</div>
+                                            </Upload>
                                         </Form.Item>
                                     </Col>
                                 </Row>
@@ -661,21 +876,30 @@ const MaterialShopRegister: React.FC = () => {
 
                         {currentStep === 1 && (
                             <div>
-                                <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
+                                <div style={{ marginBottom: 24 }}>
+                                    <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>商品信息</Title>
+                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>按统一卡片方式维护商品、参数与图片；至少准备 5 个商品，便于平台审核与展示。</Text>
+                                </div>
+                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'stretch', justifyContent: 'space-between', marginBottom: 16 }}>
                                     <Alert
                                         type="info"
                                         showIcon
                                         message="商品要求：至少 5 个，最多 20 个；每个商品至少 1 张图，至少 1 个参数"
-                                        style={{ flex: 1 }}
+                                        style={{ flex: 1, minWidth: 280, borderRadius: 12 }}
                                     />
-                                    <Space>
-                                        <Button size="small" onClick={saveDraft}>保存草稿</Button>
-                                        <Button size="small" danger onClick={clearDraft}>清除草稿</Button>
-                                    </Space>
-                                </Space>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                        <Button size="middle" onClick={saveDraft} style={{ borderRadius: 8 }}>保存草稿</Button>
+                                        <Button size="middle" danger onClick={clearDraft} style={{ borderRadius: 8 }}>清除草稿</Button>
+                                    </div>
+                                </div>
                                 {products.map((product, index) => (
                                     <Card key={product.id} size="small" className="premium-product-card"
-                                        title={`商品 ${index + 1}`}
+                                        title={
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <span style={{ fontWeight: 600 }}>商品 {index + 1}</span>
+                                                <span style={{ fontSize: 12, color: '#64748b' }}>{product.images.length}/5 张图片</span>
+                                            </div>
+                                        }
                                         extra={
                                             products.length > 1 && (
                                                 <Button
@@ -704,6 +928,7 @@ const MaterialShopRegister: React.FC = () => {
                                                 <InputNumber className="premium-input"
                                                     style={{ width: '100%' }}
                                                     min={1}
+                                                    controls={false}
                                                     placeholder="价格（元）"
                                                     value={product.price}
                                                     onChange={(value) => updateProduct(index, { price: value || undefined })}
@@ -769,14 +994,20 @@ const MaterialShopRegister: React.FC = () => {
                                                 添加参数
                                             </Button>
                                         </div>
-                                        <div style={{ marginTop: 12 }}>
+                                        <div style={{ marginTop: 16 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12, flexWrap: 'wrap' }}>
+                                                <Text strong style={{ color: '#1e293b' }}>商品图片</Text>
+                                                <Text style={{ color: '#64748b', fontSize: 12 }}>至少 1 张，最多 5 张，支持批量上传</Text>
+                                            </div>
                                             <Upload
                                                 listType="picture-card"
                                                 multiple
                                                 maxCount={5}
                                                 accept=".jpg,.jpeg,.png"
+                                                fileList={toProductUploadFileList(product)}
                                                 beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
                                                 customRequest={createProductUploadHandler(index)}
+                                                onPreview={handleUploadPreview}
                                                 onChange={(uploadInfo) => {
                                                     const urls = uploadInfo.fileList
                                                         .map((uploadFile: UploadFile) => {
@@ -787,12 +1018,17 @@ const MaterialShopRegister: React.FC = () => {
                                                     updateProduct(index, { images: urls });
                                                 }}
                                             >
-                                                <div>上传图片</div>
+                                                {product.images.length < 5 ? (
+                                                    <div>
+                                                        <PlusOutlined />
+                                                        <div style={{ marginTop: 8 }}>上传图片</div>
+                                                    </div>
+                                                ) : null}
                                             </Upload>
                                         </div>
                                     </Card>
                                 ))}
-                                <Button type="dashed" block icon={<PlusOutlined />} onClick={addProduct} disabled={products.length >= 20}>
+                                <Button type="dashed" block icon={<PlusOutlined />} onClick={addProduct} disabled={products.length >= 20} style={{ height: 48, borderRadius: 12, marginTop: 8 }}>
                                     添加商品
                                 </Button>
                             </div>
@@ -831,29 +1067,41 @@ const MaterialShopRegister: React.FC = () => {
                         )}
                     </Form>
 
-                    <Divider />
+                    <Divider style={{ margin: '40px 0' }} />
 
-                    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                         <div>
                             {currentStep > 0 && (
-                                <Button onClick={handlePrev}>上一步</Button>
+                                <Button size="large" onClick={handlePrev} style={{ borderRadius: 8 }}>上一步</Button>
                             )}
                         </div>
                         <div>
                             {currentStep === 0 ? (
-                                <Button type="primary" onClick={handleNext}>
-                                    下一步
+                                <Button type="primary" size="large" onClick={handleNext} style={{ borderRadius: 8, padding: '0 32px' }}>
+                                    下一步 <ArrowRightOutlined />
                                 </Button>
                             ) : (
-                                <Button type="primary" loading={loading} icon={<CheckOutlined />} onClick={handleSubmit}>
+                                <Button type="primary" size="large" loading={loading} icon={<CheckOutlined />} onClick={handleSubmit} style={{ borderRadius: 8, padding: '0 32px' }}>
                                     提交申请
                                 </Button>
                             )}
                         </div>
-                    </Space>
-                </div>
-            </Content>
-        </Layout>
+                    </div>
+
+                    <Modal
+                        open={previewVisible}
+                        footer={null}
+                        onCancel={() => {
+                            setPreviewVisible(false);
+                            setPreviewImage('');
+                        }}
+                        title="图片预览"
+                        width={720}
+                        destroyOnClose
+                    >
+                        <img src={previewImage} alt="主材图片预览" style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
+                    </Modal>
+        </MerchantOnboardingShell>
     );
 };
 

@@ -19,6 +19,7 @@ import {
     MenuFoldOutlined,
     MenuUnfoldOutlined,
 } from '@ant-design/icons';
+import merchantAppIcon from '../assets/branding/company-logo.png';
 
 const { Header, Sider, Content } = Layout;
 
@@ -240,6 +241,7 @@ const MerchantLayout: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: collapsed ? 'center' : 'flex-start',
+                    gap: 12,
                     color: 'white',
                     fontSize: 18,
                     fontWeight: 'bold',
@@ -248,7 +250,25 @@ const MerchantLayout: React.FC = () => {
                     transition: 'all 0.2s',
                     cursor: 'pointer',
                 }} onClick={() => navigate(fallbackPath)}>
-                    {collapsed ? '商' : `${isMaterialShop ? '主材商中心' : '商家中心'} · ${subtypeLabel}`}
+                    <img
+                        src={merchantAppIcon}
+                        alt="禾泽云"
+                        style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 10,
+                            flexShrink: 0,
+                            boxShadow: '0 8px 16px rgba(0,0,0,0.18)',
+                        }}
+                    />
+                    {!collapsed && (
+                        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                            <span style={{ fontSize: 15, fontWeight: 700 }}>禾泽云</span>
+                            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', fontWeight: 500 }}>
+                                {isMaterialShop ? '主材商中心' : `商家中心 · ${subtypeLabel}`}
+                            </span>
+                        </div>
+                    )}
                 </div>
                 <Menu
                     theme="dark"

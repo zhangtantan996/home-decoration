@@ -1,54 +1,41 @@
 /**
  * Merchant Center Theme Constants
- * 
- * Unified theme configuration for merchant authentication and public pages.
- * Consolidates colors, spacing, and responsive breakpoints.
+ *
+ * Unified tokens for merchant onboarding, login, and entry pages.
  */
 
 export const MERCHANT_THEME = {
-  // Primary brand colors - unified blue gradient
   primaryGradient: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
   primaryColor: '#1890ff',
   primaryColorDark: '#096dd9',
-
-  // Page background - purple gradient for brand differentiation
-  pageBgGradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-
-  // Card dimensions
-  cardWidth: 420,
-  cardMaxWidth: '90vw',
-  cardBorderRadius: 8,
-
-  // Role card dimensions
-  roleCardMinHeight: 200,
-
-  // Responsive breakpoints (aligned with Ant Design Grid)
-  breakpoints: {
-    mobile: 576,
-    tablet: 768,
-    desktop: 992,
-  },
-
-  // Icon usage guidelines
-  icons: {
-    // 禁止使用 Emoji，必须使用 Ant Design Icons
-    // 示例：
-    // import { HomeOutlined, UserOutlined } from '@ant-design/icons';
-    primaryColor: '#1890ff',
-    size: {
-      small: 14,
-      default: 16,
-      large: 20,
-    },
-  },
-
-  // Accessibility configuration
-  accessibility: {
-    minTouchTarget: 44, // 最小触摸目标尺寸（WCAG 2.5.5）
-    focusOutlineColor: '#1890ff',
-    focusOutlineWidth: 2,
+  primaryColorLight: '#69b1ff',
+  pageBgGradient: 'linear-gradient(135deg, #f6f8fb 0%, #e9f0f9 100%)',
+  accentGlowStart: 'rgba(24, 144, 255, 0.08)',
+  accentGlowEnd: 'rgba(114, 46, 209, 0.05)',
+  textPrimary: '#1e293b',
+  textSecondary: '#64748b',
+  textMuted: '#94a3b8',
+  borderColor: '#e2e8f0',
+  borderColorStrong: '#cbd5e1',
+  surfaceBg: 'rgba(255, 255, 255, 0.75)',
+  surfaceBorder: '1px solid rgba(255, 255, 255, 0.5)',
+  surfaceShadow: '0 24px 48px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
+  softShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+  hoverShadow: '0 12px 32px rgba(15, 23, 42, 0.12)',
+  controlHeight: 48,
+  controlRadius: 8,
+  cardRadius: 24,
+  sectionRadius: 16,
+  onboarding: {
+    sidebarWidth: 400,
+    contentMaxWidth: 760,
+    heroPadding: '64px 48px',
+    contentPaddingDesktop: '48px 64px',
+    contentPaddingMobile: '24px 16px',
+    cardPaddingDesktop: 48,
+    cardPaddingMobile: 24,
+    sidebarShadow: '4px 0 24px rgba(0,0,0,0.1)',
   },
 } as const;
 
-// Type export for consuming components
 export type MerchantTheme = typeof MERCHANT_THEME;

@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { MerchantApiError, merchantAuthApi, type MerchantLoginGuideData, type MerchantLoginNextAction } from '../../services/merchantApi';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
+import merchantAppIcon from '../../assets/branding/company-logo.png';
+import { MERCHANT_THEME } from '../../constants/merchantTheme';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -46,14 +48,14 @@ const MerchantLogin: React.FC = () => {
         const style = document.createElement('style');
         style.innerHTML = `
             .premium-login-btn {
-                background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+                background: ${MERCHANT_THEME.primaryGradient};
                 border: none;
-                height: 48px;
+                height: ${MERCHANT_THEME.controlHeight}px;
                 font-size: 16px;
                 font-weight: 500;
                 box-shadow: 0 4px 14px rgba(24, 144, 255, 0.3);
                 transition: all 0.3s ease;
-                border-radius: 8px;
+                border-radius: ${MERCHANT_THEME.controlRadius}px;
             }
             .premium-login-btn:hover {
                 transform: translateY(-2px);
@@ -61,13 +63,13 @@ const MerchantLogin: React.FC = () => {
             }
             .premium-input .ant-input-affix-wrapper {
                 padding: 12px 16px;
-                border-radius: 8px;
-                border-color: #e2e8f0;
+                border-radius: ${MERCHANT_THEME.controlRadius}px;
+                border-color: ${MERCHANT_THEME.borderColor};
                 transition: all 0.3s ease;
             }
             .premium-input .ant-input-affix-wrapper:hover,
             .premium-input .ant-input-affix-wrapper-focused {
-                border-color: #1890ff;
+                border-color: ${MERCHANT_THEME.primaryColor};
                 box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
             }
             .welcome-fade-in {
@@ -226,14 +228,17 @@ const MerchantLogin: React.FC = () => {
                     }} />
 
                     <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{
-                            width: 40, height: 40, borderRadius: 8,
-                            background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                        }}>
-                            <Title level={4} style={{ margin: 0, color: '#1890ff', lineHeight: 1 }}>禾</Title>
-                        </div>
-                        <Title level={4} style={{ margin: 0, color: '#fff', letterSpacing: '1px' }}>禾泽云平台</Title>
+                        <img
+                            src={merchantAppIcon}
+                            alt="禾泽云"
+                            style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 12,
+                                boxShadow: '0 10px 24px rgba(0,0,0,0.18)'
+                            }}
+                        />
+                        <Title level={4} style={{ margin: 0, color: '#fff', letterSpacing: '1px' }}>禾泽云商家中心</Title>
                     </div>
 
                     <div className="welcome-fade-in" style={{ position: 'relative', zIndex: 1, color: '#fff', maxWidth: 540 }}>
@@ -269,13 +274,12 @@ const MerchantLogin: React.FC = () => {
                     <div style={{ marginBottom: '40px' }}>
                         {!screens.md && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
-                                <div style={{
-                                    width: 32, height: 32, borderRadius: 6,
-                                    background: '#1890ff', display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                }}>
-                                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>禾</Text>
-                                </div>
-                                <Text strong style={{ fontSize: 18, color: '#1a1a1a' }}>禾泽云平台</Text>
+                                <img
+                                    src={merchantAppIcon}
+                                    alt="禾泽云"
+                                    style={{ width: 32, height: 32, borderRadius: 9, boxShadow: '0 8px 18px rgba(24,144,255,0.18)' }}
+                                />
+                                <Text strong style={{ fontSize: 18, color: '#1a1a1a' }}>禾泽云商家中心</Text>
                             </div>
                         )}
                         <Title level={2} style={{ fontWeight: 600, marginBottom: '8px', color: '#1a1a1a' }}>欢迎回来</Title>

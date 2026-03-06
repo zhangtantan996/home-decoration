@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Dropdown } from 'antd';
 import { ProLayout, PageContainer } from '@ant-design/pro-components';
 import { useAuthStore } from '../stores/authStore';
+import merchantAppIcon from '../assets/branding/company-logo.png';
 import NotificationDropdown from '../components/NotificationDropdown';
 import {
     DashboardOutlined,
@@ -75,8 +76,8 @@ const BasicLayout: React.FC = () => {
 
     return (
         <ProLayout
-            title="装修管理后台"
-            logo={null}
+            title="禾泽云管理后台"
+            logo={<img src={merchantAppIcon} alt="禾泽云" style={{ width: 28, height: 28, borderRadius: 8 }} />}
             layout="mix"
             splitMenus={false}
             fixedHeader

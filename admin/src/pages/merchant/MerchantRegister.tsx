@@ -9,7 +9,6 @@ import {
     PhoneOutlined,
     PictureOutlined,
     SafetyOutlined,
-    ToolOutlined,
     UserOutlined,
 } from '@ant-design/icons';
 import {
@@ -22,15 +21,12 @@ import {
     Form,
     Input,
     InputNumber,
-    Layout,
     Modal,
     Row,
     Select,
-    Steps,
     Typography,
     Upload,
     message,
-    Grid,
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -45,15 +41,16 @@ import {
     merchantApplyApi,
     merchantAuthApi,
     merchantUploadApi,
+    onboardingValidationApi,
     type MerchantApplicantType,
     type MerchantApplyPayload,
 } from '../../services/merchantApi';
 import { regionApi } from '../../services/regionApi';
+import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
+import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
-const { Content } = Layout;
 const { Title, Text } = Typography;
 const { TextArea } = Input;
-const { useBreakpoint } = Grid;
 
 type MerchantApplyRole = 'designer' | 'foreman' | 'company';
 type MerchantEntityType = 'personal' | 'company';
@@ -150,42 +147,12 @@ const caseImageRuleText = (role: MerchantApplyRole) => {
     return '每套至少 3 张图';
 };
 
-const isValidChineseIDCard = (raw: string): boolean => {
-    const id = raw.trim().toUpperCase();
-    if (!/^\d{17}[\dX]$/.test(id)) {
-        return false;
-    }
-
-    const year = Number(id.slice(6, 10));
-    const month = Number(id.slice(10, 12));
-    const day = Number(id.slice(12, 14));
-    const date = new Date(year, month - 1, day);
-    if (
-        Number.isNaN(date.getTime()) ||
-        date.getFullYear() !== year ||
-        date.getMonth() + 1 !== month ||
-        date.getDate() !== day
-    ) {
-        return false;
-    }
-
-    const weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
-    const checkMap = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'];
-    const sum = id
-        .slice(0, 17)
-        .split('')
-        .reduce((acc, char, index) => acc + Number(char) * weights[index], 0);
-
-    return checkMap[sum % 11] === id[17];
-};
-
 const MerchantRegister: React.FC = () => {
     const [searchParams] = useSearchParams();
     const phoneFromUrl = searchParams.get('phone') || '';
     const fromLogin = searchParams.get('from') || '';
     const resubmitId = searchParams.get('resubmit');
     const navigate = useNavigate();
-    const screens = useBreakpoint();
 
     const applyMeta = useMemo(() => resolveApplyMeta(searchParams), [searchParams]);
     const { role, entityType, applicantType } = applyMeta;
@@ -210,6 +177,11 @@ const MerchantRegister: React.FC = () => {
 
     const isForeman = role === 'foreman';
     const isCompanyRole = role === 'company';
+    const isCompanyEntity = entityType === 'company' || role === 'company';
+    const realNameLabel = isCompanyEntity ? '法人/经营者姓名' : (isForeman ? '工长姓名' : '负责人姓名');
+    const phoneLabel = isCompanyEntity ? '联系手机号' : '手机号';
+    const idCardLabel = isCompanyEntity ? '法人/经营者身份证号' : '身份证号';
+    const companyNameLabel = role === 'designer' ? '工作室/公司名称' : '公司名称';
     const hasPendingCaseUploads = useMemo(
         () => Object.values(uploadingCaseCountMap).some((count) => count > 0),
         [uploadingCaseCountMap],
@@ -221,7 +193,9 @@ const MerchantRegister: React.FC = () => {
             .register-page-bg {
                 background: linear-gradient(135deg, #f6f8fb 0%, #e9f0f9 100%);
                 position: relative;
-                overflow: auto;
+                overflow-x: hidden;
+                overflow-y: visible;
+                width: 100%;
                 min-height: 100vh;
             }
             .register-page-bg::before {
@@ -337,11 +311,40 @@ const MerchantRegister: React.FC = () => {
     }, [entityType, role]);
 
     const steps = [
-        { title: '基础信息', icon: <UserOutlined /> },
-        { title: '资质上传', icon: <IdcardOutlined /> },
-        { title: isForeman ? '施工案例' : '案例作品', icon: isForeman ? <ToolOutlined /> : <PictureOutlined /> },
-        { title: '服务与报价', icon: <CheckOutlined /> },
+        { title: '基础信息' },
+        { title: '资质上传' },
+        { title: isForeman ? '施工案例' : '案例作品' },
+        { title: '服务与报价' },
     ];
+
+    const validateLicenseRemote = useCallback(async (licenseNo: string, companyName?: string) => {
+        const normalized = normalizeLicenseNo(licenseNo);
+        if (!normalized) return;
+        if (!isValidBusinessLicenseNo(normalized)) {
+            throw new Error('请输入正确的统一社会信用代码/营业执照号');
+        }
+        const result = await onboardingValidationApi.validateLicense({
+            licenseNo: normalized,
+            companyName: companyName?.trim() || undefined,
+        });
+        if (!result.ok) {
+            throw new Error(result.message || '统一社会信用代码/营业执照号校验失败');
+        }
+    }, []);
+
+    const validateIdCardRemote = useCallback(async (idNo: string, realName: string) => {
+        const normalizedID = String(idNo || '').trim().toUpperCase();
+        const normalizedName = String(realName || '').trim();
+        if (!normalizedID) return;
+        if (!isValidChineseIDCard(normalizedID)) {
+            throw new Error('身份证号校验失败，请检查号码是否有效');
+        }
+        if (!normalizedName) return;
+        const result = await onboardingValidationApi.validateIdCard({ idNo: normalizedID, realName: normalizedName });
+        if (!result.ok) {
+            throw new Error(result.message || '身份证号校验失败');
+        }
+    }, []);
 
     const loadStyleOptions = useCallback(async () => {
         try {
@@ -851,8 +854,12 @@ const MerchantRegister: React.FC = () => {
                         idCardFront: String(values.idCardFront || '').trim(),
                         idCardBack: String(values.idCardBack || '').trim(),
                         companyName: values.companyName ? String(values.companyName).trim() : undefined,
-                        licenseNo: values.licenseNo ? String(values.licenseNo).trim() : undefined,
+                        licenseNo: values.licenseNo ? normalizeLicenseNo(String(values.licenseNo)) : undefined,
                         licenseImage: values.licenseImage ? String(values.licenseImage).trim() : undefined,
+                        legalPersonName: isCompanyEntity ? String(values.realName || '').trim() : undefined,
+                        legalPersonIdCardNo: isCompanyEntity ? String(values.idCardNo || '').trim().toUpperCase() : undefined,
+                        legalPersonIdCardFront: isCompanyEntity ? String(values.idCardFront || '').trim() : undefined,
+                        legalPersonIdCardBack: isCompanyEntity ? String(values.idCardBack || '').trim() : undefined,
                         teamSize: values.teamSize,
                         officeAddress: values.officeAddress ? String(values.officeAddress).trim() : undefined,
                         yearsExperience: values.yearsExperience,
@@ -935,7 +942,7 @@ const MerchantRegister: React.FC = () => {
                         <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>基础信息</Title>
                         <Form.Item
                             name="phone"
-                            label="手机号"
+                            label={phoneLabel}
                             rules={[
                                 { required: true, message: '请输入手机号' },
                                 { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' },
@@ -943,7 +950,7 @@ const MerchantRegister: React.FC = () => {
                         >
                             <Input className="premium-input"
                                 prefix={<PhoneOutlined aria-hidden="true" />}
-                                placeholder="请输入11位手机号"
+                                placeholder={isCompanyEntity ? '请输入联系手机号' : '请输入11位手机号'}
                                 maxLength={11}
                                 aria-label="手机号"
                                 aria-required="true"
@@ -979,17 +986,33 @@ const MerchantRegister: React.FC = () => {
                         </Form.Item>
                         <Form.Item
                             name="realName"
-                            label={isForeman ? '工长姓名' : '负责人姓名'}
+                            label={realNameLabel}
+                            validateTrigger="onBlur"
                             rules={[
-                                { required: true, message: '请输入姓名' },
-                                { max: 20, message: '姓名最多20个字符' },
+                                { required: true, message: `请输入${realNameLabel}` },
+                                {
+                                    validator: (_, value) => {
+                                        const normalized = String(value || '').trim();
+                                        if (!normalized) {
+                                            return Promise.resolve();
+                                        }
+                                        if (normalized.length < 2 || normalized.length > 20) {
+                                            return Promise.reject(new Error('姓名长度应在2-20个字符之间'));
+                                        }
+                                        const currentIdNo = String(form.getFieldValue('idCardNo') || '').trim();
+                                        if (!currentIdNo || !isValidChineseIDCard(currentIdNo)) {
+                                            return Promise.resolve();
+                                        }
+                                        return validateIdCardRemote(currentIdNo, normalized);
+                                    },
+                                },
                             ]}
                         >
                             <Input className="premium-input"
                                 prefix={<UserOutlined aria-hidden="true" />}
-                                placeholder="请输入姓名"
+                                placeholder={`请输入${realNameLabel}`}
                                 maxLength={20}
-                                aria-label={isForeman ? '工长姓名' : '负责人姓名'}
+                                aria-label={realNameLabel}
                                 aria-required="true"
                             />
                         </Form.Item>
@@ -1027,16 +1050,30 @@ const MerchantRegister: React.FC = () => {
                             <>
                                 <Form.Item
                                     name="companyName"
-                                    label={role === 'designer' ? '工作室/公司名称' : '公司名称'}
+                                    label={companyNameLabel}
+                                    validateTrigger="onBlur"
                                     rules={[
                                         { required: true, message: '请输入公司名称' },
                                         { max: 100, message: '名称最多100个字符' },
+                                        {
+                                            validator: (_, value) => {
+                                                const companyName = String(value || '').trim();
+                                                if (!companyName) {
+                                                    return Promise.resolve();
+                                                }
+                                                const currentLicenseNo = String(form.getFieldValue('licenseNo') || '').trim();
+                                                if (!currentLicenseNo || !isValidBusinessLicenseNo(currentLicenseNo)) {
+                                                    return Promise.resolve();
+                                                }
+                                                return validateLicenseRemote(currentLicenseNo, companyName);
+                                            },
+                                        },
                                     ]}
                                 >
                                     <Input className="premium-input"
-                                        placeholder="请输入公司名称"
+                                        placeholder="请输入公司名称 / 个体名称"
                                         maxLength={100}
-                                        aria-label={role === 'designer' ? '工作室或公司名称' : '公司名称'}
+                                        aria-label={companyNameLabel}
                                         aria-required="true"
                                     />
                                 </Form.Item>
@@ -1073,27 +1110,33 @@ const MerchantRegister: React.FC = () => {
                         <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>资质上传</Title>
                         <Form.Item
                             name="idCardNo"
-                            label="身份证号"
+                            label={idCardLabel}
+                            validateTrigger="onBlur"
                             rules={[
-                                { required: true, message: '请输入身份证号' },
+                                { required: true, message: `请输入${idCardLabel}` },
                                 { pattern: /^\d{17}[\dXx]$/, message: '请输入正确的18位身份证号' },
                                 {
                                     validator: (_, value) => {
-                                        const id = String(value || '').trim();
+                                        const id = String(value || '').trim().toUpperCase();
                                         if (!id) {
                                             return Promise.resolve();
                                         }
-                                        return isValidChineseIDCard(id)
-                                            ? Promise.resolve()
-                                            : Promise.reject(new Error('身份证号校验失败，请检查号码是否有效'));
+                                        if (!isValidChineseIDCard(id)) {
+                                            return Promise.reject(new Error('身份证号校验失败，请检查号码是否有效'));
+                                        }
+                                        const currentName = String(form.getFieldValue('realName') || '').trim();
+                                        if (!currentName) {
+                                            return Promise.resolve();
+                                        }
+                                        return validateIdCardRemote(id, currentName);
                                     },
                                 },
                             ]}
                         >
                             <Input className="premium-input"
-                                placeholder="请输入身份证号"
+                                placeholder={`请输入${idCardLabel}`}
                                 maxLength={18}
-                                aria-label="身份证号"
+                                aria-label={idCardLabel}
                                 aria-required="true"
                             />
                         </Form.Item>
@@ -1102,7 +1145,7 @@ const MerchantRegister: React.FC = () => {
                             <Col xs={24} sm={12}>
                                 <Form.Item
                                     name="idCardFront"
-                                    label="身份证正面"
+                                    label={isCompanyEntity ? '法人/经营者身份证正面' : '身份证正面'}
                                     valuePropName="fileList"
                                     getValueProps={(value: unknown) => ({
                                         fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
@@ -1133,7 +1176,7 @@ const MerchantRegister: React.FC = () => {
                             <Col xs={24} sm={12}>
                                 <Form.Item
                                     name="idCardBack"
-                                    label="身份证反面"
+                                    label={isCompanyEntity ? '法人/经营者身份证反面' : '身份证反面'}
                                     valuePropName="fileList"
                                     getValueProps={(value: unknown) => ({
                                         fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
@@ -1168,19 +1211,44 @@ const MerchantRegister: React.FC = () => {
                                 <Divider aria-hidden="true">企业资质</Divider>
                                 <Form.Item
                                     name="licenseNo"
-                                    label="营业执照号"
-                                    rules={[{ required: true, message: '请输入营业执照号' }]}
+                                    label="统一社会信用代码 / 营业执照号"
+                                    validateTrigger="onBlur"
+                                    rules={[
+                                        { required: true, message: '请输入统一社会信用代码 / 营业执照号' },
+                                        {
+                                            validator: (_, value) => {
+                                                const licenseNo = normalizeLicenseNo(String(value || ''));
+                                                if (!licenseNo) {
+                                                    return Promise.resolve();
+                                                }
+                                                if (!isValidBusinessLicenseNo(licenseNo)) {
+                                                    return Promise.reject(new Error('请输入正确的统一社会信用代码/营业执照号'));
+                                                }
+                                                const companyName = String(form.getFieldValue('companyName') || '').trim();
+                                                if (!companyName) {
+                                                    return Promise.resolve();
+                                                }
+                                                return validateLicenseRemote(licenseNo, companyName);
+                                            },
+                                        },
+                                    ]}
                                 >
                                     <Input className="premium-input"
-                                        placeholder="请输入统一社会信用代码"
+                                        placeholder="请输入18位统一社会信用代码或15位旧营业执照号"
                                         maxLength={18}
-                                        aria-label="营业执照号"
+                                        aria-label="统一社会信用代码或营业执照号"
+                                        onBlur={(event) => {
+                                            const normalized = normalizeLicenseNo(event.target.value);
+                                            if (normalized !== event.target.value) {
+                                                form.setFieldsValue({ licenseNo: normalized });
+                                            }
+                                        }}
                                         aria-required="true"
                                     />
                                 </Form.Item>
                                 <Form.Item
                                     name="licenseImage"
-                                    label="营业执照照片"
+                                    label="营业执照图片"
                                     valuePropName="fileList"
                                     getValueProps={(value: unknown) => ({
                                         fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
@@ -1579,229 +1647,126 @@ const MerchantRegister: React.FC = () => {
     };
 
     return (
-        <Layout className="register-page-bg" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'row' }}>
-            {/* Left Hero Panel */}
-            {screens.md && (
-                <div style={{
-                    width: '400px',
-                    background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
-                    position: 'sticky',
-                    top: 0,
-                    height: '100vh',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: '64px 48px',
-                    color: '#fff',
-                    boxShadow: '4px 0 24px rgba(0,0,0,0.1)'
-                }}>
-                    <div style={{ position: 'relative', zIndex: 1 }}>
+        <MerchantOnboardingShell
+            pageTitle={pageTitle}
+            pageSubtitle="请按步骤完善资质、案例和服务信息，提交后将进入人工审核。"
+            heroTitle={pageTitle.replace('（公司主体）', '').replace('（个人主体）', '')}
+            heroSubtitle="入驻即注册。完善品牌资料、上传案例作品，并用统一的服务信息向平台展示你的专业能力。"
+            currentStep={currentStep}
+            steps={steps}
+            onBack={() => navigate('/')}
+            alertNode={showRedirectAlert ? (
+                <Alert
+                    type="warning"
+                    showIcon
+                    closable
+                    onClose={() => setShowRedirectAlert(false)}
+                    message="该手机号尚未入驻，请先完成入驻申请后再登录"
+                    style={{ marginBottom: 24, borderRadius: 8 }}
+                    role="alert"
+                />
+            ) : undefined}
+        >
+            <Form
+                form={form}
+                layout="vertical"
+                preserve
+                aria-label="商家入驻申请表单"
+                size="large"
+                className="premium-form"
+            >
+                {renderStepContent()}
+
+                {currentStep === steps.length - 1 && (
+                    <Form.Item
+                        name="legalAccepted"
+                        valuePropName="checked"
+                        style={{ marginTop: 16, marginBottom: 0 }}
+                        rules={[
+                            {
+                                validator: (_, value) =>
+                                    value
+                                        ? Promise.resolve()
+                                        : Promise.reject(new Error('请先阅读并同意平台入驻相关条款')),
+                            },
+                        ]}
+                    >
+                        <Checkbox aria-label="同意平台入驻相关条款">
+                            我已阅读并同意
+                            {' '}
+                            <a href={MERCHANT_LEGAL_ROUTES.onboardingAgreement} target="_blank" rel="noreferrer">
+                                《平台入驻协议（线上勾选版）》
+                            </a>
+                            {' '}
+                            <a href={MERCHANT_LEGAL_ROUTES.platformRules} target="_blank" rel="noreferrer">
+                                《平台规则》
+                            </a>
+                            {' '}
+                            <a href={MERCHANT_LEGAL_ROUTES.privacyDataProcessing} target="_blank" rel="noreferrer">
+                                《隐私与数据处理条款》
+                            </a>
+                        </Checkbox>
+                    </Form.Item>
+                )}
+            </Form>
+
+            <Divider aria-hidden="true" style={{ margin: '40px 0' }} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                    {currentStep > 0 && (
                         <Button
-                            type="text"
+                            size="large"
                             icon={<ArrowLeftOutlined aria-hidden="true" />}
-                            onClick={() => navigate('/')}
-                            style={{ padding: 0, color: 'rgba(255,255,255,0.8)', marginBottom: 48 }}
-                            aria-label="返回商家入驻首页"
+                            onClick={handlePrev}
+                            style={{ borderRadius: 8 }}
+                            aria-label="返回上一步"
                         >
-                            返回
+                            上一步
                         </Button>
-                        <Title level={2} style={{ color: '#fff', fontWeight: 700, marginBottom: 16 }}>
-                            {pageTitle.replace('（公司主体）', '').replace('（个人主体）', '')}
-                        </Title>
-                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 16, display: 'block', marginBottom: 64 }}>
-                            入驻即注册。开启数字化业务新篇章。
-                        </Text>
-
-                        <Steps
-                            current={currentStep}
-                            items={steps}
-                            direction="vertical"
-                            className="premium-steps-dark"
-                            style={{ marginTop: 24 }}
-                            aria-label="商家入驻申请流程步骤"
-                        />
-                    </div>
-                    {/* Decorative Elements */}
-                    <div style={{
-                        position: 'absolute',
-                        bottom: '-10%',
-                        left: '-20%',
-                        width: '300px',
-                        height: '300px',
-                        borderRadius: '50%',
-                        background: 'rgba(255,255,255,0.1)',
-                        filter: 'blur(40px)',
-                    }} />
-                    <div style={{
-                        position: 'absolute',
-                        top: '20%',
-                        right: '-20%',
-                        width: '200px',
-                        height: '200px',
-                        borderRadius: '50%',
-                        background: 'rgba(255,255,255,0.15)',
-                        filter: 'blur(30px)',
-                    }} />
-                </div>
-            )}
-
-            {/* Right Content Panel */}
-            <Content style={{
-                flex: 1,
-                padding: screens.xs ? '24px 16px' : '48px 64px',
-                position: 'relative',
-                zIndex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center'
-            }}>
-                <div
-                    className="glassmorphism-card"
-                    style={{
-                        width: '100%',
-                        maxWidth: 720,
-                        padding: screens.xs ? 24 : 48,
-                        marginTop: screens.xs ? 0 : 32
-                    }}
-                >
-                    {!screens.md && (
-                        <div style={{ marginBottom: 32 }}>
-                            <Button
-                                type="link"
-                                icon={<ArrowLeftOutlined aria-hidden="true" />}
-                                onClick={() => navigate('/')}
-                                style={{ padding: 0 }}
-                                aria-label="返回商家入驻首页"
-                            >
-                                返回
-                            </Button>
-                            <Title level={3} style={{ marginTop: 8 }}>
-                                {pageTitle}
-                            </Title>
-                            <Steps
-                                current={currentStep}
-                                items={steps}
-                                size="small"
-                                style={{ marginTop: 24 }}
-                                aria-label="商家入驻申请流程步骤"
-                            />
-                        </div>
                     )}
-
-                    {showRedirectAlert && (
-                        <Alert
-                            type="warning"
-                            showIcon
-                            closable
-                            onClose={() => setShowRedirectAlert(false)}
-                            message="该手机号尚未入驻，请先完成入驻申请后再登录"
-                            style={{ marginBottom: 24, borderRadius: 8 }}
-                            role="alert"
-                        />
-                    )}
-
-                    <Form
-                        form={form}
-                        layout="vertical"
-                        preserve
-                        aria-label="商家入驻申请表单"
-                        size="large"
-                        className="premium-form"
-                    >
-                        {renderStepContent()}
-
-                        {currentStep === steps.length - 1 && (
-                            <Form.Item
-                                name="legalAccepted"
-                                valuePropName="checked"
-                                style={{ marginTop: 16, marginBottom: 0 }}
-                                rules={[
-                                    {
-                                        validator: (_, value) =>
-                                            value
-                                                ? Promise.resolve()
-                                                : Promise.reject(new Error('请先阅读并同意平台入驻相关条款')),
-                                    },
-                                ]}
-                            >
-                                <Checkbox aria-label="同意平台入驻相关条款">
-                                    我已阅读并同意
-                                    {' '}
-                                    <a href={MERCHANT_LEGAL_ROUTES.onboardingAgreement} target="_blank" rel="noreferrer">
-                                        《平台入驻协议（线上勾选版）》
-                                    </a>
-                                    {' '}
-                                    <a href={MERCHANT_LEGAL_ROUTES.platformRules} target="_blank" rel="noreferrer">
-                                        《平台规则》
-                                    </a>
-                                    {' '}
-                                    <a href={MERCHANT_LEGAL_ROUTES.privacyDataProcessing} target="_blank" rel="noreferrer">
-                                        《隐私与数据处理条款》
-                                    </a>
-                                </Checkbox>
-                            </Form.Item>
-                        )}
-                    </Form>
-
-                    <Divider aria-hidden="true" style={{ margin: '40px 0' }} />
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                            {currentStep > 0 && (
-                                <Button
-                                    size="large"
-                                    icon={<ArrowLeftOutlined aria-hidden="true" />}
-                                    onClick={handlePrev}
-                                    style={{ borderRadius: 8 }}
-                                    aria-label="返回上一步"
-                                >
-                                    上一步
-                                </Button>
-                            )}
-                        </div>
-                        <div>
-                            {currentStep < steps.length - 1 ? (
-                                <Button
-                                    type="primary"
-                                    size="large"
-                                    onClick={handleNext}
-                                    style={{ borderRadius: 8, padding: '0 32px' }}
-                                    aria-label="进入下一步"
-                                >
-                                    下一步 <ArrowRightOutlined aria-hidden="true" />
-                                </Button>
-                            ) : (
-                                <Button
-                                    type="primary"
-                                    size="large"
-                                    loading={loading}
-                                    onClick={handleSubmit}
-                                    icon={<CheckOutlined aria-hidden="true" />}
-                                    style={{ borderRadius: 8, padding: '0 32px' }}
-                                    aria-label="提交商家入驻申请"
-                                >
-                                    提交申请
-                                </Button>
-                            )}
-                        </div>
-                    </div>
-
-                    <Modal
-                        open={previewVisible}
-                        footer={null}
-                        onCancel={() => {
-                            setPreviewVisible(false);
-                            setPreviewImage('');
-                        }}
-                        title="图片预览"
-                        width={720}
-                        destroyOnClose
-                    >
-                        <img src={previewImage} alt="案例图片预览" style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
-                    </Modal>
                 </div>
-            </Content>
-        </Layout>
+                <div>
+                    {currentStep < steps.length - 1 ? (
+                        <Button
+                            type="primary"
+                            size="large"
+                            onClick={handleNext}
+                            style={{ borderRadius: 8, padding: '0 32px' }}
+                            aria-label="进入下一步"
+                        >
+                            下一步 <ArrowRightOutlined aria-hidden="true" />
+                        </Button>
+                    ) : (
+                        <Button
+                            type="primary"
+                            size="large"
+                            loading={loading}
+                            onClick={handleSubmit}
+                            icon={<CheckOutlined aria-hidden="true" />}
+                            style={{ borderRadius: 8, padding: '0 32px' }}
+                            aria-label="提交商家入驻申请"
+                        >
+                            提交申请
+                        </Button>
+                    )}
+                </div>
+            </div>
+
+            <Modal
+                open={previewVisible}
+                footer={null}
+                onCancel={() => {
+                    setPreviewVisible(false);
+                    setPreviewImage('');
+                }}
+                title="图片预览"
+                width={720}
+                destroyOnClose
+            >
+                <img src={previewImage} alt="案例图片预览" style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
+            </Modal>
+        </MerchantOnboardingShell>
     );
 };
 

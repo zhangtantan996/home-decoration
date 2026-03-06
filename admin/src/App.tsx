@@ -1,34 +1,18 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import companyLogo from './assets/branding/company-logo.png'
 import './App.css'
 import './styles/accessibility.css'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
     <>
       <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+        <img src={companyLogo} className="logo" alt="禾泽云 logo" />
       </div>
-      <h1>Vite + React</h1>
+      <h1>禾泽云管理后台</h1>
       <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
+        <p>品牌资源已切换为官方公司 logo。</p>
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
+      <p className="read-the-docs">Hezeyun Admin</p>
     </>
   )
 }

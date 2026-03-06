@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 COMPANY_SRC="${ROOT}/docs/branding/company_logo.png"
 APPICON_SRC="${ROOT}/docs/branding/app_icon.png"
+WEB_FAVICON_SCRIPT="${ROOT}/scripts/generate_web_favicons.py"
 
 if [[ ! -f "${COMPANY_SRC}" ]]; then
   echo "Missing ${COMPANY_SRC}"
@@ -14,7 +15,12 @@ fi
 
 if [[ ! -f "${APPICON_SRC}" ]]; then
   echo "Missing ${APPICON_SRC}"
-  echo "Please add the app icon PNG (blue/white) at that path."
+  echo "Please add the app icon PNG (blue/white variant) at that path."
+  exit 2
+fi
+
+if [[ ! -f "${WEB_FAVICON_SCRIPT}" ]]; then
+  echo "Missing ${WEB_FAVICON_SCRIPT}"
   exit 2
 fi
 
@@ -32,7 +38,6 @@ resize_to_png() {
   local src="$1"
   local size="$2"
   local out="$3"
-  # Force output format so we don't end up with a JPEG file named .png.
   sips -s format png -z "${size}" "${size}" "${src}" --out "${out}" >/dev/null
 }
 
@@ -42,37 +47,16 @@ to_png() {
   sips -s format png "${src}" --out "${out}" >/dev/null
 }
 
-echo "[1/5] admin favicon"
+echo "[1/5] web favicons + website brand source assets"
 ADMIN_PUBLIC="${ROOT}/admin/public"
-mkdir -p "${ADMIN_PUBLIC}"
-resize_to_png "${APPICON_SRC}" 64 "${ADMIN_PUBLIC}/favicon.png"
-
-# Ensure both entry HTML files reference the favicon.
-for html in "${ROOT}/admin/index.html" "${ROOT}/admin/merchant.html"; do
-  if [[ -f "${html}" ]]; then
-    python3 - "${html}" <<'PY'
-import re
-import sys
-
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as f:
-    s = f.read()
-
-# Replace the default Vite favicon.
-s2 = re.sub(
-    r'<link\s+rel="icon"[^>]*href="/vite\.svg"[^>]*>',
-    '<link rel="icon" type="image/png" href="/favicon.png" />',
-    s,
-    count=1,
-)
-
-if s2 != s:
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(s2)
-    print(path)
-PY
-  fi
-done
+WEBSITE_IMAGES="${ROOT}/website/assets/images"
+mkdir -p "${ADMIN_PUBLIC}" "${WEBSITE_IMAGES}"
+python3 "${WEB_FAVICON_SCRIPT}" \
+  --source "${COMPANY_SRC}" \
+  --admin-public "${ADMIN_PUBLIC}" \
+  --website-images "${WEBSITE_IMAGES}"
+to_png "${COMPANY_SRC}" "${WEBSITE_IMAGES}/company-logo.png"
+to_png "${APPICON_SRC}" "${WEBSITE_IMAGES}/app-icon.png"
 
 echo "[2/5] mobile in-app logo (login top logo uses this file)"
 MOBILE_LOGO="${ROOT}/mobile/src/assets/logo.png"
@@ -118,7 +102,6 @@ cat > "${IOS_APPICON_DIR}/Contents.json" <<'JSON'
 }
 JSON
 
-# Generate images from source
 declare -a IOS_PX=(
   "40 AppIcon-20@2x.png"
   "60 AppIcon-20@3x.png"
@@ -136,65 +119,6 @@ for entry in "${IOS_PX[@]}"; do
   resize_to_png "${APPICON_SRC}" "${px}" "${IOS_APPICON_DIR}/${fn}"
 done
 
-echo "[5/5] website static dist assets"
-WEBSITE_DIST="${ROOT}/website/dist"
-if [[ -d "${WEBSITE_DIST}" ]]; then
-  mkdir -p "${WEBSITE_DIST}/assets"
-  resize_to_png "${COMPANY_SRC}" 256 "${WEBSITE_DIST}/assets/company-logo.png"
-  resize_to_png "${APPICON_SRC}" 256 "${WEBSITE_DIST}/assets/app-icon.png"
-
-  # Update HTML references (keep it simple: company logo for nav, app icon for app preview)
-  if [[ -f "${WEBSITE_DIST}/index.html" ]]; then
-    python3 - "${WEBSITE_DIST}/index.html" <<'PY'
-import re
-import sys
-
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as f:
-    s = f.read()
-
-# Replace app preview logo first
-s = re.sub(r'(<img\s+class="app-logo-img"\s+src=")/assets/[^"]+(")', r'\1/assets/app-icon.png\2', s)
-# Replace nav/brand logos
-s = re.sub(r'(<img\s+class="logo-img"\s+src=")/assets/[^"]+(")', r'\1/assets/company-logo.png\2', s)
-
-with open(path, "w", encoding="utf-8") as f:
-    f.write(s)
-print(path)
-PY
-  fi
-
-  # Make the images fill their containers, so we don't show the old gradient background around them.
-  CSS="$(ls -1 "${WEBSITE_DIST}/assets"/index-*.css 2>/dev/null | head -n 1 || true)"
-  if [[ -n "${CSS}" && -f "${CSS}" ]]; then
-    python3 - "${CSS}" <<'PY'
-import sys
-
-css_path = sys.argv[1]
-with open(css_path, "r", encoding="utf-8") as f:
-    s = f.read()
-
-# Remove the gradient background behind the injected image.
-s = s.replace(
-    "background:linear-gradient(135deg,var(--primary),var(--secondary));",
-    "background:transparent;"
-)
-
-# Make inner images fill the container.
-s = s.replace(
-    "}.logo-icon .logo-img{width:72%;height:72%;object-fit:contain;display:block}",
-    "}.logo-icon .logo-img{width:100%;height:100%;object-fit:cover;display:block}",
-)
-s = s.replace(
-    "}.app-logo .app-logo-img{width:70%;height:70%;object-fit:contain;display:block}",
-    "}.app-logo .app-logo-img{width:100%;height:100%;object-fit:cover;display:block}",
-)
-
-with open(css_path, "w", encoding="utf-8") as f:
-    f.write(s)
-print(css_path)
-PY
-  fi
-fi
-
+echo "[5/5] website build note"
+echo "Transparent favicons were generated into source assets. Re-run 'cd website && npm run build' to refresh compiled dist output."
 echo "Done."

@@ -202,6 +202,22 @@ export interface MerchantLegalAcceptancePayload {
     privacyDataProcessingVersion: string;
 }
 
+export interface OnboardingValidateLicensePayload {
+    licenseNo: string;
+    companyName?: string;
+}
+
+export interface OnboardingValidateIdCardPayload {
+    idNo: string;
+    realName: string;
+}
+
+export interface OnboardingValidateResult {
+    ok: boolean;
+    message?: string;
+    normalizedValue?: string;
+}
+
 export interface MerchantApplyPayload {
     phone: string;
     code: string;
@@ -216,6 +232,10 @@ export interface MerchantApplyPayload {
     companyName?: string;
     licenseNo?: string;
     licenseImage?: string;
+    legalPersonName?: string;
+    legalPersonIdCardNo?: string;
+    legalPersonIdCardFront?: string;
+    legalPersonIdCardBack?: string;
     teamSize?: number;
     officeAddress?: string;
     yearsExperience?: number;
@@ -265,11 +285,16 @@ export interface MaterialShopApplyPayload {
     entityType: 'company' | 'individual_business';
     shopName: string;
     shopDescription?: string;
+    companyName: string;
     businessLicenseNo: string;
     businessLicense: string;
+    legalPersonName: string;
+    legalPersonIdCardNo: string;
+    legalPersonIdCardFront: string;
+    legalPersonIdCardBack: string;
     businessHours: string;
     contactPhone: string;
-    contactName: string;
+    contactName?: string;
     address: string;
     products: MaterialShopApplyProductPayload[];
     legalAcceptance: MerchantLegalAcceptancePayload;
@@ -288,6 +313,13 @@ export interface MaterialShopApplyStatusData {
     auditedAt?: string;
 }
 
+export const onboardingValidationApi = {
+    validateLicense: async (data: OnboardingValidateLicensePayload) =>
+        unwrapData<OnboardingValidateResult>(await merchantApi.post('/merchant/onboarding/validate-license', data), '营业执照号校验失败'),
+    validateIdCard: async (data: OnboardingValidateIdCardPayload) =>
+        unwrapData<OnboardingValidateResult>(await merchantApi.post('/merchant/onboarding/validate-id-card', data), '身份证号校验失败'),
+};
+
 export const materialShopApplyApi = {
     apply: async (data: MaterialShopApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post('/material-shop/apply', data), '提交主材商入驻失败'),
@@ -303,8 +335,10 @@ export interface MaterialShopProfile {
     entityType: 'company' | 'individual_business';
     shopName: string;
     shopDescription?: string;
+    companyName?: string;
     businessLicenseNo?: string;
     businessLicense?: string;
+    legalPersonName?: string;
     businessHours?: string;
     contactPhone?: string;
     contactName?: string;

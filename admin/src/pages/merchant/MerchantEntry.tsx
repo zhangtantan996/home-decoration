@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Layout, Typography, Row, Col, Modal, Radio, Grid } from 'antd';
-import { ArrowRightOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { MERCHANT_THEME } from '../../constants/merchantTheme';
 
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -379,7 +380,7 @@ const MerchantEntry: React.FC = () => {
                                         width: screens.xs ? '100%' : 'auto',
                                         height: 48,
                                         padding: '0 32px',
-                                        boxShadow: '0 8px 16px rgba(24,144,255,0.2)'
+                                        boxShadow: MERCHANT_THEME.softShadow
                                     }}
                                 >
                                     立即登录
@@ -433,7 +434,7 @@ const MerchantEntry: React.FC = () => {
                 width={560}
                 okButtonProps={{
                     disabled: !selectedRole,
-                    style: { borderRadius: 8, height: 44, padding: '0 32px', background: !selectedRole ? undefined : 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)', border: 'none', fontWeight: 500 },
+                    style: { borderRadius: 8, height: 44, padding: '0 32px', background: !selectedRole ? undefined : MERCHANT_THEME.primaryGradient, border: 'none', fontWeight: 500 },
                     size: 'large'
                 }}
                 cancelButtonProps={{
@@ -508,7 +509,7 @@ const MerchantEntry: React.FC = () => {
                                 </Radio.Button>
                             </Radio.Group>
                             <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start', padding: '12px 16px', background: '#f8fafc', borderRadius: 8 }}>
-                                <span style={{ color: '#1890ff' }}>💡</span>
+                                <InfoCircleOutlined style={{ color: MERCHANT_THEME.primaryColor, marginTop: 2 }} />
                                 <Text style={{ color: '#64748b', fontSize: 13, lineHeight: 1.5 }}>
                                     {entityType === 'personal' ? '个人资质仅需提供身份证，适合独立设计师或个体工长。' : '企业资质需提供营业执照，适合设计工作室或装修施工公司，可获得更多平台权益。'}
                                 </Text>

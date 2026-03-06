@@ -1,15 +1,15 @@
 # Branding Assets
 
-This repo has multiple frontends (admin/mobile/mini/website). To keep logos/icons consistent,
+This repo has multiple frontends (`admin/`, `mobile/`, `mini/`, `website/`). To keep logos and icons consistent,
 put the source images here and generate derived assets for each target.
 
 ## Source Files (required)
 
 1. `docs/branding/company_logo.png`
-   - Company logo (pure blue), used for in-app/logo displays (e.g. mobile login page, website nav).
+   - Company logo source, used for Web visible branding and as the source for transparent Web favicons.
 
 2. `docs/branding/app_icon.png`
-   - App icon (blue/white variant), used for app icons and favicons.
+   - Native app icon source, used for Android/iOS launcher icons and store icon exports.
 
 ## Generate Derived Assets
 
@@ -20,8 +20,23 @@ Run:
 ```
 
 This will:
-- Update admin favicon.
-- Update mobile login logo (company logo).
-- Regenerate mobile Android/iOS app icons from `app_icon.png`.
-- Update website (static dist) logo assets and references.
+- Generate transparent Web favicons for `admin/public/` and `website/assets/images/`.
+- Output theme-aware favicon variants:
+  - `favicon-light-*` = blue symbol + transparent background
+  - `favicon-dark-*` = white symbol + transparent background
+- Generate `favicon.ico`, `favicon.png`, and `apple-touch-icon.png`.
+- Sync `website/assets/images/company-logo.png` and `website/assets/images/app-icon.png`.
+- Update mobile login logo and regenerate mobile Android/iOS app icons from `app_icon.png`.
 
+## Web Favicon Behavior
+
+The browser tab icon does **not** use CSS. Theme switching is handled in HTML with
+`prefers-color-scheme`:
+
+- light / no-preference: load blue transparent favicon
+- dark: load white transparent favicon
+
+Entry files using this setup:
+- `admin/index.html`
+- `admin/merchant.html`
+- `website/index.html`
