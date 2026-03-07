@@ -215,24 +215,30 @@ section {
 }
 
 /* Animations */
-.animate-on-scroll {
+.animate-on-scroll,
+.stagger-item {
+  opacity: 1;
+  transform: none;
+}
+
+html.motion-ready .animate-on-scroll {
   opacity: 0;
   transform: translateY(40px);
   transition: opacity 0.8s var(--easing), transform 0.8s var(--easing);
 }
 
-.animate-on-scroll.animate-in {
+html.motion-ready .animate-on-scroll.animate-in {
   opacity: 1;
   transform: translateY(0);
 }
 
-.stagger-item {
+html.motion-ready .stagger-item {
   opacity: 0;
   transform: translateY(30px) scale(0.95);
   transition: all 0.7s var(--easing);
 }
 
-.stagger-item.animate-in {
+html.motion-ready .stagger-item.animate-in {
   opacity: 1;
   transform: translateY(0) scale(1);
 }

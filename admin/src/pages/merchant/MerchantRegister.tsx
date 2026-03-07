@@ -79,6 +79,31 @@ const DEFAULT_CITY_CODE = '610100';
 const DRAFT_STORAGE_KEY = 'merchant_register_draft';
 const DRAFT_EXPIRY_MS = 2 * 60 * 60 * 1000;
 
+const generatePortfolioCaseId = (): string => {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+        return globalThis.crypto.randomUUID();
+    }
+
+    if (typeof globalThis.crypto?.getRandomValues === 'function') {
+        const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0'));
+        return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
+    }
+
+    return `case-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+};
+
+const createEmptyPortfolioCase = (): PortfolioCase => ({
+    id: generatePortfolioCaseId(),
+    title: '',
+    description: '',
+    images: [],
+    style: '',
+    area: '',
+});
+
 interface PortfolioCase {
     id: string;
     title: string;
@@ -164,9 +189,9 @@ const MerchantRegister: React.FC = () => {
     const [showRedirectAlert, setShowRedirectAlert] = useState(fromLogin.startsWith('login_'));
     const [form] = Form.useForm();
     const [portfolioCases, setPortfolioCases] = useState<PortfolioCase[]>([
-        { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' },
-        { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' },
-        { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' },
+        createEmptyPortfolioCase(),
+        createEmptyPortfolioCase(),
+        createEmptyPortfolioCase(),
     ]);
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
     const [areaOptions, setAreaOptions] = useState<string[]>([]);
@@ -391,7 +416,7 @@ const MerchantRegister: React.FC = () => {
                     setCurrentStep(draft.currentStep);
                     const restoredCases = Array.isArray(draft.portfolioCases)
                         ? draft.portfolioCases.map((caseItem) => ({
-                            id: caseItem?.id || crypto.randomUUID(),
+                            id: caseItem?.id || generatePortfolioCaseId(),
                             title: String(caseItem?.title || ''),
                             description: String(caseItem?.description || ''),
                             images: Array.isArray(caseItem?.images)
@@ -921,7 +946,7 @@ const MerchantRegister: React.FC = () => {
     };
 
     const addPortfolioCase = () => {
-        setPortfolioCases((prev) => [...prev, { id: crypto.randomUUID(), title: '', description: '', images: [], style: '', area: '' }]);
+        setPortfolioCases((prev) => [...prev, createEmptyPortfolioCase()]);
     };
 
     const removePortfolioCase = (index: number) => {

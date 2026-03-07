@@ -41,14 +41,12 @@ const iconSet = {
     Wrench,
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Initialize lucide icons
-    createIcons({ icons: iconSet });
+document.documentElement.classList.add('motion-ready');
 
-    // Apply initial translations
+document.addEventListener('DOMContentLoaded', () => {
+    createIcons({ icons: iconSet });
     applyTranslations();
 
-    // Language toggle
     const langBtns = document.querySelectorAll('.lang-btn');
     const activeLang = getLang();
     langBtns.forEach((btn) => {
@@ -60,16 +58,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             setLang(lang);
-            langBtns.forEach((b) => {
-                b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+            langBtns.forEach((candidate) => {
+                candidate.classList.toggle('active', candidate.getAttribute('data-lang') === lang);
             });
         });
     });
 
-    // Mobile menu toggle
     const body = document.body;
     const menuToggle = document.querySelector('.menu-toggle');
     const navLinks = document.querySelector('.nav-links');
+
     const closeMenu = () => {
         if (!menuToggle || !navLinks) {
             return;
@@ -104,11 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(target instanceof HTMLElement)) {
                 return;
             }
-            if (target.closest('a')) {
-                closeMenu();
-                return;
-            }
-            if (target === navLinks) {
+            if (target.closest('a') || target === navLinks) {
                 closeMenu();
             }
         });
@@ -126,13 +120,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Init animations
     initAnimations();
     initSmoothScroll();
     initNavbarScroll();
     animateCounters();
 
-    // Parallax on hero
     const hero = document.querySelector('.hero');
     if (hero) {
         window.addEventListener('scroll', () => {

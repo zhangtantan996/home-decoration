@@ -1,42 +1,51 @@
 # ==========================================
-# Stage 1: Build Admin Panel (React 18.3.1)
+# Stage 1: Build Admin Panel / Merchant SPA
 # ==========================================
 FROM node:20-alpine AS admin-builder
 WORKDIR /app/admin
 
-# Mirror for China
 RUN npm config set registry https://registry.npmmirror.com
 
-COPY admin/package.json ./
+COPY admin/package*.json ./
 RUN npm install --legacy-peer-deps
 
 COPY admin/ ./
 
-# Increase Node.js heap size for Vite build (adjusted for 2GB server)
 ENV NODE_OPTIONS="--max-old-space-size=1536"
+RUN npx vite build
+
+# ==========================================
+# Stage 2: Build Website
+# ==========================================
+FROM node:20-alpine AS website-builder
+WORKDIR /app/website
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY website/package*.json ./
+RUN npm ci
+
+COPY website/ ./
 RUN npm run build
 
 # ==========================================
-# Stage 2: Nginx Static File Server
+# Stage 3: Nginx Static File Server
 # ==========================================
 FROM nginx:alpine
 
-# Install timezone
 RUN apk add --no-cache tzdata
 ENV TZ=Asia/Shanghai
 
-# Copy Nginx Config
 COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 
-# Copy Admin Build Artifacts
-# Admin goes to /usr/share/nginx/html/admin
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
+COPY --from=website-builder /app/website/dist /usr/share/nginx/html/web
 
-# Copy Website Static Files for root/www hosts
-COPY website/ /usr/share/nginx/html/web/
-
-# Note: Mobile app is native-only (React Native)
-# No web build needed. Use Android Studio or Xcode for mobile deployment.
+RUN mkdir -p /usr/share/nginx/html/web/assets \
+    && cp /usr/share/nginx/html/admin/merchant.html /usr/share/nginx/html/web/merchant.html \
+    && cp -R /usr/share/nginx/html/admin/assets/. /usr/share/nginx/html/web/assets/ \
+    && cp /usr/share/nginx/html/admin/apple-touch-icon.png /usr/share/nginx/html/web/ \
+    && cp /usr/share/nginx/html/admin/favicon* /usr/share/nginx/html/web/
 
 EXPOSE 8888
 
