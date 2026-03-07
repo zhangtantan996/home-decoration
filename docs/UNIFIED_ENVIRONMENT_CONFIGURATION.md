@@ -37,8 +37,29 @@
 
 - 示例模板：`env/*.env.example`
 - 实际私有配置：复制为 `env/local.env`、`env/test.env`、`env/staging.env`、`env/production.env`
+- 测试部署环境文件示例：`deploy/.env.test.example`，实际私有文件使用 `deploy/.env.test`
 - 通用加载脚本：`scripts/env/with-env.sh`
 - 移动端启动脚本：`scripts/env/mobile-run.sh`
+
+## 部署环境约定
+
+### Test 环境
+
+- 统一环境名：`test`
+- 部署编排：`deploy/docker-compose.test.yml`
+- 托管资源编排：`deploy/docker-compose.test.managed.yml`
+- 发布脚本：`deploy/scripts/deploy_test.sh`
+- 回滚脚本：`deploy/scripts/rollback_test.sh`
+- 私有环境文件：`deploy/.env.test`
+- 默认容器内 Web 入口映射到宿主机 `127.0.0.1:8889`
+- 宿主机 Nginx 模板：`deploy/nginx/host_nginx_test_http.conf`、`deploy/nginx/host_nginx_test.conf`
+
+### 隔离要求
+
+- test 与 production **必须**使用独立数据库、独立 Redis、独立 JWT Secret、独立上传目录、独立域名
+- test 默认上传目录建议为 `server/uploads_test`
+- 同机部署时不得复用 prod 的容器名、Docker network、Docker volume、宿主机 loopback 端口
+- 发布与回滚时必须显式使用对应环境脚本，禁止在 test 环境混用 `deploy_prod.sh` / `rollback_prod.sh`
 
 ## 常用命令
 

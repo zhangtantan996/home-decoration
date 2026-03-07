@@ -1,506 +1,282 @@
-# 🏠 Home Decoration 完整部署指南
-# Complete Deployment Guide
+# 生产与测试部署指南
 
-本文档提供从零开始的完整部署流程，包括：
-- Git 仓库初始化与推送
-- 服务器环境搭建
-- 本地开发环境设置
-- 测试环境与正式环境的管理
-- 一键部署脚本使用
+本文档用于说明**当前仓库推荐的生产部署与日常更新方式**。
+
+重点不是建设重型 CI/CD，而是在复用现有生产 Docker Compose、Dockerfile、Nginx 配置和备份脚本的前提下，建立一条**低出错、可回滚、便于执行**的标准 SOP。
+
+> 统一入口：`deploy/README.md`
 
 ---
 
-## 📋 目录
+## 1. 当前推荐的部署模式
 
-1. [环境要求](#1-环境要求)
-2. [Git 仓库设置](#2-git-仓库设置)
-3. [服务器初始化](#3-服务器初始化)
-4. [本地开发环境](#4-本地开发环境)
-5. [测试环境部署](#5-测试环境部署)
-6. [正式环境发布](#6-正式环境发布)
-7. [日常维护流程](#7-日常维护流程)
-8. [常见问题](#8-常见问题)
+当前项目默认采用以下发布策略：
+
+- **production**：正式环境，只部署 Git Tag，不直接上线分支头
+- **test**：长期复用测试环境，使用独立 compose / env / 域名 / 数据 / 回滚链路
+- **发布前先备份**（数据库必备，uploads 视情况但推荐默认执行）
+- **按服务最小化更新**，优先只更新 `api` 或 `web`
+- **发布后做基础验证**，至少检查容器、日志、健康检查和关键页面
+- **回滚以 Tag 为主**，数据库回滚独立判断
+
+Production 推荐命令：
+
+```bash
+bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service api
+```
+
+回滚命令：
+
+```bash
+bash deploy/scripts/rollback_prod.sh --tag v1.2.2 --service api
+```
+
+Test 推荐命令：
+
+```bash
+bash deploy/scripts/deploy_test.sh --tag v1.2.3 --service api
+```
+
+Test 回滚命令：
+
+```bash
+bash deploy/scripts/rollback_test.sh --tag v1.2.2 --service api
+```
+
+> 说明：发布脚本负责备份、切 tag、按服务更新和基础验证；**数据库迁移不会由脚本自动执行**，如涉及 schema 变更，必须先按 `docs/DATABASE_MIGRATIONS.md` 受控执行。
 
 ---
 
-## 1. 环境要求
+## 2. 环境基线
 
-### 1.1 服务器要求
-| 项目 | 最低配置 | 推荐配置 |
-|------|----------|----------|
-| CPU | 1 核 | 2 核+ |
-| 内存 | 2 GB | 4 GB+ |
-| 硬盘 | 20 GB | 50 GB+ |
-| 系统 | Ubuntu 20.04 / CentOS 7+ | Ubuntu 22.04 |
+当前仓库已具备以下部署资产：
 
-### 1.2 需要安装的软件
-```bash
-# Docker
-curl -fsSL https://get.docker.com | sh
-sudo systemctl enable docker
-sudo systemctl start docker
+### Production
 
-# Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
+- 生产编排：`deploy/docker-compose.prod.yml`
+- 托管资源编排：`deploy/docker-compose.prod.managed.yml`
+- 后端镜像构建：`deploy/Dockerfile.backend`
+- 前端 / Nginx 镜像构建：`deploy/Dockerfile.frontend`、`deploy/Dockerfile.frontend.prod`
+- Nginx 路由与静态站点入口：`deploy/nginx/nginx.conf`、`deploy/nginx/nginx.prod.conf`
+- 备份脚本：`deploy/scripts/backup_postgres.sh`、`deploy/scripts/backup_uploads.sh`
+- 宿主机 Nginx 模板：`deploy/nginx/host_nginx_http.conf`、`deploy/nginx/host_nginx_prod.conf`
 
-# Git
-sudo apt update && sudo apt install -y git  # Ubuntu
-# 或
-sudo yum install -y git  # CentOS
-```
+### Test
 
-### 1.3 本地开发要求
-- **Windows**: Git for Windows, Docker Desktop, Node.js 20+, Go 1.21+
-- **Mac**: Xcode Command Line Tools, Docker Desktop, Node.js 20+, Go 1.21+
+- 测试编排：`deploy/docker-compose.test.yml`
+- 测试托管资源编排：`deploy/docker-compose.test.managed.yml`
+- 测试环境文件模板：`deploy/.env.test.example`
+- 测试发布脚本：`deploy/scripts/deploy_test.sh`
+- 测试回滚脚本：`deploy/scripts/rollback_test.sh`
+- 测试宿主机 Nginx 模板：`deploy/nginx/host_nginx_test_http.conf`、`deploy/nginx/host_nginx_test.conf`
+- 测试默认 loopback 端口：`127.0.0.1:8889`
+
+> 如果生产环境或测试环境使用托管 RDS/Redis、宿主机 Nginx 或阿里云变体部署，也建议沿用**同一套发布规则**，只是替换为对应的 compose 文件和环境变量。
 
 ---
 
-## 2. Git 仓库设置
+## 3. 日常发版 SOP
 
-### 2.1 创建远程仓库
-1. 登录 GitHub / Gitee / GitLab
-2. 点击 "New Repository"
-3. 填写仓库名称：`home_decoration`
-4. 选择 Private（私有仓库）
-5. 点击创建
+### 3.1 发布前
 
-### 2.2 本地初始化并推送
-```powershell
-# 1. 进入项目目录
-cd "G:\AI engineering\home_decoration"
+1. 本地完成开发、测试、代码审查
+2. 创建并推送发布 tag
 
-# 2. 初始化 Git (如果还没有)
-git init
-
-# 3. 添加远程仓库 (替换为您的仓库地址)
-git remote add origin https://github.com/YOUR_USERNAME/home_decoration.git
-# 或使用 SSH
-git remote add origin git@github.com:YOUR_USERNAME/home_decoration.git
-
-# 4. 添加所有文件
-git add .
-
-# 5. 提交
-git commit -m "Initial commit: 完整项目代码"
-
-# 6. 推送到远程仓库
-git branch -M main
-git push -u origin main
+```bash
+git tag v1.2.3
+git push origin v1.2.3
 ```
 
-### 2.3 设置 SSH 密钥 (推荐)
-```powershell
-# 1. 生成 SSH 密钥
-ssh-keygen -t ed25519 -C "your_email@example.com"
+3. 登录生产服务器，进入仓库目录
+4. 获取最新 tag
 
-# 2. 查看公钥
-cat ~/.ssh/id_ed25519.pub
-
-# 3. 复制公钥内容，添加到 GitHub/Gitee 的 SSH Keys 设置中
+```bash
+git fetch --tags --prune
 ```
+
+5. 确认工作区干净
+
+```bash
+git status --short
+```
+
+6. 确认 `deploy/.env` 或对应生产环境变量文件已就绪
+
+### 3.2 发布中
+
+根据变更类型选择更新范围：
+
+- 仅后端 Go 代码变更：
+
+```bash
+bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service api
+```
+
+- 仅前端页面 / Website / Admin / Nginx 静态资源变更：
+
+```bash
+bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service web
+```
+
+- 前后端都改：
+
+```bash
+bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service all
+```
+
+### 3.3 发布后
+
+至少执行：
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml ps
+docker compose -f deploy/docker-compose.prod.yml logs --tail=100 api
+docker compose -f deploy/docker-compose.prod.yml logs --tail=100 web
+curl -fsS http://127.0.0.1:8888/api/v1/health
+```
+
+还应人工检查：
+
+- website 首页或核心页面
+- `/admin/` 后台入口
+- 关键 API
+- uploads 资源访问（若本次涉及）
 
 ---
 
-## 3. 服务器初始化
+## 4. 按改动类型选择动作
 
-### 3.1 连接服务器
-```powershell
-# Windows 使用 PowerShell 或 PuTTY
-ssh root@您的服务器IP
+| 改动类型 | 推荐动作 | 说明 |
+|---|---|---|
+| 仅后端 Go 代码 | rebuild `api` | 不动 `web` |
+| 仅前端 / 静态站点 / Nginx 配置 | rebuild `web` | 不动 `api` |
+| 前后端都改 | rebuild `api` + `web` | 使用 `--service all` |
+| 仅运行时环境变量变化 | restart / recreate 对应服务 | 若不影响 build，可不全量 rebuild |
+| 构建期环境变量变化 | rebuild 对应服务 | 例如前端构建注入 |
+| 数据库 schema 变更 | 先迁移，再更新服务 | 数据库步骤必须单独执行 |
 
-# 或使用密钥登录
-ssh -i ~/.ssh/your_key root@您的服务器IP
-```
-
-### 3.2 创建目录结构
-```bash
-# 创建项目根目录
-sudo mkdir -p /www
-
-# 创建正式环境目录
-sudo mkdir -p /www/home_decoration_prod
-
-# 创建测试环境目录
-sudo mkdir -p /www/home_decoration_staging
-
-# 设置权限 (假设您使用 deploy 用户)
-sudo chown -R $USER:$USER /www
-```
-
-### 3.3 克隆代码到服务器
-
-#### 正式环境
-```bash
-cd /www/home_decoration_prod
-
-# 克隆代码 (替换为您的仓库地址)
-git clone https://github.com/YOUR_USERNAME/home_decoration.git .
-
-# 或使用 SSH
-git clone git@github.com:YOUR_USERNAME/home_decoration.git .
-```
-
-#### 测试环境
-```bash
-cd /www/home_decoration_staging
-
-# 克隆代码
-git clone https://github.com/YOUR_USERNAME/home_decoration.git .
-
-# 切换到开发分支 (如果有)
-git checkout -b staging
-```
-
-### 3.4 配置环境变量
-```bash
-# 在项目根目录创建 .env 文件
-cd /www/home_decoration_prod
-cp .env.example .env
-
-# 编辑环境变量
-nano .env
-```
-
-**`.env` 文件示例:**
-```env
-# 数据库配置
-DB_USER=postgres
-DB_PASSWORD=您的数据库密码
-DB_NAME=home_decoration
-
-# Redis 配置
-REDIS_PASSWORD=您的Redis密码
-
-# JWT 密钥
-JWT_SECRET=您的JWT密钥
-
-# 服务器模式
-SERVER_MODE=release
-```
-
-### 3.5 配置防火墙
-```bash
-# Ubuntu (ufw)
-sudo ufw allow 22    # SSH
-sudo ufw allow 80    # HTTP
-sudo ufw allow 443   # HTTPS
-sudo ufw allow 8888  # 测试端口 (可选，调试完后关闭)
-sudo ufw enable
-
-# CentOS (firewalld)
-sudo firewall-cmd --permanent --add-port=22/tcp
-sudo firewall-cmd --permanent --add-port=80/tcp
-sudo firewall-cmd --permanent --add-port=443/tcp
-sudo firewall-cmd --permanent --add-port=8888/tcp  # 测试端口
-sudo firewall-cmd --reload
-```
+> 默认不要使用 `docker compose down && docker compose up -d --build` 作为常规动作，除非确认要整体重建整套服务。
 
 ---
 
-## 4. 本地开发环境
+## 5. 数据库变更规范
 
-### 4.1 克隆仓库到本地
-```powershell
-# 选择一个工作目录
-cd "G:\AI engineering"
+当前仓库没有统一 migration runner，因此生产环境数据库变更采用：
 
-# 克隆仓库
-git clone https://github.com/YOUR_USERNAME/home_decoration.git
+- **受控手工执行**
+- **SQL 文件规范化提交**
+- **执行过程文档化**
+- **回滚与验证脚本成对提供**
 
-# 进入项目目录
-cd home_decoration
-```
+### 5.1 必须遵守
 
-### 4.2 安装依赖
-```powershell
-# 后端 (Go)
-cd server
-go mod download
+- 迁移前必须备份数据库
+- 每次 schema 变更必须提供回滚 SQL
+- 发布流程中必须单独记录迁移步骤和验证结果
+- 数据库回滚不建议全自动化，保留人工确认
 
-# 前端 - Admin
-cd ../admin
-npm install --legacy-peer-deps
+### 5.2 推荐文件形式
 
-# 前端 - Mobile
-cd ../mobile
-npm install --legacy-peer-deps
-```
+放在：`server/scripts/migrations/`
 
-### 4.3 启动本地开发服务
-```powershell
-# 方式一：使用 Docker Compose (推荐)
-docker-compose -f docker-compose.local.yml up -d
+推荐每次迁移至少提交：
 
-# 方式二：手动启动各服务
-# 终端1 - 启动数据库
-docker compose up -d db redis
+- `YYYYMMDD_<name>_up.sql`
+- `YYYYMMDD_<name>_down.sql`
+- 可选：`YYYYMMDD_<name>_verify.sql`
 
-# 终端2 - 启动后端
-cd server
-go run ./cmd/api
-
-# 终端3 - 启动 Admin
-cd admin
-npm run dev
-
-# 终端4 - 启动 Mobile Web
-cd mobile
-npm run web
-```
-
-### 4.4 本地访问地址
-| 服务 | 地址 |
-|------|------|
-| Admin 后台 | http://localhost:5173 |
-| Mobile Web | http://localhost:5174 |
-| API 接口 | http://localhost:8080 |
-| PostgreSQL | localhost:5432 |
-| Redis | localhost:6380 |
+详细规范见：`docs/DATABASE_MIGRATIONS.md`
 
 ---
 
-## 5. 测试环境部署
+## 6. Tag 发布规则
 
-### 5.1 进入测试目录
-```bash
-ssh root@您的服务器IP
-cd /www/home_decoration_staging
-```
+### 6.1 为什么必须用 Tag
 
-### 5.2 拉取最新代码
+因为 Tag 具备以下优点：
+
+- 对应代码快照稳定，不受后续提交漂移影响
+- 便于记录发布版本
+- 便于服务器精确切换
+- 便于回滚到上一个稳定版本
+
+### 6.2 不推荐的做法
+
+以下方式不应作为生产日常 SOP：
+
 ```bash
 git pull origin main
-# 或拉取指定分支
-git pull origin staging
+git pull origin dev
+docker compose up -d --build
 ```
 
-### 5.3 一键部署测试环境
-```bash
-# 添加执行权限 (首次)
-chmod +x scripts/deploy_staging.sh
+原因：
 
-# 执行部署脚本
-./scripts/deploy_staging.sh
-```
-
-### 5.4 手动部署 (如果不使用脚本)
-```bash
-# 1. 复制并修改配置文件
-cp deploy/docker-compose.prod.yml docker-compose.staging.yml
-
-# 2. 修改端口为 8888
-sed -i 's/"80:80"/"8888:80"/g' docker-compose.staging.yml
-
-# 3. 删除 container_name (防止冲突)
-sed -i '/container_name:/d' docker-compose.staging.yml
-
-# 4. 启动
-docker-compose -p staging -f docker-compose.staging.yml up -d --build
-```
-
-### 5.5 验证测试环境
-```bash
-# 查看容器状态
-docker-compose -p staging ps
-
-# 查看日志
-docker-compose -p staging logs -f
-
-# 访问测试环境
-curl http://localhost:8888/api/health
-```
-
-### 5.6 测试环境访问地址
-| 服务 | 地址 |
-|------|------|
-| Admin 后台 | http://服务器IP:8888/admin/ |
-| Mobile Web | http://服务器IP:8888/mobile/ |
-| API 接口 | http://服务器IP:8888/api/ |
+- 上线内容不够精确
+- 回滚基线不清晰
+- 容易把未准备好的提交一起带上去
 
 ---
 
-## 6. 正式环境发布
+## 7. 回滚策略
 
-### 6.1 进入正式目录
+### 7.1 代码回滚
+
+回滚时切换到上一个稳定 tag，再只重建受影响服务：
+
 ```bash
-ssh root@您的服务器IP
-cd /www/home_decoration_prod
+bash deploy/scripts/rollback_prod.sh --tag v1.2.2 --service web
 ```
 
-### 6.2 拉取最新代码
+### 7.2 数据库回滚与代码回滚分离
+
+需要明确：
+
+- 代码回滚不自动代表数据库也应回滚
+- 如果数据库迁移是向前兼容的，很多情况下只需要回滚代码
+- 如果数据库迁移不可兼容，再根据 `*_down.sql` 或备份恢复方案人工处理
+
+### 7.3 建议的回滚判断
+
+1. **仅页面或 API 逻辑异常**：优先回滚代码
+2. **Schema 变更导致应用启动失败**：评估是否需要执行数据库回滚
+3. **数据已被新逻辑写坏**：优先使用备份恢复或受控修复，不要盲目 down SQL
+
+---
+
+## 8. 发布与回滚常用命令
+
+### 8.1 检查 Compose 配置
+
 ```bash
-# 确保在 main 分支
-git checkout main
-git pull origin main
+docker compose -f deploy/docker-compose.prod.yml config
 ```
 
-### 6.3 一键发布正式环境
-```bash
-# 添加执行权限 (首次)
-chmod +x scripts/deploy_prod.sh
+### 8.2 查看状态
 
-# 执行发布脚本
-./scripts/deploy_prod.sh
+```bash
+docker compose -f deploy/docker-compose.prod.yml ps
 ```
 
-### 6.4 手动发布 (如果不使用脚本)
+### 8.3 查看日志
+
 ```bash
-# 直接使用 prod 配置启动
-docker-compose -p prod -f deploy/docker-compose.prod.yml up -d --build
+docker compose -f deploy/docker-compose.prod.yml logs --tail=100 api
+docker compose -f deploy/docker-compose.prod.yml logs --tail=100 web
 ```
 
-### 6.5 验证正式环境
+### 8.4 健康检查
+
 ```bash
-# 查看容器状态
-docker-compose -p prod -f deploy/docker-compose.prod.yml ps
-
-# 查看日志
-docker-compose -p prod -f deploy/docker-compose.prod.yml logs -f
-
-# 健康检查
-curl http://localhost/api/health
+curl -fsS http://127.0.0.1:8888/api/v1/health
 ```
 
 ---
 
-## 7. 日常维护流程
+## 9. 相关文档
 
-### 7.1 开发新功能的完整流程
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        开发 -> 测试 -> 发布 流程图               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  [本地开发]                                                     │
-│      │                                                          │
-│      ▼                                                          │
-│  git add . && git commit -m "功能描述"                          │
-│      │                                                          │
-│      ▼                                                          │
-│  git push origin main                                           │
-│      │                                                          │
-│      ▼                                                          │
-│  [服务器 - 测试环境]                                            │
-│  cd /www/home_decoration_staging                                │
-│  git pull && ./scripts/deploy_staging.sh                        │
-│      │                                                          │
-│      ▼                                                          │
-│  通过 :8888 端口验证功能 ────────────┐                          │
-│      │                               │                          │
-│      │ ✅ 测试通过                   │ ❌ 有问题                │
-│      ▼                               ▼                          │
-│  [服务器 - 正式环境]              返回本地修改                  │
-│  cd /www/home_decoration_prod                                   │
-│  git pull && ./scripts/deploy_prod.sh                           │
-│      │                                                          │
-│      ▼                                                          │
-│  🎉 发布完成，用户可访问                                        │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 7.2 常用命令速查表
-
-| 场景 | 命令 |
-|------|------|
-| 查看运行中的容器 | `docker ps` |
-| 查看测试环境日志 | `docker-compose -p staging logs -f` |
-| 查看正式环境日志 | `docker-compose -p prod -f deploy/docker-compose.prod.yml logs -f` |
-| 重启测试环境 | `docker-compose -p staging restart` |
-| 重启正式环境 | `docker-compose -p prod -f deploy/docker-compose.prod.yml restart` |
-| 停止测试环境 | `docker-compose -p staging down` |
-| 停止正式环境 | `docker-compose -p prod -f deploy/docker-compose.prod.yml down` |
-| 进入后端容器 | `docker exec -it staging_api_1 sh` |
-| 查看数据库 | `docker exec -it staging_db_1 psql -U postgres -d home_decoration_staging` |
-
-### 7.3 数据库备份
-```bash
-# 备份正式数据库
-docker exec prod_db_1 pg_dump -U postgres home_decoration > backup_$(date +%Y%m%d).sql
-
-# 恢复数据库
-cat backup_20231231.sql | docker exec -i prod_db_1 psql -U postgres home_decoration
-```
-
----
-
-## 8. 常见问题
-
-### Q1: 端口被占用怎么办？
-```bash
-# 查看端口占用
-sudo lsof -i :80
-sudo lsof -i :8888
-
-# 杀死占用进程
-sudo kill -9 PID
-```
-
-### Q2: Docker 构建失败怎么办？
-```bash
-# 清理 Docker 缓存
-docker system prune -a
-
-# 重新构建 (不使用缓存)
-docker-compose -p staging -f docker-compose.staging.yml build --no-cache
-```
-
-### Q3: 如何查看服务器资源占用？
-```bash
-# 查看 CPU 和内存
-htop  # 需要安装: apt install htop
-
-# 查看磁盘
-df -h
-
-# 查看 Docker 资源占用
-docker stats
-```
-
-### Q4: 如何回滚到之前的版本？
-```bash
-# 查看历史提交
-git log --oneline -10
-
-# 回滚到指定版本
-git checkout 版本号
-
-# 重新部署
-./scripts/deploy_prod.sh
-```
-
-### Q5: 测试环境和正式环境数据能否同步？
-```bash
-# 导出正式数据
-docker exec prod_db_1 pg_dump -U postgres home_decoration > prod_data.sql
-
-# 导入到测试数据库
-cat prod_data.sql | docker exec -i staging_db_1 psql -U postgres home_decoration_staging
-```
-
----
-
-## 🛡️ 安全提醒
-
-> [!CAUTION]
-> 1. **切勿将 `.env` 文件提交到 Git 仓库**（已在 `.gitignore` 中忽略）
-> 2. **定期更换数据库和 Redis 密码**
-> 3. **调试完成后关闭 8888 测试端口**
-> 4. **配置 HTTPS 证书**（使用 Let's Encrypt 免费证书）
-> 5. **定期备份数据库**
-
----
-
-## 📞 技术支持
-
-如遇到问题，请检查：
-1. Docker 和 Docker Compose 版本是否正确
-2. 防火墙端口是否开放
-3. `.env` 环境变量是否配置完整
-4. 服务器内存是否充足
-
----
-
-*文档更新时间: 2025-12-31*
+- 总入口：`deploy/README.md`
+- 发布与回滚：`docs/版本发布与回滚指南.md`
+- 检查清单：`docs/DEPLOYMENT_CHECKLIST.md`
+- 数据库迁移：`docs/DATABASE_MIGRATIONS.md`
+- 阿里云生产落地：`deploy/ALIYUN_PRODUCTION_LAUNCH.md`

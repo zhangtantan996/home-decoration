@@ -1,5 +1,30 @@
 import { create } from 'zustand';
 
+const readStorage = (key: string): string | null => {
+    try {
+        return localStorage.getItem(key);
+    } catch {
+        return null;
+    }
+};
+
+const safeJsonParse = <T>(key: string, fallback: T): T => {
+    const raw = readStorage(key);
+    if (!raw) {
+        return fallback;
+    }
+    try {
+        return JSON.parse(raw) as T;
+    } catch {
+        try {
+            localStorage.removeItem(key);
+        } catch {
+            return fallback;
+        }
+        return fallback;
+    }
+};
+
 // 菜单项类型
 interface MenuItem {
     id: number;
@@ -41,11 +66,11 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-    token: localStorage.getItem('admin_token'),
-    admin: JSON.parse(localStorage.getItem('admin_user') || 'null'),
-    permissions: JSON.parse(localStorage.getItem('admin_permissions') || '[]'),
-    menus: JSON.parse(localStorage.getItem('admin_menus') || '[]'),
-    isAuthenticated: !!localStorage.getItem('admin_token'),
+    token: readStorage('admin_token'),
+    admin: safeJsonParse<AdminUser | null>('admin_user', null),
+    permissions: safeJsonParse<string[]>('admin_permissions', []),
+    menus: safeJsonParse<MenuItem[]>('admin_menus', []),
+    isAuthenticated: !!readStorage('admin_token'),
 
     login: (token, admin) => {
         localStorage.setItem('admin_token', token);

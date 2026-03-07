@@ -1,300 +1,280 @@
-# 数据库变更清单
+# 数据库迁移规范
 
-> **文档版本**: v1.0
-> **创建时间**: 2025-12-30
-> **相关文档**: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
+本文档用于统一当前仓库的数据库结构变更方式。
 
----
+当前项目**没有统一 migration runner**，因此生产环境数据库变更采用：
 
-## 📋 变更概览
+- **受控手工执行**
+- **SQL 文件规范化提交**
+- **迁移 / 验证 / 回滚成对管理**
+- **发布流程文档化**
 
-本文档记录了开发计划中涉及的所有数据库表结构变更。
-
-| 变更编号 | 相关功能 | 影响表 | 变更类型 | 优先级 |
-|---------|---------|--------|---------|--------|
-| M001 | 站内信通知系统 | notifications | 新增表 | P0 |
-| M002 | 方案版本管理 | proposals | 新增字段 | P0 |
-| M003 | 意向金退款 | bookings | 新增字段 | P0 |
+> 生产发布总入口：`deploy/README.md`
 
 ---
 
-## M001: 新增通知表 (notifications)
+## 1. 适用范围
 
-### 变更信息
-- **功能模块**: P0-1 站内信通知系统
-- **优先级**: 🔴 P0
-- **执行时机**: 第1天
-- **脚本文件**: `server/migrations/001_create_notifications_table.sql`
+适用于以下场景：
 
-### SQL脚本
+- 新增表
+- 新增字段
+- 新增索引
+- 数据回填脚本
+- 受控数据修复脚本
+- 与生产发布绑定执行的 schema 变更
 
-```sql
--- ==================== 创建通知表 ====================
+不适用于：
 
-CREATE TABLE IF NOT EXISTS notifications (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL,
-    user_type VARCHAR(20) NOT NULL,        -- user, provider, admin
-    title VARCHAR(100) NOT NULL,
-    content TEXT NOT NULL,
-    type VARCHAR(30) NOT NULL,
-    related_id BIGINT DEFAULT 0,
-    related_type VARCHAR(30),              -- booking, proposal, order, withdraw
-    is_read BOOLEAN DEFAULT FALSE,
-    read_at TIMESTAMP,
-    action_url VARCHAR(200),               -- 跳转路径
-    extra TEXT,                            -- JSON扩展字段
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ==================== 创建索引 ====================
-
-CREATE INDEX idx_notifications_user ON notifications(user_id, user_type);
-CREATE INDEX idx_notifications_is_read ON notifications(is_read);
-CREATE INDEX idx_notifications_type ON notifications(type);
-CREATE INDEX idx_notifications_created_at ON notifications(created_at DESC);
-
--- ==================== 添加注释 ====================
-
-COMMENT ON TABLE notifications IS '站内通知表';
-COMMENT ON COLUMN notifications.user_type IS '用户类型: user(普通用户), provider(商家), admin(管理员)';
-COMMENT ON COLUMN notifications.type IS '通知类型: booking.intent_paid, proposal.submitted, order.paid等';
-COMMENT ON COLUMN notifications.is_read IS '是否已读';
-COMMENT ON COLUMN notifications.action_url IS '点击通知后的跳转路径';
-COMMENT ON COLUMN notifications.extra IS 'JSON格式的扩展数据';
-```
-
-### 回滚脚本
-
-```sql
-DROP TABLE IF EXISTS notifications CASCADE;
-```
+- 仅本地开发临时试验 SQL
+- 无需进入版本控制的一次性个人调试语句
 
 ---
 
-## M002: 方案表版本管理字段
+## 2. 迁移目录
 
-### 变更信息
-- **功能模块**: P0-2 方案版本管理与拒绝重试
-- **优先级**: 🔴 P0
-- **执行时机**: 第3天
-- **脚本文件**: `server/migrations/002_add_proposal_versioning.sql`
+统一使用：
 
-### SQL脚本
+- `server/scripts/migrations/`
 
-```sql
--- ==================== 新增字段 ====================
-
-ALTER TABLE proposals
-    ADD COLUMN IF NOT EXISTS version INT DEFAULT 1,
-    ADD COLUMN IF NOT EXISTS parent_proposal_id BIGINT,
-    ADD COLUMN IF NOT EXISTS rejection_count INT DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
-    ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS user_response_deadline TIMESTAMP;
-
--- ==================== 创建索引 ====================
-
-CREATE INDEX IF NOT EXISTS idx_proposals_parent ON proposals(parent_proposal_id);
-CREATE INDEX IF NOT EXISTS idx_proposals_submitted_at ON proposals(submitted_at);
-CREATE INDEX IF NOT EXISTS idx_proposals_deadline ON proposals(user_response_deadline);
-
--- ==================== 更新现有数据 ====================
-
--- 将created_at作为submitted_at的初始值
-UPDATE proposals
-SET submitted_at = created_at
-WHERE submitted_at IS NULL;
-
--- 设置14天确认期限（仅对待确认状态的方案）
-UPDATE proposals
-SET user_response_deadline = submitted_at + INTERVAL '14 days'
-WHERE status = 1 AND user_response_deadline IS NULL;
-
--- ==================== 添加注释 ====================
-
-COMMENT ON COLUMN proposals.version IS '方案版本号（v1, v2, v3...）';
-COMMENT ON COLUMN proposals.parent_proposal_id IS '父方案ID（重新提交时指向原方案）';
-COMMENT ON COLUMN proposals.rejection_count IS '累计拒绝次数（该预约下所有版本）';
-COMMENT ON COLUMN proposals.rejection_reason IS '用户拒绝原因';
-COMMENT ON COLUMN proposals.rejected_at IS '拒绝时间';
-COMMENT ON COLUMN proposals.submitted_at IS '商家提交时间';
-COMMENT ON COLUMN proposals.user_response_deadline IS '用户确认截止时间（14天）';
-```
-
-### 回滚脚本
-
-```sql
-ALTER TABLE proposals
-    DROP COLUMN IF EXISTS version,
-    DROP COLUMN IF EXISTS parent_proposal_id,
-    DROP COLUMN IF EXISTS rejection_count,
-    DROP COLUMN IF EXISTS rejection_reason,
-    DROP COLUMN IF EXISTS rejected_at,
-    DROP COLUMN IF EXISTS submitted_at,
-    DROP COLUMN IF EXISTS user_response_deadline;
-
-DROP INDEX IF EXISTS idx_proposals_parent;
-DROP INDEX IF EXISTS idx_proposals_submitted_at;
-DROP INDEX IF EXISTS idx_proposals_deadline;
-```
+当前仓库已存在该目录，后续迁移继续在此目录提交。
 
 ---
 
-## M003: 预约表退款相关字段
+## 3. 文件命名规范
 
-### 变更信息
-- **功能模块**: P0-3 意向金退款机制
-- **优先级**: 🔴 P0
-- **执行时机**: 第5天
-- **脚本文件**: `server/migrations/003_add_booking_refund_fields.sql`
+### 3.1 推荐命名
 
-### SQL脚本
+每次 schema 变更建议至少提交以下文件：
 
-```sql
--- ==================== 新增字段 ====================
+- `YYYYMMDD_<name>_up.sql`
+- `YYYYMMDD_<name>_down.sql`
+- 可选：`YYYYMMDD_<name>_verify.sql`
 
-ALTER TABLE bookings
-    ADD COLUMN IF NOT EXISTS intent_fee_refunded BOOLEAN DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS intent_fee_refund_reason VARCHAR(200),
-    ADD COLUMN IF NOT EXISTS intent_fee_refunded_at TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS merchant_response_deadline TIMESTAMP;
+例如：
 
--- ==================== 创建索引 ====================
+- `20260307_add_user_preferences_up.sql`
+- `20260307_add_user_preferences_down.sql`
+- `20260307_add_user_preferences_verify.sql`
 
-CREATE INDEX IF NOT EXISTS idx_bookings_refunded ON bookings(intent_fee_refunded);
-CREATE INDEX IF NOT EXISTS idx_bookings_merchant_deadline ON bookings(merchant_response_deadline);
+### 3.2 命名要求
 
--- ==================== 更新现有数据 ====================
-
--- 为已支付意向金且状态为待处理的预约设置48小时期限
-UPDATE bookings
-SET merchant_response_deadline = created_at + INTERVAL '48 hours'
-WHERE intent_fee_paid = TRUE
-  AND merchant_response_deadline IS NULL
-  AND status = 1;
-
--- ==================== 添加注释 ====================
-
-COMMENT ON COLUMN bookings.intent_fee_refunded IS '意向金是否已退款';
-COMMENT ON COLUMN bookings.intent_fee_refund_reason IS '退款原因';
-COMMENT ON COLUMN bookings.intent_fee_refunded_at IS '退款时间';
-COMMENT ON COLUMN bookings.merchant_response_deadline IS '商家响应截止时间（48小时）';
-```
-
-### 回滚脚本
-
-```sql
-ALTER TABLE bookings
-    DROP COLUMN IF EXISTS intent_fee_refunded,
-    DROP COLUMN IF EXISTS intent_fee_refund_reason,
-    DROP COLUMN IF EXISTS intent_fee_refunded_at,
-    DROP COLUMN IF EXISTS merchant_response_deadline;
-
-DROP INDEX IF EXISTS idx_bookings_refunded;
-DROP INDEX IF EXISTS idx_bookings_merchant_deadline;
-```
+- 文件名使用 `snake_case`
+- 名称直接体现变更目的
+- `up/down/verify` 一眼可分辨
+- 避免使用 `final.sql`、`new.sql`、`test.sql` 之类模糊命名
 
 ---
 
-## 执行顺序
+## 4. 提交要求
 
-建议按以下顺序执行数据库变更：
+每次数据库结构变更至少需要包含：
 
-1. **M001** - 创建notifications表（第1天）
-2. **M002** - Proposals表版本管理字段（第3天）
-3. **M003** - Bookings表退款字段（第5天）
+1. `*_up.sql`
+2. `*_down.sql`
+3. 对应代码变更
+4. 本文档或发布记录中的执行说明
+
+推荐附带：
+
+5. `*_verify.sql`
+6. 变更影响说明
+7. 执行顺序说明
+8. 风险提示
 
 ---
 
-## 验证脚本
+## 5. 生产执行原则
 
-### 检查表是否存在
+### 5.1 强制要求
+
+- 迁移前必须先备份数据库
+- 如果涉及 uploads 或关键文件目录，建议同时备份
+- 先在测试环境或低风险环境验证 SQL
+- 生产执行必须有对应回滚方案
+- 数据库迁移是**单独步骤**，不能和应用代码发布混在一条模糊命令里
+
+### 5.2 不允许的做法
+
+- 不允许在生产环境依赖 `AutoMigrate`
+- 不允许先发代码后补写回滚 SQL
+- 不允许执行未审查的临时 SQL 文件
+- 不允许把数据库回滚脚本无条件自动化执行
+
+---
+
+## 6. 推荐执行流程
+
+### 6.1 发布前
+
+1. 确认本次发布是否包含数据库变更
+2. 准备以下文件：
+   - `*_up.sql`
+   - `*_down.sql`
+   - 可选 `*_verify.sql`
+3. 先备份数据库
+4. 在测试环境验证 SQL
+
+### 6.2 生产执行
+
+建议顺序：
+
+1. 备份数据库
+2. 执行 `*_up.sql`
+3. 执行 `*_verify.sql` 或验证 SQL
+4. 确认结果
+5. 再执行应用发布脚本
+
+### 6.3 出问题时
+
+按以下顺序判断：
+
+1. 只是应用代码不兼容？先回滚代码
+2. schema 本身有问题？再评估是否执行 `*_down.sql`
+3. 如果 down SQL 会导致数据丢失，优先评估备份恢复或人工修复
+
+---
+
+## 7. SQL 模板
+
+### 7.1 up.sql 模板
 
 ```sql
--- 检查notifications表
-SELECT EXISTS (
-    SELECT FROM information_schema.tables
-    WHERE table_schema = 'public'
-    AND table_name = 'notifications'
-);
+BEGIN;
 
--- 检查proposals新字段
+-- 1. schema change
+-- ALTER TABLE ...
+
+-- 2. indexes
+-- CREATE INDEX ...
+
+-- 3. data backfill if needed
+-- UPDATE ...
+
+COMMIT;
+```
+
+### 7.2 down.sql 模板
+
+```sql
+BEGIN;
+
+-- rollback schema / indexes / backfill side effects if possible
+
+COMMIT;
+```
+
+### 7.3 verify.sql 模板
+
+```sql
+-- Verify table / columns / indexes
 SELECT column_name
 FROM information_schema.columns
-WHERE table_name = 'proposals'
-  AND column_name IN ('version', 'parent_proposal_id', 'rejection_count',
-                      'rejection_reason', 'submitted_at', 'user_response_deadline');
+WHERE table_name = 'example_table';
 
--- 检查bookings新字段
-SELECT column_name
-FROM information_schema.columns
-WHERE table_name = 'bookings'
-  AND column_name IN ('intent_fee_refunded', 'intent_fee_refund_reason',
-                      'intent_fee_refunded_at', 'merchant_response_deadline');
-```
-
-### 检查索引是否创建
-
-```sql
--- 检查notifications索引
 SELECT indexname
 FROM pg_indexes
-WHERE tablename = 'notifications';
-
--- 检查proposals索引
-SELECT indexname
-FROM pg_indexes
-WHERE tablename = 'proposals'
-  AND indexname LIKE 'idx_proposals_%';
-
--- 检查bookings索引
-SELECT indexname
-FROM pg_indexes
-WHERE tablename = 'bookings'
-  AND indexname LIKE 'idx_bookings_%';
+WHERE tablename = 'example_table';
 ```
 
 ---
 
-## 注意事项
+## 8. 验证要求
 
-### 执行前备份
+每次迁移后至少验证：
 
-```bash
-# 备份整个数据库
-pg_dump -U postgres -d home_decoration > backup_$(date +%Y%m%d_%H%M%S).sql
+- 表是否创建成功
+- 字段是否存在
+- 索引是否存在
+- 默认值 / 约束是否符合预期
+- 应用关键查询是否仍正常
 
-# 仅备份特定表
-pg_dump -U postgres -d home_decoration -t proposals -t bookings > backup_tables_$(date +%Y%m%d).sql
-```
+推荐验证维度：
 
-### 生产环境执行建议
-
-1. **在维护窗口执行** - 避免业务高峰期
-2. **先在测试环境验证** - 确保脚本无误
-3. **使用事务包裹** - 出错可回滚
-   ```sql
-   BEGIN;
-   -- 执行变更脚本
-   COMMIT;  -- 或 ROLLBACK;
-   ```
-4. **监控执行时间** - 大表ALTER可能较慢
-5. **准备回滚脚本** - 出现问题时快速恢复
+1. **结构验证**：表、字段、索引、约束
+2. **数据验证**：回填结果、默认值
+3. **应用验证**：接口或页面是否正常
 
 ---
 
-## 数据迁移注意事项
+## 9. 回滚要求
 
-### proposals表
+### 9.1 为什么不能全自动回滚
 
-- 现有方案会自动设置 `version = 1`
-- `submitted_at` 会使用 `created_at` 作为初始值
-- 待确认状态的方案会自动设置14天期限
+因为数据库回滚常常涉及：
 
-### bookings表
+- 新写入数据丢失风险
+- 数据结构降级兼容性问题
+- 索引或字段删除不可逆
+- 长事务和锁表风险
 
-- 已支付意向金且状态为待处理的预约会自动设置48小时期限
-- 历史数据的 `merchant_response_deadline` 可能已过期，需业务逻辑处理
+因此本项目采用：
+
+- **代码回滚可脚本化**
+- **数据库回滚需人工确认**
+
+### 9.2 回滚决策建议
+
+| 场景 | 建议 |
+|---|---|
+| 仅代码 bug | 不回滚数据库 |
+| schema 已执行但应用报错 | 先回滚代码，再评估数据库 |
+| schema 本身错误且无业务写入 | 可评估执行 `*_down.sql` |
+| 已有新数据写入新结构 | 优先人工评估，不直接 down |
+| 数据已损坏 | 评估使用备份恢复 |
+
+---
+
+## 10. 发布记录模板
+
+每次涉及数据库变更的发布，建议记录：
+
+```markdown
+## DB Migration Record
+
+- Release tag: v1.2.3
+- Operator: <name>
+- Execute time: YYYY-MM-DD HH:mm
+
+### Files
+- Up SQL: server/scripts/migrations/20260307_xxx_up.sql
+- Down SQL: server/scripts/migrations/20260307_xxx_down.sql
+- Verify SQL: server/scripts/migrations/20260307_xxx_verify.sql
+
+### Backup
+- DB backup file: <file>
+- Uploads backup file: <file or N/A>
+
+### Result
+- Up executed: yes / no
+- Verify passed: yes / no
+- App released after migration: yes / no
+- Rollback needed: no / yes
+
+### Notes
+- <notes>
+```
+
+---
+
+## 11. 与发布脚本的关系
+
+`deploy/scripts/deploy_prod.sh` 和 `deploy/scripts/rollback_prod.sh` **不会自动执行数据库迁移或数据库回滚**。
+
+这是有意保留的安全边界：
+
+- 代码发布可以自动化
+- 数据库变更必须受控执行
+- 数据库回滚必须人工判断
+
+---
+
+## 12. 当前仓库建议后续收敛方向
+
+虽然当前没有统一 migration runner，但建议后续所有新迁移都遵守：
+
+- 同目录管理：`server/scripts/migrations/`
+- 同一命名规范：`*_up.sql` / `*_down.sql` / `*_verify.sql`
+- 同一发布规则：**备份 → 迁移 → 验证 → 发布服务**
+
+这样即使未来引入 migration runner，也可以平滑迁移，不需要重做历史迁移资产。
