@@ -106,6 +106,18 @@ func Load() (*Config, error) {
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
+	_ = viper.BindEnv("server.host", "SERVER_HOST")
+	_ = viper.BindEnv("server.port", "SERVER_PORT")
+	_ = viper.BindEnv("server.mode", "SERVER_MODE")
+	_ = viper.BindEnv("server.public_url", "SERVER_PUBLIC_URL")
+
+	_ = viper.BindEnv("database.host", "DATABASE_HOST")
+	_ = viper.BindEnv("database.port", "DATABASE_PORT")
+	_ = viper.BindEnv("database.user", "DATABASE_USER")
+	_ = viper.BindEnv("database.password", "DATABASE_PASSWORD")
+	_ = viper.BindEnv("database.dbname", "DATABASE_DBNAME")
+	_ = viper.BindEnv("database.sslmode", "DATABASE_SSLMODE")
+
 	// 兼容历史/文档环境变量别名（推荐仍使用 DATABASE_* / REDIS_*）
 	_ = viper.BindEnv("database.host", "DB_HOST")
 	_ = viper.BindEnv("database.port", "DB_PORT")
@@ -113,6 +125,21 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("database.password", "DB_PASSWORD")
 	_ = viper.BindEnv("database.dbname", "DB_NAME")
 	_ = viper.BindEnv("database.dbname", "DATABASE_NAME")
+
+	_ = viper.BindEnv("redis.host", "REDIS_HOST")
+	_ = viper.BindEnv("redis.port", "REDIS_PORT")
+	_ = viper.BindEnv("redis.password", "REDIS_PASSWORD")
+	_ = viper.BindEnv("redis.db", "REDIS_DB")
+
+	_ = viper.BindEnv("jwt.secret", "JWT_SECRET")
+	_ = viper.BindEnv("jwt.expire_hour", "JWT_EXPIRE_HOUR")
+
+	_ = viper.BindEnv("sms.provider", "SMS_PROVIDER")
+	_ = viper.BindEnv("sms.access_key_id", "SMS_ACCESS_KEY_ID")
+	_ = viper.BindEnv("sms.access_key_secret", "SMS_ACCESS_KEY_SECRET")
+	_ = viper.BindEnv("sms.sign_name", "SMS_SIGN_NAME")
+	_ = viper.BindEnv("sms.template_code", "SMS_TEMPLATE_CODE")
+	_ = viper.BindEnv("sms.region_id", "SMS_REGION_ID")
 
 	// 设置默认值
 	viper.SetDefault("server.host", "0.0.0.0")

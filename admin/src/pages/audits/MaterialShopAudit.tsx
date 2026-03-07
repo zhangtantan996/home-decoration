@@ -63,7 +63,7 @@ const MaterialShopAudit: React.FC = () => {
             if (keyword.trim()) {
                 params.keyword = keyword.trim();
             }
-            const res = await adminMaterialShopApplicationApi.list(params) as ListEnvelope<AdminMaterialShopApplicationListItem>;
+            const res = await adminMaterialShopApplicationApi.list(params) as unknown as ListEnvelope<AdminMaterialShopApplicationListItem>;
             if (res.code === 0) {
                 setItems(res.data?.list || []);
                 setTotal(res.data?.total || 0);
@@ -86,7 +86,7 @@ const MaterialShopAudit: React.FC = () => {
         setDetailLoading(true);
         setCurrentItem(null);
         try {
-            const res = await adminMaterialShopApplicationApi.detail(record.id) as DetailEnvelope<AdminMaterialShopApplicationDetail>;
+            const res = await adminMaterialShopApplicationApi.detail(record.id) as unknown as DetailEnvelope<AdminMaterialShopApplicationDetail>;
             if (res.code === 0 && res.data) {
                 setCurrentItem(res.data);
             } else {
@@ -107,7 +107,7 @@ const MaterialShopAudit: React.FC = () => {
             content: `确认通过 ${record.shopName} 的主材商入驻申请吗？`,
             onOk: async () => {
                 try {
-                    const res = await adminMaterialShopApplicationApi.approve(record.id) as { code: number; message?: string };
+                    const res = await adminMaterialShopApplicationApi.approve(record.id) as unknown as { code: number; message?: string };
                     if (res.code === 0) {
                         message.success('审核通过');
                         await loadData();
@@ -140,7 +140,7 @@ const MaterialShopAudit: React.FC = () => {
         try {
             const values = await form.validateFields();
             setRejecting(true);
-            const res = await adminMaterialShopApplicationApi.reject(rejectTargetId, values.reason) as { code: number; message?: string };
+            const res = await adminMaterialShopApplicationApi.reject(rejectTargetId, values.reason) as unknown as { code: number; message?: string };
             if (res.code === 0) {
                 message.success('已驳回申请');
                 setRejectVisible(false);

@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Build Admin Panel / Merchant SPA
 # ==========================================
-FROM node:20-alpine AS admin-builder
+FROM docker.m.daocloud.io/library/node:20-alpine AS admin-builder
 WORKDIR /app/admin
 
 RUN npm config set registry https://registry.npmmirror.com
@@ -31,7 +31,7 @@ RUN npm run build
 # ==========================================
 # Stage 3: Nginx Static File Server
 # ==========================================
-FROM nginx:alpine
+FROM docker.m.daocloud.io/library/nginx:alpine
 
 RUN apk add --no-cache tzdata
 ENV TZ=Asia/Shanghai

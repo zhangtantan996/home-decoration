@@ -70,7 +70,7 @@ const ProviderAudit: React.FC = () => {
                 params.keyword = keyword.trim();
             }
 
-            const res = await adminMerchantApplicationApi.list(params) as ListEnvelope<AdminMerchantApplicationListItem>;
+            const res = await adminMerchantApplicationApi.list(params) as unknown as ListEnvelope<AdminMerchantApplicationListItem>;
             if (res.code === 0) {
                 setItems(res.data?.list || []);
                 setTotal(res.data?.total || 0);
@@ -93,7 +93,7 @@ const ProviderAudit: React.FC = () => {
         setDetailLoading(true);
         setCurrentItem(null);
         try {
-            const res = await adminMerchantApplicationApi.detail(record.id) as DetailEnvelope<AdminMerchantApplicationDetail>;
+            const res = await adminMerchantApplicationApi.detail(record.id) as unknown as DetailEnvelope<AdminMerchantApplicationDetail>;
             if (res.code === 0 && res.data) {
                 setCurrentItem(res.data);
             } else {
@@ -114,7 +114,7 @@ const ProviderAudit: React.FC = () => {
             content: `确认通过 ${record.companyName || record.realName || record.phone} 的入驻申请吗？`,
             onOk: async () => {
                 try {
-                    const res = await adminMerchantApplicationApi.approve(record.id) as { code: number; message?: string };
+                    const res = await adminMerchantApplicationApi.approve(record.id) as unknown as { code: number; message?: string };
                     if (res.code === 0) {
                         message.success('审核通过');
                         await loadData();
@@ -147,7 +147,7 @@ const ProviderAudit: React.FC = () => {
         try {
             const values = await form.validateFields();
             setRejecting(true);
-            const res = await adminMerchantApplicationApi.reject(rejectTargetId, values.reason) as { code: number; message?: string };
+            const res = await adminMerchantApplicationApi.reject(rejectTargetId, values.reason) as unknown as { code: number; message?: string };
             if (res.code === 0) {
                 message.success('已驳回申请');
                 setRejectVisible(false);

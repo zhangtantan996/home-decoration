@@ -1,5 +1,5 @@
 # Build Stage
-FROM golang:1.23-alpine AS builder
+FROM docker.m.daocloud.io/library/golang:1.23-alpine AS builder
 
 # Set GOPROXY for China
 ENV GOPROXY=https://goproxy.cn,direct
@@ -20,7 +20,7 @@ COPY server/ .
 RUN go build -ldflags="-s -w" -o api-server cmd/api/main.go
 
 # Run Stage
-FROM alpine:latest
+FROM docker.m.daocloud.io/library/alpine:latest
 
 WORKDIR /app
 
