@@ -1,11 +1,15 @@
 {
   "mcpServers": {
-    "ios-simulator": {
+    "playwright": {
       "command": "npx",
-      "args": ["-y", "ios-simulator-mcp"],
+      "args": ["@playwright/mcp@latest"],
       "env": {
-        "IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR": "/Users/zhangtantan/Downloads"
+        "PLAYWRIGHT_HEADLESS": "true"
       }
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
     }
   }
 }
