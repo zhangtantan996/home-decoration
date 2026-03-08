@@ -500,6 +500,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		// 商家入驻 (无需认证)
 		v1.POST("/merchant/apply", handler.MerchantApply)
 		v1.GET("/merchant/apply/:phone/status", handler.MerchantApplyStatus)
+		v1.GET("/merchant/apply/:id/detail-for-resubmit", handler.MerchantApplyDetailForResubmit)
 		v1.POST("/merchant/apply/:id/resubmit", handler.MerchantResubmit)
 		v1.POST("/merchant/change-application", handler.MerchantApplyIdentityChange)
 		v1.POST("/merchant/upload-public", handler.MerchantUploadImage)
@@ -507,6 +508,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		v1.POST("/merchant/onboarding/validate-id-card", handler.MerchantValidateOnboardingIDCard)
 		v1.POST("/material-shop/apply", handler.MaterialShopApply)
 		v1.GET("/material-shop/apply/:phone/status", handler.MaterialShopApplyStatus)
+		v1.GET("/material-shop/apply/:id/detail-for-resubmit", handler.MaterialShopApplyDetailForResubmit)
 		v1.POST("/material-shop/apply/:id/resubmit", handler.MaterialShopApplyResubmit)
 
 		// 商家登录 (无需认证)

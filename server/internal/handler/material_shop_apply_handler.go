@@ -261,24 +261,20 @@ func MaterialShopApply(c *gin.Context) {
 		return
 	}
 
-	var existingProvider model.Provider
-	if err := tx.Where("user_id = ?", user.ID).First(&existingProvider).Error; err == nil {
+	if ok, nextAction, checkErr := canSubmitMaterialShopApplication(tx, user.ID); checkErr != nil {
+		tx.Rollback()
+		response.Error(c, 500, "提交失败: 校验商家身份异常")
+		return
+	} else if !ok {
 		tx.Rollback()
 		c.JSON(200, response.Response{
 			Code:    409,
-			Message: "您已拥有服务商身份，如需切换角色请提交角色变更申请",
+			Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
 			Data: gin.H{
-				"nextAction": "CHANGE_ROLE",
+				"nextAction": nextAction,
 				"userId":     user.ID,
 			},
 		})
-		return
-	}
-
-	var existingShop model.MaterialShop
-	if err := tx.Where("user_id = ?", user.ID).First(&existingShop).Error; err == nil {
-		tx.Rollback()
-		response.Error(c, 409, "您已拥有主材商身份，请直接登录")
 		return
 	}
 
@@ -364,6 +360,70 @@ func MaterialShopApplyStatus(c *gin.Context) {
 		"productCount":  productCount,
 		"createdAt":     app.CreatedAt,
 		"auditedAt":     app.AuditedAt,
+	})
+}
+
+func MaterialShopApplyDetailForResubmit(c *gin.Context) {
+	appID := parseUint64(c.Param("id"))
+
+	var app model.MaterialShopApplication
+	if err := repository.DB.First(&app, appID).Error; err != nil {
+		response.Error(c, 404, "申请不存在")
+		return
+	}
+	if app.Status != 2 {
+		response.Error(c, 400, "当前申请状态不支持重新提交详情回填")
+		return
+	}
+
+	var products []model.MaterialShopApplicationProduct
+	_ = repository.DB.Where("application_id = ?", app.ID).Order("sort_order ASC, id ASC").Find(&products).Error
+
+	productList := make([]gin.H, 0, len(products))
+	for _, product := range products {
+		var params map[string]interface{}
+		var images []string
+		_ = json.Unmarshal([]byte(product.ParamsJSON), &params)
+		_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
+		if params == nil {
+			params = map[string]interface{}{}
+		}
+		productList = append(productList, gin.H{
+			"name":   product.Name,
+			"params": params,
+			"price":  product.Price,
+			"images": imgutil.GetFullImageURLs(images),
+		})
+	}
+
+	response.Success(c, gin.H{
+		"applicationId": app.ID,
+		"merchantKind":  "material_shop",
+		"resubmitEditable": gin.H{
+			"phone":        false,
+			"merchantKind": false,
+		},
+		"form": gin.H{
+			"phone":                  app.Phone,
+			"entityType":             app.EntityType,
+			"shopName":               app.ShopName,
+			"shopDescription":        app.ShopDescription,
+			"companyName":            app.CompanyName,
+			"businessLicenseNo":      displayReadableSensitive(app.BusinessLicenseNo),
+			"businessLicense":        imgutil.GetFullImageURL(app.BusinessLicense),
+			"legalPersonName":        app.LegalPersonName,
+			"legalPersonIdCardNo":    displayReadableSensitive(app.LegalPersonIDCardNo),
+			"legalPersonIdCardFront": imgutil.GetFullImageURL(app.LegalPersonIDCardFront),
+			"legalPersonIdCardBack":  imgutil.GetFullImageURL(app.LegalPersonIDCardBack),
+			"businessHours":          app.BusinessHours,
+			"contactPhone":           app.ContactPhone,
+			"contactName":            app.ContactName,
+			"address":                app.Address,
+			"products":               productList,
+			"legalAcceptance":        parseLegalAcceptanceJSON(app.LegalAcceptanceJSON),
+			"legalAcceptanceReset":   true,
+		},
+		"rejectReason": app.RejectReason,
 	})
 }
 
@@ -896,17 +956,10 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 		return
 	}
 
-	var existingProvider model.Provider
-	if err := tx.Where("user_id = ?", user.ID).First(&existingProvider).Error; err == nil {
+	previousIdentity, err := findLatestActiveMerchantIdentity(tx, user.ID, "", 0)
+	if err != nil {
 		tx.Rollback()
-		response.Error(c, 409, "该用户已有服务商身份，无法审核主材商")
-		return
-	}
-
-	var existingShop model.MaterialShop
-	if err := tx.Where("user_id = ?", user.ID).First(&existingShop).Error; err == nil {
-		tx.Rollback()
-		response.Error(c, 409, "该用户已有主材商身份")
+		response.Error(c, 500, "校验旧商家身份失败: "+err.Error())
 		return
 	}
 
@@ -979,6 +1032,16 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 	}
 
 	now := time.Now()
+	if err := freezeMerchantIdentity(tx, user.ID, previousIdentity); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "冻结旧商家身份失败: "+err.Error())
+		return
+	}
+	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeMaterial, shop.ID, adminID, merchantIdentityStatusActive); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "激活主材商身份失败: "+err.Error())
+		return
+	}
 	app.Status = 1
 	app.AuditedBy = adminID
 	app.AuditedAt = &now

@@ -776,15 +776,18 @@ func MerchantApply(c *gin.Context) {
 		}
 	}
 
-	// 7. 单一商家身份限制：已有商家身份需走变更申请
-	var existingProvider model.Provider
-	if err := tx.Where("user_id = ?", user.ID).First(&existingProvider).Error; err == nil {
+	// 7. 商家互斥：同一时刻仅允许一个已生效商家身份；用户账号可与商家共存
+	if ok, nextAction, checkErr := canSubmitProviderApplication(tx, user.ID); checkErr != nil {
+		tx.Rollback()
+		response.Error(c, 500, "提交失败: 校验商家身份异常")
+		return
+	} else if !ok {
 		tx.Rollback()
 		c.JSON(200, response.Response{
 			Code:    409,
-			Message: "您已拥有商家身份，如需切换角色请提交角色变更申请",
+			Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
 			Data: gin.H{
-				"nextAction": "CHANGE_ROLE",
+				"nextAction": nextAction,
 				"userId":     user.ID,
 			},
 		})
@@ -874,6 +877,71 @@ func MerchantApplyStatus(c *gin.Context) {
 		"rejectReason":  app.RejectReason,
 		"createdAt":     app.CreatedAt,
 		"auditedAt":     app.AuditedAt,
+	})
+}
+
+// MerchantApplyDetailForResubmit 获取驳回后重新提交所需详情
+func MerchantApplyDetailForResubmit(c *gin.Context) {
+	appID := parseUint64(c.Param("id"))
+
+	var app model.MerchantApplication
+	if err := repository.DB.First(&app, appID).Error; err != nil {
+		response.Error(c, 404, "申请不存在")
+		return
+	}
+	if app.Status != 2 {
+		response.Error(c, 400, "当前申请状态不支持重新提交详情回填")
+		return
+	}
+
+	var serviceAreaCodes, styles, workTypes, highlightTags []string
+	var pricing map[string]float64
+	var portfolioCases []PortfolioCaseInput
+	_ = json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
+	_ = json.Unmarshal([]byte(app.Styles), &styles)
+	_ = json.Unmarshal([]byte(app.WorkTypes), &workTypes)
+	_ = json.Unmarshal([]byte(app.HighlightTags), &highlightTags)
+	_ = json.Unmarshal([]byte(app.PricingJSON), &pricing)
+	_ = json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
+	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
+
+	response.Success(c, gin.H{
+		"applicationId": app.ID,
+		"merchantKind":  "provider",
+		"resubmitEditable": gin.H{
+			"phone": false,
+			"role":  false,
+		},
+		"form": gin.H{
+			"phone":                app.Phone,
+			"applicantType":        app.ApplicantType,
+			"role":                 app.Role,
+			"entityType":           app.EntityType,
+			"realName":             app.RealName,
+			"avatar":               imgutil.GetFullImageURL(app.Avatar),
+			"idCardNo":             displayReadableSensitive(app.IDCardNo),
+			"idCardFront":          imgutil.GetFullImageURL(app.IDCardFront),
+			"idCardBack":           imgutil.GetFullImageURL(app.IDCardBack),
+			"companyName":          app.CompanyName,
+			"licenseNo":            displayReadableSensitive(app.LicenseNo),
+			"licenseImage":         imgutil.GetFullImageURL(app.LicenseImage),
+			"teamSize":             app.TeamSize,
+			"officeAddress":        app.OfficeAddress,
+			"yearsExperience":      app.YearsExperience,
+			"workTypes":            workTypes,
+			"serviceArea":          serviceAreaNames,
+			"serviceAreaCodes":     serviceAreaCodes,
+			"styles":               styles,
+			"highlightTags":        highlightTags,
+			"pricing":              pricing,
+			"introduction":         app.Introduction,
+			"graduateSchool":       app.GraduateSchool,
+			"designPhilosophy":     app.DesignPhilosophy,
+			"portfolioCases":       portfolioCases,
+			"legalAcceptance":      parseLegalAcceptanceJSON(app.LegalAcceptanceJSON),
+			"legalAcceptanceReset": true,
+		},
+		"rejectReason": app.RejectReason,
 	})
 }
 
@@ -1171,11 +1239,11 @@ func AdminApproveApplication(c *gin.Context) {
 		return
 	}
 
-	// 2.1 单一商家身份限制（防止重复创建）
-	var existingProvider model.Provider
-	if err := tx.Where("user_id = ?", user.ID).First(&existingProvider).Error; err == nil {
+	// 2.1 审核通过时允许“新商家替换旧商家”：冻结旧身份，再激活新身份
+	previousIdentity, err := findLatestActiveMerchantIdentity(tx, user.ID, "", 0)
+	if err != nil {
 		tx.Rollback()
-		response.Error(c, 409, "该用户已拥有商家身份，无法重复审核通过")
+		response.Error(c, 500, "校验旧商家身份失败: "+err.Error())
 		return
 	}
 
@@ -1225,41 +1293,17 @@ func AdminApproveApplication(c *gin.Context) {
 		return
 	}
 
-	// 3.1. 创建 user_identities 记录（多身份系统）
+	// 3.1. 冻结旧身份，并激活新的 user_identities 记录（多身份系统）
 	now := time.Now()
-	var identity model.UserIdentity
-	if err := tx.Where("user_id = ? AND identity_type = ?", user.ID, "provider").First(&identity).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			tx.Rollback()
-			response.Error(c, 500, "创建身份记录失败: "+err.Error())
-			return
-		}
-
-		identity = model.UserIdentity{
-			UserID:        user.ID,
-			IdentityType:  "provider",
-			IdentityRefID: &provider.ID,
-			Status:        1,
-			Verified:      true,
-			VerifiedAt:    &now,
-			VerifiedBy:    &adminID,
-		}
-		if err := tx.Create(&identity).Error; err != nil {
-			tx.Rollback()
-			response.Error(c, 500, "创建身份记录失败: "+err.Error())
-			return
-		}
-	} else {
-		identity.IdentityRefID = &provider.ID
-		identity.Status = 1
-		identity.Verified = true
-		identity.VerifiedAt = &now
-		identity.VerifiedBy = &adminID
-		if err := tx.Save(&identity).Error; err != nil {
-			tx.Rollback()
-			response.Error(c, 500, "更新身份记录失败: "+err.Error())
-			return
-		}
+	if err := freezeMerchantIdentity(tx, user.ID, previousIdentity); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "冻结旧商家身份失败: "+err.Error())
+		return
+	}
+	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeProvider, provider.ID, adminID, merchantIdentityStatusActive); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "激活服务商身份失败: "+err.Error())
+		return
 	}
 
 	// 4. 迁移作品集到 ProviderCase

@@ -161,19 +161,6 @@ func resolveMaterialShopEntityType(shopID, userID uint64) string {
 	return normalizeMaterialEntityType(app.EntityType)
 }
 
-func resolveMerchantNextAction(status int8) string {
-	switch status {
-	case 0:
-		return "PENDING"
-	case 1:
-		return "PENDING"
-	case 2:
-		return "RESUBMIT"
-	default:
-		return "APPLY"
-	}
-}
-
 func latestMerchantApplyGuide(userID uint64, phone string) (*merchantApplyGuide, error) {
 	phone = strings.TrimSpace(phone)
 
@@ -476,7 +463,8 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		nextAction := resolveMerchantNextAction(guide.status)
+		hasApprovedIdentity := providerErr == nil || (materialErr == nil && materialShop.IsVerified)
+		nextAction := resolveMerchantNextAction(guide.status, hasApprovedIdentity)
 		switch nextAction {
 		case "PENDING":
 			merchantLoginDenied(c, "入驻申请审核中，请耐心等待审核结果", nextAction, guide)
