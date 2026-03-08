@@ -36,7 +36,7 @@ api.interceptors.request.use(
 
 // 响应拦截器
 api.interceptors.response.use(
-    (response) => response.data,
+    <T>(response: { data: T }) => response.data,
     (error) => {
         // 如果是 401 错误且不在登录页面,清除认证信息并跳转
         if (error.response?.status === 401) {
@@ -331,20 +331,31 @@ export interface AdminMaterialShopApplicationDetail extends AdminMaterialShopApp
     products: MaterialShopApplicationProductItem[];
 }
 
+export interface AdminApiResponse<T = unknown> {
+    code: number;
+    message?: string;
+    data?: T;
+}
+
+export interface AdminListData<T> {
+    list?: T[];
+    total?: number;
+}
+
 export const adminMerchantApplicationApi = {
     list: (params?: { page?: number; pageSize?: number; status?: number; keyword?: string }) =>
-        api.get('/admin/merchant-applications', { params }),
-    detail: (id: number) => api.get(`/admin/merchant-applications/${id}`),
-    approve: (id: number) => api.post(`/admin/merchant-applications/${id}/approve`),
-    reject: (id: number, reason: string) => api.post(`/admin/merchant-applications/${id}/reject`, { reason }),
+        api.get<AdminApiResponse<AdminListData<AdminMerchantApplicationListItem>>, AdminApiResponse<AdminListData<AdminMerchantApplicationListItem>>>('/admin/merchant-applications', { params }),
+    detail: (id: number) => api.get<AdminApiResponse<AdminMerchantApplicationDetail>, AdminApiResponse<AdminMerchantApplicationDetail>>(`/admin/merchant-applications/${id}`),
+    approve: (id: number) => api.post<AdminApiResponse, AdminApiResponse>(`/admin/merchant-applications/${id}/approve`),
+    reject: (id: number, reason: string) => api.post<AdminApiResponse, AdminApiResponse>(`/admin/merchant-applications/${id}/reject`, { reason }),
 };
 
 export const adminMaterialShopApplicationApi = {
     list: (params?: { page?: number; pageSize?: number; status?: number; keyword?: string }) =>
-        api.get('/admin/material-shop-applications', { params }),
-    detail: (id: number) => api.get(`/admin/material-shop-applications/${id}`),
-    approve: (id: number) => api.post(`/admin/material-shop-applications/${id}/approve`),
-    reject: (id: number, reason: string) => api.post(`/admin/material-shop-applications/${id}/reject`, { reason }),
+        api.get<AdminApiResponse<AdminListData<AdminMaterialShopApplicationListItem>>, AdminApiResponse<AdminListData<AdminMaterialShopApplicationListItem>>>('/admin/material-shop-applications', { params }),
+    detail: (id: number) => api.get<AdminApiResponse<AdminMaterialShopApplicationDetail>, AdminApiResponse<AdminMaterialShopApplicationDetail>>(`/admin/material-shop-applications/${id}`),
+    approve: (id: number) => api.post<AdminApiResponse, AdminApiResponse>(`/admin/material-shop-applications/${id}/approve`),
+    reject: (id: number, reason: string) => api.post<AdminApiResponse, AdminApiResponse>(`/admin/material-shop-applications/${id}/reject`, { reason }),
 };
 
 // 身份申请审核

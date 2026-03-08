@@ -21,21 +21,6 @@ const roleMap: Record<string, { text: string; color: string }> = {
     foreman: { text: '工长', color: 'gold' },
 };
 
-interface ListEnvelope<T> {
-    code: number;
-    message?: string;
-    data?: {
-        list?: T[];
-        total?: number;
-    };
-}
-
-interface DetailEnvelope<T> {
-    code: number;
-    message?: string;
-    data?: T;
-}
-
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
     const date = new Date(value);
@@ -70,7 +55,7 @@ const ProviderAudit: React.FC = () => {
                 params.keyword = keyword.trim();
             }
 
-            const res = await adminMerchantApplicationApi.list(params) as unknown as ListEnvelope<AdminMerchantApplicationListItem>;
+            const res = await adminMerchantApplicationApi.list(params);
             if (res.code === 0) {
                 setItems(res.data?.list || []);
                 setTotal(res.data?.total || 0);
@@ -93,7 +78,7 @@ const ProviderAudit: React.FC = () => {
         setDetailLoading(true);
         setCurrentItem(null);
         try {
-            const res = await adminMerchantApplicationApi.detail(record.id) as unknown as DetailEnvelope<AdminMerchantApplicationDetail>;
+            const res = await adminMerchantApplicationApi.detail(record.id);
             if (res.code === 0 && res.data) {
                 setCurrentItem(res.data);
             } else {
@@ -114,7 +99,7 @@ const ProviderAudit: React.FC = () => {
             content: `确认通过 ${record.companyName || record.realName || record.phone} 的入驻申请吗？`,
             onOk: async () => {
                 try {
-                    const res = await adminMerchantApplicationApi.approve(record.id) as unknown as { code: number; message?: string };
+                    const res = await adminMerchantApplicationApi.approve(record.id);
                     if (res.code === 0) {
                         message.success('审核通过');
                         await loadData();
@@ -147,7 +132,7 @@ const ProviderAudit: React.FC = () => {
         try {
             const values = await form.validateFields();
             setRejecting(true);
-            const res = await adminMerchantApplicationApi.reject(rejectTargetId, values.reason) as unknown as { code: number; message?: string };
+            const res = await adminMerchantApplicationApi.reject(rejectTargetId, values.reason);
             if (res.code === 0) {
                 message.success('已驳回申请');
                 setRejectVisible(false);
