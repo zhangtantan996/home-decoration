@@ -259,11 +259,41 @@ export interface MerchantApplyStatusData {
     auditedAt?: string;
 }
 
+export interface MerchantApplyDetailData extends MerchantApplyStatusData {
+    phone?: string;
+    realName?: string;
+    avatar?: string;
+    idCardNo?: string;
+    idCardFront?: string;
+    idCardBack?: string;
+    companyName?: string;
+    licenseNo?: string;
+    licenseImage?: string;
+    legalPersonName?: string;
+    legalPersonIdCardNo?: string;
+    legalPersonIdCardFront?: string;
+    legalPersonIdCardBack?: string;
+    teamSize?: number;
+    officeAddress?: string;
+    yearsExperience?: number;
+    workTypes?: string[];
+    highlightTags?: string[];
+    pricing?: Record<string, number>;
+    graduateSchool?: string;
+    designPhilosophy?: string;
+    serviceArea?: string[];
+    styles?: string[];
+    introduction?: string;
+    portfolioCases?: MerchantPortfolioCase[];
+}
+
 export const merchantApplyApi = {
     apply: async (data: MerchantApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post('/merchant/apply', data), '提交申请失败'),
     status: async (phone: string) =>
         unwrapData<MerchantApplyStatusData>(await merchantApi.get(`/merchant/apply/${encodeURIComponent(phone)}/status`), '查询申请状态失败'),
+    detail: async (id: number) =>
+        unwrapData<MerchantApplyDetailData>(await merchantApi.get(`/merchant/apply/${id}`), '获取申请详情失败'),
     resubmit: async (id: number, data: MerchantApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/merchant/apply/${id}/resubmit`, data), '重新提交申请失败'),
 };
@@ -309,6 +339,24 @@ export interface MaterialShopApplyStatusData {
     auditedAt?: string;
 }
 
+export interface MaterialShopApplyDetailData extends MaterialShopApplyStatusData {
+    phone?: string;
+    shopName?: string;
+    shopDescription?: string;
+    companyName?: string;
+    businessLicenseNo?: string;
+    businessLicense?: string;
+    legalPersonName?: string;
+    legalPersonIdCardNo?: string;
+    legalPersonIdCardFront?: string;
+    legalPersonIdCardBack?: string;
+    businessHours?: string;
+    contactPhone?: string;
+    contactName?: string;
+    address?: string;
+    products?: MaterialShopApplyProductPayload[];
+}
+
 export const onboardingValidationApi = {
     validateLicense: async (data: OnboardingValidateLicensePayload) =>
         unwrapData<OnboardingValidateResult>(await merchantApi.post('/merchant/onboarding/validate-license', data), '营业执照号校验失败'),
@@ -321,6 +369,8 @@ export const materialShopApplyApi = {
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post('/material-shop/apply', data), '提交主材商入驻失败'),
     status: async (phone: string) =>
         unwrapData<MaterialShopApplyStatusData>(await merchantApi.get(`/material-shop/apply/${encodeURIComponent(phone)}/status`), '查询主材商申请状态失败'),
+    detail: async (id: number) =>
+        unwrapData<MaterialShopApplyDetailData>(await merchantApi.get(`/material-shop/apply/${id}`), '获取主材商申请详情失败'),
     resubmit: async (id: number, data: MaterialShopApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/material-shop/apply/${id}/resubmit`, data), '重新提交主材商申请失败'),
 };

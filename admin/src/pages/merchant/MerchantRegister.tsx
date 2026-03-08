@@ -43,6 +43,7 @@ import {
     merchantUploadApi,
     onboardingValidationApi,
     type MerchantApplicantType,
+    type MerchantApplyDetailData,
     type MerchantApplyPayload,
 } from '../../services/merchantApi';
 import { regionApi } from '../../services/regionApi';
@@ -198,6 +199,8 @@ const MerchantRegister: React.FC = () => {
     const [uploadingCaseCountMap, setUploadingCaseCountMap] = useState<Record<number, number>>({});
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
+    const [resubmitLoading, setResubmitLoading] = useState(false);
+    const [resubmitPrefillFailed, setResubmitPrefillFailed] = useState(false);
     const countdownTimerRef = useRef<number | null>(null);
 
     const isForeman = role === 'foreman';
@@ -473,6 +476,90 @@ const MerchantRegister: React.FC = () => {
     const clearDraft = () => {
         sessionStorage.removeItem(DRAFT_STORAGE_KEY);
     };
+
+    const hydrateResubmitDetail = useCallback((detail: MerchantApplyDetailData) => {
+        form.setFieldsValue({
+            phone: detail.phone || phoneFromUrl || undefined,
+            role: detail.role || role,
+            entityType: detail.entityType || entityType,
+            applicantType: detail.applicantType || applicantType,
+            realName: detail.realName,
+            avatar: detail.avatar,
+            idCardNo: detail.idCardNo,
+            idCardFront: detail.idCardFront,
+            idCardBack: detail.idCardBack,
+            companyName: detail.companyName,
+            licenseNo: detail.licenseNo,
+            licenseImage: detail.licenseImage,
+            legalPersonName: detail.legalPersonName,
+            legalPersonIdCardNo: detail.legalPersonIdCardNo,
+            legalPersonIdCardFront: detail.legalPersonIdCardFront,
+            legalPersonIdCardBack: detail.legalPersonIdCardBack,
+            teamSize: detail.teamSize,
+            officeAddress: detail.officeAddress,
+            yearsExperience: detail.yearsExperience,
+            workTypes: detail.workTypes,
+            highlightTags: detail.highlightTags,
+            graduateSchool: detail.graduateSchool,
+            designPhilosophy: detail.designPhilosophy,
+            serviceArea: detail.serviceArea,
+            styles: detail.styles,
+            introduction: detail.introduction,
+            legalAccepted: false,
+        });
+
+        if (detail.pricing) {
+            form.setFieldsValue({
+                designPriceMin: detail.pricing.designPriceMin,
+                designPriceMax: detail.pricing.designPriceMax,
+                hardInstallPriceMin: detail.pricing.hardInstallPriceMin,
+                hardInstallPriceMax: detail.pricing.hardInstallPriceMax,
+            });
+        }
+
+        if (Array.isArray(detail.portfolioCases) && detail.portfolioCases.length > 0) {
+            setPortfolioCases(detail.portfolioCases.map((caseItem) => ({
+                id: generatePortfolioCaseId(),
+                title: String(caseItem?.title || ''),
+                description: String(caseItem?.description || ''),
+                images: Array.isArray(caseItem?.images) ? caseItem.images.map((image) => String(image)).filter(Boolean) : [],
+                style: String(caseItem?.style || ''),
+                area: String(caseItem?.area || ''),
+            })));
+        }
+    }, [applicantType, entityType, form, phoneFromUrl, role]);
+
+    useEffect(() => {
+        if (!resubmitId) {
+            return;
+        }
+
+        let cancelled = false;
+        const loadResubmitDetail = async () => {
+            setResubmitLoading(true);
+            setResubmitPrefillFailed(false);
+            try {
+                const detail = await merchantApplyApi.detail(Number(resubmitId));
+                if (cancelled) {
+                    return;
+                }
+                hydrateResubmitDetail(detail);
+            } catch {
+                if (!cancelled) {
+                    setResubmitPrefillFailed(true);
+                }
+            } finally {
+                if (!cancelled) {
+                    setResubmitLoading(false);
+                }
+            }
+        };
+
+        void loadResubmitDetail();
+        return () => {
+            cancelled = true;
+        };
+    }, [hydrateResubmitDetail, resubmitId]);
 
     const validateImageBeforeUpload = (file: File, maxSizeMB: number) => {
         const isImage = file.type === 'image/jpeg' || file.type === 'image/png';
@@ -979,6 +1066,9 @@ const MerchantRegister: React.FC = () => {
                                 maxLength={11}
                                 aria-label="手机号"
                                 aria-required="true"
+                                readOnly={Boolean(resubmitId && phoneFromUrl)}
+                                disabled={Boolean(resubmitId && phoneFromUrl)}
+                                data-testid="merchant-register-phone-input"
                             />
                         </Form.Item>
                         <Form.Item
@@ -1686,7 +1776,7 @@ const MerchantRegister: React.FC = () => {
                     showIcon
                     closable
                     onClose={() => setShowRedirectAlert(false)}
-                    message="该手机号尚未入驻，请先完成入驻申请后再登录"
+                    message={fromLogin === 'login_resubmit' ? '系统已识别到原申请记录，正在按原商家类型为你发起重新提交。手机号和商家子类型已锁定，提交前需重新确认协议。' : '该手机号尚未入驻，请先完成入驻申请后再登录'}
                     style={{ marginBottom: 24, borderRadius: 8 }}
                     role="alert"
                 />
@@ -1699,7 +1789,24 @@ const MerchantRegister: React.FC = () => {
                 aria-label="商家入驻申请表单"
                 size="large"
                 className="premium-form"
+                data-testid="merchant-register-form"
             >
+                {resubmitLoading && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        message="正在加载原申请资料并尝试回填，请稍候。"
+                    />
+                )}
+                {resubmitId && resubmitPrefillFailed && (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        message="暂时无法拉取原申请详情，已降级为手动补填模式；手机号与商家子类型仍保持原申请约束。"
+                    />
+                )}
                 {renderStepContent()}
 
                 {currentStep === steps.length - 1 && (
@@ -1716,7 +1823,7 @@ const MerchantRegister: React.FC = () => {
                             },
                         ]}
                     >
-                        <Checkbox aria-label="同意平台入驻相关条款">
+                        <Checkbox aria-label="同意平台入驻相关条款" data-testid="merchant-register-legal-checkbox">
                             我已阅读并同意
                             {' '}
                             <a href={MERCHANT_LEGAL_ROUTES.onboardingAgreement} target="_blank" rel="noreferrer">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Form, Input, Button, message, Layout, Typography, Result, Spin, Steps, Tag, Grid } from 'antd';
+import { Alert, Form, Input, Button, message, Layout, Typography, Result, Spin, Steps, Tag, Grid } from 'antd';
 import { PhoneOutlined, ArrowLeftOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -16,6 +16,7 @@ const { useBreakpoint } = Grid;
 const MerchantApplyStatus: React.FC = () => {
     const [searchParams] = useSearchParams();
     const phoneFromUrl = searchParams.get('phone') || '';
+    const source = searchParams.get('from') || '';
     const navigate = useNavigate();
     const screens = useBreakpoint();
 
@@ -183,7 +184,7 @@ const MerchantApplyStatus: React.FC = () => {
                 {status === 2 && (
                     <Result
                         status="error"
-                        title={<span style={{ fontWeight: 600 }}>非常抱歉，审核未能通过</span>}
+                        title={<span style={{ fontWeight: 600 }}>本次申请未通过，可按原商家子类型重新提交</span>}
                         subTitle={(
                             <div style={{ marginTop: 16, background: '#fff1f0', padding: 16, borderRadius: 8, border: '1px solid #ffa39e' }}>
                                 <Text style={{ color: '#cf1322', fontWeight: 500 }}>拒绝原因：</Text>
@@ -192,7 +193,14 @@ const MerchantApplyStatus: React.FC = () => {
                         )}
                         style={{ padding: 0 }}
                         extra={(
-                            <Button
+                            <>
+                                <Alert
+                                    type="warning"
+                                    showIcon
+                                    style={{ marginBottom: 16, textAlign: 'left', borderRadius: 8 }}
+                                    message="驳回后支持按原申请类型重提，当前不支持直接切换为其他商家子类型。若需其他类型，请返回首页重新申请新商家类型。"
+                                />
+                                <Button
                                 type="primary"
                                 size="large"
                                 onClick={() => {
@@ -229,8 +237,9 @@ const MerchantApplyStatus: React.FC = () => {
                                     borderRadius: 8,
                                 }}
                             >
-                                修改信息后重新提交
+                                按原类型修改信息后重新提交
                             </Button>
+                            </>
                         )}
                     />
                 )}
@@ -286,11 +295,20 @@ const MerchantApplyStatus: React.FC = () => {
                         </Button>
                         <div style={{ textAlign: 'center' }}>
                             <Title level={2} style={{ marginTop: 0, marginBottom: 8, color: '#1a1a1a', fontWeight: 600 }}>
-                                查询审核进度
+                                统一商家入驻进度
                             </Title>
-                            <Text style={{ color: '#64748b', fontSize: 15 }}>输入申请时使用的注册手机号以查询进度</Text>
+                            <Text style={{ color: '#64748b', fontSize: 15 }}>输入申请时使用的注册手机号，查询统一商家体系下的审核状态</Text>
                         </div>
                     </div>
+
+                    {source.startsWith('login_') && (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 20, borderRadius: 8 }}
+                            message={source === 'login_pending' ? '当前手机号存在审核中的申请，已为你展示最新审核进度。' : '当前手机号存在待处理申请，已为你展示对应申请状态。'}
+                        />
+                    )}
 
                     <Form
                         form={form}

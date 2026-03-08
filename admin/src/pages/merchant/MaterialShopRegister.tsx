@@ -24,7 +24,7 @@ import {
     PLATFORM_RULES_VERSION,
     PRIVACY_DATA_PROCESSING_VERSION,
 } from '../../constants/merchantLegal';
-import { materialShopApplyApi, merchantAuthApi, merchantUploadApi, onboardingValidationApi, type MaterialShopApplyPayload } from '../../services/merchantApi';
+import { materialShopApplyApi, merchantAuthApi, merchantUploadApi, onboardingValidationApi, type MaterialShopApplyDetailData, type MaterialShopApplyPayload } from '../../services/merchantApi';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
@@ -74,6 +74,8 @@ const MaterialShopRegister: React.FC = () => {
     const [products, setProducts] = useState<MaterialProductForm[]>([createEmptyProduct()]);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
+    const [resubmitLoading, setResubmitLoading] = useState(false);
+    const [resubmitPrefillFailed, setResubmitPrefillFailed] = useState(false);
     const timerRef = useRef<number | null>(null);
 
     const phoneFromUrl = searchParams.get('phone') || '';
@@ -254,6 +256,73 @@ const MaterialShopRegister: React.FC = () => {
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (!resubmitId) {
+            return;
+        }
+
+        let cancelled = false;
+        const hydrateResubmitDetail = (detail: MaterialShopApplyDetailData) => {
+            form.setFieldsValue({
+                phone: detail.phone || phoneFromUrl || undefined,
+                entityType: detail.entityType || entityType,
+                shopName: detail.shopName,
+                shopDescription: detail.shopDescription,
+                companyName: detail.companyName,
+                businessLicenseNo: detail.businessLicenseNo,
+                businessLicense: detail.businessLicense,
+                legalPersonName: detail.legalPersonName,
+                legalPersonIdCardNo: detail.legalPersonIdCardNo,
+                legalPersonIdCardFront: detail.legalPersonIdCardFront,
+                legalPersonIdCardBack: detail.legalPersonIdCardBack,
+                businessHours: detail.businessHours,
+                contactPhone: detail.contactPhone,
+                contactName: detail.contactName,
+                address: detail.address,
+                legalAccepted: false,
+            });
+
+            if (Array.isArray(detail.products) && detail.products.length > 0) {
+                setProducts(detail.products.map((product, index) => ({
+                    id: `resubmit_product_${index}_${Date.now()}`,
+                    name: String(product?.name || ''),
+                    price: typeof product?.price === 'number' ? product.price : undefined,
+                    params: Object.entries(product?.params || {}).map(([key, value]) => ({
+                        id: `param_${key}_${index}`,
+                        key,
+                        value: String(value),
+                    })),
+                    images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
+                })));
+            }
+        };
+
+        const loadResubmitDetail = async () => {
+            setResubmitLoading(true);
+            setResubmitPrefillFailed(false);
+            try {
+                const detail = await materialShopApplyApi.detail(Number(resubmitId));
+                if (cancelled) {
+                    return;
+                }
+                hydrateResubmitDetail(detail);
+            } catch {
+                if (!cancelled) {
+                    setResubmitPrefillFailed(true);
+                }
+            } finally {
+                if (!cancelled) {
+                    setResubmitLoading(false);
+                }
+            }
+        };
+
+        void loadResubmitDetail();
+        return () => {
+            cancelled = true;
+        };
+    }, [entityType, form, phoneFromUrl, resubmitId]);
 
     const validateImageBeforeUpload = (file: File, maxSizeMB: number) => {
         const isImage = file.type === 'image/jpeg' || file.type === 'image/png';
@@ -581,12 +650,28 @@ const MaterialShopRegister: React.FC = () => {
                     showIcon
                     closable
                     onClose={() => setShowRedirectAlert(false)}
-                    message="该手机号尚未入驻，请先完成入驻申请后再登录"
+                    message={(searchParams.get('from') || '') === 'login_resubmit' ? '系统已识别到原主材商申请记录，正在按原类型重新提交。手机号与商家类型已锁定，提交前需重新确认协议。' : '该手机号尚未入驻，请先完成入驻申请后再登录'}
                     style={{ marginBottom: 24, borderRadius: 8 }}
                 />
             ) : undefined}
         >
-            <Form form={form} layout="vertical" className="glassmorphism-form premium-form">
+            <Form form={form} layout="vertical" className="glassmorphism-form premium-form" data-testid="material-register-form">
+                {resubmitLoading && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        message="正在加载原申请资料并尝试回填，请稍候。"
+                    />
+                )}
+                {resubmitId && resubmitPrefillFailed && (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        message="暂时无法拉取原申请详情，已降级为手动补填模式；手机号与主材商类型仍保持原申请约束。"
+                    />
+                )}
                         {currentStep === 0 && (
                             <div>
                                 <div style={{ marginBottom: 28 }}>
@@ -601,7 +686,7 @@ const MaterialShopRegister: React.FC = () => {
                                         { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
                                     ]}
                                 >
-                                    <Input className="premium-input" placeholder="请输入11位手机号" maxLength={11} />
+                                    <Input className="premium-input" placeholder="请输入11位手机号" maxLength={11} readOnly={Boolean(resubmitId && phoneFromUrl)} disabled={Boolean(resubmitId && phoneFromUrl)} data-testid="material-register-phone-input" />
                                 </Form.Item>
 
                                 <Form.Item
@@ -1048,7 +1133,7 @@ const MaterialShopRegister: React.FC = () => {
                                     },
                                 ]}
                             >
-                                <Checkbox aria-label="同意平台入驻相关条款">
+                                <Checkbox aria-label="同意平台入驻相关条款" data-testid="material-register-legal-checkbox">
                                     我已阅读并同意
                                     {' '}
                                     <a href={MERCHANT_LEGAL_ROUTES.onboardingAgreement} target="_blank" rel="noreferrer">

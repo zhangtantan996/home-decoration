@@ -83,6 +83,7 @@ const MerchantEntry: React.FC = () => {
     const [applyModalOpen, setApplyModalOpen] = useState(false);
     const [selectedRole, setSelectedRole] = useState<MerchantApplyRole | ''>('');
     const [entityType, setEntityType] = useState<MerchantEntityType>('personal');
+    const fromSource = new URLSearchParams(window.location.search).get('from') || '';
 
     useEffect(() => {
         const style = document.createElement('style');
@@ -355,11 +356,19 @@ const MerchantEntry: React.FC = () => {
                             加入禾泽云商家生态
                         </Title>
                         <Paragraph style={{ color: '#64748b', fontSize: 18, maxWidth: 600, margin: '0 auto' }}>
-                            选择您的角色，与数千万业主共享家装红利，开启您的数字化业务新篇章
+                            当前为统一商家入驻一期试运营：用户与商家账号可同号共存，商家子类型互斥；若需新增其他商家类型，请重新申请新商家类型。
                         </Paragraph>
                     </div>
 
-                    <div className="premium-action-bar animate-fade-in" style={{ marginBottom: 48, animationDelay: '100ms' }}>
+                    {fromSource === 'login_change_role' && (
+                        <div style={{ marginBottom: 24 }} data-testid="merchant-entry-reapply-banner">
+                            <div style={{ padding: '14px 16px', borderRadius: 12, background: '#fff7e6', border: '1px solid #ffd591', color: '#ad6800' }}>
+                                当前手机号已存在其他商家类型。本期不支持直接切换角色，请从这里重新申请新商家类型。
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="premium-action-bar animate-fade-in" style={{ marginBottom: 24, animationDelay: '100ms' }}>
                         <Row align="middle" justify="space-between" gutter={[24, 24]}>
                             <Col xs={24} md={12}>
                                 <Text style={{ color: '#1e293b', fontSize: 20, fontWeight: 600, display: 'block', marginBottom: 6 }}>
@@ -398,6 +407,29 @@ const MerchantEntry: React.FC = () => {
                                     }}
                                 >
                                     查询进度
+                                </Button>
+                            </Col>
+                        </Row>
+                    </div>
+
+                    <div className="premium-action-bar animate-fade-in" style={{ marginBottom: 48, animationDelay: '140ms' }} data-testid="merchant-entry-unified-notice">
+                        <Row align="middle" justify="space-between" gutter={[24, 16]}>
+                            <Col xs={24} md={16}>
+                                <Text style={{ color: '#1e293b', fontSize: 18, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                                    统一商家体系说明
+                                </Text>
+                                <Text style={{ color: '#64748b', fontSize: 14, lineHeight: 1.75 }}>
+                                    设计师 / 工长 / 装修公司 / 主材商统一纳入商家体系管理。本期仅支持按目标类型重新申请，不支持在已入驻类型之间直接切换。
+                                </Text>
+                            </Col>
+                            <Col xs={24} md={8} style={{ display: 'flex', justifyContent: screens.md ? 'flex-end' : 'flex-start' }}>
+                                <Button
+                                    size="large"
+                                    onClick={() => openApplyFlow()}
+                                    data-testid="merchant-entry-reapply-button"
+                                    style={{ borderRadius: 8, height: 48, padding: '0 28px', borderColor: '#cbd5e1', color: '#334155' }}
+                                >
+                                    重新申请新商家类型
                                 </Button>
                             </Col>
                         </Row>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Layout, Menu, Dropdown, Avatar, theme, Button } from 'antd';
+import { Layout, Menu, Dropdown, Avatar, theme, Button, Tag } from 'antd';
 import type { MenuProps } from 'antd';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import MerchantNotificationDropdown from '../components/MerchantNotificationDropdown';
@@ -82,6 +82,10 @@ const MerchantLayout: React.FC = () => {
                 return '设计师';
         }
     })();
+
+    const identityHint = isMaterialShop
+        ? '已纳入统一商家体系 · 本期不支持直接切换其他商家子类型'
+        : '统一商家体系 · 如需新增其他商家子类型，请返回首页重新申请';
 
     const availableKeys = isMaterialShop
         ? new Set<string>(['/material-shop/products', '/material-shop/settings'])
@@ -309,14 +313,20 @@ const MerchantLayout: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
                         <MerchantNotificationDropdown />
                         <Dropdown menu={userMenu} placement="bottomRight">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} data-testid="merchant-layout-identity">
                                 <Avatar
                                     size="large"
                                     src={provider?.avatar}
                                     icon={<UserOutlined />}
                                     style={{ backgroundColor: '#1890ff' }}
                                 />
-                                <span style={{ fontWeight: 500 }}>{provider?.name || 'Merchant'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                                    <span style={{ fontWeight: 500 }}>{provider?.name || 'Merchant'}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                        <Tag color="blue" style={{ marginInlineEnd: 0 }}>{subtypeLabel}</Tag>
+                                        <span style={{ fontSize: 12, color: '#64748b' }}>{identityHint}</span>
+                                    </div>
+                                </div>
                             </div>
                         </Dropdown>
                     </div>

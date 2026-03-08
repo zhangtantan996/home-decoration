@@ -160,7 +160,8 @@ const MerchantLogin: React.FC = () => {
         }
 
         if (nextAction === 'CHANGE_ROLE') {
-            message.warning('当前账号已入驻其他商家身份，请提交角色变更申请', 1.6);
+            message.warning('当前手机号已存在其他商家类型，请从商家首页发起“重新申请新商家类型”', 1.8);
+            navigate('/?from=login_change_role');
             return;
         }
 
