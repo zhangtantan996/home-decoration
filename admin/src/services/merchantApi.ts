@@ -124,6 +124,7 @@ export interface MerchantLoginData {
 
 export interface MerchantProviderInfo {
     id: number;
+    sourceApplicationId?: number;
     name: string;
     avatar?: string;
     providerType: number;
@@ -217,6 +218,7 @@ export interface OnboardingValidateResult {
 export interface MerchantApplyPayload {
     phone: string;
     code: string;
+    resubmitToken?: string;
     role: Exclude<MerchantRole, 'material_shop'>;
     entityType: Exclude<MerchantEntityType, 'individual_business'>;
     applicantType?: MerchantApplicantType; // 兼容旧接口
@@ -287,13 +289,33 @@ export interface MerchantApplyDetailData extends MerchantApplyStatusData {
     portfolioCases?: MerchantPortfolioCase[];
 }
 
+export interface ResubmitEditableMap {
+    phone?: boolean;
+    role?: boolean;
+    merchantKind?: boolean;
+}
+
+export interface MerchantApplyDetailForResubmitData {
+    applicationId: number;
+    merchantKind: 'provider';
+    resubmitToken: string;
+    rejectReason?: string;
+    resubmitEditable?: ResubmitEditableMap;
+    form: MerchantApplyDetailData;
+}
+
+export interface ResubmitDetailRequestPayload {
+    phone: string;
+    code: string;
+}
+
 export const merchantApplyApi = {
     apply: async (data: MerchantApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post('/merchant/apply', data), '提交申请失败'),
     status: async (phone: string) =>
         unwrapData<MerchantApplyStatusData>(await merchantApi.get(`/merchant/apply/${encodeURIComponent(phone)}/status`), '查询申请状态失败'),
-    detail: async (id: number) =>
-        unwrapData<MerchantApplyDetailData>(await merchantApi.get(`/merchant/apply/${id}`), '获取申请详情失败'),
+    detail: async (id: number, data: ResubmitDetailRequestPayload) =>
+        unwrapData<MerchantApplyDetailForResubmitData>(await merchantApi.post(`/merchant/apply/${id}/detail-for-resubmit`, data), '获取申请详情失败'),
     resubmit: async (id: number, data: MerchantApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/merchant/apply/${id}/resubmit`, data), '重新提交申请失败'),
 };
@@ -308,6 +330,7 @@ export interface MaterialShopApplyProductPayload {
 export interface MaterialShopApplyPayload {
     phone: string;
     code: string;
+    resubmitToken?: string;
     entityType: 'company' | 'individual_business';
     shopName: string;
     shopDescription?: string;
@@ -357,6 +380,15 @@ export interface MaterialShopApplyDetailData extends MaterialShopApplyStatusData
     products?: MaterialShopApplyProductPayload[];
 }
 
+export interface MaterialShopApplyDetailForResubmitData {
+    applicationId: number;
+    merchantKind: 'material_shop';
+    resubmitToken: string;
+    rejectReason?: string;
+    resubmitEditable?: ResubmitEditableMap;
+    form: MaterialShopApplyDetailData;
+}
+
 export const onboardingValidationApi = {
     validateLicense: async (data: OnboardingValidateLicensePayload) =>
         unwrapData<OnboardingValidateResult>(await merchantApi.post('/merchant/onboarding/validate-license', data), '营业执照号校验失败'),
@@ -369,14 +401,15 @@ export const materialShopApplyApi = {
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post('/material-shop/apply', data), '提交主材商入驻失败'),
     status: async (phone: string) =>
         unwrapData<MaterialShopApplyStatusData>(await merchantApi.get(`/material-shop/apply/${encodeURIComponent(phone)}/status`), '查询主材商申请状态失败'),
-    detail: async (id: number) =>
-        unwrapData<MaterialShopApplyDetailData>(await merchantApi.get(`/material-shop/apply/${id}`), '获取主材商申请详情失败'),
+    detail: async (id: number, data: ResubmitDetailRequestPayload) =>
+        unwrapData<MaterialShopApplyDetailForResubmitData>(await merchantApi.post(`/material-shop/apply/${id}/detail-for-resubmit`, data), '获取主材商申请详情失败'),
     resubmit: async (id: number, data: MaterialShopApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/material-shop/apply/${id}/resubmit`, data), '重新提交主材商申请失败'),
 };
 
 export interface MaterialShopProfile {
     id: number;
+    sourceApplicationId?: number;
     merchantKind: 'material_shop';
     entityType: 'company' | 'individual_business';
     shopName: string;

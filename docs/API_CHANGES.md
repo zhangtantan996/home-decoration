@@ -1,5 +1,27 @@
 # API 接口变更清单
 
+## 2026-03-08 驳回重提详情回填安全修复（P0/P1）
+
+### 变更范围
+- `POST /api/v1/merchant/apply/:id/detail-for-resubmit`
+- `POST /api/v1/material-shop/apply/:id/detail-for-resubmit`
+- `POST /api/v1/merchant/apply/:id/resubmit`
+- `POST /api/v1/material-shop/apply/:id/resubmit`
+
+### 行为变更
+- `detail-for-resubmit` 从匿名 GET 升级为带 `phone + code` 的 POST，必须先通过 `identity_apply` 验证码校验后才返回原申请表单详情。
+- `detail-for-resubmit` 响应新增 `resubmitToken`，用于保护后续重提提交链路。
+- 两个 `resubmit` 接口优先校验 `resubmitToken`；兼容窗口内仍允许 `code` 作为后备凭据，但不允许无 token / 无验证码直接重提。
+
+### 影响说明
+- 前端重提回填必须先调用新的 POST 详情接口，再使用返回的 `resubmitToken` 提交。
+- 旧的匿名详情路径不再继续使用，避免按申请 ID 直接读取敏感回填信息。
+
+### 一期试运营补充
+- 正式商家实体新增来源追溯字段：`providers.source_application_id`、`material_shops.source_application_id`。
+- 审核详情与商家资料接口补充 `sourceApplicationId` / `merchantKind`，支持一期开通后的回查与回滚定位。
+- 试运营发布与回滚规则见：`docs/MERCHANT_TRIAL_OPERATION_SOP.md`。
+
 ## 2026-03-05 入驻 schema 对齐修复（v1.5.3）
 
 ### 背景

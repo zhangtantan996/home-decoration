@@ -530,30 +530,31 @@ func MerchantGetInfo(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"id":               provider.ID,
-		"name":             displayName,
-		"avatar":           imgutil.GetFullImageURL(avatar),
-		"providerType":     provider.ProviderType,
-		"applicantType":    applicantType,
-		"providerSubType":  providerSubType,
-		"role":             role,
-		"entityType":       entityType,
-		"companyName":      provider.CompanyName,
-		"rating":           provider.Rating,
-		"completedCnt":     provider.CompletedCnt,
-		"verified":         provider.Verified,
-		"yearsExperience":  provider.YearsExperience,
-		"specialty":        specialty,
-		"workTypes":        workTypes,
-		"highlightTags":    highlightTags,
-		"pricing":          pricing,
-		"graduateSchool":   provider.GraduateSchool,
-		"designPhilosophy": provider.DesignPhilosophy,
-		"serviceArea":      serviceAreaNames, // 返回区域名称数组
-		"serviceAreaCodes": serviceAreaCodes, // 返回区域代码数组（用于编辑）
-		"introduction":     provider.ServiceIntro,
-		"teamSize":         provider.TeamSize,
-		"officeAddress":    provider.OfficeAddress,
+		"id":                  provider.ID,
+		"sourceApplicationId": provider.SourceApplicationID,
+		"name":                displayName,
+		"avatar":              imgutil.GetFullImageURL(avatar),
+		"providerType":        provider.ProviderType,
+		"applicantType":       applicantType,
+		"providerSubType":     providerSubType,
+		"role":                role,
+		"entityType":          entityType,
+		"companyName":         provider.CompanyName,
+		"rating":              provider.Rating,
+		"completedCnt":        provider.CompletedCnt,
+		"verified":            provider.Verified,
+		"yearsExperience":     provider.YearsExperience,
+		"specialty":           specialty,
+		"workTypes":           workTypes,
+		"highlightTags":       highlightTags,
+		"pricing":             pricing,
+		"graduateSchool":      provider.GraduateSchool,
+		"designPhilosophy":    provider.DesignPhilosophy,
+		"serviceArea":         serviceAreaNames, // 返回区域名称数组
+		"serviceAreaCodes":    serviceAreaCodes, // 返回区域代码数组（用于编辑）
+		"introduction":        provider.ServiceIntro,
+		"teamSize":            provider.TeamSize,
+		"officeAddress":       provider.OfficeAddress,
 	})
 }
 

@@ -26,7 +26,7 @@ type materialShopApplyProductInput struct {
 
 type materialShopApplyInput struct {
 	Phone                  string                          `json:"phone" binding:"required"`
-	Code                   string                          `json:"code" binding:"required"`
+	Code                   string                          `json:"code"`
 	EntityType             string                          `json:"entityType"`
 	ShopName               string                          `json:"shopName" binding:"required"`
 	ShopDescription        string                          `json:"shopDescription"`
@@ -41,6 +41,7 @@ type materialShopApplyInput struct {
 	ContactPhone           string                          `json:"contactPhone"`
 	ContactName            string                          `json:"contactName"`
 	Address                string                          `json:"address"`
+	ResubmitToken          string                          `json:"resubmitToken"`
 	Products               []materialShopApplyProductInput `json:"products" binding:"required,min=1"`
 	LegalAcceptance        LegalAcceptanceInput            `json:"legalAcceptance" binding:"required"`
 }
@@ -365,6 +366,13 @@ func MaterialShopApplyStatus(c *gin.Context) {
 
 func MaterialShopApplyDetailForResubmit(c *gin.Context) {
 	appID := parseUint64(c.Param("id"))
+	var authInput resubmitDetailRequestInput
+	if err := c.ShouldBindJSON(&authInput); err != nil {
+		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+	authInput.Phone = strings.TrimSpace(authInput.Phone)
+	authInput.Code = strings.TrimSpace(authInput.Code)
 
 	var app model.MaterialShopApplication
 	if err := repository.DB.First(&app, appID).Error; err != nil {
@@ -373,6 +381,19 @@ func MaterialShopApplyDetailForResubmit(c *gin.Context) {
 	}
 	if app.Status != 2 {
 		response.Error(c, 400, "当前申请状态不支持重新提交详情回填")
+		return
+	}
+	if app.Phone != authInput.Phone {
+		response.Error(c, 403, "手机号与原申请不一致")
+		return
+	}
+	if err := service.VerifySMSCode(authInput.Phone, service.SMSPurposeIdentityApply, authInput.Code); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	resubmitToken, err := issueResubmitToken(merchantIdentityTypeMaterial, app.ID, app.Phone)
+	if err != nil {
+		response.Error(c, 500, "生成重提授权凭证失败")
 		return
 	}
 
@@ -399,6 +420,7 @@ func MaterialShopApplyDetailForResubmit(c *gin.Context) {
 	response.Success(c, gin.H{
 		"applicationId": app.ID,
 		"merchantKind":  "material_shop",
+		"resubmitToken": resubmitToken,
 		"resubmitEditable": gin.H{
 			"phone":        false,
 			"merchantKind": false,
@@ -453,12 +475,9 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 		response.Error(c, 400, "手机号与原申请不一致")
 		return
 	}
-
-	if strings.TrimSpace(input.Code) != "" {
-		if err := service.VerifySMSCode(input.Phone, service.SMSPurposeIdentityApply, input.Code); err != nil {
-			response.Error(c, 400, err.Error())
-			return
-		}
+	if err := authorizeResubmit(input.Phone, input.ResubmitToken, app.ID, merchantIdentityTypeMaterial, input.Code); err != nil {
+		response.Error(c, 400, err.Error())
+		return
 	}
 
 	tx := repository.DB.Begin()
@@ -563,20 +582,21 @@ func MaterialShopGetMe(c *gin.Context) {
 	entityType := resolveMaterialShopEntityType(shop.ID, shop.UserID)
 
 	response.Success(c, gin.H{
-		"id":                shop.ID,
-		"merchantKind":      "material_shop",
-		"entityType":        entityType,
-		"shopName":          shop.Name,
-		"companyName":       shop.CompanyName,
-		"shopDescription":   shop.Description,
-		"businessLicenseNo": shop.BusinessLicenseNo,
-		"businessLicense":   shop.BusinessLicense,
-		"legalPersonName":   shop.LegalPersonName,
-		"businessHours":     shop.OpenTime,
-		"contactPhone":      shop.ContactPhone,
-		"contactName":       shop.ContactName,
-		"address":           shop.Address,
-		"isVerified":        shop.IsVerified,
+		"id":                  shop.ID,
+		"sourceApplicationId": shop.SourceApplicationID,
+		"merchantKind":        "material_shop",
+		"entityType":          entityType,
+		"shopName":            shop.Name,
+		"companyName":         shop.CompanyName,
+		"shopDescription":     shop.Description,
+		"businessLicenseNo":   shop.BusinessLicenseNo,
+		"businessLicense":     shop.BusinessLicense,
+		"legalPersonName":     shop.LegalPersonName,
+		"businessHours":       shop.OpenTime,
+		"contactPhone":        shop.ContactPhone,
+		"contactName":         shop.ContactName,
+		"address":             shop.Address,
+		"isVerified":          shop.IsVerified,
 	})
 }
 
@@ -902,7 +922,9 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"id":                     app.ID,
+		"merchantKind":           "material_shop",
 		"phone":                  app.Phone,
+		"sourceApplicationId":    app.ID,
 		"entityType":             app.EntityType,
 		"shopName":               app.ShopName,
 		"shopDescription":        app.ShopDescription,
@@ -985,6 +1007,7 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 		UserID:                 user.ID,
 		Type:                   "showroom",
 		Name:                   app.ShopName,
+		SourceApplicationID:    app.ID,
 		CompanyName:            app.CompanyName,
 		Description:            app.ShopDescription,
 		BusinessLicenseNo:      app.BusinessLicenseNo,

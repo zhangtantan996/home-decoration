@@ -72,14 +72,16 @@ const MaterialShopApplicationDetail: React.FC<MaterialShopApplicationDetailProps
                 <Descriptions.Item label="主体类型">{entityTypeMap[details.entityType] || details.entityType}</Descriptions.Item>
                 <Descriptions.Item label="门店名称">{details.shopName}</Descriptions.Item>
                 <Descriptions.Item label="公司名称">{details.companyName || '-'}</Descriptions.Item>
+                <Descriptions.Item label="商家体系">{details.merchantKind || 'material_shop'}</Descriptions.Item>
+                <Descriptions.Item label="来源申请单">{details.sourceApplicationId || details.id}</Descriptions.Item>
                 <Descriptions.Item label="联系人">{details.contactName}</Descriptions.Item>
                 <Descriptions.Item label="联系电话">{details.contactPhone}</Descriptions.Item>
                 <Descriptions.Item label="营业时间">{details.businessHours || '-'}</Descriptions.Item>
                 <Descriptions.Item label="地址">{details.address || '-'}</Descriptions.Item>
                 <Descriptions.Item label="门店简介" span={2}>{details.shopDescription || '-'}</Descriptions.Item>
                 <Descriptions.Item label="营业执照号">{details.businessLicenseNo || '-'}</Descriptions.Item>
-                <Descriptions.Item label="法人姓名">{details.legalPersonName || '-'}</Descriptions.Item>
-                <Descriptions.Item label="法人身份证号" span={2}>{details.legalPersonIdCardNo || '-'}</Descriptions.Item>
+                <Descriptions.Item label="法人/经营者姓名">{details.legalPersonName || '-'}</Descriptions.Item>
+                <Descriptions.Item label="法人/经营者身份证号" span={2}>{details.legalPersonIdCardNo || '-'}</Descriptions.Item>
             </Descriptions>
 
             <Card title="营业执照" size="small">

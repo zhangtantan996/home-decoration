@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,8 @@ import (
 
 func setupMerchantRound4TestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	t.Setenv("SMS_FIXED_CODE_MODE", "true")
+	t.Setenv("SMS_FIXED_CODE", "123456")
 	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -38,8 +41,26 @@ func setupMerchantRound4TestDB(t *testing.T) *gorm.DB {
 	); err != nil {
 		t.Fatalf("auto migrate failed: %v", err)
 	}
+	regions := []model.Region{
+		{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true},
+		{Code: "610133", Name: "曲江新区", Level: 3, ParentCode: "610100", Enabled: true},
+	}
+	if err := db.Create(&regions).Error; err != nil {
+		t.Fatalf("seed regions failed: %v", err)
+	}
 	repository.DB = db
 	return db
+}
+
+func newJSONRequest(t *testing.T, method string, payload interface{}) *http.Request {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload failed: %v", err)
+	}
+	req := httptest.NewRequest(method, "/", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return req
 }
 
 func TestResolveMerchantNextAction_WithApprovedIdentity(t *testing.T) {
@@ -109,6 +130,7 @@ func TestMerchantApplyDetailForResubmit(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Request = newJSONRequest(t, http.MethodPost, map[string]string{"phone": app.Phone, "code": "123456"})
 	MerchantApplyDetailForResubmit(c)
 
 	if w.Code != http.StatusOK {
@@ -122,6 +144,7 @@ func TestMerchantApplyDetailForResubmit(t *testing.T) {
 				Phone string `json:"phone"`
 				Role  string `json:"role"`
 			} `json:"form"`
+			ResubmitToken    string `json:"resubmitToken"`
 			ResubmitEditable struct {
 				Phone bool `json:"phone"`
 				Role  bool `json:"role"`
@@ -133,6 +156,9 @@ func TestMerchantApplyDetailForResubmit(t *testing.T) {
 	}
 	if resp.Data.Form.Phone != "13800138000" || resp.Data.Form.Role != "designer" {
 		t.Fatalf("unexpected form payload: %+v", resp.Data.Form)
+	}
+	if strings.TrimSpace(resp.Data.ResubmitToken) == "" {
+		t.Fatalf("expected resubmit token to be returned")
 	}
 	if resp.Data.ResubmitEditable.Phone || resp.Data.ResubmitEditable.Role {
 		t.Fatalf("phone/role should be readonly: %+v", resp.Data.ResubmitEditable)
@@ -153,6 +179,7 @@ func TestMerchantApplyDetailForResubmit_StatusValidation(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Request = newJSONRequest(t, http.MethodPost, map[string]string{"phone": app.Phone, "code": "123456"})
 	MerchantApplyDetailForResubmit(c)
 
 	var resp struct {
@@ -176,6 +203,7 @@ func TestMerchantApplyDetailForResubmit_NotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Params = []gin.Param{{Key: "id", Value: "999"}}
+	c.Request = newJSONRequest(t, http.MethodPost, map[string]string{"phone": "13800138000", "code": "123456"})
 	MerchantApplyDetailForResubmit(c)
 
 	var resp struct {
@@ -186,6 +214,162 @@ func TestMerchantApplyDetailForResubmit_NotFound(t *testing.T) {
 	}
 	if resp.Code != 404 {
 		t.Fatalf("unexpected code: got=%d want=404 body=%s", resp.Code, w.Body.String())
+	}
+}
+
+func TestMerchantApplyDetailForResubmit_PhoneMismatch(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	app := model.MerchantApplication{Phone: "13800138000", Role: "designer", Status: 2}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Request = newJSONRequest(t, http.MethodPost, map[string]string{"phone": "13800138001", "code": "123456"})
+	MerchantApplyDetailForResubmit(c)
+
+	var resp struct{ Code int }
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != 403 {
+		t.Fatalf("unexpected code: got=%d want=403 body=%s", resp.Code, w.Body.String())
+	}
+}
+
+func TestMerchantResubmit_WithResubmitToken(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	input := newValidDesignerApplyInput()
+	app := model.MerchantApplication{
+		Phone:         input.Phone,
+		ApplicantType: input.ApplicantType,
+		Role:          input.Role,
+		EntityType:    input.EntityType,
+		Status:        2,
+	}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+	token, err := issueResubmitToken(merchantIdentityTypeProvider, app.ID, input.Phone)
+	if err != nil {
+		t.Fatalf("issue token failed: %v", err)
+	}
+	input.Code = ""
+	input.ResubmitToken = token
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MerchantResubmit(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	var updated model.MerchantApplication
+	if err := repository.DB.First(&updated, app.ID).Error; err != nil {
+		t.Fatalf("reload app failed: %v", err)
+	}
+	if updated.Status != 0 {
+		t.Fatalf("expected resubmitted app to reset to pending, got=%d", updated.Status)
+	}
+}
+
+func TestMerchantResubmit_RequireAuthorization(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	input := newValidDesignerApplyInput()
+	app := model.MerchantApplication{Phone: input.Phone, ApplicantType: input.ApplicantType, Role: input.Role, EntityType: input.EntityType, Status: 2}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+	input.Code = ""
+	input.ResubmitToken = ""
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MerchantResubmit(c)
+
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"message"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != 400 || !strings.Contains(resp.Msg, "授权") {
+		t.Fatalf("unexpected response: %+v body=%s", resp, w.Body.String())
+	}
+}
+
+func TestMaterialShopApplyDetailForResubmit_WithSMS(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	app := model.MaterialShopApplication{Phone: "13800138000", EntityType: "company", ShopName: "店铺", Status: 2, ContactPhone: "13800138000"}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Request = newJSONRequest(t, http.MethodPost, map[string]string{"phone": app.Phone, "code": "123456"})
+	MaterialShopApplyDetailForResubmit(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			ResubmitToken string `json:"resubmitToken"`
+			Form          struct {
+				Phone string `json:"phone"`
+			} `json:"form"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Data.Form.Phone != app.Phone || strings.TrimSpace(resp.Data.ResubmitToken) == "" {
+		t.Fatalf("unexpected response body=%s", w.Body.String())
+	}
+}
+
+func TestMaterialShopResubmit_WithResubmitToken(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	input := newValidMaterialShopApplyInput()
+	app := model.MaterialShopApplication{
+		Phone:        input.Phone,
+		EntityType:   input.EntityType,
+		ShopName:     input.ShopName,
+		CompanyName:  input.CompanyName,
+		ContactPhone: input.ContactPhone,
+		ContactName:  input.ContactName,
+		Status:       2,
+		RejectReason: "资料待补充",
+	}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+	token, err := issueResubmitToken(merchantIdentityTypeMaterial, app.ID, input.Phone)
+	if err != nil {
+		t.Fatalf("issue token failed: %v", err)
+	}
+	input.Code = ""
+	input.ResubmitToken = token
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MaterialShopApplyResubmit(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	var updated model.MaterialShopApplication
+	if err := repository.DB.First(&updated, app.ID).Error; err != nil {
+		t.Fatalf("reload app failed: %v", err)
+	}
+	if updated.Status != 0 {
+		t.Fatalf("expected resubmitted material app to reset to pending, got=%d", updated.Status)
 	}
 }
 
@@ -265,6 +449,14 @@ func TestAdminApproveMaterialShopApplication_FreezePreviousProvider(t *testing.T
 	}
 	if materialIdentity.Status != merchantIdentityStatusActive || !materialIdentity.Verified {
 		t.Fatalf("material identity not activated: %+v", materialIdentity)
+	}
+
+	var createdShop model.MaterialShop
+	if err := repository.DB.Where("user_id = ?", user.ID).First(&createdShop).Error; err != nil {
+		t.Fatalf("created shop missing: %v", err)
+	}
+	if createdShop.SourceApplicationID != app.ID {
+		t.Fatalf("expected material shop source application id=%d got=%d", app.ID, createdShop.SourceApplicationID)
 	}
 }
 
@@ -356,6 +548,9 @@ func TestAdminApproveProviderApplication_FreezePreviousMaterialShop(t *testing.T
 	}
 	if newProvider.ProviderType != 3 {
 		t.Fatalf("unexpected provider type: %d", newProvider.ProviderType)
+	}
+	if newProvider.SourceApplicationID != app.ID {
+		t.Fatalf("expected provider source application id=%d got=%d", app.ID, newProvider.SourceApplicationID)
 	}
 	if newProvider.Specialty != "mason · plumber" {
 		t.Fatalf("unexpected foreman specialty: %s", newProvider.Specialty)

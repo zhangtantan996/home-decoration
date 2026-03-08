@@ -66,6 +66,22 @@
 - 后端 `merchant/apply` 与 `merchant/apply/:id/resubmit` 增加 `foreman` 枚举支持。
 - 审核通过映射补齐：`foreman -> provider_type=3, sub_type=foreman`，并回填 `providers.work_types`。
 
+### 🔄 本次统一商家入驻一期试运营补充（2026-03，v1.6.x）
+- 驳回重提安全闭环补齐：
+  - `detail-for-resubmit` 改为 `POST` + `phone/code` 验证；
+  - 返回 `resubmitToken`，后续重提优先凭 token 提交。
+- 正式商家实体增加来源追溯：
+  - `providers.source_application_id`
+  - `material_shops.source_application_id`
+- 审核后台详情补充统一商家体系字段：
+  - `merchantKind`
+  - `sourceApplicationId`
+  - 公司主体 / 主材商的法人（经营者）资料展示
+- 试运营 SOP 与数据治理补齐：
+  - 迁移权威目录固定为 `server/migrations/`
+  - 固定验证码模式用于联调与 E2E
+  - 测试手机号使用 `19` 前缀随机号并要求场景级隔离
+
 ### ✅ 阶段1执行状态（2026-02-09）
 - 后端契约统一完成：`dashboard/login/info/service-settings` 已对齐最新 Web 消费结构。
 - 商家 Web 已切换到统一 API 解包与强类型调用，减少页面级响应解析分叉。

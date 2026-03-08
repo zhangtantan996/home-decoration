@@ -291,6 +291,8 @@ export interface AdminMerchantApplicationListItem {
 }
 
 export interface AdminMerchantApplicationDetail extends AdminMerchantApplicationListItem, MerchantApplicationDetails {
+    merchantKind?: 'provider';
+    sourceApplicationId?: number;
     auditedBy?: number;
 }
 
@@ -318,6 +320,8 @@ export interface AdminMaterialShopApplicationListItem {
 }
 
 export interface AdminMaterialShopApplicationDetail extends AdminMaterialShopApplicationListItem {
+    merchantKind?: 'material_shop';
+    sourceApplicationId?: number;
     businessLicenseNo?: string;
     businessLicense: string;
     legalPersonName: string;

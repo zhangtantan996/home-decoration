@@ -19,7 +19,10 @@
     "ios:local": "bash ../scripts/env/mobile-run.sh local ios",
     "ios:test": "bash ../scripts/env/mobile-run.sh test ios",
     "ios:staging": "bash ../scripts/env/mobile-run.sh staging ios",
-    "ios:production": "bash ../scripts/env/mobile-run.sh production ios"
+    "ios:production": "bash ../scripts/env/mobile-run.sh production ios",
+    "android:release:staging": "cd android && ENVFILE=.env.staging ./gradlew assembleRelease",
+    "android:bundle:staging": "cd android && ENVFILE=.env.staging ./gradlew bundleRelease",
+    "android:release:prod": "cd android && ENVFILE=.env.production ./gradlew assembleRelease"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

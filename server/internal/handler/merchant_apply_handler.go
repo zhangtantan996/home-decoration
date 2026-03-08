@@ -28,7 +28,7 @@ var regionService = &service.RegionService{}
 // MerchantApplyInput 入驻申请输入
 type MerchantApplyInput struct {
 	Phone                  string `json:"phone" binding:"required"`
-	Code                   string `json:"code" binding:"required"`
+	Code                   string `json:"code"`
 	ApplicantType          string `json:"applicantType"` // 兼容旧字段
 	Role                   string `json:"role"`          // designer, foreman, company
 	EntityType             string `json:"entityType"`    // personal, company
@@ -41,6 +41,7 @@ type MerchantApplyInput struct {
 	LegalPersonIDCardNo    string `json:"legalPersonIdCardNo"`
 	LegalPersonIDCardFront string `json:"legalPersonIdCardFront"`
 	LegalPersonIDCardBack  string `json:"legalPersonIdCardBack"`
+	ResubmitToken          string `json:"resubmitToken"`
 	// 工作室/公司专属
 	CompanyName   string `json:"companyName"`
 	LicenseNo     string `json:"licenseNo"`
@@ -883,6 +884,13 @@ func MerchantApplyStatus(c *gin.Context) {
 // MerchantApplyDetailForResubmit 获取驳回后重新提交所需详情
 func MerchantApplyDetailForResubmit(c *gin.Context) {
 	appID := parseUint64(c.Param("id"))
+	var authInput resubmitDetailRequestInput
+	if err := c.ShouldBindJSON(&authInput); err != nil {
+		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+	authInput.Phone = strings.TrimSpace(authInput.Phone)
+	authInput.Code = strings.TrimSpace(authInput.Code)
 
 	var app model.MerchantApplication
 	if err := repository.DB.First(&app, appID).Error; err != nil {
@@ -891,6 +899,19 @@ func MerchantApplyDetailForResubmit(c *gin.Context) {
 	}
 	if app.Status != 2 {
 		response.Error(c, 400, "当前申请状态不支持重新提交详情回填")
+		return
+	}
+	if app.Phone != authInput.Phone {
+		response.Error(c, 403, "手机号与原申请不一致")
+		return
+	}
+	if err := service.VerifySMSCode(authInput.Phone, service.SMSPurposeIdentityApply, authInput.Code); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	resubmitToken, err := issueResubmitToken(merchantIdentityTypeProvider, app.ID, app.Phone)
+	if err != nil {
+		response.Error(c, 500, "生成重提授权凭证失败")
 		return
 	}
 
@@ -908,6 +929,7 @@ func MerchantApplyDetailForResubmit(c *gin.Context) {
 	response.Success(c, gin.H{
 		"applicationId": app.ID,
 		"merchantKind":  "provider",
+		"resubmitToken": resubmitToken,
 		"resubmitEditable": gin.H{
 			"phone": false,
 			"role":  false,
@@ -971,6 +993,10 @@ func MerchantResubmit(c *gin.Context) {
 	// 验证手机号一致
 	if app.Phone != input.Phone {
 		response.Error(c, 400, "手机号与原申请不一致")
+		return
+	}
+	if err := authorizeResubmit(input.Phone, input.ResubmitToken, app.ID, merchantIdentityTypeProvider, input.Code); err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -1149,37 +1175,39 @@ func AdminGetApplication(c *gin.Context) {
 	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
 	response.Success(c, gin.H{
-		"id":               app.ID,
-		"phone":            app.Phone,
-		"applicantType":    app.ApplicantType,
-		"role":             app.Role,
-		"entityType":       app.EntityType,
-		"realName":         app.RealName,
-		"avatar":           imgutil.GetFullImageURL(app.Avatar),
-		"idCardNo":         displayMaskedSensitive(app.IDCardNo, maskSensitiveID),
-		"idCardFront":      imgutil.GetFullImageURL(app.IDCardFront),
-		"idCardBack":       imgutil.GetFullImageURL(app.IDCardBack),
-		"companyName":      app.CompanyName,
-		"licenseNo":        displayReadableSensitive(app.LicenseNo),
-		"licenseImage":     imgutil.GetFullImageURL(app.LicenseImage),
-		"teamSize":         app.TeamSize,
-		"yearsExperience":  app.YearsExperience,
-		"workTypes":        workTypes,
-		"officeAddress":    app.OfficeAddress,
-		"serviceArea":      serviceAreaNames,
-		"serviceAreaCodes": serviceAreaCodes,
-		"styles":           styles,
-		"highlightTags":    highlightTags,
-		"pricing":          pricing,
-		"introduction":     app.Introduction,
-		"graduateSchool":   app.GraduateSchool,
-		"designPhilosophy": app.DesignPhilosophy,
-		"portfolioCases":   normalizePortfolioCaseDisplays(portfolioCases),
-		"status":           app.Status,
-		"rejectReason":     app.RejectReason,
-		"createdAt":        app.CreatedAt,
-		"auditedAt":        app.AuditedAt,
-		"auditedBy":        app.AuditedBy,
+		"id":                  app.ID,
+		"merchantKind":        "provider",
+		"phone":               app.Phone,
+		"applicantType":       app.ApplicantType,
+		"role":                app.Role,
+		"entityType":          app.EntityType,
+		"sourceApplicationId": app.ID,
+		"realName":            app.RealName,
+		"avatar":              imgutil.GetFullImageURL(app.Avatar),
+		"idCardNo":            displayMaskedSensitive(app.IDCardNo, maskSensitiveID),
+		"idCardFront":         imgutil.GetFullImageURL(app.IDCardFront),
+		"idCardBack":          imgutil.GetFullImageURL(app.IDCardBack),
+		"companyName":         app.CompanyName,
+		"licenseNo":           displayReadableSensitive(app.LicenseNo),
+		"licenseImage":        imgutil.GetFullImageURL(app.LicenseImage),
+		"teamSize":            app.TeamSize,
+		"yearsExperience":     app.YearsExperience,
+		"workTypes":           workTypes,
+		"officeAddress":       app.OfficeAddress,
+		"serviceArea":         serviceAreaNames,
+		"serviceAreaCodes":    serviceAreaCodes,
+		"styles":              styles,
+		"highlightTags":       highlightTags,
+		"pricing":             pricing,
+		"introduction":        app.Introduction,
+		"graduateSchool":      app.GraduateSchool,
+		"designPhilosophy":    app.DesignPhilosophy,
+		"portfolioCases":      normalizePortfolioCaseDisplays(portfolioCases),
+		"status":              app.Status,
+		"rejectReason":        app.RejectReason,
+		"createdAt":           app.CreatedAt,
+		"auditedAt":           app.AuditedAt,
+		"auditedBy":           app.AuditedBy,
 	})
 }
 
@@ -1264,28 +1292,29 @@ func AdminApproveApplication(c *gin.Context) {
 
 	// 3. 创建 Provider
 	provider := model.Provider{
-		UserID:           user.ID,
-		ProviderType:     providerType,
-		SubType:          subType,
-		EntityType:       entityType,
-		CompanyName:      app.CompanyName,
-		Avatar:           app.Avatar,
-		LicenseNo:        app.LicenseNo,
-		ServiceArea:      app.ServiceArea,
-		Specialty:        specialty,
-		WorkTypes:        string(workTypesJSON),
-		HighlightTags:    string(highlightTagsJSON),
-		PricingJSON:      string(pricingJSON),
-		GraduateSchool:   app.GraduateSchool,
-		DesignPhilosophy: app.DesignPhilosophy,
-		YearsExperience:  app.YearsExperience,
-		ServiceIntro:     app.Introduction,
-		TeamSize:         app.TeamSize,
-		OfficeAddress:    app.OfficeAddress,
-		PriceMin:         priceMin,
-		PriceMax:         priceMax,
-		Status:           1,
-		Verified:         true,
+		UserID:              user.ID,
+		ProviderType:        providerType,
+		SubType:             subType,
+		EntityType:          entityType,
+		CompanyName:         app.CompanyName,
+		SourceApplicationID: app.ID,
+		Avatar:              app.Avatar,
+		LicenseNo:           app.LicenseNo,
+		ServiceArea:         app.ServiceArea,
+		Specialty:           specialty,
+		WorkTypes:           string(workTypesJSON),
+		HighlightTags:       string(highlightTagsJSON),
+		PricingJSON:         string(pricingJSON),
+		GraduateSchool:      app.GraduateSchool,
+		DesignPhilosophy:    app.DesignPhilosophy,
+		YearsExperience:     app.YearsExperience,
+		ServiceIntro:        app.Introduction,
+		TeamSize:            app.TeamSize,
+		OfficeAddress:       app.OfficeAddress,
+		PriceMin:            priceMin,
+		PriceMax:            priceMax,
+		Status:              1,
+		Verified:            true,
 	}
 	if err := tx.Create(&provider).Error; err != nil {
 		tx.Rollback()

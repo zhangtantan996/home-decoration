@@ -1,9 +1,9 @@
 import React from 'react';
 import { Card, Descriptions, Image, Tag, Tabs, Space } from 'antd';
-import type { MerchantApplicationDetails } from '../../../services/api';
+import type { AdminMerchantApplicationDetail, MerchantApplicationDetails } from '../../../services/api';
 
 interface MerchantApplicationDetailProps {
-    details: MerchantApplicationDetails;
+    details: MerchantApplicationDetails & Partial<AdminMerchantApplicationDetail>;
 }
 
 const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ details }) => {
@@ -35,6 +35,12 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
                     <Descriptions.Item label="申请人类型">
                         {details.applicantType}
                     </Descriptions.Item>
+                    <Descriptions.Item label="商家体系">
+                        {details.merchantKind || 'provider'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="来源申请单">
+                        {details.sourceApplicationId || ('id' in details ? details.id : '-')}
+                    </Descriptions.Item>
                 </Descriptions>
             ),
         },
@@ -44,8 +50,8 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             children: (
                 <Space direction="vertical" style={{ width: '100%' }} size="large">
                     <Descriptions bordered column={1} size="small">
-                        <Descriptions.Item label="真实姓名">{details.realName}</Descriptions.Item>
-                        <Descriptions.Item label="身份证号">{details.idCardNo}</Descriptions.Item>
+                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者姓名' : '真实姓名'}>{details.realName}</Descriptions.Item>
+                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者身份证号' : '身份证号'}>{details.idCardNo}</Descriptions.Item>
                     </Descriptions>
 
                     <Card title="身份证照片" size="small">

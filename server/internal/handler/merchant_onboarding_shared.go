@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/service"
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
@@ -23,7 +26,75 @@ const (
 	merchantIdentityStatusFrozen = int8(3)
 	merchantProviderStatusActive = int8(1)
 	merchantProviderStatusFrozen = int8(0)
+	merchantResubmitTokenPurpose = "merchant_resubmit"
 )
+
+type resubmitDetailRequestInput struct {
+	Phone string `json:"phone" binding:"required"`
+	Code  string `json:"code" binding:"required"`
+}
+
+func issueResubmitToken(kind string, applicationID uint64, phone string) (string, error) {
+	claims := jwt.MapClaims{
+		"application_id": applicationID,
+		"phone":          strings.TrimSpace(phone),
+		"merchant_kind":  strings.TrimSpace(kind),
+		"purpose":        merchantResubmitTokenPurpose,
+		"exp":            time.Now().Add(15 * time.Minute).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(config.GetConfig().JWT.Secret))
+}
+
+func verifyResubmitToken(kind string, applicationID uint64, phone, tokenString string) error {
+	tokenString = strings.TrimSpace(tokenString)
+	if tokenString == "" {
+		return fmt.Errorf("缺少重提授权凭证")
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("重提授权凭证签名方式无效")
+		}
+		return []byte(config.GetConfig().JWT.Secret), nil
+	})
+	if err != nil || !token.Valid {
+		return fmt.Errorf("重提授权凭证无效或已过期")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return fmt.Errorf("重提授权凭证无效")
+	}
+	purpose, _ := claims["purpose"].(string)
+	if strings.TrimSpace(purpose) != merchantResubmitTokenPurpose {
+		return fmt.Errorf("重提授权凭证用途无效")
+	}
+	merchantKind, _ := claims["merchant_kind"].(string)
+	if strings.TrimSpace(merchantKind) != strings.TrimSpace(kind) {
+		return fmt.Errorf("重提授权凭证商家类型不匹配")
+	}
+	tokenPhone, _ := claims["phone"].(string)
+	if strings.TrimSpace(tokenPhone) != strings.TrimSpace(phone) {
+		return fmt.Errorf("重提授权凭证手机号不匹配")
+	}
+	applicationIDValue, ok := claims["application_id"].(float64)
+	if !ok || uint64(applicationIDValue) != applicationID {
+		return fmt.Errorf("重提授权凭证申请编号不匹配")
+	}
+
+	return nil
+}
+
+func authorizeResubmit(phone, tokenString string, applicationID uint64, kind string, code string) error {
+	if strings.TrimSpace(tokenString) != "" {
+		return verifyResubmitToken(kind, applicationID, phone, tokenString)
+	}
+	if strings.TrimSpace(code) == "" {
+		return fmt.Errorf("缺少重提授权信息")
+	}
+	return service.VerifySMSCode(strings.TrimSpace(phone), service.SMSPurposeIdentityApply, strings.TrimSpace(code))
+}
 
 type merchantActiveIdentity struct {
 	kind      string

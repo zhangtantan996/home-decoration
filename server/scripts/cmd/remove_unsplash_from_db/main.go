@@ -40,8 +40,8 @@ func main() {
 			updates["cover"] = "/static/inspiration/default-cover.png"
 			counter++
 		}
-		if strings.Contains(s.Logo, "unsplash.com") {
-			updates["logo"] = "/static/inspiration/default-avatar.png"
+		if strings.Contains(s.BrandLogo, "unsplash.com") {
+			updates["brand_logo"] = "/static/inspiration/default-avatar.png"
 			counter++
 		}
 		if len(updates) > 0 {
@@ -49,12 +49,12 @@ func main() {
 		}
 	}
 
-	// 3. projects
-	var projects []model.Project
-	repository.DB.Find(&projects)
-	for _, p := range projects {
-		if strings.Contains(p.CoverImage, "unsplash.com") {
-			repository.DB.Model(&p).Update("cover_image", "/static/inspiration/default-cover.png")
+	// 3. case_audits / provider cases（项目 Project 模型已无 cover_image 字段）
+	var cases []model.ProviderCase
+	repository.DB.Find(&cases)
+	for _, c := range cases {
+		if strings.Contains(c.CoverImage, "unsplash.com") {
+			repository.DB.Model(&c).Update("cover_image", "/static/inspiration/default-cover.png")
 			counter++
 		}
 	}

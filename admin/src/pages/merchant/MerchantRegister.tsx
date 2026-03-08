@@ -44,6 +44,7 @@ import {
     onboardingValidationApi,
     type MerchantApplicantType,
     type MerchantApplyDetailData,
+    type MerchantApplyDetailForResubmitData,
     type MerchantApplyPayload,
 } from '../../services/merchantApi';
 import { regionApi } from '../../services/regionApi';
@@ -201,6 +202,7 @@ const MerchantRegister: React.FC = () => {
     const [previewImage, setPreviewImage] = useState('');
     const [resubmitLoading, setResubmitLoading] = useState(false);
     const [resubmitPrefillFailed, setResubmitPrefillFailed] = useState(false);
+    const [resubmitToken, setResubmitToken] = useState('');
     const countdownTimerRef = useRef<number | null>(null);
 
     const isForeman = role === 'foreman';
@@ -529,36 +531,26 @@ const MerchantRegister: React.FC = () => {
         }
     }, [applicantType, entityType, form, phoneFromUrl, role]);
 
-    useEffect(() => {
+    const fetchResubmitDetail = useCallback(async (phone: string, code: string) => {
         if (!resubmitId) {
-            return;
+            return false;
         }
 
-        let cancelled = false;
-        const loadResubmitDetail = async () => {
-            setResubmitLoading(true);
-            setResubmitPrefillFailed(false);
-            try {
-                const detail = await merchantApplyApi.detail(Number(resubmitId));
-                if (cancelled) {
-                    return;
-                }
-                hydrateResubmitDetail(detail);
-            } catch {
-                if (!cancelled) {
-                    setResubmitPrefillFailed(true);
-                }
-            } finally {
-                if (!cancelled) {
-                    setResubmitLoading(false);
-                }
-            }
-        };
-
-        void loadResubmitDetail();
-        return () => {
-            cancelled = true;
-        };
+        setResubmitLoading(true);
+        setResubmitPrefillFailed(false);
+        try {
+            const detail: MerchantApplyDetailForResubmitData = await merchantApplyApi.detail(Number(resubmitId), { phone, code });
+            hydrateResubmitDetail(detail.form);
+            setResubmitToken(detail.resubmitToken || '');
+            message.success('已验证手机号并回填原申请资料，请继续核对后重新提交');
+            return true;
+        } catch (error) {
+            setResubmitPrefillFailed(true);
+            message.error(getErrorMessage(error, '原申请资料回填失败，请检查手机号与验证码'));
+            return false;
+        } finally {
+            setResubmitLoading(false);
+        }
     }, [hydrateResubmitDetail, resubmitId]);
 
     const validateImageBeforeUpload = (file: File, maxSizeMB: number) => {
@@ -824,6 +816,19 @@ const MerchantRegister: React.FC = () => {
     const handleNext = async () => {
         try {
             if (currentStep === 0) {
+                if (resubmitId && !resubmitToken) {
+                    const authValues = await form.validateFields(['phone', 'code']);
+                    const ok = await fetchResubmitDetail(String(authValues.phone || '').trim(), String(authValues.code || '').trim());
+                    if (!ok) {
+                        return;
+                    }
+                    if (showRedirectAlert) {
+                        setShowRedirectAlert(false);
+                    }
+                    setCurrentStep((prev) => prev + 1);
+                    saveDraft();
+                    return;
+                }
                 const fields = ['phone', 'code', 'realName', 'avatar'];
                 if (entityType === 'company' || role === 'company') {
                     fields.push('companyName');
@@ -957,6 +962,7 @@ const MerchantRegister: React.FC = () => {
                     const payload: MerchantApplyPayload = {
                         phone: String(values.phone || '').trim(),
                         code: String(values.code || '').trim(),
+                        resubmitToken: resubmitId ? (resubmitToken || undefined) : undefined,
                         role,
                         entityType,
                         applicantType,
@@ -1796,7 +1802,7 @@ const MerchantRegister: React.FC = () => {
                         type="info"
                         showIcon
                         style={{ marginBottom: 16, borderRadius: 8 }}
-                        message="正在加载原申请资料并尝试回填，请稍候。"
+                        message="正在校验手机号并回填原申请资料，请稍候。"
                     />
                 )}
                 {resubmitId && resubmitPrefillFailed && (
@@ -1804,7 +1810,7 @@ const MerchantRegister: React.FC = () => {
                         type="warning"
                         showIcon
                         style={{ marginBottom: 16, borderRadius: 8 }}
-                        message="暂时无法拉取原申请详情，已降级为手动补填模式；手机号与商家子类型仍保持原申请约束。"
+                        message="原申请资料回填失败，请确认手机号与验证码正确后重试；手机号与商家子类型仍保持原申请约束。"
                     />
                 )}
                 {renderStepContent()}

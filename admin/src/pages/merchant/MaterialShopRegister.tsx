@@ -24,7 +24,15 @@ import {
     PLATFORM_RULES_VERSION,
     PRIVACY_DATA_PROCESSING_VERSION,
 } from '../../constants/merchantLegal';
-import { materialShopApplyApi, merchantAuthApi, merchantUploadApi, onboardingValidationApi, type MaterialShopApplyDetailData, type MaterialShopApplyPayload } from '../../services/merchantApi';
+import {
+    materialShopApplyApi,
+    merchantAuthApi,
+    merchantUploadApi,
+    onboardingValidationApi,
+    type MaterialShopApplyDetailData,
+    type MaterialShopApplyDetailForResubmitData,
+    type MaterialShopApplyPayload,
+} from '../../services/merchantApi';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
@@ -76,6 +84,7 @@ const MaterialShopRegister: React.FC = () => {
     const [previewImage, setPreviewImage] = useState('');
     const [resubmitLoading, setResubmitLoading] = useState(false);
     const [resubmitPrefillFailed, setResubmitPrefillFailed] = useState(false);
+    const [resubmitToken, setResubmitToken] = useState('');
     const timerRef = useRef<number | null>(null);
 
     const phoneFromUrl = searchParams.get('phone') || '';
@@ -257,72 +266,62 @@ const MaterialShopRegister: React.FC = () => {
         };
     }, []);
 
-    useEffect(() => {
+    const hydrateResubmitDetail = (detail: MaterialShopApplyDetailData) => {
+        form.setFieldsValue({
+            phone: detail.phone || phoneFromUrl || undefined,
+            entityType: detail.entityType || entityType,
+            shopName: detail.shopName,
+            shopDescription: detail.shopDescription,
+            companyName: detail.companyName,
+            businessLicenseNo: detail.businessLicenseNo,
+            businessLicense: detail.businessLicense,
+            legalPersonName: detail.legalPersonName,
+            legalPersonIdCardNo: detail.legalPersonIdCardNo,
+            legalPersonIdCardFront: detail.legalPersonIdCardFront,
+            legalPersonIdCardBack: detail.legalPersonIdCardBack,
+            businessHours: detail.businessHours,
+            contactPhone: detail.contactPhone,
+            contactName: detail.contactName,
+            address: detail.address,
+            legalAccepted: false,
+        });
+
+        if (Array.isArray(detail.products) && detail.products.length > 0) {
+            setProducts(detail.products.map((product, index) => ({
+                id: `resubmit_product_${index}_${Date.now()}`,
+                name: String(product?.name || ''),
+                price: typeof product?.price === 'number' ? product.price : undefined,
+                params: Object.entries(product?.params || {}).map(([key, value]) => ({
+                    id: `param_${key}_${index}`,
+                    key,
+                    value: String(value),
+                })),
+                images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
+            })));
+        }
+    };
+
+    const fetchResubmitDetail = async (phone: string, code: string) => {
         if (!resubmitId) {
-            return;
+            return false;
         }
 
-        let cancelled = false;
-        const hydrateResubmitDetail = (detail: MaterialShopApplyDetailData) => {
-            form.setFieldsValue({
-                phone: detail.phone || phoneFromUrl || undefined,
-                entityType: detail.entityType || entityType,
-                shopName: detail.shopName,
-                shopDescription: detail.shopDescription,
-                companyName: detail.companyName,
-                businessLicenseNo: detail.businessLicenseNo,
-                businessLicense: detail.businessLicense,
-                legalPersonName: detail.legalPersonName,
-                legalPersonIdCardNo: detail.legalPersonIdCardNo,
-                legalPersonIdCardFront: detail.legalPersonIdCardFront,
-                legalPersonIdCardBack: detail.legalPersonIdCardBack,
-                businessHours: detail.businessHours,
-                contactPhone: detail.contactPhone,
-                contactName: detail.contactName,
-                address: detail.address,
-                legalAccepted: false,
-            });
-
-            if (Array.isArray(detail.products) && detail.products.length > 0) {
-                setProducts(detail.products.map((product, index) => ({
-                    id: `resubmit_product_${index}_${Date.now()}`,
-                    name: String(product?.name || ''),
-                    price: typeof product?.price === 'number' ? product.price : undefined,
-                    params: Object.entries(product?.params || {}).map(([key, value]) => ({
-                        id: `param_${key}_${index}`,
-                        key,
-                        value: String(value),
-                    })),
-                    images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
-                })));
-            }
-        };
-
-        const loadResubmitDetail = async () => {
-            setResubmitLoading(true);
-            setResubmitPrefillFailed(false);
-            try {
-                const detail = await materialShopApplyApi.detail(Number(resubmitId));
-                if (cancelled) {
-                    return;
-                }
-                hydrateResubmitDetail(detail);
-            } catch {
-                if (!cancelled) {
-                    setResubmitPrefillFailed(true);
-                }
-            } finally {
-                if (!cancelled) {
-                    setResubmitLoading(false);
-                }
-            }
-        };
-
-        void loadResubmitDetail();
-        return () => {
-            cancelled = true;
-        };
-    }, [entityType, form, phoneFromUrl, resubmitId]);
+        setResubmitLoading(true);
+        setResubmitPrefillFailed(false);
+        try {
+            const detail: MaterialShopApplyDetailForResubmitData = await materialShopApplyApi.detail(Number(resubmitId), { phone, code });
+            hydrateResubmitDetail(detail.form);
+            setResubmitToken(detail.resubmitToken || '');
+            message.success('已验证手机号并回填原申请资料，请继续核对后重新提交');
+            return true;
+        } catch (error) {
+            setResubmitPrefillFailed(true);
+            message.error(getErrorMessage(error, '原申请资料回填失败，请检查手机号与验证码'));
+            return false;
+        } finally {
+            setResubmitLoading(false);
+        }
+    };
 
     const validateImageBeforeUpload = (file: File, maxSizeMB: number) => {
         const isImage = file.type === 'image/jpeg' || file.type === 'image/png';
@@ -440,6 +439,18 @@ const MaterialShopRegister: React.FC = () => {
     const handleNext = async () => {
         try {
             if (currentStep === 0) {
+                if (resubmitId && !resubmitToken) {
+                    const authValues = await form.validateFields(['phone', 'code']);
+                    const ok = await fetchResubmitDetail(String(authValues.phone || '').trim(), String(authValues.code || '').trim());
+                    if (!ok) {
+                        return;
+                    }
+                    if (showRedirectAlert) {
+                        setShowRedirectAlert(false);
+                    }
+                    setCurrentStep((prev) => prev + 1);
+                    return;
+                }
                 await form.validateFields([
                     'phone',
                     'code',
@@ -552,7 +563,22 @@ const MaterialShopRegister: React.FC = () => {
 
     const handleSubmit = async () => {
         try {
-            await form.validateFields(['legalAccepted']);
+            await form.validateFields([
+                'phone',
+                'code',
+                'shopName',
+                'companyName',
+                'businessLicenseNo',
+                'businessLicense',
+                'legalPersonName',
+                'legalPersonIdCardNo',
+                'legalPersonIdCardFront',
+                'legalPersonIdCardBack',
+                'businessHours',
+                'contactPhone',
+                'address',
+                'legalAccepted',
+            ]);
         } catch {
             return;
         }
@@ -590,6 +616,7 @@ const MaterialShopRegister: React.FC = () => {
                     const payload: MaterialShopApplyPayload = {
                         phone: String(values.phone || '').trim(),
                         code: String(values.code || '').trim(),
+                        resubmitToken: resubmitId ? (resubmitToken || undefined) : undefined,
                         entityType,
                         shopName: String(values.shopName || '').trim(),
                         shopDescription: values.shopDescription ? String(values.shopDescription).trim() : undefined,
@@ -661,7 +688,7 @@ const MaterialShopRegister: React.FC = () => {
                         type="info"
                         showIcon
                         style={{ marginBottom: 16, borderRadius: 8 }}
-                        message="正在加载原申请资料并尝试回填，请稍候。"
+                        message="正在校验手机号并回填原申请资料，请稍候。"
                     />
                 )}
                 {resubmitId && resubmitPrefillFailed && (
@@ -669,7 +696,7 @@ const MaterialShopRegister: React.FC = () => {
                         type="warning"
                         showIcon
                         style={{ marginBottom: 16, borderRadius: 8 }}
-                        message="暂时无法拉取原申请详情，已降级为手动补填模式；手机号与主材商类型仍保持原申请约束。"
+                        message="原申请资料回填失败，请确认手机号与验证码正确后重试；手机号与主材商类型仍保持原申请约束。"
                     />
                 )}
                         {currentStep === 0 && (
