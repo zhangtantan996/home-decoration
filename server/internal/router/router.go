@@ -19,6 +19,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		"http://localhost:5174",        // Admin开发环境备用端口
 		"http://localhost:5175",        // Admin开发环境备用端口
 		"http://localhost:5176",        // Admin开发环境备用端口
+		"http://localhost:5177",        // Admin开发环境备用端口
+		"http://127.0.0.1:5173",        // Admin开发环境（本地回环）
+		"http://127.0.0.1:5174",        // Admin开发环境备用端口（本地回环）
+		"http://127.0.0.1:5175",        // Admin开发环境备用端口（本地回环）
+		"http://127.0.0.1:5176",        // Admin开发环境备用端口（本地回环）
+		"http://127.0.0.1:5177",        // Admin开发环境备用端口（本地回环）
 		"http://localhost:3000",        // Mobile开发环境
 		"https://admin.yourdomain.com", // 生产环境（需替换）
 	}

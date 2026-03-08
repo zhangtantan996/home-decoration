@@ -70,3 +70,13 @@ tmp/
 *.pid
 # Unified env templates and generated env files
 env/*.env
+
+# Local recovery and backup artifacts
+mobile/.env.staging
+generate_recovery_sql.js
+generate_recovery_shops_sql.js
+recover_avatars.sql
+recover_shops.sql
+shops_backup.txt
+users_backup.txt
+server/scripts/restore_avatars.sql
