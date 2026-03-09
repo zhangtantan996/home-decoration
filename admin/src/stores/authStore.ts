@@ -25,6 +25,17 @@ const safeJsonParse = <T>(key: string, fallback: T): T => {
     }
 };
 
+const clearAdminStorage = () => {
+    try {
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('admin_user');
+        localStorage.removeItem('admin_permissions');
+        localStorage.removeItem('admin_menus');
+    } catch {
+        // Ignore storage cleanup failures in restricted contexts.
+    }
+};
+
 // 菜单项类型
 interface MenuItem {
     id: number;
@@ -85,19 +96,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
 
     logout: () => {
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('admin_user');
-        localStorage.removeItem('admin_permissions');
-        localStorage.removeItem('admin_menus');
+        clearAdminStorage();
         set({ token: null, admin: null, permissions: [], menus: [], isAuthenticated: false });
     },
 
     checkAuth: () => {
-        const token = localStorage.getItem('admin_token');
-        if (!token) {
-            set({ isAuthenticated: false });
+        const token = readStorage('admin_token');
+        const admin = safeJsonParse<AdminUser | null>('admin_user', null);
+
+        if (!token || !admin) {
+            clearAdminStorage();
+            set({ token: null, admin: null, permissions: [], menus: [], isAuthenticated: false });
             return false;
         }
+
+        if (!get().isAuthenticated || get().token !== token) {
+            set({ token, admin, isAuthenticated: true });
+        }
+
         return true;
     },
 

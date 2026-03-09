@@ -352,6 +352,58 @@ func RequirePermission(permission string) gin.HandlerFunc {
 	}
 }
 
+// RequireAnyPermission RBAC 任意权限验证中间件
+func RequireAnyPermission(permissions ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		adminID, exists := c.Get("admin_id")
+		if !exists {
+			response.Unauthorized(c, "未登录")
+			c.Abort()
+			return
+		}
+
+		isSuperAdmin, _ := c.Get("is_super")
+		if isSuperAdmin == true {
+			c.Next()
+			return
+		}
+
+		if len(permissions) == 0 {
+			response.Forbidden(c, "无权限执行此操作")
+			c.Abort()
+			return
+		}
+
+		var admin model.SysAdmin
+		if err := repository.DB.Preload("Roles.Menus").First(&admin, adminID).Error; err != nil {
+			response.Forbidden(c, "无权限")
+			c.Abort()
+			return
+		}
+
+		permissionSet := make(map[string]struct{}, len(permissions))
+		for _, permission := range permissions {
+			permissionSet[permission] = struct{}{}
+		}
+
+		for _, role := range admin.Roles {
+			for _, menu := range role.Menus {
+				if menu.Permission == "*:*:*" {
+					c.Next()
+					return
+				}
+				if _, ok := permissionSet[menu.Permission]; ok {
+					c.Next()
+					return
+				}
+			}
+		}
+
+		response.Forbidden(c, "无权限执行此操作")
+		c.Abort()
+	}
+}
+
 // AdminLog 管理员操作日志中间件
 func AdminLog() gin.HandlerFunc {
 	return func(c *gin.Context) {

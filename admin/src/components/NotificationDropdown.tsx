@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Dropdown, Badge, Button, Empty, Spin, message } from 'antd';
 import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
-import { notificationApi } from '../services/api';
+import { getHandledAdminStatus, notificationApi } from '../services/api';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 
 interface Notification {
@@ -18,15 +18,6 @@ interface Notification {
 
 type NotificationListResponse = { data?: { list?: Notification[] } };
 type UnreadCountResponse = { data?: { count?: number } };
-
-const getErrorStatus = (error: unknown): number | undefined => {
-    if (typeof error !== 'object' || error === null || !('response' in error)) {
-        return undefined;
-    }
-
-    const response = (error as { response?: { status?: number } }).response;
-    return response?.status;
-};
 
 const POLL_INTERVAL_MS = 30000;
 const POLL_BUSINESS_KEY = 'admin.notification.unread_poll';
@@ -48,16 +39,17 @@ const NotificationDropdown: React.FC = () => {
     const pollPauseNotifiedRef = useRef(false);
     const unreadPollGuardRef = useRef(new AutoRetryGuard(POLL_POLICY));
 
-    const handleAuthError = useCallback(() => {
-        if (!authErrorNotifiedRef.current) {
-            message.warning('通知权限不可用，已暂停刷新');
-            authErrorNotifiedRef.current = true;
-        }
+    const handleHandledAuthError = useCallback((status: 401 | 403) => {
+        if (status === 401) {
+            if (!authErrorNotifiedRef.current) {
+                authErrorNotifiedRef.current = true;
+            }
 
-        setNotificationAvailable(false);
-        setNotifications([]);
-        setUnreadCount(0);
-        setOpen(false);
+            setNotificationAvailable(false);
+            setNotifications([]);
+            setUnreadCount(0);
+            setOpen(false);
+        }
     }, []);
 
     // 加载通知列表（最近5条）
@@ -69,16 +61,16 @@ const NotificationDropdown: React.FC = () => {
             const res = await notificationApi.list({ page: 1, pageSize: 5 }) as NotificationListResponse;
             setNotifications(res.data?.list || []);
         } catch (error: unknown) {
-            const status = getErrorStatus(error);
-            if (status === 401 || status === 403) {
-                handleAuthError();
+            const handledStatus = getHandledAdminStatus(error);
+            if (handledStatus) {
+                handleHandledAuthError(handledStatus);
                 return;
             }
             console.error('Failed to load notifications', error);
         } finally {
             setLoading(false);
         }
-    }, [handleAuthError, notificationAvailable]);
+    }, [handleHandledAuthError, notificationAvailable]);
 
     // 加载未读数量
     const loadUnreadCount = useCallback(async (trigger: TriggerSource = 'auto') => {
@@ -129,9 +121,9 @@ const NotificationDropdown: React.FC = () => {
                 });
             }
         } catch (error: unknown) {
-            const status = getErrorStatus(error);
-            if (status === 401 || status === 403) {
-                handleAuthError();
+            const handledStatus = getHandledAdminStatus(error);
+            if (handledStatus) {
+                handleHandledAuthError(handledStatus);
                 return;
             }
 
@@ -157,7 +149,7 @@ const NotificationDropdown: React.FC = () => {
 
             console.error('Failed to load unread count', error);
         }
-    }, [handleAuthError, notificationAvailable, pollingPaused]);
+    }, [handleHandledAuthError, notificationAvailable, pollingPaused]);
 
     const handleManualRefresh = useCallback(async () => {
         if (!notificationAvailable) return;
@@ -269,9 +261,9 @@ const NotificationDropdown: React.FC = () => {
                 window.location.href = item.actionUrl;
             }
         } catch (error: unknown) {
-            const status = getErrorStatus(error);
-            if (status === 401 || status === 403) {
-                handleAuthError();
+            const handledStatus = getHandledAdminStatus(error);
+            if (handledStatus) {
+                handleHandledAuthError(handledStatus);
                 return;
             }
             message.error('操作失败');

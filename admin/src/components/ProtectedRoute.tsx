@@ -55,12 +55,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   permission,
   requireAll = false,
 }) => {
-  const { isAuthenticated } = useAuthStore();
+  const { token, admin } = useAuthStore();
   const { hasPermission, hasAllPermissions } = usePermission();
 
   // 未登录跳转到登录页
-  if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />;
+  if (!token || !admin) {
+    return <Navigate to="/login" replace />;
   }
 
   // 如果没有指定权限要求，只要登录即可访问

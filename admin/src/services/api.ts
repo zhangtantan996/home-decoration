@@ -1,5 +1,7 @@
 import axios from 'axios';
+import { message } from 'antd';
 import { getApiBaseUrl } from '../utils/env';
+import { useAuthStore } from '../stores/authStore';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -10,6 +12,67 @@ const api = axios.create({
         'Content-Type': 'application/json',
     },
 });
+
+type AdminHandledStatus = 401 | 403;
+
+const ADMIN_ERROR_STATUS_KEY = '__adminHandledStatus';
+const ACCESS_DENIED_MESSAGE_COOLDOWN_MS = 3000;
+let lastAccessDeniedAt = 0;
+
+const getApiErrorStatus = (error: unknown): number | undefined => {
+    if (typeof error !== 'object' || error === null || !('response' in error)) {
+        return undefined;
+    }
+
+    const response = (error as { response?: { status?: number } }).response;
+    return response?.status;
+};
+
+const markAdminErrorHandled = (error: unknown, status: AdminHandledStatus) => {
+    if (typeof error === 'object' && error !== null) {
+        Object.defineProperty(error, ADMIN_ERROR_STATUS_KEY, {
+            value: status,
+            configurable: true,
+            enumerable: false,
+            writable: true,
+        });
+    }
+};
+
+const getHandledAdminStatus = (error: unknown): AdminHandledStatus | undefined => {
+    if (typeof error !== 'object' || error === null) {
+        return undefined;
+    }
+
+    const value = (error as Record<string, unknown>)[ADMIN_ERROR_STATUS_KEY];
+    if (value === 401 || value === 403) {
+        return value;
+    }
+
+    return undefined;
+};
+
+const notifyAdminAccessDenied = () => {
+    const now = Date.now();
+    if (now - lastAccessDeniedAt < ACCESS_DENIED_MESSAGE_COOLDOWN_MS) {
+        return;
+    }
+
+    lastAccessDeniedAt = now;
+    message.error('无权限访问当前功能');
+};
+
+const redirectToAdminLogin = () => {
+    useAuthStore.getState().logout();
+
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    if (!window.location.pathname.includes('/login')) {
+        window.location.replace('/admin/login');
+    }
+};
 
 // 请求拦截器
 api.interceptors.request.use(
@@ -38,20 +101,25 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     <T>(response: { data: T }) => response.data,
     (error) => {
-        // 如果是 401 错误且不在登录页面,清除认证信息并跳转
-        if (error.response?.status === 401) {
-            // 只有在非登录页面才跳转,避免干扰登录页面的错误提示
-            if (!window.location.pathname.includes('/login')) {
-                localStorage.removeItem('admin_token');
-                localStorage.removeItem('admin_user');
-                localStorage.removeItem('admin_permissions');
-                localStorage.removeItem('admin_menus');
-                window.location.href = '/admin/login';
-            }
+        const status = getApiErrorStatus(error);
+        const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
+        const isAdminPath = pathname.startsWith('/admin');
+
+        if (isAdminPath && status === 401) {
+            markAdminErrorHandled(error, 401);
+            redirectToAdminLogin();
         }
+
+        if (isAdminPath && status === 403) {
+            markAdminErrorHandled(error, 403);
+            notifyAdminAccessDenied();
+        }
+
         return Promise.reject(error);
     }
 );
+
+export { getApiErrorStatus, getHandledAdminStatus, redirectToAdminLogin };
 
 // API 接口定义
 export const authApi = {

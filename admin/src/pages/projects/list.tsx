@@ -1,31 +1,50 @@
-import React from 'react';
-import { Card, Table, Tag, Button, Space, Input } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Card, Table, Tag, Button, Space, Input, message } from 'antd';
 import { SearchOutlined, EyeOutlined } from '@ant-design/icons';
-
-import { projectApi } from '../../services/api';
-import { useEffect, useState } from 'react';
+import { adminProjectApi } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
+
+interface ProjectItem {
+    id: number;
+    name: string;
+    ownerName?: string;
+    providerName?: string;
+    currentPhase?: string;
+    budget?: number;
+    status: number;
+}
+
+interface ProjectListResponse {
+    code: number;
+    data?: ProjectItem[];
+    total?: number;
+}
 
 const ProjectList: React.FC = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
-    const [projects, setProjects] = useState<any[]>([]);
+    const [projects, setProjects] = useState<ProjectItem[]>([]);
     const [total, setTotal] = useState(0);
 
     useEffect(() => {
-        fetchProjects();
+        void fetchProjects();
     }, []);
 
     const fetchProjects = async () => {
         setLoading(true);
         try {
-            const res = await projectApi.list({ page: 1, pageSize: 10 }) as any;
-            if (res.code === 0) {
-                setProjects(res.data.list || []);
-                setTotal(res.data.total);
+            const response = await adminProjectApi.list({ page: 1, pageSize: 10 });
+            const payload = response.data as ProjectListResponse | undefined;
+            if (payload?.code === 0) {
+                setProjects(payload.data || []);
+                setTotal(payload.total || 0);
+                return;
             }
+
+            message.error('加载工地列表失败');
         } catch (error) {
             console.error(error);
+            message.error('加载工地列表失败');
         } finally {
             setLoading(false);
         }
@@ -34,14 +53,19 @@ const ProjectList: React.FC = () => {
     const columns = [
         { title: '项目ID', dataIndex: 'id', key: 'id', width: 80 },
         { title: '项目名称', dataIndex: 'name', key: 'name' },
-        { title: '业主名', dataIndex: 'ownerName', key: 'ownerName' },     // 后端返回 ownerName
-        { title: '服务商', dataIndex: 'providerName', key: 'providerName' }, // 后端返回 providerName
-        { title: '当前阶段', dataIndex: 'currentPhase', key: 'currentPhase', render: (val: number) => ['准备', '开工', '水电', '泥木', '油漆', '竣工'][val] },
+        { title: '业主名', dataIndex: 'ownerName', key: 'ownerName' },
+        { title: '服务商', dataIndex: 'providerName', key: 'providerName' },
+        {
+            title: '当前阶段',
+            dataIndex: 'currentPhase',
+            key: 'currentPhase',
+            render: (value?: string) => value || '-',
+        },
         {
             title: '预算',
             dataIndex: 'budget',
             key: 'budget',
-            render: (val: number) => val?.toLocaleString(),
+            render: (value?: number) => value?.toLocaleString() || '-',
         },
         {
             title: '状态',
@@ -53,13 +77,13 @@ const ProjectList: React.FC = () => {
                     1: { color: 'green', text: '已完工' },
                     2: { color: 'orange', text: '已暂停' },
                 };
-                return <Tag color={map[status]?.color}>{map[status]?.text}</Tag>;
+                return <Tag color={map[status]?.color}>{map[status]?.text || '-'}</Tag>;
             },
         },
         {
             title: '操作',
             key: 'action',
-            render: (_: any, record: any) => (
+            render: (_: unknown, record: ProjectItem) => (
                 <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/projects/detail/${record.id}`)}>查看</Button>
             ),
         },

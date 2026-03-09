@@ -26,6 +26,7 @@ import CaseManagement from './pages/cases/CaseManagement';
 import DictionaryManagement from './pages/system/DictionaryManagement';
 import RegionManagement from './pages/system/RegionManagement';
 import IdentityApplicationAudit from './pages/audits/IdentityApplicationAudit';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 
 const router = createBrowserRouter([
@@ -34,73 +35,77 @@ const router = createBrowserRouter([
     // ========== Admin 管理后台 ==========
     {
         path: '/',
-        element: <BasicLayout />,
+        element: (
+            <ProtectedRoute>
+                <BasicLayout />
+            </ProtectedRoute>
+        ),
         children: [
             { index: true, element: <Navigate to="/dashboard" replace /> },
-            { path: 'dashboard', element: <Dashboard /> },
+            { path: 'dashboard', element: <ProtectedRoute permission="dashboard:view"><Dashboard /></ProtectedRoute> },
 
             // Users
             { path: 'users', element: <Navigate to="/users/list" replace /> },
-            { path: 'users/list', element: <UserList /> },
-            { path: 'users/admins', element: <AdminList /> },
+            { path: 'users/list', element: <ProtectedRoute permission="system:user:list"><UserList /></ProtectedRoute> },
+            { path: 'users/admins', element: <ProtectedRoute permission="system:admin:list"><AdminList /></ProtectedRoute> },
 
             // Providers
             { path: 'providers', element: <Navigate to="/providers/designers" replace /> },
-            { path: 'providers/designers', element: <ProviderList /> },
-            { path: 'providers/companies', element: <ProviderList /> },
-            { path: 'providers/foremen', element: <ProviderList /> },
-            { path: 'providers/audit', element: <ProviderAudit /> },
-            { path: 'providers/identity-applications', element: <IdentityApplicationAudit /> },
-            { path: 'audits/identity-applications', element: <IdentityApplicationAudit /> },
+            { path: 'providers/designers', element: <ProtectedRoute permission="provider:designer:list"><ProviderList /></ProtectedRoute> },
+            { path: 'providers/companies', element: <ProtectedRoute permission="provider:company:list"><ProviderList /></ProtectedRoute> },
+            { path: 'providers/foremen', element: <ProtectedRoute permission="provider:foreman:list"><ProviderList /></ProtectedRoute> },
+            { path: 'providers/audit', element: <ProtectedRoute permission="provider:audit:list"><ProviderAudit /></ProtectedRoute> },
+            { path: 'providers/identity-applications', element: <ProtectedRoute permission="identity:application:audit"><IdentityApplicationAudit /></ProtectedRoute> },
+            { path: 'audits/identity-applications', element: <ProtectedRoute permission="identity:application:audit"><IdentityApplicationAudit /></ProtectedRoute> },
 
             // Materials
             { path: 'materials', element: <Navigate to="/materials/list" replace /> },
-            { path: 'materials/list', element: <MaterialShopList /> },
-            { path: 'materials/audit', element: <MaterialShopAudit /> },
+            { path: 'materials/list', element: <ProtectedRoute permission="material:shop:list"><MaterialShopList /></ProtectedRoute> },
+            { path: 'materials/audit', element: <ProtectedRoute permission="material:audit:list"><MaterialShopAudit /></ProtectedRoute> },
 
             // Case Management (作品管理，整合审核功能)
             { path: 'cases', element: <Navigate to="/cases/manage" replace /> },
-            { path: 'cases/manage', element: <CaseManagement /> },
+            { path: 'cases/manage', element: <ProtectedRoute permission="system:case:view"><CaseManagement /></ProtectedRoute> },
 
             // Projects
             { path: 'projects', element: <Navigate to="/projects/list" replace /> },
-            { path: 'projects/list', element: <ProjectList /> },
-            { path: 'projects/detail/:id', element: <ProjectDetail /> },
-            { path: 'projects/map', element: <ProjectMap /> },
+            { path: 'projects/list', element: <ProtectedRoute permission="project:list"><ProjectList /></ProtectedRoute> },
+            { path: 'projects/detail/:id', element: <ProtectedRoute permission="project:view"><ProjectDetail /></ProtectedRoute> },
+            { path: 'projects/map', element: <ProtectedRoute permission="project:map"><ProjectMap /></ProtectedRoute> },
 
             // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
-            { path: 'bookings/list', element: <BookingList /> },
-            { path: 'bookings/disputed', element: <DisputedBookings /> },
+            { path: 'bookings/list', element: <ProtectedRoute permission="booking:list"><BookingList /></ProtectedRoute> },
+            { path: 'bookings/disputed', element: <ProtectedRoute permission="booking:dispute:detail"><DisputedBookings /></ProtectedRoute> },
 
             // Finance
             { path: 'finance', element: <Navigate to="/finance/escrow" replace /> },
-            { path: 'finance/escrow', element: <EscrowAccountList /> },
-            { path: 'finance/transactions', element: <TransactionList /> },
+            { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
+            { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
 
             // Other
             { path: 'reviews', element: <Navigate to="/reviews/list" replace /> },
-            { path: 'reviews/list', element: <ReviewList /> },
+            { path: 'reviews/list', element: <ProtectedRoute permission="review:list"><ReviewList /></ProtectedRoute> },
 
             // Risk
             { path: 'risk', element: <Navigate to="/risk/warnings" replace /> },
-            { path: 'risk/warnings', element: <RiskWarningList /> },
-            { path: 'risk/arbitration', element: <ArbitrationCenter /> },
+            { path: 'risk/warnings', element: <ProtectedRoute permission="risk:warning:list"><RiskWarningList /></ProtectedRoute> },
+            { path: 'risk/arbitration', element: <ProtectedRoute permission="risk:arbitration:list"><ArbitrationCenter /></ProtectedRoute> },
 
             { path: 'logs', element: <Navigate to="/logs/list" replace /> },
-            { path: 'logs/list', element: <LogList /> },
+            { path: 'logs/list', element: <ProtectedRoute permission="system:log:list"><LogList /></ProtectedRoute> },
             { path: 'settings', element: <Navigate to="/settings/config" replace /> },
-            { path: 'settings/config', element: <SystemSettings /> },
-            { path: 'settings/regions', element: <RegionManagement /> },
+            { path: 'settings/config', element: <ProtectedRoute permission="system:setting:list"><SystemSettings /></ProtectedRoute> },
+            { path: 'settings/regions', element: <ProtectedRoute permission="system:setting:list"><RegionManagement /></ProtectedRoute> },
 
             // System
             { path: 'system', element: <Navigate to="/system/dictionary" replace /> },
-            { path: 'system/dictionary', element: <DictionaryManagement /> },
+            { path: 'system/dictionary', element: <ProtectedRoute permission="system:setting:list"><DictionaryManagement /></ProtectedRoute> },
 
             // Permissions (注意：路径为单数 permission，与数据库菜单配置一致)
             { path: 'permission', element: <Navigate to="/permission/roles" replace /> },
-            { path: 'permission/roles', element: <RoleList /> },
-            { path: 'permission/menus', element: <MenuList /> },
+            { path: 'permission/roles', element: <ProtectedRoute permission="system:role:list"><RoleList /></ProtectedRoute> },
+            { path: 'permission/menus', element: <ProtectedRoute permission="system:menu:list"><MenuList /></ProtectedRoute> },
         ],
     },
 ], {
