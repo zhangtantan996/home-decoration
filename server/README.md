@@ -68,7 +68,8 @@ make run
 ### 5. 访问
 
 - API地址: http://localhost:8080
-- 健康检查: http://localhost:8080/api/v1/health
+- 健康检查: http://localhost:8080/api/v1/health（`data.status` 会返回 `ok` 或 `degraded`，并暴露 `smsAuditLog`、`userAuthSchema`、`merchantOnboardingSchema` 自检结果）
+- 正式 schema 发布与历史环境补洞统一使用 `server/migrations/`；认证/短信审计/商家入驻优先执行 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`，不要依赖 `AutoMigrate` 自动补表
 
 ## API 接口
 

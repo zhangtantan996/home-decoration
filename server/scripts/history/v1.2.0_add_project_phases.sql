@@ -1,3 +1,6 @@
+-- LEGACY NOTICE: 本脚本与正式发布目录中的 server/migrations/v1.2.0_add_project_phases.sql 重复；当前仅保留用于历史追溯。
+-- 正式发布请改用 server/migrations/。
+
 -- =============================================================================
 -- Migration: v1.2.0 添加项目阶段表 (PostgreSQL)
 -- 用于支持工程进度页功能

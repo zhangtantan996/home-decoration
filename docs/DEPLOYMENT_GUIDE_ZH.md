@@ -43,7 +43,7 @@ Test 回滚命令：
 bash deploy/scripts/rollback_test.sh --tag v1.2.2 --service api
 ```
 
-> 说明：发布脚本负责备份、切 tag、按服务更新和基础验证；**数据库迁移不会由脚本自动执行**，如涉及 schema 变更，必须先按 `docs/DATABASE_MIGRATIONS.md` 受控执行。
+> 说明：发布脚本负责备份、切 tag、按服务更新和基础验证；**数据库迁移不会由脚本自动执行**，如涉及 schema 变更，必须先按 `docs/DATABASE_MIGRATIONS.md` 受控执行。认证/短信审计/商家入驻统一补洞入口为 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`。
 
 ---
 
@@ -153,7 +153,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 | 前后端都改 | rebuild `api` + `web` | 使用 `--service all` |
 | 仅运行时环境变量变化 | restart / recreate 对应服务 | 若不影响 build，可不全量 rebuild |
 | 构建期环境变量变化 | rebuild 对应服务 | 例如前端构建注入 |
-| 数据库 schema 变更 | 先迁移，再更新服务 | 数据库步骤必须单独执行 |
+| 数据库 schema 变更 | 先迁移，再更新服务 | 数据库步骤必须单独执行，认证/入驻链路优先执行 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql` |
 
 > 默认不要使用 `docker compose down && docker compose up -d --build` 作为常规动作，除非确认要整体重建整套服务。
 
@@ -177,7 +177,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 
 ### 5.2 推荐文件形式
 
-放在：`server/scripts/migrations/`
+放在：`server/migrations/`（唯一正式 schema 发布目录）
 
 推荐每次迁移至少提交：
 
@@ -185,7 +185,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 - `YYYYMMDD_<name>_down.sql`
 - 可选：`YYYYMMDD_<name>_verify.sql`
 
-详细规范见：`docs/DATABASE_MIGRATIONS.md`
+历史/辅助脚本继续保留在 `server/scripts/migrations/`，但不作为正式发版依据。详细规范见：`docs/DATABASE_MIGRATIONS.md`
 
 ---
 

@@ -1,3 +1,5 @@
+仅反映当时路径，不代表当前正式发布规范。当前正式业务 schema 发布目录以 `server/migrations/` 为准；专题脚本仍按各自文档执行。
+
 # Tinode IM 集成实施方案
 
 > **文档版本**: v1.0.0
@@ -403,7 +405,7 @@ INSERT INTO subscriptions (topic, user_id, modewant, modegiven, readseqid) VALUE
 ### 4.3 数据迁移脚本
 
 ```sql
--- 文件: server/scripts/migrations/migrate_to_tinode.sql
+-- 文件（历史示意，当前请查看目录说明）: server/scripts/topics/tinode/README.md
 
 -- ============================================================
 -- 数据迁移脚本：现有系统 → Tinode
@@ -733,7 +735,7 @@ read -p "是否运行数据迁移？(y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "📊 运行数据迁移..."
-    docker-compose exec db psql -U postgres -d tinode -f /scripts/migrations/migrate_to_tinode.sql
+    查看 `server/scripts/topics/tinode/README.md` 中的专题脚本说明，再按实际脚本执行
     echo "✅ 数据迁移完成！"
 fi
 ```

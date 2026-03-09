@@ -100,3 +100,11 @@ func ServerError(c *gin.Context, message string) {
 		Message: message,
 	})
 }
+
+// ServiceUnavailable 503错误
+func ServiceUnavailable(c *gin.Context, message string) {
+	c.JSON(http.StatusServiceUnavailable, Response{
+		Code:    503,
+		Message: message,
+	})
+}

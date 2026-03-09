@@ -2,6 +2,7 @@ package handler
 
 import (
 	"home-decoration-server/internal/config"
+	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
@@ -32,9 +33,25 @@ func InitHandlers(cfg *config.Config) {
 
 // HealthCheck 健康检查
 func HealthCheck(c *gin.Context) {
+	smsAuditHealth := repository.RefreshSMSAuditLogHealth()
+	userAuthHealth := repository.RefreshUserAuthSchemaHealth()
+	merchantOnboardingHealth := repository.RefreshMerchantOnboardingSchemaHealth()
+	alerts := repository.CurrentOperationalAlerts()
+	overallStatus := "ok"
+	if len(alerts) > 0 || smsAuditHealth.Status != "ok" || userAuthHealth.Status != "ok" || merchantOnboardingHealth.Status != "ok" {
+		overallStatus = "degraded"
+	}
+
 	response.Success(c, gin.H{
-		"status":  "ok",
-		"service": "home-decoration-server",
+		"status":     overallStatus,
+		"service":    "home-decoration-server",
+		"alertCount": len(alerts),
+		"alerts":     alerts,
+		"checks": gin.H{
+			"smsAuditLog":              smsAuditHealth,
+			"userAuthSchema":           userAuthHealth,
+			"merchantOnboardingSchema": merchantOnboardingHealth,
+		},
 	})
 }
 
@@ -51,6 +68,10 @@ func Register(c *gin.Context) {
 
 	tokenResp, user, err := userService.Register(&req, jwtConfig)
 	if err != nil {
+		if repository.IsSchemaMismatchError(err) {
+			response.ServiceUnavailable(c, repository.SchemaServiceUnavailableMessage("认证服务"))
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -92,6 +113,10 @@ func Login(c *gin.Context) {
 
 	tokenResp, user, err := userService.Login(&req, jwtConfig)
 	if err != nil {
+		if repository.IsSchemaMismatchError(err) {
+			response.ServiceUnavailable(c, repository.SchemaServiceUnavailableMessage("认证服务"))
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -145,6 +170,10 @@ func SendCode(c *gin.Context) {
 
 	sendResult, err := service.SendSMSCode(req.Phone, purpose, clientIP, req.CaptchaToken)
 	if err != nil {
+		if repository.IsSchemaMismatchError(err) {
+			response.ServiceUnavailable(c, repository.SchemaServiceUnavailableMessage("认证服务"))
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}

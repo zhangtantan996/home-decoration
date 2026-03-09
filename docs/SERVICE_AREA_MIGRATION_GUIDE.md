@@ -83,10 +83,10 @@ const values = form.getFieldsValue();
 ##### 方式 A: SQL 脚本（简单场景）
 ```bash
 # 文件位置
-server/scripts/migrations/migrate_service_area_to_codes.sql
+server/scripts/data-fixes/migrate_service_area_to_codes.sql
 
 # 执行方式
-psql -U postgres -d home_decoration -f server/scripts/migrations/migrate_service_area_to_codes.sql
+psql -U postgres -d home_decoration -f server/scripts/data-fixes/migrate_service_area_to_codes.sql
 ```
 
 ##### 方式 B: Go 程序（推荐）
@@ -127,7 +127,7 @@ git pull origin dev
 psql -U postgres -d home_decoration -c "SELECT COUNT(*) FROM regions;"
 
 # 如果没有数据，导入区域数据
-psql -U postgres -d home_decoration -f server/scripts/migrations/seed_regions_shaanxi.sql
+psql -U postgres -d home_decoration -f server/scripts/seeds/seed_regions_shaanxi.sql
 ```
 
 ### Step 4: 执行数据迁移
@@ -138,7 +138,7 @@ DATABASE_URL="host=localhost user=postgres password=postgres dbname=home_decorat
 go run migrate_service_area.go
 
 # 或使用 SQL 脚本
-psql -U postgres -d home_decoration -f server/scripts/migrations/migrate_service_area_to_codes.sql
+psql -U postgres -d home_decoration -f server/scripts/data-fixes/migrate_service_area_to_codes.sql
 ```
 
 ### Step 5: 验证迁移结果
@@ -259,7 +259,7 @@ const onFinish = (values) => {
 psql -U postgres -d home_decoration -c "SELECT * FROM regions WHERE code = '610113';"
 
 # 如果没有，导入区域数据
-psql -U postgres -d home_decoration -f server/scripts/migrations/seed_regions_shaanxi.sql
+psql -U postgres -d home_decoration -f server/scripts/seeds/seed_regions_shaanxi.sql
 ```
 
 ### 问题 2: "服务区域验证失败: 以下区域已被禁用"

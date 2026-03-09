@@ -21,6 +21,7 @@ import (
 	"home-decoration-server/pkg/utils"
 
 	"github.com/google/uuid"
+	pq "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -248,6 +249,42 @@ func trimToMax(raw string, max int) string {
 	return trimmed[:max]
 }
 
+type sqlStateError interface {
+	SQLState() string
+}
+
+func isSMSAuditLogTableMissingError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return string(pqErr.Code) == "42P01"
+	}
+
+	var stateErr sqlStateError
+	if errors.As(err, &stateErr) {
+		return strings.TrimSpace(stateErr.SQLState()) == "42P01"
+	}
+
+	errText := strings.ToLower(strings.TrimSpace(err.Error()))
+	if strings.Contains(errText, "sms_audit_logs") {
+		return strings.Contains(errText, "does not exist") || strings.Contains(errText, "no such table")
+	}
+	return false
+}
+
+func smsAuditDBErrorType(err error) string {
+	if err == nil {
+		return ""
+	}
+	if isSMSAuditLogTableMissingError(err) {
+		return "missing_table"
+	}
+	return fmt.Sprintf("%T", err)
+}
+
 func persistSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP string, providerResult SMSProviderResult, status, errCode, errMsg string) {
 	if repository.DB == nil {
 		return
@@ -267,8 +304,22 @@ func persistSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP strin
 	}
 
 	if err := repository.DB.Create(record).Error; err != nil {
-		log.Printf("[SMS-AUDIT] persist failed: requestId=%s err=%v", strings.TrimSpace(requestID), err)
+		errorType := smsAuditDBErrorType(err)
+		tableMissing := isSMSAuditLogTableMissingError(err)
+		repository.RecordSMSAuditPersistFailure(requestID, providerResult.Provider, status, errorType, tableMissing, err)
+		log.Printf(
+			"[SMS-AUDIT] persist failed: requestId=%s provider=%s status=%s tableMissing=%t dbErrType=%s err=%v",
+			strings.TrimSpace(requestID),
+			strings.TrimSpace(providerResult.Provider),
+			strings.TrimSpace(status),
+			tableMissing,
+			errorType,
+			err,
+		)
+		return
 	}
+
+	repository.RecordSMSAuditPersistSuccess()
 }
 
 // SendSMSCode generates and sends a verification code, then stores hashed code in Redis with purpose isolation.

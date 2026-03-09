@@ -1,0 +1,92 @@
+package repository
+
+import (
+	"strings"
+	"testing"
+
+	"home-decoration-server/internal/model"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+func setupSchemaHealthDB(t *testing.T, migrateModels ...interface{}) *gorm.DB {
+	t.Helper()
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if len(migrateModels) > 0 {
+		if err := db.AutoMigrate(migrateModels...); err != nil {
+			t.Fatalf("auto migrate: %v", err)
+		}
+	}
+	oldDB := DB
+	DB = db
+	t.Cleanup(func() { DB = oldDB })
+	return db
+}
+
+func TestRefreshUserAuthSchemaHealthReportsMissingColumns(t *testing.T) {
+	setupSchemaHealthDB(t)
+	if err := DB.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, created_at DATETIME, updated_at DATETIME, phone TEXT)`).Error; err != nil {
+		t.Fatalf("create users table: %v", err)
+	}
+
+	snapshot := RefreshUserAuthSchemaHealth()
+	if snapshot.Status != SMSAuditHealthStatusDegraded {
+		t.Fatalf("expected degraded status, got %s", snapshot.Status)
+	}
+	for _, required := range []string{"users.last_login_at", "users.last_login_ip", "users.public_id"} {
+		if !containsString(snapshot.Missing, required) {
+			t.Fatalf("expected missing to contain %s, got %+v", required, snapshot.Missing)
+		}
+	}
+	if snapshot.RequiredMigration != CanonicalSchemaReconcileMigrationPath {
+		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
+	}
+}
+
+func TestEnsureCriticalSchemaReleaseFailsOnMissingMerchantSchema(t *testing.T) {
+	setupSchemaHealthDB(t, &model.User{}, &model.SMSAuditLog{})
+	if err := EnsureCriticalSchema("release"); err == nil {
+		t.Fatalf("expected release preflight failure when merchant onboarding schema missing")
+	}
+}
+
+func TestEnsureCriticalSchemaNonReleaseAllowsDegradedSchema(t *testing.T) {
+	setupSchemaHealthDB(t, &model.User{}, &model.SMSAuditLog{})
+	if err := EnsureCriticalSchema("debug"); err != nil {
+		t.Fatalf("expected non-release preflight to allow degraded schema, got %v", err)
+	}
+}
+
+func TestIsSchemaMismatchError(t *testing.T) {
+	for _, errText := range []string{
+		`ERROR: column "public_id" of relation "users" does not exist`,
+		`no such column: last_login_at`,
+		`table sms_audit_logs does not exist`,
+	} {
+		if !IsSchemaMismatchError(assertErrString(errText)) {
+			t.Fatalf("expected schema mismatch for %q", errText)
+		}
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+func assertErrString(message string) error {
+	return errString(message)
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

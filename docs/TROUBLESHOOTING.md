@@ -450,7 +450,7 @@ func CORS() gin.HandlerFunc {
 
 **参考文件**:
 - `docs/SERVICE_AREA_MIGRATION_GUIDE.md`
-- `server/scripts/migrations/seed_regions_shaanxi.sql`
+- `server/scripts/seeds/seed_regions_shaanxi.sql`
 - `server/scripts/migrate_service_area.go`
 
 ---

@@ -1,3 +1,6 @@
+-- LEGACY NOTICE: 本脚本与正式发布目录中的 server/migrations/add_user_login_lock_fields.sql 重复；当前仅保留用于历史追溯。
+-- 正式发布请改用 server/migrations/。
+
 -- 添加用户登录锁定相关字段
 -- 执行时间: 2025-12-26
 

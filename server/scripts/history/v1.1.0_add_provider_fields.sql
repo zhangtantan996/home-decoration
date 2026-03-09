@@ -1,3 +1,6 @@
+-- LEGACY NOTICE: 本脚本与正式发布目录中的 server/migrations/v1.1.0_add_provider_fields.sql 重复；当前仅保留用于历史追溯。
+-- 正式发布请改用 server/migrations/。
+
 -- =============================================================================
 -- Database Migration: Add Provider Fields
 -- Version: v1.1.0

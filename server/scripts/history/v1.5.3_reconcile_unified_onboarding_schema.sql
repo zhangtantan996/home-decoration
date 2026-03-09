@@ -1,27 +1,44 @@
--- v1.5.0: 商家入驻与登录统一改版（服务商扩展 + 主材商独立入驻）
+-- LEGACY NOTICE: 历史补洞脚本，保留用于追溯。
+-- 当前正式补洞入口已统一为 server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql。
+
+-- v1.5.3: 商家入驻统一改版 schema 对齐修复（幂等）
+-- 目的：
+-- 1) 修复历史环境未完整执行 v1.5.0/v1.5.1/v1.5.2 导致的列缺失
+-- 2) 一次性补齐服务商/主材商入驻全链路所需表结构
 -- 执行方式:
--- psql -U postgres -d home_decoration -f server/scripts/migrations/v1.5.0_unified_merchant_onboarding.sql
+-- psql -U postgres -d home_decoration -f server/scripts/migrations/v1.5.3_reconcile_unified_onboarding_schema.sql
 
 BEGIN;
 
+-- 1) merchant_applications：补齐统一入驻字段
 ALTER TABLE merchant_applications
     ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT '',
     ADD COLUMN IF NOT EXISTS entity_type VARCHAR(20) DEFAULT '',
+    ADD COLUMN IF NOT EXISTS avatar VARCHAR(500) DEFAULT '',
+    ADD COLUMN IF NOT EXISTS years_experience INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS work_types TEXT DEFAULT '[]',
     ADD COLUMN IF NOT EXISTS highlight_tags TEXT DEFAULT '[]',
     ADD COLUMN IF NOT EXISTS pricing_json TEXT DEFAULT '{}',
     ADD COLUMN IF NOT EXISTS graduate_school VARCHAR(100) DEFAULT '',
-    ADD COLUMN IF NOT EXISTS design_philosophy TEXT DEFAULT '';
+    ADD COLUMN IF NOT EXISTS design_philosophy TEXT DEFAULT '',
+    ADD COLUMN IF NOT EXISTS legal_acceptance_json TEXT DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS legal_accepted_at TIMESTAMP NULL,
+    ADD COLUMN IF NOT EXISTS legal_accept_source VARCHAR(50) DEFAULT 'merchant_web';
 
+-- 2) providers：补齐 C 端展示字段
 ALTER TABLE providers
     ADD COLUMN IF NOT EXISTS entity_type VARCHAR(20) DEFAULT 'personal',
+    ADD COLUMN IF NOT EXISTS work_types TEXT DEFAULT '[]',
     ADD COLUMN IF NOT EXISTS highlight_tags TEXT DEFAULT '[]',
     ADD COLUMN IF NOT EXISTS pricing_json TEXT DEFAULT '{}',
     ADD COLUMN IF NOT EXISTS graduate_school VARCHAR(100) DEFAULT '',
-    ADD COLUMN IF NOT EXISTS design_philosophy TEXT DEFAULT '';
+    ADD COLUMN IF NOT EXISTS design_philosophy TEXT DEFAULT '',
+    ADD COLUMN IF NOT EXISTS avatar VARCHAR(500) DEFAULT '';
 
 ALTER TABLE providers
     ALTER COLUMN work_types TYPE TEXT;
 
+-- 3) material_shops：补齐主材商正式实体字段
 ALTER TABLE material_shops
     ADD COLUMN IF NOT EXISTS user_id BIGINT DEFAULT 0,
     ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '',
@@ -32,6 +49,7 @@ ALTER TABLE material_shops
 
 CREATE INDEX IF NOT EXISTS idx_material_shops_user_id ON material_shops(user_id);
 
+-- 4) 主材商入驻申请表
 CREATE TABLE IF NOT EXISTS material_shop_applications (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -47,6 +65,9 @@ CREATE TABLE IF NOT EXISTS material_shop_applications (
     contact_phone VARCHAR(20) DEFAULT '',
     contact_name VARCHAR(50) DEFAULT '',
     address VARCHAR(300) DEFAULT '',
+    legal_acceptance_json TEXT DEFAULT '{}',
+    legal_accepted_at TIMESTAMP NULL,
+    legal_accept_source VARCHAR(50) DEFAULT 'merchant_web',
     status SMALLINT NOT NULL DEFAULT 0,
     reject_reason VARCHAR(500) DEFAULT '',
     audited_by BIGINT NOT NULL DEFAULT 0,
@@ -58,6 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_material_shop_applications_phone ON material_shop
 CREATE INDEX IF NOT EXISTS idx_material_shop_applications_user_id ON material_shop_applications(user_id);
 CREATE INDEX IF NOT EXISTS idx_material_shop_applications_status ON material_shop_applications(status);
 
+-- 5) 主材商申请商品明细表
 CREATE TABLE IF NOT EXISTS material_shop_application_products (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -73,6 +95,7 @@ CREATE TABLE IF NOT EXISTS material_shop_application_products (
 CREATE INDEX IF NOT EXISTS idx_material_shop_application_products_app_id
     ON material_shop_application_products(application_id);
 
+-- 6) 主材商正式商品表
 CREATE TABLE IF NOT EXISTS material_shop_products (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -89,6 +112,7 @@ CREATE TABLE IF NOT EXISTS material_shop_products (
 
 CREATE INDEX IF NOT EXISTS idx_material_shop_products_shop_id ON material_shop_products(shop_id);
 
+-- 7) 商家身份变更申请表（注意 current_role 需转义）
 CREATE TABLE IF NOT EXISTS merchant_identity_change_applications (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),

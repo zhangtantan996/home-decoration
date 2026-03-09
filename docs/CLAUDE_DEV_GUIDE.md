@@ -389,11 +389,11 @@ git commit -m "deps: 添加 <package> 用于 <功能>"
 **✅ 正确流程**:
 ```sql
 -- 1. 创建 migration SQL
--- server/scripts/migrations/v1.4.0_add_user_avatar.sql
+-- server/migrations/v1.4.0_add_user_avatar.sql  （示例路径；当前正式 schema 发布目录统一为 server/migrations/）
 ALTER TABLE users ADD COLUMN avatar VARCHAR(255);
 
 -- 2. 提供回滚 SQL
--- server/scripts/migrations/v1.4.0_add_user_avatar_rollback.sql
+-- server/migrations/v1.4.0_add_user_avatar_rollback.sql  （示例路径；正式 schema 变更统一提交到 server/migrations/）
 ALTER TABLE users DROP COLUMN avatar;
 
 -- 3. 更新 GORM model
@@ -533,7 +533,7 @@ auth.PUT("/profile/avatar", userProfileHandler.UpdateAvatar)
 **完整步骤**:
 ```bash
 # 1. 创建 migration SQL
-# server/scripts/migrations/v1.4.0_add_user_profile_table.sql
+# server/migrations/v1.4.0_add_user_profile_table.sql
 CREATE TABLE user_profiles (
     id SERIAL PRIMARY KEY,
     user_id INT UNIQUE NOT NULL REFERENCES users(id),
@@ -544,14 +544,14 @@ CREATE TABLE user_profiles (
 );
 
 # 2. 创建回滚 SQL
-# server/scripts/migrations/v1.4.0_add_user_profile_table_rollback.sql
+# server/migrations/v1.4.0_add_user_profile_table_rollback.sql
 DROP TABLE user_profiles;
 
 # 3. 更新 GORM Model
 # server/internal/model/user_profile.go
 
 # 4. 本地测试
-docker-compose exec db psql -U postgres -d home_decoration -f /scripts/migrations/v1.4.0_add_user_profile_table.sql
+docker-compose exec db psql -U postgres -d home_decoration -f /workspace/server/migrations/v1.4.0_add_user_profile_table.sql
 
 # 5. 验证
 \d user_profiles

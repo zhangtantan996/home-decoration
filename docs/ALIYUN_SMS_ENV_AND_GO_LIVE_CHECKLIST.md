@@ -133,7 +133,7 @@ SMS_CAPTCHA_MIN_SCORE=0.0
 
 - [ ] 部署环境已注入 `SMS_PROVIDER=aliyun` 及全部密钥
 - [ ] `SMS_DEBUG_BYPASS=false`
-- [ ] 已执行短信审计日志迁移：`server/scripts/migrations/v1.4.5_create_sms_audit_logs.sql`
+- [ ] 已执行正式 schema 迁移：`server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`（包含 `sms_audit_logs` 补洞）
 - [ ] Redis 连通（验证码依赖 Redis 存储与风控计数）
 
 ### 2.3 接口 smoke 测试

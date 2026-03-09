@@ -16,7 +16,7 @@
 - RBAC 权限点：`identity:application:audit`
 - RBAC 菜单：`/providers/identity-applications`（身份申请审核）
 - 迁移脚本：
-  - 数据迁移：`/Volumes/tantan/AI_project/home-decoration/server/scripts/migrations/004_migrate_worker_to_provider_foreman.sql`
+  - 数据迁移（历史阶段记录）：`/Volumes/tantan/AI_project/home-decoration/server/scripts/history/004_migrate_worker_to_provider_foreman.sql`
   - RBAC 菜单迁移：`/Volumes/tantan/AI_project/home-decoration/server/migrations/v1.4.2_add_identity_application_audit_menu.sql`
 
 ## 2. 上线前检查（必做）
@@ -40,7 +40,7 @@
 ```bash
 cd /Volumes/tantan/AI_project/home-decoration
 psql -U postgres -d home_decoration \
-  -f server/scripts/migrations/004_migrate_worker_to_provider_foreman.sql
+  -f server/scripts/history/004_migrate_worker_to_provider_foreman.sql  （历史脚本记录；当前正式目录以 `server/migrations/` 为准）
 ```
 
 ### Step 2：执行 RBAC 菜单与权限迁移
@@ -84,7 +84,7 @@ psql -U postgres -d home_decoration \
 ```bash
 cd /Volumes/tantan/AI_project/home-decoration
 psql -U postgres -d home_decoration \
-  -f server/scripts/migrations/005_add_identity_application_audit_menu_rollback.sql
+  -f server/scripts/history/005_add_identity_application_audit_menu_rollback.sql  （历史回滚脚本记录）
 ```
 
 ### 场景 B：身份数据迁移引发严重业务问题
@@ -95,7 +95,7 @@ psql -U postgres -d home_decoration \
 ```bash
 cd /Volumes/tantan/AI_project/home-decoration
 psql -U postgres -d home_decoration \
-  -f server/scripts/migrations/004_migrate_worker_to_provider_foreman_rollback.sql
+  -f server/scripts/history/004_migrate_worker_to_provider_foreman_rollback.sql  （历史回滚脚本记录）
 ```
 
 3. 回滚后做人工校验：
@@ -121,12 +121,12 @@ psql -U postgres -d home_decoration \
 
 ```bash
 # 正向（数据迁移 + RBAC）
-psql -U postgres -d home_decoration -f /Volumes/tantan/AI_project/home-decoration/server/scripts/migrations/004_migrate_worker_to_provider_foreman.sql
+psql -U postgres -d home_decoration -f /Volumes/tantan/AI_project/home-decoration/server/scripts/history/004_migrate_worker_to_provider_foreman.sql  # 历史执行记录，当前正式目录以 server/migrations/ 为准
 psql -U postgres -d home_decoration -f /Volumes/tantan/AI_project/home-decoration/server/migrations/v1.4.2_add_identity_application_audit_menu.sql
 
 # 回滚（仅 RBAC）
-psql -U postgres -d home_decoration -f /Volumes/tantan/AI_project/home-decoration/server/scripts/migrations/005_add_identity_application_audit_menu_rollback.sql
+psql -U postgres -d home_decoration -f /Volumes/tantan/AI_project/home-decoration/server/scripts/history/005_add_identity_application_audit_menu_rollback.sql  # 历史回滚记录
 
 # 回滚（身份迁移，谨慎）
-psql -U postgres -d home_decoration -f /Volumes/tantan/AI_project/home-decoration/server/scripts/migrations/004_migrate_worker_to_provider_foreman_rollback.sql
+psql -U postgres -d home_decoration -f /Volumes/tantan/AI_project/home-decoration/server/scripts/history/004_migrate_worker_to_provider_foreman_rollback.sql  # 历史回滚记录
 ```

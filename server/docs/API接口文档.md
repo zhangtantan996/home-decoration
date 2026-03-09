@@ -1486,19 +1486,65 @@
 
 ---
 
-#### 4.1.3 重新提交申请
-**接口**: `POST /api/v1/merchant/apply/:id/resubmit`
-**描述**: 被拒绝后重新提交申请
+#### 4.1.3 第一步验证码前置校验
+**接口**: `POST /api/v1/merchant/onboarding/verify-phone`
+**描述**: 商家入驻第一步手机号验证码校验；首次申请与驳回重提统一入口
 **认证**: 无需认证
-**请求参数**: 同 4.1.1
+
+**请求参数**:
+```json
+{
+  "phone": "13800138000",
+  "code": "123456",
+  "merchantKind": "provider",
+  "mode": "apply",
+  "applicationId": 100
+}
+```
+> `merchantKind`: `provider | material_shop`
+>
+> `mode`: `apply | resubmit`
+>
+> `applicationId`: 首次申请可不传；驳回重提时必填。
+
+**响应数据**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "ok": true,
+    "verificationToken": "eyJhbGciOiJIUzI1NiIs...",
+    "verifiedPhone": "13800138000",
+    "expiresAt": "2026-03-09T20:00:00+08:00",
+    "merchantKind": "provider",
+    "form": {}
+  }
+}
+```
+> 驳回重提模式下，`form` 可直接用于回填原申请资料。
 
 ---
 
-#### 4.1.4 主材商独立入驻
+#### 4.1.4 重新提交申请
+**接口**: `POST /api/v1/merchant/apply/:id/resubmit`
+**描述**: 被拒绝后重新提交申请
+**认证**: 无需认证
+**请求参数**: 同 4.1.1，并新增：
+```json
+{
+  "verificationToken": "eyJhbGciOiJIUzI1NiIs..."
+}
+```
+> 提交主路径优先校验 `verificationToken`；兼容窗口内仍允许 `code` 兜底。
 
-1) **提交申请**：`POST /api/v1/material-shop/apply`  
-2) **查询状态**：`GET /api/v1/material-shop/apply/:phone/status`  
-3) **重新提交**：`POST /api/v1/material-shop/apply/:id/resubmit`  
+---
+
+#### 4.1.5 主材商独立入驻
+
+1) **提交申请**：`POST /api/v1/material-shop/apply`
+2) **查询状态**：`GET /api/v1/material-shop/apply/:phone/status`
+3) **重新提交**：`POST /api/v1/material-shop/apply/:id/resubmit`（优先校验 `verificationToken`）
 
 **申请示例**:
 ```json
@@ -3583,11 +3629,27 @@
 **响应数据**:
 ```json
 {
-    "status": "ok",
-    "service": "home-decoration-server",
-    "timestamp": "2025-01-15T10:00:00Z"
+    "code": 0,
+    "message": "success",
+    "data": {
+        "status": "ok",
+        "service": "home-decoration-server",
+        "alertCount": 0,
+        "alerts": [],
+        "checks": {
+            "smsAuditLog": {
+                "status": "ok",
+                "table": "sms_audit_logs",
+                "tableExists": true,
+                "migrationRequired": false,
+                "requiredMigration": "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
+            }
+        }
+    }
 }
 ```
+
+当 `status=degraded` 时，`alerts` 会返回结构化运维告警；例如 `sms_audit_log_table_missing` 会明确提示执行短信审计表迁移。
 
 ---
 

@@ -79,22 +79,22 @@ docker compose -f docker-compose.local.yml up -d db redis api admin
 
 为避免本地出现 `column does not exist`（例如 `merchant_applications.role`）导致入驻提交失败，建议在首次拉起或切分支后执行以下检查。
 
-### Step 1: 执行幂等 schema 对齐迁移（仅需执行一次，可重复执行）
+### Step 1: 执行统一幂等 schema 对齐迁移（本地/测试/预发/生产同一入口）
 
 ```bash
 docker exec -i home_decor_db_local psql -U postgres -d home_decoration \
-  < server/scripts/migrations/v1.5.3_reconcile_unified_onboarding_schema.sql
+  < server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql
 ```
 
-### Step 2: 校验关键字段存在
+### Step 2: 校验认证 + 商家入驻关键字段存在
 
 ```bash
 docker exec -i home_decor_db_local psql -U postgres -d home_decoration -At -c \
 "SELECT table_name, column_name
  FROM information_schema.columns
  WHERE table_schema='public'
-   AND table_name IN ('merchant_applications','providers','material_shop_applications')
-   AND column_name IN ('role','entity_type','avatar','work_types','highlight_tags','pricing_json','graduate_school','design_philosophy','legal_acceptance_json','legal_accepted_at','legal_accept_source')
+   AND table_name IN ('users','merchant_applications','providers','material_shop_applications','material_shops')
+   AND column_name IN ('public_id','last_login_at','last_login_ip','role','entity_type','avatar','work_types','highlight_tags','pricing_json','graduate_school','design_philosophy','legal_acceptance_json','legal_accepted_at','legal_accept_source','source_application_id')
  ORDER BY table_name, column_name;"
 ```
 
@@ -104,6 +104,8 @@ docker exec -i home_decor_db_local psql -U postgres -d home_decoration -At -c \
 docker restart home_decor_api_local
 curl -sS http://127.0.0.1:8080/api/v1/health
 ```
+
+说明：`public.sql` 与 `local_backup.sql` 当前仅视为历史快照，不再作为认证/入驻环境的 schema source of truth。重建库时以 `server/migrations/` 为准。
 
 ### Step 4: 入驻冒烟（固定验证码）
 

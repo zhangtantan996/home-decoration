@@ -7,7 +7,7 @@
 
 ## 2. 前置条件
 - 后端已部署包含身份审核 API 的版本。
-- 已执行迁移脚本：`server/scripts/migrations/004_migrate_worker_to_provider_foreman.sql`。
+- 已执行迁移脚本（历史阶段记录）：`server/scripts/history/004_migrate_worker_to_provider_foreman.sql`。当前正式 schema 发布目录统一为 `server/migrations/`。
 - 准备 3 类测试账号：仅业主、历史 worker、已通过 provider。
 
 ## 3. 核心场景（必须通过）
@@ -45,8 +45,8 @@
 - [ ] 关键链路成功率 ≥ 99%。
 
 ## 5. 回滚演练
-- [ ] 已验证回滚脚本可执行：`server/scripts/migrations/004_migrate_worker_to_provider_foreman_rollback.sql`。
-- [ ] 已验证 RBAC 回滚脚本可执行：`server/scripts/migrations/005_add_identity_application_audit_menu_rollback.sql`。
+- [ ] 已验证回滚脚本可执行（历史阶段记录）：`server/scripts/history/004_migrate_worker_to_provider_foreman_rollback.sql`。
+- [ ] 已验证 RBAC 回滚脚本可执行（历史阶段记录）：`server/scripts/history/005_add_identity_application_audit_menu_rollback.sql`。
 - [ ] 回滚后可恢复 worker 标识（仅用于应急，不建议长期运行）。
 
 ## 6. 交付物

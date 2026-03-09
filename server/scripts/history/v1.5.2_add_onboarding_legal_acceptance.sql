@@ -1,3 +1,6 @@
+-- LEGACY NOTICE: 历史版本化 schema 脚本，保留用于追溯。
+-- 当前正式目录为 server/migrations/；入驻历史环境补洞统一优先执行 v1.6.4。
+
 -- v1.5.2: 入驻条款勾选留痕字段
 -- 执行方式:
 -- psql -U postgres -d home_decoration -f server/scripts/migrations/v1.5.2_add_onboarding_legal_acceptance.sql

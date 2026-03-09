@@ -595,3 +595,87 @@ func TestUserService_Login(t *testing.T) {
 		})
 	}
 }
+
+func TestUserServiceRegisterReturnsSchemaMismatchError(t *testing.T) {
+	t.Setenv("APP_ENV", "local")
+	t.Setenv("SMS_DEBUG_BYPASS", "true")
+
+	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open main db: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			phone TEXT,
+			nickname TEXT,
+			password TEXT,
+			user_type INTEGER,
+			status INTEGER
+		)
+	`).Error; err != nil {
+		t.Fatalf("create users table: %v", err)
+	}
+	oldDB := repository.DB
+	repository.DB = db
+	defer func() { repository.DB = oldDB }()
+
+	svc := &UserService{}
+	_, _, err = svc.Register(&RegisterRequest{
+		Phone:    testPhone,
+		Code:     "123456",
+		Password: testPassword,
+		Nickname: "schema-mismatch",
+	}, &config.JWTConfig{ExpireHour: 1})
+	if err == nil {
+		t.Fatalf("expected schema mismatch error")
+	}
+	if !repository.IsSchemaMismatchError(err) {
+		t.Fatalf("expected schema mismatch error, got %v", err)
+	}
+}
+
+func TestUserServiceLoginReturnsSchemaMismatchError(t *testing.T) {
+	t.Setenv("APP_ENV", "local")
+
+	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open main db: %v", err)
+	}
+	if err := db.Exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			phone TEXT,
+			nickname TEXT,
+			password TEXT,
+			user_type INTEGER,
+			status INTEGER
+		)
+	`).Error; err != nil {
+		t.Fatalf("create users table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO users (id, phone, nickname, password, user_type, status) VALUES (?, ?, ?, ?, ?, ?)`, 1, testPhone, "tester", mustHashPassword(t, testPassword), 1, 1).Error; err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	oldDB := repository.DB
+	repository.DB = db
+	defer func() { repository.DB = oldDB }()
+
+	svc := &UserService{}
+	_, _, err = svc.Login(&LoginRequest{
+		Phone:    testPhone,
+		Password: testPassword,
+		Type:     "password",
+		ClientIP: "127.0.0.1",
+	}, &config.JWTConfig{ExpireHour: 1})
+	if err == nil {
+		t.Fatalf("expected schema mismatch error")
+	}
+	if !repository.IsSchemaMismatchError(err) {
+		t.Fatalf("expected schema mismatch error, got %v", err)
+	}
+}

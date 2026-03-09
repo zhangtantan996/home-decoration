@@ -14,7 +14,7 @@
 
 已落地：
 - 数据模型：`server/internal/model/model.go` 新增 `UserWechatBinding`
-- 数据迁移：`server/scripts/migrations/v1.4.0_add_user_wechat_bindings.sql`
+- 数据迁移（历史记录）：当时使用 `server/migrations/v1.4.0_add_user_wechat_bindings.sql`；当前正式 schema 发布规范以 `server/migrations/` 为准
 - 配置项：`server/internal/config/config.go` 新增 `wechat_mini` 配置段
 - 配置文件：`server/config.yaml`、`server/config.docker.yaml` 增加 `wechat_mini` 配置
 - 环境变量示例：根目录 `.env.example` 增加 `WECHAT_MINI_APPID`、`WECHAT_MINI_SECRET`
@@ -54,7 +54,7 @@
   - `JWT_SECRET`（已有体系依赖）
 - 执行迁移 `user_wechat_bindings`（二选一）：
   1) 使用项目既有迁移机制（如果已有脚本/流程）  
-  2) 直接执行：`server/scripts/migrations/v1.4.0_add_user_wechat_bindings.sql`
+  2) 若追溯历史阶段可查看 `server/migrations/v1.4.0_add_user_wechat_bindings.sql`；当前正式发版不要把 `server/scripts/migrations/` 当成唯一 migration 目录
 - 真实微信能力需要在微信后台配置并在真机/开发者工具中验证：
   - `wx.getPhoneNumber` 能力开通
   - 域名/合法 request 域名配置（小程序侧）

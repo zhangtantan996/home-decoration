@@ -5,10 +5,10 @@
 ### 步骤1：导入陕西省数据
 ```bash
 # 方式1：通过Docker（推荐）
-docker-compose -f docker-compose.local.yml exec -T db psql -U postgres -d home_decoration < server/scripts/migrations/seed_regions_shaanxi.sql
+docker-compose -f docker-compose.local.yml exec -T db psql -U postgres -d home_decoration < server/scripts/seeds/seed_regions_shaanxi.sql
 
 # 方式2：直接连接数据库
-psql -U postgres -d home_decoration -f server/scripts/migrations/seed_regions_shaanxi.sql
+psql -U postgres -d home_decoration -f server/scripts/seeds/seed_regions_shaanxi.sql
 ```
 
 ### 步骤2：添加侧边栏菜单
@@ -134,7 +134,7 @@ CREATE INDEX idx_regions_parent_code ON regions(parent_code);
 
 ### 导入其他省份数据
 
-参考 `server/scripts/migrations/seed_regions_shaanxi.sql` 格式创建新文件：
+参考 `server/scripts/seeds/seed_regions_shaanxi.sql` 格式创建新文件：
 
 ```sql
 -- seed_regions_beijing.sql

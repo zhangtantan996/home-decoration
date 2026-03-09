@@ -20,6 +20,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 var jwtSecret []byte
@@ -84,6 +85,8 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	var existUser model.User
 	if err := repository.DB.Where("phone = ?", req.Phone).First(&existUser).Error; err == nil {
 		return nil, nil, errors.New("手机号已注册")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, err
 	}
 
 	// 校验密码强度（如果提供了密码）
@@ -221,6 +224,9 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	var user model.User
 	userNotFound := false
 	if err := repository.DB.Where("phone = ?", req.Phone).First(&user).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, err
+		}
 		userNotFound = true
 	}
 
@@ -258,10 +264,16 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 
 		if err := tx.Create(&user).Error; err != nil {
 			tx.Rollback()
+			if repository.IsSchemaMismatchError(err) {
+				return nil, nil, err
+			}
 			return nil, nil, errors.New("账号创建失败，请稍后重试")
 		}
 
 		if err := tx.Commit().Error; err != nil {
+			if repository.IsSchemaMismatchError(err) {
+				return nil, nil, err
+			}
 			return nil, nil, errors.New("账号创建失败，请稍后重试")
 		}
 		// 同步新用户到腾讯云 IM（异步）
@@ -284,11 +296,13 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 			user.LoginFailedCount = 0
 			user.LockedUntil = nil
 			user.LastFailedLoginAt = nil
-			repository.DB.Model(&user).Updates(map[string]interface{}{
+			if err := repository.DB.Model(&user).Updates(map[string]interface{}{
 				"login_failed_count":   0,
 				"locked_until":         nil,
 				"last_failed_login_at": nil,
-			})
+			}).Error; err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 
@@ -328,7 +342,9 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		loginUpdates["login_failed_count"] = 0
 		loginUpdates["last_failed_login_at"] = nil
 	}
-	repository.DB.Model(&user).Updates(loginUpdates)
+	if err := repository.DB.Model(&user).Updates(loginUpdates).Error; err != nil {
+		return nil, nil, err
+	}
 	user.LoginFailedCount = 0
 	user.LastFailedLoginAt = nil
 	if loginAt, ok := loginUpdates["last_login_at"].(time.Time); ok {

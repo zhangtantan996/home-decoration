@@ -33,6 +33,9 @@ func main() {
 		log.Fatalf("Failed to connect database: %v", err)
 	}
 	log.Println("Database connected successfully")
+	if err := repository.EnsureCriticalSchema(cfg.Server.Mode); err != nil {
+		log.Fatalf("Critical schema preflight failed: %v", err)
+	}
 
 	// 初始化 Tinode 数据库（失败不阻塞主流程）
 	if err := repository.InitTinodeDB(&cfg.Database); err != nil {

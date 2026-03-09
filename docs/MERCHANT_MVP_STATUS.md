@@ -70,6 +70,10 @@
 - 驳回重提安全闭环补齐：
   - `detail-for-resubmit` 改为 `POST` + `phone/code` 验证；
   - 返回 `resubmitToken`，后续重提优先凭 token 提交。
+- 入驻验证码前置校验统一：
+  - 首次申请与驳回重提统一在第一步完成手机号验证码真实校验；
+  - 第一步校验成功后返回 `verificationToken`，前端保存“手机号已验证”状态；
+  - 手机号未变化时允许返回步骤编辑，手机号变化时强制重新验证。
 - 正式商家实体增加来源追溯：
   - `providers.source_application_id`
   - `material_shops.source_application_id`
@@ -79,6 +83,7 @@
   - 公司主体 / 主材商的法人（经营者）资料展示
 - 试运营 SOP 与数据治理补齐：
   - 迁移权威目录固定为 `server/migrations/`
+  - 认证/短信审计/商家入驻统一补洞迁移固定为 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`
   - 固定验证码模式用于联调与 E2E
   - 测试手机号使用 `19` 前缀随机号并要求场景级隔离
 

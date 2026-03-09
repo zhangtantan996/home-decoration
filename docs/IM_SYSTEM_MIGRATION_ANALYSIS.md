@@ -1,3 +1,5 @@
+仅反映当时路径，不代表当前正式发布规范。当前正式业务 schema 发布目录以 `server/migrations/` 为准；专题脚本仍按各自文档执行。
+
 # 家装平台聊天功能全面分析报告
 
 **文档版本**: 1.0
@@ -246,7 +248,7 @@ tinodeDSN := "dbname=tinode"
 TinodeDB, _ = gorm.Open(postgres.Open(tinodeDSN), &gorm.Config{})
 ```
 
-**SQL 迁移脚本**: `server/scripts/migrations/001_create_tinode_tables.sql`
+**SQL 迁移脚本**: `server/scripts/topics/tinode/001_create_tinode_tables.sql`
 
 **双数据库架构**:
 
@@ -756,7 +758,7 @@ INSERT INTO messages (createdAt, updatedAt, seqid, topic, ...)
 **迁移脚本** (需要实现):
 
 ```go
-// server/scripts/migrations/migrate_chat_to_tinode.go
+// 历史示例脚本说明见 server/scripts/topics/tinode/README.md
 package main
 
 import (
@@ -1211,7 +1213,7 @@ func getIMProvider(userID uint64) string {
    ```bash
    # 执行迁移
    cd server
-   go run scripts/migrations/migrate_chat_to_tinode.go
+   查看 server/scripts/topics/tinode/README.md 中的历史说明与现有专题脚本
 
    # 验证数据
    psql -d tinode -c "SELECT COUNT(*) FROM messages;"
@@ -1444,7 +1446,7 @@ curl http://localhost:8080/api/v1/tinode/userid/1
 
 #### 5. 编写历史消息迁移脚本
 
-**文件**: `server/scripts/migrations/migrate_chat_to_tinode.go`
+**文件说明**: `server/scripts/topics/tinode/README.md`（历史专题脚本入口说明）
 
 ```go
 package main
@@ -1804,7 +1806,7 @@ curl -X POST https://your-api.com/notify \
 | `server/internal/tinode/auth_adapter.go` | Tinode 认证 | P0 |
 | `server/internal/repository/tinode_db.go` | Tinode 数据库 | P0 |
 | `server/internal/utils/tencentim/client.go` | 腾讯云 IM 客户端 | P1（备选） |
-| `server/scripts/migrations/001_create_tinode_tables.sql` | Tinode 表结构 | P0 |
+| `server/scripts/topics/tinode/001_create_tinode_tables.sql` | Tinode 表结构 | P0 |
 
 #### 前端文件
 

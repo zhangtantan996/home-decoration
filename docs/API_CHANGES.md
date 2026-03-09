@@ -1,5 +1,29 @@
 # API 接口变更清单
 
+## 2026-03-09 入驻验证码前置校验统一（v1.6.x）
+
+### 变更范围
+- `POST /api/v1/merchant/onboarding/verify-phone`
+- `POST /api/v1/merchant/apply`
+- `POST /api/v1/material-shop/apply`
+- `POST /api/v1/merchant/apply/:id/resubmit`
+- `POST /api/v1/material-shop/apply/:id/resubmit`
+
+### 行为变更
+- 首次入驻与驳回重提统一为“第一步真实验证码校验”。
+- 第一步校验成功后返回：
+  - `verificationToken`
+  - `verifiedPhone`
+  - `expiresAt`
+- 驳回重提模式下，`verify-phone` 校验成功后可同时返回 `form` 回填数据。
+- `apply / resubmit` 主路径改为优先校验 `verificationToken`；兼容窗口内仍允许 `code` 兜底，但不允许无凭据提交。
+
+### 前端交互统一
+- 用户点击第一步“下一步”时立即校验验证码。
+- 验证码错误时停留在当前步骤内直接修改，不再等到最终提交时才报错。
+- 手机号未变化时，返回前序步骤不要求重复验证；手机号变化时自动清空已验证状态。
+
+
 ## 2026-03-08 驳回重提详情回填安全修复（P0/P1）
 
 ### 变更范围
@@ -17,6 +41,30 @@
 - 前端重提回填必须先调用新的 POST 详情接口，再使用返回的 `resubmitToken` 提交。
 - 旧的匿名详情路径不再继续使用，避免按申请 ID 直接读取敏感回填信息。
 
+## 2026-03-09 认证/入驻 schema 统一修复（v1.6.4）
+
+### 背景
+- 部分环境存在认证链路与商家入驻链路 schema 漂移：`users.public_id/last_login_*` 缺失、`sms_audit_logs` 缺失、历史入驻字段未补齐。
+- 旧 dump 文件可能把过期 schema 再导回环境，导致本地与生产重复出现 `column does not exist`。
+
+### 变更范围
+- 新增统一幂等迁移脚本：
+  - `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`
+- 健康检查新增：
+  - `checks.userAuthSchema`
+  - `checks.merchantOnboardingSchema`
+- 生产环境新增关键 schema 启动前预检，缺失时 fail-fast。
+
+### 修复内容
+- 补齐 `users.public_id`、`users.last_login_at`、`users.last_login_ip`。
+- 补齐 `sms_audit_logs` 及索引。
+- 补齐商家入驻与主材商入驻关键字段/表，并统一纳入 `server/migrations/`。
+- 认证/入驻链路在 schema mismatch 时返回 `503`，不再误报为 `400`。
+
+### 执行建议
+- 本地/测试/预发/生产统一优先执行 `v1.6.4`（幂等，可重复执行）。
+- 执行后重启 API，并检查 `/api/v1/health` 中 `smsAuditLog/userAuthSchema/merchantOnboardingSchema` 均为 `ok`。
+
 ### 一期试运营补充
 - 正式商家实体新增来源追溯字段：`providers.source_application_id`、`material_shops.source_application_id`。
 - 审核详情与商家资料接口补充 `sourceApplicationId` / `merchantKind`，支持一期开通后的回查与回滚定位。
@@ -29,9 +77,7 @@
 - 原因不是接口降级，而是数据库结构滞后于代码契约。
 
 ### 变更范围
-- 新增幂等迁移脚本（双目录同步）：
-  - `server/scripts/migrations/v1.5.3_reconcile_unified_onboarding_schema.sql`
-  - `server/migrations/v1.5.3_reconcile_unified_onboarding_schema.sql`
+- 当时新增了 `v1.5.3` 作为入驻补洞迁移；当前正式发布请统一使用 `server/migrations/`，历史脚本路径仅保留追溯用途。
 
 ### 修复内容
 - 补齐 `merchant_applications` 扩展字段（`role/entity_type/avatar/work_types/highlight_tags/pricing_json/graduate_school/design_philosophy/legal_*`）。

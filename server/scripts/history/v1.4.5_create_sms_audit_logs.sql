@@ -1,3 +1,6 @@
+-- LEGACY NOTICE: 历史版本化 schema 脚本，保留用于追溯，不再作为正式发布唯一依据。
+-- sms_audit_logs 缺失时，当前正式补洞入口：server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql
+
 -- Create SMS audit log table for send-code traceability and anti-fraud forensics.
 CREATE TABLE IF NOT EXISTS sms_audit_logs (
     id BIGSERIAL PRIMARY KEY,

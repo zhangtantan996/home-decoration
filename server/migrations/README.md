@@ -57,3 +57,5 @@ migrate -database "postgres://postgres:123456@localhost:5432/home_decoration?ssl
 - ✅ 如需修正，创建新的迁移文件
 - ✅ 所有迁移应支持回滚（提供down语句）
 - ✅ 迁移前备份数据库
+- ✅ 认证 / 短信审计 / 商家入驻历史环境补洞统一执行 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`
+- ⚠️ `public.sql` / `local_backup.sql` 仅为历史快照，不是 schema source of truth
