@@ -102,6 +102,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!(target instanceof HTMLElement)) {
                 return;
             }
+            if (target.closest('.lang-btn')) {
+                return;
+            }
             if (target.closest('a') || target === navLinks) {
                 closeMenu();
             }
