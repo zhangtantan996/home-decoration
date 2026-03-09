@@ -6,18 +6,82 @@ interface MerchantApplicationDetailProps {
     details: MerchantApplicationDetails & Partial<AdminMerchantApplicationDetail>;
 }
 
-const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ details }) => {
-    const roleMap: Record<string, string> = {
-        designer: '设计师',
-        company: '装修公司',
-        foreman: '工长',
-    };
+const roleMap: Record<string, string> = {
+    designer: '设计师',
+    company: '装修公司',
+    foreman: '工长',
+};
 
-    const entityTypeMap: Record<string, string> = {
-        personal: '个人',
-        company: '公司',
-        studio: '工作室',
-    };
+const entityTypeMap: Record<string, string> = {
+    personal: '个人',
+    company: '公司',
+    studio: '工作室',
+};
+
+const applicantTypeMap: Record<string, string> = {
+    personal: '个人入驻',
+    studio: '工作室入驻',
+    company: '企业入驻',
+    foreman: '工长入驻',
+};
+
+const merchantKindMap: Record<string, string> = {
+    provider: '服务商',
+    material_shop: '主材商',
+};
+
+const pricingLabelMap: Record<string, string> = {
+    flat: '平层报价',
+    duplex: '复式报价',
+    other: '其他报价',
+    perSqm: '施工报价',
+    fullPackage: '全包报价',
+    halfPackage: '半包报价',
+};
+
+const pricingOrder = ['flat', 'duplex', 'other', 'perSqm', 'fullPackage', 'halfPackage'] as const;
+
+const formatText = (value?: string | number | null) => {
+    if (value == null) return '-';
+    const normalized = String(value).trim();
+    return normalized || '-';
+};
+
+const renderTags = (values: string[] | undefined, color: string) => {
+    if (!values?.length) {
+        return '-';
+    }
+
+    return values.map((value) => (
+        <Tag key={value} color={color}>{value}</Tag>
+    ));
+};
+
+const renderPricing = (pricing?: Record<string, number>) => {
+    if (!pricing || Object.keys(pricing).length === 0) {
+        return '-';
+    }
+
+    const orderedEntries = pricingOrder
+        .filter((key) => pricing[key] != null)
+        .map((key) => [key, pricing[key]] as const);
+    const extraEntries = Object.entries(pricing).filter(([key]) => !pricingOrder.includes(key as typeof pricingOrder[number]));
+    const entries = [...orderedEntries, ...extraEntries];
+
+    return (
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            {entries.map(([key, value]) => (
+                <div key={key}>{`${pricingLabelMap[key] || key}: ¥${value}`}</div>
+            ))}
+        </Space>
+    );
+};
+
+const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ details }) => {
+    const showMerchantKind = Boolean(details.merchantKind);
+    const showSourceApplicationId = Boolean(
+        details.sourceApplicationId && details.sourceApplicationId !== details.id,
+    );
 
     const tabItems = [
         {
@@ -25,22 +89,26 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             label: '基础信息',
             children: (
                 <Descriptions bordered column={2} size="small">
-                    <Descriptions.Item label="手机号">{details.phone}</Descriptions.Item>
+                    <Descriptions.Item label="手机号">{formatText(details.phone)}</Descriptions.Item>
                     <Descriptions.Item label="角色类型">
-                        <Tag color="blue">{roleMap[details.role] || details.role}</Tag>
+                        <Tag color="blue">{roleMap[details.role] || formatText(details.role)}</Tag>
                     </Descriptions.Item>
                     <Descriptions.Item label="主体类型">
-                        {entityTypeMap[details.entityType] || details.entityType}
+                        {entityTypeMap[details.entityType] || formatText(details.entityType)}
                     </Descriptions.Item>
                     <Descriptions.Item label="申请人类型">
-                        {details.applicantType}
+                        {applicantTypeMap[details.applicantType] || formatText(details.applicantType)}
                     </Descriptions.Item>
-                    <Descriptions.Item label="商家体系">
-                        {details.merchantKind || 'provider'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="来源申请单">
-                        {details.sourceApplicationId || ('id' in details ? details.id : '-')}
-                    </Descriptions.Item>
+                    {showMerchantKind && (
+                        <Descriptions.Item label="商家体系">
+                            {merchantKindMap[details.merchantKind as string] || formatText(details.merchantKind)}
+                        </Descriptions.Item>
+                    )}
+                    {showSourceApplicationId && (
+                        <Descriptions.Item label="来源申请单">
+                            {details.sourceApplicationId}
+                        </Descriptions.Item>
+                    )}
                 </Descriptions>
             ),
         },
@@ -50,8 +118,12 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             children: (
                 <Space direction="vertical" style={{ width: '100%' }} size="large">
                     <Descriptions bordered column={1} size="small">
-                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者姓名' : '真实姓名'}>{details.realName}</Descriptions.Item>
-                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者身份证号' : '身份证号'}>{details.idCardNo}</Descriptions.Item>
+                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者姓名' : '真实姓名'}>
+                            {formatText(details.realName)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者身份证号' : '身份证号'}>
+                            {formatText(details.idCardNo)}
+                        </Descriptions.Item>
                     </Descriptions>
 
                     <Card title="身份证照片" size="small">
@@ -79,7 +151,6 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
         },
     ];
 
-    // 公司信息 Tab（仅公司主体显示）
     if (details.entityType === 'company' && details.companyName) {
         tabItems.push({
             key: 'company',
@@ -87,10 +158,10 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             children: (
                 <Space direction="vertical" style={{ width: '100%' }} size="large">
                     <Descriptions bordered column={2} size="small">
-                        <Descriptions.Item label="公司名称" span={2}>{details.companyName}</Descriptions.Item>
-                        <Descriptions.Item label="营业执照号">{details.licenseNo}</Descriptions.Item>
-                        <Descriptions.Item label="团队规模">{details.teamSize} 人</Descriptions.Item>
-                        <Descriptions.Item label="办公地址" span={2}>{details.officeAddress}</Descriptions.Item>
+                        <Descriptions.Item label="公司名称" span={2}>{formatText(details.companyName)}</Descriptions.Item>
+                        <Descriptions.Item label="营业执照号">{formatText(details.licenseNo)}</Descriptions.Item>
+                        <Descriptions.Item label="团队规模">{details.teamSize ? `${details.teamSize} 人` : '-'}</Descriptions.Item>
+                        <Descriptions.Item label="办公地址" span={2}>{formatText(details.officeAddress)}</Descriptions.Item>
                     </Descriptions>
 
                     {details.licenseImage && (
@@ -107,72 +178,70 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
         });
     }
 
-    // 工长信息 Tab（仅工长显示）
     if (details.role === 'foreman') {
         tabItems.push({
             key: 'foreman',
             label: '工长信息',
             children: (
                 <Descriptions bordered column={2} size="small">
-                    <Descriptions.Item label="从业年限">{details.yearsExperience} 年</Descriptions.Item>
+                    <Descriptions.Item label="从业年限">{details.yearsExperience ? `${details.yearsExperience} 年` : '-'}</Descriptions.Item>
                     <Descriptions.Item label="工种类型">
-                        {details.workTypes?.map((type) => (
-                            <Tag key={type} color="orange">{type}</Tag>
-                        ))}
+                        {renderTags(details.workTypes, 'orange')}
                     </Descriptions.Item>
                 </Descriptions>
             ),
         });
     }
 
-    // 服务信息 Tab
+    const serviceItems = [
+        <Descriptions.Item key="serviceArea" label="服务区域">
+            {renderTags(details.serviceArea, 'green')}
+        </Descriptions.Item>,
+        <Descriptions.Item key="styles" label="擅长风格">
+            {renderTags(details.styles, 'purple')}
+        </Descriptions.Item>,
+        <Descriptions.Item key="highlightTags" label="亮点标签">
+            {renderTags(details.highlightTags, 'cyan')}
+        </Descriptions.Item>,
+        <Descriptions.Item key="pricing" label="报价信息">
+            {renderPricing(details.pricing)}
+        </Descriptions.Item>,
+    ];
+
+    if (details.introduction && details.introduction.trim()) {
+        serviceItems.push(
+            <Descriptions.Item key="introduction" label="个人/公司简介">
+                <div style={{ whiteSpace: 'pre-wrap' }}>{details.introduction.trim()}</div>
+            </Descriptions.Item>,
+        );
+    }
+
+    if (details.graduateSchool && details.graduateSchool.trim()) {
+        serviceItems.push(
+            <Descriptions.Item key="graduateSchool" label="毕业院校">
+                {details.graduateSchool.trim()}
+            </Descriptions.Item>,
+        );
+    }
+
+    if (details.designPhilosophy && details.designPhilosophy.trim()) {
+        serviceItems.push(
+            <Descriptions.Item key="designPhilosophy" label="设计理念">
+                <div style={{ whiteSpace: 'pre-wrap' }}>{details.designPhilosophy.trim()}</div>
+            </Descriptions.Item>,
+        );
+    }
+
     tabItems.push({
         key: 'service',
         label: '服务信息',
         children: (
             <Descriptions bordered column={1} size="small">
-                <Descriptions.Item label="服务区域">
-                    {details.serviceArea?.map((area) => (
-                        <Tag key={area} color="green">{area}</Tag>
-                    ))}
-                </Descriptions.Item>
-                <Descriptions.Item label="擅长风格">
-                    {details.styles?.map((style) => (
-                        <Tag key={style} color="purple">{style}</Tag>
-                    ))}
-                </Descriptions.Item>
-                <Descriptions.Item label="亮点标签">
-                    {details.highlightTags?.map((tag) => (
-                        <Tag key={tag} color="cyan">{tag}</Tag>
-                    ))}
-                </Descriptions.Item>
-                {details.pricing && Object.keys(details.pricing).length > 0 && (
-                    <Descriptions.Item label="报价信息">
-                        {Object.entries(details.pricing).map(([key, value]) => (
-                            <div key={key}>
-                                {key}: ¥{value}
-                            </div>
-                        ))}
-                    </Descriptions.Item>
-                )}
-                {details.introduction && (
-                    <Descriptions.Item label="个人/公司简介">
-                        <div style={{ whiteSpace: 'pre-wrap' }}>{details.introduction}</div>
-                    </Descriptions.Item>
-                )}
-                {details.graduateSchool && (
-                    <Descriptions.Item label="毕业院校">{details.graduateSchool}</Descriptions.Item>
-                )}
-                {details.designPhilosophy && (
-                    <Descriptions.Item label="设计理念">
-                        <div style={{ whiteSpace: 'pre-wrap' }}>{details.designPhilosophy}</div>
-                    </Descriptions.Item>
-                )}
+                {serviceItems}
             </Descriptions>
         ),
     });
 
-    // 作品案例 Tab
     if (details.portfolioCases && details.portfolioCases.length > 0) {
         tabItems.push({
             key: 'portfolio',
@@ -180,10 +249,18 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             children: (
                 <Space direction="vertical" style={{ width: '100%' }} size="large">
                     {details.portfolioCases.map((caseItem, index) => (
-                        <Card key={index} title={caseItem.title} size="small">
+                        <Card key={index} title={`案例 ${index + 1}`} size="small">
                             <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-                                <Descriptions.Item label="风格">{caseItem.style}</Descriptions.Item>
-                                <Descriptions.Item label="面积">{caseItem.area} m²</Descriptions.Item>
+                                <Descriptions.Item label="标题" span={2}>{formatText(caseItem.title)}</Descriptions.Item>
+                                <Descriptions.Item label="风格">{formatText(caseItem.style)}</Descriptions.Item>
+                                <Descriptions.Item label="面积">
+                                    {caseItem.area ? `${caseItem.area} m²` : '-'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="案例说明" span={2}>
+                                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                                        {caseItem.description && caseItem.description.trim() ? caseItem.description.trim() : '-'}
+                                    </div>
+                                </Descriptions.Item>
                             </Descriptions>
 
                             <div style={{ marginTop: 16 }}>

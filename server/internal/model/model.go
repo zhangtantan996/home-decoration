@@ -504,11 +504,15 @@ type MerchantApplication struct {
 	IDCardBack  string `json:"idCardBack" gorm:"size:500"`  // 身份证反面
 
 	// 工作室/公司信息
-	CompanyName   string `json:"companyName" gorm:"size:100"`
-	LicenseNo     string `json:"licenseNo" gorm:"size:50"`     // 营业执照号
-	LicenseImage  string `json:"licenseImage" gorm:"size:500"` // 营业执照照片
-	TeamSize      int    `json:"teamSize" gorm:"default:1"`
-	OfficeAddress string `json:"officeAddress" gorm:"size:200"`
+	CompanyName            string `json:"companyName" gorm:"size:100"`
+	LicenseNo              string `json:"licenseNo" gorm:"size:50"`     // 营业执照号
+	LicenseImage           string `json:"licenseImage" gorm:"size:500"` // 营业执照照片
+	LegalPersonName        string `json:"legalPersonName" gorm:"size:50"`
+	LegalPersonIDCardNo    string `json:"legalPersonIdCardNo" gorm:"size:100"`
+	LegalPersonIDCardFront string `json:"legalPersonIdCardFront" gorm:"size:500"`
+	LegalPersonIDCardBack  string `json:"legalPersonIdCardBack" gorm:"size:500"`
+	TeamSize               int    `json:"teamSize" gorm:"default:1"`
+	OfficeAddress          string `json:"officeAddress" gorm:"size:200"`
 	// 工长扩展信息
 	YearsExperience int    `json:"yearsExperience" gorm:"default:0"`
 	WorkTypes       string `json:"workTypes" gorm:"type:text;default:'[]'"` // JSON数组：工种类型

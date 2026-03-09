@@ -583,3 +583,85 @@ func TestAdminApproveProviderApplication_FreezePreviousMaterialShop(t *testing.T
 		t.Fatalf("unexpected fallback style: %s", cases[0].Style)
 	}
 }
+
+func TestMerchantVerifyOnboardingPhone_ApplyMode(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, onboardingVerifyPhoneInput{
+		Phone:        "13800138000",
+		Code:         "123456",
+		MerchantKind: merchantIdentityTypeProvider,
+		Mode:         merchantVerificationModeApply,
+	})
+	MerchantVerifyOnboardingPhone(c)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			VerificationToken string `json:"verificationToken"`
+			VerifiedPhone     string `json:"verifiedPhone"`
+			OK                bool   `json:"ok"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp failed: %v", err)
+	}
+	if resp.Code != 0 || !resp.Data.OK || strings.TrimSpace(resp.Data.VerificationToken) == "" || resp.Data.VerifiedPhone != "13800138000" {
+		t.Fatalf("unexpected response: %+v body=%s", resp, w.Body.String())
+	}
+}
+
+func TestMerchantVerifyOnboardingPhone_ResubmitModeReturnsForm(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	portfolio, _ := json.Marshal([]PortfolioCaseInput{{Title: "案例1", Description: "说明", Images: []string{"/a.jpg"}}})
+	serviceArea, _ := json.Marshal([]string{"610113"})
+	app := model.MerchantApplication{
+		Phone:          "13800138000",
+		ApplicantType:  "personal",
+		Role:           "designer",
+		EntityType:     "personal",
+		RealName:       "张三",
+		Avatar:         "/avatar.jpg",
+		IDCardNo:       "11010519491231002X",
+		IDCardFront:    "/front.jpg",
+		IDCardBack:     "/back.jpg",
+		ServiceArea:    string(serviceArea),
+		PortfolioCases: string(portfolio),
+		Status:         2,
+		RejectReason:   "资料不清晰",
+	}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, onboardingVerifyPhoneInput{
+		Phone:         app.Phone,
+		Code:          "123456",
+		MerchantKind:  merchantIdentityTypeProvider,
+		Mode:          merchantVerificationModeResubmit,
+		ApplicationID: app.ID,
+	})
+	MerchantVerifyOnboardingPhone(c)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			VerificationToken string `json:"verificationToken"`
+			RejectReason      string `json:"rejectReason"`
+			Form              struct {
+				Phone string `json:"phone"`
+				Role  string `json:"role"`
+			} `json:"form"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp failed: %v", err)
+	}
+	if resp.Code != 0 || strings.TrimSpace(resp.Data.VerificationToken) == "" || resp.Data.Form.Phone != app.Phone || resp.Data.Form.Role != app.Role || resp.Data.RejectReason != app.RejectReason {
+		t.Fatalf("unexpected response: %+v body=%s", resp, w.Body.String())
+	}
+}

@@ -15,18 +15,21 @@ import (
 )
 
 const (
-	merchantNextActionApply      = "APPLY"
-	merchantNextActionPending    = "PENDING"
-	merchantNextActionResubmit   = "RESUBMIT"
-	merchantNextActionLogin      = "LOGIN"
-	merchantNextActionReapply    = "REAPPLY"
-	merchantIdentityTypeProvider = "provider"
-	merchantIdentityTypeMaterial = "material_shop"
-	merchantIdentityStatusActive = int8(1)
-	merchantIdentityStatusFrozen = int8(3)
-	merchantProviderStatusActive = int8(1)
-	merchantProviderStatusFrozen = int8(0)
-	merchantResubmitTokenPurpose = "merchant_resubmit"
+	merchantNextActionApply          = "APPLY"
+	merchantNextActionPending        = "PENDING"
+	merchantNextActionResubmit       = "RESUBMIT"
+	merchantNextActionLogin          = "LOGIN"
+	merchantNextActionReapply        = "REAPPLY"
+	merchantIdentityTypeProvider     = "provider"
+	merchantIdentityTypeMaterial     = "material_shop"
+	merchantIdentityStatusActive     = int8(1)
+	merchantIdentityStatusFrozen     = int8(3)
+	merchantProviderStatusActive     = int8(1)
+	merchantProviderStatusFrozen     = int8(0)
+	merchantVerificationTokenPurpose = "merchant_phone_verification"
+	merchantVerificationModeApply    = "apply"
+	merchantVerificationModeResubmit = "resubmit"
+	merchantResubmitTokenPurpose     = "merchant_resubmit"
 )
 
 type resubmitDetailRequestInput struct {
@@ -34,19 +37,32 @@ type resubmitDetailRequestInput struct {
 	Code  string `json:"code" binding:"required"`
 }
 
-func issueResubmitToken(kind string, applicationID uint64, phone string) (string, error) {
+type onboardingVerifyPhoneInput struct {
+	Phone         string `json:"phone" binding:"required"`
+	Code          string `json:"code" binding:"required"`
+	MerchantKind  string `json:"merchantKind" binding:"required"`
+	Mode          string `json:"mode" binding:"required"`
+	ApplicationID uint64 `json:"applicationId"`
+}
+
+func issueVerificationToken(mode, kind string, applicationID uint64, phone string, ttl time.Duration) (string, error) {
 	claims := jwt.MapClaims{
 		"application_id": applicationID,
 		"phone":          strings.TrimSpace(phone),
 		"merchant_kind":  strings.TrimSpace(kind),
-		"purpose":        merchantResubmitTokenPurpose,
-		"exp":            time.Now().Add(15 * time.Minute).Unix(),
+		"purpose":        merchantVerificationTokenPurpose,
+		"mode":           strings.TrimSpace(mode),
+		"exp":            time.Now().Add(ttl).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(config.GetConfig().JWT.Secret))
 }
 
-func verifyResubmitToken(kind string, applicationID uint64, phone, tokenString string) error {
+func issueResubmitToken(kind string, applicationID uint64, phone string) (string, error) {
+	return issueVerificationToken(merchantVerificationModeResubmit, kind, applicationID, phone, 30*time.Minute)
+}
+
+func verifyVerificationToken(mode, kind string, applicationID uint64, phone, tokenString string) error {
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
 		return fmt.Errorf("缺少重提授权凭证")
@@ -67,8 +83,12 @@ func verifyResubmitToken(kind string, applicationID uint64, phone, tokenString s
 		return fmt.Errorf("重提授权凭证无效")
 	}
 	purpose, _ := claims["purpose"].(string)
-	if strings.TrimSpace(purpose) != merchantResubmitTokenPurpose {
+	if strings.TrimSpace(purpose) != merchantVerificationTokenPurpose {
 		return fmt.Errorf("重提授权凭证用途无效")
+	}
+	modeValue, _ := claims["mode"].(string)
+	if strings.TrimSpace(modeValue) != strings.TrimSpace(mode) {
+		return fmt.Errorf("手机号验证凭证模式不匹配")
 	}
 	merchantKind, _ := claims["merchant_kind"].(string)
 	if strings.TrimSpace(merchantKind) != strings.TrimSpace(kind) {
@@ -86,14 +106,26 @@ func verifyResubmitToken(kind string, applicationID uint64, phone, tokenString s
 	return nil
 }
 
-func authorizeResubmit(phone, tokenString string, applicationID uint64, kind string, code string) error {
-	if strings.TrimSpace(tokenString) != "" {
-		return verifyResubmitToken(kind, applicationID, phone, tokenString)
+func authorizeOnboarding(phone, verificationToken string, applicationID uint64, kind, mode, code string) error {
+	if strings.TrimSpace(verificationToken) != "" {
+		return verifyVerificationToken(mode, kind, applicationID, phone, verificationToken)
 	}
 	if strings.TrimSpace(code) == "" {
-		return fmt.Errorf("缺少重提授权信息")
+		if mode == merchantVerificationModeResubmit {
+			return fmt.Errorf("缺少重提授权信息")
+		}
+		return fmt.Errorf("缺少手机号验证信息")
 	}
 	return service.VerifySMSCode(strings.TrimSpace(phone), service.SMSPurposeIdentityApply, strings.TrimSpace(code))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type merchantActiveIdentity struct {

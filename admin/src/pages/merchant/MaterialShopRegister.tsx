@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRightOutlined, CheckOutlined, DeleteOutlined, MinusCircleOutlined, PlusOutlined, SafetyOutlined } from '@ant-design/icons';
 import {
     Alert,
@@ -30,7 +30,6 @@ import {
     merchantUploadApi,
     onboardingValidationApi,
     type MaterialShopApplyDetailData,
-    type MaterialShopApplyDetailForResubmitData,
     type MaterialShopApplyPayload,
 } from '../../services/merchantApi';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
@@ -39,6 +38,18 @@ import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 const { Title, Text } = Typography;
 
 const DRAFT_KEY = 'material_shop_register_draft';
+const VERIFICATION_STORAGE_KEY = 'material_shop_register_phone_verification';
+const VERIFICATION_EXPIRE_MS = 30 * 60 * 1000;
+
+interface PhoneVerificationState {
+    phoneVerified: boolean;
+    verifiedPhone: string;
+    verificationToken: string;
+    verificationExpiresAt: number;
+    mode: 'apply' | 'resubmit';
+    merchantKind: 'provider' | 'material_shop';
+    applicationId?: number;
+}
 
 interface ParamEntry {
     id: string;
@@ -84,7 +95,15 @@ const MaterialShopRegister: React.FC = () => {
     const [previewImage, setPreviewImage] = useState('');
     const [resubmitLoading, setResubmitLoading] = useState(false);
     const [resubmitPrefillFailed, setResubmitPrefillFailed] = useState(false);
-    const [resubmitToken, setResubmitToken] = useState('');
+    const [phoneVerified, setPhoneVerified] = useState(false);
+    const [verifiedPhone, setVerifiedPhone] = useState('');
+    const [verificationToken, setVerificationToken] = useState('');
+    const [verificationExpiresAt, setVerificationExpiresAt] = useState<number | null>(null);
+    const [verificationContext, setVerificationContext] = useState<Pick<PhoneVerificationState, 'mode' | 'merchantKind' | 'applicationId'>>({
+        mode: 'apply',
+        merchantKind: 'material_shop',
+        applicationId: undefined,
+    });
     const timerRef = useRef<number | null>(null);
 
     const phoneFromUrl = searchParams.get('phone') || '';
@@ -96,9 +115,18 @@ const MaterialShopRegister: React.FC = () => {
     }, [searchParams]);
 
     const steps = useMemo(() => ([
+        { title: '手机号验证' },
         { title: '基础信息' },
         { title: '商品信息' },
     ]), []);
+
+    const draftStorageKey = useMemo(() => (
+        resubmitId ? `${DRAFT_KEY}:resubmit:${resubmitId}` : DRAFT_KEY
+    ), [resubmitId]);
+
+    const currentVerificationMode = resubmitId ? 'resubmit' as const : 'apply' as const;
+    const currentVerificationApplicationId = resubmitId ? Number(resubmitId) : undefined;
+    const currentVerificationMerchantKind = 'material_shop' as const;
 
     const validateLicenseRemote = async (licenseNo: string, companyName?: string) => {
         const normalized = normalizeLicenseNo(licenseNo);
@@ -242,12 +270,15 @@ const MaterialShopRegister: React.FC = () => {
 
 
     useEffect(() => {
-        const savedDraft = sessionStorage.getItem(DRAFT_KEY);
+        const savedDraft = sessionStorage.getItem(draftStorageKey);
         if (savedDraft) {
             try {
                 const parsed = JSON.parse(savedDraft);
                 if (parsed.formValues) {
                     form.setFieldsValue(parsed.formValues);
+                }
+                if (typeof parsed.currentStep === 'number' && parsed.currentStep >= 0 && parsed.currentStep < steps.length) {
+                    setCurrentStep(parsed.currentStep);
                 }
                 if (Array.isArray(parsed.products) && parsed.products.length > 0) {
                     setProducts(parsed.products);
@@ -256,7 +287,7 @@ const MaterialShopRegister: React.FC = () => {
                 // Ignore invalid draft
             }
         }
-    }, [form]);
+    }, [draftStorageKey, form, steps.length]);
 
     useEffect(() => {
         return () => {
@@ -265,6 +296,42 @@ const MaterialShopRegister: React.FC = () => {
             }
         };
     }, []);
+
+    useEffect(() => {
+        const stored = sessionStorage.getItem(VERIFICATION_STORAGE_KEY);
+        if (!stored) {
+            return;
+        }
+        try {
+            const parsed = JSON.parse(stored) as PhoneVerificationState;
+            const currentPhone = String(form.getFieldValue('phone') || phoneFromUrl || '').trim();
+            const hasResubmitDraft = !resubmitId || Boolean(sessionStorage.getItem(draftStorageKey));
+            if (
+                hasResubmitDraft
+                && parsed.phoneVerified
+                && parsed.verifiedPhone === currentPhone
+                && parsed.verificationExpiresAt > Date.now()
+                && parsed.mode === currentVerificationMode
+                && parsed.merchantKind === currentVerificationMerchantKind
+                && ((currentVerificationApplicationId ?? 0) === (parsed.applicationId ?? 0))
+            ) {
+                setPhoneVerified(true);
+                setVerifiedPhone(parsed.verifiedPhone);
+                setVerificationToken(parsed.verificationToken);
+                setVerificationExpiresAt(parsed.verificationExpiresAt);
+                setVerificationContext({ mode: parsed.mode, merchantKind: parsed.merchantKind, applicationId: parsed.applicationId });
+                return;
+            }
+        } catch {
+            // ignore invalid cache
+        }
+        setPhoneVerified(false);
+        setVerifiedPhone('');
+        setVerificationToken('');
+        setVerificationExpiresAt(null);
+        setVerificationContext({ mode: currentVerificationMode, merchantKind: currentVerificationMerchantKind, applicationId: currentVerificationApplicationId });
+        sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
+    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, draftStorageKey, form, phoneFromUrl, resubmitId]);
 
     const hydrateResubmitDetail = (detail: MaterialShopApplyDetailData) => {
         form.setFieldsValue({
@@ -298,28 +365,6 @@ const MaterialShopRegister: React.FC = () => {
                 })),
                 images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
             })));
-        }
-    };
-
-    const fetchResubmitDetail = async (phone: string, code: string) => {
-        if (!resubmitId) {
-            return false;
-        }
-
-        setResubmitLoading(true);
-        setResubmitPrefillFailed(false);
-        try {
-            const detail: MaterialShopApplyDetailForResubmitData = await materialShopApplyApi.detail(Number(resubmitId), { phone, code });
-            hydrateResubmitDetail(detail.form);
-            setResubmitToken(detail.resubmitToken || '');
-            message.success('已验证手机号并回填原申请资料，请继续核对后重新提交');
-            return true;
-        } catch (error) {
-            setResubmitPrefillFailed(true);
-            message.error(getErrorMessage(error, '原申请资料回填失败，请检查手机号与验证码'));
-            return false;
-        } finally {
-            setResubmitLoading(false);
         }
     };
 
@@ -439,21 +484,20 @@ const MaterialShopRegister: React.FC = () => {
     const handleNext = async () => {
         try {
             if (currentStep === 0) {
-                if (resubmitId && !resubmitToken) {
-                    const authValues = await form.validateFields(['phone', 'code']);
-                    const ok = await fetchResubmitDetail(String(authValues.phone || '').trim(), String(authValues.code || '').trim());
+                const authValues = await form.validateFields(['phone', 'code']);
+                const phone = String(authValues.phone || '').trim();
+                const code = String(authValues.code || '').trim();
+                if (!hasValidVerification(phone)) {
+                    const ok = await verifyPhoneAndMaybePrefill(phone, code);
                     if (!ok) {
                         return;
                     }
-                    if (showRedirectAlert) {
-                        setShowRedirectAlert(false);
-                    }
-                    setCurrentStep((prev) => prev + 1);
-                    return;
                 }
+                if (showRedirectAlert) {
+                    setShowRedirectAlert(false);
+                }
+            } else if (currentStep === 1) {
                 await form.validateFields([
-                    'phone',
-                    'code',
                     'shopName',
                     'companyName',
                     'businessLicenseNo',
@@ -466,9 +510,6 @@ const MaterialShopRegister: React.FC = () => {
                     'contactPhone',
                     'address',
                 ]);
-                if (showRedirectAlert) {
-                    setShowRedirectAlert(false);
-                }
             }
             setCurrentStep((prev) => prev + 1);
         } catch {
@@ -508,14 +549,123 @@ const MaterialShopRegister: React.FC = () => {
         });
     };
 
-    const saveDraft = () => {
-        const draft = {
+    const persistDraftSnapshot = useCallback((draft: {
+        currentStep: number;
+        formValues: Record<string, unknown>;
+        products: MaterialProductForm[];
+    }) => {
+        sessionStorage.setItem(draftStorageKey, JSON.stringify(draft));
+    }, [draftStorageKey]);
+
+    const saveDraft = (step = currentStep) => {
+        persistDraftSnapshot({
+            currentStep: step,
             formValues: form.getFieldsValue(),
             products,
-        };
-        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        });
         message.success('草稿已保存');
     };
+
+    const clearPhoneVerification = useCallback(() => {
+        setPhoneVerified(false);
+        setVerifiedPhone('');
+        setVerificationToken('');
+        setVerificationExpiresAt(null);
+        setVerificationContext({ mode: currentVerificationMode, merchantKind: currentVerificationMerchantKind, applicationId: currentVerificationApplicationId });
+        sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
+    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode]);
+
+    const persistPhoneVerification = useCallback((state: PhoneVerificationState) => {
+        setPhoneVerified(state.phoneVerified);
+        setVerifiedPhone(state.verifiedPhone);
+        setVerificationToken(state.verificationToken);
+        setVerificationExpiresAt(state.verificationExpiresAt);
+        setVerificationContext({ mode: state.mode, merchantKind: state.merchantKind, applicationId: state.applicationId });
+        sessionStorage.setItem(VERIFICATION_STORAGE_KEY, JSON.stringify(state));
+    }, []);
+
+    const hasValidVerification = useCallback((phone: string) => {
+        const normalizedPhone = String(phone || '').trim();
+        return phoneVerified
+            && verificationToken !== ''
+            && verifiedPhone === normalizedPhone
+            && verificationExpiresAt !== null
+            && verificationExpiresAt > Date.now()
+            && verificationContext.mode === currentVerificationMode
+            && verificationContext.merchantKind === currentVerificationMerchantKind
+            && (verificationContext.applicationId ?? 0) === (currentVerificationApplicationId ?? 0);
+    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, phoneVerified, verificationContext, verificationExpiresAt, verificationToken, verifiedPhone]);
+
+    const verifyPhoneAndMaybePrefill = useCallback(async (phone: string, code: string) => {
+        setResubmitLoading(true);
+        setResubmitPrefillFailed(false);
+        try {
+            const response = await onboardingValidationApi.verifyPhone<MaterialShopApplyDetailData>({
+                phone,
+                code,
+                merchantKind: 'material_shop',
+                mode: resubmitId ? 'resubmit' : 'apply',
+                applicationId: resubmitId ? Number(resubmitId) : undefined,
+            });
+            const expiresAtMs = response.expiresAt ? new Date(response.expiresAt).getTime() : Date.now() + VERIFICATION_EXPIRE_MS;
+            persistPhoneVerification({
+                phoneVerified: true,
+                verifiedPhone: response.verifiedPhone || phone,
+                verificationToken: response.verificationToken,
+                verificationExpiresAt: expiresAtMs,
+                mode: currentVerificationMode,
+                merchantKind: currentVerificationMerchantKind,
+                applicationId: currentVerificationApplicationId,
+            });
+            if (resubmitId && response.form) {
+                hydrateResubmitDetail(response.form);
+                const restoredProducts = Array.isArray(response.form.products)
+                    ? response.form.products.map((product, index) => ({
+                        id: `resubmit_product_${index}_${Date.now()}`,
+                        name: String(product?.name || ''),
+                        price: typeof product?.price === 'number' ? product.price : undefined,
+                        params: Object.entries(product?.params || {}).map(([key, value]) => ({
+                            id: `param_${key}_${index}`,
+                            key,
+                            value: String(value),
+                        })),
+                        images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
+                    }))
+                    : [];
+                persistDraftSnapshot({
+                    currentStep: 1,
+                    formValues: {
+                        phone: response.form.phone || phone,
+                        entityType: response.form.entityType || entityType,
+                        shopName: response.form.shopName,
+                        shopDescription: response.form.shopDescription,
+                        companyName: response.form.companyName,
+                        businessLicenseNo: response.form.businessLicenseNo,
+                        businessLicense: response.form.businessLicense,
+                        legalPersonName: response.form.legalPersonName,
+                        legalPersonIdCardNo: response.form.legalPersonIdCardNo,
+                        legalPersonIdCardFront: response.form.legalPersonIdCardFront,
+                        legalPersonIdCardBack: response.form.legalPersonIdCardBack,
+                        businessHours: response.form.businessHours,
+                        contactPhone: response.form.contactPhone,
+                        contactName: response.form.contactName,
+                        address: response.form.address,
+                        legalAccepted: false,
+                    },
+                    products: restoredProducts.length > 0 ? restoredProducts : products,
+                });
+            }
+            message.success(resubmitId ? '手机号校验成功，已回填原申请资料' : '手机号校验成功，可继续填写入驻资料');
+            return true;
+        } catch (error) {
+            clearPhoneVerification();
+            setResubmitPrefillFailed(Boolean(resubmitId));
+            message.error(resubmitId ? '原申请资料回填失败，请检查手机号与验证码' : '验证码校验失败，请检查后重试');
+            return false;
+        } finally {
+            setResubmitLoading(false);
+        }
+    }, [clearPhoneVerification, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, entityType, hydrateResubmitDetail, persistDraftSnapshot, persistPhoneVerification, products, resubmitId]);
 
     const clearDraft = () => {
         Modal.confirm({
@@ -525,7 +675,7 @@ const MaterialShopRegister: React.FC = () => {
             cancelText: '取消',
             okButtonProps: { danger: true },
             onOk: () => {
-                sessionStorage.removeItem(DRAFT_KEY);
+                sessionStorage.removeItem(draftStorageKey);
                 form.resetFields();
                 setProducts([createEmptyProduct()]);
                 setCurrentStep(0);
@@ -565,7 +715,6 @@ const MaterialShopRegister: React.FC = () => {
         try {
             await form.validateFields([
                 'phone',
-                'code',
                 'shopName',
                 'companyName',
                 'businessLicenseNo',
@@ -583,6 +732,12 @@ const MaterialShopRegister: React.FC = () => {
             return;
         }
 
+        if (!hasValidVerification(String(form.getFieldValue('phone') || '').trim())) {
+            setCurrentStep(0);
+            message.error('请先完成手机号验证码校验');
+            return;
+        }
+
         if (!validateProducts()) {
             return;
         }
@@ -595,7 +750,7 @@ const MaterialShopRegister: React.FC = () => {
             onOk: async () => {
                 setLoading(true);
                 try {
-                    const values = form.getFieldsValue() as Record<string, unknown>;
+                    const values = form.getFieldsValue(true) as Record<string, unknown>;
                     const validProducts = products
                         .filter((product) => product.name.trim() && product.price && product.images.length > 0)
                         .map((product) => {
@@ -616,7 +771,8 @@ const MaterialShopRegister: React.FC = () => {
                     const payload: MaterialShopApplyPayload = {
                         phone: String(values.phone || '').trim(),
                         code: String(values.code || '').trim(),
-                        resubmitToken: resubmitId ? (resubmitToken || undefined) : undefined,
+                        verificationToken,
+                        resubmitToken: resubmitId ? (verificationToken || undefined) : undefined,
                         entityType,
                         shopName: String(values.shopName || '').trim(),
                         shopDescription: values.shopDescription ? String(values.shopDescription).trim() : undefined,
@@ -649,7 +805,7 @@ const MaterialShopRegister: React.FC = () => {
                         return;
                     }
 
-                    sessionStorage.removeItem(DRAFT_KEY);
+                    sessionStorage.removeItem(draftStorageKey);
                     message.success(resubmitId ? '已重新提交，请等待审核' : '申请已提交，请等待审核');
                     navigate(`/apply-status?phone=${encodeURIComponent(values.phone as string)}`);
                 } catch (error) {
@@ -689,6 +845,7 @@ const MaterialShopRegister: React.FC = () => {
                         showIcon
                         style={{ marginBottom: 16, borderRadius: 8 }}
                         message="正在校验手机号并回填原申请资料，请稍候。"
+                        data-testid="material-register-resubmit-loading"
                     />
                 )}
                 {resubmitId && resubmitPrefillFailed && (
@@ -697,13 +854,23 @@ const MaterialShopRegister: React.FC = () => {
                         showIcon
                         style={{ marginBottom: 16, borderRadius: 8 }}
                         message="原申请资料回填失败，请确认手机号与验证码正确后重试；手机号与主材商类型仍保持原申请约束。"
+                        data-testid="material-register-resubmit-failed"
+                    />
+                )}
+                {phoneVerified && hasValidVerification(String(form.getFieldValue('phone') || phoneFromUrl || '').trim()) && (
+                    <Alert
+                        type="success"
+                        showIcon
+                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        message="手机号已验证，可继续填写入驻资料。"
+                        data-testid="material-register-phone-verified"
                     />
                 )}
                         {currentStep === 0 && (
-                            <div>
+                            <div data-testid="material-register-step-0">
                                 <div style={{ marginBottom: 28 }}>
-                                    <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>基础信息</Title>
-                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>填写店铺、资质与联系人信息，确保审核通过后能完整展示在平台内。</Text>
+                                    <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>手机号验证</Title>
+                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>请先完成手机号验证码校验，验证通过后再继续填写主材商入驻资料。</Text>
                                 </div>
                                 <Form.Item
                                     name="phone"
@@ -713,7 +880,14 @@ const MaterialShopRegister: React.FC = () => {
                                         { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
                                     ]}
                                 >
-                                    <Input className="premium-input" placeholder="请输入11位手机号" maxLength={11} readOnly={Boolean(resubmitId && phoneFromUrl)} disabled={Boolean(resubmitId && phoneFromUrl)} data-testid="material-register-phone-input" />
+                                    <Input className="premium-input" placeholder="请输入11位手机号" maxLength={11} readOnly={Boolean(resubmitId && phoneFromUrl)} disabled={Boolean(resubmitId && phoneFromUrl)} data-testid="material-register-phone-input"
+                                        onChange={(event) => {
+                                            const nextPhone = event.target.value.replace(/\D/g, '').slice(0, 11);
+                                            form.setFieldsValue({ phone: nextPhone });
+                                            if (phoneVerified && nextPhone !== verifiedPhone) {
+                                                clearPhoneVerification();
+                                            }
+                                        }} />
                                 </Form.Item>
 
                                 <Form.Item
@@ -728,6 +902,13 @@ const MaterialShopRegister: React.FC = () => {
                                         prefix={<SafetyOutlined />}
                                         placeholder="请输入6位验证码"
                                         maxLength={6}
+                                        onChange={(event) => {
+                                            const nextCode = event.target.value.replace(/\D/g, '').slice(0, 6);
+                                            form.setFieldsValue({ code: nextCode });
+                                            if (phoneVerified) {
+                                                clearPhoneVerification();
+                                            }
+                                        }}
                                         suffix={(
                                             <Button
                                                 type="link"
@@ -741,7 +922,15 @@ const MaterialShopRegister: React.FC = () => {
                                         )}
                                     />
                                 </Form.Item>
+                            </div>
+                        )}
 
+                        {currentStep === 1 && (
+                            <div data-testid="material-register-step-1">
+                                <div style={{ marginBottom: 28 }}>
+                                    <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>基础信息</Title>
+                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>填写店铺、资质与联系人信息，确保审核通过后能完整展示在平台内。</Text>
+                                </div>
                                 <div style={{ marginBottom: 24 }}>
                                     <div style={{ marginBottom: 8, color: 'rgba(0, 0, 0, 0.85)', fontSize: 14 }}>主体类型</div>
                                     <div style={{ padding: '4px 11px', background: '#fafafa', border: '1px solid #d9d9d9', borderRadius: 6, color: 'rgba(0, 0, 0, 0.88)' }}>
@@ -986,8 +1175,8 @@ const MaterialShopRegister: React.FC = () => {
                             </div>
                         )}
 
-                        {currentStep === 1 && (
-                            <div>
+                        {currentStep === 2 && (
+                            <div data-testid="material-register-step-2">
                                 <div style={{ marginBottom: 24 }}>
                                     <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>商品信息</Title>
                                     <Text style={{ color: '#64748b', lineHeight: 1.75 }}>按统一卡片方式维护商品、参数与图片；至少准备 5 个商品，便于平台审核与展示。</Text>
@@ -1000,7 +1189,7 @@ const MaterialShopRegister: React.FC = () => {
                                         style={{ flex: 1, minWidth: 280, borderRadius: 12 }}
                                     />
                                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                        <Button size="middle" onClick={saveDraft} style={{ borderRadius: 8 }}>保存草稿</Button>
+                                        <Button size="middle" onClick={() => saveDraft()} style={{ borderRadius: 8 }}>保存草稿</Button>
                                         <Button size="middle" danger onClick={clearDraft} style={{ borderRadius: 8 }}>清除草稿</Button>
                                     </div>
                                 </div>
@@ -1146,7 +1335,7 @@ const MaterialShopRegister: React.FC = () => {
                             </div>
                         )}
 
-                        {currentStep === 1 && (
+                        {currentStep === 2 && (
                             <Form.Item
                                 name="legalAccepted"
                                 valuePropName="checked"
@@ -1188,12 +1377,12 @@ const MaterialShopRegister: React.FC = () => {
                             )}
                         </div>
                         <div>
-                            {currentStep === 0 ? (
-                                <Button type="primary" size="large" onClick={handleNext} style={{ borderRadius: 8, padding: '0 32px' }}>
+                            {currentStep < steps.length - 1 ? (
+                                <Button type="primary" size="large" onClick={handleNext} style={{ borderRadius: 8, padding: '0 32px' }} data-testid={`material-register-next-${currentStep}`}>
                                     下一步 <ArrowRightOutlined />
                                 </Button>
                             ) : (
-                                <Button type="primary" size="large" loading={loading} icon={<CheckOutlined />} onClick={handleSubmit} style={{ borderRadius: 8, padding: '0 32px' }}>
+                                <Button type="primary" size="large" loading={loading} icon={<CheckOutlined />} onClick={handleSubmit} style={{ borderRadius: 8, padding: '0 32px' }} data-testid="material-register-submit">
                                     提交申请
                                 </Button>
                             )}

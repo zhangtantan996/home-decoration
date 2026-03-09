@@ -203,6 +203,7 @@ const MerchantApplyStatus: React.FC = () => {
                                 <Button
                                 type="primary"
                                 size="large"
+                                data-testid="merchant-apply-status-resubmit-button"
                                 onClick={() => {
                                     const currentPhone = form.getFieldValue('phone') || phoneFromUrl || '';
                                     if (isMaterialShop) {

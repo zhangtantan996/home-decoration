@@ -41,6 +41,7 @@ type materialShopApplyInput struct {
 	ContactPhone           string                          `json:"contactPhone"`
 	ContactName            string                          `json:"contactName"`
 	Address                string                          `json:"address"`
+	VerificationToken      string                          `json:"verificationToken"`
 	ResubmitToken          string                          `json:"resubmitToken"`
 	Products               []materialShopApplyProductInput `json:"products" binding:"required,min=1"`
 	LegalAcceptance        LegalAcceptanceInput            `json:"legalAcceptance" binding:"required"`
@@ -235,7 +236,7 @@ func MaterialShopApply(c *gin.Context) {
 		return
 	}
 
-	if err := service.VerifySMSCode(input.Phone, service.SMSPurposeIdentityApply, input.Code); err != nil {
+	if err := authorizeOnboarding(input.Phone, input.VerificationToken, 0, merchantIdentityTypeMaterial, merchantVerificationModeApply, input.Code); err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}
@@ -475,7 +476,7 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 		response.Error(c, 400, "手机号与原申请不一致")
 		return
 	}
-	if err := authorizeResubmit(input.Phone, input.ResubmitToken, app.ID, merchantIdentityTypeMaterial, input.Code); err != nil {
+	if err := authorizeOnboarding(input.Phone, firstNonEmpty(input.VerificationToken, input.ResubmitToken), app.ID, merchantIdentityTypeMaterial, merchantVerificationModeResubmit, input.Code); err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}

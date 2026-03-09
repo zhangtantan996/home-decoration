@@ -218,6 +218,7 @@ export interface OnboardingValidateResult {
 export interface MerchantApplyPayload {
     phone: string;
     code: string;
+    verificationToken?: string;
     resubmitToken?: string;
     role: Exclude<MerchantRole, 'material_shop'>;
     entityType: Exclude<MerchantEntityType, 'individual_business'>;
@@ -259,6 +260,25 @@ export interface MerchantApplyStatusData {
     rejectReason?: string;
     createdAt: string;
     auditedAt?: string;
+}
+
+export interface OnboardingVerifyPhonePayload {
+    phone: string;
+    code: string;
+    merchantKind: MerchantKind;
+    mode: 'apply' | 'resubmit';
+    applicationId?: number;
+}
+
+export interface OnboardingVerifyPhoneResponse<TForm = unknown> {
+    ok: boolean;
+    verificationToken: string;
+    verifiedPhone: string;
+    expiresAt: string;
+    merchantKind?: MerchantKind;
+    rejectReason?: string;
+    resubmitEditable?: Record<string, boolean>;
+    form?: TForm;
 }
 
 export interface MerchantApplyDetailData extends MerchantApplyStatusData {
@@ -330,6 +350,7 @@ export interface MaterialShopApplyProductPayload {
 export interface MaterialShopApplyPayload {
     phone: string;
     code: string;
+    verificationToken?: string;
     resubmitToken?: string;
     entityType: 'company' | 'individual_business';
     shopName: string;
@@ -394,6 +415,8 @@ export const onboardingValidationApi = {
         unwrapData<OnboardingValidateResult>(await merchantApi.post('/merchant/onboarding/validate-license', data), '营业执照号校验失败'),
     validateIdCard: async (data: OnboardingValidateIdCardPayload) =>
         unwrapData<OnboardingValidateResult>(await merchantApi.post('/merchant/onboarding/validate-id-card', data), '身份证号校验失败'),
+    verifyPhone: async <TForm = unknown>(data: OnboardingVerifyPhonePayload) =>
+        unwrapData<OnboardingVerifyPhoneResponse<TForm>>(await merchantApi.post('/merchant/onboarding/verify-phone', data), '手机号验证码校验失败'),
 };
 
 export const materialShopApplyApi = {
