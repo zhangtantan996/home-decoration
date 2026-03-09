@@ -58,6 +58,7 @@
 - 前端 / Nginx 镜像：`deploy/Dockerfile.frontend`、`deploy/Dockerfile.frontend.prod`
 - 容器 Nginx：`deploy/nginx/nginx.conf`、`deploy/nginx/nginx.prod.conf`
 - 宿主机 Nginx：`deploy/nginx/host_nginx_http.conf`、`deploy/nginx/host_nginx_prod.conf`
+- 当前生产入口标准：`deploy/PRODUCTION_NGINX_STANDARD.md`
 - 发布脚本：`deploy/scripts/deploy_prod.sh`
 - 回滚脚本：`deploy/scripts/rollback_prod.sh`
 
