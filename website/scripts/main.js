@@ -18,6 +18,8 @@ import {
     Target,
     TrendingUp,
     Wrench,
+    Sun,
+    Moon,
     createIcons,
 } from 'lucide';
 
@@ -39,6 +41,8 @@ const iconSet = {
     Target,
     TrendingUp,
     Wrench,
+    Sun,
+    Moon,
 };
 
 document.documentElement.classList.add('motion-ready');
@@ -46,6 +50,37 @@ document.documentElement.classList.add('motion-ready');
 document.addEventListener('DOMContentLoaded', () => {
     createIcons({ icons: iconSet });
     applyTranslations();
+
+    // Theme Switch Logic
+    const themeSwitches = document.querySelectorAll('.theme-switch');
+    const getSystemTheme = () => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    
+    const setTheme = (theme) => {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('hezeyun-theme', theme);
+    };
+
+    const savedTheme = localStorage.getItem('hezeyun-theme');
+    if (savedTheme) {
+        setTheme(savedTheme);
+    } else {
+        const sysTheme = getSystemTheme();
+        if (sysTheme === 'light') setTheme('light');
+    }
+
+    themeSwitches.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || getSystemTheme();
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            setTheme(newTheme);
+        });
+    });
+
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('hezeyun-theme')) {
+            document.documentElement.setAttribute('data-theme', e.matches ? 'light' : 'dark');
+        }
+    });
 
     const langBtns = document.querySelectorAll('.lang-btn');
     const activeLang = getLang();
@@ -100,9 +135,6 @@ document.addEventListener('DOMContentLoaded', () => {
         navLinks.addEventListener('click', (event) => {
             const target = event.target;
             if (!(target instanceof HTMLElement)) {
-                return;
-            }
-            if (target.closest('.lang-btn')) {
                 return;
             }
             if (target.closest('a') || target === navLinks) {
