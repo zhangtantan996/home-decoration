@@ -13,36 +13,12 @@ import (
 	"gorm.io/gorm"
 )
 
-const minVisibleMaterialShopProducts = 5
-
 func applyBaseVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
 	return db.Where("is_verified = ?", true)
 }
 
 func applyVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
-	filtered := applyBaseVisibleMaterialShopFilter(db)
-
-	migrator := repository.DB.Migrator()
-	if !migrator.HasTable(&model.MaterialShopProduct{}) {
-		return filtered
-	}
-
-	if migrator.HasColumn(&model.MaterialShopProduct{}, "status") {
-		return filtered.Where(
-			`(SELECT COUNT(1)
-			    FROM material_shop_products msp
-			   WHERE msp.shop_id = material_shops.id
-			     AND msp.status = 1) >= ?`,
-			minVisibleMaterialShopProducts,
-		)
-	}
-
-	return filtered.Where(
-		`(SELECT COUNT(1)
-		    FROM material_shop_products msp
-		   WHERE msp.shop_id = material_shops.id) >= ?`,
-		minVisibleMaterialShopProducts,
-	)
+	return applyBaseVisibleMaterialShopFilter(db)
 }
 
 // MaterialShopService 主材门店服务

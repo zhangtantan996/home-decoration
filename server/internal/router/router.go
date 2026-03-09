@@ -85,6 +85,36 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			materialShops.GET("/:id", handler.GetMaterialShop)
 		}
 
+		// 设计师 (公开)
+		designers := v1.Group("/designers")
+		{
+			designers.GET("", handler.ListDesigners)
+			designers.GET("/:id", handler.GetDesigner)
+			designers.GET("/:id/cases", handler.GetProviderCases)
+			designers.GET("/:id/reviews", handler.GetProviderReviews)
+			designers.GET("/:id/review-stats", handler.GetReviewStats)
+		}
+
+		// 装修公司 (公开)
+		companies := v1.Group("/companies")
+		{
+			companies.GET("", handler.ListCompanies)
+			companies.GET("/:id", handler.GetCompany)
+			companies.GET("/:id/cases", handler.GetProviderCases)
+			companies.GET("/:id/reviews", handler.GetProviderReviews)
+			companies.GET("/:id/review-stats", handler.GetReviewStats)
+		}
+
+		// 工长 (公开)
+		foremen := v1.Group("/foremen")
+		{
+			foremen.GET("", handler.ListForemen)
+			foremen.GET("/:id", handler.GetForeman)
+			foremen.GET("/:id/cases", handler.GetProviderCases)
+			foremen.GET("/:id/reviews", handler.GetProviderReviews)
+			foremen.GET("/:id/review-stats", handler.GetReviewStats)
+		}
+
 		v1.GET("/dictionaries/categories", dictHandler.GetAllCategories)
 		v1.GET("/dictionaries/:category", dictHandler.GetDictOptions)
 
@@ -159,36 +189,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 用户举报
 			authorized.POST("/reports/chat", handler.SubmitChatReport)
-
-			// 设计师
-			designers := authorized.Group("/designers")
-			{
-				designers.GET("", handler.ListDesigners)
-				designers.GET("/:id", handler.GetDesigner)
-				designers.GET("/:id/cases", handler.GetProviderCases)
-				designers.GET("/:id/reviews", handler.GetProviderReviews)
-				designers.GET("/:id/review-stats", handler.GetReviewStats)
-			}
-
-			// 装修公司
-			companies := authorized.Group("/companies")
-			{
-				companies.GET("", handler.ListCompanies)
-				companies.GET("/:id", handler.GetCompany)
-				companies.GET("/:id/cases", handler.GetProviderCases)
-				companies.GET("/:id/reviews", handler.GetProviderReviews)
-				companies.GET("/:id/review-stats", handler.GetReviewStats)
-			}
-
-			// 工长
-			foremen := authorized.Group("/foremen")
-			{
-				foremen.GET("", handler.ListForemen)
-				foremen.GET("/:id", handler.GetForeman)
-				foremen.GET("/:id/cases", handler.GetProviderCases)
-				foremen.GET("/:id/reviews", handler.GetProviderReviews)
-				foremen.GET("/:id/review-stats", handler.GetReviewStats)
-			}
 
 			// 案例报价（登录可查看，不提供下载）
 			authorized.GET("/cases/:id/quote", handler.GetCaseQuote)
