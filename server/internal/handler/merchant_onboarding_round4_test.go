@@ -483,16 +483,15 @@ func TestAdminApproveProviderApplication_FreezePreviousMaterialShop(t *testing.T
 		t.Fatalf("create material identity failed: %v", err)
 	}
 
-	portfolio, _ := json.Marshal([]PortfolioCaseInput{{Title: "案例A", Description: "说明", Images: []string{"/case-a.jpg"}, Area: "80㎡"}})
+	portfolio, _ := json.Marshal([]PortfolioCaseInput{{Category: "water", Description: "说明", Images: []string{"/case-a.jpg", "/case-b.jpg"}}})
 	serviceArea, _ := json.Marshal([]string{"310101"})
 	styles, _ := json.Marshal([]string{"现代", "奶油"})
-	workTypes, _ := json.Marshal([]string{"mason", "plumber"})
 	highlightTags, _ := json.Marshal([]string{"快响应", "不增项"})
 	pricing, _ := json.Marshal(map[string]float64{"halfDay": 600, "fullDay": 1200})
 	app := model.MerchantApplication{
 		UserID:              user.ID,
 		Phone:               user.Phone,
-		ApplicantType:       "team",
+		ApplicantType:       "foreman",
 		Role:                "foreman",
 		EntityType:          "company",
 		RealName:            "王五",
@@ -502,7 +501,6 @@ func TestAdminApproveProviderApplication_FreezePreviousMaterialShop(t *testing.T
 		LicenseImage:        "/license.jpg",
 		ServiceArea:         string(serviceArea),
 		Styles:              string(styles),
-		WorkTypes:           string(workTypes),
 		HighlightTags:       string(highlightTags),
 		PricingJSON:         string(pricing),
 		Introduction:        "靠谱施工",
@@ -552,7 +550,7 @@ func TestAdminApproveProviderApplication_FreezePreviousMaterialShop(t *testing.T
 	if newProvider.SourceApplicationID != app.ID {
 		t.Fatalf("expected provider source application id=%d got=%d", app.ID, newProvider.SourceApplicationID)
 	}
-	if newProvider.Specialty != "mason · plumber" {
+	if newProvider.Specialty != "全工种施工" {
 		t.Fatalf("unexpected foreman specialty: %s", newProvider.Specialty)
 	}
 
@@ -579,8 +577,11 @@ func TestAdminApproveProviderApplication_FreezePreviousMaterialShop(t *testing.T
 	if len(cases) != 1 {
 		t.Fatalf("unexpected case count: %d", len(cases))
 	}
-	if cases[0].Style != "现代" {
-		t.Fatalf("unexpected fallback style: %s", cases[0].Style)
+	if cases[0].Title != "水工施工展示" {
+		t.Fatalf("unexpected foreman case title: %s", cases[0].Title)
+	}
+	if cases[0].Style != "" || cases[0].Area != "" {
+		t.Fatalf("foreman case style/area should be empty: %+v", cases[0])
 	}
 }
 

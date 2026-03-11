@@ -25,14 +25,6 @@ import {
 } from '../../services/merchantApi';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import { regionApi } from '../../services/regionApi';
-
-const WORK_TYPE_OPTIONS = [
-    { value: 'mason', label: '瓦工' },
-    { value: 'electrician', label: '电工' },
-    { value: 'carpenter', label: '木工' },
-    { value: 'painter', label: '油漆工' },
-    { value: 'plumber', label: '水暖工' },
-];
 const FOREMAN_HIGHLIGHT_OPTIONS = [
     '工期可控',
     '工地整洁',
@@ -66,6 +58,14 @@ const getErrorMessage = (error: unknown, fallback: string) => {
     };
     return maybeAxiosError.response?.data?.message || fallback;
 };
+
+const toAlbumFileList = (urls: string[] = []) => urls.map((url, index) => ({
+    uid: `${index}-${url}`,
+    name: `company-album-${index + 1}`,
+    status: 'done' as const,
+    url,
+    response: { url },
+}));
 
 const parsePackagesFromRaw = (raw: string): Array<Record<string, unknown>> => {
     const trimmed = raw.trim();
@@ -132,6 +132,11 @@ const MerchantSettings: React.FC = () => {
         return applicantType === 'company' || applicantType === 'studio' || providerInfo?.providerType === 2;
     }, [providerInfo]);
 
+    const isCompanyRole = useMemo(() => {
+        const role = String(providerInfo?.role || '').toLowerCase();
+        return role === 'company' || providerInfo?.providerType === 2;
+    }, [providerInfo]);
+
     useEffect(() => {
         void Promise.all([
             fetchProviderInfo(),
@@ -171,7 +176,6 @@ const MerchantSettings: React.FC = () => {
                 companyName: info.companyName,
                 yearsExperience: info.yearsExperience,
                 specialty: info.specialty,
-                workTypes: info.workTypes || [],
                 highlightTags: info.highlightTags || [],
                 pricingRaw: JSON.stringify(info.pricing || {}, null, 2),
                 graduateSchool: info.graduateSchool || '',
@@ -180,6 +184,7 @@ const MerchantSettings: React.FC = () => {
                 introduction: info.introduction,
                 teamSize: info.teamSize,
                 officeAddress: info.officeAddress,
+                companyAlbum: info.companyAlbum || [],
             });
         } catch (error) {
             message.error(getErrorMessage(error, '获取账户信息失败'));
@@ -210,7 +215,6 @@ const MerchantSettings: React.FC = () => {
         companyName?: string;
         yearsExperience?: number;
         specialty?: string[];
-        workTypes?: string[];
         highlightTags?: string[];
         pricingRaw?: string;
         graduateSchool?: string;
@@ -219,10 +223,16 @@ const MerchantSettings: React.FC = () => {
         introduction?: string;
         teamSize?: number;
         officeAddress?: string;
+        companyAlbum?: string[];
     }) => {
         setSavingInfo(true);
         try {
             const pricing = parsePricingFromRaw(values.pricingRaw || '');
+            const officeAddress = (values.officeAddress || '').trim();
+            if (!officeAddress) {
+                message.error('请输入办公地址');
+                return;
+            }
             const payload: Record<string, unknown> = {
                 name: values.name,
                 companyName: values.companyName || '',
@@ -234,15 +244,17 @@ const MerchantSettings: React.FC = () => {
                 serviceArea: values.serviceArea || [],
                 introduction: values.introduction || '',
                 teamSize: values.teamSize || 1,
-                officeAddress: values.officeAddress || '',
+                officeAddress,
             };
 
             if (isForeman) {
-                payload.workTypes = values.workTypes || [];
                 payload.specialty = [];
             } else {
                 payload.specialty = values.specialty || [];
-                payload.workTypes = [];
+            }
+
+            if (isCompanyRole) {
+                payload.companyAlbum = values.companyAlbum || [];
             }
 
             await merchantAuthApi.updateInfo(payload);
@@ -253,8 +265,7 @@ const MerchantSettings: React.FC = () => {
                     name: values.name,
                     companyName: values.companyName || '',
                     yearsExperience: values.yearsExperience || 0,
-                    specialty: values.specialty || [],
-                    workTypes: values.workTypes || [],
+                    specialty: isForeman ? [] : (values.specialty || []),
                     highlightTags: values.highlightTags || [],
                     pricing,
                     graduateSchool: values.graduateSchool || '',
@@ -262,7 +273,8 @@ const MerchantSettings: React.FC = () => {
                     serviceArea: values.serviceArea || [],
                     introduction: values.introduction || '',
                     teamSize: values.teamSize || 1,
-                    officeAddress: values.officeAddress || '',
+                    officeAddress,
+                    companyAlbum: isCompanyRole ? (values.companyAlbum || []) : prev.companyAlbum,
                 };
             });
 
@@ -330,6 +342,22 @@ const MerchantSettings: React.FC = () => {
             onError?.(new Error(errorMessage));
         } finally {
             setAvatarUploading(false);
+        }
+    };
+
+    const handleCompanyAlbumUpload: UploadProps['customRequest'] = async (options) => {
+        const { file, onSuccess, onError } = options;
+        try {
+            const uploaded = await merchantUploadApi.uploadImageData(file as File);
+            const current = (infoForm.getFieldValue('companyAlbum') || []) as string[];
+            if (!current.includes(uploaded.url)) {
+                infoForm.setFieldValue('companyAlbum', [...current, uploaded.url].slice(0, 8));
+            }
+            onSuccess?.(uploaded);
+        } catch (error) {
+            const errorMessage = getErrorMessage(error, '公司相册上传失败');
+            message.error(errorMessage);
+            onError?.(new Error(errorMessage));
         }
     };
 
@@ -468,15 +496,7 @@ const MerchantSettings: React.FC = () => {
                                     </Form.Item>
                                 </Col>
                                 <Col span={12}>
-                                    {isForeman ? (
-                                        <Form.Item
-                                            name="workTypes"
-                                            label="工种类型"
-                                            rules={[{ required: true, message: '请至少选择1个工种' }]}
-                                        >
-                                            <Select mode="multiple" placeholder="选择可承接工种" options={WORK_TYPE_OPTIONS} />
-                                        </Form.Item>
-                                    ) : (
+                                    {!isForeman && (
                                         <Form.Item
                                             name="specialty"
                                             label="擅长风格"
@@ -525,11 +545,54 @@ const MerchantSettings: React.FC = () => {
                                     </Form.Item>
                                 </Col>
                                 <Col span={12}>
-                                    <Form.Item name="officeAddress" label="办公地址">
+                                    <Form.Item
+                                        name="officeAddress"
+                                        label="办公地址"
+                                        rules={[{ required: true, message: '请输入办公地址' }]}
+                                    >
                                         <Input placeholder="请输入办公地址" maxLength={200} />
                                     </Form.Item>
                                 </Col>
                             </Row>
+
+                            {isCompanyRole && (
+                                <Form.Item
+                                    name="companyAlbum"
+                                    label="公司相册"
+                                    rules={[
+                                        {
+                                            validator: (_, value) => {
+                                                const images = Array.isArray(value) ? value : [];
+                                                if (images.length < 3 || images.length > 8) {
+                                                    return Promise.reject(new Error('公司相册需上传 3-8 张图片'));
+                                                }
+                                                return Promise.resolve();
+                                            },
+                                        },
+                                    ]}
+                                >
+                                    <Upload
+                                        listType="picture-card"
+                                        multiple
+                                        fileList={toAlbumFileList(infoForm.getFieldValue('companyAlbum') || [])}
+                                        customRequest={handleCompanyAlbumUpload}
+                                        onChange={({ fileList }) => {
+                                            const next = fileList
+                                                .map((file) => (file.response as { url?: string } | undefined)?.url || file.url || '')
+                                                .filter(Boolean);
+                                            infoForm.setFieldValue('companyAlbum', next);
+                                        }}
+                                        onRemove={(file) => {
+                                            const current = (infoForm.getFieldValue('companyAlbum') || []) as string[];
+                                            const target = (file.response as { url?: string } | undefined)?.url || file.url || '';
+                                            infoForm.setFieldValue('companyAlbum', current.filter((item) => item !== target));
+                                            return true;
+                                        }}
+                                    >
+                                        {((infoForm.getFieldValue('companyAlbum') || []) as string[]).length < 8 ? <div>上传图片</div> : null}
+                                    </Upload>
+                                </Form.Item>
+                            )}
 
                             <Form.Item name="introduction" label={isForeman ? '施工服务简介' : '个人/公司简介'}>
                                 <Input.TextArea

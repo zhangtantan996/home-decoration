@@ -139,7 +139,6 @@ export interface MerchantProviderInfo {
     verified: boolean;
     yearsExperience: number;
     specialty: string[];
-    workTypes?: string[];
     highlightTags?: string[];
     pricing?: Record<string, number>;
     graduateSchool?: string;
@@ -149,6 +148,7 @@ export interface MerchantProviderInfo {
     introduction: string;
     teamSize: number;
     officeAddress: string;
+    companyAlbum?: string[];
 }
 
 export interface MerchantServiceSetting {
@@ -188,8 +188,15 @@ export interface MerchantPortfolioCase {
     title: string;
     description: string;
     images: string[];
+    category?: 'water' | 'electric' | 'wood' | 'masonry' | 'paint' | 'other';
     style?: string;
     area?: string;
+}
+
+export interface BusinessHoursRange {
+    day: number;
+    start: string;
+    end: string;
 }
 
 export interface MerchantLegalAcceptancePayload {
@@ -236,9 +243,8 @@ export interface MerchantApplyPayload {
     legalPersonIdCardFront?: string;
     legalPersonIdCardBack?: string;
     teamSize?: number;
-    officeAddress?: string;
+    officeAddress: string;
     yearsExperience?: number;
-    workTypes?: string[];
     highlightTags?: string[];
     pricing?: Record<string, number>;
     graduateSchool?: string;
@@ -246,6 +252,7 @@ export interface MerchantApplyPayload {
     serviceArea: string[];
     styles?: string[];
     introduction?: string;
+    companyAlbum?: string[];
     portfolioCases: MerchantPortfolioCase[];
     legalAcceptance: MerchantLegalAcceptancePayload;
 }
@@ -298,7 +305,6 @@ export interface MerchantApplyDetailData extends MerchantApplyStatusData {
     teamSize?: number;
     officeAddress?: string;
     yearsExperience?: number;
-    workTypes?: string[];
     highlightTags?: string[];
     pricing?: Record<string, number>;
     graduateSchool?: string;
@@ -306,6 +312,7 @@ export interface MerchantApplyDetailData extends MerchantApplyStatusData {
     serviceArea?: string[];
     styles?: string[];
     introduction?: string;
+    companyAlbum?: string[];
     portfolioCases?: MerchantPortfolioCase[];
 }
 
@@ -342,7 +349,7 @@ export const merchantApplyApi = {
 
 export interface MaterialShopApplyProductPayload {
     name: string;
-    params: Record<string, string | number | boolean>;
+    unit: string;
     price: number;
     images: string[];
 }
@@ -363,6 +370,7 @@ export interface MaterialShopApplyPayload {
     legalPersonIdCardFront: string;
     legalPersonIdCardBack: string;
     businessHours: string;
+    businessHoursRanges: BusinessHoursRange[];
     contactPhone: string;
     contactName?: string;
     address: string;
@@ -395,6 +403,7 @@ export interface MaterialShopApplyDetailData extends MaterialShopApplyStatusData
     legalPersonIdCardFront?: string;
     legalPersonIdCardBack?: string;
     businessHours?: string;
+    businessHoursRanges?: BusinessHoursRange[];
     contactPhone?: string;
     contactName?: string;
     address?: string;
@@ -442,6 +451,7 @@ export interface MaterialShopProfile {
     businessLicense?: string;
     legalPersonName?: string;
     businessHours?: string;
+    businessHoursRanges?: BusinessHoursRange[];
     contactPhone?: string;
     contactName?: string;
     address?: string;
@@ -451,7 +461,7 @@ export interface MaterialShopProfile {
 export interface MaterialShopProduct {
     id: number;
     name: string;
-    params: Record<string, string | number | boolean>;
+    unit: string;
     price: number;
     images: string[];
     coverImage?: string;

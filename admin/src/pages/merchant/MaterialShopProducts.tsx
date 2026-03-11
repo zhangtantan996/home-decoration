@@ -20,7 +20,6 @@ import { useNavigate } from 'react-router-dom';
 import { materialShopCenterApi, merchantUploadApi, type MaterialShopProduct } from '../../services/merchantApi';
 
 const { Content } = Layout;
-const { TextArea } = Input;
 
 const getErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) {
@@ -32,10 +31,20 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 
 interface ProductFormValues {
     name: string;
+    unit: string;
     price: number;
-    paramsJson: string;
     images: string[];
 }
+
+const extractLegacyUnit = (product: MaterialShopProduct) => {
+    const unit = String(product.unit || '').trim();
+    if (unit) {
+        return unit;
+    }
+    const legacy = (product as MaterialShopProduct & { params?: Record<string, unknown> }).params;
+    const legacyUnit = legacy?.unit ?? legacy?.单位;
+    return legacyUnit === undefined || legacyUnit === null ? '' : String(legacyUnit).trim();
+};
 
 const MaterialShopProducts: React.FC = () => {
     const navigate = useNavigate();
@@ -62,20 +71,12 @@ const MaterialShopProducts: React.FC = () => {
         }
     };
 
-    const parseParamsJson = (raw: string) => {
-        const parsed = JSON.parse(raw || '{}');
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-            throw new Error('参数必须是 JSON 对象');
-        }
-        return parsed as Record<string, string | number | boolean>;
-    };
-
     const openCreateModal = () => {
         setEditingProduct(null);
         form.setFieldsValue({
             name: '',
-            price: 0,
-            paramsJson: '{}',
+            unit: '',
+            price: 1,
             images: [],
         });
         setModalOpen(true);
@@ -85,8 +86,8 @@ const MaterialShopProducts: React.FC = () => {
         setEditingProduct(product);
         form.setFieldsValue({
             name: product.name,
+            unit: extractLegacyUnit(product),
             price: product.price,
-            paramsJson: JSON.stringify(product.params || {}, null, 2),
             images: product.images || [],
         });
         setModalOpen(true);
@@ -95,9 +96,9 @@ const MaterialShopProducts: React.FC = () => {
     const uploadImage: UploadProps['customRequest'] = async (options) => {
         try {
             const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
-            const currentImages = form.getFieldValue('images') || [];
+            const currentImages = (form.getFieldValue('images') || []) as string[];
             if (!currentImages.includes(uploaded.url)) {
-                form.setFieldValue('images', [...currentImages, uploaded.url]);
+                form.setFieldValue('images', [...currentImages, uploaded.url].slice(0, 6));
             }
             options.onSuccess?.(uploaded);
         } catch (error) {
@@ -108,25 +109,22 @@ const MaterialShopProducts: React.FC = () => {
     };
 
     const handleSave = async (values: ProductFormValues) => {
-        if (!values.images || values.images.length < 1) {
-            message.error('请至少上传1张商品图片');
+        const unit = String(values.unit || '').trim();
+        if (!unit) {
+            message.error('请输入商品单位');
             return;
         }
-
-        let paramsObject: Record<string, string | number | boolean>;
-        try {
-            paramsObject = parseParamsJson(values.paramsJson);
-        } catch (error) {
-            message.error(getErrorMessage(error, '商品参数格式错误'));
+        if (!values.images || values.images.length < 1 || values.images.length > 6) {
+            message.error('商品图片需为 1-6 张');
             return;
         }
 
         setSaving(true);
         try {
             const payload = {
-                name: values.name,
+                name: values.name.trim(),
+                unit,
                 price: values.price,
-                params: paramsObject,
                 images: values.images,
                 coverImage: values.images[0],
             };
@@ -164,6 +162,12 @@ const MaterialShopProducts: React.FC = () => {
             title: '商品名称',
             dataIndex: 'name',
             key: 'name',
+        },
+        {
+            title: '单位',
+            key: 'unit',
+            width: 120,
+            render: (_, record) => extractLegacyUnit(record) || '-',
         },
         {
             title: '价格（元）',
@@ -239,19 +243,19 @@ const MaterialShopProducts: React.FC = () => {
                         <Input maxLength={120} />
                     </Form.Item>
 
-                    <Form.Item name="price" label="商品价格（元）" rules={[{ required: true, message: '请输入商品价格' }]}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
+                    <Form.Item name="unit" label="单位" rules={[{ required: true, message: '请输入商品单位' }]}>
+                        <Input maxLength={20} placeholder="例如：个 / 套 / m / 平方米" />
                     </Form.Item>
 
-                    <Form.Item name="paramsJson" label="商品参数（JSON对象）" rules={[{ required: true, message: '请输入商品参数' }]}>
-                        <TextArea rows={4} placeholder='例如：{"品牌":"XX","规格":"60x60"}' />
+                    <Form.Item name="price" label="商品价格（元）" rules={[{ required: true, message: '请输入商品价格' }]}>
+                        <InputNumber min={1} style={{ width: '100%' }} />
                     </Form.Item>
 
                     <Form.Item name="images" label="商品图片" rules={[{ required: true, message: '请上传商品图片' }]}>
                         <Upload
                             listType="picture-card"
                             multiple
-                            maxCount={5}
+                            maxCount={6}
                             customRequest={uploadImage}
                             onChange={(uploadInfo) => {
                                 const urls = uploadInfo.fileList
@@ -263,7 +267,7 @@ const MaterialShopProducts: React.FC = () => {
                                 form.setFieldValue('images', urls);
                             }}
                         >
-                            <div>上传图片</div>
+                            {((form.getFieldValue('images') || []) as string[]).length < 6 ? <div>上传图片</div> : null}
                         </Upload>
                     </Form.Item>
                 </Form>

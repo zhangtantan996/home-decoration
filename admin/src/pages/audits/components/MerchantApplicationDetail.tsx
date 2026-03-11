@@ -185,9 +185,6 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             children: (
                 <Descriptions bordered column={2} size="small">
                     <Descriptions.Item label="从业年限">{details.yearsExperience ? `${details.yearsExperience} 年` : '-'}</Descriptions.Item>
-                    <Descriptions.Item label="工种类型">
-                        {renderTags(details.workTypes, 'orange')}
-                    </Descriptions.Item>
                 </Descriptions>
             ),
         });

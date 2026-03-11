@@ -71,18 +71,6 @@ const CONSTRUCTION_ORG_TYPES = [
     { id: 'company', label: '公司' },
 ];
 
-// 工种筛选
-const WORK_TYPES = [
-    { id: 'all', label: '全部工种' },
-    { id: 'mason', label: '瓦工' },
-    { id: 'electrician', label: '电工' },
-    { id: 'carpenter', label: '木工' },
-    { id: 'painter', label: '油漆工' },
-    { id: 'plumber', label: '水暖工' },
-    { id: 'hvac', label: '空调安装' },
-    { id: 'general', label: '综合施工' },
-];
-
 // Mock 施工人员数据
 // Mock 施工人员数据 - Imported from mockData.ts
 
@@ -184,8 +172,6 @@ const HomeScreen: React.FC = () => {
     const [constructionSortBy, setConstructionSortBy] = useState('recommend');
     const [showConstructionSortMenu, setShowConstructionSortMenu] = useState(false);
     const [constructionOrgFilter, setConstructionOrgFilter] = useState<string | null>(null);
-    const [showWorkTypeModal, setShowWorkTypeModal] = useState(false);
-    const [selectedWorkTypes, setSelectedWorkTypes] = useState<string[]>(['all']);
     const [searchText, setSearchText] = useState('');
 
     // 主材状态
@@ -330,9 +316,9 @@ const HomeScreen: React.FC = () => {
         // 2. 搜索施工人员
         workers.forEach((w: Worker) => {
             const name = w.name.toLowerCase();
-            const workTypeLabels = w.workTypeLabels.toLowerCase();
+            const serviceLabel = w.serviceLabel.toLowerCase();
             const tags = w.tags.join(' ').toLowerCase();
-            if (name.includes(keyword) || workTypeLabels.includes(keyword) || tags.includes(keyword)) {
+            if (name.includes(keyword) || serviceLabel.includes(keyword) || tags.includes(keyword)) {
                 results.push({
                     ...w,
                     _type: 'construction',
@@ -391,22 +377,6 @@ const HomeScreen: React.FC = () => {
         setConstructionOrgFilter(prev => prev === type ? null : type);
     }, []);
 
-    const handleWorkTypeToggle = (workType: string) => {
-        if (workType === 'all') {
-            setSelectedWorkTypes(['all']);
-        } else {
-            setSelectedWorkTypes(prev => {
-                const newTypes = prev.filter(t => t !== 'all');
-                if (newTypes.includes(workType)) {
-                    const result = newTypes.filter(t => t !== workType);
-                    return result.length === 0 ? ['all'] : result;
-                } else {
-                    return [...newTypes, workType];
-                }
-            });
-        }
-    };
-
     // 切换分类时重置状态
     const handleCategoryChange = (categoryId: string) => {
         const startTime = Date.now();
@@ -418,7 +388,6 @@ const HomeScreen: React.FC = () => {
         setShowDesignerSortMenu(false);
         setShowConstructionSortMenu(false);
         setShowMaterialSortMenu(false);
-        setShowWorkTypeModal(false);
 
         console.log(`[PERF] Switch to ${categoryId} RENDERED: ${Date.now() - startTime}ms`);
     };
@@ -433,26 +402,11 @@ const HomeScreen: React.FC = () => {
     const toggleConstructionSort = useCallback(() => {
         setShowConstructionSortMenu(prev => {
             if (!prev) {
-                setShowWorkTypeModal(false);
                 scrollToFilter();
             }
             return !prev;
         });
     }, []);
-
-    const toggleWorkTypeMenu = useCallback(() => {
-        setShowWorkTypeModal(prev => {
-            if (!prev) {
-                setShowConstructionSortMenu(false);
-                scrollToFilter();
-            }
-            return !prev;
-        });
-    }, []);
-
-    const resetWorkTypes = () => {
-        setSelectedWorkTypes(['all']);
-    };
 
     // 获取当前排序选项和标签
     let currentSortOptions = DESIGNER_SORT_OPTIONS;
@@ -542,13 +496,6 @@ const HomeScreen: React.FC = () => {
             filtered = filtered.filter((w: Worker) => w.type === constructionOrgFilter);
         }
 
-        // 按工种筛选
-        if (!selectedWorkTypes.includes('all') && selectedWorkTypes.length > 0) {
-            filtered = filtered.filter((w: Worker) =>
-                selectedWorkTypes.some(wt => w.workTypes.includes(wt))
-            );
-        }
-
         // 排序
         if (constructionSortBy === 'rating') {
             filtered.sort((a: Worker, b: Worker) => b.rating - a.rating);
@@ -563,7 +510,7 @@ const HomeScreen: React.FC = () => {
         }
 
         return [{ id: 'FILTER_SECTION' }, ...filtered];
-    }, [workers, isWorkerLoading, constructionOrgFilter, constructionSortBy, selectedWorkTypes]);
+    }, [workers, isWorkerLoading, constructionOrgFilter, constructionSortBy]);
 
     const materialListData = React.useMemo(() => {
         if (isMaterialLoading && materialShops.length === 0) {
@@ -790,7 +737,7 @@ const HomeScreen: React.FC = () => {
                 onBookPress={(w, type) => (navigation as any).navigate('Booking', { provider: w, providerType: type })}
             />
         );
-    }, [constructionSortBy, constructionOrgFilter, showConstructionSortMenu, showWorkTypeModal, selectedWorkTypes, toggleConstructionSort, handleConstructionOrgFilter, navigation]);
+    }, [constructionSortBy, constructionOrgFilter, showConstructionSortMenu, toggleConstructionSort, handleConstructionOrgFilter, navigation]);
 
     const toggleMaterialSort = useCallback(() => {
         setShowMaterialSortMenu(prev => {
@@ -980,10 +927,9 @@ const HomeScreen: React.FC = () => {
         if (showDesignerSortMenu) setShowDesignerSortMenu(false);
         if (showConstructionSortMenu) setShowConstructionSortMenu(false);
         if (showMaterialSortMenu) setShowMaterialSortMenu(false);
-        if (showWorkTypeModal) setShowWorkTypeModal(false);
         if (showMaterialFilterPanel) setShowMaterialFilterPanel(false);
         if (showGlobalSortMenu) setShowGlobalSortMenu(false);
-    }, [showDesignerSortMenu, showConstructionSortMenu, showMaterialSortMenu, showWorkTypeModal, showMaterialFilterPanel, showGlobalSortMenu]);
+    }, [showDesignerSortMenu, showConstructionSortMenu, showMaterialSortMenu, showMaterialFilterPanel, showGlobalSortMenu]);
 
     return (
         <SafeAreaView style={styles.container}>
@@ -1094,7 +1040,7 @@ const HomeScreen: React.FC = () => {
                                                         <Text style={{ fontSize: typography.caption, color: tokens.primary, marginLeft: 2 }}>{item.rating}</Text>
                                                     </View>
                                                     <Text style={styles.searchResultDesc} numberOfLines={1}>
-                                                        {item._type === 'material' ? `${item.brand} · ¥${item.price}/${item.unit}` : item.specialty || item.workTypeLabels}
+                                                        {item._type === 'material' ? `${item.brand} · ¥${item.price}/${item.unit}` : item.specialty || item.serviceLabel || '施工服务'}
                                                     </Text>
                                                 </View>
                                             </TouchableOpacity>

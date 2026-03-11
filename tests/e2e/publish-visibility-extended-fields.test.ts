@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import {
   approveMerchantApplication,
+  buildForemanPortfolioCases,
   buildLegalAcceptancePayload,
   buildRandomMainlandPhone,
   getMerchantAdminTestEnv,
@@ -15,9 +16,6 @@ import {
 type ForemanApplyPayload = Record<string, unknown>;
 
 function createVisibilityForemanPayload(phone: string, marker: string): ForemanApplyPayload {
-  const buildImages = (prefix: string) =>
-    Array.from({ length: 8 }, (_, index) => `https://example.com/${prefix}-${index + 1}.jpg`);
-
   return {
     phone,
     code: '123456',
@@ -25,12 +23,13 @@ function createVisibilityForemanPayload(phone: string, marker: string): ForemanA
     entityType: 'personal',
     realName: '展示链路测试工长',
     avatar: `https://example.com/${marker}-avatar.jpg`,
+    companyName: `西安${marker}施工服务`,
     yearsExperience: 9,
     idCardNo: '11010519491231002X',
     idCardFront: 'https://example.com/id-front.jpg',
     idCardBack: 'https://example.com/id-back.jpg',
     serviceArea: ['610100'],
-    workTypes: [marker],
+    officeAddress: '西安市高新区展示路 9 号',
     highlightTags: ['准时交付', marker],
     pricing: {
       perSqm: 260,
@@ -38,23 +37,7 @@ function createVisibilityForemanPayload(phone: string, marker: string): ForemanA
     introduction: '展示链路测试简介',
     graduateSchool: '西安建筑科技大学',
     designPhilosophy: `展示链路测试理念-${marker}`,
-    portfolioCases: [
-      {
-        title: '施工案例A',
-        description: '施工案例A说明',
-        images: buildImages(`${marker}-a`),
-      },
-      {
-        title: '施工案例B',
-        description: '施工案例B说明',
-        images: buildImages(`${marker}-b`),
-      },
-      {
-        title: '施工案例C',
-        description: '施工案例C说明',
-        images: buildImages(`${marker}-c`),
-      },
-    ],
+    portfolioCases: buildForemanPortfolioCases({ imageCount: 2 }),
     legalAcceptance: buildLegalAcceptancePayload(),
   };
 }
@@ -65,16 +48,15 @@ test.describe('Publish Visibility Extended Fields', () => {
     const adminEnv = getMerchantAdminTestEnv();
 
     const phone = buildRandomMainlandPhone('18');
-    const marker = `e2e_worktype_${Date.now()}`;
+    const marker = `e2e_company_${Date.now()}`;
     const applyPayload = createVisibilityForemanPayload(phone, marker);
 
     const applyResult = await merchantApiPost(request, env.apiBaseUrl, '/merchant/apply', applyPayload);
     expect(applyResult.status).toBe(200);
     expect(applyResult.body.code).toBe(0);
 
-    // 未审核通过前，不应出现在公开列表
     const pendingList = await merchantApiGet<{
-      list: Array<{ id: number; specialty?: string; workTypes?: string }>;
+      list: Array<{ id: number; specialty?: string; companyName?: string }>;
       total: number;
     }>(request, env.apiBaseUrl, `/providers?type=3&keyword=${encodeURIComponent(marker)}&page=1&pageSize=20`);
     expect(pendingList.status).toBe(200);
@@ -98,9 +80,8 @@ test.describe('Publish Visibility Extended Fields', () => {
     expect(approveResult.body.code).toBe(0);
     expect(approveResult.body.data.providerId).toBeGreaterThan(0);
 
-    // 审核通过后，应进入公开列表
     const approvedList = await merchantApiGet<{
-      list: Array<{ id: number; workTypes?: string; specialty?: string }>;
+      list: Array<{ id: number; specialty?: string; companyName?: string }>;
       total: number;
     }>(request, env.apiBaseUrl, `/providers?type=3&keyword=${encodeURIComponent(marker)}&page=1&pageSize=20`);
     expect(approvedList.status).toBe(200);
@@ -121,12 +102,11 @@ test.describe('Publish Visibility Extended Fields', () => {
     expect(userLoginResult.body.code).toBe(0);
     expect(userLoginResult.body.data.token).toBeTruthy();
 
-    // 扩展字段详情校验（供 mobile/mini 消费）
     const detailResult = await merchantApiGet<{
       provider: {
         id: number;
         verified: boolean;
-        workTypes: string;
+        companyName?: string;
         highlightTags?: string;
         pricingJson?: string;
         graduateSchool?: string;
@@ -137,7 +117,7 @@ test.describe('Publish Visibility Extended Fields', () => {
     expect(detailResult.body.code).toBe(0);
     expect(detailResult.body.data.provider.id).toBe(approveResult.body.data.providerId);
     expect(detailResult.body.data.provider.verified).toBe(true);
-    expect(detailResult.body.data.provider.workTypes).toContain(marker);
+    expect(detailResult.body.data.provider.companyName || '').toContain(marker);
     expect(detailResult.body.data.provider.highlightTags || '').toContain(marker);
     expect(detailResult.body.data.provider.pricingJson || '').toContain('perSqm');
     expect(detailResult.body.data.provider.graduateSchool).toBe('西安建筑科技大学');

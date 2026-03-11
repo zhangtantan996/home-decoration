@@ -83,30 +83,6 @@ func normalizeMerchantProviderSubType(applicantType string, providerType int8) s
 	}
 }
 
-func parseProviderWorkTypes(raw string) []string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return []string{}
-	}
-
-	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-		var jsonValues []string
-		if err := json.Unmarshal([]byte(trimmed), &jsonValues); err == nil {
-			return normalizeStringSlice(jsonValues)
-		}
-	}
-
-	if strings.Contains(trimmed, " · ") {
-		return normalizeStringSlice(strings.Split(trimmed, " · "))
-	}
-
-	if strings.Contains(trimmed, ",") {
-		return normalizeStringSlice(strings.Split(trimmed, ","))
-	}
-
-	return normalizeStringSlice([]string{trimmed})
-}
-
 func providerRoleFromSubType(providerSubType string) string {
 	switch providerSubType {
 	case "company":
@@ -521,8 +497,8 @@ func MerchantGetInfo(c *gin.Context) {
 	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
 	role := providerRoleFromSubType(providerSubType)
 	entityType := normalizeProviderEntityType(provider.EntityType, applicantType)
-	workTypes := parseProviderWorkTypes(provider.WorkTypes)
 	highlightTags := parseJSONOrDelimitedSlice(provider.HighlightTags)
+	companyAlbum := parseJSONStringSlice(provider.CompanyAlbumJSON)
 	pricing := parsePricingObject(provider.PricingJSON)
 	avatar := strings.TrimSpace(provider.Avatar)
 	if avatar == "" {
@@ -545,7 +521,6 @@ func MerchantGetInfo(c *gin.Context) {
 		"verified":            provider.Verified,
 		"yearsExperience":     provider.YearsExperience,
 		"specialty":           specialty,
-		"workTypes":           workTypes,
 		"highlightTags":       highlightTags,
 		"pricing":             pricing,
 		"graduateSchool":      provider.GraduateSchool,
@@ -555,6 +530,7 @@ func MerchantGetInfo(c *gin.Context) {
 		"introduction":        provider.ServiceIntro,
 		"teamSize":            provider.TeamSize,
 		"officeAddress":       provider.OfficeAddress,
+		"companyAlbum":        imgutil.GetFullImageURLs(companyAlbum),
 	})
 }
 
@@ -566,9 +542,9 @@ func MerchantUpdateInfo(c *gin.Context) {
 	var input struct {
 		Name             string             `json:"name"` // 显示名称
 		CompanyName      string             `json:"companyName"`
+		CompanyAlbum     []string           `json:"companyAlbum"`
 		YearsExperience  int                `json:"yearsExperience"`
 		Specialty        []string           `json:"specialty"`
-		WorkTypes        []string           `json:"workTypes"`
 		HighlightTags    []string           `json:"highlightTags"`
 		Pricing          map[string]float64 `json:"pricing"`
 		GraduateSchool   string             `json:"graduateSchool"`
@@ -627,17 +603,8 @@ func MerchantUpdateInfo(c *gin.Context) {
 	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
 
 	if providerSubType == "foreman" {
-		if input.WorkTypes != nil {
-			normalizedWorkTypes := normalizeStringSlice(input.WorkTypes)
-			if len(normalizedWorkTypes) == 0 {
-				tx.Rollback()
-				response.Error(c, 400, "工长至少需要保留1个工种")
-				return
-			}
-			workTypesJSON, _ := json.Marshal(normalizedWorkTypes)
-			updates["work_types"] = string(workTypesJSON)
-			updates["specialty"] = strings.Join(normalizedWorkTypes, " · ")
-		}
+		updates["work_types"] = ""
+		updates["specialty"] = "全工种施工"
 	} else {
 		if len(input.Specialty) > 0 {
 			updates["specialty"] = strings.Join(normalizeStringSlice(input.Specialty), " · ")
@@ -665,6 +632,16 @@ func MerchantUpdateInfo(c *gin.Context) {
 	if input.DesignPhilosophy != "" {
 		updates["design_philosophy"] = strings.TrimSpace(input.DesignPhilosophy)
 	}
+	if input.CompanyAlbum != nil {
+		normalizedCompanyAlbum := normalizeStringSlice(input.CompanyAlbum)
+		if providerSubType == "company" && (len(normalizedCompanyAlbum) < 3 || len(normalizedCompanyAlbum) > 8) {
+			tx.Rollback()
+			response.Error(c, 400, "装修公司企业相册需上传3-8张图片")
+			return
+		}
+		albumJSON, _ := json.Marshal(normalizedCompanyAlbum)
+		updates["company_album_json"] = string(albumJSON)
+	}
 
 	if len(serviceAreaCodes) > 0 {
 		jsonBytes, _ := json.Marshal(serviceAreaCodes)
@@ -686,6 +663,11 @@ func MerchantUpdateInfo(c *gin.Context) {
 
 	updates["service_intro"] = input.Introduction
 	updates["team_size"] = input.TeamSize
+	if strings.TrimSpace(input.OfficeAddress) == "" {
+		tx.Rollback()
+		response.Error(c, 400, "办公地址不能为空")
+		return
+	}
 	updates["office_address"] = input.OfficeAddress
 
 	if err := tx.Model(&provider).Updates(updates).Error; err != nil {

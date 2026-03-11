@@ -49,9 +49,9 @@ type MerchantApplyInput struct {
 	LicenseImage  string `json:"licenseImage"`
 	TeamSize      int    `json:"teamSize"`
 	OfficeAddress string `json:"officeAddress"`
+	CompanyAlbum  []string `json:"companyAlbum"`
 	// 工长专属
-	YearsExperience int      `json:"yearsExperience"`
-	WorkTypes       []string `json:"workTypes"`
+	YearsExperience int `json:"yearsExperience"`
 	// 通用
 	ServiceArea      []string           `json:"serviceArea" binding:"required,min=1"`
 	Styles           []string           `json:"styles"`
@@ -68,7 +68,8 @@ type MerchantApplyInput struct {
 
 // PortfolioCaseInput 作品集输入
 type PortfolioCaseInput struct {
-	Title       string   `json:"title" binding:"required"`
+	Category    string   `json:"category"`
+	Title       string   `json:"title"`
 	Description string   `json:"description" binding:"required"`
 	Images      []string `json:"images" binding:"required,min=1"`
 	Style       string   `json:"style"`
@@ -485,7 +486,46 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 		return fmt.Errorf("请至少添加1个案例")
 	}
 
+	if role == "foreman" {
+		normalized := normalizeForemanPortfolioCases(cases)
+		provided := make(map[string]PortfolioCaseInput, len(normalized))
+		for _, item := range normalized {
+			provided[item.Category] = item
+		}
+		for _, category := range foremanRequiredCategories {
+			item, ok := provided[category]
+			if !ok {
+				return fmt.Errorf("工长需补充%s", foremanCategoryDisplayNames[category])
+			}
+			if strings.TrimSpace(item.Description) == "" {
+				return fmt.Errorf("%s工艺说明不能为空", foremanCategoryDisplayNames[category])
+			}
+			if len([]rune(strings.TrimSpace(item.Description))) > 5000 {
+				return fmt.Errorf("%s工艺说明不能超过5000个字符", foremanCategoryDisplayNames[category])
+			}
+			images := normalizeStringSlice(item.Images)
+			if len(images) < 2 || len(images) > 8 {
+				return fmt.Errorf("%s需上传2-8张图片", foremanCategoryDisplayNames[category])
+			}
+		}
+		if item, ok := provided["other"]; ok {
+			desc := strings.TrimSpace(item.Description)
+			images := normalizeStringSlice(item.Images)
+			if desc == "" && len(images) == 0 {
+				return nil
+			}
+			if desc == "" {
+				return fmt.Errorf("其他施工展示工艺说明不能为空")
+			}
+			if len(images) < 2 || len(images) > 8 {
+				return fmt.Errorf("其他施工展示需上传2-8张图片")
+			}
+		}
+		return nil
+	}
+
 	for index := range cases {
+		cases[index].Category = normalizeForemanCategory(cases[index].Category)
 		cases[index].Title = strings.TrimSpace(cases[index].Title)
 		cases[index].Description = strings.TrimSpace(cases[index].Description)
 		cases[index].Style = strings.TrimSpace(cases[index].Style)
@@ -507,12 +547,15 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 
 		switch role {
 		case "designer":
-			if len(cases[index].Images) < 3 || len(cases[index].Images) > 6 {
-				return fmt.Errorf("设计师第%d个案例需上传3-6张图片", index+1)
+			minImages := 4
+			if len(cases[index].Images) < minImages || len(cases[index].Images) > 12 {
+				return fmt.Errorf("设计师第%d个案例需上传%d-12张图片", index+1, minImages)
 			}
-		case "foreman":
-			if len(cases[index].Images) < 8 || len(cases[index].Images) > 12 {
-				return fmt.Errorf("工长第%d个施工案例需上传8-12张图片", index+1)
+			if strings.TrimSpace(cases[index].Style) == "" {
+				cases[index].Style = "现代简约"
+			}
+			if strings.TrimSpace(cases[index].Area) == "" {
+				cases[index].Area = "待补充"
 			}
 		case "company":
 			if len(cases[index].Images) < 3 {
@@ -534,8 +577,8 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	}
 
 	input.Styles = normalizeStringSlice(input.Styles)
-	input.WorkTypes = normalizeStringSlice(input.WorkTypes)
 	input.HighlightTags = normalizeStringSlice(input.HighlightTags)
+	input.CompanyAlbum = normalizeStringSlice(input.CompanyAlbum)
 	input.Avatar = strings.TrimSpace(input.Avatar)
 	input.RealName = strings.TrimSpace(input.RealName)
 	input.IDCardNo = strings.TrimSpace(input.IDCardNo)
@@ -551,6 +594,7 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	input.GraduateSchool = strings.TrimSpace(input.GraduateSchool)
 	input.DesignPhilosophy = strings.TrimSpace(input.DesignPhilosophy)
 	input.Introduction = strings.TrimSpace(input.Introduction)
+	input.OfficeAddress = strings.TrimSpace(input.OfficeAddress)
 
 	if input.EntityType == "company" {
 		if input.LegalPersonName != "" {
@@ -616,6 +660,9 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	if len([]rune(input.DesignPhilosophy)) > 5000 {
 		return fmt.Errorf("设计理念不能超过5000个字符")
 	}
+	if input.OfficeAddress == "" {
+		return fmt.Errorf("请填写办公地址")
+	}
 
 	if err := validatePortfolioCases(input.Role, input.PortfolioCases); err != nil {
 		return err
@@ -653,18 +700,22 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 		if !validateOptionalPricingValue(input.Pricing, "duplex") || !validateOptionalPricingValue(input.Pricing, "other") {
 			return fmt.Errorf("设计师复式/其他报价需在1-99999之间（元/㎡）")
 		}
+		if input.EntityType == "company" {
+			for index := range input.PortfolioCases {
+				if len(normalizeStringSlice(input.PortfolioCases[index].Images)) < 6 || len(normalizeStringSlice(input.PortfolioCases[index].Images)) > 12 {
+					return fmt.Errorf("企业主体设计师第%d个案例需上传6-12张图片", index+1)
+				}
+			}
+		}
 	case "foreman":
 		if input.YearsExperience <= 0 || input.YearsExperience > 50 {
 			return fmt.Errorf("工长类型需要填写1-50年的施工经验")
 		}
-		if len(input.WorkTypes) < 1 {
-			return fmt.Errorf("工长类型至少选择1个工种")
-		}
 		if len(input.HighlightTags) < 1 || len(input.HighlightTags) > 3 {
 			return fmt.Errorf("工长施工亮点需选择1-3个")
 		}
-		if len(input.PortfolioCases) < 3 {
-			return fmt.Errorf("工长类型请至少添加3个施工案例")
+		if len(normalizeForemanPortfolioCases(input.PortfolioCases)) < len(foremanRequiredCategories) {
+			return fmt.Errorf("工长类型需补齐5个必填施工展示")
 		}
 		if !validatePricingValue(input.Pricing, "perSqm") {
 			return fmt.Errorf("工长需填写施工报价（元/㎡）")
@@ -672,6 +723,9 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 	case "company":
 		if len(input.PortfolioCases) < 3 {
 			return fmt.Errorf("装修公司请至少添加3个案例")
+		}
+		if len(input.CompanyAlbum) < 3 || len(input.CompanyAlbum) > 8 {
+			return fmt.Errorf("装修公司企业相册需上传3-8张图片")
 		}
 		if !validatePricingValue(input.Pricing, "fullPackage") || !validatePricingValue(input.Pricing, "halfPackage") {
 			return fmt.Errorf("装修公司需填写全包/半包报价（元/㎡）")
@@ -746,10 +800,14 @@ func MerchantApply(c *gin.Context) {
 	// 5. 序列化 JSON 字段
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
-	workTypesJSON, _ := json.Marshal(input.WorkTypes)
 	highlightTagsJSON, _ := json.Marshal(input.HighlightTags)
 	pricingJSON, _ := json.Marshal(input.Pricing)
-	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
+	portfolioCases := input.PortfolioCases
+	if input.Role == "foreman" {
+		portfolioCases = normalizeForemanPortfolioCases(input.PortfolioCases)
+	}
+	portfolioJSON, _ := json.Marshal(portfolioCases)
+	companyAlbumJSON, _ := json.Marshal(input.CompanyAlbum)
 
 	tx := repository.DB.Begin()
 
@@ -837,8 +895,8 @@ func MerchantApply(c *gin.Context) {
 		LicenseImage:        input.LicenseImage,
 		TeamSize:            input.TeamSize,
 		OfficeAddress:       input.OfficeAddress,
+		CompanyAlbumJSON:    string(companyAlbumJSON),
 		YearsExperience:     input.YearsExperience,
-		WorkTypes:           string(workTypesJSON),
 		ServiceArea:         string(serviceAreaJSON),
 		Styles:              string(stylesJSON),
 		HighlightTags:       string(highlightTagsJSON),
@@ -969,15 +1027,18 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 				return
 			}
 
-			var serviceAreaCodes, styles, workTypes, highlightTags []string
+			var serviceAreaCodes, styles, highlightTags, companyAlbum []string
 			var pricing map[string]float64
 			var portfolioCases []PortfolioCaseInput
 			_ = json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
 			_ = json.Unmarshal([]byte(app.Styles), &styles)
-			_ = json.Unmarshal([]byte(app.WorkTypes), &workTypes)
 			_ = json.Unmarshal([]byte(app.HighlightTags), &highlightTags)
+			_ = json.Unmarshal([]byte(app.CompanyAlbumJSON), &companyAlbum)
 			_ = json.Unmarshal([]byte(app.PricingJSON), &pricing)
 			_ = json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
+			if app.Role == "foreman" {
+				portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
+			}
 			serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
 			result["merchantKind"] = "provider"
@@ -1002,8 +1063,8 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 				"legalPersonIdCardBack":  imgutil.GetFullImageURL(app.LegalPersonIDCardBack),
 				"teamSize":               app.TeamSize,
 				"officeAddress":          app.OfficeAddress,
+				"companyAlbum":           imgutil.GetFullImageURLs(companyAlbum),
 				"yearsExperience":        app.YearsExperience,
-				"workTypes":              workTypes,
 				"serviceArea":            serviceAreaNames,
 				"serviceAreaCodes":       serviceAreaCodes,
 				"styles":                 styles,
@@ -1034,15 +1095,11 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 			_ = repository.DB.Where("application_id = ?", app.ID).Order("sort_order ASC, id ASC").Find(&products).Error
 			productList := make([]gin.H, 0, len(products))
 			for _, product := range products {
-				var params map[string]interface{}
 				var images []string
-				_ = json.Unmarshal([]byte(product.ParamsJSON), &params)
 				_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
-				if params == nil {
-					params = map[string]interface{}{}
-				}
-				productList = append(productList, gin.H{"name": product.Name, "params": params, "price": product.Price, "images": imgutil.GetFullImageURLs(images)})
+				productList = append(productList, gin.H{"name": product.Name, "unit": product.Unit, "price": product.Price, "images": imgutil.GetFullImageURLs(images)})
 			}
+			businessHoursRanges := parseBusinessHoursRanges(app.BusinessHoursJSON)
 			result["merchantKind"] = "material_shop"
 			result["rejectReason"] = app.RejectReason
 			result["resubmitEditable"] = gin.H{"phone": false, "merchantKind": false}
@@ -1059,6 +1116,7 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 				"legalPersonIdCardFront": imgutil.GetFullImageURL(app.LegalPersonIDCardFront),
 				"legalPersonIdCardBack":  imgutil.GetFullImageURL(app.LegalPersonIDCardBack),
 				"businessHours":          app.BusinessHours,
+				"businessHoursRanges":    businessHoursRanges,
 				"contactPhone":           app.ContactPhone,
 				"contactName":            app.ContactName,
 				"address":                app.Address,
@@ -1106,15 +1164,18 @@ func MerchantApplyDetailForResubmit(c *gin.Context) {
 		return
 	}
 
-	var serviceAreaCodes, styles, workTypes, highlightTags []string
+	var serviceAreaCodes, styles, highlightTags, companyAlbum []string
 	var pricing map[string]float64
 	var portfolioCases []PortfolioCaseInput
 	_ = json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
 	_ = json.Unmarshal([]byte(app.Styles), &styles)
-	_ = json.Unmarshal([]byte(app.WorkTypes), &workTypes)
 	_ = json.Unmarshal([]byte(app.HighlightTags), &highlightTags)
+	_ = json.Unmarshal([]byte(app.CompanyAlbumJSON), &companyAlbum)
 	_ = json.Unmarshal([]byte(app.PricingJSON), &pricing)
 	_ = json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
+	if app.Role == "foreman" {
+		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
+	}
 	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
 	response.Success(c, gin.H{
@@ -1140,8 +1201,8 @@ func MerchantApplyDetailForResubmit(c *gin.Context) {
 			"licenseImage":         imgutil.GetFullImageURL(app.LicenseImage),
 			"teamSize":             app.TeamSize,
 			"officeAddress":        app.OfficeAddress,
+			"companyAlbum":         imgutil.GetFullImageURLs(companyAlbum),
 			"yearsExperience":      app.YearsExperience,
-			"workTypes":            workTypes,
 			"serviceArea":          serviceAreaNames,
 			"serviceAreaCodes":     serviceAreaCodes,
 			"styles":               styles,
@@ -1224,10 +1285,14 @@ func MerchantResubmit(c *gin.Context) {
 	// 更新申请信息
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
-	workTypesJSON, _ := json.Marshal(input.WorkTypes)
 	highlightTagsJSON, _ := json.Marshal(input.HighlightTags)
 	pricingJSON, _ := json.Marshal(input.Pricing)
-	portfolioJSON, _ := json.Marshal(input.PortfolioCases)
+	portfolioCases := input.PortfolioCases
+	if input.Role == "foreman" {
+		portfolioCases = normalizeForemanPortfolioCases(input.PortfolioCases)
+	}
+	portfolioJSON, _ := json.Marshal(portfolioCases)
+	companyAlbumJSON, _ := json.Marshal(input.CompanyAlbum)
 
 	app.Role = input.Role
 	app.EntityType = input.EntityType
@@ -1243,7 +1308,7 @@ func MerchantResubmit(c *gin.Context) {
 	app.TeamSize = input.TeamSize
 	app.OfficeAddress = input.OfficeAddress
 	app.YearsExperience = input.YearsExperience
-	app.WorkTypes = string(workTypesJSON)
+	app.CompanyAlbumJSON = string(companyAlbumJSON)
 	app.ServiceArea = string(serviceAreaJSON)
 	app.Styles = string(stylesJSON)
 	app.HighlightTags = string(highlightTagsJSON)
@@ -1353,15 +1418,18 @@ func AdminGetApplication(c *gin.Context) {
 		return
 	}
 
-	var serviceAreaCodes, styles, workTypes, highlightTags []string
+	var serviceAreaCodes, styles, highlightTags, companyAlbum []string
 	var pricing map[string]float64
 	var portfolioCases []PortfolioCaseInput
 	json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
 	json.Unmarshal([]byte(app.Styles), &styles)
-	json.Unmarshal([]byte(app.WorkTypes), &workTypes)
 	json.Unmarshal([]byte(app.HighlightTags), &highlightTags)
+	json.Unmarshal([]byte(app.CompanyAlbumJSON), &companyAlbum)
 	json.Unmarshal([]byte(app.PricingJSON), &pricing)
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
+	if app.Role == "foreman" {
+		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
+	}
 
 	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
@@ -1383,7 +1451,7 @@ func AdminGetApplication(c *gin.Context) {
 		"licenseImage":        imgutil.GetFullImageURL(app.LicenseImage),
 		"teamSize":            app.TeamSize,
 		"yearsExperience":     app.YearsExperience,
-		"workTypes":           workTypes,
+		"companyAlbum":        imgutil.GetFullImageURLs(companyAlbum),
 		"officeAddress":       app.OfficeAddress,
 		"serviceArea":         serviceAreaNames,
 		"serviceAreaCodes":    serviceAreaCodes,
@@ -1466,19 +1534,19 @@ func AdminApproveApplication(c *gin.Context) {
 		return
 	}
 
-	workTypes := parseJSONOrDelimitedSlice(app.WorkTypes)
 	styles := parseJSONOrDelimitedSlice(app.Styles)
 	highlightTags := normalizeStringSlice(parseJSONOrDelimitedSlice(app.HighlightTags))
+	companyAlbum := parseJSONStringSlice(app.CompanyAlbumJSON)
 	pricing := parsePricingObject(app.PricingJSON)
 	priceMin, priceMax := getPricingRange(pricing)
 
-	workTypesJSON, _ := json.Marshal(workTypes)
 	highlightTagsJSON, _ := json.Marshal(highlightTags)
 	pricingJSON, _ := json.Marshal(pricing)
+	companyAlbumJSON, _ := json.Marshal(companyAlbum)
 
 	specialty := strings.Join(styles, " · ")
-	if providerType == 3 && len(workTypes) > 0 {
-		specialty = strings.Join(workTypes, " · ")
+	if providerType == 3 {
+		specialty = "全工种施工"
 	}
 
 	// 3. 创建 Provider
@@ -1493,7 +1561,6 @@ func AdminApproveApplication(c *gin.Context) {
 		LicenseNo:           app.LicenseNo,
 		ServiceArea:         app.ServiceArea,
 		Specialty:           specialty,
-		WorkTypes:           string(workTypesJSON),
 		HighlightTags:       string(highlightTagsJSON),
 		PricingJSON:         string(pricingJSON),
 		GraduateSchool:      app.GraduateSchool,
@@ -1502,6 +1569,7 @@ func AdminApproveApplication(c *gin.Context) {
 		ServiceIntro:        app.Introduction,
 		TeamSize:            app.TeamSize,
 		OfficeAddress:       app.OfficeAddress,
+		CompanyAlbumJSON:    string(companyAlbumJSON),
 		PriceMin:            priceMin,
 		PriceMax:            priceMax,
 		Status:              1,
@@ -1529,6 +1597,9 @@ func AdminApproveApplication(c *gin.Context) {
 	// 4. 迁移作品集到 ProviderCase
 	var portfolioCases []PortfolioCaseInput
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
+	if app.Role == "foreman" {
+		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
+	}
 
 	// 作品风格若未填写，回退到商家擅长风格的第一个选项，保证灵感库筛选字段有值。
 	fallbackStyles := styles
@@ -1545,23 +1616,31 @@ func AdminApproveApplication(c *gin.Context) {
 		}
 
 		style := strings.TrimSpace(pc.Style)
-		if style == "" {
-			style = fallbackStyle
-		}
-		if style == "" {
-			// 保底，避免出现空风格导致灵感库筛选无效。
-			style = "现代简约"
+		if app.Role != "foreman" {
+			if style == "" {
+				style = fallbackStyle
+			}
+			if style == "" {
+				style = "现代简约"
+			}
 		}
 		layout := "其他"
+		title := pc.Title
+		area := pc.Area
+		if app.Role == "foreman" {
+			title = foremanCategoryDisplayNames[normalizeForemanCategory(firstNonEmpty(pc.Category, pc.Title))]
+			style = ""
+			area = ""
+		}
 
 		providerCase := model.ProviderCase{
 			ProviderID:  provider.ID,
-			Title:       pc.Title,
+			Title:       title,
 			Description: pc.Description,
 			CoverImage:  coverImage,
 			Style:       style,
 			Layout:      layout,
-			Area:        pc.Area,
+			Area:        area,
 			Price:       0,
 			Images:      string(imagesJSON),
 			SortOrder:   i,

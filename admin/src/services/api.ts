@@ -330,7 +330,6 @@ export interface MerchantApplicationDetails {
 
     // 工长扩展信息
     yearsExperience?: number;
-    workTypes?: string[];
 
     // 服务信息
     serviceArea?: string[];      // 服务区域名称数组

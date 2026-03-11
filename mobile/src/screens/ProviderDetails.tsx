@@ -31,29 +31,6 @@ const formatFollowers = (count: number) => {
     return count.toString();
 };
 
-// 工种英文转中文
-const translateWorkType = (workType: string): string => {
-    const map: Record<string, string> = {
-        'carpenter': '木工',
-        'electrician': '电工',
-        'plumber': '水管工',
-        'painter': '油漆工',
-        'mason': '泥瓦工',
-        'tiler': '瓷砖工',
-        'hvac': '暖通工',
-        'general': '全屋装修',
-        'demolition': '拆除',
-        '水电工': '水电工',
-        '木工': '木工',
-        '油漆工': '油漆工',
-    };
-    // 处理逗号分隔的多个工种
-    if (workType.includes(',')) {
-        return workType.split(',').map(t => map[t.trim()] || t.trim()).join(' · ');
-    }
-    return map[workType] || workType;
-};
-
 const parseStringArray = (raw?: string): string[] => {
     const text = String(raw || '').trim();
     if (!text) {
@@ -646,9 +623,9 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
         reviewCount: detail?.reviewCount || provider.reviewCount || initialWorker.reviewCount || 0,
         yearsExperience: provider.yearsExperience || initialWorker.yearsExperience || 0,
         completedOrders: provider.completedCnt || initialWorker.completedOrders || 0,
-        workTypeLabels: translateWorkType(provider.workTypes || initialWorker.workTypeLabels || '水电工'),
+        serviceLabel: provider.specialty || initialWorker.serviceLabel || '施工服务',
         tags: parseStringArray(provider.highlightTags).length > 0 ? parseStringArray(provider.highlightTags) : (initialWorker.tags || ['准时守信', '技术过硬', '收费透明']),
-        serviceIntro: provider.serviceIntro || `专注${initialWorker.workTypeLabels || '施工'}服务${initialWorker.yearsExperience || 5}年，经验丰富，做工细致。`,
+        serviceIntro: provider.serviceIntro || '专注施工服务，经验丰富，做工细致。',
         priceMin: provider.priceMin || initialWorker.priceRange?.split('-')[0] || 200,
         priceMax: provider.priceMax || initialWorker.priceRange?.split('-')[1] || 400,
         priceUnit: provider.priceUnit || initialWorker.priceUnit || '/m²',
@@ -754,7 +731,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                                 avatar: displayData.avatar,
                                 rating: displayData.rating,
                                 yearsExperience: displayData.yearsExperience,
-                                specialty: displayData.workTypeLabels, // Workers use workTypeLabels as specialty
+                                specialty: displayData.serviceLabel,
                             },
                             providerType: 'worker'
                         })}
@@ -782,10 +759,10 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                             </TouchableOpacity>
                         </View>
                         <Text style={styles.designerDashExperienceText}>{displayData.yearsExperience}年经验</Text>
-                        {!!displayData.workTypeLabels && (
+                        {!!displayData.serviceLabel && (
                             <View style={styles.specialtyPill}>
                                 <Text style={styles.specialtyPillText} numberOfLines={1}>
-                                    {displayData.workTypeLabels}
+                                    {displayData.serviceLabel}
                                 </Text>
                             </View>
                         )}
@@ -1017,7 +994,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
         completedOrders: provider.completedCnt || initialCompany.completedOrders || 0,
         teamSize: provider.teamSize || initialCompany.teamSize || 20,
         establishedYear: provider.establishedYear || initialCompany.establishedYear || 2015,
-        workTypeLabels: translateWorkType(provider.workTypes || initialCompany.workTypeLabels || '全包'),
+        serviceLabel: provider.specialty || initialCompany.serviceLabel || '装修施工服务',
         certifications: initialCompany.certifications || ['建筑装饰资质', '设计甲级资质'],
         serviceIntro: provider.serviceIntro || `${initialCompany.name || '本公司'}成立于${initialCompany.establishedYear || 2015}年，提供专业的装修设计与施工服务。`,
         priceMin: provider.priceMin || 800,

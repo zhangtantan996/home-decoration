@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRightOutlined, CheckOutlined, DeleteOutlined, MinusCircleOutlined, PlusOutlined, SafetyOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, CheckOutlined, DeleteOutlined, PlusOutlined, SafetyOutlined } from '@ant-design/icons';
 import {
     Alert,
     Button,
@@ -29,11 +29,13 @@ import {
     merchantAuthApi,
     merchantUploadApi,
     onboardingValidationApi,
+    type BusinessHoursRange,
     type MaterialShopApplyDetailData,
     type MaterialShopApplyPayload,
 } from '../../services/merchantApi';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
+import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
 
 const { Title, Text } = Typography;
 
@@ -51,27 +53,78 @@ interface PhoneVerificationState {
     applicationId?: number;
 }
 
-interface ParamEntry {
-    id: string;
-    key: string;
-    value: string;
-}
-
 interface MaterialProductForm {
     id: string;
     name: string;
+    unit: string;
     price?: number;
-    params: ParamEntry[];
     images: string[];
 }
 
 const createEmptyProduct = (): MaterialProductForm => ({
     id: `product_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
     name: '',
+    unit: '',
     price: undefined,
-    params: [],
     images: [],
 });
+
+const normalizeBusinessHoursRangesForForm = (value: unknown): BusinessHoursRange[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value
+        .map((item) => ({
+            day: Number((item as BusinessHoursRange)?.day) === 7 ? 0 : Number((item as BusinessHoursRange)?.day),
+            start: String((item as BusinessHoursRange)?.start || ''),
+            end: String((item as BusinessHoursRange)?.end || ''),
+        }))
+        .filter((item) => Number.isInteger(item.day) && item.day >= 0 && item.day <= 6);
+};
+
+const normalizeBusinessHoursRangesForApi = (value: unknown): BusinessHoursRange[] =>
+    normalizeBusinessHoursRangesForForm(value).map((item) => ({
+        ...item,
+        day: item.day === 0 ? 7 : item.day,
+    }));
+
+const parseLegacyBusinessHoursText = (value?: string): BusinessHoursRange[] => {
+    const text = String(value || '').trim();
+    if (!text) {
+        return [];
+    }
+
+    const ranges: BusinessHoursRange[] = [];
+    const matchAll = text.matchAll(/周([一二三四五六日])\s*(\d{2}:\d{2})-(\d{2}:\d{2})/g);
+    const dayMap: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 0 };
+    for (const match of matchAll) {
+        ranges.push({ day: dayMap[match[1]], start: match[2], end: match[3] });
+    }
+    if (ranges.length > 0) {
+        return ranges;
+    }
+
+    const plain = text.match(/(\d{2}:\d{2})-(\d{2}:\d{2})/);
+    if (!plain) {
+        return [];
+    }
+    return [{ day: 1, start: plain[1], end: plain[2] }];
+};
+
+const resolveBusinessHoursRanges = (ranges?: BusinessHoursRange[], legacyText?: string) => {
+    const normalized = normalizeBusinessHoursRangesForForm(ranges);
+    return normalized.length > 0 ? normalized : parseLegacyBusinessHoursText(legacyText);
+};
+
+const resolveProductUnit = (product: Record<string, unknown>) => {
+    const explicitUnit = String(product.unit || '').trim();
+    if (explicitUnit) {
+        return explicitUnit;
+    }
+    const params = product.params as Record<string, unknown> | undefined;
+    const legacyUnit = params?.unit ?? params?.单位;
+    return legacyUnit === undefined || legacyUnit === null ? '' : String(legacyUnit).trim();
+};
 
 const getErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) {
@@ -347,6 +400,7 @@ const MaterialShopRegister: React.FC = () => {
             legalPersonIdCardFront: detail.legalPersonIdCardFront,
             legalPersonIdCardBack: detail.legalPersonIdCardBack,
             businessHours: detail.businessHours,
+            businessHoursRanges: resolveBusinessHoursRanges(detail.businessHoursRanges, detail.businessHours),
             contactPhone: detail.contactPhone,
             contactName: detail.contactName,
             address: detail.address,
@@ -357,12 +411,8 @@ const MaterialShopRegister: React.FC = () => {
             setProducts(detail.products.map((product, index) => ({
                 id: `resubmit_product_${index}_${Date.now()}`,
                 name: String(product?.name || ''),
+                unit: resolveProductUnit(product as unknown as Record<string, unknown>),
                 price: typeof product?.price === 'number' ? product.price : undefined,
-                params: Object.entries(product?.params || {}).map(([key, value]) => ({
-                    id: `param_${key}_${index}`,
-                    key,
-                    value: String(value),
-                })),
                 images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
             })));
         }
@@ -432,7 +482,7 @@ const MaterialShopRegister: React.FC = () => {
                 const next = [...prev];
                 const current = next[productIndex]?.images || [];
                 if (!current.includes(uploaded.url)) {
-                    next[productIndex] = { ...next[productIndex], images: [...current, uploaded.url] };
+                    next[productIndex] = { ...next[productIndex], images: [...current, uploaded.url].slice(0, 6) };
                 }
                 return next;
             });
@@ -506,7 +556,7 @@ const MaterialShopRegister: React.FC = () => {
                     'legalPersonIdCardNo',
                     'legalPersonIdCardFront',
                     'legalPersonIdCardBack',
-                    'businessHours',
+                    'businessHoursRanges',
                     'contactPhone',
                     'address',
                 ]);
@@ -623,12 +673,8 @@ const MaterialShopRegister: React.FC = () => {
                     ? response.form.products.map((product, index) => ({
                         id: `resubmit_product_${index}_${Date.now()}`,
                         name: String(product?.name || ''),
+                        unit: resolveProductUnit(product as unknown as Record<string, unknown>),
                         price: typeof product?.price === 'number' ? product.price : undefined,
-                        params: Object.entries(product?.params || {}).map(([key, value]) => ({
-                            id: `param_${key}_${index}`,
-                            key,
-                            value: String(value),
-                        })),
                         images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
                     }))
                     : [];
@@ -647,6 +693,7 @@ const MaterialShopRegister: React.FC = () => {
                         legalPersonIdCardFront: response.form.legalPersonIdCardFront,
                         legalPersonIdCardBack: response.form.legalPersonIdCardBack,
                         businessHours: response.form.businessHours,
+                        businessHoursRanges: resolveBusinessHoursRanges(response.form.businessHoursRanges, response.form.businessHours),
                         contactPhone: response.form.contactPhone,
                         contactName: response.form.contactName,
                         address: response.form.address,
@@ -685,7 +732,7 @@ const MaterialShopRegister: React.FC = () => {
     };
 
     const validateProducts = () => {
-        const validProducts = products.filter((product) => product.name.trim() && product.price && product.images.length > 0);
+        const validProducts = products.filter((product) => product.name.trim() && product.unit.trim() && product.price && product.images.length > 0);
         if (validProducts.length < 5) {
             message.error('请至少填写 5 个商品');
             return false;
@@ -697,15 +744,13 @@ const MaterialShopRegister: React.FC = () => {
 
         for (let index = 0; index < validProducts.length; index += 1) {
             const product = validProducts[index];
-            if (product.params.length === 0) {
-                message.error(`第 ${index + 1} 个商品至少需要一个参数`);
+            if (!product.unit.trim()) {
+                message.error(`第 ${index + 1} 个商品请输入单位`);
                 return false;
             }
-            for (const param of product.params) {
-                if (!param.key.trim() || !param.value.trim()) {
-                    message.error(`第 ${index + 1} 个商品存在空参数`);
-                    return false;
-                }
+            if (product.images.length < 1 || product.images.length > 6) {
+                message.error(`第 ${index + 1} 个商品图片数量需为 1-6 张`);
+                return false;
             }
         }
         return true;
@@ -723,7 +768,7 @@ const MaterialShopRegister: React.FC = () => {
                 'legalPersonIdCardNo',
                 'legalPersonIdCardFront',
                 'legalPersonIdCardBack',
-                'businessHours',
+                'businessHoursRanges',
                 'contactPhone',
                 'address',
                 'legalAccepted',
@@ -751,22 +796,15 @@ const MaterialShopRegister: React.FC = () => {
                 setLoading(true);
                 try {
                     const values = form.getFieldsValue(true) as Record<string, unknown>;
+                    const businessHoursRanges = normalizeBusinessHoursRangesForApi(values.businessHoursRanges);
                     const validProducts = products
-                        .filter((product) => product.name.trim() && product.price && product.images.length > 0)
-                        .map((product) => {
-                            const paramsObj: Record<string, string> = {};
-                            product.params.forEach((param) => {
-                                if (param.key.trim() && param.value.trim()) {
-                                    paramsObj[param.key.trim()] = param.value.trim();
-                                }
-                            });
-                            return {
-                                name: product.name.trim(),
-                                price: Number(product.price),
-                                params: paramsObj,
-                                images: product.images,
-                            };
-                        });
+                        .filter((product) => product.name.trim() && product.unit.trim() && product.price && product.images.length > 0)
+                        .map((product) => ({
+                            name: product.name.trim(),
+                            unit: product.unit.trim(),
+                            price: Number(product.price),
+                            images: product.images,
+                        }));
 
                     const payload: MaterialShopApplyPayload = {
                         phone: String(values.phone || '').trim(),
@@ -783,7 +821,8 @@ const MaterialShopRegister: React.FC = () => {
                         legalPersonIdCardNo: String(values.legalPersonIdCardNo || '').trim().toUpperCase(),
                         legalPersonIdCardFront: String(values.legalPersonIdCardFront || '').trim(),
                         legalPersonIdCardBack: String(values.legalPersonIdCardBack || '').trim(),
-                        businessHours: String(values.businessHours || '').trim(),
+                        businessHours: summarizeBusinessHoursRanges(normalizeBusinessHoursRangesForForm(values.businessHoursRanges)),
+                        businessHoursRanges,
                         contactPhone: String(values.contactPhone || '').trim(),
                         contactName: String(values.legalPersonName || '').trim(),
                         address: String(values.address || '').trim(),
@@ -1011,9 +1050,22 @@ const MaterialShopRegister: React.FC = () => {
                                         </Form.Item>
                                     </Col>
                                     <Col xs={24} sm={12}>
-                                        <Form.Item name="businessHours" label="营业时间" rules={[{ required: true, message: '请输入营业时间' }]}>
-                                            <Input className="premium-input" maxLength={100} placeholder="例如：09:00-18:00" />
+                                        <Form.Item
+                                            name="businessHoursRanges"
+                                            label="营业时间"
+                                            rules={[{
+                                                validator: (_, value) => normalizeBusinessHoursRangesForApi(value).length > 0
+                                                    ? Promise.resolve()
+                                                    : Promise.reject(new Error('请至少填写 1 条营业时间')),
+                                            }]}
+                                        >
+                                            <BusinessHoursEditor />
                                         </Form.Item>
+                                        {!!form.getFieldValue('businessHours') && normalizeBusinessHoursRangesForForm(form.getFieldValue('businessHoursRanges')).length === 0 && (
+                                            <Text style={{ color: '#64748b', fontSize: 12 }}>
+                                                已识别历史营业时间：{String(form.getFieldValue('businessHours') || '')}，请补充为结构化时段。
+                                            </Text>
+                                        )}
                                     </Col>
                                 </Row>
 
@@ -1179,13 +1231,13 @@ const MaterialShopRegister: React.FC = () => {
                             <div data-testid="material-register-step-2">
                                 <div style={{ marginBottom: 24 }}>
                                     <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>商品信息</Title>
-                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>按统一卡片方式维护商品、参数与图片；至少准备 5 个商品，便于平台审核与展示。</Text>
+                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>按统一卡片方式维护商品名称、单位、价格与图片；至少准备 5 个商品，便于平台审核与展示。</Text>
                                 </div>
                                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'stretch', justifyContent: 'space-between', marginBottom: 16 }}>
                                     <Alert
                                         type="info"
                                         showIcon
-                                        message="商品要求：至少 5 个，最多 20 个；每个商品至少 1 张图，至少 1 个参数"
+                                        message="商品要求：至少 5 个，最多 20 个；每个商品需填写名称、单位、价格，上传 1-6 张图片"
                                         style={{ flex: 1, minWidth: 280, borderRadius: 12 }}
                                     />
                                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1198,7 +1250,7 @@ const MaterialShopRegister: React.FC = () => {
                                         title={
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                                 <span style={{ fontWeight: 600 }}>商品 {index + 1}</span>
-                                                <span style={{ fontSize: 12, color: '#64748b' }}>{product.images.length}/5 张图片</span>
+                                                <span style={{ fontSize: 12, color: '#64748b' }}>{product.images.length}/6 张图片</span>
                                             </div>
                                         }
                                         extra={
@@ -1226,6 +1278,14 @@ const MaterialShopRegister: React.FC = () => {
                                                 />
                                             </Col>
                                             <Col xs={24} sm={12}>
+                                                <Input className="premium-input"
+                                                    placeholder="单位（例如：个 / 套 / m / 平方米）"
+                                                    value={product.unit}
+                                                    maxLength={20}
+                                                    onChange={(event) => updateProduct(index, { unit: event.target.value })}
+                                                />
+                                            </Col>
+                                            <Col xs={24} sm={12}>
                                                 <InputNumber className="premium-input"
                                                     style={{ width: '100%' }}
                                                     min={1}
@@ -1236,74 +1296,15 @@ const MaterialShopRegister: React.FC = () => {
                                                 />
                                             </Col>
                                         </Row>
-                                        <div style={{ marginTop: 12 }}>
-                                            <div style={{ marginBottom: 8, fontWeight: 500 }}>商品参数</div>
-                                            {product.params.map((param, paramIndex) => (
-                                                <Row key={param.id} gutter={[8, 8]} style={{ marginBottom: 8 }}>
-                                                    <Col xs={24} sm={10}>
-                                                        <Input className="premium-input"
-                                                            placeholder="参数名（如：品牌）"
-                                                            value={param.key}
-                                                            maxLength={50}
-                                                            onChange={(e) => {
-                                                                const newParams = [...product.params];
-                                                                newParams[paramIndex] = { ...param, key: e.target.value };
-                                                                updateProduct(index, { params: newParams });
-                                                            }}
-                                                        />
-                                                    </Col>
-                                                    <Col xs={24} sm={10}>
-                                                        <Input className="premium-input"
-                                                            placeholder="参数值（如：某品牌）"
-                                                            value={param.value}
-                                                            maxLength={100}
-                                                            onChange={(e) => {
-                                                                const newParams = [...product.params];
-                                                                newParams[paramIndex] = { ...param, value: e.target.value };
-                                                                updateProduct(index, { params: newParams });
-                                                            }}
-                                                        />
-                                                    </Col>
-                                                    <Col xs={24} sm={4}>
-                                                        <Button
-                                                            type="text"
-                                                            danger
-                                                            icon={<MinusCircleOutlined />}
-                                                            onClick={() => {
-                                                                const newParams = product.params.filter((_, i) => i !== paramIndex);
-                                                                updateProduct(index, { params: newParams });
-                                                            }}
-                                                        >
-                                                            删除
-                                                        </Button>
-                                                    </Col>
-                                                </Row>
-                                            ))}
-                                            <Button
-                                                type="dashed"
-                                                size="small"
-                                                icon={<PlusOutlined />}
-                                                onClick={() => {
-                                                    const newParams = [...product.params, {
-                                                        id: `param_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
-                                                        key: '',
-                                                        value: '',
-                                                    }];
-                                                    updateProduct(index, { params: newParams });
-                                                }}
-                                            >
-                                                添加参数
-                                            </Button>
-                                        </div>
                                         <div style={{ marginTop: 16 }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12, flexWrap: 'wrap' }}>
                                                 <Text strong style={{ color: '#1e293b' }}>商品图片</Text>
-                                                <Text style={{ color: '#64748b', fontSize: 12 }}>至少 1 张，最多 5 张，支持批量上传</Text>
+                                                <Text style={{ color: '#64748b', fontSize: 12 }}>至少 1 张，最多 6 张，支持批量上传</Text>
                                             </div>
                                             <Upload
                                                 listType="picture-card"
                                                 multiple
-                                                maxCount={5}
+                                                maxCount={6}
                                                 accept=".jpg,.jpeg,.png"
                                                 fileList={toProductUploadFileList(product)}
                                                 beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
@@ -1319,7 +1320,7 @@ const MaterialShopRegister: React.FC = () => {
                                                     updateProduct(index, { images: urls });
                                                 }}
                                             >
-                                                {product.images.length < 5 ? (
+                                                {product.images.length < 6 ? (
                                                     <div>
                                                         <PlusOutlined />
                                                         <div style={{ marginTop: 8 }}>上传图片</div>

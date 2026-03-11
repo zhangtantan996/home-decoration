@@ -20,7 +20,7 @@ export interface ProviderDTO {
   applicantType?: 'personal' | 'studio' | 'company' | 'foreman';
   yearsExperience: number;
   specialty: string;
-  workTypes: string;
+  workTypes?: string;
   highlightTags?: string;
   pricingJson?: string;
   graduateSchool?: string;
@@ -44,7 +44,6 @@ export interface ProviderDetailDTO {
     rating?: number;
     yearsExperience?: number;
     specialty?: string;
-    workTypes?: string;
     highlightTags?: string;
     pricingJson?: string;
     graduateSchool?: string;
@@ -81,7 +80,6 @@ export interface ProviderDetailDTO {
   serviceArea?: string;
   officeAddress?: string;
   specialty?: string;
-  workTypes?: string;
   highlightTags?: string;
   pricingJson?: string;
   graduateSchool?: string;

@@ -11,7 +11,12 @@ import ImgCrop from 'antd-img-crop';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import type { RcFile, UploadFile, UploadProps } from 'antd/es/upload/interface';
-import { merchantCaseApi, merchantUploadApi } from '../../services/merchantApi';
+import {
+    merchantAuthApi,
+    merchantCaseApi,
+    merchantUploadApi,
+    type MerchantProviderInfo,
+} from '../../services/merchantApi';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 
@@ -28,7 +33,7 @@ interface CaseItem {
     quoteItems?: unknown;
     year: string;
     description: string;
-    images: string[];
+    images: string[] | string;
     sortOrder: number;
     createdAt: string;
     // Audit fields
@@ -37,7 +42,134 @@ interface CaseItem {
     actionType?: string; // create, update, delete
     auditId?: number;
     rejectReason?: string; // 拒绝原因
+    category?: ForemanCategory;
+    caseKey?: string;
+    isPlaceholder?: boolean;
 }
+
+type ForemanCategory = 'water' | 'electric' | 'wood' | 'masonry' | 'paint' | 'other';
+
+const FOREMAN_CASE_SECTIONS: Array<{ value: ForemanCategory; label: string; required: boolean }> = [
+    { value: 'water', label: '水工施工展示', required: true },
+    { value: 'electric', label: '电工施工展示', required: true },
+    { value: 'wood', label: '木工施工展示', required: true },
+    { value: 'masonry', label: '瓦工施工展示', required: true },
+    { value: 'paint', label: '油漆工施工展示', required: true },
+    { value: 'other', label: '其他施工展示', required: false },
+];
+
+const normalizeForemanCategory = (value?: string): ForemanCategory | undefined => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (FOREMAN_CASE_SECTIONS.some((item) => item.value === normalized)) {
+        return normalized as ForemanCategory;
+    }
+    if (normalized.includes('水')) return 'water';
+    if (normalized.includes('电')) return 'electric';
+    if (normalized.includes('木')) return 'wood';
+    if (normalized.includes('瓦')) return 'masonry';
+    if (normalized.includes('油') || normalized.includes('漆')) return 'paint';
+    if (normalized.includes('其')) return 'other';
+    return undefined;
+};
+
+const getForemanCaseLabel = (category?: string) => (
+    FOREMAN_CASE_SECTIONS.find((item) => item.value === category)?.label || '其他施工展示'
+);
+
+const parseCaseImages = (images?: string[] | string): string[] => {
+    if (Array.isArray(images)) {
+        return images;
+    }
+    if (typeof images === 'string') {
+        if (!images.trim()) return [];
+        try {
+            const parsed = JSON.parse(images);
+            return Array.isArray(parsed) ? parsed : [images];
+        } catch {
+            return [images];
+        }
+    }
+    return [];
+};
+
+const buildUploadFileList = (images: string[]): UploadFile[] => (
+    images.map((img, index) => ({
+        uid: String(-(index + 1)),
+        name: `图片${index + 1}`,
+        status: 'done',
+        url: getFullUrl(img),
+        response: { url: img },
+    }))
+);
+
+const buildCoverUploadFileList = (coverImage?: string): UploadFile[] => {
+    if (!coverImage) return [];
+    return [{
+        uid: '-1',
+        name: '封面图',
+        status: 'done',
+        url: getFullUrl(coverImage),
+        response: { url: coverImage },
+    }];
+};
+
+const getForemanCasePriority = (record: CaseItem) => {
+    if (record.status === 0) return 3;
+    if (record.status === 2) return 2;
+    if (record.status === 1) return 1;
+    return 0;
+};
+
+const getCaseTimeValue = (record: CaseItem) => {
+    const timestamp = record.createdAt ? new Date(record.createdAt).getTime() : 0;
+    return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const pickPreferredForemanCase = (current: CaseItem | undefined, candidate: CaseItem) => {
+    if (!current) return candidate;
+    const currentPriority = getForemanCasePriority(current);
+    const candidatePriority = getForemanCasePriority(candidate);
+    if (candidatePriority !== currentPriority) {
+        return candidatePriority > currentPriority ? candidate : current;
+    }
+    if (candidate.id !== current.id) {
+        return candidate.id > current.id ? candidate : current;
+    }
+    return getCaseTimeValue(candidate) >= getCaseTimeValue(current) ? candidate : current;
+};
+
+const buildForemanCaseRows = (rawCases: CaseItem[]): CaseItem[] => {
+    const categoryMap: Partial<Record<ForemanCategory, CaseItem>> = {};
+
+    rawCases.forEach((item) => {
+        const category = normalizeForemanCategory(item.category || item.title) || 'other';
+        const normalizedItem: CaseItem = {
+            ...item,
+            category,
+            caseKey: `foreman-${category}`,
+        };
+        categoryMap[category] = pickPreferredForemanCase(categoryMap[category], normalizedItem);
+    });
+
+    return FOREMAN_CASE_SECTIONS.map((section, index) => categoryMap[section.value] || ({
+        id: 0,
+        title: section.label,
+        coverImage: '',
+        style: '',
+        layout: '',
+        area: '',
+        price: 0,
+        year: '',
+        description: '',
+        images: [],
+        sortOrder: index + 1,
+        createdAt: '',
+        status: -1,
+        category: section.value,
+        caseKey: `foreman-${section.value}`,
+        isPlaceholder: true,
+    }));
+};
 
 
 // 动态生成年份选项 (2000 - 当前年份)
@@ -62,6 +194,14 @@ type QuoteAmountFields = {
 };
 
 const QUOTE_CATEGORY_ORDER = ['设计费', '施工费', '主材费', '软装费', '其他'] as const;
+
+const DEFAULT_QUOTE_FORM_VALUES = {
+    quoteDesignFee: 0,
+    quoteConstructionFee: 0,
+    quoteMaterialFee: 0,
+    quoteSoftDecorationFee: 0,
+    quoteOtherFee: 0,
+};
 
 const yuanToCent = (yuan?: number) => {
     if (yuan == null) return 0;
@@ -165,6 +305,7 @@ const MerchantCases: React.FC = () => {
     const [editingCase, setEditingCase] = useState<CaseItem | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [previewCase, setPreviewCase] = useState<CaseItem | null>(null);
+    const [providerInfo, setProviderInfo] = useState<MerchantProviderInfo | null>(null);
     const [form] = Form.useForm();
     const [quoteTouched, setQuoteTouched] = useState(false);
 
@@ -173,6 +314,7 @@ const MerchantCases: React.FC = () => {
     const quoteMaterialFee = Form.useWatch('quoteMaterialFee', form) as number | undefined;
     const quoteSoftDecorationFee = Form.useWatch('quoteSoftDecorationFee', form) as number | undefined;
     const quoteOtherFee = Form.useWatch('quoteOtherFee', form) as number | undefined;
+    const formCategory = Form.useWatch('category', form) as ForemanCategory | undefined;
 
     const quoteTotalYuan = useMemo(() => {
         const parts = [
@@ -209,11 +351,60 @@ const MerchantCases: React.FC = () => {
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
     const [layoutOptions, setLayoutOptions] = useState<string[]>([]);
 
+    const isForeman = useMemo(() => {
+        const providerSubType = String(providerInfo?.providerSubType || '').toLowerCase();
+        return providerSubType === 'foreman' || providerInfo?.providerType === 3;
+    }, [providerInfo]);
+
+    const isDesigner = useMemo(() => String(providerInfo?.role || '').toLowerCase() === 'designer', [providerInfo]);
+
+    const isDesignerCompany = useMemo(
+        () => isDesigner && String(providerInfo?.entityType || '').toLowerCase() === 'company',
+        [isDesigner, providerInfo],
+    );
+
+    const maxDetailImages = isForeman ? 8 : (isDesigner ? 12 : 20);
+
+    const displayCases = useMemo(() => (isForeman ? buildForemanCaseRows(cases) : cases), [cases, isForeman]);
+
+    const usedForemanCategories = useMemo(() => {
+        if (!isForeman) return new Set<string>();
+        return new Set(
+            cases
+                .filter((item) => !editingCase || item.id !== editingCase.id)
+                .map((item) => normalizeForemanCategory(item.category || item.title))
+                .filter(Boolean),
+        );
+    }, [cases, editingCase, isForeman]);
+
+    const nextForemanCategoryToCreate = useMemo(() => {
+        if (!isForeman) return undefined;
+        const requiredSection = FOREMAN_CASE_SECTIONS.find((item) => item.required && !usedForemanCategories.has(item.value));
+        if (requiredSection) return requiredSection.value;
+        if (!usedForemanCategories.has('other')) return 'other';
+        return undefined;
+    }, [isForeman, usedForemanCategories]);
+
+    const currentForemanCategory = useMemo(
+        () => normalizeForemanCategory(formCategory || editingCase?.category || editingCase?.title) || 'water',
+        [editingCase, formCategory],
+    );
+
     useEffect(() => {
         fetchCases();
+        void fetchProviderInfo();
         loadStyleOptions();
         loadLayoutOptions();
     }, []);
+
+    const fetchProviderInfo = async () => {
+        try {
+            const info = await merchantAuthApi.getInfo();
+            setProviderInfo(info);
+        } catch {
+            setProviderInfo(null);
+        }
+    };
 
     const loadStyleOptions = async () => {
         try {
@@ -258,58 +449,62 @@ const MerchantCases: React.FC = () => {
         }
     };
 
+    const openForemanEditor = (category: ForemanCategory, record?: CaseItem | null) => {
+        const normalizedRecord = record && !record.isPlaceholder ? { ...record, category } : null;
+        const imageList = normalizedRecord ? parseCaseImages(normalizedRecord.images) : [];
+        setEditingCase(normalizedRecord);
+        setCoverFileList([]);
+        setDetailFileList(buildUploadFileList(imageList));
+        form.resetFields();
+        setQuoteTouched(false);
+        form.setFieldsValue({
+            ...DEFAULT_QUOTE_FORM_VALUES,
+            category,
+            description: normalizedRecord?.description || '',
+            images: imageList,
+            coverImage: imageList[0] || normalizedRecord?.coverImage || '',
+        });
+        setModalVisible(true);
+    };
+
     const handleCreate = () => {
+        if (isForeman) {
+            if (!nextForemanCategoryToCreate) {
+                message.info('施工展示已全部创建，请直接编辑对应分类');
+                return;
+            }
+            openForemanEditor(nextForemanCategoryToCreate);
+            return;
+        }
+
         setEditingCase(null);
         setCoverFileList([]);
         setDetailFileList([]);
         form.resetFields();
         setQuoteTouched(false);
         form.setFieldsValue({
-            quoteDesignFee: 0,
-            quoteConstructionFee: 0,
-            quoteMaterialFee: 0,
-            quoteSoftDecorationFee: 0,
-            quoteOtherFee: 0,
+            ...DEFAULT_QUOTE_FORM_VALUES,
         });
         setModalVisible(true);
     };
 
     const handleEdit = async (record: CaseItem) => {
+        const normalizedCategory = normalizeForemanCategory(record.category || record.title) || 'other';
+        if (isForeman) {
+            openForemanEditor(normalizedCategory, record);
+            return;
+        }
+
         setEditingCase(record);
         setQuoteTouched(false);
 
-        // Init file lists for upload components
-        setCoverFileList([{
-            uid: '-1',
-            name: '封面图',
-            status: 'done',
-            url: getFullUrl(record.coverImage),
-            response: { url: record.coverImage } // store relative path for submission
-        }]);
-
-        // 防御性解析：images可能是JSON字符串或数组
-        let imageList: string[] = [];
-        if (typeof record.images === 'string') {
-            try {
-                imageList = JSON.parse(record.images);
-            } catch {
-                imageList = record.images ? [record.images] : [];
-            }
-        } else if (Array.isArray(record.images)) {
-            imageList = record.images;
-        }
-
-        const detailFiles = imageList.map((img, index) => ({
-            uid: String(-index),
-            name: `图片${index + 1}`,
-            status: 'done' as const,
-            url: getFullUrl(img),
-            response: { url: img }
-        }));
-        setDetailFileList(detailFiles);
+        setCoverFileList(buildCoverUploadFileList(record.coverImage));
+        const imageList = parseCaseImages(record.images);
+        setDetailFileList(buildUploadFileList(imageList));
 
         form.setFieldsValue({
             title: record.title,
+            category: normalizedCategory,
             coverImage: record.coverImage,
             style: record.style,
             layout: record.layout,
@@ -317,12 +512,8 @@ const MerchantCases: React.FC = () => {
             price: record.price,
             year: record.year,
             description: record.description,
-            images: record.images,
-            quoteDesignFee: 0,
-            quoteConstructionFee: 0,
-            quoteMaterialFee: 0,
-            quoteSoftDecorationFee: 0,
-            quoteOtherFee: 0,
+            images: imageList,
+            ...DEFAULT_QUOTE_FORM_VALUES,
         });
         setModalVisible(true);
 
@@ -361,13 +552,36 @@ const MerchantCases: React.FC = () => {
 
 
     const handleSubmit = async (values: any) => {
-        // Ensure we have images
-        if (!values.coverImage) {
-            message.error('请上传封面图片');
+        const imageList = parseCaseImages(values.images);
+
+        if (isForeman) {
+            const category = normalizeForemanCategory(values.category);
+            const section = FOREMAN_CASE_SECTIONS.find((item) => item.value === category);
+            if (!section) {
+                message.error('请选择施工分类');
+                return;
+            }
+            if (!String(values.description || '').trim()) {
+                message.error(`${section.label}请填写工艺说明`);
+                return;
+            }
+            if (imageList.length < 2 || imageList.length > 8) {
+                message.error(`${section.label}图片数量需为 2-8 张`);
+                return;
+            }
+        } else if (isDesigner) {
+            const minImages = isDesignerCompany ? 6 : 4;
+            if (imageList.length < minImages || imageList.length > 12) {
+                message.error(`设计师案例图片数量需为 ${minImages}-12 张`);
+                return;
+            }
+        } else if (imageList.length === 0) {
+            message.error('请至少上传一张详情图片');
             return;
         }
-        if (!values.images || values.images.length === 0) {
-            message.error('请至少上传一张详情图片');
+
+        if (!isForeman && !values.coverImage) {
+            message.error('请上传封面图片');
             return;
         }
 
@@ -390,7 +604,12 @@ const MerchantCases: React.FC = () => {
 
         const basePayload = {
             ...restValues,
-            area: String(restValues.area),
+            images: imageList,
+            title: isForeman ? getForemanCaseLabel(normalizeForemanCategory(restValues.category)) : restValues.title,
+            coverImage: isForeman ? (imageList[0] || '') : restValues.coverImage,
+            style: isForeman ? getForemanCaseLabel(normalizeForemanCategory(restValues.category)) : restValues.style,
+            layout: isForeman ? '其他' : restValues.layout,
+            area: isForeman ? '' : String(restValues.area),
             price: Number(restValues.price) || 0,
         };
 
@@ -419,7 +638,7 @@ const MerchantCases: React.FC = () => {
                 payload.price !== editingCase.price ||
                 payload.year !== editingCase.year ||
                 payload.description !== editingCase.description ||
-                JSON.stringify(payload.images) !== JSON.stringify(editingCase.images) ||
+                JSON.stringify(payload.images) !== JSON.stringify(parseCaseImages(editingCase.images)) ||
                 hasQuoteChange;
 
             if (!hasChange) {
@@ -442,6 +661,9 @@ const MerchantCases: React.FC = () => {
                 message.success('已提交审核，请耐心等待');
                 setModalVisible(false);
                 form.resetFields();
+                setEditingCase(null);
+                setCoverFileList([]);
+                setDetailFileList([]);
                 fetchCases();
             } else {
                 message.error(res.message || '操作失败');
@@ -511,6 +733,9 @@ const MerchantCases: React.FC = () => {
             .filter(file => file.status === 'done' && file.response)
             .map(file => file.response.url);
         form.setFieldValue('images', urls);
+        if (isForeman) {
+            form.setFieldValue('coverImage', urls[0] || '');
+        }
     };
 
     const uploadButton = (
@@ -521,6 +746,9 @@ const MerchantCases: React.FC = () => {
     );
 
     const getStatusTag = (record: CaseItem) => {
+        if (record.isPlaceholder) {
+            return <Tag color="default">待补充</Tag>;
+        }
         if (record.status === 1) {
             return <Tag color="success">已发布</Tag>;
         }
@@ -546,29 +774,51 @@ const MerchantCases: React.FC = () => {
             dataIndex: 'coverImage',
             key: 'coverImage',
             width: 100,
-            render: (url) => (
-                <Image
-                    width={60}
-                    height={60}
-                    src={getFullUrl(url)}
-                    style={{ objectFit: 'cover', borderRadius: 4 }}
-                    fallback="https://via.placeholder.com/60?text=No+Image"
-                />
-            ),
+            render: (url) => {
+                if (!url) {
+                    return (
+                        <div style={{
+                            width: 60,
+                            height: 60,
+                            borderRadius: 4,
+                            background: '#fafafa',
+                            border: '1px dashed #d9d9d9',
+                            color: '#999',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 12,
+                        }}>
+                            待上传
+                        </div>
+                    );
+                }
+                return (
+                    <Image
+                        width={60}
+                        height={60}
+                        src={getFullUrl(url)}
+                        style={{ objectFit: 'cover', borderRadius: 4 }}
+                        fallback="https://via.placeholder.com/60?text=No+Image"
+                    />
+                );
+            },
         },
         {
-            title: '作品名称',
+            title: isForeman ? '施工分类' : '作品名称',
             dataIndex: 'title',
             key: 'title',
             render: (text, record) => (
                 <div>
-                    <div style={{ fontWeight: 500 }}>{text}</div>
-                    <div style={{ color: '#999', fontSize: 12 }}>
-                        {record.style && <span>{record.style}</span>}
-                        {record.layout && <span> · {record.layout}</span>}
-                        {record.area && <span> · {record.area}㎡</span>}
-                        {record.price > 0 && <span> · ¥{(record.price / 10000).toFixed(1)}万</span>}
-                    </div>
+                    <div style={{ fontWeight: 500 }}>{isForeman ? getForemanCaseLabel(normalizeForemanCategory(record.category || text)) : text}</div>
+                    {!isForeman && (
+                        <div style={{ color: '#999', fontSize: 12 }}>
+                            {record.style && <span>{record.style}</span>}
+                            {record.layout && <span> · {record.layout}</span>}
+                            {record.area && <span> · {record.area}㎡</span>}
+                            {record.price > 0 && <span> · ¥{(record.price / 10000).toFixed(1)}万</span>}
+                        </div>
+                    )}
                 </div>
             ),
         },
@@ -583,13 +833,14 @@ const MerchantCases: React.FC = () => {
             dataIndex: 'createdAt',
             key: 'createdAt',
             width: 180,
-            render: (text) => new Date(text).toLocaleString(),
+            render: (text) => (text ? new Date(text).toLocaleString() : '-'),
         },
         {
             title: '操作',
             key: 'action',
             width: 250,
             render: (_, record) => {
+                const isPlaceholder = !!record.isPlaceholder;
                 const isPending = record.status === 0;
                 const isRejected = record.status === 2;
                 const canCancel = (isPending || isRejected) && record.auditId;
@@ -611,15 +862,26 @@ const MerchantCases: React.FC = () => {
 
                 return (
                     <Space>
-                        <Button
-                            type="link"
-                            size="small"
-                            icon={<EyeOutlined />}
-                            onClick={() => setPreviewCase(record)}
-                        >
-                            预览
-                        </Button>
-                        {record.status === 1 && (
+                        {isPlaceholder ? (
+                            <Button
+                                type="link"
+                                size="small"
+                                icon={<EditOutlined />}
+                                onClick={() => handleEdit(record)}
+                            >
+                                去补充
+                            </Button>
+                        ) : (
+                            <Button
+                                type="link"
+                                size="small"
+                                icon={<EyeOutlined />}
+                                onClick={() => setPreviewCase(record)}
+                            >
+                                预览
+                            </Button>
+                        )}
+                        {!isPlaceholder && record.status === 1 && (
                             <>
                                 <Button
                                     type="link"
@@ -646,7 +908,7 @@ const MerchantCases: React.FC = () => {
                                 </Popconfirm>
                             </>
                         )}
-                        {canCancel && (
+                        {!isPlaceholder && canCancel && (
                             <Popconfirm
                                 title={isRejected ? "确定要清除这条被拒绝的记录吗？" : "确定要取消这次审核申请吗？"}
                                 onConfirm={handleCancelAudit}
@@ -658,7 +920,7 @@ const MerchantCases: React.FC = () => {
                                 </Button>
                             </Popconfirm>
                         )}
-                        {isRejected && record.id > 0 && (
+                        {!isPlaceholder && isRejected && record.id > 0 && (
                             <Button
                                 type="link"
                                 size="small"
@@ -686,14 +948,14 @@ const MerchantCases: React.FC = () => {
                     返回工作台
                 </Button>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2 style={{ margin: 0 }}>作品集管理</h2>
+                    <h2 style={{ margin: 0 }}>{isForeman ? '施工展示管理' : '作品集管理'}</h2>
                     <Button
                         type="primary"
                         icon={<PlusOutlined />}
                         onClick={handleCreate}
-                        disabled={cases.length >= 50}
+                        disabled={!isForeman && cases.length >= 50}
                     >
-                        添加作品
+                        {isForeman ? '补充施工展示' : '添加作品'}
                     </Button>
                 </div>
             </div>
@@ -701,37 +963,40 @@ const MerchantCases: React.FC = () => {
             <Card>
                 <Table
                     columns={columns}
-                    dataSource={cases}
-                    rowKey="id"
+                    dataSource={displayCases}
+                    rowKey={(record) => record.caseKey || String(record.id)}
                     loading={loading}
                     pagination={false}
                     locale={{
                         emptyText: (
                             <Empty
-                                description="暂无作品"
+                                description={isForeman ? '暂无施工展示' : '暂无作品'}
                                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                             >
                                 <Button type="primary" onClick={handleCreate}>
-                                    添加第一个作品
+                                    {isForeman ? '补充施工展示' : '添加第一个作品'}
                                 </Button>
                             </Empty>
                         ),
                     }}
                 />
-                {cases.length > 0 && (
+                {displayCases.length > 0 && (
                     <div style={{ marginTop: 16, color: '#999', textAlign: 'center' }}>
-                        共 {cases.length} 个作品，最多可添加 50 个
+                        {isForeman ? '固定 6 个施工展示分类，前 5 项必填，其他施工展示选填' : `共 ${cases.length} 个作品，最多可添加 50 个`}
                     </div>
                 )}
             </Card>
 
             <Modal
-                title={editingCase ? '编辑作品' : '添加作品'}
+                title={isForeman ? `${editingCase ? '编辑' : '补充'}${getForemanCaseLabel(currentForemanCategory)}` : (editingCase ? '编辑作品' : '添加作品')}
                 open={modalVisible}
                 onCancel={() => {
                     setModalVisible(false);
                     form.resetFields();
                     setEditingCase(null);
+                    setCoverFileList([]);
+                    setDetailFileList([]);
+                    setQuoteTouched(false);
                 }}
                 footer={null}
                 width={700}
@@ -757,141 +1022,156 @@ const MerchantCases: React.FC = () => {
                         }
                     }}
                 >
-                    <Form.Item
-                        name="title"
-                        label="作品名称"
-                        rules={[
-                            { required: true, message: '请输入作品名称' },
-                            { min: 2, message: '作品名称至少2个字符' },
-                            { max: 50, message: '作品名称最多50个字符' },
-                            { pattern: /^(?!\s*$).+/, message: '作品名称不能为纯空格' }
-                        ]}
-                    >
-                        <Input placeholder="例如：现代简约三居室" maxLength={50} showCount />
-                    </Form.Item>
-
-                    <Row gutter={16}>
-                        <Col span={12}>
+                    {isForeman ? (
+                        <>
+                            <Form.Item name="category" hidden>
+                                <Input />
+                            </Form.Item>
+                            <Form.Item label="施工分类">
+                                <Input value={getForemanCaseLabel(currentForemanCategory)} disabled />
+                            </Form.Item>
+                        </>
+                    ) : (
+                        <>
                             <Form.Item
-                                name="style"
-                                label="设计风格"
-                                rules={[{ required: true, message: '请选择设计风格' }]}
+                                name="title"
+                                label="作品名称"
+                                rules={[
+                                    { required: true, message: '请输入作品名称' },
+                                    { min: 2, message: '作品名称至少2个字符' },
+                                    { max: 50, message: '作品名称最多50个字符' },
+                                    { pattern: /^(?!\s*$).+/, message: '作品名称不能为纯空格' }
+                                ]}
                             >
-                                <Select placeholder="选择风格">
-                                    {styleOptions.map(s => (
-                                        <Select.Option key={s} value={s}>{s}</Select.Option>
+                                <Input placeholder="例如：现代简约三居室" maxLength={50} showCount />
+                            </Form.Item>
+
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Form.Item
+                                        name="style"
+                                        label="设计风格"
+                                        rules={[{ required: true, message: '请选择设计风格' }]}
+                                    >
+                                        <Select placeholder="选择风格">
+                                            {styleOptions.map(s => (
+                                                <Select.Option key={s} value={s}>{s}</Select.Option>
+                                            ))}
+                                        </Select>
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item
+                                        name="layout"
+                                        label="户型"
+                                        rules={[{ required: true, message: '请选择户型' }]}
+                                    >
+                                        <Select placeholder="选择户型">
+                                            {layoutOptions.map(l => (
+                                                <Select.Option key={l} value={l}>{l}</Select.Option>
+                                            ))}
+                                        </Select>
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Form.Item
+                                        name="area"
+                                        label="建筑面积"
+                                        rules={[
+                                            { required: true, message: '请输入建筑面积' },
+                                            { type: 'number', min: 1, max: 99999, message: '面积范围 1-99999 ㎡' }
+                                        ]}
+                                    >
+                                        <InputNumber
+                                            placeholder="例如：120"
+                                            min={1}
+                                            max={99999}
+                                            precision={0}
+                                            addonAfter="㎡"
+                                            style={{ width: '100%' }}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item
+                                        name="price"
+                                        label="装修总价"
+                                        rules={[
+                                            { type: 'number', min: 0, max: 99999999, message: '价格范围 0-99999999 元' }
+                                        ]}
+                                        tooltip={isQuoteBreakdownActive ? '已填写分项，系统自动合计' : '选填，用于用户参考'}
+                                    >
+                                        <InputNumber
+                                            placeholder="例如：150000"
+                                            min={0}
+                                            max={99999999}
+                                            precision={2}
+                                            addonAfter="元"
+                                            disabled={isQuoteBreakdownActive}
+                                            style={{ width: '100%' }}
+                                            formatter={(value) => value ? `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''}
+                                            parser={(value) => (value ? Number(value.replace(/,/g, '')) : 0) as 0 | 99999999}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+
+                            <Row gutter={16}>
+                                <Col span={8}>
+                                    <Form.Item name="quoteDesignFee" label="设计费（元）" tooltip="可选，最多两位小数">
+                                        <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item name="quoteConstructionFee" label="施工费（元）" tooltip="可选，最多两位小数">
+                                        <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item name="quoteMaterialFee" label="主材费（元）" tooltip="可选，最多两位小数">
+                                        <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Form.Item name="quoteSoftDecorationFee" label="软装费（元）" tooltip="可选，最多两位小数">
+                                        <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item name="quoteOtherFee" label="其他（元）" tooltip="可选，最多两位小数">
+                                        <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+
+                            <Form.Item name="year" label="完成年份">
+                                <Select placeholder="选择年份" allowClear showSearch>
+                                    {YEAR_OPTIONS.map(y => (
+                                        <Select.Option key={y} value={String(y)}>{y}年</Select.Option>
                                     ))}
                                 </Select>
                             </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="layout"
-                                label="户型"
-                                rules={[{ required: true, message: '请选择户型' }]}
-                            >
-                                <Select placeholder="选择户型">
-                                    {layoutOptions.map(l => (
-                                        <Select.Option key={l} value={l}>{l}</Select.Option>
-                                    ))}
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                name="area"
-                                label="建筑面积"
-                                rules={[
-                                    { required: true, message: '请输入建筑面积' },
-                                    { type: 'number', min: 1, max: 99999, message: '面积范围 1-99999 ㎡' }
-                                ]}
-                            >
-                                <InputNumber
-                                    placeholder="例如：120"
-                                    min={1}
-                                    max={99999}
-                                    precision={0}
-                                    addonAfter="㎡"
-                                    style={{ width: '100%' }}
-                                />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                name="price"
-                                label="装修总价"
-                                rules={[
-                                    { type: 'number', min: 0, max: 99999999, message: '价格范围 0-99999999 元' }
-                                ]}
-                                tooltip={isQuoteBreakdownActive ? '已填写分项，系统自动合计' : '选填，用于用户参考'}
-                            >
-                                <InputNumber
-                                    placeholder="例如：150000"
-                                    min={0}
-                                    max={99999999}
-                                    precision={2}
-                                    addonAfter="元"
-                                    disabled={isQuoteBreakdownActive}
-                                    style={{ width: '100%' }}
-                                    formatter={(value) => value ? `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''}
-                                    parser={(value) => (value ? Number(value.replace(/,/g, '')) : 0) as 0 | 99999999}
-                                />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={8}>
-                            <Form.Item name="quoteDesignFee" label="设计费（元）" tooltip="可选，最多两位小数">
-                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item name="quoteConstructionFee" label="施工费（元）" tooltip="可选，最多两位小数">
-                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={8}>
-                            <Form.Item name="quoteMaterialFee" label="主材费（元）" tooltip="可选，最多两位小数">
-                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item name="quoteSoftDecorationFee" label="软装费（元）" tooltip="可选，最多两位小数">
-                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item name="quoteOtherFee" label="其他（元）" tooltip="可选，最多两位小数">
-                                <InputNumber min={0} precision={2} addonAfter="元" style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-
-                    <Form.Item name="year" label="完成年份">
-                        <Select placeholder="选择年份" allowClear showSearch>
-                            {YEAR_OPTIONS.map(y => (
-                                <Select.Option key={y} value={String(y)}>{y}年</Select.Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
+                        </>
+                    )}
 
                     <Form.Item
                         name="description"
-                        label="作品描述"
+                        label={isForeman ? '工艺说明' : '作品描述'}
                         rules={[
+                            ...(isForeman ? [{ required: true, whitespace: true, message: '请填写工艺说明' }] : []),
                             { max: 500, message: '描述不能超过500字' }
                         ]}
+                        extra={isForeman ? '建议填写主要辅材品牌名、施工工序、节点做法与验收标准。' : undefined}
                     >
                         <Input.TextArea
                             rows={3}
-                            placeholder="描述这个项目的设计理念和亮点"
+                            placeholder={isForeman ? '建议填写主要辅材品牌名、施工工序、节点做法与验收标准。' : '描述这个项目的设计理念和亮点'}
                             maxLength={500}
                             showCount
                         />
@@ -902,28 +1182,34 @@ const MerchantCases: React.FC = () => {
                         <Input />
                     </Form.Item>
 
-                    <Form.Item label="封面图片" required tooltip="建议尺寸 16:9 或 4:3，JPG/PNG/WEBP 格式，小于 5MB">
-                        <ImgCrop rotationSlider aspect={4 / 3} showReset showGrid>
-                            <Upload
-                                listType="picture-card"
-                                fileList={coverFileList}
-                                onPreview={(file) => window.open(file.url || (file.response && getFullUrl(file.response.url)))}
-                                onChange={handleCoverChange}
-                                beforeUpload={beforeUpload}
-                                customRequest={customRequest}
-                                maxCount={1}
-                            >
-                                {coverFileList.length < 1 ? uploadButton : null}
-                            </Upload>
-                        </ImgCrop>
-                    </Form.Item>
+                    {!isForeman && (
+                        <Form.Item label="封面图片" required tooltip="建议尺寸 16:9 或 4:3，JPG/PNG/WEBP 格式，小于 5MB">
+                            <ImgCrop rotationSlider aspect={4 / 3} showReset showGrid>
+                                <Upload
+                                    listType="picture-card"
+                                    fileList={coverFileList}
+                                    onPreview={(file) => window.open(file.url || (file.response && getFullUrl(file.response.url)))}
+                                    onChange={handleCoverChange}
+                                    beforeUpload={beforeUpload}
+                                    customRequest={customRequest}
+                                    maxCount={1}
+                                >
+                                    {coverFileList.length < 1 ? uploadButton : null}
+                                </Upload>
+                            </ImgCrop>
+                        </Form.Item>
+                    )}
 
                     {/* Hidden input to store URLs */}
                     <Form.Item name="images" hidden>
                         <Input />
                     </Form.Item>
 
-                    <Form.Item label="作品详情图" required tooltip="支持多图上传，展示完整的案例细节">
+                    <Form.Item
+                        label={isForeman ? '施工图片' : '作品详情图'}
+                        required
+                        tooltip={isForeman ? '工长案例需上传 2-8 张图片' : '支持多图上传，展示完整的案例细节'}
+                    >
                         <Upload
                             listType="picture-card"
                             fileList={detailFileList}
@@ -931,22 +1217,23 @@ const MerchantCases: React.FC = () => {
                             onChange={handleDetailChange}
                             beforeUpload={beforeUpload}
                             customRequest={customRequest}
+                            maxCount={maxDetailImages}
                             multiple
                         >
-                            {detailFileList.length >= 20 ? null : uploadButton}
+                            {detailFileList.length >= maxDetailImages ? null : uploadButton}
                         </Upload>
                     </Form.Item>
 
                     <Form.Item style={{ marginBottom: 0, marginTop: 24 }}>
                         <Button type="primary" htmlType="submit" block loading={submitting}>
-                            {editingCase ? '保存修改' : '添加作品'}
+                            {editingCase ? '保存修改' : (isForeman ? '提交施工展示' : '添加作品')}
                         </Button>
                     </Form.Item>
                 </Form>
             </Modal>
 
             <Modal
-                title={previewCase?.title}
+                title={isForeman ? getForemanCaseLabel(normalizeForemanCategory(previewCase?.category || previewCase?.title)) : previewCase?.title}
                 open={!!previewCase}
                 onCancel={() => setPreviewCase(null)}
                 footer={null}
@@ -954,41 +1241,31 @@ const MerchantCases: React.FC = () => {
             >
                 {previewCase && (
                     <div>
-                        <div style={{ marginBottom: 16 }}>
-                            <Space wrap>
-                                {previewCase.style && <Tag color="blue">{previewCase.style}</Tag>}
-                                {previewCase.layout && <Tag color="green">{previewCase.layout}</Tag>}
-                                {previewCase.area && <Tag>面积：{previewCase.area}㎡</Tag>}
-                                {previewCase.price > 0 && <Tag color="gold">总价：¥{(previewCase.price / 10000).toFixed(1)}万</Tag>}
-                                {previewCase.year && <Tag>年份：{previewCase.year}</Tag>}
-                            </Space>
-                        </div>
+                        {!isForeman && (
+                            <div style={{ marginBottom: 16 }}>
+                                <Space wrap>
+                                    {previewCase.style && <Tag color="blue">{previewCase.style}</Tag>}
+                                    {previewCase.layout && <Tag color="green">{previewCase.layout}</Tag>}
+                                    {previewCase.area && <Tag>面积：{previewCase.area}㎡</Tag>}
+                                    {previewCase.price > 0 && <Tag color="gold">总价：¥{(previewCase.price / 10000).toFixed(1)}万</Tag>}
+                                    {previewCase.year && <Tag>年份：{previewCase.year}</Tag>}
+                                </Space>
+                            </div>
+                        )}
                         {previewCase.description && (
                             <p style={{ color: '#666', marginBottom: 16 }}>{previewCase.description}</p>
                         )}
                         <Image.PreviewGroup>
                             <Row gutter={[8, 8]}>
-                                {(() => {
-                                    let imgList: string[] = [];
-                                    if (typeof previewCase.images === 'string') {
-                                        try {
-                                            imgList = JSON.parse(previewCase.images);
-                                        } catch {
-                                            imgList = previewCase.images ? [previewCase.images] : [];
-                                        }
-                                    } else if (Array.isArray(previewCase.images)) {
-                                        imgList = previewCase.images;
-                                    }
-                                    return imgList.map((img, idx) => (
-                                        <Col span={8} key={idx}>
-                                            <Image
-                                                src={getFullUrl(img)}
-                                                style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 4 }}
-                                                fallback="https://via.placeholder.com/200?text=No+Image"
-                                            />
-                                        </Col>
-                                    ));
-                                })()}
+                                {parseCaseImages(previewCase.images).map((img, idx) => (
+                                    <Col span={8} key={idx}>
+                                        <Image
+                                            src={getFullUrl(img)}
+                                            style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 4 }}
+                                            fallback="https://via.placeholder.com/200?text=No+Image"
+                                        />
+                                    </Col>
+                                ))}
                             </Row>
                         </Image.PreviewGroup>
                     </div>

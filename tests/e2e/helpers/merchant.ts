@@ -59,6 +59,20 @@ export interface LegalAcceptancePayload {
   privacyDataProcessingVersion: string;
 }
 
+export interface BusinessHoursRange {
+  day: number;
+  start: string;
+  end: string;
+}
+
+const FOREMAN_REQUIRED_CASES = [
+  { category: 'water', title: '水工施工展示' },
+  { category: 'electric', title: '电工施工展示' },
+  { category: 'wood', title: '木工施工展示' },
+  { category: 'masonry', title: '瓦工施工展示' },
+  { category: 'paint', title: '油漆工施工展示' },
+] as const;
+
 export function getMerchantTestEnv(): MerchantTestEnv {
   return {
     origin: process.env.MERCHANT_ORIGIN || process.env.ADMIN_BASE_URL || 'http://localhost:5173',
@@ -83,6 +97,43 @@ export function buildLegalAcceptancePayload(): LegalAcceptancePayload {
     platformRulesVersion: 'v1.0.0-20260305',
     privacyDataProcessingVersion: 'v1.0.0-20260305',
   };
+}
+
+export function buildBusinessHoursRanges(days = [1, 2, 3, 4, 5]): BusinessHoursRange[] {
+  return days.map((day) => ({ day, start: '09:00', end: '18:00' }));
+}
+
+export function buildForemanPortfolioCases(options?: { imageCount?: number; includeOther?: boolean }) {
+  const imageCount = options?.imageCount ?? 2;
+  const cases = FOREMAN_REQUIRED_CASES.map((item) => ({
+    category: item.category,
+    description: `${item.title}说明，建议填写主要辅材品牌名与施工节点做法`,
+    images: Array.from({ length: imageCount }, (_, index) => `https://example.com/${item.category}-${index + 1}.jpg`),
+  }));
+
+  if (!options?.includeOther) {
+    return cases;
+  }
+
+  return [
+    ...cases,
+    {
+      category: 'other',
+      description: '其他施工展示说明',
+      images: Array.from({ length: imageCount }, (_, index) => `https://example.com/other-${index + 1}.jpg`),
+    },
+  ];
+}
+
+export function buildMaterialProducts(count: number, options?: { imageCount?: number; unit?: string }) {
+  const imageCount = options?.imageCount ?? 1;
+  const unit = options?.unit ?? '套';
+  return Array.from({ length: count }, (_, index) => ({
+    name: `主材商品${index + 1}`,
+    unit,
+    price: 199 + index,
+    images: Array.from({ length: imageCount }, (_, imageIndex) => `https://example.com/material-${index + 1}-${imageIndex + 1}.jpg`),
+  }));
 }
 
 export function buildRandomMainlandPhone(prefix = '19'): string {

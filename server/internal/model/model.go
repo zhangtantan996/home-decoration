@@ -96,6 +96,7 @@ type Provider struct {
 	Certifications  string `json:"certifications" gorm:"type:text"`     // 资质认证 (JSON数组)
 	ServiceArea     string `json:"serviceArea" gorm:"type:text"`        // 服务区域 (JSON数组，如 ["浦东新区", "徐汇区"])
 	OfficeAddress   string `json:"officeAddress" gorm:"size:200"`       // 办公地址
+	CompanyAlbumJSON string `json:"companyAlbumJson" gorm:"type:text"`  // 企业相册 (JSON数组)
 }
 
 // ProviderCase 服务商案例/作品
@@ -348,6 +349,7 @@ type MaterialShop struct {
 	Latitude               float64 `json:"latitude"`
 	Longitude              float64 `json:"longitude"`
 	OpenTime               string  `json:"openTime" gorm:"size:50"`
+	BusinessHoursJSON      string  `json:"businessHoursJson" gorm:"type:text"`
 	Tags                   string  `json:"tags" gorm:"type:text"` // JSON 数组
 	IsVerified             bool    `json:"isVerified" gorm:"default:false"`
 }
@@ -373,6 +375,7 @@ type MaterialShopApplication struct {
 	LegalPersonIDCardFront string     `json:"legalPersonIdCardFront" gorm:"size:500"`
 	LegalPersonIDCardBack  string     `json:"legalPersonIdCardBack" gorm:"size:500"`
 	BusinessHours          string     `json:"businessHours" gorm:"size:100"`
+	BusinessHoursJSON      string     `json:"businessHoursJson" gorm:"type:text"`
 	ContactPhone           string     `json:"contactPhone" gorm:"size:20"`
 	ContactName            string     `json:"contactName" gorm:"size:50"`
 	Address                string     `json:"address" gorm:"size:300"`
@@ -395,6 +398,7 @@ type MaterialShopApplicationProduct struct {
 	Base
 	ApplicationID uint64  `json:"applicationId" gorm:"index"`
 	Name          string  `json:"name" gorm:"size:120"`
+	Unit          string  `json:"unit" gorm:"size:20"`
 	ParamsJSON    string  `json:"paramsJson" gorm:"type:text"` // JSON对象
 	Price         float64 `json:"price"`
 	ImagesJSON    string  `json:"imagesJson" gorm:"type:text"` // JSON数组
@@ -410,6 +414,7 @@ type MaterialShopProduct struct {
 	Base
 	ShopID     uint64  `json:"shopId" gorm:"index"`
 	Name       string  `json:"name" gorm:"size:120"`
+	Unit       string  `json:"unit" gorm:"size:20"`
 	ParamsJSON string  `json:"paramsJson" gorm:"type:text"` // JSON对象
 	Price      float64 `json:"price"`
 	ImagesJSON string  `json:"imagesJson" gorm:"type:text"` // JSON数组
@@ -513,6 +518,7 @@ type MerchantApplication struct {
 	LegalPersonIDCardBack  string `json:"legalPersonIdCardBack" gorm:"size:500"`
 	TeamSize               int    `json:"teamSize" gorm:"default:1"`
 	OfficeAddress          string `json:"officeAddress" gorm:"size:200"`
+	CompanyAlbumJSON       string `json:"companyAlbumJson" gorm:"type:text"`
 	// 工长扩展信息
 	YearsExperience int    `json:"yearsExperience" gorm:"default:0"`
 	WorkTypes       string `json:"workTypes" gorm:"type:text;default:'[]'"` // JSON数组：工种类型

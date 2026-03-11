@@ -56,14 +56,6 @@ const { TextArea } = Input;
 type MerchantApplyRole = 'designer' | 'foreman' | 'company';
 type MerchantEntityType = 'personal' | 'company';
 
-const WORK_TYPE_OPTIONS = [
-    { value: 'mason', label: '瓦工' },
-    { value: 'electrician', label: '电工' },
-    { value: 'carpenter', label: '木工' },
-    { value: 'painter', label: '油漆工' },
-    { value: 'plumber', label: '水暖工' },
-];
-
 const FOREMAN_HIGHLIGHT_OPTIONS = [
     '工期可控',
     '工地整洁',
@@ -108,14 +100,31 @@ const generatePortfolioCaseId = (): string => {
     return `case-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 };
 
-const createEmptyPortfolioCase = (): PortfolioCase => ({
+type ForemanCaseCategory = 'water' | 'electric' | 'wood' | 'masonry' | 'paint' | 'other';
+
+const FOREMAN_CASE_SECTIONS: Array<{ category: ForemanCaseCategory; title: string; required: boolean }> = [
+    { category: 'water', title: '水工施工展示', required: true },
+    { category: 'electric', title: '电工施工展示', required: true },
+    { category: 'wood', title: '木工施工展示', required: true },
+    { category: 'masonry', title: '瓦工施工展示', required: true },
+    { category: 'paint', title: '油漆工施工展示', required: true },
+    { category: 'other', title: '其他施工展示', required: false },
+];
+
+const createEmptyPortfolioCase = (category?: ForemanCaseCategory): PortfolioCase => ({
     id: generatePortfolioCaseId(),
     title: '',
     description: '',
     images: [],
     style: '',
     area: '',
+    category,
 });
+
+const createForemanPortfolioCases = (): PortfolioCase[] => FOREMAN_CASE_SECTIONS.map((section) => ({
+    ...createEmptyPortfolioCase(section.category),
+    title: section.title,
+}));
 
 interface PortfolioCase {
     id: string;
@@ -124,6 +133,7 @@ interface PortfolioCase {
     images: string[];
     style: string;
     area: string;
+    category?: ForemanCaseCategory;
 }
 
 interface ResolvedApplyMeta {
@@ -131,6 +141,61 @@ interface ResolvedApplyMeta {
     entityType: MerchantEntityType;
     applicantType: MerchantApplicantType;
 }
+
+const matchForemanCategory = (value: string): ForemanCaseCategory | undefined => {
+    const normalized = value.trim();
+    if (!normalized) return undefined;
+    if (normalized.includes('水')) return 'water';
+    if (normalized.includes('电')) return 'electric';
+    if (normalized.includes('木')) return 'wood';
+    if (normalized.includes('瓦')) return 'masonry';
+    if (normalized.includes('油')) return 'paint';
+    if (normalized.includes('其')) return 'other';
+    return undefined;
+};
+
+const normalizePortfolioCasesForForm = (cases: unknown, isForeman: boolean): PortfolioCase[] => {
+    if (!Array.isArray(cases)) {
+        return isForeman ? createForemanPortfolioCases() : [];
+    }
+
+    if (!isForeman) {
+        return cases.map((caseItem) => ({
+            id: generatePortfolioCaseId(),
+            title: String((caseItem as { title?: unknown })?.title || ''),
+            description: String((caseItem as { description?: unknown })?.description || ''),
+            images: Array.isArray((caseItem as { images?: unknown[] })?.images)
+                ? ((caseItem as { images?: unknown[] }).images || []).map((image) => String(image)).filter(Boolean)
+                : [],
+            style: String((caseItem as { style?: unknown })?.style || ''),
+            area: String((caseItem as { area?: unknown })?.area || ''),
+            category: (caseItem as { category?: ForemanCaseCategory }).category,
+        }));
+    }
+
+    const mapped = new Map<ForemanCaseCategory, PortfolioCase>();
+    for (const rawCase of cases) {
+        const caseItem = rawCase as Record<string, unknown>;
+        const category = (typeof caseItem.category === 'string' ? caseItem.category : matchForemanCategory(String(caseItem.title || ''))) as ForemanCaseCategory | undefined;
+        const targetCategory = category || 'other';
+        if (mapped.has(targetCategory)) continue;
+        const section = FOREMAN_CASE_SECTIONS.find((item) => item.category == targetCategory);
+        mapped.set(targetCategory, {
+            id: generatePortfolioCaseId(),
+            title: section?.title || String(caseItem.title || ''),
+            description: String(caseItem.description || ''),
+            images: Array.isArray(caseItem.images) ? caseItem.images.map((image) => String(image)).filter(Boolean) : [],
+            style: '',
+            area: '',
+            category: targetCategory,
+        });
+    }
+
+    return FOREMAN_CASE_SECTIONS.map((section) => mapped.get(section.category) || {
+        ...createEmptyPortfolioCase(section.category),
+        title: section.title,
+    });
+};
 
 const getErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) {
@@ -179,9 +244,9 @@ const resolveApplyMeta = (searchParams: URLSearchParams): ResolvedApplyMeta => {
     }
 };
 
-const caseImageRuleText = (role: MerchantApplyRole) => {
-    if (role === 'designer') return '每套 3-6 张图';
-    if (role === 'foreman') return '每套 8-12 张图';
+const caseImageRuleText = (role: MerchantApplyRole, entityType: MerchantEntityType) => {
+    if (role === 'designer') return entityType === 'company' ? '每套 6-12 张图' : '每套 4-12 张图';
+    if (role === 'foreman') return '每类 2-8 张图';
     return '每套至少 3 张图';
 };
 
@@ -201,11 +266,13 @@ const MerchantRegister: React.FC = () => {
     const [countdown, setCountdown] = useState(0);
     const [showRedirectAlert, setShowRedirectAlert] = useState(fromLogin.startsWith('login_'));
     const [form] = Form.useForm();
-    const [portfolioCases, setPortfolioCases] = useState<PortfolioCase[]>([
-        createEmptyPortfolioCase(),
-        createEmptyPortfolioCase(),
-        createEmptyPortfolioCase(),
-    ]);
+    const [portfolioCases, setPortfolioCases] = useState<PortfolioCase[]>(
+        role === 'foreman' ? createForemanPortfolioCases() : [
+            createEmptyPortfolioCase(),
+            createEmptyPortfolioCase(),
+            createEmptyPortfolioCase(),
+        ]
+    );
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
     const [areaOptions, setAreaOptions] = useState<string[]>([]);
     const [uploadingCaseCountMap, setUploadingCaseCountMap] = useState<Record<number, number>>({});
@@ -359,8 +426,9 @@ const MerchantRegister: React.FC = () => {
     }, []);
 
     const requiresCompanyLicense = entityType === 'company' || isCompanyRole;
-    const caseMinCount = 3;
-    const caseMaxImages = role === 'designer' ? 6 : 12;
+    const caseMinCount = isForeman ? 5 : 3;
+    const caseMinImages = role === 'designer' ? (entityType === 'company' ? 6 : 4) : (role === 'foreman' ? 2 : 3);
+    const caseMaxImages = role === 'designer' ? 12 : (role === 'foreman' ? 8 : 12);
 
     const pageTitle = useMemo(() => {
         if (role === 'company') return '装修公司入驻申请';
@@ -453,18 +521,7 @@ const MerchantRegister: React.FC = () => {
                 onOk: () => {
                     form.setFieldsValue(draft.formValues);
                     setCurrentStep(draft.currentStep);
-                    const restoredCases = Array.isArray(draft.portfolioCases)
-                        ? draft.portfolioCases.map((caseItem) => ({
-                            id: caseItem?.id || generatePortfolioCaseId(),
-                            title: String(caseItem?.title || ''),
-                            description: String(caseItem?.description || ''),
-                            images: Array.isArray(caseItem?.images)
-                                ? caseItem.images.map((image) => String(image)).filter(Boolean)
-                                : [],
-                            style: String(caseItem?.style || ''),
-                            area: String(caseItem?.area || ''),
-                        }))
-                        : [];
+                    const restoredCases = normalizePortfolioCasesForForm(draft.portfolioCases, isForeman);
                     if (restoredCases.length > 0) {
                         setPortfolioCases(restoredCases);
                     }
@@ -476,7 +533,7 @@ const MerchantRegister: React.FC = () => {
         } catch {
             sessionStorage.removeItem(draftStorageKey)
         }
-    }, [draftStorageKey, form]);
+    }, [draftStorageKey, form, isForeman]);
 
     useEffect(() => {
         form.setFieldsValue({
@@ -612,13 +669,13 @@ const MerchantRegister: React.FC = () => {
             teamSize: detail.teamSize,
             officeAddress: detail.officeAddress,
             yearsExperience: detail.yearsExperience,
-            workTypes: detail.workTypes,
             highlightTags: detail.highlightTags,
             graduateSchool: detail.graduateSchool,
             designPhilosophy: detail.designPhilosophy,
             serviceArea: detail.serviceArea,
             styles: detail.styles,
             introduction: detail.introduction,
+            companyAlbum: detail.companyAlbum,
             legalAccepted: false,
         });
 
@@ -634,16 +691,11 @@ const MerchantRegister: React.FC = () => {
         }
 
         if (Array.isArray(detail.portfolioCases) && detail.portfolioCases.length > 0) {
-            setPortfolioCases(detail.portfolioCases.map((caseItem) => ({
-                id: generatePortfolioCaseId(),
-                title: String(caseItem?.title || ''),
-                description: String(caseItem?.description || ''),
-                images: Array.isArray(caseItem?.images) ? caseItem.images.map((image) => String(image)).filter(Boolean) : [],
-                style: String(caseItem?.style || ''),
-                area: String(caseItem?.area || ''),
-            })));
+            setPortfolioCases(normalizePortfolioCasesForForm(detail.portfolioCases, isForeman));
+        } else if (isForeman) {
+            setPortfolioCases(createForemanPortfolioCases());
         }
-    }, [applicantType, entityType, form, phoneFromUrl, role]);
+    }, [applicantType, entityType, form, isForeman, phoneFromUrl, role]);
 
     const verifyPhoneAndMaybePrefill = useCallback(async (phone: string, code: string) => {
         setResubmitLoading(true);
@@ -668,16 +720,7 @@ const MerchantRegister: React.FC = () => {
             });
             if (resubmitId && response.form) {
                 hydrateResubmitDetail(response.form);
-                const restoredCases = Array.isArray(response.form.portfolioCases)
-                    ? response.form.portfolioCases.map((caseItem) => ({
-                        id: generatePortfolioCaseId(),
-                        title: String(caseItem?.title || ''),
-                        description: String(caseItem?.description || ''),
-                        images: Array.isArray(caseItem?.images) ? caseItem.images.map((image) => String(image)).filter(Boolean) : [],
-                        style: String(caseItem?.style || ''),
-                        area: String(caseItem?.area || ''),
-                    }))
-                    : [];
+                const restoredCases = normalizePortfolioCasesForForm(response.form.portfolioCases, isForeman);
                 persistDraftSnapshot({
                     currentStep: 1,
                     formValues: {
@@ -700,13 +743,13 @@ const MerchantRegister: React.FC = () => {
                         teamSize: response.form.teamSize,
                         officeAddress: response.form.officeAddress,
                         yearsExperience: response.form.yearsExperience,
-                        workTypes: response.form.workTypes,
                         highlightTags: response.form.highlightTags,
                         graduateSchool: response.form.graduateSchool,
                         designPhilosophy: response.form.designPhilosophy,
                         serviceArea: response.form.serviceArea,
                         styles: response.form.styles,
                         introduction: response.form.introduction,
+                        companyAlbum: response.form.companyAlbum,
                         priceFlat: response.form.pricing?.flat,
                         priceDuplex: response.form.pricing?.duplex,
                         priceOther: response.form.pricing?.other,
@@ -797,13 +840,13 @@ const MerchantRegister: React.FC = () => {
 
     const getCaseImageCountError = (imageCount: number) => {
         if (role === 'designer') {
-            if (imageCount < 3) return `至少上传 3 张，当前 ${imageCount} 张`;
-            if (imageCount > 6) return `最多上传 6 张，当前 ${imageCount} 张`;
+            if (imageCount < caseMinImages) return `至少上传 ${caseMinImages} 张，当前 ${imageCount} 张`;
+            if (imageCount > caseMaxImages) return `最多上传 ${caseMaxImages} 张，当前 ${imageCount} 张`;
             return '';
         }
         if (role === 'foreman') {
-            if (imageCount < 8) return `至少上传 8 张，当前 ${imageCount} 张`;
-            if (imageCount > 12) return `最多上传 12 张，当前 ${imageCount} 张`;
+            if (imageCount < 2) return `至少上传 2 张，当前 ${imageCount} 张`;
+            if (imageCount > 8) return `最多上传 8 张，当前 ${imageCount} 张`;
             return '';
         }
         if (imageCount < 3) {
@@ -889,7 +932,56 @@ const MerchantRegister: React.FC = () => {
         }
     };
 
+    const handleCompanyAlbumUpload: UploadProps['customRequest'] = async (options) => {
+        const currentImages = (form.getFieldValue('companyAlbum') || []) as string[];
+        if (currentImages.length >= 8) {
+            message.warning('公司相册最多上传 8 张');
+            options.onError?.(new Error('已超过图片数量上限'));
+            return;
+        }
+        try {
+            const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
+            options.onSuccess?.(uploaded);
+            const nextImages = [...currentImages, uploaded.url].slice(0, 8);
+            form.setFieldValue('companyAlbum', nextImages);
+        } catch (error) {
+            const errorMessage = getErrorMessage(error, '上传失败');
+            message.error(errorMessage);
+            options.onError?.(new Error(errorMessage));
+        }
+    };
+
     const validatePortfolioCases = () => {
+        if (role === 'foreman') {
+            for (const section of FOREMAN_CASE_SECTIONS) {
+                const caseItem = portfolioCases.find((item) => item.category === section.category);
+                const hasAnyContent = Boolean(caseItem?.description.trim() || (caseItem?.images.length || 0) > 0);
+                if (section.required && !caseItem) {
+                    message.error(`${section.title}不能为空`);
+                    return false;
+                }
+                if (!caseItem) {
+                    continue;
+                }
+                if (!section.required && !hasAnyContent) {
+                    continue;
+                }
+                if (!caseItem.description.trim()) {
+                    message.error(`${section.title}请填写工艺说明`);
+                    return false;
+                }
+                if (caseItem.description.length > 5000) {
+                    message.error(`${section.title}说明不能超过5000字`);
+                    return false;
+                }
+                if (caseItem.images.length < 2 || caseItem.images.length > 8) {
+                    message.error(`${section.title}图片数量需为 2-8 张`);
+                    return false;
+                }
+            }
+            return true;
+        }
+
         const validCases = portfolioCases.filter((caseItem) =>
             caseItem.title.trim() && caseItem.description.trim() && caseItem.images.length > 0
         );
@@ -908,12 +1000,8 @@ const MerchantRegister: React.FC = () => {
                 message.error(`第 ${index + 1} 套案例说明不能超过5000字`);
                 return false;
             }
-            if (role === 'designer' && (caseItem.images.length < 3 || caseItem.images.length > 6)) {
-                message.error(`第 ${index + 1} 套案例图片数量需为 3-6 张`);
-                return false;
-            }
-            if (role === 'foreman' && (caseItem.images.length < 8 || caseItem.images.length > 12)) {
-                message.error(`第 ${index + 1} 套施工案例图片数量需为 8-12 张`);
+            if (role === 'designer' && (caseItem.images.length < caseMinImages || caseItem.images.length > caseMaxImages)) {
+                message.error(`第 ${index + 1} 套案例图片数量需为 ${caseMinImages}-${caseMaxImages} 张`);
                 return false;
             }
             if (role === 'company' && caseItem.images.length < 3) {
@@ -1006,9 +1094,12 @@ const MerchantRegister: React.FC = () => {
                     setShowRedirectAlert(false);
                 }
             } else if (currentStep === 1) {
-                const fields = ['realName', 'avatar'];
+                const fields = ['realName', 'avatar', 'officeAddress'];
                 if (entityType === 'company' || role === 'company') {
                     fields.push('companyName');
+                }
+                if (role === 'company') {
+                    fields.push('companyAlbum');
                 }
                 await form.validateFields(fields);
             } else if (currentStep === 2) {
@@ -1017,7 +1108,7 @@ const MerchantRegister: React.FC = () => {
                     fields.push('licenseNo', 'licenseImage');
                 }
                 if (isForeman) {
-                    fields.push('yearsExperience', 'workTypes');
+                    fields.push('yearsExperience');
                 }
                 if (role === 'designer') {
                     fields.push('yearsExperience');
@@ -1077,13 +1168,13 @@ const MerchantRegister: React.FC = () => {
             fields.push('companyName', 'licenseNo', 'licenseImage');
         }
         if (role === 'designer') {
-            fields.push('yearsExperience', 'styles', 'priceFlat');
+            fields.push('yearsExperience', 'styles', 'priceFlat', 'officeAddress');
         }
         if (role === 'foreman') {
-            fields.push('yearsExperience', 'workTypes', 'highlightTags', 'pricePerSqm');
+            fields.push('yearsExperience', 'highlightTags', 'pricePerSqm', 'officeAddress');
         }
         if (role === 'company') {
-            fields.push('priceFullPackage', 'priceHalfPackage');
+            fields.push('priceFullPackage', 'priceHalfPackage', 'officeAddress', 'companyAlbum');
         }
 
         let validatedValues: Record<string, unknown>;
@@ -1161,9 +1252,8 @@ const MerchantRegister: React.FC = () => {
                         legalPersonIdCardFront: isCompanyEntity ? String(values.idCardFront || '').trim() : undefined,
                         legalPersonIdCardBack: isCompanyEntity ? String(values.idCardBack || '').trim() : undefined,
                         teamSize: values.teamSize,
-                        officeAddress: values.officeAddress ? String(values.officeAddress).trim() : undefined,
+                        officeAddress: String(values.officeAddress || '').trim(),
                         yearsExperience: values.yearsExperience,
-                        workTypes: isForeman ? values.workTypes || [] : [],
                         serviceArea: values.serviceArea || [],
                         styles: role === 'designer' ? values.styles || [] : [],
                         highlightTags: role === 'foreman' ? values.highlightTags || [] : [],
@@ -1171,15 +1261,17 @@ const MerchantRegister: React.FC = () => {
                         introduction: values.introduction,
                         graduateSchool: values.graduateSchool,
                         designPhilosophy: values.designPhilosophy,
-                        portfolioCases: portfolioCases.filter((caseItem) =>
-                            caseItem.title.trim() && caseItem.description.trim() && caseItem.images.length > 0
-                        ).map((caseItem) => ({
-                            title: caseItem.title.trim(),
-                            description: caseItem.description.trim(),
-                            images: caseItem.images,
-                            style: caseItem.style,
-                            area: caseItem.area,
-                        })),
+                        companyAlbum: role === 'company' ? (values.companyAlbum || []) : undefined,
+                        portfolioCases: portfolioCases
+                            .filter((caseItem) => caseItem.description.trim() && caseItem.images.length > 0)
+                            .map((caseItem) => ({
+                                title: isForeman ? (FOREMAN_CASE_SECTIONS.find((section) => section.category === caseItem.category)?.title || caseItem.title.trim()) : caseItem.title.trim(),
+                                category: caseItem.category,
+                                description: caseItem.description.trim(),
+                                images: caseItem.images,
+                                style: isForeman ? undefined : caseItem.style,
+                                area: isForeman ? undefined : caseItem.area,
+                            })),
                         legalAcceptance: {
                             accepted: true,
                             onboardingAgreementVersion: ONBOARDING_AGREEMENT_VERSION,
@@ -1221,10 +1313,16 @@ const MerchantRegister: React.FC = () => {
     };
 
     const addPortfolioCase = () => {
+        if (isForeman) {
+            return;
+        }
         setPortfolioCases((prev) => [...prev, createEmptyPortfolioCase()]);
     };
 
     const removePortfolioCase = (index: number) => {
+        if (isForeman) {
+            return;
+        }
         setPortfolioCases((prev) => {
             if (prev.length <= caseMinCount) {
                 message.warning(`至少保留 ${caseMinCount} 套案例`);
@@ -1416,16 +1514,64 @@ const MerchantRegister: React.FC = () => {
                                     </Select>
                                 </Form.Item>
 
-                                <Form.Item name="officeAddress" label="办公地址">
-                                    <Input className="premium-input"
-                                        prefix={<EnvironmentOutlined aria-hidden="true" />}
-                                        placeholder="请输入办公地址"
-                                        maxLength={200}
-                                        aria-label="办公地址"
-                                    />
-                                </Form.Item>
+                                {role === 'company' && (
+                                    <Form.Item
+                                        name="companyAlbum"
+                                        label="公司相册"
+                                        rules={[{ validator: (_, value) => Array.isArray(value) && value.length >= 3 && value.length <= 8 ? Promise.resolve() : Promise.reject(new Error('请上传 3-8 张公司相册')) }]}
+                                    >
+                                        <Upload
+                                            listType="picture-card"
+                                            multiple
+                                            maxCount={8}
+                                            fileList={toCaseUploadFileList(form.getFieldValue('companyAlbum') || [])}
+                                            accept=".jpg,.jpeg,.png"
+                                            beforeUpload={(file, fileList) => {
+                                                const basicValidation = validateImageBeforeUpload(file as File, 5);
+                                                if (basicValidation !== true) {
+                                                    return basicValidation;
+                                                }
+                                                const current = (form.getFieldValue('companyAlbum') || []) as string[];
+                                                const remaining = 8 - current.length;
+                                                const currentIndexInBatch = fileList.findIndex((item) => item.uid === file.uid);
+                                                return currentIndexInBatch >= remaining ? Upload.LIST_IGNORE : true;
+                                            }}
+                                            customRequest={handleCompanyAlbumUpload}
+                                            onPreview={handleCasePreview}
+                                            onRemove={(file) => {
+                                                const url = file.url || (file.response as { url?: string } | undefined)?.url;
+                                                if (!url) return false;
+                                                const current = (form.getFieldValue('companyAlbum') || []) as string[];
+                                                form.setFieldValue('companyAlbum', current.filter((image) => image !== url));
+                                                return true;
+                                            }}
+                                        >
+                                            {((form.getFieldValue('companyAlbum') || []) as string[]).length < 8 ? (
+                                                <div>
+                                                    <PictureOutlined aria-hidden="true" />
+                                                    <div style={{ marginTop: 8 }}>上传图片</div>
+                                                </div>
+                                            ) : null}
+                                        </Upload>
+                                        <div style={{ marginTop: 8, color: '#8c8c8c' }}>请上传 3-8 张公司展示图片</div>
+                                    </Form.Item>
+                                )}
                             </>
                         )}
+
+                        <Form.Item
+                            name="officeAddress"
+                            label="办公地址"
+                            rules={[{ required: true, message: '请输入办公地址' }]}
+                        >
+                            <Input className="premium-input"
+                                prefix={<EnvironmentOutlined aria-hidden="true" />}
+                                placeholder="请输入办公地址"
+                                maxLength={200}
+                                aria-label="办公地址"
+                                aria-required="true"
+                            />
+                        </Form.Item>
                     </div>
                 );
 
@@ -1621,19 +1767,6 @@ const MerchantRegister: React.FC = () => {
                                         ))}
                                     </Select>
                                 </Form.Item>
-                                <Form.Item
-                                    name="workTypes"
-                                    label="工种类型"
-                                    rules={[{ required: true, message: '请至少选择1个工种' }]}
-                                >
-                                    <Select className="premium-input"
-                                        mode="multiple"
-                                        placeholder="选择可承接工种"
-                                        options={WORK_TYPE_OPTIONS}
-                                        aria-label="工种类型"
-                                        aria-required="true"
-                                    />
-                                </Form.Item>
                             </>
                         )}
                         {role === 'designer' && (
@@ -1659,120 +1792,116 @@ const MerchantRegister: React.FC = () => {
                 return (
                     <div className="animate-fade-in glassmorphism-form">
                         <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>
-                            案例上传 <Text type="secondary" style={{ fontSize: 14, fontWeight: 'normal' }}>（至少 {caseMinCount} 套，{caseImageRuleText(role)}）</Text>
+                            案例上传 <Text type="secondary" style={{ fontSize: 14, fontWeight: 'normal' }}>（至少 {caseMinCount} 套，{caseImageRuleText(role, entityType)}）</Text>
                         </Title>
-                        {portfolioCases.map((caseItem, index) => (
-                            <Card key={caseItem.id} size="small" className="premium-case-card"
-                                title={`案例 ${index + 1}`}
-                                extra={(
-                                    <Button
-                                        type="link"
-                                        danger
-                                        icon={<DeleteOutlined />}
-                                        onClick={() => removePortfolioCase(index)}
-                                        disabled={portfolioCases.length <= caseMinCount}
-                                        aria-label={`删除案例 ${index + 1}`}
-                                    >
-                                        删除案例
-                                    </Button>
-                                )}
-                                style={{ marginBottom: 16 }}
-                                role="region"
-                                aria-label={`案例 ${index + 1}`}
-                            >
-                                <Form.Item label="案例标题" required>
-                                    <Input className="premium-input"
-                                        placeholder="例如：现代简约三居室"
-                                        value={caseItem.title}
-                                        maxLength={50}
-                                        onChange={(event) => updatePortfolioCase(index, 'title', event.target.value)}
-                                        aria-label={`案例 ${index + 1} 标题`}
-                                        aria-required="true"
-                                    />
-                                </Form.Item>
-                                <Form.Item label="案例说明" required>
-                                    <TextArea className="premium-input"
-                                        rows={3}
-                                        placeholder="请输入案例说明"
-                                        value={caseItem.description}
-                                        maxLength={5000}
-                                        showCount
-                                        onChange={(event) => updatePortfolioCase(index, 'description', event.target.value)}
-                                        aria-label={`案例 ${index + 1} 说明`}
-                                        aria-required="true"
-                                    />
-                                </Form.Item>
-                                <Row gutter={16}>
-                                    <Col xs={24} sm={12}>
-                                        <Form.Item label="风格">
-                                            <Select className="premium-input"
-                                                placeholder="选择风格"
-                                                value={caseItem.style || undefined}
-                                                onChange={(value) => updatePortfolioCase(index, 'style', value)}
-                                                aria-label={`案例 ${index + 1} 风格`}
-                                            >
-                                                {styleOptions.map((style) => (
-                                                    <Select.Option key={style} value={style}>{style}</Select.Option>
-                                                ))}
-                                            </Select>
+                        {portfolioCases.map((caseItem, index) => {
+                            const section = isForeman ? FOREMAN_CASE_SECTIONS.find((item) => item.category === caseItem.category) : undefined;
+                            return (
+                                <Card
+                                    key={caseItem.id}
+                                    size="small"
+                                    className="premium-case-card"
+                                    title={isForeman ? section?.title : `案例 ${index + 1}`}
+                                    extra={(!isForeman && (
+                                        <Button
+                                            type="link"
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => removePortfolioCase(index)}
+                                            disabled={portfolioCases.length <= caseMinCount}
+                                            aria-label={`删除案例 ${index + 1}`}
+                                        >
+                                            删除案例
+                                        </Button>
+                                    )) || undefined}
+                                    style={{ marginBottom: 16 }}
+                                    role="region"
+                                    aria-label={isForeman ? (section?.title || `案例 ${index + 1}`) : `案例 ${index + 1}`}
+                                >
+                                    {!isForeman && (
+                                        <Form.Item label="案例标题" required>
+                                            <Input
+                                                className="premium-input"
+                                                placeholder="例如：现代简约三居室"
+                                                value={caseItem.title}
+                                                maxLength={50}
+                                                onChange={(event) => updatePortfolioCase(index, 'title', event.target.value)}
+                                                aria-label={`案例 ${index + 1} 标题`}
+                                                aria-required="true"
+                                            />
                                         </Form.Item>
-                                    </Col>
-                                    <Col xs={24} sm={12}>
-                                        <Form.Item label="面积">
-                                            <Select className="premium-input"
-                                                placeholder="选择面积区间"
-                                                value={caseItem.area || undefined}
-                                                onChange={(value) => updatePortfolioCase(index, 'area', value)}
-                                                aria-label={`案例 ${index + 1} 面积`}
-                                            >
-                                                {CASE_AREA_OPTIONS.map((area) => (
-                                                    <Select.Option key={area} value={area}>{area}</Select.Option>
-                                                ))}
-                                            </Select>
-                                        </Form.Item>
-                                    </Col>
-                                </Row>
-                                <Form.Item label="案例图片" required>
-                                    <Upload
-                                        listType="picture-card"
-                                        multiple
-                                        maxCount={caseMaxImages}
-                                        fileList={toCaseUploadFileList(caseItem.images)}
-                                        accept=".jpg,.jpeg,.png"
-                                        beforeUpload={createCaseBeforeUpload(index)}
-                                        customRequest={createCaseUploadHandler(index)}
-                                        onPreview={handleCasePreview}
-                                        onRemove={(file) => {
-                                            const url = file.url || (file.response as { url?: string } | undefined)?.url;
-                                            if (!url) {
-                                                return false;
-                                            }
-                                            updatePortfolioCase(index, 'images', caseItem.images.filter((image) => image !== url));
-                                            return true;
-                                        }}
-                                        aria-label={`上传案例 ${index + 1} 图片`}
-                                    >
-                                        {caseItem.images.length < caseMaxImages ? (
-                                            <div>
-                                                <PictureOutlined aria-hidden="true" />
-                                                <div style={{ marginTop: 8 }}>上传图片</div>
-                                            </div>
-                                        ) : null}
-                                    </Upload>
-                                    <div style={{ marginTop: 8, color: getCaseImageCountError(caseItem.images.length) ? '#ff4d4f' : '#8c8c8c' }}>
-                                        {getCaseImageCountError(caseItem.images.length) || `已上传 ${caseItem.images.length} 张，可一次选择多张`}
-                                    </div>
-                                </Form.Item>
-                            </Card>
-                        ))}
-                        <Button
-                            type="dashed"
-                            block
-                            onClick={addPortfolioCase}
-                            aria-label="添加更多案例"
-                        >
-                            + 添加更多案例
-                        </Button>
+                                    )}
+                                    <Form.Item label={isForeman ? '工艺说明' : '案例说明'} required={Boolean(isForeman ? section?.required || caseItem.description || caseItem.images.length : true)}>
+                                        <TextArea
+                                            className="premium-input"
+                                            rows={3}
+                                            placeholder={isForeman ? '建议填写主要辅材品牌名、施工工序、节点做法与验收标准。' : '请输入案例说明'}
+                                            value={caseItem.description}
+                                            maxLength={5000}
+                                            showCount
+                                            onChange={(event) => updatePortfolioCase(index, 'description', event.target.value)}
+                                            aria-label={`${isForeman ? (section?.title || '案例') : `案例 ${index + 1}`} 说明`}
+                                        />
+                                    </Form.Item>
+                                    {!isForeman && (
+                                        <Row gutter={16}>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item label="风格">
+                                                    <Select className="premium-input" placeholder="选择风格" value={caseItem.style || undefined} onChange={(value) => updatePortfolioCase(index, 'style', value)} aria-label={`案例 ${index + 1} 风格`}>
+                                                        {styleOptions.map((style) => (
+                                                            <Select.Option key={style} value={style}>{style}</Select.Option>
+                                                        ))}
+                                                    </Select>
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} sm={12}>
+                                                <Form.Item label="面积">
+                                                    <Select className="premium-input" placeholder="选择面积区间" value={caseItem.area || undefined} onChange={(value) => updatePortfolioCase(index, 'area', value)} aria-label={`案例 ${index + 1} 面积`}>
+                                                        {CASE_AREA_OPTIONS.map((area) => (
+                                                            <Select.Option key={area} value={area}>{area}</Select.Option>
+                                                        ))}
+                                                    </Select>
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                    )}
+                                    <Form.Item label={isForeman ? '施工图片' : '案例图片'} required>
+                                        <Upload
+                                            listType="picture-card"
+                                            multiple
+                                            maxCount={caseMaxImages}
+                                            fileList={toCaseUploadFileList(caseItem.images)}
+                                            accept=".jpg,.jpeg,.png"
+                                            beforeUpload={createCaseBeforeUpload(index)}
+                                            customRequest={createCaseUploadHandler(index)}
+                                            onPreview={handleCasePreview}
+                                            onRemove={(file) => {
+                                                const url = file.url || (file.response as { url?: string } | undefined)?.url;
+                                                if (!url) {
+                                                    return false;
+                                                }
+                                                updatePortfolioCase(index, 'images', caseItem.images.filter((image) => image !== url));
+                                                return true;
+                                            }}
+                                            aria-label={`${isForeman ? (section?.title || '案例') : `案例 ${index + 1}`} 图片`}
+                                        >
+                                            {caseItem.images.length < caseMaxImages ? (
+                                                <div>
+                                                    <PictureOutlined aria-hidden="true" />
+                                                    <div style={{ marginTop: 8 }}>上传图片</div>
+                                                </div>
+                                            ) : null}
+                                        </Upload>
+                                        <div style={{ marginTop: 8, color: getCaseImageCountError(caseItem.images.length) ? '#ff4d4f' : '#8c8c8c' }}>
+                                            {getCaseImageCountError(caseItem.images.length) || `已上传 ${caseItem.images.length} 张，可一次选择多张`}
+                                        </div>
+                                    </Form.Item>
+                                </Card>
+                            );
+                        })}
+                        {!isForeman && (
+                            <Button type="dashed" block onClick={addPortfolioCase} aria-label="添加更多案例">+ 添加更多案例</Button>
+                        )}
                     </div>
                 );
 

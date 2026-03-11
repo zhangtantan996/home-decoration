@@ -32,11 +32,13 @@ export const WorkerCard = memo(({ worker, onPress, onBookPress }: WorkerCardProp
                             <Star size={12} color="#F59E0B" fill="#F59E0B" />
                             <Text style={styles.ratingText}>{worker.rating}</Text>
                         </View>
-                        {/* 工种 + 附近 同行显示 */}
+                        {/* 服务标签 + 附近 同行显示 */}
                         <View style={styles.workTypeDistanceRow}>
-                            <View style={styles.workTypeBadge}>
-                                <Text style={styles.workTypeBadgeText}>{worker.workTypeLabels}</Text>
-                            </View>
+                            {!!worker.serviceLabel && (
+                                <View style={styles.workTypeBadge}>
+                                    <Text style={styles.workTypeBadgeText}>{worker.serviceLabel}</Text>
+                                </View>
+                            )}
                             <View style={styles.distanceInline}>
                                 <MapPinned size={12} color="#A1A1AA" />
                                 <Text style={styles.distanceInlineText}>{worker.distance}</Text>
@@ -97,8 +99,8 @@ export const WorkerCard = memo(({ worker, onPress, onBookPress }: WorkerCardProp
                     </View>
                     <View style={styles.companyStatItem}>
                         <Award size={16} color="#71717A" />
-                        <Text style={styles.statValue} numberOfLines={1}>{worker.workTypeLabels}</Text>
-                        <Text style={styles.statLabel}>工种</Text>
+                        <Text style={styles.statValue} numberOfLines={1}>{worker.serviceLabel}</Text>
+                        <Text style={styles.statLabel}>服务</Text>
                     </View>
                 </View>
                 {/* 资质行 + 认证标签 */}

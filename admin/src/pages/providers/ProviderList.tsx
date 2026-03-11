@@ -20,7 +20,6 @@ interface Provider {
     restoreRate?: number;
     budgetControl?: number;
     // 移动端详情页字段
-    workTypes: string;
     priceMin: number;
     priceMax: number;
     priceUnit: string;
@@ -129,13 +128,7 @@ const ProviderList: React.FC = () => {
     const openModal = (provider?: Provider) => {
         setEditingProvider(provider || null);
         if (provider) {
-            // 编辑模式：处理工长的 workTypes 字段
-            const formValues = { ...provider };
-            if (provider.providerType === 3 && provider.workTypes) {
-                // 将逗号分隔的字符串转为数组
-                formValues.workTypes = provider.workTypes.split(',').filter(Boolean) as any;
-            }
-            form.setFieldsValue(formValues);
+            form.setFieldsValue(provider);
             setCurrentFormType(provider.providerType);
         } else {
             form.resetFields();
@@ -156,22 +149,9 @@ const ProviderList: React.FC = () => {
 
             // 根据服务商类型清理不相关的字段
             const cleanedValues = { ...values };
-
-            if (currentFormType === 1) {
-                // 设计师：移除 teamSize, establishedYear
+            if (currentFormType === 1 || currentFormType === 3) {
                 delete cleanedValues.teamSize;
                 delete cleanedValues.establishedYear;
-            } else if (currentFormType === 2) {
-                // 装修公司：移除 workTypes
-                delete cleanedValues.workTypes;
-            } else if (currentFormType === 3) {
-                // 工长：移除 teamSize, establishedYear, 并处理 workTypes 为字符串
-                delete cleanedValues.teamSize;
-                delete cleanedValues.establishedYear;
-                // 将工种数组转为逗号分隔的字符串
-                if (Array.isArray(cleanedValues.workTypes)) {
-                    cleanedValues.workTypes = cleanedValues.workTypes.join(',');
-                }
             }
 
             if (editingProvider) {
@@ -373,7 +353,6 @@ const ProviderList: React.FC = () => {
                                 ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ''}`
                                 : '-'}
                         </Descriptions.Item>
-                        <Descriptions.Item label="工种类型" span={2}>{currentProvider.workTypes || '-'}</Descriptions.Item>
                         <Descriptions.Item label="服务介绍" span={2}>{currentProvider.serviceIntro || '-'}</Descriptions.Item>
                         <Descriptions.Item label="服务区域" span={2}>{currentProvider.serviceArea || '-'}</Descriptions.Item>
                         <Descriptions.Item label="团队规模">{currentProvider.teamSize || '-'}</Descriptions.Item>
@@ -447,27 +426,6 @@ const ProviderList: React.FC = () => {
                         <Input.TextArea rows={4} placeholder="请输入服务介绍、设计理念或公司简介" />
                     </Form.Item>
 
-                    {/* 工长专属字段：工种类型 */}
-                    {currentFormType === 3 && (
-                        <Form.Item
-                            name="workTypes"
-                            label="工种类型"
-                            tooltip="多个工种用逗号分隔"
-                            rules={[{ required: true, message: '工长必须选择工种类型' }]}
-                        >
-                            <Select
-                                mode="multiple"
-                                placeholder="请选择工种"
-                                options={[
-                                    { value: 'mason', label: '瓦工' },
-                                    { value: 'electrician', label: '电工' },
-                                    { value: 'carpenter', label: '木工' },
-                                    { value: 'painter', label: '油漆工' },
-                                    { value: 'plumber', label: '水暖工' },
-                                ]}
-                            />
-                        </Form.Item>
-                    )}
 
                     <div style={{ display: 'flex', gap: 16 }}>
                         <Form.Item name="priceMin" label="最低价格" style={{ flex: 1 }}>

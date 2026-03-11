@@ -112,29 +112,6 @@ const ProviderDetailPage: React.FC = () => {
   const providerDetail = useMemo(() => ((detail as { provider?: ProviderDetail })?.provider || detail || null), [detail]);
   const userDetail = useMemo(() => ((detail as { user?: { id?: number; publicId?: string; nickname?: string; avatar?: string } })?.user || null), [detail]);
 
-  const workTypeTags = useMemo(() => {
-    if (!providerDetail?.workTypes) {
-      return [];
-    }
-    const raw = providerDetail.workTypes.trim();
-    if (!raw) {
-      return [];
-    }
-
-    if (raw.startsWith('[') && raw.endsWith(']')) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          return parsed.map((item) => String(item).trim()).filter(Boolean);
-        }
-      } catch {
-        // fallback to split parsing
-      }
-    }
-
-    return raw.split(',').map((item) => item.trim()).filter(Boolean);
-  }, [providerDetail?.workTypes]);
-
   const serviceAreaTags = useMemo(() => {
     const parsed = parseStringList(providerDetail?.serviceArea);
     return parsed.length > 0 ? parsed : ['本地服务'];
@@ -267,9 +244,6 @@ const ProviderDetailPage: React.FC = () => {
 
           <View className="mt-md flex flex-wrap gap-xs">
             {providerDetail?.verified ? <Tag variant="primary">已认证</Tag> : null}
-            {workTypeTags.map((type) => (
-              <Tag key={type} variant="secondary">{type}</Tag>
-            ))}
             {highlightTags.map((tag) => (
               <Tag key={`highlight-${tag}`} variant="secondary">{tag}</Tag>
             ))}

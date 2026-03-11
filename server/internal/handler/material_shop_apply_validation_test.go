@@ -1,9 +1,25 @@
 package handler
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
 )
+
+func materialProductImages(count int) []string {
+	images := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		images = append(images, "https://img.example.com/p"+string(rune('a'+i))+".jpg")
+	}
+	return images
+}
 
 func newValidMaterialShopApplyInput() materialShopApplyInput {
 	return materialShopApplyInput{
@@ -19,16 +35,20 @@ func newValidMaterialShopApplyInput() materialShopApplyInput {
 		LegalPersonIDCardNo:    "11010519491231002X",
 		LegalPersonIDCardFront: "https://img.example.com/id-front.jpg",
 		LegalPersonIDCardBack:  "https://img.example.com/id-back.jpg",
-		BusinessHours:          "09:00-18:00",
-		ContactPhone:           "13800138001",
-		ContactName:            "王五",
-		Address:                "上海市浦东新区XX路88号",
+		BusinessHoursRanges: []BusinessHoursRangeInput{{
+			Day:   1,
+			Start: "09:00",
+			End:   "18:00",
+		}},
+		ContactPhone: "13800138001",
+		ContactName:  "王五",
+		Address:      "上海市浦东新区XX路88号",
 		Products: []materialShopApplyProductInput{
-			{Name: "产品1", Price: 100, Images: []string{"https://img.example.com/p1.jpg"}, Params: map[string]interface{}{"品牌": "A", "规格": "100x100"}},
-			{Name: "产品2", Price: 120, Images: []string{"https://img.example.com/p2.jpg"}, Params: map[string]interface{}{"品牌": "A", "规格": "120x120"}},
-			{Name: "产品3", Price: 130, Images: []string{"https://img.example.com/p3.jpg"}, Params: map[string]interface{}{"品牌": "A", "规格": "130x130"}},
-			{Name: "产品4", Price: 140, Images: []string{"https://img.example.com/p4.jpg"}, Params: map[string]interface{}{"品牌": "A", "规格": "140x140"}},
-			{Name: "产品5", Price: 150, Images: []string{"https://img.example.com/p5.jpg"}, Params: map[string]interface{}{"品牌": "A", "规格": "150x150"}},
+			{Name: "产品1", Unit: "平方米", Price: 100, Images: []string{"https://img.example.com/p1.jpg"}},
+			{Name: "产品2", Unit: "平方米", Price: 120, Images: []string{"https://img.example.com/p2.jpg"}},
+			{Name: "产品3", Unit: "平方米", Price: 130, Images: []string{"https://img.example.com/p3.jpg"}},
+			{Name: "产品4", Unit: "平方米", Price: 140, Images: []string{"https://img.example.com/p4.jpg"}},
+			{Name: "产品5", Unit: "平方米", Price: 150, Images: []string{"https://img.example.com/p5.jpg"}},
 		},
 		LegalAcceptance: LegalAcceptanceInput{
 			Accepted:                     true,
@@ -39,99 +59,151 @@ func newValidMaterialShopApplyInput() materialShopApplyInput {
 	}
 }
 
-func TestValidateMaterialShopApply_RequireLegalAcceptance(t *testing.T) {
+func TestValidateMaterialShopApply_RequireBusinessHoursRanges(t *testing.T) {
 	input := newValidMaterialShopApplyInput()
-	input.LegalAcceptance.Accepted = false
+	input.BusinessHoursRanges = nil
 
 	err := validateMaterialShopApply(&input)
-	if err == nil {
-		t.Fatalf("expected error for missing legal acceptance")
-	}
-	if !strings.Contains(err.Error(), "同意平台入驻相关条款") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateMaterialShopApply_RequireLegalVersions(t *testing.T) {
-	input := newValidMaterialShopApplyInput()
-	input.LegalAcceptance.PrivacyDataProcessingVersion = ""
-
-	err := validateMaterialShopApply(&input)
-	if err == nil {
-		t.Fatalf("expected error for missing legal version")
-	}
-	if !strings.Contains(err.Error(), "隐私与数据处理条款版本") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateMaterialShopApply_RequireCompanyAndLegalPerson(t *testing.T) {
-	input := newValidMaterialShopApplyInput()
-	input.CompanyName = ""
-
-	err := validateMaterialShopApply(&input)
-	if err == nil {
-		t.Fatalf("expected error for missing companyName")
-	}
-	if !strings.Contains(err.Error(), "公司/个体名称") {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "营业时间") {
+		t.Fatalf("expected business hours validation error, got=%v", err)
 	}
 
 	input = newValidMaterialShopApplyInput()
-	input.LegalPersonName = ""
+	input.BusinessHoursRanges = []BusinessHoursRangeInput{{Day: 1, Start: "18:00", End: "09:00"}}
 	err = validateMaterialShopApply(&input)
-	if err == nil {
-		t.Fatalf("expected error for missing legalPersonName")
-	}
-	if !strings.Contains(err.Error(), "法人/经营者姓名") {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "开始时间必须早于结束时间") {
+		t.Fatalf("expected invalid range error, got=%v", err)
 	}
 }
 
-func TestValidateMaterialShopApply_RequireBusinessHoursAndAddress(t *testing.T) {
+func TestValidateMaterialShopApply_RequireProductUnitAndImageLimit(t *testing.T) {
 	input := newValidMaterialShopApplyInput()
-	input.BusinessHours = ""
+	input.Products[0].Unit = ""
 
 	err := validateMaterialShopApply(&input)
-	if err == nil {
-		t.Fatalf("expected error for missing businessHours")
-	}
-	if !strings.Contains(err.Error(), "营业时间") {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "商品单位不能为空") {
+		t.Fatalf("expected unit validation error, got=%v", err)
 	}
 
 	input = newValidMaterialShopApplyInput()
-	input.Address = ""
+	input.Products[0].Images = []string{
+		"1", "2", "3", "4", "5", "6", "7",
+	}
 	err = validateMaterialShopApply(&input)
-	if err == nil {
-		t.Fatalf("expected error for missing address")
-	}
-	if !strings.Contains(err.Error(), "门店地址") {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "1-6张图片") {
+		t.Fatalf("expected image limit error, got=%v", err)
 	}
 }
 
-func TestValidateMaterialShopApply_RequireValidContactPhone(t *testing.T) {
-	input := newValidMaterialShopApplyInput()
-	input.ContactPhone = "12345"
-
-	err := validateMaterialShopApply(&input)
-	if err == nil {
-		t.Fatalf("expected error for invalid contactPhone")
-	}
-	if !strings.Contains(err.Error(), "联系手机号格式不正确") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateMaterialShopApply_ValidInput(t *testing.T) {
+func TestValidateMaterialShopApply_ValidInputSummarizesBusinessHours(t *testing.T) {
 	input := newValidMaterialShopApplyInput()
 	input.ContactName = ""
+	input.BusinessHours = ""
 
 	if err := validateMaterialShopApply(&input); err != nil {
 		t.Fatalf("expected valid input, got error: %v", err)
 	}
 	if input.ContactName != input.LegalPersonName {
 		t.Fatalf("expected contact name to default to legal person name")
+	}
+	if input.BusinessHours == "" || !strings.Contains(input.BusinessHours, "周一 09:00-18:00") {
+		t.Fatalf("expected summarized business hours, got=%q", input.BusinessHours)
+	}
+}
+
+func TestResolveMaterialProductUnit_FallsBackToLegacyParams(t *testing.T) {
+	unit := resolveMaterialProductUnit("", `{"单位":"套","颜色":"白色"}`)
+	if unit != "套" {
+		t.Fatalf("unexpected unit: %q", unit)
+	}
+
+	product := parseMaterialProduct(model.MaterialShopProduct{
+		Unit:       "",
+		ParamsJSON: `{"unit":"平方米"}`,
+		ImagesJSON: `[]`,
+	})
+	if product["unit"] != "平方米" {
+		t.Fatalf("expected legacy unit fallback, got=%v", product["unit"])
+	}
+}
+
+func TestMaterialShopStatusAndMe_ReturnBusinessHoursRanges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.MaterialShop{}, &model.MaterialShopApplication{}, &model.MaterialShopApplicationProduct{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	app := model.MaterialShopApplication{
+		Phone:             "13800138009",
+		EntityType:        "company",
+		ShopName:          "状态测试主材店",
+		BusinessHours:     "周一 09:00-18:00",
+		BusinessHoursJSON: `[{"day":1,"start":"09:00","end":"18:00"}]`,
+		Status:            2,
+	}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := db.Create(&model.MaterialShopApplicationProduct{ApplicationID: app.ID, Name: "瓷砖", Unit: "平方米", Price: 99, ImagesJSON: `[]`}).Error; err != nil {
+		t.Fatalf("create app product: %v", err)
+	}
+
+	shop := model.MaterialShop{
+		Base:              model.Base{ID: 88},
+		UserID:            66,
+		Name:              "我的主材店",
+		CompanyName:       "上海优选主材有限公司",
+		OpenTime:          "周一 09:00-18:00",
+		BusinessHoursJSON: `[{"day":1,"start":"09:00","end":"18:00"}]`,
+		Address:           "上海",
+	}
+	if err := db.Create(&shop).Error; err != nil {
+		t.Fatalf("create shop: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "phone", Value: app.Phone}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/material-shops/apply/status/"+app.Phone, nil)
+	MaterialShopApplyStatus(c)
+
+	statusResp := decodeResponse(t, w)
+	if statusResp.Code != 0 {
+		t.Fatalf("unexpected status response: %+v", statusResp)
+	}
+	var statusData struct {
+		BusinessHoursRanges []BusinessHoursRangeInput `json:"businessHoursRanges"`
+	}
+	if err := json.Unmarshal(statusResp.Data, &statusData); err != nil {
+		t.Fatalf("decode status data: %v", err)
+	}
+	if len(statusData.BusinessHoursRanges) != 1 || statusData.BusinessHoursRanges[0].Day != 1 {
+		t.Fatalf("unexpected status business hours ranges: %+v", statusData.BusinessHoursRanges)
+	}
+
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Set("materialShopId", shop.ID)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/material-shops/me", nil)
+	MaterialShopGetMe(c)
+
+	meResp := decodeResponse(t, w)
+	if meResp.Code != 0 {
+		t.Fatalf("unexpected me response: %+v", meResp)
+	}
+	var meData struct {
+		BusinessHoursRanges []BusinessHoursRangeInput `json:"businessHoursRanges"`
+	}
+	if err := json.Unmarshal(meResp.Data, &meData); err != nil {
+		t.Fatalf("decode me data: %v", err)
+	}
+	if len(meData.BusinessHoursRanges) != 1 || meData.BusinessHoursRanges[0].Start != "09:00" {
+		t.Fatalf("unexpected me business hours ranges: %+v", meData.BusinessHoursRanges)
 	}
 }

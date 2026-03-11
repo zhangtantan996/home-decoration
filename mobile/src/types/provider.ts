@@ -22,7 +22,7 @@ export interface ProviderDTO {
     applicantType?: 'personal' | 'studio' | 'company' | 'foreman';
     yearsExperience: number;
     specialty: string;
-    workTypes: string;  // 逗号分隔：mason,electrician,carpenter,painter,plumber
+    workTypes?: string;
     highlightTags?: string;
     pricingJson?: string;
     graduateSchool?: string;
@@ -67,28 +67,6 @@ export interface Designer {
     serviceArea: string[];
 }
 
-function parseWorkTypesValue(raw?: string): string[] {
-    const value = (raw || '').trim();
-    if (!value) {
-        return ['general'];
-    }
-
-    if (value.startsWith('[') && value.endsWith(']')) {
-        try {
-            const parsed = JSON.parse(value);
-            if (Array.isArray(parsed)) {
-                const normalized = parsed.map((item) => String(item).trim()).filter(Boolean);
-                return normalized.length ? normalized : ['general'];
-            }
-        } catch {
-            // fallback to delimiter parsing
-        }
-    }
-
-    const normalized = value.split(',').map((item) => item.trim()).filter(Boolean);
-    return normalized.length ? normalized : ['general'];
-}
-
 // 前端展示用的施工人员类型
 export interface Worker {
     id: number;
@@ -101,8 +79,7 @@ export interface Worker {
     establishedYear?: number;
     rating: number;
     reviewCount: number;
-    workTypes: string[];
-    workTypeLabels: string;
+    serviceLabel: string;
     priceRange: string;
     priceUnit: string;
     completedOrders: number;
@@ -177,20 +154,7 @@ export function toDesigner(dto: ProviderDTO): Designer {
 
 export function toWorker(dto: ProviderDTO): Worker {
     const isCompany = dto.providerType === 2 || (dto.companyName && dto.companyName.includes('公司'));
-
-    // 解析工种类型
-    const workTypesArray = parseWorkTypesValue(dto.workTypes);
-
-    // 工种标签映射
-    const workTypeMap: Record<string, string> = {
-        'mason': '瓦工',
-        'electrician': '电工',
-        'carpenter': '木工',
-        'painter': '油漆工',
-        'plumber': '水暖工',
-        'general': '综合施工',
-    };
-    const workTypeLabels = workTypesArray.map(t => workTypeMap[t] || t).join(' · ') || (isCompany ? '全工种覆盖' : '综合施工');
+    const serviceLabel = dto.specialty?.trim() || (isCompany ? '装修施工服务' : '施工服务');
 
     return {
         id: dto.id,
@@ -203,8 +167,7 @@ export function toWorker(dto: ProviderDTO): Worker {
         establishedYear: isCompany ? (new Date().getFullYear() - (dto.yearsExperience || 10)) : undefined,
         rating: dto.rating,
         reviewCount: dto.reviewCount || dto.completedCnt * 2,
-        workTypes: workTypesArray,
-        workTypeLabels,
+        serviceLabel,
         priceRange: dto.priceMin && dto.priceMax ? `${dto.priceMin}-${dto.priceMax}` : (isCompany ? '8-15' : '300-500'),
         priceUnit: dto.priceUnit || (isCompany ? '万/全包' : '元/天'),
         completedOrders: dto.completedCnt,

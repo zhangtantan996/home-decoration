@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import {
+  buildBusinessHoursRanges,
   buildLegalAcceptancePayload,
+  buildMaterialProducts,
   buildRandomMainlandPhone,
   getMerchantAdminTestEnv,
   getMerchantTestEnv,
@@ -24,14 +26,15 @@ function createProviderApplyPayload(phone: string) {
     idCardFront: 'https://img.example.com/front.jpg',
     idCardBack: 'https://img.example.com/back.jpg',
     yearsExperience: 5,
+    officeAddress: '西安市高新区软件新城 1 号',
     serviceArea: ['610100'],
     styles: ['现代简约'],
     pricing: { flat: 1200 },
     introduction: '重提测试简介',
     portfolioCases: [
-      { title: '案例1', description: '案例1说明', images: ['https://img.example.com/c1.jpg', 'https://img.example.com/c2.jpg', 'https://img.example.com/c3.jpg'], style: '现代简约', area: '100㎡' },
-      { title: '案例2', description: '案例2说明', images: ['https://img.example.com/c4.jpg', 'https://img.example.com/c5.jpg', 'https://img.example.com/c6.jpg'], style: '现代简约', area: '90㎡' },
-      { title: '案例3', description: '案例3说明', images: ['https://img.example.com/c7.jpg', 'https://img.example.com/c8.jpg', 'https://img.example.com/c9.jpg'], style: '现代简约', area: '80㎡' },
+      { title: '案例1', description: '案例1说明', images: ['https://img.example.com/c1.jpg', 'https://img.example.com/c2.jpg', 'https://img.example.com/c3.jpg', 'https://img.example.com/c4.jpg'], style: '现代简约', area: '100㎡' },
+      { title: '案例2', description: '案例2说明', images: ['https://img.example.com/c5.jpg', 'https://img.example.com/c6.jpg', 'https://img.example.com/c7.jpg', 'https://img.example.com/c8.jpg'], style: '现代简约', area: '90㎡' },
+      { title: '案例3', description: '案例3说明', images: ['https://img.example.com/c9.jpg', 'https://img.example.com/c10.jpg', 'https://img.example.com/c11.jpg', 'https://img.example.com/c12.jpg'], style: '现代简约', area: '80㎡' },
     ],
     legalAcceptance: buildLegalAcceptancePayload(),
   };
@@ -51,16 +54,12 @@ function createMaterialApplyPayload(phone: string) {
     legalPersonIdCardNo: '11010519491231002X',
     legalPersonIdCardFront: 'https://example.com/legal-front.jpg',
     legalPersonIdCardBack: 'https://example.com/legal-back.jpg',
-    businessHours: '09:00-18:00',
+    businessHours: '周一至周五 09:00-18:00',
+    businessHoursRanges: buildBusinessHoursRanges(),
     contactPhone: phone,
     contactName: '联系人测试',
     address: '西安市雁塔区科技路 1 号',
-    products: Array.from({ length: 5 }, (_, index) => ({
-      name: `主材商品${index + 1}`,
-      params: { brand: '测试品牌', spec: `${index + 1}号` },
-      price: 199 + index,
-      images: [`https://example.com/material-${index + 1}.jpg`],
-    })),
+    products: buildMaterialProducts(5),
     legalAcceptance: buildLegalAcceptancePayload(),
   };
 }

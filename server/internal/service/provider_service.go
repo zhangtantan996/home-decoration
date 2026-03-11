@@ -7,6 +7,7 @@ import (
 	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
+	"strings"
 )
 
 // ProviderService 服务商服务
@@ -22,7 +23,6 @@ type ProviderQuery struct {
 	SortBy   string  `form:"sortBy"`   // 排序: rating, distance, price
 	Page     int     `form:"page"`     // 页码
 	PageSize int     `form:"pageSize"` // 每页数量
-	WorkType string  `form:"workType"` // 工种筛选
 	SubType  string  `form:"subType"`  // 子类型筛选
 }
 
@@ -49,7 +49,6 @@ type ProviderListItem struct {
 	SubType         string  `json:"subType"`
 	YearsExperience int     `json:"yearsExperience"`
 	Specialty       string  `json:"specialty"`
-	WorkTypes       string  `json:"workTypes"`
 	ReviewCount     int     `json:"reviewCount"`
 	PriceMin        float64 `json:"priceMin"`
 	PriceMax        float64 `json:"priceMax"`
@@ -118,11 +117,6 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 		db = db.Where("company_name LIKE ? OR specialty LIKE ?", "%"+query.Keyword+"%", "%"+query.Keyword+"%")
 	}
 
-	// 工种筛选
-	if query.WorkType != "" && query.WorkType != "all" {
-		db = db.Where("work_types LIKE ?", "%"+query.WorkType+"%")
-	}
-
 	// 子类型筛选
 	if query.SubType != "" && query.SubType != "all" {
 		db = db.Where("sub_type = ?", query.SubType)
@@ -170,6 +164,11 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			monitor.RecordPublicIDMissing("provider_list", identity.UserID, "provider_service_list")
 		}
 
+		specialty := p.Specialty
+		if p.ProviderType == 3 && strings.TrimSpace(specialty) == "" {
+			specialty = "全工种施工"
+		}
+
 		result[i] = ProviderListItem{
 			ID:              p.ID,
 			UserID:          identity.UserID,
@@ -187,8 +186,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			Longitude:       p.Longitude,
 			SubType:         p.SubType,
 			YearsExperience: p.YearsExperience,
-			Specialty:       p.Specialty,
-			WorkTypes:       p.WorkTypes,
+			Specialty:       specialty,
 			ReviewCount:     p.ReviewCount,
 			PriceMin:        p.PriceMin,
 			PriceMax:        p.PriceMax,
@@ -259,6 +257,13 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	if user.PublicID == "" {
 		monitor.RecordPublicIDMissing("provider_detail", user.ID, "provider_service_detail")
 	}
+	if provider.ProviderType == 3 {
+		provider.WorkTypes = ""
+		if strings.TrimSpace(provider.Specialty) == "" {
+			provider.Specialty = "全工种施工"
+		}
+	}
+
 	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
 	// Also fallback to provider cover image for legacy/seeded data.
 	provider.Avatar = imgutil.GetFullImageURL(provider.Avatar)

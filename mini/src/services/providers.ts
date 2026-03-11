@@ -18,7 +18,6 @@ export interface ProviderQuery {
   sortBy?: 'rating' | 'distance' | 'price';
   page?: number;
   pageSize?: number;
-  workType?: string;
   subType?: string;
 }
 

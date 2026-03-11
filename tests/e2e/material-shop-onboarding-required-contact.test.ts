@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  buildBusinessHoursRanges,
   buildLegalAcceptancePayload,
+  buildMaterialProducts,
   buildRandomMainlandPhone,
   getMaterialShopApplyStatusByPhone,
   getMerchantAdminTestEnv,
@@ -14,26 +16,25 @@ import {
 type MaterialApplyPayload = Record<string, unknown>;
 
 function createMaterialShopApplyPayload(phone: string): MaterialApplyPayload {
-  const products = Array.from({ length: 5 }, (_, index) => ({
-    name: `主材商品${index + 1}`,
-    params: { brand: '测试品牌', spec: `${index + 1}号` },
-    price: 199 + index,
-    images: [`https://example.com/material-${index + 1}.jpg`],
-  }));
-
   return {
     phone,
     code: '123456',
     entityType: 'company',
     shopName: '主材门店测试',
     shopDescription: '主材门店入驻自动化测试',
+    companyName: '上海主材门店测试有限公司',
     businessLicenseNo: '91310114666007254Q',
     businessLicense: 'https://example.com/license.jpg',
-    businessHours: '09:00-18:00',
+    legalPersonName: '法人测试',
+    legalPersonIdCardNo: '11010519491231002X',
+    legalPersonIdCardFront: 'https://example.com/legal-front.jpg',
+    legalPersonIdCardBack: 'https://example.com/legal-back.jpg',
+    businessHours: '周一至周五 09:00-18:00',
+    businessHoursRanges: buildBusinessHoursRanges(),
     contactPhone: phone,
     contactName: '联系人测试',
     address: '西安市雁塔区科技路 1 号',
-    products,
+    products: buildMaterialProducts(5),
     legalAcceptance: buildLegalAcceptancePayload(),
   };
 }
@@ -41,14 +42,6 @@ function createMaterialShopApplyPayload(phone: string): MaterialApplyPayload {
 test.describe('Material Shop Onboarding Required Contact', () => {
   test('material shop required contact and legal validation', async ({ request }) => {
     const env = getMerchantTestEnv();
-
-    const missingContactNamePhone = buildRandomMainlandPhone('16');
-    const missingContactNamePayload = createMaterialShopApplyPayload(missingContactNamePhone);
-    missingContactNamePayload.contactName = '';
-    const missingContactName = await merchantApiPost(request, env.apiBaseUrl, '/material-shop/apply', missingContactNamePayload);
-    expect(missingContactName.status).toBe(200);
-    expect(missingContactName.body.code).toBe(400);
-    expect(missingContactName.body.message).toContain('联系人姓名');
 
     const missingContactPhonePhone = buildRandomMainlandPhone('16');
     const missingContactPhonePayload = createMaterialShopApplyPayload(missingContactPhonePhone);
@@ -61,6 +54,7 @@ test.describe('Material Shop Onboarding Required Contact', () => {
     const missingBusinessHoursPhone = buildRandomMainlandPhone('16');
     const missingBusinessHoursPayload = createMaterialShopApplyPayload(missingBusinessHoursPhone);
     missingBusinessHoursPayload.businessHours = '';
+    missingBusinessHoursPayload.businessHoursRanges = [];
     const missingBusinessHours = await merchantApiPost(request, env.apiBaseUrl, '/material-shop/apply', missingBusinessHoursPayload);
     expect(missingBusinessHours.status).toBe(200);
     expect(missingBusinessHours.body.code).toBe(400);
@@ -113,7 +107,8 @@ test.describe('Material Shop Onboarding Required Contact', () => {
     expect(rejectResult.body.code).toBe(0);
 
     const invalidResubmitPayload = createMaterialShopApplyPayload(phone);
-    invalidResubmitPayload.contactPhone = '';
+    invalidResubmitPayload.businessHoursRanges = [];
+    invalidResubmitPayload.businessHours = '';
     const resubmitResult = await merchantApiPost(
       request,
       env.apiBaseUrl,
@@ -122,6 +117,6 @@ test.describe('Material Shop Onboarding Required Contact', () => {
     );
     expect(resubmitResult.status).toBe(200);
     expect(resubmitResult.body.code).toBe(400);
-    expect(resubmitResult.body.message).toContain('联系人手机号');
+    expect(resubmitResult.body.message).toContain('营业时间');
   });
 });

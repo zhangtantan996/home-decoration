@@ -15,6 +15,7 @@ function createDesignerApplyPayload(phone: string): DesignerApplyPayload {
     `https://example.com/${prefix}-1.jpg`,
     `https://example.com/${prefix}-2.jpg`,
     `https://example.com/${prefix}-3.jpg`,
+    `https://example.com/${prefix}-4.jpg`,
   ];
 
   return {
@@ -28,6 +29,7 @@ function createDesignerApplyPayload(phone: string): DesignerApplyPayload {
     idCardNo: '11010519491231002X',
     idCardFront: 'https://example.com/id-front.jpg',
     idCardBack: 'https://example.com/id-back.jpg',
+    officeAddress: '西安市高新区科技路 66 号',
     serviceArea: ['610100'],
     styles: ['现代简约'],
     pricing: {
@@ -78,6 +80,14 @@ test.describe('Merchant Onboarding Designer Required Fields', () => {
     expect(missingYears.status).toBe(200);
     expect(missingYears.body.code).toBe(400);
     expect(missingYears.body.message).toContain('1-50年');
+
+    const missingAddressPhone = buildRandomMainlandPhone('13');
+    const missingAddressPayload = createDesignerApplyPayload(missingAddressPhone);
+    missingAddressPayload.officeAddress = '';
+    const missingAddress = await merchantApiPost(request, env.apiBaseUrl, '/merchant/apply', missingAddressPayload);
+    expect(missingAddress.status).toBe(200);
+    expect(missingAddress.body.code).toBe(400);
+    expect(missingAddress.body.message).toContain('办公地址');
 
     const missingCaseDescPhone = buildRandomMainlandPhone('13');
     const missingCaseDescPayload = createDesignerApplyPayload(missingCaseDescPhone);
