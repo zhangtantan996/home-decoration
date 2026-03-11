@@ -45,15 +45,15 @@ Define which current pages belong to Admin Web and which belong to Merchant Web,
 
 ### Goal
 
-Create an in-repo Merchant Web application shell so merchant stops living as a route island inside the admin app.
+Extract the existing Merchant Web shell into a cleaner in-repo Merchant Web application boundary so merchant stops living as a package-level dependency of the admin app.
 
 ### Scope
 
-- dedicated merchant app entry
-- merchant router
-- merchant layout/app shell
-- independent route basename semantics
-- independent dev/build entry point
+- preserve and extract the existing merchant app entry
+- preserve and extract the existing merchant router
+- preserve/clean the merchant layout/app shell
+- keep independent route basename semantics
+- establish independent dev/build ownership
 
 ### Constraints
 
