@@ -15,6 +15,9 @@ import ProviderAudit from './pages/audits/ProviderAudit';
 import MaterialShopAudit from './pages/audits/MaterialShopAudit';
 import ProjectDetail from './pages/projects/ProjectDetail';
 import ProjectMap from './pages/projects/ProjectMap';
+import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
+import QuoteListManagement from './pages/quotes/QuoteListManagement';
+import QuoteComparison from './pages/quotes/QuoteComparison';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
 import TransactionList from './pages/finance/TransactionList';
 import RiskWarningList from './pages/risk/RiskWarningList';
@@ -72,6 +75,9 @@ const router = createBrowserRouter([
             { path: 'projects/list', element: <ProtectedRoute permission="project:list"><ProjectList /></ProtectedRoute> },
             { path: 'projects/detail/:id', element: <ProtectedRoute permission="project:view"><ProjectDetail /></ProtectedRoute> },
             { path: 'projects/map', element: <ProtectedRoute permission="project:map"><ProjectMap /></ProtectedRoute> },
+            { path: 'projects/quotes/library', element: <ProtectedRoute permission="project:list"><QuoteLibraryManagement /></ProtectedRoute> },
+            { path: 'projects/quotes/lists', element: <ProtectedRoute permission="project:edit"><QuoteListManagement /></ProtectedRoute> },
+            { path: 'projects/quotes/compare/:id', element: <ProtectedRoute permission="project:view"><QuoteComparison /></ProtectedRoute> },
 
             // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },

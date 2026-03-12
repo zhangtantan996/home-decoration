@@ -537,6 +537,16 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/projects/:id/phases/:phaseId/logs", projectEditPerm, handler.AdminCreateWorkLog)
 			admin.PUT("/logs/:logId", projectEditPerm, handler.AdminUpdateWorkLog)
 			admin.DELETE("/logs/:logId", projectEditPerm, handler.AdminDeleteWorkLog)
+			admin.POST("/quote-library/import", projectEditPerm, handler.AdminImportQuoteLibrary)
+			admin.GET("/quote-library/items", projectListPerm, handler.AdminListQuoteLibraryItems)
+			admin.GET("/quote-lists", projectListPerm, handler.AdminListQuoteLists)
+			admin.GET("/quote-lists/:id", projectViewPerm, handler.AdminGetQuoteListDetail)
+			admin.POST("/quote-lists", projectEditPerm, handler.AdminCreateQuoteList)
+			admin.POST("/quote-lists/:id/items/batch-upsert", projectEditPerm, handler.AdminBatchUpsertQuoteListItems)
+			admin.POST("/quote-lists/:id/invitations", projectEditPerm, handler.AdminCreateQuoteInvitations)
+			admin.POST("/quote-lists/:id/start", projectEditPerm, handler.AdminStartQuoteList)
+			admin.GET("/quote-lists/:id/comparison", projectViewPerm, handler.AdminGetQuoteComparison)
+			admin.POST("/quote-lists/:id/award", projectEditPerm, handler.AdminAwardQuote)
 
 			// ========== 争议预约管理 ==========
 			admin.GET("/disputed-bookings", bookingListPerm, handler.AdminListDisputedBookings)
@@ -589,6 +599,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/bookings", handler.MerchantListBookings)
 			merchant.GET("/bookings/:id", handler.MerchantGetBookingDetail)
 			merchant.PUT("/bookings/:id/handle", handler.MerchantHandleBooking)
+			merchant.GET("/quote-lists", handler.MerchantListQuoteLists)
+			merchant.GET("/quote-lists/:id", handler.MerchantGetQuoteListDetail)
+			merchant.PUT("/quote-lists/:id/submission", handler.MerchantSaveQuoteSubmission)
+			merchant.POST("/quote-lists/:id/submission/submit", handler.MerchantSubmitQuoteSubmission)
 
 			// 方案管理
 			merchant.POST("/proposals", handler.MerchantSubmitProposal)

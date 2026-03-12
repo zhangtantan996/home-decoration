@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Table, Tag, Button, Space, Input, message } from 'antd';
-import { SearchOutlined, EyeOutlined } from '@ant-design/icons';
+import { SearchOutlined, EyeOutlined, FileTextOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { adminProjectApi } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -95,6 +95,8 @@ const ProjectList: React.FC = () => {
             extra={
                 <Space>
                     <Input placeholder="搜索项目" prefix={<SearchOutlined />} style={{ width: 200 }} />
+                    <Button icon={<FileTextOutlined />} onClick={() => navigate('/projects/quotes/library')}>报价库</Button>
+                    <Button icon={<UnorderedListOutlined />} onClick={() => navigate('/projects/quotes/lists')}>报价清单</Button>
                     <Button type="primary">导出</Button>
                 </Space>
             }

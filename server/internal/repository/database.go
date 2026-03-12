@@ -146,6 +146,12 @@ func autoMigrate() error {
 		&model.UserLike{},
 		&model.CaseComment{},
 		&model.SensitiveWord{},
+		&model.QuoteLibraryItem{},
+		&model.QuoteList{},
+		&model.QuoteListItem{},
+		&model.QuoteInvitation{},
+		&model.QuoteSubmission{},
+		&model.QuoteSubmissionItem{},
 	)
 }
 
