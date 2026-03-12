@@ -45,11 +45,78 @@ const iconSet = {
     Moon,
 };
 
+const USER_WEB_URL = (import.meta.env.VITE_USER_WEB_URL || '/app/').trim();
+const MERCHANT_WEB_URL = (import.meta.env.VITE_MERCHANT_WEB_URL || '/merchant').trim();
+const IOS_APP_URL = (import.meta.env.VITE_IOS_APP_URL || '').trim();
+const ANDROID_APP_URL = (import.meta.env.VITE_ANDROID_APP_URL || '').trim();
+
+const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
+const isLocalHost = (hostname) => hostname === 'localhost' || hostname === '127.0.0.1';
+
+const resolveUserWebBase = () => {
+    if (USER_WEB_URL && USER_WEB_URL !== '/app/') {
+        return USER_WEB_URL;
+    }
+
+    if (typeof window !== 'undefined' && isLocalHost(window.location.hostname)) {
+        return `${window.location.protocol}//${window.location.hostname}:5186/`;
+    }
+
+    return USER_WEB_URL || '/app/';
+};
+
+const resolveMerchantWebBase = () => {
+    if (MERCHANT_WEB_URL && MERCHANT_WEB_URL !== '/merchant') {
+        return MERCHANT_WEB_URL;
+    }
+
+    if (typeof window !== 'undefined' && isLocalHost(window.location.hostname)) {
+        return `${window.location.protocol}//${window.location.hostname}:5174/merchant`;
+    }
+
+    return MERCHANT_WEB_URL || '/merchant';
+};
+
+const resolveAppDownloadURL = (value) => value || '#download';
+
+const buildUserWebURL = (hashPath = '') => {
+    const base = resolveUserWebBase();
+    const normalizedBase = base.replace(/#.*$/, '');
+    if (!hashPath) {
+        return normalizedBase;
+    }
+    const nextHash = hashPath.startsWith('/') ? hashPath : `/${hashPath}`;
+    return `${trimTrailingSlash(normalizedBase)}/#${nextHash}`;
+};
+
+const linkTargets = {
+    'ios-app': () => resolveAppDownloadURL(IOS_APP_URL),
+    'android-app': () => resolveAppDownloadURL(ANDROID_APP_URL),
+    'user-web-home': () => buildUserWebURL('/pages/home/index'),
+    'user-web-login': () => buildUserWebURL('/pages/auth/login/index'),
+    'user-web-providers': () => buildUserWebURL('/pages/providers/list/index'),
+    'user-web-foremen': () => buildUserWebURL('/pages/providers/list/index?type=foreman'),
+    'user-web-inspiration': () => buildUserWebURL('/pages/inspiration/index'),
+    'merchant-entry': () => resolveMerchantWebBase(),
+    'merchant-web': () => resolveMerchantWebBase(),
+};
+
 document.documentElement.classList.add('motion-ready');
 
 document.addEventListener('DOMContentLoaded', () => {
     createIcons({ icons: iconSet });
     applyTranslations();
+
+    document.querySelectorAll('[data-link-target]').forEach((element) => {
+        if (!(element instanceof HTMLAnchorElement)) {
+            return;
+        }
+        const target = element.dataset.linkTarget;
+        if (!target || !linkTargets[target]) {
+            return;
+        }
+        element.href = linkTargets[target]();
+    });
 
     // Theme Switch Logic
     const themeSwitches = document.querySelectorAll('.theme-switch');

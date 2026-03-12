@@ -44,7 +44,7 @@
         <a href="#gallery" data-i18n="nav.gallery">灵感图库</a>
         <a href="#process" data-i18n="nav.process">服务流程</a>
         <a href="#join" data-i18n="nav.join">入驻合作</a>
-        <a href="#download" data-i18n="nav.download">下载 APP</a>
+        <a href="/app/" data-link-target="user-web-home" data-i18n="nav.download">进入用户端</a>
       </div>
 
       <div class="nav-right">
@@ -56,7 +56,7 @@
           <button class="lang-btn active" data-lang="zh">中</button>
           <button class="lang-btn" data-lang="en">EN</button>
         </div>
-        <a href="#download" class="nav-cta" data-i18n="nav.cta" data-track="cta_download_nav">立即下载</a>
+        <a href="/app/" data-link-target="user-web-home" class="nav-cta" data-i18n="nav.cta" data-track="cta_download_nav">立即体验</a>
       </div>
       <div class="mobile-nav-controls">
         <div class="theme-switch" id="themeToggleMobile" aria-label="切换主题" role="button" tabindex="0">
@@ -82,9 +82,9 @@
       <h1 data-i18n="hero.title">让每个家都值得期待</h1>
       <p data-i18n="hero.subtitle">连接业主、设计师与施工方的一站式家装服务平台</p>
       <div class="hero-buttons">
-        <a href="#download" class="btn-primary" data-track="cta_download_primary">
+        <a href="/app/" data-link-target="user-web-home" class="btn-primary" data-track="cta_download_primary">
           <span><i data-lucide="smartphone"></i></span>
-          <span data-i18n="hero.cta">免费下载 APP</span>
+          <span data-i18n="hero.cta">进入用户端</span>
         </a>
         <a href="#features" class="btn-secondary" data-track="cta_learn_features">
           <span data-i18n="hero.secondary">了解更多</span>
@@ -224,9 +224,9 @@
         </div>
       </div>
       <div class="gallery-cta animate-on-scroll">
-        <a href="#download" class="btn-primary" data-track="cta_download_gallery">
+        <a href="/app/#/pages/inspiration/index" data-link-target="user-web-inspiration" class="btn-primary" data-track="cta_download_gallery">
           <span><i data-lucide="smartphone"></i></span>
-          <span data-i18n="gallery.cta">下载 APP 浏览更多</span>
+          <span data-i18n="gallery.cta">去看更多案例</span>
         </a>
       </div>
     </div>
@@ -288,7 +288,7 @@
           <h2 class="section-title" data-i18n="join.title">加入禾泽云，一起成长</h2>
           <p class="section-desc" data-i18n="join.desc">面向设计师、施工团队和建材商开放入驻，共享平台流量与商机。</p>
           <div style="margin-top: 32px;">
-            <a href="/merchant/login" class="btn-primary" data-i18n="join.cta" data-track="cta_join_primary">申请入驻</a>
+            <a href="/merchant" data-link-target="merchant-entry" class="btn-primary" data-i18n="join.cta" data-track="cta_join_primary">申请入驻</a>
           </div>
         </div>
         <div class="join-cards animate-on-scroll">
@@ -324,15 +324,19 @@
         <div class="download-info animate-on-scroll">
           <div class="section-tag" data-i18n="download.tag">下载 APP</div>
           <h2 class="section-title" data-i18n="download.title">现在就开始你的家装之旅</h2>
-          <p class="section-desc" data-i18n="download.desc">扫描二维码或点击按钮下载禾泽云 APP，开启智能家装新体验。</p>
+          <p class="section-desc" data-i18n="download.desc">下载 iOS 或 Android APP，或直接使用 Web 端登录开启智能家装新体验。</p>
           <div class="download-buttons">
-            <a href="#download" class="download-btn" data-track="cta_download_ios">
+            <a href="#download" data-link-target="ios-app" class="btn-secondary download-btn" data-track="cta_download_ios">
               <span class="btn-icon"><i data-lucide="apple"></i></span>
               <span data-i18n="download.ios">App Store 下载</span>
             </a>
-            <a href="#download" class="download-btn" data-track="cta_download_android">
+            <a href="#download" data-link-target="android-app" class="btn-secondary download-btn" data-track="cta_download_android">
               <span class="btn-icon"><i data-lucide="bot"></i></span>
               <span data-i18n="download.android">Android 下载</span>
+            </a>
+            <a href="/app/" data-link-target="user-web-login" class="btn-secondary download-btn" data-track="cta_download_web_login">
+              <span class="btn-icon"><i data-lucide="smartphone"></i></span>
+              <span data-i18n="download.web">Web 端登录</span>
             </a>
           </div>
         </div>
@@ -391,15 +395,15 @@
         </div>
         <div class="footer-col">
           <h4 data-i18n="footer.product">产品</h4>
-          <a href="#download" data-i18n="footer.product.app">下载 APP</a>
-          <a href="#features" data-i18n="footer.product.designer">找设计师</a>
-          <a href="#features" data-i18n="footer.product.worker">找施工方</a>
-          <a href="#gallery" data-i18n="footer.product.inspiration">灵感图库</a>
+          <a href="/app/" data-link-target="user-web-home" data-i18n="footer.product.app">用户端入口</a>
+          <a href="/app/#/pages/providers/list/index" data-link-target="user-web-providers" data-i18n="footer.product.designer">找设计师</a>
+          <a href="/app/#/pages/providers/list/index?type=foreman" data-link-target="user-web-foremen" data-i18n="footer.product.worker">找施工方</a>
+          <a href="/app/#/pages/inspiration/index" data-link-target="user-web-inspiration" data-i18n="footer.product.inspiration">灵感图库</a>
         </div>
         <div class="footer-col" id="footer-company">
           <h4 data-i18n="footer.company">公司</h4>
           <a href="#about" data-i18n="footer.company.about">关于我们</a>
-          <a href="/merchant/login" data-i18n="footer.company.join">入驻合作</a>
+          <a href="/merchant" data-link-target="merchant-entry" data-i18n="footer.company.join">入驻合作</a>
           <a href="#footer-company" data-i18n="footer.company.careers" data-track="cta_footer_company_careers">加入团队</a>
           <a href="#footer-company" data-i18n="footer.company.contact" data-track="cta_footer_company_contact">联系我们</a>
         </div>
@@ -435,15 +439,6 @@
 
   <script type="module" src="/scripts/main.js"></script>
 
-  <!-- Dev Redirect Script for local dev environment jumps to admin Vite server on 5173 -->
-  <script>
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      const merchantLinks = document.querySelectorAll('a[href="/merchant/login"]');
-      merchantLinks.forEach(link => {
-        link.href = 'http://localhost:5173/merchant/login';
-      });
-    }
-  </script>
 </body>
 
 </html>
