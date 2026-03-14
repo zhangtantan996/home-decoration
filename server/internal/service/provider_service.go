@@ -105,8 +105,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	var providers []model.Provider
 	var total int64
 
-	db := repository.DB.Model(&model.Provider{}).
-		Where("verified = ?", true)
+	db := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{}))
 
 	if len(providerTypes) > 0 {
 		db = db.Where("provider_type IN ?", providerTypes)
@@ -114,7 +113,51 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 
 	// 关键词搜索
 	if query.Keyword != "" {
-		db = db.Where("company_name LIKE ? OR specialty LIKE ?", "%"+query.Keyword+"%", "%"+query.Keyword+"%")
+		keyword := strings.TrimSpace(query.Keyword)
+		patterns := []string{"%" + keyword + "%"}
+		if strings.HasSuffix(keyword, "风格") {
+			trimmed := strings.TrimSuffix(keyword, "风格")
+			if trimmed != "" {
+				patterns = append(patterns, "%"+trimmed+"%")
+			}
+		} else if strings.HasSuffix(keyword, "风") {
+			trimmed := strings.TrimSuffix(keyword, "风")
+			if trimmed != "" {
+				patterns = append(patterns, "%"+trimmed+"%")
+			}
+		}
+
+		conditions := make([]string, 0, len(patterns)*7)
+		args := make([]interface{}, 0, len(patterns)*7)
+		for _, pattern := range patterns {
+			conditions = append(conditions,
+				"providers.company_name LIKE ?",
+				"users.nickname LIKE ?",
+				"providers.specialty LIKE ?",
+				"providers.highlight_tags LIKE ?",
+				"providers.service_area LIKE ?",
+				"providers.sub_type LIKE ?",
+				"providers.design_philosophy LIKE ?",
+			)
+			args = append(args, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+		}
+
+		var matchedProviderTypes []int8
+		switch {
+		case strings.Contains(keyword, "设计"):
+			matchedProviderTypes = append(matchedProviderTypes, 1)
+		case strings.Contains(keyword, "装修公司"), strings.Contains(keyword, "公司"):
+			matchedProviderTypes = append(matchedProviderTypes, 2)
+		case strings.Contains(keyword, "工长"), strings.Contains(keyword, "施工"):
+			matchedProviderTypes = append(matchedProviderTypes, 3)
+		}
+		if len(matchedProviderTypes) > 0 {
+			conditions = append(conditions, "providers.provider_type IN ?")
+			args = append(args, matchedProviderTypes)
+		}
+
+		db = db.Joins("LEFT JOIN users ON users.id = providers.user_id").
+			Where(strings.Join(conditions, " OR "), args...)
 	}
 
 	// 子类型筛选
@@ -202,7 +245,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 // GetProviderByID 获取服务商详情
 func (s *ProviderService) GetProviderByID(id uint64) (*model.Provider, *model.User, error) {
 	var provider model.Provider
-	if err := repository.DB.First(&provider, id).Error; err != nil {
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).First(&provider, id).Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -246,7 +289,7 @@ type ProviderReviewItem struct {
 // GetProviderDetail 获取服务商完整详情
 func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) {
 	var provider model.Provider
-	if err := repository.DB.First(&provider, id).Error; err != nil {
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).First(&provider, id).Error; err != nil {
 		return nil, err
 	}
 
@@ -290,7 +333,10 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 
 	// 获取案例（前5条）
 	var cases []model.ProviderCase
-	repository.DB.Where("provider_id = ?", id).Order("sort_order ASC, created_at DESC").Limit(5).Find(&cases)
+	applyVisibleCaseFilter(repository.DB.Where("provider_id = ?", id)).
+		Order("sort_order ASC, created_at DESC").
+		Limit(5).
+		Find(&cases)
 	for i := range cases {
 		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
 		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
@@ -298,7 +344,9 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 
 	// 统计案例总数
 	var caseCount int64
-	repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", id).Count(&caseCount)
+	applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).
+		Where("provider_id = ?", id).
+		Count(&caseCount)
 
 	// 获取评价（前5条）
 	var reviews []model.ProviderReview
@@ -353,7 +401,12 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 	var cases []model.ProviderCase
 	var total int64
 
-	db := repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", providerID)
+	var provider model.Provider
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).Select("id").First(&provider, providerID).Error; err != nil {
+		return nil, 0, err
+	}
+
+	db := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).Where("provider_id = ?", providerID)
 	db.Count(&total)
 
 	offset := (page - 1) * pageSize

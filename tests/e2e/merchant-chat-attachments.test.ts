@@ -2,8 +2,9 @@ import { test, expect } from '@playwright/test';
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { buildMerchantAppUrl } from './helpers/merchant';
 
-// NOTE: Merchant portal runs on the admin Vite dev server (5173) under /merchant/*.
+// NOTE: Merchant portal runs on its own Vite dev server (default http://localhost:5174).
 // It uses SMS-code login (test code is hardcoded as 123456).
 
 test.describe('Merchant Chat Attachments', () => {
@@ -13,22 +14,22 @@ test.describe('Merchant Chat Attachments', () => {
     // Ensure output dir exists for runtime-generated fixtures.
     await fs.mkdir(testInfo.outputDir, { recursive: true });
 
-    const origin = process.env.MERCHANT_ORIGIN || 'http://localhost:5173';
+    const origin = process.env.MERCHANT_ORIGIN || 'http://localhost:5174';
     const phone = process.env.MERCHANT_PHONE || '13800000001';
     const code = process.env.MERCHANT_CODE || '123456';
 
-    await page.goto(`${origin}/merchant/login`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(origin, '/login'), { waitUntil: 'domcontentloaded' });
 
     await page.getByPlaceholder('请输入11位手机号').fill(phone);
     await page.getByPlaceholder('请输入6位验证码').fill(code);
 
     await Promise.all([
-      page.waitForURL('**/merchant/dashboard', { timeout: 30_000 }),
+      page.waitForURL((url) => url.pathname.endsWith('/dashboard'), { timeout: 30_000 }),
       page.getByRole('button', { name: /登\s*录/ }).click(),
     ]);
 
     // Go directly to the chat page.
-    await page.goto(`${origin}/merchant/chat`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(origin, '/chat'), { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByText('会话列表')).toBeVisible({ timeout: 30_000 });
 

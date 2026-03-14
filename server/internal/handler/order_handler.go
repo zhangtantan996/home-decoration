@@ -5,6 +5,7 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/pkg/response"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,31 @@ type PendingPaymentItem struct {
 	Address      string     `json:"address"`      // 地址（仅意向金）
 	ExpireAt     *time.Time `json:"expireAt"`     // 过期时间
 	CreatedAt    time.Time  `json:"createdAt"`    // 创建时间
+}
+
+// ListOrders 获取用户订单列表
+func ListOrders(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+
+	var status *int8
+	if raw := c.Query("status"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 8)
+		if err != nil {
+			response.BadRequest(c, "无效订单状态")
+			return
+		}
+		value := int8(parsed)
+		status = &value
+	}
+
+	items, total, err := orderService.ListOrdersForUser(c.GetUint64("userId"), status, page, pageSize)
+	if err != nil {
+		response.ServerError(c, err.Error())
+		return
+	}
+
+	response.PageSuccess(c, items, total, page, pageSize)
 }
 
 // ListPendingPayments 获取所有待付款项（含意向金+设计费订单）
@@ -176,4 +202,22 @@ func GetOrder(c *gin.Context) {
 	}
 
 	response.Success(c, order)
+}
+
+// GetOrderPaymentPlans 获取订单分期计划
+func GetOrderPaymentPlans(c *gin.Context) {
+	orderID := parseUint64(c.Param("id"))
+	if orderID == 0 {
+		response.BadRequest(c, "无效订单ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	plans, err := orderService.GetPaymentPlansForUser(userID, orderID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"plans": plans})
 }

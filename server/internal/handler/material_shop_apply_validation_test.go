@@ -95,10 +95,32 @@ func TestValidateMaterialShopApply_RequireProductUnitAndImageLimit(t *testing.T)
 	}
 }
 
+func TestValidateMaterialShopApply_ProductPriceLimitAndPrecision(t *testing.T) {
+	input := newValidMaterialShopApplyInput()
+	input.Products[0].Price = 1000000
+
+	err := validateMaterialShopApply(&input)
+	if err == nil || !strings.Contains(err.Error(), "价格不能超过") {
+		t.Fatalf("expected price max validation error, got=%v", err)
+	}
+
+	input = newValidMaterialShopApplyInput()
+	input.Products[0].Price = 12.345
+	err = validateMaterialShopApply(&input)
+	if err == nil || !strings.Contains(err.Error(), "最多保留两位小数") {
+		t.Fatalf("expected price precision validation error, got=%v", err)
+	}
+}
+
 func TestValidateMaterialShopApply_ValidInputSummarizesBusinessHours(t *testing.T) {
 	input := newValidMaterialShopApplyInput()
 	input.ContactName = ""
 	input.BusinessHours = ""
+	input.BusinessHoursRanges = []BusinessHoursRangeInput{
+		{Day: 7, Start: "10:00", End: "19:00"},
+		{Day: 1, Start: "09:00", End: "18:00"},
+		{Day: 7, Start: "10:00", End: "19:00"},
+	}
 
 	if err := validateMaterialShopApply(&input); err != nil {
 		t.Fatalf("expected valid input, got error: %v", err)
@@ -106,8 +128,15 @@ func TestValidateMaterialShopApply_ValidInputSummarizesBusinessHours(t *testing.
 	if input.ContactName != input.LegalPersonName {
 		t.Fatalf("expected contact name to default to legal person name")
 	}
-	if input.BusinessHours == "" || !strings.Contains(input.BusinessHours, "周一 09:00-18:00") {
+	if input.BusinessHours == "" || !strings.Contains(input.BusinessHours, "周一 09:00-18:00") || !strings.Contains(input.BusinessHours, "周日 10:00-19:00") {
 		t.Fatalf("expected summarized business hours, got=%q", input.BusinessHours)
+	}
+	if strings.Index(input.BusinessHours, "周一 09:00-18:00") > strings.Index(input.BusinessHours, "周日 10:00-19:00") {
+		t.Fatalf("expected business hours sorted by day, got=%q", input.BusinessHours)
+	}
+	parsedRanges := parseBusinessHoursRanges(marshalBusinessHoursRanges(input.BusinessHoursRanges))
+	if len(parsedRanges) != 2 || parsedRanges[1].Day != 7 {
+		t.Fatalf("expected normalized business hours ranges to keep sunday as day=7, got=%+v", parsedRanges)
 	}
 }
 
@@ -124,6 +153,22 @@ func TestResolveMaterialProductUnit_FallsBackToLegacyParams(t *testing.T) {
 	})
 	if product["unit"] != "平方米" {
 		t.Fatalf("expected legacy unit fallback, got=%v", product["unit"])
+	}
+}
+
+func TestResolveMaterialProductDescription_FallsBackToParams(t *testing.T) {
+	desc := resolveMaterialProductDescription("", `{"description":"防滑耐磨，适用客餐厅"}`)
+	if desc != "防滑耐磨，适用客餐厅" {
+		t.Fatalf("unexpected description: %q", desc)
+	}
+
+	product := parseMaterialProduct(model.MaterialShopProduct{
+		Description: "",
+		ParamsJSON:  `{"description":"哑光岩板，防污易清洁"}`,
+		ImagesJSON:  `[]`,
+	})
+	if product["description"] != "哑光岩板，防污易清洁" {
+		t.Fatalf("expected legacy description fallback, got=%v", product["description"])
 	}
 }
 

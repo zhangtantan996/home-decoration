@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/url"
+	"path"
 	"strings"
 
 	"home-decoration-server/internal/service"
@@ -27,6 +28,25 @@ func resolveH5Origin(c *gin.Context) (string, error) {
 	return "", errors.New("无法确定回调域名")
 }
 
+func normalizeWechatH5BasePath(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "/app"
+	}
+	if !strings.HasPrefix(value, "/") {
+		value = "/" + value
+	}
+	cleaned := path.Clean(value)
+	if cleaned == "." || cleaned == "/" {
+		return ""
+	}
+	return strings.TrimRight(cleaned, "/")
+}
+
+func buildWechatH5RedirectURI(origin, basePath string) string {
+	return strings.TrimRight(origin, "/") + normalizeWechatH5BasePath(basePath) + "/#/pages/auth/wechat-callback/index"
+}
+
 // WechatH5Authorize 获取微信网页授权链接
 func WechatH5Authorize(c *gin.Context) {
 	if wechatH5AuthService == nil {
@@ -40,7 +60,7 @@ func WechatH5Authorize(c *gin.Context) {
 		return
 	}
 
-	redirectURI := origin + "/#/pages/auth/wechat-callback/index"
+	redirectURI := buildWechatH5RedirectURI(origin, wechatH5BasePath)
 	res, err := wechatH5AuthService.AuthorizeURL(redirectURI)
 	if err != nil {
 		response.BadRequest(c, err.Error())
@@ -74,7 +94,7 @@ func WechatH5Login(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	redirectURI := origin + "/#/pages/auth/wechat-callback/index"
+	redirectURI := buildWechatH5RedirectURI(origin, wechatH5BasePath)
 
 	result, err := wechatH5AuthService.Login(req.Code, req.State, redirectURI, c.ClientIP(), jwtConfig)
 	if err != nil {

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  buildMerchantAppUrl,
   getMerchantTestEnv,
   loginMerchantByApi,
   loginMerchantByUi,
@@ -98,7 +99,7 @@ test.describe('Merchant Finance Verification', () => {
     expect(withdrawWithoutCode.body.code, 'withdraw without verificationCode should be rejected').not.toBe(0);
 
     await loginMerchantByUi(page, env.origin, env.phone, env.code);
-    await page.goto(`${env.origin}/merchant/bank-accounts`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, '/bank-accounts'), { waitUntil: 'domcontentloaded' });
 
     await page.getByRole('button', { name: '添加银行账户' }).click();
     const bankModal = page.locator('.ant-modal-content').last();
@@ -121,7 +122,7 @@ test.describe('Merchant Finance Verification', () => {
     await bankModal.getByRole('button', { name: '确认添加' }).click();
     await expect(page.getByText('验证码错误')).toBeVisible({ timeout: 10_000 });
 
-    await page.goto(`${env.origin}/merchant/withdraw`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, '/withdraw'), { waitUntil: 'domcontentloaded' });
     const applyWithdrawButton = page.getByRole('button', { name: '申请提现' }).first();
 
     if (!(await applyWithdrawButton.isEnabled())) {

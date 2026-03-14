@@ -412,7 +412,8 @@ func TestAdminApproveMaterialShopApplication_FreezePreviousProvider(t *testing.T
 		t.Fatalf("create material app failed: %v", err)
 	}
 	for i := 0; i < 5; i++ {
-		product := model.MaterialShopApplicationProduct{ApplicationID: app.ID, Name: "商品", ParamsJSON: `{"k":"v"}`, Price: 100, ImagesJSON: `["/p.jpg"]`, SortOrder: i}
+		paramsJSON := `{"description":"测试商品描述"}`
+		product := model.MaterialShopApplicationProduct{ApplicationID: app.ID, Name: "商品", Unit: "件", ParamsJSON: paramsJSON, Price: 100, ImagesJSON: `["/p.jpg"]`, SortOrder: i}
 		if err := repository.DB.Create(&product).Error; err != nil {
 			t.Fatalf("create app product failed: %v", err)
 		}
@@ -457,6 +458,17 @@ func TestAdminApproveMaterialShopApplication_FreezePreviousProvider(t *testing.T
 	}
 	if createdShop.SourceApplicationID != app.ID {
 		t.Fatalf("expected material shop source application id=%d got=%d", app.ID, createdShop.SourceApplicationID)
+	}
+
+	var createdProducts []model.MaterialShopProduct
+	if err := repository.DB.Where("shop_id = ?", createdShop.ID).Order("sort_order ASC").Find(&createdProducts).Error; err != nil {
+		t.Fatalf("query created products failed: %v", err)
+	}
+	if len(createdProducts) != 5 {
+		t.Fatalf("unexpected created products count: %d", len(createdProducts))
+	}
+	if createdProducts[0].Description != "测试商品描述" {
+		t.Fatalf("expected description to be mapped from application params, got=%q", createdProducts[0].Description)
 	}
 }
 

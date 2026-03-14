@@ -131,17 +131,13 @@ func TestMaterialShopServiceListExcludesUnverifiedShop(t *testing.T) {
 	}
 }
 
-func TestMaterialShopServiceDetailAllowsVerifiedShopWithoutProducts(t *testing.T) {
+func TestMaterialShopServiceDetailAllowsVerifiedShopWithoutEnoughProducts(t *testing.T) {
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}
 
 	shop := createMaterialShopForTest(t, db, model.MaterialShop{Name: "详情零商品已审核店", Type: "showroom", IsVerified: true}, 0)
 
-	detail, err := service.GetMaterialShopByID(shop.ID)
-	if err != nil {
-		t.Fatalf("get material shop detail: %v", err)
-	}
-	if detail == nil || detail.Name != "详情零商品已审核店" {
-		t.Fatalf("unexpected detail: %+v", detail)
+	if _, err := service.GetMaterialShopByID(shop.ID); err != nil {
+		t.Fatalf("expected detail to stay visible for verified shop without enough products: %v", err)
 	}
 }

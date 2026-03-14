@@ -132,6 +132,12 @@ func (s *NotificationService) NotifyProposalSubmitted(proposal interface{}, user
 
 	proposalID, _ := proposalMap["id"].(uint64)
 	bookingID, _ := proposalMap["bookingId"].(uint64)
+	demandID, _ := proposalMap["demandId"].(uint64)
+	sourceType, _ := proposalMap["sourceType"].(string)
+	actionURL := fmt.Sprintf("/proposals/%d", proposalID)
+	if sourceType == model.ProposalSourceDemand && demandID > 0 {
+		actionURL = fmt.Sprintf("/demands/%d/compare", demandID)
+	}
 
 	return s.Create(&CreateNotificationInput{
 		UserID:      userID,
@@ -141,10 +147,12 @@ func (s *NotificationService) NotifyProposalSubmitted(proposal interface{}, user
 		Type:        model.NotificationTypeProposalSubmitted,
 		RelatedID:   proposalID,
 		RelatedType: "proposal",
-		ActionURL:   fmt.Sprintf("/proposals/%d", proposalID),
+		ActionURL:   actionURL,
 		Extra: map[string]interface{}{
 			"proposalId": proposalID,
 			"bookingId":  bookingID,
+			"demandId":   demandID,
+			"sourceType": sourceType,
 		},
 	})
 }

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import {
+  buildMerchantAppUrl,
   buildBusinessHoursRanges,
   buildLegalAcceptancePayload,
   buildMaterialProducts,
@@ -65,7 +66,7 @@ function createMaterialApplyPayload(phone: string) {
 }
 
 async function openRejectedStatusAndJump(page: Page, origin: string, phone: string) {
-  await page.goto(`${origin}/merchant/apply-status?phone=${encodeURIComponent(phone)}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(buildMerchantAppUrl(origin, `/apply-status?phone=${encodeURIComponent(phone)}`), { waitUntil: 'domcontentloaded' });
   await page.locator('button').filter({ hasText: '查询状态' }).click();
   await page.locator('[data-testid="merchant-apply-status-resubmit-button"]').waitFor({ state: 'visible', timeout: 10_000 });
   await page.locator('[data-testid="merchant-apply-status-resubmit-button"]').click();
@@ -80,7 +81,7 @@ test.describe('Merchant onboarding phone verification flows', () => {
     const env = getMerchantTestEnv();
     const phone = buildRandomMainlandPhone('18');
 
-    await page.goto(`${env.origin}/merchant/register?role=designer&entityType=personal`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, '/register?role=designer&entityType=personal'), { waitUntil: 'domcontentloaded' });
     await page.locator('[data-testid="merchant-register-phone-input"]').fill(phone);
     await page.locator('input[aria-label="验证码"]').fill(env.code);
     await page.locator('[data-testid="merchant-register-next-0"]').click();
@@ -109,7 +110,7 @@ test.describe('Merchant onboarding phone verification flows', () => {
     expect(rejectResult.body.code).toBe(0);
 
     await openRejectedStatusAndJump(page, env.origin, phone);
-    await expect(page).toHaveURL(new RegExp(`/merchant/register\?.*resubmit=${applicationId}`));
+    await expect(page).toHaveURL(new RegExp(`/(?:merchant/)?register\?.*resubmit=${applicationId}`));
 
     await page.locator('input[aria-label="验证码"]').fill(env.code);
     await page.locator('[data-testid="merchant-register-next-0"]').click();
@@ -129,7 +130,7 @@ test.describe('Merchant onboarding phone verification flows', () => {
     const env = getMerchantTestEnv();
     const phone = buildRandomMainlandPhone('17');
 
-    await page.goto(`${env.origin}/merchant/material-shop/register?entityType=company`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, '/material-shop/register?entityType=company'), { waitUntil: 'domcontentloaded' });
     await page.locator('[data-testid="material-register-phone-input"]').fill(phone);
     await page.getByPlaceholder('请输入6位验证码').fill(env.code);
     await page.locator('[data-testid="material-register-next-0"]').click();
@@ -153,7 +154,7 @@ test.describe('Merchant onboarding phone verification flows', () => {
     expect(rejectResult.body.code).toBe(0);
 
     await openRejectedStatusAndJump(page, env.origin, phone);
-    await expect(page).toHaveURL(new RegExp(`/merchant/material-shop/register\?.*resubmit=${applicationId}`));
+    await expect(page).toHaveURL(new RegExp(`/(?:merchant/)?material-shop/register\?.*resubmit=${applicationId}`));
 
     await page.getByPlaceholder('请输入6位验证码').fill(env.code);
     await page.locator('[data-testid="material-register-next-0"]').click();
@@ -179,12 +180,12 @@ test.describe('Merchant onboarding phone verification flows', () => {
     const materialId = Number(materialApply.body.data?.applicationId || 0);
     await rejectMaterialShopApplication(request, env.apiBaseUrl, adminToken, materialId, 'E2E application switch isolation');
 
-    await page.goto(`${env.origin}/merchant/register?role=designer&entityType=personal&resubmit=${providerId}&phone=${encodeURIComponent(phone)}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, `/register?role=designer&entityType=personal&resubmit=${providerId}&phone=${encodeURIComponent(phone)}`), { waitUntil: 'domcontentloaded' });
     await page.locator('input[aria-label="验证码"]').fill(env.code);
     await page.locator('[data-testid="merchant-register-next-0"]').click();
     await expect(page.locator('[data-testid="merchant-register-step-1"]')).toBeVisible();
 
-    await page.goto(`${env.origin}/merchant/material-shop/register?resubmit=${materialId}&phone=${encodeURIComponent(phone)}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, `/material-shop/register?resubmit=${materialId}&phone=${encodeURIComponent(phone)}`), { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-testid="material-register-step-0"]')).toBeVisible();
     await page.locator('[data-testid="material-register-next-0"]').click();
     await expect(page.locator('[data-testid="material-register-step-0"]')).toBeVisible();
@@ -195,14 +196,14 @@ test.describe('Merchant onboarding phone verification flows', () => {
     const env = getMerchantTestEnv();
 
     const providerPhone = buildRandomMainlandPhone('18');
-    await page.goto(`${env.origin}/merchant/register?role=designer&entityType=personal`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, '/register?role=designer&entityType=personal'), { waitUntil: 'domcontentloaded' });
     await page.locator('[data-testid="merchant-register-phone-input"]').fill(providerPhone);
     await page.locator('input[aria-label="验证码"]').fill('000000');
     await page.locator('[data-testid="merchant-register-next-0"]').click();
     await expectMessage(page, '验证码校验失败，请检查后重试');
 
     const materialPhone = buildRandomMainlandPhone('17');
-    await page.goto(`${env.origin}/merchant/material-shop/register?entityType=company`, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildMerchantAppUrl(env.origin, '/material-shop/register?entityType=company'), { waitUntil: 'domcontentloaded' });
     await page.locator('[data-testid="material-register-phone-input"]').fill(materialPhone);
     await page.getByPlaceholder('请输入6位验证码').fill('000000');
     await page.locator('[data-testid="material-register-next-0"]').click();

@@ -21,6 +21,10 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	if err := config.ValidateDatabaseSafety(cfg); err != nil {
+		log.Fatalf("Database safety check failed: %v", err)
+	}
+
 	// 验证 Tinode 配置（启动时 fail-fast）
 	if err := tinode.ValidateConfig(); err != nil {
 		log.Printf("[Tinode] Configuration validation failed: %v", err)

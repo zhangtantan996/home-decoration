@@ -1388,7 +1388,16 @@ func AdminListApplications(c *gin.Context) {
 
 	list := make([]gin.H, 0, len(apps))
 	for _, app := range apps {
-		list = append(list, gin.H{
+		var provider *model.Provider
+		if app.ProviderID > 0 {
+			var providerRecord model.Provider
+			if err := repository.DB.First(&providerRecord, app.ProviderID).Error; err == nil {
+				provider = &providerRecord
+			}
+		}
+		visibilityResult := adminVisibilityResolver.ResolveMerchantApplication(app, provider)
+
+		item := gin.H{
 			"id":           app.ID,
 			"phone":        app.Phone,
 			"role":         app.Role,
@@ -1399,7 +1408,13 @@ func AdminListApplications(c *gin.Context) {
 			"rejectReason": app.RejectReason,
 			"createdAt":    app.CreatedAt,
 			"auditedAt":    app.AuditedAt,
-		})
+			"visibility":   visibilityResult.Visibility,
+			"actions":      visibilityResult.Actions,
+		}
+		if visibilityResult.LegacyInfo != nil {
+			item["legacyInfo"] = visibilityResult.LegacyInfo
+		}
+		list = append(list, item)
 	}
 
 	response.Success(c, gin.H{
@@ -1433,7 +1448,16 @@ func AdminGetApplication(c *gin.Context) {
 
 	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
 
-	response.Success(c, gin.H{
+	var provider *model.Provider
+	if app.ProviderID > 0 {
+		var providerRecord model.Provider
+		if err := repository.DB.First(&providerRecord, app.ProviderID).Error; err == nil {
+			provider = &providerRecord
+		}
+	}
+	visibilityResult := adminVisibilityResolver.ResolveMerchantApplication(app, provider)
+
+	detail := gin.H{
 		"id":                  app.ID,
 		"merchantKind":        "provider",
 		"phone":               app.Phone,
@@ -1467,7 +1491,14 @@ func AdminGetApplication(c *gin.Context) {
 		"createdAt":           app.CreatedAt,
 		"auditedAt":           app.AuditedAt,
 		"auditedBy":           app.AuditedBy,
-	})
+		"visibility":          visibilityResult.Visibility,
+		"actions":             visibilityResult.Actions,
+	}
+	if visibilityResult.LegacyInfo != nil {
+		detail["legacyInfo"] = visibilityResult.LegacyInfo
+	}
+
+	response.Success(c, detail)
 }
 
 // AdminApproveApplication 审核通过入驻申请

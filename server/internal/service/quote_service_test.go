@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"unicode/utf16"
 
@@ -24,12 +25,16 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 
 	if err := db.AutoMigrate(
 		&model.Provider{},
+		&model.MerchantServiceSetting{},
+		&model.QuoteCategory{},
 		&model.QuoteLibraryItem{},
 		&model.QuoteList{},
 		&model.QuoteListItem{},
 		&model.QuoteInvitation{},
 		&model.QuoteSubmission{},
 		&model.QuoteSubmissionItem{},
+		&model.QuotePriceBook{},
+		&model.QuotePriceBookItem{},
 	); err != nil {
 		t.Fatalf("auto migrate quote models: %v", err)
 	}
@@ -287,5 +292,226 @@ func TestQuoteFlow_AdminToMerchantToAward(t *testing.T) {
 	}
 	if awarded.AwardedQuoteSubmissionID == 0 || awarded.AwardedProviderID == 0 {
 		t.Fatalf("award info should be persisted: %+v", awarded)
+	}
+}
+
+func TestQuotePriceBookPublish_AndRecommendForemen(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	category := model.QuoteCategory{Code: "WATERPROOF", Name: "防水", Status: 1}
+	if err := db.Create(&category).Error; err != nil {
+		t.Fatalf("create category: %v", err)
+	}
+	libraryItem := model.QuoteLibraryItem{
+		CategoryID:    category.ID,
+		StandardCode:  "STD-WP-001",
+		ERPItemCode:   "ERP-WP-001",
+		Name:          "墙地面防水",
+		Unit:          "㎡",
+		CategoryL1:    "防水",
+		Status:        1,
+	}
+	if err := db.Create(&libraryItem).Error; err != nil {
+		t.Fatalf("create library item: %v", err)
+	}
+
+	foreman := model.Provider{
+		ProviderType: 3,
+		SubType:      "foreman",
+		CompanyName:  "工长价格库A",
+		Status:       1,
+		WorkTypes:    "waterproof,mason",
+		ServiceArea:  `["浦东新区"]`,
+	}
+	if err := db.Create(&foreman).Error; err != nil {
+		t.Fatalf("create foreman: %v", err)
+	}
+	if err := db.Create(&model.MerchantServiceSetting{ProviderID: foreman.ID, AcceptBooking: true}).Error; err != nil {
+		t.Fatalf("create merchant setting: %v", err)
+	}
+
+	if _, err := svc.UpsertProviderPriceBook(foreman.ID, &QuotePriceBookUpdateInput{
+		Remark: "工长价格库",
+		Items: []QuotePriceBookItemInput{{
+			StandardItemID: libraryItem.ID,
+			Unit:           "㎡",
+			UnitPriceCent:  2300,
+			MinChargeCent:  10000,
+			Status:         1,
+		}},
+	}); err != nil {
+		t.Fatalf("upsert price book: %v", err)
+	}
+	detail, err := svc.PublishProviderPriceBook(foreman.ID)
+	if err != nil {
+		t.Fatalf("publish price book: %v", err)
+	}
+	if detail.Book.Status != model.QuotePriceBookStatusActive {
+		t.Fatalf("unexpected price book status: %s", detail.Book.Status)
+	}
+
+	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
+		ProjectID:          1001,
+		OwnerUserID:        7001,
+		DesignerProviderID: 8001,
+		Title:              "报价任务",
+	})
+	if err != nil {
+		t.Fatalf("create quote task: %v", err)
+	}
+	if _, err := svc.BatchUpsertQuoteListItems(task.ID, []QuoteListItemUpsertInput{{
+		StandardItemID: libraryItem.ID,
+		Name:           libraryItem.Name,
+		Unit:           "㎡",
+		Quantity:       12,
+		CategoryL1:     "防水",
+	}}); err != nil {
+		t.Fatalf("batch upsert items: %v", err)
+	}
+	if _, err := svc.UpdateTaskPrerequisites(task.ID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              89,
+		Layout:            "3室2厅",
+		RenovationType:    "全屋翻新",
+		ConstructionScope: "防水",
+		ServiceAreas:      []string{"浦东新区"},
+		WorkTypes:         []string{"waterproof"},
+	}); err != nil {
+		t.Fatalf("update prerequisites: %v", err)
+	}
+	recommendations, err := svc.RecommendForemen(task.ID)
+	if err != nil {
+		t.Fatalf("recommend foremen: %v", err)
+	}
+	if len(recommendations) != 1 || recommendations[0].ProviderID != foreman.ID {
+		t.Fatalf("unexpected recommendation result: %+v", recommendations)
+	}
+}
+
+func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	foreman := model.Provider{
+		ProviderType: 3,
+		SubType:      "foreman",
+		CompanyName:  "工长生成A",
+		Status:       1,
+		WorkTypes:    "waterproof",
+		ServiceArea:  `["浦东新区"]`,
+	}
+	if err := db.Create(&foreman).Error; err != nil {
+		t.Fatalf("create foreman: %v", err)
+	}
+	if err := db.Create(&model.MerchantServiceSetting{ProviderID: foreman.ID, AcceptBooking: true}).Error; err != nil {
+		t.Fatalf("create merchant setting: %v", err)
+	}
+	libraryItem := model.QuoteLibraryItem{
+		StandardCode: "STD-WP-002",
+		ERPItemCode:  "ERP-WP-002",
+		Name:         "墙地面防水",
+		Unit:         "㎡",
+		CategoryL1:   "防水",
+		Status:       1,
+	}
+	if err := db.Create(&libraryItem).Error; err != nil {
+		t.Fatalf("create library item: %v", err)
+	}
+	if _, err := svc.UpsertProviderPriceBook(foreman.ID, &QuotePriceBookUpdateInput{
+		Items: []QuotePriceBookItemInput{{
+			StandardItemID: libraryItem.ID,
+			Unit:           "㎡",
+			UnitPriceCent:  1800,
+			MinChargeCent:  0,
+			Status:         1,
+		}},
+	}); err != nil {
+		t.Fatalf("upsert price book: %v", err)
+	}
+	if _, err := svc.PublishProviderPriceBook(foreman.ID); err != nil {
+		t.Fatalf("publish price book: %v", err)
+	}
+	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
+		ProjectID:          1002,
+		OwnerUserID:        9001,
+		DesignerProviderID: 8002,
+		Title:              "报价任务生成",
+	})
+	if err != nil {
+		t.Fatalf("create quote task: %v", err)
+	}
+	items, err := svc.BatchUpsertQuoteListItems(task.ID, []QuoteListItemUpsertInput{{
+		StandardItemID: libraryItem.ID,
+		Name:           libraryItem.Name,
+		Unit:           "㎡",
+		Quantity:       10,
+		CategoryL1:     "防水",
+	}})
+	if err != nil {
+		t.Fatalf("upsert task item: %v", err)
+	}
+	if _, err := svc.UpdateTaskPrerequisites(task.ID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              100,
+		Layout:            "3室2厅",
+		RenovationType:    "全屋翻新",
+		ConstructionScope: "防水",
+		ServiceAreas:      []string{"浦东新区"},
+		WorkTypes:         []string{"waterproof"},
+	}); err != nil {
+		t.Fatalf("update prerequisites: %v", err)
+	}
+	if _, err := svc.SelectForemen(task.ID, 1, []uint64{foreman.ID}); err != nil {
+		t.Fatalf("select foreman: %v", err)
+	}
+	comparison, err := svc.GenerateDrafts(task.ID)
+	if err != nil {
+		t.Fatalf("generate drafts: %v", err)
+	}
+	if len(comparison.Submissions) != 1 {
+		t.Fatalf("unexpected submissions after generation: %+v", comparison.Submissions)
+	}
+
+	var submission model.QuoteSubmission
+	if err := db.Where("quote_list_id = ? AND provider_id = ?", task.ID, foreman.ID).First(&submission).Error; err != nil {
+		t.Fatalf("query submission: %v", err)
+	}
+	if submission.Status != model.QuoteSubmissionStatusGenerated {
+		t.Fatalf("unexpected generated submission status: %s", submission.Status)
+	}
+
+	if _, err := svc.SaveMerchantSubmission(task.ID, foreman.ID, &QuoteSubmissionSaveInput{
+		Items: []QuoteSubmissionItemInput{{
+			QuoteListItemID: items[0].ID,
+			UnitPriceCent:   2000,
+			Remark:          "工长微调",
+		}},
+		EstimatedDays: 30,
+		Remark:        "提交正式报价",
+	}, true); err != nil {
+		t.Fatalf("merchant submit quote: %v", err)
+	}
+
+	taskAfterSubmit, err := svc.SubmitTaskToUser(task.ID, submission.ID)
+	if err != nil {
+		t.Fatalf("submit task to user: %v", err)
+	}
+	if taskAfterSubmit.Status != model.QuoteListStatusSubmittedToUser {
+		t.Fatalf("unexpected task status after submit to user: %s", taskAfterSubmit.Status)
+	}
+
+	confirmedTask, err := svc.UserConfirmQuoteSubmission(submission.ID, 9001)
+	if err != nil {
+		t.Fatalf("user confirm quote: %v", err)
+	}
+	if confirmedTask.Status != model.QuoteListStatusUserConfirmed {
+		t.Fatalf("unexpected confirmed task status: %s", confirmedTask.Status)
+	}
+
+	html, err := svc.BuildSubmissionPrintHTML(submission.ID)
+	if err != nil {
+		t.Fatalf("build submission print html: %v", err)
+	}
+	if html == "" || !strings.Contains(html, "报价任务生成") {
+		t.Fatalf("unexpected print html: %s", html)
 	}
 }

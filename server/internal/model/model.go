@@ -88,15 +88,15 @@ type Provider struct {
 	PriceMax         float64 `json:"priceMax" gorm:"default:0"`              // 最高价格
 	PriceUnit        string  `json:"priceUnit" gorm:"size:20;default:'元/天'"` // 价格单位
 	// 详情页扩展字段
-	CoverImage      string `json:"coverImage" gorm:"size:500"`          // 封面背景图
-	FollowersCount  int    `json:"followersCount" gorm:"default:0"`     // 粉丝/关注数
-	ServiceIntro    string `json:"serviceIntro" gorm:"type:text"`       // 服务介绍
-	TeamSize        int    `json:"teamSize" gorm:"default:1"`           // 团队规模
-	EstablishedYear int    `json:"establishedYear" gorm:"default:2020"` // 成立年份
-	Certifications  string `json:"certifications" gorm:"type:text"`     // 资质认证 (JSON数组)
-	ServiceArea     string `json:"serviceArea" gorm:"type:text"`        // 服务区域 (JSON数组，如 ["浦东新区", "徐汇区"])
-	OfficeAddress   string `json:"officeAddress" gorm:"size:200"`       // 办公地址
-	CompanyAlbumJSON string `json:"companyAlbumJson" gorm:"type:text"`  // 企业相册 (JSON数组)
+	CoverImage       string `json:"coverImage" gorm:"size:500"`          // 封面背景图
+	FollowersCount   int    `json:"followersCount" gorm:"default:0"`     // 粉丝/关注数
+	ServiceIntro     string `json:"serviceIntro" gorm:"type:text"`       // 服务介绍
+	TeamSize         int    `json:"teamSize" gorm:"default:1"`           // 团队规模
+	EstablishedYear  int    `json:"establishedYear" gorm:"default:2020"` // 成立年份
+	Certifications   string `json:"certifications" gorm:"type:text"`     // 资质认证 (JSON数组)
+	ServiceArea      string `json:"serviceArea" gorm:"type:text"`        // 服务区域 (JSON数组，如 ["浦东新区", "徐汇区"])
+	OfficeAddress    string `json:"officeAddress" gorm:"size:200"`       // 办公地址
+	CompanyAlbumJSON string `json:"companyAlbumJson" gorm:"type:text"`   // 企业相册 (JSON数组)
 }
 
 // ProviderCase 服务商案例/作品
@@ -412,15 +412,16 @@ func (MaterialShopApplicationProduct) TableName() string {
 // MaterialShopProduct 主材商品
 type MaterialShopProduct struct {
 	Base
-	ShopID     uint64  `json:"shopId" gorm:"index"`
-	Name       string  `json:"name" gorm:"size:120"`
-	Unit       string  `json:"unit" gorm:"size:20"`
-	ParamsJSON string  `json:"paramsJson" gorm:"type:text"` // JSON对象
-	Price      float64 `json:"price"`
-	ImagesJSON string  `json:"imagesJson" gorm:"type:text"` // JSON数组
-	CoverImage string  `json:"coverImage" gorm:"size:500"`
-	Status     int8    `json:"status" gorm:"default:1"` // 1=on 0=off
-	SortOrder  int     `json:"sortOrder" gorm:"default:0"`
+	ShopID      uint64  `json:"shopId" gorm:"index"`
+	Name        string  `json:"name" gorm:"size:120"`
+	Unit        string  `json:"unit" gorm:"size:20"`
+	Description string  `json:"description" gorm:"type:text"`
+	ParamsJSON  string  `json:"paramsJson" gorm:"type:text"` // JSON对象
+	Price       float64 `json:"price"`
+	ImagesJSON  string  `json:"imagesJson" gorm:"type:text"` // JSON数组
+	CoverImage  string  `json:"coverImage" gorm:"size:500"`
+	Status      int8    `json:"status" gorm:"default:1"` // 1=on 0=off
+	SortOrder   int     `json:"sortOrder" gorm:"default:0"`
 }
 
 func (MaterialShopProduct) TableName() string {
@@ -704,9 +705,12 @@ type SMSAuditLog struct {
 	Base
 	RequestID         string `json:"requestId" gorm:"size:64;uniqueIndex"`
 	Purpose           string `json:"purpose" gorm:"size:32;index"`
+	RiskTier          string `json:"riskTier" gorm:"size:16"`
 	PhoneHash         string `json:"phoneHash" gorm:"size:64;index"`
 	ClientIP          string `json:"clientIp" gorm:"size:64"`
 	Provider          string `json:"provider" gorm:"size:32"`
+	TemplateKey       string `json:"templateKey" gorm:"size:64"`
+	TemplateCode      string `json:"templateCode" gorm:"size:128"`
 	MessageID         string `json:"messageId" gorm:"size:128"`
 	ProviderRequestID string `json:"providerRequestId" gorm:"size:128"`
 	Status            string `json:"status" gorm:"size:32;index"`

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
@@ -21,6 +22,20 @@ func AdminImportQuoteLibrary(c *gin.Context) {
 	_ = c.ShouldBindJSON(&input)
 
 	result, err := quoteService.ImportQuoteLibraryFromERP(strings.TrimSpace(input.FilePath))
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+func AdminImportQuoteLibraryPreview(c *gin.Context) {
+	var input struct {
+		FilePath string `json:"filePath"`
+	}
+	_ = c.ShouldBindJSON(&input)
+
+	result, err := quoteService.ImportQuoteLibraryPreview(strings.TrimSpace(input.FilePath))
 	if err != nil {
 		response.Error(c, 400, err.Error())
 		return
@@ -75,14 +90,17 @@ func AdminGetQuoteListDetail(c *gin.Context) {
 
 func AdminCreateQuoteList(c *gin.Context) {
 	var input struct {
-		ProjectID    uint64 `json:"projectId"`
-		CustomerID   uint64 `json:"customerId"`
-		HouseID      uint64 `json:"houseId"`
-		OwnerUserID  uint64 `json:"ownerUserId"`
-		ScenarioType string `json:"scenarioType"`
-		Title        string `json:"title" binding:"required"`
-		Currency     string `json:"currency"`
-		DeadlineAt   string `json:"deadlineAt"`
+		ProjectID          uint64 `json:"projectId"`
+		ProposalID         uint64 `json:"proposalId"`
+		ProposalVersion    int    `json:"proposalVersion"`
+		DesignerProviderID uint64 `json:"designerProviderId"`
+		CustomerID         uint64 `json:"customerId"`
+		HouseID            uint64 `json:"houseId"`
+		OwnerUserID        uint64 `json:"ownerUserId"`
+		ScenarioType       string `json:"scenarioType"`
+		Title              string `json:"title" binding:"required"`
+		Currency           string `json:"currency"`
+		DeadlineAt         string `json:"deadlineAt"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "报价清单参数错误")
@@ -98,14 +116,17 @@ func AdminCreateQuoteList(c *gin.Context) {
 		deadlineAt = &parsed
 	}
 	quoteList, err := quoteService.CreateQuoteList(&service.QuoteListCreateInput{
-		ProjectID:    input.ProjectID,
-		CustomerID:   input.CustomerID,
-		HouseID:      input.HouseID,
-		OwnerUserID:  input.OwnerUserID,
-		ScenarioType: input.ScenarioType,
-		Title:        input.Title,
-		Currency:     input.Currency,
-		DeadlineAt:   deadlineAt,
+		ProjectID:          input.ProjectID,
+		ProposalID:         input.ProposalID,
+		ProposalVersion:    input.ProposalVersion,
+		DesignerProviderID: input.DesignerProviderID,
+		CustomerID:         input.CustomerID,
+		HouseID:            input.HouseID,
+		OwnerUserID:        input.OwnerUserID,
+		ScenarioType:       input.ScenarioType,
+		Title:              input.Title,
+		Currency:           input.Currency,
+		DeadlineAt:         deadlineAt,
 	})
 	if err != nil {
 		response.Error(c, 400, err.Error())
@@ -249,4 +270,171 @@ func handleMerchantQuoteSubmission(c *gin.Context, submit bool) {
 		return
 	}
 	response.Success(c, submission)
+}
+
+// ── Price Tier Handlers ──
+
+func AdminListPriceTiers(c *gin.Context) {
+	libraryItemID := parseUint(c.Param("itemId"))
+	tiers, err := quoteService.ListPriceTiers(libraryItemID)
+	if err != nil {
+		response.Error(c, 500, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"tiers": tiers})
+}
+
+func AdminCreatePriceTier(c *gin.Context) {
+	var input struct {
+		LibraryItemID uint64 `json:"libraryItemId" binding:"required"`
+		TierKey       string `json:"tierKey" binding:"required"`
+		TierLabel     string `json:"tierLabel" binding:"required"`
+		ConditionJSON string `json:"conditionJson"`
+		SortOrder     int    `json:"sortOrder"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "阶梯价参数错误")
+		return
+	}
+	tier := &model.QuotePriceTier{
+		LibraryItemID: input.LibraryItemID,
+		TierKey:       input.TierKey,
+		TierLabel:     input.TierLabel,
+		ConditionJSON: input.ConditionJSON,
+		SortOrder:     input.SortOrder,
+	}
+	if err := quoteService.CreatePriceTier(tier); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, tier)
+}
+
+func AdminUpdatePriceTier(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	var input map[string]interface{}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if err := quoteService.UpdatePriceTier(id, input); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"id": id})
+}
+
+func AdminDeletePriceTier(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	if err := quoteService.DeletePriceTier(id); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"id": id})
+}
+
+// ── Quote Template Handlers ──
+
+func AdminListQuoteTemplates(c *gin.Context) {
+	roomType := c.Query("roomType")
+	renovationType := c.Query("renovationType")
+	templates, err := quoteService.ListQuoteTemplates(roomType, renovationType)
+	if err != nil {
+		response.Error(c, 500, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"list": templates})
+}
+
+func AdminGetQuoteTemplateDetail(c *gin.Context) {
+	detail, err := quoteService.GetQuoteTemplateDetail(parseUint(c.Param("id")))
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, detail)
+}
+
+func AdminCreateQuoteTemplate(c *gin.Context) {
+	var input struct {
+		Name           string `json:"name" binding:"required"`
+		RoomType       string `json:"roomType"`
+		RenovationType string `json:"renovationType"`
+		Description    string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "模板参数错误")
+		return
+	}
+	tmpl := &model.QuoteTemplate{
+		Name:           input.Name,
+		RoomType:       input.RoomType,
+		RenovationType: input.RenovationType,
+		Description:    input.Description,
+		Status:         1,
+	}
+	if err := quoteService.CreateQuoteTemplate(tmpl); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, tmpl)
+}
+
+func AdminUpdateQuoteTemplate(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	var input map[string]interface{}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if err := quoteService.UpdateQuoteTemplate(id, input); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"id": id})
+}
+
+func AdminBatchUpsertTemplateItems(c *gin.Context) {
+	templateID := parseUint(c.Param("id"))
+	var input struct {
+		Items []service.QuoteTemplateItemInput `json:"items"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "模板项目参数错误")
+		return
+	}
+	if err := quoteService.BatchUpsertTemplateItems(templateID, input.Items); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"templateId": templateID})
+}
+
+func AdminApplyTemplateToQuoteList(c *gin.Context) {
+	quoteListID := parseUint(c.Param("id"))
+	var input struct {
+		TemplateID uint64 `json:"templateId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	items, err := quoteService.ApplyTemplateToQuoteList(input.TemplateID, quoteListID)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"items": items})
+}
+
+// ── Smart Quantity Calculation ──
+
+func AdminAutoCalculateQuantities(c *gin.Context) {
+	quoteListID := parseUint(c.Param("id"))
+	suggestions, err := quoteService.AutoCalculateQuantities(quoteListID)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"suggestions": suggestions})
 }

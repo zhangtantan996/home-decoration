@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { buildRandomMainlandPhone, getMerchantTestEnv } from './helpers/merchant';
+import { buildMerchantAppUrl, buildRandomMainlandPhone, getMerchantTestEnv } from './helpers/merchant';
 
 test.describe('Merchant Login Unregistered Redirect', () => {
   test('unregistered phone redirects to onboarding with alert and prefilled phone', async ({ page }, testInfo) => {
@@ -9,9 +9,9 @@ test.describe('Merchant Login Unregistered Redirect', () => {
     const env = getMerchantTestEnv();
     const phone = process.env.MERCHANT_UNREGISTERED_PHONE || buildRandomMainlandPhone('19');
 
-    await page.goto(`${env.origin}/merchant/login`, { waitUntil: 'domcontentloaded' });
-    await page.getByPlaceholder('请输入11位手机号').fill(phone);
-    await page.getByPlaceholder('请输入6位验证码').fill(env.code);
+    await page.goto(buildMerchantAppUrl(env.origin, '/login'), { waitUntil: 'domcontentloaded' });
+    await page.getByPlaceholder('输入您的11位手机号').fill(phone);
+    await page.getByPlaceholder('输入6位验证码').fill(env.code);
     await page.getByRole('button', { name: /登\s*录/ }).click();
 
     const redirectToast = page.getByText('该手机号尚未入驻，正在为你跳转入驻页');
@@ -21,7 +21,7 @@ test.describe('Merchant Login Unregistered Redirect', () => {
 
     await page.waitForURL(
       (url) =>
-        url.pathname.endsWith('/merchant/register') &&
+        url.pathname.endsWith('/register') &&
         url.searchParams.get('from') === 'login_unregistered',
       { timeout: 10_000 },
     );

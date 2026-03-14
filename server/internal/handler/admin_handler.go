@@ -9,6 +9,7 @@ import (
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,10 @@ import (
 // ==================== Admin 统计 API ====================
 
 var adminRegionService = &service.RegionService{}
+
+func getAdminUserCleanupService() *service.AdminUserCleanupService {
+	return service.NewAdminUserCleanupService(repository.DB)
+}
 
 // AdminStatsOverview 概览统计
 func AdminStatsOverview(c *gin.Context) {
@@ -305,7 +310,127 @@ func AdminUpdateUser(c *gin.Context) {
 	response.Success(c, user)
 }
 
+// AdminDeleteUser 删除单个测试/脏数据用户（仅超级管理员）
+func AdminDeleteUser(c *gin.Context) {
+	id := parseUint(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "用户ID错误")
+		return
+	}
+
+	result, err := getAdminUserCleanupService().DeleteDirtyUsers([]uint64{id})
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.SuccessWithMessage(c, "删除成功", gin.H{
+		"deletedUserIds": result.UserIDs,
+		"deletedCount":   len(result.UserIDs),
+	})
+}
+
+// AdminBatchDeleteUsers 批量删除测试/脏数据用户（仅超级管理员）
+func AdminBatchDeleteUsers(c *gin.Context) {
+	var req map[string]any
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	userIDs := parseUserIDsFromPayload(req["userIds"])
+	if len(userIDs) == 0 {
+		userIDs = parseUserIDsFromPayload(req["user_ids"])
+	}
+	if len(userIDs) == 0 {
+		response.BadRequest(c, "参数错误：userIds 不能为空")
+		return
+	}
+
+	result, err := getAdminUserCleanupService().DeleteDirtyUsers(userIDs)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.SuccessWithMessage(c, "批量删除成功", gin.H{
+		"deletedUserIds": result.UserIDs,
+		"deletedCount":   len(result.UserIDs),
+	})
+}
+
+func parseUserIDsFromPayload(value any) []uint64 {
+	list, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+
+	result := make([]uint64, 0, len(list))
+	for _, item := range list {
+		switch typed := item.(type) {
+		case float64:
+			if typed > 0 {
+				result = append(result, uint64(typed))
+			}
+		case string:
+			if typed == "" {
+				continue
+			}
+			if parsed, err := strconv.ParseUint(typed, 10, 64); err == nil && parsed > 0 {
+				result = append(result, parsed)
+			}
+		}
+	}
+
+	return result
+}
+
 // ==================== Admin 服务商管理 ====================
+
+type adminProviderListRow struct {
+	model.Provider
+	RealName   string                        `json:"realName"`
+	Visibility service.VisibilityData        `json:"visibility"`
+	Actions    service.VisibilityActions     `json:"actions"`
+	LegacyInfo *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+}
+
+type adminMaterialShopListRow struct {
+	model.MaterialShop
+	Visibility service.VisibilityData        `json:"visibility"`
+	Actions    service.VisibilityActions     `json:"actions"`
+	LegacyInfo *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+}
+
+func findProviderVisibilitySource(provider model.Provider) (*model.MerchantApplication, bool) {
+	var app model.MerchantApplication
+	if provider.SourceApplicationID > 0 {
+		if err := repository.DB.First(&app, provider.SourceApplicationID).Error; err == nil {
+			return &app, true
+		}
+	}
+
+	if err := repository.DB.Where("provider_id = ?", provider.ID).Order("id DESC").First(&app).Error; err == nil {
+		return &app, true
+	}
+
+	return nil, false
+}
+
+func findMaterialShopVisibilitySource(shop model.MaterialShop) (*model.MaterialShopApplication, bool) {
+	var app model.MaterialShopApplication
+	if shop.SourceApplicationID > 0 {
+		if err := repository.DB.First(&app, shop.SourceApplicationID).Error; err == nil {
+			return &app, true
+		}
+	}
+
+	if err := repository.DB.Where("shop_id = ?", shop.ID).Order("id DESC").First(&app).Error; err == nil {
+		return &app, true
+	}
+
+	return nil, false
+}
 
 // AdminListProviders 服务商列表
 func AdminListProviders(c *gin.Context) {
@@ -330,8 +455,68 @@ func AdminListProviders(c *gin.Context) {
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&providers)
 
+	userIDs := make([]uint64, 0, len(providers))
+	for _, provider := range providers {
+		if provider.UserID > 0 {
+			userIDs = append(userIDs, provider.UserID)
+		}
+	}
+
+	userNameMap := make(map[uint64]string, len(userIDs))
+	if len(userIDs) > 0 {
+		var users []model.User
+		repository.DB.Select("id", "nickname").Where("id IN ?", userIDs).Find(&users)
+		for _, user := range users {
+			userNameMap[user.ID] = user.Nickname
+		}
+	}
+
+	list := make([]adminProviderListRow, 0, len(providers))
+	for _, provider := range providers {
+		visibilityResult := service.VisibilityResult{
+			Visibility: service.VisibilityData{
+				CurrentLabel:  "缺少入驻申请",
+				PublicVisible: service.IsProviderPublicVisible(&provider),
+				Blockers:      make([]service.VisibilityBlocker, 0),
+				EntitySnapshot: service.VisibilityEntitySnapshot{
+					ProviderID:       &provider.ID,
+					ProviderVerified: &provider.Verified,
+					ProviderStatus:   &provider.Status,
+				},
+			},
+			Actions: service.VisibilityActions{RejectResubmittable: false},
+		}
+
+		if app, ok := findProviderVisibilitySource(provider); ok {
+			visibilityResult = adminVisibilityResolver.ResolveMerchantApplication(*app, &provider)
+		}
+
+		if !visibilityResult.Visibility.PublicVisible {
+			if !provider.Verified {
+				visibilityResult.Visibility.Blockers = append(visibilityResult.Visibility.Blockers, service.VisibilityBlocker{
+					Code:    "provider_unverified",
+					Message: "服务商未实名通过，公开列表不可见",
+				})
+			}
+			if provider.Status != 1 {
+				visibilityResult.Visibility.Blockers = append(visibilityResult.Visibility.Blockers, service.VisibilityBlocker{
+					Code:    "provider_frozen",
+					Message: "服务商状态异常（冻结/停用），公开列表不可见",
+				})
+			}
+		}
+
+		list = append(list, adminProviderListRow{
+			Provider:   provider,
+			RealName:   userNameMap[provider.UserID],
+			Visibility: visibilityResult.Visibility,
+			Actions:    visibilityResult.Actions,
+			LegacyInfo: visibilityResult.LegacyInfo,
+		})
+	}
+
 	response.Success(c, gin.H{
-		"list":  providers,
+		"list":  list,
 		"total": total,
 	})
 }
@@ -670,8 +855,45 @@ func AdminListMaterialShops(c *gin.Context) {
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&shops)
 
+	list := make([]adminMaterialShopListRow, 0, len(shops))
+	for _, shop := range shops {
+		var productCount int64
+		repository.DB.Model(&model.MaterialShopProduct{}).Where("shop_id = ? AND status = ?", shop.ID, 1).Count(&productCount)
+
+		visibilityResult := service.VisibilityResult{
+			Visibility: service.VisibilityData{
+				CurrentLabel:  "缺少入驻申请",
+				PublicVisible: service.IsMaterialShopPublicVisible(&shop, productCount),
+				Blockers:      make([]service.VisibilityBlocker, 0),
+				EntitySnapshot: service.VisibilityEntitySnapshot{
+					ShopID:       &shop.ID,
+					ShopVerified: &shop.IsVerified,
+				},
+			},
+			Actions: service.VisibilityActions{RejectResubmittable: false},
+		}
+
+		if !shop.IsVerified {
+			visibilityResult.Visibility.Blockers = append(visibilityResult.Visibility.Blockers, service.VisibilityBlocker{
+				Code:    "shop_unverified",
+				Message: "主材商未完成认证，公开列表不可见",
+			})
+		}
+
+		if app, ok := findMaterialShopVisibilitySource(shop); ok {
+			visibilityResult = adminVisibilityResolver.ResolveMaterialShopApplication(*app, &shop, productCount)
+		}
+
+		list = append(list, adminMaterialShopListRow{
+			MaterialShop: shop,
+			Visibility:   visibilityResult.Visibility,
+			Actions:      visibilityResult.Actions,
+			LegacyInfo:   visibilityResult.LegacyInfo,
+		})
+	}
+
 	response.Success(c, gin.H{
-		"list":  shops,
+		"list":  list,
 		"total": total,
 	})
 }

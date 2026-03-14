@@ -223,11 +223,14 @@ func validateSMSPurpose(purpose SMSPurpose) error {
 	return nil
 }
 
-func logSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP string, providerResult SMSProviderResult, status, errCode, errMsg string) {
+func logSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP string, templateCtx SMSTemplateContext, providerResult SMSProviderResult, status, errCode, errMsg string) {
 	log.Printf(
-		"[SMS-AUDIT] requestId=%s purpose=%s phoneHash=%s ip=%s provider=%s messageId=%s providerRequestId=%s status=%s errorCode=%s error=%s",
+		"[SMS-AUDIT] requestId=%s purpose=%s riskTier=%s templateKey=%s templateCode=%s phoneHash=%s ip=%s provider=%s messageId=%s providerRequestId=%s status=%s errorCode=%s error=%s",
 		strings.TrimSpace(requestID),
 		string(purpose),
+		string(templateCtx.RiskTier),
+		strings.TrimSpace(templateCtx.TemplateKey),
+		strings.TrimSpace(templateCtx.TemplateCode),
 		hashPhoneForAudit(phone),
 		strings.TrimSpace(clientIP),
 		strings.TrimSpace(providerResult.Provider),
@@ -238,7 +241,7 @@ func logSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP string, p
 		strings.TrimSpace(errMsg),
 	)
 
-	persistSMSAudit(requestID, purpose, phone, clientIP, providerResult, status, errCode, errMsg)
+	persistSMSAudit(requestID, purpose, phone, clientIP, templateCtx, providerResult, status, errCode, errMsg)
 }
 
 func trimToMax(raw string, max int) string {
@@ -285,7 +288,7 @@ func smsAuditDBErrorType(err error) string {
 	return fmt.Sprintf("%T", err)
 }
 
-func persistSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP string, providerResult SMSProviderResult, status, errCode, errMsg string) {
+func persistSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP string, templateCtx SMSTemplateContext, providerResult SMSProviderResult, status, errCode, errMsg string) {
 	if repository.DB == nil {
 		return
 	}
@@ -293,9 +296,12 @@ func persistSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP strin
 	record := &model.SMSAuditLog{
 		RequestID:         trimToMax(requestID, 64),
 		Purpose:           trimToMax(string(purpose), 32),
+		RiskTier:          trimToMax(string(templateCtx.RiskTier), 16),
 		PhoneHash:         trimToMax(hashPhoneForAudit(phone), 64),
 		ClientIP:          trimToMax(clientIP, 64),
 		Provider:          trimToMax(providerResult.Provider, 32),
+		TemplateKey:       trimToMax(firstNonEmptyString(providerResult.TemplateKey, templateCtx.TemplateKey), 64),
+		TemplateCode:      trimToMax(firstNonEmptyString(providerResult.TemplateCode, templateCtx.TemplateCode), 128),
 		MessageID:         trimToMax(providerResult.MessageID, 128),
 		ProviderRequestID: trimToMax(providerResult.RequestID, 128),
 		Status:            trimToMax(status, 32),
@@ -335,9 +341,22 @@ func SendSMSCode(phone string, purpose SMSPurpose, clientIP, captchaToken string
 	if !utils.ValidatePhone(phone) {
 		return nil, errors.New("手机号格式不正确")
 	}
+	cfg := config.GetConfig()
+	var smsCfg *config.SMSConfig
+	if cfg != nil {
+		smsCfg = &cfg.SMS
+	}
+	templateCtx, err := ResolveSMSTemplateContext(purpose, smsCfg)
+	if err != nil {
+		return nil, err
+	}
 
 	if isFixedCodeModeEnabled() {
-		logSMSAudit(requestID, purpose, phone, clientIP, SMSProviderResult{Provider: "fixed_code"}, "sent", "", "")
+		logSMSAudit(requestID, purpose, phone, clientIP, templateCtx, SMSProviderResult{
+			Provider:     "fixed_code",
+			TemplateKey:  templateCtx.TemplateKey,
+			TemplateCode: templateCtx.TemplateCode,
+		}, "sent", "", "")
 		return &SendSMSCodeResult{
 			RequestID: requestID,
 			DebugCode: fixedSMSCodeValue(),
@@ -345,13 +364,21 @@ func SendSMSCode(phone string, purpose SMSPurpose, clientIP, captchaToken string
 		}, nil
 	}
 
-	if err := smsService.CanSendCode(phone, clientIP, string(purpose)); err != nil {
-		logSMSAudit(requestID, purpose, phone, clientIP, SMSProviderResult{Provider: "risk_guard"}, "risk_blocked", "SMS_RATE_LIMIT", err.Error())
+	if err := smsService.CanSendCode(phone, clientIP, string(purpose), templateCtx.RiskTier); err != nil {
+		logSMSAudit(requestID, purpose, phone, clientIP, templateCtx, SMSProviderResult{
+			Provider:     "risk_guard",
+			TemplateKey:  templateCtx.TemplateKey,
+			TemplateCode: templateCtx.TemplateCode,
+		}, "risk_blocked", "SMS_RATE_LIMIT", err.Error())
 		return nil, err
 	}
 
 	if err := verifyCaptchaToken(captchaToken, clientIP); err != nil {
-		logSMSAudit(requestID, purpose, phone, clientIP, SMSProviderResult{Provider: "captcha"}, "captcha_failed", "CAPTCHA_VERIFY_FAILED", err.Error())
+		logSMSAudit(requestID, purpose, phone, clientIP, templateCtx, SMSProviderResult{
+			Provider:     "captcha",
+			TemplateKey:  templateCtx.TemplateKey,
+			TemplateCode: templateCtx.TemplateCode,
+		}, "captcha_failed", "CAPTCHA_VERIFY_FAILED", err.Error())
 		return nil, err
 	}
 
@@ -365,8 +392,8 @@ func SendSMSCode(phone string, purpose SMSPurpose, clientIP, captchaToken string
 	}
 	codeHash := hashSMSCode(phone, purpose, code, nonce)
 
-	cfg := config.GetConfig()
-	providerName := normalizeSMSProviderName(cfg.SMS.Provider)
+	providerCfg := config.GetConfig()
+	providerName := normalizeSMSProviderName(providerCfg.SMS.Provider)
 	if providerName == "" {
 		providerName = "mock"
 	}
@@ -383,10 +410,16 @@ func SendSMSCode(phone string, purpose SMSPurpose, clientIP, captchaToken string
 		return nil, err
 	}
 
-	providerResult, err := provider.SendVerificationCode(phone, code)
+	providerResult, err := provider.SendVerificationCode(SMSProviderRequest{
+		Phone:    phone,
+		Code:     code,
+		Template: templateCtx,
+	})
+	providerResult.TemplateKey = firstNonEmptyString(providerResult.TemplateKey, templateCtx.TemplateKey)
+	providerResult.TemplateCode = firstNonEmptyString(providerResult.TemplateCode, templateCtx.TemplateCode)
 	if err != nil {
 		errCode := ExtractSMSProviderErrorCode(err)
-		logSMSAudit(requestID, purpose, phone, clientIP, providerResult, "send_failed", errCode, err.Error())
+		logSMSAudit(requestID, purpose, phone, clientIP, templateCtx, providerResult, "send_failed", errCode, err.Error())
 		if isStrictProductionMode() {
 			return nil, errors.New("短信发送失败，请稍后重试")
 		}
@@ -412,12 +445,12 @@ func SendSMSCode(phone string, purpose SMSPurpose, clientIP, captchaToken string
 	})
 	pipe.Expire(ctx, codeKey, smsCodeTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
-		logSMSAudit(requestID, purpose, phone, clientIP, providerResult, "store_failed", "REDIS_WRITE", err.Error())
+		logSMSAudit(requestID, purpose, phone, clientIP, templateCtx, providerResult, "store_failed", "REDIS_WRITE", err.Error())
 		return nil, errors.New("验证码服务异常，请稍后重试")
 	}
 
-	smsService.RecordSent(phone, clientIP, string(purpose))
-	logSMSAudit(requestID, purpose, phone, clientIP, providerResult, "sent", "", "")
+	smsService.RecordSent(phone, clientIP, string(purpose), templateCtx.RiskTier)
+	logSMSAudit(requestID, purpose, phone, clientIP, templateCtx, providerResult, "sent", "", "")
 
 	result := &SendSMSCodeResult{
 		RequestID: requestID,

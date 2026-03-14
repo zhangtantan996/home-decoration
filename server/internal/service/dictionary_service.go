@@ -44,8 +44,9 @@ func (s *DictionaryService) GetDictOptions(categoryCode string) ([]model.DictDTO
 	result := make([]model.DictDTO, len(dicts))
 	for i, d := range dicts {
 		result[i] = model.DictDTO{
-			Value: d.Value,
-			Label: d.Label,
+			Value:     d.Value,
+			Label:     d.Label,
+			ExtraData: d.ExtraData,
 		}
 	}
 

@@ -38,9 +38,8 @@ type aliyunSendSMSResponse struct {
 func NewAliyunSMSProvider(cfg config.SMSConfig) (*AliyunSMSProvider, error) {
 	if strings.TrimSpace(cfg.AccessKeyID) == "" ||
 		strings.TrimSpace(cfg.AccessKeySecret) == "" ||
-		strings.TrimSpace(cfg.SignName) == "" ||
-		strings.TrimSpace(cfg.TemplateCode) == "" {
-		return nil, errors.New("短信服务未配置：缺少 SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET / SMS_SIGN_NAME / SMS_TEMPLATE_CODE")
+		strings.TrimSpace(cfg.SignName) == "" {
+		return nil, errors.New("短信服务未配置：缺少 SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET / SMS_SIGN_NAME")
 	}
 	regionID := strings.TrimSpace(cfg.RegionID)
 	if regionID == "" {
@@ -59,8 +58,20 @@ func NewAliyunSMSProvider(cfg config.SMSConfig) (*AliyunSMSProvider, error) {
 	}, nil
 }
 
-func (p *AliyunSMSProvider) SendVerificationCode(phone, code string) (SMSProviderResult, error) {
-	templateParamBytes, err := json.Marshal(map[string]string{"code": code})
+func (p *AliyunSMSProvider) SendVerificationCode(req SMSProviderRequest) (SMSProviderResult, error) {
+	templateCode := strings.TrimSpace(firstNonEmptyString(req.Template.TemplateCode, p.templateCode))
+	if templateCode == "" {
+		return SMSProviderResult{
+				Provider:     "aliyun",
+				TemplateKey:  strings.TrimSpace(req.Template.TemplateKey),
+				TemplateCode: "",
+			}, &SMSProviderError{
+				Code:    "SMS_TEMPLATE_CODE_MISSING",
+				Message: "短信模板未配置",
+			}
+	}
+
+	templateParamBytes, err := json.Marshal(map[string]string{"code": req.Code})
 	if err != nil {
 		return SMSProviderResult{Provider: "aliyun"}, fmt.Errorf("encode sms template param: %w", err)
 	}
@@ -69,13 +80,13 @@ func (p *AliyunSMSProvider) SendVerificationCode(phone, code string) (SMSProvide
 		"AccessKeyId":      p.accessKeyID,
 		"Action":           "SendSms",
 		"Format":           "JSON",
-		"PhoneNumbers":     phone,
+		"PhoneNumbers":     req.Phone,
 		"RegionId":         p.regionID,
 		"SignName":         p.signName,
 		"SignatureMethod":  "HMAC-SHA1",
 		"SignatureNonce":   mustNonce(),
 		"SignatureVersion": "1.0",
-		"TemplateCode":     p.templateCode,
+		"TemplateCode":     templateCode,
 		"TemplateParam":    string(templateParamBytes),
 		"Timestamp":        time.Now().UTC().Format("2006-01-02T15:04:05Z"),
 		"Version":          "2017-05-25",
@@ -128,9 +139,11 @@ func (p *AliyunSMSProvider) SendVerificationCode(phone, code string) (SMSProvide
 	}
 
 	return SMSProviderResult{
-		Provider:  "aliyun",
-		MessageID: strings.TrimSpace(parsed.BizID),
-		RequestID: strings.TrimSpace(parsed.RequestID),
+		Provider:     "aliyun",
+		MessageID:    strings.TrimSpace(parsed.BizID),
+		RequestID:    strings.TrimSpace(parsed.RequestID),
+		TemplateKey:  strings.TrimSpace(req.Template.TemplateKey),
+		TemplateCode: templateCode,
 	}, nil
 }
 

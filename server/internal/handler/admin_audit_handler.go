@@ -59,7 +59,16 @@ func AdminListCaseAudits(c *gin.Context) {
 			providerName = provider.CompanyName
 		}
 
-		resultList = append(resultList, gin.H{
+		var originalCase *model.ProviderCase
+		if audit.CaseID != nil {
+			var caseRecord model.ProviderCase
+			if err := repository.DB.First(&caseRecord, *audit.CaseID).Error; err == nil {
+				originalCase = &caseRecord
+			}
+		}
+		visibilityResult := adminVisibilityResolver.ResolveCaseAudit(audit, originalCase)
+
+		item := gin.H{
 			"id":           audit.ID,
 			"caseId":       audit.CaseID,
 			"providerId":   audit.ProviderID,
@@ -68,7 +77,14 @@ func AdminListCaseAudits(c *gin.Context) {
 			"title":        audit.Title,
 			"status":       audit.Status,
 			"createdAt":    audit.CreatedAt,
-		})
+			"visibility":   visibilityResult.Visibility,
+			"actions":      visibilityResult.Actions,
+		}
+		if visibilityResult.LegacyInfo != nil {
+			item["legacyInfo"] = visibilityResult.LegacyInfo
+		}
+
+		resultList = append(resultList, item)
 	}
 
 	response.Success(c, gin.H{
@@ -111,6 +127,8 @@ func AdminGetCaseAudit(c *gin.Context) {
 		}
 	}
 
+	visibilityResult := adminVisibilityResolver.ResolveCaseAudit(audit, originalCase)
+
 	// 构造返回数据（包含 providerName）
 	auditData := gin.H{
 		"id":             audit.ID,
@@ -132,10 +150,15 @@ func AdminGetCaseAudit(c *gin.Context) {
 		"status":         audit.Status,
 		"rejectReason":   audit.RejectReason,
 		"createdAt":      audit.CreatedAt,
+		"visibility":     visibilityResult.Visibility,
+		"actions":        visibilityResult.Actions,
 	}
 	if originalCase != nil {
 		originalCase.CoverImage = imgutil.GetFullImageURL(originalCase.CoverImage)
 		originalCase.Images = imgutil.NormalizeImageURLsJSON(originalCase.Images)
+	}
+	if visibilityResult.LegacyInfo != nil {
+		auditData["legacyInfo"] = visibilityResult.LegacyInfo
 	}
 
 	response.Success(c, gin.H{

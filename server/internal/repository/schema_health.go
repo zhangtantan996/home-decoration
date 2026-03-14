@@ -189,8 +189,25 @@ func findMissingColumns(table string, columns []string) ([]string, error) {
 	if !DB.Migrator().HasTable(table) {
 		return append(missing, table), nil
 	}
+
+	rows, err := DB.Table(table).Select("*").Limit(1).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	existingColumns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	columnSet := make(map[string]struct{}, len(existingColumns))
+	for _, column := range existingColumns {
+		columnSet[column] = struct{}{}
+	}
+
 	for _, column := range columns {
-		if !DB.Migrator().HasColumn(table, column) {
+		if _, ok := columnSet[column]; !ok {
 			missing = append(missing, fmt.Sprintf("%s.%s", table, column))
 		}
 	}

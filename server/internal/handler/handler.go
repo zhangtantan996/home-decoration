@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
@@ -8,6 +9,7 @@ import (
 	"home-decoration-server/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 var (
@@ -18,17 +20,45 @@ var (
 	escrowService       = &service.EscrowService{}
 	bookingService      = &service.BookingService{}
 	materialShopService = &service.MaterialShopService{}
+	demandService       = service.NewDemandService()
 	wechatAuthService   *service.WechatAuthService
 	wechatH5AuthService *service.WechatH5AuthService
 	jwtConfig           *config.JWTConfig
+	wechatH5BasePath    string
 )
 
 // InitHandlers 初始化处理器
 func InitHandlers(cfg *config.Config) {
 	jwtConfig = &cfg.JWT
+	wechatH5BasePath = cfg.WechatH5.BasePath
 	service.InitJWT(cfg.JWT.Secret)
 	wechatAuthService = service.NewWechatAuthService(cfg.WechatMini)
 	wechatH5AuthService = service.NewWechatH5AuthService(cfg.WechatH5)
+}
+
+func getCurrentUserID(c *gin.Context) uint64 {
+	if userID := c.GetUint64("userId"); userID > 0 {
+		return userID
+	}
+	return uint64(c.GetFloat64("userId"))
+}
+
+func getCurrentUserType(c *gin.Context) int8 {
+	if raw, ok := c.Get("userType"); ok {
+		switch value := raw.(type) {
+		case int8:
+			return value
+		case int:
+			return int8(value)
+		case uint8:
+			return int8(value)
+		case uint:
+			return int8(value)
+		case float64:
+			return int8(value)
+		}
+	}
+	return int8(c.GetFloat64("userType"))
 }
 
 // HealthCheck 健康检查
@@ -456,6 +486,10 @@ func GetProviderCases(c *gin.Context) {
 
 	list, total, err := providerService.GetProviderCases(id, page, pageSize)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "服务商不存在")
+			return
+		}
 		response.ServerError(c, "查询失败")
 		return
 	}
@@ -511,7 +545,7 @@ func GetReviewStats(c *gin.Context) {
 
 // CreateProject 创建项目
 func CreateProject(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
+	userId := getCurrentUserID(c)
 
 	var req service.CreateProjectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -533,8 +567,8 @@ func CreateProject(c *gin.Context) {
 
 // ListProjects 项目列表
 func ListProjects(c *gin.Context) {
-	userId := c.GetUint64("userId")
-	userType := int8(c.GetFloat64("userType"))
+	userId := getCurrentUserID(c)
+	userType := getCurrentUserType(c)
 
 	page := 1
 	pageSize := 10
@@ -587,7 +621,7 @@ func GetProjectLogs(c *gin.Context) {
 
 // CreateProjectLog 创建施工日志
 func CreateProjectLog(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
+	userId := getCurrentUserID(c)
 	projectId := parseUint64(c.Param("id"))
 
 	var req struct {
@@ -609,14 +643,48 @@ func CreateProjectLog(c *gin.Context) {
 
 // GetMilestones 获取验收节点
 func GetMilestones(c *gin.Context) {
-	// 已经在GetProjectDetail中返回，可以预留为独立接口
-	response.Success(c, []gin.H{})
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	milestones, err := projectService.GetProjectMilestones(projectID)
+	if err != nil {
+		response.ServerError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"milestones": milestones})
 }
 
 // AcceptMilestone 验收节点
 func AcceptMilestone(c *gin.Context) {
-	// TODO: 实现验收逻辑
-	response.Success(c, gin.H{"message": "验收成功"})
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req struct {
+		MilestoneID uint64 `json:"milestoneId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	milestone, err := projectService.AcceptMilestone(projectID, userID, req.MilestoneID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":   "验收成功",
+		"milestone": milestone,
+	})
 }
 
 // ========== 项目阶段 ==========
@@ -699,7 +767,7 @@ func GetEscrowAccount(c *gin.Context) {
 
 // Deposit 存入托管
 func Deposit(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
+	userId := getCurrentUserID(c)
 	projectId := parseUint64(c.Param("id"))
 
 	var req struct {
@@ -721,7 +789,7 @@ func Deposit(c *gin.Context) {
 
 // ReleaseFunds 释放资金
 func ReleaseFunds(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
+	userId := getCurrentUserID(c)
 	projectId := parseUint64(c.Param("id"))
 
 	var req struct {

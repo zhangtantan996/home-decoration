@@ -10,6 +10,7 @@ import (
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
+	"math"
 	"strings"
 	"time"
 
@@ -17,11 +18,14 @@ import (
 	"gorm.io/gorm"
 )
 
+const materialProductPriceMax = 999999
+
 type materialShopApplyProductInput struct {
-	Name   string   `json:"name"`
-	Unit   string   `json:"unit"`
-	Price  float64  `json:"price"`
-	Images []string `json:"images"`
+	Name        string   `json:"name"`
+	Unit        string   `json:"unit"`
+	Description string   `json:"description"`
+	Price       float64  `json:"price"`
+	Images      []string `json:"images"`
 }
 
 type materialShopApplyInput struct {
@@ -63,10 +67,24 @@ type materialShopUpdateInput struct {
 }
 
 type materialShopProductInput struct {
-	Name   string   `json:"name"`
-	Unit   string   `json:"unit"`
-	Price  float64  `json:"price"`
-	Images []string `json:"images"`
+	Name        string   `json:"name"`
+	Unit        string   `json:"unit"`
+	Description string   `json:"description"`
+	Price       float64  `json:"price"`
+	Images      []string `json:"images"`
+}
+
+func validateMaterialProductPrice(price float64, index int) error {
+	if price <= 0 {
+		return fmt.Errorf("第%d个商品价格需大于0", index+1)
+	}
+	if price > materialProductPriceMax {
+		return fmt.Errorf("第%d个商品价格不能超过%d", index+1, materialProductPriceMax)
+	}
+	if math.Round(price*100) != price*100 {
+		return fmt.Errorf("第%d个商品价格最多保留两位小数", index+1)
+	}
+	return nil
 }
 
 func normalizeMaterialEntityType(raw string) string {
@@ -87,6 +105,7 @@ func validateMaterialProducts(products []materialShopApplyProductInput) error {
 	for idx := range products {
 		products[idx].Name = strings.TrimSpace(products[idx].Name)
 		products[idx].Unit = strings.TrimSpace(products[idx].Unit)
+		products[idx].Description = strings.TrimSpace(products[idx].Description)
 		products[idx].Images = normalizeStringSlice(products[idx].Images)
 
 		if products[idx].Name == "" {
@@ -101,8 +120,11 @@ func validateMaterialProducts(products []materialShopApplyProductInput) error {
 		if len([]rune(products[idx].Unit)) > 20 {
 			return fmt.Errorf("第%d个商品单位不能超过20个字符", idx+1)
 		}
-		if products[idx].Price <= 0 {
-			return fmt.Errorf("第%d个商品价格需大于0", idx+1)
+		if len([]rune(products[idx].Description)) > 500 {
+			return fmt.Errorf("第%d个商品描述不能超过500个字符", idx+1)
+		}
+		if err := validateMaterialProductPrice(products[idx].Price, idx); err != nil {
+			return err
 		}
 		if len(products[idx].Images) < 1 || len(products[idx].Images) > 6 {
 			return fmt.Errorf("第%d个商品需上传1-6张图片", idx+1)
@@ -256,14 +278,43 @@ func resolveMaterialProductUnit(unit string, paramsJSON string) string {
 	return ""
 }
 
+func resolveMaterialProductDescription(description string, paramsJSON string) string {
+	description = strings.TrimSpace(description)
+	if description != "" {
+		return description
+	}
+	trimmed := strings.TrimSpace(paramsJSON)
+	if trimmed == "" {
+		return ""
+	}
+	var params map[string]interface{}
+	if err := json.Unmarshal([]byte(trimmed), &params); err != nil {
+		return ""
+	}
+	for _, key := range []string{"description", "商品描述", "desc"} {
+		value, ok := params[key]
+		if !ok || value == nil {
+			continue
+		}
+		resolved := strings.TrimSpace(fmt.Sprint(value))
+		if resolved != "" && resolved != "<nil>" {
+			return resolved
+		}
+	}
+	return ""
+}
+
 func persistMaterialApplyProducts(tx *gorm.DB, applicationID uint64, products []materialShopApplyProductInput) error {
 	for idx, product := range products {
 		imagesJSON, _ := json.Marshal(product.Images)
+		paramsJSON, _ := json.Marshal(map[string]string{
+			"description": product.Description,
+		})
 		applicationProduct := model.MaterialShopApplicationProduct{
 			ApplicationID: applicationID,
 			Name:          product.Name,
 			Unit:          product.Unit,
-			ParamsJSON:    "{}",
+			ParamsJSON:    string(paramsJSON),
 			Price:         product.Price,
 			ImagesJSON:    string(imagesJSON),
 			SortOrder:     idx,
@@ -455,10 +506,11 @@ func MaterialShopApplyDetailForResubmit(c *gin.Context) {
 		var images []string
 		_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
 		productList = append(productList, gin.H{
-			"name":   product.Name,
-			"unit":   resolveMaterialProductUnit(product.Unit, product.ParamsJSON),
-			"price":  product.Price,
-			"images": imgutil.GetFullImageURLs(images),
+			"name":        product.Name,
+			"unit":        resolveMaterialProductUnit(product.Unit, product.ParamsJSON),
+			"description": resolveMaterialProductDescription("", product.ParamsJSON),
+			"price":       product.Price,
+			"images":      imgutil.GetFullImageURLs(images),
 		})
 	}
 
@@ -595,16 +647,17 @@ func parseMaterialProduct(product model.MaterialShopProduct) gin.H {
 	_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
 
 	return gin.H{
-		"id":         product.ID,
-		"name":       product.Name,
-		"unit":       resolveMaterialProductUnit(product.Unit, product.ParamsJSON),
-		"price":      product.Price,
-		"images":     images,
-		"coverImage": product.CoverImage,
-		"status":     product.Status,
-		"sortOrder":  product.SortOrder,
-		"createdAt":  product.CreatedAt,
-		"updatedAt":  product.UpdatedAt,
+		"id":          product.ID,
+		"name":        product.Name,
+		"unit":        resolveMaterialProductUnit(product.Unit, product.ParamsJSON),
+		"description": resolveMaterialProductDescription(product.Description, product.ParamsJSON),
+		"price":       product.Price,
+		"images":      images,
+		"coverImage":  product.CoverImage,
+		"status":      product.Status,
+		"sortOrder":   product.SortOrder,
+		"createdAt":   product.CreatedAt,
+		"updatedAt":   product.UpdatedAt,
 	}
 }
 
@@ -763,6 +816,7 @@ func MaterialShopListProducts(c *gin.Context) {
 func toMaterialShopProduct(input materialShopProductInput) (model.MaterialShopProduct, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	input.Unit = strings.TrimSpace(input.Unit)
+	input.Description = strings.TrimSpace(input.Description)
 	input.Images = normalizeStringSlice(input.Images)
 
 	if input.Name == "" {
@@ -777,8 +831,17 @@ func toMaterialShopProduct(input materialShopProductInput) (model.MaterialShopPr
 	if len([]rune(input.Unit)) > 20 {
 		return model.MaterialShopProduct{}, fmt.Errorf("商品单位不能超过20个字符")
 	}
+	if len([]rune(input.Description)) > 500 {
+		return model.MaterialShopProduct{}, fmt.Errorf("商品描述不能超过500个字符")
+	}
 	if input.Price <= 0 {
 		return model.MaterialShopProduct{}, fmt.Errorf("商品价格需大于0")
+	}
+	if input.Price > materialProductPriceMax {
+		return model.MaterialShopProduct{}, fmt.Errorf("商品价格不能超过%d", materialProductPriceMax)
+	}
+	if math.Round(input.Price*100) != input.Price*100 {
+		return model.MaterialShopProduct{}, fmt.Errorf("商品价格最多保留两位小数")
 	}
 	if len(input.Images) < 1 || len(input.Images) > 6 {
 		return model.MaterialShopProduct{}, fmt.Errorf("商品需上传1-6张图片")
@@ -787,13 +850,14 @@ func toMaterialShopProduct(input materialShopProductInput) (model.MaterialShopPr
 	imagesJSON, _ := json.Marshal(input.Images)
 
 	product := model.MaterialShopProduct{
-		Name:       input.Name,
-		Unit:       input.Unit,
-		ParamsJSON: "{}",
-		Price:      input.Price,
-		ImagesJSON: string(imagesJSON),
-		CoverImage: input.Images[0],
-		Status:     1,
+		Name:        input.Name,
+		Unit:        input.Unit,
+		Description: input.Description,
+		ParamsJSON:  "{}",
+		Price:       input.Price,
+		ImagesJSON:  string(imagesJSON),
+		CoverImage:  input.Images[0],
+		Status:      1,
 	}
 
 	return product, nil
@@ -930,7 +994,18 @@ func AdminListMaterialShopApplications(c *gin.Context) {
 
 	list := make([]gin.H, 0, len(apps))
 	for _, app := range apps {
-		list = append(list, gin.H{
+		var shop *model.MaterialShop
+		if app.ShopID > 0 {
+			var shopRecord model.MaterialShop
+			if err := repository.DB.First(&shopRecord, app.ShopID).Error; err == nil {
+				shop = &shopRecord
+			}
+		}
+		var productCount int64
+		repository.DB.Model(&model.MaterialShopApplicationProduct{}).Where("application_id = ?", app.ID).Count(&productCount)
+		visibilityResult := adminVisibilityResolver.ResolveMaterialShopApplication(app, shop, productCount)
+
+		item := gin.H{
 			"id":           app.ID,
 			"phone":        app.Phone,
 			"entityType":   app.EntityType,
@@ -942,7 +1017,13 @@ func AdminListMaterialShopApplications(c *gin.Context) {
 			"rejectReason": app.RejectReason,
 			"createdAt":    app.CreatedAt,
 			"auditedAt":    app.AuditedAt,
-		})
+			"visibility":   visibilityResult.Visibility,
+			"actions":      visibilityResult.Actions,
+		}
+		if visibilityResult.LegacyInfo != nil {
+			item["legacyInfo"] = visibilityResult.LegacyInfo
+		}
+		list = append(list, item)
 	}
 
 	response.Success(c, gin.H{
@@ -969,16 +1050,28 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
 
 		productList = append(productList, gin.H{
-			"id":        product.ID,
-			"name":      product.Name,
-			"unit":      resolveMaterialProductUnit(product.Unit, product.ParamsJSON),
-			"price":     product.Price,
-			"images":    imgutil.GetFullImageURLs(images),
-			"sortOrder": product.SortOrder,
+			"id":          product.ID,
+			"name":        product.Name,
+			"unit":        resolveMaterialProductUnit(product.Unit, product.ParamsJSON),
+			"description": resolveMaterialProductDescription("", product.ParamsJSON),
+			"price":       product.Price,
+			"images":      imgutil.GetFullImageURLs(images),
+			"sortOrder":   product.SortOrder,
 		})
 	}
 
-	response.Success(c, gin.H{
+	var shop *model.MaterialShop
+	if app.ShopID > 0 {
+		var shopRecord model.MaterialShop
+		if err := repository.DB.First(&shopRecord, app.ShopID).Error; err == nil {
+			shop = &shopRecord
+		}
+	}
+	var productCount int64
+	repository.DB.Model(&model.MaterialShopApplicationProduct{}).Where("application_id = ?", app.ID).Count(&productCount)
+	visibilityResult := adminVisibilityResolver.ResolveMaterialShopApplication(app, shop, productCount)
+
+	detail := gin.H{
 		"id":                     app.ID,
 		"merchantKind":           "material_shop",
 		"phone":                  app.Phone,
@@ -1004,7 +1097,14 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		"auditedAt":              app.AuditedAt,
 		"auditedBy":              app.AuditedBy,
 		"products":               productList,
-	})
+		"visibility":             visibilityResult.Visibility,
+		"actions":                visibilityResult.Actions,
+	}
+	if visibilityResult.LegacyInfo != nil {
+		detail["legacyInfo"] = visibilityResult.LegacyInfo
+	}
+
+	response.Success(c, detail)
 }
 
 func AdminApproveMaterialShopApplication(c *gin.Context) {
@@ -1098,15 +1198,16 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 		}
 
 		product := model.MaterialShopProduct{
-			ShopID:     shop.ID,
-			Name:       appProduct.Name,
-			Unit:       resolveMaterialProductUnit(appProduct.Unit, appProduct.ParamsJSON),
-			ParamsJSON: firstNonEmpty(strings.TrimSpace(appProduct.ParamsJSON), "{}"),
-			Price:      appProduct.Price,
-			ImagesJSON: appProduct.ImagesJSON,
-			CoverImage: coverImage,
-			Status:     1,
-			SortOrder:  appProduct.SortOrder,
+			ShopID:      shop.ID,
+			Name:        appProduct.Name,
+			Unit:        resolveMaterialProductUnit(appProduct.Unit, appProduct.ParamsJSON),
+			Description: resolveMaterialProductDescription("", appProduct.ParamsJSON),
+			ParamsJSON:  firstNonEmpty(strings.TrimSpace(appProduct.ParamsJSON), "{}"),
+			Price:       appProduct.Price,
+			ImagesJSON:  appProduct.ImagesJSON,
+			CoverImage:  coverImage,
+			Status:      1,
+			SortOrder:   appProduct.SortOrder,
 		}
 		if err := tx.Create(&product).Error; err != nil {
 			tx.Rollback()

@@ -923,6 +923,8 @@ func MerchantDashboardStats(c *gin.Context) {
 	var pendingProposals, confirmedProposals int64
 	repository.DB.Model(&model.Proposal{}).Where("designer_id = ? AND status = 1", providerID).Count(&pendingProposals)
 	repository.DB.Model(&model.Proposal{}).Where("designer_id = ? AND status = 2", providerID).Count(&confirmedProposals)
+	var pendingLeads int64
+	repository.DB.Model(&model.DemandMatch{}).Where("provider_id = ? AND status = ?", providerID, model.DemandMatchStatusPending).Count(&pendingLeads)
 
 	// 订单统计
 	var bookingIDs []uint64
@@ -957,6 +959,7 @@ func MerchantDashboardStats(c *gin.Context) {
 	activeProjects := paidOrders
 
 	response.Success(c, gin.H{
+		"pendingLeads":     pendingLeads,
 		"todayBookings":    todayBookings,
 		"pendingProposals": pendingProposals,
 		"activeProjects":   activeProjects,
@@ -1099,36 +1102,55 @@ func MerchantGetProposal(c *gin.Context) {
 		return
 	}
 
-	// 获取关联的预约信息
-	var booking model.Booking
-	repository.DB.First(&booking, proposal.BookingID)
-
-	// 获取用户信息
-	var user model.User
-	repository.DB.First(&user, booking.UserID)
-
-	userNickname := user.Nickname
-	if userNickname == "" && len(user.Phone) >= 4 {
-		userNickname = "用户" + user.Phone[len(user.Phone)-4:]
-	}
-
 	type BookingWithUser struct {
 		model.Booking
 		UserNickname string `json:"userNickname"`
 		UserPhone    string `json:"userPhone"`
 		UserPublicID string `json:"userPublicId,omitempty"`
 	}
-
-	bookingIdentity := dto.NewUserIdentity(&user)
-	if bookingIdentity.UserPublicID == "" {
-		monitor.RecordPublicIDMissing("merchant_proposal_detail", bookingIdentity.UserID, "merchant_get_proposal")
-	}
-
-	bookingWithUser := BookingWithUser{
-		Booking:      booking,
-		UserNickname: userNickname,
-		UserPhone:    user.Phone,
-		UserPublicID: bookingIdentity.UserPublicID,
+	var bookingWithUser BookingWithUser
+	if proposal.SourceType == model.ProposalSourceDemand {
+		var demand model.Demand
+		if err := repository.DB.First(&demand, proposal.DemandID).Error; err == nil {
+			var user model.User
+			_ = repository.DB.First(&user, demand.UserID).Error
+			userNickname := user.Nickname
+			if userNickname == "" && len(user.Phone) >= 4 {
+				userNickname = "用户" + user.Phone[len(user.Phone)-4:]
+			}
+			bookingWithUser = BookingWithUser{
+				Booking: model.Booking{
+					Base:           model.Base{ID: demand.ID},
+					Address:        demand.Address,
+					Area:           demand.Area,
+					HouseLayout:    "",
+					RenovationType: demand.DemandType,
+					BudgetRange:    fmt.Sprintf("%.0f-%.0f", demand.BudgetMin, demand.BudgetMax),
+				},
+				UserNickname: userNickname,
+				UserPhone:    user.Phone,
+				UserPublicID: user.PublicID,
+			}
+		}
+	} else {
+		var booking model.Booking
+		repository.DB.First(&booking, proposal.BookingID)
+		var user model.User
+		repository.DB.First(&user, booking.UserID)
+		userNickname := user.Nickname
+		if userNickname == "" && len(user.Phone) >= 4 {
+			userNickname = "用户" + user.Phone[len(user.Phone)-4:]
+		}
+		bookingIdentity := dto.NewUserIdentity(&user)
+		if bookingIdentity.UserPublicID == "" {
+			monitor.RecordPublicIDMissing("merchant_proposal_detail", bookingIdentity.UserID, "merchant_get_proposal")
+		}
+		bookingWithUser = BookingWithUser{
+			Booking:      booking,
+			UserNickname: userNickname,
+			UserPhone:    user.Phone,
+			UserPublicID: bookingIdentity.UserPublicID,
+		}
 	}
 
 	response.Success(c, gin.H{
@@ -1211,8 +1233,20 @@ func MerchantCancelProposal(c *gin.Context) {
 		response.Error(c, 400, "只有待确认状态的方案才能取消")
 		return
 	}
-
-	if err := repository.DB.Delete(&proposal).Error; err != nil {
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&proposal).Error; err != nil {
+			return err
+		}
+		if proposal.SourceType == model.ProposalSourceDemand && proposal.DemandMatchID > 0 {
+			return tx.Model(&model.DemandMatch{}).
+				Where("id = ?", proposal.DemandMatchID).
+				Updates(map[string]interface{}{
+					"status":      model.DemandMatchStatusAccepted,
+					"proposal_id": 0,
+				}).Error
+		}
+		return nil
+	}); err != nil {
 		response.Error(c, 500, "删除失败")
 		return
 	}

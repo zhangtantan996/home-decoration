@@ -356,6 +356,80 @@ func (s *ProjectService) GetProjectPhases(projectID uint64) ([]model.ProjectPhas
 	return phases, nil
 }
 
+// GetProjectMilestones 获取项目验收节点
+func (s *ProjectService) GetProjectMilestones(projectID uint64) ([]model.Milestone, error) {
+	var milestones []model.Milestone
+	if err := repository.DB.Where("project_id = ?", projectID).Order("seq ASC").Find(&milestones).Error; err != nil {
+		return nil, err
+	}
+	return milestones, nil
+}
+
+// AcceptMilestone 业主验收项目节点
+func (s *ProjectService) AcceptMilestone(projectID, userID, milestoneID uint64) (*model.Milestone, error) {
+	var updated model.Milestone
+
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var project model.Project
+		if err := tx.First(&project, projectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		if project.OwnerID != userID {
+			return errors.New("无权验收此项目")
+		}
+
+		var milestone model.Milestone
+		if err := tx.Where("id = ? AND project_id = ?", milestoneID, projectID).First(&milestone).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("验收节点不存在")
+			}
+			return err
+		}
+
+		if milestone.AcceptedAt != nil || milestone.Status >= 3 {
+			return errors.New("验收节点已处理")
+		}
+
+		now := time.Now()
+		if err := tx.Model(&milestone).Updates(map[string]interface{}{
+			"status":      3,
+			"accepted_at": now,
+		}).Error; err != nil {
+			return err
+		}
+
+		var remaining int64
+		if err := tx.Model(&model.Milestone{}).
+			Where("project_id = ? AND status < ?", projectID, 3).
+			Count(&remaining).Error; err != nil {
+			return err
+		}
+
+		projectUpdates := map[string]interface{}{
+			"status":        2,
+			"current_phase": milestone.Name + "已验收",
+		}
+		if remaining == 0 {
+			projectUpdates["status"] = 3
+			projectUpdates["current_phase"] = "已完工"
+		}
+		if err := tx.Model(&project).Updates(projectUpdates).Error; err != nil {
+			return err
+		}
+
+		if err := tx.First(&updated, milestoneID).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
+}
+
 // UpdatePhaseRequest 更新阶段请求
 type UpdatePhaseRequest struct {
 	Status            string `json:"status"`

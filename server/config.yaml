@@ -41,6 +41,7 @@ wechat_h5:
   bind_token_expire_minutes: 5
   oauth_scope: "${WECHAT_H5_OAUTH_SCOPE}"
   state_signing_secret: "${WECHAT_H5_STATE_SIGNING_SECRET}"
+  base_path: "/app"
 
 sms:
   provider: "${SMS_PROVIDER}" # mock | aliyun

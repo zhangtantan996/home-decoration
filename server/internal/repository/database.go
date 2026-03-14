@@ -124,9 +124,15 @@ func autoMigrate() error {
 		&model.AdminLog{},
 		// 业务流程扩展 (2025-12-28)
 		&model.SystemConfig{},
+		&model.Demand{},
+		&model.DemandMatch{},
+		&model.Contract{},
 		&model.Proposal{},
 		&model.Order{},
 		&model.PaymentPlan{},
+		&model.ChangeOrder{},
+		&model.Complaint{},
+		&model.Evaluation{},
 		// 商家中心 (2025-12-29)
 		&model.MerchantApplication{},
 		&model.MerchantIncome{},
@@ -147,15 +153,33 @@ func autoMigrate() error {
 		&model.CaseComment{},
 		&model.SensitiveWord{},
 		&model.QuoteLibraryItem{},
+		&model.QuoteCategory{},
 		&model.QuoteList{},
 		&model.QuoteListItem{},
 		&model.QuoteInvitation{},
 		&model.QuoteSubmission{},
 		&model.QuoteSubmissionItem{},
+		&model.QuotePriceBook{},
+		&model.QuotePriceBookItem{},
+		&model.QuotePriceTier{},
+		&model.QuoteCategoryRule{},
+		&model.QuoteTemplate{},
+		&model.QuoteTemplateItem{},
 	)
 }
 
 // GetDB 获取数据库实例
 func GetDB() *gorm.DB {
 	return DB
+}
+
+// CloseDB 关闭数据库连接
+func CloseDB() {
+	if DB != nil {
+		sqlDB, err := DB.DB()
+		if err == nil {
+			sqlDB.Close()
+		}
+		DB = nil
+	}
 }

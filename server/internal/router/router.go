@@ -75,6 +75,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			auth.POST("/refresh", handler.RefreshToken)
 		}
 
+		// 公开首页聚合数据
+		v1.GET("/homepage", handler.GetHomepageData)
+
 		// 公开的服务商查询
 		v1.GET("/providers", handler.ListProviders)
 
@@ -129,6 +132,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		regions := v1.Group("/regions")
 		{
 			regions.GET("/provinces", handler.GetProvinces)
+			regions.GET("/cities", handler.GetCities)
 			regions.GET("/provinces/:provinceCode/cities", handler.GetCitiesByProvince)
 			regions.GET("/cities/:cityCode/districts", handler.GetDistrictsByCity)
 			regions.GET("/children/:parentCode", handler.GetChildrenByParentCode) // 懒加载子节点
@@ -237,6 +241,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.GET("/:id/bill", handler.GetProjectBill)
 				projects.POST("/:id/bill", handler.GenerateBill)
 				projects.GET("/:id/files", handler.GetProjectFiles)
+				projects.GET("/:id/contract", handler.GetProjectContract)
 			}
 
 			// 阶段管理
@@ -257,10 +262,44 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				proposals.POST("/:id/reject", handler.RejectProposal) // 支持拒绝原因
 			}
 
+			demands := authorized.Group("/demands")
+			{
+				demands.POST("", handler.CreateDemand)
+				demands.GET("", handler.ListDemands)
+				demands.GET("/:id", handler.GetDemand)
+				demands.PUT("/:id", handler.UpdateDemand)
+				demands.POST("/:id/submit", handler.SubmitDemand)
+			}
+
+			complaints := authorized.Group("/complaints")
+			{
+				complaints.POST("", handler.CreateComplaint)
+				complaints.GET("", handler.ListComplaints)
+				complaints.GET("/:id", handler.GetComplaint)
+			}
+
+			authorized.POST("/contracts/:id/confirm", handler.ConfirmContract)
+			authorized.GET("/contracts/:id", handler.GetContract)
+
+			quoteTasks := authorized.Group("/quote-tasks")
+			{
+				quoteTasks.GET("/my", handler.UserListQuoteTasks)
+				quoteTasks.GET("/:id/user-view", handler.UserGetQuoteTask)
+			}
+
+			quoteSubmissions := authorized.Group("/quote-submissions")
+			{
+				quoteSubmissions.POST("/:id/confirm", handler.UserConfirmQuoteSubmission)
+				quoteSubmissions.POST("/:id/reject", handler.UserRejectQuoteSubmission)
+				quoteSubmissions.GET("/:id/print", handler.UserPrintQuoteSubmission)
+			}
+
 			// 订单（用户端）
 			orders := authorized.Group("/orders")
 			{
+				orders.GET("", handler.ListOrders)
 				orders.GET("/pending-payments", handler.ListPendingPayments)
+				orders.GET("/:id/plans", handler.GetOrderPaymentPlans)
 				orders.GET("/:id", handler.GetOrder)
 				orders.POST("/:id/pay", handler.PayOrder)
 				orders.DELETE("/:id", handler.CancelOrder)
@@ -328,6 +367,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			userListPerm := middleware.RequirePermission("system:user:list")
 			userViewPerm := middleware.RequirePermission("system:user:view")
 			userEditPerm := middleware.RequirePermission("system:user:edit")
+			userDeletePerm := middleware.RequirePermission("system:user:delete")
+			superAdminOnly := middleware.RequireSuperAdmin()
 			adminListPerm := middleware.RequirePermission("system:admin:list")
 			adminCreatePerm := middleware.RequirePermission("system:admin:create")
 			adminEditPerm := middleware.RequirePermission("system:admin:edit")
@@ -380,6 +421,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			projectListPerm := middleware.RequirePermission("project:list")
 			projectViewPerm := middleware.RequirePermission("project:view")
 			projectEditPerm := middleware.RequirePermission("project:edit")
+			demandListPerm := middleware.RequirePermission("demand:list")
+			demandReviewPerm := middleware.RequirePermission("demand:review")
+			demandAssignPerm := middleware.RequirePermission("demand:assign")
+			complaintListPerm := middleware.RequirePermission("risk:arbitration:list")
+			complaintResolvePerm := middleware.RequirePermission("risk:arbitration:judge")
 
 			// 获取当前管理员信息和权限
 			admin.GET("/info", handler.AdminGetInfo)
@@ -392,10 +438,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 用户管理
 			admin.GET("/users", userListPerm, handler.AdminListUsers)
+			admin.POST("/users/batch-delete", userDeletePerm, superAdminOnly, handler.AdminBatchDeleteUsers)
 			admin.GET("/users/:id", userViewPerm, handler.AdminGetUser)
 			admin.POST("/users", userEditPerm, handler.AdminCreateUser)
 			admin.PUT("/users/:id", userEditPerm, handler.AdminUpdateUser)
 			admin.PATCH("/users/:id/status", userEditPerm, handler.AdminUpdateUserStatus)
+			admin.DELETE("/users/:id", userDeletePerm, superAdminOnly, handler.AdminDeleteUser)
 
 			// 管理员管理
 			admin.GET("/admins", adminListPerm, handler.AdminListAdmins)
@@ -538,7 +586,26 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PUT("/logs/:logId", projectEditPerm, handler.AdminUpdateWorkLog)
 			admin.DELETE("/logs/:logId", projectEditPerm, handler.AdminDeleteWorkLog)
 			admin.POST("/quote-library/import", projectEditPerm, handler.AdminImportQuoteLibrary)
+			admin.POST("/quote-library/import-preview", projectEditPerm, handler.AdminImportQuoteLibraryPreview)
+			admin.GET("/quote-categories", projectListPerm, handler.AdminListQuoteCategories)
+			admin.POST("/quote-categories", projectEditPerm, handler.AdminCreateQuoteCategory)
 			admin.GET("/quote-library/items", projectListPerm, handler.AdminListQuoteLibraryItems)
+			admin.POST("/quote-library/items", projectEditPerm, handler.AdminCreateQuoteLibraryItem)
+			admin.PUT("/quote-library/items/:id", projectEditPerm, handler.AdminUpdateQuoteLibraryItem)
+
+			// Price Tier 阶梯价管理
+			admin.GET("/quote-library/items/:itemId/tiers", projectListPerm, handler.AdminListPriceTiers)
+			admin.POST("/quote-price-tiers", projectEditPerm, handler.AdminCreatePriceTier)
+			admin.PUT("/quote-price-tiers/:id", projectEditPerm, handler.AdminUpdatePriceTier)
+			admin.DELETE("/quote-price-tiers/:id", projectEditPerm, handler.AdminDeletePriceTier)
+
+			// 报价模板管理
+			admin.GET("/quote-templates", projectListPerm, handler.AdminListQuoteTemplates)
+			admin.GET("/quote-templates/:id", projectViewPerm, handler.AdminGetQuoteTemplateDetail)
+			admin.POST("/quote-templates", projectEditPerm, handler.AdminCreateQuoteTemplate)
+			admin.PUT("/quote-templates/:id", projectEditPerm, handler.AdminUpdateQuoteTemplate)
+			admin.POST("/quote-templates/:id/items", projectEditPerm, handler.AdminBatchUpsertTemplateItems)
+
 			admin.GET("/quote-lists", projectListPerm, handler.AdminListQuoteLists)
 			admin.GET("/quote-lists/:id", projectViewPerm, handler.AdminGetQuoteListDetail)
 			admin.POST("/quote-lists", projectEditPerm, handler.AdminCreateQuoteList)
@@ -547,6 +614,32 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/quote-lists/:id/start", projectEditPerm, handler.AdminStartQuoteList)
 			admin.GET("/quote-lists/:id/comparison", projectViewPerm, handler.AdminGetQuoteComparison)
 			admin.POST("/quote-lists/:id/award", projectEditPerm, handler.AdminAwardQuote)
+			admin.GET("/providers/:id/price-book", providerListPerm, handler.AdminGetProviderPriceBook)
+			admin.GET("/quote-tasks", projectListPerm, handler.AdminListQuoteLists)
+			admin.GET("/quote-tasks/:id", projectViewPerm, handler.AdminGetQuoteListDetail)
+			admin.POST("/quote-tasks", projectEditPerm, handler.AdminCreateQuoteList)
+			admin.POST("/quote-tasks/:id/items/batch-upsert", projectEditPerm, handler.AdminBatchUpsertQuoteListItems)
+			admin.PUT("/quote-tasks/:id/prerequisites", projectEditPerm, handler.AdminUpdateQuoteTaskPrerequisites)
+			admin.POST("/quote-tasks/:id/validate-prerequisites", projectEditPerm, handler.AdminValidateQuoteTaskPrerequisites)
+			admin.POST("/quote-tasks/:id/recommend-foremen", projectEditPerm, handler.AdminRecommendForemen)
+			admin.POST("/quote-tasks/:id/select-foremen", projectEditPerm, handler.AdminSelectForemen)
+			admin.POST("/quote-tasks/:id/generate-drafts", projectEditPerm, handler.AdminGenerateQuoteDrafts)
+			admin.GET("/quote-tasks/:id/comparison", projectViewPerm, handler.AdminGetQuoteComparison)
+			admin.POST("/quote-tasks/:id/submit-to-user", projectEditPerm, handler.AdminSubmitQuoteTaskToUser)
+			admin.POST("/quote-tasks/:id/requote", projectEditPerm, handler.AdminRequoteTask)
+			admin.POST("/quote-tasks/:id/apply-template", projectEditPerm, handler.AdminApplyTemplateToQuoteList)
+			admin.POST("/quote-tasks/:id/auto-calculate", projectEditPerm, handler.AdminAutoCalculateQuantities)
+
+			// ========== 需求中心 ==========
+			admin.GET("/demands", demandListPerm, handler.AdminListDemands)
+			admin.GET("/demands/:id", demandListPerm, handler.AdminGetDemand)
+			admin.POST("/demands/:id/review", demandReviewPerm, handler.AdminReviewDemand)
+			admin.POST("/demands/:id/assign", demandAssignPerm, handler.AdminAssignDemand)
+			admin.GET("/demands/:id/candidates", demandAssignPerm, handler.AdminListDemandCandidates)
+
+			// 投诉处理
+			admin.GET("/complaints", complaintListPerm, handler.AdminListComplaints)
+			admin.POST("/complaints/:id/resolve", complaintResolvePerm, handler.AdminResolveComplaint)
 
 			// ========== 争议预约管理 ==========
 			admin.GET("/disputed-bookings", bookingListPerm, handler.AdminListDisputedBookings)
@@ -580,6 +673,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		// 商家登录 (无需认证)
 		v1.POST("/merchant/login", middleware.LoginRateLimit(), handler.MerchantLogin(cfg))
 
+		contracts := v1.Group("/contracts")
+		contracts.Use(middleware.MerchantJWT(cfg.JWT.Secret))
+		{
+			contracts.POST("", handler.CreateContract)
+		}
+
 		// 商家端路由（使用 MerchantJWT 中间件验证 token 类型）
 		merchant := v1.Group("/merchant")
 		merchant.Use(middleware.MerchantJWT(cfg.JWT.Secret))
@@ -594,6 +693,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.POST("/upload", handler.MerchantUploadImage)
 			merchant.GET("/service-settings", handler.MerchantGetServiceSettings)
 			merchant.PUT("/service-settings", handler.MerchantUpdateServiceSettings)
+			merchant.GET("/price-book", handler.MerchantGetPriceBook)
+			merchant.PUT("/price-book", handler.MerchantUpdatePriceBook)
+			merchant.POST("/price-book/publish", handler.MerchantPublishPriceBook)
 
 			// 预约管理
 			merchant.GET("/bookings", handler.MerchantListBookings)
@@ -603,6 +705,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/quote-lists/:id", handler.MerchantGetQuoteListDetail)
 			merchant.PUT("/quote-lists/:id/submission", handler.MerchantSaveQuoteSubmission)
 			merchant.POST("/quote-lists/:id/submission/submit", handler.MerchantSubmitQuoteSubmission)
+			merchant.GET("/quote-tasks", handler.MerchantListQuoteTasks)
+			merchant.GET("/quote-tasks/:id", handler.MerchantGetQuoteTask)
 
 			// 方案管理
 			merchant.POST("/proposals", handler.MerchantSubmitProposal)
@@ -613,6 +717,15 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.POST("/proposals/:id/reopen", handler.MerchantReopenProposal)
 			merchant.POST("/proposals/resubmit", handler.ResubmitProposal)          // 重新提交方案（生成新版本）
 			merchant.GET("/proposals/:id/rejection-info", handler.GetRejectionInfo) // 获取拒绝信息
+
+			// 线索管理
+			merchant.GET("/leads", handler.MerchantListLeads)
+			merchant.POST("/leads/:id/accept", handler.MerchantAcceptLead)
+			merchant.POST("/leads/:id/decline", handler.MerchantDeclineLead)
+
+			// 投诉响应
+			merchant.GET("/complaints", handler.MerchantListComplaints)
+			merchant.POST("/complaints/:id/respond", handler.MerchantRespondComplaint)
 
 			// 订单管理
 			merchant.GET("/orders", handler.MerchantListOrders)

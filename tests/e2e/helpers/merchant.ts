@@ -75,7 +75,7 @@ const FOREMAN_REQUIRED_CASES = [
 
 export function getMerchantTestEnv(): MerchantTestEnv {
   return {
-    origin: process.env.MERCHANT_ORIGIN || process.env.ADMIN_BASE_URL || 'http://localhost:5173',
+    origin: process.env.MERCHANT_ORIGIN || 'http://localhost:5174',
     apiBaseUrl: process.env.E2E_API_BASE_URL || `${(process.env.API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '')}/api/v1`,
     phone: process.env.MERCHANT_PHONE || '13800000001',
     foremanPhone: process.env.MERCHANT_FOREMAN_PHONE || process.env.MERCHANT_PHONE || '13800000001',
@@ -88,6 +88,17 @@ export function getMerchantAdminTestEnv(): MerchantAdminTestEnv {
     username: process.env.E2E_ADMIN_USER || 'admin',
     password: process.env.E2E_ADMIN_PASS || 'admin123',
   };
+}
+
+export function buildMerchantAppUrl(origin: string, path = '/'): string {
+  const url = new URL(origin);
+  const basePath = url.pathname && url.pathname !== '/' ? url.pathname.replace(/\/+$/, '') : '';
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const [pathnamePart, searchPart = ''] = normalizedPath.split('?');
+  url.pathname = `${basePath}${pathnamePart}` || '/';
+  url.search = searchPart ? `?${searchPart}` : '';
+  url.hash = '';
+  return url.toString();
 }
 
 export function buildLegalAcceptancePayload(): LegalAcceptancePayload {
@@ -340,7 +351,8 @@ export async function loginMerchantByUi(
   phone: string,
   code: string,
 ): Promise<void> {
-  await page.goto(`${origin}/merchant/login`, { waitUntil: 'domcontentloaded' });
+  const base = origin.replace(/\/$/, '');
+  await page.goto(`${base}/login`, { waitUntil: 'domcontentloaded' });
 
   await page.getByPlaceholder('请输入11位手机号').fill(phone);
   await page.getByPlaceholder('请输入6位验证码').fill(code);
@@ -349,7 +361,7 @@ export async function loginMerchantByUi(
   await page.waitForURL(
     (url) => {
       const path = url.pathname;
-      return path.endsWith('/merchant/dashboard') || path.endsWith('/merchant/material-shop/settings');
+      return path.endsWith('/dashboard') || path.endsWith('/material-shop/settings');
     },
     { timeout: 30_000 },
   );

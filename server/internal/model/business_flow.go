@@ -54,7 +54,10 @@ const (
 // Proposal 设计方案
 type Proposal struct {
 	Base
+	SourceType           string     `json:"sourceType" gorm:"size:20;default:'booking';index"`
 	BookingID            uint64     `json:"bookingId" gorm:"index"`
+	DemandID             uint64     `json:"demandId" gorm:"index"`
+	DemandMatchID        uint64     `json:"demandMatchId" gorm:"index"`
 	DesignerID           uint64     `json:"designerId" gorm:"index"`      // Provider ID
 	Summary              string     `json:"summary" gorm:"type:text"`     // 方案概述
 	DesignFee            float64    `json:"designFee"`                    // 设计费
@@ -66,7 +69,7 @@ type Proposal struct {
 	ConfirmedAt          *time.Time `json:"confirmedAt"`
 	Version              int        `json:"version" gorm:"default:1"`         // 版本号（v1, v2, v3...）
 	ParentProposalID     uint64     `json:"parentProposalId" gorm:"index"`    // 上一版本方案ID
-	RejectionCount       int        `json:"rejectionCount" gorm:"default:0"`  // 该预约的累计拒绝次数
+	RejectionCount       int        `json:"rejectionCount" gorm:"default:0"`  // 该来源链路的累计拒绝次数
 	RejectionReason      string     `json:"rejectionReason" gorm:"type:text"` // 拒绝原因
 	RejectedAt           *time.Time `json:"rejectedAt"`                       // 拒绝时间
 	SubmittedAt          *time.Time `json:"submittedAt"`                      // 提交时间

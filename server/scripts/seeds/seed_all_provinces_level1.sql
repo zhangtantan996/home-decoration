@@ -2,7 +2,7 @@
 -- 注意：这里只包含 Level 1 数据，不包含下级市县
 -- 数据来源：国家统计局 2023
 
-INSERT INTO regions (code, name, level, parent_code, enabled, sort_order) VALUES 
+INSERT INTO regions (code, name, level, parent_code, enabled, sort_order) VALUES
 ('110000', '北京市', 1, NULL, true, 1),
 ('120000', '天津市', 1, NULL, true, 2),
 ('130000', '河北省', 1, NULL, true, 3),
@@ -29,11 +29,12 @@ INSERT INTO regions (code, name, level, parent_code, enabled, sort_order) VALUES
 ('520000', '贵州省', 1, NULL, true, 24),
 ('530000', '云南省', 1, NULL, true, 25),
 ('540000', '西藏自治区', 1, NULL, true, 26),
-('610000', '陕西省', 1, NULL, true, 27) ON CONFLICT (code) DO NOTHING, -- 陕西省已存在，跳过
+('610000', '陕西省', 1, NULL, true, 27),
 ('620000', '甘肃省', 1, NULL, true, 28),
 ('630000', '青海省', 1, NULL, true, 29),
 ('640000', '宁夏回族自治区', 1, NULL, true, 30),
 ('650000', '新疆维吾尔自治区', 1, NULL, true, 31),
 ('710000', '台湾省', 1, NULL, true, 32),
 ('810000', '香港特别行政区', 1, NULL, true, 33),
-('820000', '澳门特别行政区', 1, NULL, true, 34);
+('820000', '澳门特别行政区', 1, NULL, true, 34)
+ON CONFLICT (code) DO NOTHING;

@@ -404,6 +404,20 @@ func RequireAnyPermission(permissions ...string) gin.HandlerFunc {
 	}
 }
 
+// RequireSuperAdmin 仅允许超级管理员访问
+func RequireSuperAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		isSuperAdmin, _ := c.Get("is_super")
+		if isSuperAdmin == true {
+			c.Next()
+			return
+		}
+
+		response.Forbidden(c, "仅超级管理员可执行此操作")
+		c.Abort()
+	}
+}
+
 // AdminLog 管理员操作日志中间件
 func AdminLog() gin.HandlerFunc {
 	return func(c *gin.Context) {

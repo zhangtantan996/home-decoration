@@ -9,17 +9,7 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
-
-	"gorm.io/gorm"
 )
-
-func applyBaseVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
-	return db.Where("is_verified = ?", true)
-}
-
-func applyVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
-	return applyBaseVisibleMaterialShopFilter(db)
-}
 
 // MaterialShopService 主材门店服务
 type MaterialShopService struct{}
@@ -65,26 +55,15 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 	var shops []model.MaterialShop
 	var total int64
 
-	strictDB := applyVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{}))
-	fallbackDB := applyBaseVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{}))
+	db := applyVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{}))
 
 	// 类型筛选
 	if query.Type != "" && query.Type != "all" {
-		strictDB = strictDB.Where("type = ?", query.Type)
-		fallbackDB = fallbackDB.Where("type = ?", query.Type)
+		db = db.Where("type = ?", query.Type)
 	}
 
 	// 统计总数
-	strictDB.Count(&total)
-	db := strictDB
-	if total == 0 {
-		var fallbackTotal int64
-		fallbackDB.Count(&fallbackTotal)
-		if fallbackTotal > 0 {
-			total = fallbackTotal
-			db = fallbackDB
-		}
-	}
+	db.Count(&total)
 
 	// 排序
 	switch query.SortBy {
@@ -156,15 +135,10 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 // GetMaterialShopByID 获取门店详情
 func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListItem, error) {
 	var shop model.MaterialShop
-	strictErr := applyVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).
+	if err := applyVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).
 		Where("id = ?", id).
-		First(&shop).Error
-	if strictErr != nil {
-		if err := applyBaseVisibleMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).
-			Where("id = ?", id).
-			First(&shop).Error; err != nil {
-			return nil, err
-		}
+		First(&shop).Error; err != nil {
+		return nil, err
 	}
 
 	var mainProducts []string
