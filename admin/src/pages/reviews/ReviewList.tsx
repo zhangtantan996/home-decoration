@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Button, Space, message, Popconfirm, Rate, Tag } from 'antd';
+import { Table, Card, Button, message, Popconfirm, Rate, Tag } from 'antd';
 import { ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { adminReviewApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
 
 interface Review {
     id: number;
@@ -105,25 +107,34 @@ const ReviewList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
-                <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-            </Space>
-
-            <Table
-                columns={columns}
-                dataSource={reviews}
-                rowKey="id"
-                loading={loading}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
+        <div className="hz-page-stack">
+            <PageHeader
+                title="评价管理"
+                description="查看用户评价、服务类型和评分内容，必要时执行删除操作。"
             />
-        </Card>
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
+                    <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
+                </div>
+            </ToolbarCard>
+
+            <Card className="hz-table-card">
+                <Table
+                    columns={columns}
+                    dataSource={reviews}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
+        </div>
     );
 };
 

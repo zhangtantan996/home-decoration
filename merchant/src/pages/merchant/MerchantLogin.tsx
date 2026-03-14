@@ -177,7 +177,7 @@ const MerchantLogin: React.FC = () => {
             useMerchantAuthStore.getState().login({ token, provider, tinodeToken });
             message.success('登录成功');
             if (merchantKind === 'material_shop' || provider?.merchantKind === 'material_shop') {
-                navigate('/material-shop/settings');
+                navigate('/material-shop/products');
             } else {
                 navigate('/dashboard');
             }

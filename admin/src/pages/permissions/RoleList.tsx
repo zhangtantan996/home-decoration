@@ -1,7 +1,35 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Card, Button, Space, Form, Input, InputNumber, Switch, App, Modal, Spin, Tag, Divider, Alert, Checkbox } from 'antd';
-import { PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, CheckCircleOutlined, FolderOutlined, FolderOpenOutlined, FileOutlined, ApiOutlined, RightOutlined, DownOutlined } from '@ant-design/icons';
-import { adminRoleApi, adminMenuApi } from '../../services/api';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    Alert,
+    App,
+    Button,
+    Card,
+    Checkbox,
+    Form,
+    Input,
+    InputNumber,
+    Modal,
+    Space,
+    Spin,
+    Table,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import {
+    ApiOutlined,
+    CheckCircleOutlined,
+    DownOutlined,
+    FileOutlined,
+    FolderOpenOutlined,
+    FolderOutlined,
+    PlusOutlined,
+    ReloadOutlined,
+    RightOutlined,
+    SafetyCertificateOutlined,
+} from '@ant-design/icons';
+import { adminMenuApi, adminRoleApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import StatusTag from '../../components/StatusTag';
+import ToolbarCard from '../../components/ToolbarCard';
 
 interface Role {
     id: number;
@@ -33,6 +61,61 @@ interface MenuNode extends Menu {
     expanded: boolean;
 }
 
+interface ApiEnvelope<T> {
+    code: number;
+    data: T;
+    message?: string;
+}
+
+type PillTone = 'accent' | 'success' | 'warning' | 'muted' | 'danger';
+
+const InlinePill: React.FC<{ tone: PillTone; text: string; monospace?: boolean }> = ({ tone, text, monospace }) => (
+    <span className={`hz-inline-pill hz-inline-pill--${tone}`}>
+        {monospace ? <code>{text}</code> : text}
+    </span>
+);
+
+const formatDateTime = (value: string) => new Date(value).toLocaleString('zh-CN', { hour12: false });
+
+const buildMenuTree = (nodes: Menu[]): MenuNode[] =>
+    nodes.map((node) => ({
+        ...node,
+        expanded: false,
+        children: buildMenuTree(node.children || []),
+    }));
+
+const getNodeMeta = (type: number, expanded: boolean) => {
+    if (type === 1) {
+        return {
+            icon: expanded ? <FolderOpenOutlined className="hz-permission-tree__icon" style={{ color: '#2563eb' }} /> : <FolderOutlined className="hz-permission-tree__icon" style={{ color: '#2563eb' }} />,
+            weight: 600,
+            tone: 'accent' as const,
+        };
+    }
+
+    if (type === 2) {
+        return {
+            icon: <FileOutlined className="hz-permission-tree__icon" style={{ color: '#059669' }} />,
+            weight: 500,
+            tone: 'success' as const,
+        };
+    }
+
+    return {
+        icon: <ApiOutlined className="hz-permission-tree__icon" style={{ color: '#d97706' }} />,
+        weight: 400,
+        tone: 'warning' as const,
+    };
+};
+
+const readErrorMessage = (error: unknown, fallback: string) => {
+    if (error && typeof error === 'object') {
+        const candidate = error as { message?: string; response?: { data?: { message?: string } } };
+        return candidate.response?.data?.message || candidate.message || fallback;
+    }
+    return fallback;
+};
+
 const RoleList: React.FC = () => {
     const { modal, message } = App.useApp();
     const [loading, setLoading] = useState(false);
@@ -46,32 +129,33 @@ const RoleList: React.FC = () => {
     const [menuLoading, setMenuLoading] = useState(false);
     const [form] = Form.useForm();
 
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await adminRoleApi.list() as any;
+            const res = await adminRoleApi.list() as unknown as ApiEnvelope<{ list: Role[] }>;
             if (res.code === 0) {
                 setRoles(res.data.list || []);
             }
         } catch (error) {
             console.error(error);
-            message.error('加载失败');
+            message.error('加载角色失败');
         } finally {
             setLoading(false);
         }
-    };
+    }, [message]);
 
-    const handleAdd = () => {
+    useEffect(() => {
+        void loadData();
+    }, [loadData]);
+
+    const handleAdd = useCallback(() => {
         setEditingRole(null);
         form.resetFields();
+        form.setFieldsValue({ sort: 0 });
         setModalVisible(true);
-    };
+    }, [form]);
 
-    const handleEdit = (record: Role) => {
+    const handleEdit = useCallback((record: Role) => {
         setEditingRole(record);
         form.setFieldsValue({
             name: record.name,
@@ -80,91 +164,80 @@ const RoleList: React.FC = () => {
             sort: record.sort,
         });
         setModalVisible(true);
-    };
+    }, [form]);
 
-    const handleDelete = (record: Role) => {
+    const handleDelete = useCallback((record: Role) => {
         modal.confirm({
-            title: '确认删除',
-            content: `确定要删除角色 "${record.name}" 吗？删除后该角色下的管理员将失去对应权限。`,
-            okText: '确定',
+            title: '确认删除角色',
+            content: `确定要删除角色“${record.name}”吗？删除后该角色下的管理员将失去对应权限。`,
+            okText: '确定删除',
             cancelText: '取消',
             okButtonProps: { danger: true },
             onOk: async () => {
                 try {
                     await adminRoleApi.delete(record.id);
-                    message.success('删除成功');
-                    loadData();
-                } catch (error: any) {
-                    message.error(error.response?.data?.message || '删除失败');
+                    message.success('角色已删除');
+                    await loadData();
+                } catch (error) {
+                    message.error(readErrorMessage(error, '删除失败'));
                 }
             },
         });
-    };
+    }, [loadData, message, modal]);
 
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
-
             if (editingRole) {
                 await adminRoleApi.update(editingRole.id, values);
-                message.success('更新成功');
+                message.success('角色已更新');
             } else {
                 await adminRoleApi.create(values);
-                message.success('创建成功');
+                message.success('角色已创建');
             }
             setModalVisible(false);
-            loadData();
-        } catch (error: any) {
-            if (error.errorFields) {
+            await loadData();
+        } catch (error) {
+            if (error && typeof error === 'object' && 'errorFields' in error) {
                 return;
             }
-            message.error(error.response?.data?.message || '操作失败');
+            message.error(readErrorMessage(error, '操作失败'));
         }
     };
 
-    const handleAssignPermission = async (record: Role) => {
+    const handleAssignPermission = useCallback(async (record: Role) => {
         setCurrentRole(record);
-        setMenuLoading(true);
         setPermissionModalVisible(true);
+        setMenuLoading(true);
 
         try {
-            // 获取所有菜单（后端已经返回树形结构）
-            const menuRes = await adminMenuApi.list() as any;
+            const [menuResRaw, roleMenuResRaw] = await Promise.all([
+                adminMenuApi.list(),
+                adminRoleApi.getMenus(record.id),
+            ]);
+            const menuRes = menuResRaw as unknown as ApiEnvelope<{ list: Menu[] }>;
+            const roleMenuRes = roleMenuResRaw as unknown as ApiEnvelope<{ menuIds?: number[] }>;
 
             if (menuRes.code === 0) {
-                const menuTree = menuRes.data.list || [];
+                setMenuTree(buildMenuTree(menuRes.data.list || []));
+            }
 
-                // 后端已经构建了树形结构，添加 expanded 属性
-                const processTree = (nodes: Menu[]): MenuNode[] => {
-                    return nodes.map(node => ({
-                        ...node,
-                        expanded: false, // 默认收起
-                        children: node.children ? processTree(node.children) : []
-                    }));
-                };
-
-                const processedTree = processTree(menuTree);
-                setMenuTree(processedTree);
-
-                // 获取角色已有的菜单权限
-                const roleMenuRes = await adminRoleApi.getMenus(record.id) as any;
-
-                if (roleMenuRes.code === 0) {
-                    const menuIds = roleMenuRes.data?.menuIds || [];
-                    setCheckedKeys(menuIds);
-                }
+            if (roleMenuRes.code === 0) {
+                setCheckedKeys(roleMenuRes.data?.menuIds || []);
+            } else {
+                setCheckedKeys([]);
             }
         } catch (error) {
-            console.error('加载菜单错误:', error);
-            message.error('加载菜单失败');
+            console.error(error);
+            message.error('加载权限树失败');
         } finally {
             setMenuLoading(false);
         }
-    };
+    }, [message]);
 
     const toggleExpand = (nodeId: number) => {
-        const toggleNode = (nodes: MenuNode[]): MenuNode[] => {
-            return nodes.map(node => {
+        const toggleNode = (nodes: MenuNode[]): MenuNode[] =>
+            nodes.map((node) => {
                 if (node.id === nodeId) {
                     return { ...node, expanded: !node.expanded };
                 }
@@ -173,357 +246,260 @@ const RoleList: React.FC = () => {
                 }
                 return node;
             });
-        };
-        setMenuTree(toggleNode(menuTree));
+
+        setMenuTree((prev) => toggleNode(prev));
+    };
+
+    const findNode = (nodes: MenuNode[], id: number): MenuNode | null => {
+        for (const node of nodes) {
+            if (node.id === id) {
+                return node;
+            }
+            const found = findNode(node.children, id);
+            if (found) {
+                return found;
+            }
+        }
+        return null;
+    };
+
+    const collectDescendantIds = (node: MenuNode): number[] => {
+        let ids = [node.id];
+        node.children.forEach((child) => {
+            ids = ids.concat(collectDescendantIds(child));
+        });
+        return ids;
     };
 
     const handleCheck = (menuId: number, checked: boolean) => {
-        const getAllChildIds = (node: MenuNode): number[] => {
-            let ids = [node.id];
-            node.children.forEach(child => {
-                ids = ids.concat(getAllChildIds(child));
-            });
-            return ids;
-        };
+        const targetNode = findNode(menuTree, menuId);
+        if (!targetNode) {
+            return;
+        }
 
-        const findNode = (nodes: MenuNode[], id: number): MenuNode | null => {
-            for (const node of nodes) {
-                if (node.id === id) return node;
-                const found = findNode(node.children, id);
-                if (found) return found;
-            }
-            return null;
-        };
-
-        const node = findNode(menuTree, menuId);
-        if (!node) return;
-
-        const affectedIds = getAllChildIds(node);
+        const affectedIds = collectDescendantIds(targetNode);
 
         if (checked) {
-            // 添加该节点及所有子节点
-            const newChecked = Array.from(new Set([...checkedKeys, ...affectedIds]));
-            setCheckedKeys(newChecked);
-        } else {
-            // 移除该节点及所有子节点
-            const newChecked = checkedKeys.filter(id => !affectedIds.includes(id));
-            setCheckedKeys(newChecked);
+            setCheckedKeys((prev) => Array.from(new Set([...prev, ...affectedIds])));
+            return;
         }
+
+        setCheckedKeys((prev) => prev.filter((id) => !affectedIds.includes(id)));
     };
 
-    const isChecked = (menuId: number): boolean => {
-        return checkedKeys.includes(menuId);
-    };
+    const isChecked = (menuId: number) => checkedKeys.includes(menuId);
 
     const isIndeterminate = (node: MenuNode): boolean => {
-        if (node.children.length === 0) return false;
-
-        const getAllChildIds = (n: MenuNode): number[] => {
-            let ids: number[] = [];
-            n.children.forEach(child => {
-                ids.push(child.id);
-                ids = ids.concat(getAllChildIds(child));
-            });
-            return ids;
-        };
-
-        const childIds = getAllChildIds(node);
-        const checkedCount = childIds.filter(id => checkedKeys.includes(id)).length;
-
-        return checkedCount > 0 && checkedCount < childIds.length;
-    };
-
-    const renderMenuNode = (node: MenuNode, level: number = 0): React.ReactNode => {
-        const hasChildren = node.children && node.children.length > 0;
-        const checked = isChecked(node.id);
-        const indeterminate = isIndeterminate(node);
-
-        let icon;
-        let itemStyle: React.CSSProperties = {
-            padding: '8px 12px',
-            borderRadius: 4,
-            marginBottom: 4,
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            backgroundColor: checked ? '#e6f7ff' : 'transparent',
-        };
-
-        let titleStyle: React.CSSProperties = {};
-        let badgeColor = '';
-
-        switch (node.type) {
-            case 1: // 目录
-                icon = node.expanded ? (
-                    <FolderOpenOutlined style={{ color: '#1890ff', fontSize: 16 }} />
-                ) : (
-                    <FolderOutlined style={{ color: '#1890ff', fontSize: 16 }} />
-                );
-                titleStyle = { fontWeight: 600, fontSize: 14, color: '#000' };
-                badgeColor = 'blue';
-                break;
-            case 2: // 菜单
-                icon = <FileOutlined style={{ color: '#52c41a', fontSize: 14 }} />;
-                titleStyle = { fontWeight: 500, fontSize: 13, color: '#333' };
-                badgeColor = 'green';
-                break;
-            case 3: // 按钮
-                icon = <ApiOutlined style={{ color: '#fa8c16', fontSize: 13 }} />;
-                titleStyle = { fontSize: 12, color: '#666' };
-                badgeColor = 'orange';
-                break;
+        if (node.children.length === 0) {
+            return false;
         }
 
-        return (
-            <div key={node.id} style={{ marginLeft: level * 24 }}>
-                <div
-                    style={itemStyle}
-                    onMouseEnter={(e) => {
-                        if (!checked) {
-                            e.currentTarget.style.backgroundColor = '#f5f5f5';
-                        }
-                    }}
-                    onMouseLeave={(e) => {
-                        if (!checked) {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                        }
-                    }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {/* 展开/收起图标 */}
-                        {hasChildren ? (
-                            <span
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleExpand(node.id);
-                                }}
-                                style={{
-                                    cursor: 'pointer',
-                                    width: 16,
-                                    height: 16,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0
-                                }}
-                            >
-                                {node.expanded ? (
-                                    <DownOutlined style={{ fontSize: 12, color: '#1890ff', fontWeight: 'bold' }} />
-                                ) : (
-                                    <RightOutlined style={{ fontSize: 12, color: '#1890ff', fontWeight: 'bold' }} />
-                                )}
-                            </span>
-                        ) : (
-                            <span style={{ width: 16, height: 16, display: 'inline-block', flexShrink: 0 }} />
-                        )}
+        const descendants = collectDescendantIds(node).slice(1);
+        if (!descendants.length) {
+            return false;
+        }
 
-                        {/* 复选框 */}
-                        <Checkbox
-                            checked={checked}
-                            indeterminate={indeterminate}
-                            onChange={(e) => {
-                                e.stopPropagation();
-                                handleCheck(node.id, e.target.checked);
-                            }}
-                        />
-
-                        {/* 图标 */}
-                        <span onClick={() => hasChildren && toggleExpand(node.id)}>
-                            {icon}
-                        </span>
-
-                        {/* 标题 */}
-                        <span style={titleStyle} onClick={() => hasChildren && toggleExpand(node.id)}>
-                            {node.title}
-                        </span>
-
-                        {/* 权限标识 */}
-                        {node.permission && (
-                            <Tag color={badgeColor} style={{ fontSize: 11, margin: 0 }}>
-                                {node.permission}
-                            </Tag>
-                        )}
-
-                        {/* 路由路径 */}
-                        {node.path && (
-                            <Tag color="cyan" style={{ fontSize: 11, margin: 0 }}>
-                                {node.path}
-                            </Tag>
-                        )}
-                    </div>
-                </div>
-
-                {/* 子节点 */}
-                {hasChildren && node.expanded && (
-                    <div>
-                        {node.children.map(child => renderMenuNode(child, level + 1))}
-                    </div>
-                )}
-            </div>
-        );
+        const checkedCount = descendants.filter((id) => checkedKeys.includes(id)).length;
+        return checkedCount > 0 && checkedCount < descendants.length;
     };
 
     const handleSavePermission = async () => {
-        if (!currentRole) return;
+        if (!currentRole) {
+            return;
+        }
 
         try {
             await adminRoleApi.assignMenus(currentRole.id, checkedKeys);
-            message.success('权限分配成功');
+            message.success('角色权限已保存');
             setPermissionModalVisible(false);
-        } catch (error: any) {
-            message.error(error.response?.data?.message || '分配失败');
+        } catch (error) {
+            message.error(readErrorMessage(error, '保存失败'));
         }
     };
 
-    const handleExpandAll = () => {
-        const expandAll = (nodes: MenuNode[]): MenuNode[] => {
-            return nodes.map(node => ({
+    const setExpandedState = (expanded: boolean) => {
+        const walk = (nodes: MenuNode[]): MenuNode[] =>
+            nodes.map((node) => ({
                 ...node,
-                expanded: true,
-                children: expandAll(node.children),
+                expanded,
+                children: walk(node.children),
             }));
-        };
-        setMenuTree(expandAll(menuTree));
+
+        setMenuTree((prev) => walk(prev));
     };
 
-    const handleCollapseAll = () => {
-        const collapseAll = (nodes: MenuNode[]): MenuNode[] => {
-            return nodes.map(node => ({
-                ...node,
-                expanded: false,
-                children: collapseAll(node.children),
-            }));
-        };
-        setMenuTree(collapseAll(menuTree));
-    };
-
-    const columns = [
-        {
-            title: 'ID',
-            dataIndex: 'id',
-            width: 80,
-        },
+    const columns: ColumnsType<Role> = [
         {
             title: '角色名称',
             dataIndex: 'name',
-            width: 150,
+            width: 200,
+            render: (value: string) => <span style={{ fontWeight: 700, color: '#0a1628' }}>{value}</span>,
         },
         {
             title: '角色标识',
             dataIndex: 'key',
-            width: 150,
+            width: 180,
+            render: (value: string) => <InlinePill tone="accent" text={value} monospace />,
         },
         {
             title: '备注',
             dataIndex: 'remark',
             ellipsis: true,
+            render: (value: string) => value || <span style={{ color: '#64748b' }}>暂无备注</span>,
         },
         {
             title: '排序',
             dataIndex: 'sort',
             width: 100,
+            render: (value: number) => <InlinePill tone="muted" text={`#${value}`} />,
         },
         {
             title: '状态',
             dataIndex: 'status',
             width: 100,
-            render: (val: number) => (
-                <Switch
-                    checked={val === 1}
-                    checkedChildren="启用"
-                    unCheckedChildren="禁用"
-                    disabled
-                />
+            render: (value: number) => (
+                <StatusTag status={value === 1 ? 'approved' : 'disabled'} text={value === 1 ? '启用' : '禁用'} />
             ),
         },
         {
             title: '创建时间',
             dataIndex: 'createdAt',
-            width: 170,
-            render: (val: string) => new Date(val).toLocaleString('zh-CN'),
+            width: 180,
+            render: (value: string) => formatDateTime(value),
         },
         {
             title: '操作',
             key: 'action',
             width: 250,
-            fixed: 'right' as const,
-            render: (_: any, record: Role) => (
-                <Space>
-                    <Button
-                        type="link"
-                        size="small"
-                        icon={<SafetyCertificateOutlined />}
-                        onClick={() => handleAssignPermission(record)}
-                    >
+            fixed: 'right',
+            render: (_value, record) => (
+                <Space size={0}>
+                    <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => void handleAssignPermission(record)}>
                         分配权限
                     </Button>
                     <Button type="link" size="small" onClick={() => handleEdit(record)}>
                         编辑
                     </Button>
-                    <Button
-                        type="link"
-                        size="small"
-                        danger
-                        onClick={() => handleDelete(record)}
-                    >
+                    <Button type="link" size="small" danger onClick={() => handleDelete(record)}>
                         删除
                     </Button>
                 </Space>
-            ),
+                ),
         },
     ];
 
-    return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
-                <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-                <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-                    新增角色
-                </Button>
-            </Space>
+    const renderMenuNode = (node: MenuNode, level = 0): React.ReactNode => {
+        const hasChildren = node.children.length > 0;
+        const checked = isChecked(node.id);
+        const indeterminate = isIndeterminate(node);
+        const meta = getNodeMeta(node.type, node.expanded);
 
-            <Table
-                loading={loading}
-                dataSource={roles}
-                columns={columns}
-                rowKey="id"
-                pagination={false}
+        return (
+            <div key={node.id} style={{ marginLeft: level * 24, marginBottom: 6 }}>
+                <div
+                    className={`hz-permission-tree__row${checked ? ' hz-permission-tree__row--checked' : ''}`}
+                    onClick={() => {
+                        if (hasChildren) {
+                            toggleExpand(node.id);
+                        }
+                    }}
+                >
+                    <span
+                        className={`hz-permission-tree__expander${hasChildren ? '' : ' hz-permission-tree__expander--ghost'}`}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            if (hasChildren) {
+                                toggleExpand(node.id);
+                            }
+                        }}
+                    >
+                        {hasChildren ? (node.expanded ? <DownOutlined style={{ fontSize: 10 }} /> : <RightOutlined style={{ fontSize: 10 }} />) : null}
+                    </span>
+
+                    <Checkbox
+                        checked={checked}
+                        indeterminate={indeterminate}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => handleCheck(node.id, event.target.checked)}
+                    />
+
+                    <span className="hz-permission-tree__label">
+                        {meta.icon}
+                        <span className="hz-permission-tree__title" style={{ fontWeight: meta.weight }}>{node.title}</span>
+                    </span>
+
+                    <div className="hz-permission-tree__meta">
+                        {node.permission ? <InlinePill tone="accent" text={node.permission} monospace /> : null}
+                        {node.path ? <InlinePill tone="muted" text={node.path} monospace /> : null}
+                    </div>
+                </div>
+
+                {hasChildren && node.expanded ? node.children.map((child) => renderMenuNode(child, level + 1)) : null}
+            </div>
+        );
+    };
+
+    return (
+        <div className="hz-page-stack">
+            <PageHeader
+                title="角色管理"
+                description="维护后台角色、排序状态与角色级权限分配，确保菜单与按钮权限按角色收口。"
             />
 
-            {/* 角色编辑弹窗 */}
+            <ToolbarCard>
+                <div className="hz-toolbar">
+                    <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>刷新</Button>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+                        新增角色
+                    </Button>
+                </div>
+            </ToolbarCard>
+
+            <Card className="hz-table-card">
+                <Table<Role>
+                    rowKey="id"
+                    loading={loading}
+                    columns={columns}
+                    dataSource={roles}
+                    pagination={{ pageSize: 10, showSizeChanger: false }}
+                    scroll={{ x: 1100 }}
+                />
+            </Card>
+
             <Modal
                 title={editingRole ? '编辑角色' : '新增角色'}
                 open={modalVisible}
-                onOk={handleSubmit}
+                onOk={() => void handleSubmit()}
                 onCancel={() => setModalVisible(false)}
-                width={600}
-                okText="确定"
+                width={620}
+                okText={editingRole ? '保存角色' : '创建角色'}
                 cancelText="取消"
             >
-                <Form form={form} labelCol={{ span: 6 }} wrapperCol={{ span: 16 }}>
-                    <Form.Item
-                        label="角色名称"
-                        name="name"
-                        rules={[{ required: true, message: '请输入角色名称' }]}
-                    >
-                        <Input placeholder="如：产品经理" />
-                    </Form.Item>
+                <Form form={form} layout="vertical">
+                    <Space style={{ width: '100%' }} size={16} align="start">
+                        <Form.Item
+                            label="角色名称"
+                            name="name"
+                            rules={[{ required: true, message: '请输入角色名称' }]}
+                            style={{ flex: 1 }}
+                        >
+                            <Input placeholder="例如：运营管理员" />
+                        </Form.Item>
+                        <Form.Item
+                            label="角色标识"
+                            name="key"
+                            style={{ flex: 1 }}
+                            rules={[
+                                { required: true, message: '请输入角色标识' },
+                                { pattern: /^[a-z_]+$/, message: '只能包含小写字母和下划线' },
+                            ]}
+                        >
+                            <Input placeholder="例如：ops_admin" />
+                        </Form.Item>
+                    </Space>
 
-                    <Form.Item
-                        label="角色标识"
-                        name="key"
-                        rules={[
-                            { required: true, message: '请输入角色标识' },
-                            { pattern: /^[a-z_]+$/, message: '只能包含小写字母和下划线' }
-                        ]}
-                    >
-                        <Input placeholder="如：product_manager" />
-                    </Form.Item>
-
-                    <Form.Item
-                        label="备注"
-                        name="remark"
-                    >
-                        <Input.TextArea placeholder="角色说明" rows={3} />
+                    <Form.Item label="备注说明" name="remark">
+                        <Input.TextArea placeholder="说明该角色面向的业务范围、权限边界和默认职责。" rows={4} />
                     </Form.Item>
 
                     <Form.Item
@@ -537,103 +513,70 @@ const RoleList: React.FC = () => {
                 </Form>
             </Modal>
 
-            {/* 权限分配弹窗 - 文件夹风格 */}
             <Modal
                 title={
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <SafetyCertificateOutlined />
-                        <span>分配权限 - {currentRole?.name}</span>
-                    </div>
+                    <Space size={10}>
+                        <SafetyCertificateOutlined style={{ color: '#2563eb' }} />
+                        <span>分配权限</span>
+                        {currentRole ? <InlinePill tone="accent" text={currentRole.name} /> : null}
+                    </Space>
                 }
                 open={permissionModalVisible}
-                onOk={handleSavePermission}
+                onOk={() => void handleSavePermission()}
                 onCancel={() => setPermissionModalVisible(false)}
-                width={900}
-                okText="保存"
+                width={960}
+                okText="保存权限"
                 cancelText="取消"
-                styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
             >
                 <Spin spinning={menuLoading}>
-                    {/* 统计信息 */}
-                    <Alert
-                        message={
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                                <span>已选择 <strong style={{ color: '#1890ff', fontSize: 16 }}>{checkedKeys.length}</strong> 项权限</span>
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        <Alert
+                            type="info"
+                            showIcon={false}
+                            message={(
+                                <Space size={10}>
+                                    <CheckCircleOutlined style={{ color: '#059669' }} />
+                                    <span>已选择 <strong style={{ color: '#2563eb', fontSize: 16 }}>{checkedKeys.length}</strong> 项权限</span>
+                                </Space>
+                            )}
+                        />
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                            <div className="hz-legend">
+                                <span className="hz-legend__item">
+                                    <span className="hz-legend__dot" style={{ background: '#2563eb' }} />
+                                    目录节点
+                                </span>
+                                <span className="hz-legend__item">
+                                    <span className="hz-legend__dot" style={{ background: '#059669' }} />
+                                    菜单节点
+                                </span>
+                                <span className="hz-legend__item">
+                                    <span className="hz-legend__dot" style={{ background: '#d97706' }} />
+                                    按钮权限
+                                </span>
                             </div>
-                        }
-                        type="info"
-                        showIcon={false}
-                        style={{ marginBottom: 16 }}
-                    />
 
-                    {/* 操作按钮 */}
-                    <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
-                        <Button size="small" onClick={handleExpandAll}>
-                            全部展开
-                        </Button>
-                        <Button size="small" onClick={handleCollapseAll}>
-                            全部收起
-                        </Button>
-                    </div>
+                            <Space>
+                                <Button onClick={() => setExpandedState(true)}>全部展开</Button>
+                                <Button onClick={() => setExpandedState(false)}>全部收起</Button>
+                            </Space>
+                        </div>
 
-                    <Divider style={{ margin: '12px 0' }}>权限目录</Divider>
+                        <div className="hz-permission-tree">
+                            {menuTree.map((node) => renderMenuNode(node))}
+                        </div>
 
-                    {/* 图例说明 */}
-                    <div style={{
-                        marginBottom: 16,
-                        padding: 10,
-                        background: '#fafafa',
-                        borderRadius: 4,
-                        fontSize: 12
-                    }}>
-                        <Space size={20}>
-                            <span>
-                                <FolderOutlined style={{ color: '#1890ff', marginRight: 4 }} />
-                                目录
-                            </span>
-                            <span>
-                                <FileOutlined style={{ color: '#52c41a', marginRight: 4 }} />
-                                菜单
-                            </span>
-                            <span>
-                                <ApiOutlined style={{ color: '#fa8c16', marginRight: 4 }} />
-                                按钮
-                            </span>
-                        </Space>
-                    </div>
-
-                    {/* 权限树 - 文件夹风格 */}
-                    <div style={{
-                        border: '1px solid #d9d9d9',
-                        borderRadius: 4,
-                        padding: 16,
-                        background: '#fff',
-                        minHeight: 400,
-                        maxHeight: 500,
-                        overflowY: 'auto'
-                    }}>
-                        {menuTree.map(node => renderMenuNode(node, 0))}
-                    </div>
-
-                    {/* 底部说明 */}
-                    <div style={{
-                        marginTop: 16,
-                        padding: 12,
-                        background: '#f0f5ff',
-                        border: '1px solid #adc6ff',
-                        borderRadius: 4,
-                        fontSize: 12,
-                        color: '#666'
-                    }}>
-                        <div style={{ marginBottom: 4 }}>💡 <strong>使用提示：</strong></div>
-                        <div>• 点击 ▶/▼ 箭头或文件夹图标展开/收起目录</div>
-                        <div>• 勾选复选框选择权限（会自动勾选所有子权限）</div>
-                        <div>• 已选中的项目会高亮显示为浅蓝色背景</div>
-                    </div>
+                        <div className="hz-panel-muted">
+                            <div style={{ fontWeight: 700, color: '#0a1628', marginBottom: 8 }}>分配提示</div>
+                            <div style={{ color: '#64748b', fontSize: '0.82rem', lineHeight: 1.75 }}>
+                                勾选父级权限时会一并勾选全部子权限；取消父级权限时也会同步移除子权限。请按角色职责范围授予最小必要权限。
+                            </div>
+                        </div>
+                    </Space>
                 </Spin>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

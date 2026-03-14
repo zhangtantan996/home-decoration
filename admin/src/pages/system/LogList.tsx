@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Button, Space, message, Tag, Select } from 'antd';
+import { Table, Card, Button, message, Select } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { adminLogApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
+import StatusTag from '../../components/StatusTag';
 
 interface AdminLog {
     id: number;
@@ -14,14 +17,6 @@ interface AdminLog {
     ip: string;
     createdAt: string;
 }
-
-const actionColorMap: Record<string, string> = {
-    'create': 'green',
-    'update': 'blue',
-    'delete': 'red',
-    'verify': 'orange',
-    'login': 'purple',
-};
 
 const LogList: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -57,7 +52,12 @@ const LogList: React.FC = () => {
         {
             title: '操作',
             dataIndex: 'action',
-            render: (val: string) => <Tag color={actionColorMap[val] || 'default'}>{val}</Tag>,
+            render: (val: string) => (
+                <StatusTag
+                    status={val === 'create' ? 'approved' : val === 'delete' ? 'rejected' : val === 'verify' ? 'warning' : 'info'}
+                    text={val}
+                />
+            ),
         },
         { title: '目标类型', dataIndex: 'targetType' },
         { title: '目标ID', dataIndex: 'targetId' },
@@ -70,8 +70,14 @@ const LogList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="操作日志"
+                description="查看后台关键操作轨迹，便于审计回溯与异常排查。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     placeholder="操作类型"
                     allowClear
@@ -87,22 +93,25 @@ const LogList: React.FC = () => {
                     ]}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                columns={columns}
-                dataSource={logs}
-                rowKey="id"
-                loading={loading}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
-            />
-        </Card>
+            <Card className="hz-table-card">
+                <Table
+                    columns={columns}
+                    dataSource={logs}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
+        </div>
     );
 };
 

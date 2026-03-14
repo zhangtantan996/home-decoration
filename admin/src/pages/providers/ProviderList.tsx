@@ -1,34 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Table, Card, Select, Tag, Button, Space, message, Switch, Descriptions, Modal, Form, Input, InputNumber } from 'antd';
+import { Table, Card, Select, Tag, Button, Space, message, Switch, Descriptions, Modal, Form, Input, InputNumber, Tooltip, Typography } from 'antd';
 import { ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { adminProviderApi } from '../../services/api';
+import { adminProviderApi, type AdminProviderListItem } from '../../services/api';
 import { PermissionWrapper } from '../../components/PermissionWrapper';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
+import AuditStatusSummary from '../audits/components/AuditStatusSummary';
+import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
 
-interface Provider {
-    id: number;
-    userId: number;
-    providerType: number;
-    subType: string;
-    companyName: string;
-    rating: number;
-    verified: boolean;
-    status: number;
-    specialty: string;
-    yearsExperience: number;
-    createdAt: string;
-    restoreRate?: number;
-    budgetControl?: number;
-    // 移动端详情页字段
-    priceMin: number;
-    priceMax: number;
-    priceUnit: string;
-    coverImage: string;
-    serviceIntro: string;
-    teamSize: number;
-    establishedYear: number;
-    certifications: string;
-    serviceArea: string;
+interface Provider extends AdminProviderListItem {
 }
 
 const providerTypeMap: Record<number, { text: string; color: string }> = {
@@ -41,6 +22,56 @@ const subTypeMap: Record<string, string> = {
     personal: '个人',
     studio: '工作室',
     company: '公司',
+};
+
+const { Text } = Typography;
+
+const getProviderDisplayName = (provider: Provider) => {
+    if (provider.subType === 'personal') {
+        return provider.realName || provider.companyName || '-';
+    }
+    return provider.companyName || provider.realName || '-';
+};
+
+const getProviderPrincipalName = (provider: Provider) => provider.realName || '-';
+
+const resolveVisibilityTag = (provider: Provider) => {
+    const isVisible = provider.visibility?.publicVisible;
+    if (isVisible === true) {
+        return <Tag color="success">可见</Tag>;
+    }
+    if (isVisible === false) {
+        return <Tag color="warning">不可见</Tag>;
+    }
+    return <Tag>未知</Tag>;
+};
+
+const renderBlockerSummary = (provider: Provider) => {
+    const blockers = provider.visibility?.blockers || [];
+    if (blockers.length === 0) {
+        return <Text type="secondary">-</Text>;
+    }
+
+    const first = blockers[0]?.message || '-';
+    const summary = blockers.length > 1 ? `${first} + ${blockers.length - 1} 条` : first;
+
+    return (
+        <Tooltip
+            title={
+                <div style={{ maxWidth: 360 }}>
+                    {blockers.map((item) => (
+                        <div key={item.code || item.message} style={{ marginBottom: 4, whiteSpace: 'normal' }}>
+                            {item.message}
+                        </div>
+                    ))}
+                </div>
+            }
+        >
+            <Text ellipsis style={{ display: 'inline-block', maxWidth: 240 }}>
+                {summary}
+            </Text>
+        </Tooltip>
+    );
 };
 
 const ProviderList: React.FC = () => {
@@ -175,9 +206,9 @@ const ProviderList: React.FC = () => {
             width: 80,
         },
         {
-            title: '名称',
-            dataIndex: 'companyName',
-            render: (val: string) => val || '-',
+            title: '主体名称',
+            key: 'displayName',
+            render: (_: unknown, record: Provider) => getProviderDisplayName(record),
         },
         {
             title: '类型',
@@ -191,6 +222,11 @@ const ProviderList: React.FC = () => {
             title: '子类型',
             dataIndex: 'subType',
             render: (val: string) => subTypeMap[val] || val || '-',
+        },
+        {
+            title: '负责人',
+            key: 'principalName',
+            render: (_: unknown, record: Provider) => getProviderPrincipalName(record),
         },
         {
             title: '评分',
@@ -249,6 +285,23 @@ const ProviderList: React.FC = () => {
             ),
         },
         {
+            title: '公开状态',
+            key: 'publicVisible',
+            width: 120,
+            render: (_: any, record: Provider) => (
+                <Space size={4} wrap>
+                    {resolveVisibilityTag(record)}
+                    {record.legacyInfo?.isLegacyPath && <Tag color="gold">legacy</Tag>}
+                </Space>
+            ),
+        },
+        {
+            title: '阻断摘要',
+            key: 'blockerSummary',
+            ellipsis: true,
+            render: (_: any, record: Provider) => renderBlockerSummary(record),
+        },
+        {
             title: '操作',
             key: 'action',
             render: (_: any, record: Provider) => (
@@ -273,8 +326,14 @@ const ProviderList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="服务商管理"
+                description="统一维护设计师、工长与装修公司资料，处理认证、封禁与详情查看。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 {!location.pathname.match(/(designers|companies|foremen)/) && (
                     <Select
                         placeholder="服务商类型"
@@ -312,21 +371,25 @@ const ProviderList: React.FC = () => {
                         新增服务商
                     </Button>
                 </PermissionWrapper>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                columns={columns}
-                dataSource={providers}
-                rowKey="id"
-                loading={loading}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    columns={columns}
+                    dataSource={providers}
+                    rowKey="id"
+                    loading={loading}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title="服务商详情"
@@ -336,41 +399,65 @@ const ProviderList: React.FC = () => {
                 width={800}
             >
                 {currentProvider && (
-                    <Descriptions column={2} bordered size="small">
-                        <Descriptions.Item label="ID">{currentProvider.id}</Descriptions.Item>
-                        <Descriptions.Item label="名称">{currentProvider.companyName || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="类型">
-                            {providerTypeMap[currentProvider.providerType]?.text || '-'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="子类型">{subTypeMap[currentProvider.subType] || currentProvider.subType || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="评分">{currentProvider.rating?.toFixed(1)}</Descriptions.Item>
-                        <Descriptions.Item label="经验">{currentProvider.yearsExperience}年</Descriptions.Item>
-                        <Descriptions.Item label="专长" span={2}>{currentProvider.specialty || '-'}</Descriptions.Item>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <AuditStatusSummary
+                            visibility={currentProvider.visibility}
+                            rejectResubmittable={currentProvider.actions?.rejectResubmittable}
+                            legacyInfo={currentProvider.legacyInfo}
+                        />
+                        <Descriptions column={2} bordered size="small">
+                            <Descriptions.Item label="ID">{currentProvider.id}</Descriptions.Item>
+                            <Descriptions.Item label="主体名称">{getProviderDisplayName(currentProvider)}</Descriptions.Item>
+                            <Descriptions.Item label="类型">
+                                {providerTypeMap[currentProvider.providerType]?.text || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="子类型">{subTypeMap[currentProvider.subType] || currentProvider.subType || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="负责人">{getProviderPrincipalName(currentProvider)}</Descriptions.Item>
+                            <Descriptions.Item label="评分">{currentProvider.rating?.toFixed(1)}</Descriptions.Item>
+                            <Descriptions.Item label="经验">{currentProvider.yearsExperience}年</Descriptions.Item>
+                            <Descriptions.Item label="专长" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.specialty || '-'}
+                                </div>
+                            </Descriptions.Item>
 
-                        {/* 移动端详情页字段 */}
-                        <Descriptions.Item label="价格范围" span={2}>
-                            {currentProvider.priceMin && currentProvider.priceMax
-                                ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ''}`
-                                : '-'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="服务介绍" span={2}>{currentProvider.serviceIntro || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="服务区域" span={2}>{currentProvider.serviceArea || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="团队规模">{currentProvider.teamSize || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="成立年份">{currentProvider.establishedYear || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="资质认证" span={2}>{currentProvider.certifications || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="封面图" span={2}>
-                            {currentProvider.coverImage ? (
-                                <img src={currentProvider.coverImage} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
-                            ) : '-'}
-                        </Descriptions.Item>
+                            <Descriptions.Item label="价格范围" span={2}>
+                                {currentProvider.priceMin && currentProvider.priceMax
+                                    ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ''}`
+                                    : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="服务介绍" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.serviceIntro || '-'}
+                                </div>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="服务区域" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.serviceArea || '-'}
+                                </div>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="团队规模">{currentProvider.teamSize || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="成立年份">{currentProvider.establishedYear || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="资质认证" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.certifications || '-'}
+                                </div>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="封面图" span={2}>
+                                {currentProvider.coverImage ? (
+                                    <img src={currentProvider.coverImage} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
+                                ) : '-'}
+                            </Descriptions.Item>
 
-                        <Descriptions.Item label="认证">
-                            {currentProvider.verified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="状态">
-                            {currentProvider.status === 1 ? <Tag color="green">正常</Tag> : <Tag color="red">封禁</Tag>}
-                        </Descriptions.Item>
-                    </Descriptions>
+                            <Descriptions.Item label="认证">
+                                {currentProvider.verified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="状态">
+                                {currentProvider.status === 1 ? <Tag color="green">正常</Tag> : <Tag color="red">封禁</Tag>}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        <VisibilityStatusPanel visibility={currentProvider.visibility} legacyInfo={currentProvider.legacyInfo} />
+                    </Space>
                 )}
             </Modal>
 
@@ -492,7 +579,7 @@ const ProviderList: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

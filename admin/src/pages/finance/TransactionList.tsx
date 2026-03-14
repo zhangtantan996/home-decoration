@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Select, Tag, Button, Space, message, DatePicker } from 'antd';
+import { Table, Card, Select, Button, Space, message, DatePicker } from 'antd';
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { adminFinanceApi } from '../../services/api';
 import type { Dayjs } from 'dayjs';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
+import StatusTag from '../../components/StatusTag';
 
 const { RangePicker } = DatePicker;
 
@@ -85,7 +88,7 @@ const TransactionList: React.FC = () => {
             dataIndex: 'type',
             render: (val: string) => {
                 const config = typeMap[val];
-                return config ? <Tag color={config.color}>{config.text}</Tag> : val;
+                return config ? <StatusTag status="info" text={config.text} /> : val;
             },
         },
         {
@@ -115,7 +118,9 @@ const TransactionList: React.FC = () => {
             dataIndex: 'status',
             render: (val: number) => {
                 const config = statusMap[val];
-                return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
+                return config
+                    ? <StatusTag status={val === 1 ? 'approved' : val === 2 ? 'rejected' : 'warning'} text={config.text} />
+                    : '-';
             },
         },
         {
@@ -142,8 +147,14 @@ const TransactionList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="交易记录"
+                description="统一查看充值、提现、转账与退款流水，并支持筛选与导出。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     placeholder="交易类型"
                     value={typeFilter}
@@ -164,22 +175,25 @@ const TransactionList: React.FC = () => {
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
                 <Button icon={<DownloadOutlined />} onClick={handleExport}>导出</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                loading={loading}
-                dataSource={transactions}
-                columns={columns}
-                rowKey="id"
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (total) => `共 ${total} 条`,
-                }}
-            />
-        </Card>
+            <Card className="hz-table-card">
+                <Table
+                    loading={loading}
+                    dataSource={transactions}
+                    columns={columns}
+                    rowKey="id"
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (total) => `共 ${total} 条`,
+                    }}
+                />
+            </Card>
+        </div>
     );
 };
 

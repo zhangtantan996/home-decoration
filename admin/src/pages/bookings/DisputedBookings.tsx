@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Table, Tag, Button, Space, Modal, Form, Input, Select, message, Descriptions, Timeline, Spin, Image } from 'antd';
 import { ExclamationCircleOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { adminDisputeApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
 
 const { TextArea } = Input;
 
@@ -160,28 +161,33 @@ const DisputedBookings: React.FC = () => {
     ];
 
     return (
-        <Card
-            title={
-                <Space>
-                    <ExclamationCircleOutlined style={{ color: '#faad14' }} />
-                    <span>争议预约管理</span>
-                    <Tag color="warning">{total} 条待处理</Tag>
-                </Space>
-            }
-        >
-            <Table
-                loading={loading}
-                columns={columns}
-                dataSource={data}
-                rowKey="id"
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
+        <div className="hz-page-stack">
+            <PageHeader
+                title="争议预约管理"
+                description="集中处理反复拒绝或存在争议的预约单，统一完成裁定和退款。"
+                extra={(
+                    <Space>
+                        <ExclamationCircleOutlined style={{ color: '#faad14' }} />
+                        <Tag color="warning">{total} 条待处理</Tag>
+                    </Space>
+                )}
             />
+
+            <Card className="hz-table-card">
+                <Table
+                    loading={loading}
+                    columns={columns}
+                    dataSource={data}
+                    rowKey="id"
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
 
             {/* 详情弹窗 */}
             <Modal
@@ -335,7 +341,7 @@ const DisputedBookings: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

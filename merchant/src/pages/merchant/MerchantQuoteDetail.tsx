@@ -12,6 +12,7 @@ import {
     Table,
     Tag,
     Typography,
+    Alert,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -25,8 +26,13 @@ import {
 const { Title, Text } = Typography;
 
 type EditableRow = QuoteListItem & {
+    generatedUnitPriceCent?: number;
     unitPriceCent?: number;
     amountCent?: number;
+    adjustedFlag?: boolean;
+    missingPriceFlag?: boolean;
+    minChargeAppliedFlag?: boolean;
+    missingMappingFlag?: boolean;
     remark?: string;
 };
 
@@ -111,8 +117,13 @@ const MerchantQuoteDetail: React.FC = () => {
                 const amountCent = matched?.amountCent ?? computeAmountCent(item.quantity, unitPriceCent);
                 return {
                     ...item,
+                    generatedUnitPriceCent: matched?.generatedUnitPriceCent,
                     unitPriceCent,
                     amountCent,
+                    adjustedFlag: matched?.adjustedFlag,
+                    missingPriceFlag: matched?.missingPriceFlag,
+                    minChargeAppliedFlag: matched?.minChargeAppliedFlag,
+                    missingMappingFlag: matched?.missingMappingFlag ?? item.missingMappingFlag,
                     remark: matched?.remark || '',
                 };
             });
@@ -263,11 +274,25 @@ const MerchantQuoteDetail: React.FC = () => {
                 />
             ),
         },
+        {
+            title: '系统标记',
+            key: 'flags',
+            width: 180,
+            render: (_: unknown, record) => (
+                <Space wrap>
+                    {record.missingMappingFlag && <Tag color="red">缺标准映射</Tag>}
+                    {record.missingPriceFlag && <Tag color="orange">缺工长价格</Tag>}
+                    {record.minChargeAppliedFlag && <Tag color="blue">启用起步价</Tag>}
+                    {record.adjustedFlag && <Tag color="green">已人工调整</Tag>}
+                </Space>
+            ),
+        },
     ], [canEdit]);
 
     const quoteListStatus = detail?.quoteList?.status || '';
     const quoteStatusTag = statusLabel(quoteListStatus);
     const submissionStatus = detail?.submission?.status || '-';
+    const generationStatus = detail?.submission?.generationStatus || '-';
     const invitationStatus = detail?.invitation?.status || '-';
 
     return (
@@ -304,9 +329,10 @@ const MerchantQuoteDetail: React.FC = () => {
 
             <Card style={{ marginBottom: 16 }} loading={loading}>
                 <Descriptions column={3} size="small">
-                    <Descriptions.Item label="清单状态">{quoteStatusTag.text}</Descriptions.Item>
-                    <Descriptions.Item label="我的报价状态">{submissionStatus}</Descriptions.Item>
-                    <Descriptions.Item label="邀请状态">{invitationStatus}</Descriptions.Item>
+                            <Descriptions.Item label="清单状态">{quoteStatusTag.text}</Descriptions.Item>
+                            <Descriptions.Item label="我的报价状态">{submissionStatus}</Descriptions.Item>
+                            <Descriptions.Item label="草稿生成状态">{generationStatus}</Descriptions.Item>
+                            <Descriptions.Item label="邀请状态">{invitationStatus}</Descriptions.Item>
                     <Descriptions.Item label="截止时间">
                         {detail?.quoteList?.deadlineAt ? detail.quoteList.deadlineAt.replace('T', ' ').replace('Z', '') : '-'}
                     </Descriptions.Item>
@@ -320,6 +346,15 @@ const MerchantQuoteDetail: React.FC = () => {
                         </Text>
                     </div>
                 )}
+                {rows.some((row) => row.missingMappingFlag || row.missingPriceFlag) && (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginTop: 16 }}
+                        message="存在缺失映射或缺失价格的条目"
+                        description="这类条目不会静默吞掉；请补充价格或联系平台整理标准项映射后再提交正式报价。"
+                    />
+                )}
             </Card>
 
             <Card>
@@ -329,6 +364,11 @@ const MerchantQuoteDetail: React.FC = () => {
                     columns={columns}
                     dataSource={rows}
                     pagination={{ pageSize: 20, showSizeChanger: false }}
+                    rowClassName={(record) => {
+                        if (record.missingMappingFlag || record.missingPriceFlag) return 'quote-row-warning';
+                        if (record.adjustedFlag) return 'quote-row-adjusted';
+                        return '';
+                    }}
                 />
             </Card>
         </div>
@@ -336,4 +376,3 @@ const MerchantQuoteDetail: React.FC = () => {
 };
 
 export default MerchantQuoteDetail;
-

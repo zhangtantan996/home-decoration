@@ -505,7 +505,9 @@ export const merchantProposalApi = {
     list: () => merchantApi.get('/merchant/proposals'),
     detail: (id: number) => merchantApi.get(`/merchant/proposals/${id}`),
     submit: (data: {
-        bookingId: number;
+        sourceType?: 'booking' | 'demand';
+        bookingId?: number;
+        demandMatchId?: number;
         summary: string;
         designFee: number;
         constructionFee: number;
@@ -514,6 +516,9 @@ export const merchantProposalApi = {
         attachments?: string;
     }) => merchantApi.post('/merchant/proposals', data),
     update: (id: number, data: {
+        sourceType?: 'booking' | 'demand';
+        bookingId?: number;
+        demandMatchId?: number;
         summary: string;
         designFee: number;
         constructionFee: number;
@@ -537,12 +542,110 @@ export const merchantProposalApi = {
     getRejectionInfo: (id: number) => merchantApi.get(`/merchant/proposals/${id}/rejection-info`),
 };
 
+export interface MerchantLeadDemandSummary {
+    id: number;
+    demandType: string;
+    title: string;
+    city: string;
+    district: string;
+    area: number;
+    budgetMin: number;
+    budgetMax: number;
+    timeline: string;
+    status: string;
+    matchedCount: number;
+    maxMatch: number;
+    reviewNote: string;
+    closedReason: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface MerchantLeadAttachment {
+    url: string;
+    name: string;
+    size: number;
+}
+
+export interface MerchantLeadItem {
+    id: number;
+    status: string;
+    assignedAt?: string;
+    responseDeadline?: string;
+    respondedAt?: string;
+    declineReason?: string;
+    proposalId?: number;
+    demand: MerchantLeadDemandSummary;
+    attachments: MerchantLeadAttachment[];
+}
+
+export const merchantLeadApi = {
+    list: async (params?: { status?: string; page?: number; pageSize?: number }) =>
+        unwrapData<MerchantIncomeListData<MerchantLeadItem>>(await merchantApi.get('/merchant/leads', { params }), '获取线索列表失败'),
+    accept: async (id: number) =>
+        unwrapData<{ id: number; status: string }>(await merchantApi.post(`/merchant/leads/${id}/accept`), '接受线索失败'),
+    decline: async (id: number, reason: string) =>
+        unwrapData<{ id: number; status: string; declineReason?: string }>(await merchantApi.post(`/merchant/leads/${id}/decline`, { reason }), '拒绝线索失败'),
+};
+
+export interface MerchantComplaintItem {
+    id: number;
+    projectId: number;
+    category: string;
+    title: string;
+    description: string;
+    status: string;
+    resolution?: string;
+    merchantResponse?: string;
+    freezePayment?: boolean;
+    createdAt: string;
+    updatedAt?: string;
+}
+
+export const merchantComplaintApi = {
+    list: async () =>
+        unwrapData<MerchantComplaintItem[]>(await merchantApi.get('/merchant/complaints'), '获取投诉列表失败'),
+    respond: async (id: number, response: string) =>
+        unwrapData<MerchantComplaintItem>(await merchantApi.post(`/merchant/complaints/${id}/respond`, { response }), '提交投诉回应失败'),
+};
+
+export interface MerchantContractPayload {
+    projectId?: number;
+    demandId?: number;
+    userId?: number;
+    title: string;
+    totalAmount: number;
+    paymentPlan: Array<Record<string, unknown>>;
+    attachmentUrls?: string[];
+    termsSnapshot?: Record<string, unknown>;
+}
+
+export interface MerchantContractRecord {
+    id: number;
+    contractNo: string;
+    status: string;
+    title: string;
+    totalAmount: number;
+    projectId?: number;
+    demandId?: number;
+    userId?: number;
+    paymentPlan?: string;
+    attachmentUrls?: string;
+    confirmedAt?: string | null;
+}
+
+export const merchantContractApi = {
+    create: async (data: MerchantContractPayload) =>
+        unwrapData<MerchantContractRecord>(await merchantApi.post('/contracts', data), '创建合同失败'),
+};
+
 // 订单管理
 export const merchantOrderApi = {
     list: () => merchantApi.get('/merchant/orders'),
 };
 
 export interface MerchantDashboardStats {
+    pendingLeads: number;
     todayBookings: number;
     pendingProposals: number;
     activeProjects: number;

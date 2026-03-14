@@ -14,6 +14,8 @@ import {
 } from '@ant-design/icons';
 import { adminProjectApi } from '../../services/api';
 import dayjs from 'dayjs';
+import PageHeader from '../../components/PageHeader';
+import StatusTag from '../../components/StatusTag';
 
 const { TextArea } = Input;
 
@@ -240,16 +242,11 @@ const ProjectDetail: React.FC = () => {
     }));
 
     return (
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
-            {/* Header / Basic Info */}
-            <Card
-                title={
-                    <Space>
-                        <span>{project.name}</span>
-                        <Tag color={statusMap[project.status]?.color}>{statusMap[project.status]?.text}</Tag>
-                    </Space>
-                }
-                extra={
+        <div className="hz-page-stack">
+            <PageHeader
+                title={project.name}
+                description="查看项目进度、阶段任务、施工日志与托管资金概况。"
+                extra={(
                     <Space>
                         {project.status === 0 && (
                             <Button type="primary" onClick={() => handleStatusChange(1)}>开始施工</Button>
@@ -262,8 +259,16 @@ const ProjectDetail: React.FC = () => {
                         )}
                         <Button onClick={() => navigate(-1)}>返回</Button>
                     </Space>
-                }
-            >
+                )}
+            />
+
+            <Card className="hz-panel-card">
+                <div style={{ marginBottom: 16 }}>
+                    <StatusTag
+                        status={project.status === 2 ? 'completed' : project.status === 3 ? 'rejected' : 'warning'}
+                        text={statusMap[project.status]?.text || '未知状态'}
+                    />
+                </div>
                 <Descriptions column={3}>
                     <Descriptions.Item label="ID">{project.id}</Descriptions.Item>
                     <Descriptions.Item label="业主">{project.ownerName}</Descriptions.Item>
@@ -276,7 +281,7 @@ const ProjectDetail: React.FC = () => {
             </Card>
 
             {/* Progress / Phases */}
-            <Card title="项目进度">
+            <Card className="hz-panel-card" title="项目进度">
                 {phases.length > 0 && (
                     <Steps
                         current={currentPhaseIndex >= 0 ? currentPhaseIndex : 0}
@@ -446,7 +451,7 @@ const ProjectDetail: React.FC = () => {
                     {/* TODO: 图片上传功能后续添加 */}
                 </Form>
             </Modal>
-        </Space>
+        </div>
     );
 };
 

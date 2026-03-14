@@ -52,6 +52,8 @@ export interface QuoteListSummary {
     updatedAt?: string;
     mySubmissionStatus?: string;
     myTotalCent?: number;
+    userConfirmationStatus?: string;
+    activeSubmissionId?: number;
 }
 
 export interface QuoteListItem {
@@ -64,20 +66,32 @@ export interface QuoteListItem {
     quantity: number;
     pricingNote?: string;
     sortOrder?: number;
+    missingMappingFlag?: boolean;
 }
 
 export interface QuoteSubmissionItem {
+    id?: number;
     quoteListItemId: number;
+    generatedUnitPriceCent?: number;
     unitPriceCent?: number;
     amountCent?: number;
+    adjustedFlag?: boolean;
+    missingPriceFlag?: boolean;
+    missingMappingFlag?: boolean;
+    minChargeAppliedFlag?: boolean;
     remark?: string;
 }
 
 export interface QuoteSubmission {
     status: string;
+    taskStatus?: string;
+    generationStatus?: string;
     totalCent?: number;
     currency?: string;
+    generatedFromPriceBookId?: number;
     items?: QuoteSubmissionItem[];
+    estimatedDays?: number;
+    remark?: string;
 }
 
 export interface MerchantQuoteListDetail {
@@ -94,16 +108,65 @@ export interface MerchantQuoteListDetail {
     submission?: QuoteSubmission;
 }
 
+export interface QuotePriceBookItem {
+    id?: number;
+    standardItemId: number;
+    priceTierId?: number;
+    unit: string;
+    unitPriceCent: number;
+    minChargeCent: number;
+    remark?: string;
+    status?: number;
+}
+
+export interface QuotePriceBookDetail {
+    book: {
+        id?: number;
+        providerId?: number;
+        status?: string;
+        version?: number;
+        effectiveFrom?: string;
+        effectiveTo?: string;
+        remark?: string;
+    };
+    items: QuotePriceBookItem[];
+}
+
 export const merchantQuoteApi = {
+    getPriceBook: async () =>
+        unwrapData<QuotePriceBookDetail>(
+            await quoteApi.get('/merchant/price-book'),
+            '获取工长价格库失败'
+        ),
+    savePriceBook: async (payload: { remark?: string; items: QuotePriceBookItem[] }) =>
+        unwrapData<QuotePriceBookDetail>(
+            await quoteApi.put('/merchant/price-book', payload),
+            '保存工长价格库失败'
+        ),
+    publishPriceBook: async () =>
+        unwrapData<QuotePriceBookDetail>(
+            await quoteApi.post('/merchant/price-book/publish'),
+            '发布工长价格库失败'
+        ),
     listQuoteLists: async () =>
         unwrapData<{ list: QuoteListSummary[]; total?: number; page?: number; pageSize?: number }>(
             await quoteApi.get('/merchant/quote-lists'),
             '获取报价清单失败'
         ),
+    listQuoteTasks: async () =>
+        unwrapData<{ list: QuoteListSummary[]; total?: number; page?: number; pageSize?: number }>(
+            await quoteApi.get('/merchant/quote-tasks'),
+            '获取报价任务失败'
+        ),
     getQuoteListDetail: async (id: number) =>
         unwrapData<MerchantQuoteListDetail>(
             await quoteApi.get(`/merchant/quote-lists/${id}`),
             '获取报价清单详情失败'
+        ),
+    getQuoteTaskDetail: async (id: number) =>
+        unwrapData<MerchantQuoteListDetail>(
+            await quoteApi.get(`/merchant/quote-tasks/${id}`),
+            '获取报价任务详情失败'
         ),
     saveSubmissionDraft: async (
         quoteListId: number,

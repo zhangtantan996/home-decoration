@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { message } from 'antd';
-import { getApiBaseUrl } from '../utils/env';
+import { getApiBaseUrl, getLoginPath } from '../utils/env';
 import { useAuthStore } from '../stores/authStore';
 
 const API_BASE_URL = getApiBaseUrl();
@@ -69,26 +69,16 @@ const redirectToAdminLogin = () => {
         return;
     }
 
-    if (!window.location.pathname.includes('/login')) {
-        window.location.replace('/admin/login');
+    const loginPath = getLoginPath();
+    if (!window.location.pathname.endsWith('/login')) {
+        window.location.replace(loginPath);
     }
 };
 
 // 请求拦截器
 api.interceptors.request.use(
     (config) => {
-        const pathname = window.location.pathname;
-        let token: string | null = null;
-
-        // Keep admin/merchant sessions isolated to avoid cross-token pollution.
-        if (pathname.startsWith('/admin')) {
-            token = localStorage.getItem('admin_token');
-        } else if (pathname.startsWith('/merchant')) {
-            token = localStorage.getItem('merchant_token');
-        } else {
-            token = localStorage.getItem('token') || localStorage.getItem('admin_token') || localStorage.getItem('merchant_token');
-        }
-
+        const token = localStorage.getItem('admin_token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
@@ -102,15 +92,12 @@ api.interceptors.response.use(
     <T>(response: { data: T }) => response.data,
     (error) => {
         const status = getApiErrorStatus(error);
-        const pathname = typeof window === 'undefined' ? '' : window.location.pathname;
-        const isAdminPath = pathname.startsWith('/admin');
-
-        if (isAdminPath && status === 401) {
+        if (status === 401) {
             markAdminErrorHandled(error, 401);
             redirectToAdminLogin();
         }
 
-        if (isAdminPath && status === 403) {
+        if (status === 403) {
             markAdminErrorHandled(error, 403);
             notifyAdminAccessDenied();
         }
@@ -126,7 +113,14 @@ export const authApi = {
     login: (data: { phone: string; code: string }) => api.post('/auth/login', data),
     sendCode: (
         phone: string,
-        purpose: 'login' | 'register' | 'merchant_withdraw' | 'merchant_bank_bind' | 'identity_apply' = 'login',
+        purpose:
+            | 'login'
+            | 'register'
+            | 'identity_apply'
+            | 'merchant_withdraw'
+            | 'merchant_bank_bind'
+            | 'change_phone'
+            | 'delete_account' = 'login',
         captchaToken?: string,
     ) => api.post('/auth/send-code', { phone, purpose, captchaToken }),
 };
@@ -165,6 +159,124 @@ export const adminProjectApi = {
     updateLog: (logId: string | number, data: { title?: string; description?: string; photos?: string; logDate?: string }) =>
         api.put(`/admin/logs/${logId}`, data),
     deleteLog: (logId: string | number) => api.delete(`/admin/logs/${logId}`),
+};
+
+export interface AdminDemandSummary {
+    id: number;
+    demandType: string;
+    title: string;
+    city: string;
+    district: string;
+    area: number;
+    budgetMin: number;
+    budgetMax: number;
+    timeline: string;
+    status: string;
+    matchedCount: number;
+    maxMatch: number;
+    reviewNote: string;
+    closedReason: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface AdminDemandAttachment {
+    url: string;
+    name: string;
+    size: number;
+}
+
+export interface AdminDemandProvider {
+    id: number;
+    userId: number;
+    name: string;
+    avatar: string;
+    rating: number;
+    completedCnt: number;
+    verified: boolean;
+    providerType: number;
+    subType: string;
+    yearsExperience: number;
+    specialty: string;
+    serviceArea: string[];
+}
+
+export interface AdminDemandProposal {
+    id: number;
+    summary: string;
+    designFee: number;
+    constructionFee: number;
+    materialFee: number;
+    estimatedDays: number;
+    status: number;
+    version: number;
+    submittedAt?: string;
+    responseDeadline?: string;
+    attachments?: string;
+}
+
+export interface AdminDemandMatch {
+    id: number;
+    status: string;
+    assignedAt?: string;
+    responseDeadline?: string;
+    respondedAt?: string;
+    declineReason?: string;
+    proposalId?: number;
+    provider: AdminDemandProvider;
+    proposal?: AdminDemandProposal | null;
+}
+
+export interface AdminDemandDetail extends AdminDemandSummary {
+    address: string;
+    stylePref: string;
+    description: string;
+    attachments: AdminDemandAttachment[];
+    reviewedAt?: string;
+    reviewerId: number;
+    matches: AdminDemandMatch[];
+}
+
+export interface AdminDemandCandidate {
+    provider: AdminDemandProvider;
+    matchScore: number;
+    scoreReason: string[];
+}
+
+export const adminDemandApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: string }) =>
+        api.get<AdminApiResponse<AdminListData<AdminDemandSummary>>, AdminApiResponse<AdminListData<AdminDemandSummary>>>('/admin/demands', { params }),
+    detail: (id: number) =>
+        api.get<AdminApiResponse<AdminDemandDetail>, AdminApiResponse<AdminDemandDetail>>(`/admin/demands/${id}`),
+    review: (id: number, data: { action: 'approve' | 'reject'; note?: string }) =>
+        api.post<AdminApiResponse<AdminDemandSummary>, AdminApiResponse<AdminDemandSummary>>(`/admin/demands/${id}/review`, data),
+    assign: (id: number, data: { providerIds: number[]; responseDeadlineHours: number }) =>
+        api.post<AdminApiResponse<{ count: number; matches: AdminDemandMatch[] }>, AdminApiResponse<{ count: number; matches: AdminDemandMatch[] }>>(`/admin/demands/${id}/assign`, data),
+    candidates: (id: number, params?: { page?: number; pageSize?: number }) =>
+        api.get<AdminApiResponse<AdminListData<AdminDemandCandidate>>, AdminApiResponse<AdminListData<AdminDemandCandidate>>>(`/admin/demands/${id}/candidates`, { params }),
+};
+
+export interface AdminComplaintItem {
+    id: number;
+    projectId: number;
+    userId: number;
+    providerId: number;
+    category: string;
+    title: string;
+    description: string;
+    status: string;
+    resolution?: string;
+    merchantResponse?: string;
+    freezePayment?: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export const adminComplaintApi = {
+    list: () =>
+        api.get<AdminApiResponse<AdminComplaintItem[]>, AdminApiResponse<AdminComplaintItem[]>>('/admin/complaints'),
+    resolve: (id: number, data: { resolution: string; freezePayment?: boolean }) =>
+        api.post<AdminApiResponse<AdminComplaintItem>, AdminApiResponse<AdminComplaintItem>>(`/admin/complaints/${id}/resolve`, data),
 };
 
 // ==================== Admin 争议预约管理 ====================
@@ -208,12 +320,66 @@ export const adminUserApi = {
     create: (data: any) => api.post('/admin/users', data),
     update: (id: number, data: any) => api.put(`/admin/users/${id}`, data),
     updateStatus: (id: number, status: number) => api.patch(`/admin/users/${id}/status`, { status }),
+    delete: (id: number) => api.delete(`/admin/users/${id}`),
+    batchDelete: (userIds: number[]) => api.post('/admin/users/batch-delete', { userIds }),
 };
+
+export interface AdminProviderListItem {
+    id: number;
+    userId: number;
+    providerType: number;
+    subType: string;
+    entityType?: string;
+    companyName: string;
+    realName?: string;
+    rating: number;
+    verified: boolean;
+    status: number;
+    specialty: string;
+    yearsExperience: number;
+    createdAt: string;
+    restoreRate?: number;
+    budgetControl?: number;
+    priceMin: number;
+    priceMax: number;
+    priceUnit: string;
+    coverImage: string;
+    serviceIntro: string;
+    teamSize: number;
+    establishedYear: number;
+    certifications: string;
+    serviceArea: string;
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
+}
+
+export interface AdminMaterialShopListItem {
+    id: number;
+    type: string;
+    name: string;
+    cover: string;
+    brandLogo: string;
+    rating: number;
+    reviewCount: number;
+    mainProducts: string;
+    productCategories: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    openTime: string;
+    tags: string;
+    isVerified: boolean;
+    createdAt: string;
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
+}
 
 // 服务商管理
 export const adminProviderApi = {
     list: (params?: { page?: number; pageSize?: number; type?: number; verified?: boolean }) =>
-        api.get('/admin/providers', { params }),
+        api.get<AdminApiResponse<AdminListData<AdminProviderListItem>>, AdminApiResponse<AdminListData<AdminProviderListItem>>>('/admin/providers', { params }),
     detail: (id: number) => api.get(`/admin/providers/${id}`),
     create: (data: any) => api.post('/admin/providers', data),
     update: (id: number, data: any) => api.put(`/admin/providers/${id}`, data),
@@ -224,7 +390,7 @@ export const adminProviderApi = {
 // 主材门店管理
 export const adminMaterialShopApi = {
     list: (params?: { page?: number; pageSize?: number; type?: string }) =>
-        api.get('/admin/material-shops', { params }),
+        api.get<AdminApiResponse<AdminListData<AdminMaterialShopListItem>>, AdminApiResponse<AdminListData<AdminMaterialShopListItem>>>('/admin/material-shops', { params }),
     detail: (id: number) => api.get(`/admin/material-shops/${id}`),
     create: (data: any) => api.post('/admin/material-shops', data),
     update: (id: number, data: any) => api.put(`/admin/material-shops/${id}`, data),
@@ -293,6 +459,9 @@ export interface IdentityApplicationItem {
     appliedAt: string;
     reviewedAt?: string;
     reviewedBy?: number;
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
 
     // 商家入驻扩展字段（仅当 identityType=provider 时存在）
     merchantDetails?: MerchantApplicationDetails;
@@ -355,12 +524,18 @@ export interface AdminMerchantApplicationListItem {
     rejectReason?: string;
     createdAt: string;
     auditedAt?: string;
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
 }
 
 export interface AdminMerchantApplicationDetail extends AdminMerchantApplicationListItem, MerchantApplicationDetails {
     merchantKind?: 'provider';
     sourceApplicationId?: number;
     auditedBy?: number;
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
 }
 
 export interface MaterialShopApplicationProductItem {
@@ -384,6 +559,9 @@ export interface AdminMaterialShopApplicationListItem {
     rejectReason?: string;
     createdAt: string;
     auditedAt?: string;
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
 }
 
 export interface AdminMaterialShopApplicationDetail extends AdminMaterialShopApplicationListItem {
@@ -400,6 +578,47 @@ export interface AdminMaterialShopApplicationDetail extends AdminMaterialShopApp
     shopDescription?: string;
     auditedBy?: number;
     products: MaterialShopApplicationProductItem[];
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
+}
+
+export interface AdminAuditVisibilityBlocker {
+    code: string;
+    message: string;
+}
+
+export interface AdminAuditVisibilityPreview {
+    publicVisible: boolean;
+    blockers: AdminAuditVisibilityBlocker[];
+    message: string;
+}
+
+export interface AdminAuditLegacyInfo {
+    isLegacyPath: boolean;
+    notes: string[];
+}
+
+export interface AdminAuditVisibilityEntitySnapshot {
+    providerId?: number;
+    providerVerified?: boolean;
+    providerStatus?: number;
+    shopId?: number;
+    shopVerified?: boolean;
+    caseId?: number;
+    showInInspiration?: boolean;
+}
+
+export interface AdminAuditVisibility {
+    currentLabel: string;
+    publicVisible: boolean;
+    blockers: AdminAuditVisibilityBlocker[];
+    previewAfterApprove?: AdminAuditVisibilityPreview;
+    entitySnapshot?: AdminAuditVisibilityEntitySnapshot;
+}
+
+export interface AdminAuditActions {
+    rejectResubmittable: boolean;
 }
 
 export interface AdminApiResponse<T = unknown> {

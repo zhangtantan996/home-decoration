@@ -355,6 +355,11 @@ const MerchantCases: React.FC = () => {
         const providerSubType = String(providerInfo?.providerSubType || '').toLowerCase();
         return providerSubType === 'foreman' || providerInfo?.providerType === 3;
     }, [providerInfo]);
+    const isCompanyProvider = useMemo(() => {
+        const providerSubType = String(providerInfo?.providerSubType || '').toLowerCase();
+        const applicantType = String(providerInfo?.applicantType || '').toLowerCase();
+        return providerSubType === 'company' || applicantType === 'company';
+    }, [providerInfo]);
 
     const isDesigner = useMemo(() => String(providerInfo?.role || '').toLowerCase() === 'designer', [providerInfo]);
 
@@ -805,7 +810,7 @@ const MerchantCases: React.FC = () => {
             },
         },
         {
-            title: isForeman ? '施工分类' : '作品名称',
+            title: isForeman ? '施工分类' : isCompanyProvider ? '公司案例名称' : '作品名称',
             dataIndex: 'title',
             key: 'title',
             render: (text, record) => (
@@ -948,14 +953,14 @@ const MerchantCases: React.FC = () => {
                     返回工作台
                 </Button>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2 style={{ margin: 0 }}>{isForeman ? '施工展示管理' : '作品集管理'}</h2>
+                    <h2 style={{ margin: 0 }}>{isForeman ? '施工展示管理' : isCompanyProvider ? '公司案例管理' : '作品集管理'}</h2>
                     <Button
                         type="primary"
                         icon={<PlusOutlined />}
                         onClick={handleCreate}
                         disabled={!isForeman && cases.length >= 50}
                     >
-                        {isForeman ? '补充施工展示' : '添加作品'}
+                        {isForeman ? '补充施工展示' : isCompanyProvider ? '添加公司案例' : '添加作品'}
                     </Button>
                 </div>
             </div>
@@ -970,11 +975,11 @@ const MerchantCases: React.FC = () => {
                     locale={{
                         emptyText: (
                             <Empty
-                                description={isForeman ? '暂无施工展示' : '暂无作品'}
+                                description={isForeman ? '暂无施工展示' : isCompanyProvider ? '暂无公司案例' : '暂无作品'}
                                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                             >
                                 <Button type="primary" onClick={handleCreate}>
-                                    {isForeman ? '补充施工展示' : '添加第一个作品'}
+                                    {isForeman ? '补充施工展示' : isCompanyProvider ? '添加第一个公司案例' : '添加第一个作品'}
                                 </Button>
                             </Empty>
                         ),

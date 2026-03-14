@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
+import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { adminIdentityApplicationApi, type IdentityApplicationItem } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
 import MerchantApplicationDetail from './components/MerchantApplicationDetail';
+import AuditStatusSummary from './components/AuditStatusSummary';
+import VisibilityStatusPanel from './components/VisibilityStatusPanel';
+import AuditDetailSection from './components/AuditDetailSection';
 
 const statusMap: Record<number, { text: string; color: string }> = {
     0: { text: '待审核', color: 'orange' },
@@ -245,8 +250,14 @@ const IdentityApplicationAudit: React.FC = () => {
     ], [currentItem]);
 
     return (
-        <Card title="身份申请审核">
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="身份申请审核"
+                description="审核用户新增身份申请，补充查看入驻资料与可见性解释。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     value={statusFilter}
                     onChange={(value) => {
@@ -263,69 +274,105 @@ const IdentityApplicationAudit: React.FC = () => {
                     ]}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                rowKey="id"
-                loading={loading}
-                columns={columns as any}
-                dataSource={items}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (count) => `共 ${count} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    rowKey="id"
+                    loading={loading}
+                    columns={columns as any}
+                    dataSource={items}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (count) => `共 ${count} 条`,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title="身份申请详情"
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
-                footer={null}
+                bodyStyle={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}
                 width={900}
+                footer={
+                    currentItem?.status === 0
+                        ? [
+                            <Button key="approve" type="primary" icon={<CheckCircleOutlined />} onClick={() => approve(currentItem)}>
+                                审核通过
+                            </Button>,
+                            <Button
+                                key="reject"
+                                danger
+                                icon={<CloseCircleOutlined />}
+                                onClick={() => openReject(currentItem)}
+                            >
+                                驳回申请
+                            </Button>,
+                        ]
+                        : [
+                            <Button key="close" onClick={() => setDetailVisible(false)}>
+                                关闭
+                            </Button>,
+                        ]
+                }
             >
                 {detailLoading && <div style={{ marginBottom: 12 }}>加载详情中...</div>}
                 {currentItem && (
-                    <>
-                        <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-                            <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
-                            <Descriptions.Item label="用户ID">{currentItem.userId}</Descriptions.Item>
-                            <Descriptions.Item label="身份类型">
-                                {currentItem.identityType === 'provider' ? '服务商' : currentItem.identityType}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="服务商子类型">
-                                {providerSubTypeTag(currentItem.providerSubType)}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="状态">{statusTag(currentItem.status)}</Descriptions.Item>
-                            <Descriptions.Item label="审核人">{currentItem.reviewedBy || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="申请时间">{formatDateTime(currentItem.appliedAt)}</Descriptions.Item>
-                            <Descriptions.Item label="审核时间">{formatDateTime(currentItem.reviewedAt)}</Descriptions.Item>
-                            {currentItem.rejectReason && (
-                                <Descriptions.Item label="驳回原因" span={2}>
-                                    {currentItem.rejectReason}
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <AuditStatusSummary
+                            visibility={currentItem.visibility}
+                            rejectResubmittable={currentItem.actions?.rejectResubmittable}
+                            legacyInfo={currentItem.legacyInfo}
+                        />
+
+                        <AuditDetailSection title="申请单摘要">
+                            <Descriptions bordered column={2} size="small">
+                                <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
+                                <Descriptions.Item label="用户ID">{currentItem.userId}</Descriptions.Item>
+                                <Descriptions.Item label="身份类型">
+                                    {currentItem.identityType === 'provider' ? '服务商' : currentItem.identityType}
                                 </Descriptions.Item>
-                            )}
-                        </Descriptions>
+                                <Descriptions.Item label="服务商子类型">
+                                    {providerSubTypeTag(currentItem.providerSubType)}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="状态">{statusTag(currentItem.status)}</Descriptions.Item>
+                                <Descriptions.Item label="审核人">{currentItem.reviewedBy || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="申请时间">{formatDateTime(currentItem.appliedAt)}</Descriptions.Item>
+                                <Descriptions.Item label="审核时间">{formatDateTime(currentItem.reviewedAt)}</Descriptions.Item>
+                                {currentItem.rejectReason && (
+                                    <Descriptions.Item label="驳回原因" span={2}>
+                                        <Tooltip title={currentItem.rejectReason}>
+                                            <div
+                                                style={{
+                                                    overflowWrap: 'anywhere',
+                                                    wordBreak: 'break-word',
+                                                    whiteSpace: 'pre-wrap',
+                                                }}
+                                            >
+                                                {currentItem.rejectReason}
+                                            </div>
+                                        </Tooltip>
+                                    </Descriptions.Item>
+                                )}
+                            </Descriptions>
+                        </AuditDetailSection>
+
+                        <AuditDetailSection title="可见性解释">
+                            <VisibilityStatusPanel visibility={currentItem.visibility} legacyInfo={currentItem.legacyInfo} />
+                        </AuditDetailSection>
 
                         {currentItem.merchantDetails && (
-                            <Card title="商家入驻详细信息" size="small" style={{ marginBottom: 16 }}>
+                            <AuditDetailSection title="商家入驻详细信息">
                                 <MerchantApplicationDetail details={currentItem.merchantDetails} />
-                            </Card>
+                            </AuditDetailSection>
                         )}
-
-                        {currentItem.status === 0 && (
-                            <Space style={{ marginTop: 16 }}>
-                                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => approve(currentItem)}>
-                                    审核通过
-                                </Button>
-                                <Button danger icon={<CloseCircleOutlined />} onClick={() => openReject(currentItem)}>
-                                    驳回申请
-                                </Button>
-                            </Space>
-                        )}
-                    </>
+                    </Space>
                 )}
             </Modal>
 
@@ -349,7 +396,7 @@ const IdentityApplicationAudit: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

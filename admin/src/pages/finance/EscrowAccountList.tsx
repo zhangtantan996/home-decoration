@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Tag, Button, Space, message, Statistic, Row, Col, Modal, Form, InputNumber } from 'antd';
+import { Table, Card, Button, Space, message, Modal, Form, InputNumber } from 'antd';
 import { ReloadOutlined, WalletOutlined } from '@ant-design/icons';
 import { adminFinanceApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import StatCard from '../../components/StatCard';
+import ToolbarCard from '../../components/ToolbarCard';
+import StatusTag from '../../components/StatusTag';
 
 interface EscrowAccount {
     id: number;
@@ -41,7 +45,6 @@ const EscrowAccountList: React.FC = () => {
 
     useEffect(() => {
         loadData();
-        loadStats();
     }, [page]);
 
     const loadData = async () => {
@@ -49,8 +52,16 @@ const EscrowAccountList: React.FC = () => {
         try {
             const res = await adminFinanceApi.escrowAccounts({ page, pageSize }) as any;
             if (res.code === 0) {
-                setAccounts(res.data.list || []);
+                const list = res.data.list || [];
+                const summary = res.data.summary || {};
+                setAccounts(list);
                 setTotal(res.data.total || 0);
+                setStats({
+                    totalAccounts: res.data.total || list.length,
+                    totalAmount: summary.totalAmount ?? list.reduce((sum: number, item: EscrowAccount) => sum + Number(item.totalAmount || 0), 0),
+                    frozenAmount: summary.frozenAmount ?? list.reduce((sum: number, item: EscrowAccount) => sum + Number(item.frozenAmount || 0), 0),
+                    availableAmount: summary.availableAmount ?? list.reduce((sum: number, item: EscrowAccount) => sum + Number(item.availableAmount || 0), 0),
+                });
             }
         } catch (error) {
             console.error(error);
@@ -58,16 +69,6 @@ const EscrowAccountList: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
-
-    const loadStats = async () => {
-        // 模拟统计数据加载
-        setStats({
-            totalAccounts: 156,
-            totalAmount: 12580000,
-            frozenAmount: 3420000,
-            availableAmount: 9160000,
-        });
     };
 
     const showWithdrawModal = (record: EscrowAccount) => {
@@ -130,7 +131,9 @@ const EscrowAccountList: React.FC = () => {
             dataIndex: 'status',
             render: (val: number) => {
                 const config = statusMap[val];
-                return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
+                return config
+                    ? <StatusTag status={val === 1 ? 'approved' : val === 2 ? 'rejected' : val === 3 ? 'info' : 'warning'} text={config.text} />
+                    : '-';
             },
         },
         {
@@ -155,56 +158,26 @@ const EscrowAccountList: React.FC = () => {
     ];
 
     return (
-        <div>
-            <Row gutter={16} style={{ marginBottom: 16 }}>
-                <Col span={6}>
-                    <Card>
-                        <Statistic
-                            title="托管账户总数"
-                            value={stats.totalAccounts}
-                            prefix={<WalletOutlined />}
-                        />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic
-                            title="托管总金额"
-                            value={stats.totalAmount}
-                            precision={2}
-                            prefix="¥"
-                        />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic
-                            title="冻结金额"
-                            value={stats.frozenAmount}
-                            precision={2}
-                            prefix="¥"
-                            valueStyle={{ color: '#cf1322' }}
-                        />
-                    </Card>
-                </Col>
-                <Col span={6}>
-                    <Card>
-                        <Statistic
-                            title="可用金额"
-                            value={stats.availableAmount}
-                            precision={2}
-                            prefix="¥"
-                            valueStyle={{ color: '#3f8600' }}
-                        />
-                    </Card>
-                </Col>
-            </Row>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="托管账户"
+                description="查看项目托管账户余额、冻结资金与提现处理入口。"
+            />
 
-            <Card>
-                <Space style={{ marginBottom: 16 }}>
+            <div className="hz-stat-grid">
+                <StatCard title="托管账户总数" value={stats.totalAccounts} icon={<WalletOutlined />} tone="accent" />
+                <StatCard title="托管总金额" value={`¥${stats.totalAmount.toLocaleString()}`} tone="success" />
+                <StatCard title="冻结金额" value={`¥${stats.frozenAmount.toLocaleString()}`} tone="warning" />
+                <StatCard title="可用金额" value={`¥${stats.availableAmount.toLocaleString()}`} tone="danger" />
+            </div>
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                     <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-                </Space>
+                </div>
+            </ToolbarCard>
 
+            <Card className="hz-table-card">
                 <Table
                     loading={loading}
                     dataSource={accounts}

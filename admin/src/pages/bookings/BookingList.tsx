@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Select, Tag, Button, Space, message, Descriptions, Modal } from 'antd';
+import { Table, Card, Select, Button, Space, message, Descriptions, Modal } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { adminBookingApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
+import StatusTag from '../../components/StatusTag';
 
 interface Booking {
     id: number;
@@ -104,7 +107,9 @@ const BookingList: React.FC = () => {
             dataIndex: 'status',
             render: (val: number) => {
                 const config = statusMap[val];
-                return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
+                return config
+                    ? <StatusTag status={val === 1 ? 'warning' : val === 2 ? 'info' : val === 3 ? 'completed' : 'rejected'} text={config.text} />
+                    : '-';
             },
         },
         {
@@ -128,8 +133,14 @@ const BookingList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="预约管理"
+                description="集中处理待确认预约，查看项目基础信息与用户预约偏好。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     placeholder="状态筛选"
                     allowClear
@@ -144,21 +155,25 @@ const BookingList: React.FC = () => {
                     ]}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                columns={columns}
-                dataSource={bookings}
-                rowKey="id"
-                loading={loading}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    columns={columns}
+                    dataSource={bookings}
+                    rowKey="id"
+                    loading={loading}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title="预约详情"
@@ -180,15 +195,16 @@ const BookingList: React.FC = () => {
                         <Descriptions.Item label="期望时间">{currentBooking.preferredDate}</Descriptions.Item>
                         <Descriptions.Item label="联系电话">{currentBooking.phone}</Descriptions.Item>
                         <Descriptions.Item label="状态">
-                            <Tag color={statusMap[currentBooking.status]?.color}>
-                                {statusMap[currentBooking.status]?.text}
-                            </Tag>
+                            <StatusTag
+                                status={currentBooking.status === 1 ? 'warning' : currentBooking.status === 2 ? 'info' : currentBooking.status === 3 ? 'completed' : 'rejected'}
+                                text={statusMap[currentBooking.status]?.text}
+                            />
                         </Descriptions.Item>
                         <Descriptions.Item label="备注" span={2}>{currentBooking.notes || '-'}</Descriptions.Item>
                     </Descriptions>
                 )}
             </Modal>
-        </Card>
+        </div>
     );
 };
 

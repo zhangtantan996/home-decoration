@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
+import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -7,7 +7,12 @@ import {
     type AdminMaterialShopApplicationDetail,
     type AdminMaterialShopApplicationListItem,
 } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
 import MaterialShopApplicationDetail from './components/MaterialShopApplicationDetail';
+import AuditStatusSummary from './components/AuditStatusSummary';
+import VisibilityStatusPanel from './components/VisibilityStatusPanel';
+import AuditDetailSection from './components/AuditDetailSection';
 
 const statusMap: Record<number, { text: string; color: string }> = {
     0: { text: '待审核', color: 'orange' },
@@ -184,8 +189,14 @@ const MaterialShopAudit: React.FC = () => {
     ];
 
     return (
-        <Card title="主材商入驻审核">
-            <Space style={{ marginBottom: 16 }} wrap>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="主材商入驻审核"
+                description="查看门店、法人和商品资料，统一完成主材商申请审批。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     value={statusFilter}
                     onChange={setStatusFilter}
@@ -212,61 +223,108 @@ const MaterialShopAudit: React.FC = () => {
                     }}
                 />
                 <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>刷新</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                rowKey="id"
-                loading={loading}
-                dataSource={items}
-                columns={columns}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (value) => `共 ${value} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={items}
+                    columns={columns}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (value) => `共 ${value} 条`,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title="主材商申请详情"
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
-                footer={null}
+                bodyStyle={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}
                 width={1040}
+                footer={
+                    currentItem?.status === 0
+                        ? [
+                            <Button key="approve" type="primary" icon={<CheckCircleOutlined />} onClick={() => void approve(currentItem)}>
+                                审核通过
+                            </Button>,
+                            <Button
+                                key="reject"
+                                danger
+                                icon={<CloseCircleOutlined />}
+                                onClick={() => openReject(currentItem)}
+                            >
+                                驳回申请
+                            </Button>,
+                        ]
+                        : [
+                            <Button key="close" onClick={() => setDetailVisible(false)}>
+                                关闭
+                            </Button>,
+                        ]
+                }
             >
                 {detailLoading && <div style={{ marginBottom: 12 }}>加载详情中...</div>}
                 {currentItem && (
-                    <>
-                        <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-                            <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
-                            <Descriptions.Item label="状态">
-                                <Tag color={statusMap[currentItem.status]?.color || 'default'}>
-                                    {statusMap[currentItem.status]?.text || currentItem.status}
-                                </Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="门店名称">{currentItem.shopName}</Descriptions.Item>
-                            <Descriptions.Item label="申请时间">{formatDateTime(currentItem.createdAt)}</Descriptions.Item>
-                            <Descriptions.Item label="审核人">{currentItem.auditedBy || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="审核时间">{formatDateTime(currentItem.auditedAt)}</Descriptions.Item>
-                            {currentItem.rejectReason && (
-                                <Descriptions.Item label="驳回原因" span={2}>{currentItem.rejectReason}</Descriptions.Item>
-                            )}
-                        </Descriptions>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <AuditStatusSummary
+                            visibility={currentItem.visibility}
+                            rejectResubmittable={currentItem.actions?.rejectResubmittable}
+                            legacyInfo={currentItem.legacyInfo}
+                        />
 
-                        <MaterialShopApplicationDetail details={currentItem} />
+                        <AuditDetailSection title="申请单摘要">
+                            <Descriptions bordered column={2} size="small">
+                                <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
+                                <Descriptions.Item label="状态">
+                                    <Tag color={statusMap[currentItem.status]?.color || 'default'}>
+                                        {statusMap[currentItem.status]?.text || currentItem.status}
+                                    </Tag>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="门店名称">
+                                    <Tooltip title={currentItem.shopName || '-'}>
+                                        <span
+                                            style={{
+                                                display: 'inline-block',
+                                                maxWidth: 240,
+                                                overflow: 'hidden',
+                                                whiteSpace: 'nowrap',
+                                                textOverflow: 'ellipsis',
+                                                verticalAlign: 'bottom',
+                                            }}
+                                        >
+                                            {currentItem.shopName || '-'}
+                                        </span>
+                                    </Tooltip>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="申请时间">{formatDateTime(currentItem.createdAt)}</Descriptions.Item>
+                                <Descriptions.Item label="审核人">{currentItem.auditedBy || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="审核时间">{formatDateTime(currentItem.auditedAt)}</Descriptions.Item>
+                                {currentItem.rejectReason && (
+                                    <Descriptions.Item label="驳回原因" span={2}>
+                                        <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                            {currentItem.rejectReason}
+                                        </div>
+                                    </Descriptions.Item>
+                                )}
+                            </Descriptions>
+                        </AuditDetailSection>
 
-                        {currentItem.status === 0 && (
-                            <Space style={{ marginTop: 16 }}>
-                                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => void approve(currentItem)}>
-                                    审核通过
-                                </Button>
-                                <Button danger icon={<CloseCircleOutlined />} onClick={() => openReject(currentItem)}>
-                                    驳回申请
-                                </Button>
-                            </Space>
-                        )}
-                    </>
+                        <AuditDetailSection title="可见性解释">
+                            <VisibilityStatusPanel visibility={currentItem.visibility} legacyInfo={currentItem.legacyInfo} />
+                        </AuditDetailSection>
+
+                        <AuditDetailSection title="主材商详情">
+                            <MaterialShopApplicationDetail details={currentItem} />
+                        </AuditDetailSection>
+                    </Space>
                 )}
             </Modal>
 
@@ -286,7 +344,7 @@ const MaterialShopAudit: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

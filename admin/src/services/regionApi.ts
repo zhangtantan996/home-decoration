@@ -10,6 +10,7 @@ export interface Region {
     parentCode: string;
     enabled: boolean;
     sortOrder: number;
+    hasChildren?: boolean;
 }
 
 // Cascader 选项类型

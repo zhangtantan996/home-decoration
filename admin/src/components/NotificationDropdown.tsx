@@ -407,10 +407,11 @@ const NotificationDropdown: React.FC = () => {
             placement="bottomRight"
             disabled={!notificationAvailable}
         >
-            <Badge count={notificationAvailable ? unreadCount : 0} offset={[-2, 2]} size="small">
+            <Badge count={notificationAvailable ? unreadCount : 0} offset={[-8, 8]} size="small" className="hz-notification-badge">
                 <Button
                     type="text"
                     icon={<BellOutlined style={{ fontSize: 18 }} />}
+                    className="hz-notification-trigger"
                     style={{ border: 'none', boxShadow: 'none' }}
                     disabled={!notificationAvailable}
                 />

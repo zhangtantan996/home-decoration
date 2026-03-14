@@ -1,26 +1,55 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Select, Tag, Button, Space, message, Switch, Modal, Form, Input, InputNumber, Descriptions } from 'antd';
+import { Table, Card, Select, Tag, Button, Space, message, Switch, Modal, Form, Input, InputNumber, Tooltip, Typography, Descriptions } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { adminMaterialShopApi } from '../../services/api';
+import { adminMaterialShopApi, type AdminMaterialShopListItem } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
+import AuditStatusSummary from '../audits/components/AuditStatusSummary';
+import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
 
-interface MaterialShop {
-    id: number;
-    type: string;
-    name: string;
-    cover: string;
-    brandLogo: string;
-    rating: number;
-    reviewCount: number;
-    mainProducts: string;          // JSON数组
-    productCategories: string;     // 逗号分隔
-    address: string;
-    latitude: number;
-    longitude: number;
-    openTime: string;
-    tags: string;                  // JSON数组
-    isVerified: boolean;
-    createdAt: string;
+interface MaterialShop extends AdminMaterialShopListItem {
 }
+
+const { Text } = Typography;
+
+const resolveVisibilityTag = (shop: MaterialShop) => {
+    const isVisible = shop.visibility?.publicVisible;
+    if (isVisible === true) {
+        return <Tag color="success">可见</Tag>;
+    }
+    if (isVisible === false) {
+        return <Tag color="warning">不可见</Tag>;
+    }
+    return <Tag>未知</Tag>;
+};
+
+const renderBlockerSummary = (shop: MaterialShop) => {
+    const blockers = shop.visibility?.blockers || [];
+    if (blockers.length === 0) {
+        return <Text type="secondary">-</Text>;
+    }
+
+    const first = blockers[0]?.message || '-';
+    const summary = blockers.length > 1 ? `${first} + ${blockers.length - 1} 条` : first;
+
+    return (
+        <Tooltip
+            title={
+                <div style={{ maxWidth: 360 }}>
+                    {blockers.map((item) => (
+                        <div key={item.code || item.message} style={{ marginBottom: 4, whiteSpace: 'normal' }}>
+                            {item.message}
+                        </div>
+                    ))}
+                </div>
+            }
+        >
+            <Text ellipsis style={{ display: 'inline-block', maxWidth: 240 }}>
+                {summary}
+            </Text>
+        </Tooltip>
+    );
+};
 
 const MaterialShopList: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -159,6 +188,23 @@ const MaterialShopList: React.FC = () => {
             ellipsis: true,
         },
         {
+            title: '公开状态',
+            key: 'publicVisible',
+            width: 120,
+            render: (_: any, record: MaterialShop) => (
+                <Space size={4} wrap>
+                    {resolveVisibilityTag(record)}
+                    {record.legacyInfo?.isLegacyPath && <Tag color="gold">legacy</Tag>}
+                </Space>
+            ),
+        },
+        {
+            title: '阻断摘要',
+            key: 'blockerSummary',
+            ellipsis: true,
+            render: (_: any, record: MaterialShop) => renderBlockerSummary(record),
+        },
+        {
             title: '认证',
             dataIndex: 'isVerified',
             render: (val: boolean, record: MaterialShop) => (
@@ -182,8 +228,14 @@ const MaterialShopList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="主材门店管理"
+                description="查看门店认证状态、公开可见性和基础经营信息。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     placeholder="门店类型"
                     allowClear
@@ -199,21 +251,25 @@ const MaterialShopList: React.FC = () => {
                 <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
                     新增门店
                 </Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                columns={columns}
-                dataSource={shops}
-                rowKey="id"
-                loading={loading}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    columns={columns}
+                    dataSource={shops}
+                    rowKey="id"
+                    loading={loading}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
 
             {/* 详情弹窗 */}
             <Modal
@@ -224,75 +280,91 @@ const MaterialShopList: React.FC = () => {
                 width={800}
             >
                 {currentShop && (
-                    <Descriptions column={2} bordered size="small">
-                        <Descriptions.Item label="ID">{currentShop.id}</Descriptions.Item>
-                        <Descriptions.Item label="名称">{currentShop.name}</Descriptions.Item>
-                        <Descriptions.Item label="类型">
-                            <Tag color={currentShop.type === 'brand' ? 'blue' : 'green'}>
-                                {currentShop.type === 'brand' ? '品牌店' : '展示店'}
-                            </Tag>
-                        </Descriptions.Item>
-                        <Descriptions.Item label="认证状态">
-                            {currentShop.isVerified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="评分">{currentShop.rating?.toFixed(1) || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="评价数">{currentShop.reviewCount || 0}</Descriptions.Item>
-
-                        {currentShop.brandLogo && (
-                            <Descriptions.Item label="品牌Logo" span={2}>
-                                <img src={currentShop.brandLogo} alt="Logo" style={{ maxWidth: 100, maxHeight: 50 }} />
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <AuditStatusSummary
+                            visibility={currentShop.visibility}
+                            rejectResubmittable={currentShop.actions?.rejectResubmittable}
+                            legacyInfo={currentShop.legacyInfo}
+                        />
+                        <Descriptions column={2} bordered size="small">
+                            <Descriptions.Item label="ID">{currentShop.id}</Descriptions.Item>
+                            <Descriptions.Item label="名称">{currentShop.name}</Descriptions.Item>
+                            <Descriptions.Item label="类型">
+                                <Tag color={currentShop.type === 'brand' ? 'blue' : 'green'}>
+                                    {currentShop.type === 'brand' ? '品牌店' : '展示店'}
+                                </Tag>
                             </Descriptions.Item>
-                        )}
+                            <Descriptions.Item label="认证状态">
+                                {currentShop.isVerified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="评分">{currentShop.rating?.toFixed(1) || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="评价数">{currentShop.reviewCount || 0}</Descriptions.Item>
 
-                        <Descriptions.Item label="封面图" span={2}>
-                            {currentShop.cover ? (
-                                <img src={currentShop.cover} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
-                            ) : '-'}
-                        </Descriptions.Item>
+                            {currentShop.brandLogo && (
+                                <Descriptions.Item label="品牌Logo" span={2}>
+                                    <img src={currentShop.brandLogo} alt="Logo" style={{ maxWidth: 100, maxHeight: 50 }} />
+                                </Descriptions.Item>
+                            )}
 
-                        <Descriptions.Item label="主营产品" span={2}>
-                            {(() => {
-                                try {
-                                    return currentShop.mainProducts ? JSON.parse(currentShop.mainProducts).join('、') : '-';
-                                } catch {
-                                    return currentShop.mainProducts || '-';
-                                }
-                            })()}
-                        </Descriptions.Item>
+                            <Descriptions.Item label="封面图" span={2}>
+                                {currentShop.cover ? (
+                                    <img src={currentShop.cover} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
+                                ) : '-'}
+                            </Descriptions.Item>
 
-                        <Descriptions.Item label="产品分类" span={2}>
-                            {currentShop.productCategories || '-'}
-                        </Descriptions.Item>
+                            <Descriptions.Item label="主营产品" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {(() => {
+                                        try {
+                                            return currentShop.mainProducts ? JSON.parse(currentShop.mainProducts).join('、') : '-';
+                                        } catch {
+                                            return currentShop.mainProducts || '-';
+                                        }
+                                    })()}
+                                </div>
+                            </Descriptions.Item>
 
-                        <Descriptions.Item label="地址" span={2}>
-                            {currentShop.address || '-'}
-                        </Descriptions.Item>
+                            <Descriptions.Item label="产品分类" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentShop.productCategories || '-'}
+                                </div>
+                            </Descriptions.Item>
 
-                        <Descriptions.Item label="经纬度" span={2}>
-                            {currentShop.latitude && currentShop.longitude
-                                ? `${currentShop.latitude}, ${currentShop.longitude}`
-                                : '-'}
-                        </Descriptions.Item>
+                            <Descriptions.Item label="地址" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentShop.address || '-'}
+                                </div>
+                            </Descriptions.Item>
 
-                        <Descriptions.Item label="营业时间" span={2}>
-                            {currentShop.openTime || '-'}
-                        </Descriptions.Item>
+                            <Descriptions.Item label="经纬度" span={2}>
+                                {currentShop.latitude && currentShop.longitude
+                                    ? `${currentShop.latitude}, ${currentShop.longitude}`
+                                    : '-'}
+                            </Descriptions.Item>
 
-                        <Descriptions.Item label="门店标签" span={2}>
-                            {(() => {
-                                try {
-                                    const tags = currentShop.tags ? JSON.parse(currentShop.tags) : [];
-                                    return tags.length > 0
-                                        ? tags.map((tag: string, idx: number) => (
-                                            <Tag key={idx} style={{ marginBottom: 4 }}>{tag}</Tag>
-                                        ))
-                                        : '-';
-                                } catch {
-                                    return currentShop.tags || '-';
-                                }
-                            })()}
-                        </Descriptions.Item>
-                    </Descriptions>
+                            <Descriptions.Item label="营业时间" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentShop.openTime || '-'}
+                                </div>
+                            </Descriptions.Item>
+
+                            <Descriptions.Item label="门店标签" span={2}>
+                                {(() => {
+                                    try {
+                                        const tags = currentShop.tags ? JSON.parse(currentShop.tags) : [];
+                                        return tags.length > 0
+                                            ? tags.map((tag: string, idx: number) => (
+                                                <Tag key={idx} style={{ marginBottom: 4 }}>{tag}</Tag>
+                                            ))
+                                            : '-';
+                                    } catch {
+                                        return currentShop.tags || '-';
+                                    }
+                                })()}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        <VisibilityStatusPanel visibility={currentShop.visibility} legacyInfo={currentShop.legacyInfo} />
+                    </Space>
                 )}
             </Modal>
 
@@ -386,7 +458,7 @@ const MaterialShopList: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

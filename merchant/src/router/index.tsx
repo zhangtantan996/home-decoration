@@ -5,11 +5,15 @@ import MerchantRegister from '../pages/merchant/MerchantRegister';
 import MaterialShopRegister from '../pages/merchant/MaterialShopRegister';
 import MerchantApplyStatus from '../pages/merchant/MerchantApplyStatus';
 import MerchantDashboard from '../pages/merchant/MerchantDashboard';
+import MerchantLeads from '../pages/merchant/MerchantLeads';
 import MerchantBookings from '../pages/merchant/MerchantBookings';
 import MerchantProposals from '../pages/merchant/MerchantProposals';
 import MerchantQuoteLists from '../pages/merchant/MerchantQuoteLists';
 import MerchantQuoteDetail from '../pages/merchant/MerchantQuoteDetail';
+import MerchantPriceBook from '../pages/merchant/MerchantPriceBook';
 import MerchantOrders from '../pages/merchant/MerchantOrders';
+import MerchantComplaints from '../pages/merchant/MerchantComplaints';
+import MerchantContractCreate from '../pages/merchant/MerchantContractCreate';
 import MerchantIncome from '../pages/merchant/MerchantIncome';
 import MerchantWithdraw from '../pages/merchant/MerchantWithdraw';
 import MerchantBankAccounts from '../pages/merchant/MerchantBankAccounts';
@@ -42,11 +46,15 @@ const router = createBrowserRouter([
         element: <MerchantLayout />,
         children: [
           { path: '/dashboard', element: <MerchantDashboard /> },
+          { path: '/leads', element: <MerchantLeads /> },
           { path: '/bookings', element: <MerchantBookings /> },
           { path: '/proposals', element: <MerchantProposals /> },
+          { path: '/price-book', element: <MerchantPriceBook /> },
           { path: '/quote-lists', element: <MerchantQuoteLists /> },
           { path: '/quote-lists/:id', element: <MerchantQuoteDetail /> },
           { path: '/orders', element: <MerchantOrders /> },
+          { path: '/complaints', element: <MerchantComplaints /> },
+          { path: '/contracts/new', element: <MerchantContractCreate /> },
           { path: '/chat', element: <MerchantChat /> },
           { path: '/im-test', element: <IMTest /> },
           { path: '/income', element: <MerchantIncome /> },

@@ -11,10 +11,14 @@ import ReviewList from './pages/reviews/ReviewList';
 import LogList from './pages/system/LogList';
 import Login from './pages/user/Login';
 import AdminList from './pages/admins/AdminList';
+import AuditCenter from './pages/audits/AuditCenter';
 import ProviderAudit from './pages/audits/ProviderAudit';
 import MaterialShopAudit from './pages/audits/MaterialShopAudit';
 import ProjectDetail from './pages/projects/ProjectDetail';
 import ProjectMap from './pages/projects/ProjectMap';
+import DemandAssign from './pages/demands/DemandAssign';
+import DemandList from './pages/demands/DemandList';
+import ComplaintManagement from './pages/complaints/ComplaintManagement';
 import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
@@ -30,6 +34,7 @@ import DictionaryManagement from './pages/system/DictionaryManagement';
 import RegionManagement from './pages/system/RegionManagement';
 import IdentityApplicationAudit from './pages/audits/IdentityApplicationAudit';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { getRouterBasename } from './utils/env';
 
 
 const router = createBrowserRouter([
@@ -59,6 +64,7 @@ const router = createBrowserRouter([
             { path: 'providers/foremen', element: <ProtectedRoute permission="provider:foreman:list"><ProviderList /></ProtectedRoute> },
             { path: 'providers/audit', element: <ProtectedRoute permission="provider:audit:list"><ProviderAudit /></ProtectedRoute> },
             { path: 'providers/identity-applications', element: <ProtectedRoute permission="identity:application:audit"><IdentityApplicationAudit /></ProtectedRoute> },
+            { path: 'audits', element: <ProtectedRoute permission={['provider:audit:list', 'material:audit:list', 'identity:application:audit', 'system:case:view']}><AuditCenter /></ProtectedRoute> },
             { path: 'audits/identity-applications', element: <ProtectedRoute permission="identity:application:audit"><IdentityApplicationAudit /></ProtectedRoute> },
 
             // Materials
@@ -78,6 +84,14 @@ const router = createBrowserRouter([
             { path: 'projects/quotes/library', element: <ProtectedRoute permission="project:list"><QuoteLibraryManagement /></ProtectedRoute> },
             { path: 'projects/quotes/lists', element: <ProtectedRoute permission="project:edit"><QuoteListManagement /></ProtectedRoute> },
             { path: 'projects/quotes/compare/:id', element: <ProtectedRoute permission="project:view"><QuoteComparison /></ProtectedRoute> },
+
+            // Demands
+            { path: 'demands', element: <Navigate to="/demands/list" replace /> },
+            { path: 'demands/list', element: <ProtectedRoute permission="demand:list"><DemandList /></ProtectedRoute> },
+            { path: 'demands/:id/assign', element: <ProtectedRoute permission="demand:assign"><DemandAssign /></ProtectedRoute> },
+
+            // Complaints
+            { path: 'complaints', element: <ProtectedRoute permission="risk:arbitration:list"><ComplaintManagement /></ProtectedRoute> },
 
             // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
@@ -115,7 +129,7 @@ const router = createBrowserRouter([
         ],
     },
 ], {
-    basename: '/admin'
+    basename: getRouterBasename()
 });
 
 export default router;

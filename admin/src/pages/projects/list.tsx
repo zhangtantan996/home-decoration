@@ -18,6 +18,8 @@ interface ProjectListResponse {
     code: number;
     data?: ProjectItem[];
     total?: number;
+    message?: string;
+    error?: string;
 }
 
 const ProjectList: React.FC = () => {
@@ -33,15 +35,14 @@ const ProjectList: React.FC = () => {
     const fetchProjects = async () => {
         setLoading(true);
         try {
-            const response = await adminProjectApi.list({ page: 1, pageSize: 10 });
-            const payload = response.data as ProjectListResponse | undefined;
+            const payload = await adminProjectApi.list({ page: 1, pageSize: 10 }) as unknown as ProjectListResponse | undefined;
             if (payload?.code === 0) {
                 setProjects(payload.data || []);
                 setTotal(payload.total || 0);
                 return;
             }
 
-            message.error('加载工地列表失败');
+            message.error(payload?.message || payload?.error || '加载工地列表失败');
         } catch (error) {
             console.error(error);
             message.error('加载工地列表失败');
@@ -106,6 +107,7 @@ const ProjectList: React.FC = () => {
                 columns={columns}
                 rowKey="id"
                 loading={loading}
+                scroll={{ x: 'max-content' }}
                 pagination={{ total, pageSize: 10 }}
             />
         </Card>

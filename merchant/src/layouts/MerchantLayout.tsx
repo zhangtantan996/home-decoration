@@ -9,7 +9,7 @@ import {
     CalendarOutlined,
     FileTextOutlined,
     DollarOutlined,
-    MessageOutlined,
+    NotificationOutlined,
     PictureOutlined,
     SettingOutlined,
     ShopOutlined,
@@ -83,27 +83,78 @@ const MerchantLayout: React.FC = () => {
         }
     })();
 
+    const isForeman = !isMaterialShop && normalizedProviderSubType === 'foreman';
+    const isCompanyProvider = !isMaterialShop && normalizedProviderSubType === 'company';
+
     const identityHint = isMaterialShop
         ? '已纳入统一商家体系 · 本期不支持直接切换其他商家子类型'
         : '统一商家体系 · 如需新增其他商家子类型，请返回首页重新申请';
 
-    const availableKeys = isMaterialShop
-        ? new Set<string>(['/material-shop/products', '/material-shop/settings'])
-        : new Set<string>([
-            '/dashboard',
-            '/bookings',
-            '/proposals',
-            '/quote-lists',
-            '/orders',
-            '/chat',
-            '/im-test',
-            'finance',
-            '/income',
-            '/withdraw',
-            '/bank-accounts',
-            '/cases',
-            '/settings',
-        ]);
+    const serviceMenuItems: MenuProps['items'] = [
+        {
+            key: '/dashboard',
+            icon: <DashboardOutlined />,
+            label: '工作台',
+        },
+        {
+            key: '/leads',
+            icon: <NotificationOutlined />,
+            label: isCompanyProvider ? '待分配线索' : '线索管理',
+        },
+        {
+            key: '/bookings',
+            icon: <CalendarOutlined />,
+            label: '预约管理',
+        },
+        {
+            key: '/proposals',
+            icon: <FileTextOutlined />,
+            label: isForeman ? '报价/施工方案' : '方案管理',
+        },
+        {
+            key: '/quote-lists',
+            icon: <FileTextOutlined />,
+            label: '报价清单',
+        },
+        ...(isForeman ? [{
+            key: '/price-book',
+            icon: <DollarOutlined />,
+            label: '工长价格库',
+        }] : []),
+        {
+            key: '/orders',
+            icon: <DollarOutlined />,
+            label: isCompanyProvider ? '订单协同' : '订单管理',
+        },
+        {
+            key: '/complaints',
+            icon: <NotificationOutlined />,
+            label: '投诉响应',
+        },
+        {
+            type: 'divider',
+        },
+        {
+            key: 'finance',
+            icon: <DollarOutlined />,
+            label: '财务中心',
+            children: [
+                { key: '/income', label: isCompanyProvider ? '成交与收入' : '收入明细' },
+                { key: '/withdraw', label: '提现管理' },
+                { key: '/bank-accounts', label: '银行卡' },
+            ],
+        },
+        {
+            key: '/cases',
+            icon: <PictureOutlined />,
+            label: isForeman ? '施工案例' : (isCompanyProvider ? '公司案例' : '作品集'),
+        },
+        {
+            key: '/settings',
+            icon: <SettingOutlined />,
+            label: isCompanyProvider ? '企业设置' : '账户设置',
+        },
+    ];
 
     const menuItems = isMaterialShop
         ? [
@@ -118,61 +169,27 @@ const MerchantLayout: React.FC = () => {
                 label: '资料中心',
             },
         ]
-        : [
-            {
-                key: '/dashboard',
-                icon: <DashboardOutlined />,
-                label: '工作台',
-            },
-            {
-                key: '/bookings',
-                icon: <CalendarOutlined />,
-                label: '预约管理',
-            },
-            {
-                key: '/proposals',
-                icon: <FileTextOutlined />,
-                label: normalizedProviderSubType === 'foreman' ? '报价/施工方案' : '方案管理',
-            },
-            {
-                key: '/quote-lists',
-                icon: <FileTextOutlined />,
-                label: '报价清单',
-            },
-            {
-                key: '/orders',
-                icon: <DollarOutlined />,
-                label: '订单管理',
-            },
-            {
-                key: '/chat',
-                icon: <MessageOutlined />,
-                label: '客户消息',
-            },
-            {
-                type: 'divider',
-            },
-            {
-                key: 'finance',
-                icon: <DollarOutlined />,
-                label: '财务中心',
-                children: [
-                    { key: '/income', label: '收入明细' },
-                    { key: '/withdraw', label: '提现管理' },
-                    { key: '/bank-accounts', label: '银行卡' },
-                ],
-            },
-            {
-                key: '/cases',
-                icon: <PictureOutlined />,
-                label: normalizedProviderSubType === 'foreman' ? '施工案例' : '作品集',
-            },
-            {
-                key: '/settings',
-                icon: <SettingOutlined />,
-                label: '账户设置',
-            },
-        ];
+        : serviceMenuItems;
+
+    const availableKeys = new Set<string>(
+        (menuItems || []).flatMap((item) => {
+            if (!item || typeof item !== 'object') {
+                return [];
+            }
+            if ('children' in item && Array.isArray(item.children)) {
+                return item.children
+                    .flatMap((child) => (
+                        child && typeof child === 'object' && 'key' in child && typeof child.key === 'string'
+                            ? [child.key]
+                            : []
+                    ));
+            }
+            if ('key' in item && typeof item.key === 'string') {
+                return [item.key];
+            }
+            return [];
+        }),
+    );
 
     const filteredMenuItems = menuItems
         .map((item) => {
@@ -182,7 +199,7 @@ const MerchantLayout: React.FC = () => {
             if (item.key === 'finance' && 'children' in item) {
                 const children = (item.children || []).filter((child) => 
                     child && typeof child === 'object' && 'key' in child && typeof child.key === 'string' && availableKeys.has(child.key)
-                );
+                ) as Array<{ key: string; label: string }>;
                 if (!children.length) {
                     return null;
                 }
@@ -192,7 +209,7 @@ const MerchantLayout: React.FC = () => {
         })
         .filter(Boolean) as MenuProps['items'];
 
-    const fallbackPath = isMaterialShop ? '/material-shop/settings' : '/dashboard';
+    const fallbackPath = isMaterialShop ? '/material-shop/products' : '/dashboard';
     const isPathAllowed = availableKeys.has(location.pathname);
 
     useEffect(() => {

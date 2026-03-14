@@ -137,6 +137,32 @@ const MerchantSettings: React.FC = () => {
         return role === 'company' || providerInfo?.providerType === 2;
     }, [providerInfo]);
 
+    const quickCaseLabel = isForeman ? '管理施工案例' : isCompanyRole ? '管理公司案例' : '管理作品集';
+    const basicInfoTitle = isForeman
+        ? '基础资料与施工能力'
+        : isCompanyRole
+            ? '企业资料与服务能力'
+            : '个人品牌与服务能力';
+    const nameLabel = isForeman ? '工长显示名称' : isCompanyRole ? '企业展示名称' : '设计师显示名称';
+    const namePlaceholder = isForeman ? '请输入工长/项目经理名称' : isCompanyRole ? '请输入企业展示名称' : '请输入设计师名称';
+    const companyNameLabel = isCompanyRole ? '企业名称' : '公司/工作室名称';
+    const yearsLabel = isForeman ? '施工年限' : '从业年限';
+    const yearsPlaceholder = isForeman ? '选择施工年限' : '选择从业年限';
+    const serviceAreaLabel = isForeman ? '常驻区域' : isCompanyRole ? '服务覆盖区域' : '服务区域';
+    const introLabel = isForeman ? '施工服务简介' : isCompanyRole ? '企业品牌介绍' : '个人/公司简介';
+    const introPlaceholder = isForeman
+        ? '介绍施工经验、班组优势、服务特色等'
+        : isCompanyRole
+            ? '介绍企业资质、主营服务、交付能力与服务承诺'
+            : '介绍设计理念、服务特色等';
+    const philosophyLabel = isForeman ? '施工理念' : isCompanyRole ? '服务承诺' : '设计理念';
+    const philosophyPlaceholder = isForeman
+        ? '请填写施工理念（选填）'
+        : isCompanyRole
+            ? '请填写企业服务承诺（选填）'
+            : '请填写设计理念（选填）';
+    const serviceSettingTitle = isForeman ? '施工接单设置' : isCompanyRole ? '企业服务设置' : '服务设置';
+
     useEffect(() => {
         void Promise.all([
             fetchProviderInfo(),
@@ -455,8 +481,13 @@ const MerchantSettings: React.FC = () => {
 
                     <Card title="快捷入口" style={{ marginTop: 16 }}>
                         <Button block style={{ marginBottom: 8 }} onClick={() => navigate('/cases')}>
-                            {isForeman ? '管理施工案例' : '管理作品集'}
+                            {quickCaseLabel}
                         </Button>
+                        {isForeman && (
+                            <Button block style={{ marginBottom: 8 }} onClick={() => navigate('/price-book')}>
+                                管理工长价格库
+                            </Button>
+                        )}
                         <Button block style={{ marginBottom: 8 }} onClick={() => navigate('/bank-accounts')}>
                             银行账户管理
                         </Button>
@@ -467,26 +498,26 @@ const MerchantSettings: React.FC = () => {
                 </Col>
 
                 <Col xs={24} lg={16}>
-                    <Card title="基本信息" loading={loading}>
+                    <Card title={basicInfoTitle} loading={loading}>
                         <Form form={infoForm} layout="vertical" onFinish={handleSaveInfo}>
                             <Form.Item
                                 name="name"
-                                label="显示名称"
+                                label={nameLabel}
                                 rules={[{ required: true, message: '请输入名称' }, { max: 50, message: '名称最多50个字符' }]}
                             >
-                                <Input placeholder="您的名称或公司名称" maxLength={50} />
+                                <Input placeholder={namePlaceholder} maxLength={50} />
                             </Form.Item>
 
                             {isCompanyOrStudio && (
-                                <Form.Item name="companyName" label="公司/工作室名称">
+                                <Form.Item name="companyName" label={companyNameLabel}>
                                     <Input placeholder="公司全称" maxLength={100} />
                                 </Form.Item>
                             )}
 
                             <Row gutter={16}>
                                 <Col span={12}>
-                                    <Form.Item name="yearsExperience" label="从业年限">
-                                        <Select placeholder="选择从业年限">
+                                    <Form.Item name="yearsExperience" label={yearsLabel}>
+                                        <Select placeholder={yearsPlaceholder}>
                                             {[1, 2, 3, 5, 8, 10, 15, 20].map((year) => (
                                                 <Select.Option key={year} value={year}>
                                                     {year}年以上
@@ -499,10 +530,10 @@ const MerchantSettings: React.FC = () => {
                                     {!isForeman && (
                                         <Form.Item
                                             name="specialty"
-                                            label="擅长风格"
+                                            label={isCompanyRole ? '主营风格/项目偏好' : '擅长风格'}
                                             rules={[{ type: 'array', max: 5, message: '最多选择5个擅长风格' }]}
                                         >
-                                            <Select mode="multiple" placeholder="选择擅长风格" maxTagCount={4}>
+                                            <Select mode="multiple" placeholder={isCompanyRole ? '选择主营风格/项目偏好' : '选择擅长风格'} maxTagCount={4}>
                                                 {styleOptions.map((style) => (
                                                     <Select.Option key={style} value={style}>
                                                         {style}
@@ -515,21 +546,24 @@ const MerchantSettings: React.FC = () => {
                             </Row>
 
                             {isForeman && (
-                                <Form.Item
-                                    name="highlightTags"
-                                    label="施工亮点"
-                                    rules={[{ type: 'array', min: 1, max: 3, message: '请选择1-3个施工亮点' }]}
-                                >
-                                    <Select
-                                        mode="multiple"
-                                        placeholder="选择施工亮点"
-                                        options={FOREMAN_HIGHLIGHT_OPTIONS.map((item) => ({ value: item, label: item }))}
-                                    />
-                                </Form.Item>
+                                <>
+                                    <Form.Item
+                                        name="highlightTags"
+                                        label="工种/班组配置"
+                                        rules={[{ type: 'array', min: 1, max: 3, message: '请选择1-3个施工亮点' }]}
+                                        extra="用 1-3 个标签快速表达班组特点、工种覆盖与交付优势。"
+                                    >
+                                        <Select
+                                            mode="multiple"
+                                            placeholder="选择工种/班组亮点"
+                                            options={FOREMAN_HIGHLIGHT_OPTIONS.map((item) => ({ value: item, label: item }))}
+                                        />
+                                    </Form.Item>
+                                </>
                             )}
 
-                            <Form.Item name="serviceArea" label="服务区域">
-                                <Select mode="multiple" placeholder="选择可服务的区域">
+                            <Form.Item name="serviceArea" label={serviceAreaLabel}>
+                                <Select mode="multiple" placeholder={`选择${serviceAreaLabel}`}>
                                     {areaOptions.map((area) => (
                                         <Select.Option key={area} value={area}>
                                             {area}
@@ -540,17 +574,17 @@ const MerchantSettings: React.FC = () => {
 
                             <Row gutter={16}>
                                 <Col span={12}>
-                                    <Form.Item name="teamSize" label="团队规模">
+                                    <Form.Item name="teamSize" label={isForeman ? '班组规模' : '团队规模'}>
                                         <InputNumber min={1} max={500} style={{ width: '100%' }} placeholder="团队人数" />
                                     </Form.Item>
                                 </Col>
                                 <Col span={12}>
                                     <Form.Item
                                         name="officeAddress"
-                                        label="办公地址"
+                                        label={isForeman ? '常驻地址 / 办公地址' : '办公地址'}
                                         rules={[{ required: true, message: '请输入办公地址' }]}
                                     >
-                                        <Input placeholder="请输入办公地址" maxLength={200} />
+                                        <Input placeholder={isForeman ? '请输入常驻地址或办公地址' : '请输入办公地址'} maxLength={200} />
                                     </Form.Item>
                                 </Col>
                             </Row>
@@ -558,7 +592,7 @@ const MerchantSettings: React.FC = () => {
                             {isCompanyRole && (
                                 <Form.Item
                                     name="companyAlbum"
-                                    label="公司相册"
+                                    label="企业形象相册"
                                     rules={[
                                         {
                                             validator: (_, value) => {
@@ -594,10 +628,10 @@ const MerchantSettings: React.FC = () => {
                                 </Form.Item>
                             )}
 
-                            <Form.Item name="introduction" label={isForeman ? '施工服务简介' : '个人/公司简介'}>
+                            <Form.Item name="introduction" label={introLabel}>
                                 <Input.TextArea
                                     rows={4}
-                                    placeholder={isForeman ? '介绍施工经验、团队优势、服务特色等' : '介绍设计理念、服务特色等'}
+                                    placeholder={introPlaceholder}
                                     maxLength={5000}
                                     showCount
                                 />
@@ -605,8 +639,8 @@ const MerchantSettings: React.FC = () => {
 
                             <Form.Item
                                 name="pricingRaw"
-                                label="结构化报价（JSON）"
-                                extra={'例如：设计师 {"flat":1200,"duplex":1600,"other":1000}；工长 {"perSqm":900}'}
+                                label={isForeman ? '报价方式 / 计价能力（JSON）' : isCompanyRole ? '标准报价能力（JSON）' : '结构化报价（JSON）'}
+                                extra={isForeman ? '例如：{"perSqm":900}；用于表达施工计价能力。' : isCompanyRole ? '例如：{"fullPackage":1299,"halfPackage":899}；用于表达企业标准化报价。' : '例如：设计师 {"flat":1200,"duplex":1600,"other":1000}。'}
                             >
                                 <Input.TextArea rows={4} placeholder="{}" />
                             </Form.Item>
@@ -617,10 +651,10 @@ const MerchantSettings: React.FC = () => {
                                 </Form.Item>
                             )}
 
-                            <Form.Item name="designPhilosophy" label={isForeman ? '施工理念' : '设计理念'}>
+                            <Form.Item name="designPhilosophy" label={philosophyLabel}>
                                 <Input.TextArea
                                     rows={3}
-                                    placeholder={isForeman ? '请填写施工理念（选填）' : '请填写设计理念（选填）'}
+                                    placeholder={philosophyPlaceholder}
                                     maxLength={5000}
                                     showCount
                                 />
@@ -634,7 +668,7 @@ const MerchantSettings: React.FC = () => {
                         </Form>
                     </Card>
 
-                    <Card title="服务设置" style={{ marginTop: 16 }}>
+                    <Card title={serviceSettingTitle} style={{ marginTop: 16 }}>
                         <Form form={settingForm} layout="vertical" onFinish={handleSaveServiceSettings}>
                             <Form.Item name="acceptBooking" label="接单状态" valuePropName="checked">
                                 <Switch checkedChildren="接单中" unCheckedChildren="暂停接单" />
@@ -674,8 +708,8 @@ const MerchantSettings: React.FC = () => {
                                 </Col>
                             </Row>
 
-                            <Form.Item name="serviceStyles" label={isForeman ? '可施工风格' : '服务风格'}>
-                                <Select mode="multiple" placeholder={isForeman ? '选择可承接施工风格' : '选择服务风格'}>
+                            <Form.Item name="serviceStyles" label={isForeman ? '可承接项目风格' : isCompanyRole ? '主营服务风格' : '服务风格'}>
+                                <Select mode="multiple" placeholder={isForeman ? '选择可承接项目风格' : isCompanyRole ? '选择企业主营服务风格' : '选择服务风格'}>
                                     {styleOptions.map((style) => (
                                         <Select.Option key={style} value={style}>
                                             {style}

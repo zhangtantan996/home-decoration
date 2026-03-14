@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Descriptions, Image, Tag, Tabs, Space } from 'antd';
+import { Card, Descriptions, Image, Tag, Tabs, Space, Tooltip } from 'antd';
 import type { AdminMerchantApplicationDetail, MerchantApplicationDetails } from '../../../services/api';
 
 interface MerchantApplicationDetailProps {
@@ -53,7 +53,20 @@ const renderTags = (values: string[] | undefined, color: string) => {
     }
 
     return values.map((value) => (
-        <Tag key={value} color={color}>{value}</Tag>
+        <Tooltip key={value} title={value}>
+            <Tag
+                color={color}
+                style={{
+                    maxWidth: 180,
+                    overflow: 'hidden',
+                    whiteSpace: 'nowrap',
+                    textOverflow: 'ellipsis',
+                    verticalAlign: 'bottom',
+                }}
+            >
+                {value}
+            </Tag>
+        </Tooltip>
     ));
 };
 
@@ -78,6 +91,11 @@ const renderPricing = (pricing?: Record<string, number>) => {
 };
 
 const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ details }) => {
+    const subjectName = details.entityType === 'personal'
+        ? formatText(details.realName)
+        : formatText(details.companyName || details.realName);
+    const principalLabel = details.entityType === 'company' ? '负责人/经营者' : '负责人';
+
     const showMerchantKind = Boolean(details.merchantKind);
     const showSourceApplicationId = Boolean(
         details.sourceApplicationId && details.sourceApplicationId !== details.id,
@@ -89,6 +107,8 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             label: '基础信息',
             children: (
                 <Descriptions bordered column={2} size="small">
+                    <Descriptions.Item label="主体名称">{subjectName}</Descriptions.Item>
+                    <Descriptions.Item label={principalLabel}>{formatText(details.realName)}</Descriptions.Item>
                     <Descriptions.Item label="手机号">{formatText(details.phone)}</Descriptions.Item>
                     <Descriptions.Item label="角色类型">
                         <Tag color="blue">{roleMap[details.role] || formatText(details.role)}</Tag>

@@ -90,6 +90,17 @@ const MerchantOrders: React.FC = () => {
             width: 160,
             render: (v: string) => new Date(v).toLocaleString(),
         },
+        {
+            title: '操作',
+            width: 140,
+            render: (_: unknown, record: Order) => (
+                record.projectId ? (
+                    <Button type="link" size="small" onClick={() => navigate(`/contracts/new?projectId=${record.projectId}`)}>
+                        发起合同
+                    </Button>
+                ) : null
+            ),
+        },
     ];
 
     return (

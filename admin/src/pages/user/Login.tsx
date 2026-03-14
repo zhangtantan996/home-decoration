@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { Card, Form, Input, Button, message, Layout, Typography } from 'antd';
+import { Card, Form, Input, Button, Checkbox, message, Typography } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { adminAuthApi } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import type { AdminUser, MenuItem } from '../../stores/authStore';
 import merchantAppIcon from '../../assets/branding/company-logo.png';
+import { designTokens } from '../../styles/theme';
 
-const { Content } = Layout;
 const { Title, Text } = Typography;
 
 interface AdminLoginResponse {
@@ -88,55 +88,115 @@ const Login: React.FC = () => {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-            <Content style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <Card style={{ width: 400, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', borderRadius: 12 }}>
-                    <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                        <img
-                            src={merchantAppIcon}
-                            alt="禾泽云"
-                            style={{ width: 64, height: 64, borderRadius: 18, marginBottom: 16, boxShadow: '0 10px 28px rgba(24,144,255,0.24)' }}
-                        />
-                        <Title level={3} style={{ marginBottom: 8 }}>禾泽云管理后台</Title>
-                        <Text type="secondary">平台运营与审核中心</Text>
+        <div className="hz-login">
+            <section className="hz-login__brand">
+                <div className="hz-login__grid" />
+                <div className="hz-login__brand-inner">
+                    <div className="hz-login__logo">
+                        <img src={merchantAppIcon} alt="禾泽云" />
                     </div>
+                    <Title level={1} className="hz-login__brand-title" style={{ color: '#fff', margin: 0 }}>
+                        禾泽云管理后台
+                    </Title>
+                    <Text className="hz-login__brand-subtitle">
+                        家装设计一体化平台管理系统，统一管理用户、服务商、项目、审核与财务流程。
+                    </Text>
+                    <div className="hz-login__stats">
+                        <div>
+                            <div className="hz-login__stat-value">统一鉴权</div>
+                            <div className="hz-login__stat-label">管理员登录与权限控制</div>
+                        </div>
+                        <div>
+                            <div className="hz-login__stat-value">统一审核</div>
+                            <div className="hz-login__stat-label">入驻、身份与案例审核</div>
+                        </div>
+                        <div>
+                            <div className="hz-login__stat-value">统一运营</div>
+                            <div className="hz-login__stat-label">项目、财务与风险处理入口</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section className="hz-login__form">
+                <Card className="hz-login__form-card" bordered={false}>
+                    <div className="hz-login__form-header">
+                        <div className="hz-login__swatches" aria-hidden="true">
+                            <span className="hz-login__swatch" style={{ background: '#2563eb' }} />
+                            <span className="hz-login__swatch" style={{ background: '#8b6b4a' }} />
+                            <span className="hz-login__swatch" style={{ background: '#94a3b8' }} />
+                        </div>
+                        <Title level={2} className="hz-login__form-title" style={{ margin: 0 }}>
+                            欢迎回来
+                        </Title>
+                        <Text className="hz-login__form-subtitle">请使用管理员账号登录</Text>
+                    </div>
+
                     <Form
                         name="admin_login"
-                        initialValues={{ username: '', password: '' }}
+                        initialValues={{ username: '', password: '', remember: false }}
                         onFinish={onFinish}
                         size="large"
+                        layout="vertical"
                     >
                         <Form.Item
                             name="username"
+                            label="用户名"
                             rules={[{ required: true, message: '请输入用户名' }]}
                         >
                             <Input
                                 prefix={<UserOutlined />}
-                                placeholder="用户名"
+                                placeholder="请输入用户名"
                                 autoComplete="username"
                             />
                         </Form.Item>
 
                         <Form.Item
                             name="password"
+                            label="密码"
                             rules={[{ required: true, message: '请输入密码' }]}
                         >
                             <Input.Password
                                 prefix={<LockOutlined />}
-                                placeholder="密码"
+                                placeholder="请输入密码"
                                 autoComplete="current-password"
                             />
                         </Form.Item>
 
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit" block loading={loading}>
+                        <Form.Item style={{ marginBottom: 18 }}>
+                            <div className="hz-login__meta-row">
+                                <Form.Item name="remember" valuePropName="checked" noStyle>
+                                    <Checkbox>记住登录状态</Checkbox>
+                                </Form.Item>
+                                <a className="hz-login__meta-link" href="#" onClick={(event) => event.preventDefault()}>
+                                    忘记密码?
+                                </a>
+                            </div>
+                        </Form.Item>
+
+                        <Form.Item style={{ marginBottom: 0 }}>
+                            <Button
+                                type="primary"
+                                htmlType="submit"
+                                block
+                                loading={loading}
+                                style={{
+                                    height: 48,
+                                    borderRadius: designTokens.radiusSm,
+                                    fontWeight: 700,
+                                }}
+                            >
                                 登 录
                             </Button>
                         </Form.Item>
                     </Form>
+
+                    <div className="hz-login__footer">
+                        © 2026 禾泽云科技 · 家装设计一体化平台
+                    </div>
                 </Card>
-            </Content>
-        </Layout>
+            </section>
+        </div>
     );
 };
 

@@ -40,7 +40,7 @@
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 24px;
   margin-bottom: 32px;
 }
@@ -84,6 +84,11 @@
 .iconBooking {
   background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
   color: #1976d2;
+}
+
+.iconLead {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  color: #d97706;
 }
 
 .iconProposal {
@@ -157,7 +162,7 @@
 
 .actionGrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 24px;
 }
 

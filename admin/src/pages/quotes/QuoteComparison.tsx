@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Descriptions, List, message, Modal, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { ArrowLeftOutlined, TrophyOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, SendOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 import { adminQuoteApi, type QuoteComparisonResponse, type QuoteComparisonSubmission } from '../../services/quoteApi';
+import PageHeader from '../../components/PageHeader';
+import StatusTag from '../../components/StatusTag';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const formatCent = (value?: number) => {
     if (!value || value <= 0) return '-';
@@ -17,7 +19,7 @@ const QuoteComparison: React.FC = () => {
     const params = useParams();
     const quoteListId = Number(params.id);
     const [loading, setLoading] = useState(false);
-    const [awarding, setAwarding] = useState(false);
+    const [submittingToUser, setSubmittingToUser] = useState(false);
     const [data, setData] = useState<QuoteComparisonResponse | null>(null);
 
     const load = async () => {
@@ -43,7 +45,7 @@ const QuoteComparison: React.FC = () => {
     const columns: ColumnsType<QuoteComparisonSubmission> = useMemo(() => [
         { title: '服务商', dataIndex: 'providerName', key: 'providerName' },
         { title: '类型', dataIndex: 'providerSubType', key: 'providerSubType', width: 120 },
-        { title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (value: string) => <Tag>{value}</Tag> },
+        { title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (value: string) => <StatusTag status="info" text={value} /> },
         { title: '总价', dataIndex: 'totalCent', key: 'totalCent', width: 140, render: (value: number) => formatCent(value) },
         {
             title: '缺项',
@@ -64,64 +66,65 @@ const QuoteComparison: React.FC = () => {
             render: (_value, record) => (
                 <Button
                     type="primary"
-                    icon={<TrophyOutlined />}
-                    disabled={data?.quoteList.status === 'awarded'}
+                    icon={<SendOutlined />}
+                    disabled={data?.quoteList.status === 'user_confirmed'}
                     onClick={() => {
                         Modal.confirm({
-                            title: '确认定标',
-                            content: `确定将 ${record.providerName} 设为中标方吗？`,
-                            okText: '确认定标',
+                            title: '提交给用户确认',
+                            content: `确定将 ${record.providerName} 的报价版本提交给用户确认吗？`,
+                            okText: '提交用户',
                             cancelText: '取消',
                             onOk: async () => {
                                 try {
-                                    setAwarding(true);
-                                    await adminQuoteApi.awardQuote(quoteListId, record.submissionId);
-                                    message.success('定标完成');
+                                    setSubmittingToUser(true);
+                                    await adminQuoteApi.submitTaskToUser(quoteListId, record.submissionId);
+                                    message.success('已提交给用户确认');
                                     await load();
                                 } catch (error: any) {
-                                    message.error(error?.message || '定标失败');
+                                    message.error(error?.message || '提交用户确认失败');
                                 } finally {
-                                    setAwarding(false);
+                                    setSubmittingToUser(false);
                                 }
                             },
                         });
                     }}
                 >
-                    定标
+                    提交用户确认
                 </Button>
             ),
         },
     ], [data?.quoteList.status, quoteListId]);
 
     return (
-        <div>
-            <Card style={{ marginBottom: 16 }}>
-                <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title={data?.quoteList.title || `报价对比 #${quoteListId}`}
+                description="查看多家报价版本、识别缺项与异常价，并提交用户确认版本。"
+                extra={(
                     <Space>
                         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/projects/quotes/lists')}>返回清单</Button>
-                        <div>
-                            <Title level={4} style={{ margin: 0 }}>{data?.quoteList.title || `报价对比 #${quoteListId}`}</Title>
-                            <Text type="secondary">admin 负责查看多家报价、识别缺项与异常价，并完成定标。</Text>
-                        </div>
+                        <Button onClick={() => void load()} loading={loading || submittingToUser}>刷新</Button>
                     </Space>
-                    <Button onClick={() => void load()} loading={loading || awarding}>刷新</Button>
-                </Space>
-            </Card>
+                )}
+            />
 
-            <Card loading={loading} style={{ marginBottom: 16 }}>
+            <Card className="hz-panel-card" loading={loading}>
                 <Descriptions column={4} size="small">
-                    <Descriptions.Item label="状态">{data?.quoteList.status || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="状态">
+                        {data?.quoteList.status ? <StatusTag status="info" text={data.quoteList.status} /> : '-'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="用户确认">{data?.quoteList.userConfirmationStatus || '-'}</Descriptions.Item>
                     <Descriptions.Item label="币种">{data?.quoteList.currency || 'CNY'}</Descriptions.Item>
                     <Descriptions.Item label="条目数">{data?.items.length || 0}</Descriptions.Item>
                     <Descriptions.Item label="报价数">{data?.submissions.length || 0}</Descriptions.Item>
                 </Descriptions>
             </Card>
 
-            <Card title="报价对比">
+            <Card className="hz-table-card" title="报价对比">
                 <Table rowKey="submissionId" loading={loading} columns={columns} dataSource={data?.submissions || []} pagination={false} />
             </Card>
 
-            <Card title="分类小计" style={{ marginTop: 16 }}>
+            <Card className="hz-panel-card" title="分类小计">
                 <List
                     dataSource={data?.submissions || []}
                     renderItem={(submission) => (
