@@ -30,7 +30,7 @@ export default function ProviderList() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState((router.params.keyword || '').trim());
   const requestIdRef = useRef(0);
   const skipSearchFirstRunRef = useRef(true);
 

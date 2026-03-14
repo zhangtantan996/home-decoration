@@ -1,0 +1,53 @@
+.list {
+  display: grid;
+  gap: 14px;
+}
+
+.card {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(186, 174, 162, 0.18);
+}
+
+.card h3,
+.card p,
+.card span,
+.card strong {
+  margin: 0;
+}
+
+.card p {
+  color: var(--color-secondary);
+}
+
+.metaBlock {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  text-align: right;
+}
+
+.metaBlock span {
+  color: var(--color-brand-deep);
+  font-weight: 600;
+}
+
+.metaBlock strong {
+  font-family: var(--font-family-heading);
+  color: var(--color-ink);
+}
+
+@media (max-width: 720px) {
+  .card {
+    flex-direction: column;
+  }
+
+  .metaBlock {
+    justify-items: start;
+    text-align: left;
+  }
+}

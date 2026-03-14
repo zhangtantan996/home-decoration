@@ -149,7 +149,9 @@ export const createRouter = (history, app, config, _react) => {
     const result = route.load({}, {});
     // Support both sync and async (Promise) return from route.load()
     const resolved = result instanceof Promise ? await result : result;
-    const PageComponent = Array.isArray(resolved) ? resolved[0] : (resolved?.default || resolved);
+    const loaded = Array.isArray(resolved) ? resolved[0] : resolved;
+    const moduleLike = loaded instanceof Promise ? await loaded : loaded;
+    const PageComponent = moduleLike?.default || moduleLike?.component || moduleLike;
     if (!PageComponent) return;
 
     const nextId = ensureLeadingSlash(route.path || '/');

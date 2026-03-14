@@ -88,6 +88,8 @@ const ProjectDetailPage: React.FC = () => {
   const getMilestoneStatusText = (status: string) => {
     switch(status) {
       case 'completed': return '已验收';
+      case 'paid': return '已放款';
+      case 'in_progress': return '施工中';
       case 'rejected': return '已拒绝';
       default: return '待验收';
     }
@@ -204,7 +206,7 @@ const ProjectDetailPage: React.FC = () => {
                 ) : (
                   <View className="space-y-md">
                     {milestones.map((milestone) => {
-                      const isCompleted = milestone.status === 'completed';
+                      const isCompleted = milestone.status === 'completed' || milestone.status === 'paid';
                       const isRejected = milestone.status === 'rejected';
                       const isPending = milestone.status === 'pending';
 
@@ -223,6 +225,7 @@ const ProjectDetailPage: React.FC = () => {
                             <Text className={`text-xs px-xs py-xxs rounded ml-xs ${
                               isCompleted ? 'bg-green-50 text-success' :
                               isRejected ? 'bg-red-50 text-danger' :
+                              milestone.status === 'in_progress' ? 'bg-blue-50 text-brand' :
                               'bg-yellow-50 text-warning'
                             }`}>
                               {getMilestoneStatusText(milestone.status)}

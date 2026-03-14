@@ -15,6 +15,7 @@
 ## Environment variables
 - `TARO_APP_API_BASE`: API base URL, default `http://localhost:8080/api/v1`.
 - `TARO_APP_H5_URL`: H5 base URL used by the weapp WebView container. In real devices/production it should be an **HTTPS domain** and must be whitelisted in WeChat mini program settings.
+- `TARO_APP_H5_PUBLIC_PATH`: H5 static public path. Production user-web should default to `/app/`.
 
 Example:
 ```bash

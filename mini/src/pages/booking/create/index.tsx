@@ -110,7 +110,7 @@ const BookingCreate: React.FC = () => {
 
     setLoading(true);
     try {
-      await createBooking({
+      const booking = await createBooking({
         providerId: formData.providerId,
         providerType: formData.providerType,
         address: formData.address,
@@ -124,7 +124,7 @@ const BookingCreate: React.FC = () => {
 
       Taro.showToast({ title: '预约提交成功', icon: 'success' });
       setTimeout(() => {
-        Taro.navigateBack();
+        Taro.redirectTo({ url: `/pages/booking/detail/index?id=${booking.id}` });
       }, 1200);
     } catch (error) {
       showErrorToast(error, '预约失败，请重试');

@@ -1,0 +1,150 @@
+name: User Web CI
+
+on:
+  push:
+    branches: ["dev"]
+    paths:
+      - 'web/**'
+      - 'shared/design-tokens/**'
+      - 'tests/e2e/user-web*.ts'
+      - 'tests/e2e/helpers/userWeb*.ts'
+      - 'scripts/user-web-*.sh'
+      - 'server/scripts/testdata/user_web_fixture.sql'
+      - 'playwright.user-web*.ts'
+      - 'package.json'
+      - '.github/workflows/ci-user-web.yml'
+  pull_request:
+    branches: ["dev"]
+    paths:
+      - 'web/**'
+      - 'shared/design-tokens/**'
+      - 'tests/e2e/user-web*.ts'
+      - 'tests/e2e/helpers/userWeb*.ts'
+      - 'scripts/user-web-*.sh'
+      - 'server/scripts/testdata/user_web_fixture.sql'
+      - 'playwright.user-web*.ts'
+      - 'package.json'
+      - '.github/workflows/ci-user-web.yml'
+
+jobs:
+  verify-user-web:
+    runs-on: ubuntu-latest
+    env:
+      USER_WEB_FIXTURE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/home_decoration?sslmode=disable
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: home_decoration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d home_decoration"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:6.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: server/go.sum
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Restore base schema/data
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d home_decoration -f public.sql
+
+      - name: Start API
+        env:
+          APP_ENV: local
+          DATABASE_HOST: 127.0.0.1
+          DATABASE_PORT: 5432
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          DATABASE_DBNAME: home_decoration
+          DATABASE_NAME: home_decoration
+          DATABASE_SSLMODE: disable
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          REDIS_PASSWORD: ""
+          JWT_SECRET: test_user_web_ci_jwt_secret_2026
+          SMS_PROVIDER: mock
+          SMS_DEBUG_BYPASS: "true"
+          SMS_RISK_ENABLED: "false"
+        run: |
+          cd server
+          nohup go run ./cmd/api >/tmp/user-web-api.log 2>&1 &
+          echo $! >/tmp/user-web-api.pid
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8080/api/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become healthy in time"
+          cat /tmp/user-web-api.log || true
+          exit 1
+
+      - name: Build web
+        run: npm run build:web
+
+      - name: Apply user-web fixture
+        run: npm run fixture:user-web
+
+      - name: Real API smoke
+        run: npm run smoke:user-web:api
+
+      - name: Mock UI smoke
+        run: npm run test:e2e:user-web
+
+      - name: Real UI smoke
+        run: npm run test:e2e:user-web:real
+
+      - name: Print API log on failure
+        if: failure()
+        run: cat /tmp/user-web-api.log || true
+
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/user-web-api.pid ]; then
+            kill "$(cat /tmp/user-web-api.pid)" || true
+          fi

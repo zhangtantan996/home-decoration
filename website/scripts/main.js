@@ -46,7 +46,7 @@ const iconSet = {
 };
 
 const USER_WEB_URL = (import.meta.env.VITE_USER_WEB_URL || '/app/').trim();
-const MERCHANT_WEB_URL = (import.meta.env.VITE_MERCHANT_WEB_URL || '/merchant').trim();
+const MERCHANT_WEB_URL = (import.meta.env.VITE_MERCHANT_WEB_URL || '/merchant/').trim();
 const IOS_APP_URL = (import.meta.env.VITE_IOS_APP_URL || '').trim();
 const ANDROID_APP_URL = (import.meta.env.VITE_ANDROID_APP_URL || '').trim();
 
@@ -59,44 +59,44 @@ const resolveUserWebBase = () => {
     }
 
     if (typeof window !== 'undefined' && isLocalHost(window.location.hostname)) {
-        return `${window.location.protocol}//${window.location.hostname}:5186/`;
+        return `${window.location.protocol}//${window.location.hostname}:5175/app/`;
     }
 
     return USER_WEB_URL || '/app/';
 };
 
 const resolveMerchantWebBase = () => {
-    if (MERCHANT_WEB_URL && MERCHANT_WEB_URL !== '/merchant') {
+    if (MERCHANT_WEB_URL && MERCHANT_WEB_URL !== '/merchant/') {
         return MERCHANT_WEB_URL;
     }
 
     if (typeof window !== 'undefined' && isLocalHost(window.location.hostname)) {
-        return `${window.location.protocol}//${window.location.hostname}:5174/merchant`;
+        return `${window.location.protocol}//${window.location.hostname}:5175/merchant/`;
     }
 
-    return MERCHANT_WEB_URL || '/merchant';
+    return MERCHANT_WEB_URL || '/merchant/';
 };
 
 const resolveAppDownloadURL = (value) => value || '#download';
 
-const buildUserWebURL = (hashPath = '') => {
+const buildUserWebURL = (routePath = '') => {
     const base = resolveUserWebBase();
-    const normalizedBase = base.replace(/#.*$/, '');
-    if (!hashPath) {
-        return normalizedBase;
+    const normalizedBase = trimTrailingSlash(base.replace(/#.*$/, ''));
+    if (!routePath || routePath === '/') {
+        return `${normalizedBase}/`;
     }
-    const nextHash = hashPath.startsWith('/') ? hashPath : `/${hashPath}`;
-    return `${trimTrailingSlash(normalizedBase)}/#${nextHash}`;
+    const nextPath = routePath.startsWith('/') ? routePath : `/${routePath}`;
+    return `${normalizedBase}${nextPath}`;
 };
 
 const linkTargets = {
     'ios-app': () => resolveAppDownloadURL(IOS_APP_URL),
     'android-app': () => resolveAppDownloadURL(ANDROID_APP_URL),
-    'user-web-home': () => buildUserWebURL('/pages/home/index'),
-    'user-web-login': () => buildUserWebURL('/pages/auth/login/index'),
-    'user-web-providers': () => buildUserWebURL('/pages/providers/list/index'),
-    'user-web-foremen': () => buildUserWebURL('/pages/providers/list/index?type=foreman'),
-    'user-web-inspiration': () => buildUserWebURL('/pages/inspiration/index'),
+    'user-web-home': () => buildUserWebURL('/'),
+    'user-web-login': () => buildUserWebURL('/login'),
+    'user-web-providers': () => buildUserWebURL('/providers?category=designer'),
+    'user-web-foremen': () => buildUserWebURL('/providers?category=construction'),
+    'user-web-inspiration': () => buildUserWebURL('/inspiration'),
     'merchant-entry': () => resolveMerchantWebBase(),
     'merchant-web': () => resolveMerchantWebBase(),
 };

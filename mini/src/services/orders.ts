@@ -51,15 +51,27 @@ export interface InstallmentPlan {
   orderId: number;
   seq: number;
   amount: number;
-  dueDate: string;
+  dueDate?: string;
   status: 'pending' | 'paid' | 'overdue';
   paidAt?: string;
 }
 
 export async function getInstallmentPlans(orderId: number) {
-  return request<{ plans: InstallmentPlan[] }>({
+  const data = await request<{ plans: Array<InstallmentPlan & { status: number | string; dueAt?: string }> }>({
     url: `/orders/${orderId}/plans`
   });
+
+  return {
+    plans: (data.plans || []).map((plan) => ({
+      ...plan,
+      dueDate: plan.dueDate || plan.dueAt,
+      status: plan.status === 1 || plan.status === 'paid'
+        ? 'paid'
+        : plan.status === 'overdue'
+          ? 'overdue'
+          : 'pending',
+    })),
+  };
 }
 
 export async function payInstallment(planId: number) {

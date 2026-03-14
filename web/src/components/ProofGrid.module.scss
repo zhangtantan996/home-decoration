@@ -1,0 +1,51 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.card,
+.stepCard {
+  padding: 22px;
+  border-radius: 18px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border-soft);
+}
+
+.index {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-brand-surface);
+  color: var(--color-brand);
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.title {
+  margin: 0 0 10px;
+  font-family: var(--font-family-heading);
+  font-size: 1.12rem;
+  color: var(--color-ink);
+}
+
+.copy {
+  margin: 0;
+  color: var(--color-secondary);
+  line-height: var(--line-height-body);
+}
+
+@media (max-width: 1040px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

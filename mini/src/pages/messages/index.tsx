@@ -8,7 +8,7 @@ import { ListItem } from '@/components/ListItem';
 import { Empty } from '@/components/Empty';
 import { Skeleton } from '@/components/Skeleton';
 import { Icon } from '@/components/Icon';
-import TinodeService from '@/services/TinodeService';
+import { loadTinodeService } from '@/services/loadTinodeService';
 import {
   deleteNotification,
   listNotifications,
@@ -144,18 +144,20 @@ export default function Messages() {
     }
 
     let cancelled = false;
+    let tinodeService: Awaited<ReturnType<typeof loadTinodeService>> | null = null;
 
     const fetchConversations = async () => {
       setChatLoading(true);
       setChatError(null);
 
       try {
-        const ok = await TinodeService.init(auth.tinodeToken);
+        tinodeService = await loadTinodeService();
+        const ok = await tinodeService.init(auth.tinodeToken);
         if (!ok) {
           throw new Error('聊天服务初始化失败');
         }
 
-        const topics = await TinodeService.getConversationList();
+        const topics = await tinodeService.getConversationList();
         if (cancelled) return;
 
         setConversations(topics.map(toConversationPreview));
@@ -173,8 +175,8 @@ export default function Messages() {
     fetchConversations();
 
     const handleContactsChanged = () => {
-      if (!auth.token || !auth.tinodeToken) return;
-      TinodeService.getConversationList()
+      if (!auth.token || !auth.tinodeToken || !tinodeService) return;
+      tinodeService.getConversationList()
         .then((topics) => {
           setConversations(topics.map(toConversationPreview));
         })
@@ -183,13 +185,22 @@ export default function Messages() {
         });
     };
 
-    TinodeService.on('contact-update', handleContactsChanged);
-    TinodeService.on('subs-updated', handleContactsChanged);
+    const bindListeners = async () => {
+      if (!tinodeService) {
+        tinodeService = await loadTinodeService();
+      }
+      tinodeService.on('contact-update', handleContactsChanged);
+      tinodeService.on('subs-updated', handleContactsChanged);
+    };
+
+    bindListeners().catch(() => {
+      // best-effort only
+    });
 
     return () => {
       cancelled = true;
-      TinodeService.removeListener('contact-update', handleContactsChanged);
-      TinodeService.removeListener('subs-updated', handleContactsChanged);
+      tinodeService?.removeListener('contact-update', handleContactsChanged);
+      tinodeService?.removeListener('subs-updated', handleContactsChanged);
     };
   }, [
     activeTab,

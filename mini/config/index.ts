@@ -7,6 +7,8 @@ import prodConfig from './prod';
 export default defineConfig(async (merge) => {
   const taroEnv = process.env.TARO_ENV;
   const isH5 = taroEnv === 'h5';
+  const isProduction = process.env.NODE_ENV === 'production';
+  const h5PublicPath = process.env.TARO_APP_H5_PUBLIC_PATH || (isH5 && isProduction ? '/app/' : '/');
   const plugins = ['@tarojs/plugin-framework-react'];
 
   if (!isH5) {
@@ -29,6 +31,11 @@ export default defineConfig(async (merge) => {
       '@': path.resolve(__dirname, '..', 'src'),
     },
     defineConstants: {},
+    webpackChain(chain) {
+      if (isH5 && isProduction) {
+        chain.optimization.minimize(false);
+      }
+    },
     framework: 'react',
     compiler: {
       type: 'webpack5',
@@ -59,7 +66,7 @@ export default defineConfig(async (merge) => {
       }
     },
     h5: {
-      publicPath: '/',
+      publicPath: h5PublicPath,
       staticDirectory: 'static',
       output: {
         environment: {
@@ -78,6 +85,13 @@ export default defineConfig(async (merge) => {
       router: {
         mode: 'hash',
       },
+      webpackChain(chain, webpack) {
+        chain.resolve.alias.set('@tarojs/components$', path.resolve(__dirname, '..', 'src/shims/taro-components.cjs'));
+        chain.plugin('replaceTaroRouterTabbar').use(webpack.NormalModuleReplacementPlugin, [
+          /[/\\]@tarojs[/\\]router[/\\]dist[/\\]tabbar\.js$/,
+          path.resolve(__dirname, '..', 'src/shims/taro-tabbar.js'),
+        ]);
+      },
       devServer: {
         port: 5176,
         hot: false,
@@ -94,7 +108,6 @@ export default defineConfig(async (merge) => {
     }
   };
 
-  const isProduction = process.env.NODE_ENV === 'production';
   if (isProduction) {
     return merge({}, baseConfig, prodConfig);
   }

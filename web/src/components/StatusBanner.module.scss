@@ -1,0 +1,57 @@
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 20px 22px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+}
+
+.main {
+  display: grid;
+  gap: 8px;
+}
+
+.label {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-family-heading);
+  font-size: 1.35rem;
+  color: var(--color-ink);
+}
+
+.copy {
+  margin: 0;
+  color: var(--color-secondary);
+  line-height: 1.6;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.info {
+  background: #fff;
+  border-color: var(--color-border);
+}
+
+.warning {
+  background: rgba(180, 83, 9, 0.06);
+  border-color: rgba(180, 83, 9, 0.12);
+}
+
+.success {
+  background: rgba(15, 118, 110, 0.06);
+  border-color: rgba(15, 118, 110, 0.12);
+}

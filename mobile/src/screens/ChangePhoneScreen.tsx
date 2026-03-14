@@ -4,8 +4,11 @@ import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-nativ
 import { useToast } from '../components/Toast';
 import SettingsDialog from '../components/settings/SettingsDialog';
 import { SettingsActionButton, SettingsLayout, SettingsPageDescription, SettingsSection } from '../components/settings/SettingsPrimitives';
+import { authApi, userSettingsApi } from '../services/api';
 import { SETTINGS_COLORS, SETTINGS_RADIUS } from '../styles/settingsTheme';
 import { useAuthStore } from '../store/authStore';
+
+const PHONE_REGEX = /^1[3-9]\d{9}$/;
 
 const ChangePhoneScreen = ({ navigation }: any) => {
     const { user, updateUser } = useAuthStore();
@@ -14,6 +17,8 @@ const ChangePhoneScreen = ({ navigation }: any) => {
     const [smsCode, setSmsCode] = useState('');
     const [countdown, setCountdown] = useState(0);
     const [successVisible, setSuccessVisible] = useState(false);
+    const [isSending, setIsSending] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
         if (!countdown) {
@@ -25,20 +30,64 @@ const ChangePhoneScreen = ({ navigation }: any) => {
         return () => clearInterval(timer);
     }, [countdown]);
 
-    const submitDisabled = useMemo(() => !/^1\d{10}$/.test(nextPhone) || smsCode.length !== 6, [nextPhone, smsCode]);
+    const submitDisabled = useMemo(
+        () => !PHONE_REGEX.test(nextPhone) || smsCode.length !== 6 || isSubmitting,
+        [isSubmitting, nextPhone, smsCode],
+    );
 
-    const handleSendCode = () => {
-        if (!/^1\d{10}$/.test(nextPhone)) {
+    const handleSendCode = async () => {
+        if (countdown > 0 || isSending) {
+            return;
+        }
+
+        if (!PHONE_REGEX.test(nextPhone)) {
             showToast({ type: 'warning', message: '请输入正确的新手机号' });
             return;
         }
-        setCountdown(60);
-        showToast({ type: 'success', message: '验证码已发送，请注意查收' });
+
+        if (nextPhone === user?.phone) {
+            showToast({ type: 'warning', message: '新手机号不能与当前手机号相同' });
+            return;
+        }
+
+        try {
+            setIsSending(true);
+            await authApi.sendCode(nextPhone, 'change_phone');
+            setCountdown(60);
+            showToast({ type: 'success', message: '验证码已发送，请注意查收' });
+        } catch (error: any) {
+            showToast({
+                type: 'error',
+                message: error.response?.data?.message || '发送失败，请稍后重试',
+            });
+        } finally {
+            setIsSending(false);
+        }
     };
 
     const handleSubmit = async () => {
-        await updateUser({ phone: nextPhone });
-        setSuccessVisible(true);
+        if (submitDisabled || isSubmitting) {
+            return;
+        }
+
+        if (nextPhone === user?.phone) {
+            showToast({ type: 'warning', message: '新手机号不能与当前手机号相同' });
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            await userSettingsApi.changePhone({ newPhone: nextPhone, code: smsCode });
+            await updateUser({ phone: nextPhone });
+            setSuccessVisible(true);
+        } catch (error: any) {
+            showToast({
+                type: 'error',
+                message: error.response?.data?.message || '换绑失败，请稍后重试',
+            });
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -78,19 +127,19 @@ const ChangePhoneScreen = ({ navigation }: any) => {
                         />
                         <TouchableOpacity
                             activeOpacity={0.88}
-                            style={[styles.codeButton, countdown > 0 && styles.codeButtonDisabled]}
+                            style={[styles.codeButton, (countdown > 0 || isSending) && styles.codeButtonDisabled]}
                             onPress={handleSendCode}
-                            disabled={countdown > 0}
+                            disabled={countdown > 0 || isSending}
                         >
-                            <Text style={[styles.codeButtonText, countdown > 0 && styles.codeButtonTextDisabled]}>
-                                {countdown > 0 ? `${countdown}s` : '发送验证码'}
+                            <Text style={[styles.codeButtonText, (countdown > 0 || isSending) && styles.codeButtonTextDisabled]}>
+                                {countdown > 0 ? `${countdown}s` : isSending ? '发送中...' : '发送验证码'}
                             </Text>
                         </TouchableOpacity>
                     </View>
                 </View>
             </SettingsSection>
 
-            <SettingsActionButton label="确认换绑" onPress={handleSubmit} disabled={submitDisabled} />
+            <SettingsActionButton label={isSubmitting ? '提交中...' : '确认换绑'} onPress={handleSubmit} disabled={submitDisabled} />
 
             <SettingsDialog
                 visible={successVisible}

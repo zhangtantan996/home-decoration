@@ -18,10 +18,11 @@ export const orderStatusMap: Record<number, { label: string; variant: TagVariant
 };
 
 export const projectStatusMap: Record<number, { label: string; variant: TagVariant }> = {
-  0: { label: '进行中', variant: 'brand' },
-  1: { label: '已完工', variant: 'success' },
-  2: { label: '已暂停', variant: 'warning' },
-  3: { label: '已取消', variant: 'default' },
+  0: { label: '待准备', variant: 'default' },
+  1: { label: '施工中', variant: 'brand' },
+  2: { label: '验收中', variant: 'warning' },
+  3: { label: '已完工', variant: 'success' },
+  4: { label: '已取消', variant: 'default' },
 };
 
 export const projectPhaseStatusMap: Record<string, { label: string; variant: TagVariant }> = {

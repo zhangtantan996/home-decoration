@@ -49,7 +49,7 @@ export default function Home() {
     try {
       const params: any = { page: 1, pageSize: 10, sortBy: 'rating' };
       if (activeTab !== '0') {
-        params.providerType = parseInt(activeTab);
+        params.type = parseInt(activeTab);
       }
       const data = await listProviders(params);
       setProviders(data.list || []);

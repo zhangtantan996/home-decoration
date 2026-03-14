@@ -10,17 +10,30 @@ export interface ConfirmProposalResponse {
   message?: string;
 }
 
+interface ProposalDetailEnvelope {
+  proposal: ProposalItem;
+  order?: OrderDTO;
+  hasOrder?: boolean;
+}
+
 export async function listProposals(page = 1, pageSize = 20) {
-  return request<PageData<ProposalItem>>({
+  const list = await request<ProposalItem[]>({
     url: '/proposals',
-    data: { page, pageSize }
   });
+  const items = Array.isArray(list) ? list : [];
+  return {
+    list: items.slice((page - 1) * pageSize, page * pageSize),
+    total: items.length,
+    page,
+    pageSize,
+  } satisfies PageData<ProposalItem>;
 }
 
 export async function getProposalDetail(id: number) {
-  return request<ProposalItem>({
+  const data = await request<ProposalDetailEnvelope>({
     url: `/proposals/${id}`
   });
+  return data.proposal;
 }
 
 export async function confirmProposal(id: number) {

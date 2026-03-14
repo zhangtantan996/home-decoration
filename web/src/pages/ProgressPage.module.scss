@@ -1,0 +1,19 @@
+.projectCard {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border-soft);
+  background: #fff;
+}
+
+.projectCard span,
+.projectCard p {
+  margin: 0;
+  color: var(--color-secondary);
+}
+
+.projectCard strong {
+  color: var(--color-ink);
+  font-family: var(--font-family-heading);
+}

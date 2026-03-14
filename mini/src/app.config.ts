@@ -21,6 +21,7 @@ export default {
     'pages/providers/detail/index',
     'pages/booking/create/index',
     'pages/booking/list/index',
+    'pages/booking/detail/index',
     'pages/proposals/list/index',
     'pages/proposals/detail/index',
     'pages/orders/pending/index',
