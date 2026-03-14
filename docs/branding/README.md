@@ -38,5 +38,5 @@ The browser tab icon does **not** use CSS. Theme switching is handled in HTML wi
 
 Entry files using this setup:
 - `admin/index.html`
-- `admin/merchant.html`
+- `merchant/index.html`
 - `website/index.html`

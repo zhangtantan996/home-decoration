@@ -83,31 +83,46 @@ docker compose -f docker-compose.local.yml up -d db redis api admin
 
 ```bash
 docker exec -i home_decor_db_local psql -U postgres -d home_decoration \
-  < server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql
+  < server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql
 ```
 
-### Step 2: 校验认证 + 商家入驻关键字段存在
+### Step 2: 本地 schema 健康检查（推荐）
+
+```bash
+npm run db:check
+```
+
+此命令会检查：
+- migration/version 状态
+- 高风险表关键列是否存在
+- 高风险写入路径 smoke 测试是否通过
+
+### Step 3: 手动校验认证 + 商家入驻关键字段存在（可选）
 
 ```bash
 docker exec -i home_decor_db_local psql -U postgres -d home_decoration -At -c \
-"SELECT table_name, column_name
- FROM information_schema.columns
- WHERE table_schema='public'
-   AND table_name IN ('users','merchant_applications','providers','material_shop_applications','material_shops')
-   AND column_name IN ('public_id','last_login_at','last_login_ip','role','entity_type','avatar','work_types','highlight_tags','pricing_json','graduate_school','design_philosophy','legal_acceptance_json','legal_accepted_at','legal_accept_source','source_application_id')
- ORDER BY table_name, column_name;"
+  "SELECT table_name, column_name
+  FROM information_schema.columns
+  WHERE table_schema='public'
+    AND table_name IN ('users','merchant_applications','providers','material_shop_applications','material_shops','sms_audit_logs')
+    AND column_name IN ('public_id','last_login_at','last_login_ip','role','entity_type','avatar','work_types','highlight_tags','pricing_json','graduate_school','design_philosophy','legal_acceptance_json','legal_accepted_at','legal_accept_source','source_application_id','team_size','service_area','service_intro','followers_count','certifications','business_hours_json','risk_tier','template_key','template_code')
+  ORDER BY table_name, column_name;"
 ```
 
-### Step 3: 重启 API（清理 prepared statement 缓存）
+### Step 4: 重启 API（清理 prepared statement 缓存）
 
 ```bash
 docker restart home_decor_api_local
 curl -sS http://127.0.0.1:8080/api/v1/health
 ```
 
-说明：`public.sql` 与 `local_backup.sql` 当前仅视为历史快照，不再作为认证/入驻环境的 schema source of truth。重建库时以 `server/migrations/` 为准。
+说明：
+- `model.go` 仅为代码映射，不是 schema 真相源
+- `public.sql` 与 `local_backup.sql` 当前仅视为历史快照，不再作为认证/入驻环境的 schema source of truth
+- 重建库时以 `server/migrations/` 为准
+- 高风险链路改动前，建议运行 `npm run db:check` 验证
 
-### Step 4: 入驻冒烟（固定验证码）
+### Step 5: 入驻冒烟（固定验证码）
 
 默认测试模式验证码为 `123456`。若需要显式开启，可在 API 启动环境中设置：
 - `SMS_FIXED_CODE_MODE=true`

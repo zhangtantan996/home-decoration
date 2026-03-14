@@ -69,6 +69,8 @@ services:
     build:
       context: ../
       dockerfile: deploy/Dockerfile.frontend
+      args:
+        VITE_PUBLIC_SITE_URL: ${VITE_PUBLIC_SITE_URL:-/}
     container_name: prod_web
     restart: always
     ports:

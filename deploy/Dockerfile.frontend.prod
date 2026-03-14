@@ -1,17 +1,12 @@
 # ==========================================
-# Production Frontend (Admin) + Nginx Proxy
-# - Admin served at / (supports /merchant entry)
-# - Proxies /api/* and /tinode/* to backend services
-# - Designed to run behind host Nginx for TLS
+# Production Frontend (Admin + Merchant + Web) + Nginx Proxy
 # ==========================================
-
 FROM node:20-alpine AS admin-builder
 WORKDIR /app/admin
 
-# Mirror for China
 RUN npm config set registry https://registry.npmmirror.com
 
-COPY admin/package.json ./
+COPY admin/package*.json ./
 RUN npm install --legacy-peer-deps
 
 COPY admin/ ./
@@ -20,7 +15,44 @@ ARG VITE_APP_ENV=production
 ARG VITE_API_URL=/api/v1
 ENV VITE_APP_ENV=${VITE_APP_ENV}
 ENV VITE_API_URL=${VITE_API_URL}
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+ENV NODE_OPTIONS="--max-old-space-size=8192"
+RUN npm run build
+
+FROM node:20-alpine AS merchant-builder
+WORKDIR /app/merchant
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY merchant/package*.json ./
+RUN npm install --legacy-peer-deps
+
+COPY merchant/ ./
+
+ARG VITE_APP_ENV=production
+ARG VITE_API_URL=/api/v1
+ENV VITE_APP_ENV=${VITE_APP_ENV}
+ENV VITE_API_URL=${VITE_API_URL}
+ENV NODE_OPTIONS="--max-old-space-size=8192"
+RUN npm run build
+
+FROM node:20-alpine AS web-builder
+WORKDIR /app/web
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY web/package*.json ./
+RUN npm ci
+
+COPY shared/ /app/shared/
+COPY web/ ./
+
+ARG VITE_API_URL=/api/v1
+ARG VITE_ROUTER_BASENAME=/
+ARG VITE_PUBLIC_SITE_URL=/
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_ROUTER_BASENAME=${VITE_ROUTER_BASENAME}
+ENV VITE_PUBLIC_SITE_URL=${VITE_PUBLIC_SITE_URL}
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 FROM nginx:alpine
@@ -31,8 +63,9 @@ ENV TZ=Asia/Shanghai
 COPY deploy/nginx/nginx.prod.conf /etc/nginx/nginx.conf
 COPY deploy/nginx/admin_allowlist.conf /etc/nginx/admin_allowlist.conf
 
-# Serve admin build at /usr/share/nginx/html/admin
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
+COPY --from=merchant-builder /app/merchant/dist /usr/share/nginx/html/merchant
+COPY --from=web-builder /app/web/dist /usr/share/nginx/html/web
 
 EXPOSE 8888
 
