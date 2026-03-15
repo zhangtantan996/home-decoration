@@ -589,9 +589,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/quote-library/import-preview", projectEditPerm, handler.AdminImportQuoteLibraryPreview)
 			admin.GET("/quote-categories", projectListPerm, handler.AdminListQuoteCategories)
 			admin.POST("/quote-categories", projectEditPerm, handler.AdminCreateQuoteCategory)
+			admin.DELETE("/quote-categories/:id", projectEditPerm, handler.AdminDeleteQuoteCategory)
 			admin.GET("/quote-library/items", projectListPerm, handler.AdminListQuoteLibraryItems)
 			admin.POST("/quote-library/items", projectEditPerm, handler.AdminCreateQuoteLibraryItem)
 			admin.PUT("/quote-library/items/:id", projectEditPerm, handler.AdminUpdateQuoteLibraryItem)
+			admin.DELETE("/quote-library/items/:id", projectEditPerm, handler.AdminDeleteQuoteLibraryItem)
 
 			// Price Tier 阶梯价管理
 			admin.GET("/quote-library/items/:itemId/tiers", projectListPerm, handler.AdminListPriceTiers)
@@ -624,6 +626,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/quote-tasks/:id/recommend-foremen", projectEditPerm, handler.AdminRecommendForemen)
 			admin.POST("/quote-tasks/:id/select-foremen", projectEditPerm, handler.AdminSelectForemen)
 			admin.POST("/quote-tasks/:id/generate-drafts", projectEditPerm, handler.AdminGenerateQuoteDrafts)
+			admin.GET("/quote-submissions/:id/revisions", projectViewPerm, handler.AdminListQuoteSubmissionRevisions)
 			admin.GET("/quote-tasks/:id/comparison", projectViewPerm, handler.AdminGetQuoteComparison)
 			admin.POST("/quote-tasks/:id/submit-to-user", projectEditPerm, handler.AdminSubmitQuoteTaskToUser)
 			admin.POST("/quote-tasks/:id/requote", projectEditPerm, handler.AdminRequoteTask)
@@ -751,6 +754,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/cases", handler.MerchantCaseList)
 			merchant.GET("/cases/:id", handler.MerchantCaseGet)
 			merchant.POST("/cases", handler.MerchantCaseCreate)
+			merchant.POST("/projects/:projectId/cases", handler.MerchantCaseCreateFromProject)
 			merchant.PUT("/cases/:id", handler.MerchantCaseUpdate)
 			merchant.DELETE("/cases/:id", handler.MerchantCaseDelete)
 			merchant.PUT("/cases/reorder", handler.MerchantCaseReorder)
