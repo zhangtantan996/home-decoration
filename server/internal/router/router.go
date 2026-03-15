@@ -226,7 +226,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.PUT("/:id", handler.UpdateProject)
 				projects.GET("/:id/logs", handler.GetProjectLogs)
 				projects.POST("/:id/logs", handler.CreateProjectLog)
+				projects.POST("/:id/construction/confirm", handler.ConfirmProjectConstruction)
+				projects.POST("/:id/construction/quote/confirm", handler.ConfirmProjectConstructionQuote)
+				projects.POST("/:id/start", handler.StartProject)
 				projects.GET("/:id/milestones", handler.GetMilestones)
+				projects.POST("/:id/milestones/:milestoneId/submit", handler.SubmitMilestone)
+				projects.POST("/:id/milestones/:milestoneId/accept", handler.AcceptMilestone)
 				projects.POST("/:id/accept", handler.AcceptMilestone)
 
 				// 托管账户

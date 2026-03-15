@@ -658,6 +658,116 @@ func GetMilestones(c *gin.Context) {
 	response.Success(c, gin.H{"milestones": milestones})
 }
 
+// ConfirmProjectConstruction 确认施工方与工长
+func ConfirmProjectConstruction(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req service.ConfirmConstructionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	project, err := projectService.ConfirmConstruction(projectID, userID, &req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "施工方确认成功",
+		"project": project,
+	})
+}
+
+// ConfirmProjectConstructionQuote 确认施工报价
+func ConfirmProjectConstructionQuote(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req service.ConfirmConstructionQuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	project, err := projectService.ConfirmConstructionQuote(projectID, userID, &req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "施工报价确认成功",
+		"project": project,
+	})
+}
+
+// StartProject 显式开工
+func StartProject(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req service.StartProjectRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "参数错误")
+			return
+		}
+	}
+
+	project, err := projectService.StartProject(projectID, userID, &req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "项目已开工",
+		"project": project,
+	})
+}
+
+// SubmitMilestone 提交节点完成，进入待验收
+func SubmitMilestone(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	milestoneID := parseUint64(c.Param("milestoneId"))
+	if milestoneID == 0 {
+		response.BadRequest(c, "无效节点ID")
+		return
+	}
+
+	providerID := c.GetUint64("providerId")
+	milestone, err := projectService.SubmitMilestone(projectID, providerID, milestoneID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":   "节点已提交验收",
+		"milestone": milestone,
+	})
+}
+
 // AcceptMilestone 验收节点
 func AcceptMilestone(c *gin.Context) {
 	projectID := parseUint64(c.Param("id"))
@@ -667,15 +777,23 @@ func AcceptMilestone(c *gin.Context) {
 	}
 
 	userID := getCurrentUserID(c)
-	var req struct {
-		MilestoneID uint64 `json:"milestoneId" binding:"required"`
+	milestoneID := parseUint64(c.Param("milestoneId"))
+	if milestoneID == 0 {
+		var req struct {
+			MilestoneID uint64 `json:"milestoneId" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "参数错误")
+			return
+		}
+		milestoneID = req.MilestoneID
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+	if milestoneID == 0 {
+		response.BadRequest(c, "无效节点ID")
 		return
 	}
 
-	milestone, err := projectService.AcceptMilestone(projectID, userID, req.MilestoneID)
+	milestone, err := projectService.AcceptMilestone(projectID, userID, milestoneID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

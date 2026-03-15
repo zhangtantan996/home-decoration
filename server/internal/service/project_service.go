@@ -44,12 +44,29 @@ type ProjectDetail struct {
 	EscrowBalance float64           `json:"escrowBalance"`
 }
 
+type ConfirmConstructionRequest struct {
+	ConstructionProviderID uint64 `json:"constructionProviderId" binding:"required"`
+	ForemanID              uint64 `json:"foremanId" binding:"required"`
+}
+
+type ConfirmConstructionQuoteRequest struct {
+	ConstructionQuote float64 `json:"constructionQuote" binding:"required"`
+	MaterialMethod    string  `json:"materialMethod"`
+	PlannedStartDate  string  `json:"plannedStartDate"`
+	ExpectedEnd       string  `json:"expectedEnd"`
+}
+
+type StartProjectRequest struct {
+	StartDate string `json:"startDate"`
+}
+
 // CreateProject 创建项目
 func (s *ProjectService) CreateProject(req *CreateProjectRequest) (*model.Project, error) {
 	project := &model.Project{
 		OwnerID:        req.OwnerID,
-		Status:         0, // 待准备
+		Status:         model.ProjectStatusActive,
 		CurrentPhase:   "准备阶段",
+		BusinessStatus: model.ProjectBusinessStatusDraft,
 		MaterialMethod: req.MaterialMethod,
 		CrewID:         req.CrewID,
 	}
@@ -73,21 +90,23 @@ func (s *ProjectService) CreateProject(req *CreateProjectRequest) (*model.Projec
 		project.Address = booking.Address
 		project.Area = booking.Area
 		project.Budget = proposal.DesignFee + proposal.ConstructionFee + proposal.MaterialFee
+		if proposal.Status == model.ProposalStatusConfirmed {
+			project.BusinessStatus = model.ProjectBusinessStatusProposalConfirmed
+			project.CurrentPhase = "待施工确认"
+		}
 
 		// 经纬度暂未存储在booking/proposal中，可设为0或后续补充
 
 		// 解析进场时间
 		if t, err := time.Parse("2006-01-02", req.EntryStartDate); err == nil {
 			project.EntryStartDate = &t
-			// 默认开工时间 = 进场时间
-			project.StartDate = &t
 		}
 		if t, err := time.Parse("2006-01-02", req.EntryEndDate); err == nil {
 			project.EntryEndDate = &t
 		}
 		// 预估工期默认90天
-		if project.StartDate != nil {
-			end := project.StartDate.AddDate(0, 0, 90)
+		if project.EntryStartDate != nil {
+			end := project.EntryStartDate.AddDate(0, 0, 90)
 			project.ExpectedEnd = &end
 		}
 
@@ -365,17 +384,187 @@ func (s *ProjectService) GetProjectMilestones(projectID uint64) ([]model.Milesto
 	return milestones, nil
 }
 
-// AcceptMilestone 业主验收项目节点
-func (s *ProjectService) AcceptMilestone(projectID, userID, milestoneID uint64) (*model.Milestone, error) {
-	var updated model.Milestone
+func (s *ProjectService) ConfirmConstruction(projectID, userID uint64, req *ConfirmConstructionRequest) (*model.Project, error) {
+	var updated model.Project
 
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getOwnedProjectForUpdate(tx, projectID, userID)
+		if err != nil {
+			return err
+		}
+		if err := s.ensureProjectCanConfirmConstruction(tx, project); err != nil {
+			return err
+		}
+		if err := s.ensureConstructionParticipants(tx, req.ConstructionProviderID, req.ForemanID); err != nil {
+			return err
+		}
+
+		now := time.Now()
+		updates := map[string]interface{}{
+			"provider_id":               req.ConstructionProviderID,
+			"construction_provider_id":  req.ConstructionProviderID,
+			"foreman_id":                req.ForemanID,
+			"construction_confirmed_at": now,
+			"business_status":           model.ProjectBusinessStatusConstructionConfirmed,
+			"current_phase":             "施工方已确认",
+		}
+		if err := tx.Model(project).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		return tx.First(&updated, projectID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
+}
+
+func (s *ProjectService) ConfirmConstructionQuote(projectID, userID uint64, req *ConfirmConstructionQuoteRequest) (*model.Project, error) {
+	if req.ConstructionQuote <= 0 {
+		return nil, errors.New("施工报价必须大于0")
+	}
+
+	var updated model.Project
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getOwnedProjectForUpdate(tx, projectID, userID)
+		if err != nil {
+			return err
+		}
+		if project.BusinessStatus != model.ProjectBusinessStatusConstructionConfirmed &&
+			project.BusinessStatus != model.ProjectBusinessStatusConstructionQuoteConfirmed {
+			return errors.New("当前项目状态不允许确认施工报价")
+		}
+		if project.ConstructionProviderID == 0 || project.ForemanID == 0 {
+			return errors.New("请先确认施工方和工长")
+		}
+
+		plannedStartDate := project.EntryStartDate
+		if req.PlannedStartDate != "" {
+			parsed, err := parseProjectDate(req.PlannedStartDate)
+			if err != nil {
+				return errors.New("计划开工日期格式错误")
+			}
+			plannedStartDate = parsed
+		}
+		if plannedStartDate == nil {
+			return errors.New("计划开工日期不能为空")
+		}
+
+		var expectedEnd *time.Time
+		if req.ExpectedEnd != "" {
+			parsed, err := parseProjectDate(req.ExpectedEnd)
+			if err != nil {
+				return errors.New("预计完工日期格式错误")
+			}
+			expectedEnd = parsed
+		}
+
+		now := time.Now()
+		updates := map[string]interface{}{
+			"construction_quote": req.ConstructionQuote,
+			"quote_confirmed_at": now,
+			"entry_start_date":   *plannedStartDate,
+			"business_status":    model.ProjectBusinessStatusConstructionQuoteConfirmed,
+			"current_phase":      "待开工",
+		}
+		if req.MaterialMethod != "" {
+			updates["material_method"] = req.MaterialMethod
+		}
+		if expectedEnd != nil {
+			updates["expected_end"] = *expectedEnd
+		}
+		if err := tx.Model(project).Updates(updates).Error; err != nil {
+			return err
+		}
+		if err := s.recalculateMilestoneAmounts(tx, projectID, req.ConstructionQuote); err != nil {
+			return err
+		}
+
+		return tx.First(&updated, projectID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
+}
+
+func (s *ProjectService) StartProject(projectID, userID uint64, req *StartProjectRequest) (*model.Project, error) {
+	var updated model.Project
+
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getOwnedProjectForUpdate(tx, projectID, userID)
+		if err != nil {
+			return err
+		}
+		if project.BusinessStatus != model.ProjectBusinessStatusConstructionQuoteConfirmed {
+			return errors.New("当前项目状态不允许开工")
+		}
+		if project.ConstructionProviderID == 0 || project.ForemanID == 0 || project.ConstructionQuote <= 0 {
+			return errors.New("施工条件未确认完成，不能开工")
+		}
+
+		startedAt := time.Now()
+		if req != nil && req.StartDate != "" {
+			parsed, err := parseProjectDate(req.StartDate)
+			if err != nil {
+				return errors.New("开工日期格式错误")
+			}
+			startedAt = *parsed
+		} else if project.EntryStartDate != nil {
+			startedAt = *project.EntryStartDate
+		}
+
+		currentMilestoneName, err := s.activateCurrentMilestone(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if err := s.activateFirstProjectPhase(tx, projectID, startedAt); err != nil {
+			return err
+		}
+
+		currentPhase := "施工中"
+		if currentMilestoneName != "" {
+			currentPhase = currentMilestoneName + "施工中"
+		}
+		updates := map[string]interface{}{
+			"status":          model.ProjectStatusActive,
+			"business_status": model.ProjectBusinessStatusInProgress,
+			"started_at":      startedAt,
+			"start_date":      startedAt,
+			"current_phase":   currentPhase,
+		}
+		if err := tx.Model(project).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		return tx.First(&updated, projectID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
+}
+
+func (s *ProjectService) SubmitMilestone(projectID, providerID, milestoneID uint64) (*model.Milestone, error) {
+	if providerID == 0 {
+		return nil, errors.New("无权提交当前节点")
+	}
+
+	var updated model.Milestone
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
 		if err := tx.First(&project, projectID).Error; err != nil {
 			return errors.New("项目不存在")
 		}
-		if project.OwnerID != userID {
-			return errors.New("无权验收此项目")
+		if project.BusinessStatus != model.ProjectBusinessStatusInProgress {
+			return errors.New("项目未开工，不能提交节点")
+		}
+		if !canProjectProviderOperate(&project, providerID) {
+			return errors.New("无权提交当前节点")
 		}
 
 		var milestone model.Milestone
@@ -385,49 +574,252 @@ func (s *ProjectService) AcceptMilestone(projectID, userID, milestoneID uint64) 
 			}
 			return err
 		}
-
-		if milestone.AcceptedAt != nil || milestone.Status >= 3 {
-			return errors.New("验收节点已处理")
+		if milestone.Status != model.MilestoneStatusInProgress {
+			return errors.New("当前节点未进入可提交状态")
 		}
 
 		now := time.Now()
 		if err := tx.Model(&milestone).Updates(map[string]interface{}{
-			"status":      3,
-			"accepted_at": now,
+			"status":       model.MilestoneStatusSubmitted,
+			"submitted_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&project).Updates(map[string]interface{}{
+			"current_phase": milestone.Name + "待验收",
 		}).Error; err != nil {
 			return err
 		}
 
-		var remaining int64
-		if err := tx.Model(&model.Milestone{}).
-			Where("project_id = ? AND status < ?", projectID, 3).
-			Count(&remaining).Error; err != nil {
-			return err
-		}
-
-		projectUpdates := map[string]interface{}{
-			"status":        2,
-			"current_phase": milestone.Name + "已验收",
-		}
-		if remaining == 0 {
-			projectUpdates["status"] = 3
-			projectUpdates["current_phase"] = "已完工"
-		}
-		if err := tx.Model(&project).Updates(projectUpdates).Error; err != nil {
-			return err
-		}
-
-		if err := tx.First(&updated, milestoneID).Error; err != nil {
-			return err
-		}
-
-		return nil
+		return tx.First(&updated, milestoneID).Error
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &updated, nil
+}
+
+// AcceptMilestone 业主验收项目节点
+func (s *ProjectService) AcceptMilestone(projectID, userID, milestoneID uint64) (*model.Milestone, error) {
+	var updated model.Milestone
+
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getOwnedProjectForUpdate(tx, projectID, userID)
+		if err != nil {
+			return err
+		}
+
+		var milestone model.Milestone
+		if err := tx.Where("id = ? AND project_id = ?", milestoneID, projectID).First(&milestone).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("验收节点不存在")
+			}
+			return err
+		}
+		if milestone.Status == model.MilestoneStatusAccepted || milestone.Status == model.MilestoneStatusPaid {
+			return errors.New("验收节点已处理")
+		}
+		if milestone.Status != model.MilestoneStatusSubmitted {
+			return errors.New("请先提交节点完成，再进行验收")
+		}
+
+		now := time.Now()
+		if err := tx.Model(&milestone).Updates(map[string]interface{}{
+			"status":      model.MilestoneStatusAccepted,
+			"accepted_at": now,
+		}).Error; err != nil {
+			return err
+		}
+
+		nextName, remaining, err := s.advanceMilestoneFlow(tx, projectID, milestone.Seq)
+		if err != nil {
+			return err
+		}
+
+		projectUpdates := map[string]interface{}{
+			"status":          model.ProjectStatusActive,
+			"business_status": model.ProjectBusinessStatusInProgress,
+			"current_phase":   milestone.Name + "已验收",
+		}
+		if remaining == 0 {
+			projectUpdates["status"] = model.ProjectStatusCompleted
+			projectUpdates["business_status"] = model.ProjectBusinessStatusCompleted
+			projectUpdates["current_phase"] = "已完工"
+			projectUpdates["actual_end"] = now
+		} else if nextName != "" {
+			projectUpdates["current_phase"] = nextName + "施工中"
+		}
+		if err := tx.Model(project).Updates(projectUpdates).Error; err != nil {
+			return err
+		}
+
+		return tx.First(&updated, milestoneID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
+}
+
+func (s *ProjectService) getOwnedProjectForUpdate(tx *gorm.DB, projectID, userID uint64) (*model.Project, error) {
+	var project model.Project
+	if err := tx.First(&project, projectID).Error; err != nil {
+		return nil, errors.New("项目不存在")
+	}
+	if project.OwnerID != userID {
+		return nil, errors.New("无权操作此项目")
+	}
+	return &project, nil
+}
+
+func (s *ProjectService) ensureProjectCanConfirmConstruction(tx *gorm.DB, project *model.Project) error {
+	if project.BusinessStatus == model.ProjectBusinessStatusCompleted || project.BusinessStatus == model.ProjectBusinessStatusInProgress {
+		return errors.New("项目当前阶段不允许重新确认施工方")
+	}
+	if project.BusinessStatus == model.ProjectBusinessStatusConstructionQuoteConfirmed {
+		return errors.New("施工报价已确认，不能再修改施工方")
+	}
+	if project.ProposalID == 0 {
+		return nil
+	}
+
+	var proposal model.Proposal
+	if err := tx.First(&proposal, project.ProposalID).Error; err != nil {
+		return errors.New("关联方案不存在")
+	}
+	if proposal.Status != model.ProposalStatusConfirmed {
+		return errors.New("设计方案未确认，不能确认施工方")
+	}
+	return nil
+}
+
+func (s *ProjectService) ensureConstructionParticipants(tx *gorm.DB, constructionProviderID, foremanID uint64) error {
+	var constructionProvider model.Provider
+	if err := tx.First(&constructionProvider, constructionProviderID).Error; err != nil {
+		return errors.New("施工方不存在")
+	}
+
+	var foreman model.Provider
+	if err := tx.First(&foreman, foremanID).Error; err != nil {
+		return errors.New("工长不存在")
+	}
+	if foreman.ProviderType != 3 {
+		return errors.New("负责人必须为工长身份")
+	}
+
+	return nil
+}
+
+func (s *ProjectService) recalculateMilestoneAmounts(tx *gorm.DB, projectID uint64, total float64) error {
+	var milestones []model.Milestone
+	if err := tx.Where("project_id = ?", projectID).Find(&milestones).Error; err != nil {
+		return err
+	}
+	for _, milestone := range milestones {
+		amount := total * float64(milestone.Percentage) / 100
+		if err := tx.Model(&model.Milestone{}).Where("id = ?", milestone.ID).Update("amount", amount).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *ProjectService) activateCurrentMilestone(tx *gorm.DB, projectID uint64) (string, error) {
+	var active model.Milestone
+	if err := tx.Where("project_id = ? AND status = ?", projectID, model.MilestoneStatusInProgress).
+		Order("seq ASC").First(&active).Error; err == nil {
+		return active.Name, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", err
+	}
+
+	var next model.Milestone
+	if err := tx.Where("project_id = ? AND status = ?", projectID, model.MilestoneStatusPending).
+		Order("seq ASC").First(&next).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	if err := tx.Model(&next).Update("status", model.MilestoneStatusInProgress).Error; err != nil {
+		return "", err
+	}
+	return next.Name, nil
+}
+
+func (s *ProjectService) activateFirstProjectPhase(tx *gorm.DB, projectID uint64, startedAt time.Time) error {
+	var phase model.ProjectPhase
+	if err := tx.Where("project_id = ? AND status = ?", projectID, "in_progress").
+		Order("seq ASC").First(&phase).Error; err == nil {
+		return nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	if err := tx.Where("project_id = ? AND status = ?", projectID, "pending").
+		Order("seq ASC").First(&phase).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	return tx.Model(&phase).Updates(map[string]interface{}{
+		"status":     "in_progress",
+		"start_date": startedAt,
+	}).Error
+}
+
+func (s *ProjectService) advanceMilestoneFlow(tx *gorm.DB, projectID uint64, acceptedSeq int8) (string, int64, error) {
+	var next model.Milestone
+	nextName := ""
+	if err := tx.Where("project_id = ? AND seq > ? AND status = ?", projectID, acceptedSeq, model.MilestoneStatusPending).
+		Order("seq ASC").First(&next).Error; err == nil {
+		if err := tx.Model(&next).Update("status", model.MilestoneStatusInProgress).Error; err != nil {
+			return "", 0, err
+		}
+		nextName = next.Name
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", 0, err
+	}
+
+	var remaining int64
+	if err := tx.Model(&model.Milestone{}).
+		Where("project_id = ? AND status NOT IN ?", projectID, []int8{model.MilestoneStatusAccepted, model.MilestoneStatusPaid}).
+		Count(&remaining).Error; err != nil {
+		return "", 0, err
+	}
+
+	return nextName, remaining, nil
+}
+
+func canProjectProviderOperate(project *model.Project, providerID uint64) bool {
+	if providerID == 0 {
+		return false
+	}
+	if project.ProviderID == providerID {
+		return true
+	}
+	if project.ConstructionProviderID == providerID {
+		return true
+	}
+	if project.ForemanID == providerID {
+		return true
+	}
+	return false
+}
+
+func parseProjectDate(value string) (*time.Time, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }
 
 // UpdatePhaseRequest 更新阶段请求

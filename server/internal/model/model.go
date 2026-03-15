@@ -151,20 +151,45 @@ type Worker struct {
 	Available  bool    `json:"available" gorm:"default:true"`
 }
 
+const (
+	ProjectStatusActive    int8 = 0
+	ProjectStatusCompleted int8 = 1
+	ProjectStatusPaused    int8 = 2
+)
+
+const (
+	ProjectBusinessStatusDraft                      = "draft"
+	ProjectBusinessStatusProposalConfirmed          = "proposal_confirmed"
+	ProjectBusinessStatusConstructionConfirmed      = "construction_confirmed"
+	ProjectBusinessStatusConstructionQuoteConfirmed = "construction_quote_confirmed"
+	ProjectBusinessStatusInProgress                 = "in_progress"
+	ProjectBusinessStatusCompleted                  = "completed"
+)
+
+const (
+	MilestoneStatusPending    int8 = 0
+	MilestoneStatusInProgress int8 = 1
+	MilestoneStatusSubmitted  int8 = 2
+	MilestoneStatusAccepted   int8 = 3
+	MilestoneStatusPaid       int8 = 4
+	MilestoneStatusRejected   int8 = 5
+)
+
 // Project 项目
 type Project struct {
 	Base
-	OwnerID      uint64  `json:"ownerId" gorm:"index"`
-	ProviderID   uint64  `json:"providerId" gorm:"index"`
-	ProposalID   uint64  `json:"proposalId" gorm:"index"` // 关联的设计方案ID
-	Name         string  `json:"name" gorm:"size:100"`
-	Address      string  `json:"address" gorm:"size:200"`
-	Latitude     float64 `json:"latitude"`
-	Longitude    float64 `json:"longitude"`
-	Area         float64 `json:"area"`   // 面积
-	Budget       float64 `json:"budget"` // 预算
-	Status       int8    `json:"status" gorm:"default:0"`
-	CurrentPhase string  `json:"currentPhase" gorm:"size:50"`
+	OwnerID        uint64  `json:"ownerId" gorm:"index"`
+	ProviderID     uint64  `json:"providerId" gorm:"index"`
+	ProposalID     uint64  `json:"proposalId" gorm:"index"` // 关联的设计方案ID
+	Name           string  `json:"name" gorm:"size:100"`
+	Address        string  `json:"address" gorm:"size:200"`
+	Latitude       float64 `json:"latitude"`
+	Longitude      float64 `json:"longitude"`
+	Area           float64 `json:"area"`   // 面积
+	Budget         float64 `json:"budget"` // 预算
+	Status         int8    `json:"status" gorm:"default:0"`
+	CurrentPhase   string  `json:"currentPhase" gorm:"size:50"`
+	BusinessStatus string  `json:"businessStatus" gorm:"size:40;default:'draft';index"`
 
 	// 项目创建信息
 	MaterialMethod string     `json:"materialMethod" gorm:"size:20"` // self, platform
@@ -172,9 +197,15 @@ type Project struct {
 	EntryStartDate *time.Time `json:"entryStartDate"` // 进场开始时间
 	EntryEndDate   *time.Time `json:"entryEndDate"`   // 进场结束时间
 
-	StartDate   *time.Time `json:"startDate"`
-	ExpectedEnd *time.Time `json:"expectedEnd"`
-	ActualEnd   *time.Time `json:"actualEnd"`
+	ConstructionProviderID  uint64     `json:"constructionProviderId" gorm:"index"`
+	ForemanID               uint64     `json:"foremanId" gorm:"index"`
+	ConstructionQuote       float64    `json:"constructionQuote" gorm:"default:0"`
+	ConstructionConfirmedAt *time.Time `json:"constructionConfirmedAt"`
+	QuoteConfirmedAt        *time.Time `json:"quoteConfirmedAt"`
+	StartedAt               *time.Time `json:"startedAt"`
+	StartDate               *time.Time `json:"startDate"`
+	ExpectedEnd             *time.Time `json:"expectedEnd"`
+	ActualEnd               *time.Time `json:"actualEnd"`
 }
 
 // Milestone 验收节点
