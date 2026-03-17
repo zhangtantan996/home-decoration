@@ -1,116 +1,217 @@
 # API 接口变更清单
 
-## 2026-03-09 入驻验证码前置校验统一（v1.6.x）
+> **文档版本**: v2.0 (与 PRD v2.0 对齐)
+> **创建日期**: 2026-03-17
+> **文档状态**: API 变更记录与 PRD 对齐说明
+> **适用范围**: 全体研发、测试人员
 
-### 变更范围
+---
+
+## 0. 与新版 PRD 对齐原则
+
+### 0.1 主链路接口定义
+
+本文档记录的所有 API 接口变更，必须与 [产品需求文档(PRD).md](./产品需求文档(PRD).md) v2.0 和 [BUSINESS_FLOW.md](./BUSINESS_FLOW.md) v2.0 保持一致。
+
+**主链路接口**（属于基线，必须实现）：
+
+| 主链路节点 | 关键接口 | 是否基线 |
+|-----------|---------|---------|
+| 商家入驻与能力配置 | `POST /api/v1/merchant/apply` | ✅ 是 |
+| 用户需求进入线索/预约 | `POST /api/v1/bookings` | ✅ 是 |
+| 设计沟通、量房、预算确认 | `POST /api/v1/bookings/:id/site-survey` | ✅ 是 |
+| 设计方案/报价提交与确认 | `POST /api/v1/proposals`, `POST /api/v1/proposals/:id/confirm` | ✅ 是 |
+| 工长选择与确认 | `POST /api/v1/quote-tasks`, `POST /api/v1/quote-tasks/:id/confirm` | ✅ 是 |
+| 订单生成、业务闭环与项目创建 | `POST /api/v1/orders`, `POST /api/v1/projects` | ✅ 是 |
+| 项目阶段执行与资金流转 | `POST /api/v1/projects/:id/milestones/:milestoneId/submit` | ✅ 是 |
+| 验收、放款、退款、关闭 | `POST /api/v1/projects/:id/milestones/:milestoneId/approve` | ✅ 是 |
+
+---
+
+### 0.2 历史兼容接口
+
+**历史兼容接口**（非基线，但需保留兼容）：
+
+| 接口 | 说明 | 是否基线 |
+|------|------|---------|
+| `GET /api/v1/notifications` | 通知列表（支撑性能力） | ❌ 否 |
+| `POST /api/v1/merchant/withdraws` | 商家提现（支撑性能力） | ❌ 否 |
+| `GET /api/v1/admin/system/cron-metrics` | 定时任务监控（运营工具） | ❌ 否 |
+
+---
+
+### 0.3 非基线接口
+
+**非基线接口**（增项，暂不实现）：
+
+| 接口 | 说明 | 是否基线 |
+|------|------|---------|
+| `POST /api/v1/ai/design` | AI 免费设计 | ❌ 否（增项） |
+| `GET /api/v1/bim/viewer` | BIM 协同查看器 | ❌ 否（增项） |
+| `POST /api/v1/ar/try-on` | AR 试衣间 | ❌ 否（增项） |
+
+---
+
+## 1. 最新变更（2026-03-17）
+
+### 1.1 与 PRD v2.0 对齐
+
+**变更范围**：
+- 所有主链路接口必须与 PRD v2.0 定义的 9 个节点对齐
+- 所有接口必须支持两个独立成交点（设计确认、工长确认）
+- 所有接口必须支持分阶段验收/整体验收双模式
+- 所有接口必须支持异常收口（退款/关闭/审计）
+
+**行为变更**：
+- 设计方案确认后，业务不再停留在 proposal，自然推进到施工确认链路
+- 现有 `quote workflow` 正式承接"施工方确认 + 施工报价确认"
+- 用户确认施工报价后：锁定施工方与报价版本，项目进入 `ready_to_start`，主链进入 `ready_to_start`
+- 最后一个节点验收通过后，项目进入 `completed`
+- 用户或平台触发完工收口后，生成项目对应的灵感案例草稿；默认不自动公开，只进入审核链
+
+---
+
+## 2. 历史变更记录
+
+### 2.1 2026-03-16 业务闭环主链一期（完工 + 案例草稿）
+
+**变更范围**：
+- 新增聚合表：`business_flows`
+- 新增迁移：
+  - `server/migrations/v1.9.7_add_business_flows.sql`
+  - `server/migrations/v1.10.5_backfill_business_flows.sql`
+- 新增/增强接口：
+  - `POST /api/v1/projects/:id/start`
+  - `POST /api/v1/projects/:id/milestones/:milestoneId/submit`
+  - `POST /api/v1/projects/:id/milestones/:milestoneId/approve`
+  - `POST /api/v1/projects/:id/milestones/:milestoneId/reject`
+  - `POST /api/v1/projects/:id/complete`
+  - `POST /api/v1/projects/:id/inspiration-draft`
+  - `GET /api/v1/quote-tasks/:id/user-view`
+  - 既有 `quote-list / quote-task / project detail` 接口补充闭环摘要字段
+
+**数据模型变更**：
+- `business_flows` 作为主链聚合根，负责串联：
+  - 预约/需求来源
+  - 设计确认
+  - 施工方确认
+  - 施工报价确认
+  - 项目开工与验收
+  - 完工后的案例草稿沉淀
+- `projects` 新增：
+  - `selected_quote_submission_id`
+  - `construction_quote_snapshot`
+  - `inspiration_case_draft_id`
+- `milestones` 新增：
+  - `rejection_reason`
+- `case_audits` 新增来源追溯字段：
+  - `source_type`
+  - `source_project_id`
+  - `source_proposal_id`
+
+**新增统一闭环字段**：
+以下详情/列表接口开始统一返回：
+- `businessStage`
+- `flowSummary`
+- `availableActions`
+
+项目详情额外返回：
+- `selectedQuoteTaskId`
+- `selectedForemanProviderId`
+- `selectedQuoteSubmissionId`
+- `inspirationCaseDraftId`
+
+**阶段口径**：
+统一主链阶段枚举：
+- `lead_pending`
+- `consulting`
+- `proposal_pending`
+- `proposal_confirmed`
+- `constructor_pending`
+- `construction_quote_pending`
+- `ready_to_start`
+- `in_progress`
+- `milestone_review`
+- `completed`
+- `archived`
+- `disputed`
+- `cancelled`
+
+---
+
+### 2.2 2026-03-09 入驻验证码前置校验统一（v1.6.x）
+
+**变更范围**：
 - `POST /api/v1/merchant/onboarding/verify-phone`
 - `POST /api/v1/merchant/apply`
 - `POST /api/v1/material-shop/apply`
 - `POST /api/v1/merchant/apply/:id/resubmit`
 - `POST /api/v1/material-shop/apply/:id/resubmit`
 
-### 行为变更
-- 首次入驻与驳回重提统一为“第一步真实验证码校验”。
+**行为变更**：
+- 首次入驻与驳回重提统一为"第一步真实验证码校验"
 - 第一步校验成功后返回：
   - `verificationToken`
   - `verifiedPhone`
   - `expiresAt`
-- 驳回重提模式下，`verify-phone` 校验成功后可同时返回 `form` 回填数据。
-- `apply / resubmit` 主路径改为优先校验 `verificationToken`；兼容窗口内仍允许 `code` 兜底，但不允许无凭据提交。
+- 驳回重提模式下，`verify-phone` 校验成功后可同时返回 `form` 回填数据
+- `apply / resubmit` 主路径改为优先校验 `verificationToken`；兼容窗口内仍允许 `code` 兜底，但不允许无凭据提交
 
-### 前端交互统一
-- 用户点击第一步“下一步”时立即校验验证码。
-- 验证码错误时停留在当前步骤内直接修改，不再等到最终提交时才报错。
-- 手机号未变化时，返回前序步骤不要求重复验证；手机号变化时自动清空已验证状态。
+**前端交互统一**：
+- 用户点击第一步"下一步"时立即校验验证码
+- 验证码错误时停留在当前步骤内直接修改，不再等到最终提交时才报错
+- 手机号未变化时，返回前序步骤不要求重复验证；手机号变化时自动清空已验证状态
 
+---
 
-## 2026-03-08 驳回重提详情回填安全修复（P0/P1）
+### 2.3 2026-03-08 驳回重提详情回填安全修复（P0/P1）
 
-### 变更范围
+**变更范围**：
 - `POST /api/v1/merchant/apply/:id/detail-for-resubmit`
 - `POST /api/v1/material-shop/apply/:id/detail-for-resubmit`
 - `POST /api/v1/merchant/apply/:id/resubmit`
 - `POST /api/v1/material-shop/apply/:id/resubmit`
 
-### 行为变更
-- `detail-for-resubmit` 从匿名 GET 升级为带 `phone + code` 的 POST，必须先通过 `identity_apply` 验证码校验后才返回原申请表单详情。
-- `detail-for-resubmit` 响应新增 `resubmitToken`，用于保护后续重提提交链路。
-- 两个 `resubmit` 接口优先校验 `resubmitToken`；兼容窗口内仍允许 `code` 作为后备凭据，但不允许无 token / 无验证码直接重提。
+**行为变更**：
+- `detail-for-resubmit` 从匿名 GET 升级为带 `phone + code` 的 POST，必须先通过 `identity_apply` 验证码校验后才返回原申请表单详情
+- `detail-for-resubmit` 响应新增 `resubmitToken`，用于保护后续重提提交链路
+- 两个 `resubmit` 接口优先校验 `resubmitToken`；兼容窗口内仍允许 `code` 作为后备凭据，但不允许无 token / 无验证码直接重提
 
-### 影响说明
-- 前端重提回填必须先调用新的 POST 详情接口，再使用返回的 `resubmitToken` 提交。
-- 旧的匿名详情路径不再继续使用，避免按申请 ID 直接读取敏感回填信息。
+**影响说明**：
+- 前端重提回填必须先调用新的 POST 详情接口，再使用返回的 `resubmitToken` 提交
+- 旧的匿名详情路径不再继续使用，避免按申请 ID 直接读取敏感回填信息
 
-## 2026-03-09 认证/入驻 schema 统一修复（v1.6.4）
+---
 
-### 背景
-- 部分环境存在认证链路与商家入驻链路 schema 漂移：`users.public_id/last_login_*` 缺失、`sms_audit_logs` 缺失、历史入驻字段未补齐。
-- 旧 dump 文件可能把过期 schema 再导回环境，导致本地与生产重复出现 `column does not exist`。
+### 2.4 2026-03-09 认证/入驻 schema 统一修复（v1.6.4）
 
-### 变更范围
+**背景**：
+- 部分环境存在认证链路与商家入驻链路 schema 漂移：`users.public_id/last_login_*` 缺失、`sms_audit_logs` 缺失、历史入驻字段未补齐
+- 旧 dump 文件可能把过期 schema 再导回环境，导致本地与生产重复出现 `column does not exist`
+
+**变更范围**：
 - 新增统一幂等迁移脚本：
   - `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`
 - 健康检查新增：
   - `checks.userAuthSchema`
   - `checks.merchantOnboardingSchema`
-- 生产环境新增关键 schema 启动前预检，缺失时 fail-fast。
+- 生产环境新增关键 schema 启动前预检，缺失时 fail-fast
 
-### 修复内容
-- 补齐 `users.public_id`、`users.last_login_at`、`users.last_login_ip`。
-- 补齐 `sms_audit_logs` 及索引。
-- 补齐商家入驻与主材商入驻关键字段/表，并统一纳入 `server/migrations/`。
-- 认证/入驻链路在 schema mismatch 时返回 `503`，不再误报为 `400`。
+**修复内容**：
+- 补齐 `users.public_id`、`users.last_login_at`、`users.last_login_ip`
+- 补齐 `sms_audit_logs` 及索引
+- 补齐商家入驻与主材商入驻关键字段/表，并统一纳入 `server/migrations/`
+- 认证/入驻链路在 schema mismatch 时返回 `503`，不再误报为 `400`
 
-### 执行建议
-- 本地/测试/预发/生产统一优先执行 `v1.6.4`（幂等，可重复执行）。
-- 执行后重启 API，并检查 `/api/v1/health` 中 `smsAuditLog/userAuthSchema/merchantOnboardingSchema` 均为 `ok`。
+**执行建议**：
+- 本地/测试/预发/生产统一优先执行 `v1.6.4`（幂等，可重复执行）
+- 执行后重启 API，并检查 `/api/v1/health` 中 `smsAuditLog/userAuthSchema/merchantOnboardingSchema` 均为 `ok`
 
-### 一期试运营补充
-- 正式商家实体新增来源追溯字段：`providers.source_application_id`、`material_shops.source_application_id`。
-- 审核详情与商家资料接口补充 `sourceApplicationId` / `merchantKind`，支持一期开通后的回查与回滚定位。
-- 试运营发布与回滚规则见：`docs/MERCHANT_TRIAL_OPERATION_SOP.md`。
+---
 
-## 2026-03-05 入驻 schema 对齐修复（v1.5.3）
+### 2.5 2026-03-05 入驻条款勾选留痕（v1.5.2）
 
-### 背景
-- 部分环境未完整执行 `v1.5.0/v1.5.1/v1.5.2`，会在提交入驻时触发 `column "role" of relation "merchant_applications" does not exist`。
-- 原因不是接口降级，而是数据库结构滞后于代码契约。
-
-### 变更范围
-- 当时新增了 `v1.5.3` 作为入驻补洞迁移；当前正式发布请统一使用 `server/migrations/`，历史脚本路径仅保留追溯用途。
-
-### 修复内容
-- 补齐 `merchant_applications` 扩展字段（`role/entity_type/avatar/work_types/highlight_tags/pricing_json/graduate_school/design_philosophy/legal_*`）。
-- 补齐 `providers` 扩展字段（含 `work_types` 统一为 `TEXT`）。
-- 补齐 `material_shops` 扩展字段。
-- 创建/补齐 `material_shop_applications`、`material_shop_application_products`、`material_shop_products`、`merchant_identity_change_applications` 及索引。
-- 兼容处理 `current_role` 标识符（使用 `"current_role"`）。
-
-### 执行建议
-- 线上/测试环境优先执行 `v1.5.3`（幂等，可重复执行）。
-- 执行后重启 API 进程，避免 PostgreSQL prepared statement 缓存导致的 `cached plan must not change result type`。
-
-## 2026-03-05 验证码测试固定模式（临时）
-
-### 变更范围
-- `POST /api/v1/auth/send-code`
-- 所有使用 `VerifySMSCode` 的接口（登录/注册/商家入驻/主材商入驻/提现/绑卡等）
-
-### 行为变更
-- 在测试固定模式下，验证码统一为固定值（默认 `123456`）。
-- `send-code` 在固定模式下不再依赖风控、图形验证或 Redis 存储，直接返回成功。
-- 固定模式下校验逻辑统一：输入验证码与固定值一致即通过，否则返回“验证码错误”。
-
-### 开关与默认
-- `SMS_FIXED_CODE_MODE`:
-  - 显式设置 `true/1` 时开启
-  - 未设置时在非 release 或本地环境默认开启
-- `SMS_FIXED_CODE`:
-  - 固定验证码值，默认 `123456`
-
-## 2026-03-05 入驻条款勾选留痕（v1.5.2）
-
-### 变更范围
+**变更范围**：
 - `POST /api/v1/merchant/apply`
 - `POST /api/v1/merchant/apply/:id/resubmit`
 - `POST /api/v1/material-shop/apply`
@@ -118,7 +219,7 @@
 - `merchant_applications` 表结构
 - `material_shop_applications` 表结构
 
-### 请求字段新增
+**请求字段新增**：
 所有入驻提交接口新增必填字段：
 
 ```json
@@ -130,27 +231,29 @@
 }
 ```
 
-### 后端硬校验
-- `accepted` 必须为 `true`。
-- 三个条款版本字段不能为空，且长度限制为 `1-64`。
-- 任意不满足时返回 `400` 与明确错误信息。
+**后端硬校验**：
+- `accepted` 必须为 `true`
+- 三个条款版本字段不能为空，且长度限制为 `1-64`
+- 任意不满足时返回 `400` 与明确错误信息
 
-### 留痕字段
+**留痕字段**：
 两张申请表新增：
 - `legal_acceptance_json`（TEXT，存版本快照）
 - `legal_accepted_at`（TIMESTAMP，记录服务端确认时间）
 - `legal_accept_source`（VARCHAR，默认 `merchant_web`）
 
-### 版本管理规则
-- 条款版本号由前端常量统一维护（本期：`v1.0.0-20260305`）。
+**版本管理规则**：
+- 条款版本号由前端常量统一维护（本期：`v1.0.0-20260305`）
 - 条款正文更新时，需同步更新：
   - `admin/src/constants/merchantLegal.ts`
   - `docs/legal/*.md`
   - `server/docs/API接口文档.md`
 
-## 2026-03-05 商家入驻字段全量补齐（v1.5.1）
+---
 
-### 变更范围
+### 2.6 2026-03-05 商家入驻字段全量补齐（v1.5.1）
+
+**变更范围**：
 - `POST /api/v1/merchant/apply`
 - `POST /api/v1/merchant/apply/:id/resubmit`
 - `POST /api/v1/material-shop/apply`
@@ -159,32 +262,34 @@
 - `PUT /api/v1/merchant/info`
 - `GET /api/v1/designers/:id` / `GET /api/v1/foremen/:id` / `GET /api/v1/companies/:id`（字段消费对齐）
 
-### 服务商入驻升级
-- 新增并强制必填：`avatar: string`。
-- `yearsExperience` 强化为设计师/工长必填，范围 `1-50`。
-- `portfolioCases[].description` 改为必填，长度 `1-5000`。
-- 审核通过映射补齐：`avatar/highlightTags/pricing/graduateSchool/designPhilosophy` 写入 `providers`。
+**服务商入驻升级**：
+- 新增并强制必填：`avatar: string`
+- `yearsExperience` 强化为设计师/工长必填，范围 `1-50`
+- `portfolioCases[].description` 改为必填，长度 `1-5000`
+- 审核通过映射补齐：`avatar/highlightTags/pricing/graduateSchool/designPhilosophy` 写入 `providers`
 
-### 主材商入驻升级
-- 强制必填：`contactName`、`contactPhone`、`businessHours`、`address`。
-- `contactPhone` 必须通过手机号格式校验。
-- 继续维持主材商品硬校验：`products` 数量 `5-20`，每商品至少 1 图，参数对象与价格必填。
+**主材商入驻升级**：
+- 强制必填：`contactName`、`contactPhone`、`businessHours`、`address`
+- `contactPhone` 必须通过手机号格式校验
+- 继续维持主材商品硬校验：`products` 数量 `5-20`，每商品至少 1 图，参数对象与价格必填
 
-### 校验与安全
-- 服务端硬校验优先，前端仅做提前校验与提示。
+**校验与安全**：
+- 服务端硬校验优先，前端仅做提前校验与提示
 - 新增资质核验适配层（默认 `manual`）：
   - `ID_CARD_VERIFY_PROVIDER=manual|xxx`
   - `LICENSE_VERIFY_PROVIDER=manual|xxx`
   - `VERIFY_TIMEOUT_MS`
-- 证件号继续走加密存储逻辑（`encryptSensitiveOrPlain`），日志禁止明文输出证件号与手机号。
+- 证件号继续走加密存储逻辑（`encryptSensitiveOrPlain`），日志禁止明文输出证件号与手机号
 
-### 兼容性说明
-- 旧字段 `applicantType` 继续兼容，灰度期内与 `role/entityType` 并存。
-- C 端接口结构不破坏，新增字段按“有值显示、空值隐藏”策略消费。
+**兼容性说明**：
+- 旧字段 `applicantType` 继续兼容，灰度期内与 `role/entityType` 并存
+- C 端接口结构不破坏，新增字段按"有值显示、空值隐藏"策略消费
 
-## 2026-03-03 商家入驻与登录统一改版（v1.5.0）
+---
 
-### 变更范围
+### 2.7 2026-03-03 商家入驻与登录统一改版（v1.5.0）
+
+**变更范围**：
 - `POST /api/v1/merchant/login`
 - `POST /api/v1/merchant/apply`
 - `POST /api/v1/merchant/apply/:id/resubmit`
@@ -200,7 +305,7 @@
 - `PUT /api/v1/material-shop/me/products/:id`（新增）
 - `DELETE /api/v1/material-shop/me/products/:id`（新增）
 
-### 关键变更
+**关键变更**：
 - `merchant/login` 成功时返回新增：
   - `merchantKind: provider|material_shop`
   - `role`
@@ -217,9 +322,9 @@
   - 新增 `graduateSchool?: string`
   - 新增 `designPhilosophy?: string`
   - 继续兼容旧字段 `applicantType`
-- 主材商申请改为独立通道，不再并入 `merchant/apply`。
+- 主材商申请改为独立通道，不再并入 `merchant/apply`
 
-### 校验规则
+**校验规则**：
 - 服务商规则由后端硬校验：
   - 设计师：3套案例，每套3-6图，风格1-3，报价需平层/复式/其他
   - 工长：3套案例，每套8-12图，亮点1-3，工种>=1，报价需 `perSqm`
@@ -229,700 +334,21 @@
   - 每个商品至少1图，且必须包含参数对象与价格
   - 营业执照号与执照图片必填
 
-### 兼容性说明
-- 旧 `applicantType` 仍保留并在服务端映射到新模型。
-- `providers.work_types` 支持 JSON 数组与逗号串双格式读取，保证 C 端兼容。
-
-## 2026-02-09 商家中心阶段1契约统一（v1.4.4）
-
-### 变更范围
-- `GET /api/v1/merchant/dashboard`
-- `POST /api/v1/merchant/login`
-- `GET /api/v1/merchant/info`
-- `PUT /api/v1/merchant/info`
-- `GET /api/v1/merchant/service-settings`
-- `PUT /api/v1/merchant/service-settings`
-- `POST /api/v1/merchant/withdraw`
-- `POST /api/v1/merchant/bank-accounts`
-
-### 关键变更
-- `merchant/dashboard` 增加平铺统计字段：`todayBookings`、`pendingProposals`、`activeProjects`、`totalRevenue`、`monthRevenue`，并继续保留 `bookings/proposals/orders` 分组结构。
-- `merchant/login` 的 `data.provider` 增加：`applicantType` 与 `providerSubType`，用于前端角色策略和文案判定。
-- `merchant/info` 查询结果补充：`applicantType`、`providerSubType`、`workTypes`。
-- `merchant/info` 更新支持 `workTypes`，其中工长要求至少 1 项，非工长写入时自动忽略/清空。
-- 新增服务设置读写接口：`merchant/service-settings`，字段包含接单状态、自动确认时长、响应描述、价格区间、服务风格、服务套餐。
-- 高风险资金操作对齐：提现与新增银行卡均要求 `verificationCode`。
-
-### 兼容性说明
-- 旧结构保留兼容：dashboard 旧分组字段未移除；新增字段不会破坏旧前端。
-- 旧商家类型继续可用：`personal/studio/company` 规则保持不变。
+**兼容性说明**：
+- 旧 `applicantType` 仍保留并在服务端映射到新模型
+- `providers.work_types` 支持 JSON 数组与逗号串双格式读取，保证 C 端兼容
 
 ---
 
-## 2026-02-07 商家入驻工长类型补齐（v1.4.3）
+## 3. 附录
 
-### 变更范围
-- `POST /api/v1/merchant/apply`
-- `POST /api/v1/merchant/apply/:id/resubmit`
-- `GET /api/v1/merchant/apply/:phone/status`
+### 3.1 变更记录
 
-### 字段变更
-- `applicantType` 枚举由 `personal|studio|company` 扩展为 `personal|studio|company|foreman`。
-- 新增字段：`workTypes: string[]`（`foreman` 必填，其他类型可忽略）。
-- 新增字段：`yearsExperience: number`（`foreman` 建议必填，范围 1-50）。
-- 状态查询新增：`applicantType` 字段，前端用于驳回后保留原类型重新提交。
-
-### 校验规则
-- `foreman`：必须提供至少 1 个 `workTypes`；案例最少 1 个。
-- `personal|studio|company`：保持设计导向规则，案例最少 3 个；公司仍需营业执照。
-
-### 审核映射
-- 审核通过时 `foreman` 映射为：
-  - `providers.provider_type = 3`
-  - `providers.sub_type = 'foreman'`
-  - `providers.work_types` 回填 `workTypes`
+| 版本 | 日期 | 变更内容 | 变更人 |
+|------|------|---------|-------|
+| v2.0 | 2026-03-17 | 增加"与新版 PRD 对齐原则"，明确主链路接口、历史兼容接口、非基线接口 | 产品团队 |
+| v1.0 | 2025-12-30 | 初版，记录历史 API 变更 | 研发团队 |
 
 ---
 
-> **文档版本**: v1.0
-> **创建时间**: 2025-12-30
-> **相关文档**: [DEVELOPMENT_PLAN.md](./DEVELOPMENT_PLAN.md)
-
----
-
-## 📋 变更概览
-
-本文档记录了开发计划中新增和修改的所有API接口。
-
-| 模块 | 新增接口数 | 修改接口数 | 优先级 |
-|------|-----------|-----------|--------|
-| 通知系统 | 5 | 0 | P0 |
-| 方案管理 | 2 | 1 | P0 |
-| 退款管理 | 1 | 0 | P0 |
-| 提现审核 | 4 | 1 | P0 |
-| 定时任务监控 | 1 | 0 | P0 |
-| 售后管理 | 3 | 0 | P1 |
-
----
-
-## 一、通知系统 API
-
-### 1.1 获取通知列表
-
-```http
-GET /api/v1/notifications
-```
-
-**请求参数**:
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| page | number | 否 | 页码，默认1 |
-| pageSize | number | 否 | 每页数量，默认20 |
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "list": [
-      {
-        "id": 123,
-        "title": "新预约通知",
-        "content": "您有一个新的预约请求，请尽快处理",
-        "type": "booking.intent_paid",
-        "relatedId": 456,
-        "relatedType": "booking",
-        "isRead": false,
-        "actionUrl": "/merchant/bookings/456",
-        "createdAt": "2025-12-30T10:00:00Z"
-      }
-    ],
-    "total": 50,
-    "page": 1,
-    "pageSize": 20
-  }
-}
-```
-
----
-
-### 1.2 获取未读数量
-
-```http
-GET /api/v1/notifications/unread-count
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "count": 5
-  }
-}
-```
-
----
-
-### 1.3 标记单个通知为已读
-
-```http
-PUT /api/v1/notifications/:id/read
-```
-
-**路径参数**:
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| id | number | 通知ID |
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "标记成功"
-}
-```
-
----
-
-### 1.4 标记全部通知为已读
-
-```http
-PUT /api/v1/notifications/read-all
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "全部已读"
-}
-```
-
----
-
-### 1.5 删除通知
-
-```http
-DELETE /api/v1/notifications/:id
-```
-
-**路径参数**:
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| id | number | 通知ID |
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "删除成功"
-}
-```
-
----
-
-## 二、方案管理 API
-
-### 2.1 拒绝方案（修改）
-
-```http
-POST /api/v1/proposals/:id/reject
-```
-
-**变更说明**: 新增必填参数 `reason`
-
-**请求体**:
-```json
-{
-  "reason": "配色不满意，请调整为暖色调"
-}
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "方案已拒绝，商家可重新提交"
-}
-```
-
----
-
-### 2.2 查看方案版本历史（新增）
-
-```http
-GET /api/v1/proposals/booking/:bookingId/history
-```
-
-**路径参数**:
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| bookingId | number | 预约ID |
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": [
-    {
-      "id": 789,
-      "version": 3,
-      "status": 1,
-      "designFee": 8000,
-      "summary": "v3版本，调整配色为暖色调",
-      "submittedAt": "2025-12-30T14:00:00Z"
-    },
-    {
-      "id": 788,
-      "version": 2,
-      "status": 3,
-      "rejectionReason": "空间布局不合理",
-      "rejectedAt": "2025-12-29T16:00:00Z"
-    },
-    {
-      "id": 787,
-      "version": 1,
-      "status": 4,
-      "rejectionReason": "配色不满意",
-      "rejectedAt": "2025-12-28T11:00:00Z"
-    }
-  ]
-}
-```
-
----
-
-### 2.3 商家重新提交方案（新增）
-
-```http
-POST /api/v1/merchant/proposals/resubmit
-```
-
-**请求体**:
-```json
-{
-  "proposalId": 788,
-  "summary": "v3版本，调整配色为暖色调",
-  "designFee": 8000,
-  "constructionFee": 50000,
-  "materialFee": 30000,
-  "estimatedDays": 60,
-  "attachments": "[\"url1\", \"url2\"]"
-}
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "proposal": {
-      "id": 789,
-      "version": 3,
-      "status": 1,
-      "submittedAt": "2025-12-30T14:00:00Z",
-      "userResponseDeadline": "2026-01-13T14:00:00Z"
-    },
-    "message": "已提交方案v3，等待用户确认"
-  }
-}
-```
-
----
-
-### 2.4 查看方案拒绝信息（新增）
-
-```http
-GET /api/v1/merchant/proposals/:id/rejection-info
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "proposalId": 788,
-    "version": 2,
-    "rejectionCount": 2,
-    "rejectionReason": "空间布局不合理",
-    "rejectedAt": "2025-12-29T16:00:00Z",
-    "canResubmit": true,
-    "maxRejections": 3,
-    "remainingAttempts": 1
-  }
-}
-```
-
----
-
-## 三、退款管理 API
-
-### 3.1 管理员手动退款（新增）
-
-```http
-POST /api/v1/admin/bookings/:bookingId/refund
-```
-
-**路径参数**:
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| bookingId | number | 预约ID |
-
-**请求体**:
-```json
-{
-  "reason": "商家违规操作，全额退款"
-}
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "退款成功"
-}
-```
-
----
-
-## 四、提现审核 API
-
-### 4.1 提现申请列表（新增）
-
-```http
-GET /api/v1/admin/withdraws
-```
-
-**请求参数**:
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| status | number | 否 | 0=待审核, 1=成功, 2=失败 |
-| page | number | 否 | 页码 |
-| pageSize | number | 否 | 每页数量 |
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "list": [
-      {
-        "id": 101,
-        "orderNo": "W20251230100001",
-        "providerId": 5,
-        "providerName": "张设计工作室",
-        "amount": 5000,
-        "bankAccount": "6222****1234",
-        "bankName": "中国银行",
-        "status": 0,
-        "createdAt": "2025-12-30T09:00:00Z"
-      }
-    ],
-    "total": 10,
-    "page": 1,
-    "pageSize": 20
-  }
-}
-```
-
----
-
-### 4.2 提现详情（新增）
-
-```http
-GET /api/v1/admin/withdraws/:id
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "id": 101,
-    "orderNo": "W20251230100001",
-    "provider": {
-      "id": 5,
-      "companyName": "张设计工作室",
-      "phone": "138****5678"
-    },
-    "bankAccount": {
-      "accountName": "张三",
-      "accountNo": "6222 0000 1234 5678",
-      "bankName": "中国银行",
-      "branchName": "上海分行"
-    },
-    "amount": 5000,
-    "status": 0,
-    "createdAt": "2025-12-30T09:00:00Z"
-  }
-}
-```
-
----
-
-### 4.3 审核通过（新增）
-
-```http
-POST /api/v1/admin/withdraws/:id/approve
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "审核通过，打款中..."
-}
-```
-
----
-
-### 4.4 审核拒绝（新增）
-
-```http
-POST /api/v1/admin/withdraws/:id/reject
-```
-
-**请求体**:
-```json
-{
-  "reason": "银行账户信息不完整，请重新提交"
-}
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "已拒绝"
-}
-```
-
----
-
-### 4.5 商家申请提现（修改）
-
-```http
-POST /api/v1/merchant/withdraws
-```
-
-**变更说明**: 增加并发安全控制（行锁）
-
-**请求体**:
-```json
-{
-  "amount": 5000,
-  "bankAccountId": 3
-}
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "withdrawId": 101,
-    "orderNo": "W20251230100001",
-    "message": "提现申请已提交，预计1-3个工作日到账"
-  }
-}
-```
-
----
-
-## 五、定时任务监控 API
-
-### 5.1 获取定时任务指标（新增）
-
-```http
-GET /api/v1/admin/system/cron-metrics
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "order_expiration": {
-      "taskName": "order_expiration",
-      "lastRunTime": "2025-12-30T10:05:00Z",
-      "totalRuns": 1234,
-      "lastRowsAffected": 3
-    },
-    "merchant_timeout": {
-      "taskName": "merchant_timeout",
-      "lastRunTime": "2025-12-30T10:00:00Z",
-      "totalRuns": 567,
-      "lastRowsAffected": 0
-    },
-    "user_confirm_timeout": {
-      "taskName": "user_confirm_timeout",
-      "lastRunTime": "2025-12-30T10:00:00Z",
-      "totalRuns": 567,
-      "lastRowsAffected": 1
-    }
-  }
-}
-```
-
----
-
-## 六、售后管理 API
-
-### 6.1 售后申请列表（新增）
-
-```http
-GET /api/v1/admin/after-sales
-```
-
-**请求参数**:
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| type | string | 否 | refund, complaint, repair |
-| status | number | 否 | 0=待处理, 1=处理中, 2=已完成, 3=已拒绝 |
-| page | number | 否 | 页码 |
-| pageSize | number | 否 | 每页数量 |
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "data": {
-    "list": [
-      {
-        "id": 201,
-        "orderNo": "AS20251230001",
-        "userId": 10,
-        "userName": "李四",
-        "type": "refund",
-        "typeLabel": "退款",
-        "reason": "商家延期施工",
-        "amount": 10000,
-        "status": 0,
-        "createdAt": "2025-12-30T08:00:00Z"
-      }
-    ],
-    "total": 5,
-    "page": 1,
-    "pageSize": 20
-  }
-}
-```
-
----
-
-### 6.2 售后审核通过（新增）
-
-```http
-POST /api/v1/admin/after-sales/:id/approve
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "审核通过"
-}
-```
-
----
-
-### 6.3 售后审核拒绝（新增）
-
-```http
-POST /api/v1/admin/after-sales/:id/reject
-```
-
-**请求体**:
-```json
-{
-  "reply": "经核实，商家未延期施工，申请不成立"
-}
-```
-
-**响应示例**:
-```json
-{
-  "code": 0,
-  "message": "已拒绝"
-}
-```
-
----
-
-## 通知类型常量
-
-### 完整通知类型列表
-
-| 类型 | 说明 | 接收方 |
-|------|------|--------|
-| `booking.intent_paid` | 意向金支付成功 | 商家 |
-| `booking.confirmed` | 商家接单 | 用户 |
-| `booking.cancelled` | 预约取消 | 双方 |
-| `proposal.submitted` | 方案已提交 | 用户 |
-| `proposal.confirmed` | 方案已确认 | 商家 |
-| `proposal.rejected` | 方案被拒绝 | 商家 |
-| `order.created` | 账单生成 | 用户 |
-| `order.paid` | 订单支付成功 | 商家 |
-| `order.expiring` | 订单即将过期 | 用户 |
-| `order.expired` | 订单已过期 | 用户 |
-| `withdraw.approved` | 提现审核通过 | 商家 |
-| `withdraw.rejected` | 提现审核拒绝 | 商家 |
-| `withdraw.completed` | 提现已到账 | 商家 |
-| `audit.approved` | 入驻审核通过 | 商家 |
-| `audit.rejected` | 入驻审核拒绝 | 商家 |
-| `case_audit.approved` | 作品审核通过 | 商家 |
-| `case_audit.rejected` | 作品审核拒绝 | 商家 |
-
----
-
-## 错误码说明
-
-| 错误码 | 说明 | HTTP状态码 |
-|--------|------|-----------|
-| 0 | 成功 | 200 |
-| 400 | 参数错误 | 400 |
-| 401 | 未授权 | 401 |
-| 403 | 无权限 | 403 |
-| 404 | 资源不存在 | 404 |
-| 500 | 服务器错误 | 500 |
-
----
-
-## API 测试建议
-
-### 使用Postman测试
-
-1. 导入Collection（建议创建）
-2. 设置环境变量：
-   - `base_url`: http://localhost:8080/api/v1
-   - `token`: Bearer eyJhbGc...（实际JWT token）
-3. 测试流程：
-   - 先测试登录获取token
-   - 测试各模块的增删改查接口
-   - 验证权限控制
-   - 测试异常情况
-
-### 关键测试场景
-
-1. **通知系统**
-   - 创建预约 → 支付意向金 → 验证商家收到通知
-   - 商家提交方案 → 验证用户收到通知
-   - 标记已读 → 验证未读数量减少
-
-2. **方案版本**
-   - 提交方案 → 拒绝 → 重新提交 → 验证版本号递增
-   - 连续拒绝3次 → 验证自动退款
-
-3. **提现审核**
-   - 商家申请提现 → 管理员审核通过 → 验证商家收到通知
-   - 并发申请提现 → 验证行锁有效性
-
----
-
-## 变更日志
-
-| 日期 | 版本 | 变更内容 |
-|------|------|---------|
-| 2025-12-30 | v1.0 | 初始版本，包含所有新增和修改的API接口 |
+**文档结束**

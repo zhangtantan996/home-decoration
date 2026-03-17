@@ -1,162 +1,601 @@
-# 业务流程规范 (Business Flow Specification)
+# 业务流程规范 (BUSINESS_FLOW.md)
 
-> **状态**: 实施阶段 (Phase 1-2 已完成)
-> **目标**: 标准化从用户预约到项目完工的端到端流程。
+> **文档版本**: v2.0 (与 PRD v2.0 对齐)
+> **创建日期**: 2026-03-17
+> **文档状态**: 唯一业务流底稿
+> **适用范围**: 全体产品、研发、测试、运营人员
 
 ---
 
-## 1. 流程总览 (Overview)
+## 0. 文档说明
 
-整个业务流程主要分为三个阶段：**预约与进场 (Discovery & Intake)**、**设计方案与提案 (Design & Proposal)**、**项目执行与支付 (Execution & Payment)**。
+本文档是**装修设计一体化平台的唯一业务流底稿**，与 [产品需求文档(PRD).md](./产品需求文档(PRD).md) v2.0 保持一致。
 
-```mermaid
-sequenceDiagram
-    participant U as 用户 (App)
-    participant S as 服务端 (Go)
-    participant M as 商家 (管理后台/Web)
-    participant A as 管理员 (Web)
+**核心原则**：
+- 本文档定义的业务流是唯一开发基线
+- 任何偏离该流程的功能、页面、接口、状态，统一视为增项
+- 设计确认与工长确认是两个独立成交点，不能合并
+- 验收/放款必须天然支持按阶段，也必须支持整体验收一次性放款
+- 退款、关闭、审计属于主链路异常收口，不是附属售后能力
 
-    U->>S: 发起预约 (支付意向金 Intent Fee)
-    S->>M: 收到新预约通知
-    M->>S: 提交设计方案 (Proposal)
-    S->>U: 通知方案已就绪
-    U->>S: 方案确认 (接受/拒绝)
-    Note over U,M: 支付设计费 (扣除意向金)
-    U->>S: 创建项目 (Project) / 支付计划 (Payment Plan)
-    Note over U,M: 基于里程碑的施工款支付
+---
+
+## 1. 唯一基线业务流总览
+
+### 1.1 主链路九个节点
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        唯一基线业务流（9个节点）                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  1. 商家入驻与能力配置                                                    │
+│     ↓                                                                   │
+│  2. 用户需求进入线索/预约                                                 │
+│     ↓                                                                   │
+│  3. 设计师与用户对接、量房谈单、确认预算和设计方案                           │
+│     ↓                                                                   │
+│  4. 设计师提交方案/报价，用户确认或拒绝 【成交点A：设计确认】                │
+│     ↓                                                                   │
+│  5. 选择要施工的工长，用户确认或拒绝 【成交点B：工长确认】                   │
+│     ↓                                                                   │
+│  6. 确认后生成订单/业务闭环并创建项目                                      │
+│     ↓                                                                   │
+│  7. 项目按阶段/里程碑执行，伴随托管或账款流转                               │
+│     ↓                                                                   │
+│  8. 用户验收，进入放款、退款或关闭                                         │
+│     ↓                                                                   │
+│  9. 支持分阶段验收放款，也支持一次性整体验收放款                            │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### 1.2 业务阶段枚举
 
-## 2. 详细阶段描述 (Detailed Stages)
+统一主链阶段枚举（与 `business_flows.stage` 字段对齐）：
 
-### 2.1 预约与进场 (Discovery & Intake)
-1. **用户预约**: 用户在移动端选择 `Provider` 并提交 `Booking`。
-2. **意向金 (Intent Fee)**:
-   - 可通过 `SystemConfig` 进行配置（默认：99 元）。
-   - 作为用户诚意金。
-   - **技术锚点**: `booking.IntentFee`, `booking.IntentFeePaid`。
-
-### 2.2 设计与方案提案 (Design & Proposal)
-1. **提交方案**: 商家上传设计方案草案并设置 `DesignFee` (设计费)。
-2. **方案评审**: 用户在移动端查看方案详情。
-3. **决策分流**:
-   - **接受**: 进入项目创建/合同签署阶段。
-   - **拒绝**: 商家可以重新提交方案或取消预约。
-4. **技术锚点**: `Proposal` 模型, `proposal_status` (pending/confirmed/rejected)。
-
-### 2.3 项目执行与支付 (Execution & Payment)
-1. **账单生成**: 方案确认后，系统自动生成 `Order` (订单)。
-2. **抵扣规则**: **意向金 (Intent Fee)** 将在第一笔款项（通常是设计费或首期施工款）中自动扣除。
-3. **里程碑支付**: 施工费用遵循分阶段支付计划（例如：开工款、中期款、尾款）。
-4. **文件访问控制**: 所有的附件（如设计蓝图、施工合同）只有在相关 `Order` 标记为 `paid` (已支付) 后才允许下载。
-5. **技术锚点**: `Order.Type` (design/construction), `Order.Status` (pending/paid), `EscrowAccount`。
+| 阶段枚举 | 中文名称 | 说明 |
+|---------|---------|------|
+| `lead_pending` | 线索待分发 | 用户需求进入，待分发给商家 |
+| `consulting` | 沟通中 | 设计师与用户沟通、量房、预算确认 |
+| `proposal_pending` | 待设计方案 | 设计师准备设计方案 |
+| `proposal_confirmed` | 设计方案已确认 | 用户确认设计方案（成交点A） |
+| `constructor_pending` | 待选择工长 | 用户选择施工工长 |
+| `construction_quote_pending` | 待施工报价 | 工长准备施工报价 |
+| `ready_to_start` | 待开工 | 用户确认施工报价（成交点B），项目待开工 |
+| `in_progress` | 施工中 | 项目执行中 |
+| `milestone_review` | 阶段验收中 | 某阶段提交验收 |
+| `completed` | 已完成 | 项目完工，待整体验收或已验收 |
+| `archived` | 已归档 | 项目关闭 |
+| `disputed` | 争议中 | 用户与商家发生争议 |
+| `cancelled` | 已取消 | 项目取消/退款 |
 
 ---
 
-## 3. 核心数据实体 (Data Entities)
+## 2. 两个独立成交点
 
-| 实体 | 描述 | 关键字段 (Key Fields) |
-| :--- | :--- | :--- |
-| `Booking` | 初始服务请求 | `ProviderID`, `IntentFee`, `Status` |
-| `Proposal` | 商家提交的设计/报价方案 | `BookingID`, `DesignFee`, `Attachments` |
-| `Project` | 激活的装修项目 | `OwnerID`, `ProviderID`, `ContractPrice` |
-| `Order` | 资金交易单元 | `Amount`, `Type`, `IsDeducted` |
-| `Milestone`| 项目进度跟踪 | `StepNumber`, `Title`, `IsCompleted` |
+### 2.1 成交点 A：设计确认成交
 
----
+**定义**：用户确认设计方案/报价，进入施工方选择阶段。
 
-## 4. 状态流转 (State Transitions)
+**输入**：
+- 设计方案（效果图、平面图、材料清单）
+- 设计费
+- 预算范围
 
-### 预约状态 (Booking Status)
-- `pending`: 等待商家接单。
-- `confirmed`: 商家已确认，等待方案提交。
-- `in_progress`: 方案已提交或项目执行中。
-- `completed`: 项目已结束。
+**用户决策**：
+- 确认：进入工长选择（`proposal_confirmed`）
+- 拒绝：设计师可重新提交（最多 3 次）
 
-### 订单状态 (Order Status)
-- `pending_payment`: 账单已生成，等待支付。
-- `paid`: 支付成功。
-- `refunded`: 发生纠纷或取消后的退款。
+**输出**：
+- 设计确认后，用户仍可选择不施工或更换施工方
+- 设计确认**不等于**施工成交
 
----
+**关键约束**：
+- 设计确认与工长确认是两个独立成交点，不能合并
+- 设计确认后，业务流进入 `proposal_confirmed`，但项目尚未创建
 
-## 5. 异常与容错流程 (Exception Handling)
+**对应接口**：
+- `POST /api/v1/proposals/:id/confirm` - 用户确认设计方案
+- `POST /api/v1/proposals/:id/reject` - 用户拒绝设计方案
 
-### 5.1 方案拒绝与重试
-- **拒绝场景**: 用户对设计方案不满意。
-- **重试机制**:
-  1. 用户选择 "拒绝" 并填写理由。
-  2. 商家收到通知，进入 "待修改" 状态。
-  3. 商家重新上传方案（版本号 +1）。
-  4. 若连续拒绝 3 次，系统自动介入或允许用户无责取消。
-
-### 5.2 超时取消
-- **商家超时**: 支付意向金后 48 小时无响应，自动全额退款。
-- **用户超时**: 方案提交后 7 天未确认，自动提醒；14 天未确认，视为自动放弃（意向金不退）。
+**对应状态流转**：
+- `proposal_pending` → `proposal_confirmed`（确认）
+- `proposal_pending` → `proposal_pending`（拒绝后重提）
+- `proposal_pending` → `cancelled`（拒绝 3 次后退款）
 
 ---
 
-## 6. 通知机制 (Notifications)
+### 2.2 成交点 B：工长确认成交
 
-| 触发节点 | 接收方 | 渠道 | 消息内容示例 |
-| :--- | :--- | :--- | :--- |
-| **支付意向金** | 商家 | 短信 + App | "您有新的预约请求，请在 48 小时内接单" |
-| **商家接单** | 用户 | App 推送 | "设计师已受理您的预约，正在准备方案" |
-| **方案提交** | 用户 | 短信 + App | "您的设计方案已生成，请前往查看" |
-| **账单生成** | 用户 | App 推送 | "新阶段账单已生成，请按时支付" |
+**定义**：用户确认工长/施工报价，生成订单并创建项目。
 
----
+**输入**：
+- 工长信息
+- 施工报价
+- 施工范围
 
-## 7. 退款与售后 (Refund & After-Sales)
+**用户决策**：
+- 确认：生成订单并创建项目（`ready_to_start`）
+- 拒绝：重新选择工长或终止项目
 
-### 7.1 意向金退还
-- **可退场景**: 商家拒单、商家超时未接单、首次方案严重不符（需申诉）。
-- **不可退场景**: 用户因为非质量原因主动取消、多次方案修改后仍不满意（具体依合同条款）。
+**输出**：
+- 生成订单
+- 创建项目
+- 进入项目执行阶段
 
-### 7.2 质保与评价
-- **评价入口**: 项目状态更新为 `completed` 后开放。
-- **评价维度**: 服务态度、设计还原度、施工质量。
-- **质保期**: 施工结束日起算（例如 2 年水电质保），期间用户可发起 "售后申请"。
+**关键约束**：
+- 工长确认成交是项目创建的**唯一触发条件**
+- 工长确认前，所有状态均为"商机阶段"，不是"履约阶段"
+- 工长确认后，项目进入正式履约，资金流转开始绑定阶段/里程碑
 
----
+**对应接口**：
+- `POST /api/v1/quote-tasks/:id/confirm` - 用户确认施工报价
+- `POST /api/v1/orders` - 生成订单
+- `POST /api/v1/projects` - 创建项目
 
-## 8. 合同与签署 (Contract Signing)
-
-1. **生成时机**: 用户确认设计方案，且支付设计费/首期款前。
-2. **电子签约**:
-   - 系统基于模板自动生成 PDF。
-   - 用户及商家进行电子签名/实名认证。
-3. **存证**: 签署后的合同文件存入 `Escrow` 系统，且不可篡改。
-
----
-
-## 9. 安全与约束 (Security & Constraints)
-- **权限控制 (RBAC)**: 用户仅能查看名下的项目；商家仅能查看分配给自己的预约。
-- **附件保护**: 后端在提供二进制文件流下载前，会校验对应 `Order.Status == 'paid'`。
-- **并发处理**: 在支付过程中对 `EscrowAccount` 使用 `SELECT FOR UPDATE` 锁定行，防止重复扣款。
+**对应状态流转**：
+- `construction_quote_pending` → `ready_to_start`（确认）
+- `construction_quote_pending` → `constructor_pending`（拒绝后重新选择）
+- `construction_quote_pending` → `cancelled`（终止项目）
 
 ---
 
-## 10. 验证方式 (How to Verify)
+## 3. 分阶段验收与整体验收双模式
 
-### 10.1 后端单元测试
-- **业务逻辑**: `internal/service/order_service_test.go`
-- **RBAC 权限**: `internal/middleware/middleware_test.go`
+### 3.1 分阶段验收放款
 
-### 10.2 端到端自动化测试 (E2E)
-为确保全链路业务及通知闭环，提供基于 **Playwright** 的自动化脚本。
+**定义**：按阶段/里程碑验收，每个阶段验收通过后放款该阶段款项。
 
-**覆盖场景**:
-- 用户预约 & 意向金支付 (通知商家/管理员)
-- 商家提交方案 (通知用户)
-- 用户确认方案 (通知商家/生成订单)
-- 订单支付 (通知商家)
+**适用场景**：
+- 大型项目（工期 > 60 天）
+- 用户希望按进度付款
+- 商家希望按进度收款
 
-**运行命令**:
-```powershell
-npx playwright install chromium
-npx playwright test tests/e2e/notification.test.ts
-```
+**流程**：
+1. 工长提交阶段完成材料
+2. 用户验收该阶段
+3. 验收通过后，平台放款该阶段款项
+4. 继续下一阶段
+5. 所有阶段完成后，项目完工
+
+**状态流转**：
+- `in_progress` → `milestone_review`（工长提交阶段）
+- `milestone_review` → `in_progress`（验收通过，继续下一阶段）
+- `milestone_review` → `in_progress`（验收不通过，工长整改）
+- `in_progress` → `completed`（最后一个阶段验收通过）
+
+**对应接口**：
+- `POST /api/v1/projects/:id/milestones/:milestoneId/submit` - 工长提交阶段
+- `POST /api/v1/projects/:id/milestones/:milestoneId/approve` - 用户验收通过
+- `POST /api/v1/projects/:id/milestones/:milestoneId/reject` - 用户验收不通过
 
 ---
+
+### 3.2 整体验收一次性放款
+
+**定义**：所有阶段完成后，用户一次性整体验收，验收通过后一次性放款全部款项。
+
+**适用场景**：
+- 小型项目（工期 < 30 天）
+- 用户希望整体验收后付款
+- 商家希望整体验收后收款
+
+**流程**：
+1. 工长完成所有阶段
+2. 工长提交项目完工
+3. 用户整体验收
+4. 验收通过后，平台一次性放款全部款项
+5. 项目关闭
+
+**状态流转**：
+- `in_progress` → `completed`（工长提交完工）
+- `completed` → `archived`（用户验收通过，放款完成）
+- `completed` → `in_progress`（用户验收不通过，工长整改）
+
+**对应接口**：
+- `POST /api/v1/projects/:id/complete` - 工长提交完工
+- `POST /api/v1/projects/:id/approve` - 用户整体验收通过
+
+---
+
+## 4. 主链路异常收口
+
+### 4.1 设计阶段拒绝/终止
+
+**触发场景**：
+- 用户拒绝设计方案
+
+**处理流程**：
+- 拒绝次数 < 3：设计师可重新提交
+- 拒绝次数 ≥ 3：自动触发退款，项目关闭
+
+**状态流转**：
+- `proposal_pending` → `proposal_pending`（拒绝后重提）
+- `proposal_pending` → `cancelled`（拒绝 3 次后退款）
+
+**资金处理**：
+- 意向金全额退款
+
+**对应接口**：
+- `POST /api/v1/proposals/:id/reject` - 用户拒绝设计方案
+- `POST /api/v1/merchant/proposals/resubmit` - 设计师重新提交
+- `POST /api/v1/bookings/:id/refund` - 自动触发退款
+
+---
+
+### 4.2 工长确认失败/重新选择
+
+**触发场景**：
+- 用户拒绝工长施工报价
+- 工长无法承接项目
+
+**处理流程**：
+- 用户可重新选择工长
+- 用户可终止项目并申请退款
+
+**状态流转**：
+- `construction_quote_pending` → `constructor_pending`（重新选择）
+- `construction_quote_pending` → `cancelled`（终止项目）
+
+**资金处理**：
+- 意向金全额退款（如终止）
+
+**对应接口**：
+- `POST /api/v1/quote-tasks/:id/reject` - 用户拒绝施工报价
+- `POST /api/v1/bookings/:id/refund` - 申请退款
+
+---
+
+### 4.3 执行中暂停/争议
+
+**触发场景**：
+- 用户要求暂停施工
+- 工长要求暂停施工
+- 用户与工长发生争议
+
+**处理流程**：
+- 暂停施工：冻结后续款项，等待恢复
+- 争议：平台介入仲裁
+
+**状态流转**：
+- `in_progress` → `disputed`（发生争议）
+- `disputed` → `in_progress`（争议解决，恢复施工）
+- `disputed` → `cancelled`（争议无法解决，退款关闭）
+
+**资金处理**：
+- 暂停期间：冻结后续款项
+- 争议期间：冻结所有款项
+- 仲裁后：按仲裁结论处理
+
+**对应接口**：
+- `POST /api/v1/projects/:id/pause` - 暂停施工
+- `POST /api/v1/projects/:id/dispute` - 提交争议
+- `POST /api/v1/admin/projects/:id/audit` - 管理员介入仲裁
+
+---
+
+### 4.4 分阶段验收不通过
+
+**触发场景**：
+- 用户验收某阶段不通过
+
+**处理流程**：
+- 工长整改
+- 用户重新验收
+- 验收通过后，解冻该阶段款项并放款
+
+**状态流转**：
+- `milestone_review` → `in_progress`（验收不通过，工长整改）
+- `in_progress` → `milestone_review`（整改完成，重新提交验收）
+- `milestone_review` → `in_progress`（验收通过，继续下一阶段）
+
+**资金处理**：
+- 冻结该阶段及后续款项
+- 验收通过后，解冻并放款
+
+**对应接口**：
+- `POST /api/v1/projects/:id/milestones/:milestoneId/reject` - 用户验收不通过
+
+---
+
+### 4.5 退款
+
+**触发场景**：
+- 设计方案拒绝次数 ≥ 3
+- 工长选择失败且用户终止
+- 施工中途暂停且无法恢复
+- 阶段验收不通过且无法整改
+- 用户主动申请退款
+
+**处理流程**：
+- 用户/系统提交退款申请
+- 管理员审核退款申请
+- 审核通过后，系统自动退款
+
+**状态流转**：
+- 任意状态 → `cancelled`（退款完成）
+
+**资金处理**：
+- 按退款规则计算退款金额
+- 已放款部分不退款
+- 未放款部分全额退款
+
+**对应接口**：
+- `POST /api/v1/bookings/:id/refund` - 申请退款
+- `POST /api/v1/admin/bookings/:bookingId/refund` - 管理员手动退款
+
+---
+
+### 4.6 项目关闭
+
+**触发场景**：
+- 项目正常完成，全部款项放款完毕
+- 项目异常终止，退款完成
+
+**处理流程**：
+- 系统自动关闭项目
+
+**状态流转**：
+- `completed` → `archived`（正常完成）
+- `cancelled` → `archived`（异常终止）
+
+**资金处理**：
+- 无
+
+**对应接口**：
+- `POST /api/v1/admin/projects/:id/close` - 管理员关闭项目
+
+---
+
+### 4.7 审计介入与审计结论
+
+**触发场景**：
+- 用户与商家争议无法协商
+- 资金流转异常
+- 验收标准争议
+
+**处理流程**：
+- 用户/商家提交审计申请
+- 管理员介入审计
+- 管理员给出仲裁结论
+- 系统执行仲裁结论
+
+**状态流转**：
+- `disputed` → `in_progress`（仲裁后继续执行）
+- `disputed` → `cancelled`（仲裁后退款关闭）
+
+**资金处理**：
+- 按仲裁结论处理
+
+**对应接口**：
+- `POST /api/v1/admin/projects/:id/audit` - 管理员介入审计
+
+---
+
+## 5. 业务对象与状态定义
+
+### 5.1 商家入驻（merchant_applications / providers / material_shops）
+
+**状态枚举**：
+- `pending` - 审核中
+- `approved` - 审核通过
+- `rejected` - 审核拒绝
+
+**状态流转**：
+- 提交入驻申请 → `pending`
+- 管理员审核通过 → `approved`
+- 管理员审核拒绝 → `rejected`
+- 驳回后重新提交 → `pending`
+
+---
+
+### 5.2 线索/预约（bookings / demands）
+
+**状态枚举**：
+- `pending` - 待分发/待承接
+- `confirmed` - 已承接
+- `cancelled` - 已取消
+
+**状态流转**：
+- 用户发起需求 → `pending`
+- 商家承接 → `confirmed`
+- 用户/商家取消 → `cancelled`
+
+---
+
+### 5.3 设计方案（proposals）
+
+**状态枚举**：
+- `pending` - 待用户确认
+- `confirmed` - 已确认
+- `rejected` - 已拒绝
+- `expired` - 已过期
+
+**状态流转**：
+- 设计师提交方案 → `pending`
+- 用户确认 → `confirmed`
+- 用户拒绝 → `rejected`
+- 超时未确认 → `expired`
+
+---
+
+### 5.4 施工报价（quote_tasks / quote_submissions）
+
+**状态枚举**：
+- `pending` - 待工长报价
+- `submitted` - 已提交报价
+- `confirmed` - 已确认
+- `rejected` - 已拒绝
+
+**状态流转**：
+- 创建报价任务 → `pending`
+- 工长提交报价 → `submitted`
+- 用户确认 → `confirmed`
+- 用户拒绝 → `rejected`
+
+---
+
+### 5.5 订单（orders）
+
+**状态枚举**：
+- `pending` - 待支付
+- `paid` - 已支付
+- `completed` - 已完成
+- `closed` - 已关闭
+
+**状态流转**：
+- 生成订单 → `pending`
+- 用户支付 → `paid`
+- 项目完工 → `completed`
+- 项目关闭 → `closed`
+
+---
+
+### 5.6 项目（projects）
+
+**状态枚举**：
+- `pending` - 待开工
+- `in_progress` - 施工中
+- `completed` - 已完成
+- `closed` - 已关闭
+
+**状态流转**：
+- 创建项目 → `pending`
+- 工长开工 → `in_progress`
+- 项目完工 → `completed`
+- 项目关闭 → `closed`
+
+---
+
+### 5.7 项目阶段/里程碑（milestones）
+
+**状态枚举**：
+- `pending` - 待执行
+- `in_progress` - 执行中
+- `submitted` - 已提交验收
+- `approved` - 验收通过
+- `rejected` - 验收不通过
+
+**状态流转**：
+- 创建阶段 → `pending`
+- 工长开始执行 → `in_progress`
+- 工长提交验收 → `submitted`
+- 用户验收通过 → `approved`
+- 用户验收不通过 → `rejected`
+
+---
+
+### 5.8 业务闭环（business_flows）
+
+**作用**：
+- 作为主链聚合根，串联预约/需求来源、设计确认、施工方确认、施工报价确认、项目开工与验收、完工后的案例草稿沉淀
+
+**关键字段**：
+- `stage` - 业务阶段（见 1.2 业务阶段枚举）
+- `booking_id` - 预约 ID
+- `proposal_id` - 设计方案 ID
+- `selected_foreman_provider_id` - 选中的工长 ID
+- `selected_quote_submission_id` - 选中的施工报价 ID
+- `project_id` - 项目 ID
+- `inspiration_case_draft_id` - 案例草稿 ID
+
+**状态流转**：
+- 按主链路 9 个节点流转，见 1.2 业务阶段枚举
+
+---
+
+## 6. 通知与审计要求
+
+### 6.1 关键决策节点通知
+
+**必须发送通知的节点**：
+- 商家入驻审核通过/拒绝
+- 用户发起预约（通知商家）
+- 商家承接预约（通知用户）
+- 设计师提交方案（通知用户）
+- 用户确认/拒绝方案（通知设计师）
+- 工长提交施工报价（通知用户）
+- 用户确认/拒绝施工报价（通知工长）
+- 工长提交阶段验收（通知用户）
+- 用户验收通过/不通过（通知工长）
+- 项目完工（通知用户）
+- 退款完成（通知用户/商家）
+
+---
+
+### 6.2 审计留痕要求
+
+**必须留痕的操作**：
+- 入驻审核
+- 方案确认/拒绝
+- 工长确认/拒绝
+- 阶段验收通过/不通过
+- 放款
+- 退款
+- 项目关闭
+- 审计介入与仲裁结论
+
+**留痕字段**：
+- 操作人
+- 操作时间
+- 操作类型
+- 操作结果
+- 操作原因（如有）
+
+---
+
+## 7. 与 API 接口对齐
+
+### 7.1 主链路节点 → 接口映射
+
+| 主链路节点 | 关键接口 |
+|-----------|---------|
+| 商家入驻与能力配置 | `POST /api/v1/merchant/apply` |
+| 用户需求进入线索/预约 | `POST /api/v1/bookings` |
+| 设计沟通、量房、预算确认 | `POST /api/v1/bookings/:id/site-survey` |
+| 设计方案/报价提交与确认 | `POST /api/v1/proposals`, `POST /api/v1/proposals/:id/confirm` |
+| 工长选择与确认 | `POST /api/v1/quote-tasks`, `POST /api/v1/quote-tasks/:id/confirm` |
+| 订单生成、业务闭环与项目创建 | `POST /api/v1/orders`, `POST /api/v1/projects` |
+| 项目阶段执行与资金流转 | `POST /api/v1/projects/:id/milestones/:milestoneId/submit` |
+| 验收、放款、退款、关闭 | `POST /api/v1/projects/:id/milestones/:milestoneId/approve` |
+
+---
+
+### 7.2 业务阶段 → 接口行为映射
+
+| 业务阶段 | 触发接口 | 下一阶段 |
+|---------|---------|---------|
+| `lead_pending` | `POST /api/v1/bookings/:id/confirm` | `consulting` |
+| `consulting` | `POST /api/v1/proposals` | `proposal_pending` |
+| `proposal_pending` | `POST /api/v1/proposals/:id/confirm` | `proposal_confirmed` |
+| `proposal_confirmed` | `POST /api/v1/quote-tasks` | `constructor_pending` |
+| `constructor_pending` | `POST /api/v1/quote-tasks/:id/submit` | `construction_quote_pending` |
+| `construction_quote_pending` | `POST /api/v1/quote-tasks/:id/confirm` | `ready_to_start` |
+| `ready_to_start` | `POST /api/v1/projects/:id/start` | `in_progress` |
+| `in_progress` | `POST /api/v1/projects/:id/milestones/:milestoneId/submit` | `milestone_review` |
+| `milestone_review` | `POST /api/v1/projects/:id/milestones/:milestoneId/approve` | `in_progress` / `completed` |
+| `completed` | `POST /api/v1/projects/:id/complete` | `archived` |
+
+---
+
+## 8. 附录
+
+### 8.1 与 PRD 对齐说明
+
+本文档与 [产品需求文档(PRD).md](./产品需求文档(PRD).md) v2.0 保持一致：
+
+- 主链路 9 个节点完全一致
+- 两个独立成交点定义完全一致
+- 分阶段验收/整体验收双模式完全一致
+- 异常收口机制完全一致
+
+### 8.2 变更记录
+
+| 版本 | 日期 | 变更内容 | 变更人 |
+|------|------|---------|-------|
+| v2.0 | 2026-03-17 | 重写为与 PRD v2.0 对齐的业务流底稿，补齐双成交点、阶段验收、异常收口 | 产品团队 |
+
+---
+
+**文档结束**
