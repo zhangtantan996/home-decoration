@@ -1,17 +1,18 @@
 # ==========================================
-# Production Frontend (Admin) + Nginx Proxy
-# - Admin served at / (supports /merchant entry)
+# Production Frontend (Website + Admin + Merchant) + Nginx Proxy
+# - Root domain serves website static pages
+# - /merchant* serves merchant SPA entry from admin build
+# - /admin/* serves admin SPA behind allowlist/basic auth
 # - Proxies /api/* and /tinode/* to backend services
 # - Designed to run behind host Nginx for TLS
 # ==========================================
 
-FROM node:20-alpine AS admin-builder
+FROM docker.m.daocloud.io/library/node:20-alpine AS admin-builder
 WORKDIR /app/admin
 
-# Mirror for China
 RUN npm config set registry https://registry.npmmirror.com
 
-COPY admin/package.json ./
+COPY admin/package*.json ./
 RUN npm install --legacy-peer-deps
 
 COPY admin/ ./
@@ -23,16 +24,35 @@ ENV VITE_API_URL=${VITE_API_URL}
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
-FROM nginx:alpine
+FROM docker.m.daocloud.io/library/node:20-alpine AS website-builder
+WORKDIR /app/website
 
-RUN apk add --no-cache tzdata
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY website/package*.json ./
+RUN npm ci
+
+COPY website/ ./
+RUN npm run build
+
+FROM docker.m.daocloud.io/library/nginx:alpine
+
+RUN apk add --no-cache tzdata \
+    && rm -f /etc/nginx/conf.d/default.conf
 ENV TZ=Asia/Shanghai
 
 COPY deploy/nginx/nginx.prod.conf /etc/nginx/nginx.conf
 COPY deploy/nginx/admin_allowlist.conf /etc/nginx/admin_allowlist.conf
+COPY deploy/nginx/admin.htpasswd /etc/nginx/admin.htpasswd
 
-# Serve admin build at /usr/share/nginx/html/admin
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
+COPY --from=website-builder /app/website/dist /usr/share/nginx/html/web
+
+RUN mkdir -p /usr/share/nginx/html/web/assets \
+    && cp /usr/share/nginx/html/admin/merchant.html /usr/share/nginx/html/web/merchant.html \
+    && cp -R /usr/share/nginx/html/admin/assets/. /usr/share/nginx/html/web/assets/ \
+    && cp /usr/share/nginx/html/admin/apple-touch-icon.png /usr/share/nginx/html/web/ \
+    && cp /usr/share/nginx/html/admin/favicon* /usr/share/nginx/html/web/
 
 EXPOSE 8888
 

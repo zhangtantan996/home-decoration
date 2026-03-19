@@ -1,115 +1,97 @@
+import type { ComponentType } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
-import BasicLayout from './layouts/BasicLayout';
-import Dashboard from './pages/dashboard';
-import ProjectList from './pages/projects/list';
-import UserList from './pages/users/UserList';
-import ProviderList from './pages/providers/ProviderList';
-import MaterialShopList from './pages/materials/MaterialShopList';
-import BookingList from './pages/bookings/BookingList';
-import DisputedBookings from './pages/bookings/DisputedBookings';
-import ReviewList from './pages/reviews/ReviewList';
-import LogList from './pages/system/LogList';
-import Login from './pages/user/Login';
-import AdminList from './pages/admins/AdminList';
-import ProviderAudit from './pages/audits/ProviderAudit';
-import MaterialShopAudit from './pages/audits/MaterialShopAudit';
-import ProjectDetail from './pages/projects/ProjectDetail';
-import ProjectMap from './pages/projects/ProjectMap';
-import EscrowAccountList from './pages/finance/EscrowAccountList';
-import TransactionList from './pages/finance/TransactionList';
-import RiskWarningList from './pages/risk/RiskWarningList';
-import ArbitrationCenter from './pages/risk/ArbitrationCenter';
-import SystemSettings from './pages/settings/SystemSettings';
-import RoleList from './pages/permissions/RoleList';
-import MenuList from './pages/permissions/MenuList';
-import CaseManagement from './pages/cases/CaseManagement';
-import DictionaryManagement from './pages/system/DictionaryManagement';
-import RegionManagement from './pages/system/RegionManagement';
-import IdentityApplicationAudit from './pages/audits/IdentityApplicationAudit';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
+interface RouteGuardOptions {
+    permission?: string | string[];
+    requireAll?: boolean;
+}
+
+const lazyRoute = (loader: () => Promise<{ default: ComponentType<any> }>) => async () => {
+    const mod = await loader();
+    return { Component: mod.default };
+};
+
+const lazyProtectedRoute = (
+    loader: () => Promise<{ default: ComponentType<any> }>,
+    options?: RouteGuardOptions,
+) => async () => {
+    const mod = await loader();
+    const LoadedComponent = mod.default;
+
+    const WrappedComponent = () => (
+        <ProtectedRoute permission={options?.permission} requireAll={options?.requireAll}>
+            <LoadedComponent />
+        </ProtectedRoute>
+    );
+
+    return { Component: WrappedComponent };
+};
 
 const router = createBrowserRouter([
-    { path: '/login', element: <Login /> },
-
-    // ========== Admin 管理后台 ==========
+    { path: '/login', lazy: lazyRoute(() => import('./pages/user/Login')) },
     {
         path: '/',
-        element: (
-            <ProtectedRoute>
-                <BasicLayout />
-            </ProtectedRoute>
-        ),
+        lazy: lazyProtectedRoute(() => import('./layouts/BasicLayout')),
         children: [
             { index: true, element: <Navigate to="/dashboard" replace /> },
-            { path: 'dashboard', element: <ProtectedRoute permission="dashboard:view"><Dashboard /></ProtectedRoute> },
+            { path: 'dashboard', lazy: lazyProtectedRoute(() => import('./pages/dashboard'), { permission: 'dashboard:view' }) },
 
-            // Users
             { path: 'users', element: <Navigate to="/users/list" replace /> },
-            { path: 'users/list', element: <ProtectedRoute permission="system:user:list"><UserList /></ProtectedRoute> },
-            { path: 'users/admins', element: <ProtectedRoute permission="system:admin:list"><AdminList /></ProtectedRoute> },
+            { path: 'users/list', lazy: lazyProtectedRoute(() => import('./pages/users/UserList'), { permission: 'system:user:list' }) },
+            { path: 'users/admins', lazy: lazyProtectedRoute(() => import('./pages/admins/AdminList'), { permission: 'system:admin:list' }) },
 
-            // Providers
             { path: 'providers', element: <Navigate to="/providers/designers" replace /> },
-            { path: 'providers/designers', element: <ProtectedRoute permission="provider:designer:list"><ProviderList /></ProtectedRoute> },
-            { path: 'providers/companies', element: <ProtectedRoute permission="provider:company:list"><ProviderList /></ProtectedRoute> },
-            { path: 'providers/foremen', element: <ProtectedRoute permission="provider:foreman:list"><ProviderList /></ProtectedRoute> },
-            { path: 'providers/audit', element: <ProtectedRoute permission="provider:audit:list"><ProviderAudit /></ProtectedRoute> },
-            { path: 'providers/identity-applications', element: <ProtectedRoute permission="identity:application:audit"><IdentityApplicationAudit /></ProtectedRoute> },
-            { path: 'audits/identity-applications', element: <ProtectedRoute permission="identity:application:audit"><IdentityApplicationAudit /></ProtectedRoute> },
+            { path: 'providers/designers', lazy: lazyProtectedRoute(() => import('./pages/providers/ProviderList'), { permission: 'provider:designer:list' }) },
+            { path: 'providers/companies', lazy: lazyProtectedRoute(() => import('./pages/providers/ProviderList'), { permission: 'provider:company:list' }) },
+            { path: 'providers/foremen', lazy: lazyProtectedRoute(() => import('./pages/providers/ProviderList'), { permission: 'provider:foreman:list' }) },
+            { path: 'providers/audit', lazy: lazyProtectedRoute(() => import('./pages/audits/ProviderAudit'), { permission: 'provider:audit:list' }) },
+            { path: 'providers/identity-applications', lazy: lazyProtectedRoute(() => import('./pages/audits/IdentityApplicationAudit'), { permission: 'identity:application:audit' }) },
+            { path: 'audits/identity-applications', lazy: lazyProtectedRoute(() => import('./pages/audits/IdentityApplicationAudit'), { permission: 'identity:application:audit' }) },
 
-            // Materials
             { path: 'materials', element: <Navigate to="/materials/list" replace /> },
-            { path: 'materials/list', element: <ProtectedRoute permission="material:shop:list"><MaterialShopList /></ProtectedRoute> },
-            { path: 'materials/audit', element: <ProtectedRoute permission="material:audit:list"><MaterialShopAudit /></ProtectedRoute> },
+            { path: 'materials/list', lazy: lazyProtectedRoute(() => import('./pages/materials/MaterialShopList'), { permission: 'material:shop:list' }) },
+            { path: 'materials/audit', lazy: lazyProtectedRoute(() => import('./pages/audits/MaterialShopAudit'), { permission: 'material:audit:list' }) },
 
-            // Case Management (作品管理，整合审核功能)
             { path: 'cases', element: <Navigate to="/cases/manage" replace /> },
-            { path: 'cases/manage', element: <ProtectedRoute permission="system:case:view"><CaseManagement /></ProtectedRoute> },
+            { path: 'cases/manage', lazy: lazyProtectedRoute(() => import('./pages/cases/CaseManagement'), { permission: 'system:case:view' }) },
 
-            // Projects
             { path: 'projects', element: <Navigate to="/projects/list" replace /> },
-            { path: 'projects/list', element: <ProtectedRoute permission="project:list"><ProjectList /></ProtectedRoute> },
-            { path: 'projects/detail/:id', element: <ProtectedRoute permission="project:view"><ProjectDetail /></ProtectedRoute> },
-            { path: 'projects/map', element: <ProtectedRoute permission="project:map"><ProjectMap /></ProtectedRoute> },
+            { path: 'projects/list', lazy: lazyProtectedRoute(() => import('./pages/projects/list'), { permission: 'project:list' }) },
+            { path: 'projects/detail/:id', lazy: lazyProtectedRoute(() => import('./pages/projects/ProjectDetail'), { permission: 'project:view' }) },
+            { path: 'projects/map', lazy: lazyProtectedRoute(() => import('./pages/projects/ProjectMap'), { permission: 'project:map' }) },
 
-            // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
-            { path: 'bookings/list', element: <ProtectedRoute permission="booking:list"><BookingList /></ProtectedRoute> },
-            { path: 'bookings/disputed', element: <ProtectedRoute permission="booking:dispute:detail"><DisputedBookings /></ProtectedRoute> },
+            { path: 'bookings/list', lazy: lazyProtectedRoute(() => import('./pages/bookings/BookingList'), { permission: 'booking:list' }) },
+            { path: 'bookings/disputed', lazy: lazyProtectedRoute(() => import('./pages/bookings/DisputedBookings'), { permission: 'booking:dispute:detail' }) },
 
-            // Finance
             { path: 'finance', element: <Navigate to="/finance/escrow" replace /> },
-            { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
-            { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
+            { path: 'finance/escrow', lazy: lazyProtectedRoute(() => import('./pages/finance/EscrowAccountList'), { permission: 'finance:escrow:list' }) },
+            { path: 'finance/transactions', lazy: lazyProtectedRoute(() => import('./pages/finance/TransactionList'), { permission: 'finance:transaction:list' }) },
 
-            // Other
             { path: 'reviews', element: <Navigate to="/reviews/list" replace /> },
-            { path: 'reviews/list', element: <ProtectedRoute permission="review:list"><ReviewList /></ProtectedRoute> },
+            { path: 'reviews/list', lazy: lazyProtectedRoute(() => import('./pages/reviews/ReviewList'), { permission: 'review:list' }) },
 
-            // Risk
             { path: 'risk', element: <Navigate to="/risk/warnings" replace /> },
-            { path: 'risk/warnings', element: <ProtectedRoute permission="risk:warning:list"><RiskWarningList /></ProtectedRoute> },
-            { path: 'risk/arbitration', element: <ProtectedRoute permission="risk:arbitration:list"><ArbitrationCenter /></ProtectedRoute> },
+            { path: 'risk/warnings', lazy: lazyProtectedRoute(() => import('./pages/risk/RiskWarningList'), { permission: 'risk:warning:list' }) },
+            { path: 'risk/arbitration', lazy: lazyProtectedRoute(() => import('./pages/risk/ArbitrationCenter'), { permission: 'risk:arbitration:list' }) },
 
             { path: 'logs', element: <Navigate to="/logs/list" replace /> },
-            { path: 'logs/list', element: <ProtectedRoute permission="system:log:list"><LogList /></ProtectedRoute> },
+            { path: 'logs/list', lazy: lazyProtectedRoute(() => import('./pages/system/LogList'), { permission: 'system:log:list' }) },
             { path: 'settings', element: <Navigate to="/settings/config" replace /> },
-            { path: 'settings/config', element: <ProtectedRoute permission="system:setting:list"><SystemSettings /></ProtectedRoute> },
-            { path: 'settings/regions', element: <ProtectedRoute permission="system:setting:list"><RegionManagement /></ProtectedRoute> },
+            { path: 'settings/config', lazy: lazyProtectedRoute(() => import('./pages/settings/SystemSettings'), { permission: 'system:setting:list' }) },
+            { path: 'settings/regions', lazy: lazyProtectedRoute(() => import('./pages/system/RegionManagement'), { permission: 'system:setting:list' }) },
 
-            // System
             { path: 'system', element: <Navigate to="/system/dictionary" replace /> },
-            { path: 'system/dictionary', element: <ProtectedRoute permission="system:setting:list"><DictionaryManagement /></ProtectedRoute> },
+            { path: 'system/dictionary', lazy: lazyProtectedRoute(() => import('./pages/system/DictionaryManagement'), { permission: 'system:setting:list' }) },
 
-            // Permissions (注意：路径为单数 permission，与数据库菜单配置一致)
             { path: 'permission', element: <Navigate to="/permission/roles" replace /> },
-            { path: 'permission/roles', element: <ProtectedRoute permission="system:role:list"><RoleList /></ProtectedRoute> },
-            { path: 'permission/menus', element: <ProtectedRoute permission="system:menu:list"><MenuList /></ProtectedRoute> },
+            { path: 'permission/roles', lazy: lazyProtectedRoute(() => import('./pages/permissions/RoleList'), { permission: 'system:role:list' }) },
+            { path: 'permission/menus', lazy: lazyProtectedRoute(() => import('./pages/permissions/MenuList'), { permission: 'system:menu:list' }) },
         ],
     },
 ], {
-    basename: '/admin'
+    basename: '/admin',
 });
 
 export default router;

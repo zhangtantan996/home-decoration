@@ -1,78 +1,46 @@
+import type { ComponentType } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 
-// Merchant pages
-import MerchantEntry from './pages/merchant/MerchantEntry';
-import MerchantLogin from './pages/merchant/MerchantLogin';
-import MerchantRegister from './pages/merchant/MerchantRegister';
-import MaterialShopRegister from './pages/merchant/MaterialShopRegister';
-import MerchantApplyStatus from './pages/merchant/MerchantApplyStatus';
-import MerchantDashboard from './pages/merchant/MerchantDashboard';
-import MerchantBookings from './pages/merchant/MerchantBookings';
-import MerchantProposals from './pages/merchant/MerchantProposals';
-import MerchantOrders from './pages/merchant/MerchantOrders';
-import MerchantIncome from './pages/merchant/MerchantIncome';
-import MerchantWithdraw from './pages/merchant/MerchantWithdraw';
-import MerchantBankAccounts from './pages/merchant/MerchantBankAccounts';
-import MerchantCases from './pages/merchant/MerchantCases';
-import MerchantSettings from './pages/merchant/MerchantSettings';
-import MaterialShopSettings from './pages/merchant/MaterialShopSettings';
-import MaterialShopProducts from './pages/merchant/MaterialShopProducts';
-import MerchantChat from './pages/merchant/MerchantChat';
-import IMTest from './pages/merchant/IMTest';
-import OnboardingAgreementPage from './pages/merchant/legal/OnboardingAgreementPage';
-import PlatformRulesPage from './pages/merchant/legal/PlatformRulesPage';
-import PrivacyDataProcessingPage from './pages/merchant/legal/PrivacyDataProcessingPage';
-import MerchantLayout from './layouts/MerchantLayout';
-import MerchantAuthGuard from './components/MerchantAuthGuard';
+const lazyRoute = (loader: () => Promise<{ default: ComponentType<any> }>) => async () => {
+    const mod = await loader();
+    return { Component: mod.default };
+};
 
-// 商家端专用路由
 const merchantRouter = createBrowserRouter([
-    // 入驻流程（无需登录）
-    { path: '/', element: <MerchantEntry /> },
-    { path: '/login', element: <MerchantLogin /> },
-    { path: '/register', element: <MerchantRegister /> },
-    { path: '/material-shop/register', element: <MaterialShopRegister /> },
-    { path: '/apply-status', element: <MerchantApplyStatus /> },
-    { path: '/legal/onboarding-agreement', element: <OnboardingAgreementPage /> },
-    { path: '/legal/platform-rules', element: <PlatformRulesPage /> },
-    { path: '/legal/privacy-data-processing', element: <PrivacyDataProcessingPage /> },
-
-    // 商家中心（需要登录）
+    { path: '/', lazy: lazyRoute(() => import('./pages/merchant/MerchantEntry')) },
+    { path: '/login', lazy: lazyRoute(() => import('./pages/merchant/MerchantLogin')) },
+    { path: '/register', lazy: lazyRoute(() => import('./pages/merchant/MerchantRegister')) },
+    { path: '/material-shop/register', lazy: lazyRoute(() => import('./pages/merchant/MaterialShopRegister')) },
+    { path: '/apply-status', lazy: lazyRoute(() => import('./pages/merchant/MerchantApplyStatus')) },
+    { path: '/legal/onboarding-agreement', lazy: lazyRoute(() => import('./pages/merchant/legal/OnboardingAgreementPage')) },
+    { path: '/legal/platform-rules', lazy: lazyRoute(() => import('./pages/merchant/legal/PlatformRulesPage')) },
+    { path: '/legal/privacy-data-processing', lazy: lazyRoute(() => import('./pages/merchant/legal/PrivacyDataProcessingPage')) },
     {
-        element: <MerchantAuthGuard />,
+        lazy: lazyRoute(() => import('./components/MerchantAuthGuard')),
         children: [
             {
-                element: <MerchantLayout />,
+                lazy: lazyRoute(() => import('./layouts/MerchantLayout')),
                 children: [
-                    { path: '/dashboard', element: <MerchantDashboard /> },
-                    { path: '/bookings', element: <MerchantBookings /> },
-                    { path: '/proposals', element: <MerchantProposals /> },
-                    { path: '/orders', element: <MerchantOrders /> },
-
-                    // 客户消息
-                    { path: '/chat', element: <MerchantChat /> },
-                    // IM 纯 SDK 测试页面
-                    { path: '/im-test', element: <IMTest /> },
-
-                    // 财务模块
-                    { path: '/income', element: <MerchantIncome /> },
-                    { path: '/withdraw', element: <MerchantWithdraw /> },
-                    { path: '/bank-accounts', element: <MerchantBankAccounts /> },
-
-                    // 作品集与设置
-                    { path: '/cases', element: <MerchantCases /> },
-                    { path: '/settings', element: <MerchantSettings /> },
-                    { path: '/material-shop/settings', element: <MaterialShopSettings /> },
-                    { path: '/material-shop/products', element: <MaterialShopProducts /> },
-                ]
-            }
-        ]
+                    { path: '/dashboard', lazy: lazyRoute(() => import('./pages/merchant/MerchantDashboard')) },
+                    { path: '/bookings', lazy: lazyRoute(() => import('./pages/merchant/MerchantBookings')) },
+                    { path: '/proposals', lazy: lazyRoute(() => import('./pages/merchant/MerchantProposals')) },
+                    { path: '/orders', lazy: lazyRoute(() => import('./pages/merchant/MerchantOrders')) },
+                    { path: '/chat', lazy: lazyRoute(() => import('./pages/merchant/MerchantChat')) },
+                    { path: '/im-test', lazy: lazyRoute(() => import('./pages/merchant/IMTest')) },
+                    { path: '/income', lazy: lazyRoute(() => import('./pages/merchant/MerchantIncome')) },
+                    { path: '/withdraw', lazy: lazyRoute(() => import('./pages/merchant/MerchantWithdraw')) },
+                    { path: '/bank-accounts', lazy: lazyRoute(() => import('./pages/merchant/MerchantBankAccounts')) },
+                    { path: '/cases', lazy: lazyRoute(() => import('./pages/merchant/MerchantCases')) },
+                    { path: '/settings', lazy: lazyRoute(() => import('./pages/merchant/MerchantSettings')) },
+                    { path: '/material-shop/settings', lazy: lazyRoute(() => import('./pages/merchant/MaterialShopSettings')) },
+                    { path: '/material-shop/products', lazy: lazyRoute(() => import('./pages/merchant/MaterialShopProducts')) },
+                ],
+            },
+        ],
     },
-
-    // 404 兜底
-    { path: '*', element: <Navigate to='/' replace /> }
+    { path: '*', element: <Navigate to='/' replace /> },
 ], {
-    basename: '/merchant'
+    basename: '/merchant',
 });
 
 export default merchantRouter;
