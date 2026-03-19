@@ -41,6 +41,7 @@ services:
       DATABASE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD not set}
       DATABASE_DBNAME: ${DB_NAME:-home_decoration_test}
       DATABASE_SSLMODE: disable
+      DATABASE_AUTO_MIGRATE: ${DATABASE_AUTO_MIGRATE:-true}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD not set}
