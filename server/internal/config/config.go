@@ -128,7 +128,6 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("database.password", "DATABASE_PASSWORD")
 	_ = viper.BindEnv("database.dbname", "DATABASE_DBNAME")
 	_ = viper.BindEnv("database.sslmode", "DATABASE_SSLMODE")
-	_ = viper.BindEnv("database.auto_migrate", "DATABASE_AUTO_MIGRATE")
 
 	// 兼容历史/文档环境变量别名（推荐仍使用 DATABASE_* / REDIS_*）
 	_ = viper.BindEnv("database.host", "DB_HOST")
@@ -137,7 +136,6 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("database.password", "DB_PASSWORD")
 	_ = viper.BindEnv("database.dbname", "DB_NAME")
 	_ = viper.BindEnv("database.dbname", "DATABASE_NAME")
-	_ = viper.BindEnv("database.auto_migrate", "DB_AUTO_MIGRATE")
 
 	_ = viper.BindEnv("redis.host", "REDIS_HOST")
 	_ = viper.BindEnv("redis.port", "REDIS_PORT")
@@ -173,7 +171,6 @@ func Load() (*Config, error) {
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", "5432")
 	viper.SetDefault("database.sslmode", "disable")
-	viper.SetDefault("database.auto_migrate", false)
 	viper.SetDefault("database.max_open_conns", 25)
 	viper.SetDefault("database.max_idle_conns", 10)
 	viper.SetDefault("database.conn_max_lifetime_minutes", 30)

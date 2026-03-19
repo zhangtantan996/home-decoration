@@ -134,7 +134,7 @@ bash deploy/scripts/deploy_test.sh --ref <commit-sha> --service all
 
 - 测试发布会自动清理旧的冲突 `test_*` 容器，避免从旧 Compose Project 迁移时出现容器名冲突
 - API / web / admin 路由检查带重试，首次起库较慢时不会因为瞬时 `502` 直接判失败
-- test compose 默认开启 `DATABASE_AUTO_MIGRATE=true`，用于空测试库首次引导；生产环境仍保持手动迁移策略
+- 如果测试库是空库，发布脚本会先导入一次 `public.sql` 基线快照，再补执行正式 reconcile migration；生产环境仍保持手动迁移策略
 
 如果你不想等 push，也可以在 GitHub Actions 页面手工运行：
 

@@ -156,12 +156,47 @@ release_validate_compose
 
 release_remove_conflicting_containers "${RELEASE_COMPOSE_PROJECT_NAME}" test_db test_redis test_api test_web test_tinode
 
+ensure_test_schema() {
+  if ! release_compose config --services | grep -qx 'db'; then
+    echo "==> Managed test database mode detected; skip local schema bootstrap"
+    return 0
+  fi
+
+  echo "==> Starting test database dependencies"
+  release_compose up -d db redis
+  release_wait_for_postgres 30 2
+
+  if ! release_postgres_table_exists "users"; then
+    echo "==> Empty test database detected, importing baseline snapshot public.sql"
+    release_apply_postgres_sql_file "${REPO_ROOT}/public.sql"
+  else
+    echo "==> Test database baseline already exists"
+  fi
+
+  local reconcile_files=(
+    "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
+    "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
+    "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
+    "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
+    "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
+    "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
+  )
+
+  local reconcile_file
+  for reconcile_file in "${reconcile_files[@]}"; do
+    echo "==> Applying test reconcile migration: ${reconcile_file}"
+    release_apply_postgres_sql_file "${REPO_ROOT}/${reconcile_file}" >/dev/null
+  done
+}
+
 if [[ "${SKIP_GIT}" == "false" ]]; then
   echo "==> Checking out rollback target ${CHECKOUT_TARGET}"
   release_checkout_ref "${CHECKOUT_TARGET}"
 fi
 
 rollback_services() {
+  ensure_test_schema
+
   case "${SERVICE_SCOPE}" in
     api)
       echo "==> Rolling back test service: api"

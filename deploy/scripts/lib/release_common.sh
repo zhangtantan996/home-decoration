@@ -54,6 +54,44 @@ release_validate_compose() {
   release_compose config >/dev/null
 }
 
+release_wait_for_postgres() {
+  local attempts="${1:-30}"
+  local delay_seconds="${2:-2}"
+  local attempt
+
+  for ((attempt=1; attempt<=attempts; attempt++)); do
+    if release_compose exec -T db pg_isready -U "${DB_USER:-postgres}" -d "${DB_NAME:-home_decoration}" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if (( attempt == attempts )); then
+      echo "Postgres did not become ready after ${attempts} attempts." >&2
+      return 1
+    fi
+
+    sleep "${delay_seconds}"
+  done
+}
+
+release_postgres_table_exists() {
+  local table_name="$1"
+  release_compose exec -T db \
+    psql -U "${DB_USER:-postgres}" -d "${DB_NAME:-home_decoration}" -Atqc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table_name}' LIMIT 1;" 2>/dev/null | grep -qx '1'
+}
+
+release_apply_postgres_sql_file() {
+  local sql_file="$1"
+
+  if [[ ! -f "${sql_file}" ]]; then
+    echo "SQL file not found: ${sql_file}" >&2
+    return 1
+  fi
+
+  release_compose exec -T db \
+    psql -v ON_ERROR_STOP=1 -U "${DB_USER:-postgres}" -d "${DB_NAME:-home_decoration}" < "${sql_file}"
+}
+
 release_checkout_ref() {
   local ref="$1"
   git checkout --detach "${ref}"
