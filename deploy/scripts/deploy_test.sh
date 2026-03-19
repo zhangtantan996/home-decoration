@@ -19,25 +19,30 @@ source "${COMMON_LIB}"
 usage() {
   cat <<'EOF'
 Usage:
-  bash deploy/scripts/deploy_test.sh --tag <git-tag> --service <api|web|all>
+  bash deploy/scripts/deploy_test.sh (--tag <git-tag> | --ref <git-ref>) --service <api|web|all>
 
 Options:
-  --tag <git-tag>          Required. Release tag to deploy.
+  --tag <git-tag>          Optional. Release tag to deploy.
+  --ref <git-ref>          Optional. Git branch / commit / ref to deploy.
   --service <scope>        Required. One of: api, web, all.
   --skip-backup            Optional. Skip backup step.
+  --skip-git               Optional. Deploy current working tree without git fetch/checkout.
   --managed                Optional. Use managed DB/Redis/Tinode compose file.
   --help                   Show this help message.
 
 Examples:
   bash deploy/scripts/deploy_test.sh --tag v1.2.3 --service api
+  bash deploy/scripts/deploy_test.sh --ref origin/dev --service all
   bash deploy/scripts/deploy_test.sh --tag v1.2.3 --service web --managed
   bash deploy/scripts/deploy_test.sh --tag v1.2.3 --service all
 EOF
 }
 
 TAG=""
+DEPLOY_REF=""
 SERVICE_SCOPE=""
 SKIP_BACKUP="false"
+SKIP_GIT="false"
 USE_MANAGED="false"
 
 while [[ $# -gt 0 ]]; do
@@ -46,12 +51,20 @@ while [[ $# -gt 0 ]]; do
       TAG="${2:-}"
       shift 2
       ;;
+    --ref)
+      DEPLOY_REF="${2:-}"
+      shift 2
+      ;;
     --service)
       SERVICE_SCOPE="${2:-}"
       shift 2
       ;;
     --skip-backup)
       SKIP_BACKUP="true"
+      shift
+      ;;
+    --skip-git)
+      SKIP_GIT="true"
       shift
       ;;
     --managed)
@@ -70,8 +83,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${TAG}" ]]; then
-  echo "Missing required argument: --tag" >&2
+if [[ -n "${TAG}" && -n "${DEPLOY_REF}" ]]; then
+  echo "Use either --tag or --ref, not both." >&2
+  usage >&2
+  exit 1
+fi
+
+if [[ "${SKIP_GIT}" == "false" && -z "${TAG}" && -z "${DEPLOY_REF}" ]]; then
+  echo "Missing required argument: --tag or --ref" >&2
   usage >&2
   exit 1
 fi
@@ -101,9 +120,13 @@ if [[ ! -f "${DEPLOY_ENV_FILE}" ]]; then
   exit 1
 fi
 
-release_require_command git
 release_require_command docker
 release_require_command curl
+
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  release_require_command git
+fi
+
 release_load_deploy_env
 
 RELEASE_LOCAL_PORT="${WEB_PORT:-${RELEASE_LOCAL_PORT_DEFAULT}}"
@@ -111,12 +134,24 @@ export RELEASE_LOCAL_PORT
 
 cd "${REPO_ROOT}"
 
-release_ensure_clean_worktree
+CHECKOUT_TARGET="current-working-tree"
 
-echo "==> Fetching latest tags"
-release_fetch_tags
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  release_ensure_clean_worktree
 
-release_ensure_tag_exists "${TAG}"
+  echo "==> Fetching latest tags"
+  release_fetch_tags
+
+  if [[ -n "${TAG}" ]]; then
+    release_ensure_tag_exists "${TAG}"
+    CHECKOUT_TARGET="${TAG}"
+  else
+    release_ensure_ref_exists "${DEPLOY_REF}"
+    CHECKOUT_TARGET="${DEPLOY_REF}"
+  fi
+else
+  echo "==> Git operations skipped; deploying current working tree"
+fi
 
 echo "==> Validating test compose configuration"
 release_validate_compose
@@ -165,8 +200,10 @@ else
   echo "==> Skipping backup by request"
 fi
 
-echo "==> Checking out tag ${TAG}"
-release_checkout_tag "${TAG}"
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  echo "==> Checking out ${CHECKOUT_TARGET}"
+  release_checkout_ref "${CHECKOUT_TARGET}"
+fi
 
 update_services() {
   case "${SERVICE_SCOPE}" in
@@ -194,8 +231,9 @@ verify_release
 
 echo ""
 echo "Test deployment completed successfully."
-echo "Tag: ${TAG}"
+echo "Checkout target: ${CHECKOUT_TARGET}"
 echo "Service scope: ${SERVICE_SCOPE}"
+echo "Skip git: ${SKIP_GIT}"
 echo "Managed mode: ${USE_MANAGED}"
 echo ""
 echo "Recommended manual checks:"

@@ -29,9 +29,17 @@ release_fetch_tags() {
   git fetch --tags --prune
 }
 
+release_ensure_ref_exists() {
+  local ref="$1"
+  if ! git rev-parse -q --verify "${ref}^{commit}" >/dev/null; then
+    echo "Git ref not found: ${ref}" >&2
+    exit 1
+  fi
+}
+
 release_ensure_tag_exists() {
   local tag="$1"
-  if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+  if ! git rev-parse -q --verify "refs/tags/${tag}^{commit}" >/dev/null; then
     echo "Git tag not found: ${tag}" >&2
     exit 1
   fi
@@ -41,9 +49,14 @@ release_validate_compose() {
   release_compose config >/dev/null
 }
 
+release_checkout_ref() {
+  local ref="$1"
+  git checkout --detach "${ref}"
+}
+
 release_checkout_tag() {
   local tag="$1"
-  git checkout --detach "${tag}"
+  release_checkout_ref "${tag}"
 }
 
 release_parse_url_host() {

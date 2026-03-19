@@ -24,6 +24,7 @@ Options:
   --tag <git-tag>          Required. Release tag to deploy.
   --service <scope>        Required. One of: api, web, all.
   --skip-backup            Optional. Skip backup step.
+  --skip-git               Optional. Deploy current working tree without git fetch/checkout.
   --help                   Show this help message.
 
 Examples:
@@ -36,6 +37,7 @@ EOF
 TAG=""
 SERVICE_SCOPE=""
 SKIP_BACKUP="false"
+SKIP_GIT="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -49,6 +51,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-backup)
       SKIP_BACKUP="true"
+      shift
+      ;;
+    --skip-git)
+      SKIP_GIT="true"
       shift
       ;;
     --help|-h)
@@ -90,19 +96,27 @@ if [[ ! -f "${DEPLOY_ENV_FILE}" ]]; then
   exit 1
 fi
 
-release_require_command git
 release_require_command docker
 release_require_command curl
+
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  release_require_command git
+fi
+
 release_load_deploy_env
 
 cd "${REPO_ROOT}"
 
-release_ensure_clean_worktree
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  release_ensure_clean_worktree
 
-echo "==> Fetching latest tags"
-release_fetch_tags
+  echo "==> Fetching latest tags"
+  release_fetch_tags
 
-release_ensure_tag_exists "${TAG}"
+  release_ensure_tag_exists "${TAG}"
+else
+  echo "==> Git operations skipped; deploying current working tree"
+fi
 
 echo "==> Validating compose configuration"
 release_validate_compose
@@ -139,8 +153,10 @@ else
   echo "==> Skipping backup by request"
 fi
 
-echo "==> Checking out tag ${TAG}"
-release_checkout_tag "${TAG}"
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  echo "==> Checking out tag ${TAG}"
+  release_checkout_tag "${TAG}"
+fi
 
 update_services() {
   case "${SERVICE_SCOPE}" in
@@ -170,6 +186,7 @@ echo ""
 echo "Deployment completed successfully."
 echo "Tag: ${TAG}"
 echo "Service scope: ${SERVICE_SCOPE}"
+echo "Skip git: ${SKIP_GIT}"
 echo ""
 echo "Recommended manual checks:"
 echo "  - Verify website homepage"

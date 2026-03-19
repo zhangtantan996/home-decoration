@@ -1,14 +1,24 @@
-name: Release Production
+name: Deploy Test
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - dev
+    paths:
+      - 'admin/**'
+      - 'merchant/**'
+      - 'web/**'
+      - 'server/**'
+      - 'deploy/**'
+      - 'shared/**'
+      - '.github/workflows/deploy-test.yml'
+      - '.github/workflows/rollback-test.yml'
   workflow_dispatch:
     inputs:
-      tag:
-        description: Git tag to deploy, for example v1.12.3
+      ref:
+        description: Git ref to deploy, for example dev or a commit SHA
         required: true
+        default: dev
         type: string
       service_scope:
         description: Which services to deploy
@@ -21,39 +31,34 @@ on:
           - web
 
 concurrency:
-  group: production-release
-  cancel-in-progress: false
+  group: test-release
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  verify-release:
-    name: Verify release candidate
+  verify-test-candidate:
+    name: Verify test candidate
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
-      release_tag: ${{ steps.release.outputs.tag }}
+      deploy_ref: ${{ steps.release.outputs.ref }}
       service_scope: ${{ steps.release.outputs.service_scope }}
 
     steps:
-      - name: Resolve release inputs
+      - name: Resolve deploy inputs
         id: release
         shell: bash
         run: |
           set -euo pipefail
 
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            tag="${{ inputs.tag }}"
+            deploy_ref="${{ inputs.ref }}"
             service_scope="${{ inputs.service_scope }}"
           else
-            tag="${GITHUB_REF_NAME}"
+            deploy_ref="${GITHUB_SHA}"
             service_scope="all"
-          fi
-
-          if [[ ! "${tag}" =~ ^v[0-9A-Za-z._-]+$ ]]; then
-            echo "Release tag must start with v, got: ${tag}" >&2
-            exit 1
           fi
 
           case "${service_scope}" in
@@ -64,14 +69,14 @@ jobs:
               ;;
           esac
 
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "ref=${deploy_ref}" >> "${GITHUB_OUTPUT}"
           echo "service_scope=${service_scope}" >> "${GITHUB_OUTPUT}"
 
-      - name: Checkout release tag
+      - name: Checkout deploy ref
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ steps.release.outputs.tag }}
+          ref: ${{ steps.release.outputs.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -96,7 +101,7 @@ jobs:
       - name: Build admin
         working-directory: admin
         env:
-          VITE_APP_ENV: production
+          VITE_APP_ENV: test
           VITE_API_URL: /api/v1
           VITE_ROUTER_BASENAME: /admin
         run: npm run build
@@ -108,7 +113,7 @@ jobs:
       - name: Build merchant
         working-directory: merchant
         env:
-          VITE_APP_ENV: production
+          VITE_APP_ENV: test
           VITE_API_URL: /api/v1
           VITE_ROUTER_BASENAME: /merchant
         run: npm run build
@@ -120,7 +125,7 @@ jobs:
       - name: Build user web
         working-directory: web
         env:
-          VITE_APP_ENV: production
+          VITE_APP_ENV: test
           VITE_API_URL: /api/v1
           VITE_ROUTER_BASENAME: /
           VITE_PUBLIC_SITE_URL: /
@@ -130,60 +135,59 @@ jobs:
         working-directory: server
         run: go test ./...
 
-  deploy-production:
-    name: Deploy to production
+  deploy-test:
+    name: Deploy to test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: verify-release
-    environment: production
+    needs: verify-test-candidate
 
     steps:
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.PROD_SSH_KEY }}
+          ssh-private-key: ${{ secrets.TEST_SSH_KEY }}
 
       - name: Add server host key
         shell: bash
         env:
-          PROD_HOST: ${{ secrets.PROD_HOST }}
-          PROD_PORT: ${{ secrets.PROD_PORT }}
-          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_PORT: ${{ secrets.TEST_PORT }}
+          TEST_KNOWN_HOSTS: ${{ secrets.TEST_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          : "${PROD_HOST:?missing PROD_HOST}"
+          : "${TEST_HOST:?missing TEST_HOST}"
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          if [[ -n "${PROD_KNOWN_HOSTS:-}" ]]; then
-            printf '%s\n' "${PROD_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+          if [[ -n "${TEST_KNOWN_HOSTS:-}" ]]; then
+            printf '%s\n' "${TEST_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
           else
-            ssh-keyscan -p "${PROD_PORT:-22}" -H "${PROD_HOST}" >> ~/.ssh/known_hosts
+            ssh-keyscan -p "${TEST_PORT:-22}" -H "${TEST_HOST}" >> ~/.ssh/known_hosts
           fi
 
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Checkout release tag
+      - name: Checkout deploy ref
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs.verify-release.outputs.release_tag }}
+          ref: ${{ needs.verify-test-candidate.outputs.deploy_ref }}
 
-      - name: Sync workspace to production server
+      - name: Sync workspace to test server
         shell: bash
         env:
-          PROD_HOST: ${{ secrets.PROD_HOST }}
-          PROD_PORT: ${{ secrets.PROD_PORT }}
-          PROD_USER: ${{ secrets.PROD_USER }}
-          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_PORT: ${{ secrets.TEST_PORT }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_APP_DIR: ${{ secrets.TEST_APP_DIR }}
         run: |
           set -euo pipefail
-          : "${PROD_HOST:?missing PROD_HOST}"
-          : "${PROD_USER:?missing PROD_USER}"
-          : "${PROD_APP_DIR:?missing PROD_APP_DIR}"
+          : "${TEST_HOST:?missing TEST_HOST}"
+          : "${TEST_USER:?missing TEST_USER}"
+          : "${TEST_APP_DIR:?missing TEST_APP_DIR}"
 
-          ssh -p "${PROD_PORT:-22}" "${PROD_USER}@${PROD_HOST}" "mkdir -p '${PROD_APP_DIR}'"
+          ssh -p "${TEST_PORT:-22}" "${TEST_USER}@${TEST_HOST}" "mkdir -p '${TEST_APP_DIR}'"
 
           rsync -az --delete \
             --exclude '.git/' \
@@ -198,25 +202,23 @@ jobs:
             --exclude 'deploy/backups/' \
             --exclude 'server/uploads/' \
             --exclude 'server/uploads_test/' \
-            -e "ssh -p ${PROD_PORT:-22}" \
-            ./ "${PROD_USER}@${PROD_HOST}:${PROD_APP_DIR}/"
+            -e "ssh -p ${TEST_PORT:-22}" \
+            ./ "${TEST_USER}@${TEST_HOST}:${TEST_APP_DIR}/"
 
-      - name: Run remote deploy
+      - name: Run remote test deploy
         shell: bash
         env:
-          PROD_HOST: ${{ secrets.PROD_HOST }}
-          PROD_PORT: ${{ secrets.PROD_PORT }}
-          PROD_USER: ${{ secrets.PROD_USER }}
-          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
-          RELEASE_TAG: ${{ needs.verify-release.outputs.release_tag }}
-          SERVICE_SCOPE: ${{ needs.verify-release.outputs.service_scope }}
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_PORT: ${{ secrets.TEST_PORT }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_APP_DIR: ${{ secrets.TEST_APP_DIR }}
+          SERVICE_SCOPE: ${{ needs.verify-test-candidate.outputs.service_scope }}
         run: |
           set -euo pipefail
-          : "${PROD_HOST:?missing PROD_HOST}"
-          : "${PROD_USER:?missing PROD_USER}"
-          : "${PROD_APP_DIR:?missing PROD_APP_DIR}"
-          : "${RELEASE_TAG:?missing RELEASE_TAG}"
+          : "${TEST_HOST:?missing TEST_HOST}"
+          : "${TEST_USER:?missing TEST_USER}"
+          : "${TEST_APP_DIR:?missing TEST_APP_DIR}"
           : "${SERVICE_SCOPE:?missing SERVICE_SCOPE}"
 
-          ssh -p "${PROD_PORT:-22}" "${PROD_USER}@${PROD_HOST}" \
-            "cd '${PROD_APP_DIR}' && bash deploy/scripts/deploy_prod.sh --tag '${RELEASE_TAG}' --service '${SERVICE_SCOPE}' --skip-git"
+          ssh -p "${TEST_PORT:-22}" "${TEST_USER}@${TEST_HOST}" \
+            "cd '${TEST_APP_DIR}' && bash deploy/scripts/deploy_test.sh --skip-git --service '${SERVICE_SCOPE}'"

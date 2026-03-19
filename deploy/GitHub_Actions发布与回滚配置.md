@@ -10,11 +10,15 @@
 
 - `deploy/scripts/deploy_prod.sh`
 - `deploy/scripts/rollback_prod.sh`
+- `deploy/scripts/deploy_test.sh`
+- `deploy/scripts/rollback_test.sh`
 
-本次新增的 GitHub Actions 只是把这两套脚本接到 GitHub 上：
+本次新增的 GitHub Actions 会先在 GitHub Runner 上 checkout 对应代码，再通过 SSH 同步到服务器，然后调用发布脚本：
 
 - `.github/workflows/release-prod.yml`
 - `.github/workflows/rollback-prod.yml`
+- `.github/workflows/deploy-test.yml`
+- `.github/workflows/rollback-test.yml`
 
 ## 1. 推荐版本策略
 
@@ -37,7 +41,7 @@
 
 在 GitHub 仓库里创建 `production` Environment，建议开启人工审批。
 
-### 2.2 Secrets
+### 2.2 Production Secrets
 
 在仓库或 `production` Environment 中配置：
 
@@ -47,6 +51,17 @@
 - `PROD_SSH_KEY`：用于部署的私钥
 - `PROD_APP_DIR`：服务器上的仓库目录，例如 `/opt/home-decoration`
 - `PROD_KNOWN_HOSTS`：可选，推荐填入 `ssh-keyscan -H <host>` 的结果；不填则 workflow 会在运行时自动 `ssh-keyscan`
+
+### 2.3 Test Secrets
+
+在仓库级别配置：
+
+- `TEST_HOST`：测试服务器 IP 或域名
+- `TEST_PORT`：SSH 端口，可为空，默认 `22`
+- `TEST_USER`：SSH 登录用户
+- `TEST_SSH_KEY`：用于测试部署的私钥
+- `TEST_APP_DIR`：测试环境仓库目录，例如 `/root/home-decoration-test`
+- `TEST_KNOWN_HOSTS`：可选，推荐填入 `ssh-keyscan -H <host>` 的结果
 
 ## 3. 服务器上要配什么
 
@@ -91,19 +106,37 @@ deploy/nginx/admin.htpasswd
 
 ### 3.4 工作区要求
 
-服务器上的仓库工作区必须保持干净。
+如果你走当前这套 GitHub Actions 同步模式：
 
-因为当前发布脚本会执行：
-
-```bash
-git status --porcelain
-```
-
-如果服务器上有手改代码、手工生成文件或未清理产物，发布会被阻止。
+- 服务器**不需要**主动访问 GitHub
+- GitHub Runner 会把代码同步到服务器
+- `deploy/.env`、`deploy/.env.test`、`deploy/backups/`、`server/uploads*` 会保留在服务器，不会被同步覆盖
 
 ## 4. 自动发布怎么触发
 
-### 4.1 正常发布
+### 4.1 `dev` 自动部署测试环境
+
+当 `dev` 有代码推送时，`Deploy Test` 会自动：
+
+1. 构建 `admin`
+2. 构建 `merchant`
+3. 构建 `web`
+4. 跑 `server` 的 `go test ./...`
+5. 通过 SSH + rsync 把当前 commit 同步到测试服务器
+6. 在测试服务器执行：
+
+```bash
+bash deploy/scripts/deploy_test.sh --ref <commit-sha> --service all
+```
+
+如果你不想等 push，也可以在 GitHub Actions 页面手工运行：
+
+- workflow：`Deploy Test`
+- 输入：
+  - `ref`
+  - `service_scope`
+
+### 4.2 正常发布生产
 
 本地打 Tag 并推送：
 
@@ -119,13 +152,14 @@ git push origin v1.12.3
 3. 构建 `merchant`
 4. 构建 `web`
 5. 跑 `server` 的 `go test ./...`
-6. SSH 到生产服务器执行：
+6. 通过 SSH + rsync 把 Tag 对应代码同步到生产服务器
+7. 在生产服务器执行：
 
 ```bash
 bash deploy/scripts/deploy_prod.sh --tag v1.12.3 --service all
 ```
 
-### 4.2 手工发布
+### 4.3 手工发布生产
 
 如果你不想通过 push tag 触发，也可以在 GitHub Actions 页面手工运行：
 
@@ -135,6 +169,23 @@ bash deploy/scripts/deploy_prod.sh --tag v1.12.3 --service all
   - `service_scope`：`api` / `web` / `all`
 
 ## 5. 如何回滚
+
+### 5.1 回滚测试环境
+
+在 GitHub Actions 页面运行：
+
+- workflow：`Rollback Test`
+- 输入：
+  - `ref`：例如 `dev`、某个 commit SHA 或某个 tag
+  - `service_scope`：`api` / `web` / `all`
+
+它会在服务器执行：
+
+```bash
+bash deploy/scripts/rollback_test.sh --ref dev --service all
+```
+
+### 5.2 回滚生产环境
 
 在 GitHub Actions 页面运行：
 
@@ -189,9 +240,30 @@ bash deploy/scripts/rollback_prod.sh --tag v1.12.2 --service all
 - 只支持手工触发
 - 指定稳定 Tag 回滚生产
 
+### `deploy-test.yml`
+
+作用：
+
+- `push dev` 自动部署测试环境
+- 支持手工指定 `ref` 做测试环境部署
+
+### `rollback-test.yml`
+
+作用：
+
+- 只支持手工触发
+- 支持按 `ref` 回滚测试环境
+
 ## 8. 推荐上线操作
 
-每次上线按这个顺序：
+每次日常联调按这个顺序：
+
+1. 代码推到 `dev`
+2. 等 `Deploy Test` 完成
+3. 检查测试环境健康页、首页、`/admin/`
+4. 验证业务路径
+
+每次生产上线按这个顺序：
 
 1. 代码合并完成
 2. 本地或 CI 通过

@@ -23,6 +23,7 @@ Usage:
 Options:
   --tag <stable-git-tag>   Required. Stable tag to roll back to.
   --service <scope>        Required. One of: api, web, all.
+  --skip-git               Optional. Roll back from current working tree without git fetch/checkout.
   --help                   Show this help message.
 
 Examples:
@@ -34,6 +35,7 @@ EOF
 
 TAG=""
 SERVICE_SCOPE=""
+SKIP_GIT="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +46,10 @@ while [[ $# -gt 0 ]]; do
     --service)
       SERVICE_SCOPE="${2:-}"
       shift 2
+      ;;
+    --skip-git)
+      SKIP_GIT="true"
+      shift
       ;;
     --help|-h)
       usage
@@ -84,25 +90,35 @@ if [[ ! -f "${DEPLOY_ENV_FILE}" ]]; then
   exit 1
 fi
 
-release_require_command git
 release_require_command docker
 release_require_command curl
+
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  release_require_command git
+fi
+
 release_load_deploy_env
 
 cd "${REPO_ROOT}"
 
-release_ensure_clean_worktree
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  release_ensure_clean_worktree
 
-echo "==> Fetching latest tags"
-release_fetch_tags
+  echo "==> Fetching latest tags"
+  release_fetch_tags
 
-release_ensure_tag_exists "${TAG}"
+  release_ensure_tag_exists "${TAG}"
+else
+  echo "==> Git operations skipped; rolling back from current working tree"
+fi
 
 echo "==> Validating compose configuration"
 release_validate_compose
 
-echo "==> Checking out rollback tag ${TAG}"
-release_checkout_tag "${TAG}"
+if [[ "${SKIP_GIT}" == "false" ]]; then
+  echo "==> Checking out rollback tag ${TAG}"
+  release_checkout_tag "${TAG}"
+fi
 
 rollback_services() {
   case "${SERVICE_SCOPE}" in
@@ -132,6 +148,7 @@ echo ""
 echo "Rollback completed successfully."
 echo "Rollback tag: ${TAG}"
 echo "Service scope: ${SERVICE_SCOPE}"
+echo "Skip git: ${SKIP_GIT}"
 echo ""
 echo "Reminder: database rollback is NOT automatic."
 echo "If this release included schema changes, assess whether DB rollback is necessary before executing any down SQL."
