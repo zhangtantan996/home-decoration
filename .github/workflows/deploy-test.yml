@@ -221,4 +221,4 @@ jobs:
           : "${SERVICE_SCOPE:?missing SERVICE_SCOPE}"
 
           ssh -p "${TEST_PORT:-22}" "${TEST_USER}@${TEST_HOST}" \
-            "cd '${TEST_APP_DIR}' && bash deploy/scripts/deploy_test.sh --skip-git --service '${SERVICE_SCOPE}'"
+            "cd '${TEST_APP_DIR}' && bash deploy/scripts/deploy_test.sh --skip-git --skip-backup --service '${SERVICE_SCOPE}'"
