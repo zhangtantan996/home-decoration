@@ -13,6 +13,7 @@ DELETE FROM phase_tasks WHERE id IN (99151, 99152, 99153, 99154);
 DELETE FROM project_phases WHERE id IN (99141, 99142);
 DELETE FROM escrow_accounts WHERE project_id IN (99140);
 DELETE FROM orders WHERE id IN (99130);
+DELETE FROM business_flows WHERE source_type = 'booking' AND source_id IN (99110);
 DELETE FROM projects WHERE id IN (99140);
 DELETE FROM proposals WHERE id IN (99120);
 DELETE FROM bookings WHERE id IN (99110);
@@ -140,6 +141,18 @@ INSERT INTO milestones (
   id, project_id, name, seq, amount, percentage, status, criteria, submitted_at, accepted_at, paid_at, created_at, updated_at
 ) VALUES
   (99161, 99140, '水电验收', 1, 66000, 30, 3, '线路、给排水和试压记录全部合格。', NOW() - interval '6 day', NOW() - interval '5 day', NULL, NOW(), NOW()),
-  (99162, 99140, '泥木验收', 2, 66000, 30, 1, '木作基层与瓦工排砖到位。', NOW() - interval '1 day', NULL, NULL, NOW(), NOW());
+  (99162, 99140, '泥木验收', 2, 66000, 30, 2, '木作基层与瓦工排砖到位。', NOW() - interval '1 day', NULL, NULL, NOW(), NOW());
+
+INSERT INTO business_flows (
+  source_type, source_id, customer_user_id, designer_provider_id, confirmed_proposal_id,
+  selected_foreman_provider_id, selected_quote_task_id, selected_quote_submission_id,
+  project_id, inspiration_case_draft_id, current_stage, stage_changed_at, closed_reason,
+  created_at, updated_at
+) VALUES (
+  'booking', 99110, 99100, 99101, 99120,
+  0, 0, 0,
+  99140, 0, 'node_acceptance_in_progress', NOW() - interval '1 day', '',
+  NOW(), NOW()
+);
 
 COMMIT;

@@ -88,15 +88,19 @@ type Provider struct {
 	PriceMax         float64 `json:"priceMax" gorm:"default:0"`              // 最高价格
 	PriceUnit        string  `json:"priceUnit" gorm:"size:20;default:'元/天'"` // 价格单位
 	// 详情页扩展字段
-	CoverImage       string `json:"coverImage" gorm:"size:500"`          // 封面背景图
-	FollowersCount   int    `json:"followersCount" gorm:"default:0"`     // 粉丝/关注数
-	ServiceIntro     string `json:"serviceIntro" gorm:"type:text"`       // 服务介绍
-	TeamSize         int    `json:"teamSize" gorm:"default:1"`           // 团队规模
-	EstablishedYear  int    `json:"establishedYear" gorm:"default:2020"` // 成立年份
-	Certifications   string `json:"certifications" gorm:"type:text"`     // 资质认证 (JSON数组)
-	ServiceArea      string `json:"serviceArea" gorm:"type:text"`        // 服务区域 (JSON数组，如 ["浦东新区", "徐汇区"])
-	OfficeAddress    string `json:"officeAddress" gorm:"size:200"`       // 办公地址
-	CompanyAlbumJSON string `json:"companyAlbumJson" gorm:"type:text"`   // 企业相册 (JSON数组)
+	CoverImage         string  `json:"coverImage" gorm:"size:500"`          // 封面背景图
+	FollowersCount     int     `json:"followersCount" gorm:"default:0"`     // 粉丝/关注数
+	ServiceIntro       string  `json:"serviceIntro" gorm:"type:text"`       // 服务介绍
+	TeamSize           int     `json:"teamSize" gorm:"default:1"`           // 团队规模
+	EstablishedYear    int     `json:"establishedYear" gorm:"default:2020"` // 成立年份
+	Certifications     string  `json:"certifications" gorm:"type:text"`     // 资质认证 (JSON数组)
+	ServiceArea        string  `json:"serviceArea" gorm:"type:text"`        // 服务区域 (JSON数组，如 ["浦东新区", "徐汇区"])
+	OfficeAddress      string  `json:"officeAddress" gorm:"size:200"`       // 办公地址
+	CompanyAlbumJSON   string  `json:"companyAlbumJson" gorm:"type:text"`   // 企业相册 (JSON数组)
+	SurveyDepositPrice float64 `json:"surveyDepositPrice" gorm:"default:0"`
+	// 入驻状态
+	IsSettled       bool   `json:"isSettled" gorm:"default:true"`   // true=已入驻 false=平台收录
+	CollectedSource string `json:"collectedSource" gorm:"size:200"` // 收录来源
 }
 
 // ProviderCase 服务商案例/作品
@@ -155,6 +159,7 @@ const (
 	ProjectStatusActive    int8 = 0
 	ProjectStatusCompleted int8 = 1
 	ProjectStatusPaused    int8 = 2
+	ProjectStatusClosed    int8 = 3
 )
 
 const (
@@ -164,6 +169,7 @@ const (
 	ProjectBusinessStatusConstructionQuoteConfirmed = "construction_quote_confirmed"
 	ProjectBusinessStatusInProgress                 = "in_progress"
 	ProjectBusinessStatusCompleted                  = "completed"
+	ProjectBusinessStatusCancelled                  = "cancelled"
 )
 
 const (
@@ -197,30 +203,54 @@ type Project struct {
 	EntryStartDate *time.Time `json:"entryStartDate"` // 进场开始时间
 	EntryEndDate   *time.Time `json:"entryEndDate"`   // 进场结束时间
 
-	ConstructionProviderID  uint64     `json:"constructionProviderId" gorm:"index"`
-	ForemanID               uint64     `json:"foremanId" gorm:"index"`
-	ConstructionQuote       float64    `json:"constructionQuote" gorm:"default:0"`
-	ConstructionConfirmedAt *time.Time `json:"constructionConfirmedAt"`
-	QuoteConfirmedAt        *time.Time `json:"quoteConfirmedAt"`
-	StartedAt               *time.Time `json:"startedAt"`
-	StartDate               *time.Time `json:"startDate"`
-	ExpectedEnd             *time.Time `json:"expectedEnd"`
-	ActualEnd               *time.Time `json:"actualEnd"`
+	// 施工付款模式与暂停状态
+	ConstructionPaymentMode string     `json:"constructionPaymentMode" gorm:"size:20;default:'staged'"` // onetime | staged
+	PaymentPaused           bool       `json:"paymentPaused" gorm:"default:false"`                      // 因未付款暂停施工
+	PaymentPausedAt         *time.Time `json:"paymentPausedAt"`
+	PaymentPausedReason     string     `json:"paymentPausedReason" gorm:"size:200"`
+
+	ConstructionProviderID    uint64     `json:"constructionProviderId" gorm:"index"`
+	ForemanID                 uint64     `json:"foremanId" gorm:"index"`
+	SelectedQuoteSubmissionID uint64     `json:"selectedQuoteSubmissionId" gorm:"index"`
+	InspirationCaseDraftID    uint64     `json:"inspirationCaseDraftId" gorm:"index"`
+	ConstructionQuote         float64    `json:"constructionQuote" gorm:"default:0"`
+	ConstructionQuoteSnapshot string     `json:"constructionQuoteSnapshot" gorm:"type:text"`
+	ConstructionConfirmedAt   *time.Time `json:"constructionConfirmedAt"`
+	QuoteConfirmedAt          *time.Time `json:"quoteConfirmedAt"`
+	StartedAt                 *time.Time `json:"startedAt"`
+	StartDate                 *time.Time `json:"startDate"`
+	ExpectedEnd               *time.Time `json:"expectedEnd"`
+	ActualEnd                 *time.Time `json:"actualEnd"`
+	PausedAt                  *time.Time `json:"pausedAt"`
+	ResumedAt                 *time.Time `json:"resumedAt"`
+	PauseReason               string     `json:"pauseReason" gorm:"type:text"`
+	PauseInitiator            string     `json:"pauseInitiator" gorm:"size:20"`
+	DisputedAt                *time.Time `json:"disputedAt"`
+	DisputeReason             string     `json:"disputeReason" gorm:"type:text"`
+	DisputeEvidence           string     `json:"disputeEvidence" gorm:"type:jsonb;default:'[]'"`
+	CompletedPhotos           string     `json:"-" gorm:"type:jsonb;default:'[]'"`
+	CompletionNotes           string     `json:"completionNotes" gorm:"type:text"`
+	CompletionSubmittedAt     *time.Time `json:"completionSubmittedAt"`
+	CompletionRejectionReason string     `json:"completionRejectionReason" gorm:"type:text"`
+	CompletionRejectedAt      *time.Time `json:"completionRejectedAt"`
 }
 
 // Milestone 验收节点
 type Milestone struct {
 	Base
-	ProjectID   uint64     `json:"projectId" gorm:"index"`
-	Name        string     `json:"name" gorm:"size:50"`
-	Seq         int8       `json:"seq"` // 顺序
-	Amount      float64    `json:"amount"`
-	Percentage  float32    `json:"percentage"`
-	Status      int8       `json:"status" gorm:"default:0"`
-	Criteria    string     `json:"criteria" gorm:"type:text"` // 验收标准
-	SubmittedAt *time.Time `json:"submittedAt"`
-	AcceptedAt  *time.Time `json:"acceptedAt"`
-	PaidAt      *time.Time `json:"paidAt"`
+	ProjectID          uint64     `json:"projectId" gorm:"index"`
+	Name               string     `json:"name" gorm:"size:50"`
+	Seq                int8       `json:"seq"` // 顺序
+	Amount             float64    `json:"amount"`
+	Percentage         float32    `json:"percentage"`
+	Status             int8       `json:"status" gorm:"default:0"`
+	Criteria           string     `json:"criteria" gorm:"type:text"` // 验收标准
+	RejectionReason    string     `json:"rejectionReason" gorm:"type:text"`
+	SubmittedAt        *time.Time `json:"submittedAt"`
+	AcceptedAt         *time.Time `json:"acceptedAt"`
+	PaidAt             *time.Time `json:"paidAt"`
+	ReleaseScheduledAt *time.Time `json:"releaseScheduledAt"` // T+N 放款计划时间
+	ReleasedAt         *time.Time `json:"releasedAt"`         // 实际放款时间
 }
 
 // WorkLog 施工日志
@@ -291,7 +321,18 @@ type Booking struct {
 	IntentFeeRefunded        bool       `json:"intentFeeRefunded" gorm:"default:false"` // 意向金是否已退款
 	IntentFeeRefundReason    string     `json:"intentFeeRefundReason" gorm:"size:200"`  // 退款原因
 	IntentFeeRefundedAt      *time.Time `json:"intentFeeRefundedAt"`                    // 退款时间
-	MerchantResponseDeadline *time.Time `json:"merchantResponseDeadline"`               // 商家响应截止时间 (48小时)
+	SurveyDepositSource      string     `json:"surveyDepositSource" gorm:"size:50"`
+	SurveyRefundNotice       string     `json:"surveyRefundNotice" gorm:"type:text"`
+	MerchantResponseDeadline *time.Time `json:"merchantResponseDeadline"` // 商家响应截止时间 (48小时)
+
+	// 量房定金（替代意向金的新流程）
+	SurveyDeposit          float64    `json:"surveyDeposit" gorm:"default:0"`              // 量房定金金额
+	SurveyDepositPaid      bool       `json:"surveyDepositPaid" gorm:"default:false"`      // 是否已支付
+	SurveyDepositPaidAt    *time.Time `json:"surveyDepositPaidAt"`                         // 支付时间
+	SurveyDepositConverted bool       `json:"surveyDepositConverted" gorm:"default:false"` // 是否已转化为设计费抵扣
+	SurveyDepositRefunded  bool       `json:"surveyDepositRefunded" gorm:"default:false"`  // 是否已退款
+	SurveyDepositRefundAmt float64    `json:"surveyDepositRefundAmt" gorm:"default:0"`     // 退款金额
+	SurveyDepositRefundAt  *time.Time `json:"surveyDepositRefundAt"`                       // 退款时间
 }
 
 // ProjectPhase 项目工程阶段
@@ -381,8 +422,19 @@ type MaterialShop struct {
 	Longitude              float64 `json:"longitude"`
 	OpenTime               string  `json:"openTime" gorm:"size:50"`
 	BusinessHoursJSON      string  `json:"businessHoursJson" gorm:"type:text"`
+	ServiceArea            string  `json:"serviceArea" gorm:"type:text"`
+	MainBrands             string  `json:"mainBrands" gorm:"type:text"`
+	MainCategories         string  `json:"mainCategories" gorm:"type:text"`
+	DeliveryCapability     string  `json:"deliveryCapability" gorm:"size:200"`
+	InstallationCapability string  `json:"installationCapability" gorm:"size:200"`
+	AfterSalesPolicy       string  `json:"afterSalesPolicy" gorm:"size:500"`
+	InvoiceCapability      string  `json:"invoiceCapability" gorm:"size:200"`
 	Tags                   string  `json:"tags" gorm:"type:text"` // JSON 数组
 	IsVerified             bool    `json:"isVerified" gorm:"default:false"`
+	Status                 *int8   `json:"status" gorm:"column:status;default:1;->;<-:false"` // 1:正常 0:封禁
+	// 入驻状态
+	IsSettled       bool   `json:"isSettled" gorm:"default:true"`   // true=已入驻 false=平台收录
+	CollectedSource string `json:"collectedSource" gorm:"size:200"` // 收录来源
 }
 
 // TableName 指定表名
@@ -606,9 +658,12 @@ func (MerchantIdentityChangeApplication) TableName() string {
 // CaseAudit 作品审核/草稿
 type CaseAudit struct {
 	Base
-	CaseID     *uint64 `json:"caseId" gorm:"index"` // 关联的主表ID，新增时为空
-	ProviderID uint64  `json:"providerId" gorm:"index"`
-	ActionType string  `json:"actionType" gorm:"size:20"` // create, update, delete
+	CaseID           *uint64 `json:"caseId" gorm:"index"` // 关联的主表ID，新增时为空
+	ProviderID       uint64  `json:"providerId" gorm:"index"`
+	ActionType       string  `json:"actionType" gorm:"size:20"` // create, update, delete
+	SourceType       string  `json:"sourceType" gorm:"size:30;index"`
+	SourceProjectID  uint64  `json:"sourceProjectId" gorm:"index"`
+	SourceProposalID uint64  `json:"sourceProposalId" gorm:"index"`
 
 	// 作品数据快照
 	Title          string  `json:"title" gorm:"size:100"`
@@ -694,17 +749,43 @@ func (MerchantBankAccount) TableName() string {
 	return "merchant_bank_accounts"
 }
 
+// MaterialShopServiceSetting 主材商服务设置
+type MaterialShopServiceSetting struct {
+	Base
+	ShopID                 uint64  `json:"shopId" gorm:"uniqueIndex"`
+	AcceptBooking          bool    `json:"acceptBooking" gorm:"default:true"`
+	AutoConfirmHours       int     `json:"autoConfirmHours" gorm:"default:24"`
+	ServiceStyles          string  `json:"serviceStyles" gorm:"type:text"`
+	ServicePackages        string  `json:"servicePackages" gorm:"type:text"`
+	PriceRangeMin          float64 `json:"priceRangeMin"`
+	PriceRangeMax          float64 `json:"priceRangeMax"`
+	ResponseTimeDesc       string  `json:"responseTimeDesc" gorm:"size:50"`
+	ServiceArea            string  `json:"serviceArea" gorm:"type:text"`
+	MainBrands             string  `json:"mainBrands" gorm:"type:text"`
+	MainCategories         string  `json:"mainCategories" gorm:"type:text"`
+	DeliveryCapability     string  `json:"deliveryCapability" gorm:"size:200"`
+	InstallationCapability string  `json:"installationCapability" gorm:"size:200"`
+	AfterSalesPolicy       string  `json:"afterSalesPolicy" gorm:"size:500"`
+	InvoiceCapability      string  `json:"invoiceCapability" gorm:"size:200"`
+}
+
+func (MaterialShopServiceSetting) TableName() string {
+	return "material_shop_service_settings"
+}
+
 // MerchantServiceSetting 商家服务设置
 type MerchantServiceSetting struct {
 	Base
-	ProviderID       uint64  `json:"providerId" gorm:"uniqueIndex"`
-	AcceptBooking    bool    `json:"acceptBooking" gorm:"default:true"` // 是否接单
-	AutoConfirmHours int     `json:"autoConfirmHours" gorm:"default:24"`
-	ServiceStyles    string  `json:"serviceStyles" gorm:"type:text"`   // 擅长风格 JSON
-	ServicePackages  string  `json:"servicePackages" gorm:"type:text"` // 服务套餐 JSON
-	PriceRangeMin    float64 `json:"priceRangeMin"`
-	PriceRangeMax    float64 `json:"priceRangeMax"`
-	ResponseTimeDesc string  `json:"responseTimeDesc" gorm:"size:50"` // 响应时间描述
+	ProviderID          uint64  `json:"providerId" gorm:"uniqueIndex"`
+	AcceptBooking       bool    `json:"acceptBooking" gorm:"default:true"` // 是否接单
+	AutoConfirmHours    int     `json:"autoConfirmHours" gorm:"default:24"`
+	ServiceStyles       string  `json:"serviceStyles" gorm:"type:text"`   // 擅长风格 JSON
+	ServicePackages     string  `json:"servicePackages" gorm:"type:text"` // 服务套餐 JSON
+	PriceRangeMin       float64 `json:"priceRangeMin"`
+	PriceRangeMax       float64 `json:"priceRangeMax"`
+	ResponseTimeDesc    string  `json:"responseTimeDesc" gorm:"size:50"`             // 响应时间描述
+	SurveyDepositAmount float64 `json:"surveyDepositAmount" gorm:"default:0"`        // 自定义量房定金（0=使用系统默认）
+	DesignPaymentMode   string  `json:"designPaymentMode" gorm:"size:20;default:''"` // onetime | staged（空=跟随系统）
 }
 
 // TableName 指定表名
@@ -715,15 +796,24 @@ func (MerchantServiceSetting) TableName() string {
 // AuditLog 审计日志
 type AuditLog struct {
 	Base
-	OperatorType string `json:"operatorType" gorm:"size:20;index"` // admin/merchant/user
-	OperatorID   uint64 `json:"operatorId" gorm:"index"`
-	Action       string `json:"action" gorm:"size:100;index"`  // POST /api/v1/merchant/withdraw
-	Resource     string `json:"resource" gorm:"size:50;index"` // withdraw
-	RequestBody  string `json:"requestBody" gorm:"type:text"`  // 脱敏后的请求体
-	ClientIP     string `json:"clientIp" gorm:"size:50"`
-	UserAgent    string `json:"userAgent" gorm:"size:500"`
-	StatusCode   int    `json:"statusCode"`
-	Duration     int64  `json:"duration"` // 请求耗时(ms)
+	RecordKind    string `json:"recordKind" gorm:"size:20;index;default:'request'"` // request/business
+	OperatorType  string `json:"operatorType" gorm:"size:20;index"`                 // admin/merchant/user
+	OperatorID    uint64 `json:"operatorId" gorm:"index"`
+	Action        string `json:"action" gorm:"size:100;index"`        // POST /api/v1/merchant/withdraw
+	OperationType string `json:"operationType" gorm:"size:100;index"` // freeze_funds/confirm_proposal
+	Resource      string `json:"resource" gorm:"size:50;index"`       // legacy resource label
+	ResourceType  string `json:"resourceType" gorm:"size:50;index"`
+	ResourceID    uint64 `json:"resourceId" gorm:"index"`
+	Reason        string `json:"reason" gorm:"type:text"`
+	Result        string `json:"result" gorm:"size:50;index"`
+	RequestBody   string `json:"requestBody" gorm:"type:text"` // 脱敏后的请求体
+	BeforeState   string `json:"beforeState" gorm:"type:jsonb;default:'{}'"`
+	AfterState    string `json:"afterState" gorm:"type:jsonb;default:'{}'"`
+	Metadata      string `json:"metadata" gorm:"type:jsonb;default:'{}'"`
+	ClientIP      string `json:"clientIp" gorm:"size:50"`
+	UserAgent     string `json:"userAgent" gorm:"size:500"`
+	StatusCode    int    `json:"statusCode"`
+	Duration      int64  `json:"duration"` // 请求耗时(ms)
 }
 
 // TableName 指定表名

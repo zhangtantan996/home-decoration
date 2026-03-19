@@ -60,13 +60,13 @@ type HomepageInspiration struct {
 }
 
 type HomepageData struct {
-	Stats              HomepageStats              `json:"stats"`
-	FeaturedDesigners  []HomepageFeaturedProvider  `json:"featuredDesigners"`
-	FeaturedCompanies  []HomepageFeaturedProvider  `json:"featuredCompanies"`
-	FeaturedForemen    []HomepageFeaturedProvider  `json:"featuredForemen"`
-	MaterialShops      []HomepageMaterialShop      `json:"materialShops"`
-	Inspirations       []HomepageInspiration       `json:"inspirations"`
-	HotSearchTerms     []string                    `json:"hotSearchTerms"`
+	Stats             HomepageStats              `json:"stats"`
+	FeaturedDesigners []HomepageFeaturedProvider `json:"featuredDesigners"`
+	FeaturedCompanies []HomepageFeaturedProvider `json:"featuredCompanies"`
+	FeaturedForemen   []HomepageFeaturedProvider `json:"featuredForemen"`
+	MaterialShops     []HomepageMaterialShop     `json:"materialShops"`
+	Inspirations      []HomepageInspiration      `json:"inspirations"`
+	HotSearchTerms    []string                   `json:"hotSearchTerms"`
 }
 
 func (s *HomepageService) GetHomepageData() (*HomepageData, error) {
@@ -96,10 +96,22 @@ func (s *HomepageService) GetHomepageData() (*HomepageData, error) {
 	go func() {
 		defer wg.Done()
 		db := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{}))
-		db.Where("provider_type = ?", 1).Count(&stats.DesignerCount)
-		db.Where("provider_type = ?", 2).Count(&stats.CompanyCount)
-		db.Where("provider_type = ?", 3).Count(&stats.ForemanCount)
-		repository.DB.Model(&model.ProviderCase{}).Where("status IN ?", []string{"approved", "published"}).Count(&stats.CaseCount)
+		if err := db.Where("provider_type = ?", 1).Count(&stats.DesignerCount).Error; err != nil {
+			setErr(err)
+			return
+		}
+		if err := db.Where("provider_type = ?", 2).Count(&stats.CompanyCount).Error; err != nil {
+			setErr(err)
+			return
+		}
+		if err := db.Where("provider_type = ?", 3).Count(&stats.ForemanCount).Error; err != nil {
+			setErr(err)
+			return
+		}
+		if err := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).Count(&stats.CaseCount).Error; err != nil {
+			setErr(err)
+			return
+		}
 	}()
 
 	// 2. Featured designers

@@ -203,9 +203,33 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				bookings.GET("", handler.GetUserBookings)
 				bookings.POST("", handler.CreateBooking)
 				bookings.GET("/:id", handler.GetBooking)
+				bookings.GET("/:id/site-survey", handler.GetSiteSurvey)
+				bookings.POST("/:id/site-survey/confirm", handler.ConfirmSiteSurvey)
+				bookings.POST("/:id/site-survey/reject", handler.RejectSiteSurvey)
+				bookings.GET("/:id/budget-confirm", handler.GetBudgetConfirmation)
+				bookings.POST("/:id/budget-confirm/accept", handler.AcceptBudgetConfirmation)
+				bookings.POST("/:id/budget-confirm/reject", handler.RejectBudgetConfirmation)
 				bookings.POST("/:id/pay-intent", handler.PayIntentFee)
+				bookings.POST("/:id/refund", handler.CreateBookingRefundApplication)
 				bookings.DELETE("/:id/cancel", handler.CancelBooking)
 				bookings.DELETE("/:id", handler.DeleteBooking)
+				bookings.POST("/:id/pay-survey-deposit", handler.PaySurveyDeposit)
+				bookings.POST("/:id/survey-deposit/refund", handler.RefundSurveyDeposit)
+				bookings.GET("/:id/design-fee-quote", handler.GetDesignFeeQuoteForUser)
+			}
+
+			// 设计费报价
+			designQuotes := authorized.Group("/design-quotes")
+			{
+				designQuotes.POST("/:id/confirm", handler.ConfirmDesignFeeQuote)
+				designQuotes.POST("/:id/reject", handler.RejectDesignFeeQuote)
+			}
+
+			// 设计交付物
+			designDeliverables := authorized.Group("/design-deliverables")
+			{
+				designDeliverables.POST("/:id/accept", handler.AcceptDesignDeliverable)
+				designDeliverables.POST("/:id/reject", handler.RejectDesignDeliverable)
 			}
 
 			// 售后
@@ -215,6 +239,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				afterSales.POST("", handler.CreateAfterSales)
 				afterSales.GET("/:id", handler.GetAfterSalesDetail)
 				afterSales.DELETE("/:id", handler.CancelAfterSales)
+			}
+
+			refunds := authorized.Group("/refunds")
+			{
+				refunds.GET("/my", handler.ListMyRefundApplications)
 			}
 
 			// 项目
@@ -229,10 +258,20 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.POST("/:id/construction/confirm", handler.ConfirmProjectConstruction)
 				projects.POST("/:id/construction/quote/confirm", handler.ConfirmProjectConstructionQuote)
 				projects.POST("/:id/start", handler.StartProject)
+				projects.POST("/:id/pause", handler.PauseProject)
+				projects.POST("/:id/resume", handler.ResumeProject)
+				projects.POST("/:id/dispute", handler.SubmitProjectDispute)
 				projects.GET("/:id/milestones", handler.GetMilestones)
 				projects.POST("/:id/milestones/:milestoneId/submit", handler.SubmitMilestone)
+				projects.POST("/:id/milestones/:milestoneId/approve", handler.AcceptMilestone)
 				projects.POST("/:id/milestones/:milestoneId/accept", handler.AcceptMilestone)
+				projects.POST("/:id/milestones/:milestoneId/reject", handler.RejectMilestone)
 				projects.POST("/:id/accept", handler.AcceptMilestone)
+				projects.POST("/:id/complete", handler.CompleteProject)
+				projects.POST("/:id/inspiration-draft", handler.CreateProjectInspirationDraft)
+				projects.GET("/:id/completion", handler.GetProjectCompletion)
+				projects.POST("/:id/completion/approve", handler.ApproveProjectCompletion)
+				projects.POST("/:id/completion/reject", handler.RejectProjectCompletion)
 
 				// 托管账户
 				projects.GET("/:id/escrow", handler.GetEscrowAccount)
@@ -247,6 +286,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.POST("/:id/bill", handler.GenerateBill)
 				projects.GET("/:id/files", handler.GetProjectFiles)
 				projects.GET("/:id/contract", handler.GetProjectContract)
+				projects.GET("/:id/design-deliverable", handler.GetDesignDeliverable)
 			}
 
 			// 阶段管理
@@ -405,6 +445,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			settingListPerm := middleware.RequirePermission("system:setting:list")
 			settingEditPerm := middleware.RequirePermission("system:setting:edit")
 			financeEscrowListPerm := middleware.RequirePermission("finance:escrow:list")
+			financeEscrowFreezePerm := middleware.RequirePermission("finance:escrow:freeze")
+			financeEscrowUnfreezePerm := middleware.RequirePermission("finance:escrow:unfreeze")
 			financeTransactionListPerm := middleware.RequirePermission("finance:transaction:list")
 			financeTransactionViewPerm := middleware.RequirePermission("finance:transaction:view")
 			financeTransactionApprovePerm := middleware.RequirePermission("finance:transaction:approve")
@@ -463,6 +505,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PUT("/providers/:id", providerEditPerm, handler.AdminUpdateProvider)
 			admin.PATCH("/providers/:id/verify", providerEditPerm, handler.AdminVerifyProvider)
 			admin.PATCH("/providers/:id/status", providerEditPerm, handler.AdminUpdateProviderStatus)
+			admin.POST("/providers/:id/claim-account", providerEditPerm, handler.AdminClaimProviderAccount)
+			admin.POST("/providers/:id/complete-settlement", providerEditPerm, handler.AdminCompleteProviderSettlement)
 
 			// 预约管理
 			admin.GET("/bookings", bookingListPerm, handler.AdminListBookings)
@@ -480,8 +524,13 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PUT("/material-shops/:id", materialShopEditPerm, handler.AdminUpdateMaterialShop)
 			admin.DELETE("/material-shops/:id", materialShopDeletePerm, handler.AdminDeleteMaterialShop)
 			admin.PATCH("/material-shops/:id/verify", materialShopEditPerm, handler.AdminVerifyMaterialShop)
+			admin.PATCH("/material-shops/:id/status", materialShopEditPerm, handler.AdminUpdateMaterialShopStatus)
+			admin.POST("/material-shops/:id/complete-account", materialShopEditPerm, handler.AdminCompleteMaterialShopAccount)
 
 			// 审核管理
+			admin.GET("/project-audits", complaintListPerm, handler.AdminListProjectAudits)
+			admin.GET("/project-audits/:id", complaintListPerm, handler.AdminGetProjectAudit)
+			admin.POST("/project-audits/:id/arbitrate", complaintResolvePerm, handler.AdminArbitrateProjectAudit)
 			admin.GET("/audits/providers", providerAuditListPerm, handler.AdminListProviderAudits)
 			admin.GET("/audits/material-shops", materialAuditListPerm, handler.AdminListMaterialShopAudits)
 			admin.POST("/audits/:type/:id/approve", middleware.RequireAnyPermission("provider:audit:approve", "material:audit:approve"), handler.AdminApproveAudit)
@@ -526,8 +575,13 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PUT("/regions/:id/toggle", settingEditPerm, handler.AdminToggleRegion)
 
 			// 财务管理
+			admin.GET("/finance/overview", financeEscrowListPerm, handler.AdminGetFinanceOverview)
 			admin.GET("/finance/escrow-accounts", financeEscrowListPerm, handler.AdminListEscrowAccounts)
 			admin.GET("/finance/transactions", financeTransactionListPerm, handler.AdminListTransactions)
+			admin.GET("/finance/transactions/export", financeTransactionListPerm, handler.AdminExportTransactions)
+			admin.POST("/finance/freeze", financeEscrowFreezePerm, handler.AdminFreezeFunds)
+			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, handler.AdminUnfreezeFunds)
+			admin.POST("/finance/manual-release", financeTransactionApprovePerm, handler.AdminManualReleaseFunds)
 			admin.POST("/finance/escrow-accounts/:accountId/withdraw", financeTransactionApprovePerm, handler.AdminWithdraw)
 
 			// 风险管理
@@ -551,6 +605,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 操作日志
 			admin.GET("/logs", logListPerm, handler.AdminListLogs)
+			admin.GET("/audit-logs", logListPerm, handler.AdminListAuditLogs)
+			admin.GET("/audit-logs/export", logListPerm, handler.AdminExportAuditLogs)
 
 			// ========== RBAC 权限管理 ==========
 			admin.GET("/roles", roleListPerm, handler.AdminListRoles)
@@ -583,7 +639,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// ========== 项目管理 ==========
 			admin.GET("/projects", projectListPerm, handler.AdminListProjects)
 			admin.GET("/projects/:id", projectViewPerm, handler.AdminGetProject)
+			admin.POST("/projects/:id/audit", complaintResolvePerm, handler.AdminCreateProjectAudit)
 			admin.PUT("/projects/:id/status", projectEditPerm, handler.AdminUpdateProjectStatus)
+			admin.POST("/projects/:id/construction/confirm", projectEditPerm, handler.AdminConfirmProjectConstruction)
+			admin.POST("/projects/:id/construction/quote/confirm", projectEditPerm, handler.AdminConfirmProjectConstructionQuote)
 			admin.GET("/projects/:id/phases", projectViewPerm, handler.AdminGetProjectPhases)
 			admin.PUT("/projects/:id/phases/:phaseId", projectEditPerm, handler.AdminUpdatePhase)
 			admin.GET("/projects/:id/logs", projectViewPerm, handler.AdminGetProjectLogs)
@@ -649,6 +708,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/complaints", complaintListPerm, handler.AdminListComplaints)
 			admin.POST("/complaints/:id/resolve", complaintResolvePerm, handler.AdminResolveComplaint)
 
+			// 退款申请审核
+			admin.GET("/refunds", financeTransactionListPerm, handler.AdminListRefundApplications)
+			admin.GET("/refunds/:id", financeTransactionViewPerm, handler.AdminGetRefundApplication)
+			admin.POST("/refunds/:id/approve", financeTransactionApprovePerm, handler.AdminApproveRefundApplication)
+			admin.POST("/refunds/:id/reject", financeTransactionApprovePerm, handler.AdminRejectRefundApplication)
+
 			// ========== 争议预约管理 ==========
 			admin.GET("/disputed-bookings", bookingListPerm, handler.AdminListDisputedBookings)
 			admin.GET("/disputed-bookings/:id", disputeDetailPerm, handler.AdminGetDisputedBooking)
@@ -709,12 +774,21 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/bookings", handler.MerchantListBookings)
 			merchant.GET("/bookings/:id", handler.MerchantGetBookingDetail)
 			merchant.PUT("/bookings/:id/handle", handler.MerchantHandleBooking)
+			merchant.GET("/bookings/:id/site-survey", handler.MerchantGetSiteSurvey)
+			merchant.POST("/bookings/:id/site-survey", handler.MerchantSubmitSiteSurvey)
+			merchant.GET("/bookings/:id/budget-confirm", handler.MerchantGetBudgetConfirmation)
+			merchant.POST("/bookings/:id/budget-confirm", handler.MerchantSubmitBudgetConfirmation)
 			merchant.GET("/quote-lists", handler.MerchantListQuoteLists)
 			merchant.GET("/quote-lists/:id", handler.MerchantGetQuoteListDetail)
 			merchant.PUT("/quote-lists/:id/submission", handler.MerchantSaveQuoteSubmission)
 			merchant.POST("/quote-lists/:id/submission/submit", handler.MerchantSubmitQuoteSubmission)
 			merchant.GET("/quote-tasks", handler.MerchantListQuoteTasks)
 			merchant.GET("/quote-tasks/:id", handler.MerchantGetQuoteTask)
+			merchant.POST("/bookings/:id/working-docs", handler.MerchantUploadWorkingDoc)
+			merchant.GET("/bookings/:id/working-docs", handler.MerchantListWorkingDocs)
+			merchant.POST("/bookings/:id/design-fee-quote", handler.MerchantCreateDesignFeeQuote)
+			merchant.GET("/bookings/:id/design-fee-quote", handler.MerchantGetDesignFeeQuote)
+			merchant.POST("/bookings/:id/deliverable", handler.MerchantSubmitDeliverable)
 
 			// 方案管理
 			merchant.POST("/proposals", handler.MerchantSubmitProposal)
@@ -737,6 +811,14 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 订单管理
 			merchant.GET("/orders", handler.MerchantListOrders)
+			merchant.GET("/projects", handler.MerchantListProjects)
+			merchant.GET("/projects/:projectId", handler.MerchantGetProjectDetail)
+			merchant.GET("/projects/:projectId/dispute", handler.MerchantGetProjectDispute)
+			merchant.POST("/projects/:projectId/dispute/respond", handler.MerchantRespondProjectDispute)
+			merchant.POST("/projects/:projectId/logs", handler.MerchantCreateProjectLog)
+			merchant.POST("/projects/:projectId/start", handler.MerchantStartProject)
+			merchant.POST("/projects/:projectId/milestones/:milestoneId/submit", handler.MerchantSubmitProjectMilestone)
+			merchant.POST("/projects/:projectId/complete", handler.MerchantCompleteProject)
 
 			// 仪表盘
 			merchant.GET("/dashboard", handler.MerchantDashboardStats)
@@ -781,6 +863,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		{
 			materialShop.GET("/me", handler.MaterialShopGetMe)
 			materialShop.PUT("/me", handler.MaterialShopUpdateMe)
+			materialShop.GET("/service-settings", handler.MerchantGetServiceSettings)
+			materialShop.PUT("/service-settings", handler.MerchantUpdateServiceSettings)
 			materialShop.GET("/me/products", handler.MaterialShopListProducts)
 			materialShop.POST("/me/products", handler.MaterialShopCreateProduct)
 			materialShop.PUT("/me/products/:id", handler.MaterialShopUpdateProduct)

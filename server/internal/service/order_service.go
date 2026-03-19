@@ -6,6 +6,8 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // OrderService 订单服务
@@ -119,7 +121,7 @@ func (s *OrderService) GenerateBill(userID uint64, input *GenerateBillInput) (*B
 	var paymentPlans []model.PaymentPlan
 	paymentType := input.PaymentType
 	if paymentType == "" {
-		paymentType = "milestone" // 默认分期
+		paymentType = configService.GetConstructionPaymentMode()
 	}
 
 	if paymentType == "milestone" {
@@ -247,15 +249,17 @@ func (s *OrderService) PayOrder(userID, orderID uint64) (*model.Order, error) {
 				if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
 					_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
 
-					// 创建收入记录
-					_, _ = incomeService.CreateIncome(&CreateIncomeInput{
-						ProviderID:  provider.ID,
-						OrderID:     order.ID,
-						BookingID:   booking.ID,
-						Type:        order.OrderType,
-						Amount:      order.TotalAmount - order.Discount,
-						Description: "订单支付",
-					})
+					// 施工订单不预创建收入，等里程碑验收后T+3释放
+					if order.OrderType != model.OrderTypeConstruction {
+						_, _ = incomeService.CreateIncome(&CreateIncomeInput{
+							ProviderID:  provider.ID,
+							OrderID:     order.ID,
+							BookingID:   booking.ID,
+							Type:        order.OrderType,
+							Amount:      order.TotalAmount - order.Discount,
+							Description: "订单支付",
+						})
+					}
 				}
 			}
 		}
@@ -266,15 +270,17 @@ func (s *OrderService) PayOrder(userID, orderID uint64) (*model.Order, error) {
 			if err := repository.DB.First(&provider, project.ProviderID).Error; err == nil {
 				_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
 
-				// 创建收入记录
-				_, _ = incomeService.CreateIncome(&CreateIncomeInput{
-					ProviderID:  provider.ID,
-					OrderID:     order.ID,
-					BookingID:   0, // 无关联预约
-					Type:        order.OrderType,
-					Amount:      order.TotalAmount - order.Discount,
-					Description: "订单支付",
-				})
+				// 施工订单不预创建收入，等里程碑验收后T+3释放
+				if order.OrderType != model.OrderTypeConstruction {
+					_, _ = incomeService.CreateIncome(&CreateIncomeInput{
+						ProviderID:  provider.ID,
+						OrderID:     order.ID,
+						BookingID:   0, // 无关联预约
+						Type:        order.OrderType,
+						Amount:      order.TotalAmount - order.Discount,
+						Description: "订单支付",
+					})
+				}
 			}
 		}
 	}
@@ -327,57 +333,66 @@ func (s *OrderService) CancelOrder(userID, orderID uint64) error {
 
 // PayPaymentPlan 支付分期款项
 func (s *OrderService) PayPaymentPlan(userID uint64, planID uint64) (*model.PaymentPlan, error) {
-	var plan model.PaymentPlan
-	if err := repository.DB.First(&plan, planID).Error; err != nil {
-		return nil, errors.New("支付计划不存在")
-	}
+	var updatedPlan model.PaymentPlan
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var plan model.PaymentPlan
+		if err := tx.First(&plan, planID).Error; err != nil {
+			return errors.New("支付计划不存在")
+		}
 
-	var order model.Order
-	if err := repository.DB.First(&order, plan.OrderID).Error; err != nil {
-		return nil, errors.New("订单不存在")
-	}
+		var order model.Order
+		if err := tx.First(&order, plan.OrderID).Error; err != nil {
+			return errors.New("订单不存在")
+		}
 
-	// 验证项目归属
-	var project model.Project
-	if err := repository.DB.First(&project, order.ProjectID).Error; err != nil {
-		return nil, errors.New("项目不存在")
-	}
-	if project.OwnerID != userID {
-		return nil, errors.New("无权操作")
-	}
+		var project model.Project
+		if err := tx.First(&project, order.ProjectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		if project.OwnerID != userID {
+			return errors.New("无权操作")
+		}
 
-	if plan.Status != 0 {
-		return nil, errors.New("该期款项已支付")
-	}
+		if plan.Status != 0 {
+			return errors.New("该期款项已支付")
+		}
 
-	// 检查前置期是否已支付
-	if plan.Seq > 1 {
-		var prevPlan model.PaymentPlan
-		if err := repository.DB.Where("order_id = ? AND seq = ?", plan.OrderID, plan.Seq-1).First(&prevPlan).Error; err == nil {
-			if prevPlan.Status == 0 {
-				return nil, errors.New("请先支付上一期款项")
+		if plan.Seq > 1 {
+			var prevPlan model.PaymentPlan
+			if err := tx.Where("order_id = ? AND seq = ?", plan.OrderID, plan.Seq-1).First(&prevPlan).Error; err == nil && prevPlan.Status == 0 {
+				return errors.New("请先支付上一期款项")
 			}
 		}
-	}
 
-	// 模拟支付成功
-	now := time.Now()
-	plan.Status = 1
-	plan.PaidAt = &now
+		now := time.Now()
+		plan.Status = 1
+		plan.PaidAt = &now
+		if err := tx.Save(&plan).Error; err != nil {
+			return err
+		}
 
-	if err := repository.DB.Save(&plan).Error; err != nil {
+		order.PaidAmount += plan.Amount
+		if order.PaidAmount >= order.TotalAmount {
+			order.Status = model.OrderStatusPaid
+			order.PaidAt = &now
+		}
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+
+		if order.OrderType == model.OrderTypeConstruction && project.PaymentPaused {
+			if err := (&ProjectService{}).resumeProjectExecutionAfterPaymentTx(tx, &project); err != nil {
+				return err
+			}
+		}
+
+		return tx.First(&updatedPlan, plan.ID).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	// 更新订单已付金额
-	order.PaidAmount += plan.Amount
-	if order.PaidAmount >= order.TotalAmount {
-		order.Status = model.OrderStatusPaid
-		order.PaidAt = &now
-	}
-	repository.DB.Save(&order)
-
-	return &plan, nil
+	return &updatedPlan, nil
 }
 
 // GetOrdersByProject 获取项目的所有订单

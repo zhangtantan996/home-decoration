@@ -15,6 +15,7 @@ type BookingService struct{}
 
 // configSvc 配置服务实例
 var configSvc = &ConfigService{}
+var businessFlowSvc = &BusinessFlowService{}
 
 // CreateBookingRequest 创建预约请求
 type CreateBookingRequest struct {
@@ -44,32 +45,45 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 		return nil, errors.New("补充说明不能超过 500 字符")
 	}
 
-	// 获取意向金金额（从系统配置）
-	intentFee, err := configSvc.GetIntentFee()
+	// 获取量房定金金额：设计师个人价 > 后台默认价 > 旧意向金fallback
+	intentFee, err := configSvc.GetSurveyDepositDefault()
 	if err != nil {
-		// 配置读取失败时使用默认值
 		intentFee = 99
 	}
+	surveyDepositSource := "system_default"
+	var provider model.Provider
+	if err := repository.DB.First(&provider, req.ProviderID).Error; err == nil {
+		if provider.SurveyDepositPrice > 0 {
+			intentFee = provider.SurveyDepositPrice
+			surveyDepositSource = "provider_override"
+		}
+	}
+	surveyRefundNotice := configSvc.GetSurveyRefundNotice()
 
 	booking := &model.Booking{
-		UserID:         userID,
-		ProviderID:     req.ProviderID,
-		ProviderType:   req.ProviderType,
-		Address:        req.Address,
-		Area:           req.Area,
-		RenovationType: req.RenovationType,
-		BudgetRange:    req.BudgetRange,
-		PreferredDate:  req.PreferredDate,
-		Phone:          req.Phone,
-		Notes:          req.Notes,
-		HouseLayout:    req.HouseLayout,
-		Status:         1,         // Pending
-		IntentFee:      intentFee, // 从配置读取的意向金金额
-		IntentFeePaid:  false,     // 默认未支付
+		UserID:              userID,
+		ProviderID:          req.ProviderID,
+		ProviderType:        req.ProviderType,
+		Address:             req.Address,
+		Area:                req.Area,
+		RenovationType:      req.RenovationType,
+		BudgetRange:         req.BudgetRange,
+		PreferredDate:       req.PreferredDate,
+		Phone:               req.Phone,
+		Notes:               req.Notes,
+		HouseLayout:         req.HouseLayout,
+		Status:              1,         // Pending
+		IntentFee:           intentFee, // 从配置读取的意向金金额
+		IntentFeePaid:       false,     // 默认未支付
+		SurveyDepositSource: surveyDepositSource,
+		SurveyRefundNotice:  surveyRefundNotice,
 	}
 
 	if err := repository.DB.Create(booking).Error; err != nil {
 		return nil, err
+	}
+	if _, err := businessFlowSvc.EnsureLeadFlow(nil, model.BusinessFlowSourceBooking, booking.ID, userID, req.ProviderID); err != nil {
+		log.Printf("[business_flow] ensure booking flow failed: %v", err)
 	}
 
 	return booking, nil

@@ -22,7 +22,7 @@ func setupMerchantCaseProjectTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Project{}, &model.Proposal{}, &model.WorkLog{}, &model.CaseAudit{}); err != nil {
+	if err := db.AutoMigrate(&model.Project{}, &model.Proposal{}, &model.WorkLog{}, &model.CaseAudit{}, &model.BusinessFlow{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
@@ -76,6 +76,9 @@ func TestMerchantCaseCreateFromProject(t *testing.T) {
 	}
 	if audit.ProviderID != 22 || audit.ActionType != "create" || audit.Status != 0 {
 		t.Fatalf("unexpected audit: %+v", audit)
+	}
+	if audit.SourceType != "project_completion" || audit.SourceProjectID != 101 || audit.SourceProposalID != 201 {
+		t.Fatalf("expected project source trace, got %+v", audit)
 	}
 	if audit.Title == "" || audit.CoverImage == "" || audit.QuoteTotalCent <= 0 {
 		t.Fatalf("expected generated title/cover/quote, got %+v", audit)

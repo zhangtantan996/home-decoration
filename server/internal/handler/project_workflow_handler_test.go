@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,7 +21,7 @@ func setupProjectWorkflowHandlerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.Project{}, &model.Milestone{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.Notification{}, &model.AuditLog{}, &model.Project{}, &model.Milestone{}, &model.BusinessFlow{}, &model.Order{}, &model.PaymentPlan{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
@@ -105,7 +106,39 @@ func TestProjectMilestoneHandlers(t *testing.T) {
 	if err := db.First(&completedProject, project.ID).Error; err != nil {
 		t.Fatalf("reload project: %v", err)
 	}
-	if completedProject.BusinessStatus != model.ProjectBusinessStatusCompleted {
-		t.Fatalf("expected completed business status, got %q", completedProject.BusinessStatus)
+	if completedProject.BusinessStatus != model.ProjectBusinessStatusInProgress {
+		t.Fatalf("expected in-progress business status before completion submission, got %q", completedProject.BusinessStatus)
+	}
+	if completedProject.CurrentPhase != "待提交完工材料" {
+		t.Fatalf("expected current phase 待提交完工材料, got %q", completedProject.CurrentPhase)
+	}
+}
+
+func TestLegacyCompleteProjectEndpointDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/21/complete", nil)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = req
+	ctx.Params = gin.Params{{Key: "id", Value: "21"}}
+	ctx.Set("userId", uint64(7))
+
+	CompleteProject(ctx)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if int(payload["code"].(float64)) != 409 {
+		t.Fatalf("expected business code 409, got %+v", payload)
+	}
+	data, _ := payload["data"].(map[string]any)
+	if data["errorCode"] != "PROJECT_COMPLETE_LEGACY_DISABLED" {
+		t.Fatalf("expected errorCode PROJECT_COMPLETE_LEGACY_DISABLED, got %+v", payload)
 	}
 }

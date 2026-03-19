@@ -51,14 +51,26 @@ func GetProposal(c *gin.Context) {
 	// 查询关联的设计费订单
 	var order model.Order
 	var hasOrder bool
+	deliveryUnlocked := false
 	if err := repository.DB.Where("proposal_id = ? AND order_type = ?", proposalID, "design").Order("created_at desc").First(&order).Error; err == nil {
 		hasOrder = true
+		if order.Status == model.OrderStatusPaid && configSvc.GetDesignFeeUnlockDownload() {
+			deliveryUnlocked = true
+		}
+	}
+
+	responseProposal := *proposal
+	responseProposal.InternalDraftJSON = "{}"
+	responseProposal.Attachments = "[]"
+	if !deliveryUnlocked {
+		responseProposal.DeliveryPackageJSON = "{}"
 	}
 
 	response.Success(c, gin.H{
-		"proposal": proposal,
-		"order":    order,
-		"hasOrder": hasOrder,
+		"proposal":         responseProposal,
+		"order":            order,
+		"hasOrder":         hasOrder,
+		"deliveryUnlocked": deliveryUnlocked,
 	})
 }
 
@@ -103,12 +115,18 @@ func RejectProposal(c *gin.Context) {
 		return
 	}
 
-	if err := proposalService.RejectProposal(userID, proposalID, &input); err != nil {
+	result, err := proposalService.RejectProposal(userID, proposalID, &input)
+	if err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}
 
-	response.Success(c, gin.H{"message": "方案已拒绝，商家可重新提交"})
+	messageText := "方案已拒绝，商家可重新提交"
+	if result != nil && result.EnteredAbnormal {
+		messageText = "方案已转异常订单，平台将介入处理"
+	}
+
+	response.Success(c, gin.H{"message": messageText, "result": result})
 }
 
 // GetProposalVersionHistory 获取方案版本历史

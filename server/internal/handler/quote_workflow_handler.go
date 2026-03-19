@@ -3,7 +3,6 @@ package handler
 import (
 	"strings"
 
-	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
@@ -33,6 +32,14 @@ func AdminCreateQuoteCategory(c *gin.Context) {
 	response.Success(c, category)
 }
 
+func AdminDeleteQuoteCategory(c *gin.Context) {
+	if err := quoteService.DeleteQuoteCategory(parseUint(c.Param("id"))); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"id": parseUint(c.Param("id"))})
+}
+
 func AdminCreateQuoteLibraryItem(c *gin.Context) {
 	var input service.QuoteLibraryItemWriteInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -59,6 +66,14 @@ func AdminUpdateQuoteLibraryItem(c *gin.Context) {
 		return
 	}
 	response.Success(c, item)
+}
+
+func AdminDeleteQuoteLibraryItem(c *gin.Context) {
+	if err := quoteService.DeleteQuoteLibraryItem(parseUint(c.Param("id"))); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"id": parseUint(c.Param("id"))})
 }
 
 func AdminGetProviderPriceBook(c *gin.Context) {
@@ -128,6 +143,15 @@ func AdminGenerateQuoteDrafts(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func AdminListQuoteSubmissionRevisions(c *gin.Context) {
+	revisions, err := quoteService.ListQuoteSubmissionRevisions(parseUint(c.Param("id")))
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"list": revisions})
+}
+
 func AdminSubmitQuoteTaskToUser(c *gin.Context) {
 	var input struct {
 		SubmissionID uint64 `json:"submissionId" binding:"required"`
@@ -162,8 +186,11 @@ func MerchantGetPriceBook(c *gin.Context) {
 	detail, err := quoteService.GetProviderPriceBook(providerID)
 	if err != nil {
 		if strings.Contains(err.Error(), "不存在") {
-			response.Success(c, gin.H{"book": model.QuotePriceBook{ProviderID: providerID, Status: model.QuotePriceBookStatusDraft}, "items": []model.QuotePriceBookItem{}})
-			return
+			detail, err = quoteService.UpsertProviderPriceBook(providerID, &service.QuotePriceBookUpdateInput{})
+			if err == nil {
+				response.Success(c, detail)
+				return
+			}
 		}
 		response.Error(c, 400, err.Error())
 		return

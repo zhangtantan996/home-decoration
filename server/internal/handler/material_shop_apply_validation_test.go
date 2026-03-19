@@ -172,6 +172,59 @@ func TestResolveMaterialProductDescription_FallsBackToParams(t *testing.T) {
 	}
 }
 
+func TestMaterialShopUpdateProduct_PersistsDescriptionAndStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.MaterialShopProduct{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	product := model.MaterialShopProduct{
+		Base:        model.Base{ID: 301},
+		ShopID:      88,
+		Name:        "旧商品",
+		Unit:        "件",
+		Description: "旧描述",
+		Price:       99,
+		ImagesJSON:  `["https://img.example.com/old.jpg"]`,
+		CoverImage:  "https://img.example.com/old.jpg",
+		Status:      1,
+	}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+
+	payload := `{"name":"新商品","unit":"套","description":"新描述","price":199,"images":["https://img.example.com/new.jpg"],"status":0}`
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Set("materialShopId", uint64(88))
+	c.Params = []gin.Param{{Key: "id", Value: "301"}}
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/material-shop/me/products/301", strings.NewReader(payload))
+	c.Request.Header.Set("Content-Type", "application/json")
+	MaterialShopUpdateProduct(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+
+	var updated model.MaterialShopProduct
+	if err := db.First(&updated, product.ID).Error; err != nil {
+		t.Fatalf("query updated product: %v", err)
+	}
+	if updated.Description != "新描述" {
+		t.Fatalf("description mismatch: got=%s", updated.Description)
+	}
+	if updated.Status != 0 {
+		t.Fatalf("status mismatch: got=%d", updated.Status)
+	}
+}
+
 func TestMaterialShopStatusAndMe_ReturnBusinessHoursRanges(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

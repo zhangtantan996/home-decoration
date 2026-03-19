@@ -27,7 +27,7 @@ func setupProviderServiceDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 
-	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.ProviderCase{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.ProviderCase{}, &model.Region{}); err != nil {
 		t.Fatalf("auto migrate provider tables: %v", err)
 	}
 
@@ -130,6 +130,96 @@ func TestProviderServiceListSupportsKeywordAcrossNicknameAndType(t *testing.T) {
 	}
 	if total != 1 || len(list) != 1 {
 		t.Fatalf("expected style alias keyword match, total=%d len=%d", total, len(list))
+	}
+}
+
+func TestProviderServiceListExpandsServiceAreaToCityAndDistrictNames(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	regions := []model.Region{
+		{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true},
+		{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true},
+		{Code: "610104", Name: "莲湖区", Level: 3, ParentCode: "610100", Enabled: true},
+	}
+	if err := db.Create(&regions).Error; err != nil {
+		t.Fatalf("create regions: %v", err)
+	}
+
+	user := model.User{Phone: "13800138118", Nickname: "西安设计师", PublicID: "user_public_region"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		SubType:      "designer",
+		CompanyName:  "西安空间设计",
+		Verified:     true,
+		Status:       1,
+		ServiceArea:  `["610113","610104"]`,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+
+	areas := strings.Join(list[0].ServiceArea, ",")
+	if !strings.Contains(areas, "西安市") {
+		t.Fatalf("expected city name in service area, got %v", list[0].ServiceArea)
+	}
+	if !strings.Contains(areas, "雁塔区") || !strings.Contains(areas, "莲湖区") {
+		t.Fatalf("expected district names in service area, got %v", list[0].ServiceArea)
+	}
+}
+
+func TestProviderServiceListKeepsLegacyCompanySubtypeInDesignerTab(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138119", Nickname: "华美装饰", PublicID: "user_public_legacy_company"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	legacyCompany := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		SubType:      "company",
+		CompanyName:  "华美装饰设计公司",
+		Verified:     true,
+		Status:       1,
+		IsSettled:    true,
+	}
+	if err := db.Create(&legacyCompany).Error; err != nil {
+		t.Fatalf("create legacy company provider: %v", err)
+	}
+
+	companyList, total, err := service.ListProviders(&ProviderQuery{Type: "company", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list company providers: %v", err)
+	}
+	if total != 0 || len(companyList) != 0 {
+		t.Fatalf("expected legacy company subtype to stay out of company list, total=%d len=%d", total, len(companyList))
+	}
+
+	designerList, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list designer providers: %v", err)
+	}
+	if total != 1 || len(designerList) != 1 {
+		t.Fatalf("expected legacy company subtype to remain in designer list, total=%d len=%d", total, len(designerList))
+	}
+	if designerList[0].ProviderType != 1 {
+		t.Fatalf("expected legacy provider type to remain 1 in designer list, got %d", designerList[0].ProviderType)
 	}
 }
 

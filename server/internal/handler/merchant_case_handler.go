@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
@@ -234,6 +233,22 @@ func MerchantCaseCreate(c *gin.Context) {
 	})
 }
 
+func createCaseDraftFromProject(projectID, providerID uint64, req merchantCasePayload) (*model.Project, *model.CaseAudit, error) {
+	return service.GenerateCaseDraftFromProject(projectID, providerID, &service.ProjectCaseDraftInput{
+		Title:          req.Title,
+		CoverImage:     req.CoverImage,
+		Style:          req.Style,
+		Layout:         req.Layout,
+		Area:           req.Area,
+		Price:          req.Price,
+		QuoteTotalCent: req.QuoteTotalCent,
+		QuoteCurrency:  req.QuoteCurrency,
+		QuoteItems:     req.QuoteItems,
+		Description:    req.Description,
+		Images:         req.Images,
+	})
+}
+
 // MerchantCaseCreateFromProject 保存项目方案数据到灵感案例（生成待审核草稿）
 func MerchantCaseCreateFromProject(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
@@ -243,155 +258,12 @@ func MerchantCaseCreateFromProject(c *gin.Context) {
 		return
 	}
 
-	var project model.Project
-	if err := repository.DB.First(&project, projectID).Error; err != nil {
-		response.Error(c, 404, "项目不存在")
-		return
-	}
-	if project.ProviderID != providerID {
-		response.Error(c, 403, "无权操作此项目")
-		return
-	}
-
-	var proposal model.Proposal
-	if project.ProposalID > 0 {
-		if err := repository.DB.First(&proposal, project.ProposalID).Error; err != nil {
-			response.Error(c, 400, "项目缺少关联方案")
-			return
-		}
-	} else {
-		repository.DB.Where("designer_id = ?", providerID).Order("created_at DESC").First(&proposal)
-	}
-
-	var workLogs []model.WorkLog
-	repository.DB.Where("project_id = ?", projectID).Order("created_at DESC").Find(&workLogs)
-
-	images := make([]string, 0, 12)
-	for _, logItem := range workLogs {
-		var logImages []string
-		if err := json.Unmarshal([]byte(logItem.Photos), &logImages); err == nil {
-			images = append(images, logImages...)
-		}
-	}
-
 	var req merchantCasePayload
 	_ = c.ShouldBindJSON(&req)
 
-	if len(req.Images) > 0 {
-		images = req.Images
-	}
-	if len(images) == 0 {
-		var attachments []string
-		if err := json.Unmarshal([]byte(proposal.Attachments), &attachments); err == nil {
-			images = append(images, attachments...)
-		}
-	}
-	if len(images) == 0 {
-		response.Error(c, 400, "缺少可保存到灵感案例的图片")
-		return
-	}
-
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		title = strings.TrimSpace(project.Name)
-	}
-	if title == "" {
-		title = fmt.Sprintf("%s装修方案", strings.TrimSpace(project.Address))
-	}
-
-	coverImage := strings.TrimSpace(req.CoverImage)
-	if coverImage == "" {
-		coverImage = images[0]
-	}
-
-	style := strings.TrimSpace(req.Style)
-	if style == "" {
-		style = "现代"
-	}
-
-	layout := strings.TrimSpace(req.Layout)
-	if layout == "" {
-		layout = "其他"
-	}
-
-	area := strings.TrimSpace(req.Area)
-	if area == "" && project.Area > 0 {
-		area = fmt.Sprintf("%.0f㎡", project.Area)
-	}
-
-	price := req.Price
-	if price <= 0 {
-		price = project.Budget
-	}
-	if price <= 0 {
-		price = proposal.DesignFee + proposal.ConstructionFee + proposal.MaterialFee
-	}
-
-	description := strings.TrimSpace(req.Description)
-	if description == "" {
-		description = strings.TrimSpace(proposal.Summary)
-	}
-	if description == "" {
-		description = fmt.Sprintf("来源于项目 %s 的完工方案沉淀", title)
-	}
-
-	quoteCurrency := strings.TrimSpace(req.QuoteCurrency)
-	if quoteCurrency == "" {
-		quoteCurrency = "CNY"
-	}
-
-	quoteItemsJSON := "[]"
-	quoteTotalCent := int64(price * 100)
-	if req.QuoteItems != nil {
-		var quoteItems []service.CaseQuoteItem
-		if err := json.Unmarshal(req.QuoteItems, &quoteItems); err != nil {
-			response.Error(c, 400, "报价明细格式错误")
-			return
-		}
-		computedTotal, normalizedItems := service.NormalizeCaseQuote(quoteItems)
-		quoteTotalCent = computedTotal
-		if b, err := json.Marshal(normalizedItems); err == nil {
-			quoteItemsJSON = string(b)
-		}
-	} else if proposal.ID > 0 {
-		quoteTotalCent = int64((proposal.DesignFee + proposal.ConstructionFee + proposal.MaterialFee) * 100)
-		fallbackItems := []service.CaseQuoteItem{
-			{Category: "设计费", ItemName: "设计方案", AmountCent: int64(proposal.DesignFee * 100)},
-			{Category: "施工费", ItemName: "施工预算", AmountCent: int64(proposal.ConstructionFee * 100)},
-			{Category: "主材费", ItemName: "主材预算", AmountCent: int64(proposal.MaterialFee * 100)},
-		}
-		computedTotal, normalizedItems := service.NormalizeCaseQuote(fallbackItems)
-		quoteTotalCent = computedTotal
-		if b, err := json.Marshal(normalizedItems); err == nil {
-			quoteItemsJSON = string(b)
-		}
-	}
-	if req.QuoteTotalCent != nil && *req.QuoteTotalCent > 0 {
-		quoteTotalCent = *req.QuoteTotalCent
-	}
-
-	imagesJSON, _ := json.Marshal(images)
-	audit := model.CaseAudit{
-		ProviderID:     providerID,
-		ActionType:     "create",
-		Status:         0,
-		Title:          title,
-		CoverImage:     coverImage,
-		Style:          style,
-		Layout:         layout,
-		Area:           area,
-		Price:          price,
-		QuoteTotalCent: quoteTotalCent,
-		QuoteCurrency:  quoteCurrency,
-		QuoteItems:     quoteItemsJSON,
-		Year:           time.Now().Format("2006"),
-		Description:    description,
-		Images:         string(imagesJSON),
-		SortOrder:      0,
-	}
-
-	if err := repository.DB.Create(&audit).Error; err != nil {
-		response.Error(c, 500, "保存灵感案例草稿失败")
+	project, audit, err := createCaseDraftFromProject(projectID, providerID, req)
+	if err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -399,6 +271,49 @@ func MerchantCaseCreateFromProject(c *gin.Context) {
 		"auditId":   audit.ID,
 		"projectId": project.ID,
 		"message":   "已保存到灵感案例，等待审核",
+	})
+}
+
+// CreateProjectInspirationDraft 用户侧从项目生成灵感案例草稿
+func CreateProjectInspirationDraft(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.Error(c, 400, "无效项目ID")
+		return
+	}
+
+	userID := c.GetUint64("userId")
+	var project model.Project
+	if err := repository.DB.First(&project, projectID).Error; err != nil {
+		response.Error(c, 404, "项目不存在")
+		return
+	}
+	if project.OwnerID != userID {
+		response.Error(c, 403, "无权操作此项目")
+		return
+	}
+	if project.InspirationCaseDraftID > 0 {
+		response.Success(c, gin.H{
+			"auditId":   project.InspirationCaseDraftID,
+			"projectId": project.ID,
+			"message":   "灵感案例草稿已生成",
+		})
+		return
+	}
+
+	providerID := project.ConstructionProviderID
+	if providerID == 0 {
+		providerID = project.ProviderID
+	}
+	projectResult, audit, err := createCaseDraftFromProject(projectID, providerID, merchantCasePayload{})
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{
+		"auditId":   audit.ID,
+		"projectId": projectResult.ID,
+		"message":   "已生成灵感案例草稿，等待审核",
 	})
 }
 

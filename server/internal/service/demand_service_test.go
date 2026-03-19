@@ -25,6 +25,7 @@ func setupDemandServiceDB(t *testing.T) *gorm.DB {
 		&model.Demand{},
 		&model.DemandMatch{},
 		&model.Proposal{},
+		&model.BusinessFlow{},
 		&model.Notification{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)

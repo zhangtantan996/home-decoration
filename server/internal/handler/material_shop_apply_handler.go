@@ -53,17 +53,24 @@ type materialShopApplyInput struct {
 }
 
 type materialShopUpdateInput struct {
-	Name                string                    `json:"name"`
-	CompanyName         string                    `json:"companyName"`
-	Description         string                    `json:"description"`
-	BusinessHours       string                    `json:"businessHours"`
-	BusinessHoursRanges []BusinessHoursRangeInput `json:"businessHoursRanges"`
-	ContactPhone        string                    `json:"contactPhone"`
-	ContactName         string                    `json:"contactName"`
-	LegalPersonName     string                    `json:"legalPersonName"`
-	Address             string                    `json:"address"`
-	BusinessLicenseNo   string                    `json:"businessLicenseNo"`
-	BusinessLicense     string                    `json:"businessLicense"`
+	Name                   string                    `json:"name"`
+	CompanyName            string                    `json:"companyName"`
+	Description            string                    `json:"description"`
+	BusinessHours          string                    `json:"businessHours"`
+	BusinessHoursRanges    []BusinessHoursRangeInput `json:"businessHoursRanges"`
+	ContactPhone           string                    `json:"contactPhone"`
+	ContactName            string                    `json:"contactName"`
+	LegalPersonName        string                    `json:"legalPersonName"`
+	Address                string                    `json:"address"`
+	BusinessLicenseNo      string                    `json:"businessLicenseNo"`
+	BusinessLicense        string                    `json:"businessLicense"`
+	ServiceArea            []string                  `json:"serviceArea"`
+	MainBrands             []string                  `json:"mainBrands"`
+	MainCategories         []string                  `json:"mainCategories"`
+	DeliveryCapability     string                    `json:"deliveryCapability"`
+	InstallationCapability string                    `json:"installationCapability"`
+	AfterSalesPolicy       string                    `json:"afterSalesPolicy"`
+	InvoiceCapability      string                    `json:"invoiceCapability"`
 }
 
 type materialShopProductInput struct {
@@ -72,6 +79,7 @@ type materialShopProductInput struct {
 	Description string   `json:"description"`
 	Price       float64  `json:"price"`
 	Images      []string `json:"images"`
+	Status      int      `json:"status"`
 }
 
 func validateMaterialProductPrice(price float64, index int) error {
@@ -642,6 +650,26 @@ func requireMaterialShopID(c *gin.Context) (uint64, bool) {
 	return materialShopID, true
 }
 
+func parseStringArrayField(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return []string{}
+	}
+
+	var values []string
+	if err := json.Unmarshal([]byte(trimmed), &values); err == nil {
+		return normalizeStringSlice(values)
+	}
+
+	return normalizeStringSlice(strings.Split(trimmed, ","))
+}
+
+func marshalStringArrayField(values []string) string {
+	normalized := normalizeStringSlice(values)
+	encoded, _ := json.Marshal(normalized)
+	return string(encoded)
+}
+
 func parseMaterialProduct(product model.MaterialShopProduct) gin.H {
 	var images []string
 	_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
@@ -677,22 +705,29 @@ func MaterialShopGetMe(c *gin.Context) {
 	businessHoursRanges := parseBusinessHoursRanges(shop.BusinessHoursJSON)
 
 	response.Success(c, gin.H{
-		"id":                  shop.ID,
-		"sourceApplicationId": shop.SourceApplicationID,
-		"merchantKind":        "material_shop",
-		"entityType":          entityType,
-		"shopName":            shop.Name,
-		"companyName":         shop.CompanyName,
-		"shopDescription":     shop.Description,
-		"businessLicenseNo":   shop.BusinessLicenseNo,
-		"businessLicense":     shop.BusinessLicense,
-		"legalPersonName":     shop.LegalPersonName,
-		"businessHours":       shop.OpenTime,
-		"businessHoursRanges": businessHoursRanges,
-		"contactPhone":        shop.ContactPhone,
-		"contactName":         shop.ContactName,
-		"address":             shop.Address,
-		"isVerified":          shop.IsVerified,
+		"id":                     shop.ID,
+		"sourceApplicationId":    shop.SourceApplicationID,
+		"merchantKind":           "material_shop",
+		"entityType":             entityType,
+		"shopName":               shop.Name,
+		"companyName":            shop.CompanyName,
+		"shopDescription":        shop.Description,
+		"businessLicenseNo":      shop.BusinessLicenseNo,
+		"businessLicense":        shop.BusinessLicense,
+		"legalPersonName":        shop.LegalPersonName,
+		"businessHours":          shop.OpenTime,
+		"businessHoursRanges":    businessHoursRanges,
+		"contactPhone":           shop.ContactPhone,
+		"contactName":            shop.ContactName,
+		"address":                shop.Address,
+		"serviceArea":            parseStringArrayField(shop.ServiceArea),
+		"mainBrands":             parseStringArrayField(shop.MainBrands),
+		"mainCategories":         parseStringArrayField(shop.MainCategories),
+		"deliveryCapability":     shop.DeliveryCapability,
+		"installationCapability": shop.InstallationCapability,
+		"afterSalesPolicy":       shop.AfterSalesPolicy,
+		"invoiceCapability":      shop.InvoiceCapability,
+		"isVerified":             shop.IsVerified,
 	})
 }
 
@@ -776,6 +811,27 @@ func MaterialShopUpdateMe(c *gin.Context) {
 	}
 	if input.BusinessLicense != "" {
 		updates["business_license"] = strings.TrimSpace(input.BusinessLicense)
+	}
+	if input.ServiceArea != nil {
+		updates["service_area"] = marshalStringArrayField(input.ServiceArea)
+	}
+	if input.MainBrands != nil {
+		updates["main_brands"] = marshalStringArrayField(input.MainBrands)
+	}
+	if input.MainCategories != nil {
+		updates["main_categories"] = marshalStringArrayField(input.MainCategories)
+	}
+	if input.DeliveryCapability != "" {
+		updates["delivery_capability"] = strings.TrimSpace(input.DeliveryCapability)
+	}
+	if input.InstallationCapability != "" {
+		updates["installation_capability"] = strings.TrimSpace(input.InstallationCapability)
+	}
+	if input.AfterSalesPolicy != "" {
+		updates["after_sales_policy"] = strings.TrimSpace(input.AfterSalesPolicy)
+	}
+	if input.InvoiceCapability != "" {
+		updates["invoice_capability"] = strings.TrimSpace(input.InvoiceCapability)
 	}
 
 	if len(updates) == 0 {
@@ -928,10 +984,14 @@ func MaterialShopUpdateProduct(c *gin.Context) {
 
 	existing.Name = updated.Name
 	existing.Unit = updated.Unit
+	existing.Description = updated.Description
 	existing.ParamsJSON = updated.ParamsJSON
 	existing.Price = updated.Price
 	existing.ImagesJSON = updated.ImagesJSON
 	existing.CoverImage = updated.CoverImage
+	if input.Status == 0 || input.Status == 1 {
+		existing.Status = int8(input.Status)
+	}
 
 	if err := repository.DB.Save(&existing).Error; err != nil {
 		response.Error(c, 500, "更新失败")

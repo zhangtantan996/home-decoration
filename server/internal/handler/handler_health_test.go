@@ -51,6 +51,34 @@ type healthCheckResponse struct {
 				RequiredMigration string   `json:"requiredMigration"`
 				Missing           []string `json:"missing"`
 			} `json:"merchantOnboardingSchema"`
+			BookingP0Schema struct {
+				Status            string   `json:"status"`
+				Component         string   `json:"component"`
+				MigrationRequired bool     `json:"migrationRequired"`
+				RequiredMigration string   `json:"requiredMigration"`
+				Missing           []string `json:"missing"`
+			} `json:"bookingP0Schema"`
+			ProjectRiskSchema struct {
+				Status            string   `json:"status"`
+				Component         string   `json:"component"`
+				MigrationRequired bool     `json:"migrationRequired"`
+				RequiredMigration string   `json:"requiredMigration"`
+				Missing           []string `json:"missing"`
+			} `json:"projectRiskSchema"`
+			AuditLogSchema struct {
+				Status            string   `json:"status"`
+				Component         string   `json:"component"`
+				MigrationRequired bool     `json:"migrationRequired"`
+				RequiredMigration string   `json:"requiredMigration"`
+				Missing           []string `json:"missing"`
+			} `json:"auditLogSchema"`
+			CommerceRuntimeSchema struct {
+				Status            string   `json:"status"`
+				Component         string   `json:"component"`
+				MigrationRequired bool     `json:"migrationRequired"`
+				RequiredMigration string   `json:"requiredMigration"`
+				Missing           []string `json:"missing"`
+			} `json:"commerceRuntimeSchema"`
 		} `json:"checks"`
 	} `json:"data"`
 }
@@ -64,6 +92,12 @@ func newHealthTestDB(t *testing.T, withSMSAudit bool) *gorm.DB {
 	}
 	models := []interface{}{
 		&model.User{},
+		&model.Project{},
+		&model.SiteSurvey{},
+		&model.BudgetConfirmation{},
+		&model.RefundApplication{},
+		&model.ProjectAudit{},
+		&model.AuditLog{},
 		&model.MerchantApplication{},
 		&model.Provider{},
 		&model.MaterialShop{},
@@ -71,6 +105,14 @@ func newHealthTestDB(t *testing.T, withSMSAudit bool) *gorm.DB {
 		&model.MaterialShopApplicationProduct{},
 		&model.MaterialShopProduct{},
 		&model.MerchantIdentityChangeApplication{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Milestone{},
+		&model.PaymentPlan{},
+		&model.MerchantServiceSetting{},
+		&model.DesignWorkingDoc{},
+		&model.DesignFeeQuote{},
+		&model.DesignDeliverable{},
 	}
 	if withSMSAudit {
 		models = append(models, &model.SMSAuditLog{})
@@ -126,6 +168,18 @@ func TestHealthCheckReportsDegradedWhenSMSAuditTableMissing(t *testing.T) {
 	if payload.Data.Checks.MerchantOnboardingSchema.Status != "ok" {
 		t.Fatalf("expected merchant onboarding schema ok, got %s", payload.Data.Checks.MerchantOnboardingSchema.Status)
 	}
+	if payload.Data.Checks.BookingP0Schema.Status != "ok" {
+		t.Fatalf("expected booking p0 schema ok, got %s", payload.Data.Checks.BookingP0Schema.Status)
+	}
+	if payload.Data.Checks.ProjectRiskSchema.Status != "ok" {
+		t.Fatalf("expected project risk schema ok, got %s", payload.Data.Checks.ProjectRiskSchema.Status)
+	}
+	if payload.Data.Checks.AuditLogSchema.Status != "ok" {
+		t.Fatalf("expected audit log schema ok, got %s", payload.Data.Checks.AuditLogSchema.Status)
+	}
+	if payload.Data.Checks.CommerceRuntimeSchema.Status != "ok" {
+		t.Fatalf("expected commerce runtime schema ok, got %s", payload.Data.Checks.CommerceRuntimeSchema.Status)
+	}
 	if payload.Data.AlertCount != 1 {
 		t.Fatalf("expected alertCount=1, got %d", payload.Data.AlertCount)
 	}
@@ -166,6 +220,18 @@ func TestHealthCheckReportsOKWhenSMSAuditTableExists(t *testing.T) {
 	}
 	if payload.Data.Checks.MerchantOnboardingSchema.Status != "ok" {
 		t.Fatalf("expected merchant onboarding schema ok, got %s", payload.Data.Checks.MerchantOnboardingSchema.Status)
+	}
+	if payload.Data.Checks.BookingP0Schema.Status != "ok" {
+		t.Fatalf("expected booking p0 schema ok, got %s", payload.Data.Checks.BookingP0Schema.Status)
+	}
+	if payload.Data.Checks.ProjectRiskSchema.Status != "ok" {
+		t.Fatalf("expected project risk schema ok, got %s", payload.Data.Checks.ProjectRiskSchema.Status)
+	}
+	if payload.Data.Checks.AuditLogSchema.Status != "ok" {
+		t.Fatalf("expected audit log schema ok, got %s", payload.Data.Checks.AuditLogSchema.Status)
+	}
+	if payload.Data.Checks.CommerceRuntimeSchema.Status != "ok" {
+		t.Fatalf("expected commerce runtime schema ok, got %s", payload.Data.Checks.CommerceRuntimeSchema.Status)
 	}
 	if payload.Data.AlertCount != 0 {
 		t.Fatalf("expected alertCount=0, got %d", payload.Data.AlertCount)

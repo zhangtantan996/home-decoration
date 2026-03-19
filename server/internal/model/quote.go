@@ -13,7 +13,7 @@ const (
 )
 
 const (
-	QuoteListStatusDraft    = "draft"
+	QuoteListStatusDraft             = "draft"
 	QuoteListStatusReadyForSelection = "ready_for_selection"
 	QuoteListStatusPricingInProgress = "pricing_in_progress"
 	QuoteListStatusSubmittedToUser   = "submitted_to_user"
@@ -21,10 +21,10 @@ const (
 	QuoteListStatusRejected          = "rejected"
 	QuoteListStatusSuperseded        = "superseded"
 	QuoteListStatusExpired           = "expired"
-	QuoteListStatusQuoting  = QuoteListStatusPricingInProgress
-	QuoteListStatusLocked   = "locked"
-	QuoteListStatusAwarded  = "awarded"
-	QuoteListStatusClosed   = "closed"
+	QuoteListStatusQuoting           = QuoteListStatusPricingInProgress
+	QuoteListStatusLocked            = "locked"
+	QuoteListStatusAwarded           = "awarded"
+	QuoteListStatusClosed            = "closed"
 )
 
 const (
@@ -34,14 +34,14 @@ const (
 )
 
 const (
-	QuoteSubmissionStatusDraft     = "draft"
-	QuoteSubmissionStatusGenerated = "generated"
+	QuoteSubmissionStatusDraft             = "draft"
+	QuoteSubmissionStatusGenerated         = "generated"
 	QuoteSubmissionStatusMerchantReviewing = "merchant_reviewing"
-	QuoteSubmissionStatusSubmitted = "submitted"
-	QuoteSubmissionStatusUserConfirmed = "user_confirmed"
-	QuoteSubmissionStatusSuperseded = "superseded"
-	QuoteSubmissionStatusLocked = "locked"
-	QuoteSubmissionStatusWithdrawn = "withdrawn"
+	QuoteSubmissionStatusSubmitted         = "submitted"
+	QuoteSubmissionStatusUserConfirmed     = "user_confirmed"
+	QuoteSubmissionStatusSuperseded        = "superseded"
+	QuoteSubmissionStatusLocked            = "locked"
+	QuoteSubmissionStatusWithdrawn         = "withdrawn"
 )
 
 const (
@@ -57,9 +57,9 @@ const (
 )
 
 const (
-	QuoteUserConfirmationPending  = "pending"
+	QuoteUserConfirmationPending   = "pending"
 	QuoteUserConfirmationConfirmed = "confirmed"
-	QuoteUserConfirmationRejected = "rejected"
+	QuoteUserConfirmationRejected  = "rejected"
 )
 
 const (
@@ -140,21 +140,21 @@ func (QuoteList) TableName() string {
 
 type QuoteListItem struct {
 	Base
-	QuoteListID     uint64  `json:"quoteListId" gorm:"index"`
-	StandardItemID  uint64  `json:"standardItemId" gorm:"index"`
-	MatchedStandardItemID uint64 `json:"matchedStandardItemId" gorm:"index"`
-	SelectedTierID  uint64  `json:"selectedTierId" gorm:"index;default:0"`
-	LineNo          int     `json:"lineNo" gorm:"default:0"`
-	SourceType      string  `json:"sourceType" gorm:"size:20;default:'standard'"`
-	Name            string  `json:"name" gorm:"size:255"`
-	Unit            string  `json:"unit" gorm:"size:20"`
-	Quantity        float64 `json:"quantity" gorm:"default:0"`
-	PricingNote     string  `json:"pricingNote" gorm:"type:text"`
-	CategoryL1      string  `json:"categoryL1" gorm:"size:50;index"`
-	CategoryL2      string  `json:"categoryL2" gorm:"size:50;index"`
-	SortOrder       int     `json:"sortOrder" gorm:"default:0"`
-	MissingMappingFlag bool  `json:"missingMappingFlag" gorm:"default:false"`
-	ExtensionsJSON  string  `json:"extensionsJson" gorm:"type:text"`
+	QuoteListID           uint64  `json:"quoteListId" gorm:"index"`
+	StandardItemID        uint64  `json:"standardItemId" gorm:"index"`
+	MatchedStandardItemID uint64  `json:"matchedStandardItemId" gorm:"index"`
+	SelectedTierID        uint64  `json:"selectedTierId" gorm:"index;default:0"`
+	LineNo                int     `json:"lineNo" gorm:"default:0"`
+	SourceType            string  `json:"sourceType" gorm:"size:20;default:'standard'"`
+	Name                  string  `json:"name" gorm:"size:255"`
+	Unit                  string  `json:"unit" gorm:"size:20"`
+	Quantity              float64 `json:"quantity" gorm:"default:0"`
+	PricingNote           string  `json:"pricingNote" gorm:"type:text"`
+	CategoryL1            string  `json:"categoryL1" gorm:"size:50;index"`
+	CategoryL2            string  `json:"categoryL2" gorm:"size:50;index"`
+	SortOrder             int     `json:"sortOrder" gorm:"default:0"`
+	MissingMappingFlag    bool    `json:"missingMappingFlag" gorm:"default:false"`
+	ExtensionsJSON        string  `json:"extensionsJson" gorm:"type:text"`
 }
 
 func (QuoteListItem) TableName() string {
@@ -163,12 +163,12 @@ func (QuoteListItem) TableName() string {
 
 type QuoteInvitation struct {
 	Base
-	QuoteListID      uint64     `json:"quoteListId" gorm:"uniqueIndex:idx_quote_invitation_list_provider;index"`
-	ProviderID       uint64     `json:"providerId" gorm:"uniqueIndex:idx_quote_invitation_list_provider;index"`
-	Status           string     `json:"status" gorm:"size:20;default:'invited';index"`
-	InvitedByUserID  uint64     `json:"invitedByUserId" gorm:"index"`
-	InvitedAt        *time.Time `json:"invitedAt"`
-	RespondedAt      *time.Time `json:"respondedAt"`
+	QuoteListID     uint64     `json:"quoteListId" gorm:"uniqueIndex:idx_quote_invitation_list_provider;index"`
+	ProviderID      uint64     `json:"providerId" gorm:"uniqueIndex:idx_quote_invitation_list_provider;index"`
+	Status          string     `json:"status" gorm:"size:20;default:'invited';index"`
+	InvitedByUserID uint64     `json:"invitedByUserId" gorm:"index"`
+	InvitedAt       *time.Time `json:"invitedAt"`
+	RespondedAt     *time.Time `json:"respondedAt"`
 }
 
 func (QuoteInvitation) TableName() string {
@@ -177,27 +177,27 @@ func (QuoteInvitation) TableName() string {
 
 type QuoteSubmission struct {
 	Base
-	QuoteListID             uint64 `json:"quoteListId" gorm:"uniqueIndex:idx_quote_submission_list_provider;index"`
-	ProviderID              uint64 `json:"providerId" gorm:"uniqueIndex:idx_quote_submission_list_provider;index"`
-	ProviderType            int8   `json:"providerType"`
-	ProviderSubType         string `json:"providerSubType" gorm:"size:20"`
-	Status                  string `json:"status" gorm:"size:20;default:'draft';index"`
-	TaskStatus              string `json:"taskStatus" gorm:"size:20;default:'draft';index"`
-	GenerationStatus        string `json:"generationStatus" gorm:"size:30;default:'pending';index"`
-	Currency                string `json:"currency" gorm:"size:10;default:'CNY'"`
-	GeneratedFromPriceBookID uint64 `json:"generatedFromPriceBookId" gorm:"index"`
-	TotalCent               int64  `json:"totalCent" gorm:"default:0"`
-	EstimatedDays           int    `json:"estimatedDays" gorm:"default:0"`
-	Remark                  string `json:"remark" gorm:"type:text"`
-	AttachmentsJSON         string `json:"attachmentsJson" gorm:"type:text"`
-	TeamSize                int    `json:"teamSize" gorm:"default:0"`
-	WorkTypes               string `json:"workTypes" gorm:"type:text"`
-	ConstructionMethodNote  string `json:"constructionMethodNote" gorm:"type:text"`
-	SiteVisitRequired       bool   `json:"siteVisitRequired" gorm:"default:false"`
-	SubmittedToUser         bool   `json:"submittedToUser" gorm:"default:false"`
-	LockedAt                *time.Time `json:"lockedAt"`
-	UserConfirmedAt         *time.Time `json:"userConfirmedAt"`
-	SupersededBy            uint64 `json:"supersededBy" gorm:"index"`
+	QuoteListID              uint64     `json:"quoteListId" gorm:"uniqueIndex:idx_quote_submission_list_provider;index"`
+	ProviderID               uint64     `json:"providerId" gorm:"uniqueIndex:idx_quote_submission_list_provider;index"`
+	ProviderType             int8       `json:"providerType"`
+	ProviderSubType          string     `json:"providerSubType" gorm:"size:20"`
+	Status                   string     `json:"status" gorm:"size:20;default:'draft';index"`
+	TaskStatus               string     `json:"taskStatus" gorm:"size:20;default:'draft';index"`
+	GenerationStatus         string     `json:"generationStatus" gorm:"size:30;default:'pending';index"`
+	Currency                 string     `json:"currency" gorm:"size:10;default:'CNY'"`
+	GeneratedFromPriceBookID uint64     `json:"generatedFromPriceBookId" gorm:"index"`
+	TotalCent                int64      `json:"totalCent" gorm:"default:0"`
+	EstimatedDays            int        `json:"estimatedDays" gorm:"default:0"`
+	Remark                   string     `json:"remark" gorm:"type:text"`
+	AttachmentsJSON          string     `json:"attachmentsJson" gorm:"type:text"`
+	TeamSize                 int        `json:"teamSize" gorm:"default:0"`
+	WorkTypes                string     `json:"workTypes" gorm:"type:text"`
+	ConstructionMethodNote   string     `json:"constructionMethodNote" gorm:"type:text"`
+	SiteVisitRequired        bool       `json:"siteVisitRequired" gorm:"default:false"`
+	SubmittedToUser          bool       `json:"submittedToUser" gorm:"default:false"`
+	LockedAt                 *time.Time `json:"lockedAt"`
+	UserConfirmedAt          *time.Time `json:"userConfirmedAt"`
+	SupersededBy             uint64     `json:"supersededBy" gorm:"index"`
 }
 
 func (QuoteSubmission) TableName() string {
@@ -206,31 +206,51 @@ func (QuoteSubmission) TableName() string {
 
 type QuoteSubmissionItem struct {
 	Base
-	QuoteSubmissionID uint64 `json:"quoteSubmissionId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
-	QuoteListItemID   uint64 `json:"quoteListItemId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
-	PriceTierID       uint64 `json:"priceTierId" gorm:"index;default:0"`
-	GeneratedUnitPriceCent int64 `json:"generatedUnitPriceCent" gorm:"default:0"`
-	UnitPriceCent     int64  `json:"unitPriceCent" gorm:"default:0"`
-	AmountCent        int64  `json:"amountCent" gorm:"default:0"`
-	AdjustedFlag      bool   `json:"adjustedFlag" gorm:"default:false"`
-	MissingPriceFlag  bool   `json:"missingPriceFlag" gorm:"default:false"`
-	MissingMappingFlag bool  `json:"missingMappingFlag" gorm:"default:false"`
-	MinChargeAppliedFlag bool `json:"minChargeAppliedFlag" gorm:"default:false"`
-	Remark            string `json:"remark" gorm:"type:text"`
+	QuoteSubmissionID      uint64 `json:"quoteSubmissionId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
+	QuoteListItemID        uint64 `json:"quoteListItemId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
+	PriceTierID            uint64 `json:"priceTierId" gorm:"index;default:0"`
+	GeneratedUnitPriceCent int64  `json:"generatedUnitPriceCent" gorm:"default:0"`
+	UnitPriceCent          int64  `json:"unitPriceCent" gorm:"default:0"`
+	AmountCent             int64  `json:"amountCent" gorm:"default:0"`
+	AdjustedFlag           bool   `json:"adjustedFlag" gorm:"default:false"`
+	MissingPriceFlag       bool   `json:"missingPriceFlag" gorm:"default:false"`
+	MissingMappingFlag     bool   `json:"missingMappingFlag" gorm:"default:false"`
+	MinChargeAppliedFlag   bool   `json:"minChargeAppliedFlag" gorm:"default:false"`
+	Remark                 string `json:"remark" gorm:"type:text"`
 }
 
 func (QuoteSubmissionItem) TableName() string {
 	return "quote_submission_items"
 }
 
+type QuoteSubmissionRevision struct {
+	Base
+	QuoteSubmissionID uint64 `json:"quoteSubmissionId" gorm:"index"`
+	QuoteListID       uint64 `json:"quoteListId" gorm:"index"`
+	ProviderID        uint64 `json:"providerId" gorm:"index"`
+	RevisionNo        int    `json:"revisionNo" gorm:"index"`
+	Action            string `json:"action" gorm:"size:30;index"`
+	PreviousStatus    string `json:"previousStatus" gorm:"size:30"`
+	NextStatus        string `json:"nextStatus" gorm:"size:30"`
+	PreviousTotalCent int64  `json:"previousTotalCent"`
+	NextTotalCent     int64  `json:"nextTotalCent"`
+	PreviousItemsJSON string `json:"previousItemsJson" gorm:"type:text"`
+	NextItemsJSON     string `json:"nextItemsJson" gorm:"type:text"`
+	ChangeReason      string `json:"changeReason" gorm:"type:text"`
+}
+
+func (QuoteSubmissionRevision) TableName() string {
+	return "quote_submission_revisions"
+}
+
 type QuotePriceBook struct {
 	Base
-	ProviderID     uint64     `json:"providerId" gorm:"index"`
-	Status         string     `json:"status" gorm:"size:20;default:'draft';index"`
-	Version        int        `json:"version" gorm:"default:1"`
-	EffectiveFrom  *time.Time `json:"effectiveFrom"`
-	EffectiveTo    *time.Time `json:"effectiveTo"`
-	Remark         string     `json:"remark" gorm:"type:text"`
+	ProviderID    uint64     `json:"providerId" gorm:"index"`
+	Status        string     `json:"status" gorm:"size:20;default:'draft';index"`
+	Version       int        `json:"version" gorm:"default:1"`
+	EffectiveFrom *time.Time `json:"effectiveFrom"`
+	EffectiveTo   *time.Time `json:"effectiveTo"`
+	Remark        string     `json:"remark" gorm:"type:text"`
 }
 
 func (QuotePriceBook) TableName() string {

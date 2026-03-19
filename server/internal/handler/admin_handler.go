@@ -8,11 +8,14 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
+	"home-decoration-server/pkg/utils"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ==================== Admin 统计 API ====================
@@ -197,9 +200,13 @@ func AdminListUsers(c *gin.Context) {
 
 	keyword := c.Query("keyword")
 	userType := c.Query("userType")
+	roleType := strings.TrimSpace(c.Query("roleType"))
 
-	var users []model.User
-	var total int64
+	type adminUserListRow struct {
+		model.User
+		RoleType  string `json:"roleType"`
+		RoleLabel string `json:"roleLabel"`
+	}
 
 	db := repository.DB.Model(&model.User{})
 	if keyword != "" {
@@ -209,13 +216,130 @@ func AdminListUsers(c *gin.Context) {
 		db = db.Where("user_type = ?", userType)
 	}
 
-	db.Count(&total)
-	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&users)
+	var users []model.User
+	if err := db.Order("id DESC").Find(&users).Error; err != nil {
+		response.ServerError(c, "加载失败")
+		return
+	}
+
+	userIDs := make([]uint64, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+
+	identityMap := make(map[uint64][]model.UserIdentity)
+	if len(userIDs) > 0 {
+		var identities []model.UserIdentity
+		if err := repository.DB.Where("user_id IN ?", userIDs).Order("id DESC").Find(&identities).Error; err == nil {
+			for _, identity := range identities {
+				identityMap[identity.UserID] = append(identityMap[identity.UserID], identity)
+			}
+		}
+	}
+
+	providerMap := make(map[uint64]model.Provider)
+	if len(userIDs) > 0 {
+		var providers []model.Provider
+		if err := repository.DB.Where("user_id IN ?", userIDs).Order("id DESC").Find(&providers).Error; err == nil {
+			for _, provider := range providers {
+				if _, exists := providerMap[provider.UserID]; !exists {
+					providerMap[provider.UserID] = provider
+				}
+			}
+		}
+	}
+
+	materialShopMap := make(map[uint64]model.MaterialShop)
+	if len(userIDs) > 0 {
+		var shops []model.MaterialShop
+		if err := repository.DB.Where("user_id IN ?", userIDs).Order("id DESC").Find(&shops).Error; err == nil {
+			for _, shop := range shops {
+				if _, exists := materialShopMap[shop.UserID]; !exists {
+					materialShopMap[shop.UserID] = shop
+				}
+			}
+		}
+	}
+
+	rows := make([]adminUserListRow, 0, len(users))
+	for _, user := range users {
+		derivedRoleType, derivedRoleLabel := resolveAdminUserRole(user, providerMap[user.ID], materialShopMap[user.ID], identityMap[user.ID])
+		if roleType != "" && roleType != derivedRoleType {
+			continue
+		}
+		rows = append(rows, adminUserListRow{
+			User:      user,
+			RoleType:  derivedRoleType,
+			RoleLabel: derivedRoleLabel,
+		})
+	}
+
+	total := int64(len(rows))
+	start := (page - 1) * pageSize
+	if start > len(rows) {
+		start = len(rows)
+	}
+	end := start + pageSize
+	if end > len(rows) {
+		end = len(rows)
+	}
 
 	response.Success(c, gin.H{
-		"list":  users,
+		"list":  rows[start:end],
 		"total": total,
 	})
+}
+
+func resolveAdminUserRole(user model.User, provider model.Provider, materialShop model.MaterialShop, identities []model.UserIdentity) (string, string) {
+	if materialShop.ID > 0 {
+		return "material_shop", "主材商"
+	}
+
+	for _, identity := range identities {
+		switch strings.TrimSpace(identity.IdentityType) {
+		case "material_shop", "supplier":
+			return "material_shop", "主材商"
+		}
+	}
+
+	if provider.ID > 0 {
+		switch provider.ProviderType {
+		case 1:
+			return "designer", "设计师"
+		case 2:
+			return "company", "装修公司"
+		case 3:
+			return "foreman", "工长"
+		default:
+			return "provider", "服务商"
+		}
+	}
+
+	for _, identity := range identities {
+		switch strings.TrimSpace(identity.IdentityType) {
+		case "company":
+			return "company", "装修公司"
+		case "foreman", "worker":
+			return "foreman", "工长"
+		case "designer":
+			return "designer", "设计师"
+		case "provider":
+			return "provider", "服务商"
+		}
+	}
+
+	switch user.UserType {
+	case 4:
+		return "admin", "管理员"
+	case 1:
+		return "owner", "业主"
+	case 2:
+		return "provider", "服务商"
+	case 3:
+		return "foreman", "工长"
+	default:
+		return "owner", "业主"
+	}
 }
 
 // AdminUpdateUserStatus 更新用户状态
@@ -389,17 +513,23 @@ func parseUserIDsFromPayload(value any) []uint64 {
 
 type adminProviderListRow struct {
 	model.Provider
-	RealName   string                        `json:"realName"`
-	Visibility service.VisibilityData        `json:"visibility"`
-	Actions    service.VisibilityActions     `json:"actions"`
-	LegacyInfo *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+	RealName    string                        `json:"realName"`
+	SourceLabel string                        `json:"sourceLabel"`
+	Visibility  service.VisibilityData        `json:"visibility"`
+	Actions     service.VisibilityActions     `json:"actions"`
+	LegacyInfo  *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
 }
 
 type adminMaterialShopListRow struct {
 	model.MaterialShop
-	Visibility service.VisibilityData        `json:"visibility"`
-	Actions    service.VisibilityActions     `json:"actions"`
-	LegacyInfo *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+	UserPhone    string                        `json:"userPhone"`
+	UserNickname string                        `json:"userNickname"`
+	AccountBound bool                          `json:"accountBound"`
+	LoginEnabled bool                          `json:"loginEnabled"`
+	SourceLabel  string                        `json:"sourceLabel"`
+	Visibility   service.VisibilityData        `json:"visibility"`
+	Actions      service.VisibilityActions     `json:"actions"`
+	LegacyInfo   *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
 }
 
 func findProviderVisibilitySource(provider model.Provider) (*model.MerchantApplication, bool) {
@@ -415,6 +545,39 @@ func findProviderVisibilitySource(provider model.Provider) (*model.MerchantAppli
 	}
 
 	return nil, false
+}
+
+func resolveProviderSourceLabel(p model.Provider) string {
+	if !p.IsSettled {
+		return "平台收录"
+	}
+	if p.SourceApplicationID > 0 {
+		return "入驻申请"
+	}
+	if p.UserID > 0 {
+		return "后台创建"
+	}
+	return "历史直建"
+}
+
+func resolveMaterialShopSourceLabel(shop model.MaterialShop) string {
+	if !shop.IsSettled {
+		return "平台收录"
+	}
+	if shop.SourceApplicationID > 0 {
+		return "入驻申请"
+	}
+	if shop.UserID > 0 {
+		return "后台补全"
+	}
+	return "历史直建"
+}
+
+func resolveMaterialShopIdentityStatus(shop model.MaterialShop) int8 {
+	if service.IsMaterialShopLoginEnabled(&shop) {
+		return merchantIdentityStatusActive
+	}
+	return merchantIdentityStatusFrozen
 }
 
 func findMaterialShopVisibilitySource(shop model.MaterialShop) (*model.MaterialShopApplication, bool) {
@@ -438,6 +601,7 @@ func AdminListProviders(c *gin.Context) {
 	pageSize := parseInt(c.Query("pageSize"), 10)
 	providerType := c.Query("type")
 	verified := c.Query("verified")
+	isSettled := c.Query("isSettled")
 
 	var providers []model.Provider
 	var total int64
@@ -450,6 +614,11 @@ func AdminListProviders(c *gin.Context) {
 		db = db.Where("verified = true")
 	} else if verified == "false" {
 		db = db.Where("verified = false")
+	}
+	if isSettled == "true" {
+		db = db.Where("is_settled = true")
+	} else if isSettled == "false" {
+		db = db.Where("is_settled = false")
 	}
 
 	db.Count(&total)
@@ -507,11 +676,12 @@ func AdminListProviders(c *gin.Context) {
 		}
 
 		list = append(list, adminProviderListRow{
-			Provider:   provider,
-			RealName:   userNameMap[provider.UserID],
-			Visibility: visibilityResult.Visibility,
-			Actions:    visibilityResult.Actions,
-			LegacyInfo: visibilityResult.LegacyInfo,
+			Provider:    provider,
+			RealName:    userNameMap[provider.UserID],
+			SourceLabel: resolveProviderSourceLabel(provider),
+			Visibility:  visibilityResult.Visibility,
+			Actions:     visibilityResult.Actions,
+			LegacyInfo:  visibilityResult.LegacyInfo,
 		})
 	}
 
@@ -545,14 +715,22 @@ func AdminCreateProvider(c *gin.Context) {
 		UserId          uint64 `json:"userId"`
 		ProviderType    int8   `json:"providerType" binding:"required"`
 		CompanyName     string `json:"companyName" binding:"required"`
+		RealName        string `json:"realName"`
 		SubType         string `json:"subType"`
 		Specialty       string `json:"specialty"`
 		YearsExperience int    `json:"yearsExperience"`
 		Status          int8   `json:"status"`
+		IsSettled       *bool  `json:"isSettled"`       // nil 默认 true
+		CollectedSource string `json:"collectedSource"` // 收录来源
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
+	}
+
+	isSettled := true
+	if req.IsSettled != nil {
+		isSettled = *req.IsSettled
 	}
 
 	provider := model.Provider{
@@ -563,6 +741,8 @@ func AdminCreateProvider(c *gin.Context) {
 		Specialty:       req.Specialty,
 		YearsExperience: req.YearsExperience,
 		Status:          req.Status,
+		IsSettled:       isSettled,
+		CollectedSource: req.CollectedSource,
 	}
 	if provider.Status == 0 {
 		provider.Status = 1 // 默认启用
@@ -573,6 +753,9 @@ func AdminCreateProvider(c *gin.Context) {
 	if err := repository.DB.Create(&provider).Error; err != nil {
 		response.ServerError(c, "创建失败")
 		return
+	}
+	if req.UserId > 0 && strings.TrimSpace(req.RealName) != "" {
+		_ = repository.DB.Model(&model.User{}).Where("id = ?", req.UserId).Update("nickname", strings.TrimSpace(req.RealName)).Error
 	}
 	response.Success(c, provider)
 }
@@ -587,6 +770,7 @@ func AdminUpdateProvider(c *gin.Context) {
 	}
 	var req struct {
 		CompanyName     string   `json:"companyName"`
+		RealName        string   `json:"realName"`
 		SubType         string   `json:"subType"`
 		Specialty       string   `json:"specialty"`
 		YearsExperience int      `json:"yearsExperience"`
@@ -604,6 +788,8 @@ func AdminUpdateProvider(c *gin.Context) {
 		EstablishedYear int      `json:"establishedYear"` // 成立年份
 		Certifications  string   `json:"certifications"`  // 资质认证（JSON数组）
 		ServiceArea     []string `json:"serviceArea"`     // 服务区域（区域代码数组）
+		IsSettled       *bool    `json:"isSettled"`       // 入驻状态
+		CollectedSource string   `json:"collectedSource"` // 收录来源
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -686,10 +872,22 @@ func AdminUpdateProvider(c *gin.Context) {
 		updates["service_area"] = string(serviceAreaJSON)
 	}
 	updates["status"] = req.Status
+	if req.IsSettled != nil {
+		updates["is_settled"] = *req.IsSettled
+	}
+	if req.CollectedSource != "" {
+		updates["collected_source"] = req.CollectedSource
+	}
 
 	if err := repository.DB.Model(&provider).Updates(updates).Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
+	}
+	if provider.UserID > 0 && strings.TrimSpace(req.RealName) != "" {
+		if err := repository.DB.Model(&model.User{}).Where("id = ?", provider.UserID).Update("nickname", strings.TrimSpace(req.RealName)).Error; err != nil {
+			response.ServerError(c, "更新负责人名称失败")
+			return
+		}
 	}
 	response.Success(c, provider)
 }
@@ -710,6 +908,196 @@ func AdminUpdateProviderStatus(c *gin.Context) {
 		return
 	}
 	response.Success(c, nil)
+}
+
+// AdminClaimProviderAccount 为未入驻服务商（装修公司）绑定账号并完成入驻
+func AdminClaimProviderAccount(c *gin.Context) {
+	providerID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("adminId")
+
+	var req struct {
+		Phone       string `json:"phone" binding:"required"`
+		ContactName string `json:"contactName"`
+		Nickname    string `json:"nickname"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	phone := strings.TrimSpace(req.Phone)
+	if !utils.ValidatePhone(phone) {
+		response.BadRequest(c, "手机号格式不正确")
+		return
+	}
+
+	tx := repository.DB.Begin()
+
+	var provider model.Provider
+	if err := tx.First(&provider, providerID).Error; err != nil {
+		tx.Rollback()
+		response.NotFound(c, "服务商不存在")
+		return
+	}
+	if provider.UserID > 0 {
+		tx.Rollback()
+		response.BadRequest(c, "该服务商已绑定账号")
+		return
+	}
+
+	var existingUser model.User
+	userExists := tx.Where("phone = ?", phone).First(&existingUser).Error == nil
+
+	displayName := firstNonEmpty(
+		strings.TrimSpace(req.Nickname),
+		strings.TrimSpace(req.ContactName),
+		strings.TrimSpace(provider.CompanyName),
+	)
+	user, err := createMerchantUserWithCompatibility(tx, phone, displayName)
+	if err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "认领失败: 创建或加载用户失败")
+		return
+	}
+
+	// 检查该手机号是否已绑定其他服务商
+	var duplicateProvider model.Provider
+	if err := tx.Where("user_id = ? AND id <> ?", user.ID, provider.ID).Order("id DESC").First(&duplicateProvider).Error; err == nil {
+		tx.Rollback()
+		response.BadRequest(c, "该手机号已绑定其他服务商账号，请使用未绑定的手机号")
+		return
+	} else if err != nil && err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		response.Error(c, 500, "校验服务商账号失败")
+		return
+	}
+
+	// 检查该手机号是否已绑定其他主材门店
+	var duplicateShop model.MaterialShop
+	if err := tx.Where("user_id = ?", user.ID).Order("id DESC").First(&duplicateShop).Error; err == nil {
+		tx.Rollback()
+		response.BadRequest(c, "该手机号已绑定主材商账号，请使用未绑定的手机号")
+		return
+	} else if err != nil && err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		response.Error(c, 500, "校验主材商账号失败")
+		return
+	}
+
+	// 更新 provider：绑定 user_id，标记为已入驻
+	providerUpdates := map[string]interface{}{
+		"user_id":    user.ID,
+		"is_settled": true,
+	}
+	if err := tx.Model(&provider).Updates(providerUpdates).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "绑定服务商账号失败")
+		return
+	}
+
+	// 若关联了入驻申请记录，同步 user_id
+	if provider.SourceApplicationID > 0 {
+		if err := tx.Model(&model.MerchantApplication{}).
+			Where("id = ? AND (user_id = 0 OR user_id IS NULL)", provider.SourceApplicationID).
+			Update("user_id", user.ID).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "同步申请账号失败")
+			return
+		}
+	}
+
+	// 确保商家身份记录（已认证则激活，否则冻结）
+	identityStatus := resolveProviderIdentityStatus(provider)
+	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeProvider, provider.ID, adminID, identityStatus); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "补全服务商身份失败: "+err.Error())
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.Error(c, 500, "认领入驻失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"providerId":   provider.ID,
+		"userId":       user.ID,
+		"phone":        phone,
+		"createdUser":  !userExists,
+		"sourceLabel":  resolveProviderSourceLabel(model.Provider{SourceApplicationID: provider.SourceApplicationID, UserID: user.ID, IsSettled: true}),
+		"loginEnabled": identityStatus == merchantIdentityStatusActive,
+	})
+}
+
+func resolveProviderIdentityStatus(provider model.Provider) int8 {
+	if provider.Verified && provider.Status == merchantProviderStatusActive {
+		return merchantIdentityStatusActive
+	}
+	return merchantIdentityStatusFrozen
+}
+
+// AdminCompleteProviderSettlement 为已绑定账号但仍处于未入驻状态的服务商补齐入驻
+func AdminCompleteProviderSettlement(c *gin.Context) {
+	providerID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("adminId")
+
+	tx := repository.DB.Begin()
+
+	var provider model.Provider
+	if err := tx.First(&provider, providerID).Error; err != nil {
+		tx.Rollback()
+		response.NotFound(c, "服务商不存在")
+		return
+	}
+	if provider.UserID == 0 {
+		tx.Rollback()
+		response.BadRequest(c, "该服务商尚未绑定账号，请使用认领入驻")
+		return
+	}
+	if provider.IsSettled {
+		tx.Rollback()
+		response.BadRequest(c, "该服务商已完成入驻")
+		return
+	}
+
+	if err := tx.Model(&provider).Update("is_settled", true).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "更新入驻状态失败")
+		return
+	}
+
+	if provider.SourceApplicationID > 0 {
+		if err := tx.Model(&model.MerchantApplication{}).
+			Where("id = ? AND (user_id = 0 OR user_id IS NULL)", provider.SourceApplicationID).
+			Update("user_id", provider.UserID).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "同步申请账号失败")
+			return
+		}
+	}
+
+	identityStatus := resolveProviderIdentityStatus(provider)
+	if err := ensureMerchantIdentity(tx, provider.UserID, merchantIdentityTypeProvider, provider.ID, adminID, identityStatus); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "补全服务商身份失败: "+err.Error())
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.Error(c, 500, "完成入驻失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"providerId": provider.ID,
+		"userId":     provider.UserID,
+		"sourceLabel": resolveProviderSourceLabel(model.Provider{
+			SourceApplicationID: provider.SourceApplicationID,
+			UserID:              provider.UserID,
+			IsSettled:           true,
+		}),
+		"loginEnabled": identityStatus == merchantIdentityStatusActive,
+	})
 }
 
 // ==================== Admin 预约管理 ====================
@@ -843,6 +1231,7 @@ func AdminListMaterialShops(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("pageSize"), 10)
 	shopType := c.Query("type")
+	isSettled := c.Query("isSettled")
 
 	var shops []model.MaterialShop
 	var total int64
@@ -851,9 +1240,35 @@ func AdminListMaterialShops(c *gin.Context) {
 	if shopType != "" {
 		db = db.Where("type = ?", shopType)
 	}
+	if isSettled == "true" {
+		db = db.Where("is_settled = true")
+	} else if isSettled == "false" {
+		db = db.Where("is_settled = false")
+	}
 
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&shops)
+
+	userIDs := make([]uint64, 0, len(shops))
+	for _, shop := range shops {
+		if shop.UserID > 0 {
+			userIDs = append(userIDs, shop.UserID)
+		}
+	}
+
+	type userBrief struct {
+		ID       uint64
+		Phone    string
+		Nickname string
+	}
+	userMap := make(map[uint64]userBrief, len(userIDs))
+	if len(userIDs) > 0 {
+		var users []userBrief
+		repository.DB.Model(&model.User{}).Select("id", "phone", "nickname").Where("id IN ?", userIDs).Find(&users)
+		for _, user := range users {
+			userMap[user.ID] = user
+		}
+	}
 
 	list := make([]adminMaterialShopListRow, 0, len(shops))
 	for _, shop := range shops {
@@ -884,8 +1299,16 @@ func AdminListMaterialShops(c *gin.Context) {
 			visibilityResult = adminVisibilityResolver.ResolveMaterialShopApplication(*app, &shop, productCount)
 		}
 
+		userInfo, hasUser := userMap[shop.UserID]
+		sourceLabel := resolveMaterialShopSourceLabel(shop)
+
 		list = append(list, adminMaterialShopListRow{
 			MaterialShop: shop,
+			UserPhone:    userInfo.Phone,
+			UserNickname: userInfo.Nickname,
+			AccountBound: shop.UserID > 0 && hasUser,
+			LoginEnabled: shop.UserID > 0 && hasUser && service.IsMaterialShopLoginEnabled(&shop),
+			SourceLabel:  sourceLabel,
 			Visibility:   visibilityResult.Visibility,
 			Actions:      visibilityResult.Actions,
 			LegacyInfo:   visibilityResult.LegacyInfo,
@@ -900,16 +1323,175 @@ func AdminListMaterialShops(c *gin.Context) {
 
 // AdminCreateMaterialShop 创建主材门店
 func AdminCreateMaterialShop(c *gin.Context) {
-	var shop model.MaterialShop
-	if err := c.ShouldBindJSON(&shop); err != nil {
+	var req struct {
+		Name            string `json:"name" binding:"required"`
+		Type            string `json:"type"` // showroom | brand
+		CompanyName     string `json:"companyName"`
+		Address         string `json:"address"`
+		ContactPhone    string `json:"contactPhone"`
+		ContactName     string `json:"contactName"`
+		MainProducts    string `json:"mainProducts"`
+		IsSettled       *bool  `json:"isSettled"`       // nil 默认 true
+		CollectedSource string `json:"collectedSource"` // 收录来源
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
+	}
+
+	isSettled := true
+	if req.IsSettled != nil {
+		isSettled = *req.IsSettled
+	}
+
+	// 已入驻商家仍须走申请流程
+	if isSettled {
+		response.BadRequest(c, "已入驻主材门店请通过主材商入驻申请创建")
+		return
+	}
+
+	shop := model.MaterialShop{
+		Name:            req.Name,
+		Type:            req.Type,
+		CompanyName:     req.CompanyName,
+		Address:         req.Address,
+		ContactPhone:    req.ContactPhone,
+		ContactName:     req.ContactName,
+		MainProducts:    req.MainProducts,
+		IsSettled:       false,
+		CollectedSource: req.CollectedSource,
+	}
+	if shop.Type == "" {
+		shop.Type = "showroom"
 	}
 	if err := repository.DB.Create(&shop).Error; err != nil {
 		response.ServerError(c, "创建失败")
 		return
 	}
 	response.Success(c, shop)
+}
+
+// AdminCompleteMaterialShopAccount 为历史主材门店补全账号
+func AdminCompleteMaterialShopAccount(c *gin.Context) {
+	shopID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("adminId")
+
+	var req struct {
+		Phone       string `json:"phone" binding:"required"`
+		ContactName string `json:"contactName"`
+		Nickname    string `json:"nickname"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	phone := strings.TrimSpace(req.Phone)
+	if !utils.ValidatePhone(phone) {
+		response.BadRequest(c, "手机号格式不正确")
+		return
+	}
+
+	tx := repository.DB.Begin()
+
+	var shop model.MaterialShop
+	if err := tx.First(&shop, shopID).Error; err != nil {
+		tx.Rollback()
+		response.NotFound(c, "门店不存在")
+		return
+	}
+	if shop.UserID > 0 {
+		tx.Rollback()
+		response.BadRequest(c, "该主材门店已绑定账号")
+		return
+	}
+
+	var existingUser model.User
+	userExists := tx.Where("phone = ?", phone).First(&existingUser).Error == nil
+
+	displayName := firstNonEmpty(
+		strings.TrimSpace(req.Nickname),
+		strings.TrimSpace(req.ContactName),
+		strings.TrimSpace(shop.ContactName),
+		strings.TrimSpace(shop.Name),
+	)
+	user, err := createOrLoadUserForMaterialApply(tx, phone, displayName)
+	if err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "补全账号失败: 创建或加载用户失败")
+		return
+	}
+
+	var duplicateShop model.MaterialShop
+	if err := tx.Where("user_id = ? AND id <> ?", user.ID, shop.ID).Order("id DESC").First(&duplicateShop).Error; err == nil {
+		tx.Rollback()
+		response.BadRequest(c, "该手机号已绑定其他主材商账号，请使用未绑定的手机号")
+		return
+	} else if err != nil && err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		response.Error(c, 500, "校验主材商账号失败")
+		return
+	}
+
+	var activeProvider model.Provider
+	if err := tx.Where("user_id = ? AND status = ?", user.ID, merchantProviderStatusActive).Order("id DESC").First(&activeProvider).Error; err == nil {
+		tx.Rollback()
+		response.BadRequest(c, "该手机号已绑定其他生效中的服务商身份，请使用未入驻的手机号")
+		return
+	} else if err != nil && err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		response.Error(c, 500, "校验服务商身份失败")
+		return
+	}
+
+	shopUpdates := map[string]interface{}{
+		"user_id": user.ID,
+	}
+	if strings.TrimSpace(shop.ContactPhone) == "" {
+		shopUpdates["contact_phone"] = phone
+	}
+	if strings.TrimSpace(shop.ContactName) == "" && strings.TrimSpace(req.ContactName) != "" {
+		shopUpdates["contact_name"] = strings.TrimSpace(req.ContactName)
+	}
+	if err := tx.Model(&shop).Updates(shopUpdates).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "绑定主材商账号失败")
+		return
+	}
+
+	if shop.SourceApplicationID > 0 {
+		if err := tx.Model(&model.MaterialShopApplication{}).
+			Where("id = ? AND (user_id = 0 OR user_id IS NULL)", shop.SourceApplicationID).
+			Update("user_id", user.ID).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "同步申请账号失败")
+			return
+		}
+	}
+
+	identityStatus := merchantIdentityStatusFrozen
+	if shop.IsVerified {
+		identityStatus = merchantIdentityStatusActive
+	}
+	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeMaterial, shop.ID, adminID, identityStatus); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "补全主材商身份失败: "+err.Error())
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.Error(c, 500, "补全账号失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"shopId":       shop.ID,
+		"userId":       user.ID,
+		"phone":        phone,
+		"createdUser":  !userExists,
+		"sourceLabel":  resolveMaterialShopSourceLabel(model.MaterialShop{SourceApplicationID: shop.SourceApplicationID, UserID: user.ID}),
+		"loginEnabled": resolveMaterialShopIdentityStatus(shop) == merchantIdentityStatusActive,
+	})
 }
 
 // AdminUpdateMaterialShop 更新主材门店
@@ -944,6 +1526,7 @@ func AdminDeleteMaterialShop(c *gin.Context) {
 // AdminVerifyMaterialShop 认证主材门店
 func AdminVerifyMaterialShop(c *gin.Context) {
 	id := c.Param("id")
+	adminID := c.GetUint64("adminId")
 	var req struct {
 		Verified bool `json:"verified"`
 	}
@@ -951,10 +1534,84 @@ func AdminVerifyMaterialShop(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-	if err := repository.DB.Model(&model.MaterialShop{}).Where("id = ?", id).Update("is_verified", req.Verified).Error; err != nil {
+
+	tx := repository.DB.Begin()
+
+	var shop model.MaterialShop
+	if err := tx.First(&shop, "id = ?", id).Error; err != nil {
+		tx.Rollback()
+		response.NotFound(c, "门店不存在")
+		return
+	}
+
+	if err := tx.Model(&shop).Update("is_verified", req.Verified).Error; err != nil {
+		tx.Rollback()
 		response.ServerError(c, "更新失败")
 		return
 	}
+
+	shop.IsVerified = req.Verified
+	if shop.UserID > 0 {
+		if err := ensureMerchantIdentity(tx, shop.UserID, merchantIdentityTypeMaterial, shop.ID, adminID, resolveMaterialShopIdentityStatus(shop)); err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "同步主材商身份失败: "+err.Error())
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+	response.Success(c, nil)
+}
+
+// AdminUpdateMaterialShopStatus 更新主材门店状态（封禁/解封）
+func AdminUpdateMaterialShopStatus(c *gin.Context) {
+	id := c.Param("id")
+	adminID := c.GetUint64("adminId")
+
+	var req struct {
+		Status int8 `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if req.Status != 0 && req.Status != 1 {
+		response.BadRequest(c, "状态值无效")
+		return
+	}
+
+	tx := repository.DB.Begin()
+
+	var shop model.MaterialShop
+	if err := tx.First(&shop, "id = ?", id).Error; err != nil {
+		tx.Rollback()
+		response.NotFound(c, "门店不存在")
+		return
+	}
+
+	if err := tx.Table(model.MaterialShop{}.TableName()).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+
+	shop.Status = &req.Status
+	if shop.UserID > 0 {
+		if err := ensureMerchantIdentity(tx, shop.UserID, merchantIdentityTypeMaterial, shop.ID, adminID, resolveMaterialShopIdentityStatus(shop)); err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "同步主材商身份失败: "+err.Error())
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+
 	response.Success(c, nil)
 }
 

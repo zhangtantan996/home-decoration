@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"time"
 
 	"home-decoration-server/internal/model"
@@ -35,6 +37,17 @@ func (s *EscrowService) GetEscrowDetail(projectID uint64) (*EscrowDetail, error)
 	}, nil
 }
 
+func (s *EscrowService) GetEscrowDetailForOwner(projectID, userID uint64) (*EscrowDetail, error) {
+	var project model.Project
+	if err := repository.DB.Select("id, owner_id").First(&project, projectID).Error; err != nil {
+		return nil, errors.New("项目不存在")
+	}
+	if project.OwnerID != userID {
+		return nil, errors.New("无权查看此项目托管账户")
+	}
+	return s.GetEscrowDetail(projectID)
+}
+
 // Deposit 充值/存入托管
 func (s *EscrowService) Deposit(projectID, userID uint64, amount float64, milestoneID uint64) error {
 	if amount <= 0 {
@@ -49,7 +62,8 @@ func (s *EscrowService) Deposit(projectID, userID uint64, amount float64, milest
 
 		// 更新账户余额
 		escrow.TotalAmount += amount
-		escrow.FrozenAmount += amount
+		escrow.AvailableAmount += amount
+		escrow.Status = reconcileEscrowStatus(&escrow)
 		if err := tx.Save(&escrow).Error; err != nil {
 			return err
 		}
@@ -80,64 +94,99 @@ func (s *EscrowService) Deposit(projectID, userID uint64, amount float64, milest
 
 // ReleaseFunds 释放资金给服务商
 func (s *EscrowService) ReleaseFunds(projectID, userID uint64, milestoneID uint64) error {
-	return repository.DB.Transaction(func(tx *gorm.DB) error {
-		var escrow model.EscrowAccount
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
-			return errors.New("托管账户不存在")
-		}
-
-		// 获取节点信息
-		var milestone model.Milestone
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&milestone, milestoneID).Error; err != nil {
-			return errors.New("验收节点不存在")
-		}
-
-		if milestone.Status != 3 { // 3已通过
-			return errors.New("节点未通过验收，无法释放资金")
-		}
-
-		amount := milestone.Amount
-		if escrow.FrozenAmount < amount {
-			return errors.New("冻结资金不足")
-		}
-
-		// 获取接收方(项目服务商)
-		var project model.Project
-		tx.First(&project, projectID)
-
-		// 更新账户
-		escrow.FrozenAmount -= amount
-		escrow.ReleasedAmount += amount
-		if err := tx.Save(&escrow).Error; err != nil {
-			return err
-		}
-
-		// 创建交易记录
-		trx := &model.Transaction{
-			EscrowID:    escrow.ID,
-			MilestoneID: milestoneID,
-			Type:        "release",
-			Amount:      amount,
-			FromUserID:  0, // 系统
-			ToUserID:    project.ProviderID,
-			Status:      1,
-			CompletedAt: nowTime(),
-		}
-		if err := tx.Create(trx).Error; err != nil {
-			return err
-		}
-
-		// 更新节点状态
-		tx.Model(&milestone).Updates(map[string]interface{}{
-			"status":  4, // 已支付
-			"paid_at": time.Now(),
-		})
-
-		return nil
+	_, err := (&SettlementService{}).ReleaseMilestone(&ReleaseMilestoneInput{
+		ProjectID:    projectID,
+		MilestoneID:  milestoneID,
+		OperatorType: "user",
+		OperatorID:   userID,
+		Reason:       "业主主动放款",
+		Source:       "project.release",
 	})
+	return err
 }
 
 func nowTime() *time.Time {
 	t := time.Now()
 	return &t
+}
+
+func (s *EscrowService) releaseFundsTx(tx *gorm.DB, projectID, userID uint64, milestoneID uint64) (*model.EscrowAccount, *model.Transaction, *model.Milestone, *model.Project, error) {
+	operatorType := "user"
+	if userID == 0 {
+		operatorType = "system"
+	}
+	result, err := (&SettlementService{}).ReleaseMilestoneTx(tx, &ReleaseMilestoneInput{
+		ProjectID:    projectID,
+		MilestoneID:  milestoneID,
+		OperatorType: operatorType,
+		OperatorID:   userID,
+		Reason:       "托管账户放款",
+		Source:       "escrow.release_tx",
+	})
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return result.Escrow, result.Transaction, result.Milestone, result.Project, nil
+}
+
+// ProcessScheduledReleases 定时任务: 处理已到期的 T+N 自动放款
+// 由 cron job 定期调用（建议每小时一次）
+func (s *EscrowService) ProcessScheduledReleases() (int, error) {
+	var milestones []model.Milestone
+	now := time.Now()
+
+	// 查询所有到期且未放款的里程碑
+	if err := repository.DB.Where(
+		"status = ? AND release_scheduled_at IS NOT NULL AND release_scheduled_at <= ? AND released_at IS NULL",
+		model.MilestoneStatusAccepted, now,
+	).Find(&milestones).Error; err != nil {
+		return 0, fmt.Errorf("查询到期里程碑失败: %w", err)
+	}
+
+	if len(milestones) == 0 {
+		return 0, nil
+	}
+
+	successCount := 0
+	settlementSvc := &SettlementService{}
+
+	for _, ms := range milestones {
+		released := false
+		err := repository.DB.Transaction(func(tx *gorm.DB) error {
+			// 查询关联项目
+			var project model.Project
+			if err := tx.First(&project, ms.ProjectID).Error; err != nil {
+				return fmt.Errorf("项目不存在: %w", err)
+			}
+
+			// 暂停中的项目跳过
+			if project.PaymentPaused {
+				return nil
+			}
+
+			if _, err := settlementSvc.ReleaseMilestoneTx(tx, &ReleaseMilestoneInput{
+				ProjectID:    ms.ProjectID,
+				MilestoneID:  ms.ID,
+				OperatorType: "system",
+				OperatorID:   0,
+				Reason:       "定时自动放款",
+				Source:       "scheduled.release",
+			}); err != nil {
+				return fmt.Errorf("释放资金失败: %w", err)
+			}
+			released = true
+			return nil
+		})
+
+		if err != nil {
+			log.Printf("[ProcessScheduledReleases] milestone %d 放款失败: %v", ms.ID, err)
+			continue
+		}
+
+		if released {
+			successCount++
+		}
+	}
+
+	return successCount, nil
 }

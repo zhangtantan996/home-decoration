@@ -16,6 +16,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type quoteExtensions struct {
+	Required bool `json:"required,omitempty"`
+}
+
 type QuoteCategoryCreateInput struct {
 	Code      string `json:"code"`
 	Name      string `json:"name"`
@@ -32,6 +36,7 @@ type QuoteLibraryItemWriteInput struct {
 	Unit               string   `json:"unit"`
 	ReferencePriceCent int64    `json:"referencePriceCent"`
 	PricingNote        string   `json:"pricingNote"`
+	Required           bool     `json:"required"`
 	Status             int8     `json:"status"`
 	Keywords           []string `json:"keywords"`
 	ERPMapping         any      `json:"erpMapping"`
@@ -52,31 +57,46 @@ type QuotePriceBookUpdateInput struct {
 	Items  []QuotePriceBookItemInput `json:"items"`
 }
 
+type QuotePriceBookItemView struct {
+	ID               uint64 `json:"id"`
+	StandardItemID   uint64 `json:"standardItemId"`
+	StandardCode     string `json:"standardCode"`
+	StandardItemName string `json:"standardItemName"`
+	CategoryL1       string `json:"categoryL1"`
+	CategoryL2       string `json:"categoryL2"`
+	Unit             string `json:"unit"`
+	UnitPriceCent    int64  `json:"unitPriceCent"`
+	MinChargeCent    int64  `json:"minChargeCent"`
+	Remark           string `json:"remark"`
+	Status           int8   `json:"status"`
+	Required         bool   `json:"required"`
+}
+
 type QuotePriceBookDetail struct {
-	Book  model.QuotePriceBook       `json:"book"`
-	Items []model.QuotePriceBookItem `json:"items"`
+	Book  model.QuotePriceBook     `json:"book"`
+	Items []QuotePriceBookItemView `json:"items"`
 }
 
 type QuoteTaskPrerequisiteSnapshot struct {
-	Area           float64  `json:"area"`
-	Layout         string   `json:"layout"`
-	RenovationType string   `json:"renovationType"`
-	ConstructionScope string `json:"constructionScope"`
-	ServiceAreas   []string `json:"serviceAreas"`
-	WorkTypes      []string `json:"workTypes"`
-	HouseUsage     string   `json:"houseUsage"`
-	Notes          string   `json:"notes"`
+	Area              float64  `json:"area"`
+	Layout            string   `json:"layout"`
+	RenovationType    string   `json:"renovationType"`
+	ConstructionScope string   `json:"constructionScope"`
+	ServiceAreas      []string `json:"serviceAreas"`
+	WorkTypes         []string `json:"workTypes"`
+	HouseUsage        string   `json:"houseUsage"`
+	Notes             string   `json:"notes"`
 }
 
 type QuoteTaskPrerequisiteUpdateInput struct {
-	Area             float64  `json:"area"`
-	Layout           string   `json:"layout"`
-	RenovationType   string   `json:"renovationType"`
-	ConstructionScope string  `json:"constructionScope"`
-	ServiceAreas     []string `json:"serviceAreas"`
-	WorkTypes        []string `json:"workTypes"`
-	HouseUsage       string   `json:"houseUsage"`
-	Notes            string   `json:"notes"`
+	Area              float64  `json:"area"`
+	Layout            string   `json:"layout"`
+	RenovationType    string   `json:"renovationType"`
+	ConstructionScope string   `json:"constructionScope"`
+	ServiceAreas      []string `json:"serviceAreas"`
+	WorkTypes         []string `json:"workTypes"`
+	HouseUsage        string   `json:"houseUsage"`
+	Notes             string   `json:"notes"`
 }
 
 type QuoteTaskValidationResult struct {
@@ -86,24 +106,27 @@ type QuoteTaskValidationResult struct {
 }
 
 type RecommendedForeman struct {
-	ProviderID         uint64   `json:"providerId"`
-	ProviderName       string   `json:"providerName"`
-	ProviderType       int8     `json:"providerType"`
-	ProviderSubType    string   `json:"providerSubType"`
-	RegionMatched      bool     `json:"regionMatched"`
-	WorkTypeMatched    bool     `json:"workTypeMatched"`
-	AcceptBooking      bool     `json:"acceptBooking"`
-	PriceCoverageRate  float64  `json:"priceCoverageRate"`
-	MatchedItemCount   int      `json:"matchedItemCount"`
-	MissingItemCount   int      `json:"missingItemCount"`
-	Reasons            []string `json:"reasons"`
+	ProviderID        uint64   `json:"providerId"`
+	ProviderName      string   `json:"providerName"`
+	ProviderType      int8     `json:"providerType"`
+	ProviderSubType   string   `json:"providerSubType"`
+	RegionMatched     bool     `json:"regionMatched"`
+	WorkTypeMatched   bool     `json:"workTypeMatched"`
+	AcceptBooking     bool     `json:"acceptBooking"`
+	PriceCoverageRate float64  `json:"priceCoverageRate"`
+	MatchedItemCount  int      `json:"matchedItemCount"`
+	MissingItemCount  int      `json:"missingItemCount"`
+	Reasons           []string `json:"reasons"`
 }
 
 type QuoteTaskUserView struct {
-	QuoteList   model.QuoteList           `json:"quoteList"`
-	Submission  model.QuoteSubmission     `json:"submission"`
-	Items       []model.QuoteSubmissionItem `json:"items"`
-	TaskSummary QuoteTaskPrerequisiteSnapshot `json:"taskSummary"`
+	QuoteList        model.QuoteList               `json:"quoteList"`
+	Submission       model.QuoteSubmission         `json:"submission"`
+	Items            []model.QuoteSubmissionItem   `json:"items"`
+	TaskSummary      QuoteTaskPrerequisiteSnapshot `json:"taskSummary"`
+	BusinessStage    string                        `json:"businessStage,omitempty"`
+	FlowSummary      string                        `json:"flowSummary,omitempty"`
+	AvailableActions []string                      `json:"availableActions,omitempty"`
 }
 
 type UserQuoteTaskSummary struct {
@@ -113,11 +136,16 @@ type UserQuoteTaskSummary struct {
 	UserConfirmationStatus string `json:"userConfirmationStatus"`
 	DeadlineAt             string `json:"deadlineAt,omitempty"`
 	ActiveSubmissionID     uint64 `json:"activeSubmissionId"`
+	BusinessStage          string `json:"businessStage,omitempty"`
+	FlowSummary            string `json:"flowSummary,omitempty"`
 }
 
 func (s *QuoteService) ListQuoteCategories() ([]model.QuoteCategory, error) {
 	var categories []model.QuoteCategory
-	if err := repository.DB.Order("sort_order ASC, id ASC").Find(&categories).Error; err != nil {
+	if err := repository.DB.
+		Where("status = ?", model.QuoteLibraryItemStatusEnabled).
+		Order("parent_id ASC, sort_order ASC, id ASC").
+		Find(&categories).Error; err != nil {
 		return nil, fmt.Errorf("查询报价类目失败: %w", err)
 	}
 	return categories, nil
@@ -130,7 +158,15 @@ func (s *QuoteService) CreateQuoteCategory(input *QuoteCategoryCreateInput) (*mo
 	}
 	code := strings.TrimSpace(input.Code)
 	if code == "" {
-		code = strings.ToUpper(strings.ReplaceAll(name, " ", "_"))
+		if input.ParentID > 0 {
+			var parent model.QuoteCategory
+			if err := repository.DB.Select("code").First(&parent, input.ParentID).Error; err == nil {
+				code = buildQuoteChildCategoryCode(strings.TrimSpace(parent.Code), name)
+			}
+		}
+		if code == "" {
+			code = strings.ToUpper(strings.ReplaceAll(name, " ", "_"))
+		}
 	}
 	status := input.Status
 	if status == 0 {
@@ -149,6 +185,42 @@ func (s *QuoteService) CreateQuoteCategory(input *QuoteCategoryCreateInput) (*mo
 	return category, nil
 }
 
+func (s *QuoteService) DeleteQuoteCategory(categoryID uint64) error {
+	var category model.QuoteCategory
+	if err := repository.DB.First(&category, categoryID).Error; err != nil {
+		return errors.New("报价类目不存在")
+	}
+
+	var childCount int64
+	if err := repository.DB.Model(&model.QuoteCategory{}).Where("parent_id = ?", categoryID).Count(&childCount).Error; err != nil {
+		return fmt.Errorf("检查子类目失败: %w", err)
+	}
+	if childCount > 0 {
+		return errors.New("该类目存在子类目，无法删除")
+	}
+
+	var itemCount int64
+	if err := repository.DB.Model(&model.QuoteLibraryItem{}).
+		Where("category_id = ? OR category_l1 = ? OR category_l2 = ?", categoryID, category.Name, category.Name).
+		Count(&itemCount).Error; err != nil {
+		return fmt.Errorf("检查类目引用失败: %w", err)
+	}
+	if itemCount > 0 {
+		return errors.New("该类目下仍有关联标准项，无法删除")
+	}
+
+	if repository.DB.Migrator().HasTable(&model.QuoteCategoryRule{}) {
+		if err := repository.DB.Where("category_id = ?", categoryID).Delete(&model.QuoteCategoryRule{}).Error; err != nil {
+			return fmt.Errorf("删除类目规则失败: %w", err)
+		}
+	}
+
+	if err := repository.DB.Delete(&category).Error; err != nil {
+		return fmt.Errorf("删除报价类目失败: %w", err)
+	}
+	return nil
+}
+
 func (s *QuoteService) CreateQuoteLibraryItem(input *QuoteLibraryItemWriteInput) (*model.QuoteLibraryItem, error) {
 	item := &model.QuoteLibraryItem{}
 	if err := applyQuoteLibraryItemInput(item, input); err != nil {
@@ -157,7 +229,54 @@ func (s *QuoteService) CreateQuoteLibraryItem(input *QuoteLibraryItemWriteInput)
 	if err := repository.DB.Create(item).Error; err != nil {
 		return nil, fmt.Errorf("创建标准项失败: %w", err)
 	}
+	if err := ensureGeneratedQuoteLibraryItemCodes(item); err != nil {
+		return nil, err
+	}
 	return item, nil
+}
+
+func (s *QuoteService) DeleteQuoteLibraryItem(itemID uint64) error {
+	var item model.QuoteLibraryItem
+	if err := repository.DB.First(&item, itemID).Error; err != nil {
+		return errors.New("标准项不存在")
+	}
+
+	refChecks := []struct {
+		table   string
+		query   string
+		args    []any
+		message string
+	}{
+		{"quote_list_items", "standard_item_id = ? OR matched_standard_item_id = ?", []any{itemID, itemID}, "该标准项已被报价清单引用，无法删除"},
+		{"quote_price_book_items", "standard_item_id = ?", []any{itemID}, "该标准项已被工长价格库引用，无法删除"},
+		{"quote_template_items", "library_item_id = ?", []any{itemID}, "该标准项已被报价模板引用，无法删除"},
+	}
+
+	for _, check := range refChecks {
+		if !repository.DB.Migrator().HasTable(check.table) {
+			continue
+		}
+		var count int64
+		if err := repository.DB.Table(check.table).Where(check.query, check.args...).Count(&count).Error; err != nil {
+			return fmt.Errorf("检查标准项引用失败: %w", err)
+		}
+		if count > 0 {
+			return errors.New(check.message)
+		}
+	}
+
+	return repository.DB.Transaction(func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&model.QuotePriceTier{}) {
+			if err := tx.Where("library_item_id = ?", itemID).Delete(&model.QuotePriceTier{}).Error; err != nil {
+				return fmt.Errorf("删除阶梯价失败: %w", err)
+			}
+		}
+
+		if err := tx.Delete(&item).Error; err != nil {
+			return fmt.Errorf("删除标准项失败: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *QuoteService) UpdateQuoteLibraryItem(itemID uint64, input *QuoteLibraryItemWriteInput) (*model.QuoteLibraryItem, error) {
@@ -170,6 +289,9 @@ func (s *QuoteService) UpdateQuoteLibraryItem(itemID uint64, input *QuoteLibrary
 	}
 	if err := repository.DB.Save(&item).Error; err != nil {
 		return nil, fmt.Errorf("更新标准项失败: %w", err)
+	}
+	if err := ensureGeneratedQuoteLibraryItemCodes(&item); err != nil {
+		return nil, err
 	}
 	return &item, nil
 }
@@ -194,16 +316,133 @@ func applyQuoteLibraryItemInput(item *model.QuoteLibraryItem, input *QuoteLibrar
 	} else {
 		item.Status = input.Status
 	}
+
+	if input.CategoryID > 0 {
+		categoryL1, categoryL2, err := resolveQuoteCategoryLabels(input.CategoryID)
+		if err != nil {
+			return err
+		}
+		item.CategoryL1 = categoryL1
+		item.CategoryL2 = categoryL2
+	}
+
 	keywords, _ := json.Marshal(normalizeStringSlice(input.Keywords))
-	erpMapping, _ := json.Marshal(input.ERPMapping)
-	sourceMeta, _ := json.Marshal(input.SourceMeta)
 	item.KeywordsJSON = string(keywords)
-	item.ERPMappingJSON = string(erpMapping)
-	item.SourceMetaJSON = string(sourceMeta)
+	item.ERPMappingJSON = normalizeQuoteJSONObject(item.ERPMappingJSON, input.ERPMapping, buildDefaultQuoteERPMapping(item))
+	item.SourceMetaJSON = normalizeQuoteJSONObject(item.SourceMetaJSON, input.SourceMeta, buildDefaultQuoteSourceMeta(item))
+	item.ExtensionsJSON = setQuoteRequiredFlag(item.ExtensionsJSON, input.Required)
 	if item.SourceFingerprint == "" {
 		item.SourceFingerprint = hashString(strings.Join([]string{item.StandardCode, item.ERPItemCode, item.Name, item.Unit}, "|"))
 	}
 	return nil
+}
+
+func ensureGeneratedQuoteLibraryItemCodes(item *model.QuoteLibraryItem) error {
+	if item == nil || item.ID == 0 {
+		return nil
+	}
+
+	categoryCode := ""
+	if item.CategoryID > 0 {
+		var category model.QuoteCategory
+		if err := repository.DB.Select("code").First(&category, item.CategoryID).Error; err == nil {
+			categoryCode = category.Code
+		}
+	}
+
+	updates := map[string]interface{}{}
+	if strings.TrimSpace(item.ERPItemCode) == "" || strings.HasPrefix(strings.TrimSpace(item.ERPItemCode), "ERP-MANUAL-") || strings.Count(strings.TrimSpace(item.ERPItemCode), "-") > 1 {
+		item.ERPItemCode = buildManualERPItemCode(categoryCode, item.ID)
+		updates["erp_item_code"] = item.ERPItemCode
+	}
+	if strings.TrimSpace(item.StandardCode) == "" {
+		item.StandardCode = buildStandardItemCode(categoryCode, item.ERPSeqNo, item.ID)
+		updates["standard_code"] = item.StandardCode
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	if err := repository.DB.Model(item).Updates(updates).Error; err != nil {
+		return fmt.Errorf("生成标准项编码失败: %w", err)
+	}
+	return nil
+}
+
+func resolveQuoteCategoryLabels(categoryID uint64) (string, string, error) {
+	var category model.QuoteCategory
+	if err := repository.DB.First(&category, categoryID).Error; err != nil {
+		return "", "", errors.New("类目不存在")
+	}
+
+	if category.ParentID == 0 {
+		return strings.TrimSpace(category.Name), "", nil
+	}
+
+	var parent model.QuoteCategory
+	if err := repository.DB.First(&parent, category.ParentID).Error; err != nil {
+		return strings.TrimSpace(category.Name), "", nil
+	}
+
+	return strings.TrimSpace(parent.Name), strings.TrimSpace(category.Name), nil
+}
+
+func setQuoteRequiredFlag(raw string, required bool) string {
+	ext := quoteExtensions{}
+	if strings.TrimSpace(raw) != "" {
+		_ = json.Unmarshal([]byte(raw), &ext)
+	}
+	ext.Required = required
+	bytes, _ := json.Marshal(ext)
+	return string(bytes)
+}
+
+func parseQuoteRequiredFlag(raw string) bool {
+	ext := quoteExtensions{}
+	if strings.TrimSpace(raw) == "" {
+		return false
+	}
+	if err := json.Unmarshal([]byte(raw), &ext); err != nil {
+		return false
+	}
+	return ext.Required
+}
+
+func normalizeQuoteJSONObject(existing string, incoming any, fallback any) string {
+	if incoming != nil {
+		if bytes, err := json.Marshal(incoming); err == nil && string(bytes) != "null" {
+			return string(bytes)
+		}
+	}
+	if normalized := strings.TrimSpace(existing); normalized != "" && normalized != "null" {
+		return normalized
+	}
+	bytes, _ := json.Marshal(fallback)
+	return string(bytes)
+}
+
+func buildDefaultQuoteERPMapping(item *model.QuoteLibraryItem) map[string]any {
+	return map[string]any{
+		"source":     "system",
+		"managedBy":  "backend",
+		"categoryL1": strings.TrimSpace(item.CategoryL1),
+		"categoryL2": strings.TrimSpace(item.CategoryL2),
+		"matchKey":   strings.TrimSpace(item.Name),
+		"unit":       strings.TrimSpace(item.Unit),
+	}
+}
+
+func buildDefaultQuoteSourceMeta(item *model.QuoteLibraryItem) map[string]any {
+	source := "admin_manual"
+	if strings.TrimSpace(item.ERPSeqNo) != "" {
+		source = "erp_import"
+	}
+	return map[string]any{
+		"source":        source,
+		"managedBy":     "backend",
+		"autoGenerated": true,
+		"categoryId":    item.CategoryID,
+	}
 }
 
 func (s *QuoteService) GetProviderPriceBook(providerID uint64) (*QuotePriceBookDetail, error) {
@@ -211,10 +450,49 @@ func (s *QuoteService) GetProviderPriceBook(providerID uint64) (*QuotePriceBookD
 	if err != nil {
 		return nil, err
 	}
-	var items []model.QuotePriceBookItem
-	if err := repository.DB.Where("price_book_id = ?", book.ID).Order("id ASC").Find(&items).Error; err != nil {
+	var priceItems []model.QuotePriceBookItem
+	if err := repository.DB.Where("price_book_id = ?", book.ID).Order("id ASC").Find(&priceItems).Error; err != nil {
 		return nil, fmt.Errorf("查询价格簿明细失败: %w", err)
 	}
+	var libraryItems []model.QuoteLibraryItem
+	if err := repository.DB.
+		Where("status = ?", model.QuoteLibraryItemStatusEnabled).
+		Order("category_l1 ASC, category_l2 ASC, id ASC").
+		Find(&libraryItems).Error; err != nil {
+		return nil, fmt.Errorf("查询标准项失败: %w", err)
+	}
+
+	priceByStandardID := make(map[uint64]model.QuotePriceBookItem, len(priceItems))
+	for _, item := range priceItems {
+		priceByStandardID[item.StandardItemID] = item
+	}
+
+	items := make([]QuotePriceBookItemView, 0, len(libraryItems))
+	for _, libraryItem := range libraryItems {
+		priceItem := priceByStandardID[libraryItem.ID]
+		unit := strings.TrimSpace(libraryItem.Unit)
+		if strings.TrimSpace(priceItem.Unit) != "" {
+			unit = strings.TrimSpace(priceItem.Unit)
+		}
+		if unit == "" {
+			unit = "项"
+		}
+		items = append(items, QuotePriceBookItemView{
+			ID:               priceItem.ID,
+			StandardItemID:   libraryItem.ID,
+			StandardCode:     libraryItem.StandardCode,
+			StandardItemName: libraryItem.Name,
+			CategoryL1:       libraryItem.CategoryL1,
+			CategoryL2:       libraryItem.CategoryL2,
+			Unit:             unit,
+			UnitPriceCent:    priceItem.UnitPriceCent,
+			MinChargeCent:    priceItem.MinChargeCent,
+			Remark:           priceItem.Remark,
+			Status:           maxPriceItemStatus(priceItem.Status),
+			Required:         parseQuoteRequiredFlag(libraryItem.ExtensionsJSON),
+		})
+	}
+
 	return &QuotePriceBookDetail{Book: *book, Items: items}, nil
 }
 
@@ -222,6 +500,17 @@ func (s *QuoteService) UpsertProviderPriceBook(providerID uint64, input *QuotePr
 	book, err := s.ensureDraftPriceBook(providerID)
 	if err != nil {
 		return nil, err
+	}
+
+	var libraryItems []model.QuoteLibraryItem
+	if err := repository.DB.Select("id, unit, status").
+		Where("status = ?", model.QuoteLibraryItemStatusEnabled).
+		Find(&libraryItems).Error; err != nil {
+		return nil, fmt.Errorf("查询标准项失败: %w", err)
+	}
+	libraryByID := make(map[uint64]model.QuoteLibraryItem, len(libraryItems))
+	for _, item := range libraryItems {
+		libraryByID[item.ID] = item
 	}
 
 	tx := repository.DB.Begin()
@@ -235,6 +524,14 @@ func (s *QuoteService) UpsertProviderPriceBook(providerID uint64, input *QuotePr
 			tx.Rollback()
 			return nil, errors.New("价格项缺少标准项")
 		}
+		libraryItem, ok := libraryByID[item.StandardItemID]
+		if !ok {
+			tx.Rollback()
+			return nil, errors.New("标准项不存在或已停用")
+		}
+		if item.UnitPriceCent <= 0 && item.MinChargeCent <= 0 && strings.TrimSpace(item.Remark) == "" {
+			continue
+		}
 		row := model.QuotePriceBookItem{
 			PriceBookID:    book.ID,
 			StandardItemID: item.StandardItemID,
@@ -243,6 +540,9 @@ func (s *QuoteService) UpsertProviderPriceBook(providerID uint64, input *QuotePr
 			MinChargeCent:  item.MinChargeCent,
 			Remark:         strings.TrimSpace(item.Remark),
 			Status:         item.Status,
+		}
+		if row.Unit == "" {
+			row.Unit = strings.TrimSpace(libraryItem.Unit)
 		}
 		if row.Unit == "" {
 			row.Unit = "项"
@@ -269,11 +569,53 @@ func (s *QuoteService) UpsertProviderPriceBook(providerID uint64, input *QuotePr
 	return s.GetProviderPriceBook(providerID)
 }
 
+func maxPriceItemStatus(status int8) int8 {
+	if status == 0 {
+		return model.QuoteLibraryItemStatusEnabled
+	}
+	return status
+}
+
 func (s *QuoteService) PublishProviderPriceBook(providerID uint64) (*QuotePriceBookDetail, error) {
 	book, err := s.ensureDraftPriceBook(providerID)
 	if err != nil {
 		return nil, err
 	}
+
+	var libraryItems []model.QuoteLibraryItem
+	if err := repository.DB.
+		Select("id, name, extensions_json").
+		Where("status = ?", model.QuoteLibraryItemStatusEnabled).
+		Find(&libraryItems).Error; err != nil {
+		return nil, fmt.Errorf("查询标准项失败: %w", err)
+	}
+
+	var priceItems []model.QuotePriceBookItem
+	if err := repository.DB.
+		Where("price_book_id = ?", book.ID).
+		Find(&priceItems).Error; err != nil {
+		return nil, fmt.Errorf("查询价格簿明细失败: %w", err)
+	}
+
+	priceByStandardID := make(map[uint64]model.QuotePriceBookItem, len(priceItems))
+	for _, item := range priceItems {
+		priceByStandardID[item.StandardItemID] = item
+	}
+
+	requiredMissing := make([]string, 0)
+	for _, libraryItem := range libraryItems {
+		if !parseQuoteRequiredFlag(libraryItem.ExtensionsJSON) {
+			continue
+		}
+		priceItem, ok := priceByStandardID[libraryItem.ID]
+		if !ok || priceItem.UnitPriceCent <= 0 {
+			requiredMissing = append(requiredMissing, libraryItem.Name)
+		}
+	}
+	if len(requiredMissing) > 0 {
+		return nil, fmt.Errorf("以下必填项未填写价格，无法发布：%s", strings.Join(requiredMissing, "、"))
+	}
+
 	now := time.Now()
 
 	tx := repository.DB.Begin()
@@ -648,15 +990,15 @@ func (s *QuoteService) GenerateDrafts(quoteListID uint64) (*QuoteComparisonRespo
 				missingPrice = true
 			}
 			submissionItem := model.QuoteSubmissionItem{
-				QuoteSubmissionID:     submission.ID,
-				QuoteListItemID:       taskItem.ID,
+				QuoteSubmissionID:      submission.ID,
+				QuoteListItemID:        taskItem.ID,
 				GeneratedUnitPriceCent: generatedUnitPrice,
-				UnitPriceCent:         unitPrice,
-				AmountCent:            amount,
-				AdjustedFlag:          false,
-				MissingPriceFlag:      missingPrice,
-				MissingMappingFlag:    taskItem.MissingMappingFlag || standardID == 0,
-				MinChargeAppliedFlag:  minChargeApplied,
+				UnitPriceCent:          unitPrice,
+				AmountCent:             amount,
+				AdjustedFlag:           false,
+				MissingPriceFlag:       missingPrice,
+				MissingMappingFlag:     taskItem.MissingMappingFlag || standardID == 0,
+				MinChargeAppliedFlag:   minChargeApplied,
 			}
 			if err := tx.Create(&submissionItem).Error; err != nil {
 				tx.Rollback()
@@ -670,11 +1012,11 @@ func (s *QuoteService) GenerateDrafts(quoteListID uint64) (*QuoteComparisonRespo
 			generationStatus = model.QuoteGenerationStatusPartialMissing
 		}
 		if err := tx.Model(&submission).Updates(map[string]interface{}{
-			"status":                    model.QuoteSubmissionStatusGenerated,
-			"task_status":               model.QuoteListStatusPricingInProgress,
-			"generation_status":         generationStatus,
+			"status":                       model.QuoteSubmissionStatusGenerated,
+			"task_status":                  model.QuoteListStatusPricingInProgress,
+			"generation_status":            generationStatus,
 			"generated_from_price_book_id": priceBook.ID,
-			"total_cent":                totalCent,
+			"total_cent":                   totalCent,
 		}).Error; err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("更新报价草稿失败: %w", err)
@@ -721,12 +1063,12 @@ func (s *QuoteService) SubmitTaskToUser(quoteListID, submissionID uint64) (*mode
 			return err
 		}
 		return tx.Model(&quoteList).Updates(map[string]interface{}{
-			"status":                   model.QuoteListStatusSubmittedToUser,
-			"user_confirmation_status": model.QuoteUserConfirmationPending,
-			"active_submission_id":     submission.ID,
-			"submitted_to_user_at":     &now,
+			"status":                      model.QuoteListStatusSubmittedToUser,
+			"user_confirmation_status":    model.QuoteUserConfirmationPending,
+			"active_submission_id":        submission.ID,
+			"submitted_to_user_at":        &now,
 			"awarded_quote_submission_id": submission.ID,
-			"awarded_provider_id":      submission.ProviderID,
+			"awarded_provider_id":         submission.ProviderID,
 		}).Error
 	}); err != nil {
 		return nil, fmt.Errorf("提交给用户确认失败: %w", err)
@@ -737,6 +1079,9 @@ func (s *QuoteService) SubmitTaskToUser(quoteListID, submissionID uint64) (*mode
 	quoteList.SubmittedToUserAt = &now
 	quoteList.AwardedQuoteSubmissionID = submission.ID
 	quoteList.AwardedProviderID = submission.ProviderID
+	var provider model.Provider
+	_ = repository.DB.Select("company_name").First(&provider, submission.ProviderID).Error
+	NewNotificationDispatcher().NotifyQuoteSubmittedToUser(quoteList.OwnerUserID, quoteList.ID, quoteList.ProjectID, provider.CompanyName)
 	return &quoteList, nil
 }
 
@@ -791,7 +1136,7 @@ func (s *QuoteService) RequoteTask(quoteListID uint64) (*model.QuoteList, error)
 		return nil, fmt.Errorf("更新旧任务状态失败: %w", err)
 	}
 	if err := tx.Model(&model.QuoteSubmission{}).Where("quote_list_id = ?", quoteListID).Updates(map[string]interface{}{
-		"status":       model.QuoteSubmissionStatusSuperseded,
+		"status":        model.QuoteSubmissionStatusSuperseded,
 		"superseded_by": newTask.ID,
 	}).Error; err != nil {
 		tx.Rollback()
@@ -827,11 +1172,15 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 	if err != nil {
 		return nil, err
 	}
+	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
 	return &QuoteTaskUserView{
-		QuoteList:   quoteList,
-		Submission:  submission,
-		Items:       items,
-		TaskSummary: snapshot,
+		QuoteList:        quoteList,
+		Submission:       submission,
+		Items:            items,
+		TaskSummary:      snapshot,
+		BusinessStage:    stageSummary.CurrentStage,
+		FlowSummary:      stageSummary.FlowSummary,
+		AvailableActions: stageSummary.AvailableActions,
 	}, nil
 }
 
@@ -842,12 +1191,15 @@ func (s *QuoteService) ListUserQuoteTasks(userID uint64) ([]UserQuoteTaskSummary
 	}
 	result := make([]UserQuoteTaskSummary, 0, len(tasks))
 	for _, task := range tasks {
+		stageSummary := s.resolveQuoteListBusinessSummary(&task)
 		row := UserQuoteTaskSummary{
 			ID:                     task.ID,
 			Title:                  task.Title,
 			Status:                 task.Status,
 			UserConfirmationStatus: task.UserConfirmationStatus,
 			ActiveSubmissionID:     task.ActiveSubmissionID,
+			BusinessStage:          stageSummary.CurrentStage,
+			FlowSummary:            stageSummary.FlowSummary,
 		}
 		if task.DeadlineAt != nil {
 			row.DeadlineAt = task.DeadlineAt.Format(time.RFC3339)
@@ -872,30 +1224,122 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	if quoteList.Status != model.QuoteListStatusSubmittedToUser {
 		return nil, fmt.Errorf("当前报价任务状态不允许确认: %s", quoteList.Status)
 	}
+	sourceType, sourceID, err := businessFlowSvc.ResolveSourceFromProposal(nil, quoteList.ProposalID)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
+	var projectID uint64
+	auditService := &AuditLogService{}
+	beforeState := map[string]interface{}{
+		"quoteList": map[string]interface{}{
+			"id":                     quoteList.ID,
+			"status":                 quoteList.Status,
+			"userConfirmationStatus": quoteList.UserConfirmationStatus,
+			"projectId":              quoteList.ProjectID,
+		},
+		"submission": map[string]interface{}{
+			"id":         submission.ID,
+			"providerId": submission.ProviderID,
+			"status":     submission.Status,
+			"totalCent":  submission.TotalCent,
+		},
+	}
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if projectID, err = s.getOrCreateProjectForQuoteConfirmationTx(tx, &quoteList); err != nil {
+			return err
+		}
 		if err := tx.Model(&model.QuoteSubmission{}).Where("quote_list_id = ?", quoteList.ID).Updates(map[string]interface{}{
 			"submitted_to_user": false,
 		}).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&submission).Updates(map[string]interface{}{
-			"status":             model.QuoteSubmissionStatusUserConfirmed,
-			"task_status":        model.QuoteListStatusUserConfirmed,
-			"submitted_to_user":  true,
-			"locked_at":          &now,
-			"user_confirmed_at":  &now,
+			"status":            model.QuoteSubmissionStatusUserConfirmed,
+			"task_status":       model.QuoteListStatusUserConfirmed,
+			"submitted_to_user": true,
+			"locked_at":         &now,
+			"user_confirmed_at": &now,
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&quoteList).Updates(map[string]interface{}{
-			"status":                   model.QuoteListStatusUserConfirmed,
-			"user_confirmation_status": model.QuoteUserConfirmationConfirmed,
-			"user_confirmed_at":        &now,
-			"active_submission_id":     submission.ID,
-			"awarded_provider_id":      submission.ProviderID,
+		if err := tx.Model(&quoteList).Updates(map[string]interface{}{
+			"status":                      model.QuoteListStatusUserConfirmed,
+			"user_confirmation_status":    model.QuoteUserConfirmationConfirmed,
+			"user_confirmed_at":           &now,
+			"active_submission_id":        submission.ID,
+			"awarded_provider_id":         submission.ProviderID,
 			"awarded_quote_submission_id": submission.ID,
-		}).Error
+			"project_id":                  projectID,
+		}).Error; err != nil {
+			return err
+		}
+
+		if projectID > 0 {
+			snapshotBytes, _ := json.Marshal(map[string]interface{}{
+				"quoteListId":       quoteList.ID,
+				"quoteSubmissionId": submission.ID,
+				"providerId":        submission.ProviderID,
+				"totalCent":         submission.TotalCent,
+				"estimatedDays":     submission.EstimatedDays,
+				"confirmedAt":       now,
+				"quoteStatus":       model.QuoteListStatusUserConfirmed,
+			})
+			if err := tx.Model(&model.Project{}).Where("id = ?", projectID).Updates(map[string]interface{}{
+				"construction_provider_id":     submission.ProviderID,
+				"foreman_id":                   submission.ProviderID,
+				"selected_quote_submission_id": submission.ID,
+				"construction_quote":           float64(submission.TotalCent) / 100,
+				"construction_quote_snapshot":  string(snapshotBytes),
+				"quote_confirmed_at":           &now,
+				"business_status":              model.ProjectBusinessStatusConstructionQuoteConfirmed,
+				"current_phase":                "待开工",
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := businessFlowSvc.AdvanceBySource(tx, sourceType, sourceID, map[string]interface{}{
+			"current_stage":                model.BusinessFlowStageReadyToStart,
+			"selected_foreman_provider_id": submission.ProviderID,
+			"selected_quote_task_id":       quoteList.ID,
+			"selected_quote_submission_id": submission.ID,
+			"project_id":                   projectID,
+		}); err != nil {
+			return err
+		}
+
+		return auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "user",
+			OperatorID:    userID,
+			OperationType: "confirm_construction_quote",
+			ResourceType:  "quote_list",
+			ResourceID:    quoteList.ID,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"quoteList": map[string]interface{}{
+					"id":                     quoteList.ID,
+					"status":                 model.QuoteListStatusUserConfirmed,
+					"userConfirmationStatus": model.QuoteUserConfirmationConfirmed,
+					"projectId":              projectID,
+				},
+				"submission": map[string]interface{}{
+					"id":              submission.ID,
+					"providerId":      submission.ProviderID,
+					"userConfirmedAt": now,
+					"taskStatus":      model.QuoteListStatusUserConfirmed,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"projectId":     projectID,
+				"sourceType":    sourceType,
+				"sourceId":      sourceID,
+				"submissionId":  submission.ID,
+				"providerId":    submission.ProviderID,
+				"submissionFee": float64(submission.TotalCent) / 100,
+			},
+		})
 	}); err != nil {
 		return nil, fmt.Errorf("确认报价失败: %w", err)
 	}
@@ -903,6 +1347,8 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	quoteList.UserConfirmationStatus = model.QuoteUserConfirmationConfirmed
 	quoteList.UserConfirmedAt = &now
 	quoteList.ActiveSubmissionID = submission.ID
+	quoteList.ProjectID = projectID
+	NewNotificationDispatcher().NotifyQuoteDecision(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, true, "")
 	return &quoteList, nil
 }
 
@@ -918,7 +1364,26 @@ func (s *QuoteService) UserRejectQuoteSubmission(submissionID, userID uint64, re
 	if quoteList.OwnerUserID != userID {
 		return nil, errors.New("无权拒绝该报价")
 	}
+	sourceType, sourceID, err := businessFlowSvc.ResolveSourceFromProposal(nil, quoteList.ProposalID)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
+	auditService := &AuditLogService{}
+	beforeState := map[string]interface{}{
+		"quoteList": map[string]interface{}{
+			"id":                     quoteList.ID,
+			"status":                 quoteList.Status,
+			"userConfirmationStatus": quoteList.UserConfirmationStatus,
+			"projectId":              quoteList.ProjectID,
+		},
+		"submission": map[string]interface{}{
+			"id":         submission.ID,
+			"providerId": submission.ProviderID,
+			"status":     submission.Status,
+			"totalCent":  submission.TotalCent,
+		},
+	}
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&submission).Updates(map[string]interface{}{
 			"status":      model.QuoteSubmissionStatusSubmitted,
@@ -927,18 +1392,94 @@ func (s *QuoteService) UserRejectQuoteSubmission(submissionID, userID uint64, re
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&quoteList).Updates(map[string]interface{}{
+		if err := tx.Model(&quoteList).Updates(map[string]interface{}{
 			"status":                   model.QuoteListStatusRejected,
 			"user_confirmation_status": model.QuoteUserConfirmationRejected,
 			"rejected_at":              &now,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		if err := businessFlowSvc.AdvanceBySource(tx, sourceType, sourceID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageConstructionQuotePending,
+			"closed_reason": strings.TrimSpace(reason),
+		}); err != nil {
+			return err
+		}
+		return auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "user",
+			OperatorID:    userID,
+			OperationType: "reject_construction_quote",
+			ResourceType:  "quote_list",
+			ResourceID:    quoteList.ID,
+			Reason:        strings.TrimSpace(reason),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"quoteList": map[string]interface{}{
+					"id":                     quoteList.ID,
+					"status":                 model.QuoteListStatusRejected,
+					"userConfirmationStatus": model.QuoteUserConfirmationRejected,
+					"rejectedAt":             now,
+				},
+				"submission": map[string]interface{}{
+					"id":         submission.ID,
+					"providerId": submission.ProviderID,
+					"status":     model.QuoteSubmissionStatusSubmitted,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"projectId":    quoteList.ProjectID,
+				"sourceType":   sourceType,
+				"sourceId":     sourceID,
+				"submissionId": submission.ID,
+				"providerId":   submission.ProviderID,
+			},
+		})
 	}); err != nil {
 		return nil, fmt.Errorf("拒绝报价失败: %w", err)
 	}
 	quoteList.Status = model.QuoteListStatusRejected
 	quoteList.UserConfirmationStatus = model.QuoteUserConfirmationRejected
 	quoteList.RejectedAt = &now
+	NewNotificationDispatcher().NotifyQuoteDecision(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, quoteList.ProjectID, false, reason)
 	return &quoteList, nil
+}
+
+func (s *QuoteService) ensureProjectForConfirmedQuote(quoteList *model.QuoteList) (uint64, error) {
+	return 0, errors.New("旧的兜底建项目入口已禁用，请在主事务中调用 getOrCreateProjectForQuoteConfirmationTx")
+}
+
+func (s *QuoteService) getOrCreateProjectForQuoteConfirmationTx(tx *gorm.DB, quoteList *model.QuoteList) (uint64, error) {
+	if quoteList == nil {
+		return 0, errors.New("报价任务不存在")
+	}
+	if quoteList.ProjectID > 0 {
+		var existing model.Project
+		if err := tx.First(&existing, quoteList.ProjectID).Error; err == nil {
+			return quoteList.ProjectID, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("查询项目失败: %w", err)
+		}
+	}
+	if quoteList.ProposalID == 0 {
+		return 0, nil
+	}
+
+	var project model.Project
+	if err := tx.Where("proposal_id = ?", quoteList.ProposalID).First(&project).Error; err == nil {
+		return project.ID, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, fmt.Errorf("查询项目失败: %w", err)
+	}
+
+	projectService := &ProjectService{}
+	createdProject, err := projectService.CreateProjectTx(tx, &CreateProjectRequest{
+		ProposalID: quoteList.ProposalID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("创建项目失败: %w", err)
+	}
+	return createdProject.ID, nil
 }
 
 func (s *QuoteService) BuildSubmissionPrintHTML(submissionID uint64) (string, error) {
@@ -963,12 +1504,12 @@ func (s *QuoteService) BuildSubmissionPrintHTML(submissionID uint64) (string, er
 		taskItemByID[item.ID] = item
 	}
 	type printItem struct {
-		Name       string
-		Unit       string
-		Quantity   float64
-		UnitPrice  string
-		Amount     string
-		Remark     string
+		Name      string
+		Unit      string
+		Quantity  float64
+		UnitPrice string
+		Amount    string
+		Remark    string
 	}
 	rows := make([]printItem, 0, len(items))
 	for _, item := range items {

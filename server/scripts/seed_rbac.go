@@ -83,8 +83,9 @@ func main() {
 
 		// 资金中心
 		{ID: 60, ParentID: 0, Title: "资金中心", Type: 1, Path: "/finance", Icon: "BankOutlined", Sort: 60},
-		{ID: 61, ParentID: 60, Title: "托管账户", Type: 2, Path: "/finance/escrow", Component: "pages/finance/EscrowAccountList", Sort: 1, Permission: "finance:escrow:list"},
-		{ID: 62, ParentID: 60, Title: "交易记录", Type: 2, Path: "/finance/transactions", Component: "pages/finance/TransactionList", Sort: 2, Permission: "finance:transaction:list"},
+		{ID: 61, ParentID: 60, Title: "资金概览", Type: 2, Path: "/finance/overview", Component: "pages/finance/FinanceOverview", Sort: 0, Permission: "finance:escrow:list"},
+		{ID: 62, ParentID: 60, Title: "托管账户", Type: 2, Path: "/finance/escrow", Component: "pages/finance/EscrowAccountList", Sort: 1, Permission: "finance:escrow:list"},
+		{ID: 63, ParentID: 60, Title: "交易记录", Type: 2, Path: "/finance/transactions", Component: "pages/finance/TransactionList", Sort: 2, Permission: "finance:transaction:list"},
 
 		// 评价管理
 		{ID: 70, ParentID: 0, Title: "评价管理", Type: 2, Path: "/reviews", Component: "pages/reviews/ReviewList", Icon: "StarOutlined", Sort: 70, Permission: "review:list"},
@@ -96,6 +97,7 @@ func main() {
 
 		// 操作日志
 		{ID: 90, ParentID: 0, Title: "操作日志", Type: 2, Path: "/logs", Component: "pages/system/LogList", Icon: "FileTextOutlined", Sort: 90, Permission: "system:log:list"},
+		{ID: 91, ParentID: 0, Title: "业务审计日志", Type: 2, Path: "/audit-logs", Component: "pages/system/AuditLogList", Icon: "FileTextOutlined", Sort: 91, Permission: "system:log:list"},
 
 		// 系统设置
 		{ID: 100, ParentID: 0, Title: "系统设置", Type: 2, Path: "/settings", Component: "pages/settings/SystemSettings", Icon: "SettingOutlined", Sort: 100, Permission: "system:setting:list"},

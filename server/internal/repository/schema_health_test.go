@@ -48,6 +48,57 @@ func TestRefreshUserAuthSchemaHealthReportsMissingColumns(t *testing.T) {
 	}
 }
 
+func TestRefreshBookingP0SchemaHealthReportsMissingTables(t *testing.T) {
+	setupSchemaHealthDB(t)
+
+	snapshot := RefreshBookingP0SchemaHealth()
+	if snapshot.Status != SMSAuditHealthStatusDegraded {
+		t.Fatalf("expected degraded status, got %s", snapshot.Status)
+	}
+	for _, required := range []string{"site_surveys", "budget_confirmations"} {
+		if !containsString(snapshot.Missing, required) {
+			t.Fatalf("expected missing to contain %s, got %+v", required, snapshot.Missing)
+		}
+	}
+	if snapshot.RequiredMigration != BookingP0MigrationPath {
+		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
+	}
+}
+
+func TestRefreshProjectRiskSchemaHealthReportsMissingTables(t *testing.T) {
+	setupSchemaHealthDB(t, &model.Project{})
+
+	snapshot := RefreshProjectRiskSchemaHealth()
+	if snapshot.Status != SMSAuditHealthStatusDegraded {
+		t.Fatalf("expected degraded status, got %s", snapshot.Status)
+	}
+	for _, required := range []string{"project_audits", "refund_applications"} {
+		if !containsString(snapshot.Missing, required) {
+			t.Fatalf("expected missing to contain %s, got %+v", required, snapshot.Missing)
+		}
+	}
+	if snapshot.RequiredMigration != ProjectRiskMigrationPath {
+		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
+	}
+}
+
+func TestRefreshCommerceRuntimeSchemaHealthReportsMissingTables(t *testing.T) {
+	setupSchemaHealthDB(t)
+
+	snapshot := RefreshCommerceRuntimeSchemaHealth()
+	if snapshot.Status != SMSAuditHealthStatusDegraded {
+		t.Fatalf("expected degraded status, got %s", snapshot.Status)
+	}
+	for _, required := range []string{"providers", "bookings", "design_working_docs"} {
+		if !containsString(snapshot.Missing, required) {
+			t.Fatalf("expected missing to contain %s, got %+v", required, snapshot.Missing)
+		}
+	}
+	if snapshot.RequiredMigration != CommerceRuntimeMigrationPath {
+		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
+	}
+}
+
 func TestEnsureCriticalSchemaReleaseFailsOnMissingMerchantSchema(t *testing.T) {
 	setupSchemaHealthDB(t, &model.User{}, &model.SMSAuditLog{})
 	if err := EnsureCriticalSchema("release"); err == nil {

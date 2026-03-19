@@ -23,6 +23,7 @@ func setupOrderServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Provider{},
 		&model.Booking{},
 		&model.Project{},
+		&model.Milestone{},
 		&model.Proposal{},
 		&model.Order{},
 		&model.PaymentPlan{},
@@ -168,5 +169,82 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 	}
 	if filtered[0].Amount != 11500 {
 		t.Fatalf("expected discounted amount, got %+v", filtered[0])
+	}
+}
+
+func TestPayPaymentPlanResumesPausedProjectExecution(t *testing.T) {
+	db := setupOrderServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 1001}, Phone: "13800138111", Status: 1}
+	provider := model.Provider{Base: model.Base{ID: 1002}, ProviderType: 2, CompanyName: "施工公司恢复测试"}
+	project := model.Project{
+		Base:                    model.Base{ID: 1003},
+		OwnerID:                 user.ID,
+		ProviderID:              provider.ID,
+		ConstructionProviderID:  provider.ID,
+		Name:                    "付款恢复项目",
+		Address:                 "付款恢复地址",
+		Status:                  model.ProjectStatusActive,
+		BusinessStatus:          model.ProjectBusinessStatusInProgress,
+		ConstructionPaymentMode: "milestone",
+		PaymentPaused:           true,
+		PaymentPausedReason:     "等待支付下一期施工款",
+		CurrentPhase:            "等待支付下一期施工款",
+	}
+	order := model.Order{
+		Base:        model.Base{ID: 1004},
+		ProjectID:   project.ID,
+		OrderNo:     "ORD-RESUME-1",
+		OrderType:   model.OrderTypeConstruction,
+		TotalAmount: 50000,
+		PaidAmount:  15000,
+		Status:      model.OrderStatusPending,
+	}
+	plans := []model.PaymentPlan{
+		{Base: model.Base{ID: 1005}, OrderID: order.ID, Seq: 1, Name: "首款", Amount: 15000, Status: 1},
+		{Base: model.Base{ID: 1006}, OrderID: order.ID, Seq: 2, Name: "二期款", Amount: 20000, Status: 0},
+	}
+	milestones := []model.Milestone{
+		{Base: model.Base{ID: 1007}, ProjectID: project.ID, Name: "开工交底", Seq: 1, Status: model.MilestoneStatusAccepted},
+		{Base: model.Base{ID: 1008}, ProjectID: project.ID, Name: "水电验收", Seq: 2, Status: model.MilestoneStatusPending},
+	}
+
+	for _, record := range []interface{}{&user, &provider, &project, &order} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed resume project record: %v", err)
+		}
+	}
+	if err := db.Create(&plans).Error; err != nil {
+		t.Fatalf("seed payment plans: %v", err)
+	}
+	if err := db.Create(&milestones).Error; err != nil {
+		t.Fatalf("seed milestones: %v", err)
+	}
+
+	paidPlan, err := (&OrderService{}).PayPaymentPlan(user.ID, plans[1].ID)
+	if err != nil {
+		t.Fatalf("PayPaymentPlan: %v", err)
+	}
+	if paidPlan.Status != 1 {
+		t.Fatalf("expected paid plan status, got %+v", paidPlan)
+	}
+
+	var refreshedProject model.Project
+	if err := db.First(&refreshedProject, project.ID).Error; err != nil {
+		t.Fatalf("reload project: %v", err)
+	}
+	if refreshedProject.PaymentPaused {
+		t.Fatalf("expected project payment pause cleared, got %+v", refreshedProject)
+	}
+	if refreshedProject.CurrentPhase != "水电验收施工中" {
+		t.Fatalf("expected project moved back to executable phase, got %q", refreshedProject.CurrentPhase)
+	}
+
+	var refreshedMilestone model.Milestone
+	if err := db.First(&refreshedMilestone, milestones[1].ID).Error; err != nil {
+		t.Fatalf("reload next milestone: %v", err)
+	}
+	if refreshedMilestone.Status != model.MilestoneStatusInProgress {
+		t.Fatalf("expected next milestone activated, got %+v", refreshedMilestone)
 	}
 }

@@ -18,6 +18,7 @@ func hasBlockerCode(blockers []VisibilityBlocker, code string) bool {
 func uint64Ptr(v uint64) *uint64 { return &v }
 
 func TestAdminVisibilityResolver_MerchantApplication(t *testing.T) {
+	setupPublicVisibilitySchema(t)
 	resolver := NewAdminVisibilityResolver()
 
 	t.Run("approved no blocker", func(t *testing.T) {
@@ -47,7 +48,7 @@ func TestAdminVisibilityResolver_MerchantApplication(t *testing.T) {
 	})
 
 	t.Run("approved multiple blockers includes deep link mismatch", func(t *testing.T) {
-		result := resolver.ResolveMerchantApplication(model.MerchantApplication{Status: 1}, &model.Provider{Base: model.Base{ID: 103}, Verified: false, Status: 2})
+		result := resolver.ResolveMerchantApplication(model.MerchantApplication{Status: 1}, &model.Provider{Base: model.Base{ID: 103}, Verified: false, Status: 2, IsSettled: true})
 		if result.Visibility.PublicVisible {
 			t.Fatalf("expected not public visible")
 		}
@@ -82,6 +83,7 @@ func TestAdminVisibilityResolver_MerchantApplication(t *testing.T) {
 }
 
 func TestAdminVisibilityResolver_MaterialShopApplication(t *testing.T) {
+	setupPublicVisibilitySchema(t)
 	resolver := NewAdminVisibilityResolver()
 
 	t.Run("pending preview visible even when products are below five", func(t *testing.T) {
@@ -95,7 +97,7 @@ func TestAdminVisibilityResolver_MaterialShopApplication(t *testing.T) {
 	})
 
 	t.Run("approved unverified shop has deep link mismatch", func(t *testing.T) {
-		result := resolver.ResolveMaterialShopApplication(model.MaterialShopApplication{Status: 1}, &model.MaterialShop{Base: model.Base{ID: 301}, IsVerified: false}, 8)
+		result := resolver.ResolveMaterialShopApplication(model.MaterialShopApplication{Status: 1}, &model.MaterialShop{Base: model.Base{ID: 301}, IsVerified: false, IsSettled: true}, 8)
 		if !hasBlockerCode(result.Visibility.Blockers, "shop_unverified") || !hasBlockerCode(result.Visibility.Blockers, "deep_link_visibility_mismatch") {
 			t.Fatalf("expected shop_unverified and deep_link_visibility_mismatch, got %v", result.Visibility.Blockers)
 		}
@@ -110,6 +112,7 @@ func TestAdminVisibilityResolver_MaterialShopApplication(t *testing.T) {
 }
 
 func TestAdminVisibilityResolver_IdentityApplication(t *testing.T) {
+	setupPublicVisibilitySchema(t)
 	resolver := NewAdminVisibilityResolver()
 
 	t.Run("approved identity only not enough", func(t *testing.T) {
@@ -137,6 +140,7 @@ func TestAdminVisibilityResolver_IdentityApplication(t *testing.T) {
 }
 
 func TestAdminVisibilityResolver_CaseAudit(t *testing.T) {
+	setupPublicVisibilitySchema(t)
 	resolver := NewAdminVisibilityResolver()
 
 	t.Run("create pending preview visible", func(t *testing.T) {

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"log"
@@ -82,6 +83,10 @@ func InitDB(cfg *config.DatabaseConfig) error {
 		log.Println("AutoMigrate disabled. Please ensure database schema is up to date manually.")
 	}
 
+	if err := ensureRuntimeSchemaColumns(); err != nil {
+		log.Printf("Runtime schema alignment failed: %v", err)
+	}
+
 	log.Println("Database connected successfully")
 	return nil
 }
@@ -97,10 +102,14 @@ func autoMigrate() error {
 		&model.Worker{},
 		&model.Project{},
 		&model.Milestone{},
+		&model.MilestoneSubmission{},
+		&model.MilestoneAcceptance{},
 		&model.WorkLog{},
 		&model.EscrowAccount{},
 		&model.Transaction{},
 		&model.Booking{},
+		&model.SiteSurvey{},
+		&model.BudgetConfirmation{},
 		&model.ProjectPhase{},
 		&model.PhaseTask{},
 		&model.UserFollow{},
@@ -133,12 +142,16 @@ func autoMigrate() error {
 		&model.ChangeOrder{},
 		&model.Complaint{},
 		&model.Evaluation{},
+		&model.ProjectAudit{},
+		&model.RefundApplication{},
+		&model.BusinessFlow{},
 		// 商家中心 (2025-12-29)
 		&model.MerchantApplication{},
 		&model.MerchantIncome{},
 		&model.MerchantWithdraw{},
 		&model.MerchantBankAccount{},
 		&model.MerchantServiceSetting{},
+		&model.MaterialShopServiceSetting{},
 		&model.MaterialShopApplication{},
 		&model.MaterialShopApplicationProduct{},
 		&model.MaterialShopProduct{},
@@ -152,6 +165,10 @@ func autoMigrate() error {
 		&model.UserLike{},
 		&model.CaseComment{},
 		&model.SensitiveWord{},
+		&model.UserSettings{},
+		&model.UserVerification{},
+		&model.UserLoginDevice{},
+		&model.UserFeedback{},
 		&model.QuoteLibraryItem{},
 		&model.QuoteCategory{},
 		&model.QuoteList{},
@@ -159,13 +176,58 @@ func autoMigrate() error {
 		&model.QuoteInvitation{},
 		&model.QuoteSubmission{},
 		&model.QuoteSubmissionItem{},
+		&model.QuoteSubmissionRevision{},
 		&model.QuotePriceBook{},
 		&model.QuotePriceBookItem{},
 		&model.QuotePriceTier{},
 		&model.QuoteCategoryRule{},
 		&model.QuoteTemplate{},
 		&model.QuoteTemplateItem{},
+		// 设计服务支付体系 (v1.12.0)
+		&model.DesignWorkingDoc{},
+		&model.DesignFeeQuote{},
+		&model.DesignDeliverable{},
 	)
+}
+
+func ensureRuntimeSchemaColumns() error {
+	if DB == nil {
+		return nil
+	}
+
+	runtimeTables := []struct {
+		name  string
+		model interface{}
+	}{
+		{name: "user_settings", model: &model.UserSettings{}},
+		{name: "user_verifications", model: &model.UserVerification{}},
+		{name: "user_login_devices", model: &model.UserLoginDevice{}},
+		{name: "user_feedbacks", model: &model.UserFeedback{}},
+	}
+
+	for _, runtimeTable := range runtimeTables {
+		if DB.Migrator().HasTable(runtimeTable.model) {
+			continue
+		}
+		log.Printf("Runtime schema table missing, creating: %s", runtimeTable.name)
+		if err := DB.AutoMigrate(runtimeTable.model); err != nil {
+			return fmt.Errorf("create runtime schema table %s: %w", runtimeTable.name, err)
+		}
+	}
+
+	if DB.Migrator().HasTable(&model.MaterialShop{}) && !DB.Migrator().HasColumn(&model.MaterialShop{}, "Status") {
+		if err := DB.Migrator().AddColumn(&model.MaterialShop{}, "Status"); err != nil {
+			return fmt.Errorf("add material_shops.status: %w", err)
+		}
+	}
+
+	if DB.Migrator().HasTable(&model.MaterialShop{}) {
+		if err := DB.Exec(`UPDATE material_shops SET status = 1 WHERE status IS NULL`).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // GetDB 获取数据库实例

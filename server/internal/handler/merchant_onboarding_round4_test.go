@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -469,6 +470,196 @@ func TestAdminApproveMaterialShopApplication_FreezePreviousProvider(t *testing.T
 	}
 	if createdProducts[0].Description != "测试商品描述" {
 		t.Fatalf("expected description to be mapped from application params, got=%q", createdProducts[0].Description)
+	}
+}
+
+func TestAdminCompleteMaterialShopAccount_CreatesAndBindsUser(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	shop := model.MaterialShop{
+		Name:        "测试主材店",
+		ContactName: "王五",
+		IsVerified:  true,
+	}
+	if err := repository.DB.Create(&shop).Error; err != nil {
+		t.Fatalf("create shop failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", shop.ID)}}
+	c.Set("adminId", uint64(99))
+	c.Request = newJSONRequest(t, http.MethodPost, gin.H{
+		"phone":       "13800138009",
+		"contactName": "王五",
+		"nickname":    "王五主材",
+	})
+	AdminCompleteMaterialShopAccount(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+
+	var updatedShop model.MaterialShop
+	if err := repository.DB.First(&updatedShop, shop.ID).Error; err != nil {
+		t.Fatalf("reload shop failed: %v", err)
+	}
+	if updatedShop.UserID == 0 {
+		t.Fatalf("expected shop to bind user")
+	}
+	if updatedShop.ContactPhone != "13800138009" {
+		t.Fatalf("expected contact phone synced, got %s", updatedShop.ContactPhone)
+	}
+
+	var user model.User
+	if err := repository.DB.First(&user, updatedShop.UserID).Error; err != nil {
+		t.Fatalf("load user failed: %v", err)
+	}
+	if user.Phone != "13800138009" {
+		t.Fatalf("unexpected user phone: %s", user.Phone)
+	}
+
+	var identity model.UserIdentity
+	if err := repository.DB.Where("user_id = ? AND identity_type = ?", user.ID, merchantIdentityTypeMaterial).First(&identity).Error; err != nil {
+		t.Fatalf("load identity failed: %v", err)
+	}
+	if identity.Status != merchantIdentityStatusActive || !identity.Verified {
+		t.Fatalf("unexpected identity: %+v", identity)
+	}
+}
+
+func TestAdminCompleteMaterialShopAccount_RejectsActiveProviderUser(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	user := model.User{Phone: "13800138008", Nickname: "设计师张三", Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+	provider := model.Provider{UserID: user.ID, ProviderType: 1, CompanyName: "设计师A", Status: merchantProviderStatusActive, Verified: true}
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+	shop := model.MaterialShop{Name: "待补全店", IsVerified: true}
+	if err := repository.DB.Create(&shop).Error; err != nil {
+		t.Fatalf("create shop failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", shop.ID)}}
+	c.Set("adminId", uint64(99))
+	c.Request = newJSONRequest(t, http.MethodPost, gin.H{
+		"phone": "13800138008",
+	})
+	AdminCompleteMaterialShopAccount(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected http status: %d body=%s", w.Code, w.Body.String())
+	}
+	var resp responseEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if !strings.Contains(resp.Message, "其他生效中的服务商身份") {
+		t.Fatalf("unexpected error message: %s", resp.Message)
+	}
+}
+
+func TestAdminCompleteProviderSettlement_ActivatesBoundUser(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	app := model.MerchantApplication{Phone: "13800138019", CompanyName: "测试装修公司"}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create application failed: %v", err)
+	}
+
+	user := model.User{Phone: "13800138019", Nickname: "测试装修公司", Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:              user.ID,
+		ProviderType:        2,
+		CompanyName:         "测试装修公司",
+		Status:              merchantProviderStatusActive,
+		Verified:            true,
+		SourceApplicationID: app.ID,
+	}
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", provider.ID)}}
+	c.Set("adminId", uint64(99))
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	AdminCompleteProviderSettlement(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+
+	var updatedProvider model.Provider
+	if err := repository.DB.First(&updatedProvider, provider.ID).Error; err != nil {
+		t.Fatalf("reload provider failed: %v", err)
+	}
+	if !updatedProvider.IsSettled {
+		t.Fatalf("expected provider to be settled")
+	}
+
+	var updatedApp model.MerchantApplication
+	if err := repository.DB.First(&updatedApp, app.ID).Error; err != nil {
+		t.Fatalf("reload application failed: %v", err)
+	}
+	if updatedApp.UserID != user.ID {
+		t.Fatalf("expected application user id=%d got=%d", user.ID, updatedApp.UserID)
+	}
+
+	var identity model.UserIdentity
+	if err := repository.DB.Where("user_id = ? AND identity_type = ?", user.ID, merchantIdentityTypeProvider).First(&identity).Error; err != nil {
+		t.Fatalf("load provider identity failed: %v", err)
+	}
+	if identity.Status != merchantIdentityStatusActive || !identity.Verified {
+		t.Fatalf("provider identity should be active, got=%+v", identity)
+	}
+}
+
+func TestAdminCompleteProviderSettlement_RejectsUnboundProvider(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	provider := model.Provider{
+		ProviderType: 2,
+		CompanyName:  "未绑定账号公司",
+		Status:       merchantProviderStatusActive,
+		Verified:     true,
+	}
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", provider.ID)}}
+	c.Set("adminId", uint64(99))
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	AdminCompleteProviderSettlement(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
 	}
 }
 

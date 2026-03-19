@@ -22,10 +22,18 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Provider{},
+		&model.Notification{},
+		&model.AuditLog{},
 		&model.Proposal{},
 		&model.Project{},
 		&model.Milestone{},
+		&model.WorkLog{},
 		&model.ProjectPhase{},
+		&model.BusinessFlow{},
+		&model.EscrowAccount{},
+		&model.Transaction{},
+		&model.Order{},
+		&model.PaymentPlan{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
@@ -64,6 +72,34 @@ func TestProjectServiceGetProjectMilestones(t *testing.T) {
 	}
 	if milestones[0].Seq != 1 || milestones[1].Seq != 2 {
 		t.Fatalf("milestones not ordered by seq: %+v", milestones)
+	}
+}
+
+func TestProjectServiceCreateWorkLog(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	project := model.Project{Base: model.Base{ID: 61}, OwnerID: 1, ProviderID: 2, Name: "日志测试项目", Address: "日志测试地址"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	svc := &ProjectService{}
+	if err := svc.CreateWorkLog(project.ID, 2, &CreateWorkLogRequest{
+		Title:       "施工日志",
+		Description: "日志描述",
+	}); err != nil {
+		t.Fatalf("CreateWorkLog: %v", err)
+	}
+
+	var log model.WorkLog
+	if err := db.First(&log).Error; err != nil {
+		t.Fatalf("load work log: %v", err)
+	}
+	if log.Photos != "[]" {
+		t.Fatalf("expected default photos json array, got %s", log.Photos)
+	}
+	if log.Issues != "[]" {
+		t.Fatalf("expected default issues json array, got %s", log.Issues)
 	}
 }
 
@@ -123,14 +159,13 @@ func TestProjectServiceConstructionClosureFlow(t *testing.T) {
 
 	confirmedProject, err := svc.ConfirmConstruction(project.ID, user.ID, &ConfirmConstructionRequest{
 		ConstructionProviderID: constructionProvider.ID,
-		ForemanID:              foreman.ID,
 	})
 	if err != nil {
 		t.Fatalf("ConfirmConstruction: %v", err)
 	}
 	if confirmedProject.ProviderID != constructionProvider.ID ||
 		confirmedProject.ConstructionProviderID != constructionProvider.ID ||
-		confirmedProject.ForemanID != foreman.ID {
+		confirmedProject.ForemanID != 0 {
 		t.Fatalf("unexpected construction confirmation result: %+v", confirmedProject)
 	}
 	if confirmedProject.BusinessStatus != model.ProjectBusinessStatusConstructionConfirmed {
@@ -182,6 +217,96 @@ func TestProjectServiceConstructionClosureFlow(t *testing.T) {
 	}
 	if startedPhase.Status != "in_progress" {
 		t.Fatalf("expected first phase in_progress, got %q", startedPhase.Status)
+	}
+}
+
+func TestProjectServiceConfirmConstruction_WithCompanyOnly(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 71}, Phone: "13800138071", Status: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	designProvider := model.Provider{Base: model.Base{ID: 171}, ProviderType: 1, CompanyName: "设计师"}
+	constructionProvider := model.Provider{Base: model.Base{ID: 172}, ProviderType: 2, CompanyName: "施工公司A"}
+	for _, provider := range []model.Provider{designProvider, constructionProvider} {
+		if err := db.Create(&provider).Error; err != nil {
+			t.Fatalf("create provider: %v", err)
+		}
+	}
+
+	proposal := model.Proposal{Base: model.Base{ID: 173}, Status: model.ProposalStatusConfirmed}
+	if err := db.Create(&proposal).Error; err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+
+	project := model.Project{
+		Base:           model.Base{ID: 174},
+		OwnerID:        user.ID,
+		ProviderID:     designProvider.ID,
+		ProposalID:     proposal.ID,
+		Name:           "公司施工项目",
+		BusinessStatus: model.ProjectBusinessStatusProposalConfirmed,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	svc := &ProjectService{}
+	confirmedProject, err := svc.ConfirmConstruction(project.ID, user.ID, &ConfirmConstructionRequest{
+		ConstructionProviderID: constructionProvider.ID,
+	})
+	if err != nil {
+		t.Fatalf("ConfirmConstruction with company only: %v", err)
+	}
+	if confirmedProject.ConstructionProviderID != constructionProvider.ID || confirmedProject.ForemanID != 0 || confirmedProject.ProviderID != constructionProvider.ID {
+		t.Fatalf("unexpected company-only result: %+v", confirmedProject)
+	}
+}
+
+func TestProjectServiceConfirmConstruction_WithForemanOnly(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 81}, Phone: "13800138081", Status: 1}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	designProvider := model.Provider{Base: model.Base{ID: 181}, ProviderType: 1, CompanyName: "设计师"}
+	foreman := model.Provider{Base: model.Base{ID: 182}, ProviderType: 3, CompanyName: "独立工长"}
+	for _, provider := range []model.Provider{designProvider, foreman} {
+		if err := db.Create(&provider).Error; err != nil {
+			t.Fatalf("create provider: %v", err)
+		}
+	}
+
+	proposal := model.Proposal{Base: model.Base{ID: 183}, Status: model.ProposalStatusConfirmed}
+	if err := db.Create(&proposal).Error; err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+
+	project := model.Project{
+		Base:           model.Base{ID: 184},
+		OwnerID:        user.ID,
+		ProviderID:     designProvider.ID,
+		ProposalID:     proposal.ID,
+		Name:           "工长施工项目",
+		BusinessStatus: model.ProjectBusinessStatusProposalConfirmed,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	svc := &ProjectService{}
+	confirmedProject, err := svc.ConfirmConstruction(project.ID, user.ID, &ConfirmConstructionRequest{
+		ForemanID: foreman.ID,
+	})
+	if err != nil {
+		t.Fatalf("ConfirmConstruction with foreman only: %v", err)
+	}
+	if confirmedProject.ConstructionProviderID != 0 || confirmedProject.ForemanID != foreman.ID || confirmedProject.ProviderID != foreman.ID {
+		t.Fatalf("unexpected foreman-only result: %+v", confirmedProject)
 	}
 }
 
@@ -278,16 +403,150 @@ func TestProjectServiceMilestoneSubmitAcceptAndComplete(t *testing.T) {
 	if err := db.First(&completedProject, project.ID).Error; err != nil {
 		t.Fatalf("reload completed project: %v", err)
 	}
-	if completedProject.Status != model.ProjectStatusCompleted {
-		t.Fatalf("expected coarse completed status, got %d", completedProject.Status)
+	if completedProject.Status != model.ProjectStatusActive {
+		t.Fatalf("expected project remain active until completion submission, got %d", completedProject.Status)
 	}
-	if completedProject.BusinessStatus != model.ProjectBusinessStatusCompleted {
-		t.Fatalf("expected completed business status, got %q", completedProject.BusinessStatus)
+	if completedProject.BusinessStatus != model.ProjectBusinessStatusInProgress {
+		t.Fatalf("expected in-progress business status before completion submission, got %q", completedProject.BusinessStatus)
 	}
-	if completedProject.CurrentPhase != "已完工" {
-		t.Fatalf("expected current phase 已完工, got %q", completedProject.CurrentPhase)
+	if completedProject.CurrentPhase != "待提交完工材料" {
+		t.Fatalf("expected current phase 待提交完工材料, got %q", completedProject.CurrentPhase)
 	}
-	if completedProject.ActualEnd == nil {
-		t.Fatalf("expected actual end to be set")
+	if completedProject.ActualEnd != nil {
+		t.Fatalf("expected actual end stay unset before completion submission")
+	}
+}
+
+func TestProjectServiceGetProjectDetail_FallbackWhenBusinessFlowMissing(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 71}, Phone: "13800138071", Status: 1, Nickname: "业主A"}
+	provider := model.Provider{Base: model.Base{ID: 72}, ProviderType: 2, CompanyName: "施工公司A"}
+	for _, record := range []interface{}{&user, &provider} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	project := model.Project{
+		Base:           model.Base{ID: 81},
+		OwnerID:        user.ID,
+		ProviderID:     provider.ID,
+		Name:           "无 flow 项目",
+		Address:        "测试地址",
+		Status:         model.ProjectStatusActive,
+		CurrentPhase:   "泥木验收待验收",
+		BusinessStatus: model.ProjectBusinessStatusInProgress,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	milestones := []model.Milestone{
+		{Base: model.Base{ID: 811}, ProjectID: project.ID, Name: "水电验收", Seq: 1, Status: model.MilestoneStatusAccepted},
+		{Base: model.Base{ID: 812}, ProjectID: project.ID, Name: "泥木验收", Seq: 2, Status: model.MilestoneStatusSubmitted},
+	}
+	if err := db.Create(&milestones).Error; err != nil {
+		t.Fatalf("create milestones: %v", err)
+	}
+
+	svc := &ProjectService{}
+	detail, err := svc.GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectDetail: %v", err)
+	}
+	if detail.BusinessStage != model.BusinessFlowStageNodeAcceptanceInProgress {
+		t.Fatalf("unexpected fallback business stage: %s", detail.BusinessStage)
+	}
+	if detail.FlowSummary == "" || detail.FlowSummary == "业务主链待初始化" {
+		t.Fatalf("unexpected fallback flow summary: %s", detail.FlowSummary)
+	}
+}
+
+func TestProjectServiceListMerchantProjects(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 91}, Phone: "13800138091", Status: 1, Nickname: "业主B"}
+	provider := model.Provider{Base: model.Base{ID: 92}, ProviderType: 2, CompanyName: "施工公司B"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	project := model.Project{
+		Base:           model.Base{ID: 93},
+		OwnerID:        owner.ID,
+		ProviderID:     provider.ID,
+		Name:           "项目执行列表测试",
+		Address:        "测试地址",
+		Status:         model.ProjectStatusActive,
+		CurrentPhase:   "待开工",
+		BusinessStatus: model.ProjectBusinessStatusConstructionQuoteConfirmed,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	projectCompleted := model.Project{
+		Base:           model.Base{ID: 94},
+		OwnerID:        owner.ID,
+		ProviderID:     provider.ID,
+		Name:           "另一个归档项目",
+		Address:        "测试地址2",
+		Status:         model.ProjectStatusCompleted,
+		CurrentPhase:   "已完工",
+		BusinessStatus: model.ProjectBusinessStatusCompleted,
+	}
+	if err := db.Create(&projectCompleted).Error; err != nil {
+		t.Fatalf("create completed project: %v", err)
+	}
+
+	svc := &ProjectService{}
+	items, total, err := svc.ListMerchantProjects(provider.ID, nil)
+	if err != nil {
+		t.Fatalf("ListMerchantProjects: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("expected 2 projects, got total=%d len=%d", total, len(items))
+	}
+	readyCount := 0
+	completedCount := 0
+	for _, item := range items {
+		switch item.BusinessStage {
+		case model.BusinessFlowStageReadyToStart:
+			readyCount++
+		case model.BusinessFlowStageCompleted:
+			completedCount++
+		}
+	}
+	if readyCount != 1 || completedCount != 1 {
+		t.Fatalf("unexpected stage counts: ready=%d completed=%d", readyCount, completedCount)
+	}
+
+	filteredByKeyword, keywordTotal, err := svc.ListMerchantProjects(provider.ID, &MerchantProjectListQuery{
+		Keyword: "93",
+	})
+	if err != nil {
+		t.Fatalf("ListMerchantProjects by keyword: %v", err)
+	}
+	if keywordTotal != 1 || len(filteredByKeyword) != 1 {
+		t.Fatalf("expected 1 keyword project, got total=%d len=%d", keywordTotal, len(filteredByKeyword))
+	}
+	if filteredByKeyword[0].ID != project.ID {
+		t.Fatalf("unexpected keyword project id: %d", filteredByKeyword[0].ID)
+	}
+
+	filteredByStage, stageTotal, err := svc.ListMerchantProjects(provider.ID, &MerchantProjectListQuery{
+		BusinessStage: model.BusinessFlowStageCompleted,
+	})
+	if err != nil {
+		t.Fatalf("ListMerchantProjects by stage: %v", err)
+	}
+	if stageTotal != 1 || len(filteredByStage) != 1 {
+		t.Fatalf("expected 1 completed project, got total=%d len=%d", stageTotal, len(filteredByStage))
+	}
+	if filteredByStage[0].ID != projectCompleted.ID {
+		t.Fatalf("unexpected completed project id: %d", filteredByStage[0].ID)
 	}
 }

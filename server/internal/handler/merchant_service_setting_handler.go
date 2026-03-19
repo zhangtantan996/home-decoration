@@ -13,13 +13,20 @@ import (
 )
 
 type merchantServiceSettingInput struct {
-	AcceptBooking    bool             `json:"acceptBooking"`
-	AutoConfirmHours int              `json:"autoConfirmHours"`
-	ResponseTimeDesc string           `json:"responseTimeDesc"`
-	PriceRangeMin    float64          `json:"priceRangeMin"`
-	PriceRangeMax    float64          `json:"priceRangeMax"`
-	ServiceStyles    []string         `json:"serviceStyles"`
-	ServicePackages  []map[string]any `json:"servicePackages"`
+	AcceptBooking          bool             `json:"acceptBooking"`
+	AutoConfirmHours       int              `json:"autoConfirmHours"`
+	ResponseTimeDesc       string           `json:"responseTimeDesc"`
+	PriceRangeMin          float64          `json:"priceRangeMin"`
+	PriceRangeMax          float64          `json:"priceRangeMax"`
+	ServiceStyles          []string         `json:"serviceStyles"`
+	ServicePackages        []map[string]any `json:"servicePackages"`
+	ServiceArea            []string         `json:"serviceArea"`
+	MainBrands             []string         `json:"mainBrands"`
+	MainCategories         []string         `json:"mainCategories"`
+	DeliveryCapability     string           `json:"deliveryCapability"`
+	InstallationCapability string           `json:"installationCapability"`
+	AfterSalesPolicy       string           `json:"afterSalesPolicy"`
+	InvoiceCapability      string           `json:"invoiceCapability"`
 }
 
 func parseMerchantServiceStyles(raw string) []string {
@@ -82,7 +89,60 @@ func getOrCreateMerchantServiceSetting(providerID uint64) (*model.MerchantServic
 	return &setting, nil
 }
 
+func getOrCreateMaterialShopServiceSetting(shopID uint64) (*model.MaterialShopServiceSetting, error) {
+	var setting model.MaterialShopServiceSetting
+	err := repository.DB.Where("shop_id = ?", shopID).First(&setting).Error
+	if err == nil {
+		return &setting, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	setting = model.MaterialShopServiceSetting{
+		ShopID:           shopID,
+		AcceptBooking:    true,
+		AutoConfirmHours: 24,
+		ServiceStyles:    "[]",
+		ServicePackages:  "[]",
+		ServiceArea:      "[]",
+		MainBrands:       "[]",
+		MainCategories:   "[]",
+	}
+	if createErr := repository.DB.Create(&setting).Error; createErr != nil {
+		return nil, createErr
+	}
+	return &setting, nil
+}
+
 func MerchantGetServiceSettings(c *gin.Context) {
+	materialShopID := c.GetUint64("materialShopId")
+	if materialShopID > 0 {
+		setting, err := getOrCreateMaterialShopServiceSetting(materialShopID)
+		if err != nil {
+			response.Error(c, 500, "获取服务设置失败")
+			return
+		}
+
+		response.Success(c, gin.H{
+			"acceptBooking":          setting.AcceptBooking,
+			"autoConfirmHours":       setting.AutoConfirmHours,
+			"responseTimeDesc":       setting.ResponseTimeDesc,
+			"priceRangeMin":          setting.PriceRangeMin,
+			"priceRangeMax":          setting.PriceRangeMax,
+			"serviceStyles":          parseMerchantServiceStyles(setting.ServiceStyles),
+			"servicePackages":        parseMerchantServicePackages(setting.ServicePackages),
+			"serviceArea":            parseMerchantServiceStyles(setting.ServiceArea),
+			"mainBrands":             parseMerchantServiceStyles(setting.MainBrands),
+			"mainCategories":         parseMerchantServiceStyles(setting.MainCategories),
+			"deliveryCapability":     setting.DeliveryCapability,
+			"installationCapability": setting.InstallationCapability,
+			"afterSalesPolicy":       setting.AfterSalesPolicy,
+			"invoiceCapability":      setting.InvoiceCapability,
+		})
+		return
+	}
+
 	providerID := c.GetUint64("providerId")
 	setting, err := getOrCreateMerchantServiceSetting(providerID)
 	if err != nil {
@@ -102,8 +162,6 @@ func MerchantGetServiceSettings(c *gin.Context) {
 }
 
 func MerchantUpdateServiceSettings(c *gin.Context) {
-	providerID := c.GetUint64("providerId")
-
 	var input merchantServiceSettingInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
@@ -127,20 +185,55 @@ func MerchantUpdateServiceSettings(c *gin.Context) {
 		return
 	}
 
-	setting, err := getOrCreateMerchantServiceSetting(providerID)
-	if err != nil {
-		response.Error(c, 500, "更新服务设置失败")
-		return
-	}
-
 	styles := normalizeStringSlice(input.ServiceStyles)
 	stylesJSON, _ := json.Marshal(styles)
+	serviceAreaJSON, _ := json.Marshal(normalizeStringSlice(input.ServiceArea))
+	mainBrandsJSON, _ := json.Marshal(normalizeStringSlice(input.MainBrands))
+	mainCategoriesJSON, _ := json.Marshal(normalizeStringSlice(input.MainCategories))
 
 	servicePackages := input.ServicePackages
 	if servicePackages == nil {
 		servicePackages = []map[string]any{}
 	}
 	packagesJSON, _ := json.Marshal(servicePackages)
+
+	materialShopID := c.GetUint64("materialShopId")
+	if materialShopID > 0 {
+		setting, err := getOrCreateMaterialShopServiceSetting(materialShopID)
+		if err != nil {
+			response.Error(c, 500, "更新服务设置失败")
+			return
+		}
+
+		setting.AcceptBooking = input.AcceptBooking
+		setting.AutoConfirmHours = input.AutoConfirmHours
+		setting.ResponseTimeDesc = strings.TrimSpace(input.ResponseTimeDesc)
+		setting.PriceRangeMin = input.PriceRangeMin
+		setting.PriceRangeMax = input.PriceRangeMax
+		setting.ServiceStyles = string(stylesJSON)
+		setting.ServicePackages = string(packagesJSON)
+		setting.ServiceArea = string(serviceAreaJSON)
+		setting.MainBrands = string(mainBrandsJSON)
+		setting.MainCategories = string(mainCategoriesJSON)
+		setting.DeliveryCapability = strings.TrimSpace(input.DeliveryCapability)
+		setting.InstallationCapability = strings.TrimSpace(input.InstallationCapability)
+		setting.AfterSalesPolicy = strings.TrimSpace(input.AfterSalesPolicy)
+		setting.InvoiceCapability = strings.TrimSpace(input.InvoiceCapability)
+
+		if err := repository.DB.Save(setting).Error; err != nil {
+			response.Error(c, 500, "更新服务设置失败")
+			return
+		}
+		response.Success(c, gin.H{"status": "ok"})
+		return
+	}
+
+	providerID := c.GetUint64("providerId")
+	setting, err := getOrCreateMerchantServiceSetting(providerID)
+	if err != nil {
+		response.Error(c, 500, "更新服务设置失败")
+		return
+	}
 
 	setting.AcceptBooking = input.AcceptBooking
 	setting.AutoConfirmHours = input.AutoConfirmHours

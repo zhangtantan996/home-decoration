@@ -35,6 +35,8 @@ func main() {
 	printHighRiskColumnCheck()
 	fmt.Println()
 	printSmokeResults()
+	fmt.Println()
+	printCommerceRuntimeCheck()
 
 	fmt.Println("============================================================")
 	fmt.Println("                      End of Report                         ")
@@ -143,4 +145,18 @@ func printSmokeResults() {
 		}
 		fmt.Println("  Canonical repair path: v1.6.9_reconcile_high_risk_schema_guard.sql")
 	}
+}
+
+func printCommerceRuntimeCheck() {
+	fmt.Println("4. Commerce Runtime Schema Check")
+	fmt.Println("------------------------------------------------------------")
+
+	snapshot := repository.RefreshCommerceRuntimeSchemaHealth()
+	if snapshot.Status == repository.SMSAuditHealthStatusOK {
+		fmt.Println("  [PASS] commerce runtime schema is aligned")
+		return
+	}
+
+	fmt.Printf("  [FAIL] Component '%s' missing: %s\n", snapshot.Component, strings.Join(snapshot.Missing, ", "))
+	fmt.Printf("         -> 提示：执行 %s\n", snapshot.RequiredMigration)
 }

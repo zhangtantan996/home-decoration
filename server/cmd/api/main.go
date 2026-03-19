@@ -73,6 +73,9 @@ func main() {
 	cron.StartIncomeCron()
 	log.Println("Income settlement cron job started")
 
+	cron.StartEscrowReleaseCron()
+	log.Println("Escrow release cron job started")
+
 	// 设置运行模式
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)

@@ -40,6 +40,7 @@ type MaterialShopListItem struct {
 	OpenTime          string   `json:"openTime"`
 	Tags              []string `json:"tags"`
 	IsVerified        bool     `json:"isVerified"`
+	IsSettled         bool     `json:"isSettled"`
 }
 
 // ListMaterialShops 获取门店列表
@@ -126,6 +127,7 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			OpenTime:          shop.OpenTime,
 			Tags:              tags,
 			IsVerified:        shop.IsVerified,
+			IsSettled:         materialShopSettlementValue(&shop),
 		}
 	}
 
@@ -166,6 +168,7 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		OpenTime:          shop.OpenTime,
 		Tags:              tags,
 		IsVerified:        shop.IsVerified,
+		IsSettled:         materialShopSettlementValue(&shop),
 	}, nil
 }
 

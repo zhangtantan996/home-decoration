@@ -418,6 +418,9 @@ func (s *DemandService) SubmitDemand(userID, demandID uint64) (*model.Demand, er
 	if err := s.repo.SaveDemand(nil, demand); err != nil {
 		return nil, fmt.Errorf("submit demand: %w", err)
 	}
+	if _, err := businessFlowSvc.EnsureLeadFlow(nil, model.BusinessFlowSourceDemand, demand.ID, userID, 0); err != nil {
+		return nil, fmt.Errorf("init business flow: %w", err)
+	}
 	return demand, nil
 }
 
@@ -786,6 +789,10 @@ func (s *DemandService) AcceptLead(providerID, matchID uint64) (*model.DemandMat
 		demand.Status = model.DemandStatusMatched
 		_ = s.repo.SaveDemand(nil, demand)
 	}
+	_ = businessFlowSvc.AdvanceBySource(nil, model.BusinessFlowSourceDemand, match.DemandID, map[string]interface{}{
+		"current_stage":        model.BusinessFlowStageNegotiating,
+		"designer_provider_id": providerID,
+	})
 	return match, nil
 }
 

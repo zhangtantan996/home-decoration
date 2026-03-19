@@ -48,6 +48,7 @@ func AdminListQuoteLibraryItems(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	keyword := c.Query("keyword")
 	categoryL1 := c.Query("categoryL1")
+	categoryID := parseUint(c.Query("categoryId"))
 
 	var statusPtr *int8
 	if raw := strings.TrimSpace(c.Query("status")); raw != "" {
@@ -57,7 +58,7 @@ func AdminListQuoteLibraryItems(c *gin.Context) {
 		}
 	}
 
-	result, err := quoteService.ListQuoteLibraryItems(page, pageSize, keyword, categoryL1, statusPtr)
+	result, err := quoteService.ListQuoteLibraryItems(page, pageSize, keyword, categoryL1, categoryID, statusPtr)
 	if err != nil {
 		response.Error(c, 500, err.Error())
 		return

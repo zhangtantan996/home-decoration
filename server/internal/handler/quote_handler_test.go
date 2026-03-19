@@ -35,6 +35,7 @@ func setupQuoteHandlerDB(t *testing.T) *gorm.DB {
 		&model.QuoteInvitation{},
 		&model.QuoteSubmission{},
 		&model.QuoteSubmissionItem{},
+		&model.QuoteSubmissionRevision{},
 	); err != nil {
 		t.Fatalf("auto migrate quote models: %v", err)
 	}
