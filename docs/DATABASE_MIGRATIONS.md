@@ -46,7 +46,16 @@
 
 认证 / 短信审计 / 商家入驻历史环境补洞统一优先执行：
 
-- `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`
+- `server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql`（高风险链路最新补洞）
+- `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`（历史补洞）
+
+### 1.4 Schema 真相源声明
+
+> **重要**：Schema 真相源唯一指向：
+>
+> - `server/migrations/*.sql`（正式迁移文件）
+> - `model.go` 仅为代码映射，不是 schema 真相源
+> - `public.sql` / `local_backup.sql` 仅作历史快照参考，不得作为正式 schema 演进入口
 
 ---
 
@@ -129,8 +138,9 @@
 ### 5.3 本地重建库
 
 1. 以 `server/migrations/` 作为权威 schema 来源
-2. 如需补历史漏迁移环境，优先执行 `v1.6.4_reconcile_auth_and_onboarding_schema.sql`
-3. `public.sql` / `local_backup.sql` 仅可作历史快照参考，不得作为核心链路 schema source of truth
+2. 如需补历史漏迁移环境，优先执行 `v1.6.9_reconcile_high_risk_schema_guard.sql`（高风险链路最新补洞）
+3. `v1.6.4_reconcile_auth_and_onboarding_schema.sql` 为历史 auth/onboarding 补洞，非必要不单独执行
+4. `public.sql` / `local_backup.sql` 仅可作历史快照参考，不得作为核心链路 schema source of truth
 
 ---
 
@@ -157,7 +167,37 @@
 
 ---
 
-## 8. 回滚原则
+## 8. Schema Guard 与本地检查
+
+### 8.1 Schema Guard 机制
+
+项目提供 Schema Guard 机制用于检测高风险链路 schema 漂移：
+
+- **高风险表清单**：`server/internal/repository/schema_guard.go` 中的 `HighRiskTables` 定义
+- **Canonical 修复路径**：指向 `v1.6.9_reconcile_high_risk_schema_guard.sql`
+- **Smoke 测试**：覆盖关键写入路径的事务内最小写入验证
+
+### 8.2 db:check 本地检查命令
+
+本地开发/切分支后，可运行以下命令检查 schema 健康状态：
+
+```bash
+npm run db:check
+```
+
+命令输出三段：
+
+1. migration/version 状态
+2. 高风险表关键列检查结果
+3. 高风险 smoke 测试结果
+
+### 8.3 高风险链路改动前置检查
+
+**任何高风险链路改动前，提交前必须运行 `npm run db:check` 验证 schema 状态。**
+
+---
+
+## 9. 回滚原则
 
 - 代码回滚可脚本化
 - 数据库回滚需人工确认

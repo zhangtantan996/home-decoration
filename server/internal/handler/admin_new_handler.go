@@ -430,22 +430,25 @@ func AdminListEscrowAccounts(c *gin.Context) {
 func AdminListTransactions(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("pageSize"), 10)
-	transType := c.Query("type")
 
-	var transactions []model.Transaction
-	var total int64
-
-	db := repository.DB.Model(&model.Transaction{})
-	if transType != "" {
-		db = db.Where("type = ?", transType)
+	list, total, err := adminFinanceService.ListTransactions(service.AdminFinanceTransactionFilter{
+		Type:      c.Query("type"),
+		ProjectID: parseUint64(c.Query("projectId")),
+		StartDate: c.Query("startDate"),
+		EndDate:   c.Query("endDate"),
+		Page:      page,
+		PageSize:  pageSize,
+	})
+	if err != nil {
+		response.ServerError(c, "获取交易流水失败")
+		return
 	}
 
-	db.Count(&total)
-	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&transactions)
-
 	response.Success(c, gin.H{
-		"list":  transactions,
-		"total": total,
+		"list":     list,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
 	})
 }
 

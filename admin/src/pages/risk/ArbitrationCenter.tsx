@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Card, Select, Tag, Button, Space, message, Modal, Form, Input, Upload, Descriptions } from 'antd';
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { adminRiskApi } from '../../services/api';
+import { ARBITRATION_HANDLE_STATUS_OPTIONS, ARBITRATION_STATUS_META, ARBITRATION_STATUS_OPTIONS } from '../../constants/statuses';
 
 interface Arbitration {
     id: number;
@@ -16,13 +17,6 @@ interface Arbitration {
     createdAt: string;
     updatedAt?: string;
 }
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待受理', color: 'orange' },
-    1: { text: '审理中', color: 'blue' },
-    2: { text: '已裁决', color: 'green' },
-    3: { text: '已驳回', color: 'red' },
-};
 
 const ArbitrationCenter: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -109,7 +103,7 @@ const ArbitrationCenter: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (val: number) => {
-                const config = statusMap[val];
+                const config = ARBITRATION_STATUS_META[val];
                 return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
             },
         },
@@ -143,12 +137,7 @@ const ArbitrationCenter: React.FC = () => {
                     onChange={setStatusFilter}
                     allowClear
                     style={{ width: 150 }}
-                    options={[
-                        { label: '待受理', value: 0 },
-                        { label: '审理中', value: 1 },
-                        { label: '已裁决', value: 2 },
-                        { label: '已驳回', value: 3 },
-                    ]}
+                    options={ARBITRATION_STATUS_OPTIONS}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
             </Space>
@@ -211,8 +200,8 @@ const ArbitrationCenter: React.FC = () => {
                             </Space>
                         </Descriptions.Item>
                         <Descriptions.Item label="状态" span={2}>
-                            <Tag color={statusMap[currentItem.status]?.color}>
-                                {statusMap[currentItem.status]?.text}
+                            <Tag color={ARBITRATION_STATUS_META[currentItem.status]?.color}>
+                                {ARBITRATION_STATUS_META[currentItem.status]?.text}
                             </Tag>
                         </Descriptions.Item>
                         {currentItem.result && (
@@ -236,11 +225,7 @@ const ArbitrationCenter: React.FC = () => {
             >
                 <Form form={form} layout="vertical">
                     <Form.Item label="处理状态" name="status" rules={[{ required: true }]}>
-                        <Select>
-                            <Select.Option value={1}>标记为审理中</Select.Option>
-                            <Select.Option value={2}>裁决通过</Select.Option>
-                            <Select.Option value={3}>驳回申请</Select.Option>
-                        </Select>
+                        <Select options={ARBITRATION_HANDLE_STATUS_OPTIONS} />
                     </Form.Item>
                     <Form.Item label="裁决结果" name="result" rules={[{ required: true }]}>
                         <Input.TextArea rows={6} placeholder="请输入裁决结果和处理意见" />

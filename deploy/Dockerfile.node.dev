@@ -8,6 +8,8 @@ RUN apk add --no-cache git
 # 暴露 Vite 默认端口和常用备选端口
 EXPOSE 5173
 EXPOSE 5174
+EXPOSE 5175
+EXPOSE 5176
 
 # 容器启动时默认不执行具体命令，由 docker-compose 指定
 CMD ["sh"]

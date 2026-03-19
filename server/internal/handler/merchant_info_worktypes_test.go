@@ -13,7 +13,7 @@ import (
 	"home-decoration-server/internal/repository"
 )
 
-func TestMerchantInfoAndUpdateWorkTypes_ForForeman(t *testing.T) {
+func TestMerchantInfo_ForForeman_HidesWorkTypes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	db := setupSQLiteDB(t)
@@ -23,9 +23,7 @@ func TestMerchantInfoAndUpdateWorkTypes_ForForeman(t *testing.T) {
 
 	previousDB := repository.DB
 	repository.DB = db
-	t.Cleanup(func() {
-		repository.DB = previousDB
-	})
+	t.Cleanup(func() { repository.DB = previousDB })
 
 	providerID := uint64(202)
 	userID := uint64(2002)
@@ -38,7 +36,7 @@ func TestMerchantInfoAndUpdateWorkTypes_ForForeman(t *testing.T) {
 		ProviderType:    3,
 		SubType:         "foreman",
 		WorkTypes:       "mason,electrician",
-		Specialty:       "mason · electrician",
+		Specialty:       "全工种施工",
 		YearsExperience: 4,
 		Status:          1,
 	}).Error; err != nil {
@@ -50,29 +48,56 @@ func TestMerchantInfoAndUpdateWorkTypes_ForForeman(t *testing.T) {
 		t.Fatalf("unexpected get info code: %d message=%s", getResp.Code, getResp.Message)
 	}
 
-	var getData struct {
-		ApplicantType   string   `json:"applicantType"`
-		ProviderSubType string   `json:"providerSubType"`
-		WorkTypes       []string `json:"workTypes"`
-	}
+	var getData map[string]json.RawMessage
 	if err := json.Unmarshal(getResp.Data, &getData); err != nil {
 		t.Fatalf("decode get info data: %v", err)
 	}
-	if getData.ApplicantType != "foreman" {
-		t.Fatalf("unexpected applicantType: %s", getData.ApplicantType)
+	if _, ok := getData["workTypes"]; ok {
+		t.Fatalf("workTypes should not be returned for foreman")
 	}
-	if getData.ProviderSubType != "foreman" {
-		t.Fatalf("unexpected providerSubType: %s", getData.ProviderSubType)
+
+	var applicantType string
+	if err := json.Unmarshal(getData["applicantType"], &applicantType); err != nil || applicantType != "foreman" {
+		t.Fatalf("unexpected applicantType: %s err=%v", applicantType, err)
 	}
-	if len(getData.WorkTypes) != 2 {
-		t.Fatalf("unexpected workTypes length: %v", getData.WorkTypes)
+}
+
+func TestMerchantUpdateInfo_ForForeman_ClearsWorkTypesAndKeepsFullSpecialty(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	providerID := uint64(203)
+	userID := uint64(2003)
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000023", Nickname: "老工长"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{
+		Base:            model.Base{ID: providerID},
+		UserID:          userID,
+		ProviderType:    3,
+		SubType:         "personal",
+		WorkTypes:       "mason",
+		Specialty:       "旧 specialty",
+		YearsExperience: 6,
+		OfficeAddress:   "旧地址",
+		Status:          1,
+	}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
 	}
 
 	updatePayload := map[string]any{
-		"name":            "工长王师傅",
-		"yearsExperience": 8,
-		"workTypes":       []string{"plumber", "mason"},
-		"introduction":    "专注旧房改造",
+		"name":            "老工长",
+		"yearsExperience": 12,
+		"introduction":    "老房改造",
+		"officeAddress":   "新办公地址",
 	}
 	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", updatePayload, providerID, userID, MerchantUpdateInfo)
 	if updateResp.Code != 0 {
@@ -83,20 +108,18 @@ func TestMerchantInfoAndUpdateWorkTypes_ForForeman(t *testing.T) {
 	if err := db.First(&provider, providerID).Error; err != nil {
 		t.Fatalf("query provider: %v", err)
 	}
-
-	parsedWorkTypes := parseProviderWorkTypes(provider.WorkTypes)
-	if len(parsedWorkTypes) != 2 || parsedWorkTypes[0] != "plumber" || parsedWorkTypes[1] != "mason" {
-		t.Fatalf("work_types mismatch: got=%v want=[plumber mason]", parsedWorkTypes)
+	if provider.WorkTypes != "" {
+		t.Fatalf("expected work_types cleared, got=%q", provider.WorkTypes)
 	}
-	if provider.Specialty != "plumber · mason" {
-		t.Fatalf("specialty mismatch: got=%s want=plumber · mason", provider.Specialty)
+	if provider.Specialty != "全工种施工" {
+		t.Fatalf("unexpected specialty: %s", provider.Specialty)
 	}
-	if provider.YearsExperience != 8 {
-		t.Fatalf("yearsExperience mismatch: got=%d want=8", provider.YearsExperience)
+	if provider.YearsExperience != 12 {
+		t.Fatalf("yearsExperience mismatch: got=%d want=12", provider.YearsExperience)
 	}
 }
 
-func TestMerchantInfoAndUpdateWorkTypes_ForLegacyForemanSubType(t *testing.T) {
+func TestMerchantInfo_ForCompany_ReturnsCompanyAlbum(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	db := setupSQLiteDB(t)
@@ -106,21 +129,22 @@ func TestMerchantInfoAndUpdateWorkTypes_ForLegacyForemanSubType(t *testing.T) {
 
 	previousDB := repository.DB
 	repository.DB = db
-	t.Cleanup(func() {
-		repository.DB = previousDB
-	})
+	t.Cleanup(func() { repository.DB = previousDB })
 
-	providerID := uint64(203)
-	userID := uint64(2003)
-	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000023", Nickname: "老工长"}).Error; err != nil {
+	providerID := uint64(204)
+	userID := uint64(2004)
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000024", Nickname: "装修公司"}).Error; err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	if err := db.Create(&model.Provider{
-		Base:         model.Base{ID: providerID},
-		UserID:       userID,
-		ProviderType: 3,
-		SubType:      "personal", // 兼容历史默认值
-		Status:       1,
+		Base:             model.Base{ID: providerID},
+		UserID:           userID,
+		ProviderType:     2,
+		SubType:          "company",
+		CompanyName:      "星辰装饰",
+		OfficeAddress:    "上海市浦东新区世纪大道 1 号",
+		CompanyAlbumJSON: `["/a.jpg","/b.jpg","/c.jpg"]`,
+		Status:           1,
 	}).Error; err != nil {
 		t.Fatalf("seed provider: %v", err)
 	}
@@ -131,41 +155,17 @@ func TestMerchantInfoAndUpdateWorkTypes_ForLegacyForemanSubType(t *testing.T) {
 	}
 
 	var getData struct {
-		ApplicantType   string `json:"applicantType"`
-		ProviderSubType string `json:"providerSubType"`
+		OfficeAddress string   `json:"officeAddress"`
+		CompanyAlbum  []string `json:"companyAlbum"`
 	}
 	if err := json.Unmarshal(getResp.Data, &getData); err != nil {
 		t.Fatalf("decode get info data: %v", err)
 	}
-	if getData.ApplicantType != "foreman" {
-		t.Fatalf("unexpected applicantType: %s", getData.ApplicantType)
+	if getData.OfficeAddress == "" {
+		t.Fatalf("expected officeAddress in response")
 	}
-	if getData.ProviderSubType != "foreman" {
-		t.Fatalf("unexpected providerSubType: %s", getData.ProviderSubType)
-	}
-
-	updatePayload := map[string]any{
-		"name":            "老工长",
-		"yearsExperience": 12,
-		"workTypes":       []string{"mason"},
-		"introduction":    "老房改造",
-	}
-	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", updatePayload, providerID, userID, MerchantUpdateInfo)
-	if updateResp.Code != 0 {
-		t.Fatalf("unexpected update code: %d message=%s", updateResp.Code, updateResp.Message)
-	}
-
-	var provider model.Provider
-	if err := db.First(&provider, providerID).Error; err != nil {
-		t.Fatalf("query provider: %v", err)
-	}
-
-	parsedWorkTypes := parseProviderWorkTypes(provider.WorkTypes)
-	if len(parsedWorkTypes) != 1 || parsedWorkTypes[0] != "mason" {
-		t.Fatalf("work_types mismatch: got=%v want=[mason]", parsedWorkTypes)
-	}
-	if provider.Specialty != "mason" {
-		t.Fatalf("specialty mismatch: got=%s want=mason", provider.Specialty)
+	if len(getData.CompanyAlbum) != 3 {
+		t.Fatalf("unexpected company album length: %v", getData.CompanyAlbum)
 	}
 }
 

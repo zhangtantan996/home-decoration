@@ -5,11 +5,12 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { Button } from '@/components/Button';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import TinodeService from '@/services/TinodeService';
+import { loadTinodeService } from '@/services/loadTinodeService';
 import { getProviderDetail, type ProviderDetail, type ProviderType } from '@/services/providers';
 import { refreshTinodeToken } from '@/services/tinode';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { formatProviderPricing } from '@/utils/providerPricing';
 
 const normalizeProviderType = (value?: string): ProviderType => {
   if (value === 'company' || value === '2') {
@@ -43,29 +44,6 @@ const parseStringList = (raw?: string): string[] => {
     return text.split(' · ').map((item) => item.trim()).filter(Boolean);
   }
   return text.split(',').map((item) => item.trim()).filter(Boolean);
-};
-
-const formatPricingLabel = (pricingJson?: string, priceMin?: number, priceMax?: number, priceUnit?: string): string => {
-  const normalizedUnit = priceUnit ? `/${priceUnit.replace('平米', '㎡')}` : '';
-  if (pricingJson) {
-    try {
-      const parsed = JSON.parse(pricingJson) as Record<string, unknown>;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const entries = Object.entries(parsed)
-          .map(([key, value]) => ({ key, value: Number(value) }))
-          .filter((item) => Number.isFinite(item.value) && item.value > 0);
-        if (entries.length > 0) {
-          return entries.map((item) => `${item.key}: ¥${item.value}`).join(' / ');
-        }
-      }
-    } catch {
-      // fallback to range
-    }
-  }
-  if (priceMin !== undefined && priceMax !== undefined) {
-    return `¥${priceMin} - ¥${priceMax}${normalizedUnit}`;
-  }
-  return '';
 };
 
 interface ProviderDetailParams {
@@ -112,29 +90,6 @@ const ProviderDetailPage: React.FC = () => {
   const providerDetail = useMemo(() => ((detail as { provider?: ProviderDetail })?.provider || detail || null), [detail]);
   const userDetail = useMemo(() => ((detail as { user?: { id?: number; publicId?: string; nickname?: string; avatar?: string } })?.user || null), [detail]);
 
-  const workTypeTags = useMemo(() => {
-    if (!providerDetail?.workTypes) {
-      return [];
-    }
-    const raw = providerDetail.workTypes.trim();
-    if (!raw) {
-      return [];
-    }
-
-    if (raw.startsWith('[') && raw.endsWith(']')) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          return parsed.map((item) => String(item).trim()).filter(Boolean);
-        }
-      } catch {
-        // fallback to split parsing
-      }
-    }
-
-    return raw.split(',').map((item) => item.trim()).filter(Boolean);
-  }, [providerDetail?.workTypes]);
-
   const serviceAreaTags = useMemo(() => {
     const parsed = parseStringList(providerDetail?.serviceArea);
     return parsed.length > 0 ? parsed : ['本地服务'];
@@ -145,9 +100,15 @@ const ProviderDetailPage: React.FC = () => {
     [providerDetail?.highlightTags]
   );
 
-  const pricingLabel = useMemo(
-    () => formatPricingLabel(providerDetail?.pricingJson, providerDetail?.priceMin, providerDetail?.priceMax, providerDetail?.priceUnit),
-    [providerDetail?.pricingJson, providerDetail?.priceMax, providerDetail?.priceMin, providerDetail?.priceUnit]
+  const quoteDisplay = useMemo(
+    () => formatProviderPricing({
+      role: params.type,
+      pricingJson: providerDetail?.pricingJson,
+      priceMin: providerDetail?.priceMin,
+      priceMax: providerDetail?.priceMax,
+      priceUnit: providerDetail?.priceUnit,
+    }).quoteDisplay,
+    [params.type, providerDetail?.pricingJson, providerDetail?.priceMax, providerDetail?.priceMin, providerDetail?.priceUnit]
   );
 
   const handleBook = () => {
@@ -194,6 +155,7 @@ const ProviderDetailPage: React.FC = () => {
         }
       }
 
+      const TinodeService = await loadTinodeService();
       const tinodeUserId = await TinodeService.resolveTinodeUserId(providerUserID);
       const providerName = userDetail?.nickname || providerDetail?.nickname || providerDetail?.companyName || '服务商';
       const avatarUrl = userDetail?.avatar || providerDetail?.avatar || providerDetail?.coverImage || '';
@@ -267,9 +229,6 @@ const ProviderDetailPage: React.FC = () => {
 
           <View className="mt-md flex flex-wrap gap-xs">
             {providerDetail?.verified ? <Tag variant="primary">已认证</Tag> : null}
-            {workTypeTags.map((type) => (
-              <Tag key={type} variant="secondary">{type}</Tag>
-            ))}
             {highlightTags.map((tag) => (
               <Tag key={`highlight-${tag}`} variant="secondary">{tag}</Tag>
             ))}
@@ -315,12 +274,17 @@ const ProviderDetailPage: React.FC = () => {
           </View>
         </View>
 
-        {pricingLabel ? (
+        {quoteDisplay ? (
           <View className="bg-white p-md mb-xl">
-            <View className="font-bold mb-md text-base">参考价格</View>
-            <View className="text-brand font-bold text-lg">
-              {pricingLabel}
+            <View className="text-gray-500 text-sm mb-xs">{quoteDisplay.title}</View>
+            <View className="text-brand font-bold text-lg leading-normal">
+              {quoteDisplay.primary}
             </View>
+            {quoteDisplay.secondary ? (
+              <View className="text-sm text-gray-500 mt-xs leading-relaxed">
+                {quoteDisplay.secondary}
+              </View>
+            ) : null}
           </View>
         ) : null}
       </ScrollView>

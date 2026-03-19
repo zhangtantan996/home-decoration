@@ -8,7 +8,7 @@ import (
 	"github.com/lib/pq"
 )
 
-const CanonicalSchemaReconcileMigrationPath = "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
+const CanonicalSchemaReconcileMigrationPath = "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
 
 type sqlStateError interface {
 	SQLState() string

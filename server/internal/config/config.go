@@ -71,27 +71,38 @@ type WechatH5Config struct {
 	BindTokenExpireMinutes int    `mapstructure:"bind_token_expire_minutes"`
 	OAuthScope             string `mapstructure:"oauth_scope"`
 	StateSigningSecret     string `mapstructure:"state_signing_secret"`
+	BasePath               string `mapstructure:"base_path"`
 }
 
 // SMSConfig 短信服务配置（生产环境建议使用云短信服务，如阿里云短信）
 type SMSConfig struct {
-	Provider         string  `mapstructure:"provider"` // mock | aliyun
-	AccessKeyID      string  `mapstructure:"access_key_id"`
-	AccessKeySecret  string  `mapstructure:"access_key_secret"`
-	SignName         string  `mapstructure:"sign_name"`
-	TemplateCode     string  `mapstructure:"template_code"`
-	RegionID         string  `mapstructure:"region_id"` // default: cn-hangzhou
-	DebugBypass      bool    `mapstructure:"debug_bypass"`
-	RiskEnabled      bool    `mapstructure:"risk_enabled"`
-	CodeMaxAttempts  int     `mapstructure:"code_max_attempts"`
-	PhoneDailyLimit  int     `mapstructure:"phone_daily_limit"`
-	IPDailyLimit     int     `mapstructure:"ip_daily_limit"`
-	CaptchaEnabled   bool    `mapstructure:"captcha_enabled"`
-	CaptchaProvider  string  `mapstructure:"captcha_provider"` // turnstile | hcaptcha | recaptcha
-	CaptchaVerifyURL string  `mapstructure:"captcha_verify_url"`
-	CaptchaSecretKey string  `mapstructure:"captcha_secret_key"`
-	CaptchaTimeoutMs int     `mapstructure:"captcha_timeout_ms"`
-	CaptchaMinScore  float64 `mapstructure:"captcha_min_score"`
+	Provider                     string  `mapstructure:"provider"` // mock | aliyun
+	AccessKeyID                  string  `mapstructure:"access_key_id"`
+	AccessKeySecret              string  `mapstructure:"access_key_secret"`
+	SignName                     string  `mapstructure:"sign_name"`
+	TemplateCode                 string  `mapstructure:"template_code"`
+	TemplateCodeLow              string  `mapstructure:"template_code_low"`
+	TemplateCodeMedium           string  `mapstructure:"template_code_medium"`
+	TemplateCodeHigh             string  `mapstructure:"template_code_high"`
+	TemplateCodeLogin            string  `mapstructure:"template_code_login"`
+	TemplateCodeRegister         string  `mapstructure:"template_code_register"`
+	TemplateCodeIdentityApply    string  `mapstructure:"template_code_identity_apply"`
+	TemplateCodeMerchantWithdraw string  `mapstructure:"template_code_merchant_withdraw"`
+	TemplateCodeMerchantBankBind string  `mapstructure:"template_code_merchant_bank_bind"`
+	TemplateCodeChangePhone      string  `mapstructure:"template_code_change_phone"`
+	TemplateCodeDeleteAccount    string  `mapstructure:"template_code_delete_account"`
+	RegionID                     string  `mapstructure:"region_id"` // default: cn-hangzhou
+	DebugBypass                  bool    `mapstructure:"debug_bypass"`
+	RiskEnabled                  bool    `mapstructure:"risk_enabled"`
+	CodeMaxAttempts              int     `mapstructure:"code_max_attempts"`
+	PhoneDailyLimit              int     `mapstructure:"phone_daily_limit"`
+	IPDailyLimit                 int     `mapstructure:"ip_daily_limit"`
+	CaptchaEnabled               bool    `mapstructure:"captcha_enabled"`
+	CaptchaProvider              string  `mapstructure:"captcha_provider"` // turnstile | hcaptcha | recaptcha
+	CaptchaVerifyURL             string  `mapstructure:"captcha_verify_url"`
+	CaptchaSecretKey             string  `mapstructure:"captcha_secret_key"`
+	CaptchaTimeoutMs             int     `mapstructure:"captcha_timeout_ms"`
+	CaptchaMinScore              float64 `mapstructure:"captcha_min_score"`
 }
 
 func Load() (*Config, error) {
@@ -139,7 +150,18 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("sms.access_key_secret", "SMS_ACCESS_KEY_SECRET")
 	_ = viper.BindEnv("sms.sign_name", "SMS_SIGN_NAME")
 	_ = viper.BindEnv("sms.template_code", "SMS_TEMPLATE_CODE")
+	_ = viper.BindEnv("sms.template_code_low", "SMS_TEMPLATE_CODE_LOW")
+	_ = viper.BindEnv("sms.template_code_medium", "SMS_TEMPLATE_CODE_MEDIUM")
+	_ = viper.BindEnv("sms.template_code_high", "SMS_TEMPLATE_CODE_HIGH")
+	_ = viper.BindEnv("sms.template_code_login", "SMS_TEMPLATE_CODE_LOGIN")
+	_ = viper.BindEnv("sms.template_code_register", "SMS_TEMPLATE_CODE_REGISTER")
+	_ = viper.BindEnv("sms.template_code_identity_apply", "SMS_TEMPLATE_CODE_IDENTITY_APPLY")
+	_ = viper.BindEnv("sms.template_code_merchant_withdraw", "SMS_TEMPLATE_CODE_MERCHANT_WITHDRAW")
+	_ = viper.BindEnv("sms.template_code_merchant_bank_bind", "SMS_TEMPLATE_CODE_MERCHANT_BANK_BIND")
+	_ = viper.BindEnv("sms.template_code_change_phone", "SMS_TEMPLATE_CODE_CHANGE_PHONE")
+	_ = viper.BindEnv("sms.template_code_delete_account", "SMS_TEMPLATE_CODE_DELETE_ACCOUNT")
 	_ = viper.BindEnv("sms.region_id", "SMS_REGION_ID")
+	_ = viper.BindEnv("wechat_h5.base_path", "WECHAT_H5_BASE_PATH")
 
 	// 设置默认值
 	viper.SetDefault("server.host", "0.0.0.0")
@@ -163,6 +185,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("wechat_mini.bind_token_expire_minutes", 5)
 	viper.SetDefault("wechat_h5.bind_token_expire_minutes", 5)
 	viper.SetDefault("wechat_h5.oauth_scope", "snsapi_base")
+	viper.SetDefault("wechat_h5.base_path", "/app")
 	viper.SetDefault("sms.provider", "mock")
 	viper.SetDefault("sms.region_id", "cn-hangzhou")
 	viper.SetDefault("sms.debug_bypass", false)

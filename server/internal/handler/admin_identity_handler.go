@@ -1,10 +1,15 @@
 package handler
 
 import (
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
+
+var adminVisibilityResolver = service.NewAdminVisibilityResolver()
 
 func AdminListIdentityApplications(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
@@ -45,7 +50,40 @@ func AdminGetIdentityApplication(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, item)
+	var provider *model.Provider
+	var providerRecord model.Provider
+	if err := repository.DB.Where("user_id = ?", item.UserID).Order("id DESC").First(&providerRecord).Error; err == nil {
+		provider = &providerRecord
+	}
+
+	var approvedMerchantCount int64
+	repository.DB.Model(&model.MerchantApplication{}).Where("user_id = ? AND status = ?", item.UserID, 1).Count(&approvedMerchantCount)
+	visibilityResult := adminVisibilityResolver.ResolveIdentityApplication(model.IdentityApplication{
+		Base:         model.Base{ID: item.ID},
+		UserID:       item.UserID,
+		IdentityType: item.IdentityType,
+		Status:       item.Status,
+	}, provider, approvedMerchantCount > 0)
+
+	detail := gin.H{
+		"id":              item.ID,
+		"userId":          item.UserID,
+		"identityType":    item.IdentityType,
+		"providerSubType": item.ProviderSubType,
+		"status":          item.Status,
+		"rejectReason":    item.RejectReason,
+		"appliedAt":       item.AppliedAt,
+		"reviewedAt":      item.ReviewedAt,
+		"reviewedBy":      item.ReviewedBy,
+		"merchantDetails": item.MerchantDetails,
+		"visibility":      visibilityResult.Visibility,
+		"actions":         visibilityResult.Actions,
+	}
+	if visibilityResult.LegacyInfo != nil {
+		detail["legacyInfo"] = visibilityResult.LegacyInfo
+	}
+
+	response.Success(c, detail)
 }
 
 func AdminApproveIdentityApplication(c *gin.Context) {
@@ -97,4 +135,3 @@ func AdminRejectIdentityApplication(c *gin.Context) {
 
 	response.SuccessWithMessage(c, "已驳回", nil)
 }
-

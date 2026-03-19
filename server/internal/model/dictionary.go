@@ -37,8 +37,9 @@ func (SystemDictionary) TableName() string {
 
 // DictDTO 返回给前端的简化结构
 type DictDTO struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value     string                 `json:"value"`
+	Label     string                 `json:"label"`
+	ExtraData map[string]interface{} `json:"extraData,omitempty"`
 }
 
 // CreateDictRequest 创建字典请求

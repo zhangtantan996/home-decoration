@@ -1,0 +1,152 @@
+import { createBrowserRouter } from 'react-router-dom';
+
+import { AuthenticatedAppLayout } from '../app/AuthenticatedAppLayout';
+import { ProfileWorkspaceLayout } from '../app/ProfileWorkspaceLayout';
+import { PublicAppLayout } from '../app/PublicAppLayout';
+import { PublicAuthLayout } from '../app/PublicAuthLayout';
+import { ErrorBlock } from '../components/AsyncState';
+import { BookingDetailPage } from '../pages/BookingDetailPage';
+import { BookingBudgetConfirmPage } from '../pages/BookingBudgetConfirmPage';
+import { BookingRefundPage } from '../pages/BookingRefundPage';
+import { BookingSiteSurveyPage } from '../pages/BookingSiteSurveyPage';
+import { DesignFeeQuotePage } from '../pages/DesignFeeQuotePage';
+import { DesignDeliverableReviewPage } from '../pages/DesignDeliverableReviewPage';
+import { AfterSalesCreatePage } from '../pages/AfterSalesCreatePage';
+import { AfterSalesDetailPage } from '../pages/AfterSalesDetailPage';
+import { AfterSalesPage } from '../pages/AfterSalesPage';
+import { ComplaintCreatePage } from '../pages/ComplaintCreatePage';
+import { ContractConfirmPage } from '../pages/ContractConfirmPage';
+import { DemandComparePage } from '../pages/DemandComparePage';
+import { DemandCreatePage } from '../pages/DemandCreatePage';
+import { DemandDetailPage } from '../pages/DemandDetailPage';
+import { HomePage } from '../pages/HomePage';
+import { InspirationDetailPage } from '../pages/InspirationDetailPage';
+import { InspirationPage } from '../pages/InspirationPage';
+import { LoginPage } from '../pages/LoginPage';
+import { MaterialShopDetailPage } from '../pages/MaterialShopDetailPage';
+import { MessagesHubPage } from '../pages/MessagesHubPage';
+import { ProfileHomePage } from '../pages/ProfileHomePage';
+import { ProgressPage } from '../pages/ProgressPage';
+import { ProjectAcceptancePage } from '../pages/ProjectAcceptancePage';
+import { ProjectCompletionPage } from '../pages/ProjectCompletionPage';
+import { ProjectDisputePage } from '../pages/ProjectDisputePage';
+import { ProjectChangeRequestPage } from '../pages/ProjectChangeRequestPage';
+import { ProjectDetailPage } from '../pages/ProjectDetailPage';
+import { ProjectPausePage } from '../pages/ProjectPausePage';
+import { ProposalDetailPage } from '../pages/ProposalDetailPage';
+import { QuoteTaskDetailPage } from '../pages/QuoteTaskDetailPage';
+import { ProviderDetailPage } from '../pages/ProviderDetailPage';
+import { ProvidersPage } from '../pages/ProvidersPage';
+import { PrivacyPolicyPage } from '../pages/legal/PrivacyPolicyPage';
+import { UserAgreementPage } from '../pages/legal/UserAgreementPage';
+import { BookingsPage } from '../pages/profile/BookingsPage';
+import { ComplaintsPage } from '../pages/profile/ComplaintsPage';
+import { DemandsPage } from '../pages/profile/DemandsPage';
+import { MessagesPage } from '../pages/profile/MessagesPage';
+import { OrdersPage } from '../pages/profile/OrdersPage';
+import { ProjectsPage } from '../pages/profile/ProjectsPage';
+import { ProposalsPage } from '../pages/profile/ProposalsPage';
+import { SettingsPage } from '../pages/profile/SettingsPage';
+import { ProtectedRoute } from './ProtectedRoute';
+import { PublicOnlyRoute } from './PublicOnlyRoute';
+
+const basename = (() => {
+  const raw = (import.meta.env.VITE_ROUTER_BASENAME || '/').trim();
+  if (!raw || raw === '/') {
+    return '/';
+  }
+  return `/${raw.replace(/^\/+|\/+$/g, '')}`;
+})();
+
+const errorElement = (
+  <main className="container page-stack">
+    <ErrorBlock description="路由解析失败，请刷新后重试。" />
+  </main>
+);
+
+const router = createBrowserRouter(
+  [
+    {
+      path: '/',
+      element: <PublicAuthLayout />,
+      errorElement,
+      children: [
+        {
+          path: 'login',
+          element: (
+            <PublicOnlyRoute>
+              <LoginPage />
+            </PublicOnlyRoute>
+          ),
+        },
+        { path: 'legal/user-agreement', element: <UserAgreementPage /> },
+        { path: 'legal/privacy-policy', element: <PrivacyPolicyPage /> },
+      ],
+    },
+    {
+      path: '/',
+      element: <PublicAppLayout />,
+      errorElement,
+      children: [
+        { index: true, element: <HomePage /> },
+        { path: 'inspiration', element: <InspirationPage /> },
+        { path: 'inspiration/:id', element: <InspirationDetailPage /> },
+        { path: 'providers', element: <ProvidersPage /> },
+        { path: 'providers/:role/:id', element: <ProviderDetailPage /> },
+        { path: 'material-shops/:id', element: <MaterialShopDetailPage /> },
+      ],
+    },
+    {
+      path: '/',
+      element: (
+        <ProtectedRoute>
+          <AuthenticatedAppLayout />
+        </ProtectedRoute>
+      ),
+      errorElement,
+      children: [
+        { path: 'progress', element: <ProgressPage /> },
+        { path: 'messages', element: <MessagesHubPage /> },
+        { path: 'notifications', element: <MessagesHubPage /> },
+        { path: 'me', element: <ProfileWorkspaceLayout />, children: [
+          { index: true, element: <ProfileHomePage /> },
+          { path: 'bookings', element: <BookingsPage /> },
+          { path: 'demands', element: <DemandsPage /> },
+          { path: 'proposals', element: <ProposalsPage /> },
+          { path: 'projects', element: <ProjectsPage /> },
+          { path: 'orders', element: <OrdersPage /> },
+          { path: 'messages', element: <MessagesPage /> },
+          { path: 'notifications', element: <MessagesPage /> },
+          { path: 'complaints', element: <ComplaintsPage /> },
+          { path: 'after-sales', element: <AfterSalesPage /> },
+          { path: 'settings', element: <SettingsPage /> },
+        ] },
+        { path: 'after-sales', element: <AfterSalesPage /> },
+        { path: 'after-sales/new', element: <AfterSalesCreatePage /> },
+        { path: 'after-sales/:id', element: <AfterSalesDetailPage /> },
+        { path: 'complaints/new', element: <ComplaintCreatePage /> },
+        { path: 'demands/new', element: <DemandCreatePage /> },
+        { path: 'demands/:id', element: <DemandDetailPage /> },
+        { path: 'demands/:id/compare', element: <DemandComparePage /> },
+        { path: 'bookings/:id', element: <BookingDetailPage /> },
+        { path: 'bookings/:id/refund', element: <BookingRefundPage /> },
+        { path: 'bookings/:id/site-survey', element: <BookingSiteSurveyPage /> },
+        { path: 'bookings/:id/budget-confirm', element: <BookingBudgetConfirmPage /> },
+        { path: 'bookings/:id/design-quote', element: <DesignFeeQuotePage /> },
+        { path: 'proposals/:id', element: <ProposalDetailPage /> },
+        { path: 'quote-tasks/:id', element: <QuoteTaskDetailPage /> },
+        { path: 'projects/:id', element: <ProjectDetailPage /> },
+        { path: 'projects/:id/pause', element: <ProjectPausePage /> },
+        { path: 'projects/:id/dispute', element: <ProjectDisputePage /> },
+        { path: 'projects/:id/contract', element: <ContractConfirmPage /> },
+        { path: 'projects/:id/acceptance', element: <ProjectAcceptancePage /> },
+        { path: 'projects/:id/completion', element: <ProjectCompletionPage /> },
+        { path: 'projects/:id/design-deliverable', element: <DesignDeliverableReviewPage /> },
+        { path: 'projects/:id/change-request', element: <ProjectChangeRequestPage /> },
+      ],
+    },
+  ],
+  { basename },
+);
+
+export default router;

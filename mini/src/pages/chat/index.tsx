@@ -5,7 +5,7 @@ import { Input, ScrollView, Text, View } from '@tarojs/components';
 import { Button } from '@/components/Button';
 import { Empty } from '@/components/Empty';
 import { Skeleton } from '@/components/Skeleton';
-import TinodeService from '@/services/TinodeService';
+import { loadTinodeService } from '@/services/loadTinodeService';
 import { refreshTinodeToken } from '@/services/tinode';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
@@ -30,6 +30,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [noMore, setNoMore] = useState(false);
+  const [tinodeService, setTinodeService] = useState<Awaited<ReturnType<typeof loadTinodeService>> | null>(null);
 
   useLoad((options) => {
     const topicParam = typeof options.topic === 'string' ? safeDecode(options.topic) : '';
@@ -69,10 +70,11 @@ export default function ChatPage() {
 
     let cancelled = false;
     let currentTopic: any | null = null;
+    let service: Awaited<ReturnType<typeof loadTinodeService>> | null = null;
 
     const refreshMessages = () => {
-      if (!currentTopic) return;
-      const next = TinodeService.getCachedMessages(currentTopic);
+      if (!currentTopic || !service) return;
+      const next = service.getCachedMessages(currentTopic);
       setMessages(next);
     };
 
@@ -80,12 +82,17 @@ export default function ChatPage() {
       setLoading(true);
 
       try {
-        const ok = await TinodeService.init(auth.tinodeToken);
+        service = await loadTinodeService();
+        if (!cancelled) {
+          setTinodeService(service);
+        }
+
+        const ok = await service.init(auth.tinodeToken);
         if (!ok) {
           throw new Error('聊天服务初始化失败');
         }
 
-        const loadedTopic = await TinodeService.subscribeToConversation(topicName, 50);
+        const loadedTopic = await service.subscribeToConversation(topicName, 50);
         if (cancelled) return;
 
         currentTopic = loadedTopic;
@@ -93,13 +100,13 @@ export default function ChatPage() {
 
         loadedTopic.onData = () => {
           refreshMessages();
-          TinodeService.markAsRead(topicName).catch(() => {
+          service?.markAsRead(topicName).catch(() => {
             // best-effort
           });
         };
 
         refreshMessages();
-        await TinodeService.markAsRead(topicName);
+        await service.markAsRead(topicName);
       } catch (error) {
         if (cancelled) return;
         showErrorToast(error, '加载失败');
@@ -114,7 +121,7 @@ export default function ChatPage() {
 
     return () => {
       cancelled = true;
-      TinodeService.markAsRead(topicName).catch(() => {
+      service?.markAsRead(topicName).catch(() => {
         // best-effort
       });
 
@@ -149,7 +156,7 @@ export default function ChatPage() {
   };
 
   const handleSend = async () => {
-    if (!topicName) return;
+    if (!topicName || !tinodeService) return;
     if (!auth.token) {
       Taro.showToast({ title: '请先登录', icon: 'none' });
       return;
@@ -164,9 +171,9 @@ export default function ChatPage() {
 
     setSending(true);
     try {
-      await TinodeService.sendTextMessage(topicName, text);
+      await tinodeService.sendTextMessage(topicName, text);
       setInputText('');
-      await TinodeService.markAsRead(topicName);
+      await tinodeService.markAsRead(topicName);
     } catch (error) {
       showErrorToast(error, '发送失败');
     } finally {
@@ -175,15 +182,15 @@ export default function ChatPage() {
   };
 
   const handleLoadMore = async () => {
-    if (!topic || loadingMore || noMore) {
+    if (!topic || !tinodeService || loadingMore || noMore) {
       return;
     }
 
     setLoadingMore(true);
     try {
       const beforeCount = messages.length;
-      await TinodeService.loadEarlierMessages(topic, 30);
-      const next = TinodeService.getCachedMessages(topic);
+      await tinodeService.loadEarlierMessages(topic, 30);
+      const next = tinodeService.getCachedMessages(topic);
       setMessages(next);
       if (next.length <= beforeCount) {
         setNoMore(true);
@@ -251,7 +258,7 @@ export default function ChatPage() {
             ) : null}
 
             {messages.map((msg, index) => {
-              const isMe = TinodeService.isMe(msg?.from);
+              const isMe = tinodeService?.isMe(msg?.from);
               const key = msg?.seq ? String(msg.seq) : msg?.id ? String(msg.id) : String(index);
               const text = renderText(msg);
 
@@ -323,4 +330,3 @@ export default function ChatPage() {
     </View>
   );
 }
-

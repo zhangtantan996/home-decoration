@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Card, Select, Tag, Button, Space, message, Modal, Form, Input, Alert } from 'antd';
 import { ReloadOutlined, WarningOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { adminRiskApi } from '../../services/api';
+import { RISK_LEVEL_META, RISK_LEVEL_OPTIONS, RISK_WARNING_STATUS_META, RISK_WARNING_STATUS_OPTIONS } from '../../constants/statuses';
 
 interface RiskWarning {
     id: number;
@@ -15,20 +16,6 @@ interface RiskWarning {
     handledAt?: string;
     handleResult?: string;
 }
-
-const levelMap: Record<string, { text: string; color: string }> = {
-    low: { text: '低风险', color: 'blue' },
-    medium: { text: '中风险', color: 'orange' },
-    high: { text: '高风险', color: 'red' },
-    critical: { text: '紧急', color: 'purple' },
-};
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待处理', color: 'orange' },
-    1: { text: '处理中', color: 'blue' },
-    2: { text: '已处理', color: 'green' },
-    3: { text: '已忽略', color: 'default' },
-};
 
 const RiskWarningList: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -100,7 +87,7 @@ const RiskWarningList: React.FC = () => {
             title: '风险等级',
             dataIndex: 'level',
             render: (val: string) => {
-                const config = levelMap[val];
+                const config = RISK_LEVEL_META[val];
                 return config ? <Tag color={config.color}>{config.text}</Tag> : val;
             },
         },
@@ -113,7 +100,7 @@ const RiskWarningList: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (val: number) => {
-                const config = statusMap[val];
+                const config = RISK_WARNING_STATUS_META[val];
                 return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
             },
         },
@@ -164,12 +151,7 @@ const RiskWarningList: React.FC = () => {
                     onChange={setLevelFilter}
                     allowClear
                     style={{ width: 150 }}
-                    options={[
-                        { label: '低风险', value: 'low' },
-                        { label: '中风险', value: 'medium' },
-                        { label: '高风险', value: 'high' },
-                        { label: '紧急', value: 'critical' },
-                    ]}
+                    options={RISK_LEVEL_OPTIONS}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
             </Space>
@@ -198,7 +180,7 @@ const RiskWarningList: React.FC = () => {
                 {currentWarning && (
                     <>
                         <Alert
-                            message={`风险等级: ${levelMap[currentWarning.level]?.text}`}
+                            message={`风险等级: ${RISK_LEVEL_META[currentWarning.level]?.text}`}
                             description={currentWarning.description}
                             type="warning"
                             showIcon
@@ -206,11 +188,7 @@ const RiskWarningList: React.FC = () => {
                         />
                         <Form form={form} layout="vertical">
                             <Form.Item label="处理状态" name="status" rules={[{ required: true }]}>
-                                <Select>
-                                    <Select.Option value={1}>标记为处理中</Select.Option>
-                                    <Select.Option value={2}>标记为已处理</Select.Option>
-                                    <Select.Option value={3}>忽略</Select.Option>
-                                </Select>
+                                <Select options={RISK_WARNING_STATUS_OPTIONS} />
                             </Form.Item>
                             <Form.Item label="处理说明" name="result" rules={[{ required: true }]}>
                                 <Input.TextArea rows={4} placeholder="请输入处理结果说明" />

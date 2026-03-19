@@ -1,10 +1,11 @@
 import React from 'react';
-import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { Dropdown } from 'antd';
-import { ProLayout, PageContainer } from '@ant-design/pro-components';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Dropdown, Input, Space } from 'antd';
+import { ProLayout } from '@ant-design/pro-components';
 import { useAuthStore } from '../stores/authStore';
 import merchantAppIcon from '../assets/branding/company-logo.png';
 import NotificationDropdown from '../components/NotificationDropdown';
+import { designTokens } from '../styles/theme';
 import {
     DashboardOutlined,
     ProjectOutlined,
@@ -23,6 +24,7 @@ import {
     WarningOutlined,
     FileImageOutlined,
     UnorderedListOutlined,
+    SearchOutlined,
 } from '@ant-design/icons';
 
 // 图标映射 - 根据后端返回的 icon 字段匹配对应的 React 组件
@@ -45,6 +47,36 @@ const iconMap: Record<string, React.ReactNode> = {
     'UnorderedListOutlined': <UnorderedListOutlined />,
 };
 
+type MenuNode = {
+    path?: string;
+    title?: string;
+    icon?: string;
+    visible?: boolean;
+    children?: MenuNode[];
+};
+
+type MenuRoute = {
+    path?: string;
+    name?: string;
+    icon?: React.ReactNode | null;
+    children?: MenuRoute[];
+    hideInMenu?: boolean;
+};
+
+const transformMenuData = (data: MenuNode[]): MenuRoute[] => {
+    if (!data || !Array.isArray(data)) {
+        console.warn('菜单数据不是数组:', data);
+        return [];
+    }
+    return data.map(item => ({
+        path: item.path,
+        name: item.title,
+        icon: item.icon ? iconMap[item.icon] : null,
+        children: item.children ? transformMenuData(item.children) : undefined,
+        hideInMenu: !item.visible,
+    }));
+};
+
 const BasicLayout: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
@@ -53,21 +85,6 @@ const BasicLayout: React.FC = () => {
     const handleLogout = () => {
         logout();
         navigate('/login');
-    };
-
-    // 递归转换菜单数据格式
-    const transformMenuData = (data: any[]): any[] => {
-        if (!data || !Array.isArray(data)) {
-            console.warn('菜单数据不是数组:', data);
-            return [];
-        }
-        return data.map(item => ({
-            path: item.path,
-            name: item.title,
-            icon: item.icon ? iconMap[item.icon] : null,
-            children: item.children ? transformMenuData(item.children) : undefined,
-            hideInMenu: !item.visible,
-        }));
     };
 
     const menuData = React.useMemo(() => {
@@ -82,12 +99,48 @@ const BasicLayout: React.FC = () => {
             splitMenus={false}
             fixedHeader
             fixSiderbar
+            breakpoint="lg"
+            siderWidth={designTokens.sidebarWidth}
+            collapsedButtonRender={false}
+            token={{
+                sider: {
+                    colorMenuBackground: '#11203a',
+                    colorTextMenu: 'rgba(255,255,255,0.72)',
+                    colorTextMenuSelected: '#ffffff',
+                    colorTextMenuActive: '#ffffff',
+                    colorBgMenuItemSelected: 'rgba(37,99,235,0.22)',
+                    colorBgMenuItemHover: 'rgba(255,255,255,0.1)',
+                    colorTextMenuTitle: '#ffffff',
+                    colorTextSubMenuSelected: '#ffffff',
+                },
+                header: {
+                    colorBgHeader: '#ffffff',
+                    colorHeaderTitle: designTokens.brand,
+                    heightLayoutHeader: designTokens.headerHeight,
+                },
+                pageContainer: {
+                    paddingBlockPageContainerContent: 24,
+                    paddingInlinePageContainerContent: 24,
+                },
+            }}
             route={{ routes: menuData }}
             location={{ pathname: location.pathname }}
             menuItemRender={(item, dom) => (
                 <div onClick={() => item.path && navigate(item.path)}>{dom}</div>
             )}
             actionsRender={() => [
+                <Input
+                    key="header-search"
+                    allowClear
+                    prefix={<SearchOutlined />}
+                    placeholder="搜索菜单/功能"
+                    className="hz-header-search"
+                    style={{
+                        width: 220,
+                        borderRadius: designTokens.radiusSm,
+                        background: designTokens.page,
+                    }}
+                />,
                 <NotificationDropdown key="notification" />,
             ]}
             avatarProps={{
@@ -111,23 +164,19 @@ const BasicLayout: React.FC = () => {
                     </Dropdown>
                 ),
             }}
-            breadcrumbProps={{
-                itemRender: (route, _params, routes, _paths) => {
-                    const last = routes.indexOf(route) === routes.length - 1;
-                    return last || !route.path ? (
-                        <span>{route.breadcrumbName}</span>
-                    ) : (
-                        <Link to={route.path}>{route.breadcrumbName}</Link>
-                    );
-                },
-            }}
+            headerTitleRender={() => (
+                <Space size={10} align="center" className="hz-header-brand">
+                    <img src={merchantAppIcon} alt="禾泽云" className="hz-header-brand__logo" />
+                    <span className="hz-page-title__heading hz-header-brand__title">禾泽云管理后台</span>
+                </Space>
+            )}
+            breadcrumbRender={false}
         >
-            <PageContainer>
+            <div className="hz-page-shell">
                 <Outlet />
-            </PageContainer>
+            </div>
         </ProLayout>
     );
 };
 
 export default BasicLayout;
-

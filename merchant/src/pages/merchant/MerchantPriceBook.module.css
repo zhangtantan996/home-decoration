@@ -1,0 +1,373 @@
+.page {
+  max-width: 1360px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.headerCard,
+.filterCard,
+.statCard {
+  border-radius: 22px;
+  border: 1px solid #e5edf8;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.contentCard {
+  margin-top: -4px;
+  padding: 12px;
+  border-radius: 24px;
+  border: 1px solid #e5edf8;
+  background: #f4f7fb;
+}
+
+.headerCard :global(.ant-card-body),
+.filterCard :global(.ant-card-body),
+.statCard :global(.ant-card-body) {
+  padding: 18px 22px;
+}
+
+.headerContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.headerMain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pageTitle {
+  margin: 0 !important;
+  color: #0f172a !important;
+  font-size: 18px !important;
+}
+
+.pageDescription {
+  color: #64748b !important;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.headerActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.headerActions :global(.ant-btn) {
+  border-radius: 12px;
+  min-width: 108px;
+  font-weight: 600;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.statValueRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.statValue {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.statMeta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.statProgressTrack {
+  margin-top: 12px;
+  height: 6px;
+  border-radius: 999px;
+  background: #e9eff7;
+  overflow: hidden;
+}
+
+.statProgressFill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+.toneSlate .statProgressFill {
+  background: #cbd5e1;
+}
+
+.toneBlue .statProgressFill {
+  background: #3b82f6;
+}
+
+.toneGreen .statProgressFill {
+  background: #22c55e;
+}
+
+.toneAmber .statProgressFill {
+  background: #f59e0b;
+}
+
+.toneRed .statProgressFill {
+  background: #f43f5e;
+}
+
+.toneBlue .statValue {
+  color: #0f172a;
+}
+
+.toneGreen .statValue {
+  color: #16a34a;
+}
+
+.toneAmber .statValue {
+  color: #f59e0b;
+}
+
+.toneRed .statValue {
+  color: #f43f5e;
+}
+
+.filterBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+}
+
+.filterMain {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.searchInput {
+  width: 320px;
+}
+
+.searchInput :global(.ant-input-affix-wrapper) {
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.switchGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.switchChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.filterHint {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.groupCollapse,
+.groupCollapse:global(.ant-collapse) {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent;
+}
+
+.groupCollapse :global(.ant-collapse-item) {
+  border: none !important;
+  border-radius: 18px !important;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: #fff;
+}
+
+.groupCollapse :global(.ant-collapse-header) {
+  padding: 14px 18px !important;
+  background: #fff;
+}
+
+.groupCollapse :global(.ant-collapse-content-box) {
+  padding: 0 10px 10px !important;
+}
+
+.groupCollapse :global(.ant-collapse-content) {
+  border-top: none !important;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+}
+
+.groupTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.groupTitle {
+  color: #0f172a !important;
+  font-size: 15px;
+}
+
+.groupSubtitle {
+  font-size: 12px;
+  color: #94a3b8 !important;
+}
+
+.groupMetrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.groupActionHint {
+  font-size: 13px;
+  color: #2563eb !important;
+  font-weight: 600;
+}
+
+.progressTrack {
+  width: 100px;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+}
+
+.groupTable :global(.ant-table) {
+  border-radius: 14px;
+}
+
+.groupTable :global(.ant-table-thead > tr > th) {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.groupTable :global(.ant-table-tbody > tr > td) {
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.priceInput {
+  width: 100%;
+}
+
+.priceInput :global(.ant-input-number) {
+  width: 100%;
+  border-radius: 10px;
+}
+
+.requiredPendingRow :global(td) {
+  background: #fff8f8 !important;
+}
+
+.pendingRow :global(td) {
+  background: #fffdfa !important;
+}
+
+@media (max-width: 1280px) {
+  .statsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 992px) {
+  .headerContent,
+  .filterBar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .filterHint {
+    white-space: normal;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions :global(.ant-btn) {
+    flex: 1;
+  }
+
+  .searchInput {
+    width: 100%;
+  }
+
+  .filterMain {
+    width: 100%;
+  }
+
+  .switchGroup {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .switchChip {
+    justify-content: space-between;
+  }
+
+  .groupHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .groupMetrics {
+    justify-content: flex-start;
+  }
+}

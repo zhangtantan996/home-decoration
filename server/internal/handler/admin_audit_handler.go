@@ -59,16 +59,35 @@ func AdminListCaseAudits(c *gin.Context) {
 			providerName = provider.CompanyName
 		}
 
-		resultList = append(resultList, gin.H{
-			"id":           audit.ID,
-			"caseId":       audit.CaseID,
-			"providerId":   audit.ProviderID,
-			"providerName": providerName,
-			"actionType":   audit.ActionType,
-			"title":        audit.Title,
-			"status":       audit.Status,
-			"createdAt":    audit.CreatedAt,
-		})
+		var originalCase *model.ProviderCase
+		if audit.CaseID != nil {
+			var caseRecord model.ProviderCase
+			if err := repository.DB.First(&caseRecord, *audit.CaseID).Error; err == nil {
+				originalCase = &caseRecord
+			}
+		}
+		visibilityResult := adminVisibilityResolver.ResolveCaseAudit(audit, originalCase)
+
+		item := gin.H{
+			"id":               audit.ID,
+			"caseId":           audit.CaseID,
+			"providerId":       audit.ProviderID,
+			"providerName":     providerName,
+			"actionType":       audit.ActionType,
+			"sourceType":       audit.SourceType,
+			"sourceProjectId":  audit.SourceProjectID,
+			"sourceProposalId": audit.SourceProposalID,
+			"title":            audit.Title,
+			"status":           audit.Status,
+			"createdAt":        audit.CreatedAt,
+			"visibility":       visibilityResult.Visibility,
+			"actions":          visibilityResult.Actions,
+		}
+		if visibilityResult.LegacyInfo != nil {
+			item["legacyInfo"] = visibilityResult.LegacyInfo
+		}
+
+		resultList = append(resultList, item)
 	}
 
 	response.Success(c, gin.H{
@@ -111,31 +130,41 @@ func AdminGetCaseAudit(c *gin.Context) {
 		}
 	}
 
+	visibilityResult := adminVisibilityResolver.ResolveCaseAudit(audit, originalCase)
+
 	// 构造返回数据（包含 providerName）
 	auditData := gin.H{
-		"id":             audit.ID,
-		"caseId":         audit.CaseID,
-		"providerId":     audit.ProviderID,
-		"providerName":   providerName,
-		"actionType":     audit.ActionType,
-		"title":          audit.Title,
-		"coverImage":     imgutil.GetFullImageURL(audit.CoverImage),
-		"style":          audit.Style,
-		"layout":         audit.Layout,
-		"area":           audit.Area,
-		"price":          audit.Price,
-		"quoteTotalCent": audit.QuoteTotalCent,
-		"quoteCurrency":  audit.QuoteCurrency,
-		"quoteItems":     audit.QuoteItems,
-		"year":           audit.Year,
-		"description":    audit.Description,
-		"status":         audit.Status,
-		"rejectReason":   audit.RejectReason,
-		"createdAt":      audit.CreatedAt,
+		"id":               audit.ID,
+		"caseId":           audit.CaseID,
+		"providerId":       audit.ProviderID,
+		"providerName":     providerName,
+		"actionType":       audit.ActionType,
+		"sourceType":       audit.SourceType,
+		"sourceProjectId":  audit.SourceProjectID,
+		"sourceProposalId": audit.SourceProposalID,
+		"title":            audit.Title,
+		"coverImage":       imgutil.GetFullImageURL(audit.CoverImage),
+		"style":            audit.Style,
+		"layout":           audit.Layout,
+		"area":             audit.Area,
+		"price":            audit.Price,
+		"quoteTotalCent":   audit.QuoteTotalCent,
+		"quoteCurrency":    audit.QuoteCurrency,
+		"quoteItems":       audit.QuoteItems,
+		"year":             audit.Year,
+		"description":      audit.Description,
+		"status":           audit.Status,
+		"rejectReason":     audit.RejectReason,
+		"createdAt":        audit.CreatedAt,
+		"visibility":       visibilityResult.Visibility,
+		"actions":          visibilityResult.Actions,
 	}
 	if originalCase != nil {
 		originalCase.CoverImage = imgutil.GetFullImageURL(originalCase.CoverImage)
 		originalCase.Images = imgutil.NormalizeImageURLsJSON(originalCase.Images)
+	}
+	if visibilityResult.LegacyInfo != nil {
+		auditData["legacyInfo"] = visibilityResult.LegacyInfo
 	}
 
 	response.Success(c, gin.H{

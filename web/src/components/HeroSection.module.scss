@@ -1,0 +1,135 @@
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.content,
+.aside {
+  position: relative;
+  overflow: hidden;
+  min-height: 420px;
+  border-radius: var(--radius-2xl);
+}
+
+.content {
+  padding: var(--space-12);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(243, 236, 229, 0.94));
+  box-shadow: var(--shadow-medium);
+}
+
+.content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, rgba(217, 119, 6, 0.16), transparent 32%),
+    radial-gradient(circle at bottom left, rgba(120, 113, 108, 0.10), transparent 40%);
+  pointer-events: none;
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-6);
+}
+
+.display {
+  margin: 0;
+  max-width: 720px;
+  font-family: var(--font-family-heading);
+  font-size: clamp(3rem, 5vw, 5rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  color: var(--color-ink);
+}
+
+.copy {
+  margin: 0;
+  max-width: 640px;
+  color: var(--color-secondary);
+  line-height: var(--line-height-body);
+  font-size: 1.05rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.aside {
+  padding: var(--space-8);
+  background:
+    linear-gradient(180deg, rgba(24, 24, 27, 0.94), rgba(39, 39, 42, 0.88));
+  color: #fff;
+  box-shadow: var(--shadow-hero);
+}
+
+.aside::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(217, 119, 6, 0.24), transparent 36%),
+    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.08), transparent 32%);
+  pointer-events: none;
+}
+
+.asideInner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-4);
+  height: 100%;
+  align-content: space-between;
+}
+
+.metricGrid {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.metricCard {
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.metricLabel {
+  display: block;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+
+.metricValue {
+  display: block;
+  font-family: var(--font-family-heading);
+  font-size: 1.6rem;
+}
+
+.metricDesc {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.6;
+}
+
+@media (max-width: 980px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .content,
+  .aside {
+    min-height: auto;
+  }
+
+  .content {
+    padding: var(--space-8);
+  }
+}

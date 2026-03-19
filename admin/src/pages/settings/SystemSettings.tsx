@@ -1,14 +1,66 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, message, Tabs, Switch, Space, Divider } from 'antd';
-import { SaveOutlined } from '@ant-design/icons';
-import { adminSettingsApi } from '../../services/api';
+import { Card, Form, Input, Button, message, Tabs, Switch, Space, Divider, Select, InputNumber, Row, Col, Typography } from 'antd';
+import { SaveOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { adminSettingsApi, adminSystemConfigApi } from '../../services/api';
 
 const { TabPane } = Tabs;
+
+const safeParseStages = (raw: string | undefined, fallback: { name: string; percentage: number }[]) => {
+    if (!raw) return fallback;
+    try {
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) && arr.length > 0 ? arr : fallback;
+    } catch {
+        return fallback;
+    }
+};
+
+const StageListEditor: React.FC<{ name: string; form: any }> = ({ name, form }) => {
+    const stages: { name: string; percentage: number }[] = Form.useWatch(name, form) || [];
+    const total = stages.reduce((s, item) => s + (Number(item?.percentage) || 0), 0);
+    return (
+        <>
+            <Form.List name={name}>
+                {(fields, { add, remove }) => (
+                    <>
+                        {fields.map(({ key, name: idx, ...rest }) => (
+                            <Row key={key} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                                <Col span={10}>
+                                    <Form.Item {...rest} name={[idx, 'name']} rules={[{ required: true, message: '请输入阶段名' }]} noStyle>
+                                        <Input placeholder="阶段名称" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item {...rest} name={[idx, 'percentage']} rules={[{ required: true, message: '请输入比例' }]} noStyle>
+                                        <InputNumber min={1} max={100} precision={0} style={{ width: '100%' }} addonAfter="%" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={2}>
+                                    {fields.length > 1 && (
+                                        <MinusCircleOutlined style={{ color: '#ff4d4f', cursor: 'pointer' }} onClick={() => remove(idx)} />
+                                    )}
+                                </Col>
+                            </Row>
+                        ))}
+                        <Button type="dashed" onClick={() => add({ name: '', percentage: 0 })} icon={<PlusOutlined />} style={{ width: '60%' }}>
+                            添加阶段
+                        </Button>
+                    </>
+                )}
+            </Form.List>
+            <Typography.Text type={total === 100 ? 'secondary' : 'danger'} style={{ display: 'block', marginTop: 4 }}>
+                合计：{total}%{total !== 100 && '（各阶段比例之和须等于 100%）'}
+            </Typography.Text>
+        </>
+    );
+};
 
 const SystemSettings: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [savingBiz, setSavingBiz] = useState(false);
     const [form] = Form.useForm();
+    const [bizForm] = Form.useForm();
 
     useEffect(() => {
         loadSettings();
@@ -44,6 +96,35 @@ const SystemSettings: React.FC = () => {
                 }
                 form.setFieldsValue(settings);
             }
+            const bizRes = await adminSystemConfigApi.list() as any;
+            const bizConfigMap = (bizRes?.data?.configs || []).reduce((acc: Record<string, string>, item: any) => {
+                acc[item.key] = item.value;
+                return acc;
+            }, {});
+            bizForm.setFieldsValue({
+                surveyDepositDefault: Number(bizConfigMap['booking.survey_deposit_default'] || 500),
+                surveyRefundNotice: bizConfigMap['booking.survey_refund_notice'] || '',
+                designFeePaymentMode: bizConfigMap['order.design_fee_payment_mode'] || 'onetime',
+                designFeeStages: safeParseStages(bizConfigMap['order.design_fee_stages'], [{ name: '签约款', percentage: 50 }, { name: '终稿款', percentage: 50 }]),
+                constructionPaymentMode: bizConfigMap['order.construction_payment_mode'] || 'milestone',
+                constructionFeeStages: safeParseStages(bizConfigMap['order.construction_fee_stages'], [{ name: '开工款', percentage: 30 }, { name: '水电验收款', percentage: 30 }, { name: '中期验收款', percentage: 25 }, { name: '竣工验收款', percentage: 15 }]),
+                designFeeUnlockDownload: bizConfigMap['order.design_fee_unlock_download'] || 'true',
+                // 金额与天数
+                surveyDepositMin: Number(bizConfigMap['booking.survey_deposit_min'] || 100),
+                surveyDepositMax: Number(bizConfigMap['booking.survey_deposit_max'] || 2000),
+                designFeeQuoteExpireHours: Number(bizConfigMap['design.fee_quote_expire_hours'] || 72),
+                deliverableDeadlineDays: Number(bizConfigMap['design.deliverable_deadline_days'] || 30),
+                constructionReleaseDelayDays: Number(bizConfigMap['construction.release_delay_days'] || 3),
+                // 比例字段统一用 0-100 百分比展示
+                surveyDepositRefundRate: Math.round(Number(bizConfigMap['booking.survey_deposit_refund_rate'] || 0.6) * 100),
+                intentFeeRate: Math.round(Number(bizConfigMap['fee.platform.intent_fee_rate'] || 0) * 100),
+                designFeeRate: Math.round(Number(bizConfigMap['fee.platform.design_fee_rate'] || 0.10) * 100),
+                constructionFeeRate: Math.round(Number(bizConfigMap['fee.platform.construction_fee_rate'] || 0.10) * 100),
+                materialFeeRate: Math.round(Number(bizConfigMap['fee.platform.material_fee_rate'] || 0.05) * 100),
+                // 提现与结算
+                withdrawMinAmount: Number(bizConfigMap['withdraw.min_amount'] || 100),
+                settlementAutoDays: Number(bizConfigMap['settlement.auto_days'] || 7),
+            });
         } catch (error) {
             console.error(error);
             message.error('加载失败');
@@ -77,6 +158,51 @@ const SystemSettings: React.FC = () => {
             message.error('保存失败');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleSaveBizConfigs = async () => {
+        setSavingBiz(true);
+        try {
+            const values = await bizForm.validateFields();
+            // 校验分阶段比例之和
+            const checkStages = (stages: { name: string; percentage: number }[] | undefined, label: string) => {
+                if (!stages || stages.length === 0) return true;
+                const total = stages.reduce((s, item) => s + (Number(item?.percentage) || 0), 0);
+                if (total !== 100) { message.error(`${label}各阶段比例之和为 ${total}%，须等于 100%`); return false; }
+                return true;
+            };
+            if (values.designFeePaymentMode === 'staged' && !checkStages(values.designFeeStages, '设计费')) { setSavingBiz(false); return; }
+            if (values.constructionPaymentMode === 'milestone' && !checkStages(values.constructionFeeStages, '施工费')) { setSavingBiz(false); return; }
+            await adminSystemConfigApi.batchUpdate({
+                'booking.survey_deposit_default': String(values.surveyDepositDefault || 500),
+                'booking.survey_refund_notice': String(values.surveyRefundNotice || ''),
+                'booking.survey_refund_user_percent': String(values.surveyDepositRefundRate || 60),
+                'order.design_fee_payment_mode': String(values.designFeePaymentMode || 'onetime'),
+                'order.design_fee_stages': JSON.stringify(values.designFeeStages || []),
+                'order.construction_payment_mode': String(values.constructionPaymentMode || 'milestone'),
+                'order.construction_fee_stages': JSON.stringify(values.constructionFeeStages || []),
+                'order.design_fee_unlock_download': String(values.designFeeUnlockDownload || 'true'),
+                'booking.survey_deposit_min': String(values.surveyDepositMin || 100),
+                'booking.survey_deposit_max': String(values.surveyDepositMax || 2000),
+                'design.fee_quote_expire_hours': String(values.designFeeQuoteExpireHours || 72),
+                'design.deliverable_deadline_days': String(values.deliverableDeadlineDays || 30),
+                'construction.release_delay_days': String(values.constructionReleaseDelayDays || 3),
+                // 比例字段：UI 用 0-100 整数，存储为 0-1 小数
+                'booking.survey_deposit_refund_rate': String((values.surveyDepositRefundRate || 60) / 100),
+                'fee.platform.intent_fee_rate': String((values.intentFeeRate ?? 0) / 100),
+                'fee.platform.design_fee_rate': String((values.designFeeRate ?? 10) / 100),
+                'fee.platform.construction_fee_rate': String((values.constructionFeeRate ?? 10) / 100),
+                'fee.platform.material_fee_rate': String((values.materialFeeRate ?? 5) / 100),
+                'withdraw.min_amount': String(values.withdrawMinAmount || 100),
+                'settlement.auto_days': String(values.settlementAutoDays || 7),
+            });
+            message.success('业务配置保存成功');
+        } catch (error) {
+            console.error(error);
+            message.error('业务配置保存失败');
+        } finally {
+            setSavingBiz(false);
         }
     };
 
@@ -183,6 +309,204 @@ const SystemSettings: React.FC = () => {
                         >
                             <Input.Password placeholder="请输入 SecretKey" />
                         </Form.Item>
+                    </Form>
+                </TabPane>
+
+                <TabPane tab="业务配置" key="7">
+                    <Form form={bizForm} layout="vertical">
+                        <Card
+                            size="small"
+                            title="量房定金"
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                                用户预约量房时支付的定金，取消预约可按比例退还，继续签约时可抵扣设计费
+                            </Typography.Text>
+                            <Row gutter={16}>
+                                <Col span={8}>
+                                    <Form.Item label="默认金额" name="surveyDepositDefault">
+                                        <InputNumber min={0} precision={2} style={{ width: '100%' }} addonAfter="元" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item label="最低金额" name="surveyDepositMin">
+                                        <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item label="最高金额" name="surveyDepositMax">
+                                        <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                            <Row gutter={16}>
+                                <Col span={8}>
+                                    <Form.Item label="取消退还比例" name="surveyDepositRefundRate" tooltip="用户取消预约时退还给用户的定金比例">
+                                        <InputNumber min={0} max={100} step={5} precision={0} style={{ width: '100%' }} addonAfter="%" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={16}>
+                                    <Form.Item label="退款说明（展示给用户）" name="surveyRefundNotice">
+                                        <Input.TextArea rows={2} placeholder="如：量房定金支付后，取消预约将退还60%定金" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        </Card>
+
+                        <Card
+                            size="small"
+                            title="设计费"
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                                设计师提交设计费报价，用户确认后生成订单，支持一次性或分阶段付款
+                            </Typography.Text>
+                            <Row gutter={16}>
+                                <Col span={8}>
+                                    <Form.Item label="支付模式" name="designFeePaymentMode">
+                                        <Select
+                                            options={[
+                                                { value: 'onetime', label: '一次性付款' },
+                                                { value: 'staged', label: '分阶段付款' },
+                                            ]}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item label="报价有效期" name="designFeeQuoteExpireHours" tooltip="设计费报价发出后自动过期的时间">
+                                        <InputNumber min={1} precision={0} style={{ width: '100%' }} addonAfter="小时" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={8}>
+                                    <Form.Item label="交付截止" name="deliverableDeadlineDays" tooltip="设计交付件的提交截止天数">
+                                        <InputNumber min={1} precision={0} style={{ width: '100%' }} addonAfter="天" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                            <Row gutter={16}>
+                                <Col span={8}>
+                                    <Form.Item label="支付后解锁完整包" name="designFeeUnlockDownload">
+                                        <Select
+                                            options={[
+                                                { value: 'true', label: '是' },
+                                                { value: 'false', label: '否' },
+                                            ]}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={16}>
+                                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.designFeePaymentMode !== cur.designFeePaymentMode}>
+                                        {({ getFieldValue }) =>
+                                            getFieldValue('designFeePaymentMode') === 'staged' ? (
+                                                <div>
+                                                    <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>分阶段配置</Typography.Text>
+                                                    <StageListEditor name="designFeeStages" form={bizForm} />
+                                                </div>
+                                            ) : null
+                                        }
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        </Card>
+
+                        <Card
+                            size="small"
+                            title="施工费"
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                                施工阶段按里程碑验收放款，验收通过后延迟 N 天自动转入商家账户
+                            </Typography.Text>
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Form.Item label="支付模式" name="constructionPaymentMode">
+                                        <Select
+                                            options={[
+                                                { value: 'milestone', label: '按里程碑分阶段付款' },
+                                                { value: 'onetime', label: '一次性付款' },
+                                            ]}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item label="验收后放款延迟" name="constructionReleaseDelayDays" tooltip="里程碑验收确认后 T+N 天自动放款给商家">
+                                        <InputNumber min={0} max={30} precision={0} style={{ width: '100%' }} addonAfter="天" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.constructionPaymentMode !== cur.constructionPaymentMode}>
+                                {({ getFieldValue }) =>
+                                    getFieldValue('constructionPaymentMode') === 'milestone' ? (
+                                        <div>
+                                            <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>里程碑阶段配置</Typography.Text>
+                                            <StageListEditor name="constructionFeeStages" form={bizForm} />
+                                        </div>
+                                    ) : null
+                                }
+                            </Form.Item>
+                        </Card>
+
+                        <Card
+                            size="small"
+                            title="平台抽成"
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                                平台从各类交易中抽取的服务费比例，设为 0 表示不抽成
+                            </Typography.Text>
+                            <Row gutter={16}>
+                                <Col span={6}>
+                                    <Form.Item label="意向金" name="intentFeeRate">
+                                        <InputNumber min={0} max={100} step={1} precision={0} style={{ width: '100%' }} addonAfter="%" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={6}>
+                                    <Form.Item label="设计费" name="designFeeRate">
+                                        <InputNumber min={0} max={100} step={1} precision={0} style={{ width: '100%' }} addonAfter="%" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={6}>
+                                    <Form.Item label="施工费" name="constructionFeeRate">
+                                        <InputNumber min={0} max={100} step={1} precision={0} style={{ width: '100%' }} addonAfter="%" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={6}>
+                                    <Form.Item label="材料费" name="materialFeeRate">
+                                        <InputNumber min={0} max={100} step={1} precision={0} style={{ width: '100%' }} addonAfter="%" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        </Card>
+
+                        <Card
+                            size="small"
+                            title="提现与结算"
+                        >
+                            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+                                商家收入在订单完成后经过冷静期自动变为可提现状态
+                            </Typography.Text>
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Form.Item label="最小提现金额" name="withdrawMinAmount">
+                                        <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元" />
+                                    </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                    <Form.Item label="自动结算冷静期" name="settlementAutoDays" tooltip="订单完成后多少天收入自动变为可提现状态">
+                                        <InputNumber min={1} max={90} precision={0} style={{ width: '100%' }} addonAfter="天" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                        </Card>
+
+                        <div style={{ textAlign: 'right', marginTop: 16 }}>
+                            <Space>
+                                <Button onClick={loadSettings}>重置</Button>
+                                <Button type="primary" loading={savingBiz} onClick={handleSaveBizConfigs}>
+                                    保存业务配置
+                                </Button>
+                            </Space>
+                        </div>
                     </Form>
                 </TabPane>
             </Tabs>

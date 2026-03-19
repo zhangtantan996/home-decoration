@@ -45,11 +45,78 @@ const iconSet = {
     Moon,
 };
 
+const USER_WEB_URL = (import.meta.env.VITE_USER_WEB_URL || '/app/').trim();
+const MERCHANT_WEB_URL = (import.meta.env.VITE_MERCHANT_WEB_URL || '/merchant/').trim();
+const IOS_APP_URL = (import.meta.env.VITE_IOS_APP_URL || '').trim();
+const ANDROID_APP_URL = (import.meta.env.VITE_ANDROID_APP_URL || '').trim();
+
+const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
+const isLocalHost = (hostname) => hostname === 'localhost' || hostname === '127.0.0.1';
+
+const resolveUserWebBase = () => {
+    if (USER_WEB_URL && USER_WEB_URL !== '/app/') {
+        return USER_WEB_URL;
+    }
+
+    if (typeof window !== 'undefined' && isLocalHost(window.location.hostname)) {
+        return `${window.location.protocol}//${window.location.hostname}:5175/app/`;
+    }
+
+    return USER_WEB_URL || '/app/';
+};
+
+const resolveMerchantWebBase = () => {
+    if (MERCHANT_WEB_URL && MERCHANT_WEB_URL !== '/merchant/') {
+        return MERCHANT_WEB_URL;
+    }
+
+    if (typeof window !== 'undefined' && isLocalHost(window.location.hostname)) {
+        return `${window.location.protocol}//${window.location.hostname}:5175/merchant/`;
+    }
+
+    return MERCHANT_WEB_URL || '/merchant/';
+};
+
+const resolveAppDownloadURL = (value) => value || '#download';
+
+const buildUserWebURL = (routePath = '') => {
+    const base = resolveUserWebBase();
+    const normalizedBase = trimTrailingSlash(base.replace(/#.*$/, ''));
+    if (!routePath || routePath === '/') {
+        return `${normalizedBase}/`;
+    }
+    const nextPath = routePath.startsWith('/') ? routePath : `/${routePath}`;
+    return `${normalizedBase}${nextPath}`;
+};
+
+const linkTargets = {
+    'ios-app': () => resolveAppDownloadURL(IOS_APP_URL),
+    'android-app': () => resolveAppDownloadURL(ANDROID_APP_URL),
+    'user-web-home': () => buildUserWebURL('/'),
+    'user-web-login': () => buildUserWebURL('/login'),
+    'user-web-providers': () => buildUserWebURL('/providers?category=designer'),
+    'user-web-foremen': () => buildUserWebURL('/providers?category=construction'),
+    'user-web-inspiration': () => buildUserWebURL('/inspiration'),
+    'merchant-entry': () => resolveMerchantWebBase(),
+    'merchant-web': () => resolveMerchantWebBase(),
+};
+
 document.documentElement.classList.add('motion-ready');
 
 document.addEventListener('DOMContentLoaded', () => {
     createIcons({ icons: iconSet });
     applyTranslations();
+
+    document.querySelectorAll('[data-link-target]').forEach((element) => {
+        if (!(element instanceof HTMLAnchorElement)) {
+            return;
+        }
+        const target = element.dataset.linkTarget;
+        if (!target || !linkTargets[target]) {
+            return;
+        }
+        element.href = linkTargets[target]();
+    });
 
     // Theme Switch Logic
     const themeSwitches = document.querySelectorAll('.theme-switch');

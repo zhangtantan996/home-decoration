@@ -1,0 +1,33 @@
+.filterTitle {
+  font-family: var(--font-family-heading);
+  font-size: 1rem;
+  color: var(--color-ink);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toolbar input {
+  flex: 1 1 320px;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.sortRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.resultSummary {
+  margin: 14px 0 0;
+  color: var(--color-secondary);
+}

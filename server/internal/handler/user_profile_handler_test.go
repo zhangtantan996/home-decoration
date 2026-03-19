@@ -1,0 +1,122 @@
+package handler
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+type userProfileEnvelope struct {
+	Code int `json:"code"`
+	Data struct {
+		ID       uint64 `json:"id"`
+		Nickname string `json:"nickname"`
+		Avatar   string `json:"avatar"`
+	} `json:"data"`
+}
+
+func setupUserProfileHandlerDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("auto migrate user model: %v", err)
+	}
+	oldDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = oldDB
+	})
+	return db
+}
+
+func decodeUserProfileEnvelope(t *testing.T, recorder *httptest.ResponseRecorder) userProfileEnvelope {
+	t.Helper()
+	var envelope userProfileEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return envelope
+}
+
+func TestGetProfileReadsUint64UserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupUserProfileHandlerDB(t)
+
+	user := model.User{
+		Phone:    "13800138000",
+		Nickname: "张三",
+		UserType: 1,
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/user/profile", nil)
+	c.Set("userId", user.ID)
+
+	GetProfile(c)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+	envelope := decodeUserProfileEnvelope(t, recorder)
+	if envelope.Code != 0 {
+		t.Fatalf("expected business code 0, got %d", envelope.Code)
+	}
+	if envelope.Data.ID != user.ID {
+		t.Fatalf("expected user id %d, got %d", user.ID, envelope.Data.ID)
+	}
+}
+
+func TestUpdateProfileReadsUint64UserID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupUserProfileHandlerDB(t)
+
+	user := model.User{
+		Phone:    "13800138001",
+		Nickname: "旧昵称",
+		UserType: 1,
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/user/profile", bytes.NewReader([]byte(`{"nickname":"新昵称","avatar":"/uploads/avatar.png"}`)))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("userId", user.ID)
+
+	UpdateProfile(c)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+
+	var updated model.User
+	if err := db.First(&updated, user.ID).Error; err != nil {
+		t.Fatalf("load updated user: %v", err)
+	}
+	if updated.Nickname != "新昵称" {
+		t.Fatalf("expected nickname to be updated, got %q", updated.Nickname)
+	}
+	if updated.Avatar != "/uploads/avatar.png" {
+		t.Fatalf("expected avatar to be updated, got %q", updated.Avatar)
+	}
+}

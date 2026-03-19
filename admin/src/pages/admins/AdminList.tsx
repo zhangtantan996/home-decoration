@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Table, Card, Input, Tag, Button, Space, Form, Select, Switch, App, Modal } from 'antd';
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { adminManageApi, adminRoleApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
 
 interface Role {
     id: number;
@@ -248,8 +250,14 @@ const AdminList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="管理员管理"
+                description="维护后台管理账号、角色分配和账号启停状态。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Input
                     placeholder="搜索用户名/手机号/昵称"
                     prefix={<SearchOutlined />}
@@ -261,23 +269,26 @@ const AdminList: React.FC = () => {
                 <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
                 <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>添加管理员</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                loading={loading}
-                dataSource={admins}
-                columns={columns}
-                rowKey="id"
-                scroll={{ x: 1500 }}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (total) => `共 ${total} 条`,
-                    showSizeChanger: false,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    loading={loading}
+                    dataSource={admins}
+                    columns={columns}
+                    rowKey="id"
+                    scroll={{ x: 1500 }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (total) => `共 ${total} 条`,
+                        showSizeChanger: false,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title={editingAdmin ? '编辑管理员' : '添加管理员'}
@@ -376,7 +387,7 @@ const AdminList: React.FC = () => {
                     )}
                 </Form>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

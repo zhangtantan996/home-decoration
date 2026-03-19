@@ -39,5 +39,5 @@
 
 ## 重复版本化 SQL 归档
 
-- 重复/重叠的历史版本化 SQL 清单见 `server/scripts/migrations/ARCHIVED_DUPLICATES.md`
+- 重复/重叠的历史版本化 SQL 清单见 `server/scripts/migrations/已归档重复SQL映射.md`
 - 若某脚本在 `server/migrations/` 中已有正式对应文件，则本目录版本仅作历史追溯

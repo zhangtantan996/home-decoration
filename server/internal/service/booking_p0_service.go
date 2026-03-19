@@ -1,0 +1,553 @@
+package service
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
+
+	"gorm.io/gorm"
+)
+
+type SurveyDimension struct {
+	Length float64 `json:"length"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+	Unit   string  `json:"unit"`
+}
+
+type SiteSurveyPayload struct {
+	Photos     []string                   `json:"photos"`
+	Dimensions map[string]SurveyDimension `json:"dimensions"`
+	Notes      string                     `json:"notes"`
+}
+
+type SiteSurveyDetail struct {
+	ID                    uint64                     `json:"id"`
+	BookingID             uint64                     `json:"bookingId"`
+	ProviderID            uint64                     `json:"providerId"`
+	Photos                []string                   `json:"photos"`
+	Dimensions            map[string]SurveyDimension `json:"dimensions"`
+	Notes                 string                     `json:"notes"`
+	Status                string                     `json:"status"`
+	SubmittedAt           *time.Time                 `json:"submittedAt,omitempty"`
+	ConfirmedAt           *time.Time                 `json:"confirmedAt,omitempty"`
+	RevisionRequestedAt   *time.Time                 `json:"revisionRequestedAt,omitempty"`
+	RevisionRequestReason string                     `json:"revisionRequestReason,omitempty"`
+}
+
+type BudgetIncludes struct {
+	DesignFee       bool `json:"design_fee"`
+	ConstructionFee bool `json:"construction_fee"`
+	MaterialFee     bool `json:"material_fee"`
+	FurnitureFee    bool `json:"furniture_fee"`
+}
+
+type BudgetConfirmationPayload struct {
+	BudgetMin    float64        `json:"budgetMin"`
+	BudgetMax    float64        `json:"budgetMax"`
+	Includes     BudgetIncludes `json:"includes"`
+	Notes        string         `json:"notes"`
+	DesignIntent string         `json:"designIntent"`
+}
+
+type BudgetConfirmationDetail struct {
+	ID              uint64         `json:"id"`
+	BookingID       uint64         `json:"bookingId"`
+	ProviderID      uint64         `json:"providerId"`
+	BudgetMin       float64        `json:"budgetMin"`
+	BudgetMax       float64        `json:"budgetMax"`
+	Includes        BudgetIncludes `json:"includes"`
+	Notes           string         `json:"notes"`
+	DesignIntent    string         `json:"designIntent"`
+	Status          string         `json:"status"`
+	SubmittedAt     *time.Time     `json:"submittedAt,omitempty"`
+	AcceptedAt      *time.Time     `json:"acceptedAt,omitempty"`
+	RejectedAt      *time.Time     `json:"rejectedAt,omitempty"`
+	RejectionReason string         `json:"rejectionReason,omitempty"`
+}
+
+type BookingP0Summary struct {
+	CurrentStage     string                    `json:"currentStage"`
+	FlowSummary      string                    `json:"flowSummary"`
+	AvailableActions []string                  `json:"availableActions"`
+	SiteSurvey       *SiteSurveyDetail         `json:"siteSurveySummary,omitempty"`
+	BudgetConfirm    *BudgetConfirmationDetail `json:"budgetConfirmSummary,omitempty"`
+}
+
+func (s *BookingService) GetMerchantSiteSurvey(providerID, bookingID uint64) (*SiteSurveyDetail, error) {
+	booking, err := s.getBookingForProvider(providerID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	return s.getSiteSurveyByBooking(booking.ID)
+}
+
+func (s *BookingService) SubmitMerchantSiteSurvey(providerID, bookingID uint64, req *SiteSurveyPayload) (*SiteSurveyDetail, error) {
+	booking, err := s.getBookingForProvider(providerID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	if booking.Status != 2 {
+		return nil, errors.New("预约状态不正确，需为已确认")
+	}
+	if err := validateSiteSurveyPayload(req); err != nil {
+		return nil, err
+	}
+
+	photosJSON, err := json.Marshal(req.Photos)
+	if err != nil {
+		return nil, fmt.Errorf("序列化量房照片失败: %w", err)
+	}
+	dimensionsJSON, err := json.Marshal(req.Dimensions)
+	if err != nil {
+		return nil, fmt.Errorf("序列化量房尺寸失败: %w", err)
+	}
+
+	now := time.Now()
+	var survey model.SiteSurvey
+	err = repository.DB.Where("booking_id = ?", booking.ID).First(&survey).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			survey = model.SiteSurvey{BookingID: booking.ID, ProviderID: booking.ProviderID}
+		} else {
+			return nil, err
+		}
+	}
+	survey.ProviderID = booking.ProviderID
+	survey.Photos = string(photosJSON)
+	survey.Dimensions = string(dimensionsJSON)
+	survey.Notes = strings.TrimSpace(req.Notes)
+	survey.Status = model.SiteSurveyStatusSubmitted
+	survey.SubmittedAt = &now
+	survey.ConfirmedAt = nil
+	survey.RevisionRequestedAt = nil
+	survey.RevisionRequestReason = ""
+
+	if survey.ID == 0 {
+		if err := repository.DB.Create(&survey).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		if err := repository.DB.Save(&survey).Error; err != nil {
+			return nil, err
+		}
+	}
+	return toSiteSurveyDetail(&survey)
+}
+
+func (s *BookingService) GetUserSiteSurvey(userID, bookingID uint64) (*SiteSurveyDetail, error) {
+	booking, err := s.getBookingForUser(userID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	return s.getSiteSurveyByBooking(booking.ID)
+}
+
+func (s *BookingService) ConfirmSiteSurvey(userID, bookingID uint64) (*SiteSurveyDetail, error) {
+	booking, err := s.getBookingForUser(userID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+
+	var survey model.SiteSurvey
+	if err := repository.DB.Where("booking_id = ?", booking.ID).First(&survey).Error; err != nil {
+		return nil, errors.New("量房记录不存在")
+	}
+	if survey.Status == model.SiteSurveyStatusConfirmed {
+		return toSiteSurveyDetail(&survey)
+	}
+	if survey.Status != model.SiteSurveyStatusSubmitted {
+		return nil, errors.New("当前量房记录不可确认")
+	}
+
+	now := time.Now()
+	if err := repository.DB.Model(&survey).Updates(map[string]interface{}{
+		"status":                  model.SiteSurveyStatusConfirmed,
+		"confirmed_at":            now,
+		"revision_requested_at":   nil,
+		"revision_request_reason": "",
+	}).Error; err != nil {
+		return nil, err
+	}
+	if err := repository.DB.First(&survey, survey.ID).Error; err != nil {
+		return nil, err
+	}
+	return toSiteSurveyDetail(&survey)
+}
+
+func (s *BookingService) RejectSiteSurvey(userID, bookingID uint64, reason string) (*SiteSurveyDetail, error) {
+	booking, err := s.getBookingForUser(userID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写重新量房原因")
+	}
+
+	var survey model.SiteSurvey
+	if err := repository.DB.Where("booking_id = ?", booking.ID).First(&survey).Error; err != nil {
+		return nil, errors.New("量房记录不存在")
+	}
+	if survey.Status != model.SiteSurveyStatusSubmitted && survey.Status != model.SiteSurveyStatusConfirmed {
+		return nil, errors.New("当前量房记录不可退回")
+	}
+
+	now := time.Now()
+	if err := repository.DB.Model(&survey).Updates(map[string]interface{}{
+		"status":                  model.SiteSurveyStatusRevisionRequested,
+		"confirmed_at":            nil,
+		"revision_requested_at":   now,
+		"revision_request_reason": reason,
+	}).Error; err != nil {
+		return nil, err
+	}
+	if err := repository.DB.First(&survey, survey.ID).Error; err != nil {
+		return nil, err
+	}
+	return toSiteSurveyDetail(&survey)
+}
+
+func (s *BookingService) GetMerchantBudgetConfirmation(providerID, bookingID uint64) (*BudgetConfirmationDetail, error) {
+	booking, err := s.getBookingForProvider(providerID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	return s.getBudgetConfirmationByBooking(booking.ID)
+}
+
+func (s *BookingService) SubmitMerchantBudgetConfirmation(providerID, bookingID uint64, req *BudgetConfirmationPayload) (*BudgetConfirmationDetail, error) {
+	booking, err := s.getBookingForProvider(providerID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	if booking.Status != 2 {
+		return nil, errors.New("预约状态不正确，需为已确认")
+	}
+	if err := validateBudgetConfirmationPayload(req); err != nil {
+		return nil, err
+	}
+
+	survey, err := s.getSiteSurveyByBooking(booking.ID)
+	if err != nil {
+		return nil, errors.New("请先完成量房记录")
+	}
+	if survey.Status != model.SiteSurveyStatusConfirmed {
+		return nil, errors.New("量房记录需先由用户确认")
+	}
+
+	includesJSON, err := json.Marshal(req.Includes)
+	if err != nil {
+		return nil, fmt.Errorf("序列化预算包含项失败: %w", err)
+	}
+
+	now := time.Now()
+	var confirmation model.BudgetConfirmation
+	err = repository.DB.Where("booking_id = ?", booking.ID).First(&confirmation).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			confirmation = model.BudgetConfirmation{BookingID: booking.ID, ProviderID: booking.ProviderID}
+		} else {
+			return nil, err
+		}
+	}
+	confirmation.ProviderID = booking.ProviderID
+	confirmation.BudgetMin = req.BudgetMin
+	confirmation.BudgetMax = req.BudgetMax
+	confirmation.Includes = string(includesJSON)
+	confirmation.Notes = strings.TrimSpace(req.Notes)
+	confirmation.DesignIntent = strings.TrimSpace(req.DesignIntent)
+	confirmation.Status = model.BudgetConfirmationStatusSubmitted
+	confirmation.SubmittedAt = &now
+	confirmation.AcceptedAt = nil
+	confirmation.RejectedAt = nil
+	confirmation.RejectionReason = ""
+
+	if confirmation.ID == 0 {
+		if err := repository.DB.Create(&confirmation).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		if err := repository.DB.Save(&confirmation).Error; err != nil {
+			return nil, err
+		}
+	}
+	return toBudgetConfirmationDetail(&confirmation)
+}
+
+func (s *BookingService) GetUserBudgetConfirmation(userID, bookingID uint64) (*BudgetConfirmationDetail, error) {
+	booking, err := s.getBookingForUser(userID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	return s.getBudgetConfirmationByBooking(booking.ID)
+}
+
+func (s *BookingService) AcceptBudgetConfirmation(userID, bookingID uint64) (*BudgetConfirmationDetail, error) {
+	booking, err := s.getBookingForUser(userID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+
+	var confirmation model.BudgetConfirmation
+	if err := repository.DB.Where("booking_id = ?", booking.ID).First(&confirmation).Error; err != nil {
+		return nil, errors.New("预算确认不存在")
+	}
+	if confirmation.Status == model.BudgetConfirmationStatusAccepted {
+		return toBudgetConfirmationDetail(&confirmation)
+	}
+	if confirmation.Status != model.BudgetConfirmationStatusSubmitted {
+		return nil, errors.New("当前预算确认不可接受")
+	}
+
+	now := time.Now()
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&confirmation).Updates(map[string]interface{}{
+			"status":           model.BudgetConfirmationStatusAccepted,
+			"accepted_at":      now,
+			"rejected_at":      nil,
+			"rejection_reason": "",
+		}).Error; err != nil {
+			return err
+		}
+		return businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageDesignPendingSubmission,
+		})
+	}); err != nil {
+		return nil, err
+	}
+	if err := repository.DB.First(&confirmation, confirmation.ID).Error; err != nil {
+		return nil, err
+	}
+	return toBudgetConfirmationDetail(&confirmation)
+}
+
+func (s *BookingService) RejectBudgetConfirmation(userID, bookingID uint64, reason string) (*BudgetConfirmationDetail, error) {
+	booking, err := s.getBookingForUser(userID, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写拒绝原因")
+	}
+
+	var confirmation model.BudgetConfirmation
+	if err := repository.DB.Where("booking_id = ?", booking.ID).First(&confirmation).Error; err != nil {
+		return nil, errors.New("预算确认不存在")
+	}
+	if confirmation.Status != model.BudgetConfirmationStatusSubmitted && confirmation.Status != model.BudgetConfirmationStatusAccepted {
+		return nil, errors.New("当前预算确认不可拒绝")
+	}
+
+	now := time.Now()
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&confirmation).Updates(map[string]interface{}{
+			"status":           model.BudgetConfirmationStatusRejected,
+			"accepted_at":      nil,
+			"rejected_at":      now,
+			"rejection_reason": reason,
+		}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Booking{}).Where("id = ?", booking.ID).Update("status", 4).Error; err != nil {
+			return err
+		}
+		return businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageCancelled,
+			"closed_reason": reason,
+		})
+	}); err != nil {
+		return nil, err
+	}
+	if err := repository.DB.First(&confirmation, confirmation.ID).Error; err != nil {
+		return nil, err
+	}
+	return toBudgetConfirmationDetail(&confirmation)
+}
+
+func (s *BookingService) GetBookingP0Summary(bookingID uint64) (*BookingP0Summary, error) {
+	flow, err := businessFlowSvc.GetBySource(model.BusinessFlowSourceBooking, bookingID)
+	if err != nil {
+		return nil, err
+	}
+	summary := businessFlowSvc.BuildSummary(flow)
+	siteSurvey, _ := s.getSiteSurveyByBooking(bookingID)
+	budgetConfirm, _ := s.getBudgetConfirmationByBooking(bookingID)
+	return &BookingP0Summary{
+		CurrentStage:     summary.CurrentStage,
+		FlowSummary:      summary.FlowSummary,
+		AvailableActions: summary.AvailableActions,
+		SiteSurvey:       siteSurvey,
+		BudgetConfirm:    budgetConfirm,
+	}, nil
+}
+
+func (s *BookingService) getBookingForUser(userID, bookingID uint64) (*model.Booking, error) {
+	if bookingID == 0 || userID == 0 {
+		return nil, errors.New("无效预约")
+	}
+	var booking model.Booking
+	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
+		return nil, errors.New("预约不存在")
+	}
+	if booking.UserID != userID {
+		return nil, errors.New("无权操作此预约")
+	}
+	return &booking, nil
+}
+
+func (s *BookingService) getBookingForProvider(providerID, bookingID uint64) (*model.Booking, error) {
+	if bookingID == 0 || providerID == 0 {
+		return nil, errors.New("无效预约")
+	}
+	var booking model.Booking
+	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
+		return nil, errors.New("预约不存在")
+	}
+	if booking.ProviderID != providerID {
+		return nil, errors.New("无权操作此预约")
+	}
+	return &booking, nil
+}
+
+func (s *BookingService) getSiteSurveyByBooking(bookingID uint64) (*SiteSurveyDetail, error) {
+	var survey model.SiteSurvey
+	if err := repository.DB.Where("booking_id = ?", bookingID).First(&survey).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toSiteSurveyDetail(&survey)
+}
+
+func (s *BookingService) getBudgetConfirmationByBooking(bookingID uint64) (*BudgetConfirmationDetail, error) {
+	var confirmation model.BudgetConfirmation
+	if err := repository.DB.Where("booking_id = ?", bookingID).First(&confirmation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toBudgetConfirmationDetail(&confirmation)
+}
+
+func toSiteSurveyDetail(survey *model.SiteSurvey) (*SiteSurveyDetail, error) {
+	if survey == nil {
+		return nil, nil
+	}
+	var photos []string
+	if strings.TrimSpace(survey.Photos) != "" {
+		if err := json.Unmarshal([]byte(survey.Photos), &photos); err != nil {
+			return nil, fmt.Errorf("解析量房照片失败: %w", err)
+		}
+	}
+	dimensions := map[string]SurveyDimension{}
+	if strings.TrimSpace(survey.Dimensions) != "" {
+		if err := json.Unmarshal([]byte(survey.Dimensions), &dimensions); err != nil {
+			return nil, fmt.Errorf("解析量房尺寸失败: %w", err)
+		}
+	}
+	return &SiteSurveyDetail{
+		ID:                    survey.ID,
+		BookingID:             survey.BookingID,
+		ProviderID:            survey.ProviderID,
+		Photos:                photos,
+		Dimensions:            dimensions,
+		Notes:                 survey.Notes,
+		Status:                survey.Status,
+		SubmittedAt:           survey.SubmittedAt,
+		ConfirmedAt:           survey.ConfirmedAt,
+		RevisionRequestedAt:   survey.RevisionRequestedAt,
+		RevisionRequestReason: survey.RevisionRequestReason,
+	}, nil
+}
+
+func toBudgetConfirmationDetail(confirmation *model.BudgetConfirmation) (*BudgetConfirmationDetail, error) {
+	if confirmation == nil {
+		return nil, nil
+	}
+	includes := BudgetIncludes{}
+	if strings.TrimSpace(confirmation.Includes) != "" {
+		if err := json.Unmarshal([]byte(confirmation.Includes), &includes); err != nil {
+			return nil, fmt.Errorf("解析预算包含项失败: %w", err)
+		}
+	}
+	return &BudgetConfirmationDetail{
+		ID:              confirmation.ID,
+		BookingID:       confirmation.BookingID,
+		ProviderID:      confirmation.ProviderID,
+		BudgetMin:       confirmation.BudgetMin,
+		BudgetMax:       confirmation.BudgetMax,
+		Includes:        includes,
+		Notes:           confirmation.Notes,
+		DesignIntent:    confirmation.DesignIntent,
+		Status:          confirmation.Status,
+		SubmittedAt:     confirmation.SubmittedAt,
+		AcceptedAt:      confirmation.AcceptedAt,
+		RejectedAt:      confirmation.RejectedAt,
+		RejectionReason: confirmation.RejectionReason,
+	}, nil
+}
+
+func validateSiteSurveyPayload(req *SiteSurveyPayload) error {
+	if req == nil {
+		return errors.New("参数不能为空")
+	}
+	if len(req.Photos) == 0 {
+		return errors.New("请至少上传一张量房照片")
+	}
+	if len(req.Photos) > 20 {
+		return errors.New("量房照片最多上传 20 张")
+	}
+	if len(req.Dimensions) == 0 {
+		return errors.New("请至少录入一个区域尺寸")
+	}
+	for area, item := range req.Dimensions {
+		if strings.TrimSpace(area) == "" {
+			return errors.New("尺寸区域名称不能为空")
+		}
+		if item.Length <= 0 || item.Width <= 0 || item.Height <= 0 {
+			return fmt.Errorf("%s 的长宽高需大于 0", area)
+		}
+		if strings.TrimSpace(item.Unit) == "" {
+			req.Dimensions[area] = SurveyDimension{Length: item.Length, Width: item.Width, Height: item.Height, Unit: "m"}
+		}
+	}
+	if len(strings.TrimSpace(req.Notes)) > 1000 {
+		return errors.New("量房备注不能超过 1000 字符")
+	}
+	return nil
+}
+
+func validateBudgetConfirmationPayload(req *BudgetConfirmationPayload) error {
+	if req == nil {
+		return errors.New("参数不能为空")
+	}
+	if req.BudgetMin <= 0 || req.BudgetMax <= 0 {
+		return errors.New("预算范围必须大于 0")
+	}
+	if req.BudgetMax < req.BudgetMin {
+		return errors.New("预算最大值不能小于最小值")
+	}
+	if !req.Includes.DesignFee && !req.Includes.ConstructionFee && !req.Includes.MaterialFee && !req.Includes.FurnitureFee {
+		return errors.New("请至少选择一个预算包含项")
+	}
+	if strings.TrimSpace(req.DesignIntent) == "" {
+		return errors.New("请填写设计意向")
+	}
+	if len(strings.TrimSpace(req.Notes)) > 1000 {
+		return errors.New("预算说明不能超过 1000 字符")
+	}
+	if len(strings.TrimSpace(req.DesignIntent)) > 1000 {
+		return errors.New("设计意向不能超过 1000 字符")
+	}
+	return nil
+}

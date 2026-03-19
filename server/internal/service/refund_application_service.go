@@ -1,0 +1,748 @@
+package service
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+type RefundApplicationView struct {
+	ID              uint64                 `json:"id"`
+	BookingID       uint64                 `json:"bookingId"`
+	ProjectID       uint64                 `json:"projectId,omitempty"`
+	OrderID         uint64                 `json:"orderId,omitempty"`
+	UserID          uint64                 `json:"userId"`
+	RefundType      string                 `json:"refundType"`
+	RefundAmount    float64                `json:"refundAmount"`
+	RequestedAmount float64                `json:"requestedAmount"`
+	ApprovedAmount  float64                `json:"approvedAmount"`
+	Reason          string                 `json:"reason"`
+	Evidence        []string               `json:"evidence"`
+	Status          string                 `json:"status"`
+	AdminID         uint64                 `json:"adminId,omitempty"`
+	AdminNotes      string                 `json:"adminNotes"`
+	ApprovedAt      *time.Time             `json:"approvedAt,omitempty"`
+	RejectedAt      *time.Time             `json:"rejectedAt,omitempty"`
+	CompletedAt     *time.Time             `json:"completedAt,omitempty"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+	Booking         map[string]interface{} `json:"booking,omitempty"`
+	Project         map[string]interface{} `json:"project,omitempty"`
+	Order           map[string]interface{} `json:"order,omitempty"`
+	User            map[string]interface{} `json:"user,omitempty"`
+}
+
+type CreateRefundApplicationInput struct {
+	RefundType string   `json:"refundType"`
+	Reason     string   `json:"reason"`
+	Evidence   []string `json:"evidence"`
+}
+
+type ReviewRefundApplicationInput struct {
+	ApprovedAmount float64 `json:"approvedAmount"`
+	AdminNotes     string  `json:"adminNotes"`
+}
+
+type RejectRefundApplicationInput struct {
+	AdminNotes string `json:"adminNotes"`
+}
+
+type refundBreakdown struct {
+	ProjectID       uint64
+	DesignOrderID   uint64
+	IntentFee       float64
+	DesignFee       float64
+	ConstructionFee float64
+}
+
+type RefundApplicationService struct{}
+
+func (s *RefundApplicationService) CreateApplication(bookingID, userID uint64, input *CreateRefundApplicationInput) (*RefundApplicationView, error) {
+	if input == nil {
+		return nil, errors.New("参数不能为空")
+	}
+	refundType := normalizeRefundType(strings.TrimSpace(input.RefundType))
+	if refundType == "" {
+		return nil, errors.New("无效的退款类型")
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		return nil, errors.New("请填写退款原因")
+	}
+
+	var view *RefundApplicationView
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var booking model.Booking
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&booking, bookingID).Error; err != nil {
+			return errors.New("预约不存在")
+		}
+		if booking.UserID != userID {
+			return errors.New("无权申请该预约退款")
+		}
+		var openCount int64
+		if err := tx.Model(&model.RefundApplication{}).
+			Where("booking_id = ? AND user_id = ? AND status IN ?", bookingID, userID, []string{model.RefundApplicationStatusPending, model.RefundApplicationStatusApproved}).
+			Count(&openCount).Error; err != nil {
+			return err
+		}
+		if openCount > 0 {
+			return errors.New("该预约已有处理中退款申请")
+		}
+
+		project, err := findProjectByBookingTx(tx, bookingID)
+		if err != nil {
+			return err
+		}
+		breakdown, err := calculateRefundBreakdownTx(tx, &booking, project)
+		if err != nil {
+			return err
+		}
+		requestedAmount, orderID, err := requestedRefundAmountFromBreakdown(refundType, breakdown)
+		if err != nil {
+			return err
+		}
+		application := &model.RefundApplication{
+			BookingID:       booking.ID,
+			ProjectID:       breakdown.ProjectID,
+			OrderID:         orderID,
+			UserID:          userID,
+			RefundType:      refundType,
+			RequestedAmount: requestedAmount,
+			ApprovedAmount:  0,
+			Reason:          reason,
+			Evidence:        marshalStringList(input.Evidence),
+			Status:          model.RefundApplicationStatusPending,
+		}
+		if err := tx.Create(application).Error; err != nil {
+			return err
+		}
+		if err := markRefundLifecycleDisputedTx(tx, &booking, project, "退款申请："+reason); err != nil {
+			return err
+		}
+		loaded, err := s.buildRefundApplicationViewTx(tx, application)
+		if err != nil {
+			return err
+		}
+		view = loaded
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	notificationService := &NotificationService{}
+	_ = notificationService.NotifyAdmins(&CreateNotificationInput{
+		Title:       "新的退款申请待审核",
+		Content:     fmt.Sprintf("预约 #%d 提交了退款申请", bookingID),
+		Type:        "refund.application.created",
+		RelatedID:   view.ID,
+		RelatedType: "refund_application",
+		ActionURL:   fmt.Sprintf("/admin/refunds/%d", view.ID),
+	})
+
+	return view, nil
+}
+
+func (s *RefundApplicationService) ListMyApplications(userID uint64) ([]RefundApplicationView, error) {
+	var items []model.RefundApplication
+	if err := repository.DB.Where("user_id = ?", userID).Order("created_at DESC").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	result := make([]RefundApplicationView, 0, len(items))
+	for i := range items {
+		view, err := s.buildRefundApplicationViewTx(repository.DB, &items[i])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *view)
+	}
+	return result, nil
+}
+
+func (s *RefundApplicationService) ListAdminApplications(status string, page, pageSize int) ([]RefundApplicationView, int64, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	query := repository.DB.Model(&model.RefundApplication{})
+	if strings.TrimSpace(status) != "" {
+		query = query.Where("status = ?", strings.TrimSpace(status))
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var items []model.RefundApplication
+	if err := query.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	result := make([]RefundApplicationView, 0, len(items))
+	for i := range items {
+		view, err := s.buildRefundApplicationViewTx(repository.DB, &items[i])
+		if err != nil {
+			return nil, 0, err
+		}
+		result = append(result, *view)
+	}
+	return result, total, nil
+}
+
+func (s *RefundApplicationService) GetApplicationDetail(id uint64) (*RefundApplicationView, error) {
+	var item model.RefundApplication
+	if err := repository.DB.First(&item, id).Error; err != nil {
+		return nil, errors.New("退款申请不存在")
+	}
+	return s.buildRefundApplicationViewTx(repository.DB, &item)
+}
+
+func (s *RefundApplicationService) ApproveApplication(id, adminID uint64, input *ReviewRefundApplicationInput) (*RefundApplicationView, error) {
+	if input == nil {
+		input = &ReviewRefundApplicationInput{}
+	}
+	var view *RefundApplicationView
+	auditService := &AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var application model.RefundApplication
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&application, id).Error; err != nil {
+			return errors.New("退款申请不存在")
+		}
+		if application.Status != model.RefundApplicationStatusPending {
+			return errors.New("当前退款申请不可审核")
+		}
+		approvedAmount := application.RequestedAmount
+		if input != nil && input.ApprovedAmount > 0 {
+			approvedAmount = normalizeAmount(input.ApprovedAmount)
+		}
+		if approvedAmount <= 0 || approvedAmount > application.RequestedAmount {
+			return errors.New("批准金额无效")
+		}
+		beforeState := map[string]interface{}{
+			"refundApplication": map[string]interface{}{
+				"id":              application.ID,
+				"status":          application.Status,
+				"requestedAmount": application.RequestedAmount,
+				"approvedAmount":  application.ApprovedAmount,
+			},
+		}
+		if err := applyRefundApplicationTx(tx, &application, approvedAmount); err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := tx.Model(&application).Updates(map[string]interface{}{
+			"status":          model.RefundApplicationStatusCompleted,
+			"admin_id":        adminID,
+			"admin_notes":     strings.TrimSpace(input.AdminNotes),
+			"approved_amount": approvedAmount,
+			"approved_at":     now,
+			"completed_at":    now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "approve_refund_application",
+			ResourceType:  "refund_application",
+			ResourceID:    application.ID,
+			Reason:        strings.TrimSpace(input.AdminNotes),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"refundApplication": map[string]interface{}{
+					"id":             application.ID,
+					"status":         model.RefundApplicationStatusCompleted,
+					"approvedAmount": approvedAmount,
+					"approvedAt":     now,
+					"completedAt":    now,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"bookingId": application.BookingID,
+				"projectId": application.ProjectID,
+				"userId":    application.UserID,
+			},
+		}); err != nil {
+			return err
+		}
+		var err error
+		view, err = s.buildRefundApplicationViewTx(tx, &application)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	notificationService := &NotificationService{}
+	_ = notificationService.Create(&CreateNotificationInput{
+		UserID:      view.UserID,
+		UserType:    "user",
+		Title:       "退款申请已处理",
+		Content:     fmt.Sprintf("您的退款申请已通过，退款金额 %.2f 元", view.ApprovedAmount),
+		Type:        "refund.application.approved",
+		RelatedID:   view.ID,
+		RelatedType: "refund_application",
+		ActionURL:   buildBookingRefundActionURL(view.BookingID),
+	})
+	return view, nil
+}
+
+func (s *RefundApplicationService) RejectApplication(id, adminID uint64, input *RejectRefundApplicationInput) (*RefundApplicationView, error) {
+	if input == nil {
+		input = &RejectRefundApplicationInput{}
+	}
+	var view *RefundApplicationView
+	auditService := &AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var application model.RefundApplication
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&application, id).Error; err != nil {
+			return errors.New("退款申请不存在")
+		}
+		if application.Status != model.RefundApplicationStatusPending {
+			return errors.New("当前退款申请不可驳回")
+		}
+		beforeState := map[string]interface{}{
+			"refundApplication": map[string]interface{}{
+				"id":              application.ID,
+				"status":          application.Status,
+				"requestedAmount": application.RequestedAmount,
+			},
+		}
+		now := time.Now()
+		if err := tx.Model(&application).Updates(map[string]interface{}{
+			"status":      model.RefundApplicationStatusRejected,
+			"admin_id":    adminID,
+			"admin_notes": strings.TrimSpace(input.AdminNotes),
+			"rejected_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "reject_refund_application",
+			ResourceType:  "refund_application",
+			ResourceID:    application.ID,
+			Reason:        strings.TrimSpace(input.AdminNotes),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"refundApplication": map[string]interface{}{
+					"id":         application.ID,
+					"status":     model.RefundApplicationStatusRejected,
+					"rejectedAt": now,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"bookingId": application.BookingID,
+				"projectId": application.ProjectID,
+				"userId":    application.UserID,
+			},
+		}); err != nil {
+			return err
+		}
+		var err error
+		view, err = s.buildRefundApplicationViewTx(tx, &application)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	_ = (&NotificationService{}).Create(&CreateNotificationInput{
+		UserID:      view.UserID,
+		UserType:    "user",
+		Title:       "退款申请已驳回",
+		Content:     fmt.Sprintf("您的退款申请被驳回，原因：%s", view.AdminNotes),
+		Type:        "refund.application.rejected",
+		RelatedID:   view.ID,
+		RelatedType: "refund_application",
+		ActionURL:   buildBookingRefundActionURL(view.BookingID),
+	})
+	return view, nil
+}
+
+func normalizeRefundType(refundType string) string {
+	switch refundType {
+	case model.RefundTypeIntentFee, model.RefundTypeDesignFee, model.RefundTypeConstructionFee, model.RefundTypeFull:
+		return refundType
+	default:
+		return ""
+	}
+}
+
+func pickAbnormalRefundType(breakdown *refundBreakdown) string {
+	if breakdown == nil {
+		return ""
+	}
+	switch {
+	case breakdown.IntentFee > 0 && breakdown.DesignFee > 0:
+		return model.RefundTypeFull
+	case breakdown.DesignFee > 0:
+		return model.RefundTypeDesignFee
+	case breakdown.IntentFee > 0:
+		return model.RefundTypeIntentFee
+	case breakdown.ConstructionFee > 0:
+		return model.RefundTypeConstructionFee
+	default:
+		return ""
+	}
+}
+
+func ensurePendingAbnormalRefundApplicationTx(tx *gorm.DB, booking *model.Booking, project *model.Project, userID uint64, reason string) (*model.RefundApplication, error) {
+	if tx == nil {
+		tx = repository.DB
+	}
+	if booking == nil || booking.ID == 0 || userID == 0 {
+		return nil, nil
+	}
+
+	var existing model.RefundApplication
+	if err := tx.
+		Where("booking_id = ? AND user_id = ? AND status IN ?", booking.ID, userID, []string{model.RefundApplicationStatusPending, model.RefundApplicationStatusApproved}).
+		Order("id DESC").
+		First(&existing).Error; err == nil {
+		return &existing, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	breakdown, err := calculateRefundBreakdownTx(tx, booking, project)
+	if err != nil {
+		return nil, err
+	}
+	refundType := pickAbnormalRefundType(breakdown)
+	if refundType == "" {
+		return nil, nil
+	}
+
+	requestedAmount, orderID, err := requestedRefundAmountFromBreakdown(refundType, breakdown)
+	if err != nil {
+		return nil, err
+	}
+
+	application := &model.RefundApplication{
+		BookingID:       booking.ID,
+		ProjectID:       breakdown.ProjectID,
+		OrderID:         orderID,
+		UserID:          userID,
+		RefundType:      refundType,
+		RequestedAmount: requestedAmount,
+		Reason:          strings.TrimSpace(reason),
+		Status:          model.RefundApplicationStatusPending,
+	}
+	if err := tx.Create(application).Error; err != nil {
+		return nil, err
+	}
+	return application, nil
+}
+
+func markRefundLifecycleDisputedTx(tx *gorm.DB, booking *model.Booking, project *model.Project, reason string) error {
+	if tx == nil {
+		tx = repository.DB
+	}
+	now := time.Now()
+	reason = strings.TrimSpace(reason)
+
+	if booking != nil && booking.ID > 0 {
+		if err := tx.Model(&model.Booking{}).Where("id = ?", booking.ID).Update("status", 5).Error; err != nil {
+			return err
+		}
+		if _, err := businessFlowSvc.EnsureLeadFlow(tx, model.BusinessFlowSourceBooking, booking.ID, booking.UserID, booking.ProviderID); err != nil {
+			return err
+		}
+		if err := businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageDisputed,
+		}); err != nil {
+			return err
+		}
+	}
+
+	if project != nil && project.ID > 0 {
+		if err := tx.Model(&model.Project{}).Where("id = ?", project.ID).Updates(map[string]interface{}{
+			"disputed_at":    now,
+			"dispute_reason": reason,
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func calculateRefundBreakdownTx(tx *gorm.DB, booking *model.Booking, project *model.Project) (*refundBreakdown, error) {
+	if booking == nil {
+		return nil, errors.New("预约不存在")
+	}
+	breakdown := &refundBreakdown{}
+	if project != nil {
+		breakdown.ProjectID = project.ID
+	}
+	refundSvc := &RefundService{}
+	if canRefund, _ := refundSvc.CanRefundIntentFee(booking); canRefund {
+		breakdown.IntentFee = booking.IntentFee
+	}
+	order, err := findLatestPaidOrderTx(tx, booking.ID, breakdown.ProjectID, model.OrderTypeDesign)
+	if err != nil {
+		return nil, err
+	}
+	if order != nil && order.Status != model.OrderStatusRefunded {
+		breakdown.DesignOrderID = order.ID
+		breakdown.DesignFee = order.PaidAmount
+	}
+	constructionAmount, _, err := refundableConstructionAmountTx(tx, breakdown.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	breakdown.ConstructionFee = constructionAmount
+	return breakdown, nil
+}
+
+func requestedRefundAmountFromBreakdown(refundType string, breakdown *refundBreakdown) (float64, uint64, error) {
+	if breakdown == nil {
+		return 0, 0, errors.New("退款金额计算失败")
+	}
+	switch refundType {
+	case model.RefundTypeIntentFee:
+		if breakdown.IntentFee <= 0 {
+			return 0, 0, errors.New("当前预约没有可退意向金")
+		}
+		return breakdown.IntentFee, 0, nil
+	case model.RefundTypeDesignFee:
+		if breakdown.DesignFee <= 0 {
+			return 0, 0, errors.New("当前预约没有可退设计费")
+		}
+		return breakdown.DesignFee, breakdown.DesignOrderID, nil
+	case model.RefundTypeConstructionFee:
+		if breakdown.ConstructionFee <= 0 {
+			return 0, 0, errors.New("当前项目没有可退施工费")
+		}
+		return breakdown.ConstructionFee, 0, nil
+	case model.RefundTypeFull:
+		total := breakdown.IntentFee + breakdown.DesignFee + breakdown.ConstructionFee
+		if total <= 0 {
+			return 0, 0, errors.New("当前没有可退金额")
+		}
+		return total, breakdown.DesignOrderID, nil
+	default:
+		return 0, 0, errors.New("无效的退款类型")
+	}
+}
+
+func applyRefundApplicationTx(tx *gorm.DB, application *model.RefundApplication, approvedAmount float64) error {
+	var booking model.Booking
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&booking, application.BookingID).Error; err != nil {
+		return errors.New("预约不存在")
+	}
+	var project *model.Project
+	if application.ProjectID > 0 {
+		loadedProject, err := lockProjectByID(tx, application.ProjectID)
+		if err != nil {
+			return err
+		}
+		project = loadedProject
+	}
+	breakdown, err := calculateRefundBreakdownTx(tx, &booking, project)
+	if err != nil {
+		return err
+	}
+	remaining := approvedAmount
+
+	if application.RefundType == model.RefundTypeIntentFee {
+		if remaining != breakdown.IntentFee {
+			return errors.New("意向金退款金额必须等于可退金额")
+		}
+		return applyIntentFeeRefundTx(tx, &booking, "退款申请审核通过")
+	}
+
+	if application.RefundType == model.RefundTypeDesignFee {
+		if remaining > breakdown.DesignFee {
+			return errors.New("设计费退款金额超过可退范围")
+		}
+		return applyDesignFeeRefundTx(tx, breakdown.DesignOrderID, booking.UserID, remaining)
+	}
+
+	if application.RefundType == model.RefundTypeConstructionFee {
+		if remaining > breakdown.ConstructionFee {
+			return errors.New("施工费退款金额超过可退范围")
+		}
+		return applyConstructionRefundTx(tx, application.ProjectID, booking.UserID, remaining)
+	}
+
+	if application.RefundType == model.RefundTypeFull {
+		if remaining > breakdown.IntentFee+breakdown.DesignFee+breakdown.ConstructionFee {
+			return errors.New("全额退款金额超过可退范围")
+		}
+		if breakdown.IntentFee > 0 && remaining > 0 {
+			if remaining < breakdown.IntentFee {
+				return errors.New("全额退款不能对意向金做部分退款")
+			}
+			if err := applyIntentFeeRefundTx(tx, &booking, "全额退款申请审核通过"); err != nil {
+				return err
+			}
+			remaining -= breakdown.IntentFee
+		}
+		if breakdown.DesignFee > 0 && remaining > 0 {
+			if remaining < breakdown.DesignFee {
+				return errors.New("全额退款不能对设计费做部分退款")
+			}
+			if err := applyDesignFeeRefundTx(tx, breakdown.DesignOrderID, booking.UserID, breakdown.DesignFee); err != nil {
+				return err
+			}
+			remaining -= breakdown.DesignFee
+		}
+		if remaining > 0 {
+			if err := applyConstructionRefundTx(tx, application.ProjectID, booking.UserID, remaining); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return errors.New("不支持的退款类型")
+}
+
+func applyIntentFeeRefundTx(tx *gorm.DB, booking *model.Booking, reason string) error {
+	if booking == nil {
+		return errors.New("预约不存在")
+	}
+	refundSvc := &RefundService{}
+	if canRefund, message := refundSvc.CanRefundIntentFee(booking); !canRefund {
+		return errors.New(message)
+	}
+	now := time.Now()
+	return tx.Model(booking).Updates(map[string]interface{}{
+		"intent_fee_refunded":      true,
+		"intent_fee_refund_reason": strings.TrimSpace(reason),
+		"intent_fee_refunded_at":   now,
+	}).Error
+}
+
+func applyDesignFeeRefundTx(tx *gorm.DB, orderID, userID uint64, amount float64) error {
+	if orderID == 0 {
+		return errors.New("设计费订单不存在")
+	}
+	var order model.Order
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, orderID).Error; err != nil {
+		return errors.New("设计费订单不存在")
+	}
+	if order.Status == model.OrderStatusRefunded {
+		return errors.New("设计费订单已退款")
+	}
+	if amount <= 0 {
+		return errors.New("设计费退款金额无效")
+	}
+	if amount > order.PaidAmount {
+		return errors.New("设计费退款金额超过剩余可退余额")
+	}
+	remaining := order.PaidAmount - amount
+	updates := map[string]interface{}{
+		"paid_amount": remaining,
+	}
+	if remaining <= 0 {
+		updates["paid_amount"] = 0
+		updates["status"] = model.OrderStatusRefunded
+	}
+	if err := tx.Model(&order).Updates(updates).Error; err != nil {
+		return err
+	}
+	return createRefundTransactionTx(tx, order.ProjectID, userID, order.ID, amount, "设计费退款")
+}
+
+func applyConstructionRefundTx(tx *gorm.DB, projectID, userID uint64, amount float64) error {
+	if projectID == 0 {
+		return errors.New("项目不存在")
+	}
+	var escrow model.EscrowAccount
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
+		return errors.New("项目托管账户不存在")
+	}
+	if amount <= 0 {
+		return errors.New("施工费退款金额无效")
+	}
+	if amount > escrow.FrozenAmount {
+		return errors.New("施工费退款金额超过未放款余额")
+	}
+	if err := tx.Model(&escrow).Updates(map[string]interface{}{
+		"total_amount":  gorm.Expr("total_amount - ?", amount),
+		"frozen_amount": gorm.Expr("frozen_amount - ?", amount),
+	}).Error; err != nil {
+		return err
+	}
+	return createRefundTransactionTx(tx, projectID, userID, 0, amount, "施工费退款")
+}
+
+func (s *RefundApplicationService) buildRefundApplicationViewTx(db *gorm.DB, item *model.RefundApplication) (*RefundApplicationView, error) {
+	if item == nil {
+		return nil, errors.New("退款申请不存在")
+	}
+	view := &RefundApplicationView{
+		ID:              item.ID,
+		BookingID:       item.BookingID,
+		ProjectID:       item.ProjectID,
+		OrderID:         item.OrderID,
+		UserID:          item.UserID,
+		RefundType:      item.RefundType,
+		RefundAmount:    item.RequestedAmount,
+		RequestedAmount: item.RequestedAmount,
+		ApprovedAmount:  item.ApprovedAmount,
+		Reason:          item.Reason,
+		Evidence:        ParseStringList(item.Evidence),
+		Status:          item.Status,
+		AdminID:         item.AdminID,
+		AdminNotes:      item.AdminNotes,
+		ApprovedAt:      item.ApprovedAt,
+		RejectedAt:      item.RejectedAt,
+		CompletedAt:     item.CompletedAt,
+		CreatedAt:       item.CreatedAt,
+		UpdatedAt:       item.UpdatedAt,
+	}
+	var booking model.Booking
+	if err := db.First(&booking, item.BookingID).Error; err == nil {
+		view.Booking = map[string]interface{}{
+			"id":        booking.ID,
+			"address":   booking.Address,
+			"status":    booking.Status,
+			"intentFee": booking.IntentFee,
+		}
+	}
+	if item.ProjectID > 0 {
+		var project model.Project
+		if err := db.First(&project, item.ProjectID).Error; err == nil {
+			view.Project = map[string]interface{}{
+				"id":           project.ID,
+				"name":         project.Name,
+				"status":       project.Status,
+				"currentPhase": project.CurrentPhase,
+			}
+		}
+	}
+	if item.OrderID > 0 {
+		var order model.Order
+		if err := db.First(&order, item.OrderID).Error; err == nil {
+			view.Order = map[string]interface{}{
+				"id":          order.ID,
+				"orderNo":     order.OrderNo,
+				"orderType":   order.OrderType,
+				"totalAmount": order.TotalAmount,
+				"status":      order.Status,
+			}
+		}
+	}
+	var user model.User
+	if err := db.Select("id, nickname, phone").First(&user, item.UserID).Error; err == nil {
+		view.User = map[string]interface{}{
+			"id":       user.ID,
+			"nickname": user.Nickname,
+			"phone":    user.Phone,
+		}
+	}
+	return view, nil
+}

@@ -1,10 +1,10 @@
-// 后端 API 返回的服务商数据类型
+import { formatProviderPricing, type ProviderQuoteDisplay } from '../utils/providerPricing';
 
 export interface ProviderDTO {
     id: number;
     userId: number;
     userPublicId?: string;
-    providerType: number; // 1=设计师, 2=公司, 3=工长
+    providerType: number;
     companyName: string;
     nickname: string;
     avatar: string;
@@ -16,13 +16,12 @@ export interface ProviderDTO {
     latitude: number;
     longitude: number;
     distance?: number;
-    // 新增字段
-    subType?: string; // personal, studio, company - 注册时选择的类型
+    subType?: string;
     entityType?: 'personal' | 'company';
     applicantType?: 'personal' | 'studio' | 'company' | 'foreman';
     yearsExperience: number;
     specialty: string;
-    workTypes: string;  // 逗号分隔：mason,electrician,carpenter,painter,plumber
+    workTypes?: string;
     highlightTags?: string;
     pricingJson?: string;
     graduateSchool?: string;
@@ -31,10 +30,9 @@ export interface ProviderDTO {
     priceMin: number;
     priceMax: number;
     priceUnit: string;
-    serviceArea?: string; // JSON数组，服务区域
+    serviceArea?: string;
 }
 
-// 分页响应包装
 export interface PageResponse<T> {
     code: number;
     message: string;
@@ -46,7 +44,6 @@ export interface PageResponse<T> {
     };
 }
 
-// 前端展示用的设计师类型（兼容现有 UI）
 export interface Designer {
     id: number;
     userPublicId?: string;
@@ -59,37 +56,15 @@ export interface Designer {
     orgLabel: string;
     distance: string;
     specialty: string;
-    // Price Display - 拆分价格和单位
-    price: string; // 保留兼容
-    priceRange: string; // 如: 180-400
-    priceUnit: string; // 如: /m²
-    // Service Area
+    price: string;
+    priceRange: string;
+    priceUnit: string;
+    pricingSummary: string;
+    pricingDetail: string;
+    quoteDisplay: ProviderQuoteDisplay;
     serviceArea: string[];
 }
 
-function parseWorkTypesValue(raw?: string): string[] {
-    const value = (raw || '').trim();
-    if (!value) {
-        return ['general'];
-    }
-
-    if (value.startsWith('[') && value.endsWith(']')) {
-        try {
-            const parsed = JSON.parse(value);
-            if (Array.isArray(parsed)) {
-                const normalized = parsed.map((item) => String(item).trim()).filter(Boolean);
-                return normalized.length ? normalized : ['general'];
-            }
-        } catch {
-            // fallback to delimiter parsing
-        }
-    }
-
-    const normalized = value.split(',').map((item) => item.trim()).filter(Boolean);
-    return normalized.length ? normalized : ['general'];
-}
-
-// 前端展示用的施工人员类型
 export interface Worker {
     id: number;
     userPublicId?: string;
@@ -101,10 +76,12 @@ export interface Worker {
     establishedYear?: number;
     rating: number;
     reviewCount: number;
-    workTypes: string[];
-    workTypeLabels: string;
+    serviceLabel: string;
     priceRange: string;
     priceUnit: string;
+    pricingSummary: string;
+    pricingDetail: string;
+    quoteDisplay: ProviderQuoteDisplay;
     completedOrders: number;
     teamSize?: number;
     certifications?: string[];
@@ -112,27 +89,88 @@ export interface Worker {
     tags: string[];
 }
 
-// 前端展示用的主材门店类型
+const WORKER_TAG_MAP: Record<string, string> = {
+    mason: '泥瓦铺贴',
+    masonry: '泥瓦铺贴',
+    electrician: '水电改造',
+    electric: '水电改造',
+    plumber: '管路改造',
+    water: '防水施工',
+    carpenter: '木作安装',
+    wood: '木作安装',
+    painter: '油漆找平',
+    paint: '油漆找平',
+    foreman: '现场管理',
+    manager: '现场管理',
+};
+
+const splitWorkerTokens = (raw?: string) => {
+    const text = String(raw || '').trim();
+    if (!text) {
+        return [];
+    }
+    return text
+        .split(/[·,，/|\\s]+/)
+        .map((token) => token.trim())
+        .filter(Boolean);
+};
+
+const normalizeWorkerTagText = (raw: string) => {
+    const normalized = raw.trim();
+    if (!normalized) {
+        return '';
+    }
+    const lower = normalized.toLowerCase();
+    const mapped = WORKER_TAG_MAP[lower];
+    if (mapped) {
+        return mapped;
+    }
+    const compact = normalized.replace(/[A-Za-z]/g, '');
+    const source = compact || normalized;
+    return Array.from(source).slice(0, 4).join('');
+};
+
+const buildWorkerTags = (dto: ProviderDTO, isCompany: boolean): string[] => {
+    const tags: string[] = [];
+    tags.push(isCompany ? '装修施工' : '综合施工');
+
+    splitWorkerTokens(dto.specialty).forEach((token) => {
+        const normalized = normalizeWorkerTagText(token);
+        if (normalized && !tags.includes(normalized)) {
+            tags.push(normalized);
+        }
+    });
+
+    if (dto.verified) {
+        tags.push(isCompany ? '品质保障' : '技术过硬');
+    }
+
+    if (tags.length < 3) {
+        tags.push(isCompany ? '正规资质' : '准时守信');
+    }
+
+    return tags.slice(0, 3);
+};
+
 export interface MaterialShop {
     id: number;
-    type: 'showroom' | 'brand'; // 展示店 | 品牌店
+    type: 'showroom' | 'brand';
     name: string;
-    cover: string; // 门店封面图
-    brandLogo?: string; // 品牌Logo（品牌店特有）
+    cover: string;
+    brandLogo?: string;
     rating: number;
     reviewCount: number;
-    mainProducts: string[]; // 主营产品
-    productCategories: string[]; // 产品分类标签
+    mainProducts: string[];
+    productCategories: string[];
     address: string;
     distance: string;
-    openTime: string; // 营业时间
-    tags: string[]; // 如：免费停车、免费设计
-    isVerified: boolean; // 认证商家
+    openTime: string;
+    tags: string[];
+    isVerified: boolean;
+    isSettled?: boolean;
 }
 
-// DTO -> 前端类型转换函数
 export function toDesigner(dto: ProviderDTO): Designer {
-    // 优先使用后端返回的 subType，仅在缺失时才根据名称推断
     let orgType: 'personal' | 'studio' | 'company' = 'personal';
     if (dto.subType && ['personal', 'studio', 'company'].includes(dto.subType)) {
         orgType = dto.subType as 'personal' | 'studio' | 'company';
@@ -145,7 +183,14 @@ export function toDesigner(dto: ProviderDTO): Designer {
     const priceRange = dto.priceMin && dto.priceMax
         ? `${dto.priceMin}-${dto.priceMax}`
         : '120-300';
-    const priceUnit = '/m²';
+    const priceUnit = dto.priceUnit || '/㎡';
+    const pricing = formatProviderPricing({
+        role: 'designer',
+        pricingJson: dto.pricingJson,
+        priceMin: dto.priceMin,
+        priceMax: dto.priceMax,
+        priceUnit,
+    });
 
     return {
         id: dto.id,
@@ -159,9 +204,12 @@ export function toDesigner(dto: ProviderDTO): Designer {
         orgLabel: dto.companyName || (orgType === 'personal' ? '独立设计师' : '设计公司'),
         distance: dto.distance ? `${dto.distance.toFixed(1)}km` : '附近',
         specialty: dto.specialty || (dto.restoreRate > 95 ? '高还原度 · 精品设计' : '现代简约 · 实用主义'),
-        price: `¥${priceRange}${priceUnit}`, // 兼容旧代码
+        price: pricing.summary,
         priceRange,
         priceUnit,
+        pricingSummary: pricing.summary,
+        pricingDetail: pricing.detail,
+        quoteDisplay: pricing.quoteDisplay,
         serviceArea: dto.serviceArea
             ? (() => {
                 try {
@@ -176,21 +224,16 @@ export function toDesigner(dto: ProviderDTO): Designer {
 }
 
 export function toWorker(dto: ProviderDTO): Worker {
-    const isCompany = dto.providerType === 2 || (dto.companyName && dto.companyName.includes('公司'));
-
-    // 解析工种类型
-    const workTypesArray = parseWorkTypesValue(dto.workTypes);
-
-    // 工种标签映射
-    const workTypeMap: Record<string, string> = {
-        'mason': '瓦工',
-        'electrician': '电工',
-        'carpenter': '木工',
-        'painter': '油漆工',
-        'plumber': '水暖工',
-        'general': '综合施工',
-    };
-    const workTypeLabels = workTypesArray.map(t => workTypeMap[t] || t).join(' · ') || (isCompany ? '全工种覆盖' : '综合施工');
+    const isCompany = dto.providerType === 2 || Boolean(dto.companyName && dto.companyName.includes('公司'));
+    const serviceLabel = isCompany ? '装修施工' : '综合施工';
+    const fallbackUnit = dto.priceUnit || (isCompany ? '元/全包' : '元/天');
+    const pricing = formatProviderPricing({
+        role: isCompany ? 'company' : 'foreman',
+        pricingJson: dto.pricingJson,
+        priceMin: dto.priceMin,
+        priceMax: dto.priceMax,
+        priceUnit: fallbackUnit,
+    });
 
     return {
         id: dto.id,
@@ -203,16 +246,16 @@ export function toWorker(dto: ProviderDTO): Worker {
         establishedYear: isCompany ? (new Date().getFullYear() - (dto.yearsExperience || 10)) : undefined,
         rating: dto.rating,
         reviewCount: dto.reviewCount || dto.completedCnt * 2,
-        workTypes: workTypesArray,
-        workTypeLabels,
+        serviceLabel,
         priceRange: dto.priceMin && dto.priceMax ? `${dto.priceMin}-${dto.priceMax}` : (isCompany ? '8-15' : '300-500'),
-        priceUnit: dto.priceUnit || (isCompany ? '万/全包' : '元/天'),
+        priceUnit: fallbackUnit,
+        pricingSummary: pricing.summary,
+        pricingDetail: pricing.detail,
+        quoteDisplay: pricing.quoteDisplay,
         completedOrders: dto.completedCnt,
         teamSize: isCompany ? Math.floor(dto.completedCnt / 30) + 10 : undefined,
         certifications: isCompany ? ['建筑装饰资质'] : undefined,
         distance: dto.distance ? `${dto.distance.toFixed(1)}km` : '附近',
-        tags: isCompany
-            ? (dto.verified ? ['认证商家', '品质保障'] : ['正规资质'])
-            : (dto.verified ? ['实名认证', '技术过硬'] : ['服务优质']),
+        tags: buildWorkerTags(dto, isCompany),
     };
 }

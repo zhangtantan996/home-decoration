@@ -116,16 +116,32 @@ export interface Milestone {
   name: string;
   description?: string;
   amount: number;
-  status: 'pending' | 'completed' | 'rejected';
+  status: 'pending' | 'completed' | 'rejected' | 'paid' | 'in_progress';
   acceptedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export async function getProjectMilestones(id: number) {
-  return request<{ milestones: Milestone[] }>({
+  const data = await request<{ milestones: Array<Milestone & { status: number | string; criteria?: string; paidAt?: string }> }>({
     url: `/projects/${id}/milestones`
   });
+
+  const normalizeStatus = (status: number | string): Milestone['status'] => {
+    if (status === 1 || status === 'in_progress') return 'in_progress';
+    if (status === 2 || status === 'rejected') return 'rejected';
+    if (status === 3 || status === 'completed') return 'completed';
+    if (status === 4 || status === 'paid') return 'paid';
+    return 'pending';
+  };
+
+  return {
+    milestones: (data.milestones || []).map((item) => ({
+      ...item,
+      description: item.description || item.criteria,
+      status: normalizeStatus(item.status),
+    })),
+  };
 }
 
 /**
@@ -181,4 +197,3 @@ export async function getProjectFiles(id: number) {
     url: `/projects/${id}/files`
   });
 }
-

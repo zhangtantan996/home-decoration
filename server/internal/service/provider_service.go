@@ -7,6 +7,7 @@ import (
 	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
+	"strings"
 )
 
 // ProviderService 服务商服务
@@ -22,7 +23,6 @@ type ProviderQuery struct {
 	SortBy   string  `form:"sortBy"`   // 排序: rating, distance, price
 	Page     int     `form:"page"`     // 页码
 	PageSize int     `form:"pageSize"` // 每页数量
-	WorkType string  `form:"workType"` // 工种筛选
 	SubType  string  `form:"subType"`  // 子类型筛选
 }
 
@@ -46,14 +46,15 @@ type ProviderListItem struct {
 	Longitude     float64 `json:"longitude"`
 	Distance      float64 `json:"distance,omitempty"` // 距离(km)
 	// 新增字段
-	SubType         string  `json:"subType"`
-	YearsExperience int     `json:"yearsExperience"`
-	Specialty       string  `json:"specialty"`
-	WorkTypes       string  `json:"workTypes"`
-	ReviewCount     int     `json:"reviewCount"`
-	PriceMin        float64 `json:"priceMin"`
-	PriceMax        float64 `json:"priceMax"`
-	PriceUnit       string  `json:"priceUnit"`
+	SubType         string   `json:"subType"`
+	YearsExperience int      `json:"yearsExperience"`
+	Specialty       string   `json:"specialty"`
+	ReviewCount     int      `json:"reviewCount"`
+	PriceMin        float64  `json:"priceMin"`
+	PriceMax        float64  `json:"priceMax"`
+	PriceUnit       string   `json:"priceUnit"`
+	ServiceArea     []string `json:"serviceArea"`
+	IsSettled       bool     `json:"isSettled"`
 }
 
 // ListDesigners 获取设计师列表
@@ -106,8 +107,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	var providers []model.Provider
 	var total int64
 
-	db := repository.DB.Model(&model.Provider{}).
-		Where("verified = ?", true)
+	db := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{}))
 
 	if len(providerTypes) > 0 {
 		db = db.Where("provider_type IN ?", providerTypes)
@@ -115,12 +115,51 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 
 	// 关键词搜索
 	if query.Keyword != "" {
-		db = db.Where("company_name LIKE ? OR specialty LIKE ?", "%"+query.Keyword+"%", "%"+query.Keyword+"%")
-	}
+		keyword := strings.TrimSpace(query.Keyword)
+		patterns := []string{"%" + keyword + "%"}
+		if strings.HasSuffix(keyword, "风格") {
+			trimmed := strings.TrimSuffix(keyword, "风格")
+			if trimmed != "" {
+				patterns = append(patterns, "%"+trimmed+"%")
+			}
+		} else if strings.HasSuffix(keyword, "风") {
+			trimmed := strings.TrimSuffix(keyword, "风")
+			if trimmed != "" {
+				patterns = append(patterns, "%"+trimmed+"%")
+			}
+		}
 
-	// 工种筛选
-	if query.WorkType != "" && query.WorkType != "all" {
-		db = db.Where("work_types LIKE ?", "%"+query.WorkType+"%")
+		conditions := make([]string, 0, len(patterns)*7)
+		args := make([]interface{}, 0, len(patterns)*7)
+		for _, pattern := range patterns {
+			conditions = append(conditions,
+				"providers.company_name LIKE ?",
+				"users.nickname LIKE ?",
+				"providers.specialty LIKE ?",
+				"providers.highlight_tags LIKE ?",
+				"providers.service_area LIKE ?",
+				"providers.sub_type LIKE ?",
+				"providers.design_philosophy LIKE ?",
+			)
+			args = append(args, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+		}
+
+		var matchedProviderTypes []int8
+		switch {
+		case strings.Contains(keyword, "设计"):
+			matchedProviderTypes = append(matchedProviderTypes, 1)
+		case strings.Contains(keyword, "装修公司"), strings.Contains(keyword, "公司"):
+			matchedProviderTypes = append(matchedProviderTypes, 2)
+		case strings.Contains(keyword, "工长"), strings.Contains(keyword, "施工"):
+			matchedProviderTypes = append(matchedProviderTypes, 3)
+		}
+		if len(matchedProviderTypes) > 0 {
+			conditions = append(conditions, "providers.provider_type IN ?")
+			args = append(args, matchedProviderTypes)
+		}
+
+		db = db.Joins("LEFT JOIN users ON users.id = providers.user_id").
+			Where(strings.Join(conditions, " OR "), args...)
 	}
 
 	// 子类型筛选
@@ -154,9 +193,12 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 
 	// 关联用户信息
 	result := make([]ProviderListItem, len(providers))
+	regionService := RegionService{}
 	for i, p := range providers {
 		var user model.User
-		repository.DB.First(&user, p.UserID)
+		if p.UserID > 0 {
+			repository.DB.First(&user, p.UserID)
+		}
 
 		// Some seeded providers may not have a corresponding user row yet.
 		// Fallback to provider's cover image so the client can render something.
@@ -165,10 +207,19 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			avatarPath = p.CoverImage
 		}
 
-		identity := dto.NewUserIdentity(&user)
-		if identity.UserPublicID == "" {
-			monitor.RecordPublicIDMissing("provider_list", identity.UserID, "provider_service_list")
+		var identity dto.UserIdentity
+		if p.UserID > 0 {
+			identity = dto.NewUserIdentity(&user)
+			if identity.UserPublicID == "" {
+				monitor.RecordPublicIDMissing("provider_list", identity.UserID, "provider_service_list")
+			}
 		}
+
+		specialty := p.Specialty
+		if p.ProviderType == 3 && strings.TrimSpace(specialty) == "" {
+			specialty = "全工种施工"
+		}
+		serviceArea := resolveProviderServiceAreaDisplayNames(&regionService, p.ServiceArea)
 
 		result[i] = ProviderListItem{
 			ID:              p.ID,
@@ -187,12 +238,13 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			Longitude:       p.Longitude,
 			SubType:         p.SubType,
 			YearsExperience: p.YearsExperience,
-			Specialty:       p.Specialty,
-			WorkTypes:       p.WorkTypes,
+			Specialty:       specialty,
 			ReviewCount:     p.ReviewCount,
 			PriceMin:        p.PriceMin,
 			PriceMax:        p.PriceMax,
 			PriceUnit:       p.PriceUnit,
+			ServiceArea:     serviceArea,
+			IsSettled:       providerSettlementValue(&p),
 		}
 
 		// TODO: 计算距离 (需要用户坐标)
@@ -201,10 +253,112 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	return result, total, nil
 }
 
+func resolveProviderServiceAreaDisplayNames(regionService *RegionService, raw string) []string {
+	values := parseProviderServiceAreaValues(raw)
+	if len(values) == 0 {
+		return []string{}
+	}
+
+	regionsByCode, err := regionService.GetRegionsByCodesBatch(values)
+	if err != nil || len(regionsByCode) == 0 {
+		return uniqueProviderTextValues(values)
+	}
+
+	parentCodes := make([]string, 0, len(values))
+	parentSeen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		region, ok := regionsByCode[value]
+		if !ok || region.ParentCode == "" {
+			continue
+		}
+		if _, exists := parentSeen[region.ParentCode]; exists {
+			continue
+		}
+		parentSeen[region.ParentCode] = struct{}{}
+		parentCodes = append(parentCodes, region.ParentCode)
+	}
+
+	parentRegions := make(map[string]model.Region)
+	if len(parentCodes) > 0 {
+		if items, parentErr := regionService.GetRegionsByCodesBatch(parentCodes); parentErr == nil {
+			parentRegions = items
+		}
+	}
+
+	display := make([]string, 0, len(values)*2)
+	seen := make(map[string]struct{}, len(values)*2)
+	appendIfMissing := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		if _, exists := seen[text]; exists {
+			return
+		}
+		seen[text] = struct{}{}
+		display = append(display, text)
+	}
+
+	for _, value := range values {
+		region, ok := regionsByCode[value]
+		if !ok {
+			appendIfMissing(value)
+			continue
+		}
+		if parent, exists := parentRegions[region.ParentCode]; exists && parent.Level >= 2 {
+			appendIfMissing(parent.Name)
+		}
+		appendIfMissing(region.Name)
+	}
+
+	if len(display) == 0 {
+		return uniqueProviderTextValues(values)
+	}
+	return display
+}
+
+func parseProviderServiceAreaValues(raw string) []string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return []string{}
+	}
+
+	var values []string
+	if err := json.Unmarshal([]byte(text), &values); err == nil {
+		return uniqueProviderTextValues(values)
+	}
+
+	return uniqueProviderTextValues(strings.FieldsFunc(text, func(r rune) bool {
+		switch r {
+		case '、', ',', '，', '|', '/':
+			return true
+		default:
+			return false
+		}
+	}))
+}
+
+func uniqueProviderTextValues(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
 // GetProviderByID 获取服务商详情
 func (s *ProviderService) GetProviderByID(id uint64) (*model.Provider, *model.User, error) {
 	var provider model.Provider
-	if err := repository.DB.First(&provider, id).Error; err != nil {
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).First(&provider, id).Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -248,17 +402,26 @@ type ProviderReviewItem struct {
 // GetProviderDetail 获取服务商完整详情
 func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) {
 	var provider model.Provider
-	if err := repository.DB.First(&provider, id).Error; err != nil {
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).First(&provider, id).Error; err != nil {
 		return nil, err
 	}
 
 	var user model.User
-	if err := repository.DB.First(&user, provider.UserID).Error; err != nil {
-		return nil, err
+	if provider.UserID > 0 {
+		if err := repository.DB.First(&user, provider.UserID).Error; err != nil {
+			return nil, err
+		}
+		if user.PublicID == "" {
+			monitor.RecordPublicIDMissing("provider_detail", user.ID, "provider_service_detail")
+		}
 	}
-	if user.PublicID == "" {
-		monitor.RecordPublicIDMissing("provider_detail", user.ID, "provider_service_detail")
+	if provider.ProviderType == 3 {
+		provider.WorkTypes = ""
+		if strings.TrimSpace(provider.Specialty) == "" {
+			provider.Specialty = "全工种施工"
+		}
 	}
+
 	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
 	// Also fallback to provider cover image for legacy/seeded data.
 	provider.Avatar = imgutil.GetFullImageURL(provider.Avatar)
@@ -285,7 +448,10 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 
 	// 获取案例（前5条）
 	var cases []model.ProviderCase
-	repository.DB.Where("provider_id = ?", id).Order("sort_order ASC, created_at DESC").Limit(5).Find(&cases)
+	applyVisibleCaseFilter(repository.DB.Where("provider_id = ?", id)).
+		Order("sort_order ASC, created_at DESC").
+		Limit(5).
+		Find(&cases)
 	for i := range cases {
 		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
 		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
@@ -293,7 +459,9 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 
 	// 统计案例总数
 	var caseCount int64
-	repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", id).Count(&caseCount)
+	applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).
+		Where("provider_id = ?", id).
+		Count(&caseCount)
 
 	// 获取评价（前5条）
 	var reviews []model.ProviderReview
@@ -348,7 +516,12 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 	var cases []model.ProviderCase
 	var total int64
 
-	db := repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", providerID)
+	var provider model.Provider
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).Select("id").First(&provider, providerID).Error; err != nil {
+		return nil, 0, err
+	}
+
+	db := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).Where("provider_id = ?", providerID)
 	db.Count(&total)
 
 	offset := (page - 1) * pageSize

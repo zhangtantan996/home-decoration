@@ -111,6 +111,7 @@ export const MaterialShopDetailScreen = ({ route, navigation }: any) => {
     const [isFavorited, setIsFavorited] = useState(false);
     // Mock 收藏数
     const [collectCount, setCollectCount] = useState(shop.collectCount || 368);
+    const isSettled = shop?.isSettled !== false;
 
     const handleShare = () => {
         const shareUrl = `${getWebUrl()}/shop/${shop.id}`;
@@ -168,9 +169,15 @@ export const MaterialShopDetailScreen = ({ route, navigation }: any) => {
                                 <Text style={[styles.heroName, { marginBottom: 0 }]}>{displayData.name}</Text>
                             </View>
                             <View style={styles.heroBadgeRow}>
-                                <View style={[styles.heroBadge, { backgroundColor: '#EAB308' }]}>
-                                    <Text style={styles.heroBadgeText}>品质商家</Text>
-                                </View>
+                                {isSettled ? (
+                                    <View style={styles.settledBadge}>
+                                        <Text style={styles.settledBadgeText}>已认证</Text>
+                                    </View>
+                                ) : (
+                                    <View style={styles.unsettledBadge}>
+                                        <Text style={styles.unsettledBadgeText}>未入驻</Text>
+                                    </View>
+                                )}
                                 <View style={styles.heroBadge}>
                                     <Store size={12} color="#fff" style={{ marginRight: 4 }} />
                                     <Text style={styles.heroBadgeText}>{shop.type === 'brand' ? '品牌直营' : '建材市场'}</Text>
@@ -222,7 +229,11 @@ export const MaterialShopDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 </View>
             )}
-            bottomBar={null}
+            bottomBar={isSettled ? null : (
+                <View style={styles.floatBottomBar}>
+                    <Text style={styles.unsettledHintText}>该商家信息来源于公开渠道，尚未在本平台入驻。</Text>
+                </View>
+            )}
         >
             {/* Dashboard Stats */}
             <View style={[styles.dashboardCard, { marginTop: -40, alignSelf: 'center', width: '90%' }]}>
@@ -253,6 +264,7 @@ export const MaterialShopDetailScreen = ({ route, navigation }: any) => {
                     <Text style={styles.addressText}>{displayData.address}</Text>
                     <Text style={styles.distanceText}>{displayData.distance}</Text>
                 </View>
+                {isSettled && (
                 <TouchableOpacity style={styles.phoneRow} onPress={() => { Clipboard.setString(displayData.phone); showToast({ message: '电话已复制', type: 'success' }) }}>
                     <View style={styles.phoneIconBox}>
                         <MessageCircle size={14} color="#FFFFFF" />
@@ -262,6 +274,7 @@ export const MaterialShopDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.copyTagText}>复制</Text>
                     </View>
                 </TouchableOpacity>
+                )}
                 <Text style={styles.magDescText}>{displayData.description}</Text>
                 <View style={styles.tagsContainer}>
                     {displayData.tags.map((tag: string, idx: number) => (
@@ -596,5 +609,35 @@ const styles = StyleSheet.create({
     copyTagText: {
         fontSize: 10,
         color: '#71717A',
+    },
+    settledBadge: {
+        backgroundColor: '#e6f7ee',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    settledBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#389e6a',
+    },
+    unsettledBadge: {
+        backgroundColor: '#fff7ed',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    unsettledBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#d97706',
+    },
+    unsettledHintText: {
+        fontSize: 13,
+        color: '#71717A',
+        textAlign: 'center',
+        flex: 1,
     },
 });

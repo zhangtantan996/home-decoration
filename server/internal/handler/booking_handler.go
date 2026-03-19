@@ -57,11 +57,29 @@ func GetBooking(c *gin.Context) {
 	if err := repository.DB.Where("booking_id = ?", booking.ID).First(&proposal).Error; err == nil {
 		proposalID = proposal.ID
 	}
+	p0Summary, _ := bookingService.GetBookingP0Summary(booking.ID)
+	var siteSurveySummary interface{}
+	var budgetConfirmSummary interface{}
+	var availableActions []string
+	var flowSummary string
+	var currentStage string
+	if p0Summary != nil {
+		siteSurveySummary = p0Summary.SiteSurvey
+		budgetConfirmSummary = p0Summary.BudgetConfirm
+		availableActions = p0Summary.AvailableActions
+		flowSummary = p0Summary.FlowSummary
+		currentStage = p0Summary.CurrentStage
+	}
 
 	response.Success(c, gin.H{
-		"booking":    booking,
-		"provider":   providerInfo,
-		"proposalId": proposalID,
+		"booking":              booking,
+		"provider":             providerInfo,
+		"proposalId":           proposalID,
+		"siteSurveySummary":    siteSurveySummary,
+		"budgetConfirmSummary": budgetConfirmSummary,
+		"availableActions":     availableActions,
+		"flowSummary":          flowSummary,
+		"currentStage":         currentStage,
 	})
 }
 

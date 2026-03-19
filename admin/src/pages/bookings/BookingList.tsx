@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Select, Tag, Button, Space, message, Descriptions, Modal } from 'antd';
+import { Table, Card, Select, Button, Space, message, Descriptions, Modal } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { adminBookingApi } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
+import StatusTag from '../../components/StatusTag';
+import { ADMIN_BOOKING_STATUS_META, ADMIN_BOOKING_STATUS_OPTIONS } from '../../constants/statuses';
 
 interface Booking {
     id: number;
@@ -18,13 +22,6 @@ interface Booking {
     status: number;
     createdAt: string;
 }
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    1: { text: '待处理', color: 'orange' },
-    2: { text: '已确认', color: 'blue' },
-    3: { text: '已完成', color: 'green' },
-    4: { text: '已取消', color: 'red' },
-};
 
 const BookingList: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -103,8 +100,10 @@ const BookingList: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (val: number) => {
-                const config = statusMap[val];
-                return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
+                const config = ADMIN_BOOKING_STATUS_META[val];
+                return config
+                    ? <StatusTag status={config.tagStatus} text={config.text} />
+                    : '-';
             },
         },
         {
@@ -128,37 +127,42 @@ const BookingList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="预约管理"
+                description="集中处理待确认预约，查看项目基础信息与用户预约偏好。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     placeholder="状态筛选"
                     allowClear
                     style={{ width: 120 }}
                     value={statusFilter}
                     onChange={setStatusFilter}
-                    options={[
-                        { value: 1, label: '待处理' },
-                        { value: 2, label: '已确认' },
-                        { value: 3, label: '已完成' },
-                        { value: 4, label: '已取消' },
-                    ]}
+                    options={ADMIN_BOOKING_STATUS_OPTIONS}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                columns={columns}
-                dataSource={bookings}
-                rowKey="id"
-                loading={loading}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    columns={columns}
+                    dataSource={bookings}
+                    rowKey="id"
+                    loading={loading}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title="预约详情"
@@ -180,15 +184,16 @@ const BookingList: React.FC = () => {
                         <Descriptions.Item label="期望时间">{currentBooking.preferredDate}</Descriptions.Item>
                         <Descriptions.Item label="联系电话">{currentBooking.phone}</Descriptions.Item>
                         <Descriptions.Item label="状态">
-                            <Tag color={statusMap[currentBooking.status]?.color}>
-                                {statusMap[currentBooking.status]?.text}
-                            </Tag>
+                            <StatusTag
+                                status={ADMIN_BOOKING_STATUS_META[currentBooking.status]?.tagStatus || 'warning'}
+                                text={ADMIN_BOOKING_STATUS_META[currentBooking.status]?.text}
+                            />
                         </Descriptions.Item>
                         <Descriptions.Item label="备注" span={2}>{currentBooking.notes || '-'}</Descriptions.Item>
                     </Descriptions>
                 )}
             </Modal>
-        </Card>
+        </div>
     );
 };
 

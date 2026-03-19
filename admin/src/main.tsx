@@ -5,6 +5,8 @@ import { ConfigProvider, App } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import router from './router'
 import './index.css'
+import './styles/layout-overrides.css'
+import { adminTheme } from './styles/theme'
 
 class AdminErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -40,7 +42,7 @@ class AdminErrorBoundary extends Component<{ children: ReactNode }, { error: Err
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider locale={zhCN} theme={adminTheme}>
       <App>
         <AdminErrorBoundary>
           <RouterProvider router={router} />

@@ -10,32 +10,26 @@ import (
 
 var notificationService = &service.NotificationService{}
 
-// GetNotifications 获取通知列表
-func GetNotifications(c *gin.Context) {
-	var userID uint64
-	var userType string
-
-	// 优先检查管理员
+func resolveNotificationActor(c *gin.Context) (uint64, string) {
 	if adminID, exists := c.Get("admin_id"); exists {
-		userType = "admin"
-		userID = adminID.(uint64)
-	} else if c.GetString("providerId") != "" {
-		// 如果是商家端调用，设置userType为provider
-		userType = "provider"
-		providerID := c.GetUint64("providerId")
-		if providerID > 0 {
-			userID = providerID
-		}
-	} else {
-		userID = c.GetUint64("userId")
-		userType = c.GetString("userType")
+		return adminID.(uint64), "admin"
 	}
 
-	// 如果userType仍为空，默认为user
+	if providerID := c.GetUint64("providerId"); providerID > 0 {
+		return providerID, "provider"
+	}
+
+	userID := c.GetUint64("userId")
+	userType := c.GetString("userType")
 	if userType == "" {
 		userType = "user"
 	}
+	return userID, userType
+}
 
+// GetNotifications 获取通知列表
+func GetNotifications(c *gin.Context) {
+	userID, userType := resolveNotificationActor(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 
@@ -55,29 +49,7 @@ func GetNotifications(c *gin.Context) {
 
 // GetNotificationUnreadCount 获取未读数量
 func GetNotificationUnreadCount(c *gin.Context) {
-	var userID uint64
-	var userType string
-
-	// 优先检查管理员
-	if adminID, exists := c.Get("admin_id"); exists {
-		userType = "admin"
-		userID = adminID.(uint64)
-	} else if c.GetString("providerId") != "" {
-		// 如果是商家端调用
-		userType = "provider"
-		providerID := c.GetUint64("providerId")
-		if providerID > 0 {
-			userID = providerID
-		}
-	} else {
-		userID = c.GetUint64("userId")
-		userType = c.GetString("userType")
-	}
-
-	if userType == "" {
-		userType = "user"
-	}
-
+	userID, userType := resolveNotificationActor(c)
 	count, err := notificationService.GetUnreadCount(userID, userType)
 	if err != nil {
 		response.ServerError(c, "获取未读数量失败")
@@ -91,20 +63,7 @@ func GetNotificationUnreadCount(c *gin.Context) {
 
 // MarkNotificationAsRead 标记单个通知为已读
 func MarkNotificationAsRead(c *gin.Context) {
-	var userID uint64
-
-	// 优先检查管理员
-	if adminID, exists := c.Get("admin_id"); exists {
-		userID = adminID.(uint64)
-	} else if c.GetString("providerId") != "" {
-		// 如果是商家端调用
-		providerID := c.GetUint64("providerId")
-		if providerID > 0 {
-			userID = providerID
-		}
-	} else {
-		userID = c.GetUint64("userId")
-	}
+	userID, _ := resolveNotificationActor(c)
 
 	notificationID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -124,29 +83,7 @@ func MarkNotificationAsRead(c *gin.Context) {
 
 // MarkAllNotificationsAsRead 标记全部通知为已读
 func MarkAllNotificationsAsRead(c *gin.Context) {
-	var userID uint64
-	var userType string
-
-	// 优先检查管理员
-	if adminID, exists := c.Get("admin_id"); exists {
-		userType = "admin"
-		userID = adminID.(uint64)
-	} else if c.GetString("providerId") != "" {
-		// 如果是商家端调用
-		userType = "provider"
-		providerID := c.GetUint64("providerId")
-		if providerID > 0 {
-			userID = providerID
-		}
-	} else {
-		userID = c.GetUint64("userId")
-		userType = c.GetString("userType")
-	}
-
-	if userType == "" {
-		userType = "user"
-	}
-
+	userID, userType := resolveNotificationActor(c)
 	if err := notificationService.MarkAllAsRead(userID, userType); err != nil {
 		response.ServerError(c, "操作失败")
 		return
@@ -159,20 +96,7 @@ func MarkAllNotificationsAsRead(c *gin.Context) {
 
 // DeleteNotification 删除通知
 func DeleteNotification(c *gin.Context) {
-	var userID uint64
-
-	// 优先检查管理员
-	if adminID, exists := c.Get("admin_id"); exists {
-		userID = adminID.(uint64)
-	} else if c.GetString("providerId") != "" {
-		// 如果是商家端调用
-		providerID := c.GetUint64("providerId")
-		if providerID > 0 {
-			userID = providerID
-		}
-	} else {
-		userID = c.GetUint64("userId")
-	}
+	userID, _ := resolveNotificationActor(c)
 
 	notificationID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {

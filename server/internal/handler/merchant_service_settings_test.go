@@ -136,3 +136,85 @@ func requestServiceSettingJSON(
 	handlerFunc(c)
 	return decodeResponse(t, w)
 }
+
+func requestMaterialShopServiceSettingJSON(
+	t *testing.T,
+	method string,
+	path string,
+	payload any,
+	materialShopID uint64,
+	handlerFunc gin.HandlerFunc,
+) responseEnvelope {
+	t.Helper()
+
+	var bodyBytes []byte
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal payload: %v", err)
+		}
+		bodyBytes = encoded
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, path, bytes.NewReader(bodyBytes))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("materialShopId", materialShopID)
+
+	handlerFunc(c)
+	return decodeResponse(t, w)
+}
+
+func TestMaterialShopServiceSettings_GetAndUpdate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.MaterialShopServiceSetting{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	shopID := uint64(909)
+	getResp := requestMaterialShopServiceSettingJSON(t, http.MethodGet, "/api/v1/material-shop/service-settings", nil, shopID, MerchantGetServiceSettings)
+	if getResp.Code != 0 {
+		t.Fatalf("unexpected get code: %d message=%s", getResp.Code, getResp.Message)
+	}
+
+	updatePayload := map[string]any{
+		"acceptBooking":          false,
+		"autoConfirmHours":       36,
+		"responseTimeDesc":       "4小时内回复",
+		"priceRangeMin":          1000,
+		"priceRangeMax":          5000,
+		"serviceStyles":          []string{"现代简约"},
+		"servicePackages":        []map[string]any{{"name": "标准包"}},
+		"serviceArea":            []string{"西安市雁塔区", "西安市高新区"},
+		"mainBrands":             []string{"东鹏", "马可波罗"},
+		"mainCategories":         []string{"瓷砖", "卫浴"},
+		"deliveryCapability":     "支持市内配送",
+		"installationCapability": "支持安装",
+		"afterSalesPolicy":       "7天问题响应",
+		"invoiceCapability":      "支持专票",
+	}
+	updateResp := requestMaterialShopServiceSettingJSON(t, http.MethodPut, "/api/v1/material-shop/service-settings", updatePayload, shopID, MerchantUpdateServiceSettings)
+	if updateResp.Code != 0 {
+		t.Fatalf("unexpected update code: %d message=%s", updateResp.Code, updateResp.Message)
+	}
+
+	var setting model.MaterialShopServiceSetting
+	if err := db.Where("shop_id = ?", shopID).First(&setting).Error; err != nil {
+		t.Fatalf("query updated material shop service setting: %v", err)
+	}
+	if setting.DeliveryCapability != "支持市内配送" {
+		t.Fatalf("deliveryCapability mismatch: got=%s", setting.DeliveryCapability)
+	}
+	if setting.InvoiceCapability != "支持专票" {
+		t.Fatalf("invoiceCapability mismatch: got=%s", setting.InvoiceCapability)
+	}
+}

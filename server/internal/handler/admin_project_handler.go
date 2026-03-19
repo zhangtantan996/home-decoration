@@ -6,6 +6,7 @@ import (
 	"home-decoration-server/internal/service"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +22,10 @@ func AdminListProjects(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	status := c.Query("status")
 	keyword := c.Query("keyword")
+	businessStage := ""
+	if rawBusinessStage := strings.TrimSpace(c.Query("businessStage")); rawBusinessStage != "" {
+		businessStage = model.NormalizeBusinessFlowStage(rawBusinessStage)
+	}
 
 	var projects []model.Project
 	var total int64
@@ -36,10 +41,7 @@ func AdminListProjects(c *gin.Context) {
 		db = db.Where("name LIKE ? OR address LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
-	db.Count(&total)
-
-	offset := (page - 1) * pageSize
-	if err := db.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&projects).Error; err != nil {
+	if err := db.Order("created_at DESC").Find(&projects).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "获取项目列表失败"})
 		return
 	}
@@ -47,11 +49,15 @@ func AdminListProjects(c *gin.Context) {
 	// 补充关联信息
 	type ProjectWithNames struct {
 		model.Project
-		OwnerName    string `json:"ownerName"`
-		ProviderName string `json:"providerName"`
+		OwnerName     string `json:"ownerName"`
+		ProviderName  string `json:"providerName"`
+		BusinessStage string `json:"businessStage,omitempty"`
+		FlowSummary   string `json:"flowSummary,omitempty"`
 	}
 
 	var result []ProjectWithNames
+	stageStats := map[string]int64{}
+	flowSvc := &service.BusinessFlowService{}
 	for _, p := range projects {
 		pwn := ProjectWithNames{Project: p}
 
@@ -64,16 +70,40 @@ func AdminListProjects(c *gin.Context) {
 		if err := repository.DB.Select("company_name").First(&provider, p.ProviderID).Error; err == nil {
 			pwn.ProviderName = provider.CompanyName
 		}
+		var milestones []model.Milestone
+		_ = repository.DB.Where("project_id = ?", p.ID).Order("seq ASC").Find(&milestones).Error
+		summary := flowSvc.BuildProjectFallbackSummary(&p, milestones)
+		if flow, err := flowSvc.GetByProjectID(p.ID); err == nil && flow != nil {
+			summary = flowSvc.BuildSummary(flow)
+		}
+		pwn.BusinessStage = summary.CurrentStage
+		pwn.FlowSummary = summary.FlowSummary
+		stageStats[pwn.BusinessStage]++
+
+		if businessStage != "" && model.NormalizeBusinessFlowStage(pwn.BusinessStage) != businessStage {
+			continue
+		}
 
 		result = append(result, pwn)
 	}
 
+	total = int64(len(result))
+	offset := (page - 1) * pageSize
+	if offset > len(result) {
+		offset = len(result)
+	}
+	end := offset + pageSize
+	if end > len(result) {
+		end = len(result)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"code":     0,
-		"data":     result,
-		"total":    total,
-		"page":     page,
-		"pageSize": pageSize,
+		"code":       0,
+		"data":       result[offset:end],
+		"total":      total,
+		"stageStats": stageStats,
+		"page":       page,
+		"pageSize":   pageSize,
 	})
 }
 
@@ -115,6 +145,42 @@ func AdminUpdateProjectStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "更新成功"})
+}
+
+func AdminConfirmProjectConstruction(c *gin.Context) {
+	id := c.Param("id")
+
+	var req service.ConfirmConstructionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "参数错误"})
+		return
+	}
+
+	project, err := adminProjectService.AdminConfirmConstruction(parseUint(id), &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": project, "message": "施工方确认成功"})
+}
+
+func AdminConfirmProjectConstructionQuote(c *gin.Context) {
+	id := c.Param("id")
+
+	var req service.ConfirmConstructionQuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "参数错误"})
+		return
+	}
+
+	project, err := adminProjectService.AdminConfirmConstructionQuote(parseUint(id), &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": project, "message": "施工报价确认成功"})
 }
 
 // AdminGetProjectPhases 获取项目阶段列表

@@ -293,7 +293,7 @@ export const authApi = {
     login: (data: { phone: string; code?: string; password?: string; type?: 'code' | 'password' }) => api.post('/auth/login', data),
     sendCode: (
         phone: string,
-        purpose: 'login' | 'register' | 'merchant_withdraw' | 'merchant_bank_bind' | 'identity_apply' = 'login',
+        purpose: 'login' | 'register' | 'identity_apply' | 'merchant_withdraw' | 'merchant_bank_bind' | 'change_phone' | 'delete_account' = 'login',
         captchaToken?: string,
     ) => api.post('/auth/send-code', { phone, purpose, captchaToken }),
     register: (data: { phone: string; code: string; nickname?: string }) =>

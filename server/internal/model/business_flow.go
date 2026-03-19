@@ -22,10 +22,16 @@ func (SystemConfig) TableName() string {
 // ============================================
 
 const (
-	ConfigKeyIntentFee               = "booking.intent_fee"               // 意向金金额
+	ConfigKeyIntentFee               = "booking.intent_fee"             // 意向金金额
+	ConfigKeySurveyDepositDefault    = "booking.survey_deposit_default" // 量房定金默认金额
+	ConfigKeySurveyRefundNotice      = "booking.survey_refund_notice"   // 量房定金退款说明
+	ConfigKeySurveyRefundUserPercent = "booking.survey_refund_user_percent"
 	ConfigKeyIntentFeeRefundable     = "booking.intent_fee_refundable"    // 意向金是否可退
 	ConfigKeyDesignFeeUnlockDownload = "order.design_fee_unlock_download" // 支付设计费后解锁下载
-	ConfigKeyConstructionMilestones  = "order.construction_milestones"    // 施工分期比例 JSON
+	ConfigKeyDesignFeePaymentMode    = "order.design_fee_payment_mode"
+	ConfigKeyDesignFeeStages         = "order.design_fee_stages"
+	ConfigKeyConstructionPaymentMode = "order.construction_payment_mode"
+	ConfigKeyConstructionMilestones  = "order.construction_milestones" // 施工分期比例 JSON
 
 	// 平台抽成配置
 	ConfigKeyIntentFeeRate       = "fee.platform.intent_fee_rate"       // 意向金抽成比例
@@ -49,12 +55,23 @@ const (
 	// publicId 回滚演练配置
 	ConfigKeyPublicIDRollbackDrillEnabled      = "id.public_id_rollback_drill_enabled"       // 是否启用回滚演练观测
 	ConfigKeyPublicIDRollbackForceLegacyLookup = "id.public_id_rollback_force_legacy_lookup" // 紧急回滚: 强制仅按内部ID查询
+
+	// 量房定金与设计费支付配置
+	ConfigKeySurveyDepositRefundRate   = "booking.survey_deposit_refund_rate"   // 退款比例(0-1)
+	ConfigKeySurveyDepositMin          = "booking.survey_deposit_min"           // 设计师可设最低
+	ConfigKeySurveyDepositMax          = "booking.survey_deposit_max"           // 设计师可设最高
+	ConfigKeyDesignFeeQuoteExpireHours = "design.fee_quote_expire_hours"       // 报价有效期(小时)
+	ConfigKeyDeliverableDeadlineDays   = "design.deliverable_deadline_days"    // 交付截止天数
+	ConfigKeyConstructionReleaseDelay  = "construction.release_delay_days"     // T+N 放款延迟天数
 )
 
 // Proposal 设计方案
 type Proposal struct {
 	Base
+	SourceType           string     `json:"sourceType" gorm:"size:20;default:'booking';index"`
 	BookingID            uint64     `json:"bookingId" gorm:"index"`
+	DemandID             uint64     `json:"demandId" gorm:"index"`
+	DemandMatchID        uint64     `json:"demandMatchId" gorm:"index"`
 	DesignerID           uint64     `json:"designerId" gorm:"index"`      // Provider ID
 	Summary              string     `json:"summary" gorm:"type:text"`     // 方案概述
 	DesignFee            float64    `json:"designFee"`                    // 设计费
@@ -62,11 +79,14 @@ type Proposal struct {
 	MaterialFee          float64    `json:"materialFee"`                  // 主材费预估
 	EstimatedDays        int        `json:"estimatedDays"`                // 预计工期
 	Attachments          string     `json:"attachments" gorm:"type:text"` // JSON: 附件列表
-	Status               int8       `json:"status" gorm:"default:1"`      // 1:待确认 2:已确认 3:已拒绝 4:已被新版本替代
+	InternalDraftJSON    string     `json:"internalDraftJson" gorm:"type:text;default:'{}'"`
+	PreviewPackageJSON   string     `json:"previewPackageJson" gorm:"type:text;default:'{}'"`
+	DeliveryPackageJSON  string     `json:"deliveryPackageJson" gorm:"type:text;default:'{}'"`
+	Status               int8       `json:"status" gorm:"default:1"` // 1:待确认 2:已确认 3:已拒绝 4:已被新版本替代
 	ConfirmedAt          *time.Time `json:"confirmedAt"`
 	Version              int        `json:"version" gorm:"default:1"`         // 版本号（v1, v2, v3...）
 	ParentProposalID     uint64     `json:"parentProposalId" gorm:"index"`    // 上一版本方案ID
-	RejectionCount       int        `json:"rejectionCount" gorm:"default:0"`  // 该预约的累计拒绝次数
+	RejectionCount       int        `json:"rejectionCount" gorm:"default:0"`  // 该来源链路的累计拒绝次数
 	RejectionReason      string     `json:"rejectionReason" gorm:"type:text"` // 拒绝原因
 	RejectedAt           *time.Time `json:"rejectedAt"`                       // 拒绝时间
 	SubmittedAt          *time.Time `json:"submittedAt"`                      // 提交时间
@@ -108,9 +128,10 @@ type PaymentPlan struct {
 	Name       string     `json:"name" gorm:"size:50"` // e.g., "开工款"
 	Amount     float64    `json:"amount"`
 	Percentage float32    `json:"percentage"`
-	Status     int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付
-	DueAt      *time.Time `json:"dueAt"`                   // 应付日期
-	PaidAt     *time.Time `json:"paidAt"`
+	Status      int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付
+	DueAt       *time.Time `json:"dueAt"`                   // 应付日期
+	PaidAt      *time.Time `json:"paidAt"`
+	MilestoneID uint64     `json:"milestoneId" gorm:"index"` // 关联里程碑ID（施工费分期）
 }
 
 // TableName 指定表名

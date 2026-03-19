@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  buildForemanPortfolioCases,
   buildLegalAcceptancePayload,
   buildRandomMainlandPhone,
   getMerchantAdminTestEnv,
@@ -14,9 +15,6 @@ import {
 type ForemanApplyPayload = Record<string, unknown>;
 
 function createForemanApplyPayload(phone: string): ForemanApplyPayload {
-  const buildImages = (prefix: string) =>
-    Array.from({ length: 8 }, (_, index) => `https://example.com/${prefix}-${index + 1}.jpg`);
-
   return {
     phone,
     code: '123456',
@@ -29,29 +27,13 @@ function createForemanApplyPayload(phone: string): ForemanApplyPayload {
     idCardFront: 'https://example.com/id-front.jpg',
     idCardBack: 'https://example.com/id-back.jpg',
     serviceArea: ['610100'],
-    workTypes: ['mason'],
+    officeAddress: '西安市雁塔区科技路 8 号',
     highlightTags: ['工期稳定'],
     pricing: {
       perSqm: 220,
     },
     introduction: 'E2E 工长入驻校验',
-    portfolioCases: [
-      {
-        title: '施工案例A',
-        description: '施工案例A说明',
-        images: buildImages('foreman-a'),
-      },
-      {
-        title: '施工案例B',
-        description: '施工案例B说明',
-        images: buildImages('foreman-b'),
-      },
-      {
-        title: '施工案例C',
-        description: '施工案例C说明',
-        images: buildImages('foreman-c'),
-      },
-    ],
+    portfolioCases: buildForemanPortfolioCases({ imageCount: 2 }),
     legalAcceptance: buildLegalAcceptancePayload(),
   };
 }
@@ -60,13 +42,14 @@ test.describe('Merchant Onboarding Foreman Required Fields', () => {
   test('foreman required fields validation', async ({ request }) => {
     const env = getMerchantTestEnv();
 
-    const missingWorkTypesPhone = buildRandomMainlandPhone('15');
-    const missingWorkTypesPayload = createForemanApplyPayload(missingWorkTypesPhone);
-    missingWorkTypesPayload.workTypes = [];
-    const missingWorkTypes = await merchantApiPost(request, env.apiBaseUrl, '/merchant/apply', missingWorkTypesPayload);
-    expect(missingWorkTypes.status).toBe(200);
-    expect(missingWorkTypes.body.code).toBe(400);
-    expect(missingWorkTypes.body.message).toContain('至少选择1个工种');
+    const missingDescriptionPhone = buildRandomMainlandPhone('15');
+    const missingDescriptionPayload = createForemanApplyPayload(missingDescriptionPhone);
+    const missingDescriptionCases = (missingDescriptionPayload.portfolioCases as Array<Record<string, unknown>>) || [];
+    missingDescriptionCases[0].description = '';
+    const missingDescription = await merchantApiPost(request, env.apiBaseUrl, '/merchant/apply', missingDescriptionPayload);
+    expect(missingDescription.status).toBe(200);
+    expect(missingDescription.body.code).toBe(400);
+    expect(missingDescription.body.message).toContain('水工施工展示工艺说明不能为空');
 
     const missingHighlightPhone = buildRandomMainlandPhone('15');
     const missingHighlightPayload = createForemanApplyPayload(missingHighlightPhone);
@@ -75,6 +58,15 @@ test.describe('Merchant Onboarding Foreman Required Fields', () => {
     expect(missingHighlight.status).toBe(200);
     expect(missingHighlight.body.code).toBe(400);
     expect(missingHighlight.body.message).toContain('1-3个');
+
+    const invalidOtherPhone = buildRandomMainlandPhone('15');
+    const invalidOtherPayload = createForemanApplyPayload(invalidOtherPhone);
+    const invalidOtherCases = (invalidOtherPayload.portfolioCases as Array<Record<string, unknown>>) || [];
+    invalidOtherCases.push({ category: 'other', description: '其他施工说明', images: [] });
+    const invalidOther = await merchantApiPost(request, env.apiBaseUrl, '/merchant/apply', invalidOtherPayload);
+    expect(invalidOther.status).toBe(200);
+    expect(invalidOther.body.code).toBe(400);
+    expect(invalidOther.body.message).toContain('其他施工展示需上传2-8张图片');
 
     const legalRejectedPhone = buildRandomMainlandPhone('15');
     const legalRejectedPayload = createForemanApplyPayload(legalRejectedPhone);
@@ -116,7 +108,9 @@ test.describe('Merchant Onboarding Foreman Required Fields', () => {
     expect(rejectResult.body.code).toBe(0);
 
     const invalidResubmitPayload = createForemanApplyPayload(phone);
-    invalidResubmitPayload.workTypes = [];
+    invalidResubmitPayload.portfolioCases = (invalidResubmitPayload.portfolioCases as Array<Record<string, unknown>>).filter(
+      (item) => item.category !== 'paint',
+    );
     const resubmitResult = await merchantApiPost(
       request,
       env.apiBaseUrl,
@@ -125,6 +119,6 @@ test.describe('Merchant Onboarding Foreman Required Fields', () => {
     );
     expect(resubmitResult.status).toBe(200);
     expect(resubmitResult.body.code).toBe(400);
-    expect(resubmitResult.body.message).toContain('至少选择1个工种');
+    expect(resubmitResult.body.message).toContain('油漆工施工展示');
   });
 });

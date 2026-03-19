@@ -1,14 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Switch, message, Input } from 'antd';
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Space, Switch, message, Input, Modal } from 'antd';
+import { DownOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import { regionApi, type Region } from '../../services/regionApi';
 import type { ColumnsType } from 'antd/es/table';
 import api from '../../services/api';
+import './RegionManagement.css';
 
 // 扩展 Region 类型以支持树形结构
 interface TreeRegion extends Region {
     children?: TreeRegion[];
     hasChildren?: boolean;
+}
+
+interface RegionListPayload {
+    list?: Region[];
+    total?: number;
 }
 
 const RegionManagement: React.FC = () => {
@@ -21,19 +27,29 @@ const RegionManagement: React.FC = () => {
         loadRootData();
     }, []);
 
+    const normalizeRegion = (region: Partial<Region>): TreeRegion => ({
+        id: Number(region.id || 0),
+        code: String(region.code || ''),
+        name: String(region.name || ''),
+        level: Number(region.level || 0),
+        parentCode: String(region.parentCode || ''),
+        enabled: Boolean(region.enabled),
+        sortOrder: Number(region.sortOrder || 0),
+        hasChildren: Boolean(region.hasChildren),
+    });
+
     // 加载根节点（省级）
     const loadRootData = async () => {
         setLoading(true);
         try {
             // 管理员查看所有省份（包括已禁用的）
-            const response = await api.get('/admin/regions', { params: { level: 1, pageSize: 100 } });
-            const result = (response.data || response) as any;
-            const provinces = result.list || [];
+            const response = await api.get('/admin/regions', { params: { level: 1, pageSize: 100 } }) as { data?: RegionListPayload };
+            const provinces = response.data?.list || [];
 
             // 标记所有省份都有子节点，children设为空数组（Ant Design需要）
             const treeData: TreeRegion[] = provinces.map((province: Region) => ({
-                ...province,
-                children: [], // 空数组表示有子节点但未加载，会显示展开箭头
+                ...normalizeRegion(province),
+                children: province.hasChildren ? [] : undefined,
             }));
 
             setData(treeData);
@@ -48,13 +64,13 @@ const RegionManagement: React.FC = () => {
     const loadChildren = async (parentCode: string): Promise<TreeRegion[]> => {
         try {
             // 使用管理员API获取所有子节点（包括已禁用的）
-            const response = await api.get(`/admin/regions/children/${parentCode}`);
-            const children = (response.data || response) as Region[];
+            const response = await api.get(`/admin/regions/children/${parentCode}`) as { data?: Region[] };
+            const children = response.data || [];
 
             // 只有省级和市级有子节点，区县级没有
             return children.map(child => ({
-                ...child,
-                children: child.level < 3 ? [] : undefined, // level<3(省/市)有子节点
+                ...normalizeRegion(child),
+                children: child.hasChildren ? [] : undefined,
             }));
         } catch (error) {
             message.error('加载子节点失败');
@@ -62,9 +78,24 @@ const RegionManagement: React.FC = () => {
         }
     };
 
+    const findCodeById = (nodes: TreeRegion[], targetId: React.Key): string | null => {
+        for (const node of nodes) {
+            if (node.id === targetId) {
+                return node.code;
+            }
+            if (node.children && node.children.length > 0) {
+                const found = findCodeById(node.children, targetId);
+                if (found) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    };
+
     // 处理展开/折叠
     const handleExpand = async (expanded: boolean, record: TreeRegion) => {
-        if (expanded && (!record.children || record.children.length === 0)) {
+        if (expanded && record.hasChildren && (!record.children || record.children.length === 0)) {
             // 展开且子节点未加载，开始加载
             setLoading(true);
             try {
@@ -90,47 +121,59 @@ const RegionManagement: React.FC = () => {
         }
     };
 
-    // 级联启用/禁用
-    const handleToggle = async (id: number, enabled: boolean, record: TreeRegion) => {
-        try {
-            await regionApi.toggle(id, enabled);
-            message.success(`${enabled ? '启用' : '禁用'}成功（已级联更新所有子区域）`);
+    const reloadExpandedTree = async () => {
+        const expandedCodes = expandedRowKeys
+            .map((key) => findCodeById(data, key))
+            .filter((code): code is string => Boolean(code));
 
-            // 在内存中递归更新状态，不重新加载数据
-            const updateNodeEnabled = (nodes: TreeRegion[], targetId: number, newEnabled: boolean, targetCode: string): TreeRegion[] => {
-                return nodes.map(node => {
-                    if (node.id === targetId) {
-                        // 找到目标节点，更新它和所有子节点
-                        return {
-                            ...node,
-                            enabled: newEnabled,
-                            children: node.children ? cascadeUpdateEnabled(node.children, newEnabled) : node.children
-                        };
+        await loadRootData();
+        for (const code of expandedCodes) {
+            // 顺序加载，确保父级 children 已存在
+            // eslint-disable-next-line no-await-in-loop
+            const children = await loadChildren(code);
+            setData((prev) => {
+                const updateTree = (nodes: TreeRegion[]): TreeRegion[] => nodes.map((node) => {
+                    if (node.code === code) {
+                        return { ...node, children };
                     }
-                    // 递归更新子节点
-                    if (node.children && node.children.length > 0) {
-                        return {
-                            ...node,
-                            children: updateNodeEnabled(node.children, targetId, newEnabled, targetCode)
-                        };
+                    if (node.children) {
+                        return { ...node, children: updateTree(node.children) };
                     }
                     return node;
                 });
-            };
-
-            // 级联更新所有子节点的状态
-            const cascadeUpdateEnabled = (nodes: TreeRegion[], newEnabled: boolean): TreeRegion[] => {
-                return nodes.map(node => ({
-                    ...node,
-                    enabled: newEnabled,
-                    children: node.children ? cascadeUpdateEnabled(node.children, newEnabled) : node.children
-                }));
-            };
-
-            setData(prevData => updateNodeEnabled(prevData, id, enabled, record.code));
-        } catch (error) {
-            message.error('操作失败');
+                return updateTree(prev);
+            });
         }
+    };
+
+    const getConfirmContent = (enabled: boolean, record: TreeRegion) => {
+        if (enabled) {
+            return record.level === 1
+                ? '启用省份会级联启用所有下级市区。'
+                : '启用子区域时会自动启用所有上级区域。';
+        }
+        return record.level === 1
+            ? '禁用省份会级联禁用所有下级市区。'
+            : '禁用当前区域后，如果同级区域都关闭，上级区域也会自动关闭。';
+    };
+
+    // 级联启用/禁用
+    const handleToggle = (id: number, enabled: boolean, record: TreeRegion) => {
+        Modal.confirm({
+            title: `确认${enabled ? '启用' : '禁用'}「${record.name}」？`,
+            content: getConfirmContent(enabled, record),
+            okText: '确认',
+            cancelText: '取消',
+            onOk: async () => {
+                try {
+                    await regionApi.toggle(id, enabled);
+                    message.success(`${enabled ? '启用' : '禁用'}成功`);
+                    await reloadExpandedTree();
+                } catch (error) {
+                    message.error('操作失败');
+                }
+            }
+        });
     };
 
     const getLevelTag = (level: number) => {
@@ -156,30 +199,28 @@ const RegionManagement: React.FC = () => {
 
     const columns: ColumnsType<TreeRegion> = [
         {
-            title: 'ID',
-            dataIndex: 'id',
-            width: 80
-        },
-        {
-            title: '代码',
-            dataIndex: 'code',
-            width: 100
-        },
-        {
-            title: '名称',
-            dataIndex: 'name',
-            width: 200,
+            title: '行政区划',
+            key: 'region',
+            width: 360,
+            render: (_, record) => (
+                <div className="region-management__region-cell">
+                    <div className="region-management__region-name">{record.name || '-'}</div>
+                    <div className="region-management__region-code">{record.code || '-'}</div>
+                </div>
+            ),
         },
         {
             title: '层级',
             dataIndex: 'level',
-            width: 80,
+            width: 90,
+            align: 'center',
             render: getLevelTag,
         },
         {
             title: '状态',
             dataIndex: 'enabled',
-            width: 100,
+            width: 120,
+            align: 'center',
             render: (enabled, record) => (
                 <Switch
                     checked={enabled}
@@ -192,7 +233,14 @@ const RegionManagement: React.FC = () => {
         {
             title: '排序',
             dataIndex: 'sortOrder',
-            width: 80
+            width: 90,
+            align: 'center',
+        },
+        {
+            title: 'ID',
+            dataIndex: 'id',
+            width: 90,
+            align: 'center',
         },
     ];
 
@@ -219,6 +267,7 @@ const RegionManagement: React.FC = () => {
 
     return (
         <Card
+            className="region-management"
             title="行政区划管理"
             extra={
                 <Space>
@@ -228,9 +277,9 @@ const RegionManagement: React.FC = () => {
                 </Space>
             }
         >
-            <div style={{ marginBottom: 16, padding: '12px 16px', background: '#f0f8ff', borderRadius: 4 }}>
-                <p style={{ margin: 0, color: '#1890ff' }}>
-                    💡 <strong>提示</strong>：点击左侧箭头展开查看下级区域。启用/禁用操作会级联影响所有子区域。当前已导入陕西省全部行政区划数据。
+            <div className="region-management__notice">
+                <p className="region-management__notice-text">
+                    当前页已按省、市、区三级结构展示。已导入全国省级与地市级数据；已导入区县的城市可继续展开。启用子区域时会自动启用上级区域，禁用后会同步影响父级状态。
                 </p>
             </div>
 
@@ -246,6 +295,7 @@ const RegionManagement: React.FC = () => {
             </Space>
 
             <Table
+                className="region-management__table"
                 columns={columns}
                 dataSource={filteredData}
                 loading={loading}
@@ -255,8 +305,24 @@ const RegionManagement: React.FC = () => {
                     expandedRowKeys,
                     onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
                     onExpand: handleExpand,
+                    rowExpandable: (record) => Boolean(record.hasChildren),
+                    indentSize: 20,
+                    expandIcon: ({ expanded, onExpand, record, expandable }) => (
+                        <span className="region-management__expand-slot">
+                            {expandable ? (
+                                <button
+                                    type="button"
+                                    className="region-management__expand-btn"
+                                    onClick={(event) => onExpand(record, event)}
+                                    aria-label={expanded ? '收起下级区域' : '展开下级区域'}
+                                >
+                                    {expanded ? <DownOutlined /> : <RightOutlined />}
+                                </button>
+                            ) : null}
+                        </span>
+                    ),
                 }}
-                scroll={{ y: 600 }}
+                scroll={{ x: 760, y: 600 }}
             />
         </Card>
     );

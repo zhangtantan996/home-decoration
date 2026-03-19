@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -10,27 +10,32 @@ import {
     SafeAreaView,
     StatusBar,
     Platform,
-    Modal,
     TextInput,
     ActivityIndicator,
     Animated,
     Easing,
-    TouchableWithoutFeedback,
     FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 // Mock data no longer needed for material shops, using store
 import { Designer, Worker, MaterialShop } from '../types/provider';
-import { NetworkErrorView, EmptyView, PullToRefresh, DesignerSkeletonCard, WorkerSkeletonCard, useToast } from '../components';
+import { NetworkErrorView, DesignerSkeletonCard, WorkerSkeletonCard, useToast } from '../components';
 import { useProviderStore } from '../store/providerStore';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import { ChevronDown, MapPin, Search, Maximize2, ArrowLeft, X, Star, MapPinned, Users, Briefcase, Award, Check, SlidersHorizontal, Package, Bell, PencilRuler, Hammer } from 'lucide-react-native';
+import { ChevronDown, MapPin, Search, Maximize2, ArrowLeft, X, Star, Check, SlidersHorizontal, Package, PencilRuler, Hammer } from 'lucide-react-native';
 import { DesignerCard } from '../components/DesignerCard';
 import { WorkerCard } from '../components/WorkerCard';
 import { MaterialShopCard } from '../components/MaterialShopCard';
+import ServiceProviderCard from '../components/provider/ServiceProviderCard';
 import { colors as tokens, spacing, radii, typography } from '../theme/tokens';
 import { colorsRaw } from '../theme/tokens.raw';
+import {
+    buildHomeSearchResults,
+    getHomeSearchDescription,
+    getHomeSearchNavigationTarget,
+    type HomeSearchResult,
+} from '../utils/homeSearch';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -71,18 +76,6 @@ const CONSTRUCTION_ORG_TYPES = [
     { id: 'company', label: '公司' },
 ];
 
-// 工种筛选
-const WORK_TYPES = [
-    { id: 'all', label: '全部工种' },
-    { id: 'mason', label: '瓦工' },
-    { id: 'electrician', label: '电工' },
-    { id: 'carpenter', label: '木工' },
-    { id: 'painter', label: '油漆工' },
-    { id: 'plumber', label: '水暖工' },
-    { id: 'hvac', label: '空调安装' },
-    { id: 'general', label: '综合施工' },
-];
-
 // Mock 施工人员数据
 // Mock 施工人员数据 - Imported from mockData.ts
 
@@ -90,13 +83,6 @@ const WORK_TYPES = [
 const MATERIAL_SORT_OPTIONS = [
     { id: 'recommend', label: '综合排序' },
     { id: 'distance', label: '距离最近' },
-];
-
-// 主材门店类型
-const MATERIAL_ORG_TYPES = [
-    { id: 'all', label: '全部类型' },
-    { id: 'showroom', label: '展示店' },
-    { id: 'brand', label: '品牌店' },
 ];
 
 // 主材分类
@@ -118,14 +104,6 @@ const MATERIAL_CATEGORIES = [
 // Mock 主材商品数据
 // Mock 主材商品数据 - Imported from mockData.ts
 
-// 全局搜索排序选项
-const GLOBAL_SORT_OPTIONS = [
-    { id: 'recommend', label: '综合排序' },
-    { id: 'rating', label: '评分最高' },
-    { id: 'distance', label: '距离最近' },
-    { id: 'popularity', label: '人气最高' },
-];
-
 // 热门搜索词
 const HOT_SEARCH_TERMS = [
     '北欧风格',
@@ -143,7 +121,6 @@ const HOT_SEARCH_TERMS = [
 
 const HomeScreen: React.FC = () => {
     const [activeCategory, setActiveCategory] = useState('designer');
-    const [renderedCategory, setRenderedCategory] = useState('designer');
     const [currentCity, setCurrentCity] = useState('西安');
 
     const { showToast } = useToast();
@@ -156,8 +133,6 @@ const HomeScreen: React.FC = () => {
         isDesignerLoading,
         isWorkerLoading,
         isMaterialLoading,
-        designerError,
-        workerError,
         materialError,
         hasMoreDesigners,
         hasMoreWorkers,
@@ -184,15 +159,12 @@ const HomeScreen: React.FC = () => {
     const [constructionSortBy, setConstructionSortBy] = useState('recommend');
     const [showConstructionSortMenu, setShowConstructionSortMenu] = useState(false);
     const [constructionOrgFilter, setConstructionOrgFilter] = useState<string | null>(null);
-    const [showWorkTypeModal, setShowWorkTypeModal] = useState(false);
-    const [selectedWorkTypes, setSelectedWorkTypes] = useState<string[]>(['all']);
     const [searchText, setSearchText] = useState('');
 
     // 主材状态
     const [materialSortBy, setMaterialSortBy] = useState('recommend');
     const [showMaterialSortMenu, setShowMaterialSortMenu] = useState(false);
-    const [materialFilter, setMaterialFilter] = useState('all');
-    const [showMaterialCategoryModal, setShowMaterialCategoryModal] = useState(false);
+    const [materialFilter, _setMaterialFilter] = useState('all');
     const [selectedMaterialCategory, setSelectedMaterialCategory] = useState('all');
     const [showMaterialFilterPanel, setShowMaterialFilterPanel] = useState(false); // 筛选面板显示状态
     const [selectedMaterialType, setSelectedMaterialType] = useState('all'); // 门店类型筛选
@@ -200,12 +172,8 @@ const HomeScreen: React.FC = () => {
     // 全局搜索状态
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
-    const [globalSortBy, setGlobalSortBy] = useState('recommend');
-    const [showGlobalSortMenu, setShowGlobalSortMenu] = useState(false);
+    const [globalSortBy, _setGlobalSortBy] = useState('recommend');
 
-    const scrollRef = useRef<ScrollView>(null);
-    const materialFlatListRef = useRef<FlatList>(null);
-    const [categoryHeight, setCategoryHeight] = useState(0);
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
     // Pilot is currently Xi'an only; keep city fixed and show a friendly hint.
@@ -216,36 +184,6 @@ const HomeScreen: React.FC = () => {
 
     // 筛选按钮位置追踪（用于紧贴按钮显示下拉框）
     const [filterButtonLayout, setFilterButtonLayout] = useState({ x: 0, y: 0, width: 0, height: 0 });
-
-    // 分类Tab滚动隐藏动画
-    const categoryTranslateY = useRef(new Animated.Value(0)).current;
-    const lastScrollY = useRef(0);
-    const isCategoryHidden = useRef(false);
-
-    const handleScroll = useCallback((event: any) => {
-        const currentY = event.nativeEvent.contentOffset.y;
-        const threshold = 50; // 滚动超过此值后隐藏分类Tab
-
-        if (currentY > threshold && !isCategoryHidden.current) {
-            // 向下滚动，隐藏分类Tab
-            isCategoryHidden.current = true;
-            Animated.timing(categoryTranslateY, {
-                toValue: -100,
-                duration: 200,
-                useNativeDriver: true,
-            }).start();
-        } else if (currentY <= 10 && isCategoryHidden.current) {
-            // 滚动到顶部，显示分类Tab
-            isCategoryHidden.current = false;
-            Animated.timing(categoryTranslateY, {
-                toValue: 0,
-                duration: 200,
-                useNativeDriver: true,
-            }).start();
-        }
-
-        lastScrollY.current = currentY;
-    }, [categoryTranslateY]);
 
     // 初始加载已在 AppNavigator 中完成 (preloadAll)
     // 如果用户手动刷新或筛选变化时才重新请求
@@ -297,90 +235,26 @@ const HomeScreen: React.FC = () => {
         });
     }, [isSearchFocused, navigation]);
 
-    const scrollToFilter = () => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTo({ y: categoryHeight, animated: true });
-        }
-    };
+    const unifiedSearchResults = isSearching
+        ? buildHomeSearchResults({
+            searchText,
+            designers,
+            workers,
+            materialShops,
+            sortBy: globalSortBy,
+        })
+        : [];
 
-
-
-    // ========== 全局搜索统一结果 ==========
-    const getUnifiedSearchResults = () => {
-        if (!searchText.trim()) return [];
-
-        const keyword = searchText.toLowerCase();
-        let results: any[] = [];
-
-        // 1. 搜索设计师
-        designers.forEach((d: Designer) => {
-            const name = d.name.toLowerCase();
-            const specialty = d.specialty.toLowerCase();
-            const orgLabel = d.orgLabel.toLowerCase();
-            if (name.includes(keyword) || specialty.includes(keyword) || orgLabel.includes(keyword)) {
-                results.push({
-                    ...d,
-                    _type: 'designer',
-                    _popularity: d.reviewCount,
-                    _distance: parseFloat(d.distance),
-                });
-            }
-        });
-
-        // 2. 搜索施工人员
-        workers.forEach((w: Worker) => {
-            const name = w.name.toLowerCase();
-            const workTypeLabels = w.workTypeLabels.toLowerCase();
-            const tags = w.tags.join(' ').toLowerCase();
-            if (name.includes(keyword) || workTypeLabels.includes(keyword) || tags.includes(keyword)) {
-                results.push({
-                    ...w,
-                    _type: 'construction',
-                    _popularity: w.completedOrders,
-                    _distance: parseFloat(w.distance),
-                });
-            }
-        });
-
-        // 3. 排序
-        switch (globalSortBy) {
-            case 'rating':
-                results.sort((a, b) => b.rating - a.rating);
-                break;
-            case 'distance':
-                results.sort((a, b) => a._distance - b._distance);
-                break;
-            case 'popularity':
-                results.sort((a, b) => b._popularity - a._popularity);
-                break;
-            default:
-                // 综合排序：按类型分组显示
-                break;
-        }
-
-        return results;
-    };
-
-    const unifiedSearchResults = isSearching ? getUnifiedSearchResults() : [];
+    const handleSearchResultPress = useCallback((item: HomeSearchResult) => {
+        const target = getHomeSearchNavigationTarget(item);
+        (navigation as any).navigate(target.screen, target.params);
+    }, [navigation]);
 
     // 触发全局搜索
     const handleGlobalSearch = () => {
         if (searchText.trim()) {
             setIsSearching(true);
-            setShowGlobalSortMenu(false);
         }
-    };
-
-    // 退出搜索
-    const exitSearch = () => {
-        setIsSearching(false);
-        setSearchText('');
-        setGlobalSortBy('recommend');
-        setShowGlobalSortMenu(false);
-    };
-
-    const handleMaterialFilter = (type: string) => {
-        setMaterialFilter(type);
     };
 
     const handleDesignerOrgFilter = useCallback((type: string) => {
@@ -391,110 +265,43 @@ const HomeScreen: React.FC = () => {
         setConstructionOrgFilter(prev => prev === type ? null : type);
     }, []);
 
-    const handleWorkTypeToggle = (workType: string) => {
-        if (workType === 'all') {
-            setSelectedWorkTypes(['all']);
-        } else {
-            setSelectedWorkTypes(prev => {
-                const newTypes = prev.filter(t => t !== 'all');
-                if (newTypes.includes(workType)) {
-                    const result = newTypes.filter(t => t !== workType);
-                    return result.length === 0 ? ['all'] : result;
-                } else {
-                    return [...newTypes, workType];
-                }
-            });
-        }
-    };
-
     // 切换分类时重置状态
     const handleCategoryChange = (categoryId: string) => {
-        const startTime = Date.now();
-        console.log(`[PERF] Switch to ${categoryId} START`);
-
         setActiveCategory(categoryId);
-        setRenderedCategory(categoryId);
         // 关闭所有菜单
         setShowDesignerSortMenu(false);
         setShowConstructionSortMenu(false);
         setShowMaterialSortMenu(false);
-        setShowWorkTypeModal(false);
-
-        console.log(`[PERF] Switch to ${categoryId} RENDERED: ${Date.now() - startTime}ms`);
+        setShowMaterialFilterPanel(false);
+        setIsSearching(false);
+        setIsSearchFocused(false);
     };
 
     const toggleDesignerSort = useCallback(() => {
-        setShowDesignerSortMenu(prev => {
-            if (!prev) scrollToFilter();
-            return !prev;
-        });
+        setShowConstructionSortMenu(false);
+        setShowMaterialSortMenu(false);
+        setShowMaterialFilterPanel(false);
+        setShowDesignerSortMenu(prev => !prev);
     }, []);
 
     const toggleConstructionSort = useCallback(() => {
-        setShowConstructionSortMenu(prev => {
-            if (!prev) {
-                setShowWorkTypeModal(false);
-                scrollToFilter();
-            }
-            return !prev;
-        });
+        setShowDesignerSortMenu(false);
+        setShowMaterialSortMenu(false);
+        setShowMaterialFilterPanel(false);
+        setShowConstructionSortMenu(prev => !prev);
     }, []);
-
-    const toggleWorkTypeMenu = useCallback(() => {
-        setShowWorkTypeModal(prev => {
-            if (!prev) {
-                setShowConstructionSortMenu(false);
-                scrollToFilter();
-            }
-            return !prev;
-        });
-    }, []);
-
-    const resetWorkTypes = () => {
-        setSelectedWorkTypes(['all']);
-    };
 
     // 获取当前排序选项和标签
     let currentSortOptions = DESIGNER_SORT_OPTIONS;
     let currentSortBy = designerSortBy;
-    if (renderedCategory === 'construction') {
+    if (activeCategory === 'construction') {
         currentSortOptions = CONSTRUCTION_SORT_OPTIONS;
         currentSortBy = constructionSortBy;
-    } else if (renderedCategory === 'material') {
+    } else if (activeCategory === 'material') {
         currentSortOptions = MATERIAL_SORT_OPTIONS;
         currentSortBy = materialSortBy;
     }
     const currentSortLabel = currentSortOptions.find(o => o.id === currentSortBy)?.label || '综合排序';
-
-    // ==================== 多Tab预渲染架构 ====================
-    // 核心思路：所有Tab的列表同时存在于内存，切换时只改变opacity
-    // 这样切换时不需要重新挂载FlatList，实现即时响应
-
-    // Tab切换动画
-    const designerOpacity = React.useRef(new Animated.Value(activeCategory === 'designer' ? 1 : 0)).current;
-    const constructionOpacity = React.useRef(new Animated.Value(activeCategory === 'construction' ? 1 : 0)).current;
-    const materialOpacity = React.useRef(new Animated.Value(activeCategory === 'material' ? 1 : 0)).current;
-
-    React.useEffect(() => {
-        // 淡入淡出动画 - 设置为 0ms 实现即时切换，配合骨架屏
-        Animated.parallel([
-            Animated.timing(designerOpacity, {
-                toValue: activeCategory === 'designer' ? 1 : 0,
-                duration: 0,
-                useNativeDriver: true,
-            }),
-            Animated.timing(constructionOpacity, {
-                toValue: activeCategory === 'construction' ? 1 : 0,
-                duration: 0,
-                useNativeDriver: true,
-            }),
-            Animated.timing(materialOpacity, {
-                toValue: activeCategory === 'material' ? 1 : 0,
-                duration: 0,
-                useNativeDriver: true,
-            }),
-        ]).start();
-    }, [activeCategory]);
 
     // 自动加载主材数据
     React.useEffect(() => {
@@ -542,13 +349,6 @@ const HomeScreen: React.FC = () => {
             filtered = filtered.filter((w: Worker) => w.type === constructionOrgFilter);
         }
 
-        // 按工种筛选
-        if (!selectedWorkTypes.includes('all') && selectedWorkTypes.length > 0) {
-            filtered = filtered.filter((w: Worker) =>
-                selectedWorkTypes.some(wt => w.workTypes.includes(wt))
-            );
-        }
-
         // 排序
         if (constructionSortBy === 'rating') {
             filtered.sort((a: Worker, b: Worker) => b.rating - a.rating);
@@ -563,7 +363,7 @@ const HomeScreen: React.FC = () => {
         }
 
         return [{ id: 'FILTER_SECTION' }, ...filtered];
-    }, [workers, isWorkerLoading, constructionOrgFilter, constructionSortBy, selectedWorkTypes]);
+    }, [workers, isWorkerLoading, constructionOrgFilter, constructionSortBy]);
 
     const materialListData = React.useMemo(() => {
         if (isMaterialLoading && materialShops.length === 0) {
@@ -596,7 +396,7 @@ const HomeScreen: React.FC = () => {
         }
 
         return [{ id: 'FILTER_SECTION' }, ...sorted];
-    }, [materialShops, isMaterialLoading, materialSortBy, selectedMaterialType, selectedMaterialCategory]);
+    }, [materialError, materialShops, isMaterialLoading, materialSortBy, selectedMaterialCategory, selectedMaterialType]);
 
     // 修改渲染函数以处理 Skeleton
     const renderDesignerItem = useCallback(({ item }: { item: any }) => {
@@ -632,46 +432,6 @@ const HomeScreen: React.FC = () => {
                             ))}
                         </View>
                     </View>
-                    {showDesignerSortMenu && isCategoryHidden.current && (
-                        <TouchableWithoutFeedback onPress={() => setShowDesignerSortMenu(false)}>
-                            <View style={styles.dropdownBackdrop} />
-                        </TouchableWithoutFeedback>
-                    )}
-                    {showDesignerSortMenu && (
-                        <View style={[
-                            styles.sortDropdown,
-                            isCategoryHidden.current && {
-                                position: 'absolute',
-                                top: filterButtonLayout.y + filterButtonLayout.height + 4,
-                                left: filterButtonLayout.x,
-                                width: filterButtonLayout.width + 100,
-                                zIndex: 1001,
-                                borderRadius: radii.sm,
-                                ...Platform.select({
-                                    ios: {
-                                        shadowColor: '#000',
-                                        shadowOffset: { width: 0, height: 4 },
-                                        shadowOpacity: 0.15,
-                                        shadowRadius: 12,
-                                    },
-                                    android: {
-                                        elevation: 8,
-                                    },
-                                })
-                            }
-                        ]}>
-                            {DESIGNER_SORT_OPTIONS.map(option => (
-                                <TouchableOpacity
-                                    key={option.id}
-                                    style={[styles.sortDropdownItem, designerSortBy === option.id && styles.sortDropdownItemActive]}
-                                    onPress={() => { setDesignerSortBy(option.id); setShowDesignerSortMenu(false); }}
-                                >
-                                    <Text style={[styles.sortDropdownText, designerSortBy === option.id && styles.sortDropdownTextActive]}>{option.label}</Text>
-                                    {designerSortBy === option.id && <Check size={16} color={tokens.primary} />}
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
                 </View>
             );
         }
@@ -688,7 +448,7 @@ const HomeScreen: React.FC = () => {
                 onBookPress={(d) => (navigation as any).navigate('Booking', { provider: d, providerType: 'designer' })}
             />
         );
-    }, [currentSortLabel, designerOrgFilter, designerSortBy, showDesignerSortMenu, toggleDesignerSort, handleDesignerOrgFilter, navigation]);
+    }, [currentSortLabel, designerOrgFilter, toggleDesignerSort, handleDesignerOrgFilter, navigation]);
 
     const renderWorkerItem = useCallback(({ item }: { item: any }) => {
         if (item.id === 'FILTER_SECTION') {
@@ -721,46 +481,6 @@ const HomeScreen: React.FC = () => {
                             ))}
                         </View>
                     </View>
-                    {showConstructionSortMenu && isCategoryHidden.current && (
-                        <TouchableWithoutFeedback onPress={() => setShowConstructionSortMenu(false)}>
-                            <View style={styles.dropdownBackdrop} />
-                        </TouchableWithoutFeedback>
-                    )}
-                    {showConstructionSortMenu && (
-                        <View style={[
-                            styles.sortDropdown,
-                            isCategoryHidden.current && {
-                                position: 'absolute',
-                                top: filterButtonLayout.y + filterButtonLayout.height + 4,
-                                left: filterButtonLayout.x,
-                                width: filterButtonLayout.width + 100,
-                                zIndex: 1001,
-                                borderRadius: radii.sm,
-                                ...Platform.select({
-                                    ios: {
-                                        shadowColor: '#000',
-                                        shadowOffset: { width: 0, height: 4 },
-                                        shadowOpacity: 0.15,
-                                        shadowRadius: 12,
-                                    },
-                                    android: {
-                                        elevation: 8,
-                                    },
-                                })
-                            }
-                        ]}>
-                            {CONSTRUCTION_SORT_OPTIONS.map(option => (
-                                <TouchableOpacity
-                                    key={option.id}
-                                    style={[styles.sortDropdownItem, constructionSortBy === option.id && styles.sortDropdownItemActive]}
-                                    onPress={() => { setConstructionSortBy(option.id); setShowConstructionSortMenu(false); }}
-                                >
-                                    <Text style={[styles.sortDropdownText, constructionSortBy === option.id && styles.sortDropdownTextActive]}>{option.label}</Text>
-                                    {constructionSortBy === option.id && <Check size={16} color={tokens.primary} />}
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
                 </View>
             );
         }
@@ -768,16 +488,6 @@ const HomeScreen: React.FC = () => {
         // Skeleton Item
         if (typeof item.id === 'string' && item.id.startsWith('skeleton')) {
             return <WorkerSkeletonCard />;
-        }
-
-        if (item._type === 'error') {
-            return (
-                <NetworkErrorView
-                    type="network"
-                    message={item.message || '主材数据加载失败，请检查当前开发环境网络配置后重试'}
-                    onRetry={() => storeFetchMaterialShops(1, true, materialSortBy, materialFilter)}
-                />
-            );
         }
 
         return (
@@ -790,13 +500,12 @@ const HomeScreen: React.FC = () => {
                 onBookPress={(w, type) => (navigation as any).navigate('Booking', { provider: w, providerType: type })}
             />
         );
-    }, [constructionSortBy, constructionOrgFilter, showConstructionSortMenu, showWorkTypeModal, selectedWorkTypes, toggleConstructionSort, handleConstructionOrgFilter, navigation]);
+    }, [constructionSortBy, constructionOrgFilter, toggleConstructionSort, handleConstructionOrgFilter, navigation]);
 
     const toggleMaterialSort = useCallback(() => {
-        setShowMaterialSortMenu(prev => {
-            if (!prev) scrollToFilter();
-            return !prev;
-        });
+        setShowDesignerSortMenu(false);
+        setShowConstructionSortMenu(false);
+        setShowMaterialSortMenu(prev => !prev);
         setShowMaterialFilterPanel(false);
     }, []);
 
@@ -838,47 +547,6 @@ const HomeScreen: React.FC = () => {
                             </Text>
                         </TouchableOpacity>
                     </View>
-                    {/* 排序下拉 */}
-                    {showMaterialSortMenu && isCategoryHidden.current && (
-                        <TouchableWithoutFeedback onPress={() => setShowMaterialSortMenu(false)}>
-                            <View style={styles.dropdownBackdrop} />
-                        </TouchableWithoutFeedback>
-                    )}
-                    {showMaterialSortMenu && (
-                        <View style={[
-                            styles.sortDropdown,
-                            isCategoryHidden.current && {
-                                position: 'absolute',
-                                top: filterButtonLayout.y + filterButtonLayout.height + 4,
-                                left: filterButtonLayout.x,
-                                width: filterButtonLayout.width + 100,
-                                zIndex: 1001,
-                                borderRadius: radii.sm,
-                                ...Platform.select({
-                                    ios: {
-                                        shadowColor: '#000',
-                                        shadowOffset: { width: 0, height: 4 },
-                                        shadowOpacity: 0.15,
-                                        shadowRadius: 12,
-                                    },
-                                    android: {
-                                        elevation: 8,
-                                    },
-                                })
-                            }
-                        ]}>
-                            {MATERIAL_SORT_OPTIONS.map(option => (
-                                <TouchableOpacity
-                                    key={option.id}
-                                    style={[styles.sortDropdownItem, materialSortBy === option.id && styles.sortDropdownItemActive]}
-                                    onPress={() => { setMaterialSortBy(option.id); setShowMaterialSortMenu(false); }}
-                                >
-                                    <Text style={[styles.sortDropdownText, materialSortBy === option.id && styles.sortDropdownTextActive]}>{option.label}</Text>
-                                    {materialSortBy === option.id && <Check size={16} color={tokens.primary} />}
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    )}
                     {/* 筛选面板 */}
                     {showMaterialFilterPanel && (
                         <View style={styles.materialFilterPanel}>
@@ -973,17 +641,113 @@ const HomeScreen: React.FC = () => {
                 onPress={(shop) => (navigation as any).navigate('MaterialShopDetail', { shop })}
             />
         );
-    }, [materialFilter, materialSortBy, showMaterialSortMenu, showMaterialFilterPanel, selectedMaterialCategory, selectedMaterialType, storeFetchMaterialShops, toggleMaterialSort, toggleMaterialFilterPanel, filterButtonLayout]);
+    }, [materialFilter, materialSortBy, navigation, selectedMaterialCategory, showMaterialFilterPanel, storeFetchMaterialShops, toggleMaterialSort, toggleMaterialFilterPanel]);
 
     // 点击外部关闭所有筛选弹窗
     const handleBackdropPress = useCallback(() => {
         if (showDesignerSortMenu) setShowDesignerSortMenu(false);
         if (showConstructionSortMenu) setShowConstructionSortMenu(false);
         if (showMaterialSortMenu) setShowMaterialSortMenu(false);
-        if (showWorkTypeModal) setShowWorkTypeModal(false);
         if (showMaterialFilterPanel) setShowMaterialFilterPanel(false);
-        if (showGlobalSortMenu) setShowGlobalSortMenu(false);
-    }, [showDesignerSortMenu, showConstructionSortMenu, showMaterialSortMenu, showWorkTypeModal, showMaterialFilterPanel, showGlobalSortMenu]);
+    }, [showDesignerSortMenu, showConstructionSortMenu, showMaterialSortMenu, showMaterialFilterPanel]);
+
+    const renderCategorySection = () => (
+        <View style={styles.categorySection}>
+            {SERVICE_CATEGORIES.map((cat) => (
+                <CategoryTab
+                    key={cat.id}
+                    item={cat}
+                    isActive={activeCategory === cat.id}
+                    onPress={() => handleCategoryChange(cat.id)}
+                />
+            ))}
+        </View>
+    );
+
+    const floatingSortOptions = activeCategory === 'designer'
+        ? DESIGNER_SORT_OPTIONS
+        : activeCategory === 'construction'
+            ? CONSTRUCTION_SORT_OPTIONS
+            : MATERIAL_SORT_OPTIONS;
+
+    const floatingSortValue = activeCategory === 'designer'
+        ? designerSortBy
+        : activeCategory === 'construction'
+            ? constructionSortBy
+            : materialSortBy;
+
+    const handleFloatingSortSelect = (optionId: string) => {
+        if (activeCategory === 'designer') {
+            setDesignerSortBy(optionId);
+            setShowDesignerSortMenu(false);
+            return;
+        }
+
+        if (activeCategory === 'construction') {
+            setConstructionSortBy(optionId);
+            setShowConstructionSortMenu(false);
+            return;
+        }
+
+        setMaterialSortBy(optionId);
+        setShowMaterialSortMenu(false);
+    };
+
+    const showFloatingSortMenu = showDesignerSortMenu || showConstructionSortMenu || showMaterialSortMenu;
+
+    const renderActiveList = () => {
+        if (activeCategory === 'designer') {
+            return (
+                <FlatList
+                    data={designerListData}
+                    renderItem={renderDesignerItem}
+                    keyExtractor={(item) => String(item.id)}
+                    stickyHeaderIndices={[1]}
+                    ListHeaderComponent={renderCategorySection}
+                    refreshing={isDesignerLoading}
+                    onRefresh={handleRefresh}
+                    onEndReached={() => { if (activeCategory === 'designer') handleLoadMore(); }}
+                    onEndReachedThreshold={0.2}
+                    ListFooterComponent={loadingMoreDesigners ? <ActivityIndicator style={{ paddingVertical: spacing.md }} size="small" color={tokens.placeholder} /> : <View style={{ height: 100 }} />}
+                    showsVerticalScrollIndicator={false}
+                />
+            );
+        }
+
+        if (activeCategory === 'construction') {
+            return (
+                <FlatList
+                    data={workerListData}
+                    renderItem={renderWorkerItem}
+                    keyExtractor={(item) => String(item.id)}
+                    stickyHeaderIndices={[1]}
+                    ListHeaderComponent={renderCategorySection}
+                    refreshing={isWorkerLoading}
+                    onRefresh={handleRefresh}
+                    onEndReached={() => { if (activeCategory === 'construction') handleLoadMore(); }}
+                    onEndReachedThreshold={0.2}
+                    ListFooterComponent={loadingMoreWorkers ? <ActivityIndicator style={{ paddingVertical: spacing.md }} size="small" color={tokens.placeholder} /> : <View style={{ height: 100 }} />}
+                    showsVerticalScrollIndicator={false}
+                />
+            );
+        }
+
+        return (
+            <FlatList
+                data={materialListData}
+                renderItem={renderMaterialItem}
+                keyExtractor={(item) => String(item.id)}
+                stickyHeaderIndices={[1]}
+                ListHeaderComponent={renderCategorySection}
+                refreshing={activeCategory === 'material' && isMaterialLoading && materialShops.length > 0}
+                onRefresh={handleRefresh}
+                onEndReached={() => { if (activeCategory === 'material') handleLoadMore(); }}
+                onEndReachedThreshold={0.2}
+                showsVerticalScrollIndicator={false}
+                ListFooterComponent={<View style={{ height: 100 }} />}
+            />
+        );
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -992,211 +756,160 @@ const HomeScreen: React.FC = () => {
                 backgroundColor={tokens.white}
                 translucent={Platform.OS === 'android'}
             />
-            <TouchableWithoutFeedback onPress={handleBackdropPress}>
-                <View style={{ flex: 1 }}>
-                    {/* Header */}
-                    <View style={styles.header}>
-                        {isSearchFocused ? (
-                            <>
-                                <TouchableOpacity style={styles.backBtn} onPress={() => { setIsSearchFocused(false); setIsSearching(false); setSearchText(''); }}>
-                                    <ArrowLeft size={20} color={tokens.primary} />
-                                </TouchableOpacity>
-                                <View style={[styles.searchBar, { flex: 1, marginRight: 0 }]}>
-                                    <Search size={16} color={tokens.placeholder} />
-                                    <TextInput
-                                        style={styles.searchInput}
-                                        placeholder="搜索设计师 / 施工队"
-                                        placeholderTextColor={tokens.placeholder}
-                                        value={searchText}
-                                        onChangeText={(text) => { setSearchText(text); if (!text.trim() && isSearching) setIsSearching(false); }}
-                                        returnKeyType="search"
-                                        onSubmitEditing={handleGlobalSearch}
-                                        autoFocus
-                                    />
-                                    {searchText.length > 0 && (
-                                        <TouchableOpacity onPress={() => { setSearchText(''); setIsSearching(false); }} style={styles.clearSearchBtn}>
-                                            <X size={16} color={tokens.secondary} />
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-                            </>
-                        ) : (
-                            <>
-                                <TouchableOpacity style={styles.locationBtn} onPress={handleLocationPress}>
-                                    <MapPin size={16} color={tokens.secondary} />
-                                    <Text style={styles.locationText}>{currentCity}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.searchBar} activeOpacity={0.7} onPress={() => setIsSearchFocused(true)}>
-                                    <Search size={16} color={tokens.placeholder} />
-                                    <Text style={styles.searchPlaceholder} numberOfLines={1}>{searchText || '搜索设计师 / 施工队'}</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('ScanQR' as never)}>
-                                    <Maximize2 size={20} color={tokens.primary} />
-                                </TouchableOpacity>
-                            </>
-                        )}
-                    </View>
+            <View style={{ flex: 1 }}>
+                {/* Header */}
+                <View style={styles.header}>
+                    {isSearchFocused ? (
+                        <>
+                            <TouchableOpacity style={styles.backBtn} onPress={() => { setIsSearchFocused(false); setIsSearching(false); setSearchText(''); }}>
+                                <ArrowLeft size={20} color={tokens.primary} />
+                            </TouchableOpacity>
+                            <View style={[styles.searchBar, { flex: 1, marginRight: 0 }]}>
+                                <Search size={16} color={tokens.placeholder} />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="搜索设计师 / 施工队 / 主材"
+                                    placeholderTextColor={tokens.placeholder}
+                                    value={searchText}
+                                    onChangeText={(text) => { setSearchText(text); if (!text.trim() && isSearching) setIsSearching(false); }}
+                                    returnKeyType="search"
+                                    onSubmitEditing={handleGlobalSearch}
+                                    autoFocus
+                                />
+                                {searchText.length > 0 && (
+                                    <TouchableOpacity onPress={() => { setSearchText(''); setIsSearching(false); }} style={styles.clearSearchBtn}>
+                                        <X size={16} color={tokens.secondary} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </>
+                    ) : (
+                        <>
+                            <TouchableOpacity style={styles.locationBtn} onPress={handleLocationPress}>
+                                <MapPin size={16} color={tokens.secondary} />
+                                <Text style={styles.locationText}>{currentCity}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.searchBar} activeOpacity={0.7} onPress={() => { handleBackdropPress(); setIsSearchFocused(true); }}>
+                                <Search size={16} color={tokens.placeholder} />
+                                <Text style={styles.searchPlaceholder} numberOfLines={1}>{searchText || '搜索设计师 / 施工队 / 主材'}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('ScanQR' as never)}>
+                                <Maximize2 size={20} color={tokens.primary} />
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </View>
 
-                    {/* 搜索模式 */}
-                    {isSearchFocused || isSearching ? (
-                        <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                            {isSearchFocused && !isSearching ? (
-                                <View style={styles.hotSearchSection}>
-                                    <Text style={styles.hotSearchTitle}>热门搜索</Text>
-                                    <View style={styles.hotSearchTags}>
-                                        {HOT_SEARCH_TERMS.map((term, index) => (
-                                            <TouchableOpacity key={index} style={styles.hotSearchTag} onPress={() => { setSearchText(term); setIsSearching(true); }}>
-                                                <Text style={styles.hotSearchTagText}>{term}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
+                {/* 搜索模式 */}
+                {isSearchFocused || isSearching ? (
+                    <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                        {isSearchFocused && !isSearching ? (
+                            <View style={styles.hotSearchSection}>
+                                <Text style={styles.hotSearchTitle}>热门搜索</Text>
+                                <View style={styles.hotSearchTags}>
+                                    {HOT_SEARCH_TERMS.map((term, index) => (
+                                        <TouchableOpacity key={index} style={styles.hotSearchTag} onPress={() => { setSearchText(term); setIsSearching(true); }}>
+                                            <Text style={styles.hotSearchTagText}>{term}</Text>
+                                        </TouchableOpacity>
+                                    ))}
                                 </View>
-                            ) : (
-                                <View style={styles.listSection}>
-                                    {unifiedSearchResults.length === 0 ? (
-                                        <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                                            <Text style={{ fontSize: typography.h3, color: tokens.secondary }}>未找到相关结果</Text>
-                                            <Text style={{ fontSize: typography.body - 1, color: tokens.placeholder, marginTop: spacing.xs }}>试试其他关键词</Text>
-                                        </View>
-                                     ) : (
-                                         unifiedSearchResults.map((item, index) => (
+                            </View>
+                        ) : (
+                            <View style={styles.listSection}>
+                                {unifiedSearchResults.length === 0 ? (
+                                    <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                                        <Text style={{ fontSize: typography.h3, color: tokens.secondary }}>未找到相关结果</Text>
+                                        <Text style={{ fontSize: typography.body - 1, color: tokens.placeholder, marginTop: spacing.xs }}>试试其他关键词</Text>
+                                    </View>
+                                 ) : (
+                                     unifiedSearchResults.map((item, index) => (
+                                        item._type === 'material' ? (
                                             <TouchableOpacity
                                                 key={`${item._type}-${item.id}-${index}`}
                                                 style={styles.searchResultCard}
-                                                onPress={() => {
-                                                    if (item._type === 'designer') {
-                                                        navigation.navigate('DesignerDetail', { designer: item });
-                                                        return;
-                                                    }
-                                                    if (item._type === 'construction') {
-                                                        if (item.type === 'company') {
-                                                            navigation.navigate('CompanyDetail', { company: item });
-                                                        } else {
-                                                            navigation.navigate('WorkerDetail', { worker: item });
-                                                        }
-                                                    }
-                                                }}
+                                                onPress={() => handleSearchResultPress(item)}
                                             >
-                                                {item._type === 'material' ? (
-                                                    <Image source={{ uri: item.image }} style={styles.searchResultImage} />
-                                                ) : (
-                                                    <Image source={{ uri: item.avatar || item.logo }} style={styles.searchResultAvatar} />
-                                                )}
+                                                <Image source={{ uri: item.cover }} style={styles.searchResultImage} />
                                                 <View style={styles.searchResultInfo}>
                                                     <Text style={styles.searchResultName} numberOfLines={1}>{item.name}</Text>
                                                     <View style={styles.searchResultMeta}>
-                                                        <View style={[styles.searchResultTypeBadge, { backgroundColor: item._type === 'designer' ? '#F0F9FF' : item._type === 'construction' ? '#FFF7ED' : '#FDF2F8' }]}>
-                                                            <Text style={[styles.searchResultTypeBadgeText, { color: item._type === 'designer' ? '#0369A1' : item._type === 'construction' ? '#C2410C' : '#BE185D' }]}>
-                                                                {item._type === 'designer' ? '设计师' : item._type === 'construction' ? '施工' : '主材'}
+                                                        <View style={[styles.searchResultTypeBadge, { backgroundColor: '#FDF2F8' }]}>
+                                                            <Text style={[styles.searchResultTypeBadgeText, { color: '#BE185D' }]}>
+                                                                主材
                                                             </Text>
                                                         </View>
                                                         <Star size={12} color={tokens.warning} fill={tokens.warning} />
                                                         <Text style={{ fontSize: typography.caption, color: tokens.primary, marginLeft: 2 }}>{item.rating}</Text>
                                                     </View>
                                                     <Text style={styles.searchResultDesc} numberOfLines={1}>
-                                                        {item._type === 'material' ? `${item.brand} · ¥${item.price}/${item.unit}` : item.specialty || item.workTypeLabels}
+                                                        {getHomeSearchDescription(item)}
                                                     </Text>
                                                 </View>
                                             </TouchableOpacity>
-                                        ))
-                                    )}
-                                </View>
-                            )}
-                        </ScrollView>
-                    ) : (
-                        <View style={{ flex: 1 }}>
-                            {/* ==================== 多Tab预渲染层叠 ==================== */}
-                            <View style={{ flex: 1 }}>
-                                {/* 设计师Tab */}
-                                <Animated.View style={[styles.tabPane, { opacity: designerOpacity, zIndex: activeCategory === 'designer' ? 1 : 0 }]} pointerEvents={activeCategory === 'designer' ? 'auto' : 'none'}>
-                                    <FlatList
-                                        data={designerListData}
-                                        renderItem={renderDesignerItem}
-                                        keyExtractor={(item) => String(item.id)}
-                                        stickyHeaderIndices={[1]}
-                                        ListHeaderComponent={
-                                            <View style={styles.categorySection}>
-                                                {SERVICE_CATEGORIES.map((cat) => (
-                                                    <CategoryTab
-                                                        key={cat.id}
-                                                        item={cat}
-                                                        isActive={activeCategory === cat.id}
-                                                        onPress={() => handleCategoryChange(cat.id)}
-                                                    />
-                                                ))}
-                                            </View>
-                                        }
-                                        refreshing={isDesignerLoading}
-                                        onRefresh={handleRefresh}
-                                        onEndReached={() => { if (activeCategory === 'designer') handleLoadMore(); }}
-                                        onEndReachedThreshold={0.2}
-                                        ListFooterComponent={loadingMoreDesigners ? <ActivityIndicator style={{ paddingVertical: spacing.md }} size="small" color={tokens.placeholder} /> : <View style={{ height: 100 }} />}
-                                        showsVerticalScrollIndicator={false}
-                                    />
-                                </Animated.View>
-
-                                {/* 施工Tab */}
-                                <Animated.View style={[styles.tabPane, { opacity: constructionOpacity, zIndex: activeCategory === 'construction' ? 1 : 0 }]} pointerEvents={activeCategory === 'construction' ? 'auto' : 'none'}>
-                                    <FlatList
-                                        data={workerListData}
-                                        renderItem={renderWorkerItem}
-                                        keyExtractor={(item) => String(item.id)}
-                                        stickyHeaderIndices={[1]}
-                                        ListHeaderComponent={
-                                            <View style={styles.categorySection}>
-                                                {SERVICE_CATEGORIES.map((cat) => (
-                                                    <CategoryTab
-                                                        key={cat.id}
-                                                        item={cat}
-                                                        isActive={activeCategory === cat.id}
-                                                        onPress={() => handleCategoryChange(cat.id)}
-                                                    />
-                                                ))}
-                                            </View>
-                                        }
-                                        refreshing={isWorkerLoading}
-                                        onRefresh={handleRefresh}
-                                        onEndReached={() => { if (activeCategory === 'construction') handleLoadMore(); }}
-                                        onEndReachedThreshold={0.2}
-                                        ListFooterComponent={loadingMoreWorkers ? <ActivityIndicator style={{ paddingVertical: spacing.md }} size="small" color={tokens.placeholder} /> : <View style={{ height: 100 }} />}
-                                        showsVerticalScrollIndicator={false}
-                                    />
-                                </Animated.View>
-
-                                {/* 主材Tab */}
-                                <Animated.View style={[styles.tabPane, { opacity: materialOpacity, zIndex: activeCategory === 'material' ? 1 : 0 }]} pointerEvents={activeCategory === 'material' ? 'auto' : 'none'}>
-                                    <FlatList
-                                        ref={materialFlatListRef}
-                                        data={materialListData}
-                                        renderItem={renderMaterialItem}
-                                        keyExtractor={(item) => String(item.id)}
-                                        stickyHeaderIndices={[1]}
-                                        ListHeaderComponent={
-                                            <View style={styles.categorySection}>
-                                                {SERVICE_CATEGORIES.map((cat) => (
-                                                    <CategoryTab
-                                                        key={cat.id}
-                                                        item={cat}
-                                                        isActive={activeCategory === cat.id}
-                                                        onPress={() => handleCategoryChange(cat.id)}
-                                                    />
-                                                ))}
-                                            </View>
-                                        }
-                                        refreshing={activeCategory === 'material' && isMaterialLoading && materialShops.length > 0}
-                                        onRefresh={handleRefresh}
-                                        onEndReached={() => { if (activeCategory === 'material') handleLoadMore(); }}
-                                        onEndReachedThreshold={0.2}
-                                        showsVerticalScrollIndicator={false}
-                                        ListFooterComponent={<View style={{ height: 100 }} />}
-                                    />
-                                </Animated.View>
+                                        ) : (
+                                            <ServiceProviderCard
+                                                key={`${item._type}-${item.id}-${index}`}
+                                                compact
+                                                imageUri={item._type === 'designer' ? item.avatar : (item.avatar || item.logo)}
+                                                name={item.name}
+                                                identityLabel={
+                                                    item._type === 'designer'
+                                                        ? (item.orgType === 'personal' ? '个人' : item.orgType === 'studio' ? '工作室' : '公司')
+                                                        : (item.type === 'company' ? '装修公司' : '工长')
+                                                }
+                                                metaItems={
+                                                    item._type === 'designer'
+                                                        ? [`${item.yearsExperience}年经验`, `${item.rating}分`, item.distance]
+                                                        : [
+                                                            item.type === 'company' && item.establishedYear
+                                                                ? `成立${new Date().getFullYear() - item.establishedYear}年`
+                                                                : `${item.yearsExperience || 0}年经验`,
+                                                            `${item.rating}分`,
+                                                            item.distance,
+                                                        ]
+                                                }
+                                                descriptor={item._type === 'designer' ? item.orgLabel : (item.type === 'company' ? `团队${item.teamSize || 0}人` : '施工服务')}
+                                                supportingText={item._type === 'designer' ? item.specialty : item.serviceLabel}
+                                                quote={item.quoteDisplay}
+                                                tags={item._type === 'construction' ? item.tags : []}
+                                                onPress={() => handleSearchResultPress(item)}
+                                            />
+                                        )
+                                    ))
+                                )}
                             </View>
-                        </View>
-                    )}
+                        )}
+                    </ScrollView>
+                ) : renderActiveList()}
 
-                </View>
-            </TouchableWithoutFeedback>
+                {showFloatingSortMenu ? (
+                    <TouchableOpacity style={styles.screenBackdrop} activeOpacity={1} onPress={handleBackdropPress} />
+                ) : null}
+
+                {showFloatingSortMenu ? (
+                    <View
+                        style={[
+                            styles.floatingSortDropdown,
+                            {
+                                top: filterButtonLayout.y + filterButtonLayout.height + 4,
+                                left: Math.max(spacing.md, filterButtonLayout.x),
+                                width: Math.max(filterButtonLayout.width + 100, 160),
+                            },
+                        ]}
+                    >
+                        {floatingSortOptions.map((option) => (
+                            <TouchableOpacity
+                                key={option.id}
+                                style={[styles.sortDropdownItem, floatingSortValue === option.id && styles.sortDropdownItemActive]}
+                                onPress={() => handleFloatingSortSelect(option.id)}
+                            >
+                                <Text style={[styles.sortDropdownText, floatingSortValue === option.id && styles.sortDropdownTextActive]}>{option.label}</Text>
+                                {floatingSortValue === option.id && <Check size={16} color={tokens.primary} />}
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                ) : null}
+            </View>
         </SafeAreaView>
     );
 };
@@ -1205,9 +918,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: tokens.white,
-    },
-    tabPane: {
-        ...StyleSheet.absoluteFillObject,
     },
     header: {
         flexDirection: 'row',
@@ -1763,14 +1473,30 @@ const styles = StyleSheet.create({
         fontSize: typography.body - 1,
         color: tokens.secondary,
     },
-    // 下拉菜单背景遮罩（用于点击关闭）
-    dropdownBackdrop: {
+    screenBackdrop: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
+        zIndex: 950,
+    },
+    floatingSortDropdown: {
+        position: 'absolute',
         zIndex: 1000,
+        backgroundColor: tokens.white,
+        borderRadius: radii.sm,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 12,
+            },
+            android: {
+                elevation: 8,
+            },
+        }),
     },
     // 主材筛选面板样式
     materialFilterPanel: {
@@ -1859,7 +1585,7 @@ function CategoryTab({ item, isActive, onPress }: { item: any, isActive: boolean
             useNativeDriver: false, // Color interpolation requires false
             easing: Easing.out(Easing.quad),
         }).start();
-    }, [isActive]);
+    }, [isActive, selectionAnim]);
 
     const handlePressIn = () => {
         Animated.spring(scaleAnim, {
@@ -1905,7 +1631,8 @@ function CategoryTab({ item, isActive, onPress }: { item: any, isActive: boolean
     });
 
     return (
-        <TouchableWithoutFeedback
+        <TouchableOpacity
+            activeOpacity={1}
             onPress={onPress}
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
@@ -1939,7 +1666,7 @@ function CategoryTab({ item, isActive, onPress }: { item: any, isActive: boolean
                     {item.title}
                 </Animated.Text>
             </Animated.View>
-        </TouchableWithoutFeedback>
+        </TouchableOpacity>
     );
 }
 

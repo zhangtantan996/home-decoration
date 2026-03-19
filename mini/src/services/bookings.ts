@@ -18,7 +18,7 @@ export interface CreateBookingPayload {
 export interface BookingItem {
   id: number;
   providerId: number;
-  providerType: number;
+  providerType: string | number;
   address: string;
   area: number;
   renovationType?: string;
@@ -31,6 +31,24 @@ export interface BookingItem {
   intentFeePaid: boolean;
   proposalId?: number;
   createdAt?: string;
+}
+
+export interface BookingProviderSummary {
+  id: number;
+  name?: string;
+  avatar?: string;
+  rating?: number;
+  completedCnt?: number;
+  yearsExperience?: number;
+  specialty?: string;
+  verified?: boolean;
+  providerType?: string | number;
+}
+
+export interface BookingDetailResponse {
+  booking: BookingItem;
+  provider?: BookingProviderSummary;
+  proposalId?: number;
 }
 
 export async function createBooking(payload: CreateBookingPayload) {
@@ -50,7 +68,7 @@ export async function listBookings(paid?: boolean) {
 }
 
 export async function getBookingDetail(id: number) {
-  return request<BookingItem & { provider?: Record<string, unknown> }>({
+  return request<BookingDetailResponse>({
     url: `/bookings/${id}`
   });
 }

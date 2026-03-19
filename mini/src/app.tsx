@@ -4,44 +4,65 @@ import Taro from '@tarojs/taro';
 import '@nutui/nutui-react-taro/dist/style.css';
 import './styles/base.scss';
 import './app.scss';
-import TinodeService from '@/services/TinodeService';
+import { loadTinodeService } from '@/services/loadTinodeService';
 import { useAuthStore } from '@/store/auth';
 import { useChatStore } from '@/store/chat';
 
 function App({ children }: PropsWithChildren<any>) {
   useEffect(() => {
-    Taro.onNetworkStatusChange(({ isConnected }) => {
-      if (!isConnected) {
-        Taro.showToast({ title: '网络不可用', icon: 'none' });
-      }
-    });
+    const canWatchNetwork = typeof Taro.onNetworkStatusChange === 'function';
+    if (canWatchNetwork) {
+      Taro.onNetworkStatusChange(({ isConnected }) => {
+        if (!isConnected) {
+          Taro.showToast({ title: '网络不可用', icon: 'none' });
+        }
+      });
+    }
 
     const handleAppShow = () => {
       const auth = useAuthStore.getState();
       if (auth.token && auth.tinodeToken) {
-        TinodeService.reconnect(auth.tinodeToken).catch((error) => {
-          console.warn('[Tinode] reconnect failed', error);
-        });
+        loadTinodeService()
+          .then((TinodeService) => TinodeService.reconnect(auth.tinodeToken))
+          .catch((error) => {
+            console.warn('[Tinode] reconnect failed', error);
+          });
       }
     };
 
     const handleAppHide = () => {
-      TinodeService.disconnect();
+      loadTinodeService()
+        .then((TinodeService) => TinodeService.disconnect())
+        .catch(() => {
+          // ignore
+        });
     };
 
-    Taro.onAppShow(handleAppShow);
-    Taro.onAppHide(handleAppHide);
+    if (typeof Taro.onAppShow === 'function') {
+      Taro.onAppShow(handleAppShow);
+    }
+    if (typeof Taro.onAppHide === 'function') {
+      Taro.onAppHide(handleAppHide);
+    }
 
     const unsubscribeAuth = useAuthStore.subscribe((state, prevState) => {
       if (prevState.token && !state.token) {
-        TinodeService.disconnect();
+        loadTinodeService()
+          .then((TinodeService) => TinodeService.disconnect())
+          .catch(() => {
+            // ignore
+          });
         useChatStore.getState().clear();
       }
     });
 
     return () => {
-      Taro.offAppShow(handleAppShow);
-      Taro.offAppHide(handleAppHide);
+      if (typeof Taro.offAppShow === 'function') {
+        Taro.offAppShow(handleAppShow);
+      }
+      if (typeof Taro.offAppHide === 'function') {
+        Taro.offAppHide(handleAppHide);
+      }
       unsubscribeAuth();
     };
   }, []);

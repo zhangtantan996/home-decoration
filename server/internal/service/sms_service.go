@@ -149,21 +149,6 @@ func riskDimensions(phone, ipAddress, purpose string) []riskDimension {
 	return dimensions
 }
 
-func riskThreshold(dimension string) int {
-	switch dimension {
-	case riskDimensionIP:
-		return 12
-	case riskDimensionPhone:
-		return 6
-	case riskDimensionCombo:
-		return 4
-	case riskDimensionPurpose:
-		return 3
-	default:
-		return 5
-	}
-}
-
 func penaltyWindowForStrike(strike int64) time.Duration {
 	switch {
 	case strike <= 1:
@@ -224,13 +209,13 @@ func (s *SMSService) checkRiskPenaltyWithRedis(ctx context.Context, rdb *redis.C
 	return nil
 }
 
-func (s *SMSService) checkRiskWindowWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string) error {
+func (s *SMSService) checkRiskWindowWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string, tier SMSRiskTier) error {
 	for _, dim := range riskDimensions(phone, ipAddress, purpose) {
 		count, err := rdb.Get(ctx, smsRiskWindowKey(dim.name, dim.target)).Int()
 		if err != nil && !errors.Is(err, redis.Nil) {
 			continue
 		}
-		if count >= riskThreshold(dim.name) {
+		if count >= smsRiskThresholdForDimension(tier, dim.name) {
 			s.applyPenaltyWithRedis(ctx, rdb, dim)
 			return errors.New("请求过于频繁，已触发风控限制")
 		}
@@ -238,7 +223,7 @@ func (s *SMSService) checkRiskWindowWithRedis(ctx context.Context, rdb *redis.Cl
 	return nil
 }
 
-func (s *SMSService) recordRiskWindowWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string) {
+func (s *SMSService) recordRiskWindowWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string, tier SMSRiskTier) {
 	for _, dim := range riskDimensions(phone, ipAddress, purpose) {
 		key := smsRiskWindowKey(dim.name, dim.target)
 		count, err := rdb.Incr(ctx, key).Result()
@@ -248,28 +233,29 @@ func (s *SMSService) recordRiskWindowWithRedis(ctx context.Context, rdb *redis.C
 		if count == 1 {
 			_ = rdb.Expire(ctx, key, defaultSMSRiskWindow).Err()
 		}
-		if int(count) > riskThreshold(dim.name) {
+		if int(count) > smsRiskThresholdForDimension(tier, dim.name) {
 			s.applyPenaltyWithRedis(ctx, rdb, dim)
 		}
 	}
 }
 
 // CanSendCode 检查是否可以发送验证码
-func (s *SMSService) CanSendCode(phone, ipAddress, purpose string) error {
+func (s *SMSService) CanSendCode(phone, ipAddress, purpose string, tier SMSRiskTier) error {
 	phone = strings.TrimSpace(phone)
 	ipAddress = strings.TrimSpace(ipAddress)
 	purpose = strings.TrimSpace(purpose)
+	tier = normalizeSMSRiskTier(tier)
 
 	if rdb := repository.GetRedis(); rdb != nil {
 		ctx, cancel := repository.RedisContext()
 		defer cancel()
-		return s.canSendCodeWithRedis(ctx, rdb, phone, ipAddress, purpose)
+		return s.canSendCodeWithRedis(ctx, rdb, phone, ipAddress, purpose, tier)
 	}
 
-	return s.canSendCodeInMemory(phone, ipAddress, purpose)
+	return s.canSendCodeInMemory(phone, ipAddress, purpose, tier)
 }
 
-func (s *SMSService) canSendCodeWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string) error {
+func (s *SMSService) canSendCodeWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string, tier SMSRiskTier) error {
 	phoneKey := smsPhoneCooldownKey(phone)
 	ttl, err := rdb.TTL(ctx, phoneKey).Result()
 	if err == nil && ttl > 0 {
@@ -302,7 +288,7 @@ func (s *SMSService) canSendCodeWithRedis(ctx context.Context, rdb *redis.Client
 		if err := s.checkRiskPenaltyWithRedis(ctx, rdb, phone, ipAddress, purpose); err != nil {
 			return err
 		}
-		if err := s.checkRiskWindowWithRedis(ctx, rdb, phone, ipAddress, purpose); err != nil {
+		if err := s.checkRiskWindowWithRedis(ctx, rdb, phone, ipAddress, purpose, tier); err != nil {
 			return err
 		}
 	}
@@ -310,7 +296,7 @@ func (s *SMSService) canSendCodeWithRedis(ctx context.Context, rdb *redis.Client
 	return nil
 }
 
-func (s *SMSService) canSendCodeInMemory(phone, ipAddress, purpose string) error {
+func (s *SMSService) canSendCodeInMemory(phone, ipAddress, purpose string, tier SMSRiskTier) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -366,7 +352,7 @@ func (s *SMSService) canSendCodeInMemory(phone, ipAddress, purpose string) error
 				}
 			}
 			s.windowRecords[dimKey] = validEvents
-			if len(validEvents) >= riskThreshold(dim.name) {
+			if len(validEvents) >= smsRiskThresholdForDimension(tier, dim.name) {
 				s.applyPenaltyInMemory(dim, now)
 				return errors.New("请求过于频繁，已触发风控限制")
 			}
@@ -377,22 +363,23 @@ func (s *SMSService) canSendCodeInMemory(phone, ipAddress, purpose string) error
 }
 
 // RecordSent 记录发送成功
-func (s *SMSService) RecordSent(phone, ipAddress, purpose string) {
+func (s *SMSService) RecordSent(phone, ipAddress, purpose string, tier SMSRiskTier) {
 	phone = strings.TrimSpace(phone)
 	ipAddress = strings.TrimSpace(ipAddress)
 	purpose = strings.TrimSpace(purpose)
+	tier = normalizeSMSRiskTier(tier)
 
 	if rdb := repository.GetRedis(); rdb != nil {
 		ctx, cancel := repository.RedisContext()
 		defer cancel()
-		s.recordSentWithRedis(ctx, rdb, phone, ipAddress, purpose)
+		s.recordSentWithRedis(ctx, rdb, phone, ipAddress, purpose, tier)
 		return
 	}
 
-	s.recordSentInMemory(phone, ipAddress, purpose)
+	s.recordSentInMemory(phone, ipAddress, purpose, tier)
 }
 
-func (s *SMSService) recordSentWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string) {
+func (s *SMSService) recordSentWithRedis(ctx context.Context, rdb *redis.Client, phone, ipAddress, purpose string, tier SMSRiskTier) {
 	_ = rdb.Set(ctx, smsPhoneCooldownKey(phone), "1", defaultSMSPhoneCooldown).Err()
 
 	now := time.Now()
@@ -411,11 +398,11 @@ func (s *SMSService) recordSentWithRedis(ctx context.Context, rdb *redis.Client,
 	}
 
 	if smsRiskEnabled() {
-		s.recordRiskWindowWithRedis(ctx, rdb, phone, ipAddress, purpose)
+		s.recordRiskWindowWithRedis(ctx, rdb, phone, ipAddress, purpose, tier)
 	}
 }
 
-func (s *SMSService) recordSentInMemory(phone, ipAddress, purpose string) {
+func (s *SMSService) recordSentInMemory(phone, ipAddress, purpose string, tier SMSRiskTier) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -454,7 +441,7 @@ func (s *SMSService) recordSentInMemory(phone, ipAddress, purpose string) {
 			}
 			validEvents = append(validEvents, now)
 			s.windowRecords[dimKey] = validEvents
-			if len(validEvents) > riskThreshold(dim.name) {
+			if len(validEvents) > smsRiskThresholdForDimension(tier, dim.name) {
 				s.applyPenaltyInMemory(dim, now)
 			}
 		}

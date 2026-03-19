@@ -6,10 +6,25 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // OrderService 订单服务
 type OrderService struct{}
+
+// UserOrderListItem 用户端订单列表项
+type UserOrderListItem struct {
+	ID            uint64     `json:"id"`
+	OrderNo       string     `json:"orderNo"`
+	Status        int8       `json:"status"`
+	Amount        float64    `json:"amount"`
+	ProviderName  string     `json:"providerName"`
+	Address       string     `json:"address"`
+	NextPayableAt *time.Time `json:"nextPayableAt"`
+	ProposalID    uint64     `json:"proposalId"`
+	ProjectID     uint64     `json:"projectId"`
+}
 
 var configService = &ConfigService{}
 
@@ -106,7 +121,7 @@ func (s *OrderService) GenerateBill(userID uint64, input *GenerateBillInput) (*B
 	var paymentPlans []model.PaymentPlan
 	paymentType := input.PaymentType
 	if paymentType == "" {
-		paymentType = "milestone" // 默认分期
+		paymentType = configService.GetConstructionPaymentMode()
 	}
 
 	if paymentType == "milestone" {
@@ -234,15 +249,17 @@ func (s *OrderService) PayOrder(userID, orderID uint64) (*model.Order, error) {
 				if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
 					_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
 
-					// 创建收入记录
-					_, _ = incomeService.CreateIncome(&CreateIncomeInput{
-						ProviderID:  provider.ID,
-						OrderID:     order.ID,
-						BookingID:   booking.ID,
-						Type:        order.OrderType,
-						Amount:      order.TotalAmount - order.Discount,
-						Description: "订单支付",
-					})
+					// 施工订单不预创建收入，等里程碑验收后T+3释放
+					if order.OrderType != model.OrderTypeConstruction {
+						_, _ = incomeService.CreateIncome(&CreateIncomeInput{
+							ProviderID:  provider.ID,
+							OrderID:     order.ID,
+							BookingID:   booking.ID,
+							Type:        order.OrderType,
+							Amount:      order.TotalAmount - order.Discount,
+							Description: "订单支付",
+						})
+					}
 				}
 			}
 		}
@@ -253,15 +270,17 @@ func (s *OrderService) PayOrder(userID, orderID uint64) (*model.Order, error) {
 			if err := repository.DB.First(&provider, project.ProviderID).Error; err == nil {
 				_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
 
-				// 创建收入记录
-				_, _ = incomeService.CreateIncome(&CreateIncomeInput{
-					ProviderID:  provider.ID,
-					OrderID:     order.ID,
-					BookingID:   0, // 无关联预约
-					Type:        order.OrderType,
-					Amount:      order.TotalAmount - order.Discount,
-					Description: "订单支付",
-				})
+				// 施工订单不预创建收入，等里程碑验收后T+3释放
+				if order.OrderType != model.OrderTypeConstruction {
+					_, _ = incomeService.CreateIncome(&CreateIncomeInput{
+						ProviderID:  provider.ID,
+						OrderID:     order.ID,
+						BookingID:   0, // 无关联预约
+						Type:        order.OrderType,
+						Amount:      order.TotalAmount - order.Discount,
+						Description: "订单支付",
+					})
+				}
 			}
 		}
 	}
@@ -314,57 +333,66 @@ func (s *OrderService) CancelOrder(userID, orderID uint64) error {
 
 // PayPaymentPlan 支付分期款项
 func (s *OrderService) PayPaymentPlan(userID uint64, planID uint64) (*model.PaymentPlan, error) {
-	var plan model.PaymentPlan
-	if err := repository.DB.First(&plan, planID).Error; err != nil {
-		return nil, errors.New("支付计划不存在")
-	}
+	var updatedPlan model.PaymentPlan
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var plan model.PaymentPlan
+		if err := tx.First(&plan, planID).Error; err != nil {
+			return errors.New("支付计划不存在")
+		}
 
-	var order model.Order
-	if err := repository.DB.First(&order, plan.OrderID).Error; err != nil {
-		return nil, errors.New("订单不存在")
-	}
+		var order model.Order
+		if err := tx.First(&order, plan.OrderID).Error; err != nil {
+			return errors.New("订单不存在")
+		}
 
-	// 验证项目归属
-	var project model.Project
-	if err := repository.DB.First(&project, order.ProjectID).Error; err != nil {
-		return nil, errors.New("项目不存在")
-	}
-	if project.OwnerID != userID {
-		return nil, errors.New("无权操作")
-	}
+		var project model.Project
+		if err := tx.First(&project, order.ProjectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		if project.OwnerID != userID {
+			return errors.New("无权操作")
+		}
 
-	if plan.Status != 0 {
-		return nil, errors.New("该期款项已支付")
-	}
+		if plan.Status != 0 {
+			return errors.New("该期款项已支付")
+		}
 
-	// 检查前置期是否已支付
-	if plan.Seq > 1 {
-		var prevPlan model.PaymentPlan
-		if err := repository.DB.Where("order_id = ? AND seq = ?", plan.OrderID, plan.Seq-1).First(&prevPlan).Error; err == nil {
-			if prevPlan.Status == 0 {
-				return nil, errors.New("请先支付上一期款项")
+		if plan.Seq > 1 {
+			var prevPlan model.PaymentPlan
+			if err := tx.Where("order_id = ? AND seq = ?", plan.OrderID, plan.Seq-1).First(&prevPlan).Error; err == nil && prevPlan.Status == 0 {
+				return errors.New("请先支付上一期款项")
 			}
 		}
-	}
 
-	// 模拟支付成功
-	now := time.Now()
-	plan.Status = 1
-	plan.PaidAt = &now
+		now := time.Now()
+		plan.Status = 1
+		plan.PaidAt = &now
+		if err := tx.Save(&plan).Error; err != nil {
+			return err
+		}
 
-	if err := repository.DB.Save(&plan).Error; err != nil {
+		order.PaidAmount += plan.Amount
+		if order.PaidAmount >= order.TotalAmount {
+			order.Status = model.OrderStatusPaid
+			order.PaidAt = &now
+		}
+		if err := tx.Save(&order).Error; err != nil {
+			return err
+		}
+
+		if order.OrderType == model.OrderTypeConstruction && project.PaymentPaused {
+			if err := (&ProjectService{}).resumeProjectExecutionAfterPaymentTx(tx, &project); err != nil {
+				return err
+			}
+		}
+
+		return tx.First(&updatedPlan, plan.ID).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	// 更新订单已付金额
-	order.PaidAmount += plan.Amount
-	if order.PaidAmount >= order.TotalAmount {
-		order.Status = model.OrderStatusPaid
-		order.PaidAt = &now
-	}
-	repository.DB.Save(&order)
-
-	return &plan, nil
+	return &updatedPlan, nil
 }
 
 // GetOrdersByProject 获取项目的所有订单
@@ -383,6 +411,136 @@ func (s *OrderService) GetPaymentPlansByOrder(orderID uint64) ([]model.PaymentPl
 		return nil, err
 	}
 	return plans, nil
+}
+
+// ListOrdersForUser 获取用户订单列表
+func (s *OrderService) ListOrdersForUser(userID uint64, status *int8, page, pageSize int) ([]UserOrderListItem, int64, error) {
+	if userID == 0 {
+		return nil, 0, errors.New("无效用户")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
+	var bookingIDs []uint64
+	if err := repository.DB.Model(&model.Booking{}).
+		Where("user_id = ?", userID).
+		Pluck("id", &bookingIDs).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var projectIDs []uint64
+	if err := repository.DB.Model(&model.Project{}).
+		Where("owner_id = ?", userID).
+		Pluck("id", &projectIDs).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var proposalIDs []uint64
+	if len(bookingIDs) > 0 {
+		if err := repository.DB.Model(&model.Proposal{}).
+			Where("booking_id IN ?", bookingIDs).
+			Pluck("id", &proposalIDs).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+
+	query := repository.DB.Model(&model.Order{})
+	switch {
+	case len(bookingIDs) > 0 && len(projectIDs) > 0 && len(proposalIDs) > 0:
+		query = query.Where("booking_id IN ? OR project_id IN ? OR proposal_id IN ?", bookingIDs, projectIDs, proposalIDs)
+	case len(bookingIDs) > 0 && len(projectIDs) > 0:
+		query = query.Where("booking_id IN ? OR project_id IN ?", bookingIDs, projectIDs)
+	case len(bookingIDs) > 0 && len(proposalIDs) > 0:
+		query = query.Where("booking_id IN ? OR proposal_id IN ?", bookingIDs, proposalIDs)
+	case len(projectIDs) > 0 && len(proposalIDs) > 0:
+		query = query.Where("project_id IN ? OR proposal_id IN ?", projectIDs, proposalIDs)
+	case len(bookingIDs) > 0:
+		query = query.Where("booking_id IN ?", bookingIDs)
+	case len(projectIDs) > 0:
+		query = query.Where("project_id IN ?", projectIDs)
+	case len(proposalIDs) > 0:
+		query = query.Where("proposal_id IN ?", proposalIDs)
+	default:
+		return []UserOrderListItem{}, 0, nil
+	}
+
+	if status != nil {
+		query = query.Where("status = ?", *status)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var orders []model.Order
+	if err := query.Order("created_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&orders).Error; err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]UserOrderListItem, 0, len(orders))
+	for _, order := range orders {
+		providerName, address, err := s.resolveOrderContext(&order)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		items = append(items, UserOrderListItem{
+			ID:            order.ID,
+			OrderNo:       order.OrderNo,
+			Status:        order.Status,
+			Amount:        order.TotalAmount - order.Discount,
+			ProviderName:  providerName,
+			Address:       address,
+			NextPayableAt: order.ExpireAt,
+			ProposalID:    order.ProposalID,
+			ProjectID:     order.ProjectID,
+		})
+	}
+
+	return items, total, nil
+}
+
+// GetPaymentPlansForUser 获取用户可访问订单的支付计划
+func (s *OrderService) GetPaymentPlansForUser(userID, orderID uint64) ([]model.PaymentPlan, error) {
+	var order model.Order
+	if err := repository.DB.First(&order, orderID).Error; err != nil {
+		return nil, errors.New("订单不存在")
+	}
+
+	if order.ProjectID > 0 {
+		var project model.Project
+		if err := repository.DB.First(&project, order.ProjectID).Error; err != nil {
+			return nil, errors.New("项目不存在")
+		}
+		if project.OwnerID != userID {
+			return nil, errors.New("无权查看此订单")
+		}
+	} else if order.ProposalID > 0 {
+		var proposal model.Proposal
+		if err := repository.DB.First(&proposal, order.ProposalID).Error; err != nil {
+			return nil, errors.New("关联方案不存在")
+		}
+
+		var booking model.Booking
+		if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
+			return nil, errors.New("关联预约不存在")
+		}
+		if booking.UserID != userID {
+			return nil, errors.New("无权查看此订单")
+		}
+	} else {
+		return nil, errors.New("订单数据异常")
+	}
+
+	return s.GetPaymentPlansByOrder(order.ID)
 }
 
 // generateOrderNo 生成订单号
@@ -409,4 +567,87 @@ func (s *OrderService) CanAccessDesignFiles(userID, projectID uint64) (bool, err
 	}
 
 	return designOrder.Status == model.OrderStatusPaid, nil
+}
+
+func (s *OrderService) resolveOrderContext(order *model.Order) (string, string, error) {
+	booking, project, err := s.resolveBookingAndProject(order)
+	if err != nil {
+		return "", "", err
+	}
+
+	var providerID uint64
+	address := ""
+	if booking != nil {
+		providerID = booking.ProviderID
+		address = booking.Address
+	}
+	if project != nil {
+		if providerID == 0 {
+			providerID = project.ProviderID
+		}
+		if address == "" {
+			address = project.Address
+		}
+	}
+
+	providerName, err := s.getProviderName(providerID)
+	if err != nil {
+		return "", "", err
+	}
+
+	return providerName, address, nil
+}
+
+func (s *OrderService) resolveBookingAndProject(order *model.Order) (*model.Booking, *model.Project, error) {
+	var booking *model.Booking
+	var project *model.Project
+
+	if order.BookingID > 0 {
+		record := &model.Booking{}
+		if err := repository.DB.First(record, order.BookingID).Error; err != nil {
+			return nil, nil, errors.New("关联预约不存在")
+		}
+		booking = record
+	}
+
+	if order.ProjectID > 0 {
+		record := &model.Project{}
+		if err := repository.DB.First(record, order.ProjectID).Error; err != nil {
+			return nil, nil, errors.New("关联项目不存在")
+		}
+		project = record
+	}
+
+	if booking == nil && order.ProposalID > 0 {
+		var proposal model.Proposal
+		if err := repository.DB.First(&proposal, order.ProposalID).Error; err != nil {
+			return nil, nil, errors.New("关联方案不存在")
+		}
+
+		record := &model.Booking{}
+		if err := repository.DB.First(record, proposal.BookingID).Error; err != nil {
+			return nil, nil, errors.New("关联预约不存在")
+		}
+		booking = record
+	}
+
+	return booking, project, nil
+}
+
+func (s *OrderService) getProviderName(providerID uint64) (string, error) {
+	if providerID == 0 {
+		return "", nil
+	}
+
+	var provider model.Provider
+	if err := repository.DB.First(&provider, providerID).Error; err != nil {
+		return "", errors.New("关联服务商不存在")
+	}
+
+	var user model.User
+	if err := repository.DB.First(&user, provider.UserID).Error; err == nil && user.Nickname != "" {
+		return user.Nickname, nil
+	}
+
+	return provider.CompanyName, nil
 }

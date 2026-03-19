@@ -1,0 +1,32 @@
+{
+  "name": "merchant",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.1.0",
+    "@tencentcloud/chat": "^3.6.2",
+    "antd": "^5.29.2",
+    "antd-img-crop": "^4.27.0",
+    "axios": "^1.13.2",
+    "dayjs": "^1.11.18",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "^7.10.1",
+    "tinode-sdk": "^0.25.1",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^5.1.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4"
+  }
+}

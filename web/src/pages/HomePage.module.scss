@@ -1,0 +1,16 @@
+.hero {
+  display: grid;
+  gap: 20px;
+}
+
+.heroActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.providerStack {
+  display: grid;
+  gap: 18px;
+}

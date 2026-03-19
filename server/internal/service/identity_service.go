@@ -723,13 +723,12 @@ func (s *IdentityService) getMerchantApplicationDetails(userID uint64, appliedAt
 	}
 
 	// 解析 JSON 字段
-	var serviceAreaCodes, styles, workTypes, highlightTags []string
+	var serviceAreaCodes, styles, highlightTags []string
 	var pricing map[string]float64
 	var portfolioCases []PortfolioCaseDisplay
 
 	json.Unmarshal([]byte(app.ServiceArea), &serviceAreaCodes)
 	json.Unmarshal([]byte(app.Styles), &styles)
-	json.Unmarshal([]byte(app.WorkTypes), &workTypes)
 	json.Unmarshal([]byte(app.HighlightTags), &highlightTags)
 	json.Unmarshal([]byte(app.PricingJSON), &pricing)
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
@@ -759,7 +758,6 @@ func (s *IdentityService) getMerchantApplicationDetails(userID uint64, appliedAt
 		TeamSize:         app.TeamSize,
 		OfficeAddress:    app.OfficeAddress,
 		YearsExperience:  app.YearsExperience,
-		WorkTypes:        workTypes,
 		ServiceArea:      serviceAreaNames,
 		ServiceAreaCodes: serviceAreaCodes,
 		Styles:           styles,

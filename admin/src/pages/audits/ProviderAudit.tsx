@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
+import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -7,19 +7,13 @@ import {
     type AdminMerchantApplicationDetail,
     type AdminMerchantApplicationListItem,
 } from '../../services/api';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
 import MerchantApplicationDetail from './components/MerchantApplicationDetail';
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待审核', color: 'orange' },
-    1: { text: '已通过', color: 'green' },
-    2: { text: '已拒绝', color: 'red' },
-};
-
-const roleMap: Record<string, { text: string; color: string }> = {
-    designer: { text: '设计师', color: 'purple' },
-    company: { text: '装修公司', color: 'blue' },
-    foreman: { text: '工长', color: 'gold' },
-};
+import AuditStatusSummary from './components/AuditStatusSummary';
+import VisibilityStatusPanel from './components/VisibilityStatusPanel';
+import AuditDetailSection from './components/AuditDetailSection';
+import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS, PROVIDER_ROLE_META } from '../../constants/statuses';
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -153,25 +147,25 @@ const ProviderAudit: React.FC = () => {
     const columns: ColumnsType<AdminMerchantApplicationListItem> = [
         { title: 'ID', dataIndex: 'id', width: 80 },
         {
-            title: '角色类型',
+            title: '商家角色',
             dataIndex: 'role',
             render: (value: string) => {
-                const config = roleMap[value];
+                const config = PROVIDER_ROLE_META[value];
                 return <Tag color={config?.color || 'default'}>{config?.text || value || '-'}</Tag>;
             },
         },
         {
-            title: '申请主体',
+            title: '主体名称',
             key: 'displayName',
             render: (_, record) => record.companyName || record.realName || '-',
         },
-        { title: '联系人', dataIndex: 'realName' },
+        { title: '负责人', dataIndex: 'realName' },
         { title: '手机号', dataIndex: 'phone' },
         {
             title: '状态',
             dataIndex: 'status',
             render: (value: number) => {
-                const config = statusMap[value];
+                const config = APPLICATION_AUDIT_STATUS_META[value];
                 return <Tag color={config?.color || 'default'}>{config?.text || value}</Tag>;
             },
         },
@@ -202,18 +196,19 @@ const ProviderAudit: React.FC = () => {
     ];
 
     return (
-        <Card title="商家入驻审核">
-            <Space style={{ marginBottom: 16 }} wrap>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="服务类商家入驻审核"
+                description="处理设计师、工长和装修公司入驻申请，查看资料并完成审批。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 <Select
                     value={statusFilter}
                     onChange={setStatusFilter}
                     style={{ width: 150 }}
-                    options={[
-                        { label: '待审核', value: 0 },
-                        { label: '已通过', value: 1 },
-                        { label: '已拒绝', value: 2 },
-                        { label: '全部', value: 'all' },
-                    ]}
+                    options={APPLICATION_AUDIT_STATUS_OPTIONS}
                 />
                 <Input.Search
                     allowClear
@@ -230,63 +225,109 @@ const ProviderAudit: React.FC = () => {
                     }}
                 />
                 <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>刷新</Button>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                rowKey="id"
-                loading={loading}
-                dataSource={items}
-                columns={columns}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (value) => `共 ${value} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={items}
+                    columns={columns}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (value) => `共 ${value} 条`,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title="入驻申请详情"
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
-                footer={null}
                 width={960}
+                bodyStyle={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}
+                footer={
+                    currentItem?.status === 0
+                        ? [
+                            <Button key="approve" type="primary" icon={<CheckCircleOutlined />} onClick={() => void approve(currentItem)}>
+                                审核通过
+                            </Button>,
+                            <Button
+                                key="reject"
+                                danger
+                                icon={<CloseCircleOutlined />}
+                                onClick={() => openReject(currentItem)}
+                            >
+                                驳回申请
+                            </Button>,
+                        ]
+                        : [
+                            <Button key="close" onClick={() => setDetailVisible(false)}>
+                                关闭
+                            </Button>,
+                        ]
+                }
             >
                 {detailLoading && <div style={{ marginBottom: 12 }}>加载详情中...</div>}
                 {currentItem && (
-                    <>
-                        <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
-                            <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
-                            <Descriptions.Item label="状态">
-                                <Tag color={statusMap[currentItem.status]?.color || 'default'}>
-                                    {statusMap[currentItem.status]?.text || currentItem.status}
-                                </Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="申请主体">
-                                {currentItem.companyName || currentItem.realName || '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="申请时间">{formatDateTime(currentItem.createdAt)}</Descriptions.Item>
-                            <Descriptions.Item label="审核人">{currentItem.auditedBy || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="审核时间">{formatDateTime(currentItem.auditedAt)}</Descriptions.Item>
-                            {currentItem.rejectReason && (
-                                <Descriptions.Item label="驳回原因" span={2}>{currentItem.rejectReason}</Descriptions.Item>
-                            )}
-                        </Descriptions>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <AuditStatusSummary
+                            visibility={currentItem.visibility}
+                            rejectResubmittable={currentItem.actions?.rejectResubmittable}
+                            legacyInfo={currentItem.legacyInfo}
+                        />
 
-                        <MerchantApplicationDetail details={currentItem} />
+                        <AuditDetailSection title="申请单摘要">
+                            <Descriptions bordered column={2} size="small">
+                                <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
+                                <Descriptions.Item label="状态">
+                                    <Tag color={APPLICATION_AUDIT_STATUS_META[currentItem.status]?.color || 'default'}>
+                                        {APPLICATION_AUDIT_STATUS_META[currentItem.status]?.text || currentItem.status}
+                                    </Tag>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="主体名称">
+                                    <Tooltip title={currentItem.companyName || currentItem.realName || '-'}>
+                                        <span
+                                            style={{
+                                                display: 'inline-block',
+                                                maxWidth: 240,
+                                                overflow: 'hidden',
+                                                whiteSpace: 'nowrap',
+                                                textOverflow: 'ellipsis',
+                                                verticalAlign: 'bottom',
+                                            }}
+                                        >
+                                            {currentItem.companyName || currentItem.realName || '-'}
+                                        </span>
+                                    </Tooltip>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="负责人">{currentItem.realName || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="申请时间">{formatDateTime(currentItem.createdAt)}</Descriptions.Item>
+                                <Descriptions.Item label="审核人">{currentItem.auditedBy || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="审核时间">{formatDateTime(currentItem.auditedAt)}</Descriptions.Item>
+                                {currentItem.rejectReason && (
+                                    <Descriptions.Item label="驳回原因" span={2}>
+                                        <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                            {currentItem.rejectReason}
+                                        </div>
+                                    </Descriptions.Item>
+                                )}
+                            </Descriptions>
+                        </AuditDetailSection>
 
-                        {currentItem.status === 0 && (
-                            <Space style={{ marginTop: 16 }}>
-                                <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => void approve(currentItem)}>
-                                    审核通过
-                                </Button>
-                                <Button danger icon={<CloseCircleOutlined />} onClick={() => openReject(currentItem)}>
-                                    驳回申请
-                                </Button>
-                            </Space>
-                        )}
-                    </>
+                        <AuditDetailSection title="可见性解释">
+                            <VisibilityStatusPanel visibility={currentItem.visibility} legacyInfo={currentItem.legacyInfo} />
+                        </AuditDetailSection>
+
+                        <AuditDetailSection title="入驻信息详情">
+                            <MerchantApplicationDetail details={currentItem} />
+                        </AuditDetailSection>
+                    </Space>
                 )}
             </Modal>
 
@@ -306,7 +347,7 @@ const ProviderAudit: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </Card>
+        </div>
     );
 };
 

@@ -1,47 +1,134 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Table, Card, Select, Tag, Button, Space, message, Switch, Descriptions, Modal, Form, Input, InputNumber } from 'antd';
+import { Table, Card, Select, Tag, Button, Space, message, Switch, Descriptions, Modal, Form, Input, InputNumber, Tooltip, Typography } from 'antd';
 import { ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { adminProviderApi } from '../../services/api';
+import { adminProviderApi, type AdminProviderListItem } from '../../services/api';
 import { PermissionWrapper } from '../../components/PermissionWrapper';
+import PageHeader from '../../components/PageHeader';
+import ToolbarCard from '../../components/ToolbarCard';
+import AuditStatusSummary from '../audits/components/AuditStatusSummary';
+import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
+import {
+    ADMIN_PROVIDER_STATUS_META,
+    ADMIN_PROVIDER_STATUS_OPTIONS,
+    ADMIN_PROVIDER_TYPE_META,
+    ADMIN_PROVIDER_TYPE_OPTIONS,
+    LEGACY_PATH_BADGE,
+    PROVIDER_SUBTYPE_LABELS,
+    PUBLIC_VISIBILITY_META,
+    SETTLED_STATUS_META,
+    SETTLED_FILTER_OPTIONS,
+    VERIFIED_FILTER_OPTIONS,
+    VERIFICATION_STATUS_META,
+} from '../../constants/statuses';
 
-interface Provider {
-    id: number;
-    userId: number;
-    providerType: number;
-    subType: string;
-    companyName: string;
-    rating: number;
-    verified: boolean;
-    status: number;
-    specialty: string;
-    yearsExperience: number;
-    createdAt: string;
-    restoreRate?: number;
-    budgetControl?: number;
-    // 移动端详情页字段
-    workTypes: string;
-    priceMin: number;
-    priceMax: number;
-    priceUnit: string;
-    coverImage: string;
-    serviceIntro: string;
-    teamSize: number;
-    establishedYear: number;
-    certifications: string;
-    serviceArea: string;
-}
+interface Provider extends AdminProviderListItem {}
 
-const providerTypeMap: Record<number, { text: string; color: string }> = {
-    1: { text: '设计师', color: 'blue' },
-    2: { text: '装修公司', color: 'green' },
-    3: { text: '工长', color: 'orange' },
+const { Text } = Typography;
+
+const getProviderDisplayName = (provider: Provider) => {
+    if (provider.subType === 'personal') {
+        return provider.realName || provider.companyName || '-';
+    }
+    return provider.companyName || provider.realName || '-';
 };
 
-const subTypeMap: Record<string, string> = {
-    personal: '个人',
-    studio: '工作室',
-    company: '公司',
+const getProviderPrincipalName = (provider: Provider) => provider.realName || '-';
+
+const resolveVisibilityTag = (provider: Provider) => {
+    const isVisible = provider.visibility?.publicVisible;
+    const config = PUBLIC_VISIBILITY_META[isVisible === true ? 'true' : isVisible === false ? 'false' : 'unknown'];
+    return <Tag color={config.color}>{config.text}</Tag>;
+};
+
+const renderBlockerSummary = (provider: Provider) => {
+    const blockers = provider.visibility?.blockers || [];
+    if (blockers.length === 0) {
+        return <Text type="secondary">-</Text>;
+    }
+
+    const first = blockers[0]?.message || '-';
+    const summary = blockers.length > 1 ? `${first} + ${blockers.length - 1} 条` : first;
+
+    return (
+        <Tooltip
+            title={
+                <div style={{ maxWidth: 360 }}>
+                    {blockers.map((item) => (
+                        <div key={item.code || item.message} style={{ marginBottom: 4, whiteSpace: 'normal' }}>
+                            {item.message}
+                        </div>
+                    ))}
+                </div>
+            }
+        >
+            <Text ellipsis style={{ display: 'inline-block', maxWidth: 240 }}>
+                {summary}
+            </Text>
+        </Tooltip>
+    );
+};
+
+const parseSpecialtyTags = (value?: string | string[]) => {
+    if (Array.isArray(value)) {
+        return value.filter(Boolean);
+    }
+    if (!value) {
+        return [];
+    }
+    return value
+        .split(/·|,|，/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+};
+
+const normalizeJSONArrayText = (value: unknown, fieldLabel: string): string[] => {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item).trim()).filter(Boolean);
+    }
+    if (typeof value !== 'string') {
+        return [];
+    }
+    const raw = value.trim();
+    if (!raw) {
+        return [];
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        throw new Error(`${fieldLabel}必须是 JSON 数组格式`);
+    }
+
+    if (!Array.isArray(parsed)) {
+        throw new Error(`${fieldLabel}必须是 JSON 数组格式`);
+    }
+
+    return parsed.map((item) => String(item).trim()).filter(Boolean);
+};
+
+const normalizeOptionalJSONArrayText = (value: unknown, fieldLabel: string): string => {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    const raw = value.trim();
+    if (!raw) {
+        return '';
+    }
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        throw new Error(`${fieldLabel}必须是 JSON 数组格式`);
+    }
+
+    if (!Array.isArray(parsed)) {
+        throw new Error(`${fieldLabel}必须是 JSON 数组格式`);
+    }
+
+    return JSON.stringify(parsed.map((item) => String(item).trim()).filter(Boolean));
 };
 
 const ProviderList: React.FC = () => {
@@ -53,12 +140,20 @@ const ProviderList: React.FC = () => {
     const [pageSize] = useState(10);
     const [providerType, setProviderType] = useState<number | undefined>();
     const [verifiedFilter, setVerifiedFilter] = useState<string | undefined>();
+    const [settledFilter, setSettledFilter] = useState<string | undefined>();
     const [detailVisible, setDetailVisible] = useState(false);
     const [currentProvider, setCurrentProvider] = useState<Provider | null>(null);
     const [modalVisible, setModalVisible] = useState(false);
     const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
     const [form] = Form.useForm();
     const [currentFormType, setCurrentFormType] = useState<number>(1); // 当前表单的服务商类型
+    const watchedSubType = Form.useWatch('subType', form) || 'personal';
+    const nameFieldLabel = watchedSubType === 'personal' ? '姓名' : '主体名称';
+    const nameFieldPlaceholder = watchedSubType === 'personal' ? '请输入姓名' : '请输入主体名称';
+    const [claimModalVisible, setClaimModalVisible] = useState(false);
+    const [claimSubmitting, setClaimSubmitting] = useState(false);
+    const [claimTargetProvider, setClaimTargetProvider] = useState<Provider | null>(null);
+    const [claimForm] = Form.useForm();
 
     // 根据URL路径设置服务商类型
     useEffect(() => {
@@ -78,7 +173,7 @@ const ProviderList: React.FC = () => {
         if (providerType !== undefined || !location.pathname.match(/(designers|companies|foremen)/)) {
             loadData();
         }
-    }, [page, providerType, verifiedFilter]);
+    }, [page, providerType, verifiedFilter, settledFilter]);
 
     const loadData = async () => {
         setLoading(true);
@@ -88,6 +183,7 @@ const ProviderList: React.FC = () => {
                 pageSize,
                 type: providerType,
                 verified: verifiedFilter === 'true' ? true : verifiedFilter === 'false' ? false : undefined,
+                isSettled: settledFilter === 'true' ? true : settledFilter === 'false' ? false : undefined,
             }) as any;
             if (res.code === 0) {
                 setProviders(res.data.list || []);
@@ -129,13 +225,11 @@ const ProviderList: React.FC = () => {
     const openModal = (provider?: Provider) => {
         setEditingProvider(provider || null);
         if (provider) {
-            // 编辑模式：处理工长的 workTypes 字段
-            const formValues = { ...provider };
-            if (provider.providerType === 3 && provider.workTypes) {
-                // 将逗号分隔的字符串转为数组
-                formValues.workTypes = provider.workTypes.split(',').filter(Boolean) as any;
-            }
-            form.setFieldsValue(formValues);
+            form.setFieldsValue({
+                ...provider,
+                companyName: getProviderDisplayName(provider),
+                specialty: parseSpecialtyTags(provider.specialty),
+            });
             setCurrentFormType(provider.providerType);
         } else {
             form.resetFields();
@@ -156,22 +250,16 @@ const ProviderList: React.FC = () => {
 
             // 根据服务商类型清理不相关的字段
             const cleanedValues = { ...values };
-
-            if (currentFormType === 1) {
-                // 设计师：移除 teamSize, establishedYear
+            const currentSubType = cleanedValues.subType || editingProvider?.subType || 'personal';
+            if (currentSubType === 'personal') {
+                cleanedValues.realName = String(cleanedValues.companyName || '').trim();
+            }
+            cleanedValues.specialty = parseSpecialtyTags(values.specialty).join(' · ');
+            cleanedValues.serviceArea = normalizeJSONArrayText(values.serviceArea, '服务区域');
+            cleanedValues.certifications = normalizeOptionalJSONArrayText(values.certifications, '资质认证');
+            if (currentFormType === 1 || currentFormType === 3) {
                 delete cleanedValues.teamSize;
                 delete cleanedValues.establishedYear;
-            } else if (currentFormType === 2) {
-                // 装修公司：移除 workTypes
-                delete cleanedValues.workTypes;
-            } else if (currentFormType === 3) {
-                // 工长：移除 teamSize, establishedYear, 并处理 workTypes 为字符串
-                delete cleanedValues.teamSize;
-                delete cleanedValues.establishedYear;
-                // 将工种数组转为逗号分隔的字符串
-                if (Array.isArray(cleanedValues.workTypes)) {
-                    cleanedValues.workTypes = cleanedValues.workTypes.join(',');
-                }
             }
 
             if (editingProvider) {
@@ -183,9 +271,65 @@ const ProviderList: React.FC = () => {
             }
             setModalVisible(false);
             loadData();
-        } catch (error) {
-            message.error('操作失败');
+        } catch (error: any) {
+            message.error(error?.message || '操作失败');
         }
+    };
+
+    const openClaimModal = (provider: Provider) => {
+        setClaimTargetProvider(provider);
+        claimForm.setFieldsValue({
+            phone: '',
+            contactName: '',
+            nickname: provider.companyName || '',
+        });
+        setClaimModalVisible(true);
+    };
+
+    const handleClaimAccount = async () => {
+        if (!claimTargetProvider) return;
+        try {
+            const values = await claimForm.validateFields();
+            setClaimSubmitting(true);
+            const res = await adminProviderApi.claimAccount(claimTargetProvider.id, values) as any;
+            if (res.code === 0) {
+                message.success(res.data?.createdUser ? '账号已创建并绑定，入驻状态已更新' : '已绑定现有账号，入驻状态已更新');
+                setClaimModalVisible(false);
+                setClaimTargetProvider(null);
+                claimForm.resetFields();
+                loadData();
+            } else {
+                message.error(res.message || '认领失败');
+            }
+        } catch (error: any) {
+            if (error?.errorFields) return;
+            message.error(error?.message || '认领失败');
+        } finally {
+            setClaimSubmitting(false);
+        }
+    };
+
+    const handleCompleteSettlement = (provider: Provider) => {
+        Modal.confirm({
+            title: '完成入驻',
+            content: `确认将「${getProviderDisplayName(provider)}」标记为已入驻，并补齐商家身份吗？`,
+            okText: '确认完成',
+            cancelText: '取消',
+            okButtonProps: { danger: false },
+            onOk: async () => {
+                try {
+                    const res = await adminProviderApi.completeSettlement(provider.id) as any;
+                    if (res.code === 0) {
+                        message.success('已完成入驻补齐');
+                        loadData();
+                        return;
+                    }
+                    message.error(res.message || '完成入驻失败');
+                } catch (error: any) {
+                    message.error(error?.message || '完成入驻失败');
+                }
+            },
+        });
     };
 
     const columns = [
@@ -195,22 +339,44 @@ const ProviderList: React.FC = () => {
             width: 80,
         },
         {
-            title: '名称',
-            dataIndex: 'companyName',
-            render: (val: string) => val || '-',
+            title: '主体名称',
+            key: 'displayName',
+            render: (_: unknown, record: Provider) => getProviderDisplayName(record),
         },
         {
             title: '类型',
             dataIndex: 'providerType',
             render: (val: number) => {
-                const config = providerTypeMap[val];
+                const config = ADMIN_PROVIDER_TYPE_META[val];
                 return config ? <Tag color={config.color}>{config.text}</Tag> : '-';
             },
         },
         {
-            title: '子类型',
+            title: '来源',
+            dataIndex: 'sourceLabel',
+            key: 'sourceLabel',
+            width: 90,
+            render: (text: string) => <Tag color={text === '平台收录' ? 'orange' : 'default'}>{text || '-'}</Tag>,
+        },
+        {
+            title: '入驻状态',
+            dataIndex: 'isSettled',
+            key: 'isSettled',
+            width: 90,
+            render: (val: boolean) => {
+                const config = SETTLED_STATUS_META[String(val)] || SETTLED_STATUS_META['true'];
+                return <Tag color={config.color}>{config.text}</Tag>;
+            },
+        },
+        {
+            title: '主体类型',
             dataIndex: 'subType',
-            render: (val: string) => subTypeMap[val] || val || '-',
+            render: (val: string) => PROVIDER_SUBTYPE_LABELS[val] || val || '-',
+        },
+        {
+            title: '负责人',
+            key: 'principalName',
+            render: (_: unknown, record: Provider) => getProviderPrincipalName(record),
         },
         {
             title: '评分',
@@ -269,10 +435,55 @@ const ProviderList: React.FC = () => {
             ),
         },
         {
+            title: '公开状态',
+            key: 'publicVisible',
+            width: 120,
+            render: (_: any, record: Provider) => (
+                <Space size={4} wrap>
+                    {resolveVisibilityTag(record)}
+                    {record.legacyInfo?.isLegacyPath && <Tag color={LEGACY_PATH_BADGE.color}>{LEGACY_PATH_BADGE.text}</Tag>}
+                </Space>
+            ),
+        },
+        {
+            title: '阻断摘要',
+            key: 'blockerSummary',
+            ellipsis: true,
+            render: (_: any, record: Provider) => renderBlockerSummary(record),
+        },
+        {
             title: '操作',
             key: 'action',
             render: (_: any, record: Provider) => (
                 <Space>
+                    {record.isSettled === false && !record.userId && (
+                        <PermissionWrapper permission={[
+                            'provider:company:edit',
+                        ]}>
+                            <Button
+                                type="link"
+                                size="small"
+                                style={{ color: '#fa8c16' }}
+                                onClick={() => openClaimModal(record)}
+                            >
+                                认领入驻
+                            </Button>
+                        </PermissionWrapper>
+                    )}
+                    {record.isSettled === false && !!record.userId && (
+                        <PermissionWrapper permission={[
+                            'provider:company:edit',
+                        ]}>
+                            <Button
+                                type="link"
+                                size="small"
+                                style={{ color: '#fa8c16' }}
+                                onClick={() => handleCompleteSettlement(record)}
+                            >
+                                完成入驻
+                            </Button>
+                        </PermissionWrapper>
+                    )}
                     <PermissionWrapper permission={[
                         'provider:designer:edit',
                         'provider:company:edit',
@@ -293,8 +504,14 @@ const ProviderList: React.FC = () => {
     ];
 
     return (
-        <Card>
-            <Space style={{ marginBottom: 16 }}>
+        <div className="hz-page-stack">
+            <PageHeader
+                title="服务商管理"
+                description="统一维护设计师、工长与装修公司资料，处理认证、封禁与详情查看。"
+            />
+
+            <ToolbarCard>
+                <div className="hz-toolbar">
                 {!location.pathname.match(/(designers|companies|foremen)/) && (
                     <Select
                         placeholder="服务商类型"
@@ -302,11 +519,7 @@ const ProviderList: React.FC = () => {
                         style={{ width: 120 }}
                         value={providerType}
                         onChange={setProviderType}
-                        options={[
-                            { value: 1, label: '设计师' },
-                            { value: 2, label: '装修公司' },
-                            { value: 3, label: '工长' },
-                        ]}
+                        options={ADMIN_PROVIDER_TYPE_OPTIONS}
                     />
                 )}
                 <Select
@@ -315,10 +528,15 @@ const ProviderList: React.FC = () => {
                     style={{ width: 120 }}
                     value={verifiedFilter}
                     onChange={setVerifiedFilter}
-                    options={[
-                        { value: 'true', label: '已认证' },
-                        { value: 'false', label: '未认证' },
-                    ]}
+                    options={VERIFIED_FILTER_OPTIONS}
+                />
+                <Select
+                    allowClear
+                    placeholder="入驻状态"
+                    style={{ width: 120 }}
+                    value={settledFilter}
+                    onChange={(val) => { setSettledFilter(val); setPage(1); }}
+                    options={SETTLED_FILTER_OPTIONS}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>
                     刷新
@@ -332,21 +550,25 @@ const ProviderList: React.FC = () => {
                         新增服务商
                     </Button>
                 </PermissionWrapper>
-            </Space>
+                </div>
+            </ToolbarCard>
 
-            <Table
-                columns={columns}
-                dataSource={providers}
-                rowKey="id"
-                loading={loading}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total,
-                    onChange: setPage,
-                    showTotal: (t) => `共 ${t} 条`,
-                }}
-            />
+            <Card className="hz-table-card">
+                <Table
+                    columns={columns}
+                    dataSource={providers}
+                    rowKey="id"
+                    loading={loading}
+                    scroll={{ x: 'max-content' }}
+                    pagination={{
+                        current: page,
+                        pageSize,
+                        total,
+                        onChange: setPage,
+                        showTotal: (t) => `共 ${t} 条`,
+                    }}
+                />
+            </Card>
 
             <Modal
                 title="服务商详情"
@@ -356,42 +578,69 @@ const ProviderList: React.FC = () => {
                 width={800}
             >
                 {currentProvider && (
-                    <Descriptions column={2} bordered size="small">
-                        <Descriptions.Item label="ID">{currentProvider.id}</Descriptions.Item>
-                        <Descriptions.Item label="名称">{currentProvider.companyName || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="类型">
-                            {providerTypeMap[currentProvider.providerType]?.text || '-'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="子类型">{subTypeMap[currentProvider.subType] || currentProvider.subType || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="评分">{currentProvider.rating?.toFixed(1)}</Descriptions.Item>
-                        <Descriptions.Item label="经验">{currentProvider.yearsExperience}年</Descriptions.Item>
-                        <Descriptions.Item label="专长" span={2}>{currentProvider.specialty || '-'}</Descriptions.Item>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <AuditStatusSummary
+                            visibility={currentProvider.visibility}
+                            rejectResubmittable={currentProvider.actions?.rejectResubmittable}
+                            legacyInfo={currentProvider.legacyInfo}
+                        />
+                        <Descriptions column={2} bordered size="small">
+                            <Descriptions.Item label="ID">{currentProvider.id}</Descriptions.Item>
+                            <Descriptions.Item label="主体名称">{getProviderDisplayName(currentProvider)}</Descriptions.Item>
+                            <Descriptions.Item label="类型">
+                                {ADMIN_PROVIDER_TYPE_META[currentProvider.providerType]?.text || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="主体类型">{PROVIDER_SUBTYPE_LABELS[currentProvider.subType] || currentProvider.subType || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="负责人">{getProviderPrincipalName(currentProvider)}</Descriptions.Item>
+                            <Descriptions.Item label="评分">{currentProvider.rating?.toFixed(1)}</Descriptions.Item>
+                            <Descriptions.Item label="经验">{currentProvider.yearsExperience}年</Descriptions.Item>
+                            <Descriptions.Item label="专长" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.specialty || '-'}
+                                </div>
+                            </Descriptions.Item>
 
-                        {/* 移动端详情页字段 */}
-                        <Descriptions.Item label="价格范围" span={2}>
-                            {currentProvider.priceMin && currentProvider.priceMax
-                                ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ''}`
-                                : '-'}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="工种类型" span={2}>{currentProvider.workTypes || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="服务介绍" span={2}>{currentProvider.serviceIntro || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="服务区域" span={2}>{currentProvider.serviceArea || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="团队规模">{currentProvider.teamSize || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="成立年份">{currentProvider.establishedYear || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="资质认证" span={2}>{currentProvider.certifications || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="封面图" span={2}>
-                            {currentProvider.coverImage ? (
-                                <img src={currentProvider.coverImage} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
-                            ) : '-'}
-                        </Descriptions.Item>
+                            <Descriptions.Item label="价格范围" span={2}>
+                                {currentProvider.priceMin && currentProvider.priceMax
+                                    ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ''}`
+                                    : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="服务介绍" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.serviceIntro || '-'}
+                                </div>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="服务区域" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.serviceArea || '-'}
+                                </div>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="团队规模">{currentProvider.teamSize || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="成立年份">{currentProvider.establishedYear || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="资质认证" span={2}>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                    {currentProvider.certifications || '-'}
+                                </div>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="封面图" span={2}>
+                                {currentProvider.coverImage ? (
+                                    <img src={currentProvider.coverImage} alt="封面" style={{ maxWidth: '100%', maxHeight: 200 }} />
+                                ) : '-'}
+                            </Descriptions.Item>
 
-                        <Descriptions.Item label="认证">
-                            {currentProvider.verified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="状态">
-                            {currentProvider.status === 1 ? <Tag color="green">正常</Tag> : <Tag color="red">封禁</Tag>}
-                        </Descriptions.Item>
-                    </Descriptions>
+                            <Descriptions.Item label="认证">
+                                <Tag color={VERIFICATION_STATUS_META[String(Boolean(currentProvider.verified))].color}>
+                                    {VERIFICATION_STATUS_META[String(Boolean(currentProvider.verified))].text}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="状态">
+                                <Tag color={ADMIN_PROVIDER_STATUS_META[currentProvider.status]?.color || 'default'}>
+                                    {ADMIN_PROVIDER_STATUS_META[currentProvider.status]?.text || currentProvider.status}
+                                </Tag>
+                            </Descriptions.Item>
+                        </Descriptions>
+                        <VisibilityStatusPanel visibility={currentProvider.visibility} legacyInfo={currentProvider.legacyInfo} />
+                    </Space>
                 )}
             </Modal>
 
@@ -403,26 +652,23 @@ const ProviderList: React.FC = () => {
                 width={800}
             >
                 <Form form={form} layout="vertical">
-                    <Form.Item name="companyName" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-                        <Input placeholder="请输入服务商名称" />
+                    <Form.Item
+                        name="companyName"
+                        label={nameFieldLabel}
+                        extra={watchedSubType === 'personal' ? '个人/工长将按姓名展示。' : '工作室/公司将按主体名称展示。'}
+                        rules={[{ required: true, message: `请输入${nameFieldLabel}` }]}
+                    >
+                        <Input placeholder={nameFieldPlaceholder} />
                     </Form.Item>
                     <Form.Item name="providerType" label="类型" rules={[{ required: true }]}>
                         <Select
                             disabled={!!editingProvider}
                             onChange={(val) => setCurrentFormType(val)}
-                            options={[
-                                { value: 1, label: '设计师' },
-                                { value: 2, label: '装修公司' },
-                                { value: 3, label: '工长' },
-                            ]}
+                            options={ADMIN_PROVIDER_TYPE_OPTIONS}
                         />
                     </Form.Item>
-                    <Form.Item name="subType" label="子类型">
-                        <Select options={[
-                            { value: 'personal', label: '个人' },
-                            { value: 'studio', label: '工作室' },
-                            { value: 'company', label: '公司' },
-                        ]} />
+                    <Form.Item name="subType" label="主体类型">
+                        <Select options={Object.entries(PROVIDER_SUBTYPE_LABELS).map(([value, label]) => ({ value, label }))} />
                     </Form.Item>
                     <Form.Item name="specialty" label="专长/标签">
                         <Select
@@ -447,27 +693,6 @@ const ProviderList: React.FC = () => {
                         <Input.TextArea rows={4} placeholder="请输入服务介绍、设计理念或公司简介" />
                     </Form.Item>
 
-                    {/* 工长专属字段：工种类型 */}
-                    {currentFormType === 3 && (
-                        <Form.Item
-                            name="workTypes"
-                            label="工种类型"
-                            tooltip="多个工种用逗号分隔"
-                            rules={[{ required: true, message: '工长必须选择工种类型' }]}
-                        >
-                            <Select
-                                mode="multiple"
-                                placeholder="请选择工种"
-                                options={[
-                                    { value: 'mason', label: '瓦工' },
-                                    { value: 'electrician', label: '电工' },
-                                    { value: 'carpenter', label: '木工' },
-                                    { value: 'painter', label: '油漆工' },
-                                    { value: 'plumber', label: '水暖工' },
-                                ]}
-                            />
-                        </Form.Item>
-                    )}
 
                     <div style={{ display: 'flex', gap: 16 }}>
                         <Form.Item name="priceMin" label="最低价格" style={{ flex: 1 }}>
@@ -526,15 +751,58 @@ const ProviderList: React.FC = () => {
                         <Input.TextArea rows={2} placeholder='如：["雁塔区","曲江新区","高新区"]' />
                     </Form.Item>
 
+                    <Form.Item name="isSettled" label="入驻状态" valuePropName="checked" initialValue={true}>
+                        <Switch checkedChildren="已入驻" unCheckedChildren="未入驻" />
+                    </Form.Item>
+                    {!Form.useWatch('isSettled', form) && (
+                        <Form.Item name="collectedSource" label="数据来源">
+                            <Input placeholder="如：大众点评、58同城" />
+                        </Form.Item>
+                    )}
+
                     <Form.Item name="status" label="状态">
-                        <Select options={[
-                            { value: 1, label: '正常' },
-                            { value: 0, label: '封禁' },
-                        ]} />
+                        <Select options={ADMIN_PROVIDER_STATUS_OPTIONS} />
                     </Form.Item>
                 </Form>
             </Modal>
-        </Card>
+
+            {/* 认领入驻弹窗 */}
+            <Modal
+                title="认领入驻"
+                open={claimModalVisible}
+                onCancel={() => {
+                    setClaimModalVisible(false);
+                    setClaimTargetProvider(null);
+                    claimForm.resetFields();
+                }}
+                onOk={handleClaimAccount}
+                confirmLoading={claimSubmitting}
+                destroyOnClose
+            >
+                <Form form={claimForm} layout="vertical">
+                    <Form.Item label="服务商名称">
+                        <Input value={claimTargetProvider?.companyName || ''} disabled />
+                    </Form.Item>
+                    <Form.Item
+                        name="phone"
+                        label="登录手机号"
+                        extra={'该手机号将作为商户端登录账号，入驻状态同时自动更新为「已入驻」'}
+                        rules={[
+                            { required: true, message: '请输入手机号' },
+                            { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的11位手机号' },
+                        ]}
+                    >
+                        <Input placeholder="用于商户端登录" />
+                    </Form.Item>
+                    <Form.Item name="contactName" label="联系人姓名">
+                        <Input placeholder="可选，用于补全联系人字段" />
+                    </Form.Item>
+                    <Form.Item name="nickname" label="账号昵称">
+                        <Input placeholder="可选，不填则使用公司名称" />
+                    </Form.Item>
+                </Form>
+            </Modal>
+        </div>
     );
 };
 

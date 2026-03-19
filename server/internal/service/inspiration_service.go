@@ -118,8 +118,7 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 		query.PageSize = 20
 	}
 
-	db := repository.DB.Model(&model.ProviderCase{}).
-		Where("show_in_inspiration = ?", true)
+	db := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{}))
 
 	if styles := normalizeInspirationStyleFilter(query.Style); len(styles) > 0 {
 		db = db.Where("style IN ?", styles)

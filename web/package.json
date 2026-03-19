@@ -1,0 +1,27 @@
+{
+  "name": "web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "generate:tokens": "node ./scripts/generateTokens.mjs",
+    "dev": "npm run generate:tokens && vite",
+    "build": "npm run generate:tokens && tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "^7.10.1",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^5.1.1",
+    "sass": "^1.93.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4"
+  }
+}

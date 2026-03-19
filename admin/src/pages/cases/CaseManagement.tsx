@@ -9,10 +9,14 @@ import {
     EyeOutlined, CheckOutlined, CloseOutlined, UploadOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { adminUploadApi, caseApi, caseAuditApi } from '../../services/api';
+import { adminUploadApi, caseApi, caseAuditApi, type AdminAuditActions, type AdminAuditLegacyInfo, type AdminAuditVisibility } from '../../services/api';
 import type { RcFile, UploadProps } from 'antd/es/upload/interface';
 import { DictSelect } from '../../components/DictSelect';
+import { CASE_AUDIT_ACTION_META, CASE_AUDIT_SOURCE_META, CASE_AUDIT_STATUS_META } from '../../constants/statuses';
 import { toAbsoluteAssetUrl } from '../../utils/env';
+import AuditStatusSummary from '../audits/components/AuditStatusSummary';
+import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
+import AuditDetailSection from '../audits/components/AuditDetailSection';
 
 const getFullUrl = toAbsoluteAssetUrl;
 
@@ -40,9 +44,15 @@ interface CaseAudit {
     providerId: number;
     providerName: string;
     actionType: string;
+    sourceType?: string;
+    sourceProjectId?: number;
+    sourceProposalId?: number;
     title: string;
     status: number;
     createdAt: string;
+    visibility?: AdminAuditVisibility;
+    actions?: AdminAuditActions;
+    legacyInfo?: AdminAuditLegacyInfo;
 }
 
 interface AuditDetail extends CaseAudit {
@@ -54,7 +64,13 @@ interface AuditDetail extends CaseAudit {
     year: string;
     description: string;
     images: string[];
+    rejectReason?: string;
 }
+
+const renderCaseAuditSourceTag = (sourceType?: string) => {
+    const config = sourceType ? CASE_AUDIT_SOURCE_META[sourceType] : CASE_AUDIT_SOURCE_META.manual;
+    return <Tag color={config?.color || 'default'}>{config?.text || sourceType || '手动提交'}</Tag>;
+};
 
 type QuoteAmountFields = {
     quoteDesignFee?: number;
@@ -465,12 +481,8 @@ const CaseManagement: React.FC = () => {
 
     // ==================== 表格配置 ====================
     const getActionTag = (type: string) => {
-        switch (type) {
-            case 'create': return <Tag color="orange">新增</Tag>;
-            case 'update': return <Tag color="blue">修改</Tag>;
-            case 'delete': return <Tag color="red">删除</Tag>;
-            default: return <Tag>{type}</Tag>;
-        }
+        const config = CASE_AUDIT_ACTION_META[type];
+        return <Tag color={config?.color || 'default'}>{config?.text || type}</Tag>;
     };
 
     const caseColumns: ColumnsType<CaseItem> = [
@@ -523,6 +535,19 @@ const CaseManagement: React.FC = () => {
         { title: '商家名称', dataIndex: 'providerName', width: 120 },
         { title: '申请类型', dataIndex: 'actionType', width: 100, render: (text) => getActionTag(text) },
         {
+            title: '来源',
+            key: 'source',
+            width: 180,
+            render: (_, record) => (
+                <div>
+                    <div>{renderCaseAuditSourceTag(record.sourceType)}</div>
+                    {record.sourceProjectId ? (
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>项目 #{record.sourceProjectId}</div>
+                    ) : null}
+                </div>
+            ),
+        },
+        {
             title: '作品标题',
             dataIndex: 'title',
             render: (text, record) =>
@@ -541,10 +566,8 @@ const CaseManagement: React.FC = () => {
             dataIndex: 'status',
             width: 100,
             render: (status: number) => {
-                if (status === 0) return <Tag color="orange">待审核</Tag>;
-                if (status === 1) return <Tag color="success">已通过</Tag>;
-                if (status === 2) return <Tag color="error">已拒绝</Tag>;
-                return <Tag>未知</Tag>;
+                const config = CASE_AUDIT_STATUS_META[status];
+                return <Tag color={config?.color || 'default'}>{config?.text || '未知'}</Tag>;
             },
         },
         {
@@ -705,6 +728,7 @@ const CaseManagement: React.FC = () => {
                 open={auditDetailVisible}
                 onCancel={() => setAuditDetailVisible(false)}
                 width={800}
+                bodyStyle={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}
                 footer={
                     currentDetail?.status === 0 ? [
                         <Button key="close" onClick={() => setAuditDetailVisible(false)}>
@@ -735,45 +759,85 @@ const CaseManagement: React.FC = () => {
                 }
             >
                 {currentDetail && (
-                    <div>
+                    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <AuditStatusSummary
+                            visibility={currentDetail.visibility}
+                            rejectResubmittable={currentDetail.actions?.rejectResubmittable}
+                            legacyInfo={currentDetail.legacyInfo}
+                        />
+
+                        <AuditDetailSection title="可见性解释" extra={currentDetail.legacyInfo?.isLegacyPath ? <Tag color="gold">legacy / 非主链路</Tag> : undefined}>
+                            <VisibilityStatusPanel visibility={currentDetail.visibility} legacyInfo={currentDetail.legacyInfo} />
+                        </AuditDetailSection>
+
                         {currentDetail.actionType === 'delete' && (
-                            <div style={{ padding: 16, background: '#fff2f0', border: '1px solid #ffccc7', marginBottom: 16, borderRadius: 4 }}>
+                            <div style={{ padding: 16, background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 4 }}>
                                 <p style={{ color: '#cf1322', margin: 0 }}>
                                     警告：商家申请删除此作品。审核通过后，该作品将从用户端永久移除。
                                 </p>
                             </div>
                         )}
-                        <Descriptions bordered column={2}>
-                            <Descriptions.Item label="商家">{currentDetail.providerName || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="提交时间">{new Date(currentDetail.createdAt).toLocaleString()}</Descriptions.Item>
-                            <Descriptions.Item label="标题" span={2}>{currentDetail.title}</Descriptions.Item>
-                            <Descriptions.Item label="风格">{currentDetail.style || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="户型">{currentDetail.layout || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="面积">{currentDetail.area ? `${currentDetail.area}㎡` : '-'}</Descriptions.Item>
-                            <Descriptions.Item label="装修总价">
-                                {currentDetail.price > 0 ? `¥${(currentDetail.price / 10000).toFixed(1)}万` : '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="年份">{currentDetail.year || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="申请类型">{getActionTag(currentDetail.actionType)}</Descriptions.Item>
-                            <Descriptions.Item label="描述" span={2}>
-                                {currentDetail.description || '暂无描述'}
-                            </Descriptions.Item>
-                        </Descriptions>
-                        <div style={{ marginTop: 24 }}>
-                            <h4>封面图片</h4>
-                            <Image width={200} src={getFullUrl(currentDetail.coverImage)} />
-                        </div>
-                        <div style={{ marginTop: 24 }}>
-                            <h4>详情图片 ({currentDetail.images?.length || 0}张)</h4>
+
+                        <AuditDetailSection title="申请内容">
+                            <Descriptions bordered column={2} size="small">
+                                <Descriptions.Item label="商家">{currentDetail.providerName || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="提交时间">{new Date(currentDetail.createdAt).toLocaleString()}</Descriptions.Item>
+                                <Descriptions.Item label="标题" span={2}>{currentDetail.title}</Descriptions.Item>
+                                <Descriptions.Item label="来源类型">{renderCaseAuditSourceTag(currentDetail.sourceType)}</Descriptions.Item>
+                                <Descriptions.Item label="来源项目">
+                                    {currentDetail.sourceProjectId ? `#${currentDetail.sourceProjectId}` : '-'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="来源方案">
+                                    {currentDetail.sourceProposalId ? `#${currentDetail.sourceProposalId}` : '-'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="风格">{currentDetail.style || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="户型">{currentDetail.layout || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="面积">{currentDetail.area ? `${currentDetail.area}㎡` : '-'}</Descriptions.Item>
+                                <Descriptions.Item label="装修总价">
+                                    {currentDetail.price > 0 ? `¥${(currentDetail.price / 10000).toFixed(1)}万` : '-'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="年份">{currentDetail.year || '-'}</Descriptions.Item>
+                                <Descriptions.Item label="申请类型">{getActionTag(currentDetail.actionType)}</Descriptions.Item>
+                                {currentDetail.rejectReason && (
+                                    <Descriptions.Item label="驳回原因" span={2}>
+                                        <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                            {currentDetail.rejectReason}
+                                        </div>
+                                    </Descriptions.Item>
+                                )}
+                                <Descriptions.Item label="描述" span={2}>
+                                    <div style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                                        {currentDetail.description || '暂无描述'}
+                                    </div>
+                                </Descriptions.Item>
+                            </Descriptions>
+                        </AuditDetailSection>
+
+                        <AuditDetailSection title="封面图片">
+                            <Image
+                                width={200}
+                                src={getFullUrl(currentDetail.coverImage)}
+                                placeholder={<div style={{ width: 200, height: 126, background: '#f0f0f0' }} />}
+                            />
+                        </AuditDetailSection>
+
+                        <AuditDetailSection title={`详情图片 (${currentDetail.images?.length || 0}张)`}>
                             <Image.PreviewGroup>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                                     {currentDetail.images?.map((img, idx) => (
-                                        <Image key={idx} width={100} height={100} style={{ objectFit: 'cover' }} src={getFullUrl(img)} />
+                                        <Image
+                                            key={idx}
+                                            width={100}
+                                            height={100}
+                                            style={{ objectFit: 'cover' }}
+                                            src={getFullUrl(img)}
+                                            placeholder={<div style={{ width: 100, height: 100, background: '#f0f0f0' }} />}
+                                        />
                                     ))}
                                 </div>
                             </Image.PreviewGroup>
-                        </div>
-                    </div>
+                        </AuditDetailSection>
+                    </Space>
                 )}
             </Modal>
 

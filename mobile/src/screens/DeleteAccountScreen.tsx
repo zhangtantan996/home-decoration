@@ -20,7 +20,7 @@ import {
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
 import { useToast } from '../components/Toast';
-import authApi, { userSettingsApi } from '../services/api';
+import { authApi, userSettingsApi } from '../services/api';
 
 interface DeleteAccountScreenProps {
     navigation: any;
@@ -44,10 +44,7 @@ const DeleteAccountScreen: React.FC<DeleteAccountScreenProps> = ({ navigation })
         }
 
         try {
-            await authApi.post('/send-code', {
-                phone: user.phone,
-                purpose: 'delete_account',
-            });
+            await authApi.sendCode(user.phone, 'delete_account');
             showAlert('提示', '验证码已发送至您的手机');
             setCountdown(60);
             timerRef.current = setInterval(() => {

@@ -22,6 +22,8 @@ import { getWebUrl } from '../config';
 import { providerApi } from '../services/api';
 import UserProfileCache from '../services/UserProfileCache';
 import { colors, spacing, radii } from '../theme/tokens';
+import { formatProviderPricing } from '../utils/providerPricing';
+import ProviderQuoteSection from '../components/provider/ProviderQuoteSection';
 
 const { width } = Dimensions.get('window');
 
@@ -29,29 +31,6 @@ const { width } = Dimensions.get('window');
 const formatFollowers = (count: number) => {
     if (count >= 1000) return (count / 1000).toFixed(1) + 'k';
     return count.toString();
-};
-
-// 工种英文转中文
-const translateWorkType = (workType: string): string => {
-    const map: Record<string, string> = {
-        'carpenter': '木工',
-        'electrician': '电工',
-        'plumber': '水管工',
-        'painter': '油漆工',
-        'mason': '泥瓦工',
-        'tiler': '瓷砖工',
-        'hvac': '暖通工',
-        'general': '全屋装修',
-        'demolition': '拆除',
-        '水电工': '水电工',
-        '木工': '木工',
-        '油漆工': '油漆工',
-    };
-    // 处理逗号分隔的多个工种
-    if (workType.includes(',')) {
-        return workType.split(',').map(t => map[t.trim()] || t.trim()).join(' · ');
-    }
-    return map[workType] || workType;
 };
 
 const parseStringArray = (raw?: string): string[] => {
@@ -74,37 +53,6 @@ const parseStringArray = (raw?: string): string[] => {
     }
     return text.split(',').map((item) => item.trim()).filter(Boolean);
 };
-
-const buildPricingLabel = (pricingJson: unknown, fallbackMin: number | string, fallbackMax: number | string, fallbackUnit?: string): string => {
-    const raw = String(pricingJson || '').trim();
-    if (raw) {
-        try {
-            const parsed = JSON.parse(raw) as Record<string, unknown>;
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                const segments = Object.entries(parsed)
-                    .map(([key, value]) => {
-                        const amount = Number(value);
-                        if (!Number.isFinite(amount) || amount <= 0) {
-                            return '';
-                        }
-                        return `${key}:¥${amount}`;
-                    })
-                    .filter(Boolean);
-                if (segments.length > 0) {
-                    return segments.join(' / ');
-                }
-            }
-        } catch {
-            // use fallback range
-        }
-    }
-
-    const min = Number(fallbackMin);
-    const max = Number(fallbackMax);
-    const suffix = fallbackUnit ? String(fallbackUnit).replace('平米', 'm²') : '/m²';
-    return `¥${min}-${max}${suffix}`;
-};
-
 
 // ========== Parallax Scroll Layout ==========
 const ParallaxScrollLayout = ({
@@ -253,6 +201,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
     const caseCount = detail?.caseCount || 0;
+    const isSettled = provider.isSettled !== false;
 
     // 合并数据（API 优先，降级使用传入的 initialDesigner）
     const displayData = {
@@ -276,7 +225,13 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
         designPhilosophy: provider.designPhilosophy || '',
         priceMin: provider.priceMin || 300,
         priceMax: provider.priceMax || 500,
-        pricingLabel: buildPricingLabel(provider.pricingJson, provider.priceMin || 300, provider.priceMax || 500, '/m²'),
+        quoteDisplay: formatProviderPricing({
+            role: 'designer',
+            pricingJson: provider.pricingJson,
+            priceMin: provider.priceMin || 300,
+            priceMax: provider.priceMax || 500,
+            priceUnit: provider.priceUnit || '元/㎡',
+        }).quoteDisplay,
     };
 
     const serviceAreaTags = (() => {
@@ -342,7 +297,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 </View>
             )}
-            bottomBar={
+            bottomBar={isSettled ? (
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -374,7 +329,11 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约设计</Text>
                     </TouchableOpacity>
                 </View>
-            }
+            ) : (
+                <View style={styles.floatBottomBar}>
+                    <Text style={styles.unsettledHintText}>该商家信息来源于公开渠道，尚未在本平台入驻。</Text>
+                </View>
+            )}
         >
             {/* 2. Dashboard Stats (Floating) */}
             <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
@@ -383,15 +342,26 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     <View style={styles.designerDashHeaderInfo}>
                         <View style={styles.designerDashNameRow}>
                             <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
-                            <TouchableOpacity
-                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
-                                onPress={handleFollow}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
-                                    {isFollowed ? '已关注' : '+关注'}
-                                </Text>
-                            </TouchableOpacity>
+                            {isSettled ? (
+                                <View style={styles.settledBadge}>
+                                    <Text style={styles.settledBadgeText}>已认证</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.unsettledBadge}>
+                                    <Text style={styles.unsettledBadgeText}>未入驻</Text>
+                                </View>
+                            )}
+                            {isSettled && (
+                                <TouchableOpacity
+                                    style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                    onPress={handleFollow}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                        {isFollowed ? '已关注' : '+关注'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         <Text style={styles.designerDashExperienceText}>{displayData.yearsExperience}年经验</Text>
                         {!!displayData.specialty && (
@@ -471,10 +441,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 ) : null}
 
-                <View style={styles.priceTagRow}>
-                    <Text style={styles.priceTagLabel}>设计费</Text>
-                    <Text style={styles.priceTagValue}>{displayData.pricingLabel}</Text>
-                </View>
+                <ProviderQuoteSection quote={displayData.quoteDisplay} />
             </View>
 
             {/* 4. Portfolio Showcase */}
@@ -635,6 +602,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const user = detail?.user || {};
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
+    const isSettled = provider.isSettled !== false;
 
     // 合并数据（API 优先，降级使用传入的 initialWorker）
     const displayData = {
@@ -646,13 +614,19 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
         reviewCount: detail?.reviewCount || provider.reviewCount || initialWorker.reviewCount || 0,
         yearsExperience: provider.yearsExperience || initialWorker.yearsExperience || 0,
         completedOrders: provider.completedCnt || initialWorker.completedOrders || 0,
-        workTypeLabels: translateWorkType(provider.workTypes || initialWorker.workTypeLabels || '水电工'),
+        serviceLabel: provider.specialty || initialWorker.serviceLabel || '施工服务',
         tags: parseStringArray(provider.highlightTags).length > 0 ? parseStringArray(provider.highlightTags) : (initialWorker.tags || ['准时守信', '技术过硬', '收费透明']),
-        serviceIntro: provider.serviceIntro || `专注${initialWorker.workTypeLabels || '施工'}服务${initialWorker.yearsExperience || 5}年，经验丰富，做工细致。`,
+        serviceIntro: provider.serviceIntro || '专注施工服务，经验丰富，做工细致。',
         priceMin: provider.priceMin || initialWorker.priceRange?.split('-')[0] || 200,
         priceMax: provider.priceMax || initialWorker.priceRange?.split('-')[1] || 400,
         priceUnit: provider.priceUnit || initialWorker.priceUnit || '/m²',
-        pricingLabel: buildPricingLabel(provider.pricingJson, provider.priceMin || initialWorker.priceRange?.split('-')[0] || 200, provider.priceMax || initialWorker.priceRange?.split('-')[1] || 400, provider.priceUnit || initialWorker.priceUnit || '/m²'),
+        quoteDisplay: formatProviderPricing({
+            role: 'foreman',
+            pricingJson: provider.pricingJson,
+            priceMin: provider.priceMin || initialWorker.priceRange?.split('-')[0] || 200,
+            priceMax: provider.priceMax || initialWorker.priceRange?.split('-')[1] || 400,
+            priceUnit: provider.priceUnit || initialWorker.priceUnit || '元/㎡',
+        }).quoteDisplay,
     };
 
     const serviceAreaTags = (() => {
@@ -730,7 +704,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 </View>
             )}
-            bottomBar={
+            bottomBar={isSettled ? (
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -754,7 +728,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                                 avatar: displayData.avatar,
                                 rating: displayData.rating,
                                 yearsExperience: displayData.yearsExperience,
-                                specialty: displayData.workTypeLabels, // Workers use workTypeLabels as specialty
+                                specialty: displayData.serviceLabel,
                             },
                             providerType: 'worker'
                         })}
@@ -762,7 +736,11 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约施工</Text>
                     </TouchableOpacity>
                 </View>
-            }
+            ) : (
+                <View style={styles.floatBottomBar}>
+                    <Text style={styles.unsettledHintText}>该商家信息来源于公开渠道，尚未在本平台入驻。</Text>
+                </View>
+            )}
         >
             {/* Dashboard Stats */}
             <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
@@ -771,21 +749,32 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     <View style={styles.designerDashHeaderInfo}>
                         <View style={styles.designerDashNameRow}>
                             <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
-                            <TouchableOpacity
-                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
-                                onPress={handleFollow}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
-                                    {isFollowed ? '已关注' : '+关注'}
-                                </Text>
-                            </TouchableOpacity>
+                            {isSettled ? (
+                                <View style={styles.settledBadge}>
+                                    <Text style={styles.settledBadgeText}>已认证</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.unsettledBadge}>
+                                    <Text style={styles.unsettledBadgeText}>未入驻</Text>
+                                </View>
+                            )}
+                            {isSettled && (
+                                <TouchableOpacity
+                                    style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                    onPress={handleFollow}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                        {isFollowed ? '已关注' : '+关注'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         <Text style={styles.designerDashExperienceText}>{displayData.yearsExperience}年经验</Text>
-                        {!!displayData.workTypeLabels && (
+                        {!!displayData.serviceLabel && (
                             <View style={styles.specialtyPill}>
                                 <Text style={styles.specialtyPillText} numberOfLines={1}>
-                                    {displayData.workTypeLabels}
+                                    {displayData.serviceLabel}
                                 </Text>
                             </View>
                         )}
@@ -841,10 +830,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     ))}
                 </View>
 
-                <View style={styles.priceTagRow}>
-                    <Text style={styles.priceTagLabel}>施工费</Text>
-                    <Text style={styles.priceTagValue}>{displayData.pricingLabel}</Text>
-                </View>
+                <ProviderQuoteSection quote={displayData.quoteDisplay} />
             </View>
 
             {/* Portfolio Showcase */}
@@ -1005,6 +991,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const user = detail?.user || {};
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
+    const isSettled = provider.isSettled !== false;
 
     // 合并数据（API 优先，降级使用传入的 initialCompany）
     const displayData = {
@@ -1017,13 +1004,19 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
         completedOrders: provider.completedCnt || initialCompany.completedOrders || 0,
         teamSize: provider.teamSize || initialCompany.teamSize || 20,
         establishedYear: provider.establishedYear || initialCompany.establishedYear || 2015,
-        workTypeLabels: translateWorkType(provider.workTypes || initialCompany.workTypeLabels || '全包'),
+        serviceLabel: provider.specialty || initialCompany.serviceLabel || '装修施工服务',
         certifications: initialCompany.certifications || ['建筑装饰资质', '设计甲级资质'],
         serviceIntro: provider.serviceIntro || `${initialCompany.name || '本公司'}成立于${initialCompany.establishedYear || 2015}年，提供专业的装修设计与施工服务。`,
         priceMin: provider.priceMin || 800,
         priceMax: provider.priceMax || 1500,
         priceUnit: provider.priceUnit || '/m²',
-        pricingLabel: buildPricingLabel(provider.pricingJson, provider.priceMin || 800, provider.priceMax || 1500, provider.priceUnit || '/m²'),
+        quoteDisplay: formatProviderPricing({
+            role: 'company',
+            pricingJson: provider.pricingJson,
+            priceMin: provider.priceMin || 800,
+            priceMax: provider.priceMax || 1500,
+            priceUnit: provider.priceUnit || '元/㎡',
+        }).quoteDisplay,
         highlightTags: parseStringArray(provider.highlightTags),
         designPhilosophy: provider.designPhilosophy || '',
     };
@@ -1101,7 +1094,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 </View>
             )}
-            bottomBar={
+            bottomBar={isSettled ? (
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -1130,7 +1123,11 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约</Text>
                     </TouchableOpacity>
                 </View>
-            }
+            ) : (
+                <View style={styles.floatBottomBar}>
+                    <Text style={styles.unsettledHintText}>该商家信息来源于公开渠道，尚未在本平台入驻。</Text>
+                </View>
+            )}
         >
             {/* 2. Dashboard Stats (Floating) */}
             <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
@@ -1139,15 +1136,26 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     <View style={styles.designerDashHeaderInfo}>
                         <View style={styles.designerDashNameRow}>
                             <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
-                            <TouchableOpacity
-                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
-                                onPress={handleFollow}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
-                                    {isFollowed ? '已关注' : '+关注'}
-                                </Text>
-                            </TouchableOpacity>
+                            {isSettled ? (
+                                <View style={styles.settledBadge}>
+                                    <Text style={styles.settledBadgeText}>已认证</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.unsettledBadge}>
+                                    <Text style={styles.unsettledBadgeText}>未入驻</Text>
+                                </View>
+                            )}
+                            {isSettled && (
+                                <TouchableOpacity
+                                    style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                    onPress={handleFollow}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                        {isFollowed ? '已关注' : '+关注'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         <Text style={styles.designerDashExperienceText}>{displayData.establishedYear}年成立</Text>
                         <View style={styles.specialtyPill}>
@@ -1224,10 +1232,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     ))}
                 </View>
 
-                <View style={styles.priceTagRow}>
-                    <Text style={styles.priceTagLabel}>参考均价</Text>
-                    <Text style={styles.priceTagValue}>{displayData.pricingLabel}</Text>
-                </View>
+                <ProviderQuoteSection quote={displayData.quoteDisplay} />
             </View>
 
             {/* 4. Portfolio Showcase */}
@@ -1581,24 +1586,23 @@ const styles = StyleSheet.create({
         lineHeight: 24,
     },
     priceTagRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        width: '100%',
         marginTop: 12,
         backgroundColor: colors.gray50,
-        alignSelf: 'flex-start',
         paddingHorizontal: 12,
-        paddingVertical: 6,
+        paddingVertical: 10,
         borderRadius: 8,
     },
     priceTagLabel: {
         fontSize: 12,
         color: colors.warning,
-        marginRight: 6,
+        marginBottom: 4,
     },
     priceTagValue: {
         fontSize: 16,
         fontWeight: 'bold',
         color: colors.warning,
+        lineHeight: 22,
     },
 
     // Portfolio
@@ -2020,5 +2024,35 @@ const styles = StyleSheet.create({
         padding: 8,
         borderRadius: 20,
         backgroundColor: 'rgba(0,0,0,0.1)', // backup bg for visibility
+    },
+    settledBadge: {
+        backgroundColor: '#e6f7ee',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    settledBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#389e6a',
+    },
+    unsettledBadge: {
+        backgroundColor: '#fff7ed',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    unsettledBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#d97706',
+    },
+    unsettledHintText: {
+        flex: 1,
+        fontSize: 13,
+        color: '#d97706',
+        textAlign: 'center',
     },
 });

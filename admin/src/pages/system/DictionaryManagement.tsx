@@ -38,7 +38,8 @@ const DictionaryManagement: React.FC = () => {
         try {
             const res = await dictionaryApi.getCategories();
             // 过滤掉 service_area，已迁移至行政区划管理
-            const filteredCategories = (res || []).filter(cat => cat.code !== 'service_area');
+            // 过滤掉 work_type，当前业务未直接消费该字典，避免与实际商家/施工角色口径混淆
+            const filteredCategories = (res || []).filter(cat => !['service_area', 'work_type'].includes(cat.code));
             setCategories(filteredCategories);
             if (filteredCategories && filteredCategories.length > 0 && !activeCategory) {
                 setActiveCategory(filteredCategories[0].code);

@@ -1,0 +1,51 @@
+.summaryCard,
+.card {
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(186, 174, 162, 0.16);
+}
+
+.summaryCard {
+  display: grid;
+  gap: 8px;
+}
+
+.summaryCard span,
+.summaryCard p,
+.card p,
+.meta span {
+  margin: 0;
+  color: var(--color-secondary);
+}
+
+.summaryCard strong,
+.meta strong {
+  font-family: var(--font-family-heading);
+  color: var(--color-ink);
+}
+
+.list {
+  display: grid;
+  gap: 14px;
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.card h3,
+.card p,
+.meta strong {
+  margin: 0;
+}
+
+.meta {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  text-align: right;
+}

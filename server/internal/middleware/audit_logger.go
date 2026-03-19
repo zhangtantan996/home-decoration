@@ -71,6 +71,11 @@ func shouldAudit(path string) bool {
 		"/merchant/bank-accounts",      // 银行账户
 		"/merchant/apply",              // 入驻申请
 		"/admin/merchant-applications", // Admin审核
+		"/admin/finance/",              // P2 资金监控
+		"/admin/audits/",               // 审计仲裁
+		"/projects/",                   // 项目执行关键节点
+		"/proposals/",                  // 方案确认/拒绝
+		"/quote-submissions/",          // 施工报价确认/拒绝
 	}
 
 	for _, p := range auditPaths {
@@ -115,6 +120,9 @@ func buildAuditLogEntry(c *gin.Context, path, requestBody string, startTime time
 	userID := c.GetUint64("userId")
 	providerID := c.GetUint64("providerId")
 	adminID := c.GetUint64("adminId")
+	if adminID == 0 {
+		adminID = c.GetUint64("admin_id")
+	}
 
 	// 确定操作者类型
 	var operatorType string
@@ -149,15 +157,22 @@ func buildAuditLogEntry(c *gin.Context, path, requestBody string, startTime time
 // saveAuditLog 保存审计日志（异步，不要依赖 gin.Context 生命周期）
 func saveAuditLog(entry auditLogEntry) {
 	auditLog := model.AuditLog{
-		OperatorType: entry.operatorType,
-		OperatorID:   entry.operatorID,
-		Action:       entry.action,
-		Resource:     entry.resource,
-		RequestBody:  entry.requestBody,
-		ClientIP:     entry.clientIP,
-		UserAgent:    entry.userAgent,
-		StatusCode:   entry.statusCode,
-		Duration:     entry.durationMs,
+		RecordKind:    "request",
+		OperatorType:  entry.operatorType,
+		OperatorID:    entry.operatorID,
+		Action:        entry.action,
+		OperationType: strings.ToLower(strings.TrimSpace(strings.Split(entry.action, " ")[0])),
+		Resource:      entry.resource,
+		ResourceType:  entry.resource,
+		Result:        auditResultFromStatusCode(entry.statusCode),
+		RequestBody:   entry.requestBody,
+		BeforeState:   "{}",
+		AfterState:    "{}",
+		Metadata:      "{}",
+		ClientIP:      entry.clientIP,
+		UserAgent:     entry.userAgent,
+		StatusCode:    entry.statusCode,
+		Duration:      entry.durationMs,
 	}
 
 	repository.DB.Create(&auditLog)
@@ -185,4 +200,17 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func auditResultFromStatusCode(statusCode int) string {
+	switch {
+	case statusCode >= 500:
+		return "error"
+	case statusCode >= 400:
+		return "rejected"
+	case statusCode > 0:
+		return "success"
+	default:
+		return ""
+	}
 }

@@ -132,24 +132,26 @@ func MerchantCaseList(c *gin.Context) {
 	})
 }
 
+type merchantCasePayload struct {
+	Title          string          `json:"title" binding:"required"`
+	CoverImage     string          `json:"coverImage" binding:"required"`
+	Style          string          `json:"style" binding:"required"`
+	Layout         string          `json:"layout"`
+	Area           string          `json:"area"`
+	Price          float64         `json:"price"`
+	QuoteTotalCent *int64          `json:"quoteTotalCent"`
+	QuoteCurrency  string          `json:"quoteCurrency"`
+	QuoteItems     json.RawMessage `json:"quoteItems"`
+	Year           string          `json:"year"`
+	Description    string          `json:"description"`
+	Images         []string        `json:"images" binding:"required,min=1"`
+}
+
 // MerchantCaseCreate 创建作品 (提交审核)
 func MerchantCaseCreate(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 
-	var input struct {
-		Title          string          `json:"title" binding:"required"`
-		CoverImage     string          `json:"coverImage" binding:"required"`
-		Style          string          `json:"style" binding:"required"`
-		Layout         string          `json:"layout"`
-		Area           string          `json:"area"`
-		Price          float64         `json:"price"`
-		QuoteTotalCent *int64          `json:"quoteTotalCent"`
-		QuoteCurrency  string          `json:"quoteCurrency"`
-		QuoteItems     json.RawMessage `json:"quoteItems"`
-		Year           string          `json:"year"`
-		Description    string          `json:"description"`
-		Images         []string        `json:"images" binding:"required,min=1"`
-	}
+	var input merchantCasePayload
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
@@ -228,6 +230,90 @@ func MerchantCaseCreate(c *gin.Context) {
 	response.Success(c, gin.H{
 		"id":      audit.ID, // 返回 Audit ID
 		"message": "已提交审核",
+	})
+}
+
+func createCaseDraftFromProject(projectID, providerID uint64, req merchantCasePayload) (*model.Project, *model.CaseAudit, error) {
+	return service.GenerateCaseDraftFromProject(projectID, providerID, &service.ProjectCaseDraftInput{
+		Title:          req.Title,
+		CoverImage:     req.CoverImage,
+		Style:          req.Style,
+		Layout:         req.Layout,
+		Area:           req.Area,
+		Price:          req.Price,
+		QuoteTotalCent: req.QuoteTotalCent,
+		QuoteCurrency:  req.QuoteCurrency,
+		QuoteItems:     req.QuoteItems,
+		Description:    req.Description,
+		Images:         req.Images,
+	})
+}
+
+// MerchantCaseCreateFromProject 保存项目方案数据到灵感案例（生成待审核草稿）
+func MerchantCaseCreateFromProject(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	projectID := parseUint64(c.Param("projectId"))
+	if projectID == 0 {
+		response.Error(c, 400, "无效项目ID")
+		return
+	}
+
+	var req merchantCasePayload
+	_ = c.ShouldBindJSON(&req)
+
+	project, audit, err := createCaseDraftFromProject(projectID, providerID, req)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"auditId":   audit.ID,
+		"projectId": project.ID,
+		"message":   "已保存到灵感案例，等待审核",
+	})
+}
+
+// CreateProjectInspirationDraft 用户侧从项目生成灵感案例草稿
+func CreateProjectInspirationDraft(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.Error(c, 400, "无效项目ID")
+		return
+	}
+
+	userID := c.GetUint64("userId")
+	var project model.Project
+	if err := repository.DB.First(&project, projectID).Error; err != nil {
+		response.Error(c, 404, "项目不存在")
+		return
+	}
+	if project.OwnerID != userID {
+		response.Error(c, 403, "无权操作此项目")
+		return
+	}
+	if project.InspirationCaseDraftID > 0 {
+		response.Success(c, gin.H{
+			"auditId":   project.InspirationCaseDraftID,
+			"projectId": project.ID,
+			"message":   "灵感案例草稿已生成",
+		})
+		return
+	}
+
+	providerID := project.ConstructionProviderID
+	if providerID == 0 {
+		providerID = project.ProviderID
+	}
+	projectResult, audit, err := createCaseDraftFromProject(projectID, providerID, merchantCasePayload{})
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{
+		"auditId":   audit.ID,
+		"projectId": projectResult.ID,
+		"message":   "已生成灵感案例草稿，等待审核",
 	})
 }
 

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Card, Steps, Button, Descriptions, Tag, Tabs, List, Space, Modal, message,
-    Timeline, Form, Input, DatePicker, Popconfirm, Empty, Spin, Select
+    Timeline, Form, Input, InputNumber, DatePicker, Popconfirm, Empty, Spin, Select
 } from 'antd';
 import {
     StopOutlined,
@@ -11,9 +11,14 @@ import {
     EditOutlined,
     DeleteOutlined,
     PictureOutlined,
+    ApartmentOutlined,
+    DollarCircleOutlined,
 } from '@ant-design/icons';
 import { adminProjectApi } from '../../services/api';
+import { adminQuoteApi } from '../../services/quoteApi';
 import dayjs from 'dayjs';
+import PageHeader from '../../components/PageHeader';
+import StatusTag from '../../components/StatusTag';
 
 const { TextArea } = Input;
 
@@ -32,6 +37,38 @@ const PHASE_STATUS_MAP: Record<string, { color: string; text: string }> = {
     pending: { color: 'default', text: '待开始' },
     in_progress: { color: 'blue', text: '进行中' },
     completed: { color: 'green', text: '已完成' },
+};
+
+const BUSINESS_STAGE_MAP: Record<string, string> = {
+    lead_pending: '线索待推进',
+    consulting: '沟通中',
+    proposal_pending: '方案待确认',
+    proposal_confirmed: '设计已确认',
+    constructor_pending: '待选施工方',
+    construction_quote_pending: '施工报价待确认',
+    ready_to_start: '待开工',
+    in_progress: '施工中',
+    milestone_review: '节点验收中',
+    completed: '已完工',
+    archived: '已归档',
+    disputed: '争议中',
+    cancelled: '已取消',
+};
+
+const BUSINESS_ACTION_MAP: Record<string, string> = {
+    create_proposal: '提交方案',
+    confirm_proposal: '确认设计方案',
+    reject_proposal: '驳回设计方案',
+    create_quote_task: '创建施工报价任务',
+    select_constructor: '运营干预施工方',
+    submit_construction_quote: '跟进施工报价提交',
+    confirm_construction_quote: '运营干预施工报价',
+    reject_construction_quote: '驳回施工报价',
+    start_project: '发起开工',
+    submit_milestone: '提交节点验收',
+    approve_milestone: '通过节点验收',
+    reject_milestone: '驳回节点验收',
+    generate_inspiration_draft: '生成案例草稿',
 };
 
 interface WorkLog {
@@ -61,12 +98,20 @@ interface Phase {
 const ProjectDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [project, setProject] = useState<any>(null);
     const [phases, setPhases] = useState<Phase[]>([]);
     const [logs, setLogs] = useState<WorkLog[]>([]);
     const [logsLoading, setLogsLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('overview');
+    const [constructionModalVisible, setConstructionModalVisible] = useState(false);
+    const [quoteModalVisible, setQuoteModalVisible] = useState(false);
+    const [providerOptions, setProviderOptions] = useState<Array<{ label: string; value: number; providerType: number }>>([]);
+    const [actionLoading, setActionLoading] = useState(false);
+    const [constructionForm] = Form.useForm();
+    const [quoteForm] = Form.useForm();
+    const constructionPartyMode = Form.useWatch('constructionPartyMode', constructionForm) || 'company';
 
     // 日志编辑状态
     const [logModalVisible, setLogModalVisible] = useState(false);
@@ -79,6 +124,19 @@ const ProjectDetail: React.FC = () => {
             loadData();
         }
     }, [id]);
+
+    useEffect(() => {
+        const action = searchParams.get('action');
+        if (!project || !action) return;
+        if (action === 'construction') {
+            void handleOpenConstructionModal();
+            setSearchParams({}, { replace: true });
+        }
+        if (action === 'quote') {
+            handleOpenQuoteModal();
+            setSearchParams({}, { replace: true });
+        }
+    }, [project, searchParams, setSearchParams]);
 
     useEffect(() => {
         if (activeTab === 'logs' && id) {
@@ -104,6 +162,21 @@ const ProjectDetail: React.FC = () => {
             message.error('加载失败');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadProviderOptions = async () => {
+        try {
+            const providers = await adminQuoteApi.listProviders();
+            setProviderOptions(
+                providers.map((provider) => ({
+                    value: provider.id,
+                    providerType: provider.providerType,
+                    label: `${provider.companyName || `服务商#${provider.id}`} · ${provider.providerType === 3 ? '工长' : '装修公司'}`,
+                })),
+            );
+        } catch (error) {
+            message.error('加载施工方选项失败');
         }
     };
 
@@ -152,6 +225,76 @@ const ProjectDetail: React.FC = () => {
             }
         } catch (error) {
             message.error('更新失败');
+        }
+    };
+
+    const handleOpenConstructionModal = async () => {
+        if (!providerOptions.length) {
+            await loadProviderOptions();
+        }
+        constructionForm.setFieldsValue({
+            constructionPartyMode: project?.constructionProviderId ? 'company' : 'foreman',
+            constructionProviderId: project?.constructionProviderId || undefined,
+            foremanId: project?.foremanId || undefined,
+        });
+        setConstructionModalVisible(true);
+    };
+
+    const handleConfirmConstruction = async () => {
+        try {
+            const values = await constructionForm.validateFields();
+            setActionLoading(true);
+            const payload = values.constructionPartyMode === 'company'
+                ? { constructionProviderId: values.constructionProviderId, foremanId: undefined }
+                : { constructionProviderId: undefined, foremanId: values.foremanId };
+            const res = await adminProjectApi.confirmConstruction(id!, payload) as any;
+            if (res.code === 0) {
+                message.success('施工方已确认');
+                setConstructionModalVisible(false);
+                await loadData();
+            } else {
+                message.error(res.error || res.message || '施工方确认失败');
+            }
+        } catch (error: any) {
+            if (error?.errorFields) return;
+            message.error(error?.message || '施工方确认失败');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleOpenQuoteModal = () => {
+        quoteForm.setFieldsValue({
+            constructionQuote: project?.constructionQuote || undefined,
+            materialMethod: project?.materialMethod || undefined,
+            plannedStartDate: project?.entryStartDate ? dayjs(project.entryStartDate) : undefined,
+            expectedEnd: project?.expectedEnd ? dayjs(project.expectedEnd) : undefined,
+        });
+        setQuoteModalVisible(true);
+    };
+
+    const handleConfirmConstructionQuote = async () => {
+        try {
+            const values = await quoteForm.validateFields();
+            setActionLoading(true);
+            const res = await adminProjectApi.confirmConstructionQuote(id!, {
+                constructionQuote: Number(values.constructionQuote),
+                materialMethod: values.materialMethod,
+                plannedStartDate: values.plannedStartDate ? values.plannedStartDate.format('YYYY-MM-DD') : undefined,
+                expectedEnd: values.expectedEnd ? values.expectedEnd.format('YYYY-MM-DD') : undefined,
+            }) as any;
+            if (res.code === 0) {
+                message.success('施工报价已确认');
+                setQuoteModalVisible(false);
+                await loadData();
+            } else {
+                message.error(res.error || res.message || '施工报价确认失败');
+            }
+        } catch (error: any) {
+            if (error?.errorFields) return;
+            message.error(error?.message || '施工报价确认失败');
+        } finally {
+            setActionLoading(false);
         }
     };
 
@@ -240,16 +383,11 @@ const ProjectDetail: React.FC = () => {
     }));
 
     return (
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
-            {/* Header / Basic Info */}
-            <Card
-                title={
-                    <Space>
-                        <span>{project.name}</span>
-                        <Tag color={statusMap[project.status]?.color}>{statusMap[project.status]?.text}</Tag>
-                    </Space>
-                }
-                extra={
+        <div className="hz-page-stack">
+            <PageHeader
+                title={project.name}
+                description="后台运营干预入口：正常主链由用户、设计师与施工方推进，这里仅用于异常兜底、人工协助与状态修正。"
+                extra={(
                     <Space>
                         {project.status === 0 && (
                             <Button type="primary" onClick={() => handleStatusChange(1)}>开始施工</Button>
@@ -260,23 +398,128 @@ const ProjectDetail: React.FC = () => {
                         {project.status === 2 && (
                             <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => handleStatusChange(1)}>恢复项目</Button>
                         )}
+                        {project.businessStage === 'construction_party_pending' && (
+                            <Button icon={<ApartmentOutlined />} onClick={() => void handleOpenConstructionModal()}>
+                                干预施工方
+                            </Button>
+                        )}
+                        {(project.businessStage === 'construction_party_pending' || project.businessStage === 'ready_to_start') && (
+                            <Button icon={<DollarCircleOutlined />} onClick={handleOpenQuoteModal}>
+                                干预施工报价
+                            </Button>
+                        )}
                         <Button onClick={() => navigate(-1)}>返回</Button>
                     </Space>
-                }
-            >
+                )}
+            />
+
+            <Card className="hz-panel-card">
+                <div style={{ marginBottom: 16 }}>
+                    <Space wrap>
+                        <StatusTag
+                            status={project.status === 2 ? 'completed' : project.status === 3 ? 'rejected' : 'warning'}
+                            text={statusMap[project.status]?.text || '未知状态'}
+                        />
+                        {project.businessStage ? (
+                            <StatusTag
+                                status={project.businessStage === 'completed' || project.businessStage === 'archived' ? 'completed' : 'info'}
+                                text={BUSINESS_STAGE_MAP[project.businessStage] || project.businessStage}
+                            />
+                        ) : null}
+                    </Space>
+                </div>
                 <Descriptions column={3}>
                     <Descriptions.Item label="ID">{project.id}</Descriptions.Item>
                     <Descriptions.Item label="业主">{project.ownerName}</Descriptions.Item>
                     <Descriptions.Item label="服务商">{project.providerName}</Descriptions.Item>
                     <Descriptions.Item label="预算">¥{project.budget?.toLocaleString()}</Descriptions.Item>
                     <Descriptions.Item label="当前阶段">{project.currentPhase}</Descriptions.Item>
+                    <Descriptions.Item label="闭环阶段">{BUSINESS_STAGE_MAP[project.businessStage] || project.businessStage || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="施工主体" span={3}>
+                        {project.constructionProviderId
+                            ? `装修公司（ID: ${project.constructionProviderId}）`
+                            : project.foremanId
+                                ? `独立工长（ID: ${project.foremanId}）`
+                                : '-'}
+                    </Descriptions.Item>
                     <Descriptions.Item label="开始时间">{project.startDate ? new Date(project.startDate).toLocaleDateString() : '-'}</Descriptions.Item>
+                    <Descriptions.Item label="当前动作" span={3}>
+                        {Array.isArray(project.availableActions) && project.availableActions.length > 0
+                            ? project.availableActions.map((action: string) => BUSINESS_ACTION_MAP[action] || action).join(' / ')
+                            : '-'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="闭环摘要" span={3}>{project.flowSummary || '-'}</Descriptions.Item>
                     <Descriptions.Item label="地址" span={3}>{project.address}</Descriptions.Item>
                 </Descriptions>
             </Card>
 
+            <Modal
+                title="运营干预施工方"
+                open={constructionModalVisible}
+                onCancel={() => setConstructionModalVisible(false)}
+                onOk={() => void handleConfirmConstruction()}
+                confirmLoading={actionLoading}
+                destroyOnClose
+            >
+                <Form form={constructionForm} layout="vertical">
+                    <Form.Item name="constructionPartyMode" label="施工主体" rules={[{ required: true, message: '请选择施工主体类型' }]}>
+                        <Select
+                            options={[
+                                { value: 'company', label: '装修公司（自带工长）' },
+                                { value: 'foreman', label: '独立工长' },
+                            ]}
+                        />
+                    </Form.Item>
+                    {constructionPartyMode === 'company' ? (
+                        <Form.Item name="constructionProviderId" label="装修公司" rules={[{ required: true, message: '请选择装修公司' }]}>
+                            <Select
+                                options={providerOptions.filter((item) => item.providerType === 2)}
+                                placeholder="请选择装修公司"
+                            />
+                        </Form.Item>
+                    ) : (
+                        <Form.Item name="foremanId" label="独立工长" rules={[{ required: true, message: '请选择独立工长' }]}>
+                            <Select
+                                options={providerOptions.filter((item) => item.providerType === 3)}
+                                placeholder="请选择独立工长"
+                            />
+                        </Form.Item>
+                    )}
+                </Form>
+            </Modal>
+
+            <Modal
+                title="运营干预施工报价"
+                open={quoteModalVisible}
+                onCancel={() => setQuoteModalVisible(false)}
+                onOk={() => void handleConfirmConstructionQuote()}
+                confirmLoading={actionLoading}
+                destroyOnClose
+            >
+                <Form form={quoteForm} layout="vertical">
+                    <Form.Item name="constructionQuote" label="施工总价（元）" rules={[{ required: true, message: '请输入施工总价' }]}>
+                        <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="materialMethod" label="主材方式">
+                        <Select
+                            allowClear
+                            options={[
+                                { value: 'self', label: '业主自采' },
+                                { value: 'platform', label: '平台协同' },
+                            ]}
+                        />
+                    </Form.Item>
+                    <Form.Item name="plannedStartDate" label="计划开工日期" rules={[{ required: true, message: '请选择计划开工日期' }]}>
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="expectedEnd" label="预计完工日期">
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
             {/* Progress / Phases */}
-            <Card title="项目进度">
+            <Card className="hz-panel-card" title="项目进度">
                 {phases.length > 0 && (
                     <Steps
                         current={currentPhaseIndex >= 0 ? currentPhaseIndex : 0}
@@ -446,7 +689,7 @@ const ProjectDetail: React.FC = () => {
                     {/* TODO: 图片上传功能后续添加 */}
                 </Form>
             </Modal>
-        </Space>
+        </div>
     );
 };
 

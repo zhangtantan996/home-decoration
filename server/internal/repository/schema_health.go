@@ -10,12 +10,20 @@ import (
 )
 
 const (
-	SMSAuditLogTableName         = "sms_audit_logs"
-	SMSAuditMigrationPath        = CanonicalSchemaReconcileMigrationPath
-	SMSAuditHealthStatusOK       = "ok"
-	SMSAuditHealthStatusDegraded = "degraded"
-	UserAuthHealthComponent      = "user_auth_schema"
-	MerchantOnboardingComponent  = "merchant_onboarding_schema"
+	SMSAuditLogTableName           = "sms_audit_logs"
+	SMSAuditMigrationPath          = CanonicalSchemaReconcileMigrationPath
+	SMSAuditHealthStatusOK         = "ok"
+	SMSAuditHealthStatusDegraded   = "degraded"
+	UserAuthHealthComponent        = "user_auth_schema"
+	MerchantOnboardingComponent    = "merchant_onboarding_schema"
+	BookingP0HealthComponent       = "booking_p0_schema"
+	ProjectRiskHealthComponent     = "project_risk_schema"
+	AuditLogHealthComponent        = "audit_log_schema"
+	CommerceRuntimeHealthComponent = "commerce_runtime_schema"
+	BookingP0MigrationPath         = "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
+	ProjectRiskMigrationPath       = "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
+	AuditLogMigrationPath          = "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
+	CommerceRuntimeMigrationPath   = "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
 )
 
 // SMSAuditLogHealthSnapshot describes runtime health for SMS audit persistence.
@@ -92,6 +100,58 @@ var merchantOnboardingHealthStore = struct {
 	},
 }
 
+var bookingP0HealthStore = struct {
+	sync.Mutex
+	snapshot CriticalSchemaHealthSnapshot
+}{
+	snapshot: CriticalSchemaHealthSnapshot{
+		Status:            SMSAuditHealthStatusDegraded,
+		Component:         BookingP0HealthComponent,
+		MigrationRequired: true,
+		RequiredMigration: BookingP0MigrationPath,
+		Missing:           []string{"site_surveys", "budget_confirmations"},
+	},
+}
+
+var projectRiskHealthStore = struct {
+	sync.Mutex
+	snapshot CriticalSchemaHealthSnapshot
+}{
+	snapshot: CriticalSchemaHealthSnapshot{
+		Status:            SMSAuditHealthStatusDegraded,
+		Component:         ProjectRiskHealthComponent,
+		MigrationRequired: true,
+		RequiredMigration: ProjectRiskMigrationPath,
+		Missing:           []string{"projects.paused_at", "refund_applications", "project_audits"},
+	},
+}
+
+var auditLogHealthStore = struct {
+	sync.Mutex
+	snapshot CriticalSchemaHealthSnapshot
+}{
+	snapshot: CriticalSchemaHealthSnapshot{
+		Status:            SMSAuditHealthStatusDegraded,
+		Component:         AuditLogHealthComponent,
+		MigrationRequired: true,
+		RequiredMigration: AuditLogMigrationPath,
+		Missing:           []string{"audit_logs.record_kind", "audit_logs.operation_type", "audit_logs.resource_type"},
+	},
+}
+
+var commerceRuntimeHealthStore = struct {
+	sync.Mutex
+	snapshot CriticalSchemaHealthSnapshot
+}{
+	snapshot: CriticalSchemaHealthSnapshot{
+		Status:            SMSAuditHealthStatusDegraded,
+		Component:         CommerceRuntimeHealthComponent,
+		MigrationRequired: true,
+		RequiredMigration: CommerceRuntimeMigrationPath,
+		Missing:           []string{"providers.is_settled", "material_shops.is_settled", "bookings.survey_deposit_source"},
+	},
+}
+
 var userAuthRequirements = map[string][]string{
 	"users": {"public_id", "last_login_at", "last_login_ip"},
 }
@@ -104,6 +164,35 @@ var merchantOnboardingRequirements = map[string][]string{
 	"material_shop_application_products":    {"application_id", "name", "params_json", "price", "images_json", "sort_order"},
 	"material_shop_products":                {"shop_id", "name", "params_json", "price", "images_json", "cover_image", "status", "sort_order"},
 	"merchant_identity_change_applications": {"user_id", "phone", "current_role", "target_role", "target_entity", "application_data", "status", "reject_reason", "reviewed_by", "reviewed_at"},
+}
+
+var bookingP0Requirements = map[string][]string{
+	"site_surveys":         {"booking_id", "provider_id", "photos", "dimensions", "status", "submitted_at", "confirmed_at", "revision_requested_at", "revision_request_reason"},
+	"budget_confirmations": {"booking_id", "provider_id", "budget_min", "budget_max", "includes", "design_intent", "status", "submitted_at", "accepted_at", "rejected_at", "rejection_reason"},
+}
+
+var projectRiskRequirements = map[string][]string{
+	"projects":            {"paused_at", "resumed_at", "pause_reason", "pause_initiator", "disputed_at", "dispute_reason", "dispute_evidence"},
+	"refund_applications": {"booking_id", "project_id", "refund_type", "requested_amount", "approved_amount", "status", "admin_id", "admin_notes", "approved_at", "completed_at"},
+	"project_audits":      {"project_id", "audit_type", "status", "complaint_id", "refund_application_id", "audit_notes", "conclusion", "conclusion_reason", "execution_plan", "admin_id", "completed_at"},
+}
+
+var auditLogRequirements = map[string][]string{
+	"audit_logs": {"record_kind", "operation_type", "resource_type", "resource_id", "reason", "result", "before_state", "after_state", "metadata"},
+}
+
+var commerceRuntimeRequirements = map[string][]string{
+	"providers":                 {"survey_deposit_price", "is_settled", "collected_source"},
+	"material_shops":            {"service_area", "main_brands", "main_categories", "delivery_capability", "installation_capability", "after_sales_policy", "invoice_capability", "is_settled", "collected_source", "status"},
+	"bookings":                  {"survey_deposit_source", "survey_refund_notice", "survey_deposit", "survey_deposit_paid", "survey_deposit_paid_at", "survey_deposit_converted", "survey_deposit_refunded", "survey_deposit_refund_amt", "survey_deposit_refund_at"},
+	"proposals":                 {"internal_draft_json", "preview_package_json", "delivery_package_json"},
+	"milestones":                {"release_scheduled_at", "released_at"},
+	"projects":                  {"construction_payment_mode", "payment_paused", "payment_paused_at", "payment_paused_reason"},
+	"merchant_service_settings": {"survey_deposit_amount", "design_payment_mode"},
+	"payment_plans":             {"milestone_id"},
+	"design_working_docs":       {"booking_id", "provider_id", "doc_type", "title", "description", "files", "submitted_at"},
+	"design_fee_quotes":         {"booking_id", "provider_id", "total_fee", "deposit_deduction", "net_amount", "payment_mode", "stages_json", "status", "expire_at", "confirmed_at", "rejected_at", "rejection_reason", "order_id"},
+	"design_deliverables":       {"booking_id", "project_id", "order_id", "provider_id", "color_floor_plan", "renderings", "rendering_link", "text_description", "cad_drawings", "attachments", "status", "submitted_at", "accepted_at", "rejected_at", "rejection_reason"},
 }
 
 func recordSMSAuditSchemaCheck(tableExists bool, err error) {
@@ -143,7 +232,7 @@ func snapshotSMSAuditLogHealth() SMSAuditLogHealthSnapshot {
 func recordCriticalSchemaCheck(store *struct {
 	sync.Mutex
 	snapshot CriticalSchemaHealthSnapshot
-}, component string, missing []string, err error) {
+}, component, requiredMigration string, missing []string, err error) {
 	store.Lock()
 	defer store.Unlock()
 
@@ -151,7 +240,7 @@ func recordCriticalSchemaCheck(store *struct {
 	sort.Strings(missing)
 	store.snapshot.Component = component
 	store.snapshot.MigrationRequired = len(missing) > 0
-	store.snapshot.RequiredMigration = CanonicalSchemaReconcileMigrationPath
+	store.snapshot.RequiredMigration = requiredMigration
 	store.snapshot.LastCheckedAt = time.Now()
 	store.snapshot.Missing = missing
 	if len(missing) == 0 && err == nil {
@@ -189,8 +278,25 @@ func findMissingColumns(table string, columns []string) ([]string, error) {
 	if !DB.Migrator().HasTable(table) {
 		return append(missing, table), nil
 	}
+
+	rows, err := DB.Table(table).Select("*").Limit(1).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	existingColumns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	columnSet := make(map[string]struct{}, len(existingColumns))
+	for _, column := range existingColumns {
+		columnSet[column] = struct{}{}
+	}
+
 	for _, column := range columns {
-		if !DB.Migrator().HasColumn(table, column) {
+		if _, ok := columnSet[column]; !ok {
 			missing = append(missing, fmt.Sprintf("%s.%s", table, column))
 		}
 	}
@@ -227,19 +333,43 @@ func RefreshSMSAuditLogHealth() SMSAuditLogHealthSnapshot {
 
 func RefreshUserAuthSchemaHealth() CriticalSchemaHealthSnapshot {
 	missing, err := checkSchemaRequirements(userAuthRequirements)
-	recordCriticalSchemaCheck(&userAuthHealthStore, UserAuthHealthComponent, missing, err)
+	recordCriticalSchemaCheck(&userAuthHealthStore, UserAuthHealthComponent, CanonicalSchemaReconcileMigrationPath, missing, err)
 	return snapshotCriticalSchemaHealth(&userAuthHealthStore)
 }
 
 func RefreshMerchantOnboardingSchemaHealth() CriticalSchemaHealthSnapshot {
 	missing, err := checkSchemaRequirements(merchantOnboardingRequirements)
-	recordCriticalSchemaCheck(&merchantOnboardingHealthStore, MerchantOnboardingComponent, missing, err)
+	recordCriticalSchemaCheck(&merchantOnboardingHealthStore, MerchantOnboardingComponent, CanonicalSchemaReconcileMigrationPath, missing, err)
 	return snapshotCriticalSchemaHealth(&merchantOnboardingHealthStore)
+}
+
+func RefreshBookingP0SchemaHealth() CriticalSchemaHealthSnapshot {
+	missing, err := checkSchemaRequirements(bookingP0Requirements)
+	recordCriticalSchemaCheck(&bookingP0HealthStore, BookingP0HealthComponent, BookingP0MigrationPath, missing, err)
+	return snapshotCriticalSchemaHealth(&bookingP0HealthStore)
+}
+
+func RefreshProjectRiskSchemaHealth() CriticalSchemaHealthSnapshot {
+	missing, err := checkSchemaRequirements(projectRiskRequirements)
+	recordCriticalSchemaCheck(&projectRiskHealthStore, ProjectRiskHealthComponent, ProjectRiskMigrationPath, missing, err)
+	return snapshotCriticalSchemaHealth(&projectRiskHealthStore)
+}
+
+func RefreshAuditLogSchemaHealth() CriticalSchemaHealthSnapshot {
+	missing, err := checkSchemaRequirements(auditLogRequirements)
+	recordCriticalSchemaCheck(&auditLogHealthStore, AuditLogHealthComponent, AuditLogMigrationPath, missing, err)
+	return snapshotCriticalSchemaHealth(&auditLogHealthStore)
+}
+
+func RefreshCommerceRuntimeSchemaHealth() CriticalSchemaHealthSnapshot {
+	missing, err := checkSchemaRequirements(commerceRuntimeRequirements)
+	recordCriticalSchemaCheck(&commerceRuntimeHealthStore, CommerceRuntimeHealthComponent, CommerceRuntimeMigrationPath, missing, err)
+	return snapshotCriticalSchemaHealth(&commerceRuntimeHealthStore)
 }
 
 // CurrentOperationalAlerts returns structured alerts for operational consumers.
 func CurrentOperationalAlerts() []OpsAlert {
-	alerts := make([]OpsAlert, 0, 3)
+	alerts := make([]OpsAlert, 0, 7)
 
 	smsSnapshot := RefreshSMSAuditLogHealth()
 	if smsSnapshot.Status != SMSAuditHealthStatusOK {
@@ -285,6 +415,26 @@ func CurrentOperationalAlerts() []OpsAlert {
 	merchantSnapshot := RefreshMerchantOnboardingSchemaHealth()
 	if merchantSnapshot.Status != SMSAuditHealthStatusOK {
 		alerts = append(alerts, newCriticalSchemaAlert(merchantSnapshot, "merchant_onboarding_schema_missing", "商家入驻关键表结构缺失，提交/审核链路不可用"))
+	}
+
+	bookingP0Snapshot := RefreshBookingP0SchemaHealth()
+	if bookingP0Snapshot.Status != SMSAuditHealthStatusOK {
+		alerts = append(alerts, newCriticalSchemaAlert(bookingP0Snapshot, "booking_p0_schema_missing", "预约量房/预算关键表结构缺失，P0 页面与接口不可用"))
+	}
+
+	projectRiskSnapshot := RefreshProjectRiskSchemaHealth()
+	if projectRiskSnapshot.Status != SMSAuditHealthStatusOK {
+		alerts = append(alerts, newCriticalSchemaAlert(projectRiskSnapshot, "project_risk_schema_missing", "项目争议/退款/审计关键表结构缺失，仲裁与退款链路不可用"))
+	}
+
+	auditLogSnapshot := RefreshAuditLogSchemaHealth()
+	if auditLogSnapshot.Status != SMSAuditHealthStatusOK {
+		alerts = append(alerts, newCriticalSchemaAlert(auditLogSnapshot, "audit_log_schema_missing", "审计留痕关键字段缺失，后台审计日志与资金追踪不可用"))
+	}
+
+	commerceRuntimeSnapshot := RefreshCommerceRuntimeSchemaHealth()
+	if commerceRuntimeSnapshot.Status != SMSAuditHealthStatusOK {
+		alerts = append(alerts, newCriticalSchemaAlert(commerceRuntimeSnapshot, "commerce_runtime_schema_missing", "公开列表/设计支付运行时结构缺失，用户侧列表、退款与托管链路可能异常"))
 	}
 
 	return alerts
@@ -357,9 +507,13 @@ func EnsureCriticalSchema(mode string) error {
 	smsSnapshot := RefreshSMSAuditLogHealth()
 	userAuthSnapshot := RefreshUserAuthSchemaHealth()
 	merchantSnapshot := RefreshMerchantOnboardingSchemaHealth()
+	bookingP0Snapshot := RefreshBookingP0SchemaHealth()
+	projectRiskSnapshot := RefreshProjectRiskSchemaHealth()
+	auditLogSnapshot := RefreshAuditLogSchemaHealth()
+	commerceRuntimeSnapshot := RefreshCommerceRuntimeSchemaHealth()
 
 	if !strings.EqualFold(strings.TrimSpace(mode), "release") {
-		logCriticalSchemaHealth(userAuthSnapshot, merchantSnapshot)
+		logCriticalSchemaHealth(userAuthSnapshot, merchantSnapshot, bookingP0Snapshot, projectRiskSnapshot, auditLogSnapshot, commerceRuntimeSnapshot)
 		if smsSnapshot.Status != SMSAuditHealthStatusOK {
 			logSMSAuditSchemaHealthAtStartup()
 		}
@@ -367,37 +521,75 @@ func EnsureCriticalSchema(mode string) error {
 	}
 
 	problems := make([]string, 0, 3)
+	requiredMigrations := make([]string, 0, 6)
 	if smsSnapshot.Status != SMSAuditHealthStatusOK {
 		problems = append(problems, smsSnapshot.Table)
+		requiredMigrations = append(requiredMigrations, smsSnapshot.RequiredMigration)
 	}
 	if userAuthSnapshot.Status != SMSAuditHealthStatusOK {
 		problems = append(problems, userAuthSnapshot.Missing...)
+		requiredMigrations = append(requiredMigrations, userAuthSnapshot.RequiredMigration)
 	}
 	if merchantSnapshot.Status != SMSAuditHealthStatusOK {
 		problems = append(problems, merchantSnapshot.Missing...)
+		requiredMigrations = append(requiredMigrations, merchantSnapshot.RequiredMigration)
+	}
+	if bookingP0Snapshot.Status != SMSAuditHealthStatusOK {
+		problems = append(problems, bookingP0Snapshot.Missing...)
+		requiredMigrations = append(requiredMigrations, bookingP0Snapshot.RequiredMigration)
+	}
+	if projectRiskSnapshot.Status != SMSAuditHealthStatusOK {
+		problems = append(problems, projectRiskSnapshot.Missing...)
+		requiredMigrations = append(requiredMigrations, projectRiskSnapshot.RequiredMigration)
+	}
+	if auditLogSnapshot.Status != SMSAuditHealthStatusOK {
+		problems = append(problems, auditLogSnapshot.Missing...)
+		requiredMigrations = append(requiredMigrations, auditLogSnapshot.RequiredMigration)
+	}
+	if commerceRuntimeSnapshot.Status != SMSAuditHealthStatusOK {
+		problems = append(problems, commerceRuntimeSnapshot.Missing...)
+		requiredMigrations = append(requiredMigrations, commerceRuntimeSnapshot.RequiredMigration)
 	}
 	if len(problems) == 0 {
 		return nil
 	}
 	sort.Strings(problems)
-	return fmt.Errorf("critical schema preflight failed: missing=%s requiredMigration=%s", strings.Join(problems, ","), CanonicalSchemaReconcileMigrationPath)
+	sort.Strings(requiredMigrations)
+	requiredMigrations = uniqueStrings(requiredMigrations)
+	return fmt.Errorf("critical schema preflight failed: missing=%s requiredMigrations=%s", strings.Join(problems, ","), strings.Join(requiredMigrations, ","))
 }
 
-func logCriticalSchemaHealth(userAuthSnapshot, merchantSnapshot CriticalSchemaHealthSnapshot) {
-	if userAuthSnapshot.Status != SMSAuditHealthStatusOK {
-		log.Printf("[AUTH-SCHEMA] degraded: missing=%s migration=%s errorType=%s error=%s",
-			strings.Join(userAuthSnapshot.Missing, ","),
-			userAuthSnapshot.RequiredMigration,
-			userAuthSnapshot.LastErrorType,
-			userAuthSnapshot.LastError,
+func logCriticalSchemaHealth(snapshots ...CriticalSchemaHealthSnapshot) {
+	for _, snapshot := range snapshots {
+		if snapshot.Status == SMSAuditHealthStatusOK {
+			continue
+		}
+		label := strings.ToUpper(strings.ReplaceAll(snapshot.Component, "_", "-"))
+		log.Printf("[%s] degraded: missing=%s migration=%s errorType=%s error=%s",
+			label,
+			strings.Join(snapshot.Missing, ","),
+			snapshot.RequiredMigration,
+			snapshot.LastErrorType,
+			snapshot.LastError,
 		)
 	}
-	if merchantSnapshot.Status != SMSAuditHealthStatusOK {
-		log.Printf("[MERCHANT-SCHEMA] degraded: missing=%s migration=%s errorType=%s error=%s",
-			strings.Join(merchantSnapshot.Missing, ","),
-			merchantSnapshot.RequiredMigration,
-			merchantSnapshot.LastErrorType,
-			merchantSnapshot.LastError,
-		)
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return values
 	}
+	result := make([]string, 0, len(values))
+	var previous string
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if value == previous {
+			continue
+		}
+		result = append(result, value)
+		previous = value
+	}
+	return result
 }

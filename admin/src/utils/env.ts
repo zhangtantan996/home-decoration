@@ -27,7 +27,32 @@ const normalizeAppEnv = (raw: unknown): AppEnv => {
     }
 };
 
+const normalizeRouterBasename = (raw: unknown): string => {
+    const value = typeof raw === 'string' ? raw.trim() : '';
+
+    if (!value || value === '/') {
+        return '/';
+    }
+
+    const withLeadingSlash = value.startsWith('/') ? value : `/${value}`;
+    return withLeadingSlash.replace(/\/+$/, '') || '/';
+};
+
 export const getAppEnv = (): AppEnv => normalizeAppEnv(import.meta.env.VITE_APP_ENV);
+
+export const getRouterBasename = (): string => {
+    const configured = normalizeRouterBasename(import.meta.env.VITE_ROUTER_BASENAME);
+    if (configured !== '/') {
+        return configured;
+    }
+
+    return getAppEnv() === 'production' ? '/admin' : '/';
+};
+
+export const getLoginPath = (): string => {
+    const basename = getRouterBasename();
+    return basename === '/' ? '/login' : `${basename}/login`;
+};
 
 export const getApiBaseUrl = (): string => {
     const configured = typeof import.meta.env.VITE_API_URL === 'string'

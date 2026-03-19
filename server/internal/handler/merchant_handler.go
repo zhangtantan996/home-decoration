@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"encoding/json"
@@ -81,30 +82,6 @@ func normalizeMerchantProviderSubType(applicantType string, providerType int8) s
 		}
 		return "designer"
 	}
-}
-
-func parseProviderWorkTypes(raw string) []string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return []string{}
-	}
-
-	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-		var jsonValues []string
-		if err := json.Unmarshal([]byte(trimmed), &jsonValues); err == nil {
-			return normalizeStringSlice(jsonValues)
-		}
-	}
-
-	if strings.Contains(trimmed, " · ") {
-		return normalizeStringSlice(strings.Split(trimmed, " · "))
-	}
-
-	if strings.Contains(trimmed, ",") {
-		return normalizeStringSlice(strings.Split(trimmed, ","))
-	}
-
-	return normalizeStringSlice([]string{trimmed})
 }
 
 func providerRoleFromSubType(providerSubType string) string {
@@ -378,6 +355,12 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 
 		var materialShop model.MaterialShop
 		materialErr := repository.DB.Where("user_id = ?", user.ID).Order("id DESC").First(&materialShop).Error
+		if materialErr == nil {
+			if !service.IsMaterialShopActive(&materialShop) {
+				response.Error(c, 403, "账号已被禁用")
+				return
+			}
+		}
 		if materialErr == nil && materialShop.IsVerified {
 			entityType := resolveMaterialShopEntityType(materialShop.ID, user.ID)
 
@@ -521,8 +504,8 @@ func MerchantGetInfo(c *gin.Context) {
 	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
 	role := providerRoleFromSubType(providerSubType)
 	entityType := normalizeProviderEntityType(provider.EntityType, applicantType)
-	workTypes := parseProviderWorkTypes(provider.WorkTypes)
 	highlightTags := parseJSONOrDelimitedSlice(provider.HighlightTags)
+	companyAlbum := parseJSONStringSlice(provider.CompanyAlbumJSON)
 	pricing := parsePricingObject(provider.PricingJSON)
 	avatar := strings.TrimSpace(provider.Avatar)
 	if avatar == "" {
@@ -545,7 +528,6 @@ func MerchantGetInfo(c *gin.Context) {
 		"verified":            provider.Verified,
 		"yearsExperience":     provider.YearsExperience,
 		"specialty":           specialty,
-		"workTypes":           workTypes,
 		"highlightTags":       highlightTags,
 		"pricing":             pricing,
 		"graduateSchool":      provider.GraduateSchool,
@@ -555,6 +537,8 @@ func MerchantGetInfo(c *gin.Context) {
 		"introduction":        provider.ServiceIntro,
 		"teamSize":            provider.TeamSize,
 		"officeAddress":       provider.OfficeAddress,
+		"companyAlbum":        imgutil.GetFullImageURLs(companyAlbum),
+		"surveyDepositPrice":  provider.SurveyDepositPrice,
 	})
 }
 
@@ -564,19 +548,20 @@ func MerchantUpdateInfo(c *gin.Context) {
 	userID := c.GetUint64("userId")
 
 	var input struct {
-		Name             string             `json:"name"` // 显示名称
-		CompanyName      string             `json:"companyName"`
-		YearsExperience  int                `json:"yearsExperience"`
-		Specialty        []string           `json:"specialty"`
-		WorkTypes        []string           `json:"workTypes"`
-		HighlightTags    []string           `json:"highlightTags"`
-		Pricing          map[string]float64 `json:"pricing"`
-		GraduateSchool   string             `json:"graduateSchool"`
-		DesignPhilosophy string             `json:"designPhilosophy"`
-		ServiceArea      []string           `json:"serviceArea"` // 区域代码数组
-		Introduction     string             `json:"introduction"`
-		TeamSize         int                `json:"teamSize"`
-		OfficeAddress    string             `json:"officeAddress"`
+		Name               string             `json:"name"` // 显示名称
+		CompanyName        string             `json:"companyName"`
+		CompanyAlbum       []string           `json:"companyAlbum"`
+		YearsExperience    int                `json:"yearsExperience"`
+		Specialty          []string           `json:"specialty"`
+		HighlightTags      []string           `json:"highlightTags"`
+		Pricing            map[string]float64 `json:"pricing"`
+		GraduateSchool     string             `json:"graduateSchool"`
+		DesignPhilosophy   string             `json:"designPhilosophy"`
+		ServiceArea        []string           `json:"serviceArea"` // 区域代码数组
+		Introduction       string             `json:"introduction"`
+		TeamSize           int                `json:"teamSize"`
+		OfficeAddress      string             `json:"officeAddress"`
+		SurveyDepositPrice float64            `json:"surveyDepositPrice"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -627,17 +612,8 @@ func MerchantUpdateInfo(c *gin.Context) {
 	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
 
 	if providerSubType == "foreman" {
-		if input.WorkTypes != nil {
-			normalizedWorkTypes := normalizeStringSlice(input.WorkTypes)
-			if len(normalizedWorkTypes) == 0 {
-				tx.Rollback()
-				response.Error(c, 400, "工长至少需要保留1个工种")
-				return
-			}
-			workTypesJSON, _ := json.Marshal(normalizedWorkTypes)
-			updates["work_types"] = string(workTypesJSON)
-			updates["specialty"] = strings.Join(normalizedWorkTypes, " · ")
-		}
+		updates["work_types"] = ""
+		updates["specialty"] = "全工种施工"
 	} else {
 		if len(input.Specialty) > 0 {
 			updates["specialty"] = strings.Join(normalizeStringSlice(input.Specialty), " · ")
@@ -665,6 +641,16 @@ func MerchantUpdateInfo(c *gin.Context) {
 	if input.DesignPhilosophy != "" {
 		updates["design_philosophy"] = strings.TrimSpace(input.DesignPhilosophy)
 	}
+	if input.CompanyAlbum != nil {
+		normalizedCompanyAlbum := normalizeStringSlice(input.CompanyAlbum)
+		if providerSubType == "company" && (len(normalizedCompanyAlbum) < 3 || len(normalizedCompanyAlbum) > 8) {
+			tx.Rollback()
+			response.Error(c, 400, "装修公司企业相册需上传3-8张图片")
+			return
+		}
+		albumJSON, _ := json.Marshal(normalizedCompanyAlbum)
+		updates["company_album_json"] = string(albumJSON)
+	}
 
 	if len(serviceAreaCodes) > 0 {
 		jsonBytes, _ := json.Marshal(serviceAreaCodes)
@@ -686,6 +672,14 @@ func MerchantUpdateInfo(c *gin.Context) {
 
 	updates["service_intro"] = input.Introduction
 	updates["team_size"] = input.TeamSize
+	if input.SurveyDepositPrice >= 0 {
+		updates["survey_deposit_price"] = input.SurveyDepositPrice
+	}
+	if strings.TrimSpace(input.OfficeAddress) == "" {
+		tx.Rollback()
+		response.Error(c, 400, "办公地址不能为空")
+		return
+	}
 	updates["office_address"] = input.OfficeAddress
 
 	if err := tx.Model(&provider).Updates(updates).Error; err != nil {
@@ -811,6 +805,19 @@ func MerchantGetBookingDetail(c *gin.Context) {
 	if bookingIdentity.UserPublicID == "" {
 		monitor.RecordPublicIDMissing("merchant_booking_detail", bookingIdentity.UserID, "merchant_booking_detail")
 	}
+	p0Summary, _ := bookingService.GetBookingP0Summary(booking.ID)
+	var siteSurveySummary interface{}
+	var budgetConfirmSummary interface{}
+	var availableActions []string
+	var flowSummary string
+	var currentStage string
+	if p0Summary != nil {
+		siteSurveySummary = p0Summary.SiteSurvey
+		budgetConfirmSummary = p0Summary.BudgetConfirm
+		availableActions = p0Summary.AvailableActions
+		flowSummary = p0Summary.FlowSummary
+		currentStage = p0Summary.CurrentStage
+	}
 
 	type BookingDetailWithIdentity struct {
 		model.Booking
@@ -822,8 +829,13 @@ func MerchantGetBookingDetail(c *gin.Context) {
 			Booking:      booking,
 			UserPublicID: bookingIdentity.UserPublicID,
 		},
-		"hasProposal": hasProposal,
-		"proposal":    proposal,
+		"hasProposal":          hasProposal,
+		"proposal":             proposal,
+		"siteSurveySummary":    siteSurveySummary,
+		"budgetConfirmSummary": budgetConfirmSummary,
+		"availableActions":     availableActions,
+		"flowSummary":          flowSummary,
+		"currentStage":         currentStage,
 	})
 }
 
@@ -831,6 +843,7 @@ func MerchantGetBookingDetail(c *gin.Context) {
 func MerchantHandleBooking(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 	bookingID := parseUint64(c.Param("id"))
+	businessFlowService := &service.BusinessFlowService{}
 
 	var input struct {
 		Action string `json:"action" binding:"required,oneof=confirm reject"` // confirm: 接单, reject: 拒单
@@ -866,6 +879,16 @@ func MerchantHandleBooking(c *gin.Context) {
 	if err := repository.DB.Model(&booking).Updates(updates).Error; err != nil {
 		response.Error(c, 500, "操作失败")
 		return
+	}
+	if input.Action == "confirm" {
+		_ = businessFlowService.AdvanceBySource(nil, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageNegotiating,
+		})
+	} else {
+		_ = businessFlowService.AdvanceBySource(nil, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageCancelled,
+			"closed_reason": "merchant_rejected_booking",
+		})
 	}
 
 	response.Success(c, gin.H{"status": "ok"})
@@ -928,6 +951,117 @@ func MerchantListOrders(c *gin.Context) {
 	})
 }
 
+func MerchantListProjects(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	items, total, err := projectService.ListMerchantProjects(providerID, &service.MerchantProjectListQuery{
+		Keyword:       c.Query("keyword"),
+		BusinessStage: c.Query("businessStage"),
+		Page:          page,
+		PageSize:      pageSize,
+	})
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"list":     items,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
+}
+
+func MerchantGetProjectDetail(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	projectID := parseUint64(c.Param("projectId"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	detail, err := projectService.GetMerchantProjectDetail(projectID, providerID)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, detail)
+}
+
+func MerchantCreateProjectLog(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	projectID := parseUint64(c.Param("projectId"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	var req service.CreateWorkLogRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	if err := projectService.CreateMerchantProjectLog(projectID, providerID, &req); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"message": "日志上传成功"})
+}
+
+func MerchantSubmitProjectMilestone(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	projectID := parseUint64(c.Param("projectId"))
+	milestoneID := parseUint64(c.Param("milestoneId"))
+	if projectID == 0 || milestoneID == 0 {
+		response.BadRequest(c, "无效参数")
+		return
+	}
+
+	milestone, err := projectService.SubmitMilestone(projectID, providerID, milestoneID)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":   "节点提交成功",
+		"milestone": milestone,
+	})
+}
+
+func MerchantStartProject(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	projectID := parseUint64(c.Param("projectId"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	var req service.StartProjectRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "参数错误")
+			return
+		}
+	}
+
+	project, err := projectService.MerchantStartProject(projectID, providerID, &req)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "项目已开工",
+		"project": project,
+	})
+}
+
 // MerchantDashboardStats 商家首页统计
 func MerchantDashboardStats(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
@@ -941,6 +1075,8 @@ func MerchantDashboardStats(c *gin.Context) {
 	var pendingProposals, confirmedProposals int64
 	repository.DB.Model(&model.Proposal{}).Where("designer_id = ? AND status = 1", providerID).Count(&pendingProposals)
 	repository.DB.Model(&model.Proposal{}).Where("designer_id = ? AND status = 2", providerID).Count(&confirmedProposals)
+	var pendingLeads int64
+	repository.DB.Model(&model.DemandMatch{}).Where("provider_id = ? AND status = ?", providerID, model.DemandMatchStatusPending).Count(&pendingLeads)
 
 	// 订单统计
 	var bookingIDs []uint64
@@ -975,6 +1111,7 @@ func MerchantDashboardStats(c *gin.Context) {
 	activeProjects := paidOrders
 
 	response.Success(c, gin.H{
+		"pendingLeads":     pendingLeads,
 		"todayBookings":    todayBookings,
 		"pendingProposals": pendingProposals,
 		"activeProjects":   activeProjects,
@@ -1070,7 +1207,8 @@ func MerchantUploadImage(c *gin.Context) {
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" &&
 		ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".xls" && ext != ".xlsx" &&
-		ext != ".ppt" && ext != ".pptx" && ext != ".txt" && ext != ".zip" && ext != ".rar" {
+		ext != ".ppt" && ext != ".pptx" && ext != ".txt" && ext != ".zip" && ext != ".rar" &&
+		ext != ".dwg" && ext != ".dxf" {
 		response.Error(c, 400, "不支持的文件格式")
 		return
 	}
@@ -1117,36 +1255,55 @@ func MerchantGetProposal(c *gin.Context) {
 		return
 	}
 
-	// 获取关联的预约信息
-	var booking model.Booking
-	repository.DB.First(&booking, proposal.BookingID)
-
-	// 获取用户信息
-	var user model.User
-	repository.DB.First(&user, booking.UserID)
-
-	userNickname := user.Nickname
-	if userNickname == "" && len(user.Phone) >= 4 {
-		userNickname = "用户" + user.Phone[len(user.Phone)-4:]
-	}
-
 	type BookingWithUser struct {
 		model.Booking
 		UserNickname string `json:"userNickname"`
 		UserPhone    string `json:"userPhone"`
 		UserPublicID string `json:"userPublicId,omitempty"`
 	}
-
-	bookingIdentity := dto.NewUserIdentity(&user)
-	if bookingIdentity.UserPublicID == "" {
-		monitor.RecordPublicIDMissing("merchant_proposal_detail", bookingIdentity.UserID, "merchant_get_proposal")
-	}
-
-	bookingWithUser := BookingWithUser{
-		Booking:      booking,
-		UserNickname: userNickname,
-		UserPhone:    user.Phone,
-		UserPublicID: bookingIdentity.UserPublicID,
+	var bookingWithUser BookingWithUser
+	if proposal.SourceType == model.ProposalSourceDemand {
+		var demand model.Demand
+		if err := repository.DB.First(&demand, proposal.DemandID).Error; err == nil {
+			var user model.User
+			_ = repository.DB.First(&user, demand.UserID).Error
+			userNickname := user.Nickname
+			if userNickname == "" && len(user.Phone) >= 4 {
+				userNickname = "用户" + user.Phone[len(user.Phone)-4:]
+			}
+			bookingWithUser = BookingWithUser{
+				Booking: model.Booking{
+					Base:           model.Base{ID: demand.ID},
+					Address:        demand.Address,
+					Area:           demand.Area,
+					HouseLayout:    "",
+					RenovationType: demand.DemandType,
+					BudgetRange:    fmt.Sprintf("%.0f-%.0f", demand.BudgetMin, demand.BudgetMax),
+				},
+				UserNickname: userNickname,
+				UserPhone:    user.Phone,
+				UserPublicID: user.PublicID,
+			}
+		}
+	} else {
+		var booking model.Booking
+		repository.DB.First(&booking, proposal.BookingID)
+		var user model.User
+		repository.DB.First(&user, booking.UserID)
+		userNickname := user.Nickname
+		if userNickname == "" && len(user.Phone) >= 4 {
+			userNickname = "用户" + user.Phone[len(user.Phone)-4:]
+		}
+		bookingIdentity := dto.NewUserIdentity(&user)
+		if bookingIdentity.UserPublicID == "" {
+			monitor.RecordPublicIDMissing("merchant_proposal_detail", bookingIdentity.UserID, "merchant_get_proposal")
+		}
+		bookingWithUser = BookingWithUser{
+			Booking:      booking,
+			UserNickname: userNickname,
+			UserPhone:    user.Phone,
+			UserPublicID: bookingIdentity.UserPublicID,
+		}
 	}
 
 	response.Success(c, gin.H{
@@ -1178,12 +1335,15 @@ func MerchantUpdateProposal(c *gin.Context) {
 	}
 
 	var input struct {
-		Summary         string  `json:"summary"`
-		DesignFee       float64 `json:"designFee"`
-		ConstructionFee float64 `json:"constructionFee"`
-		MaterialFee     float64 `json:"materialFee"`
-		EstimatedDays   int     `json:"estimatedDays"`
-		Attachments     string  `json:"attachments"`
+		Summary             string  `json:"summary"`
+		DesignFee           float64 `json:"designFee"`
+		ConstructionFee     float64 `json:"constructionFee"`
+		MaterialFee         float64 `json:"materialFee"`
+		EstimatedDays       int     `json:"estimatedDays"`
+		Attachments         string  `json:"attachments"`
+		InternalDraftJSON   string  `json:"internalDraftJson"`
+		PreviewPackageJSON  string  `json:"previewPackageJson"`
+		DeliveryPackageJSON string  `json:"deliveryPackageJson"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
@@ -1191,13 +1351,16 @@ func MerchantUpdateProposal(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"summary":          input.Summary,
-		"design_fee":       input.DesignFee,
-		"construction_fee": input.ConstructionFee,
-		"material_fee":     input.MaterialFee,
-		"estimated_days":   input.EstimatedDays,
-		"attachments":      input.Attachments,
-		"status":           model.ProposalStatusPending, // 重新提交后状态改为待确认
+		"summary":               input.Summary,
+		"design_fee":            input.DesignFee,
+		"construction_fee":      input.ConstructionFee,
+		"material_fee":          input.MaterialFee,
+		"estimated_days":        input.EstimatedDays,
+		"attachments":           input.Attachments,
+		"internal_draft_json":   input.InternalDraftJSON,
+		"preview_package_json":  input.PreviewPackageJSON,
+		"delivery_package_json": input.DeliveryPackageJSON,
+		"status":                model.ProposalStatusPending, // 重新提交后状态改为待确认
 	}
 
 	if err := repository.DB.Model(&proposal).Updates(updates).Error; err != nil {
@@ -1229,8 +1392,20 @@ func MerchantCancelProposal(c *gin.Context) {
 		response.Error(c, 400, "只有待确认状态的方案才能取消")
 		return
 	}
-
-	if err := repository.DB.Delete(&proposal).Error; err != nil {
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&proposal).Error; err != nil {
+			return err
+		}
+		if proposal.SourceType == model.ProposalSourceDemand && proposal.DemandMatchID > 0 {
+			return tx.Model(&model.DemandMatch{}).
+				Where("id = ?", proposal.DemandMatchID).
+				Updates(map[string]interface{}{
+					"status":      model.DemandMatchStatusAccepted,
+					"proposal_id": 0,
+				}).Error
+		}
+		return nil
+	}); err != nil {
 		response.Error(c, 500, "删除失败")
 		return
 	}

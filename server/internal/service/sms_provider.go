@@ -12,15 +12,23 @@ import (
 // SMSProvider sends verification codes (e.g. via Aliyun SMS).
 // It should NOT store codes; storage is handled separately (Redis).
 type SMSProvider interface {
-	SendVerificationCode(phone, code string) (SMSProviderResult, error)
+	SendVerificationCode(req SMSProviderRequest) (SMSProviderResult, error)
+}
+
+type SMSProviderRequest struct {
+	Phone    string
+	Code     string
+	Template SMSTemplateContext
 }
 
 // SMSProviderResult captures provider-level metadata for observability/auditing.
 type SMSProviderResult struct {
-	Provider  string
-	MessageID string
-	RequestID string
-	ErrorCode string
+	Provider     string
+	MessageID    string
+	RequestID    string
+	ErrorCode    string
+	TemplateKey  string
+	TemplateCode string
 }
 
 // SMSProviderError is a typed provider error that can be safely logged by code.

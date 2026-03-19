@@ -9,6 +9,46 @@ import (
 	"gorm.io/gorm"
 )
 
+type regionTreeItem struct {
+	model.Region
+	HasChildren bool `json:"hasChildren"`
+}
+
+func appendRegionHasChildren(regions []model.Region) ([]regionTreeItem, error) {
+	if len(regions) == 0 {
+		return []regionTreeItem{}, nil
+	}
+
+	codes := make([]string, 0, len(regions))
+	for _, region := range regions {
+		codes = append(codes, region.Code)
+	}
+
+	var parentCodes []string
+	if err := repository.DB.Model(&model.Region{}).
+		Distinct("parent_code").
+		Where("parent_code IN ?", codes).
+		Pluck("parent_code", &parentCodes).Error; err != nil {
+		return nil, err
+	}
+
+	hasChildrenMap := make(map[string]struct{}, len(parentCodes))
+	for _, code := range parentCodes {
+		hasChildrenMap[code] = struct{}{}
+	}
+
+	items := make([]regionTreeItem, 0, len(regions))
+	for _, region := range regions {
+		_, hasChildren := hasChildrenMap[region.Code]
+		items = append(items, regionTreeItem{
+			Region:      region,
+			HasChildren: hasChildren,
+		})
+	}
+
+	return items, nil
+}
+
 // ==================== 行政区划 API ====================
 
 // GetProvinces 获取所有省份
@@ -29,6 +69,18 @@ func GetCitiesByProvince(c *gin.Context) {
 
 	var cities []model.Region
 	if err := repository.DB.Where("level = ? AND parent_code = ? AND enabled = ?", 2, provinceCode, true).
+		Order("sort_order ASC, code ASC").
+		Find(&cities).Error; err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+	response.Success(c, cities)
+}
+
+// GetCities 获取所有启用城市
+func GetCities(c *gin.Context) {
+	var cities []model.Region
+	if err := repository.DB.Where("level = ? AND enabled = ?", 2, true).
 		Order("sort_order ASC, code ASC").
 		Find(&cities).Error; err != nil {
 		response.Error(c, 500, "查询失败")
@@ -76,7 +128,14 @@ func AdminGetChildrenByParentCode(c *gin.Context) {
 		response.Error(c, 500, "查询失败")
 		return
 	}
-	response.Success(c, children)
+
+	items, err := appendRegionHasChildren(children)
+	if err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+
+	response.Success(c, items)
 }
 
 // AdminListRegions 管理员查看行政区划列表（支持分页和层级筛选）
@@ -103,8 +162,14 @@ func AdminListRegions(c *gin.Context) {
 		Order("level ASC, sort_order ASC, code ASC").
 		Find(&regions)
 
+	items, err := appendRegionHasChildren(regions)
+	if err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+
 	response.Success(c, gin.H{
-		"list":  regions,
+		"list":  items,
 		"total": total,
 	})
 }
@@ -149,6 +214,21 @@ func AdminToggleRegion(c *gin.Context) {
 		return
 	}
 
+	// 子节点启用时，自动启用所有上级；子节点禁用后，若同级全部关闭则自动关闭上级
+	if req.Enabled {
+		if err := cascadeEnableParents(tx, region.ParentCode); err != nil {
+			tx.Rollback()
+			response.ServerError(c, "更新上级区域失败")
+			return
+		}
+	} else {
+		if err := syncParentEnabledState(tx, region.ParentCode); err != nil {
+			tx.Rollback()
+			response.ServerError(c, "同步上级区域失败")
+			return
+		}
+	}
+
 	tx.Commit()
 	response.Success(c, nil)
 }
@@ -176,4 +256,50 @@ func cascadeUpdateChildren(tx *gorm.DB, parentCode string, enabled bool) error {
 	}
 
 	return nil
+}
+
+// cascadeEnableParents 递归启用所有上级区域
+func cascadeEnableParents(tx *gorm.DB, parentCode string) error {
+	if parentCode == "" {
+		return nil
+	}
+
+	var parent model.Region
+	if err := tx.Where("code = ?", parentCode).First(&parent).Error; err != nil {
+		return err
+	}
+
+	if !parent.Enabled {
+		if err := tx.Model(&model.Region{}).Where("code = ?", parentCode).Update("enabled", true).Error; err != nil {
+			return err
+		}
+	}
+
+	return cascadeEnableParents(tx, parent.ParentCode)
+}
+
+// syncParentEnabledState 子区域关闭后，根据兄弟节点状态同步父级状态
+func syncParentEnabledState(tx *gorm.DB, parentCode string) error {
+	if parentCode == "" {
+		return nil
+	}
+
+	var parent model.Region
+	if err := tx.Where("code = ?", parentCode).First(&parent).Error; err != nil {
+		return err
+	}
+
+	var enabledChildren int64
+	if err := tx.Model(&model.Region{}).
+		Where("parent_code = ? AND enabled = ?", parentCode, true).
+		Count(&enabledChildren).Error; err != nil {
+		return err
+	}
+
+	nextEnabled := enabledChildren > 0
+	if err := tx.Model(&model.Region{}).Where("code = ?", parentCode).Update("enabled", nextEnabled).Error; err != nil {
+		return err
+	}
+
+	return syncParentEnabledState(tx, parent.ParentCode)
 }

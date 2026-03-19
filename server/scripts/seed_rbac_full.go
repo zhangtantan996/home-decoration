@@ -128,6 +128,12 @@ func createMenus() {
 		{ID: 54, ParentID: 50, Title: "删除项目", Type: 3, Permission: "project:delete", Visible: false, Status: 1},
 		{ID: 55, ParentID: 50, Title: "全景地图", Type: 2, Path: "/projects/map", Component: "pages/projects/ProjectMap", Sort: 2, Permission: "project:map", Visible: true, Status: 1},
 
+		// 需求中心
+		{ID: 130, ParentID: 0, Title: "需求中心", Type: 1, Path: "/demands", Icon: "UnorderedListOutlined", Sort: 45, Visible: true, Status: 1},
+		{ID: 131, ParentID: 130, Title: "需求管理", Type: 2, Path: "/demands/list", Component: "pages/demands/DemandList", Sort: 1, Permission: "demand:list", Visible: true, Status: 1},
+		{ID: 132, ParentID: 130, Title: "审核需求", Type: 3, Permission: "demand:review", Visible: false, Status: 1},
+		{ID: 133, ParentID: 130, Title: "分配需求", Type: 3, Permission: "demand:assign", Visible: false, Status: 1},
+
 		// 预约管理
 		{ID: 60, ParentID: 0, Title: "预约管理", Type: 2, Path: "/bookings", Component: "pages/bookings/BookingList", Icon: "CalendarOutlined", Sort: 50, Permission: "booking:list", Visible: true, Status: 1},
 		{ID: 61, ParentID: 0, Title: "查看预约", Type: 3, Permission: "booking:view", Visible: false, Status: 1},
@@ -137,6 +143,7 @@ func createMenus() {
 
 		// 资金中心
 		{ID: 70, ParentID: 0, Title: "资金中心", Type: 1, Path: "/finance", Icon: "BankOutlined", Sort: 60, Visible: true, Status: 1},
+		{ID: 79, ParentID: 70, Title: "资金概览", Type: 2, Path: "/finance/overview", Component: "pages/finance/FinanceOverview", Sort: 0, Permission: "finance:escrow:list", Visible: true, Status: 1},
 		{ID: 71, ParentID: 70, Title: "托管账户", Type: 2, Path: "/finance/escrow", Component: "pages/finance/EscrowAccountList", Sort: 1, Permission: "finance:escrow:list", Visible: true, Status: 1},
 		{ID: 72, ParentID: 70, Title: "查看账户", Type: 3, Permission: "finance:escrow:view", Visible: false, Status: 1},
 		{ID: 73, ParentID: 70, Title: "冻结账户", Type: 3, Permission: "finance:escrow:freeze", Visible: false, Status: 1},
@@ -159,6 +166,7 @@ func createMenus() {
 		{ID: 93, ParentID: 90, Title: "处理风险", Type: 3, Permission: "risk:warning:handle", Visible: false, Status: 1},
 		{ID: 94, ParentID: 90, Title: "忽略风险", Type: 3, Permission: "risk:warning:ignore", Visible: false, Status: 1},
 		{ID: 95, ParentID: 90, Title: "仲裁中心", Type: 2, Path: "/risk/arbitration", Component: "pages/risk/ArbitrationCenter", Sort: 2, Permission: "risk:arbitration:list", Visible: true, Status: 1},
+		{ID: 134, ParentID: 90, Title: "投诉处理", Type: 2, Path: "/complaints", Component: "pages/complaints/ComplaintManagement", Sort: 3, Permission: "risk:arbitration:list", Visible: true, Status: 1},
 		{ID: 96, ParentID: 90, Title: "查看仲裁", Type: 3, Permission: "risk:arbitration:view", Visible: false, Status: 1},
 		{ID: 97, ParentID: 90, Title: "受理仲裁", Type: 3, Permission: "risk:arbitration:accept", Visible: false, Status: 1},
 		{ID: 98, ParentID: 90, Title: "驳回仲裁", Type: 3, Permission: "risk:arbitration:reject", Visible: false, Status: 1},
@@ -167,6 +175,7 @@ func createMenus() {
 		// 操作日志
 		{ID: 100, ParentID: 0, Title: "操作日志", Type: 2, Path: "/logs", Component: "pages/system/LogList", Icon: "FileTextOutlined", Sort: 90, Permission: "system:log:list", Visible: true, Status: 1},
 		{ID: 101, ParentID: 0, Title: "查看日志", Type: 3, Permission: "system:log:view", Visible: false, Status: 1},
+		{ID: 102, ParentID: 0, Title: "业务审计日志", Type: 2, Path: "/audit-logs", Component: "pages/system/AuditLogList", Icon: "FileTextOutlined", Sort: 91, Permission: "system:log:list", Visible: true, Status: 1},
 
 		// 系统设置
 		{ID: 110, ParentID: 0, Title: "系统设置", Type: 2, Path: "/settings", Component: "pages/settings/SystemSettings", Icon: "SettingOutlined", Sort: 100, Permission: "system:setting:list", Visible: true, Status: 1},
@@ -282,27 +291,29 @@ func assignRolePermissions(roles map[string]*model.SysRole) {
 
 	// 产品管理
 	assignPermissions(roles["product_manager"].ID, []uint64{
-		1, // 工作台
+		1,              // 工作台
 		10, 11, 12, 15, // 用户管理(只读+导出)
 		20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, // 服务商管理(完整权限)
 		40, 41, 42, 43, 44, 45, // 主材门店管理(完整权限)
 		50, 51, 52, 53, 55, // 项目管理(查看+编辑+地图)
+		130, 131, 133, // 需求中心（查看+分配）
 		80, 81, // 评价管理(只读)
 	}, "产品管理")
 
 	// 运营管理
 	assignPermissions(roles["operations"].ID, []uint64{
-		1, // 工作台
+		1,          // 工作台
 		10, 11, 12, // 用户管理(只读)
 		20, 21, 22, 26, 27, 31, 32, 36, 37, 38, 39, // 服务商管理(只读+审核)
 		40, 46, 47, 48, 49, // 主材门店审核
+		130, 131, 132, 133, // 需求中心
 		60, 61, 62, 63, 64, // 预约管理(完整权限)
 		80, 81, 82, 83, // 评价管理(完整权限)
 	}, "运营管理")
 
 	// 财务管理
 	assignPermissions(roles["finance"].ID, []uint64{
-		1, // 工作台
+		1,          // 工作台
 		10, 11, 12, // 用户管理(只读)
 		50, 51, 52, // 项目管理(只读)
 		70, 71, 72, 73, 74, 75, 76, 77, 78, // 资金中心(完整权限)
@@ -310,7 +321,7 @@ func assignRolePermissions(roles map[string]*model.SysRole) {
 
 	// 风控管理
 	assignPermissions(roles["risk"].ID, []uint64{
-		1, // 工作台
+		1,          // 工作台
 		10, 11, 12, // 用户管理(只读)
 		50, 51, 52, // 项目管理(只读)
 		90, 91, 92, 93, 94, 95, 96, 97, 98, 99, // 风控中心(完整权限)
@@ -318,20 +329,22 @@ func assignRolePermissions(roles map[string]*model.SysRole) {
 
 	// 客服
 	assignPermissions(roles["customer_service"].ID, []uint64{
-		1, // 工作台
+		1,              // 工作台
 		10, 11, 12, 13, // 用户管理(查看+基础编辑)
 		20, 21, 22, 26, 27, 31, 32, // 服务商管理(只读)
+		130, 131, 132, // 需求中心（查看+审核）
 		60, 61, 62, 63, 64, // 预约管理(完整权限)
 		80, 81, // 评价管理(只读)
 	}, "客服")
 
 	// 只读用户
 	assignPermissions(roles["viewer"].ID, []uint64{
-		1, // 工作台
+		1,              // 工作台
 		10, 11, 12, 15, // 用户管理(只读+导出)
 		20, 21, 22, 26, 27, 31, 32, // 服务商管理(只读)
 		40, 41, 42, // 主材门店(只读)
 		50, 51, 52, 55, // 项目管理(只读+地图)
+		130, 131, // 需求中心（只读）
 		60, 61, // 预约管理(只读)
 		70, 71, 72, 75, 76, 77, // 资金中心(只读+导出)
 		80, 81, // 评价管理(只读)
@@ -355,9 +368,9 @@ func assignPermissions(roleID uint64, menuIDs []uint64, roleName string) {
 // 创建测试管理员账号
 func createAdmins() map[string]*model.SysAdmin {
 	admins := []struct {
-		Username string
-		Password string
-		Nickname string
+		Username     string
+		Password     string
+		Nickname     string
 		IsSuperAdmin bool
 	}{
 		{"admin", "admin123", "超级管理员", true},

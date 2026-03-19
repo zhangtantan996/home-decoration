@@ -1,4 +1,4 @@
-import { Tinode } from 'tinode-sdk';
+import { Tinode } from './tinodeSdk';
 
 import TaroWebSocketAdapter from './TaroWebSocketAdapter';
 import { getTinodeUserId } from './tinode';
@@ -374,4 +374,3 @@ class TinodeService extends SimpleEventEmitter {
 }
 
 export default TinodeService.getInstance();
-

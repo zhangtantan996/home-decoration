@@ -1,13 +1,17 @@
 package handler
 
 import (
+	"errors"
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
+	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 var (
@@ -18,17 +22,63 @@ var (
 	escrowService       = &service.EscrowService{}
 	bookingService      = &service.BookingService{}
 	materialShopService = &service.MaterialShopService{}
+	demandService       = service.NewDemandService()
 	wechatAuthService   *service.WechatAuthService
 	wechatH5AuthService *service.WechatH5AuthService
 	jwtConfig           *config.JWTConfig
+	wechatH5BasePath    string
 )
 
 // InitHandlers 初始化处理器
 func InitHandlers(cfg *config.Config) {
 	jwtConfig = &cfg.JWT
+	wechatH5BasePath = cfg.WechatH5.BasePath
 	service.InitJWT(cfg.JWT.Secret)
 	wechatAuthService = service.NewWechatAuthService(cfg.WechatMini)
 	wechatH5AuthService = service.NewWechatH5AuthService(cfg.WechatH5)
+}
+
+func getCurrentUserID(c *gin.Context) uint64 {
+	if userID := c.GetUint64("userId"); userID > 0 {
+		return userID
+	}
+	return uint64(c.GetFloat64("userId"))
+}
+
+func getCurrentUserType(c *gin.Context) int8 {
+	if raw, ok := c.Get("userType"); ok {
+		switch value := raw.(type) {
+		case int8:
+			return value
+		case int:
+			return int8(value)
+		case uint8:
+			return int8(value)
+		case uint:
+			return int8(value)
+		case float64:
+			return int8(value)
+		}
+	}
+	return int8(c.GetFloat64("userType"))
+}
+
+func respondScopedAccessError(c *gin.Context, err error, fallback string) {
+	if err == nil {
+		return
+	}
+	message := err.Error()
+	if strings.TrimSpace(message) == "" {
+		message = fallback
+	}
+	switch {
+	case strings.Contains(message, "无权"):
+		response.Forbidden(c, message)
+	case strings.Contains(message, "不存在"):
+		response.NotFound(c, message)
+	default:
+		response.ServerError(c, message)
+	}
 }
 
 // HealthCheck 健康检查
@@ -36,9 +86,20 @@ func HealthCheck(c *gin.Context) {
 	smsAuditHealth := repository.RefreshSMSAuditLogHealth()
 	userAuthHealth := repository.RefreshUserAuthSchemaHealth()
 	merchantOnboardingHealth := repository.RefreshMerchantOnboardingSchemaHealth()
+	bookingP0Health := repository.RefreshBookingP0SchemaHealth()
+	projectRiskHealth := repository.RefreshProjectRiskSchemaHealth()
+	auditLogHealth := repository.RefreshAuditLogSchemaHealth()
+	commerceRuntimeHealth := repository.RefreshCommerceRuntimeSchemaHealth()
 	alerts := repository.CurrentOperationalAlerts()
 	overallStatus := "ok"
-	if len(alerts) > 0 || smsAuditHealth.Status != "ok" || userAuthHealth.Status != "ok" || merchantOnboardingHealth.Status != "ok" {
+	if len(alerts) > 0 ||
+		smsAuditHealth.Status != "ok" ||
+		userAuthHealth.Status != "ok" ||
+		merchantOnboardingHealth.Status != "ok" ||
+		bookingP0Health.Status != "ok" ||
+		projectRiskHealth.Status != "ok" ||
+		auditLogHealth.Status != "ok" ||
+		commerceRuntimeHealth.Status != "ok" {
 		overallStatus = "degraded"
 	}
 
@@ -51,6 +112,10 @@ func HealthCheck(c *gin.Context) {
 			"smsAuditLog":              smsAuditHealth,
 			"userAuthSchema":           userAuthHealth,
 			"merchantOnboardingSchema": merchantOnboardingHealth,
+			"bookingP0Schema":          bookingP0Health,
+			"projectRiskSchema":        projectRiskHealth,
+			"auditLogSchema":           auditLogHealth,
+			"commerceRuntimeSchema":    commerceRuntimeHealth,
 		},
 	})
 }
@@ -274,10 +339,13 @@ func RefreshTinodeToken(c *gin.Context) {
 
 // GetProfile 获取用户信息
 func GetProfile(c *gin.Context) {
-	userIdFloat := c.GetFloat64("userId")
-	userId := uint64(userIdFloat)
+	userID := getCurrentUserID(c)
+	if userID == 0 {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
 
-	user, err := userService.GetUserByID(userId)
+	user, err := userService.GetUserByID(userID)
 	if err != nil {
 		response.NotFound(c, "用户不存在")
 		return
@@ -295,8 +363,11 @@ func GetProfile(c *gin.Context) {
 
 // UpdateProfile 更新用户信息
 func UpdateProfile(c *gin.Context) {
-	userIdFloat := c.GetFloat64("userId")
-	userId := uint64(userIdFloat)
+	userID := getCurrentUserID(c)
+	if userID == 0 {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
 
 	var req struct {
 		Nickname string `json:"nickname"`
@@ -307,7 +378,7 @@ func UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if err := userService.UpdateUser(userId, req.Nickname, req.Avatar); err != nil {
+	if err := userService.UpdateUser(userID, req.Nickname, req.Avatar); err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -456,6 +527,10 @@ func GetProviderCases(c *gin.Context) {
 
 	list, total, err := providerService.GetProviderCases(id, page, pageSize)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "服务商不存在")
+			return
+		}
 		response.ServerError(c, "查询失败")
 		return
 	}
@@ -511,7 +586,7 @@ func GetReviewStats(c *gin.Context) {
 
 // CreateProject 创建项目
 func CreateProject(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
+	userId := getCurrentUserID(c)
 
 	var req service.CreateProjectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -533,8 +608,8 @@ func CreateProject(c *gin.Context) {
 
 // ListProjects 项目列表
 func ListProjects(c *gin.Context) {
-	userId := c.GetUint64("userId")
-	userType := int8(c.GetFloat64("userType"))
+	userId := getCurrentUserID(c)
+	userType := getCurrentUserType(c)
 
 	page := 1
 	pageSize := 10
@@ -557,9 +632,9 @@ func GetProject(c *gin.Context) {
 		return
 	}
 
-	detail, err := projectService.GetProjectDetail(id)
+	detail, err := projectService.GetProjectDetailForOwner(id, getCurrentUserID(c))
 	if err != nil {
-		response.NotFound(c, "项目不存在")
+		respondScopedAccessError(c, err, "查询项目失败")
 		return
 	}
 
@@ -576,9 +651,9 @@ func UpdateProject(c *gin.Context) {
 func GetProjectLogs(c *gin.Context) {
 	projectId := parseUint64(c.Param("id"))
 
-	list, total, err := projectService.GetProjectLogs(projectId, 1, 20)
+	list, total, err := projectService.GetProjectLogsForOwner(projectId, getCurrentUserID(c), 1, 20)
 	if err != nil {
-		response.ServerError(c, "查询失败")
+		respondScopedAccessError(c, err, "查询日志失败")
 		return
 	}
 
@@ -587,36 +662,219 @@ func GetProjectLogs(c *gin.Context) {
 
 // CreateProjectLog 创建施工日志
 func CreateProjectLog(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
-	projectId := parseUint64(c.Param("id"))
+	response.Forbidden(c, "业主侧施工日志入口已禁用，请使用商家侧施工日志入口")
+}
 
-	var req struct {
-		Description string `json:"description"`
-		Photos      string `json:"photos"`
+// GetMilestones 获取验收节点
+func GetMilestones(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
 	}
+
+	milestones, err := projectService.GetProjectMilestonesForOwner(projectID, getCurrentUserID(c))
+	if err != nil {
+		respondScopedAccessError(c, err, "查询节点失败")
+		return
+	}
+
+	response.Success(c, gin.H{"milestones": milestones})
+}
+
+// ConfirmProjectConstruction 确认施工方与工长
+func ConfirmProjectConstruction(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req service.ConfirmConstructionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	if err := projectService.CreateWorkLog(projectId, userId, req.Description, req.Photos); err != nil {
-		response.ServerError(c, "创建日志失败")
+	project, err := projectService.ConfirmConstruction(projectID, userID, &req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 
-	response.Success(c, gin.H{"message": "日志上传成功"})
+	response.Success(c, gin.H{
+		"message": "施工方确认成功",
+		"project": project,
+	})
 }
 
-// GetMilestones 获取验收节点
-func GetMilestones(c *gin.Context) {
-	// 已经在GetProjectDetail中返回，可以预留为独立接口
-	response.Success(c, []gin.H{})
+// ConfirmProjectConstructionQuote 确认施工报价
+func ConfirmProjectConstructionQuote(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req service.ConfirmConstructionQuoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	project, err := projectService.ConfirmConstructionQuote(projectID, userID, &req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "施工报价确认成功",
+		"project": project,
+	})
+}
+
+// StartProject 显式开工
+func StartProject(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req service.StartProjectRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "参数错误")
+			return
+		}
+	}
+
+	project, err := projectService.StartProject(projectID, userID, &req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "项目已开工",
+		"project": project,
+	})
+}
+
+// SubmitMilestone 提交节点完成，进入待验收
+func SubmitMilestone(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	milestoneID := parseUint64(c.Param("milestoneId"))
+	if milestoneID == 0 {
+		response.BadRequest(c, "无效节点ID")
+		return
+	}
+
+	providerID := c.GetUint64("providerId")
+	milestone, err := projectService.SubmitMilestone(projectID, providerID, milestoneID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":   "节点已提交验收",
+		"milestone": milestone,
+	})
 }
 
 // AcceptMilestone 验收节点
 func AcceptMilestone(c *gin.Context) {
-	// TODO: 实现验收逻辑
-	response.Success(c, gin.H{"message": "验收成功"})
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	milestoneID := parseUint64(c.Param("milestoneId"))
+	if milestoneID == 0 {
+		var req struct {
+			MilestoneID uint64 `json:"milestoneId" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "参数错误")
+			return
+		}
+		milestoneID = req.MilestoneID
+	}
+	if milestoneID == 0 {
+		response.BadRequest(c, "无效节点ID")
+		return
+	}
+
+	milestone, err := projectService.AcceptMilestone(projectID, userID, milestoneID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":   "验收成功",
+		"milestone": milestone,
+	})
+}
+
+// RejectMilestone 驳回节点验收
+func RejectMilestone(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	milestoneID := parseUint64(c.Param("milestoneId"))
+	if milestoneID == 0 {
+		response.BadRequest(c, "无效节点ID")
+		return
+	}
+
+	userID := getCurrentUserID(c)
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "参数错误")
+			return
+		}
+	}
+
+	milestone, err := projectService.RejectMilestone(projectID, userID, milestoneID, req.Reason)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message":   "节点已驳回",
+		"milestone": milestone,
+	})
+}
+
+// CompleteProject 显式收口项目为完工
+func CompleteProject(c *gin.Context) {
+	c.JSON(http.StatusConflict, response.Response{
+		Code:    409,
+		Message: "旧项目完工入口已禁用，请改用商家提交完工材料并由业主在整体验收页处理",
+		Data: gin.H{
+			"errorCode": "PROJECT_COMPLETE_LEGACY_DISABLED",
+		},
+	})
 }
 
 // ========== 项目阶段 ==========
@@ -629,9 +887,9 @@ func GetProjectPhases(c *gin.Context) {
 		return
 	}
 
-	phases, err := projectService.GetProjectPhases(projectId)
+	phases, err := projectService.GetProjectPhasesForOwner(projectId, getCurrentUserID(c))
 	if err != nil {
-		response.ServerError(c, "查询失败")
+		respondScopedAccessError(c, err, "查询阶段失败")
 		return
 	}
 
@@ -688,9 +946,9 @@ func UpdatePhaseTask(c *gin.Context) {
 func GetEscrowAccount(c *gin.Context) {
 	projectId := parseUint64(c.Param("id"))
 
-	detail, err := escrowService.GetEscrowDetail(projectId)
+	detail, err := escrowService.GetEscrowDetailForOwner(projectId, getCurrentUserID(c))
 	if err != nil {
-		response.ServerError(c, "查询失败")
+		respondScopedAccessError(c, err, "查询托管账户失败")
 		return
 	}
 
@@ -699,7 +957,7 @@ func GetEscrowAccount(c *gin.Context) {
 
 // Deposit 存入托管
 func Deposit(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
+	userId := getCurrentUserID(c)
 	projectId := parseUint64(c.Param("id"))
 
 	var req struct {
@@ -721,23 +979,7 @@ func Deposit(c *gin.Context) {
 
 // ReleaseFunds 释放资金
 func ReleaseFunds(c *gin.Context) {
-	userId := uint64(c.GetFloat64("userId"))
-	projectId := parseUint64(c.Param("id"))
-
-	var req struct {
-		MilestoneID uint64 `json:"milestoneId" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-
-	if err := escrowService.ReleaseFunds(projectId, userId, req.MilestoneID); err != nil {
-		response.ServerError(c, err.Error())
-		return
-	}
-
-	response.Success(c, gin.H{"message": "资金释放成功"})
+	response.Forbidden(c, "业主侧直接放款入口已禁用，请改用验收结算链路")
 }
 
 // ========== 关注/收藏 ==========
