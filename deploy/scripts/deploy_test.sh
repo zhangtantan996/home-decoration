@@ -7,6 +7,7 @@ COMPOSE_FILE="${REPO_ROOT}/deploy/docker-compose.test.yml"
 DEPLOY_ENV_FILE="${REPO_ROOT}/deploy/.env.test"
 COMMON_LIB="${SCRIPT_DIR}/lib/release_common.sh"
 RELEASE_LOCAL_PORT_DEFAULT="8889"
+RELEASE_COMPOSE_PROJECT_DEFAULT="home_decoration_test"
 
 if [[ ! -f "${COMMON_LIB}" ]]; then
   echo "Missing shared release helper: ${COMMON_LIB}" >&2
@@ -129,6 +130,9 @@ fi
 
 release_load_deploy_env
 
+RELEASE_COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${RELEASE_COMPOSE_PROJECT_DEFAULT}}"
+export RELEASE_COMPOSE_PROJECT_NAME
+
 RELEASE_LOCAL_PORT="${WEB_PORT:-${RELEASE_LOCAL_PORT_DEFAULT}}"
 export RELEASE_LOCAL_PORT
 
@@ -187,6 +191,7 @@ run_backup() {
 
 action_summary() {
   echo "Environment: test"
+  echo "Compose project: ${RELEASE_COMPOSE_PROJECT_NAME}"
   echo "Compose file: ${COMPOSE_FILE}"
   echo "Env file: ${DEPLOY_ENV_FILE}"
   echo "Local web port: ${RELEASE_LOCAL_PORT}"
@@ -206,6 +211,8 @@ if [[ "${SKIP_GIT}" == "false" ]]; then
 fi
 
 update_services() {
+  release_remove_conflicting_containers "${RELEASE_COMPOSE_PROJECT_NAME}" test_db test_redis test_api test_web test_tinode
+
   case "${SERVICE_SCOPE}" in
     api)
       echo "==> Updating test service: api"

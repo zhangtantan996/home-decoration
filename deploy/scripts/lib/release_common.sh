@@ -8,7 +8,12 @@ release_require_command() {
 }
 
 release_compose() {
-  docker compose --env-file "${DEPLOY_ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  local compose_args=()
+  if [[ -n "${RELEASE_COMPOSE_PROJECT_NAME:-}" ]]; then
+    compose_args+=(-p "${RELEASE_COMPOSE_PROJECT_NAME}")
+  fi
+
+  docker compose "${compose_args[@]}" --env-file "${DEPLOY_ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
 }
 
 release_load_deploy_env() {
@@ -64,6 +69,33 @@ release_parse_url_host() {
   local without_scheme="${raw#*://}"
   local host_and_path="${without_scheme%%/*}"
   printf '%s\n' "${host_and_path%%:*}"
+}
+
+release_container_project() {
+  local container_name="$1"
+  docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "${container_name}" 2>/dev/null || true
+}
+
+release_remove_conflicting_containers() {
+  local expected_project="$1"
+  shift
+
+  local container_name
+  local current_project
+
+  for container_name in "$@"; do
+    if ! docker inspect "${container_name}" >/dev/null 2>&1; then
+      continue
+    fi
+
+    current_project="$(release_container_project "${container_name}")"
+    if [[ -n "${current_project}" && "${current_project}" == "${expected_project}" ]]; then
+      continue
+    fi
+
+    echo "==> Removing conflicting container ${container_name} (current project: ${current_project:-<none>}, expected: ${expected_project})"
+    docker rm -f "${container_name}" >/dev/null
+  done
 }
 
 release_resolve_api_host() {
@@ -145,9 +177,25 @@ release_probe_host_path() {
   local path="$2"
   local label="$3"
   local local_port="${RELEASE_LOCAL_PORT:-8888}"
+  local attempts="${RELEASE_HEALTHCHECK_ATTEMPTS:-20}"
+  local delay_seconds="${RELEASE_HEALTHCHECK_DELAY:-3}"
+  local max_time="${RELEASE_HEALTHCHECK_MAX_TIME:-10}"
+  local attempt
 
-  curl -fsS -H "Host: ${host}" "http://127.0.0.1:${local_port}${path}" >/dev/null
-  echo "${label} passed: http://127.0.0.1:${local_port}${path} (Host: ${host})"
+  for ((attempt=1; attempt<=attempts; attempt++)); do
+    if curl -fsS -o /dev/null --max-time "${max_time}" -H "Host: ${host}" "http://127.0.0.1:${local_port}${path}"; then
+      echo "${label} passed: http://127.0.0.1:${local_port}${path} (Host: ${host})"
+      return 0
+    fi
+
+    if (( attempt == attempts )); then
+      echo "${label} failed after ${attempts} attempts: http://127.0.0.1:${local_port}${path} (Host: ${host})" >&2
+      return 1
+    fi
+
+    echo "${label} not ready yet (${attempt}/${attempts}), retrying in ${delay_seconds}s..."
+    sleep "${delay_seconds}"
+  done
 }
 
 release_verify_stack() {

@@ -111,6 +111,7 @@ deploy/nginx/admin.htpasswd
 - 服务器**不需要**主动访问 GitHub
 - GitHub Runner 会把代码同步到服务器
 - `deploy/.env`、`deploy/.env.test`、`deploy/backups/`、`server/uploads*` 会保留在服务器，不会被同步覆盖
+- 测试环境发布脚本会固定使用独立的 Compose Project：`home_decoration_test`，避免和生产环境的 `deploy` 项目互相影响
 
 ## 4. 自动发布怎么触发
 
@@ -128,6 +129,11 @@ deploy/nginx/admin.htpasswd
 ```bash
 bash deploy/scripts/deploy_test.sh --ref <commit-sha> --service all
 ```
+
+补充说明：
+
+- 测试发布会自动清理旧的冲突 `test_*` 容器，避免从旧 Compose Project 迁移时出现容器名冲突
+- API / web / admin 路由检查带重试，首次起库较慢时不会因为瞬时 `502` 直接判失败
 
 如果你不想等 push，也可以在 GitHub Actions 页面手工运行：
 
