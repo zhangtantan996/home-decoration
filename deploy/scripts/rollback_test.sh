@@ -157,7 +157,7 @@ release_validate_compose
 release_remove_conflicting_containers "${RELEASE_COMPOSE_PROJECT_NAME}" test_db test_redis test_api test_web test_tinode
 
 ensure_test_schema() {
-  if ! release_compose config --services | grep -qx 'db'; then
+  if ! release_compose_has_service db; then
     echo "==> Managed test database mode detected; skip local schema bootstrap"
     return 0
   fi

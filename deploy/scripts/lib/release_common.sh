@@ -54,6 +54,18 @@ release_validate_compose() {
   release_compose config >/dev/null
 }
 
+release_compose_has_service() {
+  local service_name="$1"
+  local services
+
+  services="$(release_compose config --services 2>/dev/null || true)"
+  if [[ -z "${services}" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "${services}" | grep -q "^${service_name}$"
+}
+
 release_wait_for_postgres() {
   local attempts="${1:-30}"
   local delay_seconds="${2:-2}"

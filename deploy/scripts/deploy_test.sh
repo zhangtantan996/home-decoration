@@ -163,7 +163,7 @@ release_validate_compose
 run_backup() {
   echo "==> Running test database backup"
   (
-    if release_compose config --services | grep -qx 'db'; then
+    if release_compose_has_service db; then
       mkdir -p "${REPO_ROOT}/deploy/backups/test"
       ts="$(date -u +%Y%m%dT%H%M%SZ)"
       out_file="${REPO_ROOT}/deploy/backups/test/${DB_NAME:-home_decoration_test}_${ts}.sql.gz"
@@ -190,7 +190,7 @@ run_backup() {
 }
 
 ensure_test_schema() {
-  if ! release_compose config --services | grep -qx 'db'; then
+  if ! release_compose_has_service db; then
     echo "==> Managed test database mode detected; skip local schema bootstrap"
     return 0
   fi

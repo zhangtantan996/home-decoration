@@ -124,7 +124,7 @@ release_validate_compose
 run_backup() {
   echo "==> Running database backup"
   (
-    if release_compose config --services | grep -qx 'db'; then
+    if release_compose_has_service db; then
       mkdir -p "${REPO_ROOT}/deploy/backups"
       ts="$(date -u +%Y%m%dT%H%M%SZ)"
       out_file="${REPO_ROOT}/deploy/backups/${DB_NAME:-home_decoration}_${ts}.sql.gz"
