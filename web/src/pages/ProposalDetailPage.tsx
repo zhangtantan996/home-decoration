@@ -34,6 +34,29 @@ export function ProposalDetailPage() {
       <section className="detail-layout">
         <div className="detail-main">
           <section className="card section-card">
+            <div className="section-head"><h2>支付前预览</h2></div>
+            <div className="detail-note">
+              {data.previewSummary || '当前方案提供彩平摘要、必要效果图预览与报价说明，支付设计费后解锁完整交付包。'}
+            </div>
+            {(data.previewFloorPlanImages?.length || data.previewEffectImages?.length || data.previewEffectLinks?.length) ? (
+              <div className="inline-actions" style={{ flexWrap: 'wrap', marginTop: 16 }}>
+                {(data.previewFloorPlanImages || []).map((url) => (
+                  <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">彩平预览</a>
+                ))}
+                {(data.previewEffectImages || []).map((url) => (
+                  <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">效果图预览</a>
+                ))}
+                {(data.previewEffectLinks || []).map((url) => (
+                  <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">效果图链接</a>
+                ))}
+              </div>
+            ) : null}
+            <p className="detail-note" style={{ marginTop: 12 }}>
+              {data.previewHasCad ? '包含 CAD 施工图' : '暂未包含 CAD 标记'} · {data.previewHasAttachments ? '包含其他附件' : '暂未包含其他附件'}
+            </p>
+          </section>
+
+          <section className="card section-card">
             <div className="section-head"><h2>费用结构</h2></div>
             <div className="detail-stat-grid">
               <article className="detail-stat"><span>设计费</span><strong>{data.designFeeText}</strong></article>
@@ -58,6 +81,34 @@ export function ProposalDetailPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </section>
+
+          <section className="card section-card">
+            <div className="section-head"><h2>正式设计交付包</h2></div>
+            {!data.deliveryUnlocked ? (
+              <p className="detail-note">支付设计费后解锁完整彩平图、效果图、CAD 施工图和附件下载。</p>
+            ) : (
+              <>
+                {data.deliveryDescription ? <p className="detail-note">{data.deliveryDescription}</p> : null}
+                <div className="inline-actions" style={{ flexWrap: 'wrap', marginTop: 16 }}>
+                  {(data.deliveryFloorPlanImages || []).map((url) => (
+                    <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">彩平图</a>
+                  ))}
+                  {(data.deliveryEffectImages || []).map((url) => (
+                    <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">效果图</a>
+                  ))}
+                  {(data.deliveryEffectLinks || []).map((url) => (
+                    <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">效果图外链</a>
+                  ))}
+                  {(data.deliveryCadFiles || []).map((url) => (
+                    <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">CAD 图纸</a>
+                  ))}
+                  {(data.deliveryAttachments || []).map((url) => (
+                    <a key={url} className="status-chip" href={url} target="_blank" rel="noreferrer">附件下载</a>
+                  ))}
+                </div>
+              </>
             )}
           </section>
         </div>

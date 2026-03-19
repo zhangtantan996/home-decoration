@@ -1,29 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, message, Space, Table, Tag, Typography } from 'antd';
+import { Button, Empty, message, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ArrowRightOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { merchantQuoteApi, type QuoteListSummary } from '../../services/quoteApi';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import sharedStyles from '../../components/MerchantPage.module.css';
+import { BUSINESS_STAGE_META, QUOTE_LIST_STATUS_META } from '../../constants/statuses';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const statusLabel = (status: string): { text: string; color: string } => {
     const normalized = String(status || '').toLowerCase();
-    switch (normalized) {
-        case 'draft':
-            return { text: '草稿', color: 'default' };
-        case 'quoting':
-            return { text: '报价中', color: 'processing' };
-        case 'locked':
-            return { text: '已锁定', color: 'warning' };
-        case 'awarded':
-            return { text: '已定标', color: 'success' };
-        case 'closed':
-            return { text: '已归档', color: 'default' };
-        default:
-            return { text: status || '-', color: 'default' };
-    }
+    return QUOTE_LIST_STATUS_META[normalized] || { text: status || '-', color: 'default' };
 };
+
+const businessStageLabel = (stage?: string): { text: string; color: string } =>
+    BUSINESS_STAGE_META[String(stage || '').toLowerCase()] || { text: stage || '-', color: 'default' };
 
 const formatCentToYuan = (cent?: number): string => {
     if (!cent || cent <= 0) return '-';
@@ -62,6 +58,11 @@ const MerchantQuoteLists: React.FC = () => {
                     <Text type="secondary" style={{ fontSize: 12 }}>
                         ID: {record.id}
                     </Text>
+                    {record.flowSummary ? (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                            {record.flowSummary}
+                        </Text>
+                    ) : null}
                 </Space>
             ),
         },
@@ -72,6 +73,16 @@ const MerchantQuoteLists: React.FC = () => {
             width: 110,
             render: (value: string) => {
                 const mapped = statusLabel(value);
+                return <Tag color={mapped.color}>{mapped.text}</Tag>;
+            },
+        },
+        {
+            title: '闭环阶段',
+            dataIndex: 'businessStage',
+            key: 'businessStage',
+            width: 150,
+            render: (value?: string) => {
+                const mapped = businessStageLabel(value);
                 return <Tag color={mapped.color}>{mapped.text}</Tag>;
             },
         },
@@ -99,38 +110,41 @@ const MerchantQuoteLists: React.FC = () => {
                     onClick={() => navigate(`/quote-lists/${record.id}`)}
                     icon={<ArrowRightOutlined />}
                 >
-                    去报价
+                    {['quoting', 'pricing_in_progress'].includes(String(record.status || '').toLowerCase()) ? '去报价' : '查看'}
                 </Button>
             ),
         },
     ], [navigate]);
 
     return (
-        <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-            <Card style={{ marginBottom: 16 }}>
-                <Space align="baseline" style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <div>
-                        <Title level={4} style={{ margin: 0 }}>报价清单</Title>
-                        <Text type="secondary">只展示已邀请你的清单，进入后可逐行填写单价并提交</Text>
-                    </div>
+        <MerchantPageShell>
+            <MerchantPageHeader
+                title="报价清单"
+                description="只展示已邀请你的清单，进入后可逐行填写单价并提交。"
+                extra={(
                     <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
                         刷新
                     </Button>
-                </Space>
-            </Card>
+                )}
+            />
 
-            <Card>
-                <Table
-                    rowKey="id"
-                    loading={loading}
-                    columns={columns}
-                    dataSource={rows}
-                    pagination={{ pageSize: 10, showSizeChanger: false }}
-                />
-            </Card>
-        </div>
+            <MerchantContentPanel>
+                <MerchantSectionCard>
+                    <Table
+                        rowKey="id"
+                        loading={loading}
+                        columns={columns}
+                        dataSource={rows}
+                        pagination={{ pageSize: 10, showSizeChanger: false }}
+                        className={sharedStyles.tableCard}
+                        locale={{
+                            emptyText: <Empty description="暂无可处理的报价清单" />,
+                        }}
+                    />
+                </MerchantSectionCard>
+            </MerchantContentPanel>
+        </MerchantPageShell>
     );
 };
 
 export default MerchantQuoteLists;
-

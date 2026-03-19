@@ -6,6 +6,11 @@ import { PublicAppLayout } from '../app/PublicAppLayout';
 import { PublicAuthLayout } from '../app/PublicAuthLayout';
 import { ErrorBlock } from '../components/AsyncState';
 import { BookingDetailPage } from '../pages/BookingDetailPage';
+import { BookingBudgetConfirmPage } from '../pages/BookingBudgetConfirmPage';
+import { BookingRefundPage } from '../pages/BookingRefundPage';
+import { BookingSiteSurveyPage } from '../pages/BookingSiteSurveyPage';
+import { DesignFeeQuotePage } from '../pages/DesignFeeQuotePage';
+import { DesignDeliverableReviewPage } from '../pages/DesignDeliverableReviewPage';
 import { AfterSalesCreatePage } from '../pages/AfterSalesCreatePage';
 import { AfterSalesDetailPage } from '../pages/AfterSalesDetailPage';
 import { AfterSalesPage } from '../pages/AfterSalesPage';
@@ -23,9 +28,13 @@ import { MessagesHubPage } from '../pages/MessagesHubPage';
 import { ProfileHomePage } from '../pages/ProfileHomePage';
 import { ProgressPage } from '../pages/ProgressPage';
 import { ProjectAcceptancePage } from '../pages/ProjectAcceptancePage';
+import { ProjectCompletionPage } from '../pages/ProjectCompletionPage';
+import { ProjectDisputePage } from '../pages/ProjectDisputePage';
 import { ProjectChangeRequestPage } from '../pages/ProjectChangeRequestPage';
 import { ProjectDetailPage } from '../pages/ProjectDetailPage';
+import { ProjectPausePage } from '../pages/ProjectPausePage';
 import { ProposalDetailPage } from '../pages/ProposalDetailPage';
+import { QuoteTaskDetailPage } from '../pages/QuoteTaskDetailPage';
 import { ProviderDetailPage } from '../pages/ProviderDetailPage';
 import { ProvidersPage } from '../pages/ProvidersPage';
 import { PrivacyPolicyPage } from '../pages/legal/PrivacyPolicyPage';
@@ -98,6 +107,7 @@ const router = createBrowserRouter(
       children: [
         { path: 'progress', element: <ProgressPage /> },
         { path: 'messages', element: <MessagesHubPage /> },
+        { path: 'notifications', element: <MessagesHubPage /> },
         { path: 'me', element: <ProfileWorkspaceLayout />, children: [
           { index: true, element: <ProfileHomePage /> },
           { path: 'bookings', element: <BookingsPage /> },
@@ -106,6 +116,7 @@ const router = createBrowserRouter(
           { path: 'projects', element: <ProjectsPage /> },
           { path: 'orders', element: <OrdersPage /> },
           { path: 'messages', element: <MessagesPage /> },
+          { path: 'notifications', element: <MessagesPage /> },
           { path: 'complaints', element: <ComplaintsPage /> },
           { path: 'after-sales', element: <AfterSalesPage /> },
           { path: 'settings', element: <SettingsPage /> },
@@ -118,10 +129,19 @@ const router = createBrowserRouter(
         { path: 'demands/:id', element: <DemandDetailPage /> },
         { path: 'demands/:id/compare', element: <DemandComparePage /> },
         { path: 'bookings/:id', element: <BookingDetailPage /> },
+        { path: 'bookings/:id/refund', element: <BookingRefundPage /> },
+        { path: 'bookings/:id/site-survey', element: <BookingSiteSurveyPage /> },
+        { path: 'bookings/:id/budget-confirm', element: <BookingBudgetConfirmPage /> },
+        { path: 'bookings/:id/design-quote', element: <DesignFeeQuotePage /> },
         { path: 'proposals/:id', element: <ProposalDetailPage /> },
+        { path: 'quote-tasks/:id', element: <QuoteTaskDetailPage /> },
         { path: 'projects/:id', element: <ProjectDetailPage /> },
+        { path: 'projects/:id/pause', element: <ProjectPausePage /> },
+        { path: 'projects/:id/dispute', element: <ProjectDisputePage /> },
         { path: 'projects/:id/contract', element: <ContractConfirmPage /> },
         { path: 'projects/:id/acceptance', element: <ProjectAcceptancePage /> },
+        { path: 'projects/:id/completion', element: <ProjectCompletionPage /> },
+        { path: 'projects/:id/design-deliverable', element: <DesignDeliverableReviewPage /> },
         { path: 'projects/:id/change-request', element: <ProjectChangeRequestPage /> },
       ],
     },

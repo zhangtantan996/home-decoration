@@ -1,4 +1,5 @@
 import type { ProposalDetailVM, ProposalListItemVM, ProposalOrderPlanVM } from '../types/viewModels';
+import { ORDER_STATUS_LABELS, PROPOSAL_STATUS_LABELS } from '../constants/statuses';
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { requestJson } from './http';
 
@@ -17,6 +18,8 @@ interface ProposalDTO {
   rejectionReason?: string;
   submittedAt?: string;
   userResponseDeadline?: string;
+  previewPackageJson?: string;
+  deliveryPackageJson?: string;
 }
 
 interface OrderDTO {
@@ -31,6 +34,32 @@ interface ProposalResponse {
   proposal: ProposalDTO;
   order?: OrderDTO | null;
   hasOrder?: boolean;
+  deliveryUnlocked?: boolean;
+}
+
+type ProposalPackage = {
+  summary?: string;
+  floorPlanImages?: string[];
+  effectPreviewImages?: string[];
+  effectPreviewLinks?: string[];
+  effectImages?: string[];
+  effectLinks?: string[];
+  description?: string;
+  cadFiles?: string[];
+  attachments?: string[];
+  hasCad?: boolean;
+  hasAttachments?: boolean;
+};
+
+function parsePackage(value?: string): ProposalPackage {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return parsed as ProposalPackage;
+    }
+  } catch {}
+  return {};
 }
 
 interface PaymentPlanResponse {
@@ -43,20 +72,6 @@ interface PaymentPlanResponse {
   }>;
 }
 
-const PROPOSAL_STATUS_MAP: Record<number, string> = {
-  1: '待业主确认',
-  2: '已确认',
-  3: '已拒绝',
-  4: '已被新版本替代',
-};
-
-const ORDER_STATUS_MAP: Record<number, string> = {
-  0: '待支付',
-  1: '已支付',
-  2: '已取消',
-  3: '已退款',
-};
-
 function toProposalListItem(dto: ProposalDTO): ProposalListItemVM {
   const status = Number(dto.status || 0);
   const isDemand = dto.sourceType === 'demand' && Number(dto.demandId || 0) > 0;
@@ -65,7 +80,7 @@ function toProposalListItem(dto: ProposalDTO): ProposalListItemVM {
     id: dto.id,
     summary: dto.summary || `报价 #${dto.id}`,
     status,
-    statusText: PROPOSAL_STATUS_MAP[status] || '处理中',
+    statusText: PROPOSAL_STATUS_LABELS[status] || '处理中',
     designFeeText: formatCurrency(dto.designFee),
     submittedAt: formatDateTime(dto.submittedAt),
     href: isDemand ? `/demands/${dto.demandId}/compare` : `/proposals/${dto.id}`,
@@ -77,7 +92,7 @@ function adaptPlans(data: PaymentPlanResponse | null): ProposalOrderPlanVM[] {
     id: plan.id,
     name: plan.name || '分期',
     amountText: formatCurrency(plan.amount),
-    statusText: ORDER_STATUS_MAP[Number(plan.status || 0)] || '待处理',
+    statusText: ORDER_STATUS_LABELS[Number(plan.status || 0)] || '待处理',
     dueAt: formatDateTime(plan.dueAt),
   }));
 }
@@ -115,7 +130,7 @@ export async function getProposalDetail(id: number) {
   const result: ProposalDetailVM = {
     id: data.proposal.id,
     status: proposalStatus,
-    statusText: PROPOSAL_STATUS_MAP[proposalStatus] || '处理中',
+    statusText: PROPOSAL_STATUS_LABELS[proposalStatus] || '处理中',
     version: Number(data.proposal.version || 1),
     summary: data.proposal.summary || '暂无方案概述',
     estimatedDays: Number(data.proposal.estimatedDays || 0),
@@ -128,14 +143,30 @@ export async function getProposalDetail(id: number) {
     rejectionReason: data.proposal.rejectionReason || '',
     hasOrder: Boolean(data.hasOrder),
     orderId: orderId || undefined,
-    orderStatusText: orderStatus === null ? '未生成订单' : ORDER_STATUS_MAP[orderStatus] || '处理中',
+    orderStatusText: orderStatus === null ? '未生成订单' : ORDER_STATUS_LABELS[orderStatus] || '处理中',
     orderStatus,
     orderNo: data.order?.orderNo || '待生成',
     projectId: data.order?.projectId,
     planItems: adaptPlans(planData),
     canConfirm,
     blockingReason,
-  };
+    deliveryUnlocked: Boolean(data.deliveryUnlocked),
+    };
+
+  const previewPackage = parsePackage(data.proposal.previewPackageJson);
+  const deliveryPackage = parsePackage(data.proposal.deliveryPackageJson);
+  result.previewSummary = previewPackage.summary || '';
+  result.previewFloorPlanImages = previewPackage.floorPlanImages || [];
+  result.previewEffectImages = previewPackage.effectPreviewImages || [];
+  result.previewEffectLinks = previewPackage.effectPreviewLinks || [];
+  result.previewHasCad = Boolean(previewPackage.hasCad);
+  result.previewHasAttachments = Boolean(previewPackage.hasAttachments);
+  result.deliveryDescription = deliveryPackage.description || '';
+  result.deliveryFloorPlanImages = deliveryPackage.floorPlanImages || [];
+  result.deliveryEffectImages = deliveryPackage.effectImages || [];
+  result.deliveryEffectLinks = deliveryPackage.effectLinks || [];
+  result.deliveryCadFiles = deliveryPackage.cadFiles || [];
+  result.deliveryAttachments = deliveryPackage.attachments || [];
 
   return result;
 }

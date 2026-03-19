@@ -65,7 +65,11 @@ export function ProviderDetailPage() {
           </div>
           <div className="inline-actions">
             <span className="status-chip" data-tone="brand">{detail.orgLabel}</span>
-            {detail.verified ? <span className="status-chip" data-tone="success">已认证</span> : null}
+            {detail.role === 'company' && detail.isSettled === false
+              ? <span className="status-chip" data-tone="warning">未入驻</span>
+              : detail.verified
+                ? <span className="status-chip" data-tone="success">已认证</span>
+                : null}
             <span className="status-chip">{detail.priceText}</span>
           </div>
         </div>
@@ -109,7 +113,7 @@ export function ProviderDetailPage() {
             <div className="detail-stat-grid">
               <article className="detail-stat"><span>团队规模</span><strong>{detail.teamSize > 0 ? `${detail.teamSize} 人` : '待补充'}</strong></article>
               <article className="detail-stat"><span>机构信息</span><strong>{detail.establishedText}</strong></article>
-              <article className="detail-stat"><span>联系提示</span><strong>{detail.phoneHint || '预约后展示'}</strong></article>
+              <article className="detail-stat"><span>联系提示</span><strong>{detail.role === 'company' && detail.isSettled === false ? '入驻后展示' : (detail.phoneHint || '预约后展示')}</strong></article>
               <article className="detail-stat"><span>办公地址</span><strong>{detail.officeAddress}</strong></article>
             </div>
             <div className="project-list" style={{ marginTop: 16 }}>
@@ -146,6 +150,13 @@ export function ProviderDetailPage() {
         </div>
 
         <aside className="detail-aside">
+          {detail.role === 'company' && detail.isSettled === false ? (
+            <section className="card section-card">
+              <div className="section-head"><h2>信息说明</h2></div>
+              <p className="detail-note">该商家信息来源于公开渠道，尚未在本平台入驻，展示内容仅供参考。</p>
+            </section>
+          ) : (
+          <>
           <section className="card section-card">
             <div className="section-head"><h2>操作</h2></div>
             {actionNote ? <div className="status-note">{actionNote}</div> : null}
@@ -234,6 +245,9 @@ export function ProviderDetailPage() {
               </div>
             </div>
             {successNote ? <div className="status-note" style={{ marginTop: 16 }}>{successNote}</div> : null}
+            <div className="status-note" style={{ marginTop: 16 }}>
+              当前量房定金预计为 {detail.surveyDepositPrice ? `¥${detail.surveyDepositPrice}` : '平台默认价格'}。提交预约后，支付前会再次确认退款与抵扣规则。
+            </div>
             <div className="detail-actions" style={{ marginTop: 16 }}>
               <button
                 className="button-secondary"
@@ -267,6 +281,8 @@ export function ProviderDetailPage() {
               </button>
             </div>
           </section>
+          </>
+          )}
         </aside>
       </section>
     </div>

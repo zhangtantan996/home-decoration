@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Tag, Button, Typography, message } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { Button, Space, Table, Tag, message } from 'antd';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { merchantOrderApi } from '../../services/merchantApi';
-
-const { Title } = Typography;
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import sharedStyles from '../../components/MerchantPage.module.css';
+import { ORDER_STATUS_META } from '../../constants/statuses';
 
 interface Order {
     id: number;
@@ -18,13 +22,6 @@ interface Order {
     status: number;
     createdAt: string;
 }
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待支付', color: 'gold' },
-    1: { text: '已支付', color: 'green' },
-    2: { text: '已取消', color: 'default' },
-    3: { text: '已退款', color: 'red' },
-};
 
 const typeMap: Record<string, string> = {
     design: '设计费',
@@ -67,9 +64,9 @@ const MerchantOrders: React.FC = () => {
             render: (v: number) => `¥${v?.toLocaleString() || 0}`,
         },
         {
-            title: '已付',
-            dataIndex: 'paidAmount',
-            render: (v: number) => `¥${v?.toLocaleString() || 0}`,
+            title: '实付',
+            key: 'actualPaid',
+            render: (_: number, record: Order) => `¥${Math.max(Number(record.totalAmount || 0) - Number(record.discount || 0), 0).toLocaleString()}`,
         },
         {
             title: '优惠',
@@ -80,7 +77,7 @@ const MerchantOrders: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (status: number) => {
-                const s = statusMap[status] || { text: '未知', color: 'default' };
+                const s = ORDER_STATUS_META[status] || { text: '未知', color: 'default' };
                 return <Tag color={s.color}>{s.text}</Tag>;
             },
         },
@@ -92,35 +89,52 @@ const MerchantOrders: React.FC = () => {
         },
         {
             title: '操作',
-            width: 140,
+            width: 220,
             render: (_: unknown, record: Order) => (
                 record.projectId ? (
-                    <Button type="link" size="small" onClick={() => navigate(`/contracts/new?projectId=${record.projectId}`)}>
-                        发起合同
-                    </Button>
+                    <Space size={4}>
+                        <Button type="link" size="small" onClick={() => navigate(`/projects/${record.projectId}`)}>
+                            项目执行
+                        </Button>
+                        <Button type="link" size="small" onClick={() => navigate(`/contracts/new?projectId=${record.projectId}`)}>
+                            发起合同
+                        </Button>
+                    </Space>
                 ) : null
             ),
         },
     ];
 
     return (
-        <div style={{ padding: 24 }}>
-            <div style={{ marginBottom: 16 }}>
-                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
-                    返回首页
-                </Button>
-            </div>
+        <MerchantPageShell>
+            <MerchantPageHeader
+                title="订单列表"
+                description="查看设计、施工与主材相关订单状态，并从关联项目快速发起合同。"
+                extra={(
+                    <>
+                        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
+                            返回首页
+                        </Button>
+                        <Button icon={<ReloadOutlined />} onClick={() => void loadOrders()}>
+                            刷新
+                        </Button>
+                    </>
+                )}
+            />
 
-            <Card title={<Title level={4} style={{ margin: 0 }}>订单列表</Title>}>
-                <Table
-                    loading={loading}
-                    dataSource={orders}
-                    columns={columns}
-                    rowKey="id"
-                    pagination={{ pageSize: 10 }}
-                />
-            </Card>
-        </div>
+            <MerchantContentPanel>
+                <MerchantSectionCard>
+                    <Table
+                        loading={loading}
+                        dataSource={orders}
+                        columns={columns}
+                        rowKey="id"
+                        pagination={{ pageSize: 10 }}
+                        className={sharedStyles.tableCard}
+                    />
+                </MerchantSectionCard>
+            </MerchantContentPanel>
+        </MerchantPageShell>
     );
 };
 

@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { StatusBanner } from '../components/StatusBanner';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { acceptProjectMilestone, getProjectDetail, listProjectLogs } from '../services/projects';
+import { acceptProjectMilestone, getProjectDetail, listProjectLogs, rejectProjectMilestone } from '../services/projects';
 
 export function ProjectAcceptancePage() {
   const params = useParams();
+  const navigate = useNavigate();
   const projectId = Number(params.id || 0);
   const [opinion, setOpinion] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -28,7 +29,7 @@ export function ProjectAcceptancePage() {
     return <div className="container page-stack"><ErrorBlock description={error || '验收页加载失败'} onRetry={() => void reload()} /></div>;
   }
 
-  const pendingMilestone = data.detail.milestones.find((milestone) => milestone.status === '0' || milestone.status === '1');
+  const pendingMilestone = data.detail.milestones.find((milestone) => milestone.status === '2');
 
   return (
     <div className="container page-stack">
@@ -138,11 +139,36 @@ export function ProjectAcceptancePage() {
             >
               {submitting ? '提交中…' : '通过验收'}
             </button>
-            <button className="button-outline" onClick={() => setActionMessage('当前版本暂未开放线上驳回流程，请通过消息中心联系平台处理。')} type="button">
+            <button
+              className="button-outline"
+              disabled={!pendingMilestone || submitting}
+              onClick={async () => {
+                if (!pendingMilestone) return;
+                setSubmitting(true);
+                setActionMessage('');
+                try {
+                  await rejectProjectMilestone(projectId, pendingMilestone.id, opinion.trim() || '用户要求整改');
+                  await reload();
+                  setActionMessage(`节点 ${pendingMilestone.name} 已驳回，等待整改后重新提交。`);
+                } catch (submitError) {
+                  setActionMessage(submitError instanceof Error ? submitError.message : '驳回失败');
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              type="button"
+            >
               驳回
             </button>
-            <button className="button-outline" onClick={() => setActionMessage('当前版本暂未开放线上争议提交流程，请通过消息中心联系平台处理。')} type="button">
-              提交争议
+            <button
+              className="button-outline"
+              disabled={!data.detail.businessStage || data.detail.businessStage !== 'completed'}
+              onClick={() => {
+                navigate(`/projects/${projectId}/completion`);
+              }}
+              type="button"
+            >
+              去整体验收
             </button>
           </div>
         </section>

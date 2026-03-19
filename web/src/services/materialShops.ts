@@ -17,6 +17,7 @@ interface MaterialShopDTO {
   openTime?: string;
   tags?: string[];
   isVerified?: boolean;
+  isSettled?: boolean;
 }
 
 function toMaterialShop(dto: MaterialShopDTO): MaterialShopListItemVM {
@@ -35,6 +36,7 @@ function toMaterialShop(dto: MaterialShopDTO): MaterialShopListItemVM {
     openTime: dto.openTime || '营业时间待补充',
     tags: dto.tags || [],
     isVerified: Boolean(dto.isVerified),
+    isSettled: dto.isSettled,
   };
 }
 

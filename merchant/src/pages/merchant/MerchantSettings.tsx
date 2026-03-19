@@ -201,6 +201,7 @@ const MerchantSettings: React.FC = () => {
                 name: info.name,
                 companyName: info.companyName,
                 yearsExperience: info.yearsExperience,
+                surveyDepositPrice: info.surveyDepositPrice || 0,
                 specialty: info.specialty,
                 highlightTags: info.highlightTags || [],
                 pricingRaw: JSON.stringify(info.pricing || {}, null, 2),
@@ -250,6 +251,7 @@ const MerchantSettings: React.FC = () => {
         teamSize?: number;
         officeAddress?: string;
         companyAlbum?: string[];
+        surveyDepositPrice?: number;
     }) => {
         setSavingInfo(true);
         try {
@@ -271,6 +273,7 @@ const MerchantSettings: React.FC = () => {
                 introduction: values.introduction || '',
                 teamSize: values.teamSize || 1,
                 officeAddress,
+                surveyDepositPrice: Number(values.surveyDepositPrice || 0),
             };
 
             if (isForeman) {
@@ -300,6 +303,7 @@ const MerchantSettings: React.FC = () => {
                     introduction: values.introduction || '',
                     teamSize: values.teamSize || 1,
                     officeAddress,
+                    surveyDepositPrice: Number(values.surveyDepositPrice || 0),
                     companyAlbum: isCompanyRole ? (values.companyAlbum || []) : prev.companyAlbum,
                 };
             });
@@ -324,6 +328,8 @@ const MerchantSettings: React.FC = () => {
         priceRangeMax: number;
         serviceStyles: string[];
         servicePackagesRaw: string;
+        surveyDepositAmount?: number;
+        designPaymentMode?: string;
     }) => {
         setSavingSettings(true);
         try {
@@ -336,6 +342,8 @@ const MerchantSettings: React.FC = () => {
                 priceRangeMax: Number(values.priceRangeMax || 0),
                 serviceStyles: values.serviceStyles || [],
                 servicePackages,
+                surveyDepositAmount: Number(values.surveyDepositAmount || 0),
+                designPaymentMode: values.designPaymentMode || '',
             };
 
             await merchantAuthApi.updateServiceSettings(payload);
@@ -528,6 +536,16 @@ const MerchantSettings: React.FC = () => {
                                 </Col>
                                 <Col span={12}>
                                     {!isForeman && (
+                                        <Form.Item name="surveyDepositPrice" label="量房定金（元）">
+                                            <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="未填写则使用平台默认价" />
+                                        </Form.Item>
+                                    )}
+                                </Col>
+                            </Row>
+
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    {!isForeman && (
                                         <Form.Item
                                             name="specialty"
                                             label={isCompanyRole ? '主营风格/项目偏好' : '擅长风格'}
@@ -717,6 +735,31 @@ const MerchantSettings: React.FC = () => {
                                     ))}
                                 </Select>
                             </Form.Item>
+
+                            {!isForeman && (
+                                <>
+                                    <Divider orientation="left">设计服务设置</Divider>
+                                    <Row gutter={16}>
+                                        <Col span={12}>
+                                            <Form.Item name="surveyDepositAmount" label="自定义量房定金（元）" extra="留空则使用平台默认金额">
+                                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="如：500" />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col span={12}>
+                                            <Form.Item name="designPaymentMode" label="设计费收款模式">
+                                                <Select
+                                                    allowClear
+                                                    placeholder="使用平台默认"
+                                                    options={[
+                                                        { value: 'onetime', label: '一次性收款' },
+                                                        { value: 'staged', label: '分阶段收款' },
+                                                    ]}
+                                                />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
+                                </>
+                            )}
 
                             <Form.Item
                                 name="servicePackagesRaw"

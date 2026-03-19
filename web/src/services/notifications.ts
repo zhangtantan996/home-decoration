@@ -13,6 +13,13 @@ interface NotificationDTO {
   type?: string;
 }
 
+export interface NotificationListResult {
+  list: MessageListItemVM[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 function toNotification(dto: NotificationDTO): MessageListItemVM {
   return {
     id: dto.id,
@@ -38,10 +45,28 @@ export async function listNotifications(params: { page?: number; pageSize?: numb
     total: data.total,
     page: data.page,
     pageSize: data.pageSize,
-  };
+  } satisfies NotificationListResult;
 }
 
 export async function getNotificationUnreadCount() {
   const data = await requestJson<{ count: number }>('/notifications/unread-count');
   return Number(data.count || 0);
+}
+
+export async function markNotificationAsRead(id: number) {
+  await requestJson<{ message?: string }>(`/notifications/${id}/read`, {
+    method: 'PUT',
+  });
+}
+
+export async function markAllNotificationsAsRead() {
+  await requestJson<{ message?: string }>('/notifications/read-all', {
+    method: 'PUT',
+  });
+}
+
+export async function deleteNotification(id: number) {
+  await requestJson<{ message?: string }>(`/notifications/${id}`, {
+    method: 'DELETE',
+  });
 }

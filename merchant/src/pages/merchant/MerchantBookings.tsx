@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import type { UploadFile } from 'antd';
-import { Card, Table, Tag, Button, Space, Typography, message, Modal, Form, Input, InputNumber, Descriptions, Upload } from 'antd';
-import { ArrowLeftOutlined, FileAddOutlined, EyeOutlined, UploadOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Table, Tag, Button, Space, Typography, message, Modal, Form, Input, InputNumber, Descriptions, Upload } from 'antd';
+import { ArrowLeftOutlined, FileAddOutlined, EyeOutlined, ReloadOutlined, UploadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { merchantBookingApi, merchantProposalApi, merchantUploadApi } from '../../services/merchantApi';
 import { useDictStore } from '../../stores/dictStore';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import sharedStyles from '../../components/MerchantPage.module.css';
+import { BOOKING_STATUS_META } from '../../constants/statuses';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 interface Booking {
@@ -26,13 +32,6 @@ interface Booking {
     userPhone?: string;
     hasProposal?: boolean;
 }
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    1: { text: '待处理', color: 'gold' },
-    2: { text: '已确认', color: 'blue' },
-    3: { text: '已完成', color: 'green' },
-    4: { text: '已取消', color: 'default' },
-};
 
 const MerchantBookings: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -150,7 +149,7 @@ const MerchantBookings: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (status: number) => {
-                const s = statusMap[status] || { text: '未知', color: 'default' };
+                const s = BOOKING_STATUS_META[status] || { text: '未知', color: 'default' };
                 return <Tag color={s.color}>{s.text}</Tag>;
             },
         },
@@ -220,22 +219,36 @@ const MerchantBookings: React.FC = () => {
     ];
 
     return (
-        <div style={{ padding: 24 }}>
-            <div style={{ marginBottom: 16 }}>
-                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
-                    返回首页
-                </Button>
-            </div>
-
-            <Card title={<Title level={4} style={{ margin: 0 }}>预约管理</Title>}>
-                <Table
-                    loading={loading}
-                    dataSource={bookings}
-                    columns={columns}
-                    rowKey="id"
-                    pagination={{ pageSize: 10 }}
+        <>
+            <MerchantPageShell>
+                <MerchantPageHeader
+                    title="预约管理"
+                    description="处理用户预约需求，确认接单后可继续录入方案并推进后续签约。"
+                    extra={(
+                        <>
+                            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
+                                返回首页
+                            </Button>
+                            <Button icon={<ReloadOutlined />} onClick={() => void loadBookings()}>
+                                刷新
+                            </Button>
+                        </>
+                    )}
                 />
-            </Card>
+
+                <MerchantContentPanel>
+                    <MerchantSectionCard>
+                        <Table
+                            loading={loading}
+                            dataSource={bookings}
+                            columns={columns}
+                            rowKey="id"
+                            pagination={{ pageSize: 10 }}
+                            className={sharedStyles.tableCard}
+                        />
+                    </MerchantSectionCard>
+                </MerchantContentPanel>
+            </MerchantPageShell>
 
             {/* 方案录入弹窗 */}
             <Modal
@@ -343,7 +356,29 @@ const MerchantBookings: React.FC = () => {
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
                 footer={
-                    <Button onClick={() => setDetailVisible(false)}>关闭</Button>
+                    currentBooking ? (
+                        <Space>
+                            {currentBooking.status >= 2 ? (
+                                <>
+                                    <Button onClick={() => {
+                                        setDetailVisible(false);
+                                        navigate(`/bookings/${currentBooking.id}/site-survey`);
+                                    }}>
+                                        量房记录
+                                    </Button>
+                                    <Button onClick={() => {
+                                        setDetailVisible(false);
+                                        navigate(`/bookings/${currentBooking.id}/budget-confirm`);
+                                    }}>
+                                        预算确认
+                                    </Button>
+                                </>
+                            ) : null}
+                            <Button onClick={() => setDetailVisible(false)}>关闭</Button>
+                        </Space>
+                    ) : (
+                        <Button onClick={() => setDetailVisible(false)}>关闭</Button>
+                    )
                 }
                 width={640}
             >
@@ -365,8 +400,8 @@ const MerchantBookings: React.FC = () => {
                         <Descriptions.Item label="预约时间">{currentBooking.preferredDate}</Descriptions.Item>
                         <Descriptions.Item label="联系电话">{currentBooking.phone}</Descriptions.Item>
                         <Descriptions.Item label="状态" span={2}>
-                            <Tag color={statusMap[currentBooking.status]?.color}>
-                                {statusMap[currentBooking.status]?.text}
+                            <Tag color={BOOKING_STATUS_META[currentBooking.status]?.color}>
+                                {BOOKING_STATUS_META[currentBooking.status]?.text}
                             </Tag>
                         </Descriptions.Item>
                         <Descriptions.Item label="备注" span={2}>{currentBooking.notes || '-'}</Descriptions.Item>
@@ -374,7 +409,7 @@ const MerchantBookings: React.FC = () => {
                     </Descriptions>
                 )}
             </Modal>
-        </div>
+        </>
     );
 };
 

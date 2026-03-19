@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import type { UploadFile } from 'antd';
 import { Button, Card, Descriptions, Form, Input, InputNumber, Modal, Space, Table, Tag, Typography, Upload, message } from 'antd';
-import { CheckCircleOutlined, EyeOutlined, FileAddOutlined, UploadOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, EyeOutlined, FileAddOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 
 import { merchantLeadApi, merchantProposalApi, merchantUploadApi, type MerchantLeadItem } from '../../services/merchantApi';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import sharedStyles from '../../components/MerchantPage.module.css';
 
 const { TextArea } = Input;
 
@@ -179,15 +184,30 @@ const MerchantLeads: React.FC = () => {
 
     return (
         <>
-            <Card title="线索管理" extra={<Button onClick={() => void loadLeads()}>刷新</Button>}>
-                <Table
-                    loading={loading}
-                    rowKey="id"
-                    columns={columns}
-                    dataSource={leads}
-                    pagination={false}
+            <MerchantPageShell>
+                <MerchantPageHeader
+                    title="线索管理"
+                    description="查看平台分发给你的装修需求，及时响应并按需提交方案。"
+                    extra={(
+                        <Button icon={<ReloadOutlined />} onClick={() => void loadLeads()}>
+                            刷新
+                        </Button>
+                    )}
                 />
-            </Card>
+
+                <MerchantContentPanel>
+                    <MerchantSectionCard>
+                        <Table
+                            loading={loading}
+                            rowKey="id"
+                            columns={columns}
+                            dataSource={leads}
+                            pagination={false}
+                            className={sharedStyles.tableCard}
+                        />
+                    </MerchantSectionCard>
+                </MerchantContentPanel>
+            </MerchantPageShell>
 
             <Modal
                 open={detailVisible}

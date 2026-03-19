@@ -1,5 +1,6 @@
 import type { PageEnvelope } from '../types/api';
 import type { OrderListItemVM } from '../types/viewModels';
+import { ORDER_STATUS_LABELS } from '../constants/statuses';
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { requestJson } from './http';
 
@@ -15,19 +16,12 @@ interface OrderListDTO {
   projectId?: number;
 }
 
-const ORDER_STATUS_MAP: Record<number, string> = {
-  0: '待支付',
-  1: '已支付',
-  2: '已取消',
-  3: '已退款',
-};
-
 function toOrderItem(dto: OrderListDTO): OrderListItemVM {
   return {
     id: dto.id,
     orderNo: dto.orderNo || `ORD-${dto.id}`,
     status: Number(dto.status || 0),
-    statusText: ORDER_STATUS_MAP[Number(dto.status || 0)] || '处理中',
+    statusText: ORDER_STATUS_LABELS[Number(dto.status || 0)] || '处理中',
     amountText: formatCurrency(dto.amount),
     providerName: dto.providerName || '服务商',
     address: dto.address || '地址待补充',

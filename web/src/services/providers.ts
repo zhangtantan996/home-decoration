@@ -16,9 +16,10 @@ interface ProviderListDTO {
   completedCnt?: number;
   yearsExperience?: number;
   verified?: boolean;
+  isSettled?: boolean;
   specialty?: string;
   highlightTags?: string;
-  serviceArea?: string;
+  serviceArea?: string | string[];
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;
@@ -58,11 +59,14 @@ interface ProviderUserStatusDTO {
 function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
   const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit);
+  const displayName = role === 'company'
+    ? (dto.companyName || dto.nickname || '未命名服务商')
+    : (dto.nickname || dto.companyName || '未命名服务商');
 
   return {
     id: dto.id,
     role,
-    name: dto.nickname || dto.companyName || '未命名服务商',
+    name: displayName,
     orgLabel: role === 'designer' ? '设计师' : role === 'company' ? '装修公司' : '工长施工',
     avatar: dto.avatar || 'https://placehold.co/1200x900/e7eaef/0f172a?text=HZ',
     summary: dto.specialty || '支持前期沟通、现场勘测与分项报价。',
@@ -71,6 +75,7 @@ function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
     completedCount: Number(dto.completedCnt || 0),
     yearsExperience: Number(dto.yearsExperience || 0),
     verified: Boolean(dto.verified),
+    isSettled: dto.isSettled !== undefined ? Boolean(dto.isSettled) : undefined,
     priceText: pricing.priceText,
     tags: parseTextArray(dto.highlightTags).slice(0, 3),
     serviceArea: parseTextArray(dto.serviceArea),
@@ -92,11 +97,14 @@ function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, 
   const provider = (response.provider || {}) as Record<string, unknown>;
   const user = (response.user || {}) as Record<string, unknown>;
   const pricing = summarizePricing(readStringRecord(provider, 'pricingJson'), readNumericRecord(provider, 'priceMin'), readNumericRecord(provider, 'priceMax'), readStringRecord(provider, 'priceUnit'));
+  const displayName = role === 'company'
+    ? (readStringRecord(provider, 'companyName') || readStringRecord(user, 'nickname') || readStringRecord(provider, 'nickname') || '服务商')
+    : (readStringRecord(user, 'nickname') || readStringRecord(provider, 'companyName') || readStringRecord(provider, 'nickname') || '服务商');
 
   return {
     id: Number(provider.id || 0),
     role,
-    name: readStringRecord(user, 'nickname') || readStringRecord(provider, 'companyName') || readStringRecord(provider, 'nickname') || '服务商',
+    name: displayName,
     orgLabel: role === 'designer' ? '设计师' : role === 'company' ? '装修公司' : '工长',
     avatar: readStringRecord(user, 'avatar') || readStringRecord(provider, 'avatar') || readStringRecord(provider, 'coverImage') || 'https://placehold.co/120x120/e7eaef/0f172a?text=HZ',
     summary: readStringRecord(provider, 'specialty') || readStringRecord(provider, 'serviceIntro') || '支持前期沟通与上门勘测。',
@@ -105,6 +113,7 @@ function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, 
     completedCount: readNumericRecord(provider, 'completedCnt'),
     yearsExperience: readNumericRecord(provider, 'yearsExperience'),
     verified: Boolean(provider.verified),
+    isSettled: provider.isSettled !== undefined ? Boolean(provider.isSettled) : undefined,
     priceText: pricing.priceText,
     tags: parseTextArray(readStringRecord(provider, 'highlightTags')),
     serviceArea: parseTextArray(readStringRecord(provider, 'serviceArea')),
@@ -120,6 +129,7 @@ function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, 
     reviews,
     reviewStats,
     phoneHint: compactPhone(readStringRecord(user, 'phone')),
+    surveyDepositPrice: readNumericRecord(provider, 'surveyDepositPrice') || undefined,
   };
 }
 

@@ -22,6 +22,8 @@ import {
     type QuoteListItem,
     type QuoteSubmissionItem,
 } from '../../services/quoteApi';
+import { BUSINESS_STAGE_META, QUOTE_LIST_STATUS_META } from '../../constants/statuses';
+import { normalizePriceCent, normalizePriceYuan, sharedForemanPriceInputProps } from '../../utils/priceInput';
 
 const { Title, Text } = Typography;
 
@@ -38,28 +40,29 @@ type EditableRow = QuoteListItem & {
 
 const statusLabel = (status: string): { text: string; color: string } => {
     const normalized = String(status || '').toLowerCase();
-    switch (normalized) {
-        case 'draft':
-            return { text: '草稿', color: 'default' };
-        case 'quoting':
-            return { text: '报价中', color: 'processing' };
-        case 'locked':
-            return { text: '已锁定', color: 'warning' };
-        case 'awarded':
-            return { text: '已定标', color: 'success' };
-        case 'closed':
-            return { text: '已归档', color: 'default' };
-        default:
-            return { text: status || '-', color: 'default' };
-    }
+    return QUOTE_LIST_STATUS_META[normalized] || { text: status || '-', color: 'default' };
 };
 
-const toCent = (yuan: number | null): number | undefined => {
-    if (yuan === null || yuan === undefined) return undefined;
-    if (!Number.isFinite(yuan)) return undefined;
-    const cent = Math.round(yuan * 100);
-    if (cent < 0) return 0;
-    return cent;
+const businessStageLabel = (stage?: string): { text: string; color: string } =>
+    BUSINESS_STAGE_META[String(stage || '').toLowerCase()] || { text: stage || '-', color: 'default' };
+
+const actionLabel = (action?: string) => {
+    switch (action) {
+        case 'create_proposal': return '提交方案';
+        case 'confirm_proposal': return '确认设计方案';
+        case 'reject_proposal': return '驳回设计方案';
+        case 'create_quote_task': return '创建施工报价任务';
+        case 'select_constructor': return '选择施工方';
+        case 'submit_construction_quote': return '提交施工报价';
+        case 'confirm_construction_quote': return '确认施工报价';
+        case 'reject_construction_quote': return '驳回施工报价';
+        case 'start_project': return '发起开工';
+        case 'submit_milestone': return '提交节点验收';
+        case 'approve_milestone': return '通过节点验收';
+        case 'reject_milestone': return '驳回节点验收';
+        case 'generate_inspiration_draft': return '生成案例草稿';
+        default: return action || '-';
+    }
 };
 
 const centToYuan = (cent?: number): number | undefined => {
@@ -79,6 +82,21 @@ const formatCentToYuanText = (cent?: number): string => {
     return `¥${(cent / 100).toFixed(2)}`;
 };
 
+const isRequiredItem = (item: QuoteListItem): boolean => {
+    if (typeof item.required === 'boolean') {
+        return item.required;
+    }
+    if (!item.extensionsJson) {
+        return false;
+    }
+    try {
+        const parsed = JSON.parse(item.extensionsJson);
+        return Boolean(parsed?.required);
+    } catch {
+        return false;
+    }
+};
+
 const MerchantQuoteDetail: React.FC = () => {
     const navigate = useNavigate();
     const params = useParams();
@@ -91,7 +109,7 @@ const MerchantQuoteDetail: React.FC = () => {
 
     const canEdit = useMemo(() => {
         const status = detail?.quoteList?.status || '';
-        return String(status).toLowerCase() === 'quoting';
+        return ['quoting', 'pricing_in_progress'].includes(String(status).toLowerCase());
     }, [detail?.quoteList?.status]);
 
     const load = async () => {
@@ -203,7 +221,10 @@ const MerchantQuoteDetail: React.FC = () => {
             key: 'name',
             render: (value: string, record) => (
                 <Space direction="vertical" size={2}>
-                    <Text strong>{value}</Text>
+                    <Space size={8} wrap>
+                        <Text strong>{value}</Text>
+                        {isRequiredItem(record) && <Tag color="red">必填</Tag>}
+                    </Space>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                         {record.pricingNote || ''}
                     </Text>
@@ -231,15 +252,22 @@ const MerchantQuoteDetail: React.FC = () => {
             width: 120,
             render: (_: unknown, record) => (
                 <InputNumber
+                    {...sharedForemanPriceInputProps}
                     style={{ width: '100%' }}
-                    min={0}
-                    max={999999999}
-                    step={1}
-                    precision={2}
                     disabled={!canEdit}
                     value={centToYuan(record.unitPriceCent)}
                     onChange={(value) => {
-                        const nextCent = toCent(value as number | null);
+                        const nextCent = normalizePriceCent(value as number | null);
+                        setRows((prev) => prev.map((row) => {
+                            if (row.id !== record.id) return row;
+                            const unitPriceCent = nextCent;
+                            const amountCent = computeAmountCent(row.quantity, unitPriceCent);
+                            return { ...row, unitPriceCent, amountCent };
+                        }));
+                    }}
+                    onBlur={(event) => {
+                        const normalizedYuan = normalizePriceYuan(Number(event.target.value || 0));
+                        const nextCent = normalizePriceCent(normalizedYuan ?? 0);
                         setRows((prev) => prev.map((row) => {
                             if (row.id !== record.id) return row;
                             const unitPriceCent = nextCent;
@@ -291,9 +319,11 @@ const MerchantQuoteDetail: React.FC = () => {
 
     const quoteListStatus = detail?.quoteList?.status || '';
     const quoteStatusTag = statusLabel(quoteListStatus);
-    const submissionStatus = detail?.submission?.status || '-';
+    const businessStageTag = businessStageLabel(detail?.businessStage);
+    const submissionStatus = statusLabel(detail?.submission?.status || '-').text;
     const generationStatus = detail?.submission?.generationStatus || '-';
     const invitationStatus = detail?.invitation?.status || '-';
+    const showResubmitHint = canEdit && String(detail?.submission?.status || '').toLowerCase() === 'submitted';
 
     return (
         <div style={{ maxWidth: 1280, margin: '0 auto' }}>
@@ -309,6 +339,7 @@ const MerchantQuoteDetail: React.FC = () => {
                             </Title>
                             <Space size={8} style={{ marginTop: 4 }}>
                                 <Tag color={quoteStatusTag.color}>{quoteStatusTag.text}</Tag>
+                                {detail?.businessStage ? <Tag color={businessStageTag.color}>{businessStageTag.text}</Tag> : null}
                                 <Text type="secondary">合计: {formatCentToYuanText(totalCent)}</Text>
                             </Space>
                         </div>
@@ -317,6 +348,11 @@ const MerchantQuoteDetail: React.FC = () => {
                         <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
                             刷新
                         </Button>
+                        {detail?.quoteList?.projectId ? (
+                            <Button onClick={() => navigate(`/projects/${detail.quoteList.projectId}`)}>
+                                项目执行
+                            </Button>
+                        ) : null}
                         <Button onClick={saveDraft} loading={saving} disabled={!canEdit}>
                             保存草稿
                         </Button>
@@ -328,11 +364,23 @@ const MerchantQuoteDetail: React.FC = () => {
             </Card>
 
             <Card style={{ marginBottom: 16 }} loading={loading}>
+                {detail?.flowSummary ? (
+                    <Alert
+                        type={detail.businessStage === 'completed' || detail.businessStage === 'archived' ? 'success' : 'info'}
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                        message={detail.flowSummary}
+                        description={detail.availableActions?.length
+                            ? `当前推进动作：${detail.availableActions.map((action) => actionLabel(action)).join('、')}`
+                            : '当前没有待推进动作'}
+                    />
+                ) : null}
                 <Descriptions column={3} size="small">
-                            <Descriptions.Item label="清单状态">{quoteStatusTag.text}</Descriptions.Item>
-                            <Descriptions.Item label="我的报价状态">{submissionStatus}</Descriptions.Item>
-                            <Descriptions.Item label="草稿生成状态">{generationStatus}</Descriptions.Item>
-                            <Descriptions.Item label="邀请状态">{invitationStatus}</Descriptions.Item>
+                    <Descriptions.Item label="清单状态">{quoteStatusTag.text}</Descriptions.Item>
+                    <Descriptions.Item label="闭环阶段">{businessStageTag.text}</Descriptions.Item>
+                    <Descriptions.Item label="我的报价状态">{submissionStatus}</Descriptions.Item>
+                    <Descriptions.Item label="草稿生成状态">{generationStatus}</Descriptions.Item>
+                    <Descriptions.Item label="邀请状态">{invitationStatus}</Descriptions.Item>
                     <Descriptions.Item label="截止时间">
                         {detail?.quoteList?.deadlineAt ? detail.quoteList.deadlineAt.replace('T', ' ').replace('Z', '') : '-'}
                     </Descriptions.Item>
@@ -342,9 +390,22 @@ const MerchantQuoteDetail: React.FC = () => {
                 {!canEdit && (
                     <div style={{ marginTop: 12 }}>
                         <Text type="secondary">
-                            当前清单状态为 {quoteListStatus || '-'}，不可编辑报价。
+                            {quoteListStatus === 'submitted_to_user'
+                                ? '该报价已发送给用户，如需改价请联系平台发起重报价。'
+                                : quoteListStatus === 'user_confirmed' || quoteListStatus === 'awarded' || quoteListStatus === 'locked'
+                                    ? '该报价已锁定，如需调整请联系平台发起变更单或重报价。'
+                                    : `当前清单状态为 ${quoteListStatus || '-'}，不可编辑报价。`}
                         </Text>
                     </div>
+                )}
+                {showResubmitHint && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginTop: 16 }}
+                        message="你已正式提交过一次报价"
+                        description="在平台将报价发送给用户前，你仍可继续修改并重新提交。系统会保留每次改价的版本留痕。"
+                    />
                 )}
                 {rows.some((row) => row.missingMappingFlag || row.missingPriceFlag) && (
                     <Alert
@@ -353,6 +414,15 @@ const MerchantQuoteDetail: React.FC = () => {
                         style={{ marginTop: 16 }}
                         message="存在缺失映射或缺失价格的条目"
                         description="这类条目不会静默吞掉；请补充价格或联系平台整理标准项映射后再提交正式报价。"
+                    />
+                )}
+                {rows.some((row) => isRequiredItem(row)) && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        style={{ marginTop: 16 }}
+                        message="存在必填报价项"
+                        description="标记为“必填”的施工项必须填写单价后才能提交报价。"
                     />
                 )}
             </Card>

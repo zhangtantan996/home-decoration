@@ -13,8 +13,15 @@ export function MaterialShopDetailPage() {
   if (loading) return <div className="top-detail"><LoadingBlock title="加载门店详情" /></div>;
   if (error || !data) return <div className="top-detail"><ErrorBlock description={error || '门店详情加载失败'} onRetry={() => void reload()} /></div>;
 
+  const settled = data.isSettled !== false;
+
   return (
     <div className="top-detail">
+      {!settled && (
+        <section className="card section-card" style={{ background: '#fffbeb', border: '1px solid #f59e0b', marginBottom: 16, padding: '12px 16px' }}>
+          <p style={{ margin: 0, color: '#92400e', fontSize: 14 }}>该商家信息来源于公开渠道，尚未在本平台入驻，展示内容仅供参考。</p>
+        </section>
+      )}
       <section className="detail-header">
         <div className="detail-header-row">
           <div>
@@ -23,7 +30,9 @@ export function MaterialShopDetailPage() {
             <p>{data.address}</p>
           </div>
           <div className="inline-actions">
-            {data.isVerified ? <span className="status-chip" data-tone="success">已认证</span> : null}
+            {!settled
+              ? <span className="status-chip" data-tone="warning">未入驻</span>
+              : data.isVerified ? <span className="status-chip" data-tone="success">已认证</span> : null}
             <Link className="button-outline" to="/providers?category=material">返回主材列表</Link>
           </div>
         </div>

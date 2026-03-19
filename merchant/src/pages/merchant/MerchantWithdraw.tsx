@@ -12,19 +12,16 @@ import {
     CheckCircleOutlined,
     ClockCircleOutlined,
     CloseCircleOutlined,
+    ReloadOutlined,
     SafetyOutlined,
-    WalletOutlined,
 } from '@ant-design/icons';
 import {
     Button,
-    Card,
-    Col,
     Empty,
     Form,
     Input,
     InputNumber,
     Modal,
-    Row,
     Select,
     Statistic,
     Steps,
@@ -34,6 +31,12 @@ import {
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantStatGrid from '../../components/MerchantStatGrid';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import sharedStyles from '../../components/MerchantPage.module.css';
 
 interface WithdrawRecord {
     id: number;
@@ -257,74 +260,89 @@ const MerchantWithdraw: React.FC = () => {
     ];
 
     return (
-        <div style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
-            <div style={{ marginBottom: 24 }}>
-                <Button
-                    type="link"
-                    icon={<ArrowLeftOutlined />}
-                    onClick={() => navigate('/income')}
-                    style={{ padding: 0, marginBottom: 8 }}
-                >
-                    返回收入中心
-                </Button>
-                <h2 style={{ margin: 0 }}>提现管理</h2>
-            </div>
-
-            <Card style={{ marginBottom: 24 }}>
-                <Row align="middle" justify="space-between">
-                    <Col>
-                        <Statistic
-                            title="可提现金额"
-                            value={availableAmount}
-                            precision={2}
-                            prefix={<WalletOutlined />}
-                            suffix="元"
-                            valueStyle={{ color: '#52c41a', fontSize: 32 }}
-                        />
-                    </Col>
-                    <Col>
-                        <Button
-                            type="primary"
-                            size="large"
-                            icon={<BankOutlined />}
-                            onClick={() => {
-                                if (bankAccounts.length === 0) {
-                                    message.warning('请先添加银行账户');
-                                    navigate('/bank-accounts');
-                                    return;
-                                }
-                                if (availableAmount <= 0) {
-                                    message.warning('暂无可提现金额');
-                                    return;
-                                }
-                                setModalVisible(true);
-                            }}
-                        >
-                            申请提现
-                        </Button>
-                    </Col>
-                </Row>
-            </Card>
-
-            <Card title="提现记录">
-                <Table
-                    columns={columns}
-                    dataSource={withdrawList}
-                    rowKey="id"
-                    loading={loading}
-                    pagination={{
-                        current: currentPage,
-                        total,
-                        pageSize: 10,
-                        onChange: (page) => setCurrentPage(page),
-                        showTotal: (count) => `共${count} 条`,
-                    }}
-                    scroll={{ x: 1000 }}
-                    locale={{
-                        emptyText: <Empty description="暂无提现记录" />,
-                    }}
+        <>
+            <MerchantPageShell>
+                <MerchantPageHeader
+                    title="提现管理"
+                    description="查看可提现余额与历史提现记录，提交申请后等待平台审核与银行处理。"
+                    extra={(
+                        <>
+                            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/income')}>
+                                返回收入中心
+                            </Button>
+                            <Button icon={<ReloadOutlined />} onClick={() => {
+                                void Promise.all([fetchWithdrawList(), fetchAvailableAmount(), fetchBankAccounts()]);
+                            }}>
+                                刷新
+                            </Button>
+                        </>
+                    )}
                 />
-            </Card>
+
+                <MerchantStatGrid
+                    items={[
+                        {
+                            label: '可提现金额',
+                            value: `¥${availableAmount.toFixed(2)}`,
+                            meta: '提交申请前请确认收款账户可用',
+                            percent: 100,
+                            tone: 'green',
+                        },
+                        {
+                            label: '已绑定账户',
+                            value: bankAccounts.length,
+                            meta: bankAccounts.length > 0 ? '可直接选择已有银行卡' : '请先添加银行账户',
+                            percent: Math.min(100, bankAccounts.length * 20),
+                            tone: 'blue',
+                        },
+                    ]}
+                />
+
+                <MerchantContentPanel>
+                    <MerchantSectionCard
+                        title="提现记录"
+                        extra={(
+                            <Button
+                                type="primary"
+                                icon={<BankOutlined />}
+                                onClick={() => {
+                                    if (bankAccounts.length === 0) {
+                                        message.warning('请先添加银行账户');
+                                        navigate('/bank-accounts');
+                                        return;
+                                    }
+                                    if (availableAmount <= 0) {
+                                        message.warning('暂无可提现金额');
+                                        return;
+                                    }
+                                    setModalVisible(true);
+                                }}
+                            >
+                                申请提现
+                            </Button>
+                        )}
+                    >
+                        <Table
+                            columns={columns}
+                            dataSource={withdrawList}
+                            rowKey="id"
+                            loading={loading}
+                            className={sharedStyles.tableCard}
+                            pagination={{
+                                current: currentPage,
+                                total,
+                                pageSize: 10,
+                                onChange: (page) => setCurrentPage(page),
+                                showTotal: (count) => `共${count} 条`,
+                            }}
+                            scroll={{ x: 1000 }}
+                            locale={{
+                                emptyText: <Empty description="暂无提现记录" />,
+                            }}
+                        />
+                    </MerchantSectionCard>
+                </MerchantContentPanel>
+            </MerchantPageShell>
 
             <Modal
                 title="申请提现"
@@ -421,7 +439,7 @@ const MerchantWithdraw: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </div>
+        </>
     );
 };
 

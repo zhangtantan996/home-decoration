@@ -167,6 +167,7 @@ export interface MaterialShop {
     openTime: string;
     tags: string[];
     isVerified: boolean;
+    isSettled?: boolean;
 }
 
 export function toDesigner(dto: ProviderDTO): Designer {

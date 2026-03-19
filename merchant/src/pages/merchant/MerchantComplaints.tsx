@@ -2,14 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Button, Card, Descriptions, Form, Input, Modal, Space, Table, Tag, message } from 'antd';
 import { EyeOutlined } from '@ant-design/icons';
 
+import { COMPLAINT_STATUS_META } from '../../constants/statuses';
 import { merchantComplaintApi, type MerchantComplaintItem } from '../../services/merchantApi';
-
-const statusMap: Record<string, { text: string; color: string }> = {
-    submitted: { text: '待处理', color: 'gold' },
-    processing: { text: '处理中', color: 'blue' },
-    resolved: { text: '已解决', color: 'green' },
-    closed: { text: '已关闭', color: 'default' },
-};
 
 const MerchantComplaints: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -74,7 +68,7 @@ const MerchantComplaints: React.FC = () => {
                             title: '状态',
                             dataIndex: 'status',
                             render: (value: string) => {
-                                const config = statusMap[value] || { text: value, color: 'default' };
+                                const config = COMPLAINT_STATUS_META[value] || { text: value, color: 'default' };
                                 return <Tag color={config.color}>{config.text}</Tag>;
                             },
                         },
@@ -117,7 +111,7 @@ const MerchantComplaints: React.FC = () => {
                     <Descriptions bordered column={2}>
                         <Descriptions.Item label="投诉标题" span={2}>{current.title}</Descriptions.Item>
                         <Descriptions.Item label="项目ID">{current.projectId}</Descriptions.Item>
-                        <Descriptions.Item label="状态">{statusMap[current.status]?.text || current.status}</Descriptions.Item>
+                        <Descriptions.Item label="状态">{COMPLAINT_STATUS_META[current.status]?.text || current.status}</Descriptions.Item>
                         <Descriptions.Item label="类别">{current.category}</Descriptions.Item>
                         <Descriptions.Item label="冻结付款">{current.freezePayment ? '是' : '否'}</Descriptions.Item>
                         <Descriptions.Item label="投诉说明" span={2}>{current.description}</Descriptions.Item>

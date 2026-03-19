@@ -9,7 +9,7 @@ interface RequestOptions {
   retry?: boolean;
 }
 
-const API_BASE = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8080/api/v1').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
 const ROUTER_BASENAME = normalizeBasename(import.meta.env.VITE_ROUTER_BASENAME || '/');
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -53,7 +53,7 @@ function resolveLoginUrl() {
 
 async function refreshTokenOrClear(refreshToken: string) {
   if (!refreshPromise) {
-    refreshPromise = fetch(buildUrl('/auth/refresh'), {
+    refreshPromise = safeFetch(buildUrl('/auth/refresh'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -95,6 +95,28 @@ async function refreshTokenOrClear(refreshToken: string) {
   return refreshPromise;
 }
 
+function normalizeRequestError(error: unknown): Error {
+  if (error instanceof Error) {
+    if (error.name === 'AbortError') {
+      return new Error('请求超时，请稍后重试');
+    }
+    if (error.message === 'Failed to fetch' || error.message === 'Load failed') {
+      return new Error('服务连接失败，请检查接口地址或确认后端服务已启动');
+    }
+    return error;
+  }
+
+  return new Error('网络请求失败，请稍后重试');
+}
+
+async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    throw normalizeRequestError(error);
+  }
+}
+
 export async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const session = useSessionStore.getState();
   const headers = new Headers({
@@ -105,7 +127,7 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
     headers.set('Authorization', `Bearer ${session.accessToken}`);
   }
 
-  const response = await fetch(buildUrl(path, options.query), {
+  const response = await safeFetch(buildUrl(path, options.query), {
     method: options.method || 'GET',
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -141,7 +163,7 @@ export async function uploadFile(path: string, file: File, fieldName = 'file') {
   const formData = new FormData();
   formData.append(fieldName, file);
 
-  const response = await fetch(buildUrl(path), {
+  const response = await safeFetch(buildUrl(path), {
     method: 'POST',
     headers,
     body: formData,

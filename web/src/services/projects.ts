@@ -2,6 +2,7 @@ import type { PageEnvelope } from '../types/api';
 import type {
   ProjectBillingItemVM,
   ProjectBillingPlanVM,
+  ProjectCompletionVM,
   ProjectDetailVM,
   ProjectEscrowTransactionVM,
   ProjectEscrowVM,
@@ -11,6 +12,13 @@ import type {
   ProjectMilestoneVM,
   ProjectPhaseVM,
 } from '../types/viewModels';
+import {
+  MILESTONE_STATUS_LABELS,
+  ORDER_STATUS_LABELS,
+  PHASE_STATUS_LABELS,
+  PROJECT_STATUS_LABELS,
+  TRANSACTION_STATUS_LABELS,
+} from '../constants/statuses';
 import { formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
 import { requestJson } from './http';
 
@@ -29,11 +37,38 @@ interface ProjectDetailResponse {
   address?: string;
   currentPhase?: string;
   status?: number;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  selectedQuoteTaskId?: number;
   area?: number;
   budget?: number;
   ownerName?: string;
   providerName?: string;
   escrowBalance?: number;
+  completedPhotos?: string[];
+  completionNotes?: string;
+  completionSubmittedAt?: string;
+  completionRejectedAt?: string;
+  completionRejectionReason?: string;
+}
+
+interface ProjectCompletionResponse {
+  projectId: number;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  completedPhotos?: string[];
+  completionNotes?: string;
+  completionSubmittedAt?: string;
+  completionRejectedAt?: string;
+  completionRejectionReason?: string;
+  inspirationCaseDraftId?: number;
+}
+
+export interface ProjectDisputePayload {
+  reason: string;
+  evidence: string[];
 }
 
 interface ProjectPhaseDTO {
@@ -101,46 +136,6 @@ interface ProjectFilesDTO {
   files?: string[];
 }
 
-const PROJECT_STATUS_MAP: Record<number, string> = {
-  0: '待准备',
-  1: '进行中',
-  2: '已完工',
-  3: '已关闭',
-  '-1': '待完善',
-};
-
-const PHASE_STATUS_MAP: Record<string, string> = {
-  pending: '未开始',
-  in_progress: '进行中',
-  completed: '已完成',
-};
-
-const MILESTONE_STATUS_MAP: Record<string, string> = {
-  '0': '待验收',
-  '1': '施工中',
-  '2': '已拒绝',
-  '3': '已验收',
-  '4': '已放款',
-  pending: '待验收',
-  in_progress: '施工中',
-  rejected: '已拒绝',
-  completed: '已验收',
-  paid: '已放款',
-};
-
-const ORDER_STATUS_MAP: Record<number, string> = {
-  0: '待支付',
-  1: '已支付',
-  2: '已取消',
-  3: '已退款',
-};
-
-const TRANSACTION_STATUS_MAP: Record<number, string> = {
-  0: '处理中',
-  1: '成功',
-  2: '失败',
-};
-
 function parsePhotos(value?: string) {
   if (!value) {
     return [] as string[];
@@ -160,7 +155,7 @@ function toProjectListItem(dto: ProjectListDTO): ProjectListItemVM {
     name: dto.name || `项目 #${dto.id}`,
     address: dto.address || '地址待补充',
     currentPhase: dto.currentPhase || '待同步',
-    statusText: PROJECT_STATUS_MAP[Number(dto.status || 0)] || '处理中',
+    statusText: PROJECT_STATUS_LABELS[Number(dto.status || 0)] || '处理中',
     budgetText: formatCurrency(dto.budget),
     href: `/projects/${dto.id}`,
   };
@@ -182,8 +177,8 @@ function adaptPhases(items: ProjectPhaseDTO[]): ProjectPhaseVM[] {
     name: phase.name || phaseTypeMap[phase.phaseType || ''] || '阶段',
     status: phase.status || 'pending',
     statusText: phase.estimatedDays
-      ? `${PHASE_STATUS_MAP[phase.status || 'pending'] || '处理中'} · 预计 ${phase.estimatedDays} 天`
-      : PHASE_STATUS_MAP[phase.status || 'pending'] || '处理中',
+      ? `${PHASE_STATUS_LABELS[phase.status || 'pending'] || '处理中'} · 预计 ${phase.estimatedDays} 天`
+      : PHASE_STATUS_LABELS[phase.status || 'pending'] || '处理中',
     startDate: formatDate(phase.startDate),
     endDate: formatDate(phase.endDate),
     tasks: (phase.tasks || []).map((task) => `${task.isCompleted ? '已完成' : '待办'} · ${task.name || '任务'}`),
@@ -199,7 +194,7 @@ function adaptMilestones(items: ProjectMilestoneDTO[]): ProjectMilestoneVM[] {
       seq: Number(item.seq || 0),
       amountText: formatCurrency(item.amount),
       status: statusKey,
-      statusText: MILESTONE_STATUS_MAP[statusKey] || '处理中',
+      statusText: MILESTONE_STATUS_LABELS[statusKey] || '处理中',
       criteria: item.criteria || '暂无验收标准',
       acceptedAt: formatDate(item.acceptedAt),
     };
@@ -221,7 +216,7 @@ function adaptEscrowTransaction(item: EscrowTransactionDTO): ProjectEscrowTransa
     id: item.id,
     type: item.type || 'transaction',
     amountText: formatCurrency(item.amount),
-    statusText: TRANSACTION_STATUS_MAP[Number(item.status || 0)] || '处理中',
+    statusText: TRANSACTION_STATUS_LABELS[Number(item.status || 0)] || '处理中',
     createdAt: formatDateTime(item.createdAt),
   };
 }
@@ -231,7 +226,7 @@ function adaptBillingPlan(item: NonNullable<ProjectBillDTO['paymentPlans']>[numb
     id: item.id,
     name: item.name || '分期计划',
     amountText: formatCurrency(item.amount),
-    statusText: ORDER_STATUS_MAP[Number(item.status || 0)] || '处理中',
+    statusText: ORDER_STATUS_LABELS[Number(item.status || 0)] || '处理中',
     dueAt: formatDateTime(item.dueAt),
   };
 }
@@ -264,7 +259,11 @@ export async function getProjectDetail(id: number) {
     name: detail.name || '项目',
     address: detail.address || '地址待补充',
     currentPhase: detail.currentPhase || '待同步',
-    statusText: PROJECT_STATUS_MAP[Number(detail.status || 0)] || '处理中',
+    statusText: PROJECT_STATUS_LABELS[Number(detail.status || 0)] || '处理中',
+    businessStage: detail.businessStage || undefined,
+    flowSummary: detail.flowSummary || undefined,
+    availableActions: detail.availableActions || [],
+    selectedQuoteTaskId: detail.selectedQuoteTaskId || undefined,
     areaText: formatArea(detail.area),
     budgetText: formatCurrency(detail.budget),
     ownerName: detail.ownerName || '业主',
@@ -272,6 +271,11 @@ export async function getProjectDetail(id: number) {
     escrowBalanceText: formatCurrency(detail.escrowBalance),
     phases: adaptPhases(phaseResponse.phases || []),
     milestones: adaptMilestones(milestoneResponse.milestones || []),
+    completedPhotos: detail.completedPhotos || [],
+    completionNotes: detail.completionNotes || undefined,
+    completionSubmittedAt: formatDateTime(detail.completionSubmittedAt),
+    completionRejectedAt: formatDateTime(detail.completionRejectedAt),
+    completionRejectionReason: detail.completionRejectionReason || undefined,
   };
 
   return result;
@@ -311,7 +315,7 @@ export async function getProjectBill(projectId: number) {
     id: Number(item.order?.id || 0),
     orderNo: item.order?.orderNo || '待生成',
     amountText: formatCurrency(item.order?.totalAmount),
-    statusText: ORDER_STATUS_MAP[Number(item.order?.status || 0)] || '处理中',
+    statusText: ORDER_STATUS_LABELS[Number(item.order?.status || 0)] || '处理中',
     planItems: (item.paymentPlans || []).map(adaptBillingPlan),
   }));
 }
@@ -329,4 +333,89 @@ export async function acceptProjectMilestone(projectId: number, milestoneId: num
     method: 'POST',
     body: { milestoneId },
   });
+}
+
+export async function rejectProjectMilestone(projectId: number, milestoneId: number, reason: string) {
+  await requestJson(`/projects/${projectId}/milestones/${milestoneId}/reject`, {
+    method: 'POST',
+    body: { reason },
+  });
+}
+
+export async function startProject(projectId: number, startDate?: string) {
+  await requestJson(`/projects/${projectId}/start`, {
+    method: 'POST',
+    body: startDate ? { startDate } : {},
+  });
+}
+
+/** @deprecated Legacy endpoint disabled. Use merchant completion submission + user completion approval flow. */
+export async function completeProjectLegacyDisabled(_projectId: number): Promise<never> {
+  const error = new Error('旧项目完工入口已禁用，请改用商家提交完工材料并由业主在整体验收页处理');
+  (error as Error & { errorCode?: string }).errorCode = 'PROJECT_COMPLETE_LEGACY_DISABLED';
+  throw error;
+}
+
+export async function pauseProject(projectId: number, reason: string, initiator: 'user' | 'foreman' = 'user') {
+  await requestJson(`/projects/${projectId}/pause`, {
+    method: 'POST',
+    body: { reason, initiator },
+  });
+}
+
+export async function resumeProject(projectId: number) {
+  await requestJson(`/projects/${projectId}/resume`, {
+    method: 'POST',
+  });
+}
+
+export async function disputeProject(projectId: number, payload: ProjectDisputePayload) {
+  await requestJson(`/projects/${projectId}/dispute`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function createProjectInspirationDraft(projectId: number) {
+  return requestJson<{ auditId: number; projectId: number; message: string }>(`/projects/${projectId}/inspiration-draft`, {
+    method: 'POST',
+  });
+}
+
+function adaptProjectCompletion(data: ProjectCompletionResponse): ProjectCompletionVM {
+  return {
+    projectId: data.projectId,
+    businessStage: data.businessStage || undefined,
+    flowSummary: data.flowSummary || undefined,
+    availableActions: data.availableActions || [],
+    completedPhotos: data.completedPhotos || [],
+    completionNotes: data.completionNotes || '',
+    completionSubmittedAt: formatDateTime(data.completionSubmittedAt),
+    completionRejectedAt: formatDateTime(data.completionRejectedAt),
+    completionRejectionReason: data.completionRejectionReason || undefined,
+    inspirationCaseDraftId: data.inspirationCaseDraftId || undefined,
+  };
+}
+
+export async function getProjectCompletion(projectId: number) {
+  const data = await requestJson<{ completion: ProjectCompletionResponse }>(`/projects/${projectId}/completion`);
+  return adaptProjectCompletion(data.completion);
+}
+
+export async function approveProjectCompletion(projectId: number) {
+  const data = await requestJson<{ completion: ProjectCompletionResponse; auditId?: number }>(`/projects/${projectId}/completion/approve`, {
+    method: 'POST',
+  });
+  return {
+    completion: adaptProjectCompletion(data.completion),
+    auditId: data.auditId,
+  };
+}
+
+export async function rejectProjectCompletion(projectId: number, reason: string) {
+  const data = await requestJson<{ completion: ProjectCompletionResponse }>(`/projects/${projectId}/completion/reject`, {
+    method: 'POST',
+    body: { reason },
+  });
+  return adaptProjectCompletion(data.completion);
 }

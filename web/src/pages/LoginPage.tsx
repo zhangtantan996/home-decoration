@@ -27,10 +27,36 @@ function LockIcon() {
   );
 }
 
+function ShieldIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="24" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  );
+}
+
+function DiamondIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="24" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h12l4 6-10 13L2 9l4-6z" />
+    </svg>
+  );
+}
+
+function CheckCircleIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="24" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  );
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const setSession = useSessionStore((state) => state.setSession);
+// ... handling unchanged state variables down to return statement ...
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
@@ -124,140 +150,151 @@ export function LoginPage() {
   };
 
   return (
-    <div className={styles.viewport}>
-      <section className={`${styles.heroPanel} ${styles.heroA}`}>
-        <div className={styles.scene}>
-          <div className={styles.archOuter} />
-          <div className={styles.archInner} />
-          <div className={styles.glow} />
-          <div className={`${styles.lineH} ${styles.lineTop}`} />
-          <div className={`${styles.lineH} ${styles.lineBottom}`} />
-          <div className={`${styles.pillar} ${styles.pillarLeft}`} />
-          <div className={`${styles.pillar} ${styles.pillarRight}`} />
-          <div className={styles.chandelier} />
-        </div>
+    <div className={styles.pageWrapper}>
+      <div className={styles.bgGradients}>
+        <div className={styles.blob1} />
+        <div className={styles.blob2} />
+        <div className={styles.blob3} />
+        <div className={styles.blob4} />
+      </div>
+      <div className={styles.bgOverlay} />
 
+      <div className={styles.viewport}>
+        <section className={styles.heroPanel}>
         <div className={styles.brandLockup}>
-          <img alt="禾泽云公司 Logo" className={styles.brandLogo} src={companyLogo} />
+          <img alt="禾泽云 Logo" className={styles.brandLogo} src={companyLogo} />
           <div>
             <strong>禾泽云科技</strong>
-            <span>家装管家</span>
+            <span>数字化装修服务平台</span>
           </div>
         </div>
 
         <div className={styles.heroContent}>
           <div className={styles.heroTag}>
             <span className={styles.heroTagDot} />
-            平台已服务 2,400+ 家庭
+            全新版上线，体验升级
           </div>
           <h1 className={styles.heroTitle}>
             让每一次装修
             <br />
             都<em>清楚可控</em>
           </h1>
-          <p className={styles.heroSub}>从找服务商、确认报价到跟进施工，一个工作台帮你把装修过程理清楚。</p>
-          <dl className={styles.heroStats}>
-            <div>
-              <dt>850+</dt>
-              <dd>认证服务商</dd>
+          <p className={styles.heroSub}>从找服务商、确认报价到跟进施工，<br/>一个工作台帮你把装修过程理清楚。</p>
+
+          <div className={styles.heroFeatures}>
+            <div className={styles.featureItem}>
+              <div className={styles.featureIcon}><DiamondIcon /></div>
+              <div>
+                <dt>严选服务商</dt>
+                <dd>资质认证，放心托付</dd>
+              </div>
             </div>
-            <div>
-              <dt>98.6%</dt>
-              <dd>按时交付</dd>
+            <div className={styles.featureItem}>
+              <div className={styles.featureIcon}><CheckCircleIcon /></div>
+              <div>
+                <dt>全流程管控</dt>
+                <dd>节点透明，拒绝增项</dd>
+              </div>
             </div>
-            <div>
-              <dt>4.9</dt>
-              <dd>用户评分</dd>
+            <div className={styles.featureItem}>
+              <div className={styles.featureIcon}><ShieldIcon /></div>
+              <div>
+                <dt>资金安全</dt>
+                <dd>平台担保，满意才付款</dd>
+              </div>
             </div>
-          </dl>
+          </div>
         </div>
       </section>
 
-      <section className={`${styles.loginPanel} ${styles.formR1}`}>
-        <div className={styles.formHeader}>
-          <p className={styles.fhWelcome}>欢迎使用</p>
-          <h2 className={styles.fhTitle}>
-            登录家装管家
-            <br />
-            <span>开始你的装修旅程</span>
-          </h2>
+      <section className={styles.loginContainer}>
+        <div className={styles.loginCard}>
+          <div className={styles.formHeader}>
+            <p className={styles.fhWelcome}>欢迎使用</p>
+            <h2 className={styles.fhTitle}>
+              登录禾泽云
+              <br />
+              <span>开始你的装修旅程</span>
+            </h2>
+          </div>
+
+          <form
+            className={styles.loginForm}
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleLogin();
+            }}
+          >
+            <div className={styles.inputGroup}>
+              <label htmlFor="login-phone">手机号</label>
+              <div className={`${styles.inputWrap} ${phoneError ? styles.error : ''} ${phone ? styles.filled : ''}`}>
+                <span className={styles.inputIcon}><PhoneIcon /></span>
+                <input
+                  autoComplete="tel"
+                  id="login-phone"
+                  inputMode="tel"
+                  maxLength={11}
+                  onChange={(event) => handlePhoneChange(event.target.value)}
+                  placeholder="请输入手机号"
+                  type="tel"
+                  value={phone}
+                />
+              </div>
+              {phoneError && <p className={styles.fieldErrorMsg}>{phoneError}</p>}
+            </div>
+
+            <div className={styles.inputGroup}>
+              <label htmlFor="login-code">短信验证码</label>
+              <div className={`${styles.inputWrap} ${codeError ? styles.error : ''} ${code ? styles.filled : ''}`}>
+                <span className={styles.inputIcon}><LockIcon /></span>
+                <input
+                  autoComplete="one-time-code"
+                  id="login-code"
+                  inputMode="numeric"
+                  maxLength={6}
+                  onChange={(event) => handleCodeChange(event.target.value)}
+                  placeholder="6 位数字"
+                  type="text"
+                  value={code}
+                />
+                <button
+                  className={`${styles.inlineBtn} ${countdown > 0 ? styles.counting : ''}`}
+                  disabled={!canSend}
+                  onClick={() => void handleSendCode()}
+                  type="button"
+                >
+                  {sending ? <span className={styles.spinner} /> : countdown > 0 ? `${countdown}s` : '获取验证码'}
+                </button>
+              </div>
+              {codeError && <p className={styles.fieldErrorMsg}>{codeError}</p>}
+            </div>
+
+            {statusMessage && (
+              <div className={`${styles.msg} ${statusTone === 'success' ? styles.success : styles.errorMsg} ${styles.visible}`} role="alert">
+                {statusMessage}
+              </div>
+            )}
+
+            <button className={styles.submitBtn} disabled={!canSubmit} type="submit">
+              {loggingIn ? <span className={styles.spinner} /> : '登 录'}
+            </button>
+
+            <label className={styles.agreement}>
+              <input checked={agreed} onChange={(event) => setAgreed(event.target.checked)} type="checkbox" />
+              <span>
+                登录即表示同意
+                <Link to="/legal/user-agreement">《用户协议》</Link>
+                和
+                <Link to="/legal/privacy-policy">《隐私政策》</Link>
+              </span>
+            </label>
+          </form>
+
+          <div className={styles.loginFooter}>&copy; 2026 禾泽云科技</div>
         </div>
-
-        <form
-          className={styles.loginForm}
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleLogin();
-          }}
-        >
-          <div className={styles.inputGroup}>
-            <label htmlFor="login-phone">手机号</label>
-            <div className={`${styles.inputWrap} ${phoneError ? styles.error : ''}`}>
-              <span className={styles.inputIcon}><PhoneIcon /></span>
-              <input
-                autoComplete="tel"
-                id="login-phone"
-                inputMode="tel"
-                maxLength={11}
-                onChange={(event) => handlePhoneChange(event.target.value)}
-                placeholder="请输入手机号"
-                type="tel"
-                value={phone}
-              />
-            </div>
-            {phoneError ? <p className={styles.fieldErrorMsg}>{phoneError}</p> : null}
-          </div>
-
-          <div className={styles.inputGroup}>
-            <label htmlFor="login-code">短信验证码</label>
-            <div className={`${styles.inputWrap} ${codeError ? styles.error : ''}`}>
-              <span className={styles.inputIcon}><LockIcon /></span>
-              <input
-                autoComplete="one-time-code"
-                id="login-code"
-                inputMode="numeric"
-                maxLength={6}
-                onChange={(event) => handleCodeChange(event.target.value)}
-                placeholder="6 位数字验证码"
-                type="text"
-                value={code}
-              />
-              <button
-                className={`${styles.inlineBtn} ${countdown > 0 ? styles.counting : ''}`}
-                disabled={!canSend}
-                onClick={() => void handleSendCode()}
-                type="button"
-              >
-                {sending ? <span className={styles.spinner} /> : countdown > 0 ? `${countdown}s` : '获取验证码'}
-              </button>
-            </div>
-            {codeError ? <p className={styles.fieldErrorMsg}>{codeError}</p> : null}
-          </div>
-
-          {statusMessage ? (
-            <div className={`${styles.msg} ${statusTone === 'success' ? styles.success : styles.errorMsg} ${styles.visible}`} role="alert">
-              {statusMessage}
-            </div>
-          ) : null}
-
-          <button className={styles.submitBtn} disabled={!canSubmit} type="submit">
-            {loggingIn ? <span className={styles.spinner} /> : '登录'}
-          </button>
-
-          <label className={styles.agreement}>
-            <input checked={agreed} onChange={(event) => setAgreed(event.target.checked)} type="checkbox" />
-            <span>
-              登录即表示同意
-              <Link to="/legal/user-agreement">《用户协议》</Link>
-              和
-              <Link to="/legal/privacy-policy">《隐私政策》</Link>
-            </span>
-          </label>
-        </form>
-
-        <div className={styles.loginFooter}>&copy; 2026 禾泽云科技 · 家装管家</div>
       </section>
+      </div>
     </div>
   );
 }

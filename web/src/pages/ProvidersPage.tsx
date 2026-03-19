@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
@@ -23,6 +23,10 @@ interface BudgetOption {
   min: number | null;
   max: number | null;
 }
+
+const PROVIDER_FETCH_PAGE_SIZE = 50;
+const MATERIAL_FETCH_PAGE_SIZE = 50;
+const RESULT_PAGE_SIZE = 9;
 
 const tabs: Array<{ value: HomeServiceCategory; label: string }> = [
   { value: 'designer', label: '设计师' },
@@ -51,6 +55,58 @@ function extractPriceValue(text: string) {
   return match ? Number(match[1]) : 0;
 }
 
+function normalizeCityToken(value: string) {
+  return value
+    .trim()
+    .replace(/[\s/]+/g, '')
+    .replace(/(特别行政区|自治州|地区|盟|市)$/u, '');
+}
+
+function shortenCityLabel(value: string) {
+  const normalized = normalizeCityToken(value);
+  return normalized || value.trim();
+}
+
+function normalizeCityOptions(raw: string[]) {
+  const seen = new Set<string>();
+  return raw
+    .map((item) => shortenCityLabel(item))
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+}
+
+function matchesCityText(source: string, city: string) {
+  const normalizedCity = normalizeCityToken(city);
+  if (!normalizedCity) {
+    return true;
+  }
+  const normalizedSource = normalizeCityToken(source);
+  if (!normalizedSource) {
+    return false;
+  }
+  return normalizedSource.includes(normalizedCity) || normalizedCity.includes(normalizedSource);
+}
+
+function matchesProviderCity(item: ProviderListItemVM, city: string) {
+  if (!city) {
+    return true;
+  }
+  return item.serviceArea.some((area) => matchesCityText(area, city));
+}
+
+function matchesShopCity(item: MaterialShopListItemVM, city: string) {
+  if (!city) {
+    return true;
+  }
+  const candidates = [item.address, ...item.productCategories, ...item.mainProducts, ...item.tags];
+  return candidates.some((text) => matchesCityText(text, city));
+}
+
 function normalizeBudgetOptions(raw: Awaited<ReturnType<typeof getDictionaryOptions>>): BudgetOption[] {
   if (!raw || raw.length === 0) {
     return [
@@ -75,7 +131,7 @@ function normalizeBudgetOptions(raw: Awaited<ReturnType<typeof getDictionaryOpti
 
 function filterProviders(list: ProviderListItemVM[], city: string, rating: string, budget: string, budgetOptions: BudgetOption[]) {
   return list.filter((item) => {
-    const cityMatch = !city || item.serviceArea.some((area) => area.includes(city));
+    const cityMatch = matchesProviderCity(item, city);
     const ratingValue = rating === '4.8' ? 4.8 : rating === '4.5' ? 4.5 : 0;
     const ratingMatch = ratingValue === 0 || item.rating >= ratingValue;
     const price = extractPriceValue(item.priceText);
@@ -90,18 +146,72 @@ function filterProviders(list: ProviderListItemVM[], city: string, rating: strin
 
 function filterShops(list: MaterialShopListItemVM[], city: string, rating: string) {
   return list.filter((item) => {
-    const cityMatch = !city || item.address.includes(city);
+    const cityMatch = matchesShopCity(item, city);
     const ratingValue = rating === '4.8' ? 4.8 : rating === '4.5' ? 4.5 : 0;
     const ratingMatch = ratingValue === 0 || item.rating >= ratingValue;
     return cityMatch && ratingMatch;
   });
 }
 
-function sortProviders(list: ProviderListItemVM[], sortBy: string) {
+async function listAllProviders(role: ProviderRole, keyword: string) {
+  const firstPage = await listProviders({ role, keyword, page: 1, pageSize: PROVIDER_FETCH_PAGE_SIZE });
+  const totalPages = Math.max(1, Math.ceil(firstPage.total / Math.max(1, firstPage.pageSize || PROVIDER_FETCH_PAGE_SIZE)));
+  if (totalPages === 1) {
+    return firstPage;
+  }
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      listProviders({ role, keyword, page: index + 2, pageSize: firstPage.pageSize || PROVIDER_FETCH_PAGE_SIZE })),
+  );
+
+  return {
+    list: [firstPage, ...remainingPages].flatMap((page) => page.list),
+    total: firstPage.total,
+    page: 1,
+    pageSize: firstPage.total,
+  };
+}
+
+async function listAllMaterialShops(sortBy: string) {
+  const firstPage = await listMaterialShops({ page: 1, pageSize: MATERIAL_FETCH_PAGE_SIZE, sortBy });
+  const totalPages = Math.max(1, Math.ceil(firstPage.total / Math.max(1, firstPage.pageSize || MATERIAL_FETCH_PAGE_SIZE)));
+  if (totalPages === 1) {
+    return firstPage;
+  }
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      listMaterialShops({ page: index + 2, pageSize: firstPage.pageSize || MATERIAL_FETCH_PAGE_SIZE, sortBy })),
+  );
+
+  return {
+    list: [firstPage, ...remainingPages].flatMap((page) => page.list),
+    total: firstPage.total,
+    page: 1,
+    pageSize: firstPage.total,
+  };
+}
+
+function sortProviders(list: ProviderListItemVM[], sortBy: string, role?: ProviderRole) {
   const next = [...list];
   if (sortBy === 'rating') return next.sort((a, b) => b.rating - a.rating);
   if (sortBy === 'completed') return next.sort((a, b) => b.completedCount - a.completedCount);
   if (sortBy === 'price') return next.sort((a, b) => extractPriceValue(a.priceText) - extractPriceValue(b.priceText));
+  if (role === 'company') {
+    return next.sort((a, b) => {
+      const aHasRealSignals = Number(a.reviewCount > 0 || a.completedCount > 0);
+      const bHasRealSignals = Number(b.reviewCount > 0 || b.completedCount > 0);
+      if (bHasRealSignals !== aHasRealSignals) return bHasRealSignals - aHasRealSignals;
+
+      if (b.completedCount !== a.completedCount) return b.completedCount - a.completedCount;
+      if (b.reviewCount !== a.reviewCount) return b.reviewCount - a.reviewCount;
+      if (Number(b.isSettled !== false) !== Number(a.isSettled !== false)) {
+        return Number(b.isSettled !== false) - Number(a.isSettled !== false);
+      }
+      return b.rating - a.rating;
+    });
+  }
   return next;
 }
 
@@ -121,19 +231,30 @@ export function ProvidersPage() {
   const sortBy = searchParams.get('sort') || 'recommend';
   const page = Math.max(1, Number(searchParams.get('page') || '1'));
 
+  const updateParams = (patch: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(patch).forEach(([key, value]) => {
+      if (!value || value === 'all') next.delete(key);
+      else next.set(key, value);
+    });
+    if (!patch.page) next.set('page', '1');
+    setSearchParams(next, { replace: true });
+  };
+
   const { data, loading, error, reload } = useAsyncData(async () => {
     const [cities, rawBudgetOptions] = await Promise.all([
       listPublicCities().catch(() => ['西安']),
       getDictionaryOptions('provider_budget_range').catch(() => []),
     ]);
     const budgetOptions = normalizeBudgetOptions(rawBudgetOptions);
+    const cityOptions = normalizeCityOptions(cities.length > 0 ? cities : ['西安']);
 
     if (category === 'all') {
       const [designers, companies, foremen, shops] = await Promise.all([
-        listProviders({ role: 'designer', keyword, page: 1, pageSize: 12 }),
-        listProviders({ role: 'company', keyword, page: 1, pageSize: 12 }),
-        listProviders({ role: 'foreman', keyword, page: 1, pageSize: 12 }),
-        listMaterialShops({ page: 1, pageSize: 12, sortBy: 'recommend' }),
+        listAllProviders('designer', keyword),
+        listAllProviders('company', keyword),
+        listAllProviders('foreman', keyword),
+        listAllMaterialShops('recommend'),
       ]);
 
       const filteredProviders = [
@@ -152,51 +273,83 @@ export function ProvidersPage() {
         ...sortShops(filteredShops, sortBy).map((shop) => ({ kind: 'shop' as const, shop })),
       ];
 
-      return { mode: 'mixed' as const, list: mixed, total: mixed.length, page, pageSize: 9, cities, budgetOptions };
+      return { mode: 'mixed' as const, list: mixed, total: mixed.length, page: 1, pageSize: RESULT_PAGE_SIZE, cities: cityOptions, budgetOptions };
     }
 
     if (category === 'material') {
-      const result = await listMaterialShops({ page: 1, pageSize: 24, sortBy: 'recommend' });
+      const result = await listAllMaterialShops('recommend');
       const searched = keyword.trim() ? result.list.filter((item) => `${item.name}${item.productCategories.join('')}${item.mainProducts.join('')}`.includes(keyword.trim())) : result.list;
       const filtered = filterShops(searched, city, rating);
-      return { mode: 'material' as const, list: sortShops(filtered, sortBy), total: filtered.length, page: 1, pageSize: filtered.length || 24, cities, budgetOptions };
+      return { mode: 'material' as const, list: sortShops(filtered, sortBy), total: filtered.length, page: 1, pageSize: RESULT_PAGE_SIZE, cities: cityOptions, budgetOptions };
     }
 
-    const result = await listProviders({ role: category as ProviderRole, keyword, page: 1, pageSize: 30 });
+    const result = await listAllProviders(category as ProviderRole, keyword);
     const filtered = filterProviders(result.list, city, rating, budget, budgetOptions);
-    return { mode: 'provider' as const, list: sortProviders(filtered, sortBy), total: filtered.length, page, pageSize: 9, cities, budgetOptions };
-  }, [category, keyword, city, rating, budget, sortBy, page]);
+    return { mode: 'provider' as const, list: sortProviders(filtered, sortBy, category as ProviderRole), total: filtered.length, page: 1, pageSize: RESULT_PAGE_SIZE, cities: cityOptions, budgetOptions };
+  }, [category, keyword, city, rating, budget, sortBy]);
+
+  const totalPages = useMemo(() => {
+    if (!data) {
+      return 1;
+    }
+    return Math.max(1, Math.ceil(data.total / Math.max(1, data.pageSize)));
+  }, [data]);
+
+  const currentPage = Math.min(page, totalPages);
+
+  useEffect(() => {
+    if (!data || page === currentPage) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.set('page', String(currentPage));
+    setSearchParams(next, { replace: true });
+  }, [currentPage, data, page, searchParams, setSearchParams]);
 
   const paginatedProviders = useMemo(() => {
     if (!data || data.mode !== 'provider') return [] as ProviderListItemVM[];
-    const start = (page - 1) * data.pageSize;
+    const start = (currentPage - 1) * data.pageSize;
     return data.list.slice(start, start + data.pageSize);
-  }, [data, page]);
+  }, [currentPage, data]);
 
   const paginatedMixed = useMemo(() => {
     if (!data || data.mode !== 'mixed') return [] as MixedResultItem[];
-    const start = (page - 1) * data.pageSize;
+    const start = (currentPage - 1) * data.pageSize;
     return data.list.slice(start, start + data.pageSize);
-  }, [data, page]);
+  }, [currentPage, data]);
+
+  const paginatedShops = useMemo(() => {
+    if (!data || data.mode !== 'material') return [] as MaterialShopListItemVM[];
+    const start = (currentPage - 1) * data.pageSize;
+    return data.list.slice(start, start + data.pageSize);
+  }, [currentPage, data]);
+
+  // 仅装修公司和主材门店分类可能含未入驻商家，需展示免责横幅
+  const hasUnsettled = useMemo(() => {
+    if (!data) return false;
+    if (data.mode === 'provider') {
+      return category === 'company' && (data.list as ProviderListItemVM[]).some((p) => p.isSettled === false);
+    }
+    if (data.mode === 'material') {
+      return (data.list as MaterialShopListItemVM[]).some((s) => s.isSettled === false);
+    }
+    if (data.mode === 'mixed') {
+      return (data.list as MixedResultItem[]).some((item) =>
+        (item.kind === 'shop' && item.shop.isSettled === false) ||
+        (item.kind === 'provider' && item.provider.role === 'company' && item.provider.isSettled === false)
+      );
+    }
+    return false;
+  }, [data, category]);
 
   const activeTags = useMemo(() => {
     const tags: string[] = [];
-    if (city) tags.push(city);
+    if (city) tags.push(shortenCityLabel(city));
     const selectedBudget = data?.budgetOptions.find((option) => option.value === budget);
     if (selectedBudget) tags.push(selectedBudget.label);
     if (rating !== 'all') tags.push(`${rating} 分以上`);
     return tags;
   }, [budget, city, rating, data]);
-
-  const updateParams = (patch: Record<string, string>) => {
-    const next = new URLSearchParams(searchParams);
-    Object.entries(patch).forEach(([key, value]) => {
-      if (!value || value === 'all') next.delete(key);
-      else next.set(key, value);
-    });
-    if (!patch.page) next.set('page', '1');
-    setSearchParams(next, { replace: true });
-  };
 
   return (
     <div className="top-page">
@@ -213,8 +366,11 @@ export function ProvidersPage() {
 
           <div className="svc-filter-group">
             <div className="svc-filter-title">所在城市</div>
+            <button className={`svc-filter-item ${!city ? 'active' : ''}`} onClick={() => updateParams({ city: 'all' })} type="button">
+              全部城市
+            </button>
             {(data?.cities || ['西安']).map((item) => (
-              <button className={`svc-filter-item ${city === item || (!city && item === '西安') ? 'active' : ''}`} key={item} onClick={() => updateParams({ city: item })} type="button">{item}</button>
+              <button className={`svc-filter-item ${shortenCityLabel(city) === item ? 'active' : ''}`} key={item} onClick={() => updateParams({ city: item })} type="button">{item}</button>
             ))}
           </div>
 
@@ -271,6 +427,16 @@ export function ProvidersPage() {
 
           {activeTags.length > 0 ? <div className="svc-active-filters">{activeTags.map((tag) => <span className="svc-tag" key={tag}>{tag}</span>)}</div> : null}
 
+          {hasUnsettled && (
+            <div className="svc-reference-banner">
+              <span className="svc-reference-banner-label">公开参考</span>
+              <div className="svc-reference-banner-copy">
+                <strong>当前结果包含平台未入驻的公开资料</strong>
+                <span>卡片上标有「参考信息 / 公开资料」的内容，仅用于选店与比对参考，不代表平台认证、合作或履约承诺。</span>
+              </div>
+            </div>
+          )}
+
           {loading ? <LoadingBlock title="加载服务商列表" /> : null}
           {error ? <ErrorBlock description={error} onRetry={() => void reload()} /> : null}
           {!loading && !error && data && data.total === 0 ? <div className="svc-empty">暂无匹配服务商</div> : null}
@@ -278,12 +444,26 @@ export function ProvidersPage() {
             <>
               <div className="svc-results">
                 {data.mode === 'material'
-                  ? data.list.map((shop) => <MaterialShopCard key={shop.id} shop={shop} />)
+                  ? paginatedShops.map((shop) => <MaterialShopCard key={shop.id} shop={shop} />)
                   : data.mode === 'mixed'
                     ? paginatedMixed.map((item) => item.kind === 'shop' ? <MaterialShopCard key={`shop-${item.shop.id}`} shop={item.shop} /> : <ProviderCard key={`provider-${item.provider.id}`} provider={item.provider} />)
                     : paginatedProviders.map((provider) => <ProviderCard key={provider.id} provider={provider} />)}
               </div>
-              {data.mode !== 'material' ? <div style={{ marginTop: 20 }}><Pagination onChange={(nextPage) => updateParams({ page: String(nextPage) })} page={page} pageSize={data.pageSize} total={data.total} /></div> : null}
+              {data.total > data.pageSize ? (
+                <div style={{ marginTop: 20 }}>
+                  <Pagination
+                    onChange={(nextPage) => {
+                      updateParams({ page: String(nextPage) });
+                      if (typeof window !== 'undefined') {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }
+                    }}
+                    page={currentPage}
+                    pageSize={data.pageSize}
+                    total={data.total}
+                  />
+                </div>
+              ) : null}
             </>
           ) : null}
         </section>

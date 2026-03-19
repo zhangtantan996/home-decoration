@@ -1,4 +1,5 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { type APIRequestContext, type Page } from '@playwright/test';
 
 export const userWebRealFixture = {
   phone: process.env.USER_WEB_FIXTURE_PHONE || '19999100001',
@@ -11,44 +12,77 @@ export const userWebRealFixture = {
   profileName: process.env.USER_WEB_FIXTURE_PROFILE_NAME || '用户端联调业主',
 };
 
+function withAppBase(path: string) {
+  if (path.startsWith('/app/')) return path;
+  if (path === '/') return '/app/';
+  return `/app${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export async function loginThroughRealUi(page: Page, redirectPath: string) {
-  await page.goto(`/login?redirect=${encodeURIComponent(redirectPath)}`, { waitUntil: 'domcontentloaded' });
+  const normalizedRedirect = redirectPath.startsWith('/app/') ? redirectPath.replace(/^\/app/, '') : redirectPath;
+  await page.goto(`${withAppBase('/login')}?redirect=${encodeURIComponent(normalizedRedirect)}`, { waitUntil: 'domcontentloaded' });
 
   await page.getByLabel('手机号').fill(userWebRealFixture.phone);
-  await page.getByRole('button', { name: '发送验证码' }).click();
-
-  const note = page.locator('.status-note').first();
-  await expect(note).toBeVisible();
+  await page.getByRole('button', { name: '获取验证码' }).click();
+  const note = page.locator('[role="alert"]').first();
+  await note.waitFor({ state: 'visible', timeout: 10000 });
   const noteText = await note.textContent();
   const code = noteText?.match(/(\d{6})/)?.[1] || process.env.USER_WEB_REAL_SMS_CODE || '123456';
 
-  await page.getByLabel('验证码').fill(code);
-  await page.getByRole('button', { name: '登录并继续' }).click();
+  await page.getByLabel('短信验证码').fill(code);
+  const agreement = page.getByRole('checkbox');
+  if (await agreement.isVisible().catch(() => false)) {
+    await agreement.check();
+  }
+  await page.getByRole('button', { name: '登录' }).click();
 }
+
+export { withAppBase };
 
 export async function seedRealSession(page: Page, request: APIRequestContext) {
   const apiBase = process.env.USER_WEB_REAL_API_BASE || 'http://127.0.0.1:8080/api/v1';
+  let session: {
+    token: string;
+    refreshToken: string;
+    expiresIn?: number;
+    user?: unknown;
+  } | null = null;
 
-  const sendCodeResponse = await request.post(`${apiBase}/auth/send-code`, {
-    data: {
-      phone: userWebRealFixture.phone,
-      purpose: 'login',
-    },
-  });
-  const sendCodePayload = await sendCodeResponse.json();
-  const code = sendCodePayload?.data?.debugCode || process.env.USER_WEB_REAL_SMS_CODE || '123456';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const sendCodeResponse = await request.post(`${apiBase}/auth/send-code`, {
+      data: {
+        phone: userWebRealFixture.phone,
+        purpose: 'login',
+      },
+    });
+    const sendCodePayload = await sendCodeResponse.json();
+    const code = sendCodePayload?.data?.debugCode || process.env.USER_WEB_REAL_SMS_CODE || '123456';
 
-  const loginResponse = await request.post(`${apiBase}/auth/login`, {
-    data: {
-      phone: userWebRealFixture.phone,
-      code,
-    },
-  });
-  const loginPayload = await loginResponse.json();
-  const session = loginPayload?.data;
+    const loginResponse = await request.post(`${apiBase}/auth/login`, {
+      data: {
+        phone: userWebRealFixture.phone,
+        code,
+      },
+    });
+    const loginPayload = await loginResponse.json();
+    session = loginPayload?.data || null;
+
+    if (session?.token && session?.refreshToken) {
+      break;
+    }
+
+    try {
+      execFileSync('bash', ['./scripts/user-web-clear-rate-limit.sh'], {
+        cwd: process.cwd(),
+        stdio: 'ignore',
+      });
+    } catch {
+      // ignore cleanup failures in helper retry
+    }
+  }
 
   if (!session?.token || !session?.refreshToken) {
-    throw new Error(`real api login failed: ${JSON.stringify(loginPayload)}`);
+    throw new Error('real api login failed after retries');
   }
 
   await page.addInitScript((payload) => {

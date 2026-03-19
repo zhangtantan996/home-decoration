@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { merchantIncomeApi } from '../../services/merchantApi';
-import { ArrowLeftOutlined, CheckCircleOutlined, ClockCircleOutlined, DollarOutlined, WalletOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Row, Statistic, Table, Tabs, Tag, message } from 'antd';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Space, Table, Tabs, Tag, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantStatGrid from '../../components/MerchantStatGrid';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import sharedStyles from '../../components/MerchantPage.module.css';
 
 interface IncomeRecord {
     id: number;
@@ -146,114 +152,105 @@ const MerchantIncome: React.FC = () => {
     ];
 
     return (
-        <div style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
-            <div style={{ marginBottom: 24 }}>
-                <Button
-                    type="link"
-                    icon={<ArrowLeftOutlined />}
-                    onClick={() => navigate('/dashboard')}
-                    style={{ padding: 0, marginBottom: 8 }}
+        <MerchantPageShell>
+            <MerchantPageHeader
+                title="收入中心"
+                description="查看累计收入、待结算与可提现金额，并从这里进入提现和账户管理。"
+                extra={(
+                    <>
+                        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
+                            返回工作台
+                        </Button>
+                        <Button icon={<ReloadOutlined />} onClick={() => {
+                            void fetchSummary();
+                            void fetchIncomeList();
+                        }}>
+                            刷新
+                        </Button>
+                    </>
+                )}
+            />
+
+            <MerchantStatGrid
+                items={[
+                    {
+                        label: '累计收入',
+                        value: `¥${summary.totalIncome.toFixed(2)}`,
+                        meta: '已完成与结算的累计收入',
+                        percent: 100,
+                        tone: 'blue',
+                    },
+                    {
+                        label: '待结算',
+                        value: `¥${summary.pendingSettle.toFixed(2)}`,
+                        meta: '平台处理中，尚未可提现',
+                        percent: summary.totalIncome > 0 ? (summary.pendingSettle / summary.totalIncome) * 100 : 0,
+                        tone: 'amber',
+                    },
+                    {
+                        label: '可提现',
+                        value: `¥${summary.availableAmount.toFixed(2)}`,
+                        meta: '当前可申请提现金额',
+                        percent: summary.totalIncome > 0 ? (summary.availableAmount / summary.totalIncome) * 100 : 0,
+                        tone: 'green',
+                    },
+                    {
+                        label: '已提现',
+                        value: `¥${summary.withdrawnAmount.toFixed(2)}`,
+                        meta: '历史累计提现金额',
+                        percent: summary.totalIncome > 0 ? (summary.withdrawnAmount / summary.totalIncome) * 100 : 0,
+                        tone: 'slate',
+                    },
+                ]}
+            />
+
+            <MerchantContentPanel>
+                <MerchantSectionCard
+                    title="资金操作"
+                    extra={(
+                        <Space>
+                            <Button type="primary" onClick={() => navigate('/withdraw')} disabled={!summary.availableAmount}>
+                                申请提现
+                            </Button>
+                            <Button onClick={() => navigate('/bank-accounts')}>
+                                银行账户管理
+                            </Button>
+                        </Space>
+                    )}
                 >
-                    返回工作台
-                </Button>
-                <h2 style={{ margin: 0 }}>收入中心</h2>
-            </div>
+                    <Tabs
+                        activeKey={activeTab}
+                        onChange={(key) => {
+                            setActiveTab(key);
+                            setCurrentPage(1);
+                        }}
+                        items={[
+                            { key: 'all', label: '全部' },
+                            { key: '0', label: '待结算' },
+                            { key: '1', label: '已结算' },
+                            { key: '2', label: '已提现' },
+                        ]}
+                        style={{ marginBottom: 16 }}
+                    />
 
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card>
-                        <Statistic
-                            title="累计收入"
-                            value={summary.totalIncome}
-                            precision={2}
-                            prefix={<DollarOutlined />}
-                            suffix="元"
-                            valueStyle={{ color: '#1890ff' }}
-                        />
-                    </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card>
-                        <Statistic
-                            title="待结算"
-                            value={summary.pendingSettle}
-                            precision={2}
-                            prefix={<ClockCircleOutlined />}
-                            suffix="元"
-                            valueStyle={{ color: '#faad14' }}
-                        />
-                    </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card>
-                        <Statistic
-                            title="可提现"
-                            value={summary.availableAmount}
-                            precision={2}
-                            prefix={<WalletOutlined />}
-                            suffix="元"
-                            valueStyle={{ color: '#52c41a' }}
-                        />
-                    </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card>
-                        <Statistic
-                            title="已提现"
-                            value={summary.withdrawnAmount}
-                            precision={2}
-                            prefix={<CheckCircleOutlined />}
-                            suffix="元"
-                        />
-                    </Card>
-                </Col>
-            </Row>
-
-            <Row gutter={16} style={{ marginBottom: 24 }}>
-                <Col>
-                    <Button type="primary" size="large" onClick={() => navigate('/withdraw')} disabled={!summary.availableAmount}>
-                        申请提现
-                    </Button>
-                </Col>
-                <Col>
-                    <Button size="large" onClick={() => navigate('/bank-accounts')}>
-                        银行账户管理
-                    </Button>
-                </Col>
-            </Row>
-
-            <Card title="收入明细">
-                <Tabs
-                    activeKey={activeTab}
-                    onChange={(key) => {
-                        setActiveTab(key);
-                        setCurrentPage(1);
-                    }}
-                    items={[
-                        { key: 'all', label: '全部' },
-                        { key: '0', label: '待结算' },
-                        { key: '1', label: '已结算' },
-                        { key: '2', label: '已提现' },
-                    ]}
-                    style={{ marginBottom: 16 }}
-                />
-
-                <Table
-                    columns={columns}
-                    dataSource={incomeList}
-                    rowKey="id"
-                    loading={loading}
-                    pagination={{
-                        current: currentPage,
-                        total,
-                        pageSize: 10,
-                        onChange: (page) => setCurrentPage(page),
-                        showTotal: (count) => `共 ${count} 条`,
-                    }}
-                    scroll={{ x: 800 }}
-                />
-            </Card>
-        </div>
+                    <Table
+                        columns={columns}
+                        dataSource={incomeList}
+                        rowKey="id"
+                        loading={loading}
+                        className={sharedStyles.tableCard}
+                        pagination={{
+                            current: currentPage,
+                            total,
+                            pageSize: 10,
+                            onChange: (page) => setCurrentPage(page),
+                            showTotal: (count) => `共 ${count} 条`,
+                        }}
+                        scroll={{ x: 800 }}
+                    />
+                </MerchantSectionCard>
+            </MerchantContentPanel>
+        </MerchantPageShell>
     );
 };
 

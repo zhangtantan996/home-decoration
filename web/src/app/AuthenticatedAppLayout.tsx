@@ -10,6 +10,7 @@ import styles from './AuthenticatedAppLayout.module.scss';
 const navItems = [
   { to: '/', label: '首页', end: true },
   { to: '/providers', label: '找服务' },
+  { to: '/inspiration', label: '灵感案例' },
   { to: '/progress', label: '我的项目' },
   { to: '/messages', label: '消息' },
   { to: '/me', label: '个人中心' },
@@ -40,7 +41,7 @@ export function AuthenticatedAppLayout() {
         <div className={styles.headerInner}>
           <Link className={styles.brand} to="/">
             <img alt="禾泽云公司 Logo" className={styles.brandLogo} src={companyLogo} />
-            <span>家装管家</span>
+            <span>禾泽云</span>
           </Link>
 
           <nav aria-label="主导航" className={styles.nav}>
@@ -87,7 +88,7 @@ export function AuthenticatedAppLayout() {
 
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
-          <div className={styles.footerLeft}>© 2026 禾泽云科技 · 家装管家</div>
+          <div className={styles.footerLeft}>© 2026 禾泽云科技 · 禾泽云</div>
           <div className={styles.footerLinks}>
             <Link to="/legal/user-agreement">用户协议</Link>
             <Link to="/legal/privacy-policy">隐私政策</Link>

@@ -34,7 +34,11 @@ export function ProjectDetailPage() {
   if (loading) return <div className="top-detail"><LoadingBlock title="加载项目详情" /></div>;
   if (error || !data) return <div className="top-detail"><ErrorBlock description={error || '项目详情不存在'} onRetry={() => void reload()} /></div>;
 
-  const pendingMilestone = data.detail.milestones.find((milestone) => milestone.status === '0' || milestone.status === '1');
+  const pendingMilestone = data.detail.milestones.find((milestone) => milestone.status === '2');
+  const canReviewCompletion = data.detail.businessStage === 'completed'
+    || (data.detail.availableActions?.includes('approve_completion') ?? false)
+    || (data.detail.availableActions?.includes('reject_completion') ?? false)
+    || Boolean(data.detail.completionSubmittedAt);
 
   return (
     <div className="top-detail">
@@ -44,10 +48,12 @@ export function ProjectDetailPage() {
             <p className="detail-kicker">项目详情</p>
             <h1>{data.detail.name}</h1>
             <p>{data.detail.address}</p>
+            {data.detail.flowSummary ? <p className="detail-note" style={{ marginTop: 12 }}>{data.detail.flowSummary}</p> : null}
           </div>
           <div className="inline-actions">
             <span className="status-chip" data-tone="brand">{data.detail.statusText}</span>
             <span className="status-chip">{data.detail.currentPhase}</span>
+            {data.detail.businessStage ? <span className="status-chip">{data.detail.businessStage}</span> : null}
           </div>
         </div>
       </section>
@@ -97,12 +103,28 @@ export function ProjectDetailPage() {
               ))}
             </div>
           </section>
+
+          {data.detail.completionSubmittedAt ? (
+            <section className="card section-card">
+              <div className="section-head"><h2>完工材料摘要</h2></div>
+              <div className="detail-stat-grid">
+                <article className="detail-stat"><span>提交时间</span><strong>{data.detail.completionSubmittedAt}</strong></article>
+                <article className="detail-stat"><span>整改时间</span><strong>{data.detail.completionRejectedAt || '无'}</strong></article>
+              </div>
+              {data.detail.completionRejectionReason ? <p className="detail-note" style={{ marginTop: 16 }}>驳回原因：{data.detail.completionRejectionReason}</p> : null}
+              {data.detail.completionNotes ? <p className="detail-note" style={{ marginTop: 16 }}>{data.detail.completionNotes}</p> : null}
+              <div className="detail-actions" style={{ marginTop: 16 }}>
+                <Link className="button-outline" to={`/projects/${projectId}/completion`}>查看完工材料</Link>
+              </div>
+            </section>
+          ) : null}
         </div>
 
         <aside className="detail-aside">
           <section className="card section-card">
             <div className="section-head"><h2>待处理动作</h2></div>
             {message ? <div className="status-note">{message}</div> : null}
+            {data.detail.flowSummary ? <div className="status-note" style={{ marginBottom: 16 }}>{data.detail.flowSummary}</div> : null}
             {pendingMilestone ? (
               <div className="detail-actions" style={{ marginBottom: 16 }}>
                 <Link className="button-outline" to={`/projects/${projectId}/acceptance`}>去验收页</Link>
@@ -128,12 +150,29 @@ export function ProjectDetailPage() {
                 </button>
               </div>
             ) : null}
+            {data.detail.selectedQuoteTaskId && data.detail.businessStage === 'construction_quote_pending' ? (
+              <div className="detail-actions" style={{ marginBottom: 16 }}>
+                <Link className="button-outline" to={`/quote-tasks/${data.detail.selectedQuoteTaskId}`}>去确认施工报价</Link>
+              </div>
+            ) : null}
+            {data.detail.businessStage === 'ready_to_start' ? (
+              <div className="status-note" style={{ marginBottom: 16 }}>
+                施工报价已确认，当前等待施工方发起开工。你可继续查看项目资料与后续节点进度。
+              </div>
+            ) : null}
+            {canReviewCompletion ? (
+              <div className="detail-actions" style={{ marginBottom: 16 }}>
+                <Link className="button-outline" to={`/projects/${projectId}/completion`}>去整体验收</Link>
+              </div>
+            ) : null}
             <div className="project-list">
               {data.escrow ? <div className="proj-card"><div><div className="proj-name">托管余额</div><div className="proj-phase">{data.escrow.totalAmountText} · 已释放 {data.escrow.releasedAmountText}</div></div></div> : null}
               {data.bill.slice(0, 2).map((item) => <div className="proj-card" key={item.id}><div><div className="proj-name">{item.orderNo}</div><div className="proj-phase">{item.statusText}</div></div><div className="proj-percent">{item.amountText}</div></div>)}
               {data.files.slice(0, 2).map((item) => <a className="proj-card" href={item.url} key={item.url} rel="noreferrer" target="_blank"><div><div className="proj-name">{item.name}</div><div className="proj-phase">打开设计资料</div></div></a>)}
             </div>
             <div className="detail-actions" style={{ marginTop: 16 }}>
+              <Link className="button-outline" to={`/projects/${projectId}/pause`}>暂停施工</Link>
+              <Link className="button-outline" to={`/projects/${projectId}/dispute`}>发起项目争议</Link>
               <Link className="button-outline" to={`/projects/${projectId}/contract`}>合同入口</Link>
               <Link className="button-outline" to={`/projects/${projectId}/change-request`}>变更入口</Link>
               <Link className="button-outline" to={`/complaints/new?projectId=${projectId}`}>投诉入口</Link>

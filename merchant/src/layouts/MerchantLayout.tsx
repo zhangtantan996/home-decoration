@@ -9,6 +9,7 @@ import {
     CalendarOutlined,
     FileTextOutlined,
     DollarOutlined,
+    ProjectOutlined,
     NotificationOutlined,
     PictureOutlined,
     SettingOutlined,
@@ -86,10 +87,6 @@ const MerchantLayout: React.FC = () => {
     const isForeman = !isMaterialShop && normalizedProviderSubType === 'foreman';
     const isCompanyProvider = !isMaterialShop && normalizedProviderSubType === 'company';
 
-    const identityHint = isMaterialShop
-        ? '已纳入统一商家体系 · 本期不支持直接切换其他商家子类型'
-        : '统一商家体系 · 如需新增其他商家子类型，请返回首页重新申请';
-
     const serviceMenuItems: MenuProps['items'] = [
         {
             key: '/dashboard',
@@ -116,6 +113,11 @@ const MerchantLayout: React.FC = () => {
             icon: <FileTextOutlined />,
             label: '报价清单',
         },
+        {
+            key: '/projects',
+            icon: <ProjectOutlined />,
+            label: '项目执行',
+        },
         ...(isForeman ? [{
             key: '/price-book',
             icon: <DollarOutlined />,
@@ -130,6 +132,11 @@ const MerchantLayout: React.FC = () => {
             key: '/complaints',
             icon: <NotificationOutlined />,
             label: '投诉响应',
+        },
+        {
+            key: '/notifications',
+            icon: <NotificationOutlined />,
+            label: '通知中心',
         },
         {
             type: 'divider',
@@ -159,6 +166,11 @@ const MerchantLayout: React.FC = () => {
     const menuItems = isMaterialShop
         ? [
             {
+                key: '/dashboard',
+                icon: <DashboardOutlined />,
+                label: '工作台',
+            },
+            {
                 key: '/material-shop/products',
                 icon: <AppstoreOutlined />,
                 label: '商品管理',
@@ -166,7 +178,7 @@ const MerchantLayout: React.FC = () => {
             {
                 key: '/material-shop/settings',
                 icon: <ShopOutlined />,
-                label: '资料中心',
+                label: '店铺设置',
             },
         ]
         : serviceMenuItems;
@@ -209,8 +221,10 @@ const MerchantLayout: React.FC = () => {
         })
         .filter(Boolean) as MenuProps['items'];
 
-    const fallbackPath = isMaterialShop ? '/material-shop/products' : '/dashboard';
-    const isPathAllowed = availableKeys.has(location.pathname);
+    const fallbackPath = isMaterialShop ? '/dashboard' : '/dashboard';
+    const isPathAllowed = availableKeys.has(location.pathname)
+        || (!isMaterialShop && location.pathname.startsWith('/projects/'))
+        || Array.from(availableKeys).some((key) => key !== '/' && location.pathname.startsWith(`${key}/`));
 
     useEffect(() => {
         if (!isPathAllowed) {
@@ -347,7 +361,6 @@ const MerchantLayout: React.FC = () => {
                                     <span style={{ fontWeight: 500 }}>{provider?.name || 'Merchant'}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                         <Tag color="blue" style={{ marginInlineEnd: 0 }}>{subtypeLabel}</Tag>
-                                        <span style={{ fontSize: 12, color: '#64748b' }}>{identityHint}</span>
                                     </div>
                                 </div>
                             </div>

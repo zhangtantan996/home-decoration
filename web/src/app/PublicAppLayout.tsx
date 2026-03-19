@@ -43,7 +43,7 @@ export function PublicAppLayout() {
         <div className={styles.headerInner}>
           <Link className={styles.brand} to="/">
             <img alt="禾泽云公司 Logo" className={styles.brandLogo} src={companyLogo} />
-            <span>家装管家</span>
+            <span>禾泽云</span>
           </Link>
 
           <nav aria-label="主导航" className={styles.nav}>
@@ -98,7 +98,7 @@ export function PublicAppLayout() {
 
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
-          <div className={styles.footerLeft}>© 2026 禾泽云科技 · 家装管家</div>
+          <div className={styles.footerLeft}>© 2026 禾泽云科技 · 禾泽云</div>
           <div className={styles.footerLinks}>
             <Link to="/legal/user-agreement">用户协议</Link>
             <Link to="/legal/privacy-policy">隐私政策</Link>

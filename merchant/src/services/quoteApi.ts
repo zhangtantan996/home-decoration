@@ -54,6 +54,9 @@ export interface QuoteListSummary {
     myTotalCent?: number;
     userConfirmationStatus?: string;
     activeSubmissionId?: number;
+    businessStage?: string;
+    flowSummary?: string;
+    availableActions?: string[];
 }
 
 export interface QuoteListItem {
@@ -67,6 +70,8 @@ export interface QuoteListItem {
     pricingNote?: string;
     sortOrder?: number;
     missingMappingFlag?: boolean;
+    extensionsJson?: string;
+    required?: boolean;
 }
 
 export interface QuoteSubmissionItem {
@@ -95,10 +100,11 @@ export interface QuoteSubmission {
 }
 
 export interface MerchantQuoteListDetail {
-    quoteList: {
-        id: number;
-        title: string;
-        status: string;
+  quoteList: {
+    id: number;
+    projectId?: number;
+    title: string;
+    status: string;
         deadlineAt?: string;
         currency?: string;
         updatedAt?: string;
@@ -106,17 +112,25 @@ export interface MerchantQuoteListDetail {
     items: QuoteListItem[];
     invitation?: { status?: string; invitedAt?: string };
     submission?: QuoteSubmission;
+    businessStage?: string;
+    flowSummary?: string;
+    availableActions?: string[];
 }
 
 export interface QuotePriceBookItem {
     id?: number;
     standardItemId: number;
+    standardCode?: string;
+    standardItemName?: string;
+    categoryL1?: string;
+    categoryL2?: string;
     priceTierId?: number;
     unit: string;
     unitPriceCent: number;
     minChargeCent: number;
     remark?: string;
     status?: number;
+    required?: boolean;
 }
 
 export interface QuotePriceBookDetail {

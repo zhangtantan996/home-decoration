@@ -14,6 +14,9 @@ export const userWebFixtureIds = {
   projectId: 9301,
   demandId: 9401,
   demandProposalId: 9402,
+  quoteTaskId: 9501,
+  quoteSubmissionId: 9502,
+  inspirationDraftAuditId: 9601,
   inspirationId: 7001,
   materialShopId: 8101,
 };
@@ -212,7 +215,11 @@ const mockProviderDetail = () => {
   };
 };
 
-export async function mockUserWebApi(page: Page) {
+type UserWebMockOptions = {
+  initialBusinessStage?: 'construction_quote_pending' | 'ready_to_start' | 'milestone_review' | 'completed' | 'archived';
+};
+
+export async function mockUserWebApi(page: Page, options: UserWebMockOptions = {}) {
   const state = {
     booking: {
       booking: {
@@ -245,6 +252,53 @@ export async function mockUserWebApi(page: Page) {
       },
       proposalId: userWebFixtureIds.proposalId,
     },
+    siteSurvey: {
+      id: 9701,
+      status: 'submitted',
+      notes: '首次量房完成，客厅采光较好。',
+      photos: [
+        'https://placehold.co/400x300/e4e4e7/27272a?text=SURVEY-1',
+        'https://placehold.co/400x300/e4e4e7/27272a?text=SURVEY-2',
+      ],
+      dimensions: {
+        客厅: { length: 5.2, width: 4.6, height: 2.8, unit: 'm' },
+        主卧: { length: 4.0, width: 3.6, height: 2.8, unit: 'm' },
+      },
+      submittedAt: '2026-03-18T09:00:00Z',
+      confirmedAt: '',
+      revisionRequestedAt: '',
+      revisionRequestReason: '',
+    },
+    budgetConfirmation: {
+      id: 9702,
+      status: 'submitted',
+      budgetMin: 50000,
+      budgetMax: 80000,
+      includes: {
+        design_fee: true,
+        construction_fee: true,
+        material_fee: true,
+        furniture_fee: false,
+      },
+      notes: '包含基础施工和主材，不含家具软装。',
+      designIntent: '现代简约，强化收纳与采光。',
+      submittedAt: '2026-03-19T10:00:00Z',
+      acceptedAt: '',
+      rejectedAt: '',
+      rejectionReason: '',
+    },
+    completion: {
+      projectId: userWebFixtureIds.projectId,
+      completedPhotos: [
+        'https://placehold.co/400x300/e4e4e7/27272a?text=COMPLETE-1',
+        'https://placehold.co/400x300/e4e4e7/27272a?text=COMPLETE-2',
+      ],
+      completionNotes: '柜体、灯具和收口均已完成，建议重点验看柜门缝隙与乳胶漆补色。',
+      completionSubmittedAt: '2026-03-26T18:00:00Z',
+      completionRejectedAt: '',
+      completionRejectionReason: '',
+      inspirationCaseDraftId: 0,
+    },
     proposalConfirmed: false,
     demandStatus: 'matched',
     settings: {
@@ -254,6 +308,9 @@ export async function mockUserWebApi(page: Page) {
       fontSize: 'medium',
       language: 'zh',
     },
+    businessStage: options.initialBusinessStage || 'construction_quote_pending',
+    quoteTaskConfirmed: false,
+    inspirationDraftCreated: false,
     milestones: [
       {
         id: 1,
@@ -271,11 +328,89 @@ export async function mockUserWebApi(page: Page) {
         name: '泥木验收',
         amount: 66000,
         percentage: 30,
-        status: 1,
+        status: 2,
         criteria: '木作基层与瓦工排砖到位。',
         acceptedAt: '',
       },
     ],
+  };
+
+  const getFlowSummary = () => {
+    switch (state.businessStage) {
+      case 'construction_quote_pending':
+        return '施工报价待用户确认';
+      case 'ready_to_start':
+        return '施工报价已确认，项目待开工';
+      case 'milestone_review':
+        return '节点已提交，待用户验收';
+      case 'completed':
+        return '施工方已提交完工材料，待业主整体验收';
+      case 'archived':
+        return '项目已归档，案例草稿已生成';
+      default:
+        return '业务主链处理中';
+    }
+  };
+
+  const getAvailableActions = () => {
+    switch (state.businessStage) {
+      case 'construction_quote_pending':
+        return ['confirm_construction_quote', 'reject_construction_quote'];
+      case 'ready_to_start':
+        return ['start_project'];
+      case 'milestone_review':
+        return ['approve_milestone', 'reject_milestone'];
+      case 'completed':
+        return ['approve_completion', 'reject_completion'];
+      default:
+        return [];
+    }
+  };
+
+  const getCurrentPhase = () => {
+    switch (state.businessStage) {
+      case 'construction_quote_pending':
+        return '待确认施工报价';
+      case 'ready_to_start':
+        return '待开工';
+      case 'in_progress':
+        return state.completion.completionRejectedAt ? '完工整改中' : '泥木阶段';
+      case 'milestone_review':
+        return '泥木验收';
+      case 'completed':
+        return '已完工待验收';
+      case 'archived':
+        return '已归档';
+      default:
+        return '泥木阶段';
+    }
+  };
+
+  const getProjectStatus = () => {
+    if (state.businessStage === 'completed' || state.businessStage === 'archived') {
+      return 1;
+    }
+    return 0;
+  };
+
+  const getBookingStage = () => {
+    if (state.budgetConfirmation.status === 'accepted') return 'design_pending_submission';
+    if (state.budgetConfirmation.status === 'rejected') return 'cancelled';
+    return 'negotiating';
+  };
+
+  const getBookingFlowSummary = () => {
+    if (state.budgetConfirmation.status === 'accepted') return '预算与设计意向已确认，待商家提交设计方案。';
+    if (state.budgetConfirmation.status === 'rejected') return '预算已拒绝，预约已关闭。';
+    if (state.siteSurvey.status === 'revision_requested') return '已要求重新量房，等待商家补测后重提。';
+    if (state.siteSurvey.status === 'confirmed') return '量房已确认，待商家提交预算与设计意向。';
+    return '沟通进行中，待确认量房与预算。';
+  };
+
+  const getBookingAvailableActions = () => {
+    if (state.budgetConfirmation.status === 'submitted') return ['accept_budget_confirm', 'reject_budget_confirm'];
+    if (state.siteSurvey.status === 'submitted') return ['confirm_site_survey', 'reject_site_survey'];
+    return [];
   };
 
   await page.route('**/api/v1/**', async (route) => {
@@ -575,13 +710,69 @@ export async function mockUserWebApi(page: Page) {
     }
 
     if (path === `/bookings/${userWebFixtureIds.bookingId}` && method === 'GET') {
-      await ok(route, state.booking);
+      await ok(route, {
+        ...state.booking,
+        flowSummary: getBookingFlowSummary(),
+        availableActions: getBookingAvailableActions(),
+        currentStage: getBookingStage(),
+        siteSurveySummary: state.siteSurvey,
+        budgetConfirmSummary: state.budgetConfirmation,
+      });
       return;
     }
 
     if (path === `/bookings/${userWebFixtureIds.bookingId}/pay-intent` && method === 'POST') {
       state.booking.booking.intentFeePaid = true;
       await ok(route, state.booking.booking);
+      return;
+    }
+
+    if (path === `/bookings/${userWebFixtureIds.bookingId}/site-survey` && method === 'GET') {
+      await ok(route, { siteSurvey: state.siteSurvey });
+      return;
+    }
+
+    if (path === `/bookings/${userWebFixtureIds.bookingId}/site-survey/confirm` && method === 'POST') {
+      state.siteSurvey.status = 'confirmed';
+      state.siteSurvey.confirmedAt = '2026-03-20T11:00:00Z';
+      state.siteSurvey.revisionRequestedAt = '';
+      state.siteSurvey.revisionRequestReason = '';
+      await ok(route, { siteSurvey: state.siteSurvey });
+      return;
+    }
+
+    if (path === `/bookings/${userWebFixtureIds.bookingId}/site-survey/reject` && method === 'POST') {
+      const body = parseBody(route);
+      state.siteSurvey.status = 'revision_requested';
+      state.siteSurvey.confirmedAt = '';
+      state.siteSurvey.revisionRequestedAt = '2026-03-20T11:05:00Z';
+      state.siteSurvey.revisionRequestReason = String(body.reason || '请重新量房');
+      await ok(route, { siteSurvey: state.siteSurvey });
+      return;
+    }
+
+    if (path === `/bookings/${userWebFixtureIds.bookingId}/budget-confirm` && method === 'GET') {
+      await ok(route, { budgetConfirmation: state.budgetConfirmation });
+      return;
+    }
+
+    if (path === `/bookings/${userWebFixtureIds.bookingId}/budget-confirm/accept` && method === 'POST') {
+      state.budgetConfirmation.status = 'accepted';
+      state.budgetConfirmation.acceptedAt = '2026-03-20T12:00:00Z';
+      state.budgetConfirmation.rejectedAt = '';
+      state.budgetConfirmation.rejectionReason = '';
+      await ok(route, { budgetConfirmation: state.budgetConfirmation });
+      return;
+    }
+
+    if (path === `/bookings/${userWebFixtureIds.bookingId}/budget-confirm/reject` && method === 'POST') {
+      const body = parseBody(route);
+      state.budgetConfirmation.status = 'rejected';
+      state.budgetConfirmation.acceptedAt = '';
+      state.budgetConfirmation.rejectedAt = '2026-03-20T12:05:00Z';
+      state.budgetConfirmation.rejectionReason = String(body.reason || '预算超出预期');
+      state.booking.booking.status = 4;
+      await ok(route, { budgetConfirmation: state.budgetConfirmation });
       return;
     }
 
@@ -841,8 +1032,8 @@ export async function mockUserWebApi(page: Page) {
           {
             id: userWebFixtureIds.projectId,
             name: '云杉路旧房改造项目',
-            currentPhase: '泥木阶段',
-            status: 1,
+            currentPhase: getCurrentPhase(),
+            status: getProjectStatus(),
             address: '西安市高新区云杉路 88 号',
             budget: 220000,
           },
@@ -859,13 +1050,22 @@ export async function mockUserWebApi(page: Page) {
         id: userWebFixtureIds.projectId,
         name: '云杉路旧房改造项目',
         address: '西安市高新区云杉路 88 号',
-        currentPhase: '泥木阶段',
-        status: 1,
+        currentPhase: getCurrentPhase(),
+        status: getProjectStatus(),
+        businessStage: state.businessStage,
+        flowSummary: getFlowSummary(),
+        availableActions: getAvailableActions(),
+        selectedQuoteTaskId: state.businessStage === 'construction_quote_pending' ? userWebFixtureIds.quoteTaskId : 0,
         area: 98,
         budget: 220000,
         ownerName: '测试业主',
         providerName: '拾光设计',
         escrowBalance: 88000,
+        completedPhotos: state.completion.completedPhotos,
+        completionNotes: state.completion.completionNotes,
+        completionSubmittedAt: state.businessStage === 'completed' || state.businessStage === 'archived' ? state.completion.completionSubmittedAt : '',
+        completionRejectedAt: state.completion.completionRejectedAt,
+        completionRejectionReason: state.completion.completionRejectionReason,
       });
       return;
     }
@@ -932,7 +1132,126 @@ export async function mockUserWebApi(page: Page) {
 
     if (path === `/projects/${userWebFixtureIds.projectId}/accept` && method === 'POST') {
       state.milestones = state.milestones.map((item) => item.id === 2 ? { ...item, status: 3, acceptedAt: '2026-03-26T18:00:00Z' } : item);
+      state.businessStage = 'completed';
       await ok(route, { message: '验收成功' });
+      return;
+    }
+
+    if (path === `/projects/${userWebFixtureIds.projectId}/start` && method === 'POST') {
+      state.businessStage = 'in_progress';
+      await ok(route, { message: '项目已开工' });
+      return;
+    }
+
+    if (path === `/projects/${userWebFixtureIds.projectId}/milestones/2/reject` && method === 'POST') {
+      state.milestones = state.milestones.map((item) => item.id === 2 ? { ...item, status: 2 } : item);
+      state.businessStage = 'milestone_review';
+      await ok(route, { message: '已驳回当前节点' });
+      return;
+    }
+
+    if (path === `/projects/${userWebFixtureIds.projectId}/completion` && method === 'GET') {
+      await ok(route, {
+        completion: {
+          ...state.completion,
+          businessStage: state.businessStage,
+          flowSummary: getFlowSummary(),
+          availableActions: getAvailableActions(),
+          inspirationCaseDraftId: state.inspirationDraftCreated ? userWebFixtureIds.inspirationDraftAuditId : 0,
+        },
+      });
+      return;
+    }
+
+    if (path === `/projects/${userWebFixtureIds.projectId}/completion/approve` && method === 'POST') {
+      state.inspirationDraftCreated = true;
+      state.businessStage = 'archived';
+      await ok(route, {
+        completion: {
+          ...state.completion,
+          businessStage: state.businessStage,
+          flowSummary: getFlowSummary(),
+          availableActions: getAvailableActions(),
+          inspirationCaseDraftId: userWebFixtureIds.inspirationDraftAuditId,
+        },
+        auditId: userWebFixtureIds.inspirationDraftAuditId,
+      });
+      return;
+    }
+
+    if (path === `/projects/${userWebFixtureIds.projectId}/completion/reject` && method === 'POST') {
+      const body = parseBody(route);
+      state.businessStage = 'in_progress';
+      state.completion.completionRejectedAt = '2026-03-26T20:00:00Z';
+      state.completion.completionRejectionReason = String(body.reason || '仍需整改');
+      await ok(route, {
+        completion: {
+          ...state.completion,
+          businessStage: state.businessStage,
+          flowSummary: getFlowSummary(),
+          availableActions: ['submit_completion'],
+          inspirationCaseDraftId: 0,
+        },
+      });
+      return;
+    }
+
+    if (path === `/quote-tasks/${userWebFixtureIds.quoteTaskId}/user-view` && method === 'GET') {
+      await ok(route, {
+        quoteList: {
+          id: userWebFixtureIds.quoteTaskId,
+          title: '云杉路施工报价确认单',
+          status: state.quoteTaskConfirmed ? 'user_confirmed' : 'submitted_to_user',
+        },
+        submission: {
+          id: userWebFixtureIds.quoteSubmissionId,
+          totalCent: 18680000,
+          estimatedDays: 62,
+        },
+        items: [
+          {
+            id: 1,
+            quoteListItemId: 101,
+            unitPriceCent: 280000,
+            amountCent: 5600000,
+            remark: '拆改与基层处理',
+          },
+          {
+            id: 2,
+            quoteListItemId: 102,
+            unitPriceCent: 654000,
+            amountCent: 13080000,
+            remark: '水电、泥木与油工合计',
+          },
+        ],
+        taskSummary: {
+          area: 98,
+          layout: '三室两厅',
+          renovationType: '全屋翻新',
+          constructionScope: '拆改 / 水电 / 泥木 / 油工',
+          serviceAreas: ['雁塔区', '高新区'],
+          workTypes: ['demolition', 'hydropower', 'masonry'],
+          houseUsage: '自住',
+          notes: '先确认施工报价再进入开工准备',
+        },
+        businessStage: state.businessStage,
+        flowSummary: getFlowSummary(),
+        availableActions: getAvailableActions(),
+      });
+      return;
+    }
+
+    if (path === `/quote-submissions/${userWebFixtureIds.quoteSubmissionId}/confirm` && method === 'POST') {
+      state.quoteTaskConfirmed = true;
+      state.businessStage = 'ready_to_start';
+      await ok(route, { message: '施工报价已确认' });
+      return;
+    }
+
+    if (path === `/quote-submissions/${userWebFixtureIds.quoteSubmissionId}/reject` && method === 'POST') {
+      state.quoteTaskConfirmed = false;
+      state.businessStage = 'construction_quote_pending';
+      await ok(route, { message: '施工报价已驳回' });
       return;
     }
 
@@ -946,7 +1265,8 @@ export async function mockUserWebApi(page: Page) {
 }
 
 export async function loginThroughUi(page: Page, redirectPath = '/') {
-  await page.goto(`/login?redirect=${encodeURIComponent(redirectPath)}`, { waitUntil: 'domcontentloaded' });
+  const normalizedRedirect = redirectPath.startsWith('/app/') ? redirectPath.replace(/^\/app/, '') : redirectPath;
+  await page.goto(`/app/login?redirect=${encodeURIComponent(normalizedRedirect)}`, { waitUntil: 'domcontentloaded' });
   await page.getByLabel('手机号').fill('13900000001');
   await page.getByRole('button', { name: '获取验证码' }).click();
   await expect(page.getByText('验证码已发送，开发环境验证码：123456')).toBeVisible();

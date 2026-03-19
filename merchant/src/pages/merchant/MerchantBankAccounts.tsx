@@ -11,7 +11,6 @@ import {
 } from '@ant-design/icons';
 import {
     Button,
-    Card,
     Empty,
     Form,
     Input,
@@ -26,6 +25,11 @@ import {
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import sharedStyles from '../../components/MerchantPage.module.css';
 
 const BANK_OPTIONS = [
     '中国工商银行',
@@ -218,52 +222,55 @@ const MerchantBankAccounts: React.FC = () => {
     ];
 
     return (
-        <div style={{ padding: 24, background: '#f5f5f5', minHeight: '100vh' }}>
-            <div style={{ marginBottom: 24 }}>
-                <Button
-                    type="link"
-                    icon={<ArrowLeftOutlined />}
-                    onClick={() => navigate('/income')}
-                    style={{ padding: 0, marginBottom: 8 }}
-                >
-                    返回收入中心
-                </Button>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h2 style={{ margin: 0 }}>银行账户管理</h2>
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => setModalVisible(true)}
-                        disabled={accounts.length >= 5}
-                    >
-                        添加银行账户
-                    </Button>
-                </div>
-            </div>
-
-            <Card>
-                <Table
-                    columns={columns}
-                    dataSource={accounts}
-                    rowKey="id"
-                    loading={loading}
-                    pagination={false}
-                    locale={{
-                        emptyText: (
-                            <Empty description="暂无银行账户" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                                <Button type="primary" onClick={() => setModalVisible(true)}>
-                                    添加银行账户
-                                </Button>
-                            </Empty>
-                        ),
-                    }}
+        <>
+            <MerchantPageShell>
+                <MerchantPageHeader
+                    title="银行账户管理"
+                    description="维护提现收款账户，可设置默认账户并在资金页面直接复用。"
+                    extra={(
+                        <>
+                            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/income')}>
+                                返回收入中心
+                            </Button>
+                            <Button
+                                type="primary"
+                                icon={<PlusOutlined />}
+                                onClick={() => setModalVisible(true)}
+                                disabled={accounts.length >= 5}
+                            >
+                                添加银行账户
+                            </Button>
+                        </>
+                    )}
                 />
-                {accounts.length > 0 && accounts.length < 5 && (
-                    <div style={{ marginTop: 16, color: '#999', textAlign: 'center' }}>
-                        最多可添加5个银行账户，当前已添加 {accounts.length} 个
-                    </div>
-                )}
-            </Card>
+
+                <MerchantContentPanel>
+                    <MerchantSectionCard>
+                        <Table
+                            columns={columns}
+                            dataSource={accounts}
+                            rowKey="id"
+                            loading={loading}
+                            pagination={false}
+                            className={sharedStyles.tableCard}
+                            locale={{
+                                emptyText: (
+                                    <Empty description="暂无银行账户" image={Empty.PRESENTED_IMAGE_SIMPLE}>
+                                        <Button type="primary" onClick={() => setModalVisible(true)}>
+                                            添加银行账户
+                                        </Button>
+                                    </Empty>
+                                ),
+                            }}
+                        />
+                        {accounts.length > 0 && accounts.length < 5 && (
+                            <div style={{ marginTop: 16, color: '#999', textAlign: 'center' }}>
+                                最多可添加5个银行账户，当前已添加 {accounts.length} 个
+                            </div>
+                        )}
+                    </MerchantSectionCard>
+                </MerchantContentPanel>
+            </MerchantPageShell>
 
             <Modal
                 title="添加银行账户"
@@ -358,7 +365,7 @@ const MerchantBankAccounts: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
-        </div>
+        </>
     );
 };
 

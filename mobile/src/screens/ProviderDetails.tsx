@@ -201,6 +201,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
     const caseCount = detail?.caseCount || 0;
+    const isSettled = provider.isSettled !== false;
 
     // 合并数据（API 优先，降级使用传入的 initialDesigner）
     const displayData = {
@@ -296,7 +297,7 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 </View>
             )}
-            bottomBar={
+            bottomBar={isSettled ? (
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -328,7 +329,11 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约设计</Text>
                     </TouchableOpacity>
                 </View>
-            }
+            ) : (
+                <View style={styles.floatBottomBar}>
+                    <Text style={styles.unsettledHintText}>该商家信息来源于公开渠道，尚未在本平台入驻。</Text>
+                </View>
+            )}
         >
             {/* 2. Dashboard Stats (Floating) */}
             <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
@@ -337,15 +342,26 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                     <View style={styles.designerDashHeaderInfo}>
                         <View style={styles.designerDashNameRow}>
                             <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
-                            <TouchableOpacity
-                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
-                                onPress={handleFollow}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
-                                    {isFollowed ? '已关注' : '+关注'}
-                                </Text>
-                            </TouchableOpacity>
+                            {isSettled ? (
+                                <View style={styles.settledBadge}>
+                                    <Text style={styles.settledBadgeText}>已认证</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.unsettledBadge}>
+                                    <Text style={styles.unsettledBadgeText}>未入驻</Text>
+                                </View>
+                            )}
+                            {isSettled && (
+                                <TouchableOpacity
+                                    style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                    onPress={handleFollow}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                        {isFollowed ? '已关注' : '+关注'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         <Text style={styles.designerDashExperienceText}>{displayData.yearsExperience}年经验</Text>
                         {!!displayData.specialty && (
@@ -586,6 +602,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const user = detail?.user || {};
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
+    const isSettled = provider.isSettled !== false;
 
     // 合并数据（API 优先，降级使用传入的 initialWorker）
     const displayData = {
@@ -687,7 +704,7 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 </View>
             )}
-            bottomBar={
+            bottomBar={isSettled ? (
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -719,7 +736,11 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约施工</Text>
                     </TouchableOpacity>
                 </View>
-            }
+            ) : (
+                <View style={styles.floatBottomBar}>
+                    <Text style={styles.unsettledHintText}>该商家信息来源于公开渠道，尚未在本平台入驻。</Text>
+                </View>
+            )}
         >
             {/* Dashboard Stats */}
             <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
@@ -728,15 +749,26 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                     <View style={styles.designerDashHeaderInfo}>
                         <View style={styles.designerDashNameRow}>
                             <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
-                            <TouchableOpacity
-                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
-                                onPress={handleFollow}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
-                                    {isFollowed ? '已关注' : '+关注'}
-                                </Text>
-                            </TouchableOpacity>
+                            {isSettled ? (
+                                <View style={styles.settledBadge}>
+                                    <Text style={styles.settledBadgeText}>已认证</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.unsettledBadge}>
+                                    <Text style={styles.unsettledBadgeText}>未入驻</Text>
+                                </View>
+                            )}
+                            {isSettled && (
+                                <TouchableOpacity
+                                    style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                    onPress={handleFollow}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                        {isFollowed ? '已关注' : '+关注'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         <Text style={styles.designerDashExperienceText}>{displayData.yearsExperience}年经验</Text>
                         {!!displayData.serviceLabel && (
@@ -959,6 +991,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const user = detail?.user || {};
     const cases = detail?.cases || [];
     const reviews = detail?.reviews || [];
+    const isSettled = provider.isSettled !== false;
 
     // 合并数据（API 优先，降级使用传入的 initialCompany）
     const displayData = {
@@ -1061,7 +1094,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     </View>
                 </View>
             )}
-            bottomBar={
+            bottomBar={isSettled ? (
                 <View style={styles.floatBottomBar}>
                     <TouchableOpacity
                         style={styles.floatIconBtn}
@@ -1090,7 +1123,11 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                         <Text style={styles.floatPrimaryText}>立即预约</Text>
                     </TouchableOpacity>
                 </View>
-            }
+            ) : (
+                <View style={styles.floatBottomBar}>
+                    <Text style={styles.unsettledHintText}>该商家信息来源于公开渠道，尚未在本平台入驻。</Text>
+                </View>
+            )}
         >
             {/* 2. Dashboard Stats (Floating) */}
             <View style={[styles.designerDashboardCard, { marginTop: -60, alignSelf: 'center', width: '90%' }]}>
@@ -1099,15 +1136,26 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                     <View style={styles.designerDashHeaderInfo}>
                         <View style={styles.designerDashNameRow}>
                             <Text style={styles.designerDashName} numberOfLines={1}>{displayData.name}</Text>
-                            <TouchableOpacity
-                                style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
-                                onPress={handleFollow}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
-                                    {isFollowed ? '已关注' : '+关注'}
-                                </Text>
-                            </TouchableOpacity>
+                            {isSettled ? (
+                                <View style={styles.settledBadge}>
+                                    <Text style={styles.settledBadgeText}>已认证</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.unsettledBadge}>
+                                    <Text style={styles.unsettledBadgeText}>未入驻</Text>
+                                </View>
+                            )}
+                            {isSettled && (
+                                <TouchableOpacity
+                                    style={[styles.designerDashFollowBtn, isFollowed && styles.designerDashFollowedBtn]}
+                                    onPress={handleFollow}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[styles.designerDashFollowText, isFollowed && styles.designerDashFollowedText]}>
+                                        {isFollowed ? '已关注' : '+关注'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         <Text style={styles.designerDashExperienceText}>{displayData.establishedYear}年成立</Text>
                         <View style={styles.specialtyPill}>
@@ -1976,5 +2024,35 @@ const styles = StyleSheet.create({
         padding: 8,
         borderRadius: 20,
         backgroundColor: 'rgba(0,0,0,0.1)', // backup bg for visibility
+    },
+    settledBadge: {
+        backgroundColor: '#e6f7ee',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    settledBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#389e6a',
+    },
+    unsettledBadge: {
+        backgroundColor: '#fff7ed',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    unsettledBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#d97706',
+    },
+    unsettledHintText: {
+        flex: 1,
+        fontSize: 13,
+        color: '#d97706',
+        textAlign: 'center',
     },
 });

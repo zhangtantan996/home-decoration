@@ -13,6 +13,7 @@ export interface ProviderListItemVM {
   completedCount: number;
   yearsExperience: number;
   verified: boolean;
+  isSettled?: boolean;
   priceText: string;
   tags: string[];
   serviceArea: string[];
@@ -34,6 +35,7 @@ export interface MaterialShopListItemVM {
   openTime: string;
   tags: string[];
   isVerified: boolean;
+  isSettled?: boolean;
 }
 
 export interface ProviderCaseVM {
@@ -73,6 +75,7 @@ export interface ProviderDetailVM extends ProviderListItemVM {
   reviews: ProviderReviewVM[];
   reviewStats: ReviewStatsVM;
   phoneHint: string;
+  surveyDepositPrice?: number;
 }
 
 export interface InspirationListItemVM {
@@ -133,6 +136,46 @@ export interface BookingDetailVM {
   providerType: ProviderRole;
   updatedAt: string;
   timeline: BookingTimelineItemVM[];
+  flowSummary?: string;
+  availableActions?: string[];
+  currentStage?: string;
+  surveyDepositSource?: string;
+  surveyRefundNotice?: string;
+  siteSurveySummary?: BookingSiteSurveyVM | null;
+  budgetConfirmSummary?: BookingBudgetConfirmVM | null;
+}
+
+export interface SurveyDimensionVM {
+  length?: number;
+  width?: number;
+  height?: number;
+  unit?: string;
+}
+
+export interface BookingSiteSurveyVM {
+  id: number;
+  status: string;
+  notes: string;
+  photos: string[];
+  dimensions: Record<string, SurveyDimensionVM>;
+  submittedAt?: string;
+  confirmedAt?: string;
+  revisionRequestedAt?: string;
+  revisionRequestReason?: string;
+}
+
+export interface BookingBudgetConfirmVM {
+  id: number;
+  status: string;
+  budgetMin: number;
+  budgetMax: number;
+  notes: string;
+  designIntent: string;
+  includes: Record<string, boolean>;
+  submittedAt?: string;
+  acceptedAt?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
 }
 
 export interface ProposalListItemVM {
@@ -176,6 +219,22 @@ export interface ProposalDetailVM {
   planItems: ProposalOrderPlanVM[];
   canConfirm: boolean;
   blockingReason: string;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  deliveryUnlocked?: boolean;
+  previewSummary?: string;
+  previewFloorPlanImages?: string[];
+  previewEffectImages?: string[];
+  previewEffectLinks?: string[];
+  previewHasCad?: boolean;
+  previewHasAttachments?: boolean;
+  deliveryDescription?: string;
+  deliveryFloorPlanImages?: string[];
+  deliveryEffectImages?: string[];
+  deliveryEffectLinks?: string[];
+  deliveryCadFiles?: string[];
+  deliveryAttachments?: string[];
 }
 
 export interface DemandSummaryVM {
@@ -364,6 +423,10 @@ export interface ProjectDetailVM {
   address: string;
   currentPhase: string;
   statusText: string;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  selectedQuoteTaskId?: number;
   areaText: string;
   budgetText: string;
   ownerName: string;
@@ -371,6 +434,24 @@ export interface ProjectDetailVM {
   escrowBalanceText: string;
   phases: ProjectPhaseVM[];
   milestones: ProjectMilestoneVM[];
+  completedPhotos?: string[];
+  completionNotes?: string;
+  completionSubmittedAt?: string;
+  completionRejectedAt?: string;
+  completionRejectionReason?: string;
+}
+
+export interface ProjectCompletionVM {
+  projectId: number;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  completedPhotos: string[];
+  completionNotes: string;
+  completionSubmittedAt?: string;
+  completionRejectedAt?: string;
+  completionRejectionReason?: string;
+  inspirationCaseDraftId?: number;
 }
 
 export interface ProgressPageVM {
@@ -378,6 +459,36 @@ export interface ProgressPageVM {
   featuredProject: ProjectDetailVM | null;
   recentLogs: ProjectLogVM[];
   pendingMilestones: ProjectMilestoneVM[];
+}
+
+export interface QuoteTaskSubmissionItemVM {
+  id: number;
+  quoteListItemId: number;
+  unitPriceText: string;
+  amountText: string;
+  remark: string;
+}
+
+export interface QuoteTaskDetailVM {
+  id: number;
+  title: string;
+  statusText: string;
+  businessStage?: string;
+  flowSummary?: string;
+  estimatedDays: number;
+  totalFeeText: string;
+  taskSummary: {
+    area: number;
+    layout: string;
+    renovationType: string;
+    constructionScope: string;
+    serviceAreas: string[];
+    workTypes: string[];
+    houseUsage: string;
+    notes: string;
+  };
+  items: QuoteTaskSubmissionItemVM[];
+  submissionId: number;
 }
 
 export interface OrderListItemVM {

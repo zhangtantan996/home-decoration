@@ -5,6 +5,7 @@ import { ArrowLeftOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UploadOut
 import { useNavigate } from 'react-router-dom';
 import { merchantProposalApi, merchantUploadApi } from '../../services/merchantApi';
 import { useDictStore } from '../../stores/dictStore';
+import { PROPOSAL_STATUS_META } from '../../constants/statuses';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -25,6 +26,9 @@ interface Proposal {
     rejectionCount?: number; // 拒绝次数
     rejectionReason?: string; // 拒绝原因
     rejectedAt?: string; // 拒绝时间
+    internalDraftJson?: string;
+    previewPackageJson?: string;
+    deliveryPackageJson?: string;
 }
 
 interface Booking {
@@ -38,13 +42,6 @@ interface Booking {
     userPhone?: string;
 }
 
-const statusMap: Record<number, { text: string; color: string }> = {
-    1: { text: '待确认', color: 'gold' },
-    2: { text: '已确认', color: 'green' },
-    3: { text: '已拒绝', color: 'red' },
-    4: { text: '已被替代', color: 'default' },
-};
-
 const MerchantProposals: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -55,12 +52,28 @@ const MerchantProposals: React.FC = () => {
     const [currentBooking, setCurrentBooking] = useState<Booking | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [fileList, setFileList] = useState<UploadFile[]>([]);
+    const [previewFileList, setPreviewFileList] = useState<UploadFile[]>([]);
     const [rejectionInfo, setRejectionInfo] = useState<any>(null); // 拒绝信息
     const [form] = Form.useForm();
     const [resubmitForm] = Form.useForm(); // 重新提交表单
     const navigate = useNavigate();
 
     const { loadDict, getDictOptions } = useDictStore();
+
+    const parseJsonObject = (raw?: string) => {
+        if (!raw) return {};
+        try {
+            const parsed = JSON.parse(raw);
+            return typeof parsed === 'object' && parsed !== null ? parsed : {};
+        } catch {
+            return {};
+        }
+    };
+
+    const parseStringArray = (raw: string) => raw
+        .split(/\n|,|，/)
+        .map((item) => item.trim())
+        .filter(Boolean);
 
     useEffect(() => {
         loadProposals();
@@ -120,6 +133,16 @@ const MerchantProposals: React.FC = () => {
                     materialFee: res.data.proposal.materialFee,
                     estimatedDays: res.data.proposal.estimatedDays,
                 });
+                const internalDraft = parseJsonObject(res.data.proposal.internalDraftJson);
+                const previewPackage = parseJsonObject(res.data.proposal.previewPackageJson);
+                const deliveryPackage = parseJsonObject(res.data.proposal.deliveryPackageJson);
+                form.setFieldsValue({
+                    internalNotes: internalDraft.communicationNotes || '',
+                    previewSummary: previewPackage.summary || '',
+                    deliveryDescription: deliveryPackage.description || '',
+                    deliveryEffectLinksText: Array.isArray(deliveryPackage.effectLinks) ? deliveryPackage.effectLinks.join('\n') : '',
+                    deliveryCadFilesText: Array.isArray(deliveryPackage.cadFiles) ? deliveryPackage.cadFiles.join('\n') : '',
+                });
                 // Parse existing attachments
                 try {
                     const existingAttachments = JSON.parse(res.data.proposal.attachments || '[]');
@@ -132,6 +155,21 @@ const MerchantProposals: React.FC = () => {
                     })));
                 } catch {
                     setFileList([]);
+                }
+                try {
+                    const previewImages = [
+                        ...(Array.isArray(previewPackage.floorPlanImages) ? previewPackage.floorPlanImages : []),
+                        ...(Array.isArray(previewPackage.effectPreviewImages) ? previewPackage.effectPreviewImages : []),
+                    ];
+                    setPreviewFileList(previewImages.map((url: string, index: number) => ({
+                        uid: `preview-${index}`,
+                        name: url.split('/').pop() || 'preview',
+                        status: 'done',
+                        url,
+                        response: { url },
+                    })));
+                } catch {
+                    setPreviewFileList([]);
                 }
                 setEditVisible(true);
             }
@@ -149,15 +187,35 @@ const MerchantProposals: React.FC = () => {
             const attachments = fileList
                 .filter(file => file.status === 'done' && (file.response?.url || file.url))
                 .map(file => file.response?.url || file.url);
+            const previewImages = previewFileList
+                .filter(file => file.status === 'done' && (file.response?.url || file.url))
+                .map(file => file.response?.url || file.url);
 
             const res = await merchantProposalApi.update(currentProposal.id, {
                 ...values,
                 attachments: JSON.stringify(attachments),
+                internalDraftJson: JSON.stringify({
+                    communicationNotes: values.internalNotes || '',
+                }),
+                previewPackageJson: JSON.stringify({
+                    summary: values.previewSummary || '',
+                    floorPlanImages: previewImages,
+                    effectPreviewImages: previewImages,
+                    hasCad: parseStringArray(values.deliveryCadFilesText || '').length > 0,
+                    hasAttachments: attachments.length > 0,
+                }),
+                deliveryPackageJson: JSON.stringify({
+                    description: values.deliveryDescription || '',
+                    effectLinks: parseStringArray(values.deliveryEffectLinksText || ''),
+                    cadFiles: parseStringArray(values.deliveryCadFilesText || ''),
+                    attachments,
+                }),
             }) as any;
 
             if (res.code === 0) {
                 message.success('更新成功');
                 setEditVisible(false);
+                setPreviewFileList([]);
                 loadProposals();
             } else {
                 message.error(res.message || '更新失败');
@@ -214,6 +272,16 @@ const MerchantProposals: React.FC = () => {
                     materialFee: detailRes.data.proposal.materialFee,
                     estimatedDays: detailRes.data.proposal.estimatedDays,
                 });
+                const internalDraft = parseJsonObject(detailRes.data.proposal.internalDraftJson);
+                const previewPackage = parseJsonObject(detailRes.data.proposal.previewPackageJson);
+                const deliveryPackage = parseJsonObject(detailRes.data.proposal.deliveryPackageJson);
+                resubmitForm.setFieldsValue({
+                    internalNotes: internalDraft.communicationNotes || '',
+                    previewSummary: previewPackage.summary || '',
+                    deliveryDescription: deliveryPackage.description || '',
+                    deliveryEffectLinksText: Array.isArray(deliveryPackage.effectLinks) ? deliveryPackage.effectLinks.join('\n') : '',
+                    deliveryCadFilesText: Array.isArray(deliveryPackage.cadFiles) ? deliveryPackage.cadFiles.join('\n') : '',
+                });
 
                 // 解析现有附件
                 try {
@@ -227,6 +295,21 @@ const MerchantProposals: React.FC = () => {
                     })));
                 } catch {
                     setFileList([]);
+                }
+                try {
+                    const previewImages = [
+                        ...(Array.isArray(previewPackage.floorPlanImages) ? previewPackage.floorPlanImages : []),
+                        ...(Array.isArray(previewPackage.effectPreviewImages) ? previewPackage.effectPreviewImages : []),
+                    ];
+                    setPreviewFileList(previewImages.map((url: string, index: number) => ({
+                        uid: `preview-${index}`,
+                        name: url.split('/').pop() || 'preview',
+                        status: 'done',
+                        url,
+                        response: { url },
+                    })));
+                } catch {
+                    setPreviewFileList([]);
                 }
 
                 setResubmitVisible(true);
@@ -247,11 +330,30 @@ const MerchantProposals: React.FC = () => {
             const attachments = fileList
                 .filter(file => file.status === 'done' && (file.response?.url || file.url))
                 .map(file => file.response?.url || file.url);
+            const previewImages = previewFileList
+                .filter(file => file.status === 'done' && (file.response?.url || file.url))
+                .map(file => file.response?.url || file.url);
 
             const res = await merchantProposalApi.resubmit({
                 proposalId: currentProposal.id,
                 ...values,
                 attachments: JSON.stringify(attachments),
+                internalDraft: {
+                    communicationNotes: values.internalNotes || '',
+                },
+                previewPackage: {
+                    summary: values.previewSummary || '',
+                    floorPlanImages: previewImages,
+                    effectPreviewImages: previewImages,
+                    hasCad: parseStringArray(values.deliveryCadFilesText || '').length > 0,
+                    hasAttachments: attachments.length > 0,
+                },
+                deliveryPackage: {
+                    description: values.deliveryDescription || '',
+                    effectLinks: parseStringArray(values.deliveryEffectLinksText || ''),
+                    cadFiles: parseStringArray(values.deliveryCadFilesText || ''),
+                    attachments,
+                },
             }) as any;
 
             if (res.code === 0) {
@@ -260,6 +362,7 @@ const MerchantProposals: React.FC = () => {
                 setResubmitVisible(false);
                 resubmitForm.resetFields();
                 setFileList([]);
+                setPreviewFileList([]);
                 loadProposals();
             } else {
                 message.error(res.message || '提交失败');
@@ -295,7 +398,7 @@ const MerchantProposals: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (status: number) => {
-                const s = statusMap[status] || { text: '未知', color: 'default' };
+                const s = PROPOSAL_STATUS_META[status] || { text: '未知', color: 'default' };
                 return <Tag color={s.color}>{s.text}</Tag>;
             },
         },
@@ -386,8 +489,8 @@ const MerchantProposals: React.FC = () => {
                         <Descriptions column={2} bordered size="small">
                             <Descriptions.Item label="方案ID">{currentProposal.id}</Descriptions.Item>
                             <Descriptions.Item label="状态">
-                                <Tag color={statusMap[currentProposal.status]?.color}>
-                                    {statusMap[currentProposal.status]?.text}
+                                <Tag color={PROPOSAL_STATUS_META[currentProposal.status]?.color}>
+                                    {PROPOSAL_STATUS_META[currentProposal.status]?.text}
                                 </Tag>
                             </Descriptions.Item>
                             <Descriptions.Item label="方案概述" span={2}>{currentProposal.summary}</Descriptions.Item>
@@ -395,6 +498,12 @@ const MerchantProposals: React.FC = () => {
                             <Descriptions.Item label="施工费">¥{currentProposal.constructionFee?.toLocaleString()}</Descriptions.Item>
                             <Descriptions.Item label="主材费">¥{currentProposal.materialFee?.toLocaleString()}</Descriptions.Item>
                             <Descriptions.Item label="预计工期">{currentProposal.estimatedDays}天</Descriptions.Item>
+                            <Descriptions.Item label="支付前预览摘要" span={2}>
+                                {(parseJsonObject(currentProposal.previewPackageJson).summary as string) || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="交付说明" span={2}>
+                                {(parseJsonObject(currentProposal.deliveryPackageJson).description as string) || '-'}
+                            </Descriptions.Item>
                             <Descriptions.Item label="创建时间" span={2}>{new Date(currentProposal.createdAt).toLocaleString()}</Descriptions.Item>
                         </Descriptions>
                     </>
@@ -461,9 +570,62 @@ const MerchantProposals: React.FC = () => {
                         <InputNumber min={1} style={{ width: '100%' }} />
                     </Form.Item>
 
+                    <Form.Item name="internalNotes" label="内部留档备注">
+                        <TextArea rows={3} placeholder="记录客户沟通纪要、内部草图说明、初步预算判断，仅平台留存。" />
+                    </Form.Item>
+
+                    <Form.Item name="previewSummary" label="支付前预览摘要">
+                        <TextArea rows={3} placeholder="给用户看的方案摘要、彩平说明和效果图预览说明。" />
+                    </Form.Item>
+
+                    <Form.Item label="支付前预览图" extra="上传缩略彩平图/效果图，支付设计费前仅展示预览。">
+                        <Upload
+                            fileList={previewFileList}
+                            onChange={({ fileList }) => setPreviewFileList(fileList)}
+                            customRequest={async (options) => {
+                                const { file, onSuccess, onError } = options;
+                                try {
+                                    const res = await merchantUploadApi.uploadImage(file as File) as any;
+                                    if (res.code === 0) {
+                                        onSuccess?.(res.data);
+                                    } else {
+                                        onError?.(new Error(res.message));
+                                        message.error(res.message);
+                                    }
+                                } catch (err) {
+                                    onError?.(err as Error);
+                                    message.error('上传失败');
+                                }
+                            }}
+                            maxCount={6}
+                            beforeUpload={(file) => {
+                                const isLt20M = file.size / 1024 / 1024 < 20;
+                                if (!isLt20M) {
+                                    message.error('文件必须小于 20MB!');
+                                    return Upload.LIST_IGNORE;
+                                }
+                                return true;
+                            }}
+                        >
+                            <Button icon={<UploadOutlined />}>上传预览图</Button>
+                        </Upload>
+                    </Form.Item>
+
+                    <Form.Item name="deliveryDescription" label="正式交付说明">
+                        <TextArea rows={3} placeholder="支付后解锁的正式设计说明、交付范围和使用说明。" />
+                    </Form.Item>
+
+                    <Form.Item name="deliveryEffectLinksText" label="效果图外链（每行一个）">
+                        <TextArea rows={3} placeholder="https://example.com/render-1&#10;https://example.com/render-2" />
+                    </Form.Item>
+
+                    <Form.Item name="deliveryCadFilesText" label="CAD / 附件链接（每行一个）">
+                        <TextArea rows={3} placeholder="https://example.com/file.dwg&#10;https://example.com/file.pdf" />
+                    </Form.Item>
+
                     <Form.Item
                         label="附件上传"
-                        extra="支持图片/PDF/Word/Zip，最大20MB，最多5个文件"
+                        extra="支付后交付包附件，支持图片/PDF/Word/Excel/CAD/Zip，最大20MB，最多5个文件"
                     >
                         <Upload
                             fileList={fileList}
@@ -587,9 +749,62 @@ const MerchantProposals: React.FC = () => {
                         <InputNumber min={1} style={{ width: '100%' }} />
                     </Form.Item>
 
+                    <Form.Item name="internalNotes" label="内部留档备注">
+                        <TextArea rows={3} placeholder="记录客户沟通纪要、内部草图说明、初步预算判断，仅平台留存。" />
+                    </Form.Item>
+
+                    <Form.Item name="previewSummary" label="支付前预览摘要" extra="请根据用户反馈调整此处摘要与预览内容。">
+                        <TextArea rows={3} placeholder="给用户看的方案摘要、彩平说明和效果图预览说明。" />
+                    </Form.Item>
+
+                    <Form.Item label="支付前预览图" extra="上传缩略彩平图/效果图，支付设计费前仅展示预览。">
+                        <Upload
+                            fileList={previewFileList}
+                            onChange={({ fileList }) => setPreviewFileList(fileList)}
+                            customRequest={async (options) => {
+                                const { file, onSuccess, onError } = options;
+                                try {
+                                    const res = await merchantUploadApi.uploadImage(file as File) as any;
+                                    if (res.code === 0) {
+                                        onSuccess?.(res.data);
+                                    } else {
+                                        onError?.(new Error(res.message));
+                                        message.error(res.message);
+                                    }
+                                } catch (err) {
+                                    onError?.(err as Error);
+                                    message.error('上传失败');
+                                }
+                            }}
+                            maxCount={6}
+                            beforeUpload={(file) => {
+                                const isLt20M = file.size / 1024 / 1024 < 20;
+                                if (!isLt20M) {
+                                    message.error('文件必须小于 20MB!');
+                                    return Upload.LIST_IGNORE;
+                                }
+                                return true;
+                            }}
+                        >
+                            <Button icon={<UploadOutlined />}>上传预览图</Button>
+                        </Upload>
+                    </Form.Item>
+
+                    <Form.Item name="deliveryDescription" label="正式交付说明">
+                        <TextArea rows={3} placeholder="支付后解锁的正式设计说明、交付范围和使用说明。" />
+                    </Form.Item>
+
+                    <Form.Item name="deliveryEffectLinksText" label="效果图外链（每行一个）">
+                        <TextArea rows={3} placeholder="https://example.com/render-1&#10;https://example.com/render-2" />
+                    </Form.Item>
+
+                    <Form.Item name="deliveryCadFilesText" label="CAD / 附件链接（每行一个）">
+                        <TextArea rows={3} placeholder="https://example.com/file.dwg&#10;https://example.com/file.pdf" />
+                    </Form.Item>
+
                     <Form.Item
                         label="附件上传"
-                        extra="支持图片/PDF/Word/Zip，最大20MB，最多5个文件"
+                        extra="支付后交付包附件，支持图片/PDF/Word/Excel/CAD/Zip，最大20MB，最多5个文件"
                     >
                         <Upload
                             fileList={fileList}

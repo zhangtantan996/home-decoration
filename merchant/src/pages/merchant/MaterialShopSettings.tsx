@@ -1,17 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeftOutlined } from '@ant-design/icons';
 import {
     Button,
-    Card,
+    Col,
     Form,
     Input,
-    Layout,
+    Row,
+    Space,
     Upload,
     message,
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
 
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import MerchantStatGrid from '../../components/MerchantStatGrid';
 import {
     materialShopCenterApi,
     merchantUploadApi,
@@ -20,7 +25,6 @@ import {
 } from '../../services/merchantApi';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
 
-const { Content } = Layout;
 const { TextArea } = Input;
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -81,10 +85,10 @@ const toSingleUploadFileList = (value?: string): UploadFile[] => {
 
 const MaterialShopSettings: React.FC = () => {
     const navigate = useNavigate();
-    const [form] = Form.useForm<MaterialShopProfile>();
+    const [profileForm] = Form.useForm<MaterialShopProfile>();
     const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const businessHoursRanges = Form.useWatch('businessHoursRanges', form) || [];
+    const [savingProfile, setSavingProfile] = useState(false);
+    const businessHoursRanges = Form.useWatch('businessHoursRanges', profileForm) || [];
 
     const normalizedRanges = useMemo(() => normalizeRangesForForm(businessHoursRanges), [businessHoursRanges]);
 
@@ -96,7 +100,7 @@ const MaterialShopSettings: React.FC = () => {
         setLoading(true);
         try {
             const profile = await materialShopCenterApi.getMe();
-            form.setFieldsValue({
+            profileForm.setFieldsValue({
                 shopName: profile.shopName,
                 companyName: profile.companyName,
                 shopDescription: profile.shopDescription,
@@ -106,6 +110,7 @@ const MaterialShopSettings: React.FC = () => {
                 businessHours: profile.businessHours,
                 businessHoursRanges: normalizeRangesForForm(profile.businessHoursRanges, profile.businessHours),
                 contactPhone: profile.contactPhone,
+                contactName: profile.contactName,
                 address: profile.address,
             });
         } catch (error) {
@@ -118,7 +123,7 @@ const MaterialShopSettings: React.FC = () => {
     const uploadBusinessLicense: UploadProps['customRequest'] = async (options) => {
         try {
             const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
-            form.setFieldsValue({ businessLicense: uploaded.url });
+            profileForm.setFieldsValue({ businessLicense: uploaded.url });
             options.onSuccess?.(uploaded);
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -127,7 +132,25 @@ const MaterialShopSettings: React.FC = () => {
         }
     };
 
-    const handleSave = async (values: Partial<MaterialShopProfile>) => {
+    const profileCompletion = useMemo(() => {
+        const values = profileForm.getFieldsValue();
+        const requiredFields = [
+            values.shopName,
+            values.companyName,
+            values.shopDescription,
+            values.businessLicenseNo,
+            values.businessLicense,
+            values.legalPersonName,
+            values.contactPhone,
+            values.contactName,
+            values.address,
+            normalizeRangesForForm(values.businessHoursRanges, values.businessHours).length ? 'ranges' : '',
+        ];
+        const complete = requiredFields.filter((item) => String(item || '').trim()).length;
+        return Math.round((complete / requiredFields.length) * 100);
+    }, [profileForm, businessHoursRanges]);
+
+    const handleSaveProfile = async (values: Partial<MaterialShopProfile>) => {
         const rangesForForm = normalizeRangesForForm(values.businessHoursRanges as BusinessHoursRange[], String(values.businessHours || ''));
         if (rangesForForm.length === 0) {
             message.error('请至少填写 1 条营业时间');
@@ -135,15 +158,21 @@ const MaterialShopSettings: React.FC = () => {
         }
 
         const address = String(values.address || '').trim();
+        const contactName = String(values.contactName || '').trim();
         if (!address) {
             message.error('请输入门店地址');
             return;
         }
+        if (!contactName) {
+            message.error('请输入联系人');
+            return;
+        }
 
-        setSaving(true);
+        setSavingProfile(true);
         try {
             await materialShopCenterApi.updateMe({
                 ...values,
+                contactName,
                 businessHoursRanges: normalizeRangesForApi(rangesForForm),
                 businessHours: summarizeBusinessHoursRanges(rangesForForm),
                 address,
@@ -153,42 +182,142 @@ const MaterialShopSettings: React.FC = () => {
         } catch (error) {
             message.error(getErrorMessage(error, '保存失败'));
         } finally {
-            setSaving(false);
+            setSavingProfile(false);
         }
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-            <Content style={{ padding: 24, maxWidth: 900, margin: '0 auto', width: '100%' }}>
-                <Card loading={loading}>
-                    <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')} style={{ padding: 0 }}>
-                        返回工作台
-                    </Button>
-                    <h2 style={{ marginTop: 8 }}>主材商资料中心</h2>
+        <MerchantPageShell>
+            <MerchantPageHeader
+                title="主材商资料中心"
+                description="当前版本只保留店铺基础资料与主体资质，先把最基础的信息维护完整。"
+                extra={(
+                    <Space>
+                        <Button onClick={() => navigate('/dashboard')}>返回工作台</Button>
+                    </Space>
+                )}
+            />
 
-                    <Form form={form} layout="vertical" onFinish={handleSave}>
-                        <Form.Item name="shopName" label="店铺名称" rules={[{ required: true, message: '请输入店铺名称' }]}>
-                            <Input maxLength={100} />
-                        </Form.Item>
+            <MerchantStatGrid
+                items={[
+                    {
+                        label: '资料完整度',
+                        value: `${profileCompletion}%`,
+                        meta: profileCompletion >= 80 ? '基础资料已接近完整' : '建议优先补齐联系人、地址和营业时间',
+                        percent: profileCompletion,
+                        tone: profileCompletion >= 80 ? 'green' : 'amber',
+                    },
+                    {
+                        label: '营业时间状态',
+                        value: normalizedRanges.length > 0 ? '已配置' : '待补齐',
+                        meta: normalizedRanges.length > 0 ? summarizeBusinessHoursRanges(normalizedRanges) : '至少填写 1 条营业时间',
+                        percent: normalizedRanges.length > 0 ? 100 : 0,
+                        tone: normalizedRanges.length > 0 ? 'blue' : 'amber',
+                    },
+                    {
+                        label: '资质状态',
+                        value: profileForm.getFieldValue('businessLicense') ? '已上传' : '待上传',
+                        meta: profileForm.getFieldValue('businessLicense')
+                            ? '营业执照图片已上传'
+                            : '请补齐营业执照与主体信息',
+                        percent: profileForm.getFieldValue('businessLicense') ? 100 : 0,
+                        tone: profileForm.getFieldValue('businessLicense') ? 'green' : 'amber',
+                    },
+                ]}
+            />
 
-                        <Form.Item name="companyName" label="公司/个体名称" rules={[{ required: true, message: '请输入公司/个体名称' }]}>
-                            <Input maxLength={100} />
-                        </Form.Item>
+            <MerchantContentPanel>
+                <MerchantSectionCard title="店铺基础资料">
+                    <Form form={profileForm} layout="vertical" onFinish={handleSaveProfile} disabled={loading}>
+                        <Row gutter={[16, 0]}>
+                            <Col xs={24} md={12}>
+                                <Form.Item name="shopName" label="店铺名称" rules={[{ required: true, message: '请输入店铺名称' }]}>
+                                    <Input maxLength={100} />
+                                </Form.Item>
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Form.Item name="companyName" label="公司/个体名称" rules={[{ required: true, message: '请输入公司/个体名称' }]}>
+                                    <Input maxLength={100} />
+                                </Form.Item>
+                            </Col>
+                        </Row>
 
                         <Form.Item name="shopDescription" label="店铺描述">
-                            <TextArea rows={4} maxLength={5000} showCount />
+                            <TextArea rows={4} maxLength={5000} showCount placeholder="介绍主营品牌、材质优势、安装交付能力等" />
                         </Form.Item>
 
-                        <Form.Item name="businessLicenseNo" label="统一社会信用代码 / 营业执照号" rules={[{ required: true, message: '请输入统一社会信用代码 / 营业执照号' }]}>
-                            <Input maxLength={50} />
+                        <Row gutter={[16, 0]}>
+                            <Col xs={24} md={12}>
+                                <Form.Item name="contactName" label="联系人" rules={[{ required: true, message: '请输入联系人' }]}>
+                                    <Input maxLength={50} />
+                                </Form.Item>
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Form.Item
+                                    name="contactPhone"
+                                    label="联系手机号"
+                                    rules={[
+                                        { required: true, message: '请输入联系电话' },
+                                        { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
+                                    ]}
+                                >
+                                    <Input maxLength={11} />
+                                </Form.Item>
+                            </Col>
+                        </Row>
+
+                        <Form.Item name="address" label="门店地址" rules={[{ required: true, message: '请输入门店地址' }]}>
+                            <Input maxLength={300} />
                         </Form.Item>
+
+                        <Form.Item
+                            name="businessHoursRanges"
+                            label="营业时间"
+                            rules={[{
+                                validator: (_, value) => normalizeRangesForForm(value).length > 0
+                                    ? Promise.resolve()
+                                    : Promise.reject(new Error('请至少填写 1 条营业时间')),
+                            }]}
+                        >
+                            <BusinessHoursEditor />
+                        </Form.Item>
+                        {!!profileForm.getFieldValue('businessHours') && normalizedRanges.length === 0 && (
+                            <div style={{ marginTop: -12, marginBottom: 16, color: '#64748b', fontSize: 12 }}>
+                                检测到历史营业时间文本：{String(profileForm.getFieldValue('businessHours') || '')}，请确认并补充为结构化时段。
+                            </div>
+                        )}
+
+                        <Form.Item name="businessHours" hidden>
+                            <Input />
+                        </Form.Item>
+
+                        <Button type="primary" htmlType="submit" loading={savingProfile}>
+                            保存基础资料
+                        </Button>
+                    </Form>
+                </MerchantSectionCard>
+
+                <MerchantSectionCard title="主体资质资料">
+                    <Form form={profileForm} layout="vertical" onFinish={handleSaveProfile} disabled={loading}>
+                        <Row gutter={[16, 0]}>
+                            <Col xs={24} md={12}>
+                                <Form.Item name="businessLicenseNo" label="统一社会信用代码 / 营业执照号" rules={[{ required: true, message: '请输入营业执照号' }]}>
+                                    <Input maxLength={50} />
+                                </Form.Item>
+                            </Col>
+                            <Col xs={24} md={12}>
+                                <Form.Item name="legalPersonName" label="法人/经营者姓名" rules={[{ required: true, message: '请输入法人/经营者姓名' }]}>
+                                    <Input maxLength={50} />
+                                </Form.Item>
+                            </Col>
+                        </Row>
 
                         <Form.Item
                             name="businessLicense"
                             label="营业执照图片"
                             valuePropName="fileList"
                             getValueProps={(value: unknown) => ({ fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [] })}
-                            getValueFromEvent={() => form.getFieldValue('businessLicense')}
+                            getValueFromEvent={() => profileForm.getFieldValue('businessLicense')}
                             rules={[{ required: true, message: '请上传营业执照图片' }]}
                         >
                             <Upload
@@ -196,7 +325,7 @@ const MaterialShopSettings: React.FC = () => {
                                 maxCount={1}
                                 customRequest={uploadBusinessLicense}
                                 onRemove={() => {
-                                    form.setFieldsValue({ businessLicense: undefined });
+                                    profileForm.setFieldsValue({ businessLicense: undefined });
                                     return true;
                                 }}
                             >
@@ -204,57 +333,13 @@ const MaterialShopSettings: React.FC = () => {
                             </Upload>
                         </Form.Item>
 
-                        <Form.Item
-                            name="businessHoursRanges"
-                            label="营业时间"
-                            rules={[
-                                {
-                                    validator: (_, value) => normalizeRangesForForm(value).length > 0
-                                        ? Promise.resolve()
-                                        : Promise.reject(new Error('请至少填写 1 条营业时间')),
-                                },
-                            ]}
-                        >
-                            <BusinessHoursEditor />
-                        </Form.Item>
-                        {!!form.getFieldValue('businessHours') && normalizedRanges.length === 0 && (
-                            <div style={{ marginTop: -12, marginBottom: 16, color: '#64748b', fontSize: 12 }}>
-                                检测到历史营业时间文本：{String(form.getFieldValue('businessHours') || '')}，请确认并补充为结构化时段。
-                            </div>
-                        )}
-
-                        <Form.Item name="legalPersonName" label="法人/经营者姓名" rules={[{ required: true, message: '请输入法人/经营者姓名' }]}>
-                            <Input maxLength={50} />
-                        </Form.Item>
-
-                        <Form.Item
-                            name="contactPhone"
-                            label="联系手机号"
-                            rules={[
-                                { required: true, message: '请输入联系电话' },
-                                { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
-                            ]}
-                        >
-                            <Input maxLength={11} />
-                        </Form.Item>
-
-                        <Form.Item name="address" label="门店地址" rules={[{ required: true, message: '请输入门店地址' }]}>
-                            <Input maxLength={300} />
-                        </Form.Item>
-
-                        <Form.Item name="businessHours" hidden>
-                            <Input />
-                        </Form.Item>
-
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit" loading={saving}>
-                                保存资料
-                            </Button>
-                        </Form.Item>
+                        <Button type="primary" htmlType="submit" loading={savingProfile}>
+                            保存资质资料
+                        </Button>
                     </Form>
-                </Card>
-            </Content>
-        </Layout>
+                </MerchantSectionCard>
+            </MerchantContentPanel>
+        </MerchantPageShell>
     );
 };
 

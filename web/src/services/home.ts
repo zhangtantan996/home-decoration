@@ -134,10 +134,13 @@ interface HomepageResponse {
 function toProviderVM(dto: HomepageProviderDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
   const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit);
+  const displayName = role === 'company'
+    ? (dto.companyName || dto.nickname || '未命名服务商')
+    : (dto.nickname || dto.companyName || '未命名服务商');
   return {
     id: dto.id,
     role,
-    name: dto.nickname || dto.companyName || '未命名服务商',
+    name: displayName,
     orgLabel: role === 'designer' ? '设计师' : role === 'company' ? '装修公司' : '工长施工',
     avatar: dto.avatar || 'https://placehold.co/1200x900/e7eaef/0f172a?text=HZ',
     summary: dto.specialty || '支持前期沟通、现场勘测与分项报价。',
