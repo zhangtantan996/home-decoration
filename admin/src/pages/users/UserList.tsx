@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Input, Select, Button, Space, message, Switch, Modal, Form, Tooltip } from 'antd';
+import { Table, Card, Input, Select, Button, Space, message, Switch, Modal, Form, Tooltip, Alert } from 'antd';
 import { SearchOutlined, ReloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { adminUserApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
@@ -13,6 +13,8 @@ interface User {
     nickname: string;
     avatar?: string;
     userType: number;
+    roleType?: string;
+    roleLabel?: string;
     status: number;
     createdAt: string;
 }
@@ -25,11 +27,14 @@ const getErrorMessage = (error: unknown, fallback: string) => {
     return fallback;
 };
 
-const userTypeMap: Record<number, { text: string; color: string }> = {
-    1: { text: '业主', color: 'blue' },
-    2: { text: '服务商', color: 'green' },
-    3: { text: '工长', color: 'orange' },
-    4: { text: '管理员', color: 'red' },
+const userRoleMap: Record<string, { text: string; color: string }> = {
+    owner: { text: '业主', color: 'blue' },
+    designer: { text: '设计师', color: 'cyan' },
+    company: { text: '装修公司', color: 'green' },
+    foreman: { text: '工长', color: 'orange' },
+    material_shop: { text: '主材商', color: 'purple' },
+    admin: { text: '管理员', color: 'red' },
+    provider: { text: '服务商', color: 'green' },
 };
 
 const dirtyKeywords = ['[TEST]', '测试', '验收', '联调', 'fixture', 'acceptance', 'smoke', 'demo'];
@@ -37,6 +42,11 @@ const dirtyKeywords = ['[TEST]', '测试', '验收', '联调', 'fixture', 'accep
 const isDirtyCandidate = (user: User) =>
     dirtyKeywords.some((keyword) => (user.nickname || '').toLowerCase().includes(keyword.toLowerCase()))
     || (user.phone || '').startsWith('19999');
+
+const roleTypeHelpText: Record<string, string> = {
+    company: '这里显示的是已绑定登录账号的装修公司用户，不是服务商实体数据。未认领入驻的装修公司请到“服务商管理”里处理账号绑定。',
+    material_shop: '这里显示的是已绑定登录账号的主材商用户，不是主材门店实体数据。未补全账号的主材商请到“主材门店”里执行“补全主材商账号”。',
+};
 
 const UserList: React.FC = () => {
     const { admin } = useAuthStore();
@@ -46,7 +56,7 @@ const UserList: React.FC = () => {
     const [page, setPage] = useState(1);
     const [pageSize] = useState(10);
     const [keyword, setKeyword] = useState('');
-    const [userType, setUserType] = useState<number | undefined>();
+    const [roleType, setRoleType] = useState<string | undefined>();
     const [modalVisible, setModalVisible] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -54,12 +64,12 @@ const UserList: React.FC = () => {
 
     useEffect(() => {
         loadData();
-    }, [page, userType]);
+    }, [page, roleType]);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            const res = await adminUserApi.list({ page, pageSize, keyword, userType }) as any;
+            const res = await adminUserApi.list({ page, pageSize, keyword, roleType }) as any;
             if (res.code === 0) {
                 setUsers(res.data.list || []);
                 setTotal(res.data.total || 0);
@@ -186,9 +196,9 @@ const UserList: React.FC = () => {
         },
         {
             title: '用户类型',
-            dataIndex: 'userType',
-            render: (val: number) => {
-                const config = userTypeMap[val];
+            key: 'roleType',
+            render: (_: unknown, record: User) => {
+                const config = userRoleMap[record.roleType || 'owner'];
                 return config ? <StatusTag status="info" text={config.text} /> : '-';
             },
         },
@@ -255,12 +265,14 @@ const UserList: React.FC = () => {
                     placeholder="用户类型"
                     allowClear
                     style={{ width: 120 }}
-                    value={userType}
-                    onChange={setUserType}
+                    value={roleType}
+                    onChange={setRoleType}
                     options={[
-                        { value: 1, label: '业主' },
-                        { value: 2, label: '服务商' },
-                        { value: 3, label: '工长' },
+                        { value: 'owner', label: '业主' },
+                        { value: 'designer', label: '设计师' },
+                        { value: 'company', label: '装修公司' },
+                        { value: 'foreman', label: '工长' },
+                        { value: 'material_shop', label: '主材商' },
                     ]}
                 />
                 <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
@@ -285,6 +297,15 @@ const UserList: React.FC = () => {
                 </div>
             </ToolbarCard>
 
+            {roleType && roleTypeHelpText[roleType] && (
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={roleTypeHelpText[roleType]}
+                />
+            )}
+
             <Card className="hz-table-card">
                 <Table
                     rowSelection={admin?.isSuperAdmin ? {
@@ -299,6 +320,11 @@ const UserList: React.FC = () => {
                     rowKey="id"
                     loading={loading}
                     scroll={{ x: 'max-content' }}
+                    locale={{
+                        emptyText: roleType && roleTypeHelpText[roleType]
+                            ? '当前筛选下暂无已绑定账号，请先到对应实体管理页补全/认领账号。'
+                            : '暂无数据',
+                    }}
                     pagination={{
                         current: page,
                         pageSize,
@@ -323,11 +349,11 @@ const UserList: React.FC = () => {
                     <Form.Item name="nickname" label="昵称">
                         <Input placeholder="请输入昵称" />
                     </Form.Item>
-                    <Form.Item name="userType" label="用户类型" rules={[{ required: true }]}>
+                    <Form.Item name="userType" label="基础账号类型" extra="用户管理只维护基础账号类型；设计师/工长/装修公司/主材商以已绑定身份为准。" rules={[{ required: true }]}>
                         <Select options={[
                             { value: 1, label: '业主' },
-                            { value: 2, label: '服务商' },
-                            { value: 3, label: '工长' },
+                            { value: 2, label: '商家账号' },
+                            { value: 4, label: '管理员' },
                         ]} />
                     </Form.Item>
                     <Form.Item name="status" label="状态">

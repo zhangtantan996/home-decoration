@@ -140,11 +140,15 @@ export const projectApi = {
 // ==================== Admin 项目管理 ====================
 export const adminProjectApi = {
     // 项目列表和详情
-    list: (params?: { page?: number; pageSize?: number; status?: number; keyword?: string }) =>
+    list: (params?: { page?: number; pageSize?: number; status?: number; keyword?: string; businessStage?: string }) =>
         api.get('/admin/projects', { params }),
     detail: (id: string | number) => api.get(`/admin/projects/${id}`),
     updateStatus: (id: string | number, data: { status: number; currentPhase?: string }) =>
         api.put(`/admin/projects/${id}/status`, data),
+    confirmConstruction: (id: string | number, data: { constructionProviderId?: number; foremanId?: number }) =>
+        api.post(`/admin/projects/${id}/construction/confirm`, data),
+    confirmConstructionQuote: (id: string | number, data: { constructionQuote: number; materialMethod?: string; plannedStartDate?: string; expectedEnd?: string }) =>
+        api.post(`/admin/projects/${id}/construction/quote/confirm`, data),
 
     // 阶段管理
     getPhases: (id: string | number) => api.get(`/admin/projects/${id}/phases`),
@@ -279,6 +283,164 @@ export const adminComplaintApi = {
         api.post<AdminApiResponse<AdminComplaintItem>, AdminApiResponse<AdminComplaintItem>>(`/admin/complaints/${id}/resolve`, data),
 };
 
+export interface AdminProjectAuditItem {
+    id: number;
+    projectId: number;
+    auditType: 'dispute' | 'refund' | 'close' | string;
+    status: 'pending' | 'in_progress' | 'completed' | string;
+    complaintId?: number;
+    refundApplicationId?: number;
+    auditNotes?: string;
+    conclusion?: 'continue' | 'refund' | 'partial_refund' | 'close' | string;
+    conclusionReason?: string;
+    executionPlan?: Record<string, unknown> | null;
+    adminId?: number;
+    createdAt: string;
+    completedAt?: string;
+    project?: Record<string, unknown>;
+    complaint?: Record<string, unknown>;
+    escrow?: Record<string, unknown>;
+    refundApplication?: Record<string, unknown>;
+}
+
+export interface AdminProjectAuditArbitratePayload {
+    conclusion: 'continue' | 'refund' | 'partial_refund' | 'close';
+    conclusionReason: string;
+    executionPlan?: Record<string, unknown>;
+}
+
+export interface AdminFinanceOverviewStatistics {
+    intentFee?: number;
+    designFee?: number;
+    constructionFee?: number;
+    [key: string]: number | undefined;
+}
+
+export interface AdminFinanceOverviewData {
+    totalBalance: number;
+    pendingRelease: number;
+    frozenAmount: number;
+    releasedToday: number;
+    statistics?: AdminFinanceOverviewStatistics;
+}
+
+export interface AdminFinanceTransactionItem {
+    id: number;
+    orderId?: string;
+    type: string;
+    amount: number;
+    projectId?: number;
+    escrowId?: number;
+    milestoneId?: number;
+    fromUserId?: number;
+    fromAccount?: string;
+    toUserId?: number;
+    toAccount?: string;
+    status: number;
+    remark?: string;
+    completedAt?: string;
+    createdAt: string;
+}
+
+export interface AdminFinanceTransactionQuery {
+    page?: number;
+    pageSize?: number;
+    type?: string;
+    projectId?: number;
+    startDate?: string;
+    endDate?: string;
+}
+
+export interface FreezeFundsInput {
+    projectId: number;
+    amount: number;
+    reason: string;
+}
+
+export interface UnfreezeFundsInput {
+    projectId: number;
+    amount: number;
+    reason: string;
+}
+
+export interface ManualReleaseInput {
+    projectId: number;
+    milestoneId: number;
+    amount?: number;
+    reason: string;
+}
+
+export interface AdminAuditLogRecord {
+    id: number;
+    recordKind?: 'request' | 'business' | string;
+    operatorType?: string;
+    operatorId?: number;
+    operationType?: string;
+    resourceType?: string;
+    resourceId?: number;
+    reason?: string;
+    result?: string;
+    beforeState?: Record<string, unknown> | null;
+    afterState?: Record<string, unknown> | null;
+    metadata?: Record<string, unknown> | null;
+    action?: string;
+    requestBody?: string;
+    clientIp?: string;
+    userAgent?: string;
+    statusCode?: number;
+    duration?: number;
+    createdAt: string;
+}
+
+export interface AdminAuditLogQuery {
+    page?: number;
+    pageSize?: number;
+    operationType?: string;
+    resourceType?: string;
+    startDate?: string;
+    endDate?: string;
+}
+
+export const adminProjectAuditApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: string; auditType?: string }) =>
+        api.get<AdminApiResponse<AdminListData<AdminProjectAuditItem>>, AdminApiResponse<AdminListData<AdminProjectAuditItem>>>('/admin/project-audits', { params }),
+    detail: (id: number) =>
+        api.get<AdminApiResponse<{ audit: AdminProjectAuditItem } | AdminProjectAuditItem>, AdminApiResponse<{ audit: AdminProjectAuditItem } | AdminProjectAuditItem>>(`/admin/project-audits/${id}`),
+    arbitrate: (id: number, data: AdminProjectAuditArbitratePayload) =>
+        api.post<AdminApiResponse<AdminProjectAuditItem>, AdminApiResponse<AdminProjectAuditItem>>(`/admin/project-audits/${id}/arbitrate`, data),
+};
+
+export interface AdminRefundApplicationItem {
+    id: number;
+    bookingId: number;
+    projectId?: number;
+    orderId?: number;
+    userId: number;
+    refundType: 'intent_fee' | 'design_fee' | 'construction_fee' | 'full' | string;
+    requestedAmount: number;
+    approvedAmount?: number;
+    reason: string;
+    evidence?: string[] | string;
+    status: 'pending' | 'approved' | 'rejected' | 'completed' | string;
+    adminId?: number;
+    adminNotes?: string;
+    createdAt: string;
+    approvedAt?: string;
+    rejectedAt?: string;
+    completedAt?: string;
+}
+
+export const adminRefundApi = {
+    list: (params?: { page?: number; pageSize?: number; status?: string }) =>
+        api.get<AdminApiResponse<AdminListData<AdminRefundApplicationItem>>, AdminApiResponse<AdminListData<AdminRefundApplicationItem>>>('/admin/refunds', { params }),
+    detail: (id: number) =>
+        api.get<AdminApiResponse<{ refundApplication: AdminRefundApplicationItem } | AdminRefundApplicationItem>, AdminApiResponse<{ refundApplication: AdminRefundApplicationItem } | AdminRefundApplicationItem>>(`/admin/refunds/${id}`),
+    approve: (id: number, data: { adminNotes?: string; approvedAmount?: number }) =>
+        api.post<AdminApiResponse<AdminRefundApplicationItem>, AdminApiResponse<AdminRefundApplicationItem>>(`/admin/refunds/${id}/approve`, data),
+    reject: (id: number, data: { adminNotes: string }) =>
+        api.post<AdminApiResponse<AdminRefundApplicationItem>, AdminApiResponse<AdminRefundApplicationItem>>(`/admin/refunds/${id}/reject`, data),
+};
+
 // ==================== Admin 争议预约管理 ====================
 export const adminDisputeApi = {
     // 争议预约列表
@@ -314,7 +476,7 @@ export const adminStatsApi = {
 
 // 用户管理
 export const adminUserApi = {
-    list: (params?: { page?: number; pageSize?: number; keyword?: string; userType?: number }) =>
+    list: (params?: { page?: number; pageSize?: number; keyword?: string; userType?: number; roleType?: string }) =>
         api.get('/admin/users', { params }),
     detail: (id: number) => api.get(`/admin/users/${id}`),
     create: (data: any) => api.post('/admin/users', data),
@@ -349,6 +511,9 @@ export interface AdminProviderListItem {
     establishedYear: number;
     certifications: string;
     serviceArea: string;
+    isSettled?: boolean;
+    collectedSource?: string;
+    sourceLabel?: string;
     visibility?: AdminAuditVisibility;
     actions?: AdminAuditActions;
     legacyInfo?: AdminAuditLegacyInfo;
@@ -356,8 +521,13 @@ export interface AdminProviderListItem {
 
 export interface AdminMaterialShopListItem {
     id: number;
+    userId?: number;
+    status?: number | null;
     type: string;
     name: string;
+    companyName?: string;
+    contactName?: string;
+    contactPhone?: string;
     cover: string;
     brandLogo: string;
     rating: number;
@@ -370,32 +540,65 @@ export interface AdminMaterialShopListItem {
     openTime: string;
     tags: string;
     isVerified: boolean;
+    isSettled?: boolean;
+    collectedSource?: string;
+    userPhone?: string;
+    userNickname?: string;
+    accountBound?: boolean;
+    loginEnabled?: boolean;
+    sourceLabel?: string;
+    sourceApplicationId?: number;
     createdAt: string;
     visibility?: AdminAuditVisibility;
     actions?: AdminAuditActions;
     legacyInfo?: AdminAuditLegacyInfo;
 }
 
+export interface AdminMaterialShopAccountCompletionResult {
+    shopId: number;
+    userId: number;
+    phone: string;
+    createdUser: boolean;
+    sourceLabel: string;
+    loginEnabled: boolean;
+}
+
+export interface AdminProviderSettlementResult {
+    providerId: number;
+    userId: number;
+    sourceLabel: string;
+    loginEnabled: boolean;
+    phone?: string;
+    createdUser?: boolean;
+}
+
 // 服务商管理
 export const adminProviderApi = {
-    list: (params?: { page?: number; pageSize?: number; type?: number; verified?: boolean }) =>
+    list: (params?: { page?: number; pageSize?: number; type?: number; verified?: boolean; isSettled?: boolean }) =>
         api.get<AdminApiResponse<AdminListData<AdminProviderListItem>>, AdminApiResponse<AdminListData<AdminProviderListItem>>>('/admin/providers', { params }),
     detail: (id: number) => api.get(`/admin/providers/${id}`),
     create: (data: any) => api.post('/admin/providers', data),
     update: (id: number, data: any) => api.put(`/admin/providers/${id}`, data),
     verify: (id: number, verified: boolean) => api.patch(`/admin/providers/${id}/verify`, { verified }),
     updateStatus: (id: number, status: number) => api.patch(`/admin/providers/${id}/status`, { status }),
+    claimAccount: (id: number, data: { phone: string; contactName?: string; nickname?: string }) =>
+        api.post<AdminApiResponse<AdminProviderSettlementResult>, AdminApiResponse<AdminProviderSettlementResult>>(`/admin/providers/${id}/claim-account`, data),
+    completeSettlement: (id: number) =>
+        api.post<AdminApiResponse<AdminProviderSettlementResult>, AdminApiResponse<AdminProviderSettlementResult>>(`/admin/providers/${id}/complete-settlement`),
 };
 
 // 主材门店管理
 export const adminMaterialShopApi = {
-    list: (params?: { page?: number; pageSize?: number; type?: string }) =>
+    list: (params?: { page?: number; pageSize?: number; type?: string; isSettled?: boolean }) =>
         api.get<AdminApiResponse<AdminListData<AdminMaterialShopListItem>>, AdminApiResponse<AdminListData<AdminMaterialShopListItem>>>('/admin/material-shops', { params }),
     detail: (id: number) => api.get(`/admin/material-shops/${id}`),
     create: (data: any) => api.post('/admin/material-shops', data),
     update: (id: number, data: any) => api.put(`/admin/material-shops/${id}`, data),
     delete: (id: number) => api.delete(`/admin/material-shops/${id}`),
     verify: (id: number, verified: boolean) => api.patch(`/admin/material-shops/${id}/verify`, { verified }),
+    updateStatus: (id: number, status: number) => api.patch(`/admin/material-shops/${id}/status`, { status }),
+    completeAccount: (id: number, data: { phone: string; contactName?: string; nickname?: string }) =>
+        api.post<AdminApiResponse<AdminMaterialShopAccountCompletionResult>, AdminApiResponse<AdminMaterialShopAccountCompletionResult>>(`/admin/material-shops/${id}/complete-account`, data),
 };
 
 // 预约管理
@@ -417,6 +620,13 @@ export const adminReviewApi = {
 export const adminLogApi = {
     list: (params?: { page?: number; pageSize?: number; adminId?: number; action?: string }) =>
         api.get('/admin/logs', { params }),
+};
+
+export const adminAuditLogApi = {
+    list: (params?: AdminAuditLogQuery) =>
+        api.get<AdminApiResponse<AdminListData<AdminAuditLogRecord>>, AdminApiResponse<AdminListData<AdminAuditLogRecord>>>('/admin/audit-logs', { params }),
+    export: (params?: Omit<AdminAuditLogQuery, 'page' | 'pageSize'>) =>
+        api.get<Blob, Blob>('/admin/audit-logs/export', { params, responseType: 'blob' }),
 };
 
 // 管理员管理
@@ -669,10 +879,20 @@ export const adminAuditApi = {
 
 // 财务管理
 export const adminFinanceApi = {
+    overview: () =>
+        api.get<AdminApiResponse<AdminFinanceOverviewData>, AdminApiResponse<AdminFinanceOverviewData>>('/admin/finance/overview'),
     escrowAccounts: (params?: { page?: number; pageSize?: number }) =>
         api.get('/admin/finance/escrow-accounts', { params }),
-    transactions: (params?: { page?: number; pageSize?: number; type?: string }) =>
-        api.get('/admin/finance/transactions', { params }),
+    transactions: (params?: AdminFinanceTransactionQuery) =>
+        api.get<AdminApiResponse<AdminListData<AdminFinanceTransactionItem> & { page?: number; pageSize?: number }>, AdminApiResponse<AdminListData<AdminFinanceTransactionItem> & { page?: number; pageSize?: number }>>('/admin/finance/transactions', { params }),
+    exportTransactions: (params?: Omit<AdminFinanceTransactionQuery, 'page' | 'pageSize'>) =>
+        api.get<Blob, Blob>('/admin/finance/transactions/export', { params, responseType: 'blob' }),
+    freeze: (data: FreezeFundsInput) =>
+        api.post<AdminApiResponse, AdminApiResponse>('/admin/finance/freeze', data),
+    unfreeze: (data: UnfreezeFundsInput) =>
+        api.post<AdminApiResponse, AdminApiResponse>('/admin/finance/unfreeze', data),
+    manualRelease: (data: ManualReleaseInput) =>
+        api.post<AdminApiResponse, AdminApiResponse>('/admin/finance/manual-release', data),
     withdraw: (accountId: number, data: any) => api.post(`/admin/finance/escrow-accounts/${accountId}/withdraw`, data),
 };
 
@@ -690,6 +910,11 @@ export const adminRiskApi = {
 export const adminSettingsApi = {
     get: () => api.get('/admin/settings'),
     update: (data: any) => api.put('/admin/settings', data),
+};
+
+export const adminSystemConfigApi = {
+    list: () => api.get('/admin/system-configs'),
+    batchUpdate: (data: Record<string, string>) => api.put('/admin/system-configs/batch', data),
 };
 
 // 数据导出

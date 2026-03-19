@@ -21,6 +21,8 @@ export interface QuoteLibraryItem {
     keywordsJson?: string;
     erpMappingJson?: string;
     sourceMetaJson?: string;
+    extensionsJson?: string;
+    required?: boolean;
 }
 
 export interface QuoteCategory {
@@ -99,6 +101,9 @@ export interface QuoteListSummary {
     invitationCount: number;
     submissionCount: number;
     updatedAt: string;
+    businessStage?: string;
+    flowSummary?: string;
+    availableActions?: string[];
 }
 
 export interface QuoteListItem {
@@ -115,6 +120,8 @@ export interface QuoteListItem {
     sourceType?: string;
     matchedStandardItemId?: number;
     missingMappingFlag?: boolean;
+    extensionsJson?: string;
+    required?: boolean;
 }
 
 export interface QuoteInvitation {
@@ -129,11 +136,16 @@ export interface QuoteInvitation {
 export interface QuotePriceBookItem {
     id: number;
     standardItemId: number;
+    standardCode?: string;
+    standardItemName?: string;
+    categoryL1?: string;
+    categoryL2?: string;
     unit: string;
     unitPriceCent: number;
     minChargeCent: number;
     remark?: string;
     status: number;
+    required?: boolean;
 }
 
 export interface QuotePriceBookDetail {
@@ -186,6 +198,38 @@ export interface QuoteComparisonResponse {
     quoteList: QuoteListSummary;
     items: QuoteListItem[];
     submissions: QuoteComparisonSubmission[];
+    businessStage?: string;
+    flowSummary?: string;
+    availableActions?: string[];
+}
+
+export interface QuoteSubmissionRevisionItem {
+    quoteListItemId: number;
+    generatedUnitPriceCent?: number;
+    unitPriceCent?: number;
+    amountCent?: number;
+    adjustedFlag?: boolean;
+    missingPriceFlag?: boolean;
+    missingMappingFlag?: boolean;
+    minChargeAppliedFlag?: boolean;
+    remark?: string;
+}
+
+export interface QuoteSubmissionRevisionRecord {
+    id: number;
+    quoteSubmissionId: number;
+    quoteListId: number;
+    providerId: number;
+    revisionNo: number;
+    action: string;
+    previousStatus: string;
+    nextStatus: string;
+    previousTotalCent: number;
+    nextTotalCent: number;
+    changeReason?: string;
+    createdAt: string;
+    previousItems: QuoteSubmissionRevisionItem[];
+    nextItems: QuoteSubmissionRevisionItem[];
 }
 
 export interface AdminQuoteListDetail {
@@ -193,6 +237,9 @@ export interface AdminQuoteListDetail {
     items: QuoteListItem[];
     invitations: QuoteInvitation[];
     submissionCount: number;
+    businessStage?: string;
+    flowSummary?: string;
+    availableActions?: string[];
 }
 
 const unwrapEnvelope = <T,>(payload: unknown, fallbackMessage: string): T => {
@@ -217,6 +264,11 @@ export const adminQuoteApi = {
             await api.post('/admin/quote-categories', payload),
             '创建报价类目失败'
         ),
+    deleteCategory: async (id: number) =>
+        unwrapEnvelope<{ id: number }>(
+            await api.delete(`/admin/quote-categories/${id}`),
+            '删除报价类目失败'
+        ),
     importLibrary: async (filePath?: string) =>
         unwrapEnvelope<{ imported: number; updated: number; skipped: number; filePath: string }>(
             await api.post('/admin/quote-library/import', filePath ? { filePath } : {}),
@@ -227,7 +279,7 @@ export const adminQuoteApi = {
             await api.post('/admin/quote-library/import-preview', filePath ? { filePath } : {}),
             '预览导入失败'
         ),
-    listLibraryItems: async (params?: { page?: number; pageSize?: number; keyword?: string; categoryL1?: string; status?: number }) =>
+    listLibraryItems: async (params?: { page?: number; pageSize?: number; keyword?: string; categoryL1?: string; categoryId?: number; status?: number }) =>
         unwrapEnvelope<{ list: QuoteLibraryItem[]; total: number; page: number; pageSize: number }>(
             await api.get('/admin/quote-library/items', { params }),
             '获取报价库失败'
@@ -240,6 +292,7 @@ export const adminQuoteApi = {
         unit: string;
         referencePriceCent?: number;
         pricingNote?: string;
+        required?: boolean;
         status?: number;
         keywords?: string[];
         erpMapping?: unknown;
@@ -249,6 +302,11 @@ export const adminQuoteApi = {
             await api.post('/admin/quote-library/items', payload),
             '创建标准项失败'
         ),
+    deleteLibraryItem: async (id: number) =>
+        unwrapEnvelope<{ id: number }>(
+            await api.delete(`/admin/quote-library/items/${id}`),
+            '删除标准项失败'
+        ),
     updateLibraryItem: async (id: number, payload: {
         categoryId?: number;
         standardCode?: string;
@@ -257,6 +315,7 @@ export const adminQuoteApi = {
         unit: string;
         referencePriceCent?: number;
         pricingNote?: string;
+        required?: boolean;
         status?: number;
         keywords?: string[];
         erpMapping?: unknown;
@@ -376,6 +435,11 @@ export const adminQuoteApi = {
         unwrapEnvelope<QuoteComparisonResponse>(
             await api.get(`/admin/quote-tasks/${quoteTaskId}/comparison`),
             '获取报价任务对比失败'
+        ),
+    getSubmissionRevisions: async (submissionId: number) =>
+        unwrapEnvelope<{ list: QuoteSubmissionRevisionRecord[] }>(
+            await api.get(`/admin/quote-submissions/${submissionId}/revisions`),
+            '获取报价改动历史失败'
         ),
     submitTaskToUser: async (quoteTaskId: number, submissionId: number) =>
         unwrapEnvelope<QuoteListSummary>(

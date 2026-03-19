@@ -1,14 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Descriptions, Form, Input, Modal, Space, Table, Tag, message, Switch } from 'antd';
 
+import { COMPLAINT_STATUS_META } from '../../constants/statuses';
 import { adminComplaintApi, type AdminComplaintItem } from '../../services/api';
-
-const statusMap: Record<string, { text: string; color: string }> = {
-    submitted: { text: '待处理', color: 'gold' },
-    processing: { text: '处理中', color: 'blue' },
-    resolved: { text: '已解决', color: 'green' },
-    closed: { text: '已关闭', color: 'default' },
-};
 
 const ComplaintManagement: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -83,7 +77,7 @@ const ComplaintManagement: React.FC = () => {
                             title: '状态',
                             dataIndex: 'status',
                             render: (value: string) => {
-                                const config = statusMap[value] || { text: value, color: 'default' };
+                                const config = COMPLAINT_STATUS_META[value] || { text: value, color: 'default' };
                                 return <Tag color={config.color}>{config.text}</Tag>;
                             },
                         },
@@ -127,7 +121,7 @@ const ComplaintManagement: React.FC = () => {
                     <Descriptions bordered column={2}>
                         <Descriptions.Item label="标题" span={2}>{current.title}</Descriptions.Item>
                         <Descriptions.Item label="项目ID">{current.projectId}</Descriptions.Item>
-                        <Descriptions.Item label="状态">{statusMap[current.status]?.text || current.status}</Descriptions.Item>
+                        <Descriptions.Item label="状态">{COMPLAINT_STATUS_META[current.status]?.text || current.status}</Descriptions.Item>
                         <Descriptions.Item label="类别">{current.category}</Descriptions.Item>
                         <Descriptions.Item label="用户ID">{current.userId}</Descriptions.Item>
                         <Descriptions.Item label="商家ID">{current.providerId}</Descriptions.Item>

@@ -8,19 +8,7 @@ import MerchantApplicationDetail from './components/MerchantApplicationDetail';
 import AuditStatusSummary from './components/AuditStatusSummary';
 import VisibilityStatusPanel from './components/VisibilityStatusPanel';
 import AuditDetailSection from './components/AuditDetailSection';
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待审核', color: 'orange' },
-    1: { text: '已通过', color: 'green' },
-    2: { text: '已拒绝', color: 'red' },
-    3: { text: '已停用', color: 'default' },
-};
-
-const providerSubTypeMap: Record<string, { text: string; color: string }> = {
-    designer: { text: '设计师', color: 'purple' },
-    company: { text: '装修公司', color: 'blue' },
-    foreman: { text: '工长', color: 'gold' },
-};
+import { IDENTITY_APPLICATION_STATUS_META, IDENTITY_APPLICATION_STATUS_OPTIONS, IDENTITY_TYPE_LABELS, PROVIDER_ROLE_META } from '../../constants/statuses';
 
 const formatDateTime = (value?: string) => {
     if (!value) {
@@ -78,7 +66,7 @@ const IdentityApplicationAudit: React.FC = () => {
     }, [page, statusFilter]);
 
     const statusTag = (status: number) => {
-        const config = statusMap[status];
+        const config = IDENTITY_APPLICATION_STATUS_META[status];
         if (!config) {
             return <Tag>{status}</Tag>;
         }
@@ -90,7 +78,7 @@ const IdentityApplicationAudit: React.FC = () => {
             return <Tag>未指定</Tag>;
         }
         const key = providerSubType.toLowerCase();
-        const config = providerSubTypeMap[key];
+        const config = PROVIDER_ROLE_META[key];
         if (!config) {
             return <Tag>{providerSubType}</Tag>;
         }
@@ -187,11 +175,11 @@ const IdentityApplicationAudit: React.FC = () => {
         {
             title: '身份类型',
             dataIndex: 'identityType',
-            render: (value: string) => (value === 'provider' ? <Tag color="cyan">服务商</Tag> : <Tag>{value}</Tag>),
+            render: (value: string) => <Tag color={value === 'provider' ? 'cyan' : 'default'}>{IDENTITY_TYPE_LABELS[value] || value}</Tag>,
             width: 120,
         },
         {
-            title: '服务商子类型',
+            title: '商家角色',
             dataIndex: 'providerSubType',
             render: (value: string) => providerSubTypeTag(value),
             width: 140,
@@ -253,7 +241,7 @@ const IdentityApplicationAudit: React.FC = () => {
         <div className="hz-page-stack">
             <PageHeader
                 title="身份申请审核"
-                description="审核用户新增身份申请，补充查看入驻资料与可见性解释。"
+                description="审核用户新增商家身份申请，补充查看入驻资料与可见性解释。"
             />
 
             <ToolbarCard>
@@ -265,13 +253,7 @@ const IdentityApplicationAudit: React.FC = () => {
                         setStatusFilter(value);
                     }}
                     style={{ width: 160 }}
-                    options={[
-                        { label: '待审核', value: 0 },
-                        { label: '已通过', value: 1 },
-                        { label: '已拒绝', value: 2 },
-                        { label: '已停用', value: 3 },
-                        { label: '全部', value: 'all' },
-                    ]}
+                    options={IDENTITY_APPLICATION_STATUS_OPTIONS}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
                 </div>
@@ -336,9 +318,9 @@ const IdentityApplicationAudit: React.FC = () => {
                                 <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
                                 <Descriptions.Item label="用户ID">{currentItem.userId}</Descriptions.Item>
                                 <Descriptions.Item label="身份类型">
-                                    {currentItem.identityType === 'provider' ? '服务商' : currentItem.identityType}
+                                    {IDENTITY_TYPE_LABELS[currentItem.identityType] || currentItem.identityType}
                                 </Descriptions.Item>
-                                <Descriptions.Item label="服务商子类型">
+                                <Descriptions.Item label="商家角色">
                                     {providerSubTypeTag(currentItem.providerSubType)}
                                 </Descriptions.Item>
                                 <Descriptions.Item label="状态">{statusTag(currentItem.status)}</Descriptions.Item>

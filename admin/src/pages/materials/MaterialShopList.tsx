@@ -1,27 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Card, Select, Tag, Button, Space, message, Switch, Modal, Form, Input, InputNumber, Tooltip, Typography, Descriptions } from 'antd';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined } from '@ant-design/icons';
 import { adminMaterialShopApi, type AdminMaterialShopListItem } from '../../services/api';
+import { PermissionWrapper } from '../../components/PermissionWrapper';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import AuditStatusSummary from '../audits/components/AuditStatusSummary';
 import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
+import {
+    ACCOUNT_BOUND_STATUS_META,
+    LEGACY_PATH_BADGE,
+    LOGIN_ENABLED_STATUS_META,
+    MATERIAL_SHOP_TYPE_META,
+    MATERIAL_SHOP_TYPE_OPTIONS,
+    PUBLIC_VISIBILITY_META,
+    SETTLED_FILTER_OPTIONS,
+    VERIFICATION_STATUS_META,
+} from '../../constants/statuses';
 
-interface MaterialShop extends AdminMaterialShopListItem {
-}
+interface MaterialShop extends AdminMaterialShopListItem {}
 
 const { Text } = Typography;
 
 const resolveVisibilityTag = (shop: MaterialShop) => {
     const isVisible = shop.visibility?.publicVisible;
-    if (isVisible === true) {
-        return <Tag color="success">可见</Tag>;
-    }
-    if (isVisible === false) {
-        return <Tag color="warning">不可见</Tag>;
-    }
-    return <Tag>未知</Tag>;
+    const config = PUBLIC_VISIBILITY_META[isVisible === true ? 'true' : isVisible === false ? 'false' : 'unknown'];
+    return <Tag color={config.color}>{config.text}</Tag>;
 };
+
+const renderStatusTag = (shop: MaterialShop) => (
+    <Tag color={(shop.status ?? 1) === 1 ? 'success' : 'error'}>
+        {(shop.status ?? 1) === 1 ? '正常' : '封禁'}
+    </Tag>
+);
 
 const renderBlockerSummary = (shop: MaterialShop) => {
     const blockers = shop.visibility?.blockers || [];
@@ -58,20 +69,25 @@ const MaterialShopList: React.FC = () => {
     const [page, setPage] = useState(1);
     const [pageSize] = useState(10);
     const [typeFilter, setTypeFilter] = useState<string | undefined>();
+    const [settledFilter, setSettledFilter] = useState<string | undefined>();
     const [modalVisible, setModalVisible] = useState(false);
     const [editingShop, setEditingShop] = useState<MaterialShop | null>(null);
     const [detailVisible, setDetailVisible] = useState(false);
     const [currentShop, setCurrentShop] = useState<MaterialShop | null>(null);
     const [form] = Form.useForm();
+    const [accountModalVisible, setAccountModalVisible] = useState(false);
+    const [accountSubmitting, setAccountSubmitting] = useState(false);
+    const [accountTargetShop, setAccountTargetShop] = useState<MaterialShop | null>(null);
+    const [accountForm] = Form.useForm();
 
     useEffect(() => {
         loadData();
-    }, [page, typeFilter]);
+    }, [page, typeFilter, settledFilter]);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            const res = await adminMaterialShopApi.list({ page, pageSize, type: typeFilter }) as any;
+            const res = await adminMaterialShopApi.list({ page, pageSize, type: typeFilter, isSettled: settledFilter === 'true' ? true : settledFilter === 'false' ? false : undefined }) as any;
             if (res.code === 0) {
                 setShops(res.data.list || []);
                 setTotal(res.data.total || 0);
@@ -88,6 +104,26 @@ const MaterialShopList: React.FC = () => {
         try {
             await adminMaterialShopApi.verify(id, verified);
             message.success(verified ? '已认证' : '已取消认证');
+            loadData();
+        } catch (error) {
+            message.error('操作失败');
+        }
+    };
+
+    const handleStatusChange = async (id: number, status: number) => {
+        try {
+            await adminMaterialShopApi.updateStatus(id, status);
+            message.success(status === 1 ? '已解封' : '已封禁');
+            loadData();
+        } catch (error) {
+            message.error('操作失败');
+        }
+    };
+
+    const handleToggleSettled = async (id: number, settled: boolean) => {
+        try {
+            await adminMaterialShopApi.update(id, { isSettled: settled });
+            message.success(settled ? '已标记为入驻' : '已标记为未入驻');
             loadData();
         } catch (error) {
             message.error('操作失败');
@@ -125,6 +161,16 @@ const MaterialShopList: React.FC = () => {
         setModalVisible(true);
     };
 
+    const openAccountModal = (shop: MaterialShop) => {
+        setAccountTargetShop(shop);
+        accountForm.setFieldsValue({
+            phone: shop.userPhone || '',
+            contactName: shop.contactName || '',
+            nickname: shop.userNickname || shop.contactName || shop.name || '',
+        });
+        setAccountModalVisible(true);
+    };
+
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
@@ -132,13 +178,36 @@ const MaterialShopList: React.FC = () => {
                 await adminMaterialShopApi.update(editingShop.id, values);
                 message.success('更新成功');
             } else {
-                await adminMaterialShopApi.create(values);
-                message.success('创建成功');
+                await adminMaterialShopApi.create({ ...values, isSettled: false });
+                message.success('创建成功（未入驻状态）');
             }
             setModalVisible(false);
             loadData();
-        } catch (error) {
-            message.error('操作失败');
+        } catch (error: any) {
+            message.error(error?.message || '操作失败');
+        }
+    };
+
+    const handleCompleteAccount = async () => {
+        if (!accountTargetShop) return;
+        try {
+            const values = await accountForm.validateFields();
+            setAccountSubmitting(true);
+            const res = await adminMaterialShopApi.completeAccount(accountTargetShop.id, values) as any;
+            if (res.code === 0) {
+                message.success(res.data?.createdUser ? '账号已创建并绑定' : '已绑定现有账号');
+                setAccountModalVisible(false);
+                setAccountTargetShop(null);
+                accountForm.resetFields();
+                loadData();
+            } else {
+                message.error(res.message || '补全账号失败');
+            }
+        } catch (error: any) {
+            if (error?.errorFields) return;
+            message.error(error?.message || '补全账号失败');
+        } finally {
+            setAccountSubmitting(false);
         }
     };
 
@@ -155,11 +224,49 @@ const MaterialShopList: React.FC = () => {
         {
             title: '类型',
             dataIndex: 'type',
-            render: (val: string) => (
-                <Tag color={val === 'brand' ? 'blue' : 'green'}>
-                    {val === 'brand' ? '品牌店' : '展示店'}
+            render: (val: string) => <Tag color={MATERIAL_SHOP_TYPE_META[val]?.color || 'default'}>{MATERIAL_SHOP_TYPE_META[val]?.text || val}</Tag>,
+        },
+        {
+            title: '入驻状态',
+            dataIndex: 'isSettled',
+            key: 'isSettled',
+            width: 100,
+            render: (val: boolean, record: MaterialShop) => (
+                <Switch
+                    checked={val ?? true}
+                    checkedChildren="已入驻"
+                    unCheckedChildren="未入驻"
+                    onChange={(checked) => handleToggleSettled(record.id, checked)}
+                />
+            ),
+        },
+        {
+            title: '账号状态',
+            key: 'accountBound',
+            render: (_: any, record: MaterialShop) => (
+                <Tag color={ACCOUNT_BOUND_STATUS_META[String(Boolean(record.accountBound))].color}>
+                    {ACCOUNT_BOUND_STATUS_META[String(Boolean(record.accountBound))].text}
                 </Tag>
             ),
+        },
+        {
+            title: '关联手机号',
+            dataIndex: 'userPhone',
+            render: (val: string) => val || '-',
+        },
+        {
+            title: '登录后台',
+            key: 'loginEnabled',
+            render: (_: any, record: MaterialShop) => (
+                <Tag color={LOGIN_ENABLED_STATUS_META[String(Boolean(record.loginEnabled))].color}>
+                    {LOGIN_ENABLED_STATUS_META[String(Boolean(record.loginEnabled))].text}
+                </Tag>
+            ),
+        },
+        {
+            title: '来源',
+            dataIndex: 'sourceLabel',
+            render: (val: string) => val || '-',
         },
         {
             title: '评分',
@@ -194,7 +301,7 @@ const MaterialShopList: React.FC = () => {
             render: (_: any, record: MaterialShop) => (
                 <Space size={4} wrap>
                     {resolveVisibilityTag(record)}
-                    {record.legacyInfo?.isLegacyPath && <Tag color="gold">legacy</Tag>}
+                    {record.legacyInfo?.isLegacyPath && <Tag color={LEGACY_PATH_BADGE.color}>{LEGACY_PATH_BADGE.text}</Tag>}
                 </Space>
             ),
         },
@@ -215,10 +322,29 @@ const MaterialShopList: React.FC = () => {
             ),
         },
         {
+            title: '封禁状态',
+            dataIndex: 'status',
+            render: (_: number | null | undefined, record: MaterialShop) => (
+                <PermissionWrapper permission="material:shop:edit">
+                    <Switch
+                        checked={(record.status ?? 1) === 1}
+                        checkedChildren="正常"
+                        unCheckedChildren="封禁"
+                        onChange={(checked) => handleStatusChange(record.id, checked ? 1 : 0)}
+                    />
+                </PermissionWrapper>
+            ),
+        },
+        {
             title: '操作',
             key: 'action',
             render: (_: any, record: MaterialShop) => (
                 <Space>
+                    {!record.accountBound && (
+                        <Button type="link" size="small" onClick={() => openAccountModal(record)}>
+                            补全账号
+                        </Button>
+                    )}
                     <Button type="link" size="small" onClick={() => openModal(record)}>编辑</Button>
                     <Button type="link" size="small" onClick={() => showDetail(record)}>详情</Button>
                     <Button type="link" size="small" danger onClick={() => handleDelete(record.id)}>删除</Button>
@@ -231,7 +357,7 @@ const MaterialShopList: React.FC = () => {
         <div className="hz-page-stack">
             <PageHeader
                 title="主材门店管理"
-                description="查看门店认证状态、公开可见性和基础经营信息。"
+                description="查看主材商账号绑定、登录能力、公开状态和基础经营信息。"
             />
 
             <ToolbarCard>
@@ -242,15 +368,18 @@ const MaterialShopList: React.FC = () => {
                     style={{ width: 120 }}
                     value={typeFilter}
                     onChange={setTypeFilter}
-                    options={[
-                        { value: 'brand', label: '品牌店' },
-                        { value: 'showroom', label: '展示店' },
-                    ]}
+                    options={MATERIAL_SHOP_TYPE_OPTIONS}
+                />
+                <Select
+                    allowClear
+                    placeholder="入驻状态"
+                    style={{ width: 120 }}
+                    value={settledFilter}
+                    onChange={(val) => { setSettledFilter(val); setPage(1); }}
+                    options={SETTLED_FILTER_OPTIONS}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-                <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
-                    新增门店
-                </Button>
+                <Button type="primary" onClick={() => openModal()}>新增门店</Button>
                 </div>
             </ToolbarCard>
 
@@ -289,13 +418,30 @@ const MaterialShopList: React.FC = () => {
                         <Descriptions column={2} bordered size="small">
                             <Descriptions.Item label="ID">{currentShop.id}</Descriptions.Item>
                             <Descriptions.Item label="名称">{currentShop.name}</Descriptions.Item>
-                            <Descriptions.Item label="类型">
-                                <Tag color={currentShop.type === 'brand' ? 'blue' : 'green'}>
-                                    {currentShop.type === 'brand' ? '品牌店' : '展示店'}
+                            <Descriptions.Item label="账号状态">
+                                <Tag color={ACCOUNT_BOUND_STATUS_META[String(Boolean(currentShop.accountBound))].color}>
+                                    {ACCOUNT_BOUND_STATUS_META[String(Boolean(currentShop.accountBound))].text}
                                 </Tag>
                             </Descriptions.Item>
+                            <Descriptions.Item label="关联手机号">{currentShop.userPhone || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="类型">
+                                <Tag color={MATERIAL_SHOP_TYPE_META[currentShop.type]?.color || 'default'}>
+                                    {MATERIAL_SHOP_TYPE_META[currentShop.type]?.text || currentShop.type}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="登录后台">
+                                <Tag color={LOGIN_ENABLED_STATUS_META[String(Boolean(currentShop.loginEnabled))].color}>
+                                    {LOGIN_ENABLED_STATUS_META[String(Boolean(currentShop.loginEnabled))].text}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="来源">{currentShop.sourceLabel || '-'}</Descriptions.Item>
                             <Descriptions.Item label="认证状态">
-                                {currentShop.isVerified ? <Tag color="green">已认证</Tag> : <Tag color="red">未认证</Tag>}
+                                <Tag color={VERIFICATION_STATUS_META[String(Boolean(currentShop.isVerified))].color}>
+                                    {VERIFICATION_STATUS_META[String(Boolean(currentShop.isVerified))].text}
+                                </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="封禁状态">
+                                {renderStatusTag(currentShop)}
                             </Descriptions.Item>
                             <Descriptions.Item label="评分">{currentShop.rating?.toFixed(1) || '-'}</Descriptions.Item>
                             <Descriptions.Item label="评价数">{currentShop.reviewCount || 0}</Descriptions.Item>
@@ -377,17 +523,25 @@ const MaterialShopList: React.FC = () => {
                 width={800}
             >
                 <Form form={form} layout="vertical">
+                    {!editingShop && (
+                        <Card size="small" style={{ marginBottom: 16, background: '#e6f7ff', borderColor: '#91d5ff' }}>
+                            新增门店将以「未入驻」状态创建，后续可通过补全账号完成入驻。
+                        </Card>
+                    )}
                     <Form.Item name="name" label="门店名称" rules={[{ required: true, message: '请输入门店名称' }]}>
                         <Input placeholder="如：顾家家居旗舰店" />
                     </Form.Item>
 
                     <Form.Item name="type" label="类型" rules={[{ required: true }]}>
-                        <Select
-                            options={[
-                                { value: 'brand', label: '品牌店' },
-                                { value: 'showroom', label: '展示店' },
-                            ]}
-                        />
+                        <Select options={MATERIAL_SHOP_TYPE_OPTIONS} />
+                    </Form.Item>
+
+                    <Form.Item name="companyName" label="公司名称">
+                        <Input placeholder="如：顾家家居股份有限公司" />
+                    </Form.Item>
+
+                    <Form.Item name="collectedSource" label="采集来源">
+                        <Input placeholder="如：线下拜访、企查查、大众点评" />
                     </Form.Item>
 
                     <Form.Item name="cover" label="封面图URL" rules={[{ required: true, message: '请输入封面图' }]}>
@@ -455,6 +609,41 @@ const MaterialShopList: React.FC = () => {
                             rows={2}
                             placeholder='如：["免费停车","免费设计","送货上门"]'
                         />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                title="补全主材商账号"
+                open={accountModalVisible}
+                onCancel={() => {
+                    setAccountModalVisible(false);
+                    setAccountTargetShop(null);
+                    accountForm.resetFields();
+                }}
+                onOk={handleCompleteAccount}
+                confirmLoading={accountSubmitting}
+                destroyOnClose
+            >
+                <Form form={accountForm} layout="vertical">
+                    <Form.Item label="门店名称">
+                        <Input value={accountTargetShop?.name || ''} disabled />
+                    </Form.Item>
+                    <Form.Item
+                        name="phone"
+                        label="登录手机号"
+                        rules={[
+                            { required: true, message: '请输入手机号' },
+                            { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的11位手机号' },
+                        ]}
+                    >
+                        <Input placeholder="用于主材商后台登录" />
+                    </Form.Item>
+                    <Form.Item name="contactName" label="联系人姓名">
+                        <Input placeholder="可选，用于补全门店联系人" />
+                    </Form.Item>
+                    <Form.Item name="nickname" label="账号昵称">
+                        <Input placeholder="可选，不填则默认使用门店名称/联系人姓名" />
                     </Form.Item>
                 </Form>
             </Modal>

@@ -1,43 +1,11 @@
 import React from 'react';
 import { Card, Descriptions, Image, Tag, Tabs, Space, Tooltip } from 'antd';
 import type { AdminMerchantApplicationDetail, MerchantApplicationDetails } from '../../../services/api';
+import { APPLICANT_TYPE_LABELS, ENTITY_TYPE_LABELS, MERCHANT_KIND_LABELS, PRICING_LABELS, PROVIDER_ROLE_META } from '../../../constants/statuses';
 
 interface MerchantApplicationDetailProps {
     details: MerchantApplicationDetails & Partial<AdminMerchantApplicationDetail>;
 }
-
-const roleMap: Record<string, string> = {
-    designer: '设计师',
-    company: '装修公司',
-    foreman: '工长',
-};
-
-const entityTypeMap: Record<string, string> = {
-    personal: '个人',
-    company: '公司',
-    studio: '工作室',
-};
-
-const applicantTypeMap: Record<string, string> = {
-    personal: '个人入驻',
-    studio: '工作室入驻',
-    company: '企业入驻',
-    foreman: '工长入驻',
-};
-
-const merchantKindMap: Record<string, string> = {
-    provider: '服务商',
-    material_shop: '主材商',
-};
-
-const pricingLabelMap: Record<string, string> = {
-    flat: '平层报价',
-    duplex: '复式报价',
-    other: '其他报价',
-    perSqm: '施工报价',
-    fullPackage: '全包报价',
-    halfPackage: '半包报价',
-};
 
 const pricingOrder = ['flat', 'duplex', 'other', 'perSqm', 'fullPackage', 'halfPackage'] as const;
 
@@ -84,7 +52,7 @@ const renderPricing = (pricing?: Record<string, number>) => {
     return (
         <Space direction="vertical" size={4} style={{ width: '100%' }}>
             {entries.map(([key, value]) => (
-                <div key={key}>{`${pricingLabelMap[key] || key}: ¥${value}`}</div>
+                <div key={key}>{`${PRICING_LABELS[key] || key}: ¥${value}`}</div>
             ))}
         </Space>
     );
@@ -110,18 +78,18 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
                     <Descriptions.Item label="主体名称">{subjectName}</Descriptions.Item>
                     <Descriptions.Item label={principalLabel}>{formatText(details.realName)}</Descriptions.Item>
                     <Descriptions.Item label="手机号">{formatText(details.phone)}</Descriptions.Item>
-                    <Descriptions.Item label="角色类型">
-                        <Tag color="blue">{roleMap[details.role] || formatText(details.role)}</Tag>
+                    <Descriptions.Item label="商家角色">
+                        <Tag color={PROVIDER_ROLE_META[details.role]?.color || 'blue'}>{PROVIDER_ROLE_META[details.role]?.text || formatText(details.role)}</Tag>
                     </Descriptions.Item>
                     <Descriptions.Item label="主体类型">
-                        {entityTypeMap[details.entityType] || formatText(details.entityType)}
+                        {ENTITY_TYPE_LABELS[details.entityType] || formatText(details.entityType)}
                     </Descriptions.Item>
                     <Descriptions.Item label="申请人类型">
-                        {applicantTypeMap[details.applicantType] || formatText(details.applicantType)}
+                        {APPLICANT_TYPE_LABELS[details.applicantType] || formatText(details.applicantType)}
                     </Descriptions.Item>
                     {showMerchantKind && (
                         <Descriptions.Item label="商家体系">
-                            {merchantKindMap[details.merchantKind as string] || formatText(details.merchantKind)}
+                            {MERCHANT_KIND_LABELS[details.merchantKind as string] || formatText(details.merchantKind)}
                         </Descriptions.Item>
                     )}
                     {showSourceApplicationId && (

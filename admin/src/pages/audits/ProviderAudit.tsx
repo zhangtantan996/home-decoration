@@ -13,18 +13,7 @@ import MerchantApplicationDetail from './components/MerchantApplicationDetail';
 import AuditStatusSummary from './components/AuditStatusSummary';
 import VisibilityStatusPanel from './components/VisibilityStatusPanel';
 import AuditDetailSection from './components/AuditDetailSection';
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待审核', color: 'orange' },
-    1: { text: '已通过', color: 'green' },
-    2: { text: '已拒绝', color: 'red' },
-};
-
-const roleMap: Record<string, { text: string; color: string }> = {
-    designer: { text: '设计师', color: 'purple' },
-    company: { text: '装修公司', color: 'blue' },
-    foreman: { text: '工长', color: 'gold' },
-};
+import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS, PROVIDER_ROLE_META } from '../../constants/statuses';
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -158,10 +147,10 @@ const ProviderAudit: React.FC = () => {
     const columns: ColumnsType<AdminMerchantApplicationListItem> = [
         { title: 'ID', dataIndex: 'id', width: 80 },
         {
-            title: '角色类型',
+            title: '商家角色',
             dataIndex: 'role',
             render: (value: string) => {
-                const config = roleMap[value];
+                const config = PROVIDER_ROLE_META[value];
                 return <Tag color={config?.color || 'default'}>{config?.text || value || '-'}</Tag>;
             },
         },
@@ -176,7 +165,7 @@ const ProviderAudit: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (value: number) => {
-                const config = statusMap[value];
+                const config = APPLICATION_AUDIT_STATUS_META[value];
                 return <Tag color={config?.color || 'default'}>{config?.text || value}</Tag>;
             },
         },
@@ -209,7 +198,7 @@ const ProviderAudit: React.FC = () => {
     return (
         <div className="hz-page-stack">
             <PageHeader
-                title="服务商入驻审核"
+                title="服务类商家入驻审核"
                 description="处理设计师、工长和装修公司入驻申请，查看资料并完成审批。"
             />
 
@@ -219,12 +208,7 @@ const ProviderAudit: React.FC = () => {
                     value={statusFilter}
                     onChange={setStatusFilter}
                     style={{ width: 150 }}
-                    options={[
-                        { label: '待审核', value: 0 },
-                        { label: '已通过', value: 1 },
-                        { label: '已拒绝', value: 2 },
-                        { label: '全部', value: 'all' },
-                    ]}
+                    options={APPLICATION_AUDIT_STATUS_OPTIONS}
                 />
                 <Input.Search
                     allowClear
@@ -302,8 +286,8 @@ const ProviderAudit: React.FC = () => {
                             <Descriptions bordered column={2} size="small">
                                 <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
                                 <Descriptions.Item label="状态">
-                                    <Tag color={statusMap[currentItem.status]?.color || 'default'}>
-                                        {statusMap[currentItem.status]?.text || currentItem.status}
+                                    <Tag color={APPLICATION_AUDIT_STATUS_META[currentItem.status]?.color || 'default'}>
+                                        {APPLICATION_AUDIT_STATUS_META[currentItem.status]?.text || currentItem.status}
                                     </Tag>
                                 </Descriptions.Item>
                                 <Descriptions.Item label="主体名称">

@@ -5,6 +5,7 @@ import { adminBookingApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
+import { ADMIN_BOOKING_STATUS_META, ADMIN_BOOKING_STATUS_OPTIONS } from '../../constants/statuses';
 
 interface Booking {
     id: number;
@@ -21,13 +22,6 @@ interface Booking {
     status: number;
     createdAt: string;
 }
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    1: { text: '待处理', color: 'orange' },
-    2: { text: '已确认', color: 'blue' },
-    3: { text: '已完成', color: 'green' },
-    4: { text: '已取消', color: 'red' },
-};
 
 const BookingList: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -106,9 +100,9 @@ const BookingList: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (val: number) => {
-                const config = statusMap[val];
+                const config = ADMIN_BOOKING_STATUS_META[val];
                 return config
-                    ? <StatusTag status={val === 1 ? 'warning' : val === 2 ? 'info' : val === 3 ? 'completed' : 'rejected'} text={config.text} />
+                    ? <StatusTag status={config.tagStatus} text={config.text} />
                     : '-';
             },
         },
@@ -147,12 +141,7 @@ const BookingList: React.FC = () => {
                     style={{ width: 120 }}
                     value={statusFilter}
                     onChange={setStatusFilter}
-                    options={[
-                        { value: 1, label: '待处理' },
-                        { value: 2, label: '已确认' },
-                        { value: 3, label: '已完成' },
-                        { value: 4, label: '已取消' },
-                    ]}
+                    options={ADMIN_BOOKING_STATUS_OPTIONS}
                 />
                 <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
                 </div>
@@ -196,8 +185,8 @@ const BookingList: React.FC = () => {
                         <Descriptions.Item label="联系电话">{currentBooking.phone}</Descriptions.Item>
                         <Descriptions.Item label="状态">
                             <StatusTag
-                                status={currentBooking.status === 1 ? 'warning' : currentBooking.status === 2 ? 'info' : currentBooking.status === 3 ? 'completed' : 'rejected'}
-                                text={statusMap[currentBooking.status]?.text}
+                                status={ADMIN_BOOKING_STATUS_META[currentBooking.status]?.tagStatus || 'warning'}
+                                text={ADMIN_BOOKING_STATUS_META[currentBooking.status]?.text}
                             />
                         </Descriptions.Item>
                         <Descriptions.Item label="备注" span={2}>{currentBooking.notes || '-'}</Descriptions.Item>

@@ -75,9 +75,54 @@ const USER_CONFIRM_META: Record<string, { text: string; tone: PillTone }> = {
     rejected: { text: '已驳回', tone: 'danger' },
 };
 
+const BUSINESS_STAGE_META: Record<string, { text: string; tone: PillTone }> = {
+    lead_pending: { text: '线索待推进', tone: 'muted' },
+    consulting: { text: '沟通中', tone: 'accent' },
+    proposal_pending: { text: '方案待确认', tone: 'warning' },
+    proposal_confirmed: { text: '设计已确认', tone: 'success' },
+    constructor_pending: { text: '待选施工方', tone: 'warning' },
+    construction_quote_pending: { text: '施工报价待确认', tone: 'accent' },
+    ready_to_start: { text: '待开工', tone: 'warning' },
+    in_progress: { text: '施工中', tone: 'accent' },
+    milestone_review: { text: '节点验收中', tone: 'warning' },
+    completed: { text: '已完工', tone: 'success' },
+    archived: { text: '已归档', tone: 'muted' },
+    disputed: { text: '争议中', tone: 'danger' },
+    cancelled: { text: '已取消', tone: 'muted' },
+};
+
+const ACTION_LABELS: Record<string, string> = {
+    create_proposal: '提交方案',
+    confirm_proposal: '确认设计方案',
+    reject_proposal: '驳回设计方案',
+    create_quote_task: '创建施工报价任务',
+    select_constructor: '运营干预施工方',
+    submit_construction_quote: '跟进施工报价提交',
+    confirm_construction_quote: '运营干预施工报价',
+    reject_construction_quote: '驳回施工报价',
+    start_project: '发起开工',
+    submit_milestone: '提交节点验收',
+    approve_milestone: '通过节点验收',
+    reject_milestone: '驳回节点验收',
+    generate_inspiration_draft: '生成案例草稿',
+};
+
 const renderStatusPill = (meta?: { text: string; tone: PillTone }) => (
     <InlinePill tone={meta?.tone || 'muted'} text={meta?.text || '未设置'} />
 );
+
+const renderActionPills = (actions?: string[]) => {
+    if (!actions?.length) {
+        return <InlinePill tone="muted" text="当前无推进动作" />;
+    }
+    return (
+        <Space size={[6, 6]} wrap>
+            {actions.map((action) => (
+                <InlinePill key={action} tone="accent" text={ACTION_LABELS[action] || action} />
+            ))}
+        </Space>
+    );
+};
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -366,6 +411,11 @@ const QuoteListManagement: React.FC = () => {
                         <InlinePill tone="muted" text={`方案 v${record.proposalVersion || '-'}`} />
                         <InlinePill tone="muted" text={formatDateTime(record.updatedAt)} />
                     </Space>
+                    {record.flowSummary ? (
+                        <span style={{ color: '#64748b', fontSize: 12 }}>
+                            {record.flowSummary}
+                        </span>
+                    ) : null}
                 </div>
             ),
         },
@@ -375,6 +425,13 @@ const QuoteListManagement: React.FC = () => {
             key: 'status',
             width: 140,
             render: (value: string) => renderStatusPill(TASK_STATUS_META[value]),
+        },
+        {
+            title: '闭环阶段',
+            dataIndex: 'businessStage',
+            key: 'businessStage',
+            width: 150,
+            render: (value?: string) => renderStatusPill(BUSINESS_STAGE_META[value || '']),
         },
         {
             title: '前置数据',
@@ -573,6 +630,13 @@ const QuoteListManagement: React.FC = () => {
                                 <div className="hz-summary-card__meta">决定是否可进入选工长阶段</div>
                             </div>
                             <div className="hz-summary-card">
+                                <div className="hz-summary-card__label">业务闭环阶段</div>
+                                <div className="hz-summary-card__value">
+                                    {BUSINESS_STAGE_META[detail.businessStage || '']?.text || '未初始化'}
+                                </div>
+                                <div className="hz-summary-card__meta">{detail.flowSummary || '当前报价任务尚未挂到完整业务主链'}</div>
+                            </div>
+                            <div className="hz-summary-card">
                                 <div className="hz-summary-card__label">施工项数量</div>
                                 <div className="hz-summary-card__value">{detail.items.length}</div>
                                 <div className="hz-summary-card__meta">标准项与自定义项的总条目数</div>
@@ -590,8 +654,17 @@ const QuoteListManagement: React.FC = () => {
                         </div>
 
                         <Card className="hz-panel-card">
+                            <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 16 }}>
+                                <Alert
+                                    type={detail.businessStage === 'completed' || detail.businessStage === 'archived' ? 'success' : 'info'}
+                                    showIcon
+                                    message={detail.flowSummary || '业务主链待初始化'}
+                                    description={renderActionPills(detail.availableActions)}
+                                />
+                            </Space>
                             <Descriptions bordered column={3} size="small">
                                 <Descriptions.Item label="任务状态">{renderStatusPill(TASK_STATUS_META[detail.quoteList.status])}</Descriptions.Item>
+                                <Descriptions.Item label="闭环阶段">{renderStatusPill(BUSINESS_STAGE_META[detail.businessStage || ''])}</Descriptions.Item>
                                 <Descriptions.Item label="前置数据">{renderStatusPill(PREREQUISITE_STATUS_META[detail.quoteList.prerequisiteStatus || 'draft'])}</Descriptions.Item>
                                 <Descriptions.Item label="用户确认">{renderStatusPill(USER_CONFIRM_META[detail.quoteList.userConfirmationStatus || 'pending'])}</Descriptions.Item>
                                 <Descriptions.Item label="方案 ID">{detail.quoteList.proposalId || '-'}</Descriptions.Item>

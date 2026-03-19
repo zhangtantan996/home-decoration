@@ -22,6 +22,7 @@ import ComplaintManagement from './pages/complaints/ComplaintManagement';
 import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
+import FinanceOverview from './pages/finance/FinanceOverview';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
 import TransactionList from './pages/finance/TransactionList';
 import RiskWarningList from './pages/risk/RiskWarningList';
@@ -32,7 +33,13 @@ import MenuList from './pages/permissions/MenuList';
 import CaseManagement from './pages/cases/CaseManagement';
 import DictionaryManagement from './pages/system/DictionaryManagement';
 import RegionManagement from './pages/system/RegionManagement';
+import AuditLogList from './pages/system/AuditLogList';
 import IdentityApplicationAudit from './pages/audits/IdentityApplicationAudit';
+import ProjectAuditList from './pages/projectAudits/ProjectAuditList';
+import ProjectAuditDetail from './pages/projectAudits/ProjectAuditDetail';
+import ProjectAuditArbitrate from './pages/projectAudits/ProjectAuditArbitrate';
+import RefundList from './pages/refunds/RefundList';
+import RefundDetail from './pages/refunds/RefundDetail';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { getRouterBasename } from './utils/env';
 
@@ -92,6 +99,9 @@ const router = createBrowserRouter([
 
             // Complaints
             { path: 'complaints', element: <ProtectedRoute permission="risk:arbitration:list"><ComplaintManagement /></ProtectedRoute> },
+            { path: 'project-audits', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectAuditList /></ProtectedRoute> },
+            { path: 'project-audits/:id', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectAuditDetail /></ProtectedRoute> },
+            { path: 'project-audits/:id/arbitrate', element: <ProtectedRoute permission="risk:arbitration:judge"><ProjectAuditArbitrate /></ProtectedRoute> },
 
             // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
@@ -99,9 +109,12 @@ const router = createBrowserRouter([
             { path: 'bookings/disputed', element: <ProtectedRoute permission="booking:dispute:detail"><DisputedBookings /></ProtectedRoute> },
 
             // Finance
-            { path: 'finance', element: <Navigate to="/finance/escrow" replace /> },
+            { path: 'finance', element: <Navigate to="/finance/overview" replace /> },
+            { path: 'finance/overview', element: <ProtectedRoute permission="finance:escrow:list"><FinanceOverview /></ProtectedRoute> },
             { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
             { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
+            { path: 'refunds', element: <ProtectedRoute permission="finance:transaction:list"><RefundList /></ProtectedRoute> },
+            { path: 'refunds/:id', element: <ProtectedRoute permission="finance:transaction:view"><RefundDetail /></ProtectedRoute> },
 
             // Other
             { path: 'reviews', element: <Navigate to="/reviews/list" replace /> },
@@ -114,6 +127,7 @@ const router = createBrowserRouter([
 
             { path: 'logs', element: <Navigate to="/logs/list" replace /> },
             { path: 'logs/list', element: <ProtectedRoute permission="system:log:list"><LogList /></ProtectedRoute> },
+            { path: 'audit-logs', element: <ProtectedRoute permission="system:log:list"><AuditLogList /></ProtectedRoute> },
             { path: 'settings', element: <Navigate to="/settings/config" replace /> },
             { path: 'settings/config', element: <ProtectedRoute permission="system:setting:list"><SystemSettings /></ProtectedRoute> },
             { path: 'settings/regions', element: <ProtectedRoute permission="system:setting:list"><RegionManagement /></ProtectedRoute> },

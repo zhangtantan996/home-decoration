@@ -6,6 +6,7 @@ import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
+import { ESCROW_ACCOUNT_STATUS_META } from '../../constants/statuses';
 
 interface EscrowAccount {
     id: number;
@@ -19,13 +20,6 @@ interface EscrowAccount {
     status: number;
     createdAt: string;
 }
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待激活', color: 'default' },
-    1: { text: '正常', color: 'green' },
-    2: { text: '冻结', color: 'red' },
-    3: { text: '已清算', color: 'blue' },
-};
 
 const EscrowAccountList: React.FC = () => {
     const [loading, setLoading] = useState(false);
@@ -130,9 +124,9 @@ const EscrowAccountList: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (val: number) => {
-                const config = statusMap[val];
+                const config = ESCROW_ACCOUNT_STATUS_META[val];
                 return config
-                    ? <StatusTag status={val === 1 ? 'approved' : val === 2 ? 'rejected' : val === 3 ? 'info' : 'warning'} text={config.text} />
+                    ? <StatusTag status={config.tagStatus} text={config.text} />
                     : '-';
             },
         },

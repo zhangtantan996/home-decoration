@@ -12,6 +12,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { adminUploadApi, caseApi, caseAuditApi, type AdminAuditActions, type AdminAuditLegacyInfo, type AdminAuditVisibility } from '../../services/api';
 import type { RcFile, UploadProps } from 'antd/es/upload/interface';
 import { DictSelect } from '../../components/DictSelect';
+import { CASE_AUDIT_ACTION_META, CASE_AUDIT_SOURCE_META, CASE_AUDIT_STATUS_META } from '../../constants/statuses';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import AuditStatusSummary from '../audits/components/AuditStatusSummary';
 import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
@@ -43,6 +44,9 @@ interface CaseAudit {
     providerId: number;
     providerName: string;
     actionType: string;
+    sourceType?: string;
+    sourceProjectId?: number;
+    sourceProposalId?: number;
     title: string;
     status: number;
     createdAt: string;
@@ -62,6 +66,11 @@ interface AuditDetail extends CaseAudit {
     images: string[];
     rejectReason?: string;
 }
+
+const renderCaseAuditSourceTag = (sourceType?: string) => {
+    const config = sourceType ? CASE_AUDIT_SOURCE_META[sourceType] : CASE_AUDIT_SOURCE_META.manual;
+    return <Tag color={config?.color || 'default'}>{config?.text || sourceType || '手动提交'}</Tag>;
+};
 
 type QuoteAmountFields = {
     quoteDesignFee?: number;
@@ -472,12 +481,8 @@ const CaseManagement: React.FC = () => {
 
     // ==================== 表格配置 ====================
     const getActionTag = (type: string) => {
-        switch (type) {
-            case 'create': return <Tag color="orange">新增</Tag>;
-            case 'update': return <Tag color="blue">修改</Tag>;
-            case 'delete': return <Tag color="red">删除</Tag>;
-            default: return <Tag>{type}</Tag>;
-        }
+        const config = CASE_AUDIT_ACTION_META[type];
+        return <Tag color={config?.color || 'default'}>{config?.text || type}</Tag>;
     };
 
     const caseColumns: ColumnsType<CaseItem> = [
@@ -530,6 +535,19 @@ const CaseManagement: React.FC = () => {
         { title: '商家名称', dataIndex: 'providerName', width: 120 },
         { title: '申请类型', dataIndex: 'actionType', width: 100, render: (text) => getActionTag(text) },
         {
+            title: '来源',
+            key: 'source',
+            width: 180,
+            render: (_, record) => (
+                <div>
+                    <div>{renderCaseAuditSourceTag(record.sourceType)}</div>
+                    {record.sourceProjectId ? (
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>项目 #{record.sourceProjectId}</div>
+                    ) : null}
+                </div>
+            ),
+        },
+        {
             title: '作品标题',
             dataIndex: 'title',
             render: (text, record) =>
@@ -548,10 +566,8 @@ const CaseManagement: React.FC = () => {
             dataIndex: 'status',
             width: 100,
             render: (status: number) => {
-                if (status === 0) return <Tag color="orange">待审核</Tag>;
-                if (status === 1) return <Tag color="success">已通过</Tag>;
-                if (status === 2) return <Tag color="error">已拒绝</Tag>;
-                return <Tag>未知</Tag>;
+                const config = CASE_AUDIT_STATUS_META[status];
+                return <Tag color={config?.color || 'default'}>{config?.text || '未知'}</Tag>;
             },
         },
         {
@@ -767,6 +783,13 @@ const CaseManagement: React.FC = () => {
                                 <Descriptions.Item label="商家">{currentDetail.providerName || '-'}</Descriptions.Item>
                                 <Descriptions.Item label="提交时间">{new Date(currentDetail.createdAt).toLocaleString()}</Descriptions.Item>
                                 <Descriptions.Item label="标题" span={2}>{currentDetail.title}</Descriptions.Item>
+                                <Descriptions.Item label="来源类型">{renderCaseAuditSourceTag(currentDetail.sourceType)}</Descriptions.Item>
+                                <Descriptions.Item label="来源项目">
+                                    {currentDetail.sourceProjectId ? `#${currentDetail.sourceProjectId}` : '-'}
+                                </Descriptions.Item>
+                                <Descriptions.Item label="来源方案">
+                                    {currentDetail.sourceProposalId ? `#${currentDetail.sourceProposalId}` : '-'}
+                                </Descriptions.Item>
                                 <Descriptions.Item label="风格">{currentDetail.style || '-'}</Descriptions.Item>
                                 <Descriptions.Item label="户型">{currentDetail.layout || '-'}</Descriptions.Item>
                                 <Descriptions.Item label="面积">{currentDetail.area ? `${currentDetail.area}㎡` : '-'}</Descriptions.Item>

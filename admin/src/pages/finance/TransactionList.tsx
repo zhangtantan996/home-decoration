@@ -1,146 +1,256 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Card, Select, Button, Space, message, DatePicker } from 'antd';
-import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
-import { adminFinanceApi } from '../../services/api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, message } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
+import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
+import { usePermission } from '../../hooks/usePermission';
+import {
+    adminFinanceApi,
+    type AdminFinanceTransactionItem,
+    type AdminFinanceTransactionQuery,
+    type FreezeFundsInput,
+    type ManualReleaseInput,
+    type UnfreezeFundsInput,
+} from '../../services/api';
+import { FINANCE_TRANSACTION_STATUS_META, FINANCE_TRANSACTION_TYPE_LABELS } from '../../constants/statuses';
 
 const { RangePicker } = DatePicker;
 
-interface Transaction {
-    id: number;
-    orderId: string;
-    type: string;
-    amount: number;
-    fromAccount: string;
-    toAccount: string;
-    status: number;
-    remark: string;
-    createdAt: string;
-}
+type FinanceAction = 'freeze' | 'unfreeze' | 'manualRelease';
 
-const typeMap: Record<string, { text: string; color: string }> = {
-    deposit: { text: '充值', color: 'blue' },
-    withdraw: { text: '提现', color: 'orange' },
-    transfer: { text: '转账', color: 'green' },
-    refund: { text: '退款', color: 'red' },
+const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : '-');
+
+const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 };
 
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '处理中', color: 'orange' },
-    1: { text: '成功', color: 'green' },
-    2: { text: '失败', color: 'red' },
+const getActionLabel = (action: FinanceAction) => {
+    if (action === 'freeze') return '冻结资金';
+    if (action === 'unfreeze') return '解冻资金';
+    return '手动放款';
 };
 
 const TransactionList: React.FC = () => {
+    const navigate = useNavigate();
+    const { hasPermission } = usePermission();
+    const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [exporting, setExporting] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [transactions, setTransactions] = useState<AdminFinanceTransactionItem[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(1);
     const [pageSize] = useState(10);
     const [typeFilter, setTypeFilter] = useState<string | undefined>();
+    const [projectIdFilter, setProjectIdFilter] = useState<string>('');
     const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+    const [activeAction, setActiveAction] = useState<FinanceAction | null>(null);
+    const [selectedTransaction, setSelectedTransaction] = useState<AdminFinanceTransactionItem | null>(null);
 
-    useEffect(() => {
-        loadData();
-    }, [page, typeFilter]);
+    const canFreeze = hasPermission('finance:escrow:freeze');
+    const canUnfreeze = hasPermission('finance:escrow:unfreeze');
+    const canManualRelease = hasPermission('finance:transaction:approve');
+
+    const query = useMemo<AdminFinanceTransactionQuery>(() => ({
+        page,
+        pageSize,
+        type: typeFilter,
+        projectId: projectIdFilter ? Number(projectIdFilter) : undefined,
+        startDate: dateRange?.[0]?.format('YYYY-MM-DD'),
+        endDate: dateRange?.[1]?.format('YYYY-MM-DD'),
+    }), [dateRange, page, pageSize, projectIdFilter, typeFilter]);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            const res = await adminFinanceApi.transactions({
-                page,
-                pageSize,
-                type: typeFilter,
-            }) as any;
+            const res = await adminFinanceApi.transactions(query);
             if (res.code === 0) {
-                setTransactions(res.data.list || []);
-                setTotal(res.data.total || 0);
+                setTransactions(res.data?.list || []);
+                setTotal(res.data?.total || 0);
+            } else {
+                message.error(res.message || '加载交易流水失败');
             }
         } catch (error) {
             console.error(error);
-            message.error('加载失败');
+            message.error('加载交易流水失败');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleExport = () => {
-        message.info('导出功能开发中...');
-        // 将来实现导出为 Excel 功能
+    useEffect(() => {
+        void loadData();
+    }, [query]);
+
+    const openActionModal = (action: FinanceAction, record?: AdminFinanceTransactionItem) => {
+        setActiveAction(action);
+        setSelectedTransaction(record || null);
+        form.setFieldsValue({
+            projectId: record?.projectId,
+            milestoneId: record?.milestoneId,
+            amount: typeof record?.amount === 'number' ? record.amount : undefined,
+            reason: '',
+        });
     };
 
-    const columns = [
+    const closeActionModal = () => {
+        setActiveAction(null);
+        setSelectedTransaction(null);
+        form.resetFields();
+    };
+
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const blob = await adminFinanceApi.exportTransactions({
+                type: typeFilter,
+                projectId: projectIdFilter ? Number(projectIdFilter) : undefined,
+                startDate: dateRange?.[0]?.format('YYYY-MM-DD'),
+                endDate: dateRange?.[1]?.format('YYYY-MM-DD'),
+            });
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            downloadBlob(blob, `finance-transactions-${timestamp}.csv`);
+            message.success('交易流水已导出');
+        } catch (error) {
+            console.error(error);
+            message.error('导出交易流水失败');
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const handleActionSubmit = async () => {
+        if (!activeAction) return;
+
+        try {
+            const values = await form.validateFields();
+            setSubmitting(true);
+
+            if (activeAction === 'freeze') {
+                await adminFinanceApi.freeze(values as FreezeFundsInput);
+            } else if (activeAction === 'unfreeze') {
+                await adminFinanceApi.unfreeze(values as UnfreezeFundsInput);
+            } else {
+                await adminFinanceApi.manualRelease(values as ManualReleaseInput);
+            }
+
+            message.success(`${getActionLabel(activeAction)}已提交`);
+            closeActionModal();
+            void loadData();
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('validate')) {
+                return;
+            }
+            console.error(error);
+            message.error(`${activeAction ? getActionLabel(activeAction) : '资金操作'}失败`);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const columns: ColumnsType<AdminFinanceTransactionItem> = [
         {
             title: '交易ID',
             dataIndex: 'id',
-            width: 80,
+            width: 88,
         },
         {
             title: '订单号',
             dataIndex: 'orderId',
             width: 180,
+            render: (value?: string) => value || '-',
+        },
+        {
+            title: '项目ID',
+            dataIndex: 'projectId',
+            width: 100,
+            render: (value?: number) => value || '-',
         },
         {
             title: '类型',
             dataIndex: 'type',
-            render: (val: string) => {
-                const config = typeMap[val];
-                return config ? <StatusTag status="info" text={config.text} /> : val;
-            },
+            width: 110,
+            render: (value: string) => <StatusTag status="info" text={FINANCE_TRANSACTION_TYPE_LABELS[value] || value} />,
         },
         {
             title: '金额',
             dataIndex: 'amount',
-            render: (val: number, record: Transaction) => {
-                const isIncome = record.type === 'deposit';
-                return (
-                    <span style={{ color: isIncome ? '#3f8600' : '#cf1322' }}>
-                        {isIncome ? '+' : '-'}¥{val.toLocaleString()}
-                    </span>
-                );
+            width: 140,
+            render: (value: number, record) => {
+                const isPositive = record.type === 'deposit' || record.type === 'unfreeze';
+                return <span style={{ color: isPositive ? '#1677ff' : '#cf1322' }}>{`${isPositive ? '+' : '-'}¥${Number(value || 0).toLocaleString()}`}</span>;
             },
         },
         {
             title: '付款方',
             dataIndex: 'fromAccount',
             ellipsis: true,
+            render: (value?: string) => value || '-',
         },
         {
             title: '收款方',
             dataIndex: 'toAccount',
             ellipsis: true,
+            render: (value?: string) => value || '-',
         },
         {
             title: '状态',
             dataIndex: 'status',
-            render: (val: number) => {
-                const config = statusMap[val];
-                return config
-                    ? <StatusTag status={val === 1 ? 'approved' : val === 2 ? 'rejected' : 'warning'} text={config.text} />
-                    : '-';
+            width: 100,
+            render: (value: number) => {
+                const config = FINANCE_TRANSACTION_STATUS_META[value];
+                return config ? <StatusTag status={config.tagStatus} text={config.text} /> : '-';
             },
         },
         {
             title: '备注',
             dataIndex: 'remark',
             ellipsis: true,
-            render: (val: string) => val || '-',
+            render: (value?: string) => value || '-',
         },
         {
             title: '交易时间',
             dataIndex: 'createdAt',
             width: 180,
-            render: (val: string) => new Date(val).toLocaleString(),
+            render: (value?: string) => formatDateTime(value),
         },
         {
             title: '操作',
             key: 'action',
-            render: () => (
-                <Space>
-                    <Button type="link" size="small">详情</Button>
+            width: 220,
+            render: (_, record) => (
+                <Space size="small" wrap>
+                    {record.projectId ? (
+                        <Button type="link" size="small" onClick={() => navigate(`/projects/detail/${record.projectId}`)}>
+                            项目详情
+                        </Button>
+                    ) : null}
+                    {record.projectId && canFreeze ? (
+                        <Button type="link" size="small" onClick={() => openActionModal('freeze', record)}>
+                            冻结
+                        </Button>
+                    ) : null}
+                    {record.projectId && canUnfreeze ? (
+                        <Button type="link" size="small" onClick={() => openActionModal('unfreeze', record)}>
+                            解冻
+                        </Button>
+                    ) : null}
+                    {record.projectId && canManualRelease ? (
+                        <Button type="link" size="small" onClick={() => openActionModal('manualRelease', record)}>
+                            手动放款
+                        </Button>
+                    ) : null}
                 </Space>
             ),
         },
@@ -149,50 +259,109 @@ const TransactionList: React.FC = () => {
     return (
         <div className="hz-page-stack">
             <PageHeader
-                title="交易记录"
-                description="统一查看充值、提现、转账与退款流水，并支持筛选与导出。"
+                title="交易流水"
+                description="按项目、时间和类型筛选资金流水，并可发起冻结、解冻和手动放款。"
             />
 
             <ToolbarCard>
                 <div className="hz-toolbar">
-                <Select
-                    placeholder="交易类型"
-                    value={typeFilter}
-                    onChange={setTypeFilter}
-                    allowClear
-                    style={{ width: 150 }}
-                    options={[
-                        { label: '充值', value: 'deposit' },
-                        { label: '提现', value: 'withdraw' },
-                        { label: '转账', value: 'transfer' },
-                        { label: '退款', value: 'refund' },
-                    ]}
-                />
-                <RangePicker
-                    value={dateRange}
-                    onChange={(dates) => setDateRange(dates as [Dayjs, Dayjs] | null)}
-                    style={{ width: 260 }}
-                />
-                <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
-                <Button icon={<DownloadOutlined />} onClick={handleExport}>导出</Button>
+                    <Select
+                        placeholder="交易类型"
+                        value={typeFilter}
+                        onChange={(value) => {
+                            setPage(1);
+                            setTypeFilter(value);
+                        }}
+                        allowClear
+                        style={{ width: 160 }}
+                        options={Object.entries(FINANCE_TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
+                    />
+                    <Input
+                        placeholder="项目ID"
+                        value={projectIdFilter}
+                        onChange={(event) => {
+                            setPage(1);
+                            setProjectIdFilter(event.target.value.replace(/\D/g, ''));
+                        }}
+                        style={{ width: 140 }}
+                    />
+                    <RangePicker
+                        value={dateRange}
+                        onChange={(dates) => {
+                            setPage(1);
+                            setDateRange(dates as [Dayjs, Dayjs] | null);
+                        }}
+                    />
+                    <Button icon={<ReloadOutlined />} onClick={() => void loadData()} loading={loading}>刷新</Button>
+                    <Button icon={<DownloadOutlined />} onClick={() => void handleExport()} loading={exporting}>导出</Button>
+                    {canFreeze ? <Button onClick={() => openActionModal('freeze')}>冻结资金</Button> : null}
+                    {canUnfreeze ? <Button onClick={() => openActionModal('unfreeze')}>解冻资金</Button> : null}
+                    {canManualRelease ? <Button type="primary" onClick={() => openActionModal('manualRelease')}>手动放款</Button> : null}
                 </div>
             </ToolbarCard>
 
             <Card className="hz-table-card">
                 <Table
+                    rowKey="id"
                     loading={loading}
                     dataSource={transactions}
                     columns={columns}
-                    rowKey="id"
                     pagination={{
                         current: page,
                         pageSize,
                         total,
                         onChange: setPage,
-                        showTotal: (total) => `共 ${total} 条`,
+                        showTotal: (value) => `共 ${value} 条`,
                     }}
                 />
             </Card>
+
+            <Modal
+                title={activeAction ? getActionLabel(activeAction) : '资金操作'}
+                open={Boolean(activeAction)}
+                onCancel={closeActionModal}
+                onOk={() => void handleActionSubmit()}
+                confirmLoading={submitting}
+                destroyOnClose
+            >
+                <Form form={form} layout="vertical">
+                    <Form.Item
+                        label="项目ID"
+                        name="projectId"
+                        rules={[{ required: true, message: '请输入项目ID' }]}
+                    >
+                        <InputNumber style={{ width: '100%' }} min={1} precision={0} placeholder="请输入项目ID" />
+                    </Form.Item>
+                    {activeAction === 'manualRelease' ? (
+                        <Form.Item
+                            label="节点ID"
+                            name="milestoneId"
+                            rules={[{ required: true, message: '请输入节点ID' }]}
+                        >
+                            <InputNumber style={{ width: '100%' }} min={1} precision={0} placeholder="请输入节点ID" />
+                        </Form.Item>
+                    ) : null}
+                    <Form.Item
+                        label="金额"
+                        name="amount"
+                        rules={[{ required: true, message: '请输入金额' }]}
+                    >
+                        <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="请输入金额" />
+                    </Form.Item>
+                    <Form.Item
+                        label="原因"
+                        name="reason"
+                        rules={[{ required: true, message: '请输入原因' }]}
+                    >
+                        <Input.TextArea rows={4} placeholder="记录本次资金操作原因" />
+                    </Form.Item>
+                    {selectedTransaction?.projectId ? (
+                        <div style={{ color: 'rgba(0,0,0,0.45)' }}>
+                            已根据流水 #{selectedTransaction.id} 预填项目信息，可按需调整。
+                        </div>
+                    ) : null}
+                </Form>
+            </Modal>
         </div>
     );
 };

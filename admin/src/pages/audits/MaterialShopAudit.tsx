@@ -13,12 +13,7 @@ import MaterialShopApplicationDetail from './components/MaterialShopApplicationD
 import AuditStatusSummary from './components/AuditStatusSummary';
 import VisibilityStatusPanel from './components/VisibilityStatusPanel';
 import AuditDetailSection from './components/AuditDetailSection';
-
-const statusMap: Record<number, { text: string; color: string }> = {
-    0: { text: '待审核', color: 'orange' },
-    1: { text: '已通过', color: 'green' },
-    2: { text: '已拒绝', color: 'red' },
-};
+import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS } from '../../constants/statuses';
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -158,7 +153,7 @@ const MaterialShopAudit: React.FC = () => {
             title: '状态',
             dataIndex: 'status',
             render: (value: number) => {
-                const config = statusMap[value];
+                const config = APPLICATION_AUDIT_STATUS_META[value];
                 return <Tag color={config?.color || 'default'}>{config?.text || value}</Tag>;
             },
         },
@@ -201,12 +196,7 @@ const MaterialShopAudit: React.FC = () => {
                     value={statusFilter}
                     onChange={setStatusFilter}
                     style={{ width: 150 }}
-                    options={[
-                        { label: '待审核', value: 0 },
-                        { label: '已通过', value: 1 },
-                        { label: '已拒绝', value: 2 },
-                        { label: '全部', value: 'all' },
-                    ]}
+                    options={APPLICATION_AUDIT_STATUS_OPTIONS}
                 />
                 <Input.Search
                     allowClear
@@ -284,8 +274,8 @@ const MaterialShopAudit: React.FC = () => {
                             <Descriptions bordered column={2} size="small">
                                 <Descriptions.Item label="申请ID">{currentItem.id}</Descriptions.Item>
                                 <Descriptions.Item label="状态">
-                                    <Tag color={statusMap[currentItem.status]?.color || 'default'}>
-                                        {statusMap[currentItem.status]?.text || currentItem.status}
+                                    <Tag color={APPLICATION_AUDIT_STATUS_META[currentItem.status]?.color || 'default'}>
+                                        {APPLICATION_AUDIT_STATUS_META[currentItem.status]?.text || currentItem.status}
                                     </Tag>
                                 </Descriptions.Item>
                                 <Descriptions.Item label="门店名称">

@@ -2,37 +2,13 @@ import React from 'react';
 import { Card, Descriptions, Image, Space, Table, Tag, Tooltip } from 'antd';
 import type { AdminMaterialShopApplicationDetail } from '../../../services/api';
 import type { ColumnsType } from 'antd/es/table';
+import { ENTITY_TYPE_LABELS, MATERIAL_PRODUCT_PARAM_LABELS, MERCHANT_KIND_LABELS } from '../../../constants/statuses';
 
 interface MaterialShopApplicationDetailProps {
     details: AdminMaterialShopApplicationDetail;
 }
 
-const entityTypeMap: Record<string, string> = {
-    company: '公司',
-    individual_business: '个体工商户',
-};
-
-const merchantKindMap: Record<string, string> = {
-    material_shop: '主材商',
-};
-
-
-const productParamLabelMap: Record<string, string> = {
-    brand: '品牌',
-    spec: '规格',
-    specification: '规格',
-    model: '型号',
-    series: '系列',
-    material: '材质',
-    color: '颜色',
-    size: '尺寸',
-    weight: '重量',
-    unit: '单位',
-    origin: '产地',
-    sku: 'SKU',
-};
-
-const formatParamLabel = (key: string) => productParamLabelMap[key] || key;
+const formatParamLabel = (key: string) => MATERIAL_PRODUCT_PARAM_LABELS[key] || key;
 
 const formatText = (value?: string | number | null) => {
     if (value == null) return '-';
@@ -124,12 +100,12 @@ const MaterialShopApplicationDetail: React.FC<MaterialShopApplicationDetailProps
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
             <Descriptions bordered column={2} size="small">
                 <Descriptions.Item label="手机号">{formatText(details.phone)}</Descriptions.Item>
-                <Descriptions.Item label="主体类型">{entityTypeMap[details.entityType] || formatText(details.entityType)}</Descriptions.Item>
+                <Descriptions.Item label="主体类型">{ENTITY_TYPE_LABELS[details.entityType] || formatText(details.entityType)}</Descriptions.Item>
                 <Descriptions.Item label="门店名称">{formatText(details.shopName)}</Descriptions.Item>
                 <Descriptions.Item label="公司名称">{formatText(details.companyName)}</Descriptions.Item>
                 {showMerchantKind && (
                     <Descriptions.Item label="商家体系">
-                        {merchantKindMap[details.merchantKind as string] || formatText(details.merchantKind)}
+                        {MERCHANT_KIND_LABELS[details.merchantKind as string] || formatText(details.merchantKind)}
                     </Descriptions.Item>
                 )}
                 {showSourceApplicationId && (

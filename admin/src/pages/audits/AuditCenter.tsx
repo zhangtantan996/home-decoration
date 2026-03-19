@@ -17,6 +17,7 @@ import PageHeader from '../../components/PageHeader';
 import StatCard from '../../components/StatCard';
 import StatusTag from '../../components/StatusTag';
 import { AuditOutlined, CheckCircleOutlined, FileImageOutlined, ShopOutlined } from '@ant-design/icons';
+import { AUDIT_MODULE_OPTIONS, PROVIDER_ROLE_META } from '../../constants/statuses';
 
 type AuditModuleKey = 'all' | 'provider' | 'material' | 'identity' | 'case';
 
@@ -78,14 +79,6 @@ const wrapDangerButtonStyle: React.CSSProperties = {
     color: '#dc2626',
     borderColor: 'rgba(220,38,38,0.24)',
 };
-
-const moduleTabOptions: Array<{ key: AuditModuleKey; label: string }> = [
-    { key: 'all', label: '待审核' },
-    { key: 'provider', label: '服务商' },
-    { key: 'material', label: '主材商' },
-    { key: 'identity', label: '身份申请' },
-    { key: 'case', label: '案例' },
-];
 
 const AuditCenter: React.FC = () => {
     const { hasPermission } = usePermission();
@@ -204,9 +197,9 @@ const AuditCenter: React.FC = () => {
             key: `provider-${item.id}`,
             module: 'provider' as const,
             name: item.companyName || item.realName || item.phone,
-            moduleLabel: '服务商入驻',
+            moduleLabel: '服务类商家入驻',
             badgeId: `#${item.id}`,
-            description: `申请认证为${item.role === 'designer' ? '设计师' : item.role === 'company' ? '装修公司' : '工长'}，提交了相关资质材料，请审核。`,
+            description: `申请认证为${PROVIDER_ROLE_META[item.role]?.text || item.role || '服务类商家'}，提交了相关资质材料，请审核。`,
             submittedAt: item.createdAt,
             path: '/providers/audit',
             avatarText: (item.realName || item.companyName || item.phone || '申').slice(0, 1),
@@ -230,7 +223,7 @@ const AuditCenter: React.FC = () => {
             name: item.merchantDetails?.companyName || item.merchantDetails?.realName || `用户 #${item.userId}`,
             moduleLabel: '身份申请',
             badgeId: `#${item.id}`,
-            description: `申请认证为${item.providerSubType === 'designer' ? '设计师' : item.providerSubType === 'company' ? '装修公司' : item.providerSubType === 'foreman' ? '工长' : '新身份'}，请审核。`,
+            description: `申请认证为${PROVIDER_ROLE_META[item.providerSubType || '']?.text || item.providerSubType || '新身份'}，请审核。`,
             submittedAt: item.appliedAt,
             path: '/audits/identity-applications',
             avatarText: (item.merchantDetails?.realName || item.merchantDetails?.companyName || '身').slice(0, 1),
@@ -270,13 +263,13 @@ const AuditCenter: React.FC = () => {
 
             <div className="hz-audit-summary">
                 <StatCard title="待审核" value={totalPending} icon={<AuditOutlined />} tone="warning" />
-                <StatCard title="服务商入驻" value={providerState.pendingCount} icon={<ShopOutlined />} tone="accent" />
+                <StatCard title="服务类商家入驻" value={providerState.pendingCount} icon={<ShopOutlined />} tone="accent" />
                 <StatCard title="身份 / 主材" value={identityState.pendingCount + materialState.pendingCount} icon={<CheckCircleOutlined />} tone="success" />
                 <StatCard title="案例审核" value={caseState.pendingCount} icon={<FileImageOutlined />} tone="danger" />
             </div>
 
             <div className="hz-audit-tabs" role="tablist" aria-label="审核中心筛选">
-                {moduleTabOptions.map((item) => (
+                {AUDIT_MODULE_OPTIONS.map((item) => (
                     <button
                         key={item.key}
                         type="button"

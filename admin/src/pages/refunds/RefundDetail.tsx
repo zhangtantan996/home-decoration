@@ -1,0 +1,231 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Space, Spin, Tag, message } from 'antd';
+import { ArrowLeftOutlined } from '@ant-design/icons';
+import { useNavigate, useParams } from 'react-router-dom';
+
+import PageHeader from '../../components/PageHeader';
+import { adminRefundApi, type AdminRefundApplicationItem } from '../../services/api';
+import { usePermission } from '../../hooks/usePermission';
+import { REFUND_STATUS_META, REFUND_TYPE_LABELS } from '../../constants/statuses';
+
+const normalizeDetail = (raw: any): AdminRefundApplicationItem | null => {
+    const data = raw?.data;
+    if (!data) return null;
+    if (data.refundApplication) return data.refundApplication as AdminRefundApplicationItem;
+    return data as AdminRefundApplicationItem;
+};
+
+const parseEvidence = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item));
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+        try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+                return parsed.map((item) => String(item));
+            }
+        } catch {
+            return value.split(/\n|,|，/).map((item) => item.trim()).filter(Boolean);
+        }
+    }
+    return [];
+};
+
+const RefundDetail: React.FC = () => {
+    const navigate = useNavigate();
+    const params = useParams();
+    const refundId = Number(params.id || 0);
+    const [approveForm] = Form.useForm();
+    const [rejectForm] = Form.useForm();
+
+    const [loading, setLoading] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [approveVisible, setApproveVisible] = useState(false);
+    const [rejectVisible, setRejectVisible] = useState(false);
+    const [item, setItem] = useState<AdminRefundApplicationItem | null>(null);
+    const { hasPermission } = usePermission();
+
+    const loadData = async () => {
+        if (!Number.isFinite(refundId) || refundId <= 0) {
+            message.error('无效退款申请ID');
+            return;
+        }
+        try {
+            setLoading(true);
+            const res = await adminRefundApi.detail(refundId);
+            if (res?.code !== 0) {
+                message.error(res?.message || '加载退款详情失败');
+                setItem(null);
+                return;
+            }
+            setItem(normalizeDetail(res));
+        } catch {
+            message.error('加载退款详情失败');
+            setItem(null);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        void loadData();
+    }, [refundId]);
+
+    const statusTag = useMemo(() => {
+        if (!item) return null;
+        const config = REFUND_STATUS_META[item.status] || { text: item.status, color: 'default' };
+        return <Tag color={config.color}>{config.text}</Tag>;
+    }, [item]);
+
+    const canAudit = item?.status === 'pending' && hasPermission('finance:transaction:approve');
+
+    const handleApprove = async () => {
+        if (!item) return;
+        try {
+            const values = await approveForm.validateFields();
+            setSubmitting(true);
+            const res = await adminRefundApi.approve(item.id, {
+                adminNotes: values.adminNotes,
+                approvedAmount: values.approvedAmount,
+            });
+            if (res?.code !== 0) {
+                message.error(res?.message || '批准失败');
+                return;
+            }
+            message.success('退款申请已批准');
+            setApproveVisible(false);
+            approveForm.resetFields();
+            await loadData();
+        } catch {
+            // 表单校验失败
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleReject = async () => {
+        if (!item) return;
+        try {
+            const values = await rejectForm.validateFields();
+            setSubmitting(true);
+            const res = await adminRefundApi.reject(item.id, {
+                adminNotes: values.adminNotes,
+            });
+            if (res?.code !== 0) {
+                message.error(res?.message || '拒绝失败');
+                return;
+            }
+            message.success('退款申请已拒绝');
+            setRejectVisible(false);
+            rejectForm.resetFields();
+            await loadData();
+        } catch {
+            // 表单校验失败
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const evidence = parseEvidence(item?.evidence);
+
+    return (
+        <div className="hz-page-stack">
+            <PageHeader
+                title={`退款详情 #${refundId || '-'}`}
+                description="查看退款申请信息并执行审核动作。"
+                extra={(
+                    <Space>
+                        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/refunds')}>
+                            返回列表
+                        </Button>
+                        {canAudit ? (
+                            <>
+                                <Button type="primary" onClick={() => setApproveVisible(true)}>
+                                    批准
+                                </Button>
+                                <Button danger onClick={() => setRejectVisible(true)}>
+                                    拒绝
+                                </Button>
+                            </>
+                        ) : null}
+                    </Space>
+                )}
+            />
+
+            <Card className="hz-table-card">
+                {loading ? (
+                    <div style={{ textAlign: 'center', padding: 48 }}>
+                        <Spin />
+                    </div>
+                ) : !item ? (
+                    <Empty description="未找到退款详情" />
+                ) : (
+                    <Descriptions bordered column={2}>
+                        <Descriptions.Item label="申请ID">{item.id}</Descriptions.Item>
+                        <Descriptions.Item label="状态">{statusTag}</Descriptions.Item>
+                        <Descriptions.Item label="预约ID">{item.bookingId}</Descriptions.Item>
+                        <Descriptions.Item label="项目ID">{item.projectId || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="订单ID">{item.orderId || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="用户ID">{item.userId}</Descriptions.Item>
+                        <Descriptions.Item label="退款类型">{REFUND_TYPE_LABELS[item.refundType] || item.refundType}</Descriptions.Item>
+                        <Descriptions.Item label="申请金额">¥{Number(item.requestedAmount || 0).toLocaleString()}</Descriptions.Item>
+                        <Descriptions.Item label="批准金额">{item.approvedAmount != null ? `¥${Number(item.approvedAmount).toLocaleString()}` : '-'}</Descriptions.Item>
+                        <Descriptions.Item label="申请原因" span={2}>{item.reason || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="证据材料" span={2}>
+                            {evidence.length === 0 ? '-' : (
+                                <Space direction="vertical">
+                                    {evidence.map((url) => (
+                                        <a key={url} href={url} target="_blank" rel="noreferrer">{url}</a>
+                                    ))}
+                                </Space>
+                            )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="审核意见" span={2}>{item.adminNotes || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="创建时间">{item.createdAt ? new Date(item.createdAt).toLocaleString() : '-'}</Descriptions.Item>
+                        <Descriptions.Item label="批准时间">{item.approvedAt ? new Date(item.approvedAt).toLocaleString() : '-'}</Descriptions.Item>
+                        <Descriptions.Item label="拒绝时间">{item.rejectedAt ? new Date(item.rejectedAt).toLocaleString() : '-'}</Descriptions.Item>
+                        <Descriptions.Item label="完成时间">{item.completedAt ? new Date(item.completedAt).toLocaleString() : '-'}</Descriptions.Item>
+                    </Descriptions>
+                )}
+            </Card>
+
+            <Modal
+                open={approveVisible}
+                title="批准退款申请"
+                confirmLoading={submitting}
+                onOk={() => void handleApprove()}
+                onCancel={() => setApproveVisible(false)}
+            >
+                <Form form={approveForm} layout="vertical">
+                    <Form.Item label="批准金额" name="approvedAmount">
+                        <InputNumber style={{ width: '100%' }} min={0} precision={2} placeholder="不填则由后端按默认规则执行" />
+                    </Form.Item>
+                    <Form.Item label="审核意见" name="adminNotes">
+                        <Input.TextArea rows={4} placeholder="填写审核意见（可选）" />
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            <Modal
+                open={rejectVisible}
+                title="拒绝退款申请"
+                confirmLoading={submitting}
+                onOk={() => void handleReject()}
+                onCancel={() => setRejectVisible(false)}
+            >
+                <Form form={rejectForm} layout="vertical">
+                    <Form.Item
+                        label="拒绝原因"
+                        name="adminNotes"
+                        rules={[{ required: true, message: '请填写拒绝原因' }]}
+                    >
+                        <Input.TextArea rows={4} placeholder="请填写拒绝原因" />
+                    </Form.Item>
+                </Form>
+            </Modal>
+        </div>
+    );
+};
+
+export default RefundDetail;
