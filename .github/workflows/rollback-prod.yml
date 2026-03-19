@@ -1,0 +1,100 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable git tag to roll back to, for example v1.12.2
+        required: true
+        type: string
+      service_scope:
+        description: Which services to roll back
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - api
+          - web
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback-production:
+    name: Roll back production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ inputs.tag }}"
+          service_scope="${{ inputs.service_scope }}"
+
+          if [[ ! "${tag}" =~ ^v[0-9A-Za-z._-]+$ ]]; then
+            echo "Rollback tag must start with v, got: ${tag}" >&2
+            exit 1
+          fi
+
+          case "${service_scope}" in
+            api|web|all) ;;
+            *)
+              echo "Invalid service scope: ${service_scope}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_KEY }}
+
+      - name: Add server host key
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${PROD_HOST:?missing PROD_HOST}"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          if [[ -n "${PROD_KNOWN_HOSTS:-}" ]]; then
+            printf '%s\n' "${PROD_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${PROD_PORT:-22}" -H "${PROD_HOST}" >> ~/.ssh/known_hosts
+          fi
+
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run remote rollback
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+          ROLLBACK_TAG: ${{ inputs.tag }}
+          SERVICE_SCOPE: ${{ inputs.service_scope }}
+        run: |
+          set -euo pipefail
+          : "${PROD_HOST:?missing PROD_HOST}"
+          : "${PROD_USER:?missing PROD_USER}"
+          : "${PROD_APP_DIR:?missing PROD_APP_DIR}"
+          : "${ROLLBACK_TAG:?missing ROLLBACK_TAG}"
+          : "${SERVICE_SCOPE:?missing SERVICE_SCOPE}"
+
+          ssh -p "${PROD_PORT:-22}" "${PROD_USER}@${PROD_HOST}" \
+            "cd '${PROD_APP_DIR}' && git fetch --tags --prune && bash deploy/scripts/rollback_prod.sh --tag '${ROLLBACK_TAG}' --service '${SERVICE_SCOPE}'"
