@@ -35,6 +35,23 @@ ENV VITE_API_URL=${VITE_API_URL}
 ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
+FROM node:20-alpine AS website-builder
+WORKDIR /app/website
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY website/package*.json ./
+RUN npm ci
+
+COPY website/ ./
+
+ARG VITE_USER_WEB_URL=/app/
+ARG VITE_MERCHANT_WEB_URL=/merchant/
+ENV VITE_USER_WEB_URL=${VITE_USER_WEB_URL}
+ENV VITE_MERCHANT_WEB_URL=${VITE_MERCHANT_WEB_URL}
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+RUN npm run build
+
 FROM node:20-alpine AS web-builder
 WORKDIR /app/web
 
@@ -65,6 +82,7 @@ COPY deploy/nginx/admin_allowlist.conf /etc/nginx/admin_allowlist.conf
 
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
 COPY --from=merchant-builder /app/merchant/dist /usr/share/nginx/html/merchant
+COPY --from=website-builder /app/website/dist /usr/share/nginx/html/website
 COPY --from=web-builder /app/web/dist /usr/share/nginx/html/web
 
 EXPOSE 8888
