@@ -79,6 +79,43 @@ jobs:
 
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Checkout rollback tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Sync workspace to production server
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_PORT: ${{ secrets.PROD_PORT }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
+        run: |
+          set -euo pipefail
+          : "${PROD_HOST:?missing PROD_HOST}"
+          : "${PROD_USER:?missing PROD_USER}"
+          : "${PROD_APP_DIR:?missing PROD_APP_DIR}"
+
+          ssh -p "${PROD_PORT:-22}" "${PROD_USER}@${PROD_HOST}" "mkdir -p '${PROD_APP_DIR}'"
+
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            --exclude 'output/' \
+            --exclude 'playwright-report/' \
+            --exclude 'test-results/' \
+            --exclude 'db_data_local/' \
+            --exclude 'deploy/.env' \
+            --exclude 'deploy/.env.test' \
+            --exclude 'deploy/backups/' \
+            --exclude 'server/uploads/' \
+            --exclude 'server/uploads_test/' \
+            -e "ssh -p ${PROD_PORT:-22}" \
+            ./ "${PROD_USER}@${PROD_HOST}:${PROD_APP_DIR}/"
+
       - name: Run remote rollback
         shell: bash
         env:
@@ -97,4 +134,4 @@ jobs:
           : "${SERVICE_SCOPE:?missing SERVICE_SCOPE}"
 
           ssh -p "${PROD_PORT:-22}" "${PROD_USER}@${PROD_HOST}" \
-            "cd '${PROD_APP_DIR}' && git fetch --tags --prune && bash deploy/scripts/rollback_prod.sh --tag '${ROLLBACK_TAG}' --service '${SERVICE_SCOPE}'"
+            "cd '${PROD_APP_DIR}' && bash deploy/scripts/rollback_prod.sh --tag '${ROLLBACK_TAG}' --service '${SERVICE_SCOPE}' --skip-git"

@@ -1,0 +1,135 @@
+name: Rollback Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to roll back to, for example dev, a tag, or a commit SHA
+        required: true
+        default: dev
+        type: string
+      service_scope:
+        description: Which services to roll back
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - api
+          - web
+
+concurrency:
+  group: test-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback-test:
+    name: Roll back test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ref="${{ inputs.ref }}"
+          service_scope="${{ inputs.service_scope }}"
+
+          if [[ -z "${ref}" ]]; then
+            echo "Rollback ref is required." >&2
+            exit 1
+          fi
+
+          case "${service_scope}" in
+            api|web|all) ;;
+            *)
+              echo "Invalid service scope: ${service_scope}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.TEST_SSH_KEY }}
+
+      - name: Add server host key
+        shell: bash
+        env:
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_PORT: ${{ secrets.TEST_PORT }}
+          TEST_KNOWN_HOSTS: ${{ secrets.TEST_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          : "${TEST_HOST:?missing TEST_HOST}"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          if [[ -n "${TEST_KNOWN_HOSTS:-}" ]]; then
+            printf '%s\n' "${TEST_KNOWN_HOSTS}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${TEST_PORT:-22}" -H "${TEST_HOST}" >> ~/.ssh/known_hosts
+          fi
+
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Checkout rollback ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Sync workspace to test server
+        shell: bash
+        env:
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_PORT: ${{ secrets.TEST_PORT }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_APP_DIR: ${{ secrets.TEST_APP_DIR }}
+        run: |
+          set -euo pipefail
+          : "${TEST_HOST:?missing TEST_HOST}"
+          : "${TEST_USER:?missing TEST_USER}"
+          : "${TEST_APP_DIR:?missing TEST_APP_DIR}"
+
+          ssh -p "${TEST_PORT:-22}" "${TEST_USER}@${TEST_HOST}" "mkdir -p '${TEST_APP_DIR}'"
+
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude 'dist/' \
+            --exclude 'output/' \
+            --exclude 'playwright-report/' \
+            --exclude 'test-results/' \
+            --exclude 'db_data_local/' \
+            --exclude 'deploy/.env' \
+            --exclude 'deploy/.env.test' \
+            --exclude 'deploy/backups/' \
+            --exclude 'server/uploads/' \
+            --exclude 'server/uploads_test/' \
+            -e "ssh -p ${TEST_PORT:-22}" \
+            ./ "${TEST_USER}@${TEST_HOST}:${TEST_APP_DIR}/"
+
+      - name: Run remote test rollback
+        shell: bash
+        env:
+          TEST_HOST: ${{ secrets.TEST_HOST }}
+          TEST_PORT: ${{ secrets.TEST_PORT }}
+          TEST_USER: ${{ secrets.TEST_USER }}
+          TEST_APP_DIR: ${{ secrets.TEST_APP_DIR }}
+          SERVICE_SCOPE: ${{ inputs.service_scope }}
+        run: |
+          set -euo pipefail
+          : "${TEST_HOST:?missing TEST_HOST}"
+          : "${TEST_USER:?missing TEST_USER}"
+          : "${TEST_APP_DIR:?missing TEST_APP_DIR}"
+          : "${SERVICE_SCOPE:?missing SERVICE_SCOPE}"
+
+          ssh -p "${TEST_PORT:-22}" "${TEST_USER}@${TEST_HOST}" \
+            "cd '${TEST_APP_DIR}' && bash deploy/scripts/rollback_test.sh --skip-git --service '${SERVICE_SCOPE}'"
