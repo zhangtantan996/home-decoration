@@ -29,6 +29,7 @@ RUN apk add --no-cache tzdata
 ENV TZ=Asia/Shanghai
 
 COPY --from=builder /app/api-server .
+COPY --from=builder /app/static ./static
 # Copy default config if needed, though env vars are better
 # COPY server/config.docker.yaml config.yaml 
 
