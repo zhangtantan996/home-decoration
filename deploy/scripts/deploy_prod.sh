@@ -181,6 +181,7 @@ verify_release() {
 
 update_services
 verify_release
+release_record_state "production" "deploy" "${TAG}" "${SERVICE_SCOPE}" "${SKIP_GIT}" "tag"
 
 echo ""
 echo "Deployment completed successfully."

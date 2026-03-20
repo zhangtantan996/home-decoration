@@ -65,6 +65,7 @@ server/uploads/
 db_data_local/
 /db_data_local/
 deploy/backups/
+deploy/state/
 deploy/nginx/admin.htpasswd
 tmp/
 *.pid

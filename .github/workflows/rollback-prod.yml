@@ -85,6 +85,13 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.tag }}
 
+      - name: Resolve rollback commit
+        id: rollback-meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "commit=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
       - name: Sync workspace to production server
         shell: bash
         env:
@@ -111,6 +118,7 @@ jobs:
             --exclude 'deploy/.env' \
             --exclude 'deploy/.env.test' \
             --exclude 'deploy/backups/' \
+            --exclude 'deploy/state/' \
             --exclude 'server/uploads/' \
             --exclude 'server/uploads_test/' \
             -e "ssh -p ${PROD_PORT:-22}" \
@@ -124,6 +132,7 @@ jobs:
           PROD_USER: ${{ secrets.PROD_USER }}
           PROD_APP_DIR: ${{ secrets.PROD_APP_DIR }}
           ROLLBACK_TAG: ${{ inputs.tag }}
+          ROLLBACK_COMMIT: ${{ steps.rollback-meta.outputs.commit }}
           SERVICE_SCOPE: ${{ inputs.service_scope }}
         run: |
           set -euo pipefail
@@ -131,7 +140,8 @@ jobs:
           : "${PROD_USER:?missing PROD_USER}"
           : "${PROD_APP_DIR:?missing PROD_APP_DIR}"
           : "${ROLLBACK_TAG:?missing ROLLBACK_TAG}"
+          : "${ROLLBACK_COMMIT:?missing ROLLBACK_COMMIT}"
           : "${SERVICE_SCOPE:?missing SERVICE_SCOPE}"
 
           ssh -p "${PROD_PORT:-22}" "${PROD_USER}@${PROD_HOST}" \
-            "cd '${PROD_APP_DIR}' && bash deploy/scripts/rollback_prod.sh --tag '${ROLLBACK_TAG}' --service '${SERVICE_SCOPE}' --skip-git"
+            "cd '${PROD_APP_DIR}' && RELEASE_COMMIT_OVERRIDE='${ROLLBACK_COMMIT}' bash deploy/scripts/rollback_prod.sh --tag '${ROLLBACK_TAG}' --service '${SERVICE_SCOPE}' --skip-git"
