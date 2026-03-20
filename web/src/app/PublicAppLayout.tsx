@@ -30,8 +30,11 @@ export function PublicAppLayout() {
   const user = useSessionStore((state) => state.user);
   const accessToken = useSessionStore((state) => state.accessToken);
   const clearSession = useSessionStore((state) => state.clearSession);
-  const { data: unreadCount } = useAsyncData(getNotificationUnreadCount, []);
   const isLoggedIn = Boolean(accessToken && user);
+  const { data: unreadCount } = useAsyncData(
+    () => (isLoggedIn ? getNotificationUnreadCount() : Promise.resolve(0)),
+    [isLoggedIn],
+  );
 
   const displayName = useMemo(() => user?.nickname || user?.phone || '用户', [user]);
   const avatarLetter = useMemo(() => displayName.slice(0, 1).toUpperCase(), [displayName]);
