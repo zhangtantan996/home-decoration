@@ -124,7 +124,7 @@ release_timestamp_slug() {
 
 release_sanitize_name() {
   local raw="${1:-}"
-  printf '%s' "${raw}" | tr '/:@ ' '____' | tr -cd '[:alnum:]._-\n'
+  printf '%s' "${raw}" | tr '/:@ ' '____' | tr -cd '[:alnum:]._\n-'
 }
 
 release_resolve_commit_sha() {
