@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import { useToast } from '../components/Toast';
 import { userSettingsApi } from '../services/api';
+import { formatServerDate } from '../utils/serverTime';
 
 const PRIMARY_GOLD = '#D4AF37';
 const GOLD_LIGHT = '#F5ECD0';
@@ -93,7 +94,7 @@ const LoginDevicesScreen: React.FC<LoginDevicesScreenProps> = ({ navigation }) =
                     name: d.deviceName || 'Unknown Device',
                     os: d.os || 'Unknown OS',
                     location: d.location || 'Unknown Location',
-                    lastActive: d.isCurrent ? '当前设备' : (d.lastLoginAt ? new Date(d.lastLoginAt).toLocaleDateString() : '未知'),
+                    lastActive: d.isCurrent ? '当前设备' : formatServerDate(d.lastLoginAt, '未知'),
                     isCurrent: d.isCurrent,
                     type: d.deviceType || 'mobile',
                 }));

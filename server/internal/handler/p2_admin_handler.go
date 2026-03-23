@@ -1,20 +1,24 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"time"
 
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
+	"home-decoration-server/pkg/timeutil"
 
 	"github.com/gin-gonic/gin"
 )
 
 var (
-	adminFinanceService = service.NewAdminFinanceService()
-	adminAuditService   = &service.AuditLogService{}
+	adminFinanceService               = service.NewAdminFinanceService()
+	adminFinanceReconciliationService = &service.FinanceReconciliationService{}
+	adminAuditService                 = &service.AuditLogService{}
 )
 
 func AdminGetFinanceOverview(c *gin.Context) {
@@ -90,6 +94,89 @@ func AdminManualReleaseFunds(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "手动放款成功", "transaction": result})
+}
+
+func AdminListFinanceReconciliations(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("pageSize"), 20)
+
+	list, total, err := adminFinanceReconciliationService.ListFinanceReconciliations(service.FinanceReconciliationFilter{
+		Status:    c.Query("status"),
+		StartDate: c.Query("startDate"),
+		EndDate:   c.Query("endDate"),
+		Page:      page,
+		PageSize:  pageSize,
+	})
+	if err != nil {
+		response.ServerError(c, "获取资金对账列表失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"list":     list,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
+}
+
+func AdminRunFinanceReconciliation(c *gin.Context) {
+	targetDate := timeutil.Now().AddDate(0, 0, -1)
+	if rawDate := strings.TrimSpace(c.Query("date")); rawDate != "" {
+		parsed, err := timeutil.ParseDate(rawDate)
+		if err != nil {
+			response.BadRequest(c, "日期格式错误，应为 YYYY-MM-DD")
+			return
+		}
+		targetDate = parsed
+	}
+
+	result, err := adminFinanceReconciliationService.RunDailyReconciliation(targetDate)
+	if err != nil {
+		response.ServerError(c, "执行资金对账失败")
+		return
+	}
+	response.Success(c, gin.H{"message": "资金对账执行完成", "item": result})
+}
+
+func AdminClaimFinanceReconciliation(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
+	reconciliationID := parseUint64(c.Param("id"))
+
+	var input struct {
+		Note string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	result, err := adminFinanceReconciliationService.ClaimFinanceReconciliation(reconciliationID, adminID, input.Note)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"message": "资金对账已认领", "item": result})
+}
+
+func AdminResolveFinanceReconciliation(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
+	reconciliationID := parseUint64(c.Param("id"))
+
+	var input struct {
+		Note string `json:"note" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "请填写处理结果")
+		return
+	}
+
+	result, err := adminFinanceReconciliationService.ResolveFinanceReconciliation(reconciliationID, adminID, input.Note)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"message": "资金对账已处理", "item": result})
 }
 
 func AdminListAuditLogs(c *gin.Context) {

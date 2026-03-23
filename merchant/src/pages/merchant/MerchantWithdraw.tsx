@@ -33,6 +33,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
+import { formatServerDateTime } from '../../utils/serverTime';
 import MerchantStatGrid from '../../components/MerchantStatGrid';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
@@ -241,14 +242,14 @@ const MerchantWithdraw: React.FC = () => {
             title: '申请时间',
             dataIndex: 'createdAt',
             key: 'createdAt',
-            render: (text: string) => new Date(text).toLocaleString('zh-CN'),
+            render: (text: string) => formatServerDateTime(text),
             width: 180,
         },
         {
             title: '完成时间',
             dataIndex: 'completedAt',
             key: 'completedAt',
-            render: (text: string | null) => (text ? new Date(text).toLocaleString('zh-CN') : '-'),
+            render: (text: string | null) => formatServerDateTime(text),
             width: 180,
         },
         {

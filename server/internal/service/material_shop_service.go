@@ -16,12 +16,15 @@ type MaterialShopService struct{}
 
 // MaterialShopQuery 查询参数
 type MaterialShopQuery struct {
-	Type     string  `form:"type"`   // showroom | brand
-	Lat      float64 `form:"lat"`    // 用户纬度
-	Lng      float64 `form:"lng"`    // 用户经度
-	SortBy   string  `form:"sortBy"` // recommend | distance
-	Page     int     `form:"page"`
-	PageSize int     `form:"pageSize"`
+	Type      string  `form:"type"`      // showroom | brand
+	Keyword   string  `form:"keyword"`   // 名称/品类/品牌关键词
+	City      string  `form:"city"`      // 城市
+	RatingMin float64 `form:"ratingMin"` // 最低评分
+	Lat       float64 `form:"lat"`       // 用户纬度
+	Lng       float64 `form:"lng"`       // 用户经度
+	SortBy    string  `form:"sortBy"`    // recommend | distance
+	Page      int     `form:"page"`
+	PageSize  int     `form:"pageSize"`
 }
 
 // MaterialShopListItem 列表返回项
@@ -63,6 +66,27 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 		db = db.Where("type = ?", query.Type)
 	}
 
+	if keyword := strings.TrimSpace(query.Keyword); keyword != "" {
+		pattern := "%" + keyword + "%"
+		db = db.Where(
+			`name LIKE ? OR company_name LIKE ? OR description LIKE ? OR address LIKE ? OR main_products LIKE ? OR product_categories LIKE ? OR main_brands LIKE ? OR main_categories LIKE ? OR tags LIKE ?`,
+			pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern,
+		)
+	}
+
+	if city := strings.TrimSpace(query.City); city != "" {
+		pattern := "%" + city + "%"
+		altPattern := pattern
+		if !strings.HasSuffix(city, "市") {
+			altPattern = "%" + city + "市%"
+		}
+		db = db.Where("(address LIKE ? OR service_area LIKE ? OR address LIKE ? OR service_area LIKE ?)", pattern, pattern, altPattern, altPattern)
+	}
+
+	if query.RatingMin > 0 {
+		db = db.Where("rating >= ?", query.RatingMin)
+	}
+
 	// 统计总数
 	db.Count(&total)
 
@@ -77,6 +101,8 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 		} else {
 			db = db.Order("id ASC")
 		}
+	case "rating", "recommend":
+		db = db.Order("rating DESC, review_count DESC")
 	default:
 		// 综合排序：评分优先
 		db = db.Order("rating DESC, review_count DESC")

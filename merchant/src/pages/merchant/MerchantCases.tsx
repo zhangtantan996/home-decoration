@@ -19,6 +19,8 @@ import {
 } from '../../services/merchantApi';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
+import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
+import { formatServerDateTime, getServerTimeMs } from '../../utils/serverTime';
 
 interface CaseItem {
     id: number;
@@ -50,22 +52,27 @@ interface CaseItem {
 type ForemanCategory = 'water' | 'electric' | 'wood' | 'masonry' | 'paint' | 'other';
 
 const FOREMAN_CASE_SECTIONS: Array<{ value: ForemanCategory; label: string; required: boolean }> = [
-    { value: 'water', label: '水工施工展示', required: true },
-    { value: 'electric', label: '电工施工展示', required: true },
-    { value: 'wood', label: '木工施工展示', required: true },
+    { value: 'water', label: '水电工施工展示', required: true },
+    { value: 'electric', label: '防水施工展示', required: true },
+    { value: 'wood', label: '木作施工展示', required: true },
     { value: 'masonry', label: '瓦工施工展示', required: true },
-    { value: 'paint', label: '油漆工施工展示', required: true },
+    { value: 'paint', label: '油漆施工展示', required: true },
     { value: 'other', label: '其他施工展示', required: false },
 ];
+
+const getForemanImageBounds = (category?: ForemanCategory) => ({
+    min: category === 'water' ? 3 : 2,
+    max: 6,
+});
 
 const normalizeForemanCategory = (value?: string): ForemanCategory | undefined => {
     const normalized = String(value || '').trim().toLowerCase();
     if (FOREMAN_CASE_SECTIONS.some((item) => item.value === normalized)) {
         return normalized as ForemanCategory;
     }
-    if (normalized.includes('水')) return 'water';
-    if (normalized.includes('电')) return 'electric';
-    if (normalized.includes('木')) return 'wood';
+    if (normalized.includes('水电') || normalized.includes('水工')) return 'water';
+    if (normalized.includes('防水') || normalized.includes('电工')) return 'electric';
+    if (normalized.includes('木作') || normalized.includes('木工')) return 'wood';
     if (normalized.includes('瓦')) return 'masonry';
     if (normalized.includes('油') || normalized.includes('漆')) return 'paint';
     if (normalized.includes('其')) return 'other';
@@ -121,7 +128,7 @@ const getForemanCasePriority = (record: CaseItem) => {
 };
 
 const getCaseTimeValue = (record: CaseItem) => {
-    const timestamp = record.createdAt ? new Date(record.createdAt).getTime() : 0;
+    const timestamp = getServerTimeMs(record.createdAt);
     return Number.isNaN(timestamp) ? 0 : timestamp;
 };
 
@@ -368,7 +375,7 @@ const MerchantCases: React.FC = () => {
         [isDesigner, providerInfo],
     );
 
-    const maxDetailImages = isForeman ? 8 : (isDesigner ? 12 : 20);
+    const maxDetailImages = isForeman ? 6 : (isDesigner ? 12 : 20);
 
     const displayCases = useMemo(() => (isForeman ? buildForemanCaseRows(cases) : cases), [cases, isForeman]);
 
@@ -570,8 +577,9 @@ const MerchantCases: React.FC = () => {
                 message.error(`${section.label}请填写工艺说明`);
                 return;
             }
-            if (imageList.length < 2 || imageList.length > 8) {
-                message.error(`${section.label}图片数量需为 2-8 张`);
+            const { min, max } = getForemanImageBounds(category);
+            if (imageList.length < min || imageList.length > max) {
+                message.error(`${section.label}图片数量需为 ${min}-${max} 张`);
                 return;
             }
         } else if (isDesigner) {
@@ -695,17 +703,7 @@ const MerchantCases: React.FC = () => {
     };
 
     // Upload Handlers
-    const beforeUpload = (file: RcFile) => {
-        const isJpgOrPngOrWebp = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/webp';
-        if (!isJpgOrPngOrWebp) {
-            message.error('只支持 JPG/PNG/WEBP 格式!');
-        }
-        const isLt5M = file.size / 1024 / 1024 < 5;
-        if (!isLt5M) {
-            message.error('图片大小不能超过 5MB!');
-        }
-        return isJpgOrPngOrWebp && isLt5M;
-    };
+    const beforeUpload = (file: RcFile) => validateImageUploadBeforeSend(file, IMAGE_UPLOAD_SPECS.showcase);
 
     const customRequest = async (options: any) => {
         const { file, onSuccess, onError } = options;
@@ -838,7 +836,7 @@ const MerchantCases: React.FC = () => {
             dataIndex: 'createdAt',
             key: 'createdAt',
             width: 180,
-            render: (text) => (text ? new Date(text).toLocaleString() : '-'),
+            render: (text) => formatServerDateTime(text),
         },
         {
             title: '操作',
@@ -1213,7 +1211,7 @@ const MerchantCases: React.FC = () => {
                     <Form.Item
                         label={isForeman ? '施工图片' : '作品详情图'}
                         required
-                        tooltip={isForeman ? '工长案例需上传 2-8 张图片' : '支持多图上传，展示完整的案例细节'}
+                        tooltip={isForeman ? '水电工需上传 3-6 张，其余施工分类需上传 2-6 张图片' : '支持多图上传，展示完整的案例细节'}
                     >
                         <Upload
                             listType="picture-card"

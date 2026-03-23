@@ -5,6 +5,7 @@ import { adminLogApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface AdminLog {
     id: number;
@@ -65,7 +66,7 @@ const LogList: React.FC = () => {
         {
             title: '时间',
             dataIndex: 'createdAt',
-            render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+            render: (val: string) => formatServerDateTime(val),
         },
     ];
 

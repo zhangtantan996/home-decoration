@@ -29,11 +29,22 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantStatGrid from '../../components/MerchantStatGrid';
 import sharedStyles from '../../components/MerchantPage.module.css';
 import { materialShopCenterApi, merchantUploadApi, type MaterialShopProduct } from '../../services/merchantApi';
+import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const PRODUCT_PRICE_MAX = 999999;
 const UNIT_MAX_LENGTH = 20;
 const PAGE_SIZE = 10;
 const COMMON_UNIT_OPTIONS = ['个', '件', '套', '米', '平方米', '箱'].map((unit) => ({ value: unit }));
+
+const toProductUploadFileList = (images?: string[]): UploadFile[] =>
+    (Array.isArray(images) ? images : []).map((url, index) => ({
+        uid: `${index}-${url}`,
+        name: url.split('/').pop() || `product-${index + 1}`,
+        status: 'done',
+        url,
+        response: { url },
+    }));
 
 const getErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) {
@@ -85,6 +96,7 @@ const MaterialShopProducts: React.FC = () => {
     const navigate = useNavigate();
     const [form] = Form.useForm<ProductFormValues>();
     const watchedUnit = Form.useWatch('unit', form) || '';
+    const watchedImages = Form.useWatch('images', form) || [];
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
@@ -325,7 +337,7 @@ const MaterialShopProducts: React.FC = () => {
             dataIndex: 'updatedAt',
             key: 'updatedAt',
             width: 180,
-            render: (value?: string) => value ? new Date(value).toLocaleString() : '-',
+            render: (value?: string) => formatServerDateTime(value),
         },
         {
             title: '操作',
@@ -517,23 +529,27 @@ const MaterialShopProducts: React.FC = () => {
                         <Input.TextArea rows={3} maxLength={500} showCount placeholder="请描述规格、材质、适用场景等" />
                     </Form.Item>
 
-                    <Form.Item name="images" label="商品图片" rules={[{ required: true, message: '请上传商品图片' }]}>
+                    <Form.Item
+                        name="images"
+                        label="商品图片"
+                        getValueFromEvent={() => (Array.isArray(form.getFieldValue('images')) ? form.getFieldValue('images') : [])}
+                        rules={[{ required: true, message: '请上传商品图片' }]}
+                    >
                         <Upload
                             listType="picture-card"
                             multiple
                             maxCount={6}
+                            fileList={toProductUploadFileList(watchedImages as string[])}
+                            beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.product)}
                             customRequest={uploadImage}
-                            onChange={(uploadInfo) => {
-                                const urls = uploadInfo.fileList
-                                    .map((uploadFile: UploadFile) => {
-                                        const response = uploadFile.response as { url?: string } | undefined;
-                                        return response?.url || uploadFile.url || '';
-                                    })
-                                    .filter((url): url is string => Boolean(url));
-                                form.setFieldValue('images', urls);
+                            onRemove={(file) => {
+                                const target = (file.response as { url?: string } | undefined)?.url || file.url || '';
+                                const current = (watchedImages || []) as string[];
+                                form.setFieldValue('images', current.filter((item) => item !== target));
+                                return true;
                             }}
                         >
-                            {((form.getFieldValue('images') || []) as string[]).length < 6 ? <div>上传图片</div> : null}
+                            {((watchedImages || []) as string[]).length < 6 ? <div>上传图片</div> : null}
                         </Upload>
                     </Form.Item>
                 </Form>

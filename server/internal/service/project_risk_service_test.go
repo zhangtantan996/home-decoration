@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -39,6 +42,9 @@ func setupProjectRiskServiceTestDB(t *testing.T) *gorm.DB {
 		&model.ProjectAudit{},
 		&model.RefundApplication{},
 		&model.MerchantIncome{},
+		&model.PaymentOrder{},
+		&model.PaymentCallback{},
+		&model.RefundOrder{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
@@ -50,6 +56,40 @@ func setupProjectRiskServiceTestDB(t *testing.T) *gorm.DB {
 	})
 
 	return db
+}
+
+type projectRiskMockGateway struct{}
+
+func (projectRiskMockGateway) BuildLaunchHTML(order *model.PaymentOrder) (string, error) {
+	return "<html></html>", nil
+}
+
+func (projectRiskMockGateway) VerifyNotify(values url.Values) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
+func (projectRiskMockGateway) QueryTrade(ctx context.Context, order *model.PaymentOrder) (*AlipayTradeQueryResult, error) {
+	return &AlipayTradeQueryResult{}, nil
+}
+
+func (projectRiskMockGateway) Refund(ctx context.Context, order *model.PaymentOrder, refund *model.RefundOrder) (*AlipayRefundResult, error) {
+	return &AlipayRefundResult{
+		TradeNo:     "TRADE-MOCK",
+		OutTradeNo:  order.OutTradeNo,
+		OutRefundNo: refund.OutRefundNo,
+		Success:     true,
+		RawJSON:     `{"code":"10000"}`,
+	}, nil
+}
+
+func (projectRiskMockGateway) QueryRefund(ctx context.Context, order *model.PaymentOrder, refund *model.RefundOrder) (*AlipayRefundResult, error) {
+	return &AlipayRefundResult{
+		TradeNo:     "TRADE-MOCK",
+		OutTradeNo:  order.OutTradeNo,
+		OutRefundNo: refund.OutRefundNo,
+		Success:     true,
+		RawJSON:     `{"code":"10000"}`,
+	}, nil
 }
 
 func seedProjectRiskFixture(t *testing.T, db *gorm.DB) (model.User, model.Provider, model.Project, model.Milestone, model.Booking) {
@@ -72,8 +112,39 @@ func seedProjectRiskFixture(t *testing.T, db *gorm.DB) (model.User, model.Provid
 	flow := model.BusinessFlow{Base: model.Base{ID: 51}, ProjectID: project.ID, CurrentStage: model.BusinessFlowStageInProgress}
 	escrow := model.EscrowAccount{Base: model.Base{ID: 61}, ProjectID: project.ID, UserID: user.ID, TotalAmount: 30000, AvailableAmount: 30000, FrozenAmount: 0, Status: escrowStatusActive}
 	order := model.Order{Base: model.Base{ID: 71}, ProjectID: project.ID, BookingID: booking.ID, OrderNo: "ORD-P1-001", OrderType: model.OrderTypeDesign, TotalAmount: 5000, PaidAmount: 5000, Status: model.OrderStatusPaid}
+	paidAt := time.Now()
+	bookingPayment := model.PaymentOrder{
+		Base:            model.Base{ID: 81},
+		BizType:         model.PaymentBizTypeBookingIntent,
+		BizID:           booking.ID,
+		PayerUserID:     user.ID,
+		Channel:         model.PaymentChannelAlipay,
+		Scene:           model.PaymentBizTypeBookingIntent,
+		TerminalType:    model.PaymentTerminalPCWeb,
+		Subject:         "预约量房定金",
+		Amount:          booking.IntentFee,
+		OutTradeNo:      "OUT-BOOKING-21",
+		Status:          model.PaymentStatusPaid,
+		ProviderTradeNo: "TRADE-BOOKING-21",
+		PaidAt:          &paidAt,
+	}
+	orderPayment := model.PaymentOrder{
+		Base:            model.Base{ID: 82},
+		BizType:         model.PaymentBizTypeOrder,
+		BizID:           order.ID,
+		PayerUserID:     user.ID,
+		Channel:         model.PaymentChannelAlipay,
+		Scene:           model.PaymentBizTypeOrder,
+		TerminalType:    model.PaymentTerminalPCWeb,
+		Subject:         "设计费订单支付",
+		Amount:          order.PaidAmount,
+		OutTradeNo:      "OUT-ORDER-71",
+		Status:          model.PaymentStatusPaid,
+		ProviderTradeNo: "TRADE-ORDER-71",
+		PaidAt:          &paidAt,
+	}
 
-	for _, value := range []interface{}{&user, &providerUser, &provider, &booking, &project, &milestone, &flow, &escrow, &order} {
+	for _, value := range []interface{}{&user, &providerUser, &provider, &booking, &project, &milestone, &flow, &escrow, &order, &bookingPayment, &orderPayment} {
 		if err := db.Create(value).Error; err != nil {
 			t.Fatalf("seed fixture failed: %v", err)
 		}
@@ -549,6 +620,11 @@ func TestProjectAuditServiceArbitratePartialRefundClosesProjectWhenNotContinuing
 
 func TestRefundApplicationApproveIntentFee(t *testing.T) {
 	db := setupProjectRiskServiceTestDB(t)
+	previousGatewayFactory := paymentGatewayFactory
+	paymentGatewayFactory = func() paymentGateway { return projectRiskMockGateway{} }
+	t.Cleanup(func() {
+		paymentGatewayFactory = previousGatewayFactory
+	})
 	user, _, _, _, booking := seedProjectRiskFixture(t, db)
 	service := &RefundApplicationService{}
 
@@ -622,6 +698,11 @@ func TestRefundApplicationRejectKeepsBookingUnchanged(t *testing.T) {
 
 func TestRefundApplicationPartialDesignFeeTracksRemainingBalance(t *testing.T) {
 	db := setupProjectRiskServiceTestDB(t)
+	previousGatewayFactory := paymentGatewayFactory
+	paymentGatewayFactory = func() paymentGateway { return projectRiskMockGateway{} }
+	t.Cleanup(func() {
+		paymentGatewayFactory = previousGatewayFactory
+	})
 	user, _, _, _, booking := seedProjectRiskFixture(t, db)
 	service := &RefundApplicationService{}
 

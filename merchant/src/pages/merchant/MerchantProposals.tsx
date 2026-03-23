@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { merchantProposalApi, merchantUploadApi } from '../../services/merchantApi';
 import { useDictStore } from '../../stores/dictStore';
 import { PROPOSAL_STATUS_META } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -406,7 +407,7 @@ const MerchantProposals: React.FC = () => {
             title: '创建时间',
             dataIndex: 'createdAt',
             width: 160,
-            render: (v: string) => new Date(v).toLocaleString(),
+            render: (v: string) => formatServerDateTime(v),
         },
         {
             title: '操作',
@@ -504,7 +505,7 @@ const MerchantProposals: React.FC = () => {
                             <Descriptions.Item label="交付说明" span={2}>
                                 {(parseJsonObject(currentProposal.deliveryPackageJson).description as string) || '-'}
                             </Descriptions.Item>
-                            <Descriptions.Item label="创建时间" span={2}>{new Date(currentProposal.createdAt).toLocaleString()}</Descriptions.Item>
+                            <Descriptions.Item label="创建时间" span={2}>{formatServerDateTime(currentProposal.createdAt)}</Descriptions.Item>
                         </Descriptions>
                     </>
                 )}

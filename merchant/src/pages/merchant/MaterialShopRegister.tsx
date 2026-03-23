@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRightOutlined, CheckOutlined, DeleteOutlined, PlusOutlined, SafetyOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, CheckOutlined, DeleteOutlined, PictureOutlined, PlusOutlined, SafetyOutlined } from '@ant-design/icons';
 import {
     AutoComplete,
     Alert,
@@ -18,6 +18,7 @@ import {
     message,
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
+import ImgCrop from 'antd-img-crop';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     MERCHANT_LEGAL_ROUTES,
@@ -25,7 +26,9 @@ import {
     PLATFORM_RULES_VERSION,
     PRIVACY_DATA_PROCESSING_VERSION,
 } from '../../constants/merchantLegal';
+import { getServerTimeMs } from '../../utils/serverTime';
 import {
+    MerchantApiError,
     materialShopApplyApi,
     merchantAuthApi,
     merchantUploadApi,
@@ -34,6 +37,7 @@ import {
     type MaterialShopApplyDetailData,
     type MaterialShopApplyPayload,
 } from '../../services/merchantApi';
+import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
@@ -169,6 +173,7 @@ const MaterialShopRegister: React.FC = () => {
         merchantKind: 'material_shop',
         applicationId: undefined,
     });
+    const watchedAvatar = Form.useWatch('avatar', form);
     const timerRef = useRef<number | null>(null);
 
     const phoneFromUrl = searchParams.get('phone') || '';
@@ -236,8 +241,7 @@ const MaterialShopRegister: React.FC = () => {
             .register-page-bg {
                 background: linear-gradient(135deg, #f6f8fb 0%, #e9f0f9 100%);
                 position: relative;
-                overflow-x: hidden;
-                overflow-y: visible;
+                overflow: visible;
                 width: 100%;
                 min-height: 100vh;
             }
@@ -342,8 +346,10 @@ const MaterialShopRegister: React.FC = () => {
                 if (parsed.formValues) {
                     form.setFieldsValue(parsed.formValues);
                 }
-                if (typeof parsed.currentStep === 'number' && parsed.currentStep >= 0 && parsed.currentStep < steps.length) {
+                if (!resubmitId && typeof parsed.currentStep === 'number' && parsed.currentStep >= 0 && parsed.currentStep < steps.length) {
                     setCurrentStep(parsed.currentStep);
+                } else if (resubmitId) {
+                    setCurrentStep(0);
                 }
                 if (Array.isArray(parsed.products) && parsed.products.length > 0) {
                     setProducts(parsed.products);
@@ -352,7 +358,7 @@ const MaterialShopRegister: React.FC = () => {
                 // Ignore invalid draft
             }
         }
-    }, [draftStorageKey, form, steps.length]);
+    }, [draftStorageKey, form, resubmitId, steps.length]);
 
     useEffect(() => {
         return () => {
@@ -363,6 +369,19 @@ const MaterialShopRegister: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (resubmitId) {
+            setPhoneVerified(false);
+            setVerifiedPhone('');
+            setVerificationToken('');
+            setVerificationExpiresAt(null);
+            setVerificationContext({
+                mode: currentVerificationMode,
+                merchantKind: currentVerificationMerchantKind,
+                applicationId: currentVerificationApplicationId,
+            });
+            sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
+            return;
+        }
         const stored = sessionStorage.getItem(VERIFICATION_STORAGE_KEY);
         if (!stored) {
             return;
@@ -398,10 +417,28 @@ const MaterialShopRegister: React.FC = () => {
         sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
     }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, draftStorageKey, form, phoneFromUrl, resubmitId]);
 
+    const handleStepValidationError = useCallback((error: unknown, fallbackMessage = '请完善当前步骤必填信息') => {
+        const errorFields = (
+            typeof error === 'object'
+            && error !== null
+            && 'errorFields' in error
+            && Array.isArray((error as { errorFields?: unknown[] }).errorFields)
+        )
+            ? (error as { errorFields: Array<{ name?: (string | number)[]; errors?: string[] }> }).errorFields
+            : [];
+
+        const firstField = errorFields[0];
+        if (firstField?.name && firstField.name.length > 0) {
+            form.scrollToField(firstField.name);
+        }
+        message.error(firstField?.errors?.[0] || fallbackMessage);
+    }, [form]);
+
     const hydrateResubmitDetail = useCallback((detail: MaterialShopApplyDetailData) => {
         form.setFieldsValue({
             phone: detail.phone || phoneFromUrl || undefined,
             entityType: detail.entityType || entityType,
+            avatar: detail.avatar,
             shopName: detail.shopName,
             shopDescription: detail.shopDescription,
             companyName: detail.companyName,
@@ -431,20 +468,10 @@ const MaterialShopRegister: React.FC = () => {
         }
     }, [entityType, form, phoneFromUrl]);
 
-    const validateImageBeforeUpload = (file: File, maxSizeMB: number) => {
-        const isImage = file.type === 'image/jpeg' || file.type === 'image/png';
-        if (!isImage) {
-            message.error('只支持 JPG/PNG 图片');
-            return Upload.LIST_IGNORE;
-        }
-        if (file.size / 1024 / 1024 >= maxSizeMB) {
-            message.error(`图片大小不能超过 ${maxSizeMB}MB`);
-            return Upload.LIST_IGNORE;
-        }
-        return true;
-    };
+    const validateImageBeforeUpload = (file: File, spec: typeof IMAGE_UPLOAD_SPECS.product) =>
+        validateImageUploadBeforeSend(file, spec);
 
-    const createSingleUploadHandler = (fieldName: 'businessLicense' | 'legalPersonIdCardFront' | 'legalPersonIdCardBack'): UploadProps['customRequest'] => async (options) => {
+    const createSingleUploadHandler = (fieldName: 'avatar' | 'businessLicense' | 'legalPersonIdCardFront' | 'legalPersonIdCardBack'): UploadProps['customRequest'] => async (options) => {
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             form.setFieldsValue({ [fieldName]: uploaded.url });
@@ -561,6 +588,7 @@ const MaterialShopRegister: React.FC = () => {
                 }
             } else if (currentStep === 1) {
                 await form.validateFields([
+                    'avatar',
                     'shopName',
                     'companyName',
                     'businessLicenseNo',
@@ -575,8 +603,8 @@ const MaterialShopRegister: React.FC = () => {
                 ]);
             }
             setCurrentStep((prev) => prev + 1);
-        } catch {
-            // no-op
+        } catch (error) {
+            handleStepValidationError(error);
         }
     };
 
@@ -659,7 +687,19 @@ const MaterialShopRegister: React.FC = () => {
             && (verificationContext.applicationId ?? 0) === (currentVerificationApplicationId ?? 0);
     }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, phoneVerified, verificationContext, verificationExpiresAt, verificationToken, verifiedPhone]);
 
-    const verifyPhoneAndMaybePrefill = useCallback(async (phone: string, code: string) => {
+    const confirmReapplyWarning = useCallback((phone: string) => new Promise<boolean>((resolve) => {
+        Modal.confirm({
+            title: '检测到当前手机号已有其他商家身份',
+            content: `继续申请新商家类型后，待新申请审核通过，旧商家身份将被冻结停用，本操作不可逆。请确认手机号 ${phone} 的申请操作。`,
+            okText: '继续申请',
+            cancelText: '取消',
+            centered: true,
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
+        });
+    }), []);
+
+    const verifyPhoneAndMaybePrefill = useCallback(async (phone: string, code: string, allowReapply = false) => {
         setResubmitLoading(true);
         setResubmitPrefillFailed(false);
         try {
@@ -669,8 +709,9 @@ const MaterialShopRegister: React.FC = () => {
                 merchantKind: 'material_shop',
                 mode: resubmitId ? 'resubmit' : 'apply',
                 applicationId: resubmitId ? Number(resubmitId) : undefined,
+                allowReapply: allowReapply || undefined,
             });
-            const expiresAtMs = response.expiresAt ? new Date(response.expiresAt).getTime() : Date.now() + VERIFICATION_EXPIRE_MS;
+            const expiresAtMs = response.expiresAt ? getServerTimeMs(response.expiresAt) : Date.now() + VERIFICATION_EXPIRE_MS;
             persistPhoneVerification({
                 phoneVerified: true,
                 verifiedPhone: response.verifiedPhone || phone,
@@ -697,6 +738,7 @@ const MaterialShopRegister: React.FC = () => {
                     formValues: {
                         phone: response.form.phone || phone,
                         entityType: response.form.entityType || entityType,
+                        avatar: response.form.avatar,
                         shopName: response.form.shopName,
                         shopDescription: response.form.shopDescription,
                         companyName: response.form.companyName,
@@ -719,14 +761,24 @@ const MaterialShopRegister: React.FC = () => {
             message.success(resubmitId ? '手机号校验成功，已回填原申请资料' : '手机号校验成功，可继续填写入驻资料');
             return true;
         } catch (error) {
+            if (!resubmitId && !allowReapply && error instanceof MerchantApiError) {
+                const guideData = (typeof error.data === 'object' && error.data !== null ? error.data : {}) as { nextAction?: string };
+                if (error.code === 409 && guideData.nextAction === 'REAPPLY') {
+                    const confirmed = await confirmReapplyWarning(phone);
+                    if (confirmed) {
+                        return verifyPhoneAndMaybePrefill(phone, code, true);
+                    }
+                    return false;
+                }
+            }
             clearPhoneVerification();
             setResubmitPrefillFailed(Boolean(resubmitId));
-            message.error(resubmitId ? '原申请资料回填失败，请检查手机号与验证码' : '验证码校验失败，请检查后重试');
+            message.error(getErrorMessage(error, resubmitId ? '原申请资料回填失败，请检查手机号与验证码' : '手机号校验失败，请检查后重试'));
             return false;
         } finally {
             setResubmitLoading(false);
         }
-    }, [clearPhoneVerification, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, entityType, hydrateResubmitDetail, persistDraftSnapshot, persistPhoneVerification, products, resubmitId]);
+    }, [clearPhoneVerification, confirmReapplyWarning, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, entityType, hydrateResubmitDetail, persistDraftSnapshot, persistPhoneVerification, products, resubmitId]);
 
     const clearDraft = () => {
         Modal.confirm({
@@ -793,6 +845,7 @@ const MaterialShopRegister: React.FC = () => {
         try {
             await form.validateFields([
                 'phone',
+                'avatar',
                 'shopName',
                 'companyName',
                 'businessLicenseNo',
@@ -844,6 +897,7 @@ const MaterialShopRegister: React.FC = () => {
                         verificationToken,
                         resubmitToken: resubmitId ? (verificationToken || undefined) : undefined,
                         entityType,
+                        avatar: String(values.avatar || '').trim(),
                         shopName: String(values.shopName || '').trim(),
                         shopDescription: values.shopDescription ? String(values.shopDescription).trim() : undefined,
                         companyName: String(values.companyName || '').trim(),
@@ -1009,6 +1063,38 @@ const MaterialShopRegister: React.FC = () => {
                                     </div>
                                 </div>
 
+                                <Form.Item
+                                    label="店铺头像"
+                                    required
+                                    validateStatus={form.getFieldError('avatar').length > 0 ? 'error' : undefined}
+                                    help={form.getFieldError('avatar')[0]}
+                                >
+                                    <Form.Item name="avatar" hidden rules={[{ required: true, message: '请上传店铺头像' }]}>
+                                        <Input />
+                                    </Form.Item>
+                                    <ImgCrop rotationSlider cropShape="round" aspect={1} showReset showGrid>
+                                        <Upload
+                                            listType="picture-card"
+                                            fileList={toSingleUploadFileList(typeof watchedAvatar === 'string' ? watchedAvatar : undefined)}
+                                            maxCount={1}
+                                            accept=".jpg,.jpeg,.png"
+                                            beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.avatar)}
+                                            customRequest={createSingleUploadHandler('avatar')}
+                                            onPreview={handleUploadPreview}
+                                            onRemove={() => {
+                                                form.setFieldsValue({ avatar: undefined });
+                                                void form.validateFields(['avatar']).catch(() => undefined);
+                                                return true;
+                                            }}
+                                        >
+                                            <div>
+                                                <PictureOutlined style={{ fontSize: 24 }} />
+                                                <div style={{ marginTop: 8 }}>上传头像</div>
+                                            </div>
+                                        </Upload>
+                                    </ImgCrop>
+                                </Form.Item>
+
                                 <Form.Item name="shopName" label="店铺名称" rules={[{ required: true, message: '请输入店铺名称' }]}>
                                     <Input className="premium-input" maxLength={100} placeholder="请输入店铺名称" />
                                 </Form.Item>
@@ -1115,7 +1201,7 @@ const MaterialShopRegister: React.FC = () => {
                                         listType="picture-card"
                                         maxCount={1}
                                         accept=".jpg,.jpeg,.png"
-                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
+                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.onboardingDoc)}
                                         customRequest={createSingleUploadHandler('businessLicense')}
                                         onPreview={handleUploadPreview}
                                         onRemove={() => {
@@ -1212,7 +1298,7 @@ const MaterialShopRegister: React.FC = () => {
                                                 listType="picture-card"
                                                 maxCount={1}
                                                 accept=".jpg,.jpeg,.png"
-                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
+                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.onboardingDoc)}
                                                 customRequest={createSingleUploadHandler('legalPersonIdCardFront')}
                                                 onPreview={handleUploadPreview}
                                                 onRemove={() => {
@@ -1239,7 +1325,7 @@ const MaterialShopRegister: React.FC = () => {
                                                 listType="picture-card"
                                                 maxCount={1}
                                                 accept=".jpg,.jpeg,.png"
-                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
+                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.onboardingDoc)}
                                                 customRequest={createSingleUploadHandler('legalPersonIdCardBack')}
                                                 onPreview={handleUploadPreview}
                                                 onRemove={() => {
@@ -1360,17 +1446,27 @@ const MaterialShopRegister: React.FC = () => {
                                                 maxCount={6}
                                                 accept=".jpg,.jpeg,.png"
                                                 fileList={toProductUploadFileList(product)}
-                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
+                                                beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.product)}
                                                 customRequest={createProductUploadHandler(index)}
                                                 onPreview={handleUploadPreview}
-                                                onChange={(uploadInfo) => {
-                                                    const urls = uploadInfo.fileList
-                                                        .map((uploadFile: UploadFile) => {
-                                                            const response = uploadFile.response as { url?: string } | undefined;
-                                                            return response?.url || uploadFile.url || '';
-                                                        })
-                                                        .filter((url): url is string => Boolean(url));
-                                                    updateProduct(index, { images: urls });
+                                                onRemove={(file) => {
+                                                    const url = file.url || (file.response as { url?: string } | undefined)?.url;
+                                                    if (!url) {
+                                                        return false;
+                                                    }
+                                                    setProducts((prev) => {
+                                                        const next = [...prev];
+                                                        const current = next[index];
+                                                        if (!current) {
+                                                            return prev;
+                                                        }
+                                                        next[index] = {
+                                                            ...current,
+                                                            images: current.images.filter((image) => image !== url),
+                                                        };
+                                                        return next;
+                                                    });
+                                                    return true;
                                                 }}
                                             >
                                                 {product.images.length < 6 ? (

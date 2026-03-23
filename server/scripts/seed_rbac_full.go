@@ -259,6 +259,27 @@ func createRoles() map[string]*model.SysRole {
 			Sort:   60,
 			Status: 1,
 		},
+		{
+			Name:   "系统管理员",
+			Key:    "system_admin",
+			Remark: "三员分立保留角色：负责系统配置与账号体系，必须独立分配",
+			Sort:   70,
+			Status: 1,
+		},
+		{
+			Name:   "安全管理员",
+			Key:    "security_admin",
+			Remark: "三员分立保留角色：负责安全策略与安全事件处置，必须独立分配",
+			Sort:   71,
+			Status: 1,
+		},
+		{
+			Name:   "安全审计员",
+			Key:    "security_auditor",
+			Remark: "三员分立保留角色：默认只读审计角色，必须独立分配",
+			Sort:   72,
+			Status: 1,
+		},
 	}
 
 	roleMap := make(map[string]*model.SysRole)
@@ -351,6 +372,9 @@ func assignRolePermissions(roles map[string]*model.SysRole) {
 		90, 91, 92, 95, 96, // 风控中心(只读)
 		100, 101, // 操作日志
 	}, "只读用户")
+
+	// 三员分立保留角色默认不自动分配菜单，避免初始化时直接放开权限
+	fmt.Println("   ✓ 三员分立保留角色: 默认不自动分配菜单，需按制度单独授权")
 }
 
 // 辅助函数：分配权限

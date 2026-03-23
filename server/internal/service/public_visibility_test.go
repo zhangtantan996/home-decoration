@@ -91,12 +91,30 @@ func TestEvaluateMaterialShopPublicVisibilityFrozen(t *testing.T) {
 func TestEvaluateCasePublicVisibility(t *testing.T) {
 	setupPublicVisibilitySchema(t)
 
-	visible := EvaluateCasePublicVisibility(&model.ProviderCase{ShowInInspiration: true})
+	visible := EvaluateCasePublicVisibility(&model.ProviderCase{ProviderID: 0, ShowInInspiration: true})
 	if !visible.PublicVisible || len(visible.Blockers) != 0 {
 		t.Fatalf("expected visible case, got %+v", visible)
 	}
 
-	hidden := EvaluateCasePublicVisibility(&model.ProviderCase{ShowInInspiration: false})
+	provider := model.Provider{Verified: true, Status: 1, IsSettled: true}
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	visible = EvaluateCasePublicVisibility(&model.ProviderCase{ProviderID: provider.ID, ShowInInspiration: true})
+	if !visible.PublicVisible || len(visible.Blockers) != 0 {
+		t.Fatalf("expected visible provider case, got %+v", visible)
+	}
+
+	hidden := EvaluateCasePublicVisibility(&model.ProviderCase{ProviderID: 99, ShowInInspiration: true})
+	if hidden.PublicVisible {
+		t.Fatalf("expected unknown provider case hidden from inspiration")
+	}
+	if !hasBlockerCode(hidden.Blockers, "case_hidden_from_inspiration") {
+		t.Fatalf("expected case_hidden_from_inspiration blocker, got %+v", hidden.Blockers)
+	}
+
+	hidden = EvaluateCasePublicVisibility(&model.ProviderCase{ProviderID: 0, ShowInInspiration: false})
 	if hidden.PublicVisible {
 		t.Fatalf("expected hidden case")
 	}

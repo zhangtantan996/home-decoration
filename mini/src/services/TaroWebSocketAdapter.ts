@@ -1,5 +1,5 @@
-import Taro from '@tarojs/taro';
-import type { SocketTask } from '@tarojs/taro';
+import Taro from "@tarojs/taro";
+import type { SocketTask } from "@tarojs/taro";
 
 type WsEventHandler<T = any> = ((evt: T) => void) | null;
 
@@ -26,36 +26,52 @@ export default class TaroWebSocketAdapter {
   onerror: WsEventHandler = null;
   onmessage: WsEventHandler<{ data: any }> = null;
 
-  private task: SocketTask;
+  private task: SocketTask | null = null;
+  private connectSeq = 0;
 
   constructor(url: string) {
-    this.task = Taro.connectSocket({ url });
+    void this.open(url);
+  }
 
-    this.task.onOpen(() => {
+  private async open(url: string) {
+    const currentSeq = this.connectSeq + 1;
+    this.connectSeq = currentSeq;
+    const task = await Taro.connectSocket({ url });
+    if (
+      this.connectSeq !== currentSeq ||
+      this.readyState === TaroWebSocketAdapter.CLOSED
+    ) {
+      task.close({});
+      return;
+    }
+
+    this.task = task;
+
+    task.onOpen(() => {
       this.readyState = TaroWebSocketAdapter.OPEN;
       this.onopen?.({});
     });
 
-    this.task.onClose((res) => {
+    task.onClose((res) => {
       this.readyState = TaroWebSocketAdapter.CLOSED;
       this.onclose?.(res);
     });
 
-    this.task.onError((err) => {
+    task.onError((err) => {
       this.onerror?.(err);
     });
 
-    this.task.onMessage((res) => {
+    task.onMessage((res) => {
       this.onmessage?.({ data: res.data });
     });
   }
 
   send(data: string) {
     if (this.readyState !== TaroWebSocketAdapter.OPEN) {
-      throw new Error('WebSocket is not connected');
+      throw new Error("WebSocket is not connected");
     }
 
-    this.task.send({ data });
+    this.task?.send({ data });
   }
 
   close() {
@@ -64,7 +80,7 @@ export default class TaroWebSocketAdapter {
     }
 
     this.readyState = TaroWebSocketAdapter.CLOSING;
-    this.task.close({});
+    this.connectSeq += 1;
+    this.task?.close({});
   }
 }
-

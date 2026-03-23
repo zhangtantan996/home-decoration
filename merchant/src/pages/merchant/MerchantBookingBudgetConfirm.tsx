@@ -8,6 +8,7 @@ import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import { BUDGET_CONFIRM_STATUS_META } from '../../constants/statuses';
 import { merchantBookingApi, merchantBudgetApi, type MerchantBudgetSummary } from '../../services/merchantApi';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const { Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -112,7 +113,7 @@ const MerchantBookingBudgetConfirm: React.FC = () => {
               <TextArea rows={4} maxLength={1000} showCount placeholder="补充预算假设、范围边界和已知不包含项。" />
             </Form.Item>
             <Button type="primary" loading={submitting} onClick={() => void handleSubmit()}>提交预算确认</Button>
-            {summary?.acceptedAt ? <Text type="success" style={{ marginLeft: 12 }}>用户已于 {new Date(summary.acceptedAt).toLocaleString()} 接受</Text> : null}
+            {summary?.acceptedAt ? <Text type="success" style={{ marginLeft: 12 }}>用户已于 {formatServerDateTime(summary.acceptedAt)} 接受</Text> : null}
           </Form>
         </MerchantSectionCard>
       </MerchantContentPanel>

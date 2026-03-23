@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 import { useToast } from '../components/Toast';
 import { userSettingsApi } from '../services/api';
+import { formatServerDate } from '../utils/serverTime';
 
 const PRIMARY_GOLD = '#D4AF37';
 const GOLD_LIGHT = '#F5ECD0';
@@ -123,7 +124,7 @@ const RealNameAuthScreen: React.FC<RealNameAuthScreenProps> = ({ navigation }) =
                 </View>
                 <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>认证时间</Text>
-                    <Text style={styles.infoValue}>{authData?.updatedAt ? new Date(authData.updatedAt).toLocaleDateString() : '-'}</Text>
+                    <Text style={styles.infoValue}>{formatServerDate(authData?.updatedAt)}</Text>
                 </View>
             </View>
         </View>

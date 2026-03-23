@@ -21,8 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **所有代码修改必须先阅读以下文档**:
 1. **[.speckit/constitution.md](.speckit/constitution.md)** - 项目宪法（P0 优先级）
-2. **[docs/CLAUDE_DEV_GUIDE.md](docs/CLAUDE_DEV_GUIDE.md)** - 开发约束和规范
-3. **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - 已知问题解决方案
+2. **[docs/Claude开发参考手册.md](docs/Claude开发参考手册.md)** - 开发约束和规范
+3. **[docs/问题解决手册.md](docs/问题解决手册.md)** - 已知问题解决方案
 
 **核心规范文件**（按需查阅）:
 - **[.claude/rules/tech-stack.md](.claude/rules/tech-stack.md)** - Go 和 React 技术栈规范
@@ -273,7 +273,7 @@ npm run build:weapp
 - Phone binding: `wx.getPhoneNumber` → `POST /api/v1/auth/wechat/mini/bind-phone`
 - Shares same JWT/RefreshToken system with mobile app
 
-**Note**: See `docs/WECHAT_MINIPROGRAM_STATUS.md` for current development status and `mini/README.md` for detailed setup.
+**Note**: See `docs/微信小程序开发进度.md` for current development status and `mini/README.md` for detailed setup.
 
 ### Android Debugging with ADB
 
@@ -402,7 +402,7 @@ adb reverse tcp:8080 tcp:8080
 
 **API Integration**: Connects to same backend as mobile app (`/api/v1/*`)
 
-**Note**: Currently in MVP stage with basic authentication. See `docs/WECHAT_MINIPROGRAM_STATUS.md` for roadmap.
+**Note**: Currently in MVP stage with basic authentication. See `docs/微信小程序开发进度.md` for roadmap.
 
 ## Important Technical Notes
 

@@ -248,3 +248,32 @@ func TestPayPaymentPlanResumesPausedProjectExecution(t *testing.T) {
 		t.Fatalf("expected next milestone activated, got %+v", refreshedMilestone)
 	}
 }
+
+func TestOrderServiceGetProjectBillForOwner(t *testing.T) {
+	db := setupOrderServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 2001}, Phone: "13800138201", Status: 1}
+	other := model.User{Base: model.Base{ID: 2002}, Phone: "13800138202", Status: 1}
+	project := model.Project{Base: model.Base{ID: 2003}, OwnerID: owner.ID, ProviderID: 30, Name: "账单项目", Address: "账单地址"}
+	order := model.Order{Base: model.Base{ID: 2004}, ProjectID: project.ID, OrderNo: "ORD-BILL-1", OrderType: model.OrderTypeConstruction, TotalAmount: 8888, Status: model.OrderStatusPending}
+	plan := model.PaymentPlan{Base: model.Base{ID: 2005}, OrderID: order.ID, Seq: 1, Name: "首款", Amount: 4000, Status: 0}
+
+	for _, record := range []interface{}{&owner, &other, &project, &order, &plan} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed bill data: %v", err)
+		}
+	}
+
+	svc := &OrderService{}
+	items, err := svc.GetProjectBillForOwner(project.ID, owner.ID)
+	if err != nil {
+		t.Fatalf("GetProjectBillForOwner: %v", err)
+	}
+	if len(items) != 1 || items[0].Order.ID != order.ID || len(items[0].PaymentPlans) != 1 {
+		t.Fatalf("unexpected project bill items: %+v", items)
+	}
+
+	if _, err := svc.GetProjectBillForOwner(project.ID, other.ID); err == nil {
+		t.Fatalf("expected foreign owner access to fail")
+	}
+}

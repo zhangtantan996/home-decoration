@@ -24,6 +24,9 @@ func main() {
 	if err := config.ValidateDatabaseSafety(cfg); err != nil {
 		log.Fatalf("Database safety check failed: %v", err)
 	}
+	if err := config.ValidateProductionTransportSafety(cfg); err != nil {
+		log.Fatalf("Production transport safety check failed: %v", err)
+	}
 
 	// 验证 Tinode 配置（启动时 fail-fast）
 	if err := tinode.ValidateConfig(); err != nil {
@@ -57,6 +60,16 @@ func main() {
 	// 初始化处理器
 	handler.InitHandlers(cfg)
 
+	// 初始化通知实时推送
+	notificationGateway := handler.InitNotificationRealtime(cfg.NotificationRealtime)
+	if notificationGateway != nil {
+		service.SetNotificationPublisher(service.NewNotificationPublisher(notificationGateway))
+		log.Println("Notification realtime gateway enabled")
+	} else {
+		service.SetNotificationPublisher(nil)
+		log.Println("Notification realtime gateway disabled")
+	}
+
 	// 初始化数据字典相关
 	dictRepo := repository.NewDictionaryRepository(repository.DB)
 	dictCache := service.NewDictCacheService()
@@ -75,6 +88,12 @@ func main() {
 
 	cron.StartEscrowReleaseCron()
 	log.Println("Escrow release cron job started")
+
+	cron.StartAuditLogRetentionCron(cfg.Log.AuditRetentionDays)
+	log.Printf("Audit log retention cron job started (retention=%d days)", service.ResolveAuditRetentionDays(cfg.Log.AuditRetentionDays))
+
+	cron.StartFinanceReconciliationCron()
+	log.Println("Finance reconciliation cron job started")
 
 	// 设置运行模式
 	if cfg.Server.Mode == "release" {

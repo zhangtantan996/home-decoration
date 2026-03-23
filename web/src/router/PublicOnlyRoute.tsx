@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
-import { useSessionStore } from '../modules/session/sessionStore';
+import { hasRecoverableSession, useSessionStore } from '../modules/session/sessionStore';
 
 interface PublicOnlyRouteProps {
   children: ReactNode;
@@ -10,13 +10,19 @@ interface PublicOnlyRouteProps {
 export function PublicOnlyRoute({ children }: PublicOnlyRouteProps) {
   const location = useLocation();
   const hasHydrated = useSessionStore((state) => state.hasHydrated);
-  const accessToken = useSessionStore((state) => state.accessToken);
+  const hasSession = useSessionStore((state) =>
+    hasRecoverableSession({
+      accessToken: state.accessToken,
+      refreshToken: state.refreshToken,
+      expiresAt: state.expiresAt,
+    }),
+  );
 
   if (!hasHydrated) {
     return null;
   }
 
-  if (accessToken) {
+  if (hasSession) {
     const redirect = new URLSearchParams(location.search).get('redirect');
     return <Navigate replace to={redirect && redirect.startsWith('/') ? redirect : '/'} />;
   }

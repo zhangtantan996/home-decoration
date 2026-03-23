@@ -59,7 +59,7 @@ const ProposalDetail: React.FC = () => {
 
     if (!auth.token) {
       Taro.showToast({ title: '请先登录', icon: 'none' });
-      Taro.navigateTo({ url: '/pages/profile/index' });
+      Taro.switchTab({ url: '/pages/profile/index' });
       return;
     }
 

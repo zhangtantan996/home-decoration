@@ -40,6 +40,7 @@ import { useToast } from '../components/Toast';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { getApiBaseUrl } from '../config';
+import { getServerDateAfterDays, getServerDateParts } from '../utils/serverTime';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -85,15 +86,18 @@ const generateWeekDays = (): WeekDay[] => {
     const days: WeekDay[] = [];
     const weekMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     for (let i = 1; i <= 7; i++) {
-        const date = new Date();
-        date.setDate(date.getDate() + i);
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const day = date.getDate().toString().padStart(2, '0');
-        const week = weekMap[date.getDay()];
+        const serverDate = getServerDateAfterDays(i);
+        const parts = getServerDateParts(serverDate);
+        if (!parts) {
+            continue;
+        }
+        const month = parts.month.toString().padStart(2, '0');
+        const day = parts.day.toString().padStart(2, '0');
+        const week = weekMap[parts.weekday];
         days.push({
-            id: date.toISOString().split('T')[0],
+            id: serverDate,
             label: `${month}-${day}`,
-            week: week,
+            week,
             fullDate: `${month}-${day} [${week}]`
         });
     }

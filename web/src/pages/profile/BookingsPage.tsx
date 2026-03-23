@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/AsyncState';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { listBookings } from '../../services/bookings';
+import styles from './WorkspacePage.module.scss';
 
 const filters = [
   { key: 'all', label: '全部' },
@@ -34,34 +35,50 @@ export function BookingsPage() {
   if (error || !data) return <ErrorBlock description={error || '预约列表加载失败'} onRetry={() => void reload()} />;
 
   return (
-    <section>
-      <div className="section-head" style={{ marginBottom: 20 }}>
+    <div className={styles.pageContainer}>
+      <header className={styles.sectionHead}>
         <h2>我的预约</h2>
-      </div>
-      <div className="ptabs" style={{ marginBottom: 16 }}>
+      </header>
+
+      <div className={styles.filterTabs}>
         {filters.map((item) => (
-          <button className={`ptab ${activeFilter === item.key ? 'active' : ''}`} key={item.key} onClick={() => setActiveFilter(item.key)} type="button">
+          <button
+            className={`${styles.filterTab} ${activeFilter === item.key ? styles.active : ''}`}
+            key={item.key}
+            onClick={() => setActiveFilter(item.key)}
+            type="button"
+          >
             {item.label}
           </button>
         ))}
       </div>
-      {filtered.length === 0 ? <EmptyBlock title="暂无预约" description="当前筛选条件下没有预约记录。" /> : (
-        <div className="project-list">
+
+      {filtered.length === 0 ? (
+        <EmptyBlock title="暂无预约" description="" />
+      ) : (
+        <div className={styles.list}>
           {filtered.map((item) => {
             const progress = calcProgress(item.statusText);
             return (
-              <Link className="proj-card" key={item.id} to={item.href}>
-                <div>
-                  <div className="proj-name">{item.title}</div>
-                  <div className="proj-phase">{item.providerTypeText} · {item.address}</div>
-                  <div className="proj-bar"><div className="proj-bar-fill" style={{ width: `${progress}%` }} /></div>
+              <Link className={styles.card} key={item.id} to={item.href}>
+                <div className={styles.cardBody}>
+                  <div className={styles.cardTitle}>
+                    <h3>{item.title}</h3>
+                    <p>{item.providerTypeText} · {item.address}</p>
+                  </div>
+                  <div className={styles.statusBar}>
+                    <div className={styles.statusFill} style={{ width: `${progress}%` }} />
+                  </div>
                 </div>
-                <div className="proj-percent">{progress}%</div>
+                <div className={styles.metaBlock}>
+                  <span>{item.statusText}</span>
+                  <strong>{progress}%</strong>
+                </div>
               </Link>
             );
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }

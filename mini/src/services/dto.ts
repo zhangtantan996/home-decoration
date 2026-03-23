@@ -1,4 +1,5 @@
 export type ProviderType = 'designer' | 'company' | 'foreman';
+type StringListValue = string | string[];
 
 export interface ProviderDTO {
   id: number;
@@ -29,7 +30,7 @@ export interface ProviderDTO {
   priceMin: number;
   priceMax: number;
   priceUnit: string;
-  serviceArea?: string;
+  serviceArea?: StringListValue;
 }
 
 export interface ProviderDetailDTO {
@@ -44,18 +45,20 @@ export interface ProviderDetailDTO {
     rating?: number;
     yearsExperience?: number;
     specialty?: string;
-    highlightTags?: string;
+    highlightTags?: StringListValue;
     pricingJson?: string;
     graduateSchool?: string;
     designPhilosophy?: string;
-    serviceArea?: string;
+    serviceArea?: StringListValue;
     serviceIntro?: string;
     teamSize?: number;
     establishedYear?: number;
+    followersCount?: number;
     priceMin?: number;
     priceMax?: number;
     priceUnit?: string;
     coverImage?: string;
+    isSettled?: boolean;
   };
   user?: {
     id?: number;
@@ -76,17 +79,18 @@ export interface ProviderDetailDTO {
   serviceIntro?: string;
   teamSize?: number;
   establishedYear?: number;
-  certifications?: string;
-  serviceArea?: string;
+  certifications?: StringListValue;
+  serviceArea?: StringListValue;
   officeAddress?: string;
   specialty?: string;
-  highlightTags?: string;
+  highlightTags?: StringListValue;
   pricingJson?: string;
   graduateSchool?: string;
   designPhilosophy?: string;
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;
+  isSettled?: boolean;
 }
 
 export interface ProviderCaseDTO {

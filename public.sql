@@ -3795,3 +3795,5 @@ ALTER TABLE "public"."phase_tasks" ADD CONSTRAINT "fk_project_phases_tasks" FORE
 -- Foreign Keys structure for table system_dictionaries
 -- ----------------------------
 ALTER TABLE "public"."system_dictionaries" ADD CONSTRAINT "fk_dict_category" FOREIGN KEY ("category_code") REFERENCES "public"."dictionary_categories" ("code") ON DELETE CASCADE ON UPDATE CASCADE;
+-- WARNING: 历史数据库快照，仅供参考/回溯，不是认证或商家入驻 schema 的权威来源。
+-- 请使用 server/migrations/ 下的迁移，尤其是 server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql。

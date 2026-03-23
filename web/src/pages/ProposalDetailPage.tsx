@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { payOrder } from '../services/orders';
 import { confirmProposal, getProposalDetail } from '../services/proposals';
 import type { ProposalDetailVM } from '../types/viewModels';
 
@@ -135,6 +136,23 @@ export function ProposalDetailPage() {
               >
                 确认报价
               </button>
+              {data.orderStatus === 0 && data.orderId ? (
+                <button
+                  className="button-secondary"
+                  onClick={async () => {
+                    setMessage('');
+                    try {
+                      const payment = await payOrder(data.orderId!);
+                      window.location.assign(payment.launchUrl);
+                    } catch (payError) {
+                      setMessage(payError instanceof Error ? payError.message : '支付失败');
+                    }
+                  }}
+                  type="button"
+                >
+                  支付设计费
+                </button>
+              ) : null}
               {data.projectId ? <Link className="button-outline" to={`/projects/${data.projectId}`}>进入项目</Link> : null}
             </div>
           </section>

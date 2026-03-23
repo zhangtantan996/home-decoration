@@ -235,8 +235,8 @@ func AdminApproveCaseAudit(c *gin.Context) {
 			Description:    audit.Description,
 			Images:         audit.Images,
 			SortOrder:      0, // 默认
-			// 审核通过即展示到灵感库（符合“审核通过的案例可见”的产品预期）
-			ShowInInspiration: true,
+			// 商家案例仅在商家详情页展示，不进入独立灵感图库。
+			ShowInInspiration: false,
 		}
 		if err := tx.Create(&newCase).Error; err != nil {
 			tx.Rollback()

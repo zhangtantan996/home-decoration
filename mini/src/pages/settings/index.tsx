@@ -26,7 +26,7 @@ export default function SettingsPage() {
       </Card>
 
       <Card title="功能设置" className="mb-md">
-        <ListItem title="消息提醒" description="已开启" />
+        <ListItem title="通知提醒" description="已开启" />
         <ListItem title="隐私说明" description="遵循平台隐私协议" />
       </Card>
 

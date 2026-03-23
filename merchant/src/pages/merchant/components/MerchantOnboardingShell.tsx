@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { Button, Grid, Layout, Steps, Typography } from 'antd';
 import type { StepsProps } from 'antd';
@@ -40,6 +40,32 @@ const MerchantOnboardingShell: React.FC<MerchantOnboardingShellProps> = ({
     const sidebarWidth = MERCHANT_THEME.onboarding.sidebarWidth;
     const cardMaxWidth = maxWidth ?? MERCHANT_THEME.onboarding.contentMaxWidth;
 
+    useEffect(() => {
+        const html = document.documentElement;
+        const body = document.body;
+        const previous = {
+            htmlOverflowY: html.style.overflowY,
+            htmlOverflowX: html.style.overflowX,
+            bodyOverflowY: body.style.overflowY,
+            bodyOverflowX: body.style.overflowX,
+            bodyHeight: body.style.height,
+        };
+
+        html.style.overflowY = 'auto';
+        html.style.overflowX = 'hidden';
+        body.style.overflowY = 'hidden';
+        body.style.overflowX = 'hidden';
+        body.style.height = 'auto';
+
+        return () => {
+            html.style.overflowY = previous.htmlOverflowY;
+            html.style.overflowX = previous.htmlOverflowX;
+            body.style.overflowY = previous.bodyOverflowY;
+            body.style.overflowX = previous.bodyOverflowX;
+            body.style.height = previous.bodyHeight;
+        };
+    }, []);
+
     return (
         <Layout
             className="register-page-bg"
@@ -47,7 +73,7 @@ const MerchantOnboardingShell: React.FC<MerchantOnboardingShellProps> = ({
                 minHeight: '100vh',
                 width: '100%',
                 position: 'relative',
-                overflowX: 'hidden',
+                overflow: 'visible',
             }}
         >
             {isDesktop && (
@@ -167,6 +193,7 @@ const MerchantOnboardingShell: React.FC<MerchantOnboardingShellProps> = ({
                     alignItems: 'center',
                     justifyContent: isDesktop ? 'flex-start' : 'center',
                     overflow: 'visible',
+                    overflowY: 'visible',
                 }}
             >
                 <div

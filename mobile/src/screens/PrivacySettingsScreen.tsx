@@ -25,7 +25,7 @@ const PrivacySettingsScreen = ({ navigation }: any) => {
                 />
                 <SettingsRow
                     label="展示在线状态"
-                    hint="消息页会显示最近在线时间，帮助对方判断沟通效率。"
+                    hint="个人中心与协作记录中会显示最近活跃时间，便于服务商安排跟进节奏。"
                     rightNode={<SettingsSwitch value={privacy.onlineStatusVisible} onValueChange={(value) => updatePrivacy({ onlineStatusVisible: value })} />}
                     withChevron={false}
                 />

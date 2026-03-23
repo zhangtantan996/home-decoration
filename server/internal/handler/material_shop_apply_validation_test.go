@@ -26,6 +26,7 @@ func newValidMaterialShopApplyInput() materialShopApplyInput {
 		Phone:                  "13800138001",
 		Code:                   "123456",
 		EntityType:             "company",
+		Avatar:                 "https://img.example.com/avatar.jpg",
 		ShopName:               "优选主材馆",
 		ShopDescription:        "主营瓷砖、地板与卫浴主材",
 		CompanyName:            "上海优选主材有限公司",

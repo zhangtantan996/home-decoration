@@ -6,6 +6,7 @@ import { Success } from '@nutui/icons-react-taro';
 import { Skeleton } from '@/components/Skeleton';
 import { getProjectDetail, getProjectPhases, getProjectMilestones, acceptMilestone, type ProjectDetail as ProjectDetailType, type ProjectPhase, type Milestone } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
+import { formatServerDate } from '@/utils/serverTime';
 
 const ProjectDetailPage: React.FC = () => {
   const auth = useAuthStore();
@@ -133,7 +134,7 @@ const ProjectDetailPage: React.FC = () => {
              </View>
              <View>
                <View className="text-xs text-gray-400">开工时间</View>
-               <View className="font-medium">{detail.createdAt ? new Date(detail.createdAt).toLocaleDateString() : '-'}</View>
+               <View className="font-medium">{formatServerDate(detail.createdAt)}</View>
              </View>
           </View>
         </View>
@@ -253,7 +254,7 @@ const ProjectDetailPage: React.FC = () => {
 
                             {isCompleted && milestone.acceptedAt && (
                               <Text className="text-xs text-gray-400">
-                                验收时间: {new Date(milestone.acceptedAt).toLocaleDateString()}
+                                验收时间: {formatServerDate(milestone.acceptedAt)}
                               </Text>
                             )}
                           </View>

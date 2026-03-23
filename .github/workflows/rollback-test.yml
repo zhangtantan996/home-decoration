@@ -85,6 +85,13 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.ref }}
 
+      - name: Resolve rollback commit
+        id: rollback-meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "commit=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
       - name: Sync workspace to test server
         shell: bash
         env:
@@ -111,6 +118,7 @@ jobs:
             --exclude 'deploy/.env' \
             --exclude 'deploy/.env.test' \
             --exclude 'deploy/backups/' \
+            --exclude 'deploy/state/' \
             --exclude 'server/uploads/' \
             --exclude 'server/uploads_test/' \
             -e "ssh -p ${TEST_PORT:-22}" \
@@ -123,13 +131,15 @@ jobs:
           TEST_PORT: ${{ secrets.TEST_PORT }}
           TEST_USER: ${{ secrets.TEST_USER }}
           TEST_APP_DIR: ${{ secrets.TEST_APP_DIR }}
+          ROLLBACK_COMMIT: ${{ steps.rollback-meta.outputs.commit }}
           SERVICE_SCOPE: ${{ inputs.service_scope }}
         run: |
           set -euo pipefail
           : "${TEST_HOST:?missing TEST_HOST}"
           : "${TEST_USER:?missing TEST_USER}"
           : "${TEST_APP_DIR:?missing TEST_APP_DIR}"
+          : "${ROLLBACK_COMMIT:?missing ROLLBACK_COMMIT}"
           : "${SERVICE_SCOPE:?missing SERVICE_SCOPE}"
 
           ssh -p "${TEST_PORT:-22}" "${TEST_USER}@${TEST_HOST}" \
-            "cd '${TEST_APP_DIR}' && bash deploy/scripts/rollback_test.sh --skip-git --service '${SERVICE_SCOPE}'"
+            "cd '${TEST_APP_DIR}' && RELEASE_COMMIT_OVERRIDE='${ROLLBACK_COMMIT}' bash deploy/scripts/rollback_test.sh --skip-git --service '${SERVICE_SCOPE}'"

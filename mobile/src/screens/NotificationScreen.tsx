@@ -17,7 +17,9 @@ import {
     ChevronRight,
 } from 'lucide-react-native';
 import { notificationApi } from '../services/api';
+import { notificationRealtimeService } from '../services/notificationRealtimeService';
 import { useToast } from '../components/Toast';
+import { formatServerRelativeTime } from '../utils/serverTime';
 
 const PRIMARY_GOLD = '#D4AF37';
 
@@ -75,8 +77,23 @@ const NotificationScreen = ({ navigation }: any) => {
     }, [showToast]);
 
     useEffect(() => {
-        loadNotifications(1);
-    }, []);
+        void loadNotifications(1);
+    }, [loadNotifications]);
+
+    useEffect(() => {
+        return notificationRealtimeService.subscribe((event) => {
+            if (
+                event.type === 'notification.new'
+                || event.type === 'notification.read'
+                || event.type === 'notification.delete'
+                || event.type === 'notification.all_read'
+                || event.type === 'notification.init'
+                || event.type === 'notification.unread_count'
+            ) {
+                void loadNotifications(1, true);
+            }
+        });
+    }, [loadNotifications]);
 
     // 下拉刷新
     const handleRefresh = () => {
@@ -179,18 +196,7 @@ const NotificationScreen = ({ navigation }: any) => {
 
     // 格式化时间
     const formatTime = (dateString: string) => {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diff = now.getTime() - date.getTime();
-        const minutes = Math.floor(diff / 60000);
-        const hours = Math.floor(diff / 3600000);
-        const days = Math.floor(diff / 86400000);
-
-        if (minutes < 1) return '刚刚';
-        if (minutes < 60) return `${minutes}分钟前`;
-        if (hours < 24) return `${hours}小时前`;
-        if (days < 7) return `${days}天前`;
-        return date.toLocaleDateString('zh-CN');
+        return formatServerRelativeTime(dateString, '刚刚');
     };
 
     // 渲染通知项

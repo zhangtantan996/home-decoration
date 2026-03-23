@@ -143,6 +143,7 @@ verify_rollback() {
 
 rollback_services
 verify_rollback
+release_record_state "production" "rollback" "${TAG}" "${SERVICE_SCOPE}" "${SKIP_GIT}" "tag"
 
 echo ""
 echo "Rollback completed successfully."

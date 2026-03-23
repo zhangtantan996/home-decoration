@@ -78,10 +78,20 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 		SurveyDepositSource: surveyDepositSource,
 		SurveyRefundNotice:  surveyRefundNotice,
 	}
+	plainAddress := booking.Address
+	plainPhone := booking.Phone
+	plainNotes := booking.Notes
+
+	if err := encryptBookingSensitiveFields(booking); err != nil {
+		return nil, err
+	}
 
 	if err := repository.DB.Create(booking).Error; err != nil {
 		return nil, err
 	}
+	booking.Address = plainAddress
+	booking.Phone = plainPhone
+	booking.Notes = plainNotes
 	if _, err := businessFlowSvc.EnsureLeadFlow(nil, model.BusinessFlowSourceBooking, booking.ID, userID, req.ProviderID); err != nil {
 		log.Printf("[business_flow] ensure booking flow failed: %v", err)
 	}

@@ -11,6 +11,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/pkg/timeutil"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -102,7 +103,7 @@ func (s *AdminFinanceService) GetOverview() (*FinanceOverviewResponse, error) {
 	}
 
 	var releasedToday float64
-	startOfDay := time.Now().In(time.Local).Truncate(24 * time.Hour)
+	startOfDay := timeutil.StartOfDay(timeutil.Now())
 	if err := repository.DB.Model(&model.Transaction{}).
 		Where("type = ? AND created_at >= ?", "release", startOfDay).
 		Select("COALESCE(SUM(amount), 0)").

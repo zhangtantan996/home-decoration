@@ -3,6 +3,7 @@ package cron
 import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"log"
 	"time"
 )
@@ -17,6 +18,7 @@ func StartOrderCron() {
 
 		for range ticker.C {
 			cancelExpiredOrders()
+			syncPendingRefundOrders()
 		}
 	}()
 }
@@ -36,5 +38,24 @@ func cancelExpiredOrders() {
 
 	if result.RowsAffected > 0 {
 		log.Printf("[Cron] Cancelled %d expired orders", result.RowsAffected)
+	}
+}
+
+func syncPendingRefundOrders() {
+	count, err := service.NewPaymentService(nil).SyncPendingRefundOrders(20)
+	if err != nil {
+		log.Printf("[Cron] Failed to sync pending refunds: %v", err)
+		_, _, _ = (&service.SystemAlertService{}).UpsertAlert(&service.CreateSystemAlertInput{
+			Type:        service.SystemAlertTypeRefundSyncFailure,
+			Level:       "critical",
+			Scope:       "退款同步/全局",
+			Description: err.Error(),
+			ActionURL:   "/risk/warnings",
+		})
+		return
+	}
+	_, _ = (&service.SystemAlertService{}).ResolveAlert(service.SystemAlertTypeRefundSyncFailure, "退款同步/全局", "退款同步任务恢复正常")
+	if count > 0 {
+		log.Printf("[Cron] Synced %d pending refund orders", count)
 	}
 }

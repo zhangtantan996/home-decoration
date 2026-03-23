@@ -1,7 +1,7 @@
 import { useSessionStore } from '../modules/session/sessionStore';
 import type { SessionUser } from '../types/api';
 import type { ProfileFeedItemVM, ProfileHomeVM, ProfileShortcutVM } from '../types/viewModels';
-import { compactPhone, formatDateTime } from '../utils/format';
+import { formatDateTime } from '../utils/format';
 import { listDemands } from './demands';
 import { requestJson } from './http';
 import { listBookings } from './bookings';
@@ -17,6 +17,8 @@ interface RawProfile {
   phone?: string;
   nickname?: string;
   avatar?: string;
+  birthday?: string;
+  bio?: string;
   userType?: number;
 }
 
@@ -111,8 +113,8 @@ function buildShortcuts(input: {
     },
     {
       key: 'messages',
-      title: '我的消息',
-      description: '查看最近消息和提醒',
+      title: '我的通知',
+      description: '查看最近通知和提醒',
       countText: `${input.messages.filter((item) => !item.isRead).length} 条未读`,
       href: '/me/messages',
       highlight: input.messages.some((item) => !item.isRead),
@@ -147,16 +149,15 @@ export async function getProfileHomeData(): Promise<ProfileHomeVM> {
   const pendingPaymentsCount = orders.list.filter((item) => item.status === 0).length;
 
   return {
-    displayName: effectiveProfile?.nickname || effectiveProfile?.phone || '已登录用户',
-    phoneText: compactPhone(effectiveProfile?.phone),
-    avatar: effectiveProfile?.avatar || 'https://placehold.co/160x160/e4e4e7/27272a?text=ME',
+    displayName: effectiveProfile?.nickname || '已登录用户',
+    avatar: effectiveProfile?.avatar || '',
     unreadCount,
     pendingPaymentsCount,
     summaryCards: [
-      { title: '进行中需求', value: `${demands.list.filter((item) => item.status === 'matching' || item.status === 'matched').length}`, description: '审核或匹配中的真实需求' },
-      { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '需要你尽快决定的方案' },
-      { title: '进行中项目', value: `${projects.list.filter((item) => item.statusText.includes('进行中')).length}`, description: '正在推进的施工项目' },
-      { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '与报价或阶段付款相关' },
+      { title: '进行中需求', value: `${demands.list.filter((item) => item.status === 'matching' || item.status === 'matched').length}`, description: '审核或匹配中的真实需求', href: '/me/demands' },
+      { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '需要你尽快决定的方案', href: '/me/proposals' },
+      { title: '进行中项目', value: `${projects.list.filter((item) => item.statusText.includes('进行中')).length}`, description: '正在推进的施工项目', href: '/me/projects' },
+      { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '与报价或阶段付款相关', href: '/me/orders' },
     ],
     todos: [
       { title: '需求进度', value: `${demands.list.filter((item) => item.status === 'submitted' || item.status === 'matching').length}`, description: '查看平台审核和商家响应进度', href: '/me/demands' },
@@ -203,4 +204,11 @@ export async function getProfileHomeData(): Promise<ProfileHomeVM> {
 
 export function formatRecordUpdatedAt(value: string | null | undefined) {
   return formatDateTime(value);
+}
+
+export async function updateProfile(data: { nickname?: string; avatar?: string; birthday?: string; bio?: string }) {
+  return requestJson<null>('/user/profile', {
+    method: 'PUT',
+    body: data,
+  });
 }

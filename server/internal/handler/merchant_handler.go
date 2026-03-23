@@ -473,12 +473,9 @@ func MerchantGetInfo(c *gin.Context) {
 	var user model.User
 	repository.DB.First(&user, provider.UserID)
 
-	displayName := provider.CompanyName
-	// 特殊处理：如果是个人设计师，显示名称优先使用用户昵称/真实姓名
-	if provider.ProviderType == 1 {
-		displayName = user.Nickname
-	} else if displayName == "" {
-		displayName = user.Nickname
+	displayName := user.Nickname
+	if displayName == "" {
+		displayName = provider.CompanyName
 	}
 
 	// 解析 ServiceArea (JSON数组) - 存储的是区域代码
@@ -569,27 +566,15 @@ func MerchantUpdateInfo(c *gin.Context) {
 		return
 	}
 
-	// 验证服务区域代码（如果提供）
+	// 验证服务城市代码（如果提供）
 	var serviceAreaCodes []string
 	if len(input.ServiceArea) > 0 {
-		// 先尝试验证是否为代码格式
-		if err := merchantRegionService.ValidateRegionCodes(input.ServiceArea); err != nil {
-			// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
-			codes, convertErr := merchantRegionService.ConvertNamesToCodes(input.ServiceArea)
-			if convertErr != nil {
-				response.Error(c, 400, "服务区域验证失败: "+err.Error())
-				return
-			}
-			// 转换成功后再次验证代码
-			if err := merchantRegionService.ValidateRegionCodes(codes); err != nil {
-				response.Error(c, 400, "服务区域代码验证失败: "+err.Error())
-				return
-			}
-			serviceAreaCodes = codes
-		} else {
-			// 如果是代码格式，直接使用
-			serviceAreaCodes = input.ServiceArea
+		codes, err := merchantRegionService.NormalizeServiceCityCodes(input.ServiceArea)
+		if err != nil {
+			response.Error(c, 400, "服务城市验证失败: "+err.Error())
+			return
 		}
+		serviceAreaCodes = codes
 	}
 
 	tx := repository.DB.Begin()
@@ -1174,16 +1159,38 @@ func MerchantUploadAvatar(c *gin.Context) {
 
 	// 生成访问URL (根据实际部署配置)
 	avatarURL := fmt.Sprintf("/uploads/avatars/%s", filename)
+	meta, err := imgutil.ProcessUploadedImageAsset(dst, avatarURL, ext, imgutil.UploadAssetSpec{
+		MinShortEdge:       300,
+		ThumbnailMaxWidth:  320,
+		ThumbnailMaxHeight: 320,
+	})
+	if err != nil {
+		_ = os.Remove(dst)
+		if smallErr, ok := imgutil.IsImageTooSmallError(err); ok {
+			response.Error(c, 400, smallErr.Error())
+			return
+		}
+		response.Error(c, 500, "处理头像失败")
+		return
+	}
 
 	// 更新用户头像
 	if err := repository.DB.Model(&model.User{}).Where("id = ?", userID).Update("avatar", avatarURL).Error; err != nil {
 		response.Error(c, 500, "更新头像失败")
 		return
 	}
+	if err := repository.DB.Model(&model.Provider{}).Where("user_id = ?", userID).Update("avatar", avatarURL).Error; err != nil {
+		response.Error(c, 500, "更新商家头像失败")
+		return
+	}
 
 	response.Success(c, gin.H{
-		"url":  imgutil.GetFullImageURL(avatarURL),
-		"path": avatarURL,
+		"url":           imgutil.GetFullImageURL(avatarURL),
+		"path":          avatarURL,
+		"thumbnailUrl":  imgutil.GetFullImageURL(resolveUploadThumbnailPath(meta, avatarURL)),
+		"thumbnailPath": resolveUploadThumbnailPath(meta, avatarURL),
+		"width":         resolveUploadAssetWidth(meta),
+		"height":        resolveUploadAssetHeight(meta),
 	})
 }
 
@@ -1232,11 +1239,50 @@ func MerchantUploadImage(c *gin.Context) {
 
 	// 生成访问URL
 	imageURL := fmt.Sprintf("/uploads/cases/%s", filename)
+	meta, err := imgutil.ProcessUploadedImageAsset(dst, imageURL, ext, imgutil.UploadAssetSpec{
+		MinShortEdge:       600,
+		ThumbnailMaxWidth:  960,
+		ThumbnailMaxHeight: 960,
+	})
+	if err != nil {
+		_ = os.Remove(dst)
+		if smallErr, ok := imgutil.IsImageTooSmallError(err); ok {
+			response.Error(c, 400, smallErr.Error())
+			return
+		}
+		response.Error(c, 500, "处理图片失败")
+		return
+	}
 
 	response.Success(c, gin.H{
-		"url":  imgutil.GetFullImageURL(imageURL),
-		"path": imageURL,
+		"url":           imgutil.GetFullImageURL(imageURL),
+		"path":          imageURL,
+		"thumbnailUrl":  imgutil.GetFullImageURL(resolveUploadThumbnailPath(meta, imageURL)),
+		"thumbnailPath": resolveUploadThumbnailPath(meta, imageURL),
+		"width":         resolveUploadAssetWidth(meta),
+		"height":        resolveUploadAssetHeight(meta),
 	})
+}
+
+func resolveUploadThumbnailPath(meta *imgutil.UploadAssetMeta, fallback string) string {
+	if meta == nil || strings.TrimSpace(meta.ThumbnailPath) == "" {
+		return fallback
+	}
+	return meta.ThumbnailPath
+}
+
+func resolveUploadAssetWidth(meta *imgutil.UploadAssetMeta) int {
+	if meta == nil {
+		return 0
+	}
+	return meta.Width
+}
+
+func resolveUploadAssetHeight(meta *imgutil.UploadAssetMeta) int {
+	if meta == nil {
+		return 0
+	}
+	return meta.Height
 }
 
 // MerchantGetProposal 获取方案详情

@@ -10,6 +10,7 @@ import MerchantStatGrid from '../../components/MerchantStatGrid';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface IncomeRecord {
     id: number;
@@ -105,7 +106,7 @@ const MerchantIncome: React.FC = () => {
             title: '时间',
             dataIndex: 'createdAt',
             key: 'createdAt',
-            render: (text: string) => new Date(text).toLocaleString(),
+            render: (text: string) => formatServerDateTime(text),
             width: 180,
         },
         {

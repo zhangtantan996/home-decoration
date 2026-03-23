@@ -3,13 +3,12 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Text, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
-import { Home, Sparkles, FileText, MessageSquare, User } from 'lucide-react-native';
+import { Home, Sparkles, FileText, Bell, User } from 'lucide-react-native';
 
 // 导入页面
 import HomeScreen from '../screens/HomeScreen';
 
 import MySiteScreen from '../screens/MySiteScreen';
-import MessageScreen from '../screens/MessageScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import LoginScreen from '../screens/LoginScreen';
 import InspirationScreen from '../screens/InspirationScreen';
@@ -19,8 +18,6 @@ import { DesignerDetailScreen, WorkerDetailScreen, CompanyDetailScreen } from '.
 import { CaseGalleryScreen, CaseDetailScreen } from '../screens/CaseScreens';
 import BookingScreen from '../screens/BookingScreen';
 import ProjectTimelineScreen from '../screens/ProjectTimelineScreen';
-import ChatRoomScreen from '../screens/ChatRoomScreen';
-import ChatSettingsScreen from '../screens/ChatSettingsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import PersonalInfoScreen from '../screens/PersonalInfoScreen';
@@ -59,6 +56,7 @@ import ChangePhoneScreen from '../screens/ChangePhoneScreen';
 import { useAuthStore } from '../store/authStore';
 import { useProviderStore } from '../store/providerStore';
 import { useSessionExpiry } from '../hooks/useSessionExpiry';
+import { notificationRealtimeService } from '../services/notificationRealtimeService';
 
 // 定义导航参数列表
 export type RootStackParamList = {
@@ -107,8 +105,8 @@ const progressTabIcon = ({ focused, color }: { focused: boolean; color: string }
     <FileText size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
 );
 
-const messageTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
-    <MessageSquare size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
+const notificationTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
+    <Bell size={22} color={color} strokeWidth={focused ? 2 : 1.5} />
 );
 
 const profileTabIcon = ({ focused, color }: { focused: boolean; color: string }) => (
@@ -166,10 +164,10 @@ const MainTabs = () => {
             />
             <Tab.Screen
                 name="Message"
-                component={MessageScreen}
+                component={NotificationScreen}
                 options={{
-                    tabBarLabel: '消息',
-                    tabBarIcon: messageTabIcon,
+                    tabBarLabel: '通知',
+                    tabBarIcon: notificationTabIcon,
                 }}
             />
             <Tab.Screen
@@ -212,6 +210,18 @@ const AppNavigator = () => {
             preloadAll();
         }
     }, [isAuthenticated, preloadAll]);
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            notificationRealtimeService.stop();
+            return;
+        }
+
+        notificationRealtimeService.start();
+        return () => {
+            notificationRealtimeService.stop();
+        };
+    }, [isAuthenticated]);
 
     if (isLoading) {
         return <LoadingScreen />;
@@ -260,8 +270,6 @@ const AppNavigator = () => {
                         />
                         <Stack.Screen name="Booking" component={BookingScreen} />
                         <Stack.Screen name="ProjectTimeline" component={ProjectTimelineScreen} />
-                        <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
-                        <Stack.Screen name="ChatSettings" component={ChatSettingsScreen} />
                         <Stack.Screen name="Settings" component={SettingsScreen} />
                         <Stack.Screen name="ChangePhone" component={ChangePhoneScreen} />
                         <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />

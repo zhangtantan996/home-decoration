@@ -18,6 +18,7 @@ import StatCard from '../../components/StatCard';
 import StatusTag from '../../components/StatusTag';
 import { AuditOutlined, CheckCircleOutlined, FileImageOutlined, ShopOutlined } from '@ant-design/icons';
 import { AUDIT_MODULE_OPTIONS, PROVIDER_ROLE_META } from '../../constants/statuses';
+import { formatServerDateTime, getServerTimeMs } from '../../utils/serverTime';
 
 type AuditModuleKey = 'all' | 'provider' | 'material' | 'identity' | 'case';
 
@@ -55,12 +56,7 @@ const defaultModuleState = <T,>(): AuditModuleState<T> => ({
     items: [],
 });
 
-const formatDateTime = (value?: string) => {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString('zh-CN', { hour12: false });
-};
+const formatDateTime = formatServerDateTime;
 
 const readErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error) {
@@ -242,7 +238,7 @@ const AuditCenter: React.FC = () => {
         }));
 
         return [...providerItems, ...materialItems, ...identityItems, ...caseItems]
-            .sort((left, right) => new Date(right.submittedAt).getTime() - new Date(left.submittedAt).getTime());
+            .sort((left, right) => getServerTimeMs(right.submittedAt) - getServerTimeMs(left.submittedAt));
     }, [caseState.items, identityState.items, materialState.items, providerState.items]);
 
     const filteredQueueItems = useMemo(() => {

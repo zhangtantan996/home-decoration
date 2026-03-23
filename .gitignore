@@ -43,7 +43,9 @@ NUL
 # Agent & IDE Specific
 .agent/
 .claude/
-.codex/
+.codex/*
+!.codex/agents/
+!.codex/agents/**
 .cursor/
 .kiro/
 .superdesign/
@@ -65,6 +67,7 @@ server/uploads/
 db_data_local/
 /db_data_local/
 deploy/backups/
+deploy/state/
 deploy/nginx/admin.htpasswd
 tmp/
 *.pid

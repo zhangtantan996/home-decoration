@@ -3,6 +3,7 @@ import { Table, Card, Select, Tag, Button, Space, message, Modal, Form, Input, U
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { adminRiskApi } from '../../services/api';
 import { ARBITRATION_HANDLE_STATUS_OPTIONS, ARBITRATION_STATUS_META, ARBITRATION_STATUS_OPTIONS } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Arbitration {
     id: number;
@@ -110,7 +111,7 @@ const ArbitrationCenter: React.FC = () => {
         {
             title: '申请时间',
             dataIndex: 'createdAt',
-            render: (val: string) => new Date(val).toLocaleString(),
+            render: (val: string) => formatServerDateTime(val),
         },
         {
             title: '操作',
@@ -210,7 +211,7 @@ const ArbitrationCenter: React.FC = () => {
                             </Descriptions.Item>
                         )}
                         <Descriptions.Item label="申请时间" span={2}>
-                            {new Date(currentItem.createdAt).toLocaleString()}
+                            {formatServerDateTime(currentItem.createdAt)}
                         </Descriptions.Item>
                     </Descriptions>
                 )}

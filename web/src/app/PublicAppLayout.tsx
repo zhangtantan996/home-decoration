@@ -1,18 +1,18 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import companyLogo from '../assets/company-logo.png';
-import { useAsyncData } from '../hooks/useAsyncData';
-import { useSessionStore } from '../modules/session/sessionStore';
+import { hasRecoverableSession, useSessionStore } from '../modules/session/sessionStore';
 import { getNotificationUnreadCount } from '../services/notifications';
+import { notificationRealtimeClient } from '../services/notificationRealtime';
 import styles from './AuthenticatedAppLayout.module.scss';
 
 const navItems = [
   { to: '/', label: '首页', end: true },
-  { to: '/providers', label: '找服务' },
+  { to: '/providers', label: '服务商' },
   { to: '/inspiration', label: '灵感案例' },
   { to: '/progress', label: '我的项目' },
-  { to: '/messages', label: '消息' },
+  { to: '/messages', label: '通知' },
   { to: '/me', label: '个人中心' },
 ];
 
@@ -28,13 +28,58 @@ function BellIcon() {
 export function PublicAppLayout() {
   const navigate = useNavigate();
   const user = useSessionStore((state) => state.user);
-  const accessToken = useSessionStore((state) => state.accessToken);
+  const hasSession = useSessionStore((state) =>
+    hasRecoverableSession({
+      accessToken: state.accessToken,
+      refreshToken: state.refreshToken,
+      expiresAt: state.expiresAt,
+    }),
+  );
   const clearSession = useSessionStore((state) => state.clearSession);
-  const { data: unreadCount } = useAsyncData(getNotificationUnreadCount, []);
-  const isLoggedIn = Boolean(accessToken && user);
+  const isLoggedIn = Boolean(hasSession && user);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const displayName = useMemo(() => user?.nickname || user?.phone || '用户', [user]);
+  const displayName = useMemo(() => user?.nickname || '用户', [user]);
   const avatarLetter = useMemo(() => displayName.slice(0, 1).toUpperCase(), [displayName]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (!isLoggedIn) {
+      setUnreadCount(0);
+      return () => {
+        active = false;
+      };
+    }
+
+    void getNotificationUnreadCount()
+      .then((count) => {
+        if (active) {
+          setUnreadCount(count);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setUnreadCount(0);
+        }
+      });
+
+    const unsubscribe = notificationRealtimeClient.subscribe((event) => {
+      if ((event.type === 'notification.init' || event.type === 'notification.unread_count') && typeof event.data?.count === 'number') {
+        setUnreadCount(event.data.count);
+        return;
+      }
+
+      if (event.type === 'notification.new') {
+        setUnreadCount((current) => current + 1);
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [isLoggedIn]);
 
   return (
     <div className={styles.shell}>
@@ -69,8 +114,11 @@ export function PublicAppLayout() {
                   <BellIcon />
                   {unreadCount && unreadCount > 0 ? <span className={styles.notiDot} /> : null}
                 </button>
-                <Link className={styles.avatar} to="/me" title={displayName}>
-                  {user?.avatar ? <img alt={`${displayName}头像`} src={user.avatar} /> : avatarLetter}
+                <Link className={styles.accountLink} to="/me" title={displayName}>
+                  <span className={styles.avatar}>
+                    {user?.avatar ? <img alt={`${displayName}头像`} src={user.avatar} /> : avatarLetter}
+                  </span>
+                  <span className={styles.accountName}>{displayName}</span>
                 </Link>
                 <button
                   className={styles.logoutBtn}

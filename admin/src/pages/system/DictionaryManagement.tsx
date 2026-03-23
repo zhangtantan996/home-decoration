@@ -10,6 +10,34 @@ import type { DictItem, DictCategory } from '../../services/dictionaryApi';
 import { useDictStore } from '../../stores/dictStore';
 import type { ColumnsType } from 'antd/es/table';
 
+const RANGE_EXTRA_CATEGORIES = new Set(['provider_budget_range', 'inspiration_area_bucket']);
+
+function readRangeNumber(value: unknown) {
+    if (value === '' || value === undefined || value === null) {
+        return undefined;
+    }
+    const next = Number(value);
+    return Number.isNaN(next) ? undefined : next;
+}
+
+function formatExtraData(extraData?: Record<string, any>) {
+    if (!extraData || Object.keys(extraData).length === 0) {
+        return '-';
+    }
+
+    const min = readRangeNumber(extraData.min);
+    const max = readRangeNumber(extraData.max);
+    if (min !== undefined || max !== undefined) {
+        return `min: ${min ?? '不限'} / max: ${max ?? '不限'}`;
+    }
+
+    try {
+        return JSON.stringify(extraData);
+    } catch {
+        return '[配置异常]';
+    }
+}
+
 const DictionaryManagement: React.FC = () => {
     const [activeCategory, setActiveCategory] = useState('style');
     const [categories, setCategories] = useState<DictCategory[]>([]);
@@ -20,6 +48,8 @@ const DictionaryManagement: React.FC = () => {
     const [pagination, setPagination] = useState({ current: 1, pageSize: 50 });
     const [form] = Form.useForm();
     const { clearDict } = useDictStore();
+    const currentCategoryCode = Form.useWatch('categoryCode', form) || activeCategory;
+    const isRangeCategory = RANGE_EXTRA_CATEGORIES.has(currentCategoryCode);
 
     // 加载分类列表
     useEffect(() => {
@@ -82,7 +112,11 @@ const DictionaryManagement: React.FC = () => {
             categoryCode: activeCategory,
             categoryName: currentCategory?.name || activeCategory,
             sortOrder: maxSortOrder + 1,
-            enabled: true
+            enabled: true,
+            parentValue: '',
+            extraDataText: '',
+            rangeMin: undefined,
+            rangeMax: undefined,
         });
         setEditingItem(null);
         setModalVisible(true);
@@ -90,9 +124,15 @@ const DictionaryManagement: React.FC = () => {
 
     const handleEdit = (record: DictItem) => {
         const currentCategory = categories.find(cat => cat.code === record.categoryCode);
+        const rangeMin = readRangeNumber(record.extraData?.min);
+        const rangeMax = readRangeNumber(record.extraData?.max);
         form.setFieldsValue({
             ...record,
-            categoryName: currentCategory?.name || record.categoryCode
+            categoryName: currentCategory?.name || record.categoryCode,
+            parentValue: record.parentValue || '',
+            extraDataText: record.extraData ? JSON.stringify(record.extraData, null, 2) : '',
+            rangeMin,
+            rangeMax,
         });
         setEditingItem(record);
         setModalVisible(true);
@@ -112,12 +152,41 @@ const DictionaryManagement: React.FC = () => {
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
+            let extraData: Record<string, any> | undefined;
+
+            if (RANGE_EXTRA_CATEGORIES.has(values.categoryCode)) {
+                const min = readRangeNumber(values.rangeMin);
+                const max = readRangeNumber(values.rangeMax);
+                if (min !== undefined && max !== undefined && max < min) {
+                    message.error('区间上限不能小于下限');
+                    return;
+                }
+                if (min !== undefined || max !== undefined) {
+                    extraData = {
+                        min: min ?? null,
+                        max: max ?? null,
+                    };
+                }
+            } else if (values.extraDataText?.trim()) {
+                extraData = JSON.parse(values.extraDataText);
+            }
+
+            const payload = {
+                categoryCode: values.categoryCode,
+                value: values.value,
+                label: values.label,
+                description: values.description,
+                sortOrder: values.sortOrder,
+                enabled: values.enabled,
+                parentValue: values.parentValue?.trim() || '',
+                extraData,
+            };
 
             if (editingItem) {
-                await dictionaryApi.update(editingItem.id, values);
+                await dictionaryApi.update(editingItem.id, payload);
                 message.success('更新成功');
             } else {
-                await dictionaryApi.create(values);
+                await dictionaryApi.create(payload);
                 message.success('创建成功');
             }
 
@@ -125,6 +194,10 @@ const DictionaryManagement: React.FC = () => {
             setModalVisible(false);
             loadData();
         } catch (error: any) {
+            if (error instanceof SyntaxError) {
+                message.error('扩展配置不是合法 JSON');
+                return;
+            }
             message.error(error.response?.data?.message || '操作失败');
         }
     };
@@ -133,7 +206,19 @@ const DictionaryManagement: React.FC = () => {
         { title: 'ID', dataIndex: 'id', width: 80 },
         { title: '值', dataIndex: 'value', width: 150 },
         { title: '标签', dataIndex: 'label', width: 150 },
+        {
+            title: '父级值',
+            dataIndex: 'parentValue',
+            width: 140,
+            render: (value) => value || '-'
+        },
         { title: '描述', dataIndex: 'description', ellipsis: true },
+        {
+            title: '扩展配置',
+            dataIndex: 'extraData',
+            width: 220,
+            render: (value) => formatExtraData(value)
+        },
         {
             title: '排序',
             dataIndex: 'sortOrder',
@@ -188,7 +273,7 @@ const DictionaryManagement: React.FC = () => {
         >
             <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fff7e6', borderRadius: 4, border: '1px solid #ffd591' }}>
                 <p style={{ margin: 0, color: '#ad6800' }}>
-                    💡 <strong>提示</strong>：服务区域管理已迁移至 <Link to="/settings/regions" style={{ fontWeight: 'bold', color: '#1890ff' }}>行政区划管理</Link>，请前往该页面进行省市区数据的查看和管理。
+                    💡 <strong>提示</strong>：行政区划数据请前往 <Link to="/settings/regions" style={{ fontWeight: 'bold', color: '#1890ff' }}>行政区划管理</Link> 维护；服务城市开放策略请在当前字典页维护“开放省份 / 开放城市”分类。
                 </p>
             </div>
 
@@ -249,6 +334,27 @@ const DictionaryManagement: React.FC = () => {
                     <Form.Item name="description" label="描述">
                         <Input.TextArea rows={3} placeholder="详细说明（可选）" />
                     </Form.Item>
+                    <Form.Item name="parentValue" label="父级值">
+                        <Input placeholder="可选，用于层级字典关联" />
+                    </Form.Item>
+                    {isRangeCategory ? (
+                        <Space style={{ display: 'flex', width: '100%' }} align="start">
+                            <Form.Item name="rangeMin" label="区间下限" style={{ flex: 1 }}>
+                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="留空表示不限" />
+                            </Form.Item>
+                            <Form.Item name="rangeMax" label="区间上限" style={{ flex: 1 }}>
+                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="留空表示不限" />
+                            </Form.Item>
+                        </Space>
+                    ) : (
+                        <Form.Item
+                            name="extraDataText"
+                            label="扩展配置"
+                            extra="可选，输入合法 JSON。区间类字典请直接使用上下限字段。"
+                        >
+                            <Input.TextArea rows={4} placeholder='例如：{"min":0,"max":90}' />
+                        </Form.Item>
+                    )}
                     <Form.Item name="sortOrder" label="排序" initialValue={0}>
                         <InputNumber min={0} style={{ width: '100%' }} />
                     </Form.Item>

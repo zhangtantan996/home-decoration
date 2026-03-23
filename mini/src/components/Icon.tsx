@@ -19,7 +19,20 @@ export type IconName =
   | 'about'
   | 'settings'
   | 'success'
-  | 'pending';
+  | 'pending'
+  | 'search'
+  | 'location-pin'
+  | 'expand'
+  | 'designer-service'
+  | 'construction-service'
+  | 'company-service'
+  | 'material-service'
+  | 'star'
+  | 'arrow-down'
+  | 'nearby'
+  | 'arrow-left'
+  | 'share'
+  | 'plus';
 
 export interface IconProps {
   name: IconName;
@@ -32,6 +45,10 @@ const SVG_VIEWBOX = '0 0 24 24';
 
 const wrapSvg = (content: string, color: string) => {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SVG_VIEWBOX}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${content}</svg>`;
+};
+
+const wrapFilledSvg = (content: string, color: string) => {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SVG_VIEWBOX}" fill="${color}" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${content}</svg>`;
 };
 
 const iconSvgMap: Record<IconName, (color: string) => string> = {
@@ -61,6 +78,28 @@ const iconSvgMap: Record<IconName, (color: string) => string> = {
     wrapSvg('<circle cx="12" cy="12" r="3"/><path d="M12 4v2"/><path d="M12 18v2"/><path d="M4 12h2"/><path d="M18 12h2"/><path d="M6.3 6.3l1.4 1.4"/><path d="M16.3 16.3l1.4 1.4"/><path d="M17.7 6.3l-1.4 1.4"/><path d="M7.7 16.3l-1.4 1.4"/>', color),
   success: (color) => wrapSvg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>', color),
   pending: (color) => wrapSvg('<circle cx="8" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="12" r="1"/>', color),
+  search: (color) => wrapSvg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>', color),
+  'location-pin': (color) =>
+    wrapSvg('<path d="M12 21s-6-4.4-6-10a6 6 0 1 1 12 0c0 5.6-6 10-6 10z"/><circle cx="12" cy="11" r="2.3"/>', color),
+  expand: (color) =>
+    wrapSvg('<path d="M9 5H5v4"/><path d="M15 5h4v4"/><path d="M5 9l5-5"/><path d="M19 9l-5-5"/><path d="M5 15l5 5"/><path d="M15 19h4v-4"/><path d="M9 19H5v-4"/><path d="M19 15l-5 5"/>', color),
+  'designer-service': (color) =>
+    wrapSvg('<path d="M4 20l6-6"/><path d="M8.5 18.5L19 8a2.2 2.2 0 1 0-3.1-3.1L5.4 15.4"/><path d="M13 5l6 6"/><path d="M5 7l12 12"/>', color),
+  'construction-service': (color) =>
+    wrapSvg('<path d="M14 6.5a3.5 3.5 0 0 0 4.5 4.5L12 17.5 6.5 12 14 6.5z"/><path d="M5 19l4.5-4.5"/><path d="M12 7l5 5"/>', color),
+  'company-service': (color) =>
+    wrapSvg('<path d="M5 20V6l7-3 7 3v14"/><path d="M9 9h1"/><path d="M14 9h1"/><path d="M9 13h1"/><path d="M14 13h1"/><path d="M10 20v-4h4v4"/>', color),
+  'material-service': (color) =>
+    wrapSvg('<path d="M12 3l7 4v10l-7 4-7-4V7l7-4z"/><path d="M5 7l7 4 7-4"/><path d="M12 11v10"/>', color),
+  star: (color) =>
+    wrapFilledSvg('<path d="M12 3.8l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.9 7.2 19.7l.9-5.4-3.9-3.8 5.4-.8L12 3.8z"/>', color),
+  'arrow-down': (color) => wrapSvg('<path d="M6 9l6 6 6-6"/>', color),
+  nearby: (color) =>
+    wrapSvg('<circle cx="9" cy="8.5" r="2.5"/><path d="M4.5 16c1-2.4 2.9-3.7 4.5-3.7s3.5 1.3 4.5 3.7"/><path d="M17 8.5a3.5 3.5 0 0 1 0 7c-1.2 0-2.2-.8-2.2-2 0-1.6 1.9-2.2 2.2-5z"/>', color),
+  'arrow-left': (color) => wrapSvg('<path d="M15 18l-6-6 6-6"/><path d="M9 12h10"/>', color),
+  share: (color) =>
+    wrapSvg('<circle cx="18" cy="5" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="18" cy="19" r="2"/><path d="M8 12l8-6"/><path d="M8 12l8 6"/>', color),
+  plus: (color) => wrapSvg('<path d="M12 5v14"/><path d="M5 12h14"/>', color),
 };
 
 const fallbackGlyphMap: Record<IconName, string> = {
@@ -80,6 +119,19 @@ const fallbackGlyphMap: Record<IconName, string> = {
   settings: '◌',
   success: '✓',
   pending: '…',
+  search: '⌕',
+  'location-pin': '⌖',
+  expand: '⤢',
+  'designer-service': '✎',
+  'construction-service': '⌁',
+  'company-service': '▥',
+  'material-service': '▣',
+  star: '★',
+  'arrow-down': '⌄',
+  nearby: '⌖',
+  'arrow-left': '‹',
+  share: '↗',
+  plus: '+',
 };
 
 const buildClassName = (base: string, className?: string) => {

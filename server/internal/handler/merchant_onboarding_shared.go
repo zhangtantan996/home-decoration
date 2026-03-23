@@ -43,11 +43,13 @@ type onboardingVerifyPhoneInput struct {
 	MerchantKind  string `json:"merchantKind" binding:"required"`
 	Mode          string `json:"mode" binding:"required"`
 	ApplicationID uint64 `json:"applicationId"`
+	AllowReapply  bool   `json:"allowReapply"`
 }
 
-func issueVerificationToken(mode, kind string, applicationID uint64, phone string, ttl time.Duration) (string, error) {
+func issueVerificationToken(mode, kind string, applicationID uint64, phone string, ttl time.Duration, allowReapply bool) (string, error) {
 	claims := jwt.MapClaims{
 		"application_id": applicationID,
+		"allow_reapply":  allowReapply,
 		"phone":          strings.TrimSpace(phone),
 		"merchant_kind":  strings.TrimSpace(kind),
 		"purpose":        merchantVerificationTokenPurpose,
@@ -59,13 +61,13 @@ func issueVerificationToken(mode, kind string, applicationID uint64, phone strin
 }
 
 func issueResubmitToken(kind string, applicationID uint64, phone string) (string, error) {
-	return issueVerificationToken(merchantVerificationModeResubmit, kind, applicationID, phone, 30*time.Minute)
+	return issueVerificationToken(merchantVerificationModeResubmit, kind, applicationID, phone, 30*time.Minute, false)
 }
 
-func verifyVerificationToken(mode, kind string, applicationID uint64, phone, tokenString string) error {
+func parseVerificationTokenClaims(mode, kind string, applicationID uint64, phone, tokenString string) (jwt.MapClaims, error) {
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
-		return fmt.Errorf("缺少重提授权凭证")
+		return nil, fmt.Errorf("缺少重提授权凭证")
 	}
 
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -75,35 +77,49 @@ func verifyVerificationToken(mode, kind string, applicationID uint64, phone, tok
 		return []byte(config.GetConfig().JWT.Secret), nil
 	})
 	if err != nil || !token.Valid {
-		return fmt.Errorf("重提授权凭证无效或已过期")
+		return nil, fmt.Errorf("重提授权凭证无效或已过期")
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return fmt.Errorf("重提授权凭证无效")
+		return nil, fmt.Errorf("重提授权凭证无效")
 	}
 	purpose, _ := claims["purpose"].(string)
 	if strings.TrimSpace(purpose) != merchantVerificationTokenPurpose {
-		return fmt.Errorf("重提授权凭证用途无效")
+		return nil, fmt.Errorf("重提授权凭证用途无效")
 	}
 	modeValue, _ := claims["mode"].(string)
 	if strings.TrimSpace(modeValue) != strings.TrimSpace(mode) {
-		return fmt.Errorf("手机号验证凭证模式不匹配")
+		return nil, fmt.Errorf("手机号验证凭证模式不匹配")
 	}
 	merchantKind, _ := claims["merchant_kind"].(string)
 	if strings.TrimSpace(merchantKind) != strings.TrimSpace(kind) {
-		return fmt.Errorf("重提授权凭证商家类型不匹配")
+		return nil, fmt.Errorf("重提授权凭证商家类型不匹配")
 	}
 	tokenPhone, _ := claims["phone"].(string)
 	if strings.TrimSpace(tokenPhone) != strings.TrimSpace(phone) {
-		return fmt.Errorf("重提授权凭证手机号不匹配")
+		return nil, fmt.Errorf("重提授权凭证手机号不匹配")
 	}
 	applicationIDValue, ok := claims["application_id"].(float64)
 	if !ok || uint64(applicationIDValue) != applicationID {
-		return fmt.Errorf("重提授权凭证申请编号不匹配")
+		return nil, fmt.Errorf("重提授权凭证申请编号不匹配")
 	}
 
-	return nil
+	return claims, nil
+}
+
+func verifyVerificationToken(mode, kind string, applicationID uint64, phone, tokenString string) error {
+	_, err := parseVerificationTokenClaims(mode, kind, applicationID, phone, tokenString)
+	return err
+}
+
+func verificationTokenAllowsReapply(mode, kind string, applicationID uint64, phone, tokenString string) bool {
+	claims, err := parseVerificationTokenClaims(mode, kind, applicationID, phone, tokenString)
+	if err != nil {
+		return false
+	}
+	allowed, _ := claims["allow_reapply"].(bool)
+	return allowed
 }
 
 func authorizeOnboarding(phone, verificationToken string, applicationID uint64, kind, mode, code string) error {

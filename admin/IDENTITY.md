@@ -16,8 +16,8 @@
 
 1. 读本文件（确认身份）
 2. 读 `admin/MEMORY.md`
-3. 读根目录 `memory/decisions.md`
-4. 读根目录 `memory/pitfalls.md`
+3. 读根目录 `memory/技术决策日志.md`
+4. 读根目录 `memory/常见坑点.md`
 5. 就绪
 
 ## 关键约束

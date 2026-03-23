@@ -28,6 +28,7 @@ import {
 import { bookingApi } from '../services/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { getApiBaseUrl } from '../config';
+import { formatServerDateTime } from '../utils/serverTime';
 
 type OrderDetailScreenRouteProp = RouteProp<RootStackParamList, 'OrderDetail'>;
 type OrderDetailScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -152,15 +153,7 @@ const OrderDetailScreen = () => {
     };
 
     const formatDate = (dateStr: string) => {
-        if (!dateStr) return '-';
-        const date = new Date(dateStr);
-        return date.toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
+        return formatServerDateTime(dateStr);
     };
 
     if (isLoading) {

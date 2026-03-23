@@ -93,7 +93,7 @@ const SettingsScreen = ({ navigation }: any) => {
 
             <SettingsSection>
                 <SettingsRow label="支付设置" onPress={() => navigation.navigate('PaymentSettings')} />
-                <SettingsRow label="消息通知" onPress={() => navigation.navigate('NotificationSettings')} />
+                <SettingsRow label="通知提醒" onPress={() => navigation.navigate('NotificationSettings')} />
                 <SettingsRow label="通用设置" onPress={() => navigation.navigate('GeneralSettings')} />
                 <SettingsRow
                     label="清理缓存"

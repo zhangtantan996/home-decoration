@@ -358,6 +358,7 @@ export interface ProjectPhaseVM {
   statusText: string;
   startDate: string;
   endDate: string;
+  responsiblePerson?: string;
   tasks: string[];
 }
 
@@ -423,6 +424,8 @@ export interface ProjectDetailVM {
   address: string;
   currentPhase: string;
   statusText: string;
+  startDateText?: string;
+  expectedEndText?: string;
   businessStage?: string;
   flowSummary?: string;
   availableActions?: string[];
@@ -431,6 +434,9 @@ export interface ProjectDetailVM {
   budgetText: string;
   ownerName: string;
   providerName: string;
+  providerAvatar?: string;
+  providerPhoneHint?: string;
+  providerRoleText?: string;
   escrowBalanceText: string;
   phases: ProjectPhaseVM[];
   milestones: ProjectMilestoneVM[];
@@ -561,11 +567,10 @@ export interface ProfileFeedItemVM {
 
 export interface ProfileHomeVM {
   displayName: string;
-  phoneText: string;
   avatar: string;
   unreadCount: number;
   pendingPaymentsCount: number;
-  summaryCards: Array<{ title: string; value: string; description: string }>;
+  summaryCards: Array<{ title: string; value: string; description: string; href?: string }>;
   todos: Array<{ title: string; value: string; description: string; href?: string }>;
   shortcuts: ProfileShortcutVM[];
   recentBookings: ProfileFeedItemVM[];

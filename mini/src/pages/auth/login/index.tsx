@@ -6,9 +6,12 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Input } from '@/components/Input';
 import { getWechatH5AuthorizeUrl, loginWithSmsCode, sendLoginCode } from '@/services/auth_h5';
+import { navigateAfterAuthSuccess, setPendingAuthReturnUrl } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 
 export default function LoginPage() {
+  const router = Taro.useRouter();
+  const returnUrl = (router.params?.returnUrl || '').trim();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
@@ -57,7 +60,7 @@ export default function LoginPage() {
     try {
       await loginWithSmsCode(phone.trim(), code.trim());
       Taro.showToast({ title: '登录成功', icon: 'success' });
-      Taro.switchTab({ url: '/pages/profile/index' });
+      await navigateAfterAuthSuccess(returnUrl);
     } catch (err) {
       showErrorToast(err, '登录失败');
     }
@@ -69,6 +72,7 @@ export default function LoginPage() {
       return;
     }
     try {
+      setPendingAuthReturnUrl(returnUrl);
       const { url } = await getWechatH5AuthorizeUrl();
       // eslint-disable-next-line no-restricted-globals
       window.location.href = url;

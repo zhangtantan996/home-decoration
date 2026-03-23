@@ -4,6 +4,7 @@ import { ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { adminReviewApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Review {
     id: number;
@@ -88,7 +89,7 @@ const ReviewList: React.FC = () => {
         {
             title: '时间',
             dataIndex: 'createdAt',
-            render: (val: string) => val ? new Date(val).toLocaleString() : '-',
+            render: (val: string) => formatServerDateTime(val),
         },
         {
             title: '操作',

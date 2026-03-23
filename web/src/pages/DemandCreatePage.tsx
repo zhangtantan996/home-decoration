@@ -103,7 +103,7 @@ export function DemandCreatePage() {
               </div>
               <div className="field">
                 <label htmlFor="demand-address">详细地址</label>
-                <input id="demand-address" onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))} placeholder="用于平台匹配服务区域，提交后仅平台可见" value={form.address} />
+                <input id="demand-address" onChange={(event) => setForm((prev) => ({ ...prev, address: event.target.value }))} placeholder="用于平台匹配服务城市，提交后仅平台可见" value={form.address} />
               </div>
               <div className="field">
                 <label htmlFor="demand-area">建筑面积（㎡）</label>

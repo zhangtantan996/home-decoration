@@ -15,6 +15,7 @@ import { getProjectDetail } from '@/services/projects';
 import { getProviderDetail, type ProviderType } from '@/services/providers';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { formatServerDate, formatServerDateTime } from '@/utils/serverTime';
 
 type ProviderSummary = {
   id: number;
@@ -64,7 +65,7 @@ const formatDate = (dateStr?: string) => {
   if (!dateStr) {
     return '-';
   }
-  return new Date(dateStr).toLocaleString();
+  return formatServerDateTime(dateStr);
 };
 
 const OrderDetail: React.FC = () => {
@@ -260,7 +261,7 @@ const OrderDetail: React.FC = () => {
       <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
         <Empty
           description="登录后查看订单详情"
-          action={{ text: '去登录', onClick: () => Taro.navigateTo({ url: '/pages/profile/index' }) }}
+          action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
         />
       </View>
     );
@@ -379,7 +380,7 @@ const OrderDetail: React.FC = () => {
                       <View>
                         <Text className="font-medium">第 {plan.seq} 期</Text>
                         <Text className="text-sm text-gray-500 mt-xs">
-                          到期日: {new Date(plan.dueDate).toLocaleDateString()}
+                          到期日: {formatServerDate(plan.dueDate)}
                         </Text>
                       </View>
                       <Tag variant={isPaid ? 'success' : isOverdue ? 'danger' : 'warning'}>
@@ -401,7 +402,7 @@ const OrderDetail: React.FC = () => {
                       )}
                       {isPaid && plan.paidAt && (
                         <Text className="text-xs text-gray-400">
-                          支付时间: {new Date(plan.paidAt).toLocaleDateString()}
+                          支付时间: {formatServerDate(plan.paidAt)}
                         </Text>
                       )}
                     </View>

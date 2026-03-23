@@ -99,8 +99,8 @@ type MerchantApplicationDetails struct {
 	WorkTypes       []string `json:"workTypes,omitempty"` // JSON 数组
 
 	// 服务信息
-	ServiceArea      []string               `json:"serviceArea,omitempty"`      // 服务区域名称数组
-	ServiceAreaCodes []string               `json:"serviceAreaCodes,omitempty"` // 服务区域代码数组
+	ServiceArea      []string               `json:"serviceArea,omitempty"`      // 服务城市名称数组
+	ServiceAreaCodes []string               `json:"serviceAreaCodes,omitempty"` // 服务城市代码数组
 	Styles           []string               `json:"styles,omitempty"`
 	HighlightTags    []string               `json:"highlightTags,omitempty"`
 	Pricing          map[string]float64     `json:"pricing,omitempty"`
@@ -733,7 +733,7 @@ func (s *IdentityService) getMerchantApplicationDetails(userID uint64, appliedAt
 	json.Unmarshal([]byte(app.PricingJSON), &pricing)
 	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
 
-	// 转换服务区域代码为名称
+	// 转换服务城市代码为名称
 	var serviceAreaNames []string
 	if len(serviceAreaCodes) > 0 {
 		regionSvc := &RegionService{}

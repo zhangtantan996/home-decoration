@@ -19,19 +19,19 @@
 
 按优先级读取：
 ```
-memory/decisions.md    → 技术决策，避免重复讨论
-memory/pitfalls.md     → 已知坑，直接跳过
-memory/patterns.md     → 项目常用模式
-memory/deployment.md   → 部署步骤和注意事项
-memory/environment.md  → 环境配置约定
-memory/architecture.md → 架构全局视图
+memory/技术决策日志.md    → 技术决策，避免重复讨论
+memory/常见坑点.md     → 已知坑，直接跳过
+memory/常用模式.md     → 项目常用模式
+memory/部署注意事项.md   → 部署步骤和注意事项
+memory/环境配置约定.md  → 环境配置约定
+memory/架构全局视图.md → 架构全局视图
 ```
 
 ## 第四步：读项目约束（首次或有变更时）
 
 ```
-docs/CLAUDE_DEV_GUIDE.md   → P0 约束（版本锁、架构规则）
-docs/TROUBLESHOOTING.md    → 已知问题解法
+docs/Claude开发参考手册.md   → P0 约束（版本锁、架构规则）
+docs/问题解决手册.md    → 已知问题解法
 AGENTS.md                  → 命令速查和代码规范
 ```
 
@@ -54,7 +54,7 @@ AGENTS.md                  → 命令速查和代码规范
 1. 读本目录的 `IDENTITY.md`
 2. 读本目录的 `MEMORY.md`
 3. 读本目录的 `memory/` 文件
-4. 读根目录 `memory/decisions.md`（保持架构一致性）
+4. 读根目录 `memory/技术决策日志.md`（保持架构一致性）
 
 ---
 

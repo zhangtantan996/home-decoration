@@ -7,10 +7,11 @@ import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
 import { adminAuditLogApi, type AdminAuditLogQuery, type AdminAuditLogRecord } from '../../services/api';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const { RangePicker } = DatePicker;
 
-const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : '-');
+const formatDateTime = formatServerDateTime;
 
 const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);

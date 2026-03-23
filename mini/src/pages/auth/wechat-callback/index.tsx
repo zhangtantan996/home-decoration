@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 
 import { Card } from '@/components/Card';
 import { wechatH5Login } from '@/services/auth_h5';
+import { navigateAfterAuthSuccess, resolveAuthReturnUrl } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 
 export default function WechatCallbackPage() {
@@ -21,13 +22,16 @@ export default function WechatCallbackPage() {
       try {
         const res = await wechatH5Login(code, state);
         if (res.needBindPhone && res.bindToken) {
-          Taro.redirectTo({ url: `/pages/auth/wechat-bind-phone/index?bindToken=${encodeURIComponent(res.bindToken)}` });
+          const returnUrl = resolveAuthReturnUrl();
+          Taro.redirectTo({
+            url: `/pages/auth/wechat-bind-phone/index?bindToken=${encodeURIComponent(res.bindToken)}&returnUrl=${encodeURIComponent(returnUrl)}`,
+          });
           return;
         }
 
         if (res.token) {
           Taro.showToast({ title: '登录成功', icon: 'success' });
-          Taro.switchTab({ url: '/pages/profile/index' });
+          await navigateAfterAuthSuccess();
           return;
         }
 
@@ -51,4 +55,3 @@ export default function WechatCallbackPage() {
     </View>
   );
 }
-

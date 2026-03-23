@@ -197,6 +197,39 @@ const RegionManagement: React.FC = () => {
         );
     };
 
+    const renderRegionStatus = (enabled: boolean, record: TreeRegion) => {
+        if (record.level === 3) {
+            return (
+                <span
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 88,
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        fontSize: 12,
+                        color: '#64748b',
+                        background: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                    }}
+                    title="区县仅保留为地址基础数据，不参与服务城市开放开关"
+                >
+                    仅地址数据
+                </span>
+            );
+        }
+
+        return (
+            <Switch
+                checked={enabled}
+                onChange={(checked) => handleToggle(record.id, checked, record)}
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
+            />
+        );
+    };
+
     const columns: ColumnsType<TreeRegion> = [
         {
             title: '行政区划',
@@ -221,14 +254,7 @@ const RegionManagement: React.FC = () => {
             dataIndex: 'enabled',
             width: 120,
             align: 'center',
-            render: (enabled, record) => (
-                <Switch
-                    checked={enabled}
-                    onChange={(checked) => handleToggle(record.id, checked, record)}
-                    checkedChildren="启用"
-                    unCheckedChildren="禁用"
-                />
-            ),
+            render: renderRegionStatus,
         },
         {
             title: '排序',

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -21,6 +22,8 @@ type userProfileEnvelope struct {
 		ID       uint64 `json:"id"`
 		Nickname string `json:"nickname"`
 		Avatar   string `json:"avatar"`
+		Birthday string `json:"birthday"`
+		Bio      string `json:"bio"`
 	} `json:"data"`
 }
 
@@ -57,9 +60,12 @@ func TestGetProfileReadsUint64UserID(t *testing.T) {
 	user := model.User{
 		Phone:    "13800138000",
 		Nickname: "张三",
+		Bio:      "喜欢简洁的生活方式",
 		UserType: 1,
 		Status:   1,
 	}
+	birthday := time.Date(1992, time.August, 18, 0, 0, 0, 0, time.UTC)
+	user.Birthday = &birthday
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -81,6 +87,12 @@ func TestGetProfileReadsUint64UserID(t *testing.T) {
 	if envelope.Data.ID != user.ID {
 		t.Fatalf("expected user id %d, got %d", user.ID, envelope.Data.ID)
 	}
+	if envelope.Data.Birthday != "1992-08-18" {
+		t.Fatalf("expected birthday 1992-08-18, got %q", envelope.Data.Birthday)
+	}
+	if envelope.Data.Bio != "喜欢简洁的生活方式" {
+		t.Fatalf("expected bio to be returned, got %q", envelope.Data.Bio)
+	}
 }
 
 func TestUpdateProfileReadsUint64UserID(t *testing.T) {
@@ -99,7 +111,7 @@ func TestUpdateProfileReadsUint64UserID(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/user/profile", bytes.NewReader([]byte(`{"nickname":"新昵称","avatar":"/uploads/avatar.png"}`)))
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/user/profile", bytes.NewReader([]byte(`{"nickname":"新昵称","avatar":"/uploads/avatar.png","birthday":"1990-05-20","bio":"希望把装修过程管理得更清晰。"}`)))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("userId", user.ID)
 
@@ -118,5 +130,65 @@ func TestUpdateProfileReadsUint64UserID(t *testing.T) {
 	}
 	if updated.Avatar != "/uploads/avatar.png" {
 		t.Fatalf("expected avatar to be updated, got %q", updated.Avatar)
+	}
+	if updated.Birthday == nil || updated.Birthday.Format("2006-01-02") != "1990-05-20" {
+		t.Fatalf("expected birthday to be updated, got %+v", updated.Birthday)
+	}
+	if updated.Bio != "希望把装修过程管理得更清晰。" {
+		t.Fatalf("expected bio to be updated, got %q", updated.Bio)
+	}
+}
+
+func TestUpdateProfileRejectsInvalidBirthday(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupUserProfileHandlerDB(t)
+
+	user := model.User{
+		Phone:    "13800138002",
+		Nickname: "旧昵称",
+		UserType: 1,
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/user/profile", bytes.NewReader([]byte(`{"birthday":"1990/05/20"}`)))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("userId", user.ID)
+
+	UpdateProfile(c)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", recorder.Code)
+	}
+}
+
+func TestUpdateProfileRejectsFutureBirthday(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupUserProfileHandlerDB(t)
+
+	user := model.User{
+		Phone:    "13800138003",
+		Nickname: "旧昵称",
+		UserType: 1,
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/user/profile", bytes.NewReader([]byte(`{"birthday":"2999-05-20"}`)))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("userId", user.ID)
+
+	UpdateProfile(c)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", recorder.Code)
 	}
 }

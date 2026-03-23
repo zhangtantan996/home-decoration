@@ -9,6 +9,7 @@ import (
 	"home-decoration-server/pkg/response"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -21,6 +22,7 @@ var (
 	projectService      = &service.ProjectService{}
 	escrowService       = &service.EscrowService{}
 	bookingService      = &service.BookingService{}
+	paymentService      = service.NewPaymentService(nil)
 	materialShopService = &service.MaterialShopService{}
 	demandService       = service.NewDemandService()
 	wechatAuthService   *service.WechatAuthService
@@ -81,6 +83,26 @@ func respondScopedAccessError(c *gin.Context, err error, fallback string) {
 	}
 }
 
+func respondDomainMutationError(c *gin.Context, err error, fallback string) {
+	if err == nil {
+		return
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		message = fallback
+	}
+	switch {
+	case strings.Contains(message, "无权"):
+		response.Forbidden(c, message)
+	case strings.Contains(message, "不存在"):
+		response.NotFound(c, message)
+	case strings.Contains(message, "冲突"), strings.Contains(message, "不匹配"), strings.Contains(message, "不属于"):
+		response.Conflict(c, message)
+	default:
+		response.BadRequest(c, message)
+	}
+}
+
 // HealthCheck 健康检查
 func HealthCheck(c *gin.Context) {
 	smsAuditHealth := repository.RefreshSMSAuditLogHealth()
@@ -104,10 +126,11 @@ func HealthCheck(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"status":     overallStatus,
-		"service":    "home-decoration-server",
-		"alertCount": len(alerts),
-		"alerts":     alerts,
+		"status":               overallStatus,
+		"service":              "home-decoration-server",
+		"alertCount":           len(alerts),
+		"alerts":               alerts,
+		"notificationRealtime": getNotificationRealtimeHealth(),
 		"checks": gin.H{
 			"smsAuditLog":              smsAuditHealth,
 			"userAuthSchema":           userAuthHealth,
@@ -118,6 +141,23 @@ func HealthCheck(c *gin.Context) {
 			"commerceRuntimeSchema":    commerceRuntimeHealth,
 		},
 	})
+}
+
+func getNotificationRealtimeHealth() gin.H {
+	gateway := getNotificationRealtimeGateway()
+	if gateway == nil {
+		return gin.H{
+			"enabled": false,
+		}
+	}
+
+	stats := gateway.GetStats()
+	return gin.H{
+		"enabled":          true,
+		"totalConnections": stats.TotalConnections,
+		"totalUsers":       stats.TotalUsers,
+		"droppedMessages":  stats.DroppedMessages,
+	}
 }
 
 // ========== 认证相关 ==========
@@ -351,12 +391,19 @@ func GetProfile(c *gin.Context) {
 		return
 	}
 
+	birthday := ""
+	if user.Birthday != nil {
+		birthday = user.Birthday.Format("2006-01-02")
+	}
+
 	response.Success(c, gin.H{
 		"id":       user.ID,
 		"publicId": user.PublicID,
 		"phone":    user.Phone,
 		"nickname": user.Nickname,
 		"avatar":   imgutil.GetFullImageURL(user.Avatar),
+		"birthday": birthday,
+		"bio":      user.Bio,
 		"userType": user.UserType,
 	})
 }
@@ -372,13 +419,35 @@ func UpdateProfile(c *gin.Context) {
 	var req struct {
 		Nickname string `json:"nickname"`
 		Avatar   string `json:"avatar"`
+		Birthday string `json:"birthday"`
+		Bio      string `json:"bio"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	if err := userService.UpdateUser(userID, req.Nickname, req.Avatar); err != nil {
+	var birthday *time.Time
+	if trimmedBirthday := strings.TrimSpace(req.Birthday); trimmedBirthday != "" {
+		parsedBirthday, err := time.Parse("2006-01-02", trimmedBirthday)
+		if err != nil {
+			response.BadRequest(c, "生日格式错误，请使用 YYYY-MM-DD")
+			return
+		}
+		if parsedBirthday.After(time.Now()) {
+			response.BadRequest(c, "生日不能晚于今天")
+			return
+		}
+		birthday = &parsedBirthday
+	}
+
+	bio := strings.TrimSpace(req.Bio)
+	if len([]rune(bio)) > 200 {
+		response.BadRequest(c, "个人简介不能超过200个字符")
+		return
+	}
+
+	if err := userService.UpdateUser(userID, req.Nickname, req.Avatar, birthday, bio); err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -969,8 +1038,8 @@ func Deposit(c *gin.Context) {
 		return
 	}
 
-	if err := escrowService.Deposit(projectId, userId, req.Amount, req.MilestoneID); err != nil {
-		response.ServerError(c, err.Error())
+	if err := escrowService.DepositForOwner(projectId, userId, req.Amount, req.MilestoneID); err != nil {
+		respondDomainMutationError(c, err, "充值失败")
 		return
 	}
 

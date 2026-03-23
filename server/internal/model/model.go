@@ -22,6 +22,8 @@ type User struct {
 	Phone             string     `json:"phone" gorm:"uniqueIndex;size:20"`
 	Nickname          string     `json:"nickname" gorm:"size:50"`
 	Avatar            string     `json:"avatar" gorm:"size:500"`
+	Birthday          *time.Time `json:"birthday" gorm:"type:date"`
+	Bio               string     `json:"bio" gorm:"type:text"`
 	Password          string     `json:"-" gorm:"size:255"` // 密码，不返回给前端
 	UserType          int8       `json:"userType"`          // 1业主 2服务商 3工人 4管理员
 	Status            int8       `json:"status" gorm:"default:1"`
@@ -94,7 +96,7 @@ type Provider struct {
 	TeamSize           int     `json:"teamSize" gorm:"default:1"`           // 团队规模
 	EstablishedYear    int     `json:"establishedYear" gorm:"default:2020"` // 成立年份
 	Certifications     string  `json:"certifications" gorm:"type:text"`     // 资质认证 (JSON数组)
-	ServiceArea        string  `json:"serviceArea" gorm:"type:text"`        // 服务区域 (JSON数组，如 ["浦东新区", "徐汇区"])
+	ServiceArea        string  `json:"serviceArea" gorm:"type:text"`        // 服务城市 (JSON数组，如 ["310100", "610100"])
 	OfficeAddress      string  `json:"officeAddress" gorm:"size:200"`       // 办公地址
 	CompanyAlbumJSON   string  `json:"companyAlbumJson" gorm:"type:text"`   // 企业相册 (JSON数组)
 	SurveyDepositPrice float64 `json:"surveyDepositPrice" gorm:"default:0"`
@@ -184,18 +186,21 @@ const (
 // Project 项目
 type Project struct {
 	Base
-	OwnerID        uint64  `json:"ownerId" gorm:"index"`
-	ProviderID     uint64  `json:"providerId" gorm:"index"`
-	ProposalID     uint64  `json:"proposalId" gorm:"index"` // 关联的设计方案ID
-	Name           string  `json:"name" gorm:"size:100"`
-	Address        string  `json:"address" gorm:"size:200"`
-	Latitude       float64 `json:"latitude"`
-	Longitude      float64 `json:"longitude"`
-	Area           float64 `json:"area"`   // 面积
-	Budget         float64 `json:"budget"` // 预算
-	Status         int8    `json:"status" gorm:"default:0"`
-	CurrentPhase   string  `json:"currentPhase" gorm:"size:50"`
-	BusinessStatus string  `json:"businessStatus" gorm:"size:40;default:'draft';index"`
+	OwnerID            uint64  `json:"ownerId" gorm:"index"`
+	ProviderID         uint64  `json:"providerId" gorm:"index"`
+	ProposalID         uint64  `json:"proposalId" gorm:"index"` // 关联的设计方案ID
+	Name               string  `json:"name" gorm:"size:100"`
+	Address            string  `json:"address" gorm:"size:200"`
+	AddressEncrypted   string  `json:"-" gorm:"column:address_encrypted;type:text"`
+	Latitude           float64 `json:"latitude"`
+	LatitudeEncrypted  string  `json:"-" gorm:"column:latitude_encrypted;type:text"`
+	Longitude          float64 `json:"longitude"`
+	LongitudeEncrypted string  `json:"-" gorm:"column:longitude_encrypted;type:text"`
+	Area               float64 `json:"area"`   // 面积
+	Budget             float64 `json:"budget"` // 预算
+	Status             int8    `json:"status" gorm:"default:0"`
+	CurrentPhase       string  `json:"currentPhase" gorm:"size:50"`
+	BusinessStatus     string  `json:"businessStatus" gorm:"size:40;default:'draft';index"`
 
 	// 项目创建信息
 	MaterialMethod string     `json:"materialMethod" gorm:"size:20"` // self, platform
@@ -307,12 +312,15 @@ type Booking struct {
 	ProviderID               uint64     `json:"providerId" gorm:"index"`
 	ProviderType             string     `json:"providerType" gorm:"size:20"` // designer, worker, company
 	Address                  string     `json:"address" gorm:"size:200"`
+	AddressEncrypted         string     `json:"-" gorm:"column:address_encrypted;type:text"`
 	Area                     float64    `json:"area"`
 	RenovationType           string     `json:"renovationType" gorm:"size:50"`
 	BudgetRange              string     `json:"budgetRange" gorm:"size:50"`
 	PreferredDate            string     `json:"preferredDate" gorm:"size:100"`
 	Phone                    string     `json:"phone" gorm:"size:20"`
+	PhoneEncrypted           string     `json:"-" gorm:"column:phone_encrypted;type:text"`
 	Notes                    string     `json:"notes" gorm:"type:text"`
+	NotesEncrypted           string     `json:"-" gorm:"column:notes_encrypted;type:text"`
 	HouseLayout              string     `json:"houseLayout" gorm:"size:50"`             // e.g., "3室2厅2卫"
 	Status                   int8       `json:"status" gorm:"default:1"`                // 1:pending, 2:confirmed, 3:completed, 4:cancelled
 	IntentFee                float64    `json:"intentFee" gorm:"default:0"`             // 意向金金额 (从系统配置读取)
@@ -420,7 +428,7 @@ type MaterialShop struct {
 	Address                string  `json:"address" gorm:"size:300"`
 	Latitude               float64 `json:"latitude"`
 	Longitude              float64 `json:"longitude"`
-	OpenTime               string  `json:"openTime" gorm:"size:50"`
+	OpenTime               string  `json:"openTime" gorm:"type:text"`
 	BusinessHoursJSON      string  `json:"businessHoursJson" gorm:"type:text"`
 	ServiceArea            string  `json:"serviceArea" gorm:"type:text"`
 	MainBrands             string  `json:"mainBrands" gorm:"type:text"`
@@ -450,6 +458,7 @@ type MaterialShopApplication struct {
 	EntityType             string     `json:"entityType" gorm:"size:20;default:'company'"` // company
 	ShopName               string     `json:"shopName" gorm:"size:100"`
 	ShopDescription        string     `json:"shopDescription" gorm:"type:text"`
+	BrandLogo              string     `json:"brandLogo" gorm:"size:500"`
 	CompanyName            string     `json:"companyName" gorm:"size:100"`
 	BusinessLicenseNo      string     `json:"businessLicenseNo" gorm:"size:50"`
 	BusinessLicense        string     `json:"businessLicense" gorm:"size:500"`
@@ -457,7 +466,7 @@ type MaterialShopApplication struct {
 	LegalPersonIDCardNo    string     `json:"legalPersonIdCardNo" gorm:"size:100"`
 	LegalPersonIDCardFront string     `json:"legalPersonIdCardFront" gorm:"size:500"`
 	LegalPersonIDCardBack  string     `json:"legalPersonIdCardBack" gorm:"size:500"`
-	BusinessHours          string     `json:"businessHours" gorm:"size:100"`
+	BusinessHours          string     `json:"businessHours" gorm:"type:text"`
 	BusinessHoursJSON      string     `json:"businessHoursJson" gorm:"type:text"`
 	ContactPhone           string     `json:"contactPhone" gorm:"size:20"`
 	ContactName            string     `json:"contactName" gorm:"size:50"`
@@ -608,7 +617,7 @@ type MerchantApplication struct {
 	WorkTypes       string `json:"workTypes" gorm:"type:text;default:'[]'"` // JSON数组：工种类型
 
 	// 服务信息
-	ServiceArea         string     `json:"serviceArea" gorm:"type:text"`      // JSON数组：服务区域
+	ServiceArea         string     `json:"serviceArea" gorm:"type:text"`      // JSON数组：服务城市代码
 	Styles              string     `json:"styles" gorm:"type:text"`           // JSON数组：擅长风格
 	HighlightTags       string     `json:"highlightTags" gorm:"type:text"`    // JSON数组：亮点标签
 	PricingJSON         string     `json:"pricingJson" gorm:"type:text"`      // JSON对象：结构化报价
@@ -712,19 +721,29 @@ func (MerchantIncome) TableName() string {
 	return "merchant_incomes"
 }
 
+const (
+	MerchantWithdrawStatusPendingReview           int8 = 0
+	MerchantWithdrawStatusApprovedPendingTransfer int8 = 1
+	MerchantWithdrawStatusPaid                    int8 = 2
+	MerchantWithdrawStatusRejected                int8 = 3
+)
+
 // MerchantWithdraw 商家提现记录
 type MerchantWithdraw struct {
 	Base
-	ProviderID  uint64     `json:"providerId" gorm:"index"`
-	OrderNo     string     `json:"orderNo" gorm:"uniqueIndex;size:32"`
-	Amount      float64    `json:"amount"`
-	BankAccount string     `json:"bankAccount" gorm:"size:100"` // 收款账户（脱敏存储）
-	BankName    string     `json:"bankName" gorm:"size:50"`
-	Status      int8       `json:"status" gorm:"default:0"` // 0:处理中 1:成功 2:失败
-	FailReason  string     `json:"failReason" gorm:"size:200"`
-	CompletedAt *time.Time `json:"completedAt"`
-	OperatorID  uint64     `json:"operatorId"` // 审核人
-	AuditRemark string     `json:"auditRemark" gorm:"type:text"`
+	ProviderID      uint64     `json:"providerId" gorm:"index"`
+	OrderNo         string     `json:"orderNo" gorm:"uniqueIndex;size:32"`
+	Amount          float64    `json:"amount"`
+	BankAccount     string     `json:"bankAccount" gorm:"size:100"` // 收款账户（脱敏存储）
+	BankName        string     `json:"bankName" gorm:"size:50"`
+	Status          int8       `json:"status" gorm:"default:0"` // 0:待审核 1:待打款 2:已打款 3:已拒绝
+	FailReason      string     `json:"failReason" gorm:"size:200"`
+	ApprovedAt      *time.Time `json:"approvedAt"`
+	TransferredAt   *time.Time `json:"transferredAt"`
+	TransferVoucher string     `json:"transferVoucher" gorm:"size:500"`
+	CompletedAt     *time.Time `json:"completedAt"`
+	OperatorID      uint64     `json:"operatorId"` // 审核/确认打款操作人
+	AuditRemark     string     `json:"auditRemark" gorm:"type:text"`
 }
 
 // TableName 指定表名

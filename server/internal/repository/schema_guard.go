@@ -23,7 +23,7 @@ const (
 var HighRiskTables = map[string][]string{
 	"merchant_applications":              {"team_size", "office_address", "service_area", "styles", "introduction", "portfolio_cases", "user_id", "provider_id"},
 	"providers":                          {"service_area", "service_intro", "team_size", "office_address", "followers_count", "established_year", "certifications", "cover_image"},
-	"material_shop_applications":         {"business_hours_json"},
+	"material_shop_applications":         {"business_hours_json", "brand_logo"},
 	"material_shops":                     {"business_hours_json"},
 	"material_shop_application_products": {"unit"},
 	"material_shop_products":             {"unit", "description"},

@@ -44,11 +44,11 @@ type MerchantApplyInput struct {
 	VerificationToken      string `json:"verificationToken"`
 	ResubmitToken          string `json:"resubmitToken"`
 	// 工作室/公司专属
-	CompanyName   string `json:"companyName"`
-	LicenseNo     string `json:"licenseNo"`
-	LicenseImage  string `json:"licenseImage"`
-	TeamSize      int    `json:"teamSize"`
-	OfficeAddress string `json:"officeAddress"`
+	CompanyName   string   `json:"companyName"`
+	LicenseNo     string   `json:"licenseNo"`
+	LicenseImage  string   `json:"licenseImage"`
+	TeamSize      int      `json:"teamSize"`
+	OfficeAddress string   `json:"officeAddress"`
 	CompanyAlbum  []string `json:"companyAlbum"`
 	// 工长专属
 	YearsExperience int `json:"yearsExperience"`
@@ -777,24 +777,11 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
-	// 4. 验证服务区域代码是否有效（支持自动转换名称为代码）
-	var serviceAreaCodes []string
-	if err := regionService.ValidateRegionCodes(input.ServiceArea); err != nil {
-		// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
-		codes, convertErr := regionService.ConvertNamesToCodes(input.ServiceArea)
-		if convertErr != nil {
-			response.Error(c, 400, "服务区域验证失败: "+err.Error())
-			return
-		}
-		// 转换成功后再次验证代码
-		if err := regionService.ValidateRegionCodes(codes); err != nil {
-			response.Error(c, 400, "服务区域代码验证失败: "+err.Error())
-			return
-		}
-		serviceAreaCodes = codes
-	} else {
-		// 如果是代码格式，直接使用
-		serviceAreaCodes = input.ServiceArea
+	// 4. 验证服务城市代码是否有效（支持名称/代码输入，最终统一收口为城市代码）
+	serviceAreaCodes, err := regionService.NormalizeServiceCityCodes(input.ServiceArea)
+	if err != nil {
+		response.Error(c, 400, "服务城市验证失败: "+err.Error())
+		return
 	}
 
 	// 5. 序列化 JSON 字段
@@ -865,6 +852,9 @@ func MerchantApply(c *gin.Context) {
 		response.Error(c, 500, "提交失败: 校验商家身份异常")
 		return
 	} else if !ok {
+		if nextAction == merchantNextActionReapply && verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeProvider, 0, input.Phone, input.VerificationToken) {
+			goto createProviderApplication
+		}
 		tx.Rollback()
 		c.JSON(200, response.Response{
 			Code:    409,
@@ -878,6 +868,7 @@ func MerchantApply(c *gin.Context) {
 	}
 
 	// 8. 创建申请记录
+createProviderApplication:
 	acceptedAt := time.Now()
 	application := model.MerchantApplication{
 		UserID:              user.ID,
@@ -998,7 +989,90 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 		return
 	}
 
-	verificationToken, err := issueVerificationToken(input.Mode, input.MerchantKind, input.ApplicationID, input.Phone, 30*time.Minute)
+	if input.Mode == merchantVerificationModeApply {
+		switch input.MerchantKind {
+		case merchantIdentityTypeProvider:
+			var existingApp model.MerchantApplication
+			if err := repository.DB.Where("phone = ? AND status IN (0, 1)", input.Phone).Order("created_at DESC").First(&existingApp).Error; err == nil {
+				if existingApp.Status == 0 {
+					response.Error(c, 400, "您已提交申请，请等待审核")
+				} else {
+					response.Error(c, 400, "您已是入驻商家，请直接登录")
+				}
+				return
+			} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				response.Error(c, 500, "校验入驻申请失败")
+				return
+			}
+
+			var user model.User
+			if err := repository.DB.Where("phone = ?", input.Phone).First(&user).Error; err == nil {
+				ok, nextAction, checkErr := canSubmitProviderApplication(repository.DB, user.ID)
+				if checkErr != nil {
+					response.Error(c, 500, "校验商家身份异常")
+					return
+				}
+				if !ok {
+					if nextAction == merchantNextActionReapply && input.AllowReapply {
+						break
+					}
+					c.JSON(200, response.Response{
+						Code:    409,
+						Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
+						Data: gin.H{
+							"nextAction": nextAction,
+							"userId":     user.ID,
+						},
+					})
+					return
+				}
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				response.Error(c, 500, "校验手机号账号失败")
+				return
+			}
+		case merchantIdentityTypeMaterial:
+			var existingApp model.MaterialShopApplication
+			if err := repository.DB.Where("phone = ? AND status IN (0, 1)", input.Phone).Order("created_at DESC").First(&existingApp).Error; err == nil {
+				if existingApp.Status == 0 {
+					response.Error(c, 400, "您已提交主材商入驻申请，请等待审核")
+				} else {
+					response.Error(c, 400, "您已是入驻主材商，请直接登录")
+				}
+				return
+			} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				response.Error(c, 500, "校验主材商申请失败")
+				return
+			}
+
+			var user model.User
+			if err := repository.DB.Where("phone = ?", input.Phone).First(&user).Error; err == nil {
+				ok, nextAction, checkErr := canSubmitMaterialShopApplication(repository.DB, user.ID)
+				if checkErr != nil {
+					response.Error(c, 500, "校验商家身份异常")
+					return
+				}
+				if !ok {
+					if nextAction == merchantNextActionReapply && input.AllowReapply {
+						break
+					}
+					c.JSON(200, response.Response{
+						Code:    409,
+						Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
+						Data: gin.H{
+							"nextAction": nextAction,
+							"userId":     user.ID,
+						},
+					})
+					return
+				}
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				response.Error(c, 500, "校验手机号账号失败")
+				return
+			}
+		}
+	}
+
+	verificationToken, err := issueVerificationToken(input.Mode, input.MerchantKind, input.ApplicationID, input.Phone, 30*time.Minute, input.AllowReapply)
 	if err != nil {
 		response.Error(c, 500, "生成手机号验证凭证失败")
 		return
@@ -1106,6 +1180,7 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 			result["form"] = gin.H{
 				"phone":                  app.Phone,
 				"entityType":             app.EntityType,
+				"avatar":                 imgutil.GetFullImageURL(app.BrandLogo),
 				"shopName":               app.ShopName,
 				"shopDescription":        app.ShopDescription,
 				"companyName":            app.CompanyName,
@@ -1262,24 +1337,10 @@ func MerchantResubmit(c *gin.Context) {
 		return
 	}
 
-	// 验证服务区域代码（支持自动转换名称为代码）
-	var serviceAreaCodes []string
-	if err := regionService.ValidateRegionCodes(input.ServiceArea); err != nil {
-		// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
-		codes, convertErr := regionService.ConvertNamesToCodes(input.ServiceArea)
-		if convertErr != nil {
-			response.Error(c, 400, "服务区域验证失败: "+err.Error())
-			return
-		}
-		// 转换成功后再次验证代码
-		if err := regionService.ValidateRegionCodes(codes); err != nil {
-			response.Error(c, 400, "服务区域代码验证失败: "+err.Error())
-			return
-		}
-		serviceAreaCodes = codes
-	} else {
-		// 如果是代码格式，直接使用
-		serviceAreaCodes = input.ServiceArea
+	serviceAreaCodes, err := regionService.NormalizeServiceCityCodes(input.ServiceArea)
+	if err != nil {
+		response.Error(c, 400, "服务城市验证失败: "+err.Error())
+		return
 	}
 
 	// 更新申请信息
@@ -1319,8 +1380,10 @@ func MerchantResubmit(c *gin.Context) {
 	app.PortfolioCases = string(portfolioJSON)
 	app.LegalAcceptanceJSON = buildLegalAcceptanceJSON(input.LegalAcceptance)
 	app.LegalAcceptSource = "merchant_web"
-	acceptedAt := time.Now()
-	app.LegalAcceptedAt = &acceptedAt
+	submittedAt := time.Now()
+	app.LegalAcceptedAt = &submittedAt
+	app.CreatedAt = submittedAt
+	app.UpdatedAt = submittedAt
 	app.Status = 0 // 重置为待审核
 	app.RejectReason = ""
 	app.AuditedBy = 0
@@ -1406,8 +1469,8 @@ func AdminListApplications(c *gin.Context) {
 			"companyName":  app.CompanyName,
 			"status":       app.Status,
 			"rejectReason": app.RejectReason,
-			"createdAt":    app.CreatedAt,
-			"auditedAt":    app.AuditedAt,
+			"createdAt":    formatServerDateTime(app.CreatedAt),
+			"auditedAt":    formatServerDateTimePtr(app.AuditedAt),
 			"visibility":   visibilityResult.Visibility,
 			"actions":      visibilityResult.Actions,
 		}
@@ -1458,41 +1521,45 @@ func AdminGetApplication(c *gin.Context) {
 	visibilityResult := adminVisibilityResolver.ResolveMerchantApplication(app, provider)
 
 	detail := gin.H{
-		"id":                  app.ID,
-		"merchantKind":        "provider",
-		"phone":               app.Phone,
-		"applicantType":       app.ApplicantType,
-		"role":                app.Role,
-		"entityType":          app.EntityType,
-		"sourceApplicationId": app.ID,
-		"realName":            app.RealName,
-		"avatar":              imgutil.GetFullImageURL(app.Avatar),
-		"idCardNo":            displayMaskedSensitive(app.IDCardNo, maskSensitiveID),
-		"idCardFront":         imgutil.GetFullImageURL(app.IDCardFront),
-		"idCardBack":          imgutil.GetFullImageURL(app.IDCardBack),
-		"companyName":         app.CompanyName,
-		"licenseNo":           displayReadableSensitive(app.LicenseNo),
-		"licenseImage":        imgutil.GetFullImageURL(app.LicenseImage),
-		"teamSize":            app.TeamSize,
-		"yearsExperience":     app.YearsExperience,
-		"companyAlbum":        imgutil.GetFullImageURLs(companyAlbum),
-		"officeAddress":       app.OfficeAddress,
-		"serviceArea":         serviceAreaNames,
-		"serviceAreaCodes":    serviceAreaCodes,
-		"styles":              styles,
-		"highlightTags":       highlightTags,
-		"pricing":             pricing,
-		"introduction":        app.Introduction,
-		"graduateSchool":      app.GraduateSchool,
-		"designPhilosophy":    app.DesignPhilosophy,
-		"portfolioCases":      normalizePortfolioCaseDisplays(portfolioCases),
-		"status":              app.Status,
-		"rejectReason":        app.RejectReason,
-		"createdAt":           app.CreatedAt,
-		"auditedAt":           app.AuditedAt,
-		"auditedBy":           app.AuditedBy,
-		"visibility":          visibilityResult.Visibility,
-		"actions":             visibilityResult.Actions,
+		"id":                     app.ID,
+		"merchantKind":           "provider",
+		"phone":                  app.Phone,
+		"applicantType":          app.ApplicantType,
+		"role":                   app.Role,
+		"entityType":             app.EntityType,
+		"sourceApplicationId":    app.ID,
+		"realName":               app.RealName,
+		"avatar":                 imgutil.GetFullImageURL(app.Avatar),
+		"idCardNo":               displayReadableSensitive(app.IDCardNo),
+		"idCardFront":            imgutil.GetFullImageURL(app.IDCardFront),
+		"idCardBack":             imgutil.GetFullImageURL(app.IDCardBack),
+		"companyName":            app.CompanyName,
+		"licenseNo":              displayReadableSensitive(app.LicenseNo),
+		"licenseImage":           imgutil.GetFullImageURL(app.LicenseImage),
+		"legalPersonName":        app.LegalPersonName,
+		"legalPersonIdCardNo":    displayReadableSensitive(app.LegalPersonIDCardNo),
+		"legalPersonIdCardFront": imgutil.GetFullImageURL(app.LegalPersonIDCardFront),
+		"legalPersonIdCardBack":  imgutil.GetFullImageURL(app.LegalPersonIDCardBack),
+		"teamSize":               app.TeamSize,
+		"yearsExperience":        app.YearsExperience,
+		"companyAlbum":           imgutil.GetFullImageURLs(companyAlbum),
+		"officeAddress":          app.OfficeAddress,
+		"serviceArea":            serviceAreaNames,
+		"serviceAreaCodes":       serviceAreaCodes,
+		"styles":                 styles,
+		"highlightTags":          highlightTags,
+		"pricing":                pricing,
+		"introduction":           app.Introduction,
+		"graduateSchool":         app.GraduateSchool,
+		"designPhilosophy":       app.DesignPhilosophy,
+		"portfolioCases":         normalizePortfolioCaseDisplays(portfolioCases),
+		"status":                 app.Status,
+		"rejectReason":           app.RejectReason,
+		"createdAt":              formatServerDateTime(app.CreatedAt),
+		"auditedAt":              formatServerDateTimePtr(app.AuditedAt),
+		"auditedBy":              app.AuditedBy,
+		"visibility":             visibilityResult.Visibility,
+		"actions":                visibilityResult.Actions,
 	}
 	if visibilityResult.LegacyInfo != nil {
 		detail["legacyInfo"] = visibilityResult.LegacyInfo
@@ -1675,8 +1742,8 @@ func AdminApproveApplication(c *gin.Context) {
 			Price:       0,
 			Images:      string(imagesJSON),
 			SortOrder:   i,
-			// 审核通过后生成的作品默认可在灵感库展示。
-			ShowInInspiration: true,
+			// 商家案例仅在商家详情页展示，不进入独立灵感图库。
+			ShowInInspiration: false,
 		}
 		if err := tx.Create(&providerCase).Error; err != nil {
 			tx.Rollback()

@@ -1,97 +1,489 @@
 .provider-detail-page {
   min-height: 100vh;
-  background-color: #FFFFFF;
-  padding-bottom: 140rpx;
+  background: #f5f5f5;
+  padding-bottom: 180rpx;
 
-  .header-section {
-    padding: 40rpx;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    border-bottom: 1rpx solid #F4F4F5;
-
-    .avatar {
-      width: 160rpx;
-      height: 160rpx;
-      border-radius: 50%;
-      margin-bottom: 24rpx;
-      background-color: #eee;
-    }
-
-    .info {
-      text-align: center;
-      
-      .name {
-        font-size: 40rpx;
-        font-weight: 600;
-        margin-bottom: 12rpx;
-        color: #09090B;
-      }
-
-      .stats {
-        font-size: 28rpx;
-        color: #71717A;
-        margin-bottom: 16rpx;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8rpx;
-
-        .rating {
-          color: #D4AF37;
-          font-weight: 500;
-        }
-      }
-
-      .tags {
-        display: flex;
-        gap: 12rpx;
-        justify-content: center;
-        flex-wrap: wrap;
-      }
-    }
+  &--loading,
+  &--empty {
+    padding-bottom: 0;
   }
 
-  .content-section {
-    padding: 40rpx;
-
-    .section-title {
-      font-size: 32rpx;
-      font-weight: 600;
-      margin-bottom: 16rpx;
-      margin-top: 32rpx;
-      color: #09090B;
-      
-      &:first-child {
-        margin-top: 0;
-      }
-    }
-
-    .description {
-      font-size: 28rpx;
-      color: #52525B;
-      line-height: 1.6;
-    }
-
-    .price-info {
-      margin-top: 32rpx;
-      .price {
-        font-size: 36rpx;
-        font-weight: 600;
-        color: #D4AF37;
-      }
-    }
+  &__scroll {
+    min-height: 100vh;
   }
 
-  .footer-action {
-    position: fixed;
-    bottom: 0;
+  &__hero {
+    position: relative;
+    height: 520rpx;
+    overflow: hidden;
+    background: #d4d4d8;
+  }
+
+  &__hero-image,
+  &__hero-placeholder {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  &__hero-placeholder {
+    background: linear-gradient(135deg, #d4d4d8 0%, #a1a1aa 100%);
+  }
+
+  &__hero-mask {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(17, 17, 17, 0.08) 0%, rgba(17, 17, 17, 0.38) 100%);
+  }
+
+  &__nav {
+    position: absolute;
+    top: 0;
     left: 0;
     right: 0;
-    padding: 24rpx 40rpx;
-    background: #FFFFFF;
-    border-top: 1rpx solid #F4F4F5;
-    padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));
-    padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 24rpx;
+    padding-right: 24rpx;
+  }
+
+  &__nav-button {
+    width: 72rpx;
+    height: 72rpx;
+    padding: 0;
+    border-radius: 999rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(12rpx);
+    border: 1rpx solid rgba(255, 255, 255, 0.24);
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__nav-share {
+    margin: 0;
+    line-height: 1;
+  }
+
+  &__profile-card {
+    position: relative;
+    z-index: 5;
+    margin: -84rpx 24rpx 0;
+    padding: 32rpx 28rpx 24rpx;
+    border-radius: 36rpx;
+    background: #ffffff;
+    box-shadow: 0 22rpx 54rpx rgba(17, 17, 17, 0.12);
+  }
+
+  &__profile-head {
+    display: flex;
+    align-items: center;
+    gap: 22rpx;
+    padding-bottom: 24rpx;
+    border-bottom: 1rpx solid #f0f0f0;
+  }
+
+  &__avatar {
+    width: 104rpx;
+    height: 104rpx;
+    border-radius: 52rpx;
+    background: #e5e7eb;
+    flex-shrink: 0;
+
+    &--placeholder {
+      background: linear-gradient(135deg, #e5e7eb 0%, #d4d4d8 100%);
+    }
+  }
+
+  &__profile-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__profile-title-row {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    color: #111111;
+    font-size: 40rpx;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  &__follow-button {
+    flex-shrink: 0;
+    min-width: 124rpx;
+    height: 64rpx;
+    padding: 0 22rpx;
+    border-radius: 999rpx;
+    background: #111111;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6rpx;
+
+    &--followed {
+      background: #f4f4f5;
+      border: 1rpx solid #e4e4e7;
+    }
+  }
+
+  &__follow-icon {
+    flex-shrink: 0;
+  }
+
+  &__follow-text {
+    color: #ffffff;
+    font-size: 24rpx;
+    font-weight: 600;
+
+    &--followed {
+      color: #111111;
+    }
+  }
+
+  &__experience {
+    display: block;
+    margin-top: 10rpx;
+    color: #525252;
+    font-size: 28rpx;
+  }
+
+  &__specialty-pill {
+    margin-top: 14rpx;
+    display: inline-flex;
+    max-width: 100%;
+    padding: 12rpx 18rpx;
+    border-radius: 999rpx;
+    background: #f5f5f5;
+  }
+
+  &__specialty-text {
+    color: #404040;
+    font-size: 24rpx;
+    line-height: 1.4;
+  }
+
+  &__stats {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    padding-top: 24rpx;
+  }
+
+  &__stat {
+    flex: 1;
+    text-align: center;
+  }
+
+  &__stat-value {
+    display: block;
+    color: #111111;
+    font-size: 52rpx;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  &__stat-label {
+    display: block;
+    margin-top: 12rpx;
+    color: #737373;
+    font-size: 24rpx;
+  }
+
+  &__stat-divider {
+    width: 1rpx;
+    margin: 10rpx 0;
+    background: #ededed;
+  }
+
+  &__section {
+    margin: 30rpx 24rpx 0;
+  }
+
+  &__section--reviews {
+    padding-bottom: 28rpx;
+  }
+
+  &__section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16rpx;
+    margin-bottom: 22rpx;
+  }
+
+  &__section-title {
+    color: #111111;
+    font-size: 46rpx;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  &__section-more {
+    color: #a3a3a3;
+    font-size: 28rpx;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14rpx;
+
+    &--subtle {
+      margin-top: 24rpx;
+    }
+  }
+
+  &__chip {
+    padding: 14rpx 20rpx;
+    border-radius: 18rpx;
+    background: #ededed;
+
+    &--subtle {
+      background: #fafafa;
+      border: 1rpx solid #ededed;
+    }
+  }
+
+  &__chip-text {
+    color: #404040;
+    font-size: 26rpx;
+
+    &--subtle {
+      color: #525252;
+    }
+  }
+
+  &__intro {
+    color: #404040;
+    font-size: 32rpx;
+    line-height: 1.75;
+  }
+
+  &__expand-link {
+    display: block;
+    margin-top: 8rpx;
+    color: #a3a3a3;
+    font-size: 28rpx;
+    text-align: right;
+  }
+
+  &__quote-box {
+    margin-top: 28rpx;
+  }
+
+  &__quote-label {
+    display: block;
+    color: #ca8a04;
+    font-size: 24rpx;
+  }
+
+  &__quote-primary {
+    display: block;
+    margin-top: 8rpx;
+    color: #eab308;
+    font-size: 44rpx;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  &__quote-secondary {
+    display: block;
+    margin-top: 10rpx;
+    color: #737373;
+    font-size: 24rpx;
+    line-height: 1.6;
+  }
+
+  &__case-scroll {
+    white-space: nowrap;
+  }
+
+  &__case-list {
+    display: flex;
+    gap: 20rpx;
+    padding-right: 24rpx;
+  }
+
+  &__case-card {
+    position: relative;
+    width: 470rpx;
+    height: 284rpx;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 26rpx;
+    background: #e5e7eb;
+  }
+
+  &__case-image {
+    width: 100%;
+    height: 100%;
+    display: block;
+
+    &--placeholder {
+      background: #d4d4d8;
+    }
+  }
+
+  &__case-overlay {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 22rpx 20rpx 18rpx;
+    background: linear-gradient(180deg, rgba(17, 17, 17, 0.04) 0%, rgba(17, 17, 17, 0.72) 100%);
+  }
+
+  &__case-title {
+    display: block;
+    color: #ffffff;
+    font-size: 32rpx;
+    font-weight: 700;
+  }
+
+  &__case-meta {
+    display: block;
+    margin-top: 8rpx;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 24rpx;
+  }
+
+  &__review-list {
+    display: flex;
+    flex-direction: column;
+    gap: 18rpx;
+  }
+
+  &__review-card,
+  &__placeholder-card,
+  &__review-all {
+    padding: 24rpx;
+    border-radius: 28rpx;
+    background: #ffffff;
+    box-shadow: 0 10rpx 24rpx rgba(17, 17, 17, 0.05);
+  }
+
+  &__review-head {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+    margin-bottom: 18rpx;
+  }
+
+  &__review-avatar {
+    width: 64rpx;
+    height: 64rpx;
+    border-radius: 32rpx;
+    background: #ededed;
+    flex-shrink: 0;
+
+    &--placeholder {
+      background: #ededed;
+    }
+  }
+
+  &__review-user {
+    flex: 1;
+    min-width: 0;
+    color: #262626;
+    font-size: 30rpx;
+    font-weight: 600;
+  }
+
+  &__review-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 6rpx;
+  }
+
+  &__review-rating-text {
+    color: #d97706;
+    font-size: 28rpx;
+    font-weight: 600;
+  }
+
+  &__review-content {
+    color: #404040;
+    font-size: 30rpx;
+    line-height: 1.7;
+  }
+
+  &__review-all {
+    text-align: center;
+    background: #fafafa;
+  }
+
+  &__review-all-text,
+  &__placeholder-text {
+    color: #525252;
+    font-size: 30rpx;
+    text-align: center;
+  }
+
+  &__bottom-bar,
+  &__unsettled-bar {
+    position: fixed;
+    left: 24rpx;
+    right: 24rpx;
+    bottom: calc(24rpx + env(safe-area-inset-bottom));
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 18rpx;
+    padding: 16rpx;
+    border-radius: 999rpx;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 18rpx 40rpx rgba(17, 17, 17, 0.12);
+  }
+
+  &__consult-button {
+    width: 180rpx;
+    height: 96rpx;
+    border-radius: 999rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10rpx;
+    flex-shrink: 0;
+  }
+
+  &__consult-text {
+    color: #111111;
+    font-size: 34rpx;
+    font-weight: 600;
+  }
+
+  &__primary-button {
+    flex: 1;
+    margin-bottom: 0;
+  }
+
+  &__unsettled-bar {
+    justify-content: center;
+    padding: 24rpx 30rpx;
+    border-radius: 28rpx;
+  }
+
+  &__unsettled-text {
+    color: #525252;
+    font-size: 28rpx;
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  &__loading-card {
+    margin: -80rpx 24rpx 0;
   }
 }

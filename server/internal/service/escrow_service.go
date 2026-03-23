@@ -50,14 +50,39 @@ func (s *EscrowService) GetEscrowDetailForOwner(projectID, userID uint64) (*Escr
 
 // Deposit 充值/存入托管
 func (s *EscrowService) Deposit(projectID, userID uint64, amount float64, milestoneID uint64) error {
+	return s.DepositForOwner(projectID, userID, amount, milestoneID)
+}
+
+func (s *EscrowService) DepositForOwner(projectID, userID uint64, amount float64, milestoneID uint64) error {
 	if amount <= 0 {
 		return errors.New("金额必须大于0")
 	}
 
 	return repository.DB.Transaction(func(tx *gorm.DB) error {
+		var project model.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id, owner_id").First(&project, projectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		if project.OwnerID != userID {
+			return errors.New("无权为该项目充值")
+		}
+
 		var escrow model.EscrowAccount
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
 			return errors.New("托管账户不存在")
+		}
+		if escrow.ProjectID != projectID {
+			return errors.New("托管账户与当前项目不匹配")
+		}
+
+		if milestoneID > 0 {
+			var milestone model.Milestone
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id, project_id").First(&milestone, milestoneID).Error; err != nil {
+				return errors.New("验收节点不存在")
+			}
+			if milestone.ProjectID != projectID {
+				return errors.New("验收节点不属于当前项目")
+			}
 		}
 
 		// 更新账户余额
@@ -81,11 +106,6 @@ func (s *EscrowService) Deposit(projectID, userID uint64, amount float64, milest
 		}
 		if err := tx.Create(trx).Error; err != nil {
 			return err
-		}
-
-		// 如果关联了节点，更新节点状态为"待验收"（假设存入即开工）
-		if milestoneID > 0 {
-			tx.Model(&model.Milestone{}).Where("id = ?", milestoneID).Update("status", 1) // 1施工中
 		}
 
 		return nil
@@ -149,9 +169,11 @@ func (s *EscrowService) ProcessScheduledReleases() (int, error) {
 
 	successCount := 0
 	settlementSvc := &SettlementService{}
+	alertSvc := &SystemAlertService{}
 
 	for _, ms := range milestones {
 		released := false
+		scope := fmt.Sprintf("自动放款/项目%d/节点%d", ms.ProjectID, ms.ID)
 		err := repository.DB.Transaction(func(tx *gorm.DB) error {
 			// 查询关联项目
 			var project model.Project
@@ -180,11 +202,20 @@ func (s *EscrowService) ProcessScheduledReleases() (int, error) {
 
 		if err != nil {
 			log.Printf("[ProcessScheduledReleases] milestone %d 放款失败: %v", ms.ID, err)
+			_, _, _ = alertSvc.UpsertAlert(&CreateSystemAlertInput{
+				Type:        SystemAlertTypeEscrowReleaseFailure,
+				Level:       "high",
+				Scope:       scope,
+				ProjectID:   ms.ProjectID,
+				Description: err.Error(),
+				ActionURL:   "/risk/warnings",
+			})
 			continue
 		}
 
 		if released {
 			successCount++
+			_, _ = alertSvc.ResolveAlert(SystemAlertTypeEscrowReleaseFailure, scope, "自动放款恢复成功")
 		}
 	}
 

@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getBookingDetail, payIntentFee } from '../services/bookings';
 
@@ -8,9 +10,38 @@ export function BookingDetailPage() {
   const params = useParams();
   const bookingId = Number(params.id || 0);
   const { data, loading, error, reload } = useAsyncData(() => getBookingDetail(bookingId), [bookingId]);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   if (loading) return <div className="top-detail"><LoadingBlock title="加载预约详情" /></div>;
   if (error || !data) return <div className="top-detail"><ErrorBlock description={error || '预约详情不存在'} onRetry={() => void reload()} /></div>;
+
+  const refundNotice = data.surveyRefundNotice || '量房完成后若不继续设计，默认退回 60% 给用户；后续确认设计方案后，量房定金转为设计费抵扣。';
+
+  const openPaymentDialog = () => {
+    setPaymentError(null);
+    setPaymentDialogOpen(true);
+  };
+
+  const closePaymentDialog = () => {
+    if (paymentSubmitting) return;
+    setPaymentError(null);
+    setPaymentDialogOpen(false);
+  };
+
+  const handlePayIntentFee = async () => {
+    setPaymentSubmitting(true);
+    setPaymentError(null);
+
+    try {
+      const payment = await payIntentFee(data.id);
+      window.location.assign(payment.launchUrl);
+    } catch (paymentRequestError) {
+      setPaymentError(paymentRequestError instanceof Error ? paymentRequestError.message : '发起支付失败，请稍后重试。');
+      setPaymentSubmitting(false);
+    }
+  };
 
   return (
     <div className="top-detail">
@@ -108,15 +139,15 @@ export function BookingDetailPage() {
             </div>
             {data.surveyRefundNotice ? <div className="status-note" style={{ marginTop: 16 }}>{data.surveyRefundNotice}</div> : null}
             <div className="detail-actions" style={{ marginTop: 16 }}>
-              <button className={data.intentFeePaid ? 'button-ghost' : 'button-secondary'} disabled={data.intentFeePaid} onClick={async () => {
-                if (!data.intentFeePaid) {
-                  const confirmed = window.confirm(`确认支付量房定金 ${data.intentFeeText}？\n\n${data.surveyRefundNotice || '量房完成后若不继续设计，默认退回 60% 给用户；后续确认设计方案后，量房定金转为设计费抵扣。'}`);
-                  if (!confirmed) return;
-                }
-                await payIntentFee(data.id);
-                await reload();
-              }} type="button">
-                {data.intentFeePaid ? '量房定金已支付' : '支付量房定金'}
+              <button
+                className={data.intentFeePaid ? 'button-ghost' : 'button-secondary'}
+                disabled={data.intentFeePaid || paymentSubmitting}
+                onClick={() => {
+                  if (!data.intentFeePaid) openPaymentDialog();
+                }}
+                type="button"
+              >
+                {data.intentFeePaid ? '量房定金已支付' : paymentSubmitting ? '跳转支付中…' : '支付量房定金'}
               </button>
               <Link className="button-outline" to={`/bookings/${data.id}/site-survey`}>量房记录</Link>
               <Link className="button-outline" to={`/bookings/${data.id}/budget-confirm`}>预算确认</Link>
@@ -127,6 +158,23 @@ export function BookingDetailPage() {
           </section>
         </aside>
       </section>
+
+      <ConfirmDialog
+        amount={data.intentFeeText}
+        cancelText="暂不支付"
+        confirmDisabled={paymentSubmitting}
+        confirmText={paymentSubmitting ? '跳转中…' : '确认支付'}
+        description={`确认后将为 ${data.providerName} 发起量房定金支付，并进入后续量房与报价沟通流程。`}
+        error={paymentError}
+        notice={refundNotice}
+        noticeTitle="退款与抵扣说明"
+        onCancel={closePaymentDialog}
+        onConfirm={() => {
+          void handlePayIntentFee();
+        }}
+        open={paymentDialogOpen}
+        title="确认支付量房定金"
+      />
     </div>
   );
 }

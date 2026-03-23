@@ -1357,7 +1357,7 @@
 - 条款版本号统一采用：`v主版本.次版本.修订-YYYYMMDD`。
 - 当条款正文变更时，必须同步更新：
   1. 商家前端常量（`admin/src/constants/merchantLegal.ts`）
-  2. 本接口文档与 `docs/API_CHANGES.md`
+  2. 本接口文档与 `docs/API变更记录.md`
   3. `docs/legal/` 对应条款模板
 - 留痕字段说明：
   - `legal_acceptance_json`：原始勾选快照（含 accepted 与三个版本号）

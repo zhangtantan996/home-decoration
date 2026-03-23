@@ -48,7 +48,7 @@ export type MerchantProviderSubType = 'designer' | 'company' | 'foreman';
 export type MerchantKind = 'provider' | 'material_shop';
 export type MerchantRole = 'designer' | 'foreman' | 'company' | 'material_shop';
 export type MerchantEntityType = 'personal' | 'company' | 'individual_business';
-export type MerchantLoginNextAction = 'APPLY' | 'PENDING' | 'RESUBMIT' | 'CHANGE_ROLE';
+export type MerchantLoginNextAction = 'APPLY' | 'PENDING' | 'RESUBMIT' | 'CHANGE_ROLE' | 'REAPPLY';
 
 export interface MerchantLoginApplyStatus {
     kind?: MerchantKind;
@@ -244,6 +244,7 @@ export interface OnboardingVerifyPhonePayload {
     merchantKind: MerchantKind;
     mode: 'apply' | 'resubmit';
     applicationId?: number;
+    allowReapply?: boolean;
 }
 
 export interface OnboardingVerifyPhoneResponse<TForm = unknown> {
@@ -279,6 +280,7 @@ export interface MerchantApplyDetailData extends MerchantApplyStatusData {
     graduateSchool?: string;
     designPhilosophy?: string;
     serviceArea?: string[];
+    serviceAreaCodes?: string[];
     styles?: string[];
     introduction?: string;
     companyAlbum?: string[];
@@ -330,6 +332,7 @@ export interface MaterialShopApplyPayload {
     verificationToken?: string;
     resubmitToken?: string;
     entityType: 'company' | 'individual_business';
+    avatar: string;
     shopName: string;
     shopDescription?: string;
     companyName: string;
@@ -363,6 +366,7 @@ export interface MaterialShopApplyStatusData {
 
 export interface MaterialShopApplyDetailData extends MaterialShopApplyStatusData {
     phone?: string;
+    avatar?: string;
     shopName?: string;
     shopDescription?: string;
     companyName?: string;
@@ -414,6 +418,7 @@ export interface MaterialShopProfile {
     sourceApplicationId?: number;
     merchantKind: 'material_shop';
     entityType: 'company' | 'individual_business';
+    avatar?: string;
     shopName: string;
     shopDescription?: string;
     companyName?: string;
@@ -471,6 +476,10 @@ export const materialShopCenterApi = {
 export interface MerchantUploadResult {
     url: string;
     path?: string;
+    thumbnailUrl?: string;
+    thumbnailPath?: string;
+    width?: number;
+    height?: number;
 }
 
 // 文件上传
@@ -492,6 +501,17 @@ export const merchantUploadApi = {
                 timeout: 60000,
             }),
             '上传失败'
+        );
+    },
+    uploadAvatarData: async (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return unwrapData<MerchantUploadResult>(
+            await merchantApi.post('/merchant/avatar', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 60000,
+            }),
+            '头像上传失败'
         );
     },
     uploadOnboardingImageData: async (file: File) => {

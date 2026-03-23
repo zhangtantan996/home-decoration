@@ -9,17 +9,9 @@ import AuditStatusSummary from './components/AuditStatusSummary';
 import VisibilityStatusPanel from './components/VisibilityStatusPanel';
 import AuditDetailSection from './components/AuditDetailSection';
 import { IDENTITY_APPLICATION_STATUS_META, IDENTITY_APPLICATION_STATUS_OPTIONS, IDENTITY_TYPE_LABELS, PROVIDER_ROLE_META } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
-const formatDateTime = (value?: string) => {
-    if (!value) {
-        return '-';
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return value;
-    }
-    return date.toLocaleString();
-};
+const formatDateTime = formatServerDateTime;
 
 const IdentityApplicationAudit: React.FC = () => {
     const [loading, setLoading] = useState(false);

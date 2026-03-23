@@ -105,6 +105,49 @@ fi
 
 release_load_deploy_env
 
+is_safe_internal_host() {
+  local host="${1:-}"
+  host="$(printf '%s' "${host}" | tr '[:upper:]' '[:lower:]')"
+  host="${host%%:*}"
+
+  case "${host}" in
+    localhost|127.0.0.1|::1|db|redis|prod_db|prod_redis|*.local|*.internal)
+      return 0
+      ;;
+  esac
+
+  if [[ "${host}" =~ ^10\. ]]; then
+    return 0
+  fi
+  if [[ "${host}" =~ ^192\.168\. ]]; then
+    return 0
+  fi
+  if [[ "${host}" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+validate_transport_safety() {
+  if [[ -z "${SERVER_PUBLIC_URL:-}" || ! "${SERVER_PUBLIC_URL}" =~ ^https:// ]]; then
+    echo "Production deploy requires SERVER_PUBLIC_URL to use https://, current=${SERVER_PUBLIC_URL:-<empty>}" >&2
+    exit 1
+  fi
+
+  if [[ -n "${DATABASE_HOST:-}" ]] && ! is_safe_internal_host "${DATABASE_HOST}"; then
+    echo "Production deploy requires DATABASE_HOST to be internal/private, current=${DATABASE_HOST}" >&2
+    exit 1
+  fi
+
+  if [[ -n "${REDIS_HOST:-}" ]] && ! is_safe_internal_host "${REDIS_HOST}"; then
+    echo "Production deploy requires REDIS_HOST to be internal/private, current=${REDIS_HOST}" >&2
+    exit 1
+  fi
+}
+
+validate_transport_safety
+
 cd "${REPO_ROOT}"
 
 if [[ "${SKIP_GIT}" == "false" ]]; then
@@ -181,6 +224,7 @@ verify_release() {
 
 update_services
 verify_release
+release_record_state "production" "deploy" "${TAG}" "${SERVICE_SCOPE}" "${SKIP_GIT}" "tag"
 
 echo ""
 echo "Deployment completed successfully."

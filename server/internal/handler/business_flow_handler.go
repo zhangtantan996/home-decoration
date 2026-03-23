@@ -240,39 +240,39 @@ func GenerateBill(c *gin.Context) {
 
 // GetProjectBill 获取项目账单
 func GetProjectBill(c *gin.Context) {
+	userID := c.GetUint64("userId")
 	projectID := parseUint64(c.Param("id"))
 
-	orders, err := orderService.GetOrdersByProject(projectID)
+	items, err := orderService.GetProjectBillForOwner(projectID, userID)
 	if err != nil {
-		response.Error(c, 500, err.Error())
+		respondScopedAccessError(c, err, "获取项目账单失败")
 		return
 	}
 
-	// 获取每个订单的支付计划
-	result := make([]gin.H, 0)
-	for _, order := range orders {
-		plans, _ := orderService.GetPaymentPlansByOrder(order.ID)
-		result = append(result, gin.H{
-			"order":        order,
-			"paymentPlans": plans,
-		})
-	}
-
-	response.Success(c, result)
+	response.Success(c, items)
 }
 
 // PayOrder 支付订单
 func PayOrder(c *gin.Context) {
 	userID := c.GetUint64("userId")
 	orderID := parseUint64(c.Param("id"))
+	if orderID == 0 {
+		response.BadRequest(c, "无效订单ID")
+		return
+	}
+	req, err := bindPaymentLaunchRequest(c)
+	if err != nil {
+		response.BadRequest(c, "支付参数错误")
+		return
+	}
 
-	order, err := orderService.PayOrder(userID, orderID)
+	result, err := paymentService.StartOrderPayment(userID, orderID, req.TerminalType)
 	if err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}
 
-	response.Success(c, order)
+	response.Success(c, result)
 }
 
 // CancelOrder 取消订单
@@ -292,14 +292,23 @@ func CancelOrder(c *gin.Context) {
 func PayPaymentPlan(c *gin.Context) {
 	userID := c.GetUint64("userId")
 	planID := parseUint64(c.Param("planId"))
+	if planID == 0 {
+		response.BadRequest(c, "无效支付计划ID")
+		return
+	}
+	req, err := bindPaymentLaunchRequest(c)
+	if err != nil {
+		response.BadRequest(c, "支付参数错误")
+		return
+	}
 
-	plan, err := orderService.PayPaymentPlan(userID, planID)
+	result, err := paymentService.StartPaymentPlanPayment(userID, planID, req.TerminalType)
 	if err != nil {
 		response.Error(c, 400, err.Error())
 		return
 	}
 
-	response.Success(c, plan)
+	response.Success(c, result)
 }
 
 // GetProjectFiles 获取项目文件（需验证设计费支付状态）

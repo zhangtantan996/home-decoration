@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { listAfterSales } from '../services/afterSales';
+import styles from './profile/WorkspacePage.module.scss';
 
 const filters = [
   { key: 'all', label: '全部' },
@@ -28,60 +29,49 @@ export function AfterSalesPage() {
   }, [activeFilter, data]);
 
   if (loading) {
-    return <div className="container page-stack"><LoadingBlock title="加载售后中心" /></div>;
+    return <LoadingBlock title="加载售后中心" />;
   }
 
   if (error || !data) {
-    return <div className="container page-stack"><ErrorBlock description={error || '售后中心加载失败'} onRetry={() => void reload()} /></div>;
+    return <ErrorBlock description={error || '售后中心加载失败'} onRetry={() => void reload()} />;
   }
 
   return (
-    <div className="container page-stack">
-      <section className="card section-card">
-        <div className="page-hero">
-          <div className="page-hero-copy">
-            <p className="kicker eyebrow-accent">售后 / 争议</p>
-            <h1 className="page-title">统一查看退款、投诉与返修申请</h1>
-            <p className="page-subtitle">把售后记录集中起来，方便你持续跟进平台处理状态，不需要在消息里反复回找。</p>
-          </div>
-          <div className="inline-actions">
-            <Link className="button-secondary" to="/after-sales/new">发起售后申请</Link>
-          </div>
-        </div>
-      </section>
+    <div className={styles.pageContainer}>
+      <header className={styles.sectionHead}>
+        <h2>售后 / 争议</h2>
+        <Link className={styles.headerAction} to="/after-sales/new">发起售后申请</Link>
+      </header>
 
-      <section className="card section-card">
-        <div className="inline-actions">
-          {filters.map((item) => (
-            <button className="filter-chip" data-active={activeFilter === item.key} key={String(item.key)} onClick={() => setActiveFilter(item.key)} type="button">
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </section>
+      <div className={styles.filterTabs}>
+        {filters.map((item) => (
+          <button className={`${styles.filterTab} ${activeFilter === item.key ? styles.active : ''}`} key={String(item.key)} onClick={() => setActiveFilter(item.key)} type="button">
+            {item.label}
+          </button>
+        ))}
+      </div>
 
-      <section className="card section-card">
-        {filtered.length === 0 ? <EmptyBlock title="暂无售后申请" description="你当前还没有符合筛选条件的售后或争议记录。" /> : (
-          <div className="list-stack">
-            {filtered.map((item) => (
-              <Link className="list-card" key={item.id} to={`/after-sales/${item.id}`}>
-                <div>
-                  <div className="inline-actions" style={{ marginBottom: 10 }}>
-                    <span className="status-chip" data-tone={item.status === 0 ? 'warning' : item.status === 1 ? 'brand' : item.status === 2 ? 'success' : 'danger'}>{item.statusText}</span>
-                    <span className="status-chip">{item.typeText}</span>
-                  </div>
+      {filtered.length === 0 ? <EmptyBlock title="暂无售后申请" description="你当前还没有符合筛选条件的售后或争议记录。" /> : (
+        <div className={styles.list}>
+          {filtered.map((item) => (
+            <Link className={styles.card} key={item.id} to={`/after-sales/${item.id}`}>
+              <div className={styles.cardBody}>
+                <div className={styles.cardTitle}>
                   <h3>{item.reason}</h3>
                   <p>关联预约 #{item.bookingId} · 单号 {item.orderNo}</p>
                 </div>
-                <div className="list-meta">
-                  <strong>{item.amountText}</strong>
-                  <span>{item.createdAt}</span>
+                <div className={styles.statusBar}>
+                  <div className={styles.statusFill} style={{ width: `${item.status === 2 || item.status === 3 ? 100 : item.status === 1 ? 62 : 28}%` }} />
                 </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+              </div>
+              <div className={styles.metaBlock}>
+                <span>{item.statusText}</span>
+                <strong>{item.amountText}</strong>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

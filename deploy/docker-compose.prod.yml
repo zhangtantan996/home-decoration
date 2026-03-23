@@ -40,6 +40,7 @@ services:
       DATABASE_USER: ${DB_USER:-postgres}
       DATABASE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD not set}
       DATABASE_DBNAME: ${DB_NAME:-home_decoration}
+      # 仅限同机 Docker bridge 网络；若切到托管数据库，改为 require/verify-* 并使用内网地址。
       DATABASE_SSLMODE: disable
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -70,7 +71,12 @@ services:
       context: ../
       dockerfile: deploy/Dockerfile.frontend
       args:
-        VITE_PUBLIC_SITE_URL: ${VITE_PUBLIC_SITE_URL:-/}
+        VITE_APP_ENV: ${VITE_APP_ENV:-production}
+        VITE_API_URL: ${VITE_API_URL:-http://api.hezeyunchuang.com/api/v1}
+        VITE_ROUTER_BASENAME: ${VITE_ROUTER_BASENAME:-/app}
+        VITE_PUBLIC_SITE_URL: ${VITE_PUBLIC_SITE_URL:-http://hezeyunchuang.com}
+        VITE_USER_WEB_URL: ${VITE_USER_WEB_URL:-/app/}
+        VITE_MERCHANT_WEB_URL: ${VITE_MERCHANT_WEB_URL:-/merchant/}
     container_name: prod_web
     restart: always
     ports:

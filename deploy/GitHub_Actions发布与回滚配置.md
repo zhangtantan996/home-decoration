@@ -110,7 +110,7 @@ deploy/nginx/admin.htpasswd
 
 - 服务器**不需要**主动访问 GitHub
 - GitHub Runner 会把代码同步到服务器
-- `deploy/.env`、`deploy/.env.test`、`deploy/backups/`、`server/uploads*` 会保留在服务器，不会被同步覆盖
+- `deploy/.env`、`deploy/.env.test`、`deploy/backups/`、`deploy/state/`、`server/uploads*` 会保留在服务器，不会被同步覆盖
 - 测试环境发布脚本会固定使用独立的 Compose Project：`home_decoration_test`，避免和生产环境的 `deploy` 项目互相影响
 
 ## 4. 自动发布怎么触发

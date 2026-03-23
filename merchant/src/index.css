@@ -4,6 +4,12 @@
   font-weight: 400;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -12,9 +18,16 @@
 
 body {
   min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: hidden;
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+  overflow: visible;
+}
+
+.register-page-bg.ant-layout {
+  overflow: visible !important;
 }

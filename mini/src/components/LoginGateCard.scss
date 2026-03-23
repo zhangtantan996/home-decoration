@@ -1,0 +1,60 @@
+@import "../theme/tokens";
+
+.login-gate {
+  padding: 32rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(180deg, #fffdf8 0%, #ffffff 100%);
+  border: 1rpx solid rgba(212, 175, 55, 0.12);
+  box-shadow: 0 16rpx 36rpx rgba(32, 24, 8, 0.06);
+
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 20rpx;
+  }
+
+  &__icon {
+    width: 88rpx;
+    height: 88rpx;
+    flex-shrink: 0;
+    border-radius: 24rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #fff7dd 0%, #fff2ca 100%);
+  }
+
+  &__copy {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    color: $color-primary;
+    font-size: 34rpx;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  &__description {
+    display: block;
+    margin-top: 10rpx;
+    color: $color-secondary;
+    font-size: 26rpx;
+    line-height: 1.7;
+  }
+
+  &__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 16rpx;
+    margin-top: 28rpx;
+  }
+
+  &__hint {
+    color: $color-placeholder;
+    font-size: 22rpx;
+    line-height: 1.7;
+  }
+}

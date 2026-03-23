@@ -131,6 +131,57 @@ func TestMaterialShopServiceListExcludesUnverifiedShop(t *testing.T) {
 	}
 }
 
+func TestMaterialShopServiceListSupportsKeywordCityAndRatingFilters(t *testing.T) {
+	db := setupMaterialShopServiceDB(t)
+	service := &MaterialShopService{}
+
+	createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:              "西安木作馆",
+		Type:              "showroom",
+		IsVerified:        true,
+		Address:           "陕西省西安市雁塔区科技路",
+		Rating:            4.9,
+		MainProducts:      `["木地板","定制木作"]`,
+		ProductCategories: "地板,木作",
+		Tags:              `["环保"]`,
+	}, 1)
+	createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:              "成都木作馆",
+		Type:              "showroom",
+		IsVerified:        true,
+		Address:           "四川省成都市高新区天府大道",
+		Rating:            4.9,
+		MainProducts:      `["木地板"]`,
+		ProductCategories: "地板",
+	}, 1)
+	createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:              "西安低分店",
+		Type:              "showroom",
+		IsVerified:        true,
+		Address:           "陕西省西安市未央区",
+		Rating:            4.2,
+		MainProducts:      `["木地板"]`,
+		ProductCategories: "地板",
+	}, 1)
+
+	list, total, err := service.ListMaterialShops(&MaterialShopQuery{
+		Keyword:   "木地板",
+		City:      "西安",
+		RatingMin: 4.5,
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatalf("list material shops with filters: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("expected exactly one filtered shop, total=%d len=%d", total, len(list))
+	}
+	if list[0].Name != "西安木作馆" {
+		t.Fatalf("unexpected filtered shop: %+v", list[0])
+	}
+}
+
 func TestMaterialShopServiceDetailAllowsVerifiedShopWithoutEnoughProducts(t *testing.T) {
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}

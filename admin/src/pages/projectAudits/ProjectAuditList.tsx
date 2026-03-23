@@ -8,6 +8,7 @@ import PageHeader from '../../components/PageHeader';
 import { adminProjectAuditApi, type AdminProjectAuditItem } from '../../services/api';
 import { usePermission } from '../../hooks/usePermission';
 import { PROJECT_AUDIT_CONCLUSION_LABELS, PROJECT_AUDIT_STATUS_META, PROJECT_AUDIT_STATUS_OPTIONS, PROJECT_AUDIT_TYPE_LABELS } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 type ApiListPayload = {
     list?: AdminProjectAuditItem[];
@@ -97,7 +98,7 @@ const ProjectAuditList: React.FC = () => {
             title: '创建时间',
             dataIndex: 'createdAt',
             width: 180,
-            render: (value: string) => (value ? new Date(value).toLocaleString() : '-'),
+            render: (value: string) => formatServerDateTime(value),
         },
         {
             title: '操作',

@@ -58,7 +58,7 @@
 - 前端 / Nginx 镜像：`deploy/Dockerfile.frontend`、`deploy/Dockerfile.frontend.prod`
 - 容器 Nginx：`deploy/nginx/nginx.conf`、`deploy/nginx/nginx.prod.conf`
 - 宿主机 Nginx：`deploy/nginx/host_nginx_http.conf`、`deploy/nginx/host_nginx_prod.conf`
-- 当前生产入口标准：`deploy/PRODUCTION_NGINX_STANDARD.md`
+- 当前生产入口标准：`deploy/生产Nginx标准.md`
 - 发布脚本：`deploy/scripts/deploy_prod.sh`
 - 回滚脚本：`deploy/scripts/rollback_prod.sh`
 
@@ -154,7 +154,7 @@ bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service all
 如果本次发布包含数据库结构变更，流程必须改为：
 
 1. 先执行发布前备份
-2. 按 `docs/DATABASE_MIGRATIONS.md` 执行对应 `*_up.sql`
+2. 按 `docs/数据库迁移规范.md` 执行对应 `*_up.sql`
 3. 运行验证 SQL
 4. 再执行 `deploy_prod.sh`
 5. 将本次迁移脚本、执行时间、验证结果记录到发布记录中
@@ -250,7 +250,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 
 数据库迁移规范请统一参考：
 
-- `docs/DATABASE_MIGRATIONS.md`
+- `docs/数据库迁移规范.md`
 
 当前仓库已有迁移目录：
 
@@ -266,11 +266,11 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 
 ## 8. 关联文档索引
 
-- 完整部署与运维说明：`docs/DEPLOYMENT_GUIDE_ZH.md`
+- 完整部署与运维说明：`docs/部署指南.md`
 - 发布与回滚策略：`docs/版本发布与回滚指南.md`
-- 上线检查清单：`docs/DEPLOYMENT_CHECKLIST.md`
-- 数据库迁移规范：`docs/DATABASE_MIGRATIONS.md`
-- 阿里云落地方案：`deploy/ALIYUN_PRODUCTION_LAUNCH.md`
+- 上线检查清单：`docs/发布检查清单.md`
+- 数据库迁移规范：`docs/数据库迁移规范.md`
+- 阿里云落地方案：`deploy/阿里云生产上线指南.md`
 
 ---
 

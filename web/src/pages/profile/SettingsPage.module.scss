@@ -1,0 +1,1004 @@
+.page {
+  display: grid;
+  gap: 20px;
+  padding-bottom: 40px;
+  animation: fadeIn 0.28s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.header h2,
+.panelHead h3,
+.cardHead h4 {
+  margin: 0;
+  color: #1f2937;
+  letter-spacing: -0.02em;
+}
+
+.header h2 {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tabRail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tabCard,
+.panel,
+.settingRow,
+.infoRow,
+.securityCard,
+.metricCard,
+.uploadCard,
+.uploadCardStatic {
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.tabCard {
+  display: grid;
+  gap: 6px;
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  color: #64748b;
+  text-align: left;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.tabCard strong {
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tabCard span,
+.panelHead p,
+.cardHead p,
+.rowCopy span,
+.rowMeta em,
+.helperText,
+.inlineNotice {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tabCard:hover {
+  transform: translateY(-1px);
+  border-color: rgba(191, 219, 254, 0.96);
+}
+
+.tabCardActive {
+  border-color: rgba(96, 165, 250, 0.95);
+  background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.08);
+}
+
+.panel {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border-radius: 22px;
+}
+
+.panelHead,
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panelHead p,
+.cardHead p {
+  margin: 6px 0 0;
+}
+
+.profileCard {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.avatarArea {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+}
+
+.avatarShell {
+  width: 168px;
+  height: 168px;
+  overflow: hidden;
+  border-radius: 32px;
+  background: linear-gradient(145deg, #edf4ff 0%, #f8fafc 100%);
+  border: 1px solid rgba(219, 234, 254, 0.96);
+}
+
+.avatarImage,
+.avatarFallback {
+  width: 100%;
+  height: 100%;
+}
+
+.avatarImage {
+  object-fit: cover;
+}
+
+.avatarFallback {
+  display: grid;
+  place-items: center;
+  color: #475569;
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.secondaryButton,
+.primaryButton,
+.dangerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.secondaryButton:hover,
+.primaryButton:hover:not(:disabled),
+.dangerButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.secondaryButton {
+  border: 1px solid rgba(191, 219, 254, 0.96);
+  background: #f8fbff;
+  color: #2563eb;
+}
+
+.secondaryButton svg {
+  width: 16px;
+  height: 16px;
+}
+
+.primaryButton {
+  min-width: 168px;
+  border: none;
+  background: #1f2937;
+  color: #ffffff;
+}
+
+.dangerButton {
+  min-width: 168px;
+  border: none;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.secondaryButton:disabled,
+.primaryButton:disabled,
+.dangerButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.formArea,
+.securityStack,
+.infoList,
+.rowGroup {
+  display: grid;
+  gap: 16px;
+}
+
+.fieldBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.birthdayBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.birthPickerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(241, 245, 249, 0.72);
+  backdrop-filter: blur(10px);
+  animation: birthFadeIn 0.22s ease-out;
+}
+
+.birthPickerSheet {
+  width: min(680px, 100%);
+  margin: 0 auto;
+  max-height: min(720px, calc(100vh - 48px));
+  padding: 18px 18px 20px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(246, 250, 255, 0.985) 100%);
+  box-shadow: 0 24px 72px rgba(148, 163, 184, 0.2);
+  animation: birthSheetIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes birthFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes birthSheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.975);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.birthPickerHandle {
+  width: 44px;
+  height: 5px;
+  margin: 0 auto 14px;
+  border-radius: 999px;
+  background: rgba(191, 219, 254, 0.92);
+}
+
+.birthPickerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.birthPickerHeader p {
+  margin: 0 0 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.birthPickerHeader h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.birthPreviewCard {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #f3f8ff 0%, #ffffff 100%);
+  border: 1px solid rgba(219, 234, 254, 0.98);
+}
+
+.birthPreviewCard span,
+.birthColumn > span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.birthPreviewCard strong {
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.birthPreviewCard em {
+  color: #2563eb;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.birthPickerGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.birthColumn {
+  display: grid;
+  gap: 10px;
+}
+
+.birthColumnList {
+  display: grid;
+  gap: 8px;
+  min-height: 268px;
+  max-height: 268px;
+  padding: 10px;
+  overflow-y: auto;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(255, 255, 255, 0.98) 18%, rgba(255, 255, 255, 0.98) 82%, rgba(248, 250, 252, 0.96) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(191, 219, 254, 0.96) transparent;
+}
+
+.birthColumnList::-webkit-scrollbar {
+  width: 6px;
+}
+
+.birthColumnList::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(191, 219, 254, 0.96);
+}
+
+.birthOption {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #475569;
+  font-size: 15px;
+  font-weight: 700;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+
+.birthOption:hover {
+  transform: translateY(-1px);
+  border-color: rgba(219, 234, 254, 0.98);
+  background: #f8fbff;
+  color: #1e3a8a;
+}
+
+.birthOptionActive {
+  border-color: rgba(147, 197, 253, 0.98);
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1d4ed8;
+  box-shadow: 0 10px 22px rgba(191, 219, 254, 0.45);
+}
+
+.birthPickerActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(226, 232, 240, 0.88);
+}
+
+.birthdayHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fieldBlock span,
+.birthdayHead span,
+.metricCard span,
+.uploadCard em,
+.uploadCardStatic em {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.textButton {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.birthdayCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(203, 213, 225, 0.96);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  color: #1f2937;
+  text-align: left;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.birthdayCard:hover {
+  transform: translateY(-1px);
+  border-color: rgba(147, 197, 253, 0.96);
+  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.08);
+}
+
+.birthdayIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #eff6ff 0%, #f8fafc 100%);
+  color: #2563eb;
+}
+
+.birthdayIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.birthdayCopy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.birthdayCopy strong {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.birthdayCopy span {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.birthdayAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.fieldBlock input,
+.fieldBlock textarea {
+  width: 100%;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(203, 213, 225, 0.96);
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.fieldBlock input {
+  min-height: 52px;
+}
+
+.fieldBlock textarea {
+  min-height: 120px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.fieldBlock input:focus,
+.fieldBlock textarea:focus {
+  outline: none;
+  border-color: rgba(96, 165, 250, 0.96);
+  box-shadow: 0 0 0 4px rgba(191, 219, 254, 0.5);
+}
+
+.infoRow,
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+}
+
+.infoRow span,
+.rowCopy strong,
+.rowMeta em {
+  font-size: 14px;
+}
+
+.infoRow span,
+.rowCopy span {
+  color: #64748b;
+}
+
+.infoRow strong,
+.rowCopy strong,
+.rowMeta,
+.metricCard strong,
+.uploadPlaceholder {
+  color: #1f2937;
+}
+
+.inlineNotice {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px dashed rgba(203, 213, 225, 0.96);
+}
+
+.rowCopy {
+  display: grid;
+  gap: 4px;
+}
+
+.rowMeta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  text-align: right;
+}
+
+.switchWrap input {
+  width: 20px;
+  height: 20px;
+  accent-color: #3b82f6;
+}
+
+.panelActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.securityCard {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border-radius: 20px;
+}
+
+.securityCardDanger {
+  border-color: rgba(254, 205, 211, 0.96);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(255, 241, 242, 0.86) 100%);
+}
+
+.securityGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.securityActionCard {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 251, 255, 0.92) 100%);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+}
+
+.securityActionCardDanger {
+  border-color: rgba(254, 205, 211, 0.96);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(255, 241, 242, 0.88) 100%);
+}
+
+.securityActionTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.securityActionMeta {
+  display: grid;
+  gap: 6px;
+}
+
+.securityActionMeta span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.securityActionMeta strong {
+  color: #0f172a;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.securityActionMeta p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.securityActionFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dangerGhostButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid rgba(254, 202, 202, 0.96);
+  border-radius: 14px;
+  background: rgba(255, 241, 242, 0.9);
+  color: #b91c1c;
+  font-size: 14px;
+  font-weight: 700;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.dangerGhostButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(248, 113, 113, 0.12);
+}
+
+.dangerGhostButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.actionModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(241, 245, 249, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.actionModalCard {
+  width: min(640px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(247, 250, 255, 0.985) 100%);
+  box-shadow: 0 24px 72px rgba(148, 163, 184, 0.2);
+  animation: birthSheetIn 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.actionModalHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.actionModalHead h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.actionModalKicker {
+  margin: 0 0 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.readonlyNotice {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(219, 234, 254, 0.96);
+  background: linear-gradient(145deg, #f3f8ff 0%, #ffffff 100%);
+}
+
+.readonlyNotice p {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.inlineActionRow {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badgeNeutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.badgeInfo {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.badgeSuccess {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.badgeDanger {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metricCard {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+}
+
+.metricCard strong {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.splitFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.uploadGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.uploadCard,
+.uploadCardStatic {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+}
+
+.uploadCard {
+  cursor: pointer;
+}
+
+.uploadPreview,
+.uploadPlaceholder {
+  width: 100%;
+  height: 164px;
+  border-radius: 14px;
+}
+
+.uploadPreview {
+  object-fit: cover;
+}
+
+.uploadPlaceholder {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #eff6ff 0%, #f8fafc 100%);
+  border: 1px dashed rgba(191, 219, 254, 0.96);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.helperText {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid rgba(226, 232, 240, 0.96);
+}
+
+.feedbackSuccess,
+.feedbackError {
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.feedbackSuccess {
+  border: 1px solid rgba(167, 243, 208, 0.96);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.feedbackError {
+  border: 1px solid rgba(254, 202, 202, 0.96);
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+@media (max-width: 1100px) {
+  .metricsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .tabRail,
+  .profileCard,
+  .uploadGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .splitFields {
+    grid-template-columns: 1fr;
+  }
+
+  .birthPickerGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .secondaryButton,
+  .primaryButton,
+  .dangerButton,
+  .dangerGhostButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .panel,
+  .tabCard,
+  .securityCard,
+  .securityActionCard {
+    padding: 16px;
+  }
+
+  .infoRow,
+  .settingRow,
+  .panelHead,
+  .cardHead,
+  .securityActionTop,
+  .actionModalHead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rowMeta,
+  .panelActions {
+    width: 100%;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .avatarShell {
+    width: 144px;
+    height: 144px;
+  }
+
+  .birthPickerBackdrop {
+    padding: 12px;
+  }
+
+  .birthPickerSheet {
+    padding: 14px 14px 16px;
+    border-radius: 24px;
+  }
+
+  .birthdayCard {
+    grid-template-columns: auto 1fr;
+  }
+
+  .birthPickerHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .birthdayAction {
+    grid-column: 1 / -1;
+    justify-self: flex-start;
+  }
+
+  .birthPickerActions {
+    flex-direction: column-reverse;
+  }
+
+  .birthColumnList {
+    min-height: 220px;
+    max-height: 220px;
+  }
+
+  .actionModalBackdrop {
+    padding: 12px;
+  }
+
+  .actionModalCard {
+    padding: 16px;
+    border-radius: 24px;
+  }
+}

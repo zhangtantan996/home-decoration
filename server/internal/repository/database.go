@@ -144,10 +144,14 @@ func autoMigrate() error {
 		&model.Evaluation{},
 		&model.ProjectAudit{},
 		&model.RefundApplication{},
+		&model.PaymentOrder{},
+		&model.PaymentCallback{},
+		&model.RefundOrder{},
 		&model.BusinessFlow{},
 		// 商家中心 (2025-12-29)
 		&model.MerchantApplication{},
 		&model.MerchantIncome{},
+		&model.FinanceReconciliation{},
 		&model.MerchantWithdraw{},
 		&model.MerchantBankAccount{},
 		&model.MerchantServiceSetting{},
@@ -224,6 +228,46 @@ func ensureRuntimeSchemaColumns() error {
 	if DB.Migrator().HasTable(&model.MaterialShop{}) {
 		if err := DB.Exec(`UPDATE material_shops SET status = 1 WHERE status IS NULL`).Error; err != nil {
 			return err
+		}
+		if DB.Dialector.Name() == "postgres" {
+			if err := DB.Exec(`ALTER TABLE material_shops ALTER COLUMN open_time TYPE TEXT`).Error; err != nil {
+				return fmt.Errorf("expand material_shops.open_time: %w", err)
+			}
+		}
+	}
+
+	if DB.Migrator().HasTable(&model.MaterialShopApplication{}) {
+		if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "BrandLogo") {
+			if err := DB.Migrator().AddColumn(&model.MaterialShopApplication{}, "BrandLogo"); err != nil {
+				return fmt.Errorf("add material_shop_applications.brand_logo: %w", err)
+			}
+		}
+		if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "BusinessHoursJSON") {
+			if err := DB.Migrator().AddColumn(&model.MaterialShopApplication{}, "BusinessHoursJSON"); err != nil {
+				return fmt.Errorf("add material_shop_applications.business_hours_json: %w", err)
+			}
+		}
+		if DB.Dialector.Name() == "postgres" {
+			if err := DB.Exec(`ALTER TABLE material_shop_applications ALTER COLUMN business_hours TYPE TEXT`).Error; err != nil {
+				return fmt.Errorf("expand material_shop_applications.business_hours: %w", err)
+			}
+		}
+	}
+
+	onboardingModels := []interface{}{
+		&model.MerchantApplication{},
+		&model.Provider{},
+		&model.MaterialShopApplication{},
+		&model.MaterialShopApplicationProduct{},
+		&model.MaterialShop{},
+		&model.MaterialShopProduct{},
+		&model.MerchantServiceSetting{},
+		&model.MaterialShopServiceSetting{},
+	}
+
+	for _, onboardingModel := range onboardingModels {
+		if err := DB.AutoMigrate(onboardingModel); err != nil {
+			return fmt.Errorf("align onboarding runtime schema %T: %w", onboardingModel, err)
 		}
 	}
 

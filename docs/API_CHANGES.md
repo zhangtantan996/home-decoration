@@ -69,6 +69,41 @@
 - 最后一个节点验收通过后，项目进入 `completed`
 - 用户或平台触发完工收口后，生成项目对应的灵感案例草稿；默认不自动公开，只进入审核链
 
+### 1.2 P2 支撑能力补齐
+
+**资金监控**：
+- 新增 `GET /api/v1/admin/finance/overview`
+- 新增 `POST /api/v1/admin/finance/freeze`
+- 新增 `POST /api/v1/admin/finance/unfreeze`
+- 新增 `POST /api/v1/admin/finance/manual-release`
+- 新增 `GET /api/v1/admin/finance/transactions/export`
+- 既有 `GET /api/v1/admin/finance/transactions` 增加 `projectId/startDate/endDate/page/pageSize/type`
+
+**审计留痕**：
+- 新增 `GET /api/v1/admin/audit-logs`
+- 新增 `GET /api/v1/admin/audit-logs/export`
+- `audit_logs` 扩展结构化字段：
+  - `record_kind`
+  - `operation_type`
+  - `resource_type`
+  - `resource_id`
+  - `reason`
+  - `result`
+  - `before_state`
+  - `after_state`
+  - `metadata`
+
+**通知系统**：
+- 保留既有 `/api/v1/notifications` CRUD 能力
+- 新增前端别名路由 `/notifications` 指向现有消息中心能力
+- 关键业务节点补齐站内信通知：
+  - 施工报价提交/确认/拒绝
+  - 项目暂停/争议
+  - 阶段验收结果
+  - 退款审核结果
+  - 审计/仲裁结论
+  - 冻结/解冻/手动放款结果
+
 ---
 
 ## 2. 历史变更记录

@@ -20,6 +20,7 @@ import {
 import { orderApi } from '../services/api';
 import CancelOrderModal from '../components/CancelOrderModal';
 import InfoModal from '../components/InfoModal';
+import { getServerTimeMs } from '../utils/serverTime';
 
 interface Order {
     id: number;
@@ -93,7 +94,7 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
     const updateCountdown = () => {
         if (!order || !order.expireAt) return;
 
-        const expireTime = new Date(order.expireAt).getTime();
+        const expireTime = getServerTimeMs(order.expireAt);
         const now = Date.now();
         const diff = expireTime - now;
 
@@ -127,7 +128,7 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
 
     const isExpired = () => {
         if (!order?.expireAt) return false;
-        return new Date(order.expireAt).getTime() <= Date.now();
+        return getServerTimeMs(order.expireAt) <= Date.now();
     };
 
     const handlePay = async () => {

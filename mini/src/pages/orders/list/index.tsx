@@ -11,6 +11,7 @@ import { getOrderStatus, getOrderTypeLabel } from '@/constants/status';
 import { listOrders, type OrderItem } from '@/services/orders';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { formatServerDate } from '@/utils/serverTime';
 
 const OrdersList: React.FC = () => {
   const auth = useAuthStore();
@@ -92,7 +93,7 @@ const OrdersList: React.FC = () => {
       {!auth.token ? (
         <Empty
           description="登录后查看订单"
-          action={{ text: '去登录', onClick: () => Taro.navigateTo({ url: '/pages/profile/index' }) }}
+          action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
         />
       ) : init && loading ? (
         <View>
@@ -115,7 +116,7 @@ const OrdersList: React.FC = () => {
                 <View className="flex flex-col gap-sm mt-sm">
                   <View className="flex justify-between text-sm">
                     <Text className="text-gray-500">下单时间</Text>
-                    <Text>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-'}</Text>
+                    <Text>{formatServerDate(item.createdAt)}</Text>
                   </View>
                   <View className="flex justify-between text-sm">
                     <Text className="text-gray-500">订单类型</Text>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -24,6 +24,7 @@ import {
     Bell,
 } from 'lucide-react-native';
 import { useAuthStore } from '../store/authStore';
+import { notificationRealtimeService } from '../services/notificationRealtimeService';
 
 // 主色调
 const PRIMARY_GOLD = '#D4AF37';
@@ -40,6 +41,15 @@ const ProfileScreen = ({ navigation }: any) => {
 
     const [pendingCount, setPendingCount] = useState(0);
     const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+    const loadUnreadNotifications = useCallback(async () => {
+        try {
+            const { notificationApi } = await import('../services/api');
+            const res = await notificationApi.getUnreadCount();
+            setUnreadNotificationCount(res.data?.count || 0);
+        } catch {
+            // Silent fail
+        }
+    }, []);
 
     // 加载待处理数量
     // 加载待处理数量 (方案 + 待付款)
@@ -71,20 +81,34 @@ const ProfileScreen = ({ navigation }: any) => {
 
     // 加载未读通知数量
     useEffect(() => {
-        const loadUnreadNotifications = async () => {
-            try {
-                const { notificationApi } = await import('../services/api');
-                const res = await notificationApi.getUnreadCount();
-                setUnreadNotificationCount(res.data?.count || 0);
-            } catch {
-                // Silent fail
-            }
-        };
-        loadUnreadNotifications();
+        void loadUnreadNotifications();
 
-        const unsubscribe = navigation.addListener('focus', loadUnreadNotifications);
-        return unsubscribe;
-    }, [navigation]);
+        const unsubscribeFocus = navigation.addListener('focus', loadUnreadNotifications);
+        const unsubscribeRealtime = notificationRealtimeService.subscribe((event) => {
+            if ((event.type === 'notification.init' || event.type === 'notification.unread_count') && typeof event.data?.count === 'number') {
+                setUnreadNotificationCount(event.data.count);
+                return;
+            }
+
+            if (event.type === 'notification.new') {
+                setUnreadNotificationCount((current) => current + 1);
+                return;
+            }
+
+            if (
+                event.type === 'notification.read'
+                || event.type === 'notification.delete'
+                || event.type === 'notification.all_read'
+            ) {
+                void loadUnreadNotifications();
+            }
+        });
+
+        return () => {
+            unsubscribeFocus();
+            unsubscribeRealtime();
+        };
+    }, [loadUnreadNotifications, navigation]);
 
     // 快捷统计数据
     const quickStats = [

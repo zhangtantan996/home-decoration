@@ -13,6 +13,13 @@ export interface Region {
     hasChildren?: boolean;
 }
 
+export interface ServiceCityRegion {
+    code: string;
+    name: string;
+    parentCode: string;
+    parentName: string;
+}
+
 // Cascader 选项类型
 export interface RegionCascaderOption {
     value: string;
@@ -127,4 +134,8 @@ export const regionApi = {
     // 获取子行政区划 (主要用于获取区县)
     getChildren: (code: string) => 
         api.get(`/regions/cities/${code}/districts`) as Promise<Region[]>,
+
+    // 获取开放服务城市（按后端开放策略过滤）
+    getServiceCities: () =>
+        api.get('/regions/service-cities') as Promise<ServiceCityRegion[]>,
 };

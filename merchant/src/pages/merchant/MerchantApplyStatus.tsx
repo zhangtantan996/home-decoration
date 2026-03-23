@@ -8,6 +8,7 @@ import {
     type MaterialShopApplyStatusData,
     type MerchantApplyStatusData,
 } from '../../services/merchantApi';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -133,11 +134,11 @@ const MerchantApplyStatus: React.FC = () => {
                     current={status === 0 ? 1 : 2}
                     status={status === 2 ? 'error' : undefined}
                     items={[
-                        { title: '提交申请', description: createdAt ? new Date(createdAt).toLocaleString() : '' },
+                        { title: '提交申请', description: createdAt ? formatServerDateTime(createdAt, '') : '' },
                         { title: '平台审核', description: status === 0 ? '审核中...' : '' },
                         {
                             title: status === 2 ? '审核拒绝' : '审核通过',
-                            description: auditedAt ? new Date(auditedAt).toLocaleString() : '',
+                            description: auditedAt ? formatServerDateTime(auditedAt, '') : '',
                         },
                     ]}
                     style={{ marginBottom: 40 }}

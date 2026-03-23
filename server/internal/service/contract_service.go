@@ -8,6 +8,8 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 type ContractService struct{}
@@ -38,14 +40,54 @@ func (s *ContractService) CreateContract(providerID uint64, input *CreateContrac
 	if providerID == 0 {
 		return nil, errors.New("缺少商家身份")
 	}
+	if input == nil {
+		return nil, errors.New("参数不能为空")
+	}
 	if input.DemandID == 0 && input.ProjectID == 0 {
 		return nil, errors.New("缺少需求或项目信息")
 	}
+
+	resolvedUserID := uint64(0)
+	if input.ProjectID > 0 {
+		var project model.Project
+		if err := repository.DB.First(&project, input.ProjectID).Error; err != nil {
+			return nil, errors.New("项目不存在")
+		}
+		if !canProjectProviderOperate(&project, providerID) {
+			return nil, errors.New("无权为该项目创建合同")
+		}
+		resolvedUserID = project.OwnerID
+	}
+
+	if input.DemandID > 0 {
+		var demand model.Demand
+		if err := repository.DB.First(&demand, input.DemandID).Error; err != nil {
+			return nil, errors.New("需求不存在")
+		}
+
+		var match model.DemandMatch
+		if err := repository.DB.Where("demand_id = ? AND provider_id = ?", input.DemandID, providerID).First(&match).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errors.New("无权为该需求创建合同")
+			}
+			return nil, err
+		}
+
+		if resolvedUserID > 0 && resolvedUserID != demand.UserID {
+			return nil, errors.New("项目与需求归属冲突")
+		}
+		resolvedUserID = demand.UserID
+	}
+
+	if resolvedUserID == 0 {
+		return nil, errors.New("缺少业主信息")
+	}
+
 	contract := &model.Contract{
 		ProjectID:      input.ProjectID,
 		DemandID:       input.DemandID,
 		ProviderID:     providerID,
-		UserID:         input.UserID,
+		UserID:         resolvedUserID,
 		Title:          input.Title,
 		TotalAmount:    input.TotalAmount,
 		PaymentPlan:    toJSONString(input.PaymentPlan, "[]"),
@@ -54,16 +96,6 @@ func (s *ContractService) CreateContract(providerID uint64, input *CreateContrac
 		Status:         model.ContractStatusDraft,
 	}
 
-	if input.DemandID > 0 {
-		var demand model.Demand
-		if err := repository.DB.First(&demand, input.DemandID).Error; err != nil {
-			return nil, errors.New("需求不存在")
-		}
-		contract.UserID = demand.UserID
-	}
-	if contract.UserID == 0 {
-		return nil, errors.New("缺少业主信息")
-	}
 	if contract.Title == "" {
 		contract.Title = "装修合同"
 	}

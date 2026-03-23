@@ -7,6 +7,8 @@ import type {
   ProviderType,
 } from './dto';
 
+export type { ProviderType } from './dto';
+
 export type ProviderListItem = ProviderDTO;
 
 export interface ProviderQuery {
@@ -34,6 +36,9 @@ export interface ProviderReviewItem {
   tags?: string;
   userName?: string;
   userAvatar?: string;
+  serviceType?: string;
+  area?: string;
+  style?: string;
 }
 
 export interface ReviewStats {
@@ -105,17 +110,19 @@ export async function getProviderUserStatus(id: number) {
   });
 }
 
-export async function followProvider(id: number) {
+export async function followProvider(id: number, type: ProviderType) {
   return request<void>({
     url: `/providers/${id}/follow`,
-    method: 'POST'
+    method: 'POST',
+    data: { type }
   });
 }
 
-export async function unfollowProvider(id: number) {
+export async function unfollowProvider(id: number, type: ProviderType) {
   return request<void>({
     url: `/providers/${id}/follow`,
-    method: 'DELETE'
+    method: 'DELETE',
+    data: { type }
   });
 }
 

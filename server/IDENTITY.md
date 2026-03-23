@@ -16,9 +16,9 @@
 
 1. 读本文件（确认身份）
 2. 读 `server/MEMORY.md`
-3. 读 `server/memory/backend-focus.md`
-4. 读根目录 `memory/decisions.md`（架构一致性）
-5. 读根目录 `memory/pitfalls.md`（已知坑）
+3. 读 `server/memory/后端关注点.md`
+4. 读根目录 `memory/技术决策日志.md`（架构一致性）
+5. 读根目录 `memory/常见坑点.md`（已知坑）
 6. 就绪
 
 ## 关键约束

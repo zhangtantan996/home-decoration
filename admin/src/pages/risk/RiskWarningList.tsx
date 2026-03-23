@@ -3,6 +3,7 @@ import { Table, Card, Select, Tag, Button, Space, message, Modal, Form, Input, A
 import { ReloadOutlined, WarningOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { adminRiskApi } from '../../services/api';
 import { RISK_LEVEL_META, RISK_LEVEL_OPTIONS, RISK_WARNING_STATUS_META, RISK_WARNING_STATUS_OPTIONS } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface RiskWarning {
     id: number;
@@ -107,7 +108,7 @@ const RiskWarningList: React.FC = () => {
         {
             title: '预警时间',
             dataIndex: 'createdAt',
-            render: (val: string) => new Date(val).toLocaleString(),
+            render: (val: string) => formatServerDateTime(val),
         },
         {
             title: '操作',

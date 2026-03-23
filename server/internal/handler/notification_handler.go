@@ -16,6 +16,9 @@ func resolveNotificationActor(c *gin.Context) (uint64, string) {
 	}
 
 	if providerID := c.GetUint64("providerId"); providerID > 0 {
+		if userID := c.GetUint64("userId"); userID > 0 {
+			return userID, "provider"
+		}
 		return providerID, "provider"
 	}
 
@@ -63,7 +66,7 @@ func GetNotificationUnreadCount(c *gin.Context) {
 
 // MarkNotificationAsRead 标记单个通知为已读
 func MarkNotificationAsRead(c *gin.Context) {
-	userID, _ := resolveNotificationActor(c)
+	userID, userType := resolveNotificationActor(c)
 
 	notificationID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -71,7 +74,7 @@ func MarkNotificationAsRead(c *gin.Context) {
 		return
 	}
 
-	if err := notificationService.MarkAsRead(notificationID, userID); err != nil {
+	if err := notificationService.MarkAsRead(notificationID, userID, userType); err != nil {
 		response.ServerError(c, err.Error())
 		return
 	}
@@ -96,7 +99,7 @@ func MarkAllNotificationsAsRead(c *gin.Context) {
 
 // DeleteNotification 删除通知
 func DeleteNotification(c *gin.Context) {
-	userID, _ := resolveNotificationActor(c)
+	userID, userType := resolveNotificationActor(c)
 
 	notificationID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -104,7 +107,7 @@ func DeleteNotification(c *gin.Context) {
 		return
 	}
 
-	if err := notificationService.DeleteNotification(notificationID, userID); err != nil {
+	if err := notificationService.DeleteNotification(notificationID, userID, userType); err != nil {
 		response.ServerError(c, err.Error())
 		return
 	}

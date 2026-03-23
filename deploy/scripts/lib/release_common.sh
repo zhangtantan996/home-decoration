@@ -114,6 +114,87 @@ release_checkout_tag() {
   release_checkout_ref "${tag}"
 }
 
+release_timestamp_utc() {
+  date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+release_timestamp_slug() {
+  date -u +%Y%m%dT%H%M%SZ
+}
+
+release_sanitize_name() {
+  local raw="${1:-}"
+  printf '%s' "${raw}" | tr '/:@ ' '____' | tr -cd '[:alnum:]._\n-'
+}
+
+release_resolve_commit_sha() {
+  if [[ -n "${RELEASE_COMMIT_OVERRIDE:-}" ]]; then
+    printf '%s\n' "${RELEASE_COMMIT_OVERRIDE}"
+    return
+  fi
+
+  if command -v git >/dev/null 2>&1 && git rev-parse --verify HEAD >/dev/null 2>&1; then
+    git rev-parse HEAD
+    return
+  fi
+
+  printf '\n'
+}
+
+release_record_state() {
+  local environment="$1"
+  local action="$2"
+  local target="$3"
+  local service_scope="$4"
+  local skip_git="$5"
+  local target_kind="${6:-unknown}"
+  local state_root="${RELEASE_STATE_DIR:-${REPO_ROOT}/deploy/state}"
+  local environment_dir="${state_root}/${environment}"
+  local history_dir="${environment_dir}/history"
+  local timestamp_iso
+  local timestamp_slug
+  local target_slug
+  local hostname_value
+  local commit_value
+  local current_file
+  local history_file
+
+  mkdir -p "${history_dir}"
+
+  timestamp_iso="$(release_timestamp_utc)"
+  timestamp_slug="$(release_timestamp_slug)"
+  target_slug="$(release_sanitize_name "${target}")"
+  if [[ -z "${target_slug}" ]]; then
+    target_slug="current"
+  fi
+
+  hostname_value="$(hostname -f 2>/dev/null || hostname 2>/dev/null || printf 'unknown')"
+  commit_value="$(release_resolve_commit_sha)"
+  current_file="${environment_dir}/current.env"
+  history_file="${history_dir}/${timestamp_slug}-${action}-${target_slug}.env"
+
+  cat > "${current_file}" <<EOF
+RELEASE_ENVIRONMENT=${environment}
+RELEASE_ACTION=${action}
+RELEASE_TARGET=${target}
+RELEASE_TARGET_KIND=${target_kind}
+RELEASE_COMMIT=${commit_value}
+RELEASE_SERVICE_SCOPE=${service_scope}
+RELEASE_SKIP_GIT=${skip_git}
+RELEASE_COMPOSE_FILE=${COMPOSE_FILE}
+RELEASE_ENV_FILE=${DEPLOY_ENV_FILE}
+RELEASE_COMPOSE_PROJECT_NAME=${RELEASE_COMPOSE_PROJECT_NAME:-}
+RELEASE_MANAGED_MODE=${USE_MANAGED:-false}
+RELEASE_HOSTNAME=${hostname_value}
+RELEASE_TIMESTAMP_UTC=${timestamp_iso}
+EOF
+
+  cp "${current_file}" "${history_file}"
+
+  echo "==> Recorded release state: ${current_file}"
+  echo "==> Recorded release history: ${history_file}"
+}
+
 release_parse_url_host() {
   local raw="${1:-}"
   local without_scheme="${raw#*://}"

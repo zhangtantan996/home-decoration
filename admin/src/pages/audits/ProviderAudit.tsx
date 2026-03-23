@@ -17,9 +17,7 @@ import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS, PROVID
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString();
+    return value;
 };
 
 const ProviderAudit: React.FC = () => {
@@ -249,7 +247,7 @@ const ProviderAudit: React.FC = () => {
                 title="入驻申请详情"
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
-                width={960}
+                width={1120}
                 bodyStyle={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}
                 footer={
                     currentItem?.status === 0

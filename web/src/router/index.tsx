@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter } from 'react-router-dom';
 
 import { AuthenticatedAppLayout } from '../app/AuthenticatedAppLayout';
 import { ProfileWorkspaceLayout } from '../app/ProfileWorkspaceLayout';
@@ -24,16 +24,17 @@ import { InspirationDetailPage } from '../pages/InspirationDetailPage';
 import { InspirationPage } from '../pages/InspirationPage';
 import { LoginPage } from '../pages/LoginPage';
 import { MaterialShopDetailPage } from '../pages/MaterialShopDetailPage';
-import { MessagesHubPage } from '../pages/MessagesHubPage';
 import { ProfileHomePage } from '../pages/ProfileHomePage';
 import { ProgressPage } from '../pages/ProgressPage';
+import { PaymentResultPage } from '../pages/PaymentResultPage';
 import { ProjectAcceptancePage } from '../pages/ProjectAcceptancePage';
+import { ProjectBillingPage } from '../pages/ProjectBillingPage';
 import { ProjectCompletionPage } from '../pages/ProjectCompletionPage';
 import { ProjectDisputePage } from '../pages/ProjectDisputePage';
 import { ProjectChangeRequestPage } from '../pages/ProjectChangeRequestPage';
-import { ProjectDetailPage } from '../pages/ProjectDetailPage';
 import { ProjectPausePage } from '../pages/ProjectPausePage';
 import { ProposalDetailPage } from '../pages/ProposalDetailPage';
+import { ProviderBookingCreatePage } from '../pages/ProviderBookingCreatePage';
 import { QuoteTaskDetailPage } from '../pages/QuoteTaskDetailPage';
 import { ProviderDetailPage } from '../pages/ProviderDetailPage';
 import { ProvidersPage } from '../pages/ProvidersPage';
@@ -92,6 +93,7 @@ const router = createBrowserRouter(
         { path: 'inspiration', element: <InspirationPage /> },
         { path: 'inspiration/:id', element: <InspirationDetailPage /> },
         { path: 'providers', element: <ProvidersPage /> },
+        { path: 'providers/:role/:id/booking', element: <ProviderBookingCreatePage /> },
         { path: 'providers/:role/:id', element: <ProviderDetailPage /> },
         { path: 'material-shops/:id', element: <MaterialShopDetailPage /> },
       ],
@@ -105,9 +107,10 @@ const router = createBrowserRouter(
       ),
       errorElement,
       children: [
-        { path: 'progress', element: <ProgressPage /> },
-        { path: 'messages', element: <MessagesHubPage /> },
-        { path: 'notifications', element: <MessagesHubPage /> },
+        { path: 'progress', element: <ProjectsPage /> },
+        { path: 'messages', element: <Navigate to="/me/notifications" replace /> },
+        { path: 'notifications', element: <Navigate to="/me/notifications" replace /> },
+        { path: 'payments/result', element: <PaymentResultPage /> },
         { path: 'me', element: <ProfileWorkspaceLayout />, children: [
           { index: true, element: <ProfileHomePage /> },
           { path: 'bookings', element: <BookingsPage /> },
@@ -120,6 +123,7 @@ const router = createBrowserRouter(
           { path: 'complaints', element: <ComplaintsPage /> },
           { path: 'after-sales', element: <AfterSalesPage /> },
           { path: 'settings', element: <SettingsPage /> },
+          { path: 'edit', element: <Navigate replace to="/me/settings?tab=profile" /> },
         ] },
         { path: 'after-sales', element: <AfterSalesPage /> },
         { path: 'after-sales/new', element: <AfterSalesCreatePage /> },
@@ -135,7 +139,8 @@ const router = createBrowserRouter(
         { path: 'bookings/:id/design-quote', element: <DesignFeeQuotePage /> },
         { path: 'proposals/:id', element: <ProposalDetailPage /> },
         { path: 'quote-tasks/:id', element: <QuoteTaskDetailPage /> },
-        { path: 'projects/:id', element: <ProjectDetailPage /> },
+        { path: 'projects/:id', element: <ProgressPage /> },
+        { path: 'projects/:id/billing', element: <ProjectBillingPage /> },
         { path: 'projects/:id/pause', element: <ProjectPausePage /> },
         { path: 'projects/:id/dispute', element: <ProjectDisputePage /> },
         { path: 'projects/:id/contract', element: <ContractConfirmPage /> },

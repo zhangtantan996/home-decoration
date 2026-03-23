@@ -40,13 +40,26 @@ function toMaterialShop(dto: MaterialShopDTO): MaterialShopListItemVM {
   };
 }
 
-export async function listMaterialShops(params: { page?: number; pageSize?: number; sortBy?: string; type?: string } = {}) {
+interface ListMaterialShopsParams {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  type?: string;
+  keyword?: string;
+  city?: string;
+  ratingMin?: number;
+}
+
+export async function listMaterialShops(params: ListMaterialShopsParams = {}) {
   const data = await requestJson<PageEnvelope<MaterialShopDTO>>('/material-shops', {
     query: {
       page: params.page || 1,
       pageSize: params.pageSize || 8,
       sortBy: params.sortBy || 'recommend',
       type: params.type,
+      keyword: params.keyword,
+      city: params.city,
+      ratingMin: params.ratingMin,
     },
   });
 

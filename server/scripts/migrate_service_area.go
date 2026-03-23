@@ -5,176 +5,287 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
-	"os"
+	"strings"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"home-decoration-server/internal/config"
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
 )
 
-// Region 区域模型（简化版）
-type Region struct {
-	ID         uint64 `json:"id" gorm:"primaryKey"`
-	Code       string `json:"code"`
-	Name       string `json:"name"`
-	Level      int    `json:"level"`
-	ParentCode string `json:"parentCode"`
-	Enabled    bool   `json:"enabled"`
+type serviceAreaCarrier interface {
+	GetID() uint64
+	GetServiceArea() string
+	SetServiceArea(string)
 }
 
-// Provider 服务商模型（简化版）
-type Provider struct {
-	ID          uint64 `gorm:"primaryKey"`
-	ServiceArea string `gorm:"type:text"`
+type providerCarrier struct{ model.Provider }
+
+func (p *providerCarrier) GetID() uint64           { return p.ID }
+func (p *providerCarrier) GetServiceArea() string  { return p.ServiceArea }
+func (p *providerCarrier) SetServiceArea(v string) { p.ServiceArea = v }
+
+type merchantApplicationCarrier struct{ model.MerchantApplication }
+
+func (m *merchantApplicationCarrier) GetID() uint64           { return m.ID }
+func (m *merchantApplicationCarrier) GetServiceArea() string  { return m.ServiceArea }
+func (m *merchantApplicationCarrier) SetServiceArea(v string) { m.ServiceArea = v }
+
+type migrationStats struct {
+	TableName          string
+	Total              int
+	Updated            int
+	Unchanged          int
+	DroppedValueCount  int
+	RolledUpValueCount int
+	Samples            []string
 }
 
-// MerchantApplication 商家入驻申请模型（简化版）
-type MerchantApplication struct {
-	ID          uint64 `gorm:"primaryKey"`
-	ServiceArea string `gorm:"type:text"`
+func (s *migrationStats) addSample(format string, args ...any) {
+	if len(s.Samples) >= 10 {
+		return
+	}
+	s.Samples = append(s.Samples, fmt.Sprintf(format, args...))
 }
 
 func main() {
-	// 数据库连接配置（请根据实际情况修改）
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "host=localhost user=postgres password=postgres dbname=home_decoration port=5432 sslmode=disable"
-	}
+	apply := flag.Bool("apply", false, "写回数据库；默认仅预演")
+	flag.Parse()
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal("连接数据库失败:", err)
+		log.Fatalf("加载配置失败: %v", err)
+	}
+	if err := repository.InitDB(&cfg.Database); err != nil {
+		log.Fatalf("连接数据库失败: %v", err)
 	}
 
-	// 1. 加载所有区域数据，构建名称到代码的映射
-	var regions []Region
-	if err := db.Find(&regions).Error; err != nil {
-		log.Fatal("查询区域数据失败:", err)
+	regionByCode, nameToRegion, err := loadRegionLookups()
+	if err != nil {
+		log.Fatalf("加载行政区划失败: %v", err)
 	}
 
-	nameToCode := make(map[string]string)
-	for _, r := range regions {
-		nameToCode[r.Name] = r.Code
+	providerStats, err := migrateProviders(regionByCode, nameToRegion, *apply)
+	if err != nil {
+		log.Fatalf("迁移 providers 失败: %v", err)
+	}
+	appStats, err := migrateMerchantApplications(regionByCode, nameToRegion, *apply)
+	if err != nil {
+		log.Fatalf("迁移 merchant_applications 失败: %v", err)
 	}
 
-	fmt.Printf("加载了 %d 个区域映射\n", len(nameToCode))
-
-	// 2. 迁移 providers 表
-	migrateProviders(db, nameToCode)
-
-	// 3. 迁移 merchant_applications 表
-	migrateMerchantApplications(db, nameToCode)
-
-	fmt.Println("✅ 数据迁移完成！")
+	printStats(providerStats, *apply)
+	printStats(appStats, *apply)
+	if *apply {
+		log.Println("✅ 服务城市迁移已写回数据库")
+	} else {
+		log.Println("✅ 服务城市迁移预演完成（未写库）")
+	}
 }
 
-func migrateProviders(db *gorm.DB, nameToCode map[string]string) {
-	var providers []Provider
-	if err := db.Where("service_area IS NOT NULL AND service_area != ''").Find(&providers).Error; err != nil {
-		log.Fatal("查询 providers 失败:", err)
+func loadRegionLookups() (map[string]model.Region, map[string]model.Region, error) {
+	var regions []model.Region
+	if err := repository.DB.Find(&regions).Error; err != nil {
+		return nil, nil, err
 	}
 
-	successCount := 0
-	failCount := 0
-
-	for _, provider := range providers {
-		// 解析现有的 service_area
-		var names []string
-		if err := json.Unmarshal([]byte(provider.ServiceArea), &names); err != nil {
-			// 如果解析失败，可能是旧格式或空字符串
-			fmt.Printf("⚠️  Provider ID %d: 解析失败 - %s\n", provider.ID, provider.ServiceArea)
-			failCount++
-			continue
+	regionByCode := make(map[string]model.Region, len(regions))
+	nameToRegion := make(map[string]model.Region, len(regions))
+	for _, region := range regions {
+		regionByCode[region.Code] = region
+		if _, exists := nameToRegion[region.Name]; !exists {
+			nameToRegion[region.Name] = region
 		}
-
-		// 转换名称为代码
-		codes := make([]string, 0)
-		allFound := true
-		for _, name := range names {
-			if code, ok := nameToCode[name]; ok {
-				codes = append(codes, code)
-			} else {
-				fmt.Printf("⚠️  Provider ID %d: 未找到区域 '%s' 的代码\n", provider.ID, name)
-				allFound = false
-			}
-		}
-
-		if !allFound {
-			failCount++
-			continue
-		}
-
-		// 序列化为 JSON
-		codesJSON, _ := json.Marshal(codes)
-
-		// 更新数据库
-		if err := db.Model(&Provider{}).Where("id = ?", provider.ID).
-			Update("service_area", string(codesJSON)).Error; err != nil {
-			fmt.Printf("❌ Provider ID %d: 更新失败 - %v\n", provider.ID, err)
-			failCount++
-			continue
-		}
-
-		fmt.Printf("✅ Provider ID %d: %v → %v\n", provider.ID, names, codes)
-		successCount++
 	}
-
-	fmt.Printf("\n📊 Providers 迁移统计: 成功 %d, 失败 %d, 总计 %d\n\n",
-		successCount, failCount, len(providers))
+	return regionByCode, nameToRegion, nil
 }
 
-func migrateMerchantApplications(db *gorm.DB, nameToCode map[string]string) {
-	var applications []MerchantApplication
-	if err := db.Where("service_area IS NOT NULL AND service_area != ''").
-		Find(&applications).Error; err != nil {
-		log.Fatal("查询 merchant_applications 失败:", err)
+func migrateProviders(regionByCode, nameToRegion map[string]model.Region, apply bool) (*migrationStats, error) {
+	var providers []model.Provider
+	if err := repository.DB.Where("service_area IS NOT NULL AND TRIM(service_area) != ''").Find(&providers).Error; err != nil {
+		return nil, err
 	}
 
-	successCount := 0
-	failCount := 0
-
-	for _, app := range applications {
-		// 解析现有的 service_area
-		var names []string
-		if err := json.Unmarshal([]byte(app.ServiceArea), &names); err != nil {
-			fmt.Printf("⚠️  Application ID %d: 解析失败 - %s\n", app.ID, app.ServiceArea)
-			failCount++
-			continue
+	stats := &migrationStats{TableName: "providers", Total: len(providers)}
+	for _, item := range providers {
+		carrier := &providerCarrier{Provider: item}
+		changed, err := migrateOneRecord("providers", carrier, regionByCode, nameToRegion, apply, stats)
+		if err != nil {
+			return nil, err
 		}
-
-		// 转换名称为代码
-		codes := make([]string, 0)
-		allFound := true
-		for _, name := range names {
-			if code, ok := nameToCode[name]; ok {
-				codes = append(codes, code)
-			} else {
-				fmt.Printf("⚠️  Application ID %d: 未找到区域 '%s' 的代码\n", app.ID, name)
-				allFound = false
-			}
+		if changed {
+			stats.Updated++
+		} else {
+			stats.Unchanged++
 		}
+	}
+	return stats, nil
+}
 
-		if !allFound {
-			failCount++
-			continue
-		}
-
-		// 序列化为 JSON
-		codesJSON, _ := json.Marshal(codes)
-
-		// 更新数据库
-		if err := db.Model(&MerchantApplication{}).Where("id = ?", app.ID).
-			Update("service_area", string(codesJSON)).Error; err != nil {
-			fmt.Printf("❌ Application ID %d: 更新失败 - %v\n", app.ID, err)
-			failCount++
-			continue
-		}
-
-		fmt.Printf("✅ Application ID %d: %v → %v\n", app.ID, names, codes)
-		successCount++
+func migrateMerchantApplications(regionByCode, nameToRegion map[string]model.Region, apply bool) (*migrationStats, error) {
+	var items []model.MerchantApplication
+	if err := repository.DB.Where("service_area IS NOT NULL AND TRIM(service_area) != ''").Find(&items).Error; err != nil {
+		return nil, err
 	}
 
-	fmt.Printf("\n📊 MerchantApplications 迁移统计: 成功 %d, 失败 %d, 总计 %d\n\n",
-		successCount, failCount, len(applications))
+	stats := &migrationStats{TableName: "merchant_applications", Total: len(items)}
+	for _, item := range items {
+		carrier := &merchantApplicationCarrier{MerchantApplication: item}
+		changed, err := migrateOneRecord("merchant_applications", carrier, regionByCode, nameToRegion, apply, stats)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			stats.Updated++
+		} else {
+			stats.Unchanged++
+		}
+	}
+	return stats, nil
+}
+
+func migrateOneRecord(
+	tableName string,
+	record serviceAreaCarrier,
+	regionByCode map[string]model.Region,
+	nameToRegion map[string]model.Region,
+	apply bool,
+	stats *migrationStats,
+) (bool, error) {
+	originalItems := parseRawServiceArea(record.GetServiceArea())
+	nextCodes, rolledUp, dropped, sampleNotes := transformServiceAreaItems(originalItems, regionByCode, nameToRegion)
+	stats.RolledUpValueCount += rolledUp
+	stats.DroppedValueCount += dropped
+	for _, note := range sampleNotes {
+		stats.addSample("%s#%d: %s", tableName, record.GetID(), note)
+	}
+
+	nextJSONBytes, _ := json.Marshal(nextCodes)
+	nextJSON := string(nextJSONBytes)
+	changed := normalizeJSONString(record.GetServiceArea()) != nextJSON
+
+	if !apply || !changed {
+		return changed, nil
+	}
+
+	if err := repository.DB.Table(tableName).
+		Where("id = ?", record.GetID()).
+		Update("service_area", nextJSON).Error; err != nil {
+		return false, err
+	}
+
+	record.SetServiceArea(nextJSON)
+	return true, nil
+}
+
+func parseRawServiceArea(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return []string{}
+	}
+
+	var items []string
+	if err := json.Unmarshal([]byte(trimmed), &items); err == nil {
+		return normalizeStringSlice(items)
+	}
+
+	parts := strings.FieldsFunc(trimmed, func(r rune) bool {
+		return r == ',' || r == '，' || r == ';' || r == '；'
+	})
+	return normalizeStringSlice(parts)
+}
+
+func transformServiceAreaItems(
+	items []string,
+	regionByCode map[string]model.Region,
+	nameToRegion map[string]model.Region,
+) (codes []string, rolledUp int, dropped int, samples []string) {
+	seen := make(map[string]struct{})
+	for _, item := range items {
+		region, resolved, ok := resolveRegion(item, regionByCode, nameToRegion)
+		if !ok {
+			dropped++
+			samples = append(samples, fmt.Sprintf("丢弃无法识别值 %q", item))
+			continue
+		}
+
+		targetCode := ""
+		switch region.Level {
+		case 2:
+			targetCode = region.Code
+		case 3:
+			targetCode = strings.TrimSpace(region.ParentCode)
+			rolledUp++
+			samples = append(samples, fmt.Sprintf("区县 %q(%s) 回卷到城市 %s", region.Name, resolved, targetCode))
+		default:
+			dropped++
+			samples = append(samples, fmt.Sprintf("丢弃非城市粒度值 %q(%s)", region.Name, resolved))
+			continue
+		}
+
+		if targetCode == "" {
+			dropped++
+			samples = append(samples, fmt.Sprintf("丢弃缺少父城市的值 %q(%s)", region.Name, resolved))
+			continue
+		}
+		if _, exists := seen[targetCode]; exists {
+			continue
+		}
+		seen[targetCode] = struct{}{}
+		codes = append(codes, targetCode)
+	}
+
+	return codes, rolledUp, dropped, samples
+}
+
+func resolveRegion(input string, regionByCode map[string]model.Region, nameToRegion map[string]model.Region) (model.Region, string, bool) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return model.Region{}, "", false
+	}
+	if region, ok := regionByCode[trimmed]; ok {
+		return region, trimmed, true
+	}
+	if region, ok := nameToRegion[trimmed]; ok {
+		return region, region.Code, true
+	}
+	return model.Region{}, "", false
+}
+
+func normalizeStringSlice(items []string) []string {
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func normalizeJSONString(raw string) string {
+	items := parseRawServiceArea(raw)
+	bytes, _ := json.Marshal(items)
+	return string(bytes)
+}
+
+func printStats(stats *migrationStats, apply bool) {
+	mode := "DRY-RUN"
+	if apply {
+		mode = "APPLY"
+	}
+	log.Printf("[%s] %s: total=%d updated=%d unchanged=%d rolled_up=%d dropped=%d",
+		mode,
+		stats.TableName,
+		stats.Total,
+		stats.Updated,
+		stats.Unchanged,
+		stats.RolledUpValueCount,
+		stats.DroppedValueCount,
+	)
+	for _, sample := range stats.Samples {
+		log.Printf("[%s] sample: %s", stats.TableName, sample)
+	}
 }

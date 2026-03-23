@@ -21,6 +21,7 @@ import { getWebUrl } from '../config';
 import { useToast } from '../components/Toast';
 import { inspirationApi, caseApi } from '../services/api';
 import { getInspirationAvatarUrl, getInspirationGalleryImages } from '../utils/inspirationImages';
+import { formatServerDate } from '../utils/serverTime';
 
 const { width } = Dimensions.get('window');
 
@@ -171,7 +172,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
             <View style={styles.commentContent}>
                 <View style={styles.commentHeader}>
                     <Text style={styles.commentUser}>{comment.user?.nickname || comment.user?.name || '用户'}</Text>
-                    <Text style={styles.commentTime}>{comment.createdAt ? new Date(comment.createdAt).toLocaleDateString() : '刚刚'}</Text>
+                    <Text style={styles.commentTime}>{formatServerDate(comment.createdAt, '刚刚')}</Text>
                 </View>
                 <Text style={styles.commentText}>{comment.content}</Text>
             </View>
@@ -258,7 +259,7 @@ export const InspirationDetailScreen = ({ route, navigation }: any) => {
                             />
                             <View style={styles.authorInfo}>
                                 <Text style={styles.authorName}>{item.author?.name || '未知作者'}</Text>
-                                <Text style={styles.publishTime}>发布于 {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '近期'}</Text>
+                                <Text style={styles.publishTime}>发布于 {formatServerDate(item.createdAt, '近期')}</Text>
                             </View>
                             <TouchableOpacity style={styles.followBtn}>
                                 <Text style={styles.followBtnText}>关注</Text>

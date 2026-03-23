@@ -12,6 +12,7 @@ import {
     Space,
     Spin,
     Table,
+    Tooltip,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
@@ -30,6 +31,7 @@ import { adminMenuApi, adminRoleApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import StatusTag from '../../components/StatusTag';
 import ToolbarCard from '../../components/ToolbarCard';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Role {
     id: number;
@@ -69,13 +71,31 @@ interface ApiEnvelope<T> {
 
 type PillTone = 'accent' | 'success' | 'warning' | 'muted' | 'danger';
 
+const RESERVED_ROLE_META: Record<string, { label: string; tone: PillTone; description: string }> = {
+    system_admin: {
+        label: '三员分立·系统管理员',
+        tone: 'danger',
+        description: '保留角色，必须独立分配，不得和其他角色混用。',
+    },
+    security_admin: {
+        label: '三员分立·安全管理员',
+        tone: 'warning',
+        description: '保留角色，必须独立分配，不得和其他角色混用。',
+    },
+    security_auditor: {
+        label: '三员分立·安全审计员',
+        tone: 'success',
+        description: '保留角色，只允许只读权限，不得分配审批或写操作。',
+    },
+};
+
 const InlinePill: React.FC<{ tone: PillTone; text: string; monospace?: boolean }> = ({ tone, text, monospace }) => (
     <span className={`hz-inline-pill hz-inline-pill--${tone}`}>
         {monospace ? <code>{text}</code> : text}
     </span>
 );
 
-const formatDateTime = (value: string) => new Date(value).toLocaleString('zh-CN', { hour12: false });
+const formatDateTime = (value: string) => formatServerDateTime(value);
 
 const buildMenuTree = (nodes: Menu[]): MenuNode[] =>
     nodes.map((node) => ({
@@ -115,6 +135,8 @@ const readErrorMessage = (error: unknown, fallback: string) => {
     }
     return fallback;
 };
+
+const getReservedRoleMeta = (roleKey: string) => RESERVED_ROLE_META[roleKey];
 
 const RoleList: React.FC = () => {
     const { modal, message } = App.useApp();
@@ -333,7 +355,15 @@ const RoleList: React.FC = () => {
             title: '角色名称',
             dataIndex: 'name',
             width: 200,
-            render: (value: string) => <span style={{ fontWeight: 700, color: '#0a1628' }}>{value}</span>,
+            render: (value: string, record) => {
+                const reservedMeta = getReservedRoleMeta(record.key);
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <span style={{ fontWeight: 700, color: '#0a1628' }}>{value}</span>
+                        {reservedMeta ? <InlinePill tone={reservedMeta.tone} text={reservedMeta.label} /> : null}
+                    </div>
+                );
+            },
         },
         {
             title: '角色标识',
@@ -345,7 +375,18 @@ const RoleList: React.FC = () => {
             title: '备注',
             dataIndex: 'remark',
             ellipsis: true,
-            render: (value: string) => value || <span style={{ color: '#64748b' }}>暂无备注</span>,
+            render: (value: string, record) => {
+                const reservedMeta = getReservedRoleMeta(record.key);
+                if (!value && !reservedMeta) {
+                    return <span style={{ color: '#64748b' }}>暂无备注</span>;
+                }
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {value ? <span>{value}</span> : null}
+                        {reservedMeta ? <span style={{ color: '#64748b', fontSize: '0.82rem' }}>{reservedMeta.description}</span> : null}
+                    </div>
+                );
+            },
         },
         {
             title: '排序',
@@ -372,19 +413,30 @@ const RoleList: React.FC = () => {
             key: 'action',
             width: 250,
             fixed: 'right',
-            render: (_value, record) => (
-                <Space size={0}>
-                    <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => void handleAssignPermission(record)}>
-                        分配权限
-                    </Button>
-                    <Button type="link" size="small" onClick={() => handleEdit(record)}>
-                        编辑
-                    </Button>
-                    <Button type="link" size="small" danger onClick={() => handleDelete(record)}>
-                        删除
-                    </Button>
-                </Space>
-                ),
+            render: (_value, record) => {
+                const reservedMeta = getReservedRoleMeta(record.key);
+                return (
+                    <Space size={0}>
+                        <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => void handleAssignPermission(record)}>
+                            分配权限
+                        </Button>
+                        <Button type="link" size="small" onClick={() => handleEdit(record)}>
+                            编辑
+                        </Button>
+                        {reservedMeta ? (
+                            <Tooltip title="三员分立保留角色不可删除">
+                                <Button type="link" size="small" danger disabled>
+                                    删除
+                                </Button>
+                            </Tooltip>
+                        ) : (
+                            <Button type="link" size="small" danger onClick={() => handleDelete(record)}>
+                                删除
+                            </Button>
+                        )}
+                    </Space>
+                );
+            },
         },
     ];
 
@@ -455,6 +507,13 @@ const RoleList: React.FC = () => {
                 </div>
             </ToolbarCard>
 
+            <Alert
+                type="warning"
+                showIcon
+                message="三员分立保留角色已收口"
+                description="system_admin、security_admin、security_auditor 为保留角色。它们必须独立分配；其中安全审计员仅允许只读权限。"
+            />
+
             <Card className="hz-table-card">
                 <Table<Role>
                     rowKey="id"
@@ -494,9 +553,22 @@ const RoleList: React.FC = () => {
                                 { pattern: /^[a-z_]+$/, message: '只能包含小写字母和下划线' },
                             ]}
                         >
-                            <Input placeholder="例如：ops_admin" />
+                            <Input
+                                placeholder="例如：ops_admin"
+                                disabled={Boolean(editingRole && getReservedRoleMeta(editingRole.key))}
+                            />
                         </Form.Item>
                     </Space>
+
+                    {editingRole && getReservedRoleMeta(editingRole.key) ? (
+                        <Alert
+                            style={{ marginBottom: 16 }}
+                            type="info"
+                            showIcon
+                            message="当前是三员分立保留角色"
+                            description={getReservedRoleMeta(editingRole.key)?.description}
+                        />
+                    ) : null}
 
                     <Form.Item label="备注说明" name="remark">
                         <Input.TextArea placeholder="说明该角色面向的业务范围、权限边界和默认职责。" rows={4} />
@@ -530,6 +602,15 @@ const RoleList: React.FC = () => {
             >
                 <Spin spinning={menuLoading}>
                     <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        {currentRole && getReservedRoleMeta(currentRole.key) ? (
+                            <Alert
+                                type={currentRole.key === 'security_auditor' ? 'warning' : 'info'}
+                                showIcon
+                                message={getReservedRoleMeta(currentRole.key)?.label}
+                                description={getReservedRoleMeta(currentRole.key)?.description}
+                            />
+                        ) : null}
+
                         <Alert
                             type="info"
                             showIcon={false}

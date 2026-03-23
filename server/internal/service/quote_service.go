@@ -1087,13 +1087,27 @@ func (s *QuoteService) GetQuoteComparison(quoteListID uint64) (*QuoteComparisonR
 	if len(providerIDs) > 0 {
 		_ = repository.DB.Where("id IN ?", providerIDs).Find(&providers).Error
 	}
+	userIDs := make([]uint64, 0, len(providers))
+	for _, provider := range providers {
+		if provider.UserID > 0 {
+			userIDs = append(userIDs, provider.UserID)
+		}
+	}
+	userMap := make(map[uint64]model.User, len(userIDs))
+	if len(userIDs) > 0 {
+		var users []model.User
+		_ = repository.DB.Select("id", "nickname", "phone").Where("id IN ?", userIDs).Find(&users).Error
+		for _, user := range users {
+			userMap[user.ID] = user
+		}
+	}
 	providerNames := make(map[uint64]string, len(providers))
 	for _, provider := range providers {
-		name := strings.TrimSpace(provider.CompanyName)
-		if name == "" {
-			name = fmt.Sprintf("服务商#%d", provider.ID)
+		var providerUser *model.User
+		if user, ok := userMap[provider.UserID]; ok {
+			providerUser = &user
 		}
-		providerNames[provider.ID] = name
+		providerNames[provider.ID] = ResolveProviderDisplayName(provider, providerUser)
 	}
 
 	itemsBySubmission := make(map[uint64]map[uint64]model.QuoteSubmissionItem)

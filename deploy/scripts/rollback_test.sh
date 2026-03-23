@@ -133,6 +133,7 @@ export RELEASE_LOCAL_PORT
 cd "${REPO_ROOT}"
 
 CHECKOUT_TARGET="current-working-tree"
+STATE_TARGET_KIND="working-tree"
 
 if [[ "${SKIP_GIT}" == "false" ]]; then
   release_ensure_clean_worktree
@@ -143,9 +144,11 @@ if [[ "${SKIP_GIT}" == "false" ]]; then
   if [[ -n "${TAG}" ]]; then
     release_ensure_tag_exists "${TAG}"
     CHECKOUT_TARGET="${TAG}"
+    STATE_TARGET_KIND="tag"
   else
     release_ensure_ref_exists "${ROLLBACK_REF}"
     CHECKOUT_TARGET="${ROLLBACK_REF}"
+    STATE_TARGET_KIND="ref"
   fi
 else
   echo "==> Git operations skipped; rolling back from current working tree"
@@ -219,6 +222,7 @@ verify_rollback() {
 
 rollback_services
 verify_rollback
+release_record_state "test" "rollback" "${CHECKOUT_TARGET}" "${SERVICE_SCOPE}" "${SKIP_GIT}" "${STATE_TARGET_KIND}"
 
 echo ""
 echo "Test rollback completed successfully."

@@ -8,12 +8,9 @@ import { createBooking } from '@/services/bookings';
 import type { ProviderType } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { getServerTodayDate } from '@/utils/serverTime';
 
-const getTodayLocalDate = () => {
-  const now = new Date();
-  const localTime = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-  return localTime.toISOString().split('T')[0];
-};
+const getTodayLocalDate = () => getServerTodayDate();
 
 const normalizeProviderType = (value?: string): ProviderType => {
   if (value === 'company' || value === '2') {
@@ -83,7 +80,7 @@ const BookingCreate: React.FC = () => {
 
     if (!auth.token) {
       Taro.showToast({ title: '请先登录', icon: 'none' });
-      Taro.navigateTo({ url: '/pages/profile/index' });
+      Taro.switchTab({ url: '/pages/profile/index' });
       return;
     }
 
