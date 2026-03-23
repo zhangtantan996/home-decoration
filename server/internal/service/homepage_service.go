@@ -286,7 +286,7 @@ func (s *HomepageService) featuredMaterialShops(limit int) ([]HomepageMaterialSh
 func (s *HomepageService) featuredInspirations(limit int) ([]HomepageInspiration, error) {
 	var cases []model.ProviderCase
 	db := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{}))
-	if err := db.Order("created_at DESC").Limit(limit).Find(&cases).Error; err != nil {
+	if err := db.Order("provider_cases.created_at DESC").Limit(limit).Find(&cases).Error; err != nil {
 		return nil, err
 	}
 
