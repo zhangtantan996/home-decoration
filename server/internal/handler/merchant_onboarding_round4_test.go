@@ -39,15 +39,27 @@ func setupMerchantRound4TestDB(t *testing.T) *gorm.DB {
 		&model.UserIdentity{},
 		&model.MerchantServiceSetting{},
 		&model.ProviderCase{},
+		&model.DictionaryCategory{},
+		&model.SystemDictionary{},
 	); err != nil {
 		t.Fatalf("auto migrate failed: %v", err)
 	}
-	regions := []model.Region{
-		{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true},
-		{Code: "610133", Name: "曲江新区", Level: 3, ParentCode: "610100", Enabled: true},
+	seedRecords := []interface{}{
+		&model.Region{Code: "610000", Name: "陕西省", Level: 1, Enabled: true, SortOrder: 1},
+		&model.Region{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, SortOrder: 1},
+		&model.Region{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true, SortOrder: 1},
+		&model.Region{Code: "610133", Name: "曲江新区", Level: 3, ParentCode: "610100", Enabled: true, SortOrder: 2},
+		&model.Region{Code: "510000", Name: "四川省", Level: 1, Enabled: true, SortOrder: 2},
+		&model.Region{Code: "510100", Name: "成都市", Level: 2, ParentCode: "510000", Enabled: true, SortOrder: 1},
+		&model.DictionaryCategory{Code: "open_service_provinces", Name: "开放服务省份", Enabled: true},
+		&model.DictionaryCategory{Code: "open_service_cities", Name: "开放服务城市", Enabled: true},
+		&model.SystemDictionary{CategoryCode: "open_service_provinces", Value: "610000", Label: "陕西省", Enabled: true, SortOrder: 1},
+		&model.SystemDictionary{CategoryCode: "open_service_cities", Value: "510100", Label: "成都市", Enabled: true, SortOrder: 1},
 	}
-	if err := db.Create(&regions).Error; err != nil {
-		t.Fatalf("seed regions failed: %v", err)
+	for _, record := range seedRecords {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed merchant round4 test data failed: %v", err)
+		}
 	}
 	repository.DB = db
 	return db

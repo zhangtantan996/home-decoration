@@ -17,8 +17,8 @@ func setupCaseServiceDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.ProviderCase{}); err != nil {
-		t.Fatalf("auto migrate provider case: %v", err)
+	if err := db.AutoMigrate(&model.Provider{}, &model.ProviderCase{}); err != nil {
+		t.Fatalf("auto migrate provider/provider case: %v", err)
 	}
 
 	previousDB := repository.DB

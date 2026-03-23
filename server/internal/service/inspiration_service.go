@@ -168,7 +168,7 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 
 	var cases []model.ProviderCase
 	offset := (query.Page - 1) * query.PageSize
-	if err := db.Order("created_at DESC").
+	if err := db.Order("provider_cases.created_at DESC").
 		Offset(offset).
 		Limit(query.PageSize).
 		Find(&cases).Error; err != nil {

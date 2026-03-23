@@ -34,7 +34,7 @@ func newValidDesignerApplyInput() MerchantApplyInput {
 		IDCardFront:     "https://img.example.com/id-front.jpg",
 		IDCardBack:      "https://img.example.com/id-back.jpg",
 		YearsExperience: 8,
-		ServiceArea:     []string{"雁塔区", "曲江新区"},
+		ServiceArea:     []string{"610100", "510100"},
 		Styles:          []string{"现代简约", "北欧"},
 		Pricing: map[string]float64{
 			"flat":   1200,
@@ -81,7 +81,7 @@ func newValidForemanApplyInput() MerchantApplyInput {
 		IDCardFront:     "https://img.example.com/id-front.jpg",
 		IDCardBack:      "https://img.example.com/id-back.jpg",
 		YearsExperience: 12,
-		ServiceArea:     []string{"雁塔区"},
+		ServiceArea:     []string{"610100"},
 		HighlightTags:   []string{"快响应", "不增项"},
 		Pricing:         map[string]float64{"perSqm": 599},
 		Introduction:    "专注家装施工管理。",
