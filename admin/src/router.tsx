@@ -40,6 +40,8 @@ import ProjectAuditDetail from './pages/projectAudits/ProjectAuditDetail';
 import ProjectAuditArbitrate from './pages/projectAudits/ProjectAuditArbitrate';
 import RefundList from './pages/refunds/RefundList';
 import RefundDetail from './pages/refunds/RefundDetail';
+import WithdrawList from './pages/withdraws/WithdrawList';
+import WithdrawDetail from './pages/withdraws/WithdrawDetail';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { getRouterBasename } from './utils/env';
 
@@ -115,6 +117,8 @@ const router = createBrowserRouter([
             { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
             { path: 'refunds', element: <ProtectedRoute permission="finance:transaction:list"><RefundList /></ProtectedRoute> },
             { path: 'refunds/:id', element: <ProtectedRoute permission="finance:transaction:view"><RefundDetail /></ProtectedRoute> },
+            { path: 'withdraws', element: <ProtectedRoute permission="finance:transaction:list"><WithdrawList /></ProtectedRoute> },
+            { path: 'withdraws/:id', element: <ProtectedRoute permission="finance:transaction:view"><WithdrawDetail /></ProtectedRoute> },
 
             // Other
             { path: 'reviews', element: <Navigate to="/reviews/list" replace /> },

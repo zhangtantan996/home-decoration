@@ -7,6 +7,7 @@ import StatCard from '../../components/StatCard';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
 import { ESCROW_ACCOUNT_STATUS_META } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface EscrowAccount {
     id: number;
@@ -133,7 +134,7 @@ const EscrowAccountList: React.FC = () => {
         {
             title: '创建时间',
             dataIndex: 'createdAt',
-            render: (val: string) => new Date(val).toLocaleString(),
+            render: (val: string) => formatServerDateTime(val),
         },
         {
             title: '操作',

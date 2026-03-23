@@ -7,6 +7,7 @@ import PageHeader from '../../components/PageHeader';
 import { adminProjectAuditApi, type AdminProjectAuditItem } from '../../services/api';
 import { usePermission } from '../../hooks/usePermission';
 import { PROJECT_AUDIT_CONCLUSION_LABELS, PROJECT_AUDIT_STATUS_META, PROJECT_AUDIT_TYPE_LABELS } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const normalizeAuditDetail = (raw: any): AdminProjectAuditItem | null => {
     const data = raw?.data;
@@ -106,8 +107,8 @@ const ProjectAuditDetail: React.FC = () => {
                         <Descriptions.Item label="执行方案" span={2}>
                             <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{pretty(item.executionPlan)}</pre>
                         </Descriptions.Item>
-                        <Descriptions.Item label="创建时间">{item.createdAt ? new Date(item.createdAt).toLocaleString() : '-'}</Descriptions.Item>
-                        <Descriptions.Item label="完成时间">{item.completedAt ? new Date(item.completedAt).toLocaleString() : '-'}</Descriptions.Item>
+                        <Descriptions.Item label="创建时间">{formatServerDateTime(item.createdAt)}</Descriptions.Item>
+                        <Descriptions.Item label="完成时间">{formatServerDateTime(item.completedAt)}</Descriptions.Item>
                         <Descriptions.Item label="项目摘要" span={2}>
                             <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{pretty(item.project)}</pre>
                         </Descriptions.Item>

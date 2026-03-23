@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
     Card, Table, Button, Modal, Tag, message, Image,
     Descriptions, Input, Tabs, Space, Popconfirm, Form,
-    InputNumber, Upload
+    InputNumber, Switch, Upload
 } from 'antd';
 import {
     PlusOutlined, EditOutlined, DeleteOutlined,
@@ -14,6 +14,7 @@ import type { RcFile, UploadProps } from 'antd/es/upload/interface';
 import { DictSelect } from '../../components/DictSelect';
 import { CASE_AUDIT_ACTION_META, CASE_AUDIT_SOURCE_META, CASE_AUDIT_STATUS_META } from '../../constants/statuses';
 import { toAbsoluteAssetUrl } from '../../utils/env';
+import { formatServerDateTime } from '../../utils/serverTime';
 import AuditStatusSummary from '../audits/components/AuditStatusSummary';
 import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
 import AuditDetailSection from '../audits/components/AuditDetailSection';
@@ -34,6 +35,7 @@ interface CaseItem {
     description: string;
     images: string[];
     sortOrder: number;
+    showInInspiration: boolean;
     createdAt: string;
     updatedAt: string;
 }
@@ -66,6 +68,17 @@ interface AuditDetail extends CaseAudit {
     images: string[];
     rejectReason?: string;
 }
+
+const getCaseProviderDisplayName = (providerId?: number | null, providerName?: string | null) => {
+    const trimmed = providerName?.trim();
+    if (trimmed) {
+        return trimmed;
+    }
+    if (!providerId) {
+        return '官方作品';
+    }
+    return '未关联商家信息';
+};
 
 const renderCaseAuditSourceTag = (sourceType?: string) => {
     const config = sourceType ? CASE_AUDIT_SOURCE_META[sourceType] : CASE_AUDIT_SOURCE_META.manual;
@@ -163,6 +176,7 @@ const CaseManagement: React.FC = () => {
     const [form] = Form.useForm();
     const [editingId, setEditingId] = useState<number | null>(null);
     const [uploading, setUploading] = useState(false);
+    const [toggleLoadingId, setToggleLoadingId] = useState<number | null>(null);
     const [coverImageUrl, setCoverImageUrl] = useState('');
     const [detailImages, setDetailImages] = useState<string[]>([]);
     const [quoteTouched, setQuoteTouched] = useState(false);
@@ -250,11 +264,13 @@ const CaseManagement: React.FC = () => {
         form.resetFields();
         setQuoteTouched(false);
         form.setFieldsValue({
+            providerDisplayName: '官方作品',
             quoteDesignFee: 0,
             quoteConstructionFee: 0,
             quoteMaterialFee: 0,
             quoteSoftDecorationFee: 0,
             quoteOtherFee: 0,
+            showInInspiration: true,
         });
         setCoverImageUrl('');
         setDetailImages([]);
@@ -266,6 +282,7 @@ const CaseManagement: React.FC = () => {
         setQuoteTouched(false);
         form.setFieldsValue({
             providerId: record.providerId || undefined,
+            providerDisplayName: getCaseProviderDisplayName(record.providerId, record.providerName),
             title: record.title,
             style: record.style,
             layout: record.layout,
@@ -278,6 +295,7 @@ const CaseManagement: React.FC = () => {
             quoteMaterialFee: 0,
             quoteSoftDecorationFee: 0,
             quoteOtherFee: 0,
+            showInInspiration: Boolean(record.showInInspiration),
         });
         setCoverImageUrl(record.coverImage);
         setDetailImages(record.images || []);
@@ -286,11 +304,14 @@ const CaseManagement: React.FC = () => {
         try {
             const res = (await caseApi.detail(record.id)) as unknown as {
                 code: number;
-                data?: { quoteItems?: unknown };
+                data?: { quoteItems?: unknown; providerName?: string };
             };
             if (res.code === 0 && res.data) {
                 const quoteAmounts = extractQuoteAmountsFromItems(res.data.quoteItems);
-                form.setFieldsValue(quoteAmounts);
+                form.setFieldsValue({
+                    providerDisplayName: getCaseProviderDisplayName(record.providerId, res.data.providerName || record.providerName),
+                    ...quoteAmounts,
+                });
                 setQuoteTouched(false);
             }
         } catch {
@@ -308,6 +329,23 @@ const CaseManagement: React.FC = () => {
             }
         } catch (error) {
             message.error('删除失败');
+        }
+    };
+
+    const handleToggleInspiration = async (record: CaseItem, checked: boolean) => {
+        setToggleLoadingId(record.id);
+        try {
+            const res = await caseApi.toggleInspiration(record.id, checked) as any;
+            if (res.code === 0) {
+                message.success(checked ? '已开启灵感展示' : '已关闭灵感展示');
+                setData((current) => current.map((item) => (item.id === record.id ? { ...item, showInInspiration: checked } : item)));
+            } else {
+                message.error(res.message || '更新失败');
+            }
+        } catch (error) {
+            message.error('更新失败');
+        } finally {
+            setToggleLoadingId(null);
         }
     };
 
@@ -343,6 +381,7 @@ const CaseManagement: React.FC = () => {
                 providerId: providerId || null,
                 coverImage: coverImageUrl,
                 images: detailImages,
+                showInInspiration: Boolean(values.showInInspiration),
             };
 
             const data = quoteTouched
@@ -505,10 +544,24 @@ const CaseManagement: React.FC = () => {
         },
         { title: '商家', dataIndex: 'providerName', width: 120 },
         {
+            title: '灵感认证',
+            dataIndex: 'showInInspiration',
+            width: 120,
+            render: (_, record) => (
+                <Switch
+                    checked={Boolean(record.showInInspiration)}
+                    checkedChildren="通过"
+                    loading={toggleLoadingId === record.id}
+                    onChange={(checked) => void handleToggleInspiration(record, checked)}
+                    unCheckedChildren="关闭"
+                />
+            ),
+        },
+        {
             title: '创建时间',
             dataIndex: 'createdAt',
             width: 180,
-            render: (text) => new Date(text).toLocaleString()
+            render: (text) => formatServerDateTime(text)
         },
         {
             title: '操作',
@@ -559,7 +612,7 @@ const CaseManagement: React.FC = () => {
             title: '提交时间',
             dataIndex: 'createdAt',
             width: 180,
-            render: (text) => new Date(text).toLocaleString()
+            render: (text) => formatServerDateTime(text)
         },
         {
             title: '审核状态',
@@ -644,8 +697,22 @@ const CaseManagement: React.FC = () => {
                         }
                     }}
                 >
-                    <Form.Item label="商家" name="providerId">
-                        <Input placeholder="留空表示官方作品" type="number" />
+                    {editingId ? (
+                        <>
+                            <Form.Item label="商家" name="providerDisplayName" extra="编辑时展示商家昵称 / 主体名称 / 手机号，内部关联 ID 不直接暴露在这里。">
+                                <Input disabled />
+                            </Form.Item>
+                            <Form.Item name="providerId" hidden>
+                                <Input />
+                            </Form.Item>
+                        </>
+                    ) : (
+                        <Form.Item label="商家ID（可选）" name="providerId" extra="留空表示官方作品；若需绑定到指定商家，请填写内部商家 ID。">
+                            <Input placeholder="请输入商家ID" />
+                        </Form.Item>
+                    )}
+                    <Form.Item extra="开启后，该作品可进入用户侧灵感案例页" label="灵感认证 / 展示" name="showInInspiration" valuePropName="checked">
+                        <Switch checkedChildren="通过" unCheckedChildren="关闭" />
                     </Form.Item>
                     <Form.Item label="标题" name="title" rules={[{ required: true, message: '请输入标题' }]}>
                         <Input placeholder="作品标题" />
@@ -781,7 +848,7 @@ const CaseManagement: React.FC = () => {
                         <AuditDetailSection title="申请内容">
                             <Descriptions bordered column={2} size="small">
                                 <Descriptions.Item label="商家">{currentDetail.providerName || '-'}</Descriptions.Item>
-                                <Descriptions.Item label="提交时间">{new Date(currentDetail.createdAt).toLocaleString()}</Descriptions.Item>
+                                <Descriptions.Item label="提交时间">{formatServerDateTime(currentDetail.createdAt)}</Descriptions.Item>
                                 <Descriptions.Item label="标题" span={2}>{currentDetail.title}</Descriptions.Item>
                                 <Descriptions.Item label="来源类型">{renderCaseAuditSourceTag(currentDetail.sourceType)}</Descriptions.Item>
                                 <Descriptions.Item label="来源项目">

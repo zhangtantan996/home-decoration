@@ -12,6 +12,13 @@ export interface Region {
     sortOrder: number;
 }
 
+export interface ServiceCityRegion {
+    code: string;
+    name: string;
+    parentCode: string;
+    parentName: string;
+}
+
 // Cascader 选项类型
 export interface RegionCascaderOption {
     value: string;
@@ -126,4 +133,14 @@ export const useRegionCascader = () => {
 export const regionApi = {
     getChildren: (code: string) => 
         api.get(`/regions/cities/${code}/districts`).then(unwrapRegionList),
+    getServiceCities: () =>
+        api.get('/regions/service-cities').then((payload) => {
+            if (Array.isArray(payload)) {
+                return payload as ServiceCityRegion[];
+            }
+            if (payload && typeof payload === 'object' && 'data' in payload) {
+                return (((payload as { data?: unknown }).data) as ServiceCityRegion[]) || [];
+            }
+            return [];
+        }),
 };

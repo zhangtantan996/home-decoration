@@ -27,9 +27,7 @@ import MerchantCases from '../pages/merchant/MerchantCases';
 import MerchantSettings from '../pages/merchant/MerchantSettings';
 import MaterialShopSettings from '../pages/merchant/MaterialShopSettings';
 import MaterialShopProducts from '../pages/merchant/MaterialShopProducts';
-import MerchantChat from '../pages/merchant/MerchantChat';
 import MerchantDesignWorkflow from '../pages/merchant/MerchantDesignWorkflow';
-import IMTest from '../pages/merchant/IMTest';
 import OnboardingAgreementPage from '../pages/merchant/legal/OnboardingAgreementPage';
 import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
@@ -69,8 +67,6 @@ const router = createBrowserRouter([
           { path: '/orders', element: <MerchantOrders /> },
           { path: '/complaints', element: <MerchantComplaints /> },
           { path: '/contracts/new', element: <MerchantContractCreate /> },
-          { path: '/chat', element: <MerchantChat /> },
-          { path: '/im-test', element: <IMTest /> },
           { path: '/income', element: <MerchantIncome /> },
           { path: '/withdraw', element: <MerchantWithdraw /> },
           { path: '/bank-accounts', element: <MerchantBankAccounts /> },

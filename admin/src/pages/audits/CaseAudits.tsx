@@ -8,6 +8,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { caseAuditApi } from '../../services/api';
 import { CASE_AUDIT_ACTION_META, CASE_AUDIT_SOURCE_META, CASE_AUDIT_STATUS_META } from '../../constants/statuses';
 import { toAbsoluteAssetUrl } from '../../utils/env';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface CaseAudit {
     id: number;
@@ -238,7 +239,7 @@ const CaseAudits: React.FC = () => {
             title: '提交时间',
             dataIndex: 'createdAt',
             width: 180,
-            render: (text) => new Date(text).toLocaleString(),
+            render: (text) => formatServerDateTime(text),
         },
         {
             title: '审核状态',
@@ -332,7 +333,7 @@ const CaseAudits: React.FC = () => {
 
                         <Descriptions bordered column={2}>
                             <Descriptions.Item label="商家">{currentDetail.providerName || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="提交时间">{new Date(currentDetail.createdAt).toLocaleString()}</Descriptions.Item>
+                            <Descriptions.Item label="提交时间">{formatServerDateTime(currentDetail.createdAt)}</Descriptions.Item>
 
                             <Descriptions.Item label="标题" span={2}>{currentDetail.title}</Descriptions.Item>
                             <Descriptions.Item label="来源类型">{renderSourceTag(currentDetail.sourceType)}</Descriptions.Item>

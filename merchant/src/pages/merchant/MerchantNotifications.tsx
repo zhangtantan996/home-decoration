@@ -12,6 +12,7 @@ import {
     type MerchantNotificationItem,
 } from '../../services/merchantApi';
 import { MERCHANT_NOTIFICATION_TYPE_LABELS } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const PAGE_SIZE = 10;
 
@@ -30,7 +31,7 @@ const formatRelativeTime = (value: string) => {
     if (minutes < 60) return `${minutes} 分钟前`;
     if (hours < 24) return `${hours} 小时前`;
     if (days < 7) return `${days} 天前`;
-    return date.toLocaleString('zh-CN');
+    return formatServerDateTime(value);
 };
 
 const MerchantNotifications: React.FC = () => {
@@ -154,7 +155,7 @@ const MerchantNotifications: React.FC = () => {
                     {
                         label: '通知总数',
                         value: total,
-                        meta: '支持分页查看历史消息',
+                        meta: '支持分页查看历史通知',
                         percent: 100,
                         tone: 'slate',
                     },

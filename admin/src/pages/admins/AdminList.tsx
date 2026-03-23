@@ -4,6 +4,7 @@ import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { adminManageApi, adminRoleApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Role {
     id: number;
@@ -218,13 +219,13 @@ const AdminList: React.FC = () => {
             title: '最后登录',
             dataIndex: 'lastLoginAt',
             width: 170,
-            render: (val: string) => val ? new Date(val).toLocaleString('zh-CN') : '-',
+            render: (val: string) => formatServerDateTime(val),
         },
         {
             title: '创建时间',
             dataIndex: 'createdAt',
             width: 170,
-            render: (val: string) => new Date(val).toLocaleString('zh-CN'),
+            render: (val: string) => formatServerDateTime(val),
         },
         {
             title: '操作',

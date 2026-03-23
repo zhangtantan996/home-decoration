@@ -9,6 +9,7 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
 import { ORDER_STATUS_META } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Order {
     id: number;
@@ -85,7 +86,7 @@ const MerchantOrders: React.FC = () => {
             title: '创建时间',
             dataIndex: 'createdAt',
             width: 160,
-            render: (v: string) => new Date(v).toLocaleString(),
+            render: (v: string) => formatServerDateTime(v),
         },
         {
             title: '操作',

@@ -17,9 +17,7 @@ import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS } from 
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleString();
+    return value;
 };
 
 const MaterialShopAudit: React.FC = () => {
@@ -238,7 +236,7 @@ const MaterialShopAudit: React.FC = () => {
                 open={detailVisible}
                 onCancel={() => setDetailVisible(false)}
                 bodyStyle={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: 8 }}
-                width={1040}
+                width={1120}
                 footer={
                     currentItem?.status === 0
                         ? [

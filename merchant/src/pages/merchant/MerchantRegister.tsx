@@ -28,6 +28,7 @@ import {
     Upload,
     message,
 } from 'antd';
+import ImgCrop from 'antd-img-crop';
 import type { UploadFile, UploadProps } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -36,8 +37,10 @@ import {
     PLATFORM_RULES_VERSION,
     PRIVACY_DATA_PROCESSING_VERSION,
 } from '../../constants/merchantLegal';
+import { getServerTimeMs } from '../../utils/serverTime';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import {
+    MerchantApiError,
     merchantApplyApi,
     merchantAuthApi,
     merchantUploadApi,
@@ -46,7 +49,8 @@ import {
     type MerchantApplyDetailData,
     type MerchantApplyPayload,
 } from '../../services/merchantApi';
-import { regionApi } from '../../services/regionApi';
+import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
+import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
@@ -68,7 +72,6 @@ const CASE_AREA_OPTIONS = ['60㎡以下', '60-90㎡', '90-120㎡', '120-150㎡',
 const PRICING_MIN: number = 1;
 const PRICING_MAX: number = 99999;
 
-const DEFAULT_CITY_CODE = '610100';
 const DRAFT_STORAGE_KEY = 'merchant_register_draft';
 const DRAFT_EXPIRY_MS = 2 * 60 * 60 * 1000;
 const VERIFICATION_STORAGE_KEY = 'merchant_register_phone_verification';
@@ -102,14 +105,35 @@ const generatePortfolioCaseId = (): string => {
 
 type ForemanCaseCategory = 'water' | 'electric' | 'wood' | 'masonry' | 'paint' | 'other';
 
+interface ServiceCityGroupOption {
+    label: string;
+    options: Array<{ label: string; value: string }>;
+}
+
+const buildServiceCityGroups = (cities: ServiceCityRegion[]): ServiceCityGroupOption[] => {
+    const grouped = new Map<string, Array<{ label: string; value: string }>>();
+    cities.forEach((city) => {
+        const provinceName = city.parentName?.trim() || '未分组';
+        const bucket = grouped.get(provinceName) || [];
+        bucket.push({ label: city.name, value: city.code });
+        grouped.set(provinceName, bucket);
+    });
+    return [...grouped.entries()].map(([label, options]) => ({ label, options }));
+};
+
 const FOREMAN_CASE_SECTIONS: Array<{ category: ForemanCaseCategory; title: string; required: boolean }> = [
-    { category: 'water', title: '水工施工展示', required: true },
-    { category: 'electric', title: '电工施工展示', required: true },
-    { category: 'wood', title: '木工施工展示', required: true },
+    { category: 'water', title: '水电工施工展示', required: true },
+    { category: 'electric', title: '防水施工展示', required: true },
+    { category: 'wood', title: '木作施工展示', required: true },
     { category: 'masonry', title: '瓦工施工展示', required: true },
-    { category: 'paint', title: '油漆工施工展示', required: true },
+    { category: 'paint', title: '油漆施工展示', required: true },
     { category: 'other', title: '其他施工展示', required: false },
 ];
+
+const getForemanCaseImageBounds = (category?: ForemanCaseCategory) => ({
+    min: category === 'water' ? 3 : 2,
+    max: 6,
+});
 
 const createEmptyPortfolioCase = (category?: ForemanCaseCategory): PortfolioCase => ({
     id: generatePortfolioCaseId(),
@@ -145,9 +169,9 @@ interface ResolvedApplyMeta {
 const matchForemanCategory = (value: string): ForemanCaseCategory | undefined => {
     const normalized = value.trim();
     if (!normalized) return undefined;
-    if (normalized.includes('水')) return 'water';
-    if (normalized.includes('电')) return 'electric';
-    if (normalized.includes('木')) return 'wood';
+    if (normalized.includes('水电') || normalized.includes('水工')) return 'water';
+    if (normalized.includes('防水') || normalized.includes('电工')) return 'electric';
+    if (normalized.includes('木作') || normalized.includes('木工')) return 'wood';
     if (normalized.includes('瓦')) return 'masonry';
     if (normalized.includes('油')) return 'paint';
     if (normalized.includes('其')) return 'other';
@@ -246,7 +270,7 @@ const resolveApplyMeta = (searchParams: URLSearchParams): ResolvedApplyMeta => {
 
 const caseImageRuleText = (role: MerchantApplyRole, entityType: MerchantEntityType) => {
     if (role === 'designer') return entityType === 'company' ? '每套 6-12 张图' : '每套 4-12 张图';
-    if (role === 'foreman') return '每类 2-8 张图';
+    if (role === 'foreman') return '水电工 3-6 张，其余每类 2-6 张图';
     return '每套至少 3 张图';
 };
 
@@ -274,7 +298,7 @@ const MerchantRegister: React.FC = () => {
         ]
     );
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
-    const [areaOptions, setAreaOptions] = useState<string[]>([]);
+    const [areaOptions, setAreaOptions] = useState<ServiceCityGroupOption[]>([]);
     const [uploadingCaseCountMap, setUploadingCaseCountMap] = useState<Record<number, number>>({});
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
@@ -289,6 +313,7 @@ const MerchantRegister: React.FC = () => {
         merchantKind: 'provider',
         applicationId: undefined,
     });
+    const watchedAvatar = Form.useWatch('avatar', form);
     const countdownTimerRef = useRef<number | null>(null);
     const draftRestoreHandledRef = useRef(false);
 
@@ -303,6 +328,7 @@ const MerchantRegister: React.FC = () => {
     const isForeman = role === 'foreman';
     const isCompanyRole = role === 'company';
     const isCompanyEntity = entityType === 'company' || role === 'company';
+    const serviceAreaLabel = isForeman ? '常驻城市' : '服务城市';
     const realNameLabel = isCompanyEntity ? '法人/经营者姓名' : (isForeman ? '工长姓名' : '负责人姓名');
     const phoneLabel = isCompanyEntity ? '联系手机号' : '手机号';
     const idCardLabel = isCompanyEntity ? '法人/经营者身份证号' : '身份证号';
@@ -318,8 +344,7 @@ const MerchantRegister: React.FC = () => {
             .register-page-bg {
                 background: linear-gradient(135deg, #f6f8fb 0%, #e9f0f9 100%);
                 position: relative;
-                overflow-x: hidden;
-                overflow-y: visible;
+                overflow: visible;
                 width: 100%;
                 min-height: 100vh;
             }
@@ -428,7 +453,7 @@ const MerchantRegister: React.FC = () => {
     const requiresCompanyLicense = entityType === 'company' || isCompanyRole;
     const caseMinCount = isForeman ? 5 : 3;
     const caseMinImages = role === 'designer' ? (entityType === 'company' ? 6 : 4) : (role === 'foreman' ? 2 : 3);
-    const caseMaxImages = role === 'designer' ? 12 : (role === 'foreman' ? 8 : 12);
+    const caseMaxImages = role === 'designer' ? 12 : (role === 'foreman' ? 6 : 12);
 
     const pageTitle = useMemo(() => {
         if (role === 'company') return '装修公司入驻申请';
@@ -484,10 +509,15 @@ const MerchantRegister: React.FC = () => {
 
     const loadAreaOptions = useCallback(async () => {
         try {
-            const districts = await regionApi.getChildren(DEFAULT_CITY_CODE);
-            setAreaOptions(districts.map((district) => district.name));
+            const cities = await regionApi.getServiceCities();
+            setAreaOptions(buildServiceCityGroups(cities));
         } catch {
-            setAreaOptions(['雁塔区', '碑林区', '新城区', '莲湖区', '未央区', '灞桥区', '长安区', '高新区', '曲江新区', '经开区']);
+            setAreaOptions([
+                {
+                    label: '陕西省',
+                    options: [{ label: '西安市', value: '610100' }],
+                },
+            ]);
         }
     }, []);
 
@@ -520,7 +550,7 @@ const MerchantRegister: React.FC = () => {
                 cancelText: '清除',
                 onOk: () => {
                     form.setFieldsValue(draft.formValues);
-                    setCurrentStep(draft.currentStep);
+                    setCurrentStep(resubmitId ? 0 : draft.currentStep);
                     const restoredCases = normalizePortfolioCasesForForm(draft.portfolioCases, isForeman);
                     if (restoredCases.length > 0) {
                         setPortfolioCases(restoredCases);
@@ -556,6 +586,19 @@ const MerchantRegister: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (resubmitId) {
+            setPhoneVerified(false);
+            setVerifiedPhone('');
+            setVerificationToken('');
+            setVerificationExpiresAt(null);
+            setVerificationContext({
+                mode: currentVerificationMode,
+                merchantKind: currentVerificationMerchantKind,
+                applicationId: currentVerificationApplicationId,
+            });
+            sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
+            return;
+        }
         const stored = sessionStorage.getItem(VERIFICATION_STORAGE_KEY);
         if (!stored) {
             return;
@@ -590,6 +633,23 @@ const MerchantRegister: React.FC = () => {
         setVerificationContext({ mode: currentVerificationMode, merchantKind: currentVerificationMerchantKind, applicationId: currentVerificationApplicationId });
         sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
     }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, draftStorageKey, form, phoneFromUrl, resubmitId]);
+
+    const handleStepValidationError = useCallback((error: unknown, fallbackMessage = '请完善当前步骤必填信息') => {
+        const errorFields = (
+            typeof error === 'object'
+            && error !== null
+            && 'errorFields' in error
+            && Array.isArray((error as { errorFields?: unknown[] }).errorFields)
+        )
+            ? (error as { errorFields: Array<{ name?: (string | number)[]; errors?: string[] }> }).errorFields
+            : [];
+
+        const firstField = errorFields[0];
+        if (firstField?.name && firstField.name.length > 0) {
+            form.scrollToField(firstField.name);
+        }
+        message.error(firstField?.errors?.[0] || fallbackMessage);
+    }, [form]);
 
     const persistDraftSnapshot = useCallback((draft: {
         timestamp?: number;
@@ -672,7 +732,7 @@ const MerchantRegister: React.FC = () => {
             highlightTags: detail.highlightTags,
             graduateSchool: detail.graduateSchool,
             designPhilosophy: detail.designPhilosophy,
-            serviceArea: detail.serviceArea,
+            serviceArea: detail.serviceAreaCodes || detail.serviceArea,
             styles: detail.styles,
             introduction: detail.introduction,
             companyAlbum: detail.companyAlbum,
@@ -697,7 +757,19 @@ const MerchantRegister: React.FC = () => {
         }
     }, [applicantType, entityType, form, isForeman, phoneFromUrl, role]);
 
-    const verifyPhoneAndMaybePrefill = useCallback(async (phone: string, code: string) => {
+    const confirmReapplyWarning = useCallback((phone: string) => new Promise<boolean>((resolve) => {
+        Modal.confirm({
+            title: '检测到当前手机号已有其他商家身份',
+            content: `继续申请新商家类型后，待新申请审核通过，旧商家身份将被冻结停用，本操作不可逆。请确认手机号 ${phone} 的申请操作。`,
+            okText: '继续申请',
+            cancelText: '取消',
+            centered: true,
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
+        });
+    }), []);
+
+    const verifyPhoneAndMaybePrefill = useCallback(async (phone: string, code: string, allowReapply = false) => {
         setResubmitLoading(true);
         setResubmitPrefillFailed(false);
         try {
@@ -707,8 +779,9 @@ const MerchantRegister: React.FC = () => {
                 merchantKind: 'provider',
                 mode: resubmitId ? 'resubmit' : 'apply',
                 applicationId: resubmitId ? Number(resubmitId) : undefined,
+                allowReapply: allowReapply || undefined,
             });
-            const expiresAtMs = response.expiresAt ? new Date(response.expiresAt).getTime() : Date.now() + VERIFICATION_EXPIRE_MS;
+            const expiresAtMs = response.expiresAt ? getServerTimeMs(response.expiresAt) : Date.now() + VERIFICATION_EXPIRE_MS;
             persistPhoneVerification({
                 phoneVerified: true,
                 verifiedPhone: response.verifiedPhone || phone,
@@ -746,7 +819,7 @@ const MerchantRegister: React.FC = () => {
                         highlightTags: response.form.highlightTags,
                         graduateSchool: response.form.graduateSchool,
                         designPhilosophy: response.form.designPhilosophy,
-                        serviceArea: response.form.serviceArea,
+                        serviceArea: response.form.serviceAreaCodes || response.form.serviceArea,
                         styles: response.form.styles,
                         introduction: response.form.introduction,
                         companyAlbum: response.form.companyAlbum,
@@ -764,29 +837,27 @@ const MerchantRegister: React.FC = () => {
             message.success(resubmitId ? '手机号校验成功，已回填原申请资料' : '手机号校验成功，可继续填写入驻资料');
             return true;
         } catch (error) {
+            if (!resubmitId && !allowReapply && error instanceof MerchantApiError) {
+                const guideData = (typeof error.data === 'object' && error.data !== null ? error.data : {}) as { nextAction?: string };
+                if (error.code === 409 && guideData.nextAction === 'REAPPLY') {
+                    const confirmed = await confirmReapplyWarning(phone);
+                    if (confirmed) {
+                        return verifyPhoneAndMaybePrefill(phone, code, true);
+                    }
+                    return false;
+                }
+            }
             clearPhoneVerification();
             setResubmitPrefillFailed(Boolean(resubmitId));
-            message.error(resubmitId ? '原申请资料回填失败，请检查手机号与验证码' : '验证码校验失败，请检查后重试');
+            message.error(getErrorMessage(error, resubmitId ? '原申请资料回填失败，请检查手机号与验证码' : '手机号校验失败，请检查后重试'));
             return false;
         } finally {
             setResubmitLoading(false);
         }
-    }, [applicantType, clearPhoneVerification, currentStep, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, entityType, hydrateResubmitDetail, persistDraftSnapshot, persistPhoneVerification, portfolioCases, resubmitId, role]);
+    }, [applicantType, clearPhoneVerification, confirmReapplyWarning, currentStep, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, entityType, hydrateResubmitDetail, persistDraftSnapshot, persistPhoneVerification, portfolioCases, resubmitId, role]);
 
-    const validateImageBeforeUpload = (file: File, maxSizeMB: number) => {
-        const isImage = file.type === 'image/jpeg' || file.type === 'image/png';
-        if (!isImage) {
-            message.error('只支持上传 JPG/PNG 格式的图片');
-            return Upload.LIST_IGNORE;
-        }
-
-        if (file.size / 1024 / 1024 >= maxSizeMB) {
-            message.error(`图片大小不能超过 ${maxSizeMB}MB`);
-            return Upload.LIST_IGNORE;
-        }
-
-        return true;
-    };
+    const validateImageBeforeUpload = (file: File, spec: typeof IMAGE_UPLOAD_SPECS.avatar) =>
+        validateImageUploadBeforeSend(file, spec);
 
     const createSingleUploadHandler = (
         fieldName: 'avatar' | 'idCardFront' | 'idCardBack' | 'licenseImage',
@@ -838,15 +909,16 @@ const MerchantRegister: React.FC = () => {
         });
     };
 
-    const getCaseImageCountError = (imageCount: number) => {
+    const getCaseImageCountError = (imageCount: number, category?: ForemanCaseCategory) => {
         if (role === 'designer') {
             if (imageCount < caseMinImages) return `至少上传 ${caseMinImages} 张，当前 ${imageCount} 张`;
             if (imageCount > caseMaxImages) return `最多上传 ${caseMaxImages} 张，当前 ${imageCount} 张`;
             return '';
         }
         if (role === 'foreman') {
-            if (imageCount < 2) return `至少上传 2 张，当前 ${imageCount} 张`;
-            if (imageCount > 8) return `最多上传 8 张，当前 ${imageCount} 张`;
+            const { min, max } = getForemanCaseImageBounds(category);
+            if (imageCount < min) return `至少上传 ${min} 张，当前 ${imageCount} 张`;
+            if (imageCount > max) return `最多上传 ${max} 张，当前 ${imageCount} 张`;
             return '';
         }
         if (imageCount < 3) {
@@ -880,22 +952,25 @@ const MerchantRegister: React.FC = () => {
         setPreviewVisible(true);
     };
 
-    const createCaseBeforeUpload = (caseIndex: number): UploadProps['beforeUpload'] => (file, fileList) => {
-        const basicValidation = validateImageBeforeUpload(file as File, 5);
+    const createCaseBeforeUpload = (caseIndex: number): UploadProps['beforeUpload'] => async (file, fileList) => {
+        const basicValidation = await validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.showcase);
         if (basicValidation !== true) {
             return basicValidation;
         }
 
         const existingCount = portfolioCases[caseIndex]?.images.length || 0;
-        const remaining = caseMaxImages - existingCount;
+        const maxImageCount = role === 'foreman'
+            ? getForemanCaseImageBounds(portfolioCases[caseIndex]?.category).max
+            : caseMaxImages;
+        const remaining = maxImageCount - existingCount;
         if (remaining <= 0) {
-            message.warning(`单套案例最多上传 ${caseMaxImages} 张，已达到上限`);
+            message.warning(`单套案例最多上传 ${maxImageCount} 张，已达到上限`);
             return Upload.LIST_IGNORE;
         }
 
         const currentIndexInBatch = fileList.findIndex((item) => item.uid === file.uid);
         if (currentIndexInBatch >= remaining) {
-            message.warning(`单套案例最多上传 ${caseMaxImages} 张，超出图片将被忽略`);
+            message.warning(`单套案例最多上传 ${maxImageCount} 张，超出图片将被忽略`);
             return Upload.LIST_IGNORE;
         }
 
@@ -903,9 +978,12 @@ const MerchantRegister: React.FC = () => {
     };
 
     const createCaseUploadHandler = (caseIndex: number): UploadProps['customRequest'] => async (options) => {
+        const maxImageCount = role === 'foreman'
+            ? getForemanCaseImageBounds(portfolioCases[caseIndex]?.category).max
+            : caseMaxImages;
         const currentImages = portfolioCases[caseIndex]?.images || [];
-        if (currentImages.length >= caseMaxImages) {
-            message.warning(`单套案例最多上传 ${caseMaxImages} 张`);
+        if (currentImages.length >= maxImageCount) {
+            message.warning(`单套案例最多上传 ${maxImageCount} 张`);
             options.onError?.(new Error('已超过图片数量上限'));
             return;
         }
@@ -914,14 +992,26 @@ const MerchantRegister: React.FC = () => {
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             options.onSuccess?.(uploaded);
-
-            const latestImages = portfolioCases[caseIndex]?.images || [];
-            if (!latestImages.includes(uploaded.url)) {
-                const nextImages = [...latestImages, uploaded.url].slice(0, caseMaxImages);
-                updatePortfolioCase(caseIndex, 'images', nextImages);
-                if (nextImages.length === caseMaxImages) {
-                    message.info(`已达到单套案例图片上限（${caseMaxImages} 张）`);
+            let reachedLimit = false;
+            setPortfolioCases((prev) => {
+                const next = [...prev];
+                const current = next[caseIndex];
+                if (!current) {
+                    return prev;
                 }
+                if (current.images.includes(uploaded.url)) {
+                    return prev;
+                }
+                const nextImages = [...current.images, uploaded.url].slice(0, maxImageCount);
+                reachedLimit = nextImages.length === maxImageCount && current.images.length < maxImageCount;
+                next[caseIndex] = {
+                    ...current,
+                    images: nextImages,
+                };
+                return next;
+            });
+            if (reachedLimit) {
+                message.info(`已达到单套案例图片上限（${maxImageCount} 张）`);
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -942,8 +1032,10 @@ const MerchantRegister: React.FC = () => {
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             options.onSuccess?.(uploaded);
-            const nextImages = [...currentImages, uploaded.url].slice(0, 8);
-            form.setFieldValue('companyAlbum', nextImages);
+            const latestImages = ((form.getFieldValue('companyAlbum') || []) as string[]).filter(Boolean);
+            if (!latestImages.includes(uploaded.url)) {
+                form.setFieldValue('companyAlbum', [...latestImages, uploaded.url].slice(0, 8));
+            }
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
             message.error(errorMessage);
@@ -974,8 +1066,9 @@ const MerchantRegister: React.FC = () => {
                     message.error(`${section.title}说明不能超过5000字`);
                     return false;
                 }
-                if (caseItem.images.length < 2 || caseItem.images.length > 8) {
-                    message.error(`${section.title}图片数量需为 2-8 张`);
+                const { min, max } = getForemanCaseImageBounds(caseItem.category);
+                if (caseItem.images.length < min || caseItem.images.length > max) {
+                    message.error(`${section.title}图片数量需为 ${min}-${max} 张`);
                     return false;
                 }
             }
@@ -1126,8 +1219,8 @@ const MerchantRegister: React.FC = () => {
             const nextStep = currentStep + 1;
             setCurrentStep(nextStep);
             saveDraft(nextStep);
-        } catch {
-            // no-op
+        } catch (error) {
+            handleStepValidationError(error);
         }
     };
 
@@ -1440,33 +1533,36 @@ const MerchantRegister: React.FC = () => {
                             />
                         </Form.Item>
                         <Form.Item
-                            name="avatar"
                             label="头像"
-                            valuePropName="fileList"
-                            getValueProps={(value: unknown) => ({
-                                fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [],
-                            })}
-                            getValueFromEvent={() => form.getFieldValue('avatar')}
-                            rules={[{ required: true, message: '请上传头像' }]}
+                            required
+                            validateStatus={form.getFieldError('avatar').length > 0 ? 'error' : undefined}
+                            help={form.getFieldError('avatar')[0]}
                         >
-                            <Upload
-                                listType="picture-card"
-                                maxCount={1}
-                                accept=".jpg,.jpeg,.png"
-                                beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
-                                customRequest={createSingleUploadHandler('avatar')}
-                                onPreview={(file) => handleSinglePreview(file, 'avatar')}
-                                onRemove={() => {
-                                    form.setFieldsValue({ avatar: undefined });
-                                    return true;
-                                }}
-                                aria-label="上传头像"
-                            >
-                                <div>
-                                    <PictureOutlined style={{ fontSize: 24 }} aria-hidden="true" />
-                                    <div style={{ marginTop: 8 }}>上传头像</div>
-                                </div>
-                            </Upload>
+                            <Form.Item name="avatar" hidden rules={[{ required: true, message: '请上传头像' }]}>
+                                <Input />
+                            </Form.Item>
+                            <ImgCrop rotationSlider cropShape="round" aspect={1} showReset showGrid>
+                                <Upload
+                                    listType="picture-card"
+                                    fileList={toSingleUploadFileList(typeof watchedAvatar === 'string' ? watchedAvatar : undefined)}
+                                    maxCount={1}
+                                    accept=".jpg,.jpeg,.png"
+                                    beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.avatar)}
+                                    customRequest={createSingleUploadHandler('avatar')}
+                                    onPreview={(file) => handleSinglePreview(file, 'avatar')}
+                                    onRemove={() => {
+                                        form.setFieldsValue({ avatar: undefined });
+                                        void form.validateFields(['avatar']).catch(() => undefined);
+                                        return true;
+                                    }}
+                                    aria-label="上传头像"
+                                >
+                                    <div>
+                                        <PictureOutlined style={{ fontSize: 24 }} aria-hidden="true" />
+                                        <div style={{ marginTop: 8 }}>上传头像</div>
+                                    </div>
+                                </Upload>
+                            </ImgCrop>
                         </Form.Item>
 
                         {(entityType === 'company' || role === 'company') && (
@@ -1526,8 +1622,8 @@ const MerchantRegister: React.FC = () => {
                                             maxCount={8}
                                             fileList={toCaseUploadFileList(form.getFieldValue('companyAlbum') || [])}
                                             accept=".jpg,.jpeg,.png"
-                                            beforeUpload={(file, fileList) => {
-                                                const basicValidation = validateImageBeforeUpload(file as File, 5);
+                                            beforeUpload={async (file, fileList) => {
+                                                const basicValidation = await validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.showcase);
                                                 if (basicValidation !== true) {
                                                     return basicValidation;
                                                 }
@@ -1561,14 +1657,14 @@ const MerchantRegister: React.FC = () => {
 
                         <Form.Item
                             name="officeAddress"
-                            label="办公地址"
-                            rules={[{ required: true, message: '请输入办公地址' }]}
+                            label="常驻地址"
+                            rules={[{ required: true, message: '请输入常驻地址' }]}
                         >
                             <Input className="premium-input"
                                 prefix={<EnvironmentOutlined aria-hidden="true" />}
-                                placeholder="请输入办公地址"
+                                placeholder="请输入常驻地址"
                                 maxLength={200}
-                                aria-label="办公地址"
+                                aria-label="常驻地址"
                                 aria-required="true"
                             />
                         </Form.Item>
@@ -1628,7 +1724,7 @@ const MerchantRegister: React.FC = () => {
                                         listType="picture-card"
                                         maxCount={1}
                                         accept=".jpg,.jpeg,.png"
-                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
+                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.onboardingDoc)}
                                         customRequest={createSingleUploadHandler('idCardFront')}
                                         onPreview={(file) => handleSinglePreview(file, 'idCardFront')}
                                         onRemove={() => {
@@ -1659,7 +1755,7 @@ const MerchantRegister: React.FC = () => {
                                         listType="picture-card"
                                         maxCount={1}
                                         accept=".jpg,.jpeg,.png"
-                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, 2)}
+                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.onboardingDoc)}
                                         customRequest={createSingleUploadHandler('idCardBack')}
                                         onPreview={(file) => handleSinglePreview(file, 'idCardBack')}
                                         onRemove={() => {
@@ -1731,7 +1827,7 @@ const MerchantRegister: React.FC = () => {
                                         listType="picture-card"
                                         maxCount={1}
                                         accept=".jpg,.jpeg,.png"
-                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, 5)}
+                                        beforeUpload={(file) => validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.onboardingDoc)}
                                         customRequest={createSingleUploadHandler('licenseImage')}
                                         onPreview={(file) => handleSinglePreview(file, 'licenseImage')}
                                         onRemove={() => {
@@ -1869,7 +1965,7 @@ const MerchantRegister: React.FC = () => {
                                         <Upload
                                             listType="picture-card"
                                             multiple
-                                            maxCount={caseMaxImages}
+                                            maxCount={role === 'foreman' ? getForemanCaseImageBounds(caseItem.category).max : caseMaxImages}
                                             fileList={toCaseUploadFileList(caseItem.images)}
                                             accept=".jpg,.jpeg,.png"
                                             beforeUpload={createCaseBeforeUpload(index)}
@@ -1880,20 +1976,31 @@ const MerchantRegister: React.FC = () => {
                                                 if (!url) {
                                                     return false;
                                                 }
-                                                updatePortfolioCase(index, 'images', caseItem.images.filter((image) => image !== url));
+                                                setPortfolioCases((prev) => {
+                                                    const next = [...prev];
+                                                    const current = next[index];
+                                                    if (!current) {
+                                                        return prev;
+                                                    }
+                                                    next[index] = {
+                                                        ...current,
+                                                        images: current.images.filter((image) => image !== url),
+                                                    };
+                                                    return next;
+                                                });
                                                 return true;
                                             }}
                                             aria-label={`${isForeman ? (section?.title || '案例') : `案例 ${index + 1}`} 图片`}
                                         >
-                                            {caseItem.images.length < caseMaxImages ? (
+                                            {caseItem.images.length < (role === 'foreman' ? getForemanCaseImageBounds(caseItem.category).max : caseMaxImages) ? (
                                                 <div>
                                                     <PictureOutlined aria-hidden="true" />
                                                     <div style={{ marginTop: 8 }}>上传图片</div>
                                                 </div>
                                             ) : null}
                                         </Upload>
-                                        <div style={{ marginTop: 8, color: getCaseImageCountError(caseItem.images.length) ? '#ff4d4f' : '#8c8c8c' }}>
-                                            {getCaseImageCountError(caseItem.images.length) || `已上传 ${caseItem.images.length} 张，可一次选择多张`}
+                                        <div style={{ marginTop: 8, color: getCaseImageCountError(caseItem.images.length, caseItem.category) ? '#ff4d4f' : '#8c8c8c' }}>
+                                            {getCaseImageCountError(caseItem.images.length, caseItem.category) || `已上传 ${caseItem.images.length} 张，可一次选择多张`}
                                         </div>
                                     </Form.Item>
                                 </Card>
@@ -1911,19 +2018,17 @@ const MerchantRegister: React.FC = () => {
                         <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>服务与报价</Title>
                         <Form.Item
                             name="serviceArea"
-                            label="服务区域"
-                            rules={[{ required: true, message: '请选择服务区域' }]}
+                            label={serviceAreaLabel}
+                            rules={[{ required: true, message: `请选择${serviceAreaLabel}` }]}
                         >
                             <Select className="premium-input"
                                 mode="multiple"
-                                placeholder="选择可服务区域"
-                                aria-label="服务区域"
+                                placeholder={`选择${serviceAreaLabel}`}
+                                aria-label={serviceAreaLabel}
                                 aria-required="true"
-                            >
-                                {areaOptions.map((area) => (
-                                    <Select.Option key={area} value={area}>{area}</Select.Option>
-                                ))}
-                            </Select>
+                                options={areaOptions}
+                                optionFilterProp="label"
+                            />
                         </Form.Item>
 
                         {role === 'designer' && (

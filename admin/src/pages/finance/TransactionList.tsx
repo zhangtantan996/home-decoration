@@ -8,6 +8,7 @@ import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
 import { usePermission } from '../../hooks/usePermission';
+import { formatServerDateTime } from '../../utils/serverTime';
 import {
     adminFinanceApi,
     type AdminFinanceTransactionItem,
@@ -22,7 +23,7 @@ const { RangePicker } = DatePicker;
 
 type FinanceAction = 'freeze' | 'unfreeze' | 'manualRelease';
 
-const formatDateTime = (value?: string) => (value ? new Date(value).toLocaleString() : '-');
+const formatDateTime = formatServerDateTime;
 
 const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);

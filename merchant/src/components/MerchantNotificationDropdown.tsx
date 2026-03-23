@@ -4,6 +4,12 @@ import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import { merchantNotificationApi } from '../services/merchantApi';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 import { withRouterBasename } from '../utils/env';
+import {
+    buildNotificationRealtimeUrl,
+    isNotificationRealtimeEnabled,
+    NotificationWebSocket,
+} from '../utils/notificationWebSocket';
+import { formatServerDate } from '../utils/serverTime';
 
 interface Notification {
     id: number;
@@ -20,7 +26,7 @@ interface Notification {
 type NotificationListResponse = { data?: { list?: Notification[] } };
 type UnreadCountResponse = { data?: { count?: number } };
 
-const POLL_INTERVAL_MS = 30000;
+const POLL_INTERVAL_MS = 15000;
 const POLL_BUSINESS_KEY = 'merchant.notification.unread_poll';
 const POLL_POLICY: AutoRetryPolicy = {
     maxAutoAttempts: Number.MAX_SAFE_INTEGER,
@@ -48,6 +54,13 @@ const MerchantNotificationDropdown: React.FC = () => {
     const authErrorNotifiedRef = useRef(false);
     const pollPauseNotifiedRef = useRef(false);
     const unreadPollGuardRef = useRef(new AutoRetryGuard(POLL_POLICY));
+    const websocketRef = useRef<NotificationWebSocket | null>(null);
+    const openRef = useRef(false);
+    const [fallbackToPolling, setFallbackToPolling] = useState(!isNotificationRealtimeEnabled());
+
+    useEffect(() => {
+        openRef.current = open;
+    }, [open]);
 
     const handleAuthError = useCallback(() => {
         if (!authErrorNotifiedRef.current) {
@@ -181,15 +194,69 @@ const MerchantNotificationDropdown: React.FC = () => {
     }, [loadNotifications, loadUnreadCount, notificationAvailable]);
 
     useEffect(() => {
-        if (!notificationAvailable || pollingPaused) return;
+        if (!notificationAvailable || pollingPaused || !fallbackToPolling) return;
 
         void loadUnreadCount('auto');
-        // 每30秒刷新一次未读数量
+        // 每15秒刷新一次未读数量
         const interval = setInterval(() => {
             void loadUnreadCount('auto');
         }, POLL_INTERVAL_MS);
         return () => clearInterval(interval);
-    }, [loadUnreadCount, notificationAvailable, pollingPaused]);
+    }, [fallbackToPolling, loadUnreadCount, notificationAvailable, pollingPaused]);
+
+    useEffect(() => {
+        if (!notificationAvailable) {
+            websocketRef.current?.disconnect();
+            websocketRef.current = null;
+            setFallbackToPolling(true);
+            return;
+        }
+
+        if (!isNotificationRealtimeEnabled()) {
+            setFallbackToPolling(true);
+            return;
+        }
+
+        const token = localStorage.getItem('merchant_token');
+        if (!token) {
+            setFallbackToPolling(true);
+            return;
+        }
+
+        const websocket = new NotificationWebSocket({
+            url: buildNotificationRealtimeUrl(token),
+            onConnected: () => {
+                setFallbackToPolling(false);
+            },
+            onDisconnected: () => {
+                setFallbackToPolling(true);
+            },
+            onNewNotification: () => {
+                if (!openRef.current) {
+                    setUnreadCount(prev => prev + 1);
+                    return;
+                }
+
+                void loadNotifications();
+            },
+            onUnreadCountUpdate: (count) => {
+                setUnreadCount(count);
+                if (openRef.current) {
+                    void loadNotifications();
+                }
+            },
+        });
+
+        websocketRef.current = websocket;
+        websocket.connect();
+
+        return () => {
+            websocket.disconnect();
+            if (websocketRef.current === websocket) {
+                websocketRef.current = null;
+            }
+        };
+    }, [loadNotifications, notificationAvailable]);
 
     // 打开下拉框时加载通知
     useEffect(() => {
@@ -251,7 +318,7 @@ const MerchantNotificationDropdown: React.FC = () => {
         if (minutes < 60) return `${minutes}分钟前`;
         if (hours < 24) return `${hours}小时前`;
         if (days < 7) return `${days}天前`;
-        return date.toLocaleDateString('zh-CN');
+        return formatServerDate(dateString);
     };
 
     // 点击通知项

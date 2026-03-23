@@ -10,6 +10,7 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import { BUSINESS_STAGE_META, MILESTONE_STATUS_META } from '../../constants/statuses';
 import { merchantProjectApi, merchantUploadApi, type MerchantProjectExecutionDetail, type MerchantProjectMilestone } from '../../services/merchantApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
+import { formatServerDate, formatServerDateTime } from '../../utils/serverTime';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -293,8 +294,8 @@ const MerchantProjectExecution: React.FC = () => {
                         <Space direction="vertical" size={4}>
                           <Text type="secondary">验收标准：{milestone.criteria || '暂无验收标准'}</Text>
                           {milestone.rejectionReason ? <Text type="danger">驳回原因：{milestone.rejectionReason}</Text> : null}
-                          {milestone.submittedAt ? <Text type="secondary">提交时间：{new Date(milestone.submittedAt).toLocaleString()}</Text> : null}
-                          {milestone.acceptedAt ? <Text type="secondary">验收时间：{new Date(milestone.acceptedAt).toLocaleString()}</Text> : null}
+                          {milestone.submittedAt ? <Text type="secondary">提交时间：{formatServerDateTime(milestone.submittedAt)}</Text> : null}
+                          {milestone.acceptedAt ? <Text type="secondary">验收时间：{formatServerDateTime(milestone.acceptedAt)}</Text> : null}
                         </Space>
                       )}
                     />
@@ -326,7 +327,7 @@ const MerchantProjectExecution: React.FC = () => {
                       title={(
                         <Space wrap>
                           <span>{log.title || '施工日志'}</span>
-                          {log.logDate ? <Text type="secondary">{new Date(log.logDate).toLocaleDateString()}</Text> : null}
+                          {log.logDate ? <Text type="secondary">{formatServerDate(log.logDate)}</Text> : null}
                         </Space>
                       )}
                       description={(
@@ -372,7 +373,7 @@ const MerchantProjectExecution: React.FC = () => {
               type={detail.businessStage === 'completed' ? 'info' : 'success'}
               showIcon
               style={{ marginBottom: 16 }}
-              message={`最近一次完工提交：${new Date(detail.completionSubmittedAt).toLocaleString()}`}
+              message={`最近一次完工提交：${formatServerDateTime(detail.completionSubmittedAt)}`}
               description={detail.businessStage === 'completed' ? '当前等待业主整体验收。' : '当前已进入后续归档链路。'}
             />
           ) : null}

@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import { adminRefundApi, type AdminRefundApplicationItem } from '../../services/api';
 import { REFUND_STATUS_META, REFUND_STATUS_OPTIONS, REFUND_TYPE_LABELS } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const extractListData = (raw: any) => {
     const data = raw?.data;
@@ -91,7 +92,7 @@ const RefundList: React.FC = () => {
             title: '创建时间',
             dataIndex: 'createdAt',
             width: 180,
-            render: (value: string) => (value ? new Date(value).toLocaleString() : '-'),
+            render: (value: string) => formatServerDateTime(value),
         },
         {
             title: '操作',

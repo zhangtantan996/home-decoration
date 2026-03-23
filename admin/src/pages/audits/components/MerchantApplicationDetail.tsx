@@ -1,13 +1,30 @@
 import React from 'react';
-import { Card, Descriptions, Image, Tag, Tabs, Space, Tooltip } from 'antd';
+import { Card, Descriptions, Image, Space, Tag, Tabs, Tooltip } from 'antd';
 import type { AdminMerchantApplicationDetail, MerchantApplicationDetails } from '../../../services/api';
-import { APPLICANT_TYPE_LABELS, ENTITY_TYPE_LABELS, MERCHANT_KIND_LABELS, PRICING_LABELS, PROVIDER_ROLE_META } from '../../../constants/statuses';
+import {
+    APPLICANT_TYPE_LABELS,
+    ENTITY_TYPE_LABELS,
+    MERCHANT_KIND_LABELS,
+    PRICING_LABELS,
+    PROVIDER_ROLE_META,
+} from '../../../constants/statuses';
 
 interface MerchantApplicationDetailProps {
     details: MerchantApplicationDetails & Partial<AdminMerchantApplicationDetail>;
 }
 
 const pricingOrder = ['flat', 'duplex', 'other', 'perSqm', 'fullPackage', 'halfPackage'] as const;
+
+const imagePlaceholderStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 200,
+    height: 126,
+    background: '#f5f5f5',
+    color: '#8c8c8c',
+    borderRadius: 8,
+};
 
 const formatText = (value?: string | number | null) => {
     if (value == null) return '-';
@@ -58,46 +75,74 @@ const renderPricing = (pricing?: Record<string, number>) => {
     );
 };
 
+const renderPreviewImage = (label: string, src?: string, width = 200, height = 126) => (
+    <div>
+        <div style={{ marginBottom: 8, fontWeight: 500 }}>{label}</div>
+        {src ? (
+            <Image
+                width={width}
+                src={src}
+                placeholder={<div style={{ ...imagePlaceholderStyle, width, height }} />}
+            />
+        ) : (
+            <div style={{ ...imagePlaceholderStyle, width, height }}>未上传</div>
+        )}
+    </div>
+);
+
 const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ details }) => {
     const subjectName = details.entityType === 'personal'
         ? formatText(details.realName)
         : formatText(details.companyName || details.realName);
-    const principalLabel = details.entityType === 'company' ? '负责人/经营者' : '负责人';
+    const principalLabel = details.entityType === 'company' ? '申请人/经办人' : '负责人';
 
     const showMerchantKind = Boolean(details.merchantKind);
-    const showSourceApplicationId = Boolean(
-        details.sourceApplicationId && details.sourceApplicationId !== details.id,
+    const showSourceApplicationId = Boolean(details.sourceApplicationId && details.sourceApplicationId !== details.id);
+    const hasLegalPersonIdentity = Boolean(
+        details.legalPersonName
+        || details.legalPersonIdCardNo
+        || details.legalPersonIdCardFront
+        || details.legalPersonIdCardBack,
     );
+    const hasCompanyAlbum = Boolean(details.companyAlbum?.length);
 
     const tabItems = [
         {
             key: 'basic',
             label: '基础信息',
             children: (
-                <Descriptions bordered column={2} size="small">
-                    <Descriptions.Item label="主体名称">{subjectName}</Descriptions.Item>
-                    <Descriptions.Item label={principalLabel}>{formatText(details.realName)}</Descriptions.Item>
-                    <Descriptions.Item label="手机号">{formatText(details.phone)}</Descriptions.Item>
-                    <Descriptions.Item label="商家角色">
-                        <Tag color={PROVIDER_ROLE_META[details.role]?.color || 'blue'}>{PROVIDER_ROLE_META[details.role]?.text || formatText(details.role)}</Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="主体类型">
-                        {ENTITY_TYPE_LABELS[details.entityType] || formatText(details.entityType)}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="申请人类型">
-                        {APPLICANT_TYPE_LABELS[details.applicantType] || formatText(details.applicantType)}
-                    </Descriptions.Item>
-                    {showMerchantKind && (
-                        <Descriptions.Item label="商家体系">
-                            {MERCHANT_KIND_LABELS[details.merchantKind as string] || formatText(details.merchantKind)}
+                <Space direction="vertical" style={{ width: '100%' }} size="large">
+                    <Descriptions bordered column={2} size="small">
+                        <Descriptions.Item label="主体名称">{subjectName}</Descriptions.Item>
+                        <Descriptions.Item label={principalLabel}>{formatText(details.realName)}</Descriptions.Item>
+                        <Descriptions.Item label="手机号">{formatText(details.phone)}</Descriptions.Item>
+                        <Descriptions.Item label="商家角色">
+                            <Tag color={PROVIDER_ROLE_META[details.role]?.color || 'blue'}>
+                                {PROVIDER_ROLE_META[details.role]?.text || formatText(details.role)}
+                            </Tag>
                         </Descriptions.Item>
-                    )}
-                    {showSourceApplicationId && (
-                        <Descriptions.Item label="来源申请单">
-                            {details.sourceApplicationId}
+                        <Descriptions.Item label="主体类型">
+                            {ENTITY_TYPE_LABELS[details.entityType] || formatText(details.entityType)}
                         </Descriptions.Item>
-                    )}
-                </Descriptions>
+                        <Descriptions.Item label="申请人类型">
+                            {APPLICANT_TYPE_LABELS[details.applicantType] || formatText(details.applicantType)}
+                        </Descriptions.Item>
+                        {showMerchantKind && (
+                            <Descriptions.Item label="商家体系">
+                                {MERCHANT_KIND_LABELS[details.merchantKind as string] || formatText(details.merchantKind)}
+                            </Descriptions.Item>
+                        )}
+                        {showSourceApplicationId && (
+                            <Descriptions.Item label="来源申请单">{details.sourceApplicationId}</Descriptions.Item>
+                        )}
+                    </Descriptions>
+
+                    <Card title="申请人头像" size="small">
+                        <Space wrap>
+                            {renderPreviewImage('头像', details.avatar, 140, 140)}
+                        </Space>
+                    </Card>
+                </Space>
             ),
         },
         {
@@ -105,41 +150,39 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
             label: '身份信息',
             children: (
                 <Space direction="vertical" style={{ width: '100%' }} size="large">
-                    <Descriptions bordered column={1} size="small">
-                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者姓名' : '真实姓名'}>
-                            {formatText(details.realName)}
-                        </Descriptions.Item>
-                        <Descriptions.Item label={details.entityType === 'company' ? '法人/经营者身份证号' : '身份证号'}>
-                            {formatText(details.idCardNo)}
-                        </Descriptions.Item>
+                    <Descriptions bordered column={2} size="small">
+                        <Descriptions.Item label="申请人/经办人姓名">{formatText(details.realName)}</Descriptions.Item>
+                        <Descriptions.Item label="申请人/经办人身份证号">{formatText(details.idCardNo)}</Descriptions.Item>
                     </Descriptions>
 
-                    <Card title="身份证照片" size="small">
-                        <Space size="large">
-                            <div>
-                                <div style={{ marginBottom: 8, fontWeight: 500 }}>身份证正面</div>
-                                <Image
-                                    width={200}
-                                    src={details.idCardFront}
-                                    placeholder={<div style={{ width: 200, height: 126, background: '#f0f0f0' }} />}
-                                />
-                            </div>
-                            <div>
-                                <div style={{ marginBottom: 8, fontWeight: 500 }}>身份证反面</div>
-                                <Image
-                                    width={200}
-                                    src={details.idCardBack}
-                                    placeholder={<div style={{ width: 200, height: 126, background: '#f0f0f0' }} />}
-                                />
-                            </div>
+                    <Card title="申请人/经办人证件" size="small">
+                        <Space size="large" wrap>
+                            {renderPreviewImage('身份证正面', details.idCardFront)}
+                            {renderPreviewImage('身份证反面', details.idCardBack)}
                         </Space>
                     </Card>
+
+                    {hasLegalPersonIdentity && (
+                        <>
+                            <Descriptions bordered column={2} size="small">
+                                <Descriptions.Item label="法人/经营者姓名">{formatText(details.legalPersonName)}</Descriptions.Item>
+                                <Descriptions.Item label="法人/经营者身份证号">{formatText(details.legalPersonIdCardNo)}</Descriptions.Item>
+                            </Descriptions>
+
+                            <Card title="法人/经营者证件" size="small">
+                                <Space size="large" wrap>
+                                    {renderPreviewImage('身份证正面', details.legalPersonIdCardFront)}
+                                    {renderPreviewImage('身份证反面', details.legalPersonIdCardBack)}
+                                </Space>
+                            </Card>
+                        </>
+                    )}
                 </Space>
             ),
         },
     ];
 
-    if (details.entityType === 'company' && details.companyName) {
+    if (details.entityType === 'company' || details.companyName || details.licenseNo || details.licenseImage || hasCompanyAlbum) {
         tabItems.push({
             key: 'company',
             label: '公司信息',
@@ -152,13 +195,28 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
                         <Descriptions.Item label="办公地址" span={2}>{formatText(details.officeAddress)}</Descriptions.Item>
                     </Descriptions>
 
-                    {details.licenseImage && (
-                        <Card title="营业执照" size="small">
-                            <Image
-                                width={300}
-                                src={details.licenseImage}
-                                placeholder={<div style={{ width: 300, height: 200, background: '#f0f0f0' }} />}
-                            />
+                    <Card title="营业执照" size="small">
+                        <Space wrap>
+                            {renderPreviewImage('营业执照', details.licenseImage, 320, 200)}
+                        </Space>
+                    </Card>
+
+                    {hasCompanyAlbum && (
+                        <Card title={`企业相册 (${details.companyAlbum?.length || 0})`} size="small">
+                            <Image.PreviewGroup>
+                                <Space wrap size="middle">
+                                    {details.companyAlbum?.map((image, index) => (
+                                        <Image
+                                            key={`${image}-${index}`}
+                                            width={150}
+                                            height={150}
+                                            src={image}
+                                            style={{ objectFit: 'cover' }}
+                                            placeholder={<div style={{ ...imagePlaceholderStyle, width: 150, height: 150 }} />}
+                                        />
+                                    ))}
+                                </Space>
+                            </Image.PreviewGroup>
                         </Card>
                     )}
                 </Space>
@@ -179,7 +237,7 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
     }
 
     const serviceItems = [
-        <Descriptions.Item key="serviceArea" label="服务区域">
+        <Descriptions.Item key="serviceArea" label="服务城市">
             {renderTags(details.serviceArea, 'green')}
         </Descriptions.Item>,
         <Descriptions.Item key="styles" label="擅长风格">
@@ -252,14 +310,14 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
                                 <div style={{ marginBottom: 8, fontWeight: 500 }}>案例图片</div>
                                 <Image.PreviewGroup>
                                     <Space wrap>
-                                        {caseItem.images.map((img, imgIndex) => (
+                                        {caseItem.images.map((image, imageIndex) => (
                                             <Image
-                                                key={imgIndex}
+                                                key={`${image}-${imageIndex}`}
                                                 width={150}
                                                 height={150}
-                                                src={img}
+                                                src={image}
                                                 style={{ objectFit: 'cover' }}
-                                                placeholder={<div style={{ width: 150, height: 150, background: '#f0f0f0' }} />}
+                                                placeholder={<div style={{ ...imagePlaceholderStyle, width: 150, height: 150 }} />}
                                             />
                                         ))}
                                     </Space>

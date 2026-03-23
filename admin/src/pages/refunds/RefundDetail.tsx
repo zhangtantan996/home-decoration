@@ -7,6 +7,7 @@ import PageHeader from '../../components/PageHeader';
 import { adminRefundApi, type AdminRefundApplicationItem } from '../../services/api';
 import { usePermission } from '../../hooks/usePermission';
 import { REFUND_STATUS_META, REFUND_TYPE_LABELS } from '../../constants/statuses';
+import { formatServerDateTime } from '../../utils/serverTime';
 
 const normalizeDetail = (raw: any): AdminRefundApplicationItem | null => {
     const data = raw?.data;
@@ -182,10 +183,10 @@ const RefundDetail: React.FC = () => {
                             )}
                         </Descriptions.Item>
                         <Descriptions.Item label="审核意见" span={2}>{item.adminNotes || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="创建时间">{item.createdAt ? new Date(item.createdAt).toLocaleString() : '-'}</Descriptions.Item>
-                        <Descriptions.Item label="批准时间">{item.approvedAt ? new Date(item.approvedAt).toLocaleString() : '-'}</Descriptions.Item>
-                        <Descriptions.Item label="拒绝时间">{item.rejectedAt ? new Date(item.rejectedAt).toLocaleString() : '-'}</Descriptions.Item>
-                        <Descriptions.Item label="完成时间">{item.completedAt ? new Date(item.completedAt).toLocaleString() : '-'}</Descriptions.Item>
+                        <Descriptions.Item label="创建时间">{formatServerDateTime(item.createdAt)}</Descriptions.Item>
+                        <Descriptions.Item label="批准时间">{formatServerDateTime(item.approvedAt)}</Descriptions.Item>
+                        <Descriptions.Item label="拒绝时间">{formatServerDateTime(item.rejectedAt)}</Descriptions.Item>
+                        <Descriptions.Item label="完成时间">{formatServerDateTime(item.completedAt)}</Descriptions.Item>
                     </Descriptions>
                 )}
             </Card>

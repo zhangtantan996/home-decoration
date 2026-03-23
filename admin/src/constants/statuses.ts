@@ -84,6 +84,20 @@ export const REFUND_STATUS_OPTIONS: Array<{ label: string; value: string }> = [
   { label: '已完成', value: 'completed' },
 ];
 
+export const ADMIN_WITHDRAW_STATUS_META: Record<number, { text: string; color: string }> = {
+  0: { text: '待审核', color: 'orange' },
+  1: { text: '待打款', color: 'blue' },
+  2: { text: '已打款', color: 'green' },
+  3: { text: '已拒绝', color: 'red' },
+};
+
+export const ADMIN_WITHDRAW_STATUS_OPTIONS: Array<{ label: string; value: number }> = [
+  { label: '待审核', value: 0 },
+  { label: '待打款', value: 1 },
+  { label: '已打款', value: 2 },
+  { label: '已拒绝', value: 3 },
+];
+
 export const REFUND_TYPE_LABELS: Record<string, string> = {
   intent_fee: '意向金',
   design_fee: '设计费',
