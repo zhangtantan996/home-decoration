@@ -58,7 +58,7 @@
 - 前端 / Nginx 镜像：`deploy/Dockerfile.frontend`、`deploy/Dockerfile.frontend.prod`
 - 容器 Nginx：`deploy/nginx/nginx.conf`、`deploy/nginx/nginx.prod.conf`
 - 宿主机 Nginx：`deploy/nginx/host_nginx_http.conf`、`deploy/nginx/host_nginx_prod.conf`
-- 当前生产入口标准：`deploy/PRODUCTION_NGINX_STANDARD.md`
+- 当前生产入口标准：`deploy/生产Nginx标准.md`
 - 发布脚本：`deploy/scripts/deploy_prod.sh`
 - 回滚脚本：`deploy/scripts/rollback_prod.sh`
 
@@ -145,8 +145,7 @@ bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service all
 3. 切换到指定 tag
 4. 根据 `api` / `web` / `all` 仅更新受影响服务
 5. 执行最小健康验证
-6. 将当前版本写入 `deploy/state/production/current.env`，并在 `deploy/state/production/history/` 追加一份时间点快照
-7. 输出发布后建议检查命令
+6. 输出发布后建议检查命令
 
 > 说明：`deploy_prod.sh` 负责代码发布、服务更新和基础验证；**不会自动执行数据库迁移**。如本次发布涉及 schema 变更，仍需先按数据库迁移规范人工执行迁移与验证。
 
@@ -155,7 +154,7 @@ bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service all
 如果本次发布包含数据库结构变更，流程必须改为：
 
 1. 先执行发布前备份
-2. 按 `docs/DATABASE_MIGRATIONS.md` 执行对应 `*_up.sql`
+2. 按 `docs/数据库迁移规范.md` 执行对应 `*_up.sql`
 3. 运行验证 SQL
 4. 再执行 `deploy_prod.sh`
 5. 将本次迁移脚本、执行时间、验证结果记录到发布记录中
@@ -194,22 +193,8 @@ bash deploy/scripts/rollback_prod.sh --tag v1.2.2 --service all
 2. 切回指定稳定 tag
 3. 按服务重新 build / up
 4. 执行最小验证
-5. 将当前回滚结果写入 `deploy/state/production/current.env`，并在 `deploy/state/production/history/` 追加一份时间点快照
 
-### 4.3 查看当前线上版本标记
-
-```bash
-cat deploy/state/production/current.env
-ls -1 deploy/state/production/history | tail
-```
-
-说明：
-
-- `current.env` 表示服务器最近一次发布/回滚后的版本状态
-- `history/` 会保留每次发布/回滚的时间点快照
-- 当 GitHub Actions 使用 `rsync + --skip-git` 模式时，应以这里的 `RELEASE_TARGET` / `RELEASE_COMMIT` 作为线上版本判断依据
-
-### 4.4 数据库回滚原则
+### 4.3 数据库回滚原则
 
 - **代码回滚 ≠ 数据库自动回滚**
 - 如果新版本已经执行 schema/data migration，必须单独判断是否需要执行 `*_down.sql`
@@ -265,7 +250,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 
 数据库迁移规范请统一参考：
 
-- `docs/DATABASE_MIGRATIONS.md`
+- `docs/数据库迁移规范.md`
 
 当前仓库已有迁移目录：
 
@@ -281,11 +266,11 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 
 ## 8. 关联文档索引
 
-- 完整部署与运维说明：`docs/DEPLOYMENT_GUIDE_ZH.md`
+- 完整部署与运维说明：`docs/部署指南.md`
 - 发布与回滚策略：`docs/版本发布与回滚指南.md`
-- 上线检查清单：`docs/DEPLOYMENT_CHECKLIST.md`
-- 数据库迁移规范：`docs/DATABASE_MIGRATIONS.md`
-- 阿里云落地方案：`deploy/ALIYUN_PRODUCTION_LAUNCH.md`
+- 上线检查清单：`docs/发布检查清单.md`
+- 数据库迁移规范：`docs/数据库迁移规范.md`
+- 阿里云落地方案：`deploy/阿里云生产上线指南.md`
 
 ---
 

@@ -15,8 +15,31 @@ DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${DEPLOY_DIR}"
 
-bash "${SCRIPT_DIR}/backup_postgres.sh"
-bash "${SCRIPT_DIR}/backup_uploads.sh"
-bash "${SCRIPT_DIR}/oss_sync_backups.sh"
+report_alert() {
+  local scope="$1"
+  local message="$2"
+  bash "${SCRIPT_DIR}/report_risk_warning.sh" open "system_backup_failure" "critical" "${scope}" "${message}" || true
+}
+
+resolve_alert() {
+  local scope="$1"
+  local result="$2"
+  bash "${SCRIPT_DIR}/report_risk_warning.sh" resolve "system_backup_failure" "${scope}" "${result}" || true
+}
+
+run_step() {
+  local scope="$1"
+  shift
+  if "$@"; then
+    resolve_alert "${scope}" "备份步骤恢复正常"
+    return 0
+  fi
+  report_alert "${scope}" "备份步骤失败：$*"
+  exit 1
+}
+
+run_step "备份/数据库" bash "${SCRIPT_DIR}/backup_postgres.sh"
+run_step "备份/上传文件" bash "${SCRIPT_DIR}/backup_uploads.sh"
+run_step "备份/OSS同步" bash "${SCRIPT_DIR}/oss_sync_backups.sh"
 
 echo "All backup steps completed."

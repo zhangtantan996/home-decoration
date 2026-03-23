@@ -36,7 +36,7 @@ func (s *CaseService) GetCaseDetail(caseID uint64) (*model.ProviderCase, error) 
 	var pc model.ProviderCase
 
 	// 查询案例详情，排除敏感的报价明细字段
-	if err := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).
+	if err := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{})).
 		Select("id, provider_id, title, cover_image, style, layout, area, price, quote_total_cent, quote_currency, year, description, images, sort_order, created_at, updated_at").
 		First(&pc, caseID).Error; err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (s *CaseService) GetCaseDetail(caseID uint64) (*model.ProviderCase, error) 
 
 func (s *CaseService) GetCaseQuote(caseID uint64) (*CaseQuote, error) {
 	var pc model.ProviderCase
-	if err := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).
+	if err := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{})).
 		Select("id, quote_total_cent, quote_currency, quote_items, updated_at").
 		First(&pc, caseID).Error; err != nil {
 		return nil, err

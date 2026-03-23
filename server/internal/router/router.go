@@ -54,12 +54,15 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 	// 静态文件服务 (上传文件)
 	r.Static("/uploads", "./uploads")
 	r.Static("/static/inspiration", "./static/inspiration")
+	r.GET("/metrics", handler.HandleNotificationRealtimeMetrics)
 
 	// API版本分组
 	v1 := r.Group("/api/v1")
 	{
 		// 健康检查
 		v1.GET("/health", handler.HealthCheck)
+		v1.GET("/metrics", handler.HandleNotificationRealtimeMetrics)
+		v1.GET("/realtime/notifications", handler.HandleNotificationRealtime)
 
 		// 认证相关 (无需登录) - 添加限流保护防止暴力破解
 		auth := v1.Group("/auth")
@@ -77,6 +80,14 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 		// 公开首页聚合数据
 		v1.GET("/homepage", handler.GetHomepageData)
+
+		// 支付回调与跳转（不依赖 SPA Authorization 头）
+		payments := v1.Group("/payments")
+		{
+			payments.GET("/:id/launch", handler.PaymentLaunch)
+			payments.POST("/alipay/notify", handler.PaymentAlipayNotify)
+			payments.GET("/alipay/return", handler.PaymentAlipayReturn)
+		}
 
 		// 公开的服务商查询
 		v1.GET("/providers", handler.ListProviders)
@@ -133,6 +144,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		{
 			regions.GET("/provinces", handler.GetProvinces)
 			regions.GET("/cities", handler.GetCities)
+			regions.GET("/service-provinces", handler.GetServiceProvinces)
+			regions.GET("/service-cities", handler.GetServiceCities)
 			regions.GET("/provinces/:provinceCode/cities", handler.GetCitiesByProvince)
 			regions.GET("/cities/:cityCode/districts", handler.GetDistrictsByCity)
 			regions.GET("/children/:parentCode", handler.GetChildrenByParentCode) // 懒加载子节点
@@ -244,6 +257,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			refunds := authorized.Group("/refunds")
 			{
 				refunds.GET("/my", handler.ListMyRefundApplications)
+			}
+
+			userPayments := authorized.Group("/payments")
+			{
+				userPayments.GET("/:id/status", handler.PaymentStatus)
 			}
 
 			// 项目
@@ -579,6 +597,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/finance/escrow-accounts", financeEscrowListPerm, handler.AdminListEscrowAccounts)
 			admin.GET("/finance/transactions", financeTransactionListPerm, handler.AdminListTransactions)
 			admin.GET("/finance/transactions/export", financeTransactionListPerm, handler.AdminExportTransactions)
+			admin.GET("/finance/reconciliations", financeTransactionListPerm, handler.AdminListFinanceReconciliations)
+			admin.POST("/finance/reconciliations/run", financeTransactionApprovePerm, handler.AdminRunFinanceReconciliation)
+			admin.POST("/finance/reconciliations/:id/claim", financeTransactionApprovePerm, handler.AdminClaimFinanceReconciliation)
+			admin.POST("/finance/reconciliations/:id/resolve", financeTransactionApprovePerm, handler.AdminResolveFinanceReconciliation)
 			admin.POST("/finance/freeze", financeEscrowFreezePerm, handler.AdminFreezeFunds)
 			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, handler.AdminUnfreezeFunds)
 			admin.POST("/finance/manual-release", financeTransactionApprovePerm, handler.AdminManualReleaseFunds)
@@ -601,6 +623,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/withdraws", financeTransactionListPerm, handler.AdminWithdrawList)
 			admin.GET("/withdraws/:id", financeTransactionViewPerm, handler.AdminWithdrawDetail)
 			admin.POST("/withdraws/:id/approve", financeTransactionApprovePerm, handler.AdminWithdrawApprove)
+			admin.POST("/withdraws/:id/mark-paid", financeTransactionApprovePerm, handler.AdminWithdrawMarkPaid)
 			admin.POST("/withdraws/:id/reject", financeTransactionApprovePerm, handler.AdminWithdrawReject)
 
 			// 操作日志

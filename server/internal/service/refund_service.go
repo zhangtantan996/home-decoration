@@ -6,6 +6,9 @@ import (
 	"home-decoration-server/internal/repository"
 	"log"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // RefundService 退款服务
@@ -38,34 +41,65 @@ func (s *RefundService) RefundIntentFee(bookingID uint64, scenario RefundScenari
 	// 构建退款原因
 	refundReason := s.buildRefundReason(scenario, additionalReason)
 
-	// 执行退款（暂时模拟，P1阶段接入真实支付网关）
-	now := time.Now()
-	booking.IntentFeeRefunded = true
-	booking.IntentFeeRefundReason = refundReason
-	booking.IntentFeeRefundedAt = &now
-
-	if err := repository.DB.Save(&booking).Error; err != nil {
-		log.Printf("[RefundService] Failed to update booking %d: %v", bookingID, err)
-		return errors.New("退款处理失败")
+	var application model.RefundApplication
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&booking, bookingID).Error; err != nil {
+			return errors.New("预约记录不存在")
+		}
+		project, err := findProjectByBookingTx(tx, booking.ID)
+		if err != nil {
+			return err
+		}
+		existing, err := ensurePendingAbnormalRefundApplicationTx(tx, &booking, project, booking.UserID, refundReason)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return errors.New("未生成退款申请")
+		}
+		application = *existing
+		if application.Status == model.RefundApplicationStatusCompleted {
+			return nil
+		}
+		if application.Status == model.RefundApplicationStatusApproved {
+			return nil
+		}
+		if application.Status != model.RefundApplicationStatusPending {
+			return errors.New("当前退款申请状态不可执行")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
-	log.Printf("[RefundService] Refunded intent fee for booking %d (%.2f元): %s",
-		bookingID, booking.IntentFee, refundReason)
-
-	// 发送退款通知给用户
-	notifService := &NotificationService{}
-	refundData := map[string]interface{}{
-		"bookingId":    booking.ID,
-		"amount":       booking.IntentFee,
-		"reason":       refundReason,
-		"refundedAt":   now,
+	if application.Status == model.RefundApplicationStatusCompleted {
+		return nil
 	}
-	_ = notifService.NotifyIntentFeeRefunded(refundData, booking.UserID)
 
-	// TODO: 调用支付网关退款API
-	// paymentGateway.Refund(booking.IntentFeeTransactionID, booking.IntentFee)
+	refundApplicationService := &RefundApplicationService{}
+	if application.Status == model.RefundApplicationStatusPending {
+		view, approveErr := refundApplicationService.ApproveApplication(application.ID, 0, &ReviewRefundApplicationInput{
+			ApprovedAmount: booking.IntentFee,
+			AdminNotes:     refundReason,
+		})
+		if approveErr != nil {
+			return approveErr
+		}
+		if view != nil && view.Status == model.RefundApplicationStatusCompleted {
+			return nil
+		}
+		return errors.New("退款处理中，请稍后确认")
+	}
 
-	return nil
+	completed, finalizeErr := NewPaymentService(nil).FinalizeRefundApplicationIfReady(application.ID)
+	if finalizeErr != nil {
+		return finalizeErr
+	}
+	if completed {
+		return nil
+	}
+	return errors.New("退款处理中，请稍后确认")
 }
 
 // CanRefundIntentFee 判断是否可以退款

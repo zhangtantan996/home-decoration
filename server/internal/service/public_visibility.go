@@ -163,10 +163,7 @@ func IsCasePublicVisible(providerCase *model.ProviderCase) bool {
 	if providerCase == nil {
 		return false
 	}
-	if !supportsCaseInspirationVisibility() {
-		return true
-	}
-	return providerCase.ShowInInspiration
+	return IsInspirationCasePublicVisible(providerCase)
 }
 
 func applyVisibleCaseFilter(db *gorm.DB) *gorm.DB {
@@ -174,6 +171,42 @@ func applyVisibleCaseFilter(db *gorm.DB) *gorm.DB {
 		return db
 	}
 	return db.Where("show_in_inspiration = ?", true)
+}
+
+func IsInspirationCasePublicVisible(providerCase *model.ProviderCase) bool {
+	if providerCase == nil {
+		return false
+	}
+	if !supportsCaseInspirationVisibility() {
+		return true
+	}
+	if !providerCase.ShowInInspiration {
+		return false
+	}
+	if providerCase.ProviderID == 0 {
+		return true
+	}
+
+	var provider model.Provider
+	if err := repository.DB.First(&provider, providerCase.ProviderID).Error; err != nil {
+		return false
+	}
+	return IsProviderPublicVisible(&provider)
+}
+
+func applyVisibleInspirationCaseFilter(db *gorm.DB) *gorm.DB {
+	if !supportsCaseInspirationVisibility() {
+		return db
+	}
+	filtered := db.Joins("LEFT JOIN providers ON providers.id = provider_cases.provider_id").
+		Where("provider_cases.show_in_inspiration = ?", true)
+	if !supportsProviderSettlementVisibility() {
+		return filtered.Where("(provider_cases.provider_id = 0) OR (providers.verified = ? AND providers.status = ?)", true, 1)
+	}
+	return filtered.Where(
+		"(provider_cases.provider_id = 0) OR ((providers.is_settled = false AND providers.status = ?) OR (providers.is_settled = true AND providers.verified = ? AND providers.status = ?))",
+		1, true, 1,
+	)
 }
 
 func ApplyPublicCaseFilter(db *gorm.DB) *gorm.DB {

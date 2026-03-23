@@ -39,6 +39,7 @@ func AdminListAdmins(c *gin.Context) {
 
 // AdminCreateAdmin 创建管理员
 func AdminCreateAdmin(c *gin.Context) {
+	operatorID := c.GetUint64("admin_id")
 	var req struct {
 		Username string   `json:"username" binding:"required"`
 		Phone    string   `json:"phone"`
@@ -49,6 +50,10 @@ func AdminCreateAdmin(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+	if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 
@@ -88,6 +93,7 @@ func AdminCreateAdmin(c *gin.Context) {
 	}
 
 	// 使用事务创建管理员并分配角色
+	auditService := &service.AuditLogService{}
 	tx := repository.DB.Begin()
 	if err := tx.Create(&admin).Error; err != nil {
 		tx.Rollback()
@@ -107,7 +113,33 @@ func AdminCreateAdmin(c *gin.Context) {
 		}
 	}
 
-	tx.Commit()
+	roles, err := loadRolesByIDsTx(tx, req.RoleIDs)
+	if err != nil {
+		tx.Rollback()
+		response.ServerError(c, "加载角色失败")
+		return
+	}
+	admin.Roles = roles
+	if err := auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    operatorID,
+		OperationType: "create_admin",
+		ResourceType:  "sys_admin",
+		ResourceID:    admin.ID,
+		Reason:        "创建管理员账号",
+		Result:        "success",
+		AfterState: map[string]interface{}{
+			"admin": snapshotSysAdminForAudit(admin),
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "创建失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "创建失败")
+		return
+	}
 
 	// 加载角色信息返回
 	repository.DB.Preload("Roles").First(&admin, admin.ID)
@@ -116,7 +148,8 @@ func AdminCreateAdmin(c *gin.Context) {
 
 // AdminUpdateAdmin 更新管理员
 func AdminUpdateAdmin(c *gin.Context) {
-	id := c.Param("id")
+	id := parseUint64(c.Param("id"))
+	operatorID := c.GetUint64("admin_id")
 	var admin model.SysAdmin
 	if err := repository.DB.Preload("Roles").First(&admin, "id = ?", id).Error; err != nil {
 		response.NotFound(c, "管理员不存在")
@@ -134,6 +167,12 @@ func AdminUpdateAdmin(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
+	}
+	if len(req.RoleIDs) > 0 {
+		if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
 	}
 
 	// 检查用户名是否被其他管理员占用
@@ -180,7 +219,12 @@ func AdminUpdateAdmin(c *gin.Context) {
 		admin.Password = string(hashedPassword)
 	}
 
+	beforeState := map[string]interface{}{
+		"admin": snapshotSysAdminForAudit(admin),
+	}
+
 	// 使用事务更新管理员信息和角色
+	auditService := &service.AuditLogService{}
 	tx := repository.DB.Begin()
 
 	// 更新管理员基本信息
@@ -208,7 +252,36 @@ func AdminUpdateAdmin(c *gin.Context) {
 		}
 	}
 
-	tx.Commit()
+	updatedAdmin, err := loadAdminWithRolesTx(tx, admin.ID)
+	if err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+	if err := auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    operatorID,
+		OperationType: "update_admin",
+		ResourceType:  "sys_admin",
+		ResourceID:    admin.ID,
+		Reason:        "更新管理员账号",
+		Result:        "success",
+		BeforeState:   beforeState,
+		AfterState: map[string]interface{}{
+			"admin": snapshotSysAdminForAudit(*updatedAdmin),
+		},
+		Metadata: map[string]interface{}{
+			"passwordUpdated": req.Password != "",
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
 
 	// 重新加载角色信息返回
 	repository.DB.Preload("Roles").First(&admin, admin.ID)
@@ -217,11 +290,12 @@ func AdminUpdateAdmin(c *gin.Context) {
 
 // AdminDeleteAdmin 删除管理员
 func AdminDeleteAdmin(c *gin.Context) {
-	id := c.Param("id")
+	id := parseUint64(c.Param("id"))
+	operatorID := c.GetUint64("admin_id")
 
 	// 检查管理员是否存在
 	var admin model.SysAdmin
-	if err := repository.DB.First(&admin, "id = ?", id).Error; err != nil {
+	if err := repository.DB.Preload("Roles").First(&admin, "id = ?", id).Error; err != nil {
 		response.NotFound(c, "管理员不存在")
 		return
 	}
@@ -233,6 +307,7 @@ func AdminDeleteAdmin(c *gin.Context) {
 	}
 
 	// 使用事务删除管理员及其角色关联
+	auditService := &service.AuditLogService{}
 	tx := repository.DB.Begin()
 
 	// 删除角色关联
@@ -245,13 +320,36 @@ func AdminDeleteAdmin(c *gin.Context) {
 		return
 	}
 
-	tx.Commit()
+	if err := auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    operatorID,
+		OperationType: "delete_admin",
+		ResourceType:  "sys_admin",
+		ResourceID:    admin.ID,
+		Reason:        "删除管理员账号",
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"admin": snapshotSysAdminForAudit(admin),
+		},
+		AfterState: map[string]interface{}{
+			"deleted": true,
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "删除失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "删除失败")
+		return
+	}
 	response.Success(c, nil)
 }
 
 // AdminUpdateAdminStatus 更新管理员状态
 func AdminUpdateAdminStatus(c *gin.Context) {
-	id := c.Param("id")
+	id := parseUint64(c.Param("id"))
+	operatorID := c.GetUint64("admin_id")
 	var req struct {
 		Status int8 `json:"status"`
 	}
@@ -273,7 +371,35 @@ func AdminUpdateAdminStatus(c *gin.Context) {
 		return
 	}
 
-	if err := repository.DB.Model(&model.SysAdmin{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+	beforeState := map[string]interface{}{
+		"admin": snapshotSysAdminForAudit(admin),
+	}
+
+	tx := repository.DB.Begin()
+	if err := tx.Model(&model.SysAdmin{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+	admin.Status = req.Status
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    operatorID,
+		OperationType: "update_admin_status",
+		ResourceType:  "sys_admin",
+		ResourceID:    admin.ID,
+		Reason:        "更新管理员状态",
+		Result:        "success",
+		BeforeState:   beforeState,
+		AfterState: map[string]interface{}{
+			"admin": snapshotSysAdminForAudit(admin),
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -509,6 +635,8 @@ func AdminListRiskWarnings(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("pageSize"), 10)
 	level := c.Query("level")
+	warningType := c.Query("type")
+	status := c.Query("status")
 
 	var warnings []model.RiskWarning
 	var total int64
@@ -516,6 +644,12 @@ func AdminListRiskWarnings(c *gin.Context) {
 	db := repository.DB.Model(&model.RiskWarning{})
 	if level != "" {
 		db = db.Where("level = ?", level)
+	}
+	if warningType != "" {
+		db = db.Where("type = ?", warningType)
+	}
+	if status != "" {
+		db = db.Where("status = ?", status)
 	}
 
 	db.Count(&total)
@@ -530,6 +664,7 @@ func AdminListRiskWarnings(c *gin.Context) {
 // AdminHandleRiskWarning 处理风险预警
 func AdminHandleRiskWarning(c *gin.Context) {
 	id := c.Param("id")
+	adminID := c.GetUint64("admin_id")
 	var req struct {
 		Status int8   `json:"status" binding:"required"`
 		Result string `json:"result" binding:"required"`
@@ -549,6 +684,7 @@ func AdminHandleRiskWarning(c *gin.Context) {
 	warning.Status = req.Status
 	warning.HandleResult = req.Result
 	warning.HandledAt = &now
+	warning.HandledBy = &adminID
 
 	if err := repository.DB.Save(&warning).Error; err != nil {
 		response.ServerError(c, "处理失败")

@@ -20,13 +20,13 @@ func NewAdminUserCleanupService(db *gorm.DB) *AdminUserCleanupService {
 	return &AdminUserCleanupService{db: db}
 }
 
-func (s *AdminUserCleanupService) DeleteDirtyUsers(userIDs []uint64) (*AdminUserCleanupResult, error) {
+func (s *AdminUserCleanupService) DeleteUsers(userIDs []uint64) (*AdminUserCleanupResult, error) {
 	userIDs = uniqueUint64(userIDs)
 	if len(userIDs) == 0 {
 		return nil, fmt.Errorf("未提供待删除用户")
 	}
 
-	if err := s.ensureDirtyCandidates(userIDs); err != nil {
+	if err := s.ensureUsersExist(userIDs); err != nil {
 		return nil, err
 	}
 
@@ -113,6 +113,23 @@ func (s *AdminUserCleanupService) DeleteDirtyUsers(userIDs []uint64) (*AdminUser
 	return &AdminUserCleanupResult{UserIDs: targets.users}, nil
 }
 
+func (s *AdminUserCleanupService) DeleteDirtyUsers(userIDs []uint64) (*AdminUserCleanupResult, error) {
+	userIDs = uniqueUint64(userIDs)
+	if len(userIDs) == 0 {
+		return nil, fmt.Errorf("未提供待删除用户")
+	}
+
+	if err := s.ensureUsersExist(userIDs); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureDirtyCandidates(userIDs); err != nil {
+		return nil, err
+	}
+
+	return s.DeleteUsers(userIDs)
+}
+
 type cleanupTargets struct {
 	users            []uint64
 	providers        []uint64
@@ -133,7 +150,7 @@ type cleanupTargets struct {
 	providerCases    []uint64
 }
 
-func (s *AdminUserCleanupService) ensureDirtyCandidates(userIDs []uint64) error {
+func (s *AdminUserCleanupService) ensureUsersExist(userIDs []uint64) error {
 	if !hasTable(s.db, "users") {
 		return fmt.Errorf("users 表不存在")
 	}
@@ -151,6 +168,21 @@ func (s *AdminUserCleanupService) ensureDirtyCandidates(userIDs []uint64) error 
 
 	if len(rows) != len(userIDs) {
 		return fmt.Errorf("部分用户不存在或已被删除")
+	}
+
+	return nil
+}
+
+func (s *AdminUserCleanupService) ensureDirtyCandidates(userIDs []uint64) error {
+	type userRow struct {
+		ID       uint64
+		Phone    string
+		Nickname string
+	}
+
+	var rows []userRow
+	if err := s.db.Table("users").Select("id", "phone", "nickname").Where("id IN ?", userIDs).Find(&rows).Error; err != nil {
+		return err
 	}
 
 	for _, row := range rows {

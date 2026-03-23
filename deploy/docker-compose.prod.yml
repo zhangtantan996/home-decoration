@@ -40,6 +40,7 @@ services:
       DATABASE_USER: ${DB_USER:-postgres}
       DATABASE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD not set}
       DATABASE_DBNAME: ${DB_NAME:-home_decoration}
+      # 仅限同机 Docker bridge 网络；若切到托管数据库，改为 require/verify-* 并使用内网地址。
       DATABASE_SSLMODE: disable
       REDIS_HOST: redis
       REDIS_PORT: 6379

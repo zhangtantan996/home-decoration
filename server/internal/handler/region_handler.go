@@ -3,6 +3,7 @@ package handler
 import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -87,6 +88,28 @@ func GetCities(c *gin.Context) {
 		return
 	}
 	response.Success(c, cities)
+}
+
+// GetServiceProvinces 获取开放服务省份
+func GetServiceProvinces(c *gin.Context) {
+	regionService := service.RegionService{}
+	items, err := regionService.ListOpenServiceProvinces()
+	if err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+	response.Success(c, items)
+}
+
+// GetServiceCities 获取开放服务城市
+func GetServiceCities(c *gin.Context) {
+	regionService := service.RegionService{}
+	items, err := regionService.ListOpenServiceCities()
+	if err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
+	response.Success(c, items)
 }
 
 // GetDistrictsByCity 根据城市代码获取区/县列表

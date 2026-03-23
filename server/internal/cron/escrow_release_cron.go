@@ -37,8 +37,16 @@ func processEscrowReleases() {
 
 	if err != nil {
 		log.Printf("[Cron] Escrow release failed: %v", err)
+		_, _, _ = (&service.SystemAlertService{}).UpsertAlert(&service.CreateSystemAlertInput{
+			Type:        service.SystemAlertTypeEscrowReleaseFailure,
+			Level:       "critical",
+			Scope:       "自动放款/全局",
+			Description: err.Error(),
+			ActionURL:   "/risk/warnings",
+		})
 		return
 	}
+	_, _ = (&service.SystemAlertService{}).ResolveAlert(service.SystemAlertTypeEscrowReleaseFailure, "自动放款/全局", "自动放款任务恢复正常")
 
 	if count > 0 {
 		log.Printf("[Cron] Successfully released %d milestone payments", count)

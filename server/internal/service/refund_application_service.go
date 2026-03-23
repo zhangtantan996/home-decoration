@@ -208,8 +208,12 @@ func (s *RefundApplicationService) ApproveApplication(id, adminID uint64, input 
 	if input == nil {
 		input = &ReviewRefundApplicationInput{}
 	}
-	var view *RefundApplicationView
+	var (
+		view         *RefundApplicationView
+		refundOrders []model.RefundOrder
+	)
 	auditService := &AuditLogService{}
+	paymentService := NewPaymentService(nil)
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var application model.RefundApplication
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&application, id).Error; err != nil {
@@ -233,20 +237,26 @@ func (s *RefundApplicationService) ApproveApplication(id, adminID uint64, input 
 				"approvedAmount":  application.ApprovedAmount,
 			},
 		}
-		if err := applyRefundApplicationTx(tx, &application, approvedAmount); err != nil {
-			return err
+		createdRefundOrders, createErr := paymentService.CreateRefundOrdersForApplicationTx(tx, &application, approvedAmount)
+		if createErr != nil {
+			return createErr
 		}
+		refundOrders = createdRefundOrders
 		now := time.Now()
 		if err := tx.Model(&application).Updates(map[string]interface{}{
-			"status":          model.RefundApplicationStatusCompleted,
+			"status":          model.RefundApplicationStatusApproved,
 			"admin_id":        adminID,
 			"admin_notes":     strings.TrimSpace(input.AdminNotes),
 			"approved_amount": approvedAmount,
 			"approved_at":     now,
-			"completed_at":    now,
 		}).Error; err != nil {
 			return err
 		}
+		application.Status = model.RefundApplicationStatusApproved
+		application.AdminID = adminID
+		application.AdminNotes = strings.TrimSpace(input.AdminNotes)
+		application.ApprovedAmount = approvedAmount
+		application.ApprovedAt = &now
 		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
 			OperatorType:  "admin",
 			OperatorID:    adminID,
@@ -259,10 +269,10 @@ func (s *RefundApplicationService) ApproveApplication(id, adminID uint64, input 
 			AfterState: map[string]interface{}{
 				"refundApplication": map[string]interface{}{
 					"id":             application.ID,
-					"status":         model.RefundApplicationStatusCompleted,
+					"status":         model.RefundApplicationStatusApproved,
 					"approvedAmount": approvedAmount,
 					"approvedAt":     now,
-					"completedAt":    now,
+					"refundOrderCnt": len(refundOrders),
 				},
 			},
 			Metadata: map[string]interface{}{
@@ -281,17 +291,57 @@ func (s *RefundApplicationService) ApproveApplication(id, adminID uint64, input 
 		return nil, err
 	}
 
+	hasFailed := false
+	hasProcessing := false
+	for _, refundOrder := range refundOrders {
+		updated, execErr := paymentService.ExecuteRefundOrder(refundOrder.ID)
+		switch {
+		case updated == nil && execErr != nil:
+			hasProcessing = true
+		case updated == nil:
+			continue
+		case updated.Status == model.RefundOrderStatusFailed:
+			hasFailed = true
+		case updated.Status != model.RefundOrderStatusSucceeded:
+			hasProcessing = true
+		}
+	}
+
+	if !hasFailed {
+		completed, finalizeErr := paymentService.FinalizeRefundApplicationIfReady(id)
+		if finalizeErr != nil {
+			if strings.Contains(finalizeErr.Error(), "存在退款失败记录") {
+				hasFailed = true
+			} else {
+				return nil, finalizeErr
+			}
+		}
+		if completed {
+			hasProcessing = false
+		}
+	}
+
+	view, err = s.GetApplicationDetail(id)
+	if err != nil {
+		return nil, err
+	}
 	notificationService := &NotificationService{}
 	_ = notificationService.Create(&CreateNotificationInput{
 		UserID:      view.UserID,
 		UserType:    "user",
 		Title:       "退款申请已处理",
-		Content:     fmt.Sprintf("您的退款申请已通过，退款金额 %.2f 元", view.ApprovedAmount),
+		Content:     refundApprovedNotificationText(view),
 		Type:        "refund.application.approved",
 		RelatedID:   view.ID,
 		RelatedType: "refund_application",
 		ActionURL:   buildBookingRefundActionURL(view.BookingID),
 	})
+	if hasFailed {
+		return view, errors.New("退款执行存在失败记录，请继续跟进处理")
+	}
+	if hasProcessing {
+		return view, nil
+	}
 	return view, nil
 }
 
@@ -367,6 +417,20 @@ func (s *RefundApplicationService) RejectApplication(id, adminID uint64, input *
 		ActionURL:   buildBookingRefundActionURL(view.BookingID),
 	})
 	return view, nil
+}
+
+func refundApprovedNotificationText(view *RefundApplicationView) string {
+	if view == nil {
+		return "您的退款申请已进入处理流程"
+	}
+	switch view.Status {
+	case model.RefundApplicationStatusCompleted:
+		return fmt.Sprintf("您的退款申请已完成，退款金额 %.2f 元", view.ApprovedAmount)
+	case model.RefundApplicationStatusApproved:
+		return fmt.Sprintf("您的退款申请已审核通过，退款金额 %.2f 元，当前正在处理退款", view.ApprovedAmount)
+	default:
+		return fmt.Sprintf("您的退款申请状态已更新为 %s", view.Status)
+	}
 }
 
 func normalizeRefundType(refundType string) string {

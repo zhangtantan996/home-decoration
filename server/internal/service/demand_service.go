@@ -276,9 +276,9 @@ func buildDemandSummary(demand *model.Demand) DemandSummary {
 }
 
 func buildProviderSummary(provider model.Provider, user model.User) DemandProviderSummary {
-	name := strings.TrimSpace(provider.CompanyName)
-	if provider.ProviderType == 1 || name == "" {
-		name = strings.TrimSpace(user.Nickname)
+	name := strings.TrimSpace(user.Nickname)
+	if name == "" {
+		name = strings.TrimSpace(provider.CompanyName)
 	}
 	if name == "" && len(user.Phone) >= 4 {
 		name = "用户" + user.Phone[len(user.Phone)-4:]
@@ -566,6 +566,7 @@ func (s *DemandService) ListDemandCandidates(demandID uint64, page, pageSize int
 	if err != nil {
 		return nil, 0, errors.New("需求不存在")
 	}
+	targetCityCodes := resolveDemandTargetCityCodes(demand)
 	var providers []model.Provider
 	if err := repository.DB.Where("status = ?", 1).Order("verified DESC, rating DESC, completed_cnt DESC").Find(&providers).Error; err != nil {
 		return nil, 0, err
@@ -574,7 +575,7 @@ func (s *DemandService) ListDemandCandidates(demandID uint64, page, pageSize int
 	for _, provider := range providers {
 		var user model.User
 		_ = repository.DB.First(&user, provider.UserID).Error
-		score, reasons := scoreDemandCandidate(demand, &provider)
+		score, reasons := scoreDemandCandidate(demand, targetCityCodes, &provider)
 		items = append(items, DemandCandidateView{
 			Provider:    buildProviderSummary(provider, user),
 			MatchScore:  score,
@@ -601,7 +602,7 @@ func (s *DemandService) ListDemandCandidates(demandID uint64, page, pageSize int
 	return items[start:end], total, nil
 }
 
-func scoreDemandCandidate(demand *model.Demand, provider *model.Provider) (int, []string) {
+func scoreDemandCandidate(demand *model.Demand, targetCityCodes []string, provider *model.Provider) (int, []string) {
 	score := 0
 	reasons := make([]string, 0, 4)
 	if provider.Verified {
@@ -609,12 +610,9 @@ func scoreDemandCandidate(demand *model.Demand, provider *model.Provider) (int, 
 		reasons = append(reasons, "已认证服务商")
 	}
 	serviceAreas := parseServiceAreas(provider.ServiceArea)
-	for _, area := range serviceAreas {
-		if strings.Contains(area, demand.District) || strings.Contains(area, demand.City) {
-			score += 30
-			reasons = append(reasons, "服务区域匹配")
-			break
-		}
+	if isDemandServiceAreaMatched(serviceAreas, demand, targetCityCodes) {
+		score += 30
+		reasons = append(reasons, "服务城市匹配")
 	}
 	switch demand.DemandType {
 	case model.DemandTypeDesign:
@@ -640,6 +638,71 @@ func scoreDemandCandidate(demand *model.Demand, provider *model.Provider) (int, 
 		reasons = append(reasons, "经验稳定")
 	}
 	return score, reasons
+}
+
+func resolveDemandTargetCityCodes(demand *model.Demand) []string {
+	names := make([]string, 0, 2)
+	if city := strings.TrimSpace(demand.City); city != "" {
+		names = append(names, city)
+	}
+	if district := strings.TrimSpace(demand.District); district != "" {
+		names = append(names, district)
+	}
+	if len(names) == 0 {
+		return []string{}
+	}
+
+	var regions []model.Region
+	if err := repository.DB.Where("name IN ?", names).Find(&regions).Error; err != nil {
+		return []string{}
+	}
+
+	targets := make([]string, 0, len(regions))
+	for _, region := range regions {
+		switch region.Level {
+		case 2:
+			targets = append(targets, region.Code)
+		case 3:
+			if strings.TrimSpace(region.ParentCode) != "" {
+				targets = append(targets, region.ParentCode)
+			}
+		}
+	}
+	return dedupeStringList(targets)
+}
+
+func isDemandServiceAreaMatched(serviceAreas []string, demand *model.Demand, targetCityCodes []string) bool {
+	targetSet := make(map[string]struct{}, len(targetCityCodes))
+	for _, code := range targetCityCodes {
+		targetSet[code] = struct{}{}
+	}
+
+	for _, area := range serviceAreas {
+		trimmed := strings.TrimSpace(area)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := targetSet[trimmed]; ok {
+			return true
+		}
+		if strings.Contains(trimmed, demand.District) || strings.Contains(trimmed, demand.City) {
+			return true
+		}
+	}
+	return false
+}
+
+func dedupeStringList(items []string) []string {
+	seen := make(map[string]struct{}, len(items))
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if _, exists := seen[item]; exists {
+			continue
+		}
+		seen[item] = struct{}{}
+		result = append(result, item)
+	}
+	return result
 }
 
 func minInt(a, b int) int {

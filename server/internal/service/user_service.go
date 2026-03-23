@@ -532,10 +532,12 @@ func (s *UserService) RefreshTinodeToken(user *model.User) (string, error) {
 }
 
 // UpdateUser 更新用户信息
-func (s *UserService) UpdateUser(id uint64, nickname, avatar string) error {
+func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *time.Time, bio string) error {
 	err := repository.DB.Model(&model.User{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nickname": nickname,
 		"avatar":   avatar,
+		"birthday": birthday,
+		"bio":      bio,
 	}).Error
 
 	if err != nil {

@@ -241,12 +241,17 @@ func TestMerchantApplyDetailForResubmit_PhoneMismatch(t *testing.T) {
 func TestMerchantResubmit_WithResubmitToken(t *testing.T) {
 	setupMerchantRound4TestDB(t)
 	input := newValidDesignerApplyInput()
+	oldCreatedAt := time.Date(2025, 3, 1, 9, 30, 0, 0, time.Local)
 	app := model.MerchantApplication{
 		Phone:         input.Phone,
 		ApplicantType: input.ApplicantType,
 		Role:          input.Role,
 		EntityType:    input.EntityType,
 		Status:        2,
+		Base: model.Base{
+			CreatedAt: oldCreatedAt,
+			UpdatedAt: oldCreatedAt,
+		},
 	}
 	if err := repository.DB.Create(&app).Error; err != nil {
 		t.Fatalf("create app failed: %v", err)
@@ -273,6 +278,9 @@ func TestMerchantResubmit_WithResubmitToken(t *testing.T) {
 	}
 	if updated.Status != 0 {
 		t.Fatalf("expected resubmitted app to reset to pending, got=%d", updated.Status)
+	}
+	if !updated.CreatedAt.After(oldCreatedAt) {
+		t.Fatalf("expected resubmitted app createdAt to refresh, old=%s new=%s", oldCreatedAt, updated.CreatedAt)
 	}
 }
 
@@ -336,6 +344,7 @@ func TestMaterialShopApplyDetailForResubmit_WithSMS(t *testing.T) {
 func TestMaterialShopResubmit_WithResubmitToken(t *testing.T) {
 	setupMerchantRound4TestDB(t)
 	input := newValidMaterialShopApplyInput()
+	oldCreatedAt := time.Date(2025, 4, 2, 11, 0, 0, 0, time.Local)
 	app := model.MaterialShopApplication{
 		Phone:        input.Phone,
 		EntityType:   input.EntityType,
@@ -345,6 +354,10 @@ func TestMaterialShopResubmit_WithResubmitToken(t *testing.T) {
 		ContactName:  input.ContactName,
 		Status:       2,
 		RejectReason: "资料待补充",
+		Base: model.Base{
+			CreatedAt: oldCreatedAt,
+			UpdatedAt: oldCreatedAt,
+		},
 	}
 	if err := repository.DB.Create(&app).Error; err != nil {
 		t.Fatalf("create app failed: %v", err)
@@ -371,6 +384,9 @@ func TestMaterialShopResubmit_WithResubmitToken(t *testing.T) {
 	}
 	if updated.Status != 0 {
 		t.Fatalf("expected resubmitted material app to reset to pending, got=%d", updated.Status)
+	}
+	if !updated.CreatedAt.After(oldCreatedAt) {
+		t.Fatalf("expected resubmitted material app createdAt to refresh, old=%s new=%s", oldCreatedAt, updated.CreatedAt)
 	}
 }
 
@@ -814,6 +830,107 @@ func TestMerchantVerifyOnboardingPhone_ApplyMode(t *testing.T) {
 	}
 	if resp.Code != 0 || !resp.Data.OK || strings.TrimSpace(resp.Data.VerificationToken) == "" || resp.Data.VerifiedPhone != "13800138000" {
 		t.Fatalf("unexpected response: %+v body=%s", resp, w.Body.String())
+	}
+}
+
+func TestMerchantVerifyOnboardingPhone_ApplyModeRejectsPendingProviderApplication(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+
+	app := model.MerchantApplication{
+		Phone:  "13800138000",
+		Status: 0,
+	}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, onboardingVerifyPhoneInput{
+		Phone:        "13800138000",
+		Code:         "123456",
+		MerchantKind: merchantIdentityTypeProvider,
+		Mode:         merchantVerificationModeApply,
+	})
+	MerchantVerifyOnboardingPhone(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp failed: %v", err)
+	}
+	if resp.Code != 400 || !strings.Contains(resp.Message, "已提交申请") {
+		t.Fatalf("unexpected response: %+v body=%s", resp, w.Body.String())
+	}
+}
+
+func TestMerchantVerifyOnboardingPhone_ApplyModeRequiresExplicitReapplyConfirmation(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+
+	user := model.User{Phone: "13800138066", Nickname: "老主材商", Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+	shop := model.MaterialShop{
+		UserID:      user.ID,
+		Name:        "老店铺",
+		CompanyName: "老店铺公司",
+		IsVerified:  true,
+	}
+	if err := repository.DB.Create(&shop).Error; err != nil {
+		t.Fatalf("create shop failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, onboardingVerifyPhoneInput{
+		Phone:        user.Phone,
+		Code:         "123456",
+		MerchantKind: merchantIdentityTypeProvider,
+		Mode:         merchantVerificationModeApply,
+	})
+	MerchantVerifyOnboardingPhone(c)
+
+	var conflictResp struct {
+		Code int `json:"code"`
+		Data struct {
+			NextAction string `json:"nextAction"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &conflictResp); err != nil {
+		t.Fatalf("decode conflict resp failed: %v", err)
+	}
+	if conflictResp.Code != 409 || conflictResp.Data.NextAction != merchantNextActionReapply {
+		t.Fatalf("unexpected conflict response: %+v body=%s", conflictResp, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, onboardingVerifyPhoneInput{
+		Phone:        user.Phone,
+		Code:         "123456",
+		MerchantKind: merchantIdentityTypeProvider,
+		Mode:         merchantVerificationModeApply,
+		AllowReapply: true,
+	})
+	MerchantVerifyOnboardingPhone(c)
+
+	var successResp struct {
+		Code int `json:"code"`
+		Data struct {
+			VerificationToken string `json:"verificationToken"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &successResp); err != nil {
+		t.Fatalf("decode success resp failed: %v", err)
+	}
+	if successResp.Code != 0 || strings.TrimSpace(successResp.Data.VerificationToken) == "" {
+		t.Fatalf("unexpected success response: %+v body=%s", successResp, w.Body.String())
+	}
+	if !verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeProvider, 0, user.Phone, successResp.Data.VerificationToken) {
+		t.Fatalf("expected verification token to carry allowReapply flag")
 	}
 }
 

@@ -42,6 +42,9 @@ type ProjectDetail struct {
 	model.Project
 	OwnerName                 string            `json:"ownerName"`
 	ProviderName              string            `json:"providerName"`
+	ProviderAvatar            string            `json:"providerAvatar"`
+	ProviderPhone             string            `json:"providerPhone"`
+	ProviderType              int8              `json:"providerType"`
 	Milestones                []model.Milestone `json:"milestones"`
 	RecentLogs                []model.WorkLog   `json:"recentLogs"`
 	EscrowBalance             float64           `json:"escrowBalance"`
@@ -207,6 +210,13 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 	if err := tx.First(&provider, project.ProviderID).Error; err != nil {
 		return nil, errors.New("服务商不存在")
 	}
+	plainAddress := project.Address
+	plainLatitude := project.Latitude
+	plainLongitude := project.Longitude
+
+	if err := encryptProjectSensitiveFields(project); err != nil {
+		return nil, err
+	}
 
 	if err := tx.Create(project).Error; err != nil {
 		return nil, err
@@ -223,21 +233,13 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 	if err := s.InitProjectPhases(tx, project.ID); err != nil {
 		return nil, err
 	}
-
-	milestones := []model.Milestone{
-		{ProjectID: project.ID, Name: "开工交底", Seq: 1, Percentage: 20, Status: model.MilestoneStatusPending, Criteria: "现场保护完成，图纸确认"},
-		{ProjectID: project.ID, Name: "水电验收", Seq: 2, Percentage: 30, Status: model.MilestoneStatusPending, Criteria: "水管试压合格，电路通断测试"},
-		{ProjectID: project.ID, Name: "泥木验收", Seq: 3, Percentage: 30, Status: model.MilestoneStatusPending, Criteria: "瓷砖空鼓率<5%，木工结构牢固"},
-		{ProjectID: project.ID, Name: "竣工验收", Seq: 4, Percentage: 20, Status: model.MilestoneStatusPending, Criteria: "全屋保洁完成，设备调试正常"},
-	}
-
-	for i := range milestones {
-		milestones[i].Amount = project.Budget * float64(milestones[i].Percentage) / 100
-	}
-
-	if err := tx.Create(&milestones).Error; err != nil {
+	if err := s.InitProjectMilestones(tx, project.ID, project.Budget); err != nil {
 		return nil, err
 	}
+
+	project.Address = plainAddress
+	project.Latitude = plainLatitude
+	project.Longitude = plainLongitude
 
 	return project, nil
 }
@@ -306,12 +308,14 @@ func (s *ProjectService) ListProjects(userID uint64, userType int8, page, pageSi
 
 					// 2. 检查数据库中已存在的项目
 					if !exists {
-						var count int64
-						repository.DB.Model(&model.Project{}).
-							Where("owner_id = ? AND address = ?", userID, booking.Address).
-							Count(&count)
-						if count > 0 {
-							exists = true
+						var ownerProjects []model.Project
+						if err := repository.DB.Where("owner_id = ?", userID).Find(&ownerProjects).Error; err == nil {
+							for _, ownerProject := range ownerProjects {
+								if ownerProject.Address == booking.Address {
+									exists = true
+									break
+								}
+							}
 						}
 					}
 
@@ -358,7 +362,11 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 	repository.DB.Select("nickname").First(&owner, project.OwnerID)
 
 	var provider model.Provider
-	repository.DB.Select("company_name").First(&provider, project.ProviderID)
+	repository.DB.Select("id", "user_id", "company_name", "provider_type", "avatar").First(&provider, project.ProviderID)
+	var providerUser model.User
+	if provider.UserID > 0 {
+		_ = repository.DB.Select("nickname", "phone", "avatar").First(&providerUser, provider.UserID).Error
+	}
 
 	var milestones []model.Milestone
 	repository.DB.Where("project_id = ?", id).Order("seq ASC").Find(&milestones)
@@ -380,9 +388,25 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 	completedPhotos = imgutil.GetFullImageURLs(completedPhotos)
 
 	return &ProjectDetail{
-		Project:                   *project,
-		OwnerName:                 owner.Nickname,
-		ProviderName:              provider.CompanyName,
+		Project:   *project,
+		OwnerName: owner.Nickname,
+		ProviderName: ResolveProviderDisplayName(provider, func() *model.User {
+			if provider.UserID > 0 {
+				return &providerUser
+			}
+			return nil
+		}()),
+		ProviderAvatar: func() string {
+			if providerUser.Avatar != "" {
+				return imgutil.GetFullImageURL(providerUser.Avatar)
+			}
+			if provider.Avatar != "" {
+				return imgutil.GetFullImageURL(provider.Avatar)
+			}
+			return ""
+		}(),
+		ProviderPhone:             providerUser.Phone,
+		ProviderType:              provider.ProviderType,
 		Milestones:                milestones,
 		RecentLogs:                logs,
 		EscrowBalance:             escrow.TotalAmount - escrow.ReleasedAmount,
@@ -455,17 +479,26 @@ func (s *ProjectService) ListMerchantProjects(providerID uint64, query *Merchant
 		_ = repository.DB.Select("nickname").First(&owner, project.OwnerID).Error
 
 		var provider model.Provider
-		_ = repository.DB.Select("company_name").First(&provider, project.ProviderID).Error
+		_ = repository.DB.Select("id", "user_id", "company_name").First(&provider, project.ProviderID).Error
+		var providerUser model.User
+		if provider.UserID > 0 {
+			_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+		}
 
 		var milestones []model.Milestone
 		_ = repository.DB.Where("project_id = ?", project.ID).Order("seq ASC").Find(&milestones).Error
 		flowSummary := s.resolveProjectFlowSummary(&project, milestones)
 
 		item := MerchantProjectListItem{
-			ID:            project.ID,
-			Name:          project.Name,
-			OwnerName:     owner.Nickname,
-			ProviderName:  provider.CompanyName,
+			ID:        project.ID,
+			Name:      project.Name,
+			OwnerName: owner.Nickname,
+			ProviderName: ResolveProviderDisplayName(provider, func() *model.User {
+				if provider.UserID > 0 {
+					return &providerUser
+				}
+				return nil
+			}()),
 			CurrentPhase:  project.CurrentPhase,
 			Status:        project.Status,
 			Budget:        project.Budget,
@@ -1871,4 +1904,20 @@ func (s *ProjectService) InitProjectPhases(tx *gorm.DB, projectID uint64) error 
 	}
 
 	return nil
+}
+
+// InitProjectMilestones 创建项目默认里程碑
+func (s *ProjectService) InitProjectMilestones(tx *gorm.DB, projectID uint64, total float64) error {
+	milestones := []model.Milestone{
+		{ProjectID: projectID, Name: "开工交底", Seq: 1, Percentage: 20, Status: model.MilestoneStatusPending, Criteria: "现场保护完成，图纸确认"},
+		{ProjectID: projectID, Name: "水电验收", Seq: 2, Percentage: 30, Status: model.MilestoneStatusPending, Criteria: "水管试压合格，电路通断测试"},
+		{ProjectID: projectID, Name: "泥木验收", Seq: 3, Percentage: 30, Status: model.MilestoneStatusPending, Criteria: "瓷砖空鼓率<5%，木工结构牢固"},
+		{ProjectID: projectID, Name: "竣工验收", Seq: 4, Percentage: 20, Status: model.MilestoneStatusPending, Criteria: "全屋保洁完成，设备调试正常"},
+	}
+
+	for i := range milestones {
+		milestones[i].Amount = total * float64(milestones[i].Percentage) / 100
+	}
+
+	return tx.Create(&milestones).Error
 }

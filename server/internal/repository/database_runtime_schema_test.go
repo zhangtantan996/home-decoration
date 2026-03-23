@@ -24,3 +24,49 @@ func TestEnsureRuntimeSchemaColumnsCreatesUserRuntimeTables(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureRuntimeSchemaColumnsAlignsOnboardingTables(t *testing.T) {
+	setupSchemaHealthDB(t)
+
+	if err := DB.Exec(`
+		CREATE TABLE merchant_applications (
+			id INTEGER PRIMARY KEY,
+			phone TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create merchant_applications table: %v", err)
+	}
+
+	if err := DB.Exec(`
+		CREATE TABLE material_shop_applications (
+			id INTEGER PRIMARY KEY,
+			phone TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)
+	`).Error; err != nil {
+		t.Fatalf("create material_shop_applications table: %v", err)
+	}
+
+	if err := ensureRuntimeSchemaColumns(); err != nil {
+		t.Fatalf("ensure runtime schema columns: %v", err)
+	}
+
+	if !DB.Migrator().HasColumn(&model.MerchantApplication{}, "LegalPersonName") {
+		t.Fatalf("expected merchant_applications.legal_person_name to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MerchantApplication{}, "OfficeAddress") {
+		t.Fatalf("expected merchant_applications.office_address to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "LegalPersonName") {
+		t.Fatalf("expected material_shop_applications.legal_person_name to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "BusinessHoursJSON") {
+		t.Fatalf("expected material_shop_applications.business_hours_json to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "BrandLogo") {
+		t.Fatalf("expected material_shop_applications.brand_logo to exist")
+	}
+}

@@ -32,6 +32,7 @@ type materialShopApplyInput struct {
 	Phone                  string                          `json:"phone" binding:"required"`
 	Code                   string                          `json:"code"`
 	EntityType             string                          `json:"entityType"`
+	Avatar                 string                          `json:"avatar" binding:"required"`
 	ShopName               string                          `json:"shopName" binding:"required"`
 	ShopDescription        string                          `json:"shopDescription"`
 	CompanyName            string                          `json:"companyName"`
@@ -148,6 +149,7 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 
 	input.ShopName = strings.TrimSpace(input.ShopName)
 	input.ShopDescription = strings.TrimSpace(input.ShopDescription)
+	input.Avatar = strings.TrimSpace(input.Avatar)
 	input.CompanyName = strings.TrimSpace(input.CompanyName)
 	input.BusinessLicenseNo = utils.NormalizeLicenseNo(input.BusinessLicenseNo)
 	input.BusinessLicense = strings.TrimSpace(input.BusinessLicense)
@@ -168,6 +170,9 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 
 	if len([]rune(input.ShopName)) < 2 || len([]rune(input.ShopName)) > 100 {
 		return fmt.Errorf("店铺名称长度需为2-100个字符")
+	}
+	if input.Avatar == "" {
+		return fmt.Errorf("请上传店铺头像")
 	}
 	if len([]rune(input.ShopDescription)) > 5000 {
 		return fmt.Errorf("店铺描述不能超过5000个字符")
@@ -364,15 +369,24 @@ func MaterialShopApply(c *gin.Context) {
 	user, err := createOrLoadUserForMaterialApply(tx, input.Phone, input.LegalPersonName)
 	if err != nil {
 		tx.Rollback()
-		response.Error(c, 500, "提交失败: 创建账号失败")
+		if respondMerchantSchemaMismatch(c, err) {
+			return
+		}
+		response.Error(c, 500, buildUserCreateFailMessage(err))
 		return
 	}
 
 	if ok, nextAction, checkErr := canSubmitMaterialShopApplication(tx, user.ID); checkErr != nil {
 		tx.Rollback()
+		if respondMerchantSchemaMismatch(c, checkErr) {
+			return
+		}
 		response.Error(c, 500, "提交失败: 校验商家身份异常")
 		return
 	} else if !ok {
+		if nextAction == merchantNextActionReapply && verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeMaterial, 0, input.Phone, input.VerificationToken) {
+			goto createMaterialShopApplication
+		}
 		tx.Rollback()
 		c.JSON(200, response.Response{
 			Code:    409,
@@ -385,6 +399,7 @@ func MaterialShopApply(c *gin.Context) {
 		return
 	}
 
+createMaterialShopApplication:
 	acceptedAt := time.Now()
 	application := model.MaterialShopApplication{
 		UserID:                 user.ID,
@@ -392,6 +407,7 @@ func MaterialShopApply(c *gin.Context) {
 		EntityType:             input.EntityType,
 		ShopName:               input.ShopName,
 		ShopDescription:        input.ShopDescription,
+		BrandLogo:              input.Avatar,
 		CompanyName:            input.CompanyName,
 		BusinessLicenseNo:      encryptSensitiveOrPlain(input.BusinessLicenseNo),
 		BusinessLicense:        input.BusinessLicense,
@@ -411,12 +427,18 @@ func MaterialShopApply(c *gin.Context) {
 	}
 	if err := tx.Create(&application).Error; err != nil {
 		tx.Rollback()
+		if respondMerchantSchemaMismatch(c, err) {
+			return
+		}
 		response.Error(c, 500, "提交失败: 创建申请记录失败")
 		return
 	}
 
 	if err := persistMaterialApplyProducts(tx, application.ID, input.Products); err != nil {
 		tx.Rollback()
+		if respondMerchantSchemaMismatch(c, err) {
+			return
+		}
 		response.Error(c, 500, "提交失败: 保存商品失败")
 		return
 	}
@@ -533,6 +555,7 @@ func MaterialShopApplyDetailForResubmit(c *gin.Context) {
 		"form": gin.H{
 			"phone":                  app.Phone,
 			"entityType":             app.EntityType,
+			"avatar":                 imgutil.GetFullImageURL(app.BrandLogo),
 			"shopName":               app.ShopName,
 			"shopDescription":        app.ShopDescription,
 			"companyName":            app.CompanyName,
@@ -591,6 +614,7 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 	app.EntityType = input.EntityType
 	app.ShopName = input.ShopName
 	app.ShopDescription = input.ShopDescription
+	app.BrandLogo = input.Avatar
 	app.CompanyName = input.CompanyName
 	app.BusinessLicenseNo = encryptSensitiveOrPlain(input.BusinessLicenseNo)
 	app.BusinessLicense = input.BusinessLicense
@@ -605,8 +629,10 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 	app.Address = input.Address
 	app.LegalAcceptanceJSON = buildLegalAcceptanceJSON(input.LegalAcceptance)
 	app.LegalAcceptSource = "merchant_web"
-	acceptedAt := time.Now()
-	app.LegalAcceptedAt = &acceptedAt
+	submittedAt := time.Now()
+	app.LegalAcceptedAt = &submittedAt
+	app.CreatedAt = submittedAt
+	app.UpdatedAt = submittedAt
 	app.Status = 0
 	app.RejectReason = ""
 	app.AuditedBy = 0
@@ -709,6 +735,7 @@ func MaterialShopGetMe(c *gin.Context) {
 		"sourceApplicationId":    shop.SourceApplicationID,
 		"merchantKind":           "material_shop",
 		"entityType":             entityType,
+		"avatar":                 imgutil.GetFullImageURL(firstNonEmpty(shop.BrandLogo, shop.Cover)),
 		"shopName":               shop.Name,
 		"companyName":            shop.CompanyName,
 		"shopDescription":        shop.Description,
@@ -1075,8 +1102,8 @@ func AdminListMaterialShopApplications(c *gin.Context) {
 			"contactPhone": app.ContactPhone,
 			"status":       app.Status,
 			"rejectReason": app.RejectReason,
-			"createdAt":    app.CreatedAt,
-			"auditedAt":    app.AuditedAt,
+			"createdAt":    formatServerDateTime(app.CreatedAt),
+			"auditedAt":    formatServerDateTimePtr(app.AuditedAt),
 			"visibility":   visibilityResult.Visibility,
 			"actions":      visibilityResult.Actions,
 		}
@@ -1137,13 +1164,14 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		"phone":                  app.Phone,
 		"sourceApplicationId":    app.ID,
 		"entityType":             app.EntityType,
+		"avatar":                 imgutil.GetFullImageURL(app.BrandLogo),
 		"shopName":               app.ShopName,
 		"shopDescription":        app.ShopDescription,
 		"companyName":            app.CompanyName,
 		"businessLicenseNo":      displayReadableSensitive(app.BusinessLicenseNo),
 		"businessLicense":        imgutil.GetFullImageURL(app.BusinessLicense),
 		"legalPersonName":        app.LegalPersonName,
-		"legalPersonIdCardNo":    displayMaskedSensitive(app.LegalPersonIDCardNo, maskSensitiveID),
+		"legalPersonIdCardNo":    displayReadableSensitive(app.LegalPersonIDCardNo),
 		"legalPersonIdCardFront": imgutil.GetFullImageURL(app.LegalPersonIDCardFront),
 		"legalPersonIdCardBack":  imgutil.GetFullImageURL(app.LegalPersonIDCardBack),
 		"businessHours":          app.BusinessHours,
@@ -1153,8 +1181,8 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		"address":                app.Address,
 		"status":                 app.Status,
 		"rejectReason":           app.RejectReason,
-		"createdAt":              app.CreatedAt,
-		"auditedAt":              app.AuditedAt,
+		"createdAt":              formatServerDateTime(app.CreatedAt),
+		"auditedAt":              formatServerDateTimePtr(app.AuditedAt),
 		"auditedBy":              app.AuditedBy,
 		"products":               productList,
 		"visibility":             visibilityResult.Visibility,
@@ -1229,6 +1257,7 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 		SourceApplicationID:    app.ID,
 		CompanyName:            app.CompanyName,
 		Description:            app.ShopDescription,
+		BrandLogo:              app.BrandLogo,
 		BusinessLicenseNo:      app.BusinessLicenseNo,
 		BusinessLicense:        app.BusinessLicense,
 		LegalPersonName:        app.LegalPersonName,

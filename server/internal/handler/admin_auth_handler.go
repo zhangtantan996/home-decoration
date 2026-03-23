@@ -5,6 +5,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // ==================== 管理员认证 ====================
@@ -292,13 +294,31 @@ func AdminListRoles(c *gin.Context) {
 
 // AdminCreateRole 创建角色
 func AdminCreateRole(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
 	var role model.SysRole
 	if err := c.ShouldBindJSON(&role); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	if err := repository.DB.Create(&role).Error; err != nil {
+	auditService := &service.AuditLogService{}
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&role).Error; err != nil {
+			return err
+		}
+		return auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "create_role",
+			ResourceType:  "sys_role",
+			ResourceID:    role.ID,
+			Reason:        role.Remark,
+			Result:        "success",
+			AfterState: map[string]interface{}{
+				"role": snapshotSysRoleForAudit(role),
+			},
+		})
+	}); err != nil {
 		response.ServerError(c, "创建失败")
 		return
 	}
@@ -308,9 +328,10 @@ func AdminCreateRole(c *gin.Context) {
 
 // AdminUpdateRole 更新角色
 func AdminUpdateRole(c *gin.Context) {
-	id := c.Param("id")
+	roleID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("admin_id")
 	var role model.SysRole
-	if err := repository.DB.First(&role, id).Error; err != nil {
+	if err := repository.DB.First(&role, roleID).Error; err != nil {
 		response.NotFound(c, "角色不存在")
 		return
 	}
@@ -327,6 +348,15 @@ func AdminUpdateRole(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
+	if service.IsReservedSeparationRoleKey(role.Key) && req.Key != "" && req.Key != role.Key {
+		response.BadRequest(c, "三员分立保留角色不允许修改标识")
+		return
+	}
+	if !service.IsReservedSeparationRoleKey(role.Key) && service.IsReservedSeparationRoleKey(req.Key) {
+		response.BadRequest(c, "不能把普通角色修改为三员分立保留角色")
+		return
+	}
+	existingRole := role
 
 	// ✅ 显式更新字段
 	role.Name = req.Name
@@ -335,7 +365,29 @@ func AdminUpdateRole(c *gin.Context) {
 	role.Status = req.Status
 	role.Remark = req.Remark
 
-	if err := repository.DB.Save(&role).Error; err != nil {
+	beforeState := map[string]interface{}{
+		"role": snapshotSysRoleForAudit(existingRole),
+	}
+
+	auditService := &service.AuditLogService{}
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&role).Error; err != nil {
+			return err
+		}
+		return auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "update_role",
+			ResourceType:  "sys_role",
+			ResourceID:    role.ID,
+			Reason:        req.Remark,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"role": snapshotSysRoleForAudit(role),
+			},
+		})
+	}); err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -345,21 +397,65 @@ func AdminUpdateRole(c *gin.Context) {
 
 // AdminDeleteRole 删除角色
 func AdminDeleteRole(c *gin.Context) {
-	id := c.Param("id")
+	roleID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("admin_id")
+
+	var role model.SysRole
+	if err := repository.DB.First(&role, roleID).Error; err != nil {
+		response.NotFound(c, "角色不存在")
+		return
+	}
+	if service.IsReservedSeparationRoleKey(role.Key) {
+		response.BadRequest(c, "三员分立保留角色不允许删除")
+		return
+	}
 
 	// 检查是否有管理员使用此角色
 	var count int64
-	repository.DB.Model(&model.SysAdminRole{}).Where("role_id = ?", id).Count(&count)
+	repository.DB.Model(&model.SysAdminRole{}).Where("role_id = ?", roleID).Count(&count)
 	if count > 0 {
 		response.BadRequest(c, "该角色下存在管理员，无法删除")
 		return
 	}
 
+	beforeMenus, err := loadRoleMenuAuditSnapshotTx(repository.DB, roleID)
+	if err != nil {
+		response.ServerError(c, "加载角色权限失败")
+		return
+	}
 	// 删除角色及其菜单关联
+	auditService := &service.AuditLogService{}
 	tx := repository.DB.Begin()
-	tx.Where("role_id = ?", id).Delete(&model.SysRoleMenu{})
-	tx.Delete(&model.SysRole{}, id)
-	tx.Commit()
+	tx.Where("role_id = ?", roleID).Delete(&model.SysRoleMenu{})
+	if err := tx.Delete(&role).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "删除失败")
+		return
+	}
+	if err := auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "delete_role",
+		ResourceType:  "sys_role",
+		ResourceID:    role.ID,
+		Reason:        role.Remark,
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"role":      snapshotSysRoleForAudit(role),
+			"menuScope": beforeMenus,
+		},
+		AfterState: map[string]interface{}{
+			"deleted": true,
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "删除失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "删除失败")
+		return
+	}
 
 	response.Success(c, nil)
 }
@@ -381,13 +477,27 @@ func AdminGetRoleMenus(c *gin.Context) {
 
 // AdminAssignRoleMenus 给角色分配菜单权限
 func AdminAssignRoleMenus(c *gin.Context) {
-	roleID := c.Param("id")
+	roleID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("admin_id")
 
 	var req struct {
 		MenuIDs []uint64 `json:"menuIds"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
+		return
+	}
+	if _, role, err := service.ValidateRoleMenuAssignment(roleID, req.MenuIDs); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	} else if role == nil {
+		response.NotFound(c, "角色不存在")
+		return
+	}
+
+	beforeState, err := loadRoleMenuAuditSnapshotTx(repository.DB, roleID)
+	if err != nil {
+		response.ServerError(c, "加载角色权限失败")
 		return
 	}
 
@@ -398,13 +508,47 @@ func AdminAssignRoleMenus(c *gin.Context) {
 
 	// 创建新关联
 	for _, menuID := range req.MenuIDs {
-		tx.Create(&model.SysRoleMenu{
-			RoleID: parseUint64(roleID),
+		if err := tx.Create(&model.SysRoleMenu{
+			RoleID: roleID,
 			MenuID: menuID,
-		})
+		}).Error; err != nil {
+			tx.Rollback()
+			response.ServerError(c, "分配菜单失败")
+			return
+		}
 	}
 
-	tx.Commit()
+	afterState, err := loadRoleMenuAuditSnapshotTx(tx, roleID)
+	if err != nil {
+		tx.Rollback()
+		response.ServerError(c, "加载角色权限失败")
+		return
+	}
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "assign_role_menus",
+		ResourceType:  "sys_role",
+		ResourceID:    roleID,
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"menuScope": beforeState,
+		},
+		AfterState: map[string]interface{}{
+			"menuScope": afterState,
+		},
+		Metadata: map[string]interface{}{
+			"menuCount": len(req.MenuIDs),
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "分配菜单失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "分配菜单失败")
+		return
+	}
 	response.Success(c, nil)
 }
 
@@ -507,4 +651,88 @@ func AdminDeleteMenu(c *gin.Context) {
 	tx.Commit()
 
 	response.Success(c, nil)
+}
+
+func snapshotSysRoleForAudit(role model.SysRole) map[string]interface{} {
+	return map[string]interface{}{
+		"id":     role.ID,
+		"name":   role.Name,
+		"key":    role.Key,
+		"remark": role.Remark,
+		"sort":   role.Sort,
+		"status": role.Status,
+	}
+}
+
+func snapshotSysAdminForAudit(admin model.SysAdmin) map[string]interface{} {
+	roleIDs := make([]uint64, 0, len(admin.Roles))
+	for _, role := range admin.Roles {
+		roleIDs = append(roleIDs, role.ID)
+	}
+	sort.Slice(roleIDs, func(i, j int) bool { return roleIDs[i] < roleIDs[j] })
+	roleKeys := getRoleKeys(admin.Roles)
+	sort.Strings(roleKeys)
+
+	return map[string]interface{}{
+		"id":           admin.ID,
+		"username":     admin.Username,
+		"nickname":     admin.Nickname,
+		"phone":        admin.Phone,
+		"email":        admin.Email,
+		"status":       admin.Status,
+		"isSuperAdmin": admin.IsSuperAdmin,
+		"roleIds":      roleIDs,
+		"roleKeys":     roleKeys,
+	}
+}
+
+func loadAdminWithRolesTx(tx *gorm.DB, adminID uint64) (*model.SysAdmin, error) {
+	var admin model.SysAdmin
+	if err := tx.Preload("Roles").First(&admin, adminID).Error; err != nil {
+		return nil, err
+	}
+	return &admin, nil
+}
+
+func loadRolesByIDsTx(tx *gorm.DB, roleIDs []uint64) ([]model.SysRole, error) {
+	if len(roleIDs) == 0 {
+		return []model.SysRole{}, nil
+	}
+	var roles []model.SysRole
+	if err := tx.Where("id IN ?", roleIDs).Order("sort ASC, id ASC").Find(&roles).Error; err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+func loadRoleMenuAuditSnapshotTx(tx *gorm.DB, roleID uint64) (map[string]interface{}, error) {
+	var role model.SysRole
+	if err := tx.First(&role, roleID).Error; err != nil {
+		return nil, err
+	}
+
+	var menus []model.SysMenu
+	if err := tx.Joins("JOIN sys_role_menus ON sys_role_menus.menu_id = sys_menus.id").
+		Where("sys_role_menus.role_id = ?", roleID).
+		Order("sys_menus.sort ASC, sys_menus.id ASC").
+		Find(&menus).Error; err != nil {
+		return nil, err
+	}
+
+	menuIDs := make([]uint64, 0, len(menus))
+	permissions := make([]string, 0, len(menus))
+	for _, menu := range menus {
+		menuIDs = append(menuIDs, menu.ID)
+		if menu.Permission != "" {
+			permissions = append(permissions, menu.Permission)
+		}
+	}
+	sort.Slice(menuIDs, func(i, j int) bool { return menuIDs[i] < menuIDs[j] })
+	sort.Strings(permissions)
+
+	return map[string]interface{}{
+		"role":        snapshotSysRoleForAudit(role),
+		"menuIds":     menuIDs,
+		"permissions": permissions,
+	}, nil
 }

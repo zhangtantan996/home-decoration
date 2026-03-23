@@ -7,14 +7,16 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Redis      RedisConfig      `mapstructure:"redis"`
-	JWT        JWTConfig        `mapstructure:"jwt"`
-	Log        LogConfig        `mapstructure:"log"`
-	WechatMini WechatMiniConfig `mapstructure:"wechat_mini"`
-	WechatH5   WechatH5Config   `mapstructure:"wechat_h5"`
-	SMS        SMSConfig        `mapstructure:"sms"`
+	Server               ServerConfig               `mapstructure:"server"`
+	Database             DatabaseConfig             `mapstructure:"database"`
+	Redis                RedisConfig                `mapstructure:"redis"`
+	JWT                  JWTConfig                  `mapstructure:"jwt"`
+	Log                  LogConfig                  `mapstructure:"log"`
+	WechatMini           WechatMiniConfig           `mapstructure:"wechat_mini"`
+	WechatH5             WechatH5Config             `mapstructure:"wechat_h5"`
+	Alipay               AlipayConfig               `mapstructure:"alipay"`
+	SMS                  SMSConfig                  `mapstructure:"sms"`
+	NotificationRealtime NotificationRealtimeConfig `mapstructure:"notification_realtime"`
 }
 
 type ServerConfig struct {
@@ -53,8 +55,9 @@ type JWTConfig struct {
 }
 
 type LogConfig struct {
-	Level string `mapstructure:"level"` // debug, info, warn, error
-	File  string `mapstructure:"file"`  // 日志文件路径
+	Level              string `mapstructure:"level"`                // debug, info, warn, error
+	File               string `mapstructure:"file"`                 // 日志文件路径
+	AuditRetentionDays int    `mapstructure:"audit_retention_days"` // 审计日志保留天数（最少 60 天）
 }
 
 // WechatMiniConfig 微信小程序配置
@@ -72,6 +75,19 @@ type WechatH5Config struct {
 	OAuthScope             string `mapstructure:"oauth_scope"`
 	StateSigningSecret     string `mapstructure:"state_signing_secret"`
 	BasePath               string `mapstructure:"base_path"`
+}
+
+type AlipayConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	GatewayURL     string `mapstructure:"gateway_url"`
+	AppID          string `mapstructure:"app_id"`
+	AppPrivateKey  string `mapstructure:"app_private_key"`
+	PublicKey      string `mapstructure:"public_key"`
+	NotifyURL      string `mapstructure:"notify_url"`
+	ReturnURLWeb   string `mapstructure:"return_url_web"`
+	ReturnURLH5    string `mapstructure:"return_url_h5"`
+	TimeoutMinutes int    `mapstructure:"timeout_minutes"`
+	Sandbox        bool   `mapstructure:"sandbox"`
 }
 
 // SMSConfig 短信服务配置（生产环境建议使用云短信服务，如阿里云短信）
@@ -103,6 +119,15 @@ type SMSConfig struct {
 	CaptchaSecretKey             string  `mapstructure:"captcha_secret_key"`
 	CaptchaTimeoutMs             int     `mapstructure:"captcha_timeout_ms"`
 	CaptchaMinScore              float64 `mapstructure:"captcha_min_score"`
+}
+
+type NotificationRealtimeConfig struct {
+	Enabled               bool `mapstructure:"enabled"`
+	MaxConnectionsPerUser int  `mapstructure:"max_connections_per_user"`
+	MaxConnectionsPerIP   int  `mapstructure:"max_connections_per_ip"`
+	PingIntervalSeconds   int  `mapstructure:"ping_interval_seconds"`
+	IdleTimeoutSeconds    int  `mapstructure:"idle_timeout_seconds"`
+	SendBufferSize        int  `mapstructure:"send_buffer_size"`
 }
 
 func Load() (*Config, error) {
@@ -144,8 +169,19 @@ func Load() (*Config, error) {
 
 	_ = viper.BindEnv("jwt.secret", "JWT_SECRET")
 	_ = viper.BindEnv("jwt.expire_hour", "JWT_EXPIRE_HOUR")
+	_ = viper.BindEnv("log.audit_retention_days", "LOG_AUDIT_RETENTION_DAYS")
 
 	_ = viper.BindEnv("sms.provider", "SMS_PROVIDER")
+	_ = viper.BindEnv("alipay.enabled", "ALIPAY_ENABLED")
+	_ = viper.BindEnv("alipay.gateway_url", "ALIPAY_GATEWAY_URL")
+	_ = viper.BindEnv("alipay.app_id", "ALIPAY_APP_ID")
+	_ = viper.BindEnv("alipay.app_private_key", "ALIPAY_APP_PRIVATE_KEY")
+	_ = viper.BindEnv("alipay.public_key", "ALIPAY_PUBLIC_KEY")
+	_ = viper.BindEnv("alipay.notify_url", "ALIPAY_NOTIFY_URL")
+	_ = viper.BindEnv("alipay.return_url_web", "ALIPAY_RETURN_URL_WEB")
+	_ = viper.BindEnv("alipay.return_url_h5", "ALIPAY_RETURN_URL_H5")
+	_ = viper.BindEnv("alipay.timeout_minutes", "ALIPAY_TIMEOUT_MINUTES")
+	_ = viper.BindEnv("alipay.sandbox", "ALIPAY_SANDBOX")
 	_ = viper.BindEnv("sms.access_key_id", "SMS_ACCESS_KEY_ID")
 	_ = viper.BindEnv("sms.access_key_secret", "SMS_ACCESS_KEY_SECRET")
 	_ = viper.BindEnv("sms.sign_name", "SMS_SIGN_NAME")
@@ -162,6 +198,12 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("sms.template_code_delete_account", "SMS_TEMPLATE_CODE_DELETE_ACCOUNT")
 	_ = viper.BindEnv("sms.region_id", "SMS_REGION_ID")
 	_ = viper.BindEnv("wechat_h5.base_path", "WECHAT_H5_BASE_PATH")
+	_ = viper.BindEnv("notification_realtime.enabled", "NOTIFICATION_REALTIME_ENABLED")
+	_ = viper.BindEnv("notification_realtime.max_connections_per_user", "NOTIFICATION_WS_MAX_CONN_PER_USER")
+	_ = viper.BindEnv("notification_realtime.max_connections_per_ip", "NOTIFICATION_WS_MAX_CONN_PER_IP")
+	_ = viper.BindEnv("notification_realtime.ping_interval_seconds", "NOTIFICATION_WS_PING_INTERVAL_SECONDS")
+	_ = viper.BindEnv("notification_realtime.idle_timeout_seconds", "NOTIFICATION_WS_IDLE_TIMEOUT_SECONDS")
+	_ = viper.BindEnv("notification_realtime.send_buffer_size", "NOTIFICATION_WS_SEND_BUFFER_SIZE")
 
 	// 设置默认值
 	viper.SetDefault("server.host", "0.0.0.0")
@@ -182,10 +224,18 @@ func Load() (*Config, error) {
 	viper.SetDefault("jwt.expire_hour", 72)
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", "logs/backend.log")
+	viper.SetDefault("log.audit_retention_days", 180)
 	viper.SetDefault("wechat_mini.bind_token_expire_minutes", 5)
 	viper.SetDefault("wechat_h5.bind_token_expire_minutes", 5)
 	viper.SetDefault("wechat_h5.oauth_scope", "snsapi_base")
 	viper.SetDefault("wechat_h5.base_path", "/app")
+	viper.SetDefault("alipay.enabled", false)
+	viper.SetDefault("alipay.gateway_url", "https://openapi.alipay.com/gateway.do")
+	viper.SetDefault("alipay.notify_url", "")
+	viper.SetDefault("alipay.return_url_web", "")
+	viper.SetDefault("alipay.return_url_h5", "")
+	viper.SetDefault("alipay.timeout_minutes", 15)
+	viper.SetDefault("alipay.sandbox", false)
 	viper.SetDefault("sms.provider", "mock")
 	viper.SetDefault("sms.region_id", "cn-hangzhou")
 	viper.SetDefault("sms.debug_bypass", false)
@@ -199,6 +249,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("sms.captcha_secret_key", "")
 	viper.SetDefault("sms.captcha_timeout_ms", 3000)
 	viper.SetDefault("sms.captcha_min_score", 0.0)
+	viper.SetDefault("notification_realtime.enabled", true)
+	viper.SetDefault("notification_realtime.max_connections_per_user", 5)
+	viper.SetDefault("notification_realtime.max_connections_per_ip", 50)
+	viper.SetDefault("notification_realtime.ping_interval_seconds", 30)
+	viper.SetDefault("notification_realtime.idle_timeout_seconds", 90)
+	viper.SetDefault("notification_realtime.send_buffer_size", 32)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

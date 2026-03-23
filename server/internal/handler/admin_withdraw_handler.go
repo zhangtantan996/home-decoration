@@ -1,14 +1,21 @@
 package handler
 
 import (
+	"errors"
+	"io"
+	"log"
+	"math"
+	"strings"
+	"time"
+
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
-	"log"
-	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AdminWithdrawList 管理员查看提现申请列表
@@ -16,17 +23,13 @@ func AdminWithdrawList(c *gin.Context) {
 	var withdraws []model.MerchantWithdraw
 	query := repository.DB.Order("created_at DESC")
 
-	// 筛选状态
 	if status := c.Query("status"); status != "" {
 		query = query.Where("status = ?", status)
 	}
-
-	// 筛选商家
 	if providerID := c.Query("providerId"); providerID != "" {
 		query = query.Where("provider_id = ?", providerID)
 	}
 
-	// 分页
 	page := parseIntDefault(c.Query("page"), 1)
 	pageSize := parseIntDefault(c.Query("pageSize"), 20)
 	offset := (page - 1) * pageSize
@@ -35,40 +38,23 @@ func AdminWithdrawList(c *gin.Context) {
 	query.Model(&model.MerchantWithdraw{}).Count(&total)
 	query.Offset(offset).Limit(pageSize).Find(&withdraws)
 
-	// 查询商家信息
-	providerIDs := make([]uint64, 0)
-	for _, w := range withdraws {
-		providerIDs = append(providerIDs, w.ProviderID)
+	providerIDs := make([]uint64, 0, len(withdraws))
+	for _, withdraw := range withdraws {
+		providerIDs = append(providerIDs, withdraw.ProviderID)
 	}
-
 	var providers []model.Provider
 	if len(providerIDs) > 0 {
 		repository.DB.Where("id IN ?", providerIDs).Find(&providers)
 	}
-
-	providerMap := make(map[uint64]model.Provider)
-	for _, p := range providers {
-		providerMap[p.ID] = p
+	providerMap := make(map[uint64]model.Provider, len(providers))
+	for _, provider := range providers {
+		providerMap[provider.ID] = provider
 	}
 
-	// 组装返回数据
 	list := make([]gin.H, len(withdraws))
-	for i, w := range withdraws {
-		provider := providerMap[w.ProviderID]
-		list[i] = gin.H{
-			"id":           w.ID,
-			"providerId":   w.ProviderID,
-			"providerName": provider.CompanyName,
-			"orderNo":      w.OrderNo,
-			"amount":       w.Amount,
-			"bankAccount":  w.BankAccount,
-			"bankName":     w.BankName,
-			"status":       w.Status,
-			"statusLabel":  getWithdrawStatusLabel(w.Status),
-			"failReason":   w.FailReason,
-			"completedAt":  w.CompletedAt,
-			"createdAt":    w.CreatedAt,
-		}
+	for i, withdraw := range withdraws {
+		provider := providerMap[withdraw.ProviderID]
+		list[i] = serializeAdminWithdraw(withdraw, provider)
 	}
 
 	response.Success(c, gin.H{
@@ -89,32 +75,30 @@ func AdminWithdrawDetail(c *gin.Context) {
 		return
 	}
 
-	// 查询商家信息
 	var provider model.Provider
 	repository.DB.First(&provider, withdraw.ProviderID)
+	var providerUser model.User
+	if provider.UserID > 0 {
+		_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+	}
+	providerName := service.ResolveProviderDisplayName(provider, func() *model.User {
+		if provider.UserID > 0 {
+			return &providerUser
+		}
+		return nil
+	}())
 
-	// 查询关联的收入记录
 	var incomes []model.MerchantIncome
-	repository.DB.Where("provider_id = ? AND status = 1", withdraw.ProviderID).
+	repository.DB.Where("provider_id = ? AND status IN ?", withdraw.ProviderID, []int8{1, 2}).
 		Order("created_at DESC").
 		Find(&incomes)
 
 	response.Success(c, gin.H{
-		"withdraw": gin.H{
-			"id":          withdraw.ID,
-			"orderNo":     withdraw.OrderNo,
-			"amount":      withdraw.Amount,
-			"bankAccount": withdraw.BankAccount,
-			"bankName":    withdraw.BankName,
-			"status":      withdraw.Status,
-			"statusLabel": getWithdrawStatusLabel(withdraw.Status),
-			"failReason":  withdraw.FailReason,
-			"completedAt": withdraw.CompletedAt,
-			"createdAt":   withdraw.CreatedAt,
-		},
+		"withdraw": serializeAdminWithdraw(withdraw, provider),
 		"provider": gin.H{
 			"id":           provider.ID,
 			"companyName":  provider.CompanyName,
+			"displayName":  providerName,
 			"providerType": provider.ProviderType,
 		},
 		"incomes": incomes,
@@ -124,50 +108,70 @@ func AdminWithdrawDetail(c *gin.Context) {
 // AdminWithdrawApprove 管理员审核通过提现
 func AdminWithdrawApprove(c *gin.Context) {
 	withdrawID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("admin_id")
 
-	// 1. 验证提现记录存在且状态为待审核
-	var withdraw model.MerchantWithdraw
-	if err := repository.DB.First(&withdraw, withdrawID).Error; err != nil {
-		response.Error(c, 404, "提现记录不存在")
+	var input struct {
+		Remark string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
+		response.Error(c, 400, "参数错误")
 		return
 	}
 
-	if withdraw.Status != 0 {
-		response.Error(c, 400, "该提现申请已处理")
-		return
-	}
-
-	// 2. 更新提现记录状态
-	now := time.Now()
-	withdraw.Status = 1 // 成功
-	withdraw.CompletedAt = &now
-
-	if err := repository.DB.Save(&withdraw).Error; err != nil {
-		log.Printf("[AdminWithdrawApprove] Failed to update withdraw: %v", err)
-		response.Error(c, 500, "审核失败")
-		return
-	}
-
-	// 3. 更新关联的收入记录状态为已提现
-	result := repository.DB.Model(&model.MerchantIncome{}).
-		Where("provider_id = ? AND status = 1", withdraw.ProviderID).
-		Updates(map[string]interface{}{
-			"status":           2, // 已提现
-			"withdraw_order_no": withdraw.OrderNo,
+	var (
+		withdraw model.MerchantWithdraw
+		provider model.Provider
+	)
+	auditService := &service.AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&withdraw, withdrawID).Error; err != nil {
+			return errors.New("提现记录不存在")
+		}
+		if withdraw.Status != model.MerchantWithdrawStatusPendingReview {
+			return errors.New("只有待审核提现可以审核通过")
+		}
+		beforeState := map[string]interface{}{
+			"withdraw": snapshotWithdrawForAudit(withdraw),
+		}
+		now := time.Now()
+		if err := tx.Model(&withdraw).Updates(map[string]any{
+			"status":       model.MerchantWithdrawStatusApprovedPendingTransfer,
+			"approved_at":  &now,
+			"operator_id":  adminID,
+			"audit_remark": strings.TrimSpace(input.Remark),
+		}).Error; err != nil {
+			return err
+		}
+		withdraw.Status = model.MerchantWithdrawStatusApprovedPendingTransfer
+		withdraw.ApprovedAt = &now
+		withdraw.OperatorID = adminID
+		withdraw.AuditRemark = strings.TrimSpace(input.Remark)
+		if err := tx.First(&provider, withdraw.ProviderID).Error; err != nil {
+			return err
+		}
+		return auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "approve_withdraw_application",
+			ResourceType:  "merchant_withdraw",
+			ResourceID:    withdraw.ID,
+			Reason:        strings.TrimSpace(input.Remark),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"withdraw": snapshotWithdrawForAudit(withdraw),
+			},
+			Metadata: map[string]interface{}{
+				"providerId": withdraw.ProviderID,
+				"orderNo":    withdraw.OrderNo,
+				"amount":     withdraw.Amount,
+			},
 		})
-
-	if result.Error != nil {
-		log.Printf("[AdminWithdrawApprove] Failed to update income status: %v", result.Error)
-		// 不回滚提现状态，继续处理
+	})
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
 	}
-
-	// 4. TODO: 调用银行API实际打款（暂时模拟）
-	log.Printf("[AdminWithdrawApprove] TODO: Transfer %.2f to bank account %s",
-		withdraw.Amount, withdraw.BankAccount)
-
-	// 5. 发送通知给商家
-	var provider model.Provider
-	repository.DB.First(&provider, withdraw.ProviderID)
 
 	notifService := &service.NotificationService{}
 	if err := notifService.NotifyWithdrawApproved(&withdraw, provider.UserID); err != nil {
@@ -175,13 +179,103 @@ func AdminWithdrawApprove(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"message": "审核通过，提现成功",
+		"message":  "审核通过，等待线下打款",
+		"withdraw": serializeAdminWithdraw(withdraw, provider),
+	})
+}
+
+// AdminWithdrawMarkPaid 管理员确认线下打款完成
+func AdminWithdrawMarkPaid(c *gin.Context) {
+	withdrawID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("admin_id")
+
+	var input struct {
+		TransferVoucher string `json:"transferVoucher" binding:"required"`
+		Remark          string `json:"remark"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "请填写打款凭证")
+		return
+	}
+
+	var (
+		withdraw model.MerchantWithdraw
+		provider model.Provider
+	)
+	auditService := &service.AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&withdraw, withdrawID).Error; err != nil {
+			return errors.New("提现记录不存在")
+		}
+		if withdraw.Status != model.MerchantWithdrawStatusApprovedPendingTransfer {
+			return errors.New("只有待打款提现可以确认完成")
+		}
+		beforeState := map[string]interface{}{
+			"withdraw": snapshotWithdrawForAudit(withdraw),
+		}
+		if err := markWithdrawIncomesPaidTx(tx, &withdraw); err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := tx.Model(&withdraw).Updates(map[string]any{
+			"status":           model.MerchantWithdrawStatusPaid,
+			"operator_id":      adminID,
+			"transferred_at":   &now,
+			"completed_at":     &now,
+			"transfer_voucher": strings.TrimSpace(input.TransferVoucher),
+			"audit_remark":     strings.TrimSpace(input.Remark),
+		}).Error; err != nil {
+			return err
+		}
+		withdraw.Status = model.MerchantWithdrawStatusPaid
+		withdraw.OperatorID = adminID
+		withdraw.TransferVoucher = strings.TrimSpace(input.TransferVoucher)
+		withdraw.AuditRemark = strings.TrimSpace(input.Remark)
+		withdraw.TransferredAt = &now
+		withdraw.CompletedAt = &now
+		if err := tx.First(&provider, withdraw.ProviderID).Error; err != nil {
+			return err
+		}
+		return auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "mark_withdraw_paid",
+			ResourceType:  "merchant_withdraw",
+			ResourceID:    withdraw.ID,
+			Reason:        strings.TrimSpace(input.Remark),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"withdraw": snapshotWithdrawForAudit(withdraw),
+			},
+			Metadata: map[string]interface{}{
+				"providerId":         withdraw.ProviderID,
+				"orderNo":            withdraw.OrderNo,
+				"amount":             withdraw.Amount,
+				"hasTransferVoucher": strings.TrimSpace(input.TransferVoucher) != "",
+			},
+		})
+	})
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	notifService := &service.NotificationService{}
+	if err := notifService.NotifyWithdrawCompleted(&withdraw, provider.UserID); err != nil {
+		log.Printf("[AdminWithdrawMarkPaid] Failed to send notification: %v", err)
+	}
+
+	response.Success(c, gin.H{
+		"message":  "已登记线下打款完成",
+		"withdraw": serializeAdminWithdraw(withdraw, provider),
 	})
 }
 
 // AdminWithdrawReject 管理员审核拒绝提现
 func AdminWithdrawReject(c *gin.Context) {
 	withdrawID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("admin_id")
 
 	var input struct {
 		Reason string `json:"reason" binding:"required"`
@@ -191,33 +285,59 @@ func AdminWithdrawReject(c *gin.Context) {
 		return
 	}
 
-	// 1. 验证提现记录存在且状态为待审核
-	var withdraw model.MerchantWithdraw
-	if err := repository.DB.First(&withdraw, withdrawID).Error; err != nil {
-		response.Error(c, 404, "提现记录不存在")
+	var (
+		withdraw model.MerchantWithdraw
+		provider model.Provider
+	)
+	auditService := &service.AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&withdraw, withdrawID).Error; err != nil {
+			return errors.New("提现记录不存在")
+		}
+		if withdraw.Status != model.MerchantWithdrawStatusPendingReview {
+			return errors.New("只有待审核提现可以拒绝")
+		}
+		beforeState := map[string]interface{}{
+			"withdraw": snapshotWithdrawForAudit(withdraw),
+		}
+		if err := tx.Model(&withdraw).Updates(map[string]any{
+			"status":       model.MerchantWithdrawStatusRejected,
+			"fail_reason":  strings.TrimSpace(input.Reason),
+			"operator_id":  adminID,
+			"audit_remark": strings.TrimSpace(input.Reason),
+		}).Error; err != nil {
+			return err
+		}
+		withdraw.Status = model.MerchantWithdrawStatusRejected
+		withdraw.FailReason = strings.TrimSpace(input.Reason)
+		withdraw.OperatorID = adminID
+		withdraw.AuditRemark = strings.TrimSpace(input.Reason)
+		if err := tx.First(&provider, withdraw.ProviderID).Error; err != nil {
+			return err
+		}
+		return auditService.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "reject_withdraw_application",
+			ResourceType:  "merchant_withdraw",
+			ResourceID:    withdraw.ID,
+			Reason:        strings.TrimSpace(input.Reason),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"withdraw": snapshotWithdrawForAudit(withdraw),
+			},
+			Metadata: map[string]interface{}{
+				"providerId": withdraw.ProviderID,
+				"orderNo":    withdraw.OrderNo,
+				"amount":     withdraw.Amount,
+			},
+		})
+	})
+	if err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
-
-	if withdraw.Status != 0 {
-		response.Error(c, 400, "该提现申请已处理")
-		return
-	}
-
-	// 2. 更新提现记录状态
-	withdraw.Status = 2 // 失败
-	withdraw.FailReason = input.Reason
-
-	if err := repository.DB.Save(&withdraw).Error; err != nil {
-		log.Printf("[AdminWithdrawReject] Failed to update withdraw: %v", err)
-		response.Error(c, 500, "操作失败")
-		return
-	}
-
-	// 3. 不修改MerchantIncome状态（退回已结算状态，商家可重新申请）
-
-	// 4. 发送通知给商家
-	var provider model.Provider
-	repository.DB.First(&provider, withdraw.ProviderID)
 
 	notifService := &service.NotificationService{}
 	if err := notifService.NotifyWithdrawRejected(&withdraw, provider.UserID); err != nil {
@@ -225,6 +345,146 @@ func AdminWithdrawReject(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"message": "已拒绝该提现申请",
+		"message":  "已拒绝该提现申请",
+		"withdraw": serializeAdminWithdraw(withdraw, provider),
 	})
+}
+
+func serializeAdminWithdraw(withdraw model.MerchantWithdraw, provider model.Provider) gin.H {
+	var providerUser model.User
+	if provider.UserID > 0 {
+		_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+	}
+	providerName := service.ResolveProviderDisplayName(provider, func() *model.User {
+		if provider.UserID > 0 {
+			return &providerUser
+		}
+		return nil
+	}())
+	return gin.H{
+		"id":              withdraw.ID,
+		"providerId":      withdraw.ProviderID,
+		"providerName":    providerName,
+		"orderNo":         withdraw.OrderNo,
+		"amount":          withdraw.Amount,
+		"bankAccount":     withdraw.BankAccount,
+		"bankName":        withdraw.BankName,
+		"status":          withdraw.Status,
+		"statusLabel":     getWithdrawStatusLabel(withdraw.Status),
+		"failReason":      withdraw.FailReason,
+		"approvedAt":      withdraw.ApprovedAt,
+		"transferredAt":   withdraw.TransferredAt,
+		"transferVoucher": withdraw.TransferVoucher,
+		"completedAt":     withdraw.CompletedAt,
+		"createdAt":       withdraw.CreatedAt,
+	}
+}
+
+func markWithdrawIncomesPaidTx(tx *gorm.DB, withdraw *model.MerchantWithdraw) error {
+	if tx == nil || withdraw == nil {
+		return errors.New("提现上下文无效")
+	}
+	remaining := roundMoney(withdraw.Amount)
+	if remaining <= 0 {
+		return errors.New("提现金额无效")
+	}
+
+	var incomes []model.MerchantIncome
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("provider_id = ? AND status = ?", withdraw.ProviderID, 1).
+		Order("created_at ASC, id ASC").
+		Find(&incomes).Error; err != nil {
+		return err
+	}
+
+	for _, income := range incomes {
+		if remaining <= 0 {
+			break
+		}
+		available := roundMoney(income.NetAmount)
+		if available <= 0 {
+			continue
+		}
+
+		if available <= remaining {
+			if err := tx.Model(&income).Updates(map[string]any{
+				"status":            2,
+				"withdraw_order_no": withdraw.OrderNo,
+			}).Error; err != nil {
+				return err
+			}
+			remaining = roundMoney(remaining - available)
+			continue
+		}
+
+		if err := splitWithdrawnIncomeTx(tx, &income, withdraw.OrderNo, remaining); err != nil {
+			return err
+		}
+		remaining = 0
+	}
+
+	if remaining > 0 {
+		return errors.New("已结算收入不足以匹配本次提现金额")
+	}
+	return nil
+}
+
+func splitWithdrawnIncomeTx(tx *gorm.DB, income *model.MerchantIncome, withdrawOrderNo string, withdrawNetAmount float64) error {
+	if tx == nil || income == nil {
+		return errors.New("收入拆分上下文无效")
+	}
+	withdrawNetAmount = roundMoney(withdrawNetAmount)
+	if withdrawNetAmount <= 0 || withdrawNetAmount >= roundMoney(income.NetAmount) {
+		return errors.New("收入拆分金额无效")
+	}
+
+	ratio := withdrawNetAmount / income.NetAmount
+	withdrawAmount := roundMoney(income.Amount * ratio)
+	withdrawPlatformFee := roundMoney(income.PlatformFee * ratio)
+
+	withdrawnIncome := *income
+	withdrawnIncome.Base = model.Base{}
+	withdrawnIncome.Amount = withdrawAmount
+	withdrawnIncome.PlatformFee = withdrawPlatformFee
+	withdrawnIncome.NetAmount = withdrawNetAmount
+	withdrawnIncome.Status = 2
+	withdrawnIncome.WithdrawOrderNo = withdrawOrderNo
+	if err := tx.Create(&withdrawnIncome).Error; err != nil {
+		return err
+	}
+
+	remainingAmount := roundMoney(income.Amount - withdrawAmount)
+	remainingPlatformFee := roundMoney(income.PlatformFee - withdrawPlatformFee)
+	remainingNetAmount := roundMoney(income.NetAmount - withdrawNetAmount)
+	if remainingNetAmount <= 0 {
+		return errors.New("收入拆分后剩余金额无效")
+	}
+
+	return tx.Model(income).Updates(map[string]any{
+		"amount":       remainingAmount,
+		"platform_fee": remainingPlatformFee,
+		"net_amount":   remainingNetAmount,
+	}).Error
+}
+
+func roundMoney(value float64) float64 {
+	return math.Round(value*100) / 100
+}
+
+func snapshotWithdrawForAudit(withdraw model.MerchantWithdraw) map[string]interface{} {
+	return map[string]interface{}{
+		"id":              withdraw.ID,
+		"providerId":      withdraw.ProviderID,
+		"orderNo":         withdraw.OrderNo,
+		"amount":          withdraw.Amount,
+		"bankName":        withdraw.BankName,
+		"status":          withdraw.Status,
+		"failReason":      withdraw.FailReason,
+		"approvedAt":      withdraw.ApprovedAt,
+		"transferredAt":   withdraw.TransferredAt,
+		"completedAt":     withdraw.CompletedAt,
+		"operatorId":      withdraw.OperatorID,
+		"auditRemark":     withdraw.AuditRemark,
+		"withdrawVoucher": withdraw.TransferVoucher,
+	}
 }

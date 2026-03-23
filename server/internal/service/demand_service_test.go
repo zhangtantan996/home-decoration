@@ -21,6 +21,7 @@ func setupDemandServiceDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Provider{},
+		&model.Region{},
 		&model.Booking{},
 		&model.Demand{},
 		&model.DemandMatch{},
@@ -84,10 +85,20 @@ func seedDemandScenario(t *testing.T, db *gorm.DB) (user model.User, providerUse
 func TestDemandServiceAssignAndAcceptLead(t *testing.T) {
 	db := setupDemandServiceDB(t)
 
+	if err := db.Create(&model.Region{Code: "610000", Name: "陕西省", Level: 1, Enabled: true}).Error; err != nil {
+		t.Fatalf("create province: %v", err)
+	}
+	if err := db.Create(&model.Region{Code: "610100", Name: "西安", Level: 2, ParentCode: "610000", Enabled: true}).Error; err != nil {
+		t.Fatalf("create city: %v", err)
+	}
+	if err := db.Create(&model.Region{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true}).Error; err != nil {
+		t.Fatalf("create district: %v", err)
+	}
+
 	user := model.User{Base: model.Base{ID: 7}, Phone: "13800138001", Nickname: "业主B", Status: 1}
 	admin := model.SysAdmin{}
 	providerUser := model.User{Base: model.Base{ID: 8}, Phone: "13900139001", Nickname: "商家B", Status: 1}
-	provider := model.Provider{Base: model.Base{ID: 18}, UserID: providerUser.ID, ProviderType: 2, CompanyName: "整装公司", Verified: true, Rating: 4.6, CompletedCnt: 6, Status: 1, ServiceArea: `["雁塔区"]`}
+	provider := model.Provider{Base: model.Base{ID: 18}, UserID: providerUser.ID, ProviderType: 2, CompanyName: "整装公司", Verified: true, Rating: 4.6, CompletedCnt: 6, Status: 1, ServiceArea: `["610100"]`}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -148,6 +159,42 @@ func TestDemandServiceAssignAndAcceptLead(t *testing.T) {
 	}
 	if detail.Status != model.DemandStatusMatched {
 		t.Fatalf("expected demand status matched after accepting lead, got %s", detail.Status)
+	}
+}
+
+func TestScoreDemandCandidateMatchesCityCodeFromDistrictDemand(t *testing.T) {
+	demand := &model.Demand{City: "西安", District: "雁塔区"}
+	provider := &model.Provider{
+		Verified:     true,
+		ProviderType: 2,
+		Status:       1,
+		ServiceArea:  `["610100"]`,
+	}
+
+	db := setupDemandServiceDB(t)
+	if err := db.Create(&model.Region{Code: "610000", Name: "陕西省", Level: 1, Enabled: true}).Error; err != nil {
+		t.Fatalf("create province: %v", err)
+	}
+	if err := db.Create(&model.Region{Code: "610100", Name: "西安", Level: 2, ParentCode: "610000", Enabled: true}).Error; err != nil {
+		t.Fatalf("create city: %v", err)
+	}
+	if err := db.Create(&model.Region{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true}).Error; err != nil {
+		t.Fatalf("create district: %v", err)
+	}
+
+	score, reasons := scoreDemandCandidate(demand, resolveDemandTargetCityCodes(demand), provider)
+	if score < 55 {
+		t.Fatalf("expected city code match to increase score, got %d", score)
+	}
+	found := false
+	for _, reason := range reasons {
+		if reason == "服务城市匹配" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected service area match reason, got %v", reasons)
 	}
 }
 

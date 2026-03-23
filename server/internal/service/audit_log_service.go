@@ -10,6 +10,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/pkg/timeutil"
 
 	"gorm.io/gorm"
 )
@@ -17,6 +18,7 @@ import (
 const (
 	auditRecordKindRequest  = "request"
 	auditRecordKindBusiness = "business"
+	minAuditRetentionDays   = 60
 )
 
 type CreateAuditRecordInput struct {
@@ -306,7 +308,7 @@ func parseAuditFilterTime(raw string, endOfDay bool) (time.Time, bool) {
 		"2006-01-02",
 	}
 	for _, layout := range layouts {
-		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
+		if parsed, err := time.ParseInLocation(layout, value, timeutil.Location()); err == nil {
 			if layout == "2006-01-02" && endOfDay {
 				return parsed.Add(24 * time.Hour), true
 			}
@@ -347,4 +349,23 @@ func normalizeAuditResult(result string, statusCode int) string {
 		return "success"
 	}
 	return ""
+}
+
+func ResolveAuditRetentionDays(retentionDays int) int {
+	if retentionDays < minAuditRetentionDays {
+		return minAuditRetentionDays
+	}
+	return retentionDays
+}
+
+func (s *AuditLogService) CleanupExpiredAuditLogs(retentionDays int) (int64, error) {
+	effectiveRetentionDays := ResolveAuditRetentionDays(retentionDays)
+	cutoff := time.Now().Add(-time.Duration(effectiveRetentionDays) * 24 * time.Hour)
+
+	result := repository.DB.Where("created_at < ?", cutoff).Delete(&model.AuditLog{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("cleanup expired audit logs: %w", result.Error)
+	}
+
+	return result.RowsAffected, nil
 }

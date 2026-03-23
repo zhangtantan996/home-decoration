@@ -467,19 +467,28 @@ func (s *ProjectDisputeService) loadProjectDisputeDetail(db *gorm.DB, project *m
 	var owner model.User
 	_ = db.Select("nickname").First(&owner, project.OwnerID).Error
 	var provider model.Provider
-	_ = db.Select("company_name").First(&provider, project.ProviderID).Error
+	_ = db.Select("id", "user_id", "company_name").First(&provider, project.ProviderID).Error
+	var providerUser model.User
+	if provider.UserID > 0 {
+		_ = db.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+	}
 
 	detail := &MerchantProjectDisputeDetail{
-		Project:           project,
-		Complaint:         complaint,
-		Audit:             audit,
-		Escrow:            escrow,
-		ProjectID:         project.ID,
-		ProjectName:       project.Name,
-		BusinessStage:     "",
-		FlowSummary:       "",
-		OwnerName:         owner.Nickname,
-		ProviderName:      provider.CompanyName,
+		Project:       project,
+		Complaint:     complaint,
+		Audit:         audit,
+		Escrow:        escrow,
+		ProjectID:     project.ID,
+		ProjectName:   project.Name,
+		BusinessStage: "",
+		FlowSummary:   "",
+		OwnerName:     owner.Nickname,
+		ProviderName: ResolveProviderDisplayName(provider, func() *model.User {
+			if provider.UserID > 0 {
+				return &providerUser
+			}
+			return nil
+		}()),
 		DisputeReason:     project.DisputeReason,
 		DisputeEvidence:   ParseStringList(project.DisputeEvidence),
 		ComplaintEvidence: []string{},

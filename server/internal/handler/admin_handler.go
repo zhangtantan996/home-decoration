@@ -8,6 +8,7 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
+	"home-decoration-server/pkg/timeutil"
 	"home-decoration-server/pkg/utils"
 	"log"
 	"strconv"
@@ -47,7 +48,7 @@ func AdminStatsOverview(c *gin.Context) {
 		PublicIDRollback  monitor.PublicIDRollbackSnapshot `json:"publicIdRollback"`
 	}
 
-	today := time.Now().Truncate(24 * time.Hour)
+	today := timeutil.StartOfDay(timeutil.Now())
 
 	// 用户统计
 	repository.DB.Model(&model.User{}).Count(&stats.UserCount)
@@ -101,7 +102,7 @@ func AdminStatsTrends(c *gin.Context) {
 	}
 
 	var trends []DailyStats
-	today := time.Now().Truncate(24 * time.Hour)
+	today := timeutil.StartOfDay(timeutil.Now())
 
 	for i := days - 1; i >= 0; i-- {
 		date := today.AddDate(0, 0, -i)
@@ -434,7 +435,7 @@ func AdminUpdateUser(c *gin.Context) {
 	response.Success(c, user)
 }
 
-// AdminDeleteUser 删除单个测试/脏数据用户（仅超级管理员）
+// AdminDeleteUser 删除单个用户（仅超级管理员）
 func AdminDeleteUser(c *gin.Context) {
 	id := parseUint(c.Param("id"))
 	if id == 0 {
@@ -442,7 +443,7 @@ func AdminDeleteUser(c *gin.Context) {
 		return
 	}
 
-	result, err := getAdminUserCleanupService().DeleteDirtyUsers([]uint64{id})
+	result, err := getAdminUserCleanupService().DeleteUsers([]uint64{id})
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -454,7 +455,7 @@ func AdminDeleteUser(c *gin.Context) {
 	})
 }
 
-// AdminBatchDeleteUsers 批量删除测试/脏数据用户（仅超级管理员）
+// AdminBatchDeleteUsers 批量删除用户（仅超级管理员，需二次验证）
 func AdminBatchDeleteUsers(c *gin.Context) {
 	var req map[string]any
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -471,7 +472,17 @@ func AdminBatchDeleteUsers(c *gin.Context) {
 		return
 	}
 
-	result, err := getAdminUserCleanupService().DeleteDirtyUsers(userIDs)
+	verificationText := parseStringFromPayload(req["verificationText"])
+	if verificationText == "" {
+		verificationText = parseStringFromPayload(req["verification_text"])
+	}
+	expectedVerificationText := buildBatchDeleteVerificationText(len(userIDs))
+	if verificationText != expectedVerificationText {
+		response.BadRequest(c, fmt.Sprintf("二次验证失败，请输入 %s", expectedVerificationText))
+		return
+	}
+
+	result, err := getAdminUserCleanupService().DeleteUsers(userIDs)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -481,6 +492,17 @@ func AdminBatchDeleteUsers(c *gin.Context) {
 		"deletedUserIds": result.UserIDs,
 		"deletedCount":   len(result.UserIDs),
 	})
+}
+
+func buildBatchDeleteVerificationText(count int) string {
+	return fmt.Sprintf("DELETE %d", count)
+}
+
+func parseStringFromPayload(value any) string {
+	if typed, ok := value.(string); ok {
+		return strings.TrimSpace(typed)
+	}
+	return ""
 }
 
 func parseUserIDsFromPayload(value any) []uint64 {
@@ -796,26 +818,15 @@ func AdminUpdateProvider(c *gin.Context) {
 		return
 	}
 
-	// 验证服务区域代码（如果提供）支持自动转换名称为代码
+	// 验证服务城市代码（如果提供）支持名称/代码输入
 	var serviceAreaCodes []string
 	if len(req.ServiceArea) > 0 {
-		if err := adminRegionService.ValidateRegionCodes(req.ServiceArea); err != nil {
-			// 如果验证失败，尝试将名称转换为代码（兼容旧数据）
-			codes, convertErr := adminRegionService.ConvertNamesToCodes(req.ServiceArea)
-			if convertErr != nil {
-				response.BadRequest(c, "服务区域验证失败: "+err.Error())
-				return
-			}
-			// 转换成功后再次验证代码
-			if err := adminRegionService.ValidateRegionCodes(codes); err != nil {
-				response.BadRequest(c, "服务区域代码验证失败: "+err.Error())
-				return
-			}
-			serviceAreaCodes = codes
-		} else {
-			// 如果是代码格式，直接使用
-			serviceAreaCodes = req.ServiceArea
+		codes, err := adminRegionService.NormalizeServiceCityCodes(req.ServiceArea)
+		if err != nil {
+			response.BadRequest(c, "服务城市验证失败: "+err.Error())
+			return
 		}
+		serviceAreaCodes = codes
 	}
 
 	updates := map[string]interface{}{}
@@ -1199,8 +1210,14 @@ func AdminListReviews(c *gin.Context) {
 
 		// 查询服务商名称
 		var provider model.Provider
-		if err := repository.DB.Select("company_name").First(&provider, review.ProviderID).Error; err == nil {
-			resp.ProviderName = provider.CompanyName
+		if err := repository.DB.Select("id", "user_id", "company_name").First(&provider, review.ProviderID).Error; err == nil {
+			var providerUser model.User
+			if provider.UserID > 0 {
+				_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+				resp.ProviderName = service.ResolveProviderDisplayName(provider, &providerUser)
+			} else {
+				resp.ProviderName = service.ResolveProviderDisplayName(provider, nil)
+			}
 		} else {
 			resp.ProviderName = fmt.Sprintf("服务商%d", review.ProviderID)
 		}
@@ -1632,6 +1649,12 @@ func AdminRefundIntentFee(c *gin.Context) {
 	// 调用退款服务
 	refundSvc := &service.RefundService{}
 	if err := refundSvc.RefundIntentFee(bookingID, service.RefundScenarioAdminManual, input.Reason); err != nil {
+		if strings.Contains(err.Error(), "退款处理中") {
+			response.Success(c, gin.H{
+				"message": err.Error(),
+			})
+			return
+		}
 		response.Error(c, 400, err.Error())
 		return
 	}

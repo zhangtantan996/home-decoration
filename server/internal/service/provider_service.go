@@ -2,12 +2,15 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"home-decoration-server/internal/dto"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // ProviderService 服务商服务
@@ -15,15 +18,19 @@ type ProviderService struct{}
 
 // ProviderQuery 服务商查询参数
 type ProviderQuery struct {
-	Type     string  `form:"type"`     // 1设计师 2公司 3工长, 或字符串设计师、施工队等
-	Lat      float64 `form:"lat"`      // 纬度
-	Lng      float64 `form:"lng"`      // 经度
-	Radius   float64 `form:"radius"`   // 半径(km)
-	Keyword  string  `form:"keyword"`  // 关键词
-	SortBy   string  `form:"sortBy"`   // 排序: rating, distance, price
-	Page     int     `form:"page"`     // 页码
-	PageSize int     `form:"pageSize"` // 每页数量
-	SubType  string  `form:"subType"`  // 子类型筛选
+	Type      string  `form:"type"`      // 1设计师 2公司 3工长, 或字符串设计师、施工队等
+	Lat       float64 `form:"lat"`       // 纬度
+	Lng       float64 `form:"lng"`       // 经度
+	Radius    float64 `form:"radius"`    // 半径(km)
+	Keyword   string  `form:"keyword"`   // 关键词
+	City      string  `form:"city"`      // 城市
+	RatingMin float64 `form:"ratingMin"` // 最低评分
+	BudgetMin float64 `form:"budgetMin"` // 预算下限
+	BudgetMax float64 `form:"budgetMax"` // 预算上限
+	SortBy    string  `form:"sortBy"`    // 排序: rating, distance, price
+	Page      int     `form:"page"`      // 页码
+	PageSize  int     `form:"pageSize"`  // 每页数量
+	SubType   string  `form:"subType"`   // 子类型筛选
 }
 
 // ... (ProviderListItem struct unchanged)
@@ -49,12 +56,37 @@ type ProviderListItem struct {
 	SubType         string   `json:"subType"`
 	YearsExperience int      `json:"yearsExperience"`
 	Specialty       string   `json:"specialty"`
+	HighlightTags   string   `json:"highlightTags"`
 	ReviewCount     int      `json:"reviewCount"`
 	PriceMin        float64  `json:"priceMin"`
 	PriceMax        float64  `json:"priceMax"`
 	PriceUnit       string   `json:"priceUnit"`
 	ServiceArea     []string `json:"serviceArea"`
 	IsSettled       bool     `json:"isSettled"`
+}
+
+func ResolveProviderDisplayName(provider model.Provider, user *model.User) string {
+	if user != nil {
+		if name := strings.TrimSpace(user.Nickname); name != "" {
+			return name
+		}
+	}
+
+	if name := strings.TrimSpace(provider.CompanyName); name != "" {
+		return name
+	}
+
+	if user != nil {
+		if phone := strings.TrimSpace(user.Phone); phone != "" {
+			return phone
+		}
+	}
+
+	if provider.ID > 0 {
+		return fmt.Sprintf("服务商#%d", provider.ID)
+	}
+
+	return "服务商"
 }
 
 // ListDesigners 获取设计师列表
@@ -167,6 +199,18 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 		db = db.Where("sub_type = ?", query.SubType)
 	}
 
+	if query.City != "" {
+		db = applyProviderCityFilter(db, query.City)
+	}
+
+	if query.RatingMin > 0 {
+		db = db.Where("rating >= ?", query.RatingMin)
+	}
+
+	if query.BudgetMin > 0 || query.BudgetMax > 0 {
+		db = applyProviderBudgetFilter(db, query.BudgetMin, query.BudgetMax)
+	}
+
 	// 统计总数
 	db.Count(&total)
 
@@ -176,7 +220,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 		db = db.Order("rating DESC")
 	case "completed", "orders":
 		db = db.Order("completed_cnt DESC")
-	case "price_low":
+	case "price", "price_low":
 		db = db.Order("price_min ASC")
 	case "price_high":
 		db = db.Order("price_min DESC")
@@ -219,6 +263,10 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 		if p.ProviderType == 3 && strings.TrimSpace(specialty) == "" {
 			specialty = "全工种施工"
 		}
+		highlightTags := strings.TrimSpace(p.HighlightTags)
+		if highlightTags == "" {
+			highlightTags = specialty
+		}
 		serviceArea := resolveProviderServiceAreaDisplayNames(&regionService, p.ServiceArea)
 
 		result[i] = ProviderListItem{
@@ -239,6 +287,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			SubType:         p.SubType,
 			YearsExperience: p.YearsExperience,
 			Specialty:       specialty,
+			HighlightTags:   highlightTags,
 			ReviewCount:     p.ReviewCount,
 			PriceMin:        p.PriceMin,
 			PriceMax:        p.PriceMax,
@@ -251,6 +300,75 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	}
 
 	return result, total, nil
+}
+
+func applyProviderCityFilter(db *gorm.DB, city string) *gorm.DB {
+	tokens := buildProviderCityTokens(city)
+	if len(tokens) == 0 {
+		return db
+	}
+
+	conditions := make([]string, 0, len(tokens))
+	args := make([]interface{}, 0, len(tokens))
+	for _, token := range tokens {
+		conditions = append(conditions, "providers.service_area LIKE ?")
+		args = append(args, "%"+token+"%")
+	}
+
+	return db.Where(strings.Join(conditions, " OR "), args...)
+}
+
+func applyProviderBudgetFilter(db *gorm.DB, budgetMin, budgetMax float64) *gorm.DB {
+	switch {
+	case budgetMin > 0 && budgetMax > 0:
+		return db.Where(
+			"((price_min = 0 AND price_max = 0) OR ((price_max = 0 OR price_max >= ?) AND (price_min = 0 OR price_min < ?)))",
+			budgetMin,
+			budgetMax,
+		)
+	case budgetMin > 0:
+		return db.Where("((price_min = 0 AND price_max = 0) OR price_max = 0 OR price_max >= ?)", budgetMin)
+	case budgetMax > 0:
+		return db.Where("((price_min = 0 AND price_max = 0) OR price_min = 0 OR price_min < ?)", budgetMax)
+	default:
+		return db
+	}
+}
+
+func buildProviderCityTokens(city string) []string {
+	normalized := strings.TrimSpace(city)
+	if normalized == "" {
+		return nil
+	}
+
+	tokens := []string{normalized}
+	if !strings.HasSuffix(normalized, "市") {
+		tokens = append(tokens, normalized+"市")
+	}
+
+	var cityRegions []model.Region
+	if err := repository.DB.Where("name IN ?", uniqueProviderTextValues(tokens)).Find(&cityRegions).Error; err != nil || len(cityRegions) == 0 {
+		_ = repository.DB.Where("name LIKE ?", normalized+"%").Limit(20).Find(&cityRegions).Error
+	}
+
+	if len(cityRegions) == 0 {
+		return uniqueProviderTextValues(tokens)
+	}
+
+	cityCodes := make([]string, 0, len(cityRegions))
+	for _, region := range cityRegions {
+		cityCodes = append(cityCodes, region.Code)
+		tokens = append(tokens, region.Code, region.Name)
+	}
+
+	var childRegions []model.Region
+	if err := repository.DB.Where("parent_code IN ?", uniqueProviderTextValues(cityCodes)).Find(&childRegions).Error; err == nil {
+		for _, region := range childRegions {
+			tokens = append(tokens, region.Code, region.Name)
+		}
+	}
+
+	return uniqueProviderTextValues(tokens)
 }
 
 func resolveProviderServiceAreaDisplayNames(regionService *RegionService, raw string) []string {
@@ -448,7 +566,7 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 
 	// 获取案例（前5条）
 	var cases []model.ProviderCase
-	applyVisibleCaseFilter(repository.DB.Where("provider_id = ?", id)).
+	repository.DB.Where("provider_id = ?", id).
 		Order("sort_order ASC, created_at DESC").
 		Limit(5).
 		Find(&cases)
@@ -459,7 +577,7 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 
 	// 统计案例总数
 	var caseCount int64
-	applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).
+	repository.DB.Model(&model.ProviderCase{}).
 		Where("provider_id = ?", id).
 		Count(&caseCount)
 
@@ -521,7 +639,7 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 		return nil, 0, err
 	}
 
-	db := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).Where("provider_id = ?", providerID)
+	db := repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", providerID)
 	db.Count(&total)
 
 	offset := (page - 1) * pageSize

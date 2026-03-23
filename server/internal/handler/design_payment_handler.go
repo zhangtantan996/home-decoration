@@ -13,7 +13,7 @@ var designPaymentService = &service.DesignPaymentService{}
 
 // ========== 用户端：设计支付流程 ==========
 
-// PaySurveyDeposit 支付量房押金
+// PaySurveyDeposit 创建量房定金支付单
 func PaySurveyDeposit(c *gin.Context) {
 	userID := getCurrentUserID(c)
 	bookingID := parseUint64(c.Param("id"))
@@ -21,10 +21,15 @@ func PaySurveyDeposit(c *gin.Context) {
 		response.BadRequest(c, "无效预约ID")
 		return
 	}
-
-	result, err := designPaymentService.PaySurveyDeposit(userID, bookingID)
+	req, err := bindPaymentLaunchRequest(c)
 	if err != nil {
-		response.ServerError(c, err.Error())
+		response.BadRequest(c, "支付参数错误")
+		return
+	}
+
+	result, err := paymentService.StartSurveyDepositPayment(userID, bookingID, req.TerminalType)
+	if err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 

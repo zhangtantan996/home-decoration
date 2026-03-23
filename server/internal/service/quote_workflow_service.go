@@ -831,7 +831,7 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 		workTypesMatched := overlapExists(snapshot.WorkTypes, parseDelimitedString(provider.WorkTypes))
 		reasons := make([]string, 0, 4)
 		if regionMatched {
-			reasons = append(reasons, "服务区域匹配")
+			reasons = append(reasons, "服务城市匹配")
 		}
 		if workTypesMatched {
 			reasons = append(reasons, "工种匹配")
@@ -842,9 +842,18 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 		if coverage > 0 {
 			reasons = append(reasons, fmt.Sprintf("价格覆盖率 %.0f%%", coverage*100))
 		}
+		var providerUser model.User
+		if provider.UserID > 0 {
+			_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+		}
 		recommendations = append(recommendations, RecommendedForeman{
-			ProviderID:        provider.ID,
-			ProviderName:      provider.CompanyName,
+			ProviderID: provider.ID,
+			ProviderName: ResolveProviderDisplayName(provider, func() *model.User {
+				if provider.UserID > 0 {
+					return &providerUser
+				}
+				return nil
+			}()),
 			ProviderType:      provider.ProviderType,
 			ProviderSubType:   provider.SubType,
 			RegionMatched:     regionMatched,
@@ -1080,8 +1089,22 @@ func (s *QuoteService) SubmitTaskToUser(quoteListID, submissionID uint64) (*mode
 	quoteList.AwardedQuoteSubmissionID = submission.ID
 	quoteList.AwardedProviderID = submission.ProviderID
 	var provider model.Provider
-	_ = repository.DB.Select("company_name").First(&provider, submission.ProviderID).Error
-	NewNotificationDispatcher().NotifyQuoteSubmittedToUser(quoteList.OwnerUserID, quoteList.ID, quoteList.ProjectID, provider.CompanyName)
+	_ = repository.DB.Select("id", "user_id", "company_name").First(&provider, submission.ProviderID).Error
+	var providerUser model.User
+	if provider.UserID > 0 {
+		_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+	}
+	NewNotificationDispatcher().NotifyQuoteSubmittedToUser(
+		quoteList.OwnerUserID,
+		quoteList.ID,
+		quoteList.ProjectID,
+		ResolveProviderDisplayName(provider, func() *model.User {
+			if provider.UserID > 0 {
+				return &providerUser
+			}
+			return nil
+		}()),
+	)
 	return &quoteList, nil
 }
 

@@ -85,6 +85,14 @@ func Forbidden(c *gin.Context, message string) {
 	})
 }
 
+// Conflict 409错误
+func Conflict(c *gin.Context, message string) {
+	c.JSON(http.StatusConflict, Response{
+		Code:    409,
+		Message: message,
+	})
+}
+
 // NotFound 404错误
 func NotFound(c *gin.Context, message string) {
 	c.JSON(http.StatusNotFound, Response{

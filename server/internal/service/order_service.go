@@ -44,6 +44,11 @@ type BillResult struct {
 	PaymentPlans      []model.PaymentPlan `json:"paymentPlans"`
 }
 
+type ProjectBillItem struct {
+	Order        model.Order         `json:"order"`
+	PaymentPlans []model.PaymentPlan `json:"paymentPlans"`
+}
+
 // GenerateBill 生成项目账单（设计费订单 + 施工费订单）
 func (s *OrderService) GenerateBill(userID uint64, input *GenerateBillInput) (*BillResult, error) {
 	// 1. 验证 Project 归属和状态
@@ -402,6 +407,35 @@ func (s *OrderService) GetOrdersByProject(projectID uint64) ([]model.Order, erro
 		return nil, err
 	}
 	return orders, nil
+}
+
+func (s *OrderService) GetProjectBillForOwner(projectID, userID uint64) ([]ProjectBillItem, error) {
+	var project model.Project
+	if err := repository.DB.Select("id, owner_id").First(&project, projectID).Error; err != nil {
+		return nil, errors.New("项目不存在")
+	}
+	if project.OwnerID != userID {
+		return nil, errors.New("无权查看此项目账单")
+	}
+
+	orders, err := s.GetOrdersByProject(projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]ProjectBillItem, 0, len(orders))
+	for _, order := range orders {
+		plans, err := s.GetPaymentPlansByOrder(order.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, ProjectBillItem{
+			Order:        order,
+			PaymentPlans: plans,
+		})
+	}
+
+	return result, nil
 }
 
 // GetPaymentPlansByOrder 获取订单的支付计划

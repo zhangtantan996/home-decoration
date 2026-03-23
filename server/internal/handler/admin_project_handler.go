@@ -37,10 +37,6 @@ func AdminListProjects(c *gin.Context) {
 		db = db.Where("status = ?", s)
 	}
 
-	if keyword != "" {
-		db = db.Where("name LIKE ? OR address LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
-	}
-
 	if err := db.Order("created_at DESC").Find(&projects).Error; err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "获取项目列表失败"})
 		return
@@ -67,8 +63,14 @@ func AdminListProjects(c *gin.Context) {
 		}
 
 		var provider model.Provider
-		if err := repository.DB.Select("company_name").First(&provider, p.ProviderID).Error; err == nil {
-			pwn.ProviderName = provider.CompanyName
+		if err := repository.DB.Select("id", "user_id", "company_name").First(&provider, p.ProviderID).Error; err == nil {
+			var providerUser model.User
+			if provider.UserID > 0 {
+				_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+				pwn.ProviderName = service.ResolveProviderDisplayName(provider, &providerUser)
+			} else {
+				pwn.ProviderName = service.ResolveProviderDisplayName(provider, nil)
+			}
 		}
 		var milestones []model.Milestone
 		_ = repository.DB.Where("project_id = ?", p.ID).Order("seq ASC").Find(&milestones).Error
@@ -81,6 +83,11 @@ func AdminListProjects(c *gin.Context) {
 		stageStats[pwn.BusinessStage]++
 
 		if businessStage != "" && model.NormalizeBusinessFlowStage(pwn.BusinessStage) != businessStage {
+			continue
+		}
+		if keyword != "" &&
+			!strings.Contains(strings.ToLower(pwn.Name), strings.ToLower(keyword)) &&
+			!strings.Contains(strings.ToLower(pwn.Address), strings.ToLower(keyword)) {
 			continue
 		}
 

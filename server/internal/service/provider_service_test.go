@@ -115,6 +115,9 @@ func TestProviderServiceListSupportsKeywordAcrossNicknameAndType(t *testing.T) {
 	if total != 1 || len(list) != 1 {
 		t.Fatalf("expected nickname keyword match, total=%d len=%d", total, len(list))
 	}
+	if strings.TrimSpace(list[0].HighlightTags) == "" {
+		t.Fatalf("expected highlight tags in list payload")
+	}
 
 	list, total, err = service.ListProviders(&ProviderQuery{Keyword: "设计师", Page: 1, PageSize: 10})
 	if err != nil {
@@ -130,6 +133,41 @@ func TestProviderServiceListSupportsKeywordAcrossNicknameAndType(t *testing.T) {
 	}
 	if total != 1 || len(list) != 1 {
 		t.Fatalf("expected style alias keyword match, total=%d len=%d", total, len(list))
+	}
+}
+
+func TestProviderServiceListFallsBackToSpecialtyWhenHighlightTagsMissing(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138112", Nickname: "李工", PublicID: "user_public_tags_fallback"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:          user.ID,
+		ProviderType:    3,
+		SubType:         "foreman",
+		CompanyName:     "李工施工队",
+		Verified:        true,
+		Status:          1,
+		YearsExperience: 9,
+		Specialty:       "旧房改造 · 水电规范",
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "foreman", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+	if list[0].HighlightTags != "旧房改造 · 水电规范" {
+		t.Fatalf("expected specialty fallback in highlight tags, got %q", list[0].HighlightTags)
 	}
 }
 
@@ -223,6 +261,65 @@ func TestProviderServiceListKeepsLegacyCompanySubtypeInDesignerTab(t *testing.T)
 	}
 }
 
+func TestProviderServiceListSupportsCityRatingAndBudgetFilters(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	regions := []model.Region{
+		{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true},
+		{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true},
+		{Code: "510100", Name: "成都市", Level: 2, ParentCode: "510000", Enabled: true},
+	}
+	if err := db.Create(&regions).Error; err != nil {
+		t.Fatalf("create regions: %v", err)
+	}
+
+	createProvider := func(phone, nickname, companyName, serviceArea string, rating float32, priceMin, priceMax float64) {
+		user := model.User{Phone: phone, Nickname: nickname, PublicID: phone}
+		if err := db.Create(&user).Error; err != nil {
+			t.Fatalf("create user: %v", err)
+		}
+		provider := model.Provider{
+			UserID:       user.ID,
+			ProviderType: 1,
+			SubType:      "designer",
+			CompanyName:  companyName,
+			Verified:     true,
+			Status:       1,
+			ServiceArea:  serviceArea,
+			Rating:       rating,
+			PriceMin:     priceMin,
+			PriceMax:     priceMax,
+		}
+		if err := db.Create(&provider).Error; err != nil {
+			t.Fatalf("create provider: %v", err)
+		}
+	}
+
+	createProvider("13800138130", "西安高分设计", "西安高分设计工作室", `["610113"]`, 4.9, 400, 600)
+	createProvider("13800138131", "西安低分设计", "西安低分设计工作室", `["610113"]`, 4.3, 400, 600)
+	createProvider("13800138132", "成都设计", "成都设计工作室", `["510100"]`, 4.9, 400, 600)
+
+	list, total, err := service.ListProviders(&ProviderQuery{
+		Type:      "designer",
+		City:      "西安",
+		RatingMin: 4.5,
+		BudgetMin: 300,
+		BudgetMax: 800,
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatalf("list providers with filters: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("expected exactly one filtered provider, total=%d len=%d", total, len(list))
+	}
+	if list[0].CompanyName != "西安高分设计工作室" {
+		t.Fatalf("unexpected provider after filters: %+v", list[0])
+	}
+}
+
 func TestProviderServiceGetProviderDetail_HidesInvisibleProvider(t *testing.T) {
 	db := setupProviderServiceDB(t)
 	service := &ProviderService{}
@@ -247,7 +344,7 @@ func TestProviderServiceGetProviderDetail_HidesInvisibleProvider(t *testing.T) {
 	}
 }
 
-func TestProviderServiceGetProviderCases_OnlyReturnsVisibleCases(t *testing.T) {
+func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *testing.T) {
 	db := setupProviderServiceDB(t)
 	service := &ProviderService{}
 
@@ -276,15 +373,15 @@ func TestProviderServiceGetProviderCases_OnlyReturnsVisibleCases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get provider detail: %v", err)
 	}
-	if detail.CaseCount != 1 || len(detail.Cases) != 1 || detail.Cases[0].Title != "公开案例" {
-		t.Fatalf("expected only visible cases in detail, got count=%d cases=%+v", detail.CaseCount, detail.Cases)
+	if detail.CaseCount != 2 || len(detail.Cases) != 2 {
+		t.Fatalf("expected all provider cases in detail, got count=%d cases=%+v", detail.CaseCount, detail.Cases)
 	}
 
 	cases, total, err := service.GetProviderCases(provider.ID, 1, 10)
 	if err != nil {
 		t.Fatalf("get provider cases: %v", err)
 	}
-	if total != 1 || len(cases) != 1 || cases[0].Title != "公开案例" {
-		t.Fatalf("expected only visible cases in public list, total=%d cases=%+v", total, cases)
+	if total != 2 || len(cases) != 2 {
+		t.Fatalf("expected all provider cases in public provider list, total=%d cases=%+v", total, cases)
 	}
 }

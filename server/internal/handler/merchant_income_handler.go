@@ -63,14 +63,17 @@ func MerchantIncomeSummary(c *gin.Context) {
 		Scan(&totalSettled)
 	summary.SettledAmount = totalSettled
 
-	// 4. 已提现 (从提现记录表统计: 处理中+成功)
-	// status: 0处理中, 1成功, 2失败
+	// 4. 已占用提现金额（待审核/待打款/已打款都会占用可提现余额）
 	repository.DB.Model(&model.MerchantWithdraw{}).
-		Where("provider_id = ? AND status IN (0, 1)", providerID).
+		Where("provider_id = ? AND status IN ?", providerID, []int8{
+			model.MerchantWithdrawStatusPendingReview,
+			model.MerchantWithdrawStatusApprovedPendingTransfer,
+			model.MerchantWithdrawStatusPaid,
+		}).
 		Select("COALESCE(SUM(amount), 0)").
 		Scan(&summary.WithdrawnAmount)
 
-	// 5. 可提现 = (已结算总额) - (已提现/提现中总额)
+	// 5. 可提现 = (已结算总额) - (已占用提现金额)
 	summary.AvailableAmount = summary.SettledAmount - summary.WithdrawnAmount
 	if summary.AvailableAmount < 0 {
 		summary.AvailableAmount = 0
@@ -181,16 +184,19 @@ func MerchantWithdrawList(c *gin.Context) {
 	list := make([]gin.H, len(withdraws))
 	for i, w := range withdraws {
 		list[i] = gin.H{
-			"id":          w.ID,
-			"orderNo":     w.OrderNo,
-			"amount":      w.Amount,
-			"bankAccount": maskBankAccount(w.BankAccount),
-			"bankName":    w.BankName,
-			"status":      w.Status,
-			"statusLabel": getWithdrawStatusLabel(w.Status),
-			"failReason":  w.FailReason,
-			"completedAt": w.CompletedAt,
-			"createdAt":   w.CreatedAt,
+			"id":              w.ID,
+			"orderNo":         w.OrderNo,
+			"amount":          w.Amount,
+			"bankAccount":     maskBankAccount(w.BankAccount),
+			"bankName":        w.BankName,
+			"status":          w.Status,
+			"statusLabel":     getWithdrawStatusLabel(w.Status),
+			"failReason":      w.FailReason,
+			"approvedAt":      w.ApprovedAt,
+			"transferredAt":   w.TransferredAt,
+			"transferVoucher": w.TransferVoucher,
+			"completedAt":     w.CompletedAt,
+			"createdAt":       w.CreatedAt,
 		}
 	}
 
@@ -204,12 +210,14 @@ func MerchantWithdrawList(c *gin.Context) {
 
 func getWithdrawStatusLabel(status int8) string {
 	switch status {
-	case 0:
-		return "处理中"
-	case 1:
-		return "成功"
-	case 2:
-		return "失败"
+	case model.MerchantWithdrawStatusPendingReview:
+		return "待审核"
+	case model.MerchantWithdrawStatusApprovedPendingTransfer:
+		return "待打款"
+	case model.MerchantWithdrawStatusPaid:
+		return "已打款"
+	case model.MerchantWithdrawStatusRejected:
+		return "已拒绝"
 	default:
 		return "未知"
 	}
@@ -257,7 +265,11 @@ func MerchantWithdrawCreate(c *gin.Context) {
 
 	var totalWithdrawn float64
 	repository.DB.Model(&model.MerchantWithdraw{}).
-		Where("provider_id = ? AND status IN (0, 1)", providerID).
+		Where("provider_id = ? AND status IN ?", providerID, []int8{
+			model.MerchantWithdrawStatusPendingReview,
+			model.MerchantWithdrawStatusApprovedPendingTransfer,
+			model.MerchantWithdrawStatusPaid,
+		}).
 		Select("COALESCE(SUM(amount), 0)").
 		Scan(&totalWithdrawn)
 
@@ -286,7 +298,7 @@ func MerchantWithdrawCreate(c *gin.Context) {
 		Amount:      input.Amount,
 		BankAccount: bankAccount.AccountNo,
 		BankName:    bankAccount.BankName,
-		Status:      0, // 处理中
+		Status:      model.MerchantWithdrawStatusPendingReview,
 	}
 
 	if err := repository.DB.Create(&withdraw).Error; err != nil {
@@ -299,7 +311,7 @@ func MerchantWithdrawCreate(c *gin.Context) {
 	response.Success(c, gin.H{
 		"withdrawId": withdraw.ID,
 		"orderNo":    orderNo,
-		"message":    "提现申请已提交，预计1-3个工作日到账",
+		"message":    "提现申请已提交，等待平台审核",
 	})
 }
 

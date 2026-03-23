@@ -18,7 +18,7 @@ func CreateContract(c *gin.Context) {
 	}
 	contract, err := contractService.CreateContract(providerID, &input)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "创建合同失败")
 		return
 	}
 	response.Success(c, contract)

@@ -108,7 +108,7 @@ func (s *HomepageService) GetHomepageData() (*HomepageData, error) {
 			setErr(err)
 			return
 		}
-		if err := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{})).Count(&stats.CaseCount).Error; err != nil {
+		if err := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{})).Count(&stats.CaseCount).Error; err != nil {
 			setErr(err)
 			return
 		}
@@ -285,7 +285,7 @@ func (s *HomepageService) featuredMaterialShops(limit int) ([]HomepageMaterialSh
 
 func (s *HomepageService) featuredInspirations(limit int) ([]HomepageInspiration, error) {
 	var cases []model.ProviderCase
-	db := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{}))
+	db := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{}))
 	if err := db.Order("created_at DESC").Limit(limit).Find(&cases).Error; err != nil {
 		return nil, err
 	}
@@ -306,13 +306,24 @@ func (s *HomepageService) featuredInspirations(limit int) ([]HomepageInspiration
 	inspSvc := &InspirationService{}
 	likeCounts := inspSvc.batchGetLikeCounts(caseIDs)
 	providers := inspSvc.batchGetProviders(providerIDs)
+	providerUserIDs := make([]uint64, 0, len(providers))
+	for _, provider := range providers {
+		if provider.UserID > 0 {
+			providerUserIDs = append(providerUserIDs, provider.UserID)
+		}
+	}
+	providerUsers := inspSvc.batchGetUsers(providerUserIDs)
 
 	items := make([]HomepageInspiration, len(cases))
 	for i, c := range cases {
 		authorName := "官方"
 		if c.ProviderID > 0 {
 			if p, ok := providers[c.ProviderID]; ok {
-				authorName = p.CompanyName
+				var providerUser *model.User
+				if user, ok := providerUsers[p.UserID]; ok {
+					providerUser = &user
+				}
+				authorName = resolveInspirationAuthorName(p, providerUser)
 			}
 		}
 		items[i] = HomepageInspiration{

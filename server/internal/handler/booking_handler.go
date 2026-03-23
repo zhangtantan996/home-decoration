@@ -29,10 +29,10 @@ func GetBooking(c *gin.Context) {
 		var user model.User
 		repository.DB.First(&user, provider.UserID)
 
-		// 获取显示名称
-		displayName := provider.CompanyName
-		if provider.ProviderType == 1 || displayName == "" {
-			displayName = user.Nickname
+		// 获取显示名称：前端统一优先展示账号昵称
+		displayName := user.Nickname
+		if displayName == "" {
+			displayName = provider.CompanyName
 		}
 		if displayName == "" && len(user.Phone) >= 4 {
 			displayName = "用户" + user.Phone[len(user.Phone)-4:]
@@ -83,18 +83,27 @@ func GetBooking(c *gin.Context) {
 	})
 }
 
-// PayIntentFee 支付预约意向金（模拟支付）
+// PayIntentFee 创建预约意向金支付单
 func PayIntentFee(c *gin.Context) {
-	bookingID := c.Param("id")
+	bookingID := parseUint64(c.Param("id"))
 	userID := c.GetUint64("userId")
+	if bookingID == 0 {
+		response.BadRequest(c, "无效的预约ID")
+		return
+	}
+	req, err := bindPaymentLaunchRequest(c)
+	if err != nil {
+		response.BadRequest(c, "支付参数错误")
+		return
+	}
 
-	booking, err := bookingService.PayIntentFee(userID, bookingID)
+	result, err := paymentService.StartBookingIntentPayment(userID, bookingID, req.TerminalType)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	response.SuccessWithMessage(c, "支付成功", booking)
+	response.Success(c, result)
 }
 
 // GetUserBookings 获取用户预约列表

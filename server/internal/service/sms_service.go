@@ -10,6 +10,7 @@ import (
 
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/pkg/timeutil"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -73,12 +74,12 @@ func smsPhoneCooldownKey(phone string) string {
 }
 
 func smsIPDailyCountKey(ipAddress string, now time.Time) string {
-	date := now.In(time.Local).Format("20060102")
+	date := now.In(timeutil.Location()).Format("20060102")
 	return "sms:send:count:ip:" + strings.TrimSpace(ipAddress) + ":" + date
 }
 
 func smsPhoneDailyCountKey(phone string, now time.Time) string {
-	date := now.In(time.Local).Format("20060102")
+	date := now.In(timeutil.Location()).Format("20060102")
 	return "sms:send:count:phone:" + strings.TrimSpace(phone) + ":" + date
 }
 
@@ -95,8 +96,8 @@ func smsRiskStrikeKey(dimension, target string) string {
 }
 
 func durationUntilNextLocalDay(now time.Time) time.Duration {
-	localNow := now.In(time.Local)
-	nextDay := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, localNow.Location()).AddDate(0, 0, 1)
+	localNow := now.In(timeutil.Location())
+	nextDay := timeutil.StartOfDay(localNow).AddDate(0, 0, 1)
 	ttl := nextDay.Sub(localNow)
 	if ttl <= 0 {
 		return 24 * time.Hour

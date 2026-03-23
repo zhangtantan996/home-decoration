@@ -15,6 +15,32 @@ import (
 
 // ==================== 管理员作品管理 ====================
 
+func buildAdminCaseProviderName(providerID uint64) string {
+	if providerID == 0 {
+		return "官方"
+	}
+
+	var provider model.Provider
+	if err := repository.DB.First(&provider, providerID).Error; err != nil {
+		return ""
+	}
+
+	var user model.User
+	_ = repository.DB.First(&user, provider.UserID).Error
+
+	if name := strings.TrimSpace(user.Nickname); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(provider.CompanyName); name != "" {
+		return name
+	}
+	if phone := strings.TrimSpace(user.Phone); phone != "" {
+		return phone
+	}
+
+	return ""
+}
+
 // AdminListCases 获取所有作品列表
 func AdminListCases(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
@@ -47,22 +73,7 @@ func AdminListCases(c *gin.Context) {
 	// 聚合商家名称
 	var resultList []gin.H
 	for _, caseItem := range cases {
-		var providerName string
-		var provider model.Provider
-		var user model.User
-
-		// 查询商家信息（如果 provider_id 为 0 则为官方）
-		if caseItem.ProviderID == 0 {
-			providerName = "官方"
-		} else {
-			if err := repository.DB.First(&provider, caseItem.ProviderID).Error; err == nil {
-				repository.DB.First(&user, provider.UserID)
-				providerName = user.Nickname
-				if providerName == "" {
-					providerName = provider.CompanyName
-				}
-			}
-		}
+		providerName := buildAdminCaseProviderName(caseItem.ProviderID)
 
 		// 解析图片
 		var images []string
@@ -110,44 +121,32 @@ func AdminGetCase(c *gin.Context) {
 		return
 	}
 
-	var providerName string
-	if caseItem.ProviderID == 0 {
-		providerName = "官方"
-	} else {
-		var provider model.Provider
-		var user model.User
-		if err := repository.DB.First(&provider, caseItem.ProviderID).Error; err == nil {
-			repository.DB.First(&user, provider.UserID)
-			providerName = user.Nickname
-			if providerName == "" {
-				providerName = provider.CompanyName
-			}
-		}
-	}
+	providerName := buildAdminCaseProviderName(caseItem.ProviderID)
 
 	var images []string
 	json.Unmarshal([]byte(caseItem.Images), &images)
 	images = imgutil.GetFullImageURLs(images)
 
 	response.Success(c, gin.H{
-		"id":             caseItem.ID,
-		"providerId":     caseItem.ProviderID,
-		"providerName":   providerName,
-		"title":          caseItem.Title,
-		"coverImage":     imgutil.GetFullImageURL(caseItem.CoverImage),
-		"style":          caseItem.Style,
-		"layout":         caseItem.Layout,
-		"area":           caseItem.Area,
-		"price":          caseItem.Price,
-		"quoteTotalCent": caseItem.QuoteTotalCent,
-		"quoteCurrency":  caseItem.QuoteCurrency,
-		"quoteItems":     caseItem.QuoteItems,
-		"year":           caseItem.Year,
-		"description":    caseItem.Description,
-		"images":         images,
-		"sortOrder":      caseItem.SortOrder,
-		"createdAt":      caseItem.CreatedAt,
-		"updatedAt":      caseItem.UpdatedAt,
+		"id":                caseItem.ID,
+		"providerId":        caseItem.ProviderID,
+		"providerName":      providerName,
+		"title":             caseItem.Title,
+		"coverImage":        imgutil.GetFullImageURL(caseItem.CoverImage),
+		"style":             caseItem.Style,
+		"layout":            caseItem.Layout,
+		"area":              caseItem.Area,
+		"price":             caseItem.Price,
+		"quoteTotalCent":    caseItem.QuoteTotalCent,
+		"quoteCurrency":     caseItem.QuoteCurrency,
+		"quoteItems":        caseItem.QuoteItems,
+		"year":              caseItem.Year,
+		"description":       caseItem.Description,
+		"images":            images,
+		"sortOrder":         caseItem.SortOrder,
+		"showInInspiration": caseItem.ShowInInspiration,
+		"createdAt":         caseItem.CreatedAt,
+		"updatedAt":         caseItem.UpdatedAt,
 	})
 }
 

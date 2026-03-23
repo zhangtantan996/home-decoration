@@ -4641,4 +4641,6 @@ ALTER TABLE ONLY public.phase_tasks
 --
 
 \unrestrict 5afDTts6TBzhbRFcWm8TadEGl44wTlXTxRBQDo6NKXGCrRhEhNLZH0MdjEs53f8
+-- WARNING: 历史数据库快照，仅供参考/回溯，不是认证或商家入驻 schema 的权威来源。
+-- 请使用 server/migrations/ 下的迁移，尤其是 server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql。
 

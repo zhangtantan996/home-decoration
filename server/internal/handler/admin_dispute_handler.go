@@ -3,6 +3,7 @@ package handler
 import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"net/http"
 	"strconv"
 
@@ -53,8 +54,14 @@ func AdminListDisputedBookings(c *gin.Context) {
 
 		// 获取商家信息
 		var provider model.Provider
-		if err := repository.DB.Select("company_name").First(&provider, b.ProviderID).Error; err == nil {
-			item.ProviderName = provider.CompanyName
+		if err := repository.DB.Select("id", "user_id", "company_name").First(&provider, b.ProviderID).Error; err == nil {
+			var providerUser model.User
+			if provider.UserID > 0 {
+				_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+				item.ProviderName = service.ResolveProviderDisplayName(provider, &providerUser)
+			} else {
+				item.ProviderName = service.ResolveProviderDisplayName(provider, nil)
+			}
 		}
 
 		// 获取最新的被拒绝方案信息
@@ -94,6 +101,16 @@ func AdminGetDisputedBooking(c *gin.Context) {
 	// 获取商家信息
 	var provider model.Provider
 	repository.DB.Select("id, company_name, user_id").First(&provider, booking.ProviderID)
+	var providerUser model.User
+	if provider.UserID > 0 {
+		_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+	}
+	providerName := service.ResolveProviderDisplayName(provider, func() *model.User {
+		if provider.UserID > 0 {
+			return &providerUser
+		}
+		return nil
+	}())
 
 	// 获取所有方案版本历史
 	var proposals []model.Proposal
@@ -102,9 +119,14 @@ func AdminGetDisputedBooking(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"booking":   booking,
-			"user":      user,
-			"provider":  provider,
+			"booking": booking,
+			"user":    user,
+			"provider": gin.H{
+				"id":          provider.ID,
+				"userId":      provider.UserID,
+				"companyName": provider.CompanyName,
+				"displayName": providerName,
+			},
 			"proposals": proposals,
 		},
 	})

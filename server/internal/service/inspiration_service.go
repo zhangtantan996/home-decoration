@@ -110,6 +110,36 @@ type Author struct {
 	Avatar string `json:"avatar"`
 }
 
+func resolveInspirationAuthorName(provider model.Provider, user *model.User) string {
+	if user != nil {
+		if nickname := strings.TrimSpace(user.Nickname); nickname != "" {
+			return nickname
+		}
+	}
+
+	if companyName := strings.TrimSpace(provider.CompanyName); companyName != "" {
+		return companyName
+	}
+
+	return "官方"
+}
+
+func resolveInspirationAuthor(provider model.Provider, user *model.User) Author {
+	author := Author{
+		ID:   provider.ID,
+		Name: resolveInspirationAuthorName(provider, user),
+	}
+
+	if user != nil {
+		author.Avatar = imgutil.GetFullImageURL(user.Avatar)
+	}
+	if author.Avatar == "" {
+		author.Avatar = imgutil.GetFullImageURL(provider.Avatar)
+	}
+
+	return author
+}
+
 func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *uint64) ([]InspirationItem, int64, error) {
 	if query.Page <= 0 {
 		query.Page = 1
@@ -118,7 +148,7 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 		query.PageSize = 20
 	}
 
-	db := applyVisibleCaseFilter(repository.DB.Model(&model.ProviderCase{}))
+	db := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{}))
 
 	if styles := normalizeInspirationStyleFilter(query.Style); len(styles) > 0 {
 		db = db.Where("style IN ?", styles)
@@ -169,19 +199,24 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 	}
 
 	providers := s.batchGetProviders(providerIDs)
+	providerUserIDs := make([]uint64, 0, len(providers))
+	for _, provider := range providers {
+		if provider.UserID > 0 {
+			providerUserIDs = append(providerUserIDs, provider.UserID)
+		}
+	}
+	providerUsers := s.batchGetUsers(providerUserIDs)
 
 	items := make([]InspirationItem, len(cases))
 	for i, c := range cases {
 		author := Author{ID: 0, Name: "官方", Avatar: ""}
 		if c.ProviderID > 0 {
 			if provider, ok := providers[c.ProviderID]; ok {
-				author.ID = provider.ID
-				author.Name = provider.CompanyName
-				if provider.UserID > 0 {
-					if user, err := s.getUserByID(provider.UserID); err == nil {
-						author.Avatar = imgutil.GetFullImageURL(user.Avatar)
-					}
+				var providerUser *model.User
+				if user, ok := providerUsers[provider.UserID]; ok {
+					providerUser = &user
 				}
+				author = resolveInspirationAuthor(provider, providerUser)
 			}
 		}
 

@@ -1,10 +1,10 @@
 阿里云产品 (Product),推荐规格 (Spec),为什么买它? (Why),预估费用 (Cost)
 VPC + vSwitch,1 个生产 VPC + 1 个交换机（建议同可用区）,让 ECS/RDS/Redis 走内网互通（更安全、延迟更低、通常不额外计费）,0 元（按量/基本无）
-ECS (云服务器),u1/e 4核 8G（最低 2核 4G）+ ESSD 100G + 公网按量峰值 20–100Mbps,运行 Docker 容器：Go API + Tinode + Nginx（TLS 建议在宿主机终止）,视地域/活动价（参考 deploy/COST_ANALYSIS.md）
-RDS PostgreSQL 15,基础版 2核 4G / 50G ESSD（同地域同 VPC，建议内网地址）,必选：托管备份/监控/稳定；建库 home_decoration + tinode,视地域/活动价（参考 deploy/COST_ANALYSIS.md）
-ApsaraDB for Redis,1GB 起（同地域同 VPC，开启密码，仅内网访问）,必选：验证码/限流/缓存/刷新令牌重放检测,视地域/活动价（参考 deploy/COST_ANALYSIS.md）
+ECS (云服务器),u1/e 4核 8G（最低 2核 4G）+ ESSD 100G + 公网按量峰值 20–100Mbps,运行 Docker 容器：Go API + Tinode + Nginx（TLS 建议在宿主机终止）,视地域/活动价（参考 deploy/成本分析与采购建议.md）
+RDS PostgreSQL 15,基础版 2核 4G / 50G ESSD（同地域同 VPC，建议内网地址）,必选：托管备份/监控/稳定；建库 home_decoration + tinode,视地域/活动价（参考 deploy/成本分析与采购建议.md）
+ApsaraDB for Redis,1GB 起（同地域同 VPC，开启密码，仅内网访问）,必选：验证码/限流/缓存/刷新令牌重放检测,视地域/活动价（参考 deploy/成本分析与采购建议.md）
 OSS (对象存储),标准存储 Bucket（权限私有）,首版用于备份 DB 导出文件与 uploads 压缩包（后续可迁移图片上云 + CDN）,按量计费（通常很低）
-域名 + ICP 备案,.com/.cn（尽早备案）,国内访问与小程序/短信合规要求,按年（参考 deploy/COST_ANALYSIS.md）
+域名 + ICP 备案,.com/.cn（尽早备案）,国内访问与小程序/短信合规要求,按年（参考 deploy/成本分析与采购建议.md）
 HTTPS 证书,Let's Encrypt 免费证书（或阿里云证书）,HTTPS/WSS 必需,0 元起
 阿里云短信,签名 + 模板（审核需要时间）,注册/登录验证码必需（release 禁用 mock 与 debugCode）,按量计费
 CDN (可选),流量包,加速 OSS 图片与静态资源（小流量可先不买）,按量计费（可选）

@@ -51,7 +51,12 @@ func (s *NotificationService) Create(input *CreateNotificationInput) error {
 		IsRead:      false,
 	}
 
-	return repository.DB.Create(notification).Error
+	if err := repository.DB.Create(notification).Error; err != nil {
+		return err
+	}
+
+	s.publishNewNotification(notification)
+	return nil
 }
 
 // NotifyAdmins 向所有超级管理员发送通知
@@ -266,8 +271,27 @@ func (s *NotificationService) NotifyWithdrawApproved(withdraw *model.MerchantWit
 		UserID:      providerUserID,
 		UserType:    "provider",
 		Title:       "提现审核通过",
-		Content:     fmt.Sprintf("您的提现申请已审核通过，金额：%.2f元，预计1-3个工作日到账", withdraw.Amount),
+		Content:     fmt.Sprintf("您的提现申请已审核通过，金额：%.2f元，当前待财务线下打款", withdraw.Amount),
 		Type:        model.NotificationTypeWithdrawApproved,
+		RelatedID:   withdraw.ID,
+		RelatedType: "withdraw",
+		ActionURL:   fmt.Sprintf("/merchant/withdraws/%d", withdraw.ID),
+		Extra: map[string]interface{}{
+			"withdrawId": withdraw.ID,
+			"amount":     withdraw.Amount,
+			"orderNo":    withdraw.OrderNo,
+		},
+	})
+}
+
+// NotifyWithdrawCompleted 通知商家提现已打款
+func (s *NotificationService) NotifyWithdrawCompleted(withdraw *model.MerchantWithdraw, providerUserID uint64) error {
+	return s.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "提现已打款",
+		Content:     fmt.Sprintf("您的提现申请已完成打款，金额：%.2f元", withdraw.Amount),
+		Type:        model.NotificationTypeWithdrawCompleted,
 		RelatedID:   withdraw.ID,
 		RelatedType: "withdraw",
 		ActionURL:   fmt.Sprintf("/merchant/withdraws/%d", withdraw.ID),
@@ -352,10 +376,10 @@ func (s *NotificationService) GetUnreadCount(userID uint64, userType string) (in
 }
 
 // MarkAsRead 标记已读
-func (s *NotificationService) MarkAsRead(notificationID, userID uint64) error {
+func (s *NotificationService) MarkAsRead(notificationID, userID uint64, userType string) error {
 	now := time.Now()
 	result := repository.DB.Model(&model.Notification{}).
-		Where("id = ? AND user_id = ?", notificationID, userID).
+		Where("id = ? AND user_id = ? AND user_type = ?", notificationID, userID, userType).
 		Updates(map[string]interface{}{
 			"is_read": true,
 			"read_at": &now,
@@ -364,27 +388,92 @@ func (s *NotificationService) MarkAsRead(notificationID, userID uint64) error {
 	if result.RowsAffected == 0 {
 		return errors.New("通知不存在")
 	}
-	return result.Error
+	if result.Error != nil {
+		return result.Error
+	}
+
+	s.publishReadNotification(userType, userID, notificationID)
+	s.publishUnreadCount(userType, userID)
+	return nil
 }
 
 // MarkAllAsRead 全部标记已读
 func (s *NotificationService) MarkAllAsRead(userID uint64, userType string) error {
 	now := time.Now()
-	return repository.DB.Model(&model.Notification{}).
+	if err := repository.DB.Model(&model.Notification{}).
 		Where("user_id = ? AND user_type = ? AND is_read = ?", userID, userType, false).
 		Updates(map[string]interface{}{
 			"is_read": true,
 			"read_at": &now,
-		}).Error
+		}).Error; err != nil {
+		return err
+	}
+
+	s.publishAllReadNotification(userType, userID)
+	s.publishUnreadCount(userType, userID)
+	return nil
 }
 
 // DeleteNotification 删除通知
-func (s *NotificationService) DeleteNotification(notificationID, userID uint64) error {
-	result := repository.DB.Where("id = ? AND user_id = ?", notificationID, userID).
+func (s *NotificationService) DeleteNotification(notificationID, userID uint64, userType string) error {
+	result := repository.DB.Where("id = ? AND user_id = ? AND user_type = ?", notificationID, userID, userType).
 		Delete(&model.Notification{})
 
 	if result.RowsAffected == 0 {
 		return errors.New("通知不存在")
 	}
-	return result.Error
+	if result.Error != nil {
+		return result.Error
+	}
+
+	s.publishDeletedNotification(userType, userID, notificationID)
+	s.publishUnreadCount(userType, userID)
+	return nil
+}
+
+func (s *NotificationService) publishNewNotification(notification *model.Notification) {
+	publisher := GetNotificationPublisher()
+	if publisher == nil || notification == nil {
+		return
+	}
+
+	_ = publisher.PublishNew(notification)
+	s.publishUnreadCount(notification.UserType, notification.UserID)
+}
+
+func (s *NotificationService) publishUnreadCount(userType string, userID uint64) {
+	publisher := GetNotificationPublisher()
+	if publisher == nil || userID == 0 || userType == "" {
+		return
+	}
+
+	count, err := s.GetUnreadCount(userID, userType)
+	if err != nil {
+		return
+	}
+	_ = publisher.PublishUnreadCount(userType, userID, count)
+}
+
+func (s *NotificationService) publishReadNotification(userType string, userID, notificationID uint64) {
+	publisher := GetNotificationPublisher()
+	if publisher == nil || userID == 0 || userType == "" || notificationID == 0 {
+		return
+	}
+	_ = publisher.PublishRead(userType, userID, notificationID)
+}
+
+func (s *NotificationService) publishDeletedNotification(userType string, userID, notificationID uint64) {
+	publisher := GetNotificationPublisher()
+	if publisher == nil || userID == 0 || userType == "" || notificationID == 0 {
+		return
+	}
+	_ = publisher.PublishDeleted(userType, userID, notificationID)
+}
+
+func (s *NotificationService) publishAllReadNotification(userType string, userID uint64) {
+	publisher := GetNotificationPublisher()
+	if publisher == nil || userID == 0 || userType == "" {
+		return
+	}
+	_ = publisher.PublishAllRead(userType, userID)
 }
