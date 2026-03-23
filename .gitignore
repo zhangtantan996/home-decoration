@@ -43,7 +43,9 @@ NUL
 # Agent & IDE Specific
 .agent/
 .claude/
-.codex/
+.codex/*
+!.codex/agents/
+!.codex/agents/**
 .cursor/
 .kiro/
 .superdesign/
