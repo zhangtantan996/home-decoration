@@ -1,19 +1,754 @@
-.projectCard {
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+.mainContainer {
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
+  align-self: flex-start;
+  padding: 1.5rem;
+  background-color: transparent;
+  color: #1e293b;
+  font-family: 'Inter', system-ui, sans-serif;
+  box-sizing: border-box;
+}
+
+.mainContainer * {
+  box-sizing: border-box;
+}
+
+.materialIcon {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Card Base */
+.cardBase {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+  padding: 24px;
+}
+
+/* Base Bento Grid layout */
+.bentoGrid {
   display: grid;
-  gap: 8px;
-  padding: 20px;
-  border-radius: 18px;
-  border: 1px solid var(--color-border-soft);
-  background: #fff;
+  grid-template-columns: 1fr;
+  gap: 24px;
 }
 
-.projectCard span,
-.projectCard p {
+@media (min-width: 1024px) {
+  .bentoGrid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+}
+
+.col8 {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+@media (min-width: 1024px) {
+  .col8 {
+    grid-column: span 8 / span 8;
+  }
+}
+
+.col4 {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+@media (min-width: 1024px) {
+  .col4 {
+    grid-column: span 4 / span 4;
+  }
+}
+
+/* 1. Hero Card - screenshot 2 */
+.heroCard {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+@media (min-width: 1024px) {
+  .heroCard {
+    flex-direction: row;
+  }
+}
+
+.heroLeft {
+  width: 100%;
+  min-height: 280px;
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+
+  .heroImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .heroImagePlaceholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: white;
+
+    svg {
+      width: 64px;
+      height: 64px;
+      opacity: 0.8;
+    }
+
+    span {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+  }
+
+  .heroBadge {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    z-index: 1;
+  }
+}
+
+@media (min-width: 1024px) {
+  .heroLeft {
+    width: 380px;
+    min-width: 380px;
+    min-height: 280px;
+  }
+}
+
+.heroRight {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.heroRightTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0 0 8px;
+  }
+  .projectId {
+    font-size: 14px;
+    color: #2563eb;
+    margin: 0;
+  }
+}
+
+.heroDateInfo {
+  text-align: right;
+  p, strong { margin: 0; }
+  p {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 4px;
+  }
+  strong {
+    font-size: 18px;
+    color: #0f172a;
+    font-weight: 700;
+  }
+}
+
+.heroMetaList {
+  list-style: none;
   margin: 0;
-  color: var(--color-secondary);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+
+  li {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  span {
+    font-size: 13px;
+    color: #64748b;
+  }
+
+  b {
+    font-size: 15px;
+    line-height: 1.5;
+    color: #0f172a;
+    font-weight: 600;
+    word-break: break-word;
+  }
 }
 
-.projectCard strong {
-  color: var(--color-ink);
-  font-family: var(--font-family-heading);
+.heroProgressRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .heroProgressTop {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    .tag {
+      background: #eff6ff;
+      color: #2563eb;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .val {
+      color: #2563eb;
+      font-size: 14px;
+      font-weight: 700;
+    }
+  }
+
+  .progressBar {
+    width: 100%;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+
+    .fill {
+      height: 100%;
+      background: #2563eb;
+      border-radius: 999px;
+    }
+  }
+}
+
+
+/* 2. Finance Overview */
+.financeHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+
+  .iconBox {
+    background: #2563eb;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    .materialIcon { font-size: 18px; }
+  }
+
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+  }
+}
+
+.financeLayout {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.financeLeft {
+  display: flex;
+  flex-direction: column;
+
+  .totalLabel {
+    font-size: 14px;
+    color: #64748b;
+    margin: 0 0 4px;
+  }
+  .totalVal {
+    font-size: 32px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 24px;
+  }
+
+  .financeSplit {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 24px;
+
+    .splitPair {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+
+      span {
+        font-size: 13px;
+        color: #64748b;
+      }
+      strong.blue { color: #2563eb; font-size: 18px; font-weight: 700; }
+      strong.gold { color: #b45309; font-size: 18px; font-weight: 700; }
+    }
+  }
+
+  .financeLink {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+
+    .materialIcon { font-size: 16px; margin-left: 4px; transition: transform 0.2s; }
+    &:hover .materialIcon { transform: translateX(2px); }
+  }
+}
+
+.financeDonut {
+  position: relative;
+  width: 180px;
+  height: 180px;
+
+  svg {
+    transform: rotate(-90deg);
+    width: 100%;
+    height: 100%;
+  }
+
+  .donutInner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    .pct {
+      font-size: 24px;
+      font-weight: 800;
+      color: #0f172a;
+      text-align: center;
+    }
+    .lbl {
+      font-size: 12px;
+      color: #64748b;
+    }
+  }
+}
+
+/* New: Todo Card */
+.todoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+
+  .left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .iconBox {
+      color: #2563eb;
+      .materialIcon { font-size: 24px; }
+    }
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1e293b;
+      margin: 0;
+    }
+  }
+
+  .badgeCount {
+    background: #ef4444;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+}
+
+.todoList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.todoItem {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  background: #f8fafc;
+
+  .todoTop {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+
+    strong {
+      font-size: 15px;
+      color: #1e293b;
+      display: block;
+      margin-bottom: 4px;
+    }
+    p {
+      font-size: 13px;
+      color: #64748b;
+      margin: 0;
+    }
+
+    .todoStatusBadge {
+      font-size: 12px;
+      font-weight: bold;
+      padding: 4px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+
+      &.urgent { background: #fef2f2; color: #ef4444; }
+      &.pending { background: #fffbeb; color: #d97706; }
+      &.normal { background: #e0e7ff; color: #4338ca; }
+    }
+  }
+
+  .todoBottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    em {
+      font-style: normal;
+      font-weight: bold;
+      color: #0f172a;
+      font-size: 14px;
+    }
+
+    .todoAction {
+      color: #2563eb;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+}
+
+/* 3. Construction Progress Timeline - screenshot 3 bottom */
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+
+  .left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .iconBox {
+      color: #2563eb;
+      .materialIcon { font-size: 22px; }
+    }
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1e293b;
+      margin: 0;
+    }
+  }
+
+  .right {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2563eb;
+  }
+}
+
+.timeline {
+  margin-left: 10px;
+  border-left: 2px solid #f1f5f9;
+  padding-left: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  position: relative;
+}
+
+.tlItem {
+  position: relative;
+
+  .tlIcon {
+    position: absolute;
+    left: -42px; /* Pull back to center over the border-left line */
+    top: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: white; /* masks the line underneath */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .tlDot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+    }
+
+    &.done {
+      background: #d1fae5;
+      .tlDot { background: #10b981; }
+    }
+    &.active {
+      background: #dbeafe;
+      .tlDot { background: #2563eb; }
+    }
+    &.pending {
+      width: 8px;
+      height: 8px;
+      left: -33px; /* centering smaller dot manually */
+      top: 6px;
+      background: #cbd5e1;
+      .tlDot { display: none; }
+    }
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1e293b;
+  }
+
+  p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: #64748b;
+  }
+
+  &.pending h3 {
+    font-weight: normal;
+    color: #64748b;
+  }
+  &.pending p {
+    color: #94a3b8;
+  }
+}
+
+.tlPhotos {
+  margin-top: 16px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  img {
+    width: 140px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 8px;
+  }
+
+  .phaseEmpty {
+    min-width: 180px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px dashed #cbd5e1;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+  }
+}
+
+.timelineEmpty {
+  padding: 16px 18px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 4. Team Card - screenshot 1 */
+.teamHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+
+  .iconBox {
+    color: #2563eb;
+    .materialIcon { font-size: 24px; }
+  }
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+  }
+}
+
+.teamList {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.teamItem {
+  background: #f8fafc;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.teamItemLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  .avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .avatarFallback {
+      width: 100%;
+      height: 100%;
+      background: #e2e8f0;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 20px;
+    }
+  }
+
+  .info {
+    h3 {
+      font-size: 17px;
+      font-weight: 700;
+      color: #1e293b;
+      margin: 0 0 4px;
+    }
+    p {
+      font-size: 13px;
+      color: #64748b;
+      margin: 0;
+    }
+  }
+}
+
+.teamActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+
+  .phoneNumber {
+    font-size: 15px;
+    font-weight: 600;
+    color: #0f172a;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    padding: 8px 16px;
+    border-radius: 999px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  }
+
+  button {
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #2563eb;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    cursor: pointer;
+    transition: all 0.2s;
+
+    .materialIcon { font-size: 20px; }
+
+    &:hover {
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+      transform: translateY(-1px);
+    }
+  }
+}
+
+.teamEmpty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 16px 18px;
 }

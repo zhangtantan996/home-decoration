@@ -1,12 +1,19 @@
 import { Link } from 'react-router-dom';
 
-import { EmptyBlock, ErrorBlock, LoadingBlock } from '../components/AsyncState';
+import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getProfileHomeData } from '../services/profile';
 import type { ProfileHomeVM } from '../types/viewModels';
+import styles from './ProfileHomePage.module.scss';
 
-const iconClassMap = ['ps-blue', 'ps-green', 'ps-amber', 'ps-rose'];
-const shortcutIconMap = ['ps-blue', 'ps-green', 'ps-amber', 'ps-slate'];
+const StatIcons = [
+  <svg fill="none" key="0" stroke="currentColor" strokeWidth={1.9} viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  <svg fill="none" key="1" stroke="currentColor" strokeWidth={1.9} viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  <svg fill="none" key="2" stroke="currentColor" strokeWidth={1.9} viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  <svg fill="none" key="3" stroke="currentColor" strokeWidth={1.9} viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+];
+
+const colorClasses = ['blue', 'green', 'amber', 'rose', 'slate'];
 
 export function ProfileHomePage() {
   const { data, loading, error, reload } = useAsyncData<ProfileHomeVM>(getProfileHomeData, []);
@@ -16,81 +23,111 @@ export function ProfileHomePage() {
   }
 
   if (error || !data) {
-    return <ErrorBlock description={error || '个人中心加载失败'} onRetry={() => void reload()} />;
+    return <ErrorBlock description={error || '加载失败'} onRetry={() => void reload()} />;
   }
 
   return (
-    <>
-      <section className="profile-hero">
-        <div className="profile-av">
-          {data.avatar ? <img alt={data.displayName} src={data.avatar} /> : data.displayName.slice(0, 1)}
-        </div>
-        <div className="profile-info">
-          <h2>{data.displayName}</h2>
-          <p>{data.phoneText}</p>
+    <div className={styles.pageContainer}>
+      <header className={styles.sectionHead}>
+        <h2>概览</h2>
+      </header>
+
+      <section className={styles.heroCard}>
+        <div className={styles.heroTitleRow}>
+          <div className={styles.heroIdentity}>
+            {data.avatar ? (
+              <img alt={data.displayName} className={styles.heroAvatar} src={data.avatar} />
+            ) : (
+              <div className={styles.heroAvatar}>{data.displayName.slice(0, 1)}</div>
+            )}
+            <div className={styles.heroTitleBlock}>
+              <p className={styles.heroEyebrow}>个人中心</p>
+              <h3>{data.displayName}</h3>
+            </div>
+          </div>
+          <Link className={styles.heroAction} to="/me/settings?tab=profile">
+            编辑资料
+          </Link>
         </div>
       </section>
 
-      <div className="profile-grid">
-        {data.summaryCards.slice(0, 4).map((item, index) => (
-          <article className="profile-stat" key={item.title}>
-            <div className={`ps-icon ${iconClassMap[index % iconClassMap.length]}`}>{item.title.slice(0, 1)}</div>
-            <div className="ps-count">{item.value}</div>
-            <div className="ps-label">{item.title}</div>
-            <div className="ps-sub">{item.description}</div>
-          </article>
-        ))}
-      </div>
+      <section className={styles.surfaceCard}>
+        <div className={styles.surfaceHead}>
+          <h3>关键概览</h3>
+        </div>
+        <div className={styles.statGrid}>
+          {data.summaryCards.slice(0, 4).map((item, index) => {
+            const colorClass = styles[colorClasses[index % colorClasses.length]] || '';
+            const content = (
+              <>
+                <div className={`${styles.statIconWrap} ${colorClass}`.trim()}>
+                  {StatIcons[index % StatIcons.length]}
+                </div>
+                <strong className={styles.statCount}>{item.value}</strong>
+                <span className={styles.statTitle}>{item.title}</span>
+                <p className={styles.statDescription}>{item.description}</p>
+              </>
+            );
 
-      <div className="profile-shortcuts">
-        {data.shortcuts.slice(1, 5).map((item, index) => (
-          <Link className="ps-link" key={item.key} to={item.href || '/me'}>
-            <span className={`ps-link-icon ${shortcutIconMap[index % shortcutIconMap.length]}`}>{item.title.slice(0, 1)}</span>
-            <span>{item.title}</span>
-          </Link>
-        ))}
-      </div>
+            if (item.href) {
+              return (
+                <Link className={`${styles.statCard} ${styles.statLink}`.trim()} key={item.title} to={item.href}>
+                  {content}
+                </Link>
+              );
+            }
 
-      {data.latestMessages.length === 0 ? null : (
-        <section style={{ marginTop: 24 }}>
-          <div className="section-head" style={{ marginBottom: 16 }}>
-            <h2>最近动态</h2>
+            return <article className={styles.statCard} key={item.title}>{content}</article>;
+          })}
+        </div>
+      </section>
+
+      {data.latestMessages.length > 0 ? (
+        <section className={styles.surfaceCard}>
+          <div className={styles.surfaceHead}>
+            <h3>最近动态</h3>
+            <Link className={styles.surfaceLink} to="/me/messages">
+              查看全部
+            </Link>
           </div>
-          <div className="msg-list">
+          <div className={styles.feedList}>
             {data.latestMessages.map((item) => (
-              <Link className="msg-item" key={item.id} to={item.href || '/messages'}>
-                <div className="msg-icon mi-blue">动</div>
-                <div className="msg-body">
+              <Link className={styles.feedCard} key={item.id} to={item.href || '/me/messages'}>
+                <div className={styles.feedIcon}>
+                  <svg fill="none" stroke="currentColor" strokeWidth={1.7} viewBox="0 0 24 24"><path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </div>
+                <div className={styles.feedContent}>
                   <strong>{item.title}</strong>
                   <p>{item.subtitle}</p>
                 </div>
-                <div className="msg-time">{item.meta}</div>
+                <div className={styles.feedMeta}>{item.meta}</div>
               </Link>
             ))}
           </div>
         </section>
-      )}
+      ) : null}
 
-      {data.pendingPayments.length === 0 ? null : (
-        <section style={{ marginTop: 24 }}>
-          <div className="section-head" style={{ marginBottom: 16 }}>
-            <h2>最近订单</h2>
+      {data.pendingPayments.length > 0 ? (
+        <section className={styles.surfaceCard}>
+          <div className={styles.surfaceHead}>
+            <h3>最近订单</h3>
+            <Link className={styles.surfaceLink} to="/me/orders">
+              查看全部
+            </Link>
           </div>
-          <div className="project-list">
+          <div className={styles.orderList}>
             {data.pendingPayments.map((item) => (
-              <Link className="proj-card" key={item.id} to={item.href || '/me/orders'}>
-                <div>
-                  <div className="proj-name">{item.title}</div>
-                  <div className="proj-phase">{item.subtitle}</div>
+              <Link className={styles.orderCard} key={item.id} to={item.href || '/me/orders'}>
+                <div className={styles.orderInfo}>
+                  <strong>{item.title}</strong>
+                  <span>{item.subtitle}</span>
                 </div>
-                <div className="proj-percent">{item.meta}</div>
+                <em className={styles.orderAmount}>{item.meta}</em>
               </Link>
             ))}
           </div>
         </section>
-      )}
-
-      {data.shortcuts.length === 0 ? <EmptyBlock title="暂无快捷入口" description="当前没有可展示的常用入口。" /> : null}
-    </>
+      ) : null}
+    </div>
   );
 }

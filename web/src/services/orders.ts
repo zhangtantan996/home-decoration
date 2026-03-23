@@ -2,7 +2,9 @@ import type { PageEnvelope } from '../types/api';
 import type { OrderListItemVM } from '../types/viewModels';
 import { ORDER_STATUS_LABELS } from '../constants/statuses';
 import { formatCurrency, formatDateTime } from '../utils/format';
+import { detectTerminalType } from '../utils/terminal';
 import { requestJson } from './http';
+import type { PaymentLaunchPayload } from './payments';
 
 interface OrderListDTO {
   id: number;
@@ -49,7 +51,8 @@ export async function listOrders(params: { page?: number; pageSize?: number; sta
 }
 
 export async function payOrder(id: number) {
-  await requestJson(`/orders/${id}/pay`, {
+  return requestJson<PaymentLaunchPayload>(`/orders/${id}/pay`, {
     method: 'POST',
+    body: { terminalType: detectTerminalType() },
   });
 }

@@ -7,7 +7,7 @@ import { SettingsActionButton, SettingsLayout, SettingsPageDescription, Settings
 import { SETTINGS_COLORS, SETTINGS_RADIUS } from '../styles/settingsTheme';
 import { useAuthStore } from '../store/authStore';
 
-const REASONS = ['暂时不用了', '切换其他账号', '担心隐私与消息打扰', '其他原因'];
+const REASONS = ['暂时不用了', '切换其他账号', '担心隐私与通知打扰', '其他原因'];
 
 const AccountCancellationScreen = ({ navigation }: any) => {
     const { logout } = useAuthStore();

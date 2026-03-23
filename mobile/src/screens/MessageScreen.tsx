@@ -587,7 +587,7 @@ const MessageScreen: React.FC = () => {
         <SafeAreaView style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>消息中心</Text>
+                <Text style={styles.headerTitle}>通知中心</Text>
                 {/* 连接状态指示器 */}
                 <View style={styles.connectionStatus}>
                     {imStatus === 'connected' ? (

@@ -6,11 +6,13 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Input } from '@/components/Input';
 import { sendLoginCode, wechatH5BindPhone } from '@/services/auth_h5';
+import { navigateAfterAuthSuccess } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 
 export default function WechatBindPhonePage() {
   const router = useRouter();
   const bindToken = (router.params?.bindToken || '').trim();
+  const returnUrl = (router.params?.returnUrl || '').trim();
 
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -65,7 +67,7 @@ export default function WechatBindPhonePage() {
     try {
       await wechatH5BindPhone(bindToken, phone.trim(), code.trim());
       Taro.showToast({ title: '绑定成功', icon: 'success' });
-      Taro.switchTab({ url: '/pages/profile/index' });
+      await navigateAfterAuthSuccess(returnUrl);
     } catch (err) {
       showErrorToast(err, '绑定失败');
     }

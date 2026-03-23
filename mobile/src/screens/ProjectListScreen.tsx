@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { ArrowLeft, MapPin, Calendar, ChevronRight } from 'lucide-react-native';
 import { projectApi } from '../services/api';
+import { formatServerDate } from '../utils/serverTime';
 
 interface Project {
     id: number;
@@ -108,7 +109,7 @@ const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => 
                         <View style={styles.infoRow}>
                             <Calendar size={16} color="#71717A" />
                             <Text style={styles.infoText}>
-                                {new Date(item.startDate || item.entryStartDate).toLocaleDateString()} 开工
+                                {formatServerDate(item.startDate || item.entryStartDate)} 开工
                             </Text>
                         </View>
                     )}

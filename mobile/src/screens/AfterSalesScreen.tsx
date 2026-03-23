@@ -19,6 +19,7 @@ import { ArrowLeft, Plus, Clock, CheckCircle, XCircle, AlertCircle } from 'lucid
 import { afterSalesApi } from '../services/api';
 import { useToast } from '../components/Toast';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { formatServerDate } from '../utils/serverTime';
 
 type AfterSalesScreenRouteProp = RouteProp<RootStackParamList, 'AfterSales'>;
 type AfterSalesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -142,7 +143,7 @@ const AfterSalesScreen = () => {
     const renderItem = ({ item }: { item: AfterSalesItem }) => {
         const statusConfig = STATUS_CONFIG[item.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG[0];
         const StatusIcon = statusConfig.icon;
-        const createdDate = new Date(item.createdAt).toLocaleDateString('zh-CN');
+        const createdDate = formatServerDate(item.createdAt);
 
         return (
             <View style={styles.card}>

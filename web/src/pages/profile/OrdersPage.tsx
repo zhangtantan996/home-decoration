@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/AsyncState';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { listOrders, payOrder } from '../../services/orders';
+import styles from './WorkspacePage.module.scss';
 
 const filters = [
   { key: 'all', label: '全部' },
@@ -31,34 +32,52 @@ export function OrdersPage() {
   }, [activeFilter, data]);
 
   if (loading) return <LoadingBlock title="加载订单列表" />;
-  if (error || !data) return <ErrorBlock description={error || '订单列表加载失败'} onRetry={() => void reload()} />;
+  if (error || !data) return <ErrorBlock description={error || '加载订单失败'} onRetry={() => void reload()} />;
 
   return (
-    <section>
-      <div className="section-head" style={{ marginBottom: 20 }}>
+    <div className={styles.pageContainer}>
+      <header className={styles.sectionHead}>
         <h2>我的订单</h2>
-      </div>
-      <div className="ptabs" style={{ marginBottom: 16 }}>
+      </header>
+
+      <div className={styles.filterTabs}>
         {filters.map((item) => (
-          <button className={`ptab ${activeFilter === item.key ? 'active' : ''}`} key={String(item.key)} onClick={() => setActiveFilter(item.key)} type="button">
+          <button
+            className={`${styles.filterTab} ${activeFilter === item.key ? styles.active : ''}`}
+            key={String(item.key)}
+            onClick={() => setActiveFilter(item.key)}
+            type="button"
+          >
             {item.label}
           </button>
         ))}
       </div>
-      {actionMessage ? <div className="status-note" style={{ marginBottom: 16 }}>{actionMessage}</div> : null}
-      {filtered.length === 0 ? <EmptyBlock title="暂无订单" description="当前筛选条件下没有订单记录。" /> : (
-        <div className="project-list">
+
+      {actionMessage ? <div className={styles.messageNote}>{actionMessage}</div> : null}
+
+      {filtered.length === 0 ? (
+        <EmptyBlock title="暂无订单" description="" />
+      ) : (
+        <div className={styles.list}>
           {filtered.map((item) => {
             const href = item.projectId ? `/projects/${item.projectId}` : item.proposalId ? `/proposals/${item.proposalId}` : undefined;
             const progress = calcProgress(item.status);
+
             const card = (
-              <div className="proj-card">
-                <div>
-                  <div className="proj-name">{item.orderNo}</div>
-                  <div className="proj-phase">{item.providerName} · {item.statusText}</div>
-                  <div className="proj-bar"><div className="proj-bar-fill" style={{ width: `${progress}%` }} /></div>
+              <div className={styles.card}>
+                <div className={styles.cardBody}>
+                  <div className={styles.cardTitle}>
+                    <h3>{item.orderNo}</h3>
+                    <p>{item.providerName}</p>
+                  </div>
+                  <div className={styles.statusBar}>
+                    <div className={styles.statusFill} style={{ width: `${progress}%` }} />
+                  </div>
                 </div>
-                <div className="proj-percent">{item.amountText}</div>
+                <div className={styles.metaBlock}>
+                  <span>{item.statusText}</span>
+                  <strong>{item.amountText}</strong>
+                </div>
               </div>
             );
 
@@ -70,18 +89,18 @@ export function OrdersPage() {
           })}
         </div>
       )}
-      {filtered.some((item) => item.status === 0) ? (
-        <div className="inline-actions" style={{ marginTop: 16 }}>
+
+      {filtered.some((item) => item.status === 0) && (
+        <div className={styles.inlineActionWrap}>
           {filtered.filter((item) => item.status === 0).slice(0, 1).map((item) => (
             <button
-              className="button-secondary"
+              className={styles.primaryInlineAction}
               key={item.id}
               onClick={async () => {
                 setActionMessage('');
                 try {
-                  await payOrder(item.id);
-                  setActionMessage(`订单 ${item.orderNo} 已支付。`);
-                  await reload();
+                  const payment = await payOrder(item.id);
+                  window.location.assign(payment.launchUrl);
                 } catch (payError) {
                   setActionMessage(payError instanceof Error ? payError.message : '支付失败');
                 }
@@ -92,7 +111,7 @@ export function OrdersPage() {
             </button>
           ))}
         </div>
-      ) : null}
-    </section>
+      )}
+    </div>
   );
 }

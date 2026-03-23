@@ -12,13 +12,15 @@ export default {
     'pages/inspiration/index',
     'pages/inspiration/detail/index',
     'pages/inspiration/quote/index',
+    'pages/cases/gallery/index',
+    'pages/cases/detail/index',
+    'pages/reviews/index',
     'pages/progress/index',
-    'pages/messages/index',
-    'pages/chat/index',
     'pages/profile/index',
     'pages/profile/edit/index',
     'pages/providers/list/index',
     'pages/providers/detail/index',
+    'pages/material-shops/detail/index',
     'pages/booking/create/index',
     'pages/booking/list/index',
     'pages/booking/detail/index',
@@ -39,6 +41,7 @@ export default {
   ],
 
   tabBar: {
+    custom: true,
     color: '#71717A',
     selectedColor: '#D4AF37',
     backgroundColor: '#FFFFFF',
@@ -61,12 +64,6 @@ export default {
         text: '进度',
         iconPath: 'assets/tab/progress.png',
         selectedIconPath: 'assets/tab/progress-active.png',
-      },
-      {
-        pagePath: 'pages/messages/index',
-        text: '消息',
-        iconPath: 'assets/tab/message.png',
-        selectedIconPath: 'assets/tab/message-active.png',
       },
       {
         pagePath: 'pages/profile/index',

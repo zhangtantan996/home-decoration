@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import { proposalApi, orderApi } from '../services/api';
 import { ProposalStatus, ProposalStatusType, getProposalStatusText } from '../types/businessFlow';
+import { formatServerDate, getServerTimeMs } from '../utils/serverTime';
 
 // Tab 配置
 const TABS = [
@@ -98,7 +99,7 @@ const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
     // 计算倒计时
     const getCountdown = (expireAt: string | null) => {
         if (!expireAt) return null;
-        const expire = new Date(expireAt).getTime();
+        const expire = getServerTimeMs(expireAt);
         const now = Date.now();
         const diff = expire - now;
         if (diff <= 0) return '已过期';
@@ -176,7 +177,7 @@ const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
                             {item.summary || '设计方案'}
                         </Text>
                         <Text style={styles.cardSubtitle}>
-                            {new Date(item.createdAt).toLocaleDateString()}
+                            {formatServerDate(item.createdAt)}
                         </Text>
                     </View>
                     <View style={[styles.statusBadge, { backgroundColor: '#F59E0B20' }]}>

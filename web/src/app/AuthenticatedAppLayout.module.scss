@@ -17,8 +17,8 @@
 
 .headerInner {
   width: 100%;
-  max-width: var(--container-width);
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -45,12 +45,16 @@
 .nav {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 28px;
+  height: 64px;
   margin-left: 32px;
 }
 
 .navItem {
   position: relative;
+  display: flex;
+  align-items: stretch;
+  height: 100%;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -61,23 +65,24 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
-  border-radius: 10px;
+  height: 100%;
+  padding: 0 2px;
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1;
   color: var(--color-muted);
   transition: all 0.15s;
   position: relative;
+  border-bottom: 2px solid transparent;
 }
 
 .navItem span:hover {
   color: var(--color-brand);
-  background: var(--color-brand-soft);
 }
 
 .navItemActive span {
   color: var(--color-brand);
-  background: var(--color-brand-soft);
+  border-bottom-color: var(--color-brand);
 }
 
 .navBadge {
@@ -101,6 +106,23 @@
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+
+.accountLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.accountName {
+  color: var(--color-text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .notiBtn,
@@ -245,6 +267,10 @@
   .right {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .accountName {
+    display: none;
   }
 
   .search {

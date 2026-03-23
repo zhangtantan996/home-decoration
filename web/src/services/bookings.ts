@@ -8,7 +8,9 @@ import type {
 } from '../types/viewModels';
 import { BOOKING_STATUS_LABELS } from '../constants/statuses';
 import { formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
+import { detectTerminalType } from '../utils/terminal';
 import { requestJson } from './http';
+import type { PaymentLaunchPayload } from './payments';
 
 interface CreateBookingPayload {
   providerId: number;
@@ -240,8 +242,9 @@ export async function getBookingDetail(id: number) {
 }
 
 export async function payIntentFee(id: number) {
-  await requestJson(`/bookings/${id}/pay-intent`, {
+  return requestJson<PaymentLaunchPayload>(`/bookings/${id}/pay-intent`, {
     method: 'POST',
+    body: { terminalType: detectTerminalType() },
   });
 }
 
@@ -341,8 +344,9 @@ export interface DesignDeliverableVM {
 }
 
 export async function paySurveyDeposit(bookingId: number) {
-  return requestJson<{ message?: string }>(`/bookings/${bookingId}/pay-survey-deposit`, {
+  return requestJson<PaymentLaunchPayload>(`/bookings/${bookingId}/pay-survey-deposit`, {
     method: 'POST',
+    body: { terminalType: detectTerminalType() },
   });
 }
 

@@ -1,5 +1,5 @@
 import type { HomePageDataVM, InspirationListItemVM, MaterialShopListItemVM, ProviderListItemVM } from '../types/viewModels';
-import { normalizeProviderRole, parseTextArray, summarizePricing } from '../utils/provider';
+import { normalizeProviderRole, parseTextArray, resolveProviderDisplayName, summarizePricing } from '../utils/provider';
 import { listBookings } from './bookings';
 import { listDemands } from './demands';
 import { listInspiration } from './inspiration';
@@ -67,7 +67,7 @@ export async function getHomePageData(): Promise<HomePageDataVM> {
         href: '/progress',
       },
       {
-        title: '最新消息',
+        title: '最新通知',
         count: `${notifications.filter((item) => !item.isRead).length}`,
         description: '系统提醒和业务通知都在这里。',
         href: '/messages',
@@ -134,9 +134,7 @@ interface HomepageResponse {
 function toProviderVM(dto: HomepageProviderDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
   const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit);
-  const displayName = role === 'company'
-    ? (dto.companyName || dto.nickname || '未命名服务商')
-    : (dto.nickname || dto.companyName || '未命名服务商');
+  const displayName = resolveProviderDisplayName(role, dto.companyName, dto.nickname);
   return {
     id: dto.id,
     role,

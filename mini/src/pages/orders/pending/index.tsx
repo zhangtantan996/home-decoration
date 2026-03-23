@@ -11,6 +11,7 @@ import { payIntentFee } from '@/services/bookings';
 import { listPendingPayments, payOrder, type PendingPaymentItem } from '@/services/orders';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { formatServerDateTime } from '@/utils/serverTime';
 
 const PendingOrders: React.FC = () => {
   const auth = useAuthStore();
@@ -88,7 +89,7 @@ const PendingOrders: React.FC = () => {
       {!auth.token ? (
         <Empty
           description="登录后查看待付款订单"
-          action={{ text: '去登录', onClick: () => Taro.navigateTo({ url: '/pages/profile/index' }) }}
+          action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
         />
       ) : loading && list.length === 0 ? (
         <View>
@@ -122,7 +123,7 @@ const PendingOrders: React.FC = () => {
               {item.expireAt ? (
                 <View className="flex justify-between text-sm">
                   <Text className="text-gray-500">截止时间</Text>
-                  <Text className="text-error">{new Date(item.expireAt).toLocaleString()}</Text>
+                  <Text className="text-error">{formatServerDateTime(item.expireAt)}</Text>
                 </View>
               ) : null}
 

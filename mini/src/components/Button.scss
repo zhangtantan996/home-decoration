@@ -10,6 +10,11 @@
   font-weight: 600;
   padding: 0 40rpx;
   transition: opacity 0.2s;
+  overflow: hidden;
+
+  &::after {
+    border: none;
+  }
   
   &:active {
     opacity: 0.8;
@@ -51,6 +56,10 @@
     background-color: $color-disabled;
     color: $color-secondary;
     border-color: $color-disabled;
+  }
+
+  &--block {
+    width: 100%;
   }
   
   &--sm {

@@ -26,6 +26,7 @@ import { proposalApi } from '../services/api';
 import { useToast } from '../components/Toast';
 import { Proposal, ProposalStatus, getProposalStatusText, Order } from '../types/businessFlow';
 import RejectionReasonModal from '../components/RejectionReasonModal';
+import { formatServerDate } from '../utils/serverTime';
 
 const { width } = Dimensions.get('window');
 
@@ -189,7 +190,7 @@ const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navi
                             </Text>
                         </View>
                         <Text style={styles.createTime}>
-                            提交于 {new Date(proposal.createdAt).toLocaleDateString()}
+                            提交于 {formatServerDate(proposal.createdAt)}
                         </Text>
                     </View>
 

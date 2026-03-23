@@ -1,0 +1,282 @@
+.mainContainer {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 24px 56px;
+  display: grid;
+  gap: 20px;
+}
+
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 24px 28px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #ffffff 0%, #f6f8fb 100%);
+  border: 1px solid #d9e1ea;
+}
+
+.headerActions {
+  margin-bottom: 12px;
+}
+
+.pageHeader h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.1;
+  color: #18212f;
+}
+
+.pageHeader p {
+  margin: 8px 0 0;
+  color: #5f6b7a;
+  font-size: 14px;
+}
+
+.headerMeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.headerMeta span {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eef3f8;
+  color: #405063;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.summaryCard,
+.sectionCard {
+  border-radius: 24px;
+  background: #ffffff;
+  border: 1px solid #d9e1ea;
+}
+
+.summaryCard {
+  padding: 20px 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.summaryCard span {
+  font-size: 13px;
+  color: #66768a;
+}
+
+.summaryCard strong {
+  font-size: 28px;
+  line-height: 1.1;
+  color: #142033;
+}
+
+.sectionCard {
+  padding: 24px 28px;
+  display: grid;
+  gap: 20px;
+}
+
+.sectionHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.sectionHead h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #18212f;
+}
+
+.sectionHead p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: #69788a;
+}
+
+.sectionCount {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #f3f6fa;
+  color: #405063;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.emptyState,
+.inlineEmpty {
+  border-radius: 18px;
+  border: 1px dashed #c9d3df;
+  background: #f8fafc;
+  color: #617184;
+  font-size: 14px;
+}
+
+.emptyState {
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.inlineEmpty {
+  padding: 16px 18px;
+}
+
+.billList,
+.transactionList {
+  display: grid;
+  gap: 16px;
+}
+
+.billCard {
+  border-radius: 20px;
+  border: 1px solid #e1e8ef;
+  background: #fbfcfe;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.billTop,
+.planRow,
+.transactionRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.billTop h3,
+.planRow strong,
+.transactionRow strong {
+  margin: 0;
+  font-size: 16px;
+  color: #18212f;
+}
+
+.billTop p,
+.planRow p,
+.transactionRow p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #6b7888;
+}
+
+.planList {
+  display: grid;
+  gap: 12px;
+}
+
+.planRow,
+.transactionRow {
+  padding-top: 12px;
+  border-top: 1px solid #e7edf3;
+}
+
+.planRow:first-child,
+.transactionRow:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.planMeta,
+.transactionMeta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  text-align: right;
+}
+
+.planMeta > span:first-child,
+.transactionMeta > span:first-child {
+  font-size: 15px;
+  font-weight: 700;
+  color: #18212f;
+}
+
+.statusChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.paid {
+  background: #e6f6ec;
+  color: #18794e;
+}
+
+.pending {
+  background: #fff4df;
+  color: #9a6700;
+}
+
+.muted {
+  background: #eef2f6;
+  color: #66768a;
+}
+
+.neutral {
+  background: #edf2ff;
+  color: #3451b2;
+}
+
+@media (max-width: 1024px) {
+  .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .mainContainer {
+    padding: 16px 16px 40px;
+  }
+
+  .pageHeader,
+  .sectionCard {
+    padding: 20px;
+  }
+
+  .pageHeader,
+  .sectionHead,
+  .billTop,
+  .planRow,
+  .transactionRow {
+    flex-direction: column;
+  }
+
+  .headerMeta,
+  .planMeta,
+  .transactionMeta {
+    justify-content: flex-start;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryCard strong {
+    font-size: 24px;
+  }
+}

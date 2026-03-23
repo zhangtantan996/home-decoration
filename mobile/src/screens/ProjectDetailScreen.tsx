@@ -25,6 +25,7 @@ import {
 } from 'lucide-react-native';
 import { projectApi, billApi } from '../services/api';
 import { useToast } from '../components/Toast';
+import { formatServerDate } from '../utils/serverTime';
 
 interface Project {
     id: number;
@@ -82,8 +83,7 @@ const ProjectDetailScreen: React.FC<ProjectDetailScreenProps> = ({ route, naviga
     };
 
     const formatDate = (dateStr: string | null) => {
-        if (!dateStr) return '-';
-        return new Date(dateStr).toLocaleDateString('zh-CN');
+        return formatServerDate(dateStr);
     };
 
     const getStatusInfo = (status: number) => {

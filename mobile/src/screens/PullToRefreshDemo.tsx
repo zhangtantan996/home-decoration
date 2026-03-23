@@ -64,7 +64,7 @@ export const PullToRefreshDemo: React.FC = () => {
                 </View>
                 <View style={styles.tabItem}>
                     <Text style={styles.tabIcon}>💬</Text>
-                    <Text style={styles.tabLabel}>消息</Text>
+                    <Text style={styles.tabLabel}>通知</Text>
                 </View>
                 <View style={styles.tabItem}>
                     <Text style={styles.tabIcon}>👤</Text>

@@ -1,18 +1,17 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import companyLogo from '../assets/company-logo.png';
-import { useAsyncData } from '../hooks/useAsyncData';
 import { useSessionStore } from '../modules/session/sessionStore';
 import { getNotificationUnreadCount } from '../services/notifications';
+import { notificationRealtimeClient } from '../services/notificationRealtime';
 import styles from './AuthenticatedAppLayout.module.scss';
 
 const navItems = [
   { to: '/', label: '首页', end: true },
-  { to: '/providers', label: '找服务' },
+  { to: '/providers', label: '服务商' },
   { to: '/inspiration', label: '灵感案例' },
   { to: '/progress', label: '我的项目' },
-  { to: '/messages', label: '消息' },
   { to: '/me', label: '个人中心' },
 ];
 
@@ -29,10 +28,42 @@ export function AuthenticatedAppLayout() {
   const navigate = useNavigate();
   const clearSession = useSessionStore((state) => state.clearSession);
   const user = useSessionStore((state) => state.user);
-  const { data: unreadCount } = useAsyncData(getNotificationUnreadCount, []);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const displayName = useMemo(() => user?.nickname || user?.phone || '用户', [user]);
+  const displayName = useMemo(() => user?.nickname || '用户', [user]);
   const avatarLetter = useMemo(() => displayName.slice(0, 1).toUpperCase(), [displayName]);
+
+  useEffect(() => {
+    let active = true;
+
+    void getNotificationUnreadCount()
+      .then((count) => {
+        if (active) {
+          setUnreadCount(count);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setUnreadCount(0);
+        }
+      });
+
+    const unsubscribe = notificationRealtimeClient.subscribe((event) => {
+      if ((event.type === 'notification.init' || event.type === 'notification.unread_count') && typeof event.data?.count === 'number') {
+        setUnreadCount(event.data.count);
+        return;
+      }
+
+      if (event.type === 'notification.new') {
+        setUnreadCount((current) => current + 1);
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
 
   return (
     <div className={styles.shell}>
@@ -61,12 +92,15 @@ export function AuthenticatedAppLayout() {
           </nav>
 
           <div className={styles.right}>
-            <button className={styles.notiBtn} onClick={() => navigate('/messages')} title="通知" type="button">
+            <button className={styles.notiBtn} onClick={() => navigate('/me/notifications')} title="通知" type="button">
               <BellIcon />
               {unreadCount && unreadCount > 0 ? <span className={styles.notiDot} /> : null}
             </button>
-            <Link className={styles.avatar} to="/me" title={displayName}>
-              {user?.avatar ? <img alt={`${displayName}头像`} src={user.avatar} /> : avatarLetter}
+            <Link className={styles.accountLink} to="/me" title={displayName}>
+              <span className={styles.avatar}>
+                {user?.avatar ? <img alt={`${displayName}头像`} src={user.avatar} /> : avatarLetter}
+              </span>
+              <span className={styles.accountName}>{displayName}</span>
             </Link>
             <button
               className={styles.logoutBtn}

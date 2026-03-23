@@ -77,7 +77,7 @@ export function ProjectChangeRequestPage() {
           <div className="inline-actions" style={{ marginTop: 18 }}>
             <button
               className="button-secondary"
-              onClick={() => setMessage('当前版本仅完成变更页结构，正式变更单接口待后端开放后接入。你可以先通过消息中心与平台同步变更内容。')}
+              onClick={() => setMessage('当前版本仅完成变更页结构，正式变更单接口待后端开放后接入。你可以先通过通知中心与平台同步变更内容。')}
               type="button"
             >
               提交变更意向

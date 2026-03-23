@@ -19,7 +19,7 @@ const NotificationSettingsScreen = ({ navigation }: any) => {
     const [sheetVisible, setSheetVisible] = useState(false);
 
     return (
-        <SettingsLayout title="消息通知" navigation={navigation}>
+        <SettingsLayout title="通知提醒" navigation={navigation}>
             <SettingsPageDescription text="通知只保留真正有用的四类提醒，营销和免打扰单独控制，尽量避免打断。" />
 
             <SettingsSection>

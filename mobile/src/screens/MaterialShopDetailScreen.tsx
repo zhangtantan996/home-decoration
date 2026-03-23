@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { ArrowLeft, Star, MapPin, MessageCircle, Calendar, Award, Briefcase, Users, Clock, ChevronRight, Heart, Share2, Store } from 'lucide-react-native';
+import { ArrowLeft, Star, MapPin, Phone, Calendar, Award, Briefcase, Users, Clock, ChevronRight, Heart, Share2, Store } from 'lucide-react-native';
 import { useToast } from '../components/Toast';
 import { getWebUrl } from '../config';
 import { providerApi } from '../services/api';
@@ -267,7 +267,7 @@ export const MaterialShopDetailScreen = ({ route, navigation }: any) => {
                 {isSettled && (
                 <TouchableOpacity style={styles.phoneRow} onPress={() => { Clipboard.setString(displayData.phone); showToast({ message: '电话已复制', type: 'success' }) }}>
                     <View style={styles.phoneIconBox}>
-                        <MessageCircle size={14} color="#FFFFFF" />
+                        <Phone size={14} color="#FFFFFF" />
                     </View>
                     <Text style={styles.phoneText}>联系电话：{displayData.phone}</Text>
                     <View style={styles.copyTag}>

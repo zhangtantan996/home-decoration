@@ -8,6 +8,7 @@ interface CardProps {
   extra?: React.ReactNode;
   className?: string;
   onClick?: () => void;
+  style?: React.CSSProperties;
 }
 
 const buildClassName = (base: string, parts: Array<string | false | undefined>) => {
@@ -19,7 +20,8 @@ export const Card: React.FC<CardProps> = ({
   title,
   extra,
   className,
-  onClick
+  onClick,
+  style
 }) => {
   const classes = buildClassName('card', [
     onClick ? 'card--hover' : undefined,
@@ -30,6 +32,7 @@ export const Card: React.FC<CardProps> = ({
     <View 
       className={classes}
       onClick={onClick}
+      style={style}
     >
       {(title || extra) && (
         <View className="card__header">

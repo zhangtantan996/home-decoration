@@ -1,20 +1,22 @@
 import Taro, { useDidShow, useLoad, usePullDownRefresh, useReachBottom } from '@tarojs/taro';
-import { Image, ScrollView, View } from '@tarojs/components';
+import { Image, Input, Text, View } from '@tarojs/components';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
-import { ListItem } from '@/components/ListItem';
+import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/Skeleton';
-import { Tag } from '@/components/Tag';
 import type { FavoriteItemDTO, InspirationItemDTO } from '@/services/dto';
 import { favoriteService, inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
+import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getInspirationCoverImage } from '@/utils/inspirationImages';
+import { formatServerMonthDay, getServerTimeMs } from '@/utils/serverTime';
+
+import './index.scss';
 
 const STYLES = ['现代', '原木', '极简', '侘寂', '美式', '法式'];
+const SPACE_TAGS = ['全部', '客厅', '卧室', '厨卫', '阳台', '办公区'];
 const PAGE_SIZE = 10;
 const INSPIRATION_CASE_SYNC_KEY = 'inspiration_case_sync';
 const INSPIRATION_FILTER_KEY = 'inspiration_filter_state';
@@ -29,16 +31,16 @@ interface InspirationCaseSyncPayload {
 
 interface InspirationFilterState {
   activeStyle?: string;
+  activeSpace?: string;
   activeTab?: 'all' | 'favorites';
+  keyword?: string;
 }
 
 const getDateTimestamp = (value?: string) => {
   if (!value) {
     return 0;
   }
-
-  const time = Date.parse(value);
-  return Number.isNaN(time) ? 0 : time;
+  return getServerTimeMs(value);
 };
 
 const dedupeFavorites = (items: FavoriteItemDTO[]) => {
@@ -60,17 +62,70 @@ const dedupeFavorites = (items: FavoriteItemDTO[]) => {
   return Array.from(map.values()).sort((left, right) => getDateTimestamp(right.createdAt) - getDateTimestamp(left.createdAt));
 };
 
-const renderCaseSkeletons = () => {
-  return [0, 1].map((idx) => (
-    <View key={`case-skeleton-${idx}`} className="mb-md border-b border-gray-100 pb-md">
-      <View className="mb-sm"><Skeleton width="70%" /></View>
-      <View className="mb-sm"><Skeleton width="45%" /></View>
-      <Skeleton height={220} className="mb-sm" />
-      <View className="flex justify-between items-center px-md">
-        <Skeleton width="35%" />
-        <View className="flex gap-sm">
-          <Skeleton width="110rpx" />
-          <Skeleton width="110rpx" />
+const compactCount = (value?: number) => {
+  const safeValue = value || 0;
+  if (safeValue >= 10000) {
+    return `${(safeValue / 10000).toFixed(safeValue >= 100000 ? 0 : 1)}w`;
+  }
+
+  if (safeValue >= 1000) {
+    return `${(safeValue / 1000).toFixed(safeValue >= 10000 ? 0 : 1)}k`;
+  }
+
+  return `${safeValue}`;
+};
+
+const formatFavoriteDate = (value?: string) => {
+  if (!value) {
+    return '最近收藏';
+  }
+  return formatServerMonthDay(value, '最近收藏');
+};
+
+const matchesSpace = (title: string, space: string) => {
+  if (!space || space === '全部') {
+    return true;
+  }
+
+  const text = title.toLowerCase();
+  const patternMap: Record<string, RegExp> = {
+    客厅: /(客厅|会客|沙发|电视墙)/,
+    卧室: /(卧室|主卧|次卧|睡眠|床头)/,
+    厨卫: /(厨房|餐厨|卫生间|浴室|厨卫)/,
+    阳台: /(阳台|露台)/,
+    办公区: /(书房|办公|工作区|书桌)/,
+  };
+
+  return (patternMap[space] || /.*/).test(text);
+};
+
+const splitColumns = <T,>(items: T[]) => {
+  return items.reduce<[T[], T[]]>(
+    (columns, item, index) => {
+      columns[index % 2].push(item);
+      return columns;
+    },
+    [[], []],
+  );
+};
+
+const renderSkeletonCards = (prefix: string) => {
+  return [0, 1, 2].map((idx) => (
+    <View key={`${prefix}-${idx}`} className="inspiration-page__card inspiration-page__card--skeleton">
+      <Skeleton height={idx === 1 ? 360 : idx === 2 ? 300 : 420} className="inspiration-page__skeleton-cover" />
+      <View className="inspiration-page__card-body">
+        <View className="inspiration-page__card-title">
+          <Skeleton width="88%" />
+        </View>
+        <View className="inspiration-page__card-title inspiration-page__card-title--secondary">
+          <Skeleton width="62%" />
+        </View>
+        <View className="inspiration-page__card-footer">
+          <View className="inspiration-page__author">
+            <Skeleton width="40rpx" height={40} />
+            <Skeleton width="90rpx" />
+          </View>
+          <Skeleton width="72rpx" />
         </View>
       </View>
     </View>
@@ -94,6 +149,8 @@ export default function Inspiration() {
 
   const [activeTab, setActiveTab] = useState<'all' | 'favorites'>('all');
   const [activeStyle, setActiveStyle] = useState('');
+  const [activeSpace, setActiveSpace] = useState('全部');
+  const [keyword, setKeyword] = useState('');
 
   const [likingIds, setLikingIds] = useState<number[]>([]);
   const [favoritingIds, setFavoritingIds] = useState<number[]>([]);
@@ -105,17 +162,23 @@ export default function Inspiration() {
 
   const likingIdSet = useMemo(() => new Set(likingIds), [likingIds]);
   const favoritingIdSet = useMemo(() => new Set(favoritingIds), [favoritingIds]);
+  const statusBarHeight = useMemo(() => Taro.getSystemInfoSync().statusBarHeight || 24, []);
+  const navInsetStyle = useMemo(() => ({ paddingTop: `${statusBarHeight + 10}px` }), [statusBarHeight]);
 
   useLoad((options) => {
     const savedFilter = Taro.getStorageSync(INSPIRATION_FILTER_KEY) as Partial<InspirationFilterState> | undefined;
     if (savedFilter?.activeStyle && STYLES.includes(savedFilter.activeStyle)) {
       setActiveStyle(savedFilter.activeStyle);
     }
-
+    if (savedFilter?.activeSpace && SPACE_TAGS.includes(savedFilter.activeSpace)) {
+      setActiveSpace(savedFilter.activeSpace);
+    }
+    if (typeof savedFilter?.keyword === 'string') {
+      setKeyword(savedFilter.keyword);
+    }
     if (savedFilter?.activeTab === 'favorites' && auth.token) {
       setActiveTab('favorites');
     }
-
     if (options.tab === 'favorites' && auth.token) {
       setActiveTab('favorites');
     }
@@ -124,10 +187,12 @@ export default function Inspiration() {
   useEffect(() => {
     const nextFilter: InspirationFilterState = {
       activeStyle,
+      activeSpace,
+      keyword,
       activeTab: activeTab === 'favorites' && !auth.token ? 'all' : activeTab,
     };
     Taro.setStorageSync(INSPIRATION_FILTER_KEY, nextFilter);
-  }, [activeStyle, activeTab, auth.token]);
+  }, [activeStyle, activeSpace, activeTab, auth.token, keyword]);
 
   const fetchCases = async (reset = false) => {
     if (reset) {
@@ -164,17 +229,16 @@ export default function Inspiration() {
 
       const hasMoreByTotal = (caseData.total || 0) > targetPage * PAGE_SIZE;
       setCasesHasMore(hasMoreByTotal || incoming.length === PAGE_SIZE);
-    } catch (err) {
+    } catch (error) {
       if (requestId === casesRequestIdRef.current) {
-        showErrorToast(err, '加载失败');
+        showErrorToast(error, '加载失败');
       }
     } finally {
       if (!reset) {
         loadingCasesMoreRef.current = false;
       }
 
-      const isLatestRequest = requestId === casesRequestIdRef.current;
-      if (isLatestRequest) {
+      if (requestId === casesRequestIdRef.current) {
         if (reset) {
           setLoadingCases(false);
         } else {
@@ -225,17 +289,16 @@ export default function Inspiration() {
 
       const hasMoreByTotal = (res.total || 0) > targetPage * PAGE_SIZE;
       setFavoritesHasMore(hasMoreByTotal || incoming.length === PAGE_SIZE);
-    } catch (err) {
+    } catch (error) {
       if (requestId === favoritesRequestIdRef.current) {
-        showErrorToast(err, '加载收藏失败');
+        showErrorToast(error, '加载收藏失败');
       }
     } finally {
       if (!reset) {
         loadingFavoritesMoreRef.current = false;
       }
 
-      const isLatestRequest = requestId === favoritesRequestIdRef.current;
-      if (isLatestRequest) {
+      if (requestId === favoritesRequestIdRef.current) {
         if (reset) {
           setLoadingFavorites(false);
         } else {
@@ -246,6 +309,8 @@ export default function Inspiration() {
   };
 
   useDidShow(() => {
+    syncCurrentTabBar('/pages/inspiration/index');
+
     const nextTab = Taro.getStorageSync('inspiration_active_tab');
     if (nextTab === 'favorites' && auth.token) {
       setActiveTab('favorites');
@@ -287,12 +352,9 @@ export default function Inspiration() {
   }, [activeStyle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const shouldLoadFavorites = auth.token && activeTab === 'favorites';
-    if (!shouldLoadFavorites) {
-      return;
+    if (auth.token && activeTab === 'favorites') {
+      void fetchFavorites(true);
     }
-
-    void fetchFavorites(true);
   }, [activeTab, auth.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -313,10 +375,9 @@ export default function Inspiration() {
 
   useReachBottom(() => {
     if (activeTab === 'favorites') {
-      if (!auth.token) {
-        return;
+      if (auth.token) {
+        void fetchFavorites();
       }
-      void fetchFavorites();
       return;
     }
 
@@ -327,16 +388,12 @@ export default function Inspiration() {
     if (auth.token) {
       return true;
     }
-    Taro.navigateTo({ url: '/pages/profile/index' });
+    Taro.switchTab({ url: '/pages/profile/index' });
     return false;
   };
 
   const handleLike = async (item: InspirationItemDTO) => {
-    if (!ensureAuth()) {
-      return;
-    }
-
-    if (likingIdSet.has(item.id)) {
+    if (!ensureAuth() || likingIdSet.has(item.id)) {
       return;
     }
 
@@ -376,17 +433,13 @@ export default function Inspiration() {
   };
 
   const handleFavorite = async (item: InspirationItemDTO) => {
-    if (!ensureAuth()) {
-      return;
-    }
-
-    if (favoritingIdSet.has(item.id)) {
+    if (!ensureAuth() || favoritingIdSet.has(item.id)) {
       return;
     }
 
     setFavoritingIds((prev) => [...prev, item.id]);
-
     const originFavorited = item.isFavorited;
+
     setCases((prev) =>
       prev.map((caseItem) =>
         caseItem.id === item.id ? { ...caseItem, isFavorited: !originFavorited } : caseItem,
@@ -419,48 +472,133 @@ export default function Inspiration() {
     Taro.navigateTo({ url: `/pages/inspiration/detail/index?id=${id}` });
   };
 
+  const filteredCases = useMemo(() => {
+    const query = keyword.trim().toLowerCase();
+    return cases.filter((item) => {
+      const text = `${item.title} ${item.style} ${item.layout} ${item.area} ${item.author?.name || ''}`.toLowerCase();
+      return (!query || text.includes(query)) && matchesSpace(text, activeSpace);
+    });
+  }, [activeSpace, cases, keyword]);
+
+  const filteredFavorites = useMemo(() => {
+    const query = keyword.trim().toLowerCase();
+    return favorites.filter((item) => {
+      const text = `${item.title} ${item.targetType}`.toLowerCase();
+      return (!query || text.includes(query)) && matchesSpace(text, activeSpace);
+    });
+  }, [activeSpace, favorites, keyword]);
+
+  const [leftCases, rightCases] = useMemo(() => splitColumns(filteredCases), [filteredCases]);
+  const [leftFavorites, rightFavorites] = useMemo(() => splitColumns(filteredFavorites), [filteredFavorites]);
+
+  const renderCaseCard = (item: InspirationItemDTO) => (
+    <View key={item.id} className="inspiration-page__card" onClick={() => openInspirationDetail(item.id)}>
+      <View
+        className={`inspiration-page__favorite-chip ${item.isFavorited ? 'inspiration-page__favorite-chip--active' : ''}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          void handleFavorite(item);
+        }}
+      >
+        <Text className="inspiration-page__favorite-chip-text">{item.isFavorited ? '已藏' : '收藏'}</Text>
+      </View>
+
+      {item.coverImage ? (
+        <Image
+          className="inspiration-page__card-cover"
+          src={getInspirationCoverImage(item)}
+          mode="widthFix"
+          lazyLoad
+        />
+      ) : (
+        <View className="inspiration-page__card-cover inspiration-page__card-cover--placeholder" />
+      )}
+
+      <View className="inspiration-page__card-body">
+        <Text className="inspiration-page__card-title line-clamp-2">{item.title}</Text>
+        <Text className="inspiration-page__card-subtitle">{item.style || item.layout || '空间灵感'}</Text>
+        <View className="inspiration-page__card-footer">
+          <View className="inspiration-page__author">
+            {item.author?.avatar ? (
+              <Image className="inspiration-page__author-avatar" src={item.author.avatar} mode="aspectFill" />
+            ) : (
+              <View className="inspiration-page__author-avatar inspiration-page__author-avatar--placeholder" />
+            )}
+            <Text className="inspiration-page__author-name">{item.author?.name || '官方'}</Text>
+          </View>
+
+          <View
+            className={`inspiration-page__metric ${item.isLiked ? 'inspiration-page__metric--active' : ''}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleLike(item);
+            }}
+          >
+            <Icon name="favorites" size={22} color={item.isLiked ? '#2c3e50' : '#9ca3af'} />
+            <Text className="inspiration-page__metric-text">{compactCount(item.likeCount)}</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderFavoriteCard = (item: FavoriteItemDTO) => (
+    <View key={item.id} className="inspiration-page__card" onClick={() => openInspirationDetail(item.targetId)}>
+      {item.coverImage ? (
+        <Image className="inspiration-page__card-cover" src={item.coverImage} mode="widthFix" lazyLoad />
+      ) : (
+        <View className="inspiration-page__card-cover inspiration-page__card-cover--placeholder" />
+      )}
+      <View className="inspiration-page__card-body">
+        <Text className="inspiration-page__card-title line-clamp-2">{item.title}</Text>
+        <Text className="inspiration-page__card-subtitle">案例收藏</Text>
+        <View className="inspiration-page__card-footer">
+          <Text className="inspiration-page__saved-time">{formatFavoriteDate(item.createdAt)}</Text>
+          <View className="inspiration-page__saved-badge">
+            <Text className="inspiration-page__saved-badge-text">已收藏</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
+  const isFavoritesTab = activeTab === 'favorites';
+  const showEmpty = isFavoritesTab ? filteredFavorites.length === 0 : filteredCases.length === 0;
+
   return (
-    <View className="page">
-      <View className="m-md">
-        <View className="text-primary font-bold" style={{ fontSize: '40rpx', marginBottom: '24rpx' }}>
-          灵感合集
+    <View className="inspiration-page">
+      <View className="inspiration-page__nav" style={navInsetStyle}>
+        <Text className="inspiration-page__nav-title">发现灵感</Text>
+        <View className="inspiration-page__nav-icon">
+          <Icon name="search" size={30} color="#111111" />
+        </View>
+      </View>
+
+      <View className="inspiration-page__content">
+        <View className="inspiration-page__search">
+          <Icon name="search" size={28} color="#8b8b8b" className="inspiration-page__search-icon" />
+          <Input
+            className="inspiration-page__search-input"
+            type="text"
+            confirmType="search"
+            value={keyword}
+            maxlength={30}
+            placeholder="搜索 极简 客厅 文艺 灵感"
+            placeholderClass="inspiration-page__search-placeholder"
+            onInput={(event) => setKeyword(event.detail.value)}
+          />
         </View>
 
-        <Card title="热门风格" className="mb-lg">
-          <ScrollView scrollX style={{ whiteSpace: 'nowrap', width: '100%' }}>
-            <View style={{ display: 'inline-block', marginRight: '16rpx' }}>
-              <Tag
-                variant={activeStyle ? 'secondary' : 'brand'}
-                className="px-lg py-sm"
-                style={{ fontSize: '28rpx', padding: '12rpx 32rpx' }}
-                onClick={() => setActiveStyle('')}
-              >
-                全部
-              </Tag>
+        <View className="inspiration-page__filters">
+          <View className="inspiration-page__chip-row">
+            <View
+              className={`inspiration-page__chip ${activeTab === 'all' ? 'inspiration-page__chip--active' : ''}`}
+              onClick={() => setActiveTab('all')}
+            >
+              <Text className="inspiration-page__chip-text">推荐</Text>
             </View>
-            {STYLES.map((style) => (
-              <View key={style} style={{ display: 'inline-block', marginRight: '16rpx' }}>
-                <Tag
-                  variant={activeStyle === style ? 'brand' : 'secondary'}
-                  className="px-lg py-sm"
-                  style={{ fontSize: '28rpx', padding: '12rpx 32rpx' }}
-                  onClick={() => setActiveStyle(style)}
-                >
-                  {style}
-                </Tag>
-              </View>
-            ))}
-          </ScrollView>
-        </Card>
-
-        <Card title="内容分区" className="mb-lg">
-          <View className="flex gap-sm">
-            <Button variant={activeTab === 'all' ? 'primary' : 'secondary'} size="sm" onClick={() => setActiveTab('all')}>
-              灵感列表
-            </Button>
-            <Button
-              variant={activeTab === 'favorites' ? 'primary' : 'secondary'}
-              size="sm"
+            <View
+              className={`inspiration-page__chip ${activeTab === 'favorites' ? 'inspiration-page__chip--active' : ''}`}
               onClick={() => {
                 if (!ensureAuth()) {
                   return;
@@ -468,102 +606,90 @@ export default function Inspiration() {
                 setActiveTab('favorites');
               }}
             >
-              我的收藏
-            </Button>
-          </View>
-        </Card>
-
-        <Card
-          title={activeTab === 'all' ? '精选案例' : '我的收藏'}
-          extra={
-            <View className="text-brand" onClick={() => Taro.navigateTo({ url: '/pages/providers/list/index' })}>
-              查看服务商
+              <Text className="inspiration-page__chip-text">收藏</Text>
             </View>
-          }
-        >
-          {activeTab === 'all' && loadingCases && cases.length === 0 ? (
-            <View className="p-sm">{renderCaseSkeletons()}</View>
-          ) : activeTab === 'all' && cases.length === 0 ? (
-            <Empty description="暂无案例数据" />
-          ) : activeTab === 'favorites' && !auth.token ? (
-            <Empty description="登录后查看收藏" action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }} />
-          ) : activeTab === 'favorites' && loadingFavorites && favorites.length === 0 ? (
-            <View className="p-sm">
-              <View className="mb-sm"><Skeleton width="80%" /></View>
-              <View className="mb-sm"><Skeleton width="60%" /></View>
-              <View><Skeleton width="70%" /></View>
-            </View>
-          ) : activeTab === 'favorites' && favorites.length === 0 ? (
-            <Empty description="暂无收藏案例" action={{ text: '去逛逛', onClick: () => setActiveTab('all') }} />
-          ) : activeTab === 'favorites' ? (
-            favorites.map((item) => (
-              <ListItem
-                key={item.id}
-                title={item.title}
-                description={item.targetType === 'case' ? '案例收藏' : '其他收藏'}
-                arrow
-                onClick={() => openInspirationDetail(item.targetId)}
-              />
-            ))
-          ) : (
-            cases.map((item) => (
-              <View key={item.id} className="mb-md border-b border-gray-100 pb-md">
-                <ListItem
-                  title={item.title}
-                  description={item.style ? `${item.style} · ${item.layout || ''} · ${item.area || ''}` : '暂无风格信息'}
-                  arrow
-                  onClick={() => openInspirationDetail(item.id)}
-                />
-                {item.coverImage ? (
-                  <Image
-                    src={getInspirationCoverImage(item)}
-                    mode="aspectFill"
-                    style={{ width: '100%', height: '260rpx', borderRadius: '12rpx', marginTop: '12rpx' }}
-                  />
-                ) : null}
-                <View className="flex justify-between items-center mt-sm px-md">
-                  <View className="text-gray-500 text-sm">
-                    {item.author?.name || '官方'} · {item.commentCount || 0} 评论
-                  </View>
-                  <View className="flex gap-sm">
-                    <Button
-                      size="sm"
-                      variant={item.isLiked ? 'brand' : 'secondary'}
-                      onClick={() => handleLike(item)}
-                      loading={likingIdSet.has(item.id)}
-                      disabled={likingIdSet.has(item.id) || favoritingIdSet.has(item.id)}
-                    >
-                      点赞 {item.likeCount || 0}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={item.isFavorited ? 'brand' : 'secondary'}
-                      onClick={() => handleFavorite(item)}
-                      loading={favoritingIdSet.has(item.id)}
-                      disabled={likingIdSet.has(item.id) || favoritingIdSet.has(item.id)}
-                    >
-                      {item.isFavorited ? '已收藏' : '收藏'}
-                    </Button>
-                  </View>
-                </View>
+            {STYLES.map((style) => (
+              <View
+                key={style}
+                className={`inspiration-page__chip ${activeStyle === style ? 'inspiration-page__chip--active' : ''}`}
+                onClick={() => setActiveStyle(activeStyle === style ? '' : style)}
+              >
+                <Text className="inspiration-page__chip-text">{style}</Text>
               </View>
-            ))
-          )}
+            ))}
+          </View>
 
-          {activeTab === 'all' && loadingCasesMore ? (
-            <View className="text-center text-gray-400 text-xs py-md">加载中...</View>
-          ) : null}
-          {activeTab === 'all' && !casesHasMore && cases.length > 0 ? (
-            <View className="text-center text-gray-400 text-xs py-md">没有更多案例了</View>
-          ) : null}
+          <View className="inspiration-page__chip-row inspiration-page__chip-row--secondary">
+            {SPACE_TAGS.map((space) => (
+              <View
+                key={space}
+                className={`inspiration-page__chip inspiration-page__chip--soft ${activeSpace === space ? 'inspiration-page__chip--active' : ''}`}
+                onClick={() => setActiveSpace(space)}
+              >
+                <Text className="inspiration-page__chip-text">{space}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
 
-          {activeTab === 'favorites' && loadingFavoritesMore ? (
-            <View className="text-center text-gray-400 text-xs py-md">加载中...</View>
-          ) : null}
-          {activeTab === 'favorites' && !favoritesHasMore && favorites.length > 0 ? (
-            <View className="text-center text-gray-400 text-xs py-md">没有更多收藏了</View>
-          ) : null}
-        </Card>
+        {isFavoritesTab && !auth.token ? (
+          <View className="inspiration-page__empty">
+            <Empty
+              description="登录后查看收藏灵感"
+              action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
+            />
+          </View>
+        ) : null}
+
+        {isFavoritesTab && auth.token && loadingFavorites && favorites.length === 0 ? (
+          <View className="inspiration-page__waterfall">
+            <View className="inspiration-page__column">{renderSkeletonCards('favorite-left')}</View>
+            <View className="inspiration-page__column">{renderSkeletonCards('favorite-right')}</View>
+          </View>
+        ) : null}
+
+        {!isFavoritesTab && loadingCases && cases.length === 0 ? (
+          <View className="inspiration-page__waterfall">
+            <View className="inspiration-page__column">{renderSkeletonCards('case-left')}</View>
+            <View className="inspiration-page__column">{renderSkeletonCards('case-right')}</View>
+          </View>
+        ) : null}
+
+        {!loadingCases && !loadingFavorites && showEmpty && (!isFavoritesTab || auth.token) ? (
+          <View className="inspiration-page__empty">
+            <Empty
+              description={isFavoritesTab ? '还没有收藏灵感' : '暂无匹配的灵感内容'}
+              action={isFavoritesTab ? { text: '去逛逛', onClick: () => setActiveTab('all') } : undefined}
+            />
+          </View>
+        ) : null}
+
+        {isFavoritesTab && auth.token && filteredFavorites.length > 0 ? (
+          <View className="inspiration-page__waterfall">
+            <View className="inspiration-page__column">{leftFavorites.map((item) => renderFavoriteCard(item))}</View>
+            <View className="inspiration-page__column">{rightFavorites.map((item) => renderFavoriteCard(item))}</View>
+          </View>
+        ) : null}
+
+        {!isFavoritesTab && filteredCases.length > 0 ? (
+          <View className="inspiration-page__waterfall">
+            <View className="inspiration-page__column">{leftCases.map((item) => renderCaseCard(item))}</View>
+            <View className="inspiration-page__column">{rightCases.map((item) => renderCaseCard(item))}</View>
+          </View>
+        ) : null}
+
+        {!isFavoritesTab && loadingCasesMore ? (
+          <Text className="inspiration-page__status">加载更多灵感中...</Text>
+        ) : null}
+        {!isFavoritesTab && !casesHasMore && filteredCases.length > 0 ? (
+          <Text className="inspiration-page__status">已经到底了</Text>
+        ) : null}
+        {isFavoritesTab && loadingFavoritesMore ? (
+          <Text className="inspiration-page__status">加载更多收藏中...</Text>
+        ) : null}
+        {isFavoritesTab && !favoritesHasMore && filteredFavorites.length > 0 ? (
+          <Text className="inspiration-page__status">收藏已全部展示</Text>
+        ) : null}
       </View>
     </View>
   );

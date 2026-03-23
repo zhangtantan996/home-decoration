@@ -1,7 +1,7 @@
 import type { PageEnvelope } from '../types/api';
 import type { ProviderCaseVM, ProviderDetailVM, ProviderListItemVM, ProviderReviewVM, ProviderRole, ReviewStatsVM } from '../types/viewModels';
 import { compactPhone, formatDateTime } from '../utils/format';
-import { normalizeProviderRole, parseTextArray, roleToBasePath, summarizePricing } from '../utils/provider';
+import { normalizeProviderRole, parseTextArray, resolveProviderDisplayName, roleToBasePath, summarizePricing } from '../utils/provider';
 import { requestJson } from './http';
 
 interface ProviderListDTO {
@@ -59,9 +59,7 @@ interface ProviderUserStatusDTO {
 function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
   const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit);
-  const displayName = role === 'company'
-    ? (dto.companyName || dto.nickname || '未命名服务商')
-    : (dto.nickname || dto.companyName || '未命名服务商');
+  const displayName = resolveProviderDisplayName(role, dto.companyName, dto.nickname);
 
   return {
     id: dto.id,
@@ -96,10 +94,19 @@ function readStringRecord(source: Record<string, unknown>, key: string) {
 function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, cases: ProviderCaseVM[], reviews: ProviderReviewVM[], reviewStats: ReviewStatsVM): ProviderDetailVM {
   const provider = (response.provider || {}) as Record<string, unknown>;
   const user = (response.user || {}) as Record<string, unknown>;
-  const pricing = summarizePricing(readStringRecord(provider, 'pricingJson'), readNumericRecord(provider, 'priceMin'), readNumericRecord(provider, 'priceMax'), readStringRecord(provider, 'priceUnit'));
-  const displayName = role === 'company'
-    ? (readStringRecord(provider, 'companyName') || readStringRecord(user, 'nickname') || readStringRecord(provider, 'nickname') || '服务商')
-    : (readStringRecord(user, 'nickname') || readStringRecord(provider, 'companyName') || readStringRecord(provider, 'nickname') || '服务商');
+  const pricing = summarizePricing(
+    readStringRecord(provider, 'pricingJson'),
+    readNumericRecord(provider, 'priceMin'),
+    readNumericRecord(provider, 'priceMax'),
+    readStringRecord(provider, 'priceUnit'),
+    role,
+  );
+  const displayName = resolveProviderDisplayName(
+    role,
+    readStringRecord(provider, 'companyName'),
+    readStringRecord(user, 'nickname'),
+    readStringRecord(provider, 'nickname'),
+  );
 
   return {
     id: Number(provider.id || 0),
@@ -162,11 +169,28 @@ export async function getRecommendedProviders() {
   return data.list.map(toProviderListItem);
 }
 
-export async function listProviders(params: { role: ProviderRole; keyword: string; page: number; pageSize: number }) {
+interface ListProvidersParams {
+  role: ProviderRole;
+  keyword: string;
+  page: number;
+  pageSize: number;
+  city?: string;
+  ratingMin?: number;
+  budgetMin?: number;
+  budgetMax?: number;
+  sortBy?: string;
+}
+
+export async function listProviders(params: ListProvidersParams) {
   const data = await requestJson<PageEnvelope<ProviderListDTO>>('/providers', {
     query: {
       type: params.role,
       keyword: params.keyword,
+      city: params.city,
+      ratingMin: params.ratingMin,
+      budgetMin: params.budgetMin,
+      budgetMax: params.budgetMax,
+      sortBy: params.sortBy,
       page: params.page,
       pageSize: params.pageSize,
     },

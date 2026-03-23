@@ -1,16 +1,545 @@
-.hero {
+.page {
+  padding: 0 0 24px;
+  background:
+    radial-gradient(circle at top right, rgba(216, 227, 250, 0.88) 0%, rgba(248, 249, 250, 0.96) 48%),
+    linear-gradient(180deg, rgba(248, 249, 250, 0.98), rgba(243, 246, 248, 0.98));
+}
+
+.pageInner {
+  width: min(1600px, 100%);
+  margin: 0 auto;
   display: grid;
-  gap: 20px;
+  gap: 28px;
+  padding: 0 20px;
 }
 
-.heroActions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+.hero,
+.section {
+  display: grid;
+  gap: 24px;
 }
 
-.providerStack {
+.hero {
+  padding: 72px 32px 56px;
+  background: transparent;
+}
+
+.heroInner {
+  width: min(960px, 100%);
+  margin: 0 auto;
   display: grid;
   gap: 18px;
+  justify-items: center;
+}
+
+.sectionKicker {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.heroTitle,
+.sectionTitle,
+.searchLabel {
+  margin: 0;
+  color: var(--color-ink);
+  font-family: var(--font-family-heading);
+  letter-spacing: -0.04em;
+}
+
+.heroTitle {
+  max-width: 920px;
+  font-size: clamp(2.6rem, 3vw + 1.1rem, 4.6rem);
+  line-height: 1.04;
+  text-align: center;
+}
+
+.sectionTitle {
+  font-size: clamp(1.36rem, 0.55vw + 1.1rem, 1.9rem);
+  line-height: 1.14;
+}
+
+.searchPanel {
+  width: min(700px, 100%);
+}
+
+.searchForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 10px 10px 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(171, 179, 183, 0.2);
+  box-shadow: 0 18px 42px rgba(43, 52, 55, 0.06);
+}
+
+.searchInput {
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 0 18px;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 1rem;
+}
+
+.searchInput::placeholder {
+  color: var(--color-muted);
+}
+
+.searchInput:focus {
+  outline: none;
+}
+
+.searchButton {
+  min-height: 56px;
+  padding: 0 28px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #455864, #4b6170);
+  color: var(--color-surface);
+  font-weight: 700;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.searchButton:hover {
+  opacity: 0.94;
+  transform: translateY(-1px);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.section {
+  gap: 20px;
+  padding: 28px;
+  border-radius: 28px;
+  background: rgba(250, 251, 252, 0.72);
+  border: 1px solid rgba(214, 220, 224, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.inlineTabList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inlineTab {
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid rgba(171, 179, 183, 0.2);
+  border-radius: 999px;
+  background: rgba(248, 249, 250, 0.88);
+  color: var(--color-secondary);
+  font-weight: 600;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.inlineTab:hover {
+  border-color: rgba(76, 97, 108, 0.22);
+  color: var(--color-brand);
+}
+
+.inlineTabActive {
+  border-color: rgba(76, 97, 108, 0.28);
+  background: rgba(227, 233, 236, 0.88);
+  color: var(--color-brand);
+}
+
+.showcaseShell {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 34%),
+    linear-gradient(180deg, rgba(237, 241, 244, 0.92), rgba(232, 237, 240, 0.82));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+.providerGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.providerGrid :global(.pcard) {
+  height: 100%;
+  border-radius: 22px;
+  border-color: rgba(171, 179, 183, 0.18);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: none;
+}
+
+.providerGrid :global(.pcard:hover) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(43, 52, 55, 0.07);
+}
+
+.providerSkeleton,
+.inspirationSkeleton {
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(171, 179, 183, 0.18);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.providerSkeletonMedia,
+.inspirationSkeletonMedia {
+  background: linear-gradient(90deg, rgba(227, 233, 236, 0.72), rgba(241, 244, 246, 0.92), rgba(227, 233, 236, 0.72));
+  background-size: 200% 100%;
+  animation: home-shimmer 1.3s linear infinite;
+}
+
+.providerSkeletonMedia {
+  aspect-ratio: 4 / 3;
+}
+
+.inspirationSkeletonMedia {
+  aspect-ratio: 5 / 6;
+}
+
+.providerSkeletonBody,
+.inspirationSkeletonBody {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.providerSkeletonLine {
+  display: block;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(227, 233, 236, 0.72), rgba(241, 244, 246, 0.92), rgba(227, 233, 236, 0.72));
+  background-size: 200% 100%;
+  animation: home-shimmer 1.3s linear infinite;
+}
+
+.shortLine {
+  width: 58%;
+}
+
+.mutedLine {
+  width: 72%;
+}
+
+.stateBlock {
+  max-width: 760px;
+}
+
+.inspirationSection {
+  background: rgba(246, 248, 249, 0.82);
+}
+
+.inspirationGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.inspirationCard {
+  overflow: hidden;
+  display: grid;
+  align-content: start;
+  border-radius: 24px;
+  border: 1px solid rgba(171, 179, 183, 0.18);
+  background: rgba(255, 255, 255, 0.9);
+  color: inherit;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.inspirationCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(43, 52, 55, 0.07);
+}
+
+.inspirationMedia {
+  overflow: hidden;
+  background: rgba(227, 233, 236, 0.72);
+}
+
+.inspirationMedia img {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 5 / 6;
+  object-fit: cover;
+  transition: transform 0.28s ease;
+}
+
+.inspirationCard:hover .inspirationMedia img {
+  transform: scale(1.02);
+}
+
+.inspirationBody {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+.inspirationMetaTop,
+.inspirationFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inspirationMetaTop {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.inspirationMetaTop span:last-child {
+  color: var(--color-secondary);
+}
+
+.inspirationBody h3 {
+  margin: 0;
+  font-family: var(--font-family-heading);
+  font-size: clamp(1.05rem, 0.4vw + 0.98rem, 1.32rem);
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+  color: var(--color-ink);
+}
+
+.inspirationAuthor {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--color-secondary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.inspirationAuthor img,
+.inspirationAuthorFallback {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.inspirationAuthor img {
+  object-fit: cover;
+}
+
+.inspirationAuthorFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(227, 233, 236, 0.92);
+  color: var(--color-brand);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.inspirationAuthor span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspirationEngagement {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.sectionFooter {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.sectionMoreButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 14px;
+  background: rgba(227, 233, 236, 0.92);
+  color: var(--color-ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  transition: background-color 0.18s ease, transform 0.18s ease;
+}
+
+.sectionMoreButton:hover {
+  background: rgba(214, 223, 228, 0.96);
+  transform: translateY(-1px);
+}
+
+.emptyPanel {
+  display: grid;
+  gap: 14px;
+  align-content: center;
+  justify-items: start;
+  grid-column: 1 / -1;
+  min-height: 260px;
+  padding: 28px;
+  border-radius: 24px;
+  border: 1px dashed rgba(171, 179, 183, 0.4);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.emptyBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(241, 244, 246, 0.92);
+  color: var(--color-brand);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.emptyPanel h3 {
+  margin: 0;
+  color: var(--color-ink);
+  font-family: var(--font-family-heading);
+  font-size: 1.34rem;
+  line-height: 1.18;
+}
+
+.emptyPanel p {
+  margin: 0;
+  max-width: 540px;
+  color: var(--color-secondary);
+  font-size: 0.94rem;
+  line-height: 1.72;
+}
+
+.emptyAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 14px;
+  background: rgba(69, 88, 100, 0.94);
+  color: var(--color-surface);
+  font-weight: 700;
+}
+
+@media (max-width: 1400px) {
+  .providerGrid,
+  .inspirationGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@keyframes home-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .page {
+    padding-bottom: 20px;
+  }
+
+  .pageInner {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .providerGrid,
+  .inspirationGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .showcaseShell {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero,
+  .section {
+    gap: 20px;
+  }
+
+  .hero {
+    padding: 56px 20px 44px;
+  }
+
+  .sectionHead {
+    justify-content: flex-start;
+  }
+
+  .inspirationSection {
+    padding: 24px;
+  }
+
+  .searchForm {
+    grid-template-columns: 1fr;
+    border-radius: 28px;
+  }
+
+  .searchButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding-bottom: 16px;
+  }
+
+  .pageInner {
+    gap: 22px;
+    padding: 0 12px;
+  }
+
+  .hero {
+    padding: 42px 12px 32px;
+  }
+
+  .providerGrid,
+  .inspirationGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .showcaseShell {
+    gap: 18px;
+    padding: 14px;
+    border-radius: 24px;
+  }
+
+  .inlineTabList {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inlineTab {
+    justify-content: center;
+  }
+
+  .inspirationSection {
+    padding: 20px;
+    border-radius: 24px;
+  }
 }

@@ -20,6 +20,7 @@ import { bookingApi, orderApi } from '../services/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import CancelOrderModal from '../components/CancelOrderModal';
 import InfoModal from '../components/InfoModal';
+import { formatServerDate, getServerTimeMs } from '../utils/serverTime';
 
 type OrderListScreenRouteProp = RouteProp<RootStackParamList, 'OrderList'>;
 type OrderListScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -262,11 +263,7 @@ const OrderListScreen = () => {
     // 渲染订单卡片
     const renderOrderItem = ({ item }: { item: Booking }) => {
         const status = getOrderStatus(item);
-        const createdDate = new Date(item.createdAt).toLocaleDateString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-        });
+        const createdDate = formatServerDate(item.createdAt);
 
         return (
             <TouchableOpacity
@@ -352,7 +349,7 @@ const OrderListScreen = () => {
                     <View style={styles.orderInfo}>
                         <Text style={styles.orderId}>订单号: {item.orderNo}</Text>
                         <Text style={styles.orderDate}>
-                            {new Date(item.createdAt).toLocaleDateString('zh-CN')}
+                            {formatServerDate(item.createdAt)}
                         </Text>
                     </View>
                     <View style={[styles.statusBadge, { backgroundColor: '#FFFBEB' }]}>
@@ -403,7 +400,7 @@ const OrderListScreen = () => {
     // 计算倒计时
     const getCountdown = (expireAt: string | null) => {
         if (!expireAt) return null;
-        const expire = new Date(expireAt).getTime();
+        const expire = getServerTimeMs(expireAt);
         const now = Date.now();
         const diff = expire - now;
         if (diff <= 0) return '已过期';

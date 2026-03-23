@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { ArrowLeft, Star, ThumbsUp, MessageSquare, MoreHorizontal, Filter } from 'lucide-react-native';
 import { providerApi } from '../services/api';
+import { formatServerDate } from '../utils/serverTime';
 
 const { width } = Dimensions.get('window');
 
@@ -217,7 +218,7 @@ export const ReviewsScreen = ({ route, navigation }: any) => {
                                     <Star key={i} size={10} color="#F59E0B" fill={i <= item.rating ? "#F59E0B" : "transparent"} />
                                 ))}
                             </View>
-                            <Text style={styles.headerDate}>{item.createdAt?.split('T')[0]}</Text>
+                            <Text style={styles.headerDate}>{formatServerDate(item.createdAt)}</Text>
                         </View>
                     </View>
                     <TouchableOpacity>

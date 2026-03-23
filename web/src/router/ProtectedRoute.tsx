@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
-import { useSessionStore } from '../modules/session/sessionStore';
+import { hasRecoverableSession, useSessionStore } from '../modules/session/sessionStore';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -10,13 +10,19 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const location = useLocation();
   const hasHydrated = useSessionStore((state) => state.hasHydrated);
-  const accessToken = useSessionStore((state) => state.accessToken);
+  const hasSession = useSessionStore((state) =>
+    hasRecoverableSession({
+      accessToken: state.accessToken,
+      refreshToken: state.refreshToken,
+      expiresAt: state.expiresAt,
+    }),
+  );
 
   if (!hasHydrated) {
     return null;
   }
 
-  if (!accessToken) {
+  if (!hasSession) {
     const redirect = `${location.pathname}${location.search}`;
     return <Navigate replace to={`/login?redirect=${encodeURIComponent(redirect)}`} />;
   }

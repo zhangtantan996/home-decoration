@@ -1,0 +1,304 @@
+.inspiration-page {
+  min-height: 100vh;
+  background: #f8f9fa;
+  padding-bottom: calc(220rpx + env(safe-area-inset-bottom));
+
+  &__nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 28rpx 18rpx;
+    background: rgba(248, 249, 250, 0.92);
+    backdrop-filter: blur(18rpx);
+  }
+
+  &__nav-title {
+    color: #111111;
+    font-size: 34rpx;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+
+  &__nav-icon {
+    width: 60rpx;
+    height: 60rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__content {
+    padding: 18rpx 24rpx 0;
+  }
+
+  &__search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 84rpx;
+    padding-left: 22rpx;
+    padding-right: 20rpx;
+    background: #ffffff;
+    border-radius: 999rpx;
+    box-shadow: 0 10rpx 24rpx rgba(17, 17, 17, 0.06);
+  }
+
+  &__search-icon {
+    margin-right: 12rpx;
+    flex-shrink: 0;
+  }
+
+  &__search-input {
+    flex: 1;
+    height: 84rpx;
+    color: #111111;
+    font-size: 26rpx;
+  }
+
+  &__search-placeholder {
+    color: #8b8b8b;
+    font-size: 26rpx;
+  }
+
+  &__filters {
+    margin-top: 24rpx;
+  }
+
+  &__chip-row {
+    display: flex;
+    gap: 14rpx;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 8rpx;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    &--secondary {
+      margin-top: 12rpx;
+    }
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 30rpx;
+    height: 58rpx;
+    border-radius: 999rpx;
+    background: #ffffff;
+    border: 1rpx solid #f0f0f0;
+    box-shadow: 0 6rpx 16rpx rgba(17, 17, 17, 0.04);
+    flex-shrink: 0;
+
+    &--soft {
+      box-shadow: none;
+    }
+
+    &--active {
+      background: #2c3e50;
+      border-color: #2c3e50;
+      box-shadow: 0 10rpx 22rpx rgba(44, 62, 80, 0.18);
+
+      .inspiration-page__chip-text {
+        color: #ffffff;
+        font-weight: 700;
+      }
+    }
+  }
+
+  &__chip-text {
+    color: #555555;
+    font-size: 24rpx;
+    font-weight: 600;
+  }
+
+  &__waterfall {
+    display: flex;
+    gap: 18rpx;
+    align-items: flex-start;
+    margin-top: 28rpx;
+  }
+
+  &__column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 18rpx;
+    min-width: 0;
+  }
+
+  &__card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16rpx;
+    background: #ffffff;
+    box-shadow: 0 16rpx 30rpx rgba(17, 17, 17, 0.08);
+
+    &--skeleton {
+      padding: 0;
+    }
+  }
+
+  &__favorite-chip {
+    position: absolute;
+    top: 16rpx;
+    right: 16rpx;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76rpx;
+    height: 42rpx;
+    padding: 0 18rpx;
+    border-radius: 999rpx;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12rpx);
+    box-shadow: 0 8rpx 18rpx rgba(17, 17, 17, 0.08);
+
+    &--active {
+      background: rgba(44, 62, 80, 0.92);
+
+      .inspiration-page__favorite-chip-text {
+        color: #ffffff;
+      }
+    }
+  }
+
+  &__favorite-chip-text {
+    color: #2c3e50;
+    font-size: 20rpx;
+    font-weight: 700;
+  }
+
+  &__card-cover {
+    width: 100%;
+    display: block;
+    background: #ececec;
+
+    &--placeholder {
+      height: 320rpx;
+      background: linear-gradient(135deg, #ebeef1 0%, #dfe4ea 100%);
+    }
+  }
+
+  &__card-body {
+    padding: 18rpx 18rpx 16rpx;
+  }
+
+  &__card-title {
+    display: block;
+    color: #111111;
+    font-size: 25rpx;
+    font-weight: 800;
+    line-height: 1.5;
+
+    &--secondary {
+      margin-top: 8rpx;
+    }
+  }
+
+  &__card-subtitle {
+    display: block;
+    margin-top: 8rpx;
+    color: #777777;
+    font-size: 20rpx;
+    line-height: 1.4;
+  }
+
+  &__card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12rpx;
+    margin-top: 14rpx;
+  }
+
+  &__author {
+    display: flex;
+    align-items: center;
+    gap: 8rpx;
+    min-width: 0;
+  }
+
+  &__author-avatar {
+    width: 36rpx;
+    height: 36rpx;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #f0f0f0;
+
+    &--placeholder {
+      background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    }
+  }
+
+  &__author-name {
+    color: #333333;
+    font-size: 20rpx;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__metric {
+    display: inline-flex;
+    align-items: center;
+    gap: 4rpx;
+
+    &--active .inspiration-page__metric-text {
+      color: #2c3e50;
+    }
+  }
+
+  &__metric-text {
+    color: #666666;
+    font-size: 18rpx;
+    font-weight: 700;
+  }
+
+  &__saved-time {
+    color: #8b8b8b;
+    font-size: 18rpx;
+    font-weight: 600;
+  }
+
+  &__saved-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 84rpx;
+    height: 38rpx;
+    padding: 0 14rpx;
+    border-radius: 999rpx;
+    background: #eff2f5;
+  }
+
+  &__saved-badge-text {
+    color: #2c3e50;
+    font-size: 18rpx;
+    font-weight: 700;
+  }
+
+  &__empty {
+    margin-top: 56rpx;
+    padding: 0 12rpx;
+  }
+
+  &__status {
+    display: block;
+    padding: 28rpx 0 8rpx;
+    color: #a1a1aa;
+    font-size: 22rpx;
+    text-align: center;
+  }
+
+  &__skeleton-cover {
+    border-radius: 0;
+  }
+}

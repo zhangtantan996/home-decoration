@@ -1,4 +1,5 @@
 import { useAuthStore, type AuthUser } from '@/store/auth';
+import { refreshTinodeToken } from '@/services/tinode';
 import { request } from '@/utils/request';
 
 interface SendCodeResult {
@@ -33,6 +34,19 @@ interface WechatH5LoginResult {
   providerSubType?: AuthUser['providerSubType'];
 }
 
+async function refreshTinodeAuthBestEffort() {
+  try {
+    const result = await refreshTinodeToken();
+    useAuthStore.getState().updateTinodeAuth({
+      tinodeToken: result.tinodeToken || '',
+      tinodeError: result.tinodeError || '',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Tinode token 获取失败';
+    useAuthStore.getState().updateTinodeAuth({ tinodeToken: '', tinodeError: message });
+  }
+}
+
 export async function sendLoginCode(phone: string) {
   return request<SendCodeResult>({
     url: '/auth/send-code',
@@ -60,6 +74,7 @@ export async function loginWithSmsCode(phone: string, code: string) {
       providerSubType: data.providerSubType,
     },
   });
+  await refreshTinodeAuthBestEffort();
 
   return data;
 }
@@ -91,6 +106,7 @@ export async function wechatH5Login(code: string, state: string) {
         providerSubType: data.providerSubType,
       },
     });
+    await refreshTinodeAuthBestEffort();
   }
 
   return data;
@@ -114,6 +130,7 @@ export async function wechatH5BindPhone(bindToken: string, phone: string, code: 
       providerSubType: data.providerSubType,
     },
   });
+  await refreshTinodeAuthBestEffort();
 
   return data;
 }

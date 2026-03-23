@@ -19,7 +19,7 @@ import {
   PROJECT_STATUS_LABELS,
   TRANSACTION_STATUS_LABELS,
 } from '../constants/statuses';
-import { formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
+import { compactPhone, formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
 import { requestJson } from './http';
 
 interface ProjectListDTO {
@@ -37,6 +37,8 @@ interface ProjectDetailResponse {
   address?: string;
   currentPhase?: string;
   status?: number;
+  startDate?: string;
+  expectedEnd?: string;
   businessStage?: string;
   flowSummary?: string;
   availableActions?: string[];
@@ -45,6 +47,9 @@ interface ProjectDetailResponse {
   budget?: number;
   ownerName?: string;
   providerName?: string;
+  providerAvatar?: string;
+  providerPhone?: string;
+  providerType?: number;
   escrowBalance?: number;
   completedPhotos?: string[];
   completionNotes?: string;
@@ -78,6 +83,7 @@ interface ProjectPhaseDTO {
   status?: string;
   startDate?: string;
   endDate?: string;
+  responsiblePerson?: string;
   estimatedDays?: number;
   tasks?: Array<{ id: number; name?: string; isCompleted?: boolean }>;
 }
@@ -181,6 +187,7 @@ function adaptPhases(items: ProjectPhaseDTO[]): ProjectPhaseVM[] {
       : PHASE_STATUS_LABELS[phase.status || 'pending'] || '处理中',
     startDate: formatDate(phase.startDate),
     endDate: formatDate(phase.endDate),
+    responsiblePerson: phase.responsiblePerson || undefined,
     tasks: (phase.tasks || []).map((task) => `${task.isCompleted ? '已完成' : '待办'} · ${task.name || '任务'}`),
   }));
 }
@@ -260,6 +267,8 @@ export async function getProjectDetail(id: number) {
     address: detail.address || '地址待补充',
     currentPhase: detail.currentPhase || '待同步',
     statusText: PROJECT_STATUS_LABELS[Number(detail.status || 0)] || '处理中',
+    startDateText: formatDate(detail.startDate),
+    expectedEndText: formatDate(detail.expectedEnd),
     businessStage: detail.businessStage || undefined,
     flowSummary: detail.flowSummary || undefined,
     availableActions: detail.availableActions || [],
@@ -268,6 +277,9 @@ export async function getProjectDetail(id: number) {
     budgetText: formatCurrency(detail.budget),
     ownerName: detail.ownerName || '业主',
     providerName: detail.providerName || '服务商',
+    providerAvatar: detail.providerAvatar || undefined,
+    providerPhoneHint: compactPhone(detail.providerPhone || ''),
+    providerRoleText: detail.providerType === 1 ? '设计师' : detail.providerType === 2 ? '装修公司' : detail.providerType === 3 ? '工长' : '服务商',
     escrowBalanceText: formatCurrency(detail.escrowBalance),
     phases: adaptPhases(phaseResponse.phases || []),
     milestones: adaptMilestones(milestoneResponse.milestones || []),

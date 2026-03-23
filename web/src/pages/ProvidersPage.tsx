@@ -1,21 +1,17 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { MaterialShopCard } from '../components/MaterialShopCard';
 import { Pagination } from '../components/Pagination';
 import { ProviderCard } from '../components/ProviderCard';
+import { UserPageFrame } from '../components/UserPageFrame';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getDictionaryOptions } from '../services/dictionaries';
 import { listMaterialShops } from '../services/materialShops';
 import { listProviders } from '../services/providers';
 import { listPublicCities } from '../services/regions';
 import type { HomeServiceCategory, MaterialShopListItemVM, ProviderListItemVM, ProviderRole } from '../types/viewModels';
-
-type ProvidersFilterCategory = HomeServiceCategory | 'all';
-type MixedResultItem =
-  | { kind: 'provider'; provider: ProviderListItemVM }
-  | { kind: 'shop'; shop: MaterialShopListItemVM };
+import styles from './ProvidersPage.module.scss';
 
 interface BudgetOption {
   value: string;
@@ -24,9 +20,7 @@ interface BudgetOption {
   max: number | null;
 }
 
-const PROVIDER_FETCH_PAGE_SIZE = 50;
-const MATERIAL_FETCH_PAGE_SIZE = 50;
-const RESULT_PAGE_SIZE = 9;
+const PROVIDERS_PAGE_SIZE = 12;
 
 const tabs: Array<{ value: HomeServiceCategory; label: string }> = [
   { value: 'designer', label: '设计师' },
@@ -34,6 +28,22 @@ const tabs: Array<{ value: HomeServiceCategory; label: string }> = [
   { value: 'foreman', label: '工长' },
   { value: 'material', label: '主材门店' },
 ];
+
+function getSortOptions(category: HomeServiceCategory) {
+  if (category === 'material') {
+    return [
+      { key: 'recommend', label: '推荐' },
+      { key: 'rating', label: '评分高' },
+    ] as const;
+  }
+
+  return [
+    { key: 'recommend', label: '推荐' },
+    { key: 'rating', label: '评分高' },
+    { key: 'completed', label: '成交多' },
+    { key: 'price', label: '价格低' },
+  ] as const;
+}
 
 function SearchIcon() {
   return (
@@ -44,15 +54,9 @@ function SearchIcon() {
   );
 }
 
-function readCategory(value: string | null, keyword: string): ProvidersFilterCategory {
+function readCategory(value: string | null): HomeServiceCategory {
   if (value === 'company' || value === 'foreman' || value === 'material') return value;
-  if (!value && keyword.trim()) return 'all';
   return 'designer';
-}
-
-function extractPriceValue(text: string) {
-  const match = text.match(/(\d+(?:\.\d+)?)/);
-  return match ? Number(match[1]) : 0;
 }
 
 function normalizeCityToken(value: string) {
@@ -80,33 +84,6 @@ function normalizeCityOptions(raw: string[]) {
     });
 }
 
-function matchesCityText(source: string, city: string) {
-  const normalizedCity = normalizeCityToken(city);
-  if (!normalizedCity) {
-    return true;
-  }
-  const normalizedSource = normalizeCityToken(source);
-  if (!normalizedSource) {
-    return false;
-  }
-  return normalizedSource.includes(normalizedCity) || normalizedCity.includes(normalizedSource);
-}
-
-function matchesProviderCity(item: ProviderListItemVM, city: string) {
-  if (!city) {
-    return true;
-  }
-  return item.serviceArea.some((area) => matchesCityText(area, city));
-}
-
-function matchesShopCity(item: MaterialShopListItemVM, city: string) {
-  if (!city) {
-    return true;
-  }
-  const candidates = [item.address, ...item.productCategories, ...item.mainProducts, ...item.tags];
-  return candidates.some((text) => matchesCityText(text, city));
-}
-
 function normalizeBudgetOptions(raw: Awaited<ReturnType<typeof getDictionaryOptions>>): BudgetOption[] {
   if (!raw || raw.length === 0) {
     return [
@@ -129,107 +106,27 @@ function normalizeBudgetOptions(raw: Awaited<ReturnType<typeof getDictionaryOpti
   });
 }
 
-function filterProviders(list: ProviderListItemVM[], city: string, rating: string, budget: string, budgetOptions: BudgetOption[]) {
-  return list.filter((item) => {
-    const cityMatch = matchesProviderCity(item, city);
-    const ratingValue = rating === '4.8' ? 4.8 : rating === '4.5' ? 4.5 : 0;
-    const ratingMatch = ratingValue === 0 || item.rating >= ratingValue;
-    const price = extractPriceValue(item.priceText);
-    const selectedBudget = budgetOptions.find((option) => option.value === budget);
-    const budgetMatch = !selectedBudget || price === 0 || (
-      (selectedBudget.min === null || price >= selectedBudget.min) &&
-      (selectedBudget.max === null || price < selectedBudget.max)
-    );
-    return cityMatch && ratingMatch && budgetMatch;
-  });
-}
-
-function filterShops(list: MaterialShopListItemVM[], city: string, rating: string) {
-  return list.filter((item) => {
-    const cityMatch = matchesShopCity(item, city);
-    const ratingValue = rating === '4.8' ? 4.8 : rating === '4.5' ? 4.5 : 0;
-    const ratingMatch = ratingValue === 0 || item.rating >= ratingValue;
-    return cityMatch && ratingMatch;
-  });
-}
-
-async function listAllProviders(role: ProviderRole, keyword: string) {
-  const firstPage = await listProviders({ role, keyword, page: 1, pageSize: PROVIDER_FETCH_PAGE_SIZE });
-  const totalPages = Math.max(1, Math.ceil(firstPage.total / Math.max(1, firstPage.pageSize || PROVIDER_FETCH_PAGE_SIZE)));
-  if (totalPages === 1) {
-    return firstPage;
-  }
-
-  const remainingPages = await Promise.all(
-    Array.from({ length: totalPages - 1 }, (_, index) =>
-      listProviders({ role, keyword, page: index + 2, pageSize: firstPage.pageSize || PROVIDER_FETCH_PAGE_SIZE })),
-  );
-
-  return {
-    list: [firstPage, ...remainingPages].flatMap((page) => page.list),
-    total: firstPage.total,
-    page: 1,
-    pageSize: firstPage.total,
-  };
-}
-
-async function listAllMaterialShops(sortBy: string) {
-  const firstPage = await listMaterialShops({ page: 1, pageSize: MATERIAL_FETCH_PAGE_SIZE, sortBy });
-  const totalPages = Math.max(1, Math.ceil(firstPage.total / Math.max(1, firstPage.pageSize || MATERIAL_FETCH_PAGE_SIZE)));
-  if (totalPages === 1) {
-    return firstPage;
-  }
-
-  const remainingPages = await Promise.all(
-    Array.from({ length: totalPages - 1 }, (_, index) =>
-      listMaterialShops({ page: index + 2, pageSize: firstPage.pageSize || MATERIAL_FETCH_PAGE_SIZE, sortBy })),
-  );
-
-  return {
-    list: [firstPage, ...remainingPages].flatMap((page) => page.list),
-    total: firstPage.total,
-    page: 1,
-    pageSize: firstPage.total,
-  };
-}
-
-function sortProviders(list: ProviderListItemVM[], sortBy: string, role?: ProviderRole) {
-  const next = [...list];
-  if (sortBy === 'rating') return next.sort((a, b) => b.rating - a.rating);
-  if (sortBy === 'completed') return next.sort((a, b) => b.completedCount - a.completedCount);
-  if (sortBy === 'price') return next.sort((a, b) => extractPriceValue(a.priceText) - extractPriceValue(b.priceText));
-  if (role === 'company') {
-    return next.sort((a, b) => {
-      const aHasRealSignals = Number(a.reviewCount > 0 || a.completedCount > 0);
-      const bHasRealSignals = Number(b.reviewCount > 0 || b.completedCount > 0);
-      if (bHasRealSignals !== aHasRealSignals) return bHasRealSignals - aHasRealSignals;
-
-      if (b.completedCount !== a.completedCount) return b.completedCount - a.completedCount;
-      if (b.reviewCount !== a.reviewCount) return b.reviewCount - a.reviewCount;
-      if (Number(b.isSettled !== false) !== Number(a.isSettled !== false)) {
-        return Number(b.isSettled !== false) - Number(a.isSettled !== false);
-      }
-      return b.rating - a.rating;
-    });
-  }
-  return next;
-}
-
-function sortShops(list: MaterialShopListItemVM[], sortBy: string) {
-  const next = [...list];
-  if (sortBy === 'rating') return next.sort((a, b) => b.rating - a.rating);
-  return next;
+function readRatingMin(value: string) {
+  if (value === '4.8') return 4.8;
+  if (value === '4.5') return 4.5;
+  return undefined;
 }
 
 export function ProvidersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const keyword = searchParams.get('keyword') || '';
-  const category = readCategory(searchParams.get('category'), keyword);
+  const category = readCategory(searchParams.get('category'));
   const city = searchParams.get('city') || '';
   const rating = searchParams.get('rating') || 'all';
   const budget = searchParams.get('budget') || '';
   const sortBy = searchParams.get('sort') || 'recommend';
   const page = Math.max(1, Number(searchParams.get('page') || '1'));
+  const [draftKeyword, setDraftKeyword] = useState(keyword);
+  const sortOptions = useMemo(() => getSortOptions(category), [category]);
+  const effectiveSortBy = sortOptions.some((item) => item.key === sortBy) ? sortBy : sortOptions[0].key;
+  const searchPlaceholder = category === 'material'
+    ? '搜索门店名称、品类或品牌'
+    : '搜索服务商名称、风格或服务类型';
 
   const updateParams = (patch: Record<string, string>) => {
     const next = new URLSearchParams(searchParams);
@@ -241,6 +138,20 @@ export function ProvidersPage() {
     setSearchParams(next, { replace: true });
   };
 
+  useEffect(() => {
+    setDraftKeyword(keyword);
+  }, [keyword]);
+
+  useEffect(() => {
+    if (sortBy === effectiveSortBy) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.set('sort', effectiveSortBy);
+    next.set('page', '1');
+    setSearchParams(next, { replace: true });
+  }, [effectiveSortBy, searchParams, setSearchParams, sortBy]);
+
   const { data, loading, error, reload } = useAsyncData(async () => {
     const [cities, rawBudgetOptions] = await Promise.all([
       listPublicCities().catch(() => ['西安']),
@@ -248,45 +159,50 @@ export function ProvidersPage() {
     ]);
     const budgetOptions = normalizeBudgetOptions(rawBudgetOptions);
     const cityOptions = normalizeCityOptions(cities.length > 0 ? cities : ['西安']);
-
-    if (category === 'all') {
-      const [designers, companies, foremen, shops] = await Promise.all([
-        listAllProviders('designer', keyword),
-        listAllProviders('company', keyword),
-        listAllProviders('foreman', keyword),
-        listAllMaterialShops('recommend'),
-      ]);
-
-      const filteredProviders = [
-        ...filterProviders(designers.list, city, rating, budget, budgetOptions),
-        ...filterProviders(companies.list, city, rating, budget, budgetOptions),
-        ...filterProviders(foremen.list, city, rating, budget, budgetOptions),
-      ];
-      const filteredShops = filterShops(
-        keyword.trim() ? shops.list.filter((item) => `${item.name}${item.productCategories.join('')}${item.mainProducts.join('')}`.includes(keyword.trim())) : shops.list,
-        city,
-        rating,
-      );
-
-      const mixed: MixedResultItem[] = [
-        ...sortProviders(filteredProviders, sortBy).map((provider) => ({ kind: 'provider' as const, provider })),
-        ...sortShops(filteredShops, sortBy).map((shop) => ({ kind: 'shop' as const, shop })),
-      ];
-
-      return { mode: 'mixed' as const, list: mixed, total: mixed.length, page: 1, pageSize: RESULT_PAGE_SIZE, cities: cityOptions, budgetOptions };
-    }
-
     if (category === 'material') {
-      const result = await listAllMaterialShops('recommend');
-      const searched = keyword.trim() ? result.list.filter((item) => `${item.name}${item.productCategories.join('')}${item.mainProducts.join('')}`.includes(keyword.trim())) : result.list;
-      const filtered = filterShops(searched, city, rating);
-      return { mode: 'material' as const, list: sortShops(filtered, sortBy), total: filtered.length, page: 1, pageSize: RESULT_PAGE_SIZE, cities: cityOptions, budgetOptions };
+      const result = await listMaterialShops({
+        page,
+        pageSize: PROVIDERS_PAGE_SIZE,
+        sortBy: effectiveSortBy,
+        keyword: keyword.trim(),
+        city,
+        ratingMin: readRatingMin(rating),
+      });
+
+      return {
+        mode: 'material' as const,
+        list: result.list,
+        total: result.total,
+        page: result.page || page,
+        pageSize: result.pageSize || PROVIDERS_PAGE_SIZE,
+        cities: cityOptions,
+        budgetOptions,
+      };
     }
 
-    const result = await listAllProviders(category as ProviderRole, keyword);
-    const filtered = filterProviders(result.list, city, rating, budget, budgetOptions);
-    return { mode: 'provider' as const, list: sortProviders(filtered, sortBy, category as ProviderRole), total: filtered.length, page: 1, pageSize: RESULT_PAGE_SIZE, cities: cityOptions, budgetOptions };
-  }, [category, keyword, city, rating, budget, sortBy]);
+    const selectedBudget = budgetOptions.find((option) => option.value === budget);
+    const result = await listProviders({
+      role: category as ProviderRole,
+      keyword: keyword.trim(),
+      city,
+      ratingMin: readRatingMin(rating),
+      budgetMin: selectedBudget?.min ?? undefined,
+      budgetMax: selectedBudget?.max ?? undefined,
+      sortBy: effectiveSortBy,
+      page,
+      pageSize: PROVIDERS_PAGE_SIZE,
+    });
+
+    return {
+      mode: 'provider' as const,
+      list: result.list,
+      total: result.total,
+      page: result.page || page,
+      pageSize: result.pageSize || PROVIDERS_PAGE_SIZE,
+      cities: cityOptions,
+      budgetOptions,
+    };
+  }, [category, keyword, city, rating, budget, effectiveSortBy, page]);
 
   const totalPages = useMemo(() => {
     if (!data) {
@@ -295,179 +211,199 @@ export function ProvidersPage() {
     return Math.max(1, Math.ceil(data.total / Math.max(1, data.pageSize)));
   }, [data]);
 
-  const currentPage = Math.min(page, totalPages);
+  const currentPage = Math.max(1, Math.min(page, totalPages));
 
   useEffect(() => {
-    if (!data || page === currentPage) {
+    if (!data || loading || page <= totalPages) {
       return;
     }
     const next = new URLSearchParams(searchParams);
-    next.set('page', String(currentPage));
+    next.set('page', String(totalPages));
     setSearchParams(next, { replace: true });
-  }, [currentPage, data, page, searchParams, setSearchParams]);
-
-  const paginatedProviders = useMemo(() => {
-    if (!data || data.mode !== 'provider') return [] as ProviderListItemVM[];
-    const start = (currentPage - 1) * data.pageSize;
-    return data.list.slice(start, start + data.pageSize);
-  }, [currentPage, data]);
-
-  const paginatedMixed = useMemo(() => {
-    if (!data || data.mode !== 'mixed') return [] as MixedResultItem[];
-    const start = (currentPage - 1) * data.pageSize;
-    return data.list.slice(start, start + data.pageSize);
-  }, [currentPage, data]);
-
-  const paginatedShops = useMemo(() => {
-    if (!data || data.mode !== 'material') return [] as MaterialShopListItemVM[];
-    const start = (currentPage - 1) * data.pageSize;
-    return data.list.slice(start, start + data.pageSize);
-  }, [currentPage, data]);
+  }, [data, loading, page, searchParams, setSearchParams, totalPages]);
 
   // 仅装修公司和主材门店分类可能含未入驻商家，需展示免责横幅
   const hasUnsettled = useMemo(() => {
     if (!data) return false;
     if (data.mode === 'provider') {
-      return category === 'company' && (data.list as ProviderListItemVM[]).some((p) => p.isSettled === false);
+      return category === 'company' && (data.list as ProviderListItemVM[]).some((provider) => provider.isSettled === false);
     }
-    if (data.mode === 'material') {
-      return (data.list as MaterialShopListItemVM[]).some((s) => s.isSettled === false);
-    }
-    if (data.mode === 'mixed') {
-      return (data.list as MixedResultItem[]).some((item) =>
-        (item.kind === 'shop' && item.shop.isSettled === false) ||
-        (item.kind === 'provider' && item.provider.role === 'company' && item.provider.isSettled === false)
-      );
-    }
-    return false;
+    return (data.list as MaterialShopListItemVM[]).some((shop) => shop.isSettled === false);
   }, [data, category]);
 
-  const activeTags = useMemo(() => {
-    const tags: string[] = [];
-    if (city) tags.push(shortenCityLabel(city));
-    const selectedBudget = data?.budgetOptions.find((option) => option.value === budget);
-    if (selectedBudget) tags.push(selectedBudget.label);
-    if (rating !== 'all') tags.push(`${rating} 分以上`);
-    return tags;
-  }, [budget, city, rating, data]);
+  const sidebar = (
+    <div className={styles.sidebarInner}>
+      <section className="user-page-panel">
+        <p className="user-page-label">服务类型</p>
+        <div className="user-page-button-list">
+          {tabs.map((tab) => (
+            <button
+              className={`user-page-filter ${tab.value === category ? 'active' : ''}`}
+              key={tab.value}
+              onClick={() => updateParams(tab.value === 'material' ? { category: tab.value, budget: 'all' } : { category: tab.value })}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
-  return (
-    <div className="top-page">
-      <div className="svc-layout">
-        <aside className="svc-sidebar">
-          <div className="svc-filter-group">
-            <div className="svc-filter-title">服务类型</div>
-            {tabs.map((tab) => (
-              <button className={`svc-filter-item ${tab.value === category ? 'active' : ''}`} key={tab.value} onClick={() => updateParams({ category: tab.value })} type="button">
-                {tab.label}
+      <section className="user-page-panel compact">
+        <p className="user-page-label">所在城市</p>
+        <div className="user-page-button-list">
+          <button className={`user-page-filter ${!city ? 'active' : ''}`} onClick={() => updateParams({ city: 'all' })} type="button">
+            全部城市
+          </button>
+          {(data?.cities || ['西安']).map((item) => (
+            <button
+              className={`user-page-filter ${shortenCityLabel(city) === item ? 'active' : ''}`}
+              key={item}
+              onClick={() => updateParams({ city: item })}
+              type="button"
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {category !== 'material' ? (
+        <section className="user-page-panel compact">
+          <p className="user-page-label">预算区间</p>
+          <div className="user-page-button-list">
+            <button className={`user-page-filter ${!budget ? 'active' : ''}`} onClick={() => updateParams({ budget: 'all' })} type="button">
+              全部
+            </button>
+            {(data?.budgetOptions || []).map((item) => (
+              <button className={`user-page-filter ${budget === item.value ? 'active' : ''}`} key={item.value} onClick={() => updateParams({ budget: item.value })} type="button">
+                {item.label}
               </button>
             ))}
           </div>
+        </section>
+      ) : null}
 
-          <div className="svc-filter-group">
-            <div className="svc-filter-title">所在城市</div>
-            <button className={`svc-filter-item ${!city ? 'active' : ''}`} onClick={() => updateParams({ city: 'all' })} type="button">
-              全部城市
+      <section className="user-page-panel compact">
+        <p className="user-page-label">评分筛选</p>
+        <div className="user-page-button-list">
+          {[
+            { key: 'all', label: '全部' },
+            { key: '4.5', label: '4.5 分以上' },
+            { key: '4.8', label: '4.8 分以上' },
+          ].map((item) => (
+            <button className={`user-page-filter ${rating === item.key ? 'active' : ''}`} key={item.key} onClick={() => updateParams({ rating: item.key })} type="button">
+              {item.label}
             </button>
-            {(data?.cities || ['西安']).map((item) => (
-              <button className={`svc-filter-item ${shortenCityLabel(city) === item ? 'active' : ''}`} key={item} onClick={() => updateParams({ city: item })} type="button">{item}</button>
-            ))}
+          ))}
           </div>
+        </section>
+    </div>
+  );
 
-          {category !== 'material' ? (
-            <div className="svc-filter-group">
-              <div className="svc-filter-title">预算区间</div>
-              {(data?.budgetOptions || []).map((item) => (
-                <button className={`svc-filter-item ${budget === item.value ? 'active' : ''}`} key={item.value} onClick={() => updateParams({ budget: item.value })} type="button">{item.label}</button>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="svc-filter-group">
-            <div className="svc-filter-title">评分筛选</div>
-            {[
-              { key: 'all', label: '全部' },
-              { key: '4.5', label: '4.5 分以上' },
-              { key: '4.8', label: '4.8 分以上' },
-            ].map((item) => (
-              <button className={`svc-filter-item ${rating === item.key ? 'active' : ''}`} key={item.key} onClick={() => updateParams({ rating: item.key })} type="button">{item.label}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section>
-          <div className="svc-topbar">
-            <div className="svc-search">
+  return (
+    <UserPageFrame
+      contentClassName={styles.content}
+      frameClassName={styles.frame}
+      mainClassName={styles.main}
+      sidebar={sidebar}
+      sidebarClassName={styles.sidebar}
+      wrapClassName={styles.wrap}
+    >
+      <section className={styles.toolbarPanel}>
+        <div className={styles.toolbar}>
+          <form
+            className={styles.searchForm}
+            onSubmit={(event) => {
+              event.preventDefault();
+              updateParams({ keyword: draftKeyword.trim() });
+            }}
+          >
+            <div className={styles.searchField}>
               <SearchIcon />
               <input
-                defaultValue={keyword}
-                onBlur={(event) => {
-                  if (event.target.value.trim() !== keyword) updateParams({ keyword: event.target.value.trim() });
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    const target = event.target as HTMLInputElement;
-                    updateParams({ keyword: target.value.trim() });
-                  }
-                }}
-                placeholder="搜索服务商名称、风格、区域或类型"
+                onChange={(event) => setDraftKeyword(event.target.value)}
+                placeholder={searchPlaceholder}
+                value={draftKeyword}
               />
             </div>
-            <div className="svc-sort">
-              {[
-                { key: 'recommend', label: '综合推荐' },
-                { key: 'rating', label: '评分最高' },
-                { key: 'completed', label: '评价最多' },
-                { key: 'price', label: '价格最低' },
-              ].map((item) => (
-                <button className={`svc-sort-btn ${sortBy === item.key ? 'active' : ''}`} key={item.key} onClick={() => updateParams({ sort: item.key })} type="button">{item.label}</button>
+            <button type="submit">搜索</button>
+          </form>
+
+          <div className={styles.sortBar}>
+            <div className={styles.sortButtons}>
+              {sortOptions.map((item) => (
+                <button
+                  className={`${styles.sortButton} ${effectiveSortBy === item.key ? styles.sortButtonActive : ''}`.trim()}
+                  key={item.key}
+                  onClick={() => updateParams({ sort: item.key })}
+                  type="button"
+                >
+                  {item.label}
+                </button>
               ))}
             </div>
+            <div className={styles.resultCount}>找到 {data?.total ?? 0} 个结果</div>
           </div>
+        </div>
+      </section>
 
-          {activeTags.length > 0 ? <div className="svc-active-filters">{activeTags.map((tag) => <span className="svc-tag" key={tag}>{tag}</span>)}</div> : null}
+      {hasUnsettled ? (
+        <div className="svc-reference-banner">
+          <span className="svc-reference-banner-label">公开参考</span>
+          <div className="svc-reference-banner-copy">
+            <strong>当前结果包含平台未入驻的公开资料</strong>
+            <span>卡片上标有「参考信息 / 公开资料」的内容，仅用于选店与比对参考，不代表平台认证、合作或履约承诺。</span>
+          </div>
+        </div>
+      ) : null}
 
-          {hasUnsettled && (
-            <div className="svc-reference-banner">
-              <span className="svc-reference-banner-label">公开参考</span>
-              <div className="svc-reference-banner-copy">
-                <strong>当前结果包含平台未入驻的公开资料</strong>
-                <span>卡片上标有「参考信息 / 公开资料」的内容，仅用于选店与比对参考，不代表平台认证、合作或履约承诺。</span>
-              </div>
+      <section className={styles.resultsPanel}>
+        {loading && !data ? (
+          <div className={styles.stateBlock}>
+            <div className={styles.stateSpinner} aria-hidden="true" />
+            <strong>加载服务商列表</strong>
+            <span>正在同步当前筛选结果，请稍候。</span>
+          </div>
+        ) : null}
+
+        {!loading && error && !data ? (
+          <div className={styles.stateBlock}>
+            <strong>加载失败</strong>
+            <span>{error}</span>
+            <button className={styles.stateButton} onClick={() => void reload()} type="button">重试</button>
+          </div>
+        ) : null}
+
+        {!loading && !error && data && data.total === 0 ? (
+          <div className={styles.emptyState}>暂无匹配服务商</div>
+        ) : null}
+
+        {data && data.total > 0 ? (
+          <>
+            <div className={styles.resultsGrid}>
+              {data.mode === 'material'
+                ? (data.list as MaterialShopListItemVM[]).map((shop) => <MaterialShopCard key={shop.id} shop={shop} />)
+                : (data.list as ProviderListItemVM[]).map((provider) => <ProviderCard key={provider.id} provider={provider} />)}
             </div>
-          )}
-
-          {loading ? <LoadingBlock title="加载服务商列表" /> : null}
-          {error ? <ErrorBlock description={error} onRetry={() => void reload()} /> : null}
-          {!loading && !error && data && data.total === 0 ? <div className="svc-empty">暂无匹配服务商</div> : null}
-          {!loading && !error && data ? (
-            <>
-              <div className="svc-results">
-                {data.mode === 'material'
-                  ? paginatedShops.map((shop) => <MaterialShopCard key={shop.id} shop={shop} />)
-                  : data.mode === 'mixed'
-                    ? paginatedMixed.map((item) => item.kind === 'shop' ? <MaterialShopCard key={`shop-${item.shop.id}`} shop={item.shop} /> : <ProviderCard key={`provider-${item.provider.id}`} provider={item.provider} />)
-                    : paginatedProviders.map((provider) => <ProviderCard key={provider.id} provider={provider} />)}
+            {data.total > data.pageSize ? (
+              <div className={styles.paginationWrap}>
+                <Pagination
+                  onChange={(nextPage) => {
+                    updateParams({ page: String(nextPage) });
+                    if (typeof window !== 'undefined') {
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  page={currentPage}
+                  pageSize={data.pageSize}
+                  total={data.total}
+                />
               </div>
-              {data.total > data.pageSize ? (
-                <div style={{ marginTop: 20 }}>
-                  <Pagination
-                    onChange={(nextPage) => {
-                      updateParams({ page: String(nextPage) });
-                      if (typeof window !== 'undefined') {
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }
-                    }}
-                    page={currentPage}
-                    pageSize={data.pageSize}
-                    total={data.total}
-                  />
-                </div>
-              ) : null}
-            </>
-          ) : null}
-        </section>
-      </div>
-    </div>
+            ) : null}
+          </>
+        ) : null}
+      </section>
+    </UserPageFrame>
   );
 }

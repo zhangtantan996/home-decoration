@@ -1,5 +1,5 @@
 import type { ApiEnvelope } from '../types/api';
-import { useSessionStore } from '../modules/session/sessionStore';
+import { isSessionExpired, useSessionStore } from '../modules/session/sessionStore';
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -95,6 +95,27 @@ async function refreshTokenOrClear(refreshToken: string) {
   return refreshPromise;
 }
 
+async function resolveAuthToken(skipAuth: boolean, retry?: boolean) {
+  if (skipAuth) {
+    return '';
+  }
+
+  const session = useSessionStore.getState();
+  if (session.accessToken && !isSessionExpired(session.expiresAt)) {
+    return session.accessToken;
+  }
+
+  if (session.refreshToken && !retry) {
+    const nextToken = await refreshTokenOrClear(session.refreshToken);
+    if (nextToken) {
+      return nextToken;
+    }
+    throw new Error('登录已过期，请重新登录');
+  }
+
+  return session.accessToken;
+}
+
 function normalizeRequestError(error: unknown): Error {
   if (error instanceof Error) {
     if (error.name === 'AbortError') {
@@ -118,13 +139,13 @@ async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
 }
 
 export async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const session = useSessionStore.getState();
   const headers = new Headers({
     'Content-Type': 'application/json',
   });
+  const accessToken = await resolveAuthToken(Boolean(options.skipAuth), options.retry);
 
-  if (!options.skipAuth && session.accessToken) {
-    headers.set('Authorization', `Bearer ${session.accessToken}`);
+  if (!options.skipAuth && accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
   }
 
   const response = await safeFetch(buildUrl(path, options.query), {
@@ -132,11 +153,20 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
+  const session = useSessionStore.getState();
 
   if (response.status === 401 && !options.skipAuth && session.refreshToken && !options.retry) {
     const nextToken = await refreshTokenOrClear(session.refreshToken);
     if (nextToken) {
       return requestJson<T>(path, { ...options, retry: true });
+    }
+    throw new Error('登录已过期，请重新登录');
+  }
+
+  if (response.status === 401 && !options.skipAuth) {
+    useSessionStore.getState().clearSession();
+    if (typeof window !== 'undefined') {
+      window.location.replace(resolveLoginUrl());
     }
     throw new Error('登录已过期，请重新登录');
   }
@@ -155,10 +185,10 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
 }
 
 export async function uploadFile(path: string, file: File, fieldName = 'file') {
-  const session = useSessionStore.getState();
   const headers = new Headers();
-  if (session.accessToken) {
-    headers.set('Authorization', `Bearer ${session.accessToken}`);
+  const accessToken = await resolveAuthToken(false, false);
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
   }
   const formData = new FormData();
   formData.append(fieldName, file);

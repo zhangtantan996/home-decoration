@@ -78,7 +78,7 @@ const ProposalList: React.FC = () => {
       {!auth.token ? (
         <Empty
           description="登录后查看设计方案"
-          action={{ text: '去登录', onClick: () => Taro.navigateTo({ url: '/pages/profile/index' }) }}
+          action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
         />
       ) : loading && list.length === 0 ? (
         <View>

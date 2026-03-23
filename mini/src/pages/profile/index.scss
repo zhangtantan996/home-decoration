@@ -1,0 +1,125 @@
+.profile-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f5f5 100%);
+  padding-bottom: 48rpx;
+
+  &__hero {
+    padding: 40rpx 24rpx 28rpx;
+    background: #111111;
+    color: #ffffff;
+    box-shadow: 0 24rpx 44rpx rgba(17, 17, 17, 0.16);
+  }
+
+  &__hero-main {
+    display: flex;
+    align-items: center;
+    gap: 20rpx;
+  }
+
+  &__avatar {
+    width: 112rpx;
+    height: 112rpx;
+    border-radius: 56rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1rpx solid rgba(255, 255, 255, 0.18);
+  }
+
+  &__avatar-text {
+    color: #ffffff;
+    font-size: 42rpx;
+    font-weight: 700;
+  }
+
+  &__identity {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title {
+    display: block;
+    font-size: 42rpx;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  &__subtitle {
+    display: block;
+    margin-top: 10rpx;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 24rpx;
+    line-height: 1.6;
+  }
+
+  &__edit {
+    width: 72rpx;
+    height: 72rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999rpx;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  &__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16rpx;
+    margin-top: 28rpx;
+  }
+
+  &__stat {
+    padding: 18rpx 14rpx;
+    border-radius: 24rpx;
+    background: rgba(255, 255, 255, 0.08);
+    text-align: center;
+  }
+
+  &__stat-value {
+    display: block;
+    color: #ffffff;
+    font-size: 30rpx;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  &__stat-label {
+    display: block;
+    margin-top: 8rpx;
+    color: rgba(255, 255, 255, 0.66);
+    font-size: 22rpx;
+  }
+
+  &__content {
+    padding: 24rpx;
+  }
+
+  &__card {
+    margin-bottom: 20rpx;
+    border-radius: 30rpx;
+    border: 1rpx solid rgba(17, 17, 17, 0.05);
+    box-shadow: 0 16rpx 34rpx rgba(17, 17, 17, 0.07);
+  }
+
+  &__login-copy {
+    margin-bottom: 20rpx;
+    color: #6b7280;
+    font-size: 26rpx;
+    line-height: 1.7;
+  }
+
+  &__button-gap {
+    height: 16rpx;
+  }
+
+  &__list-extra {
+    color: #6b7280;
+    font-size: 24rpx;
+  }
+
+  &__logout {
+    margin-top: 8rpx;
+  }
+}

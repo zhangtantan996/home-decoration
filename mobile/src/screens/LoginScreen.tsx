@@ -150,13 +150,8 @@ const LoginScreen: React.FC = () => {
                 throw new Error('登录返回数据异常');
             }
 
-            // 检查 Tinode token 生成是否失败
             if (tinodeError) {
                 console.warn('[Tinode] Token generation failed:', tinodeError);
-                showToast({
-                    message: '聊天功能暂时不可用，其他功能正常使用',
-                    type: 'warning'
-                });
             }
 
             setAuth(token, refreshToken || '', tinodeToken || '', user);

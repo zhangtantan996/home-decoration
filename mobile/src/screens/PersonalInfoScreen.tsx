@@ -200,7 +200,7 @@ const PersonalInfoScreen = ({ navigation }: any) => {
                 return (
                     <>
                         <Text style={styles.sheetTitle}>修改头像</Text>
-                        <Text style={styles.sheetSubtitle}>尽量使用清晰正面照片，头像会同步到消息和项目协作页。</Text>
+                        <Text style={styles.sheetSubtitle}>尽量使用清晰正面照片，头像会同步到通知、项目和订单相关页面。</Text>
                         <TouchableOpacity activeOpacity={0.86} style={styles.actionRow} onPress={handlePickAvatar}>
                             <Camera size={18} color={SETTINGS_COLORS.textPrimary} strokeWidth={2.1} />
                             <Text style={styles.actionLabel}>从相册选择</Text>
@@ -223,7 +223,7 @@ const PersonalInfoScreen = ({ navigation }: any) => {
                 return (
                     <>
                         <Text style={styles.sheetTitle}>编辑昵称</Text>
-                        <Text style={styles.sheetSubtitle}>昵称会展示在消息、项目和订单相关页面，建议简洁易识别。</Text>
+                        <Text style={styles.sheetSubtitle}>昵称会展示在通知、项目和订单相关页面，建议简洁易识别。</Text>
                         <TextInput
                             value={nicknameDraft}
                             onChangeText={setNicknameDraft}

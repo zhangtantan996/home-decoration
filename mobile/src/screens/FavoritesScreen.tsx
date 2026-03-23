@@ -15,6 +15,7 @@ import {
 import { ChevronLeft, Store, Image as ImageIcon } from 'lucide-react-native';
 import { userApi, materialShopApi } from '../services/api';
 import { useToast } from '../components/Toast';
+import { formatServerDate } from '../utils/serverTime';
 
 interface FavoriteItem {
     id: number;
@@ -132,7 +133,7 @@ const FavoritesScreen = ({ navigation }: any) => {
                         </View>
                     )}
                     <Text style={styles.dateText}>
-                        {new Date(item.createdAt).toLocaleDateString()}
+                        {formatServerDate(item.createdAt)}
                     </Text>
                 </View>
             </View>

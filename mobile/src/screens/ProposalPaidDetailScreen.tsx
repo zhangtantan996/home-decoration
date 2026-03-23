@@ -23,6 +23,7 @@ import { Proposal } from '../types/businessFlow';
 import InfoModal from '../components/InfoModal';
 import { getApiBaseUrl } from '../config';
 import { downloadFile } from '../utils/fileDownload';
+import { formatServerDate } from '../utils/serverTime';
 
 interface ProposalPaidDetailScreenProps {
     route: any;
@@ -94,8 +95,7 @@ const ProposalPaidDetailScreen: React.FC<ProposalPaidDetailScreenProps> = ({ rou
     };
 
     const formatDate = (dateStr: string | null) => {
-        if (!dateStr) return '-';
-        return new Date(dateStr).toLocaleDateString('zh-CN');
+        return formatServerDate(dateStr);
     };
 
     if (loading) {

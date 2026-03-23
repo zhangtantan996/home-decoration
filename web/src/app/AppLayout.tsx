@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
-import { useSessionStore } from '../modules/session/sessionStore';
+import { hasRecoverableSession, useSessionStore } from '../modules/session/sessionStore';
 import styles from './AppLayout.module.scss';
 
 const navItems = [
@@ -11,7 +11,13 @@ const navItems = [
 
 export function AppLayout() {
   const user = useSessionStore((state) => state.user);
-  const accessToken = useSessionStore((state) => state.accessToken);
+  const hasSession = useSessionStore((state) =>
+    hasRecoverableSession({
+      accessToken: state.accessToken,
+      refreshToken: state.refreshToken,
+      expiresAt: state.expiresAt,
+    }),
+  );
   const clearSession = useSessionStore((state) => state.clearSession);
 
   return (
@@ -40,7 +46,7 @@ export function AppLayout() {
           </nav>
 
           <div className={styles.headerActions}>
-            {accessToken ? (
+            {hasSession ? (
               <>
                 <div className={styles.userPanel}>
                   <span className={styles.userLabel}>当前会话</span>
