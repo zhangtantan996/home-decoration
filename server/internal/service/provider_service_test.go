@@ -171,7 +171,7 @@ func TestProviderServiceListFallsBackToSpecialtyWhenHighlightTagsMissing(t *test
 	}
 }
 
-func TestProviderServiceListExpandsServiceAreaToCityAndDistrictNames(t *testing.T) {
+func TestProviderServiceListRollsServiceAreaUpToCityNames(t *testing.T) {
 	db := setupProviderServiceDB(t)
 	service := &ProviderService{}
 
@@ -211,11 +211,52 @@ func TestProviderServiceListExpandsServiceAreaToCityAndDistrictNames(t *testing.
 	}
 
 	areas := strings.Join(list[0].ServiceArea, ",")
-	if !strings.Contains(areas, "西安市") {
-		t.Fatalf("expected city name in service area, got %v", list[0].ServiceArea)
+	if areas != "西安市" {
+		t.Fatalf("expected city-only service area, got %v", list[0].ServiceArea)
 	}
-	if !strings.Contains(areas, "雁塔区") || !strings.Contains(areas, "莲湖区") {
-		t.Fatalf("expected district names in service area, got %v", list[0].ServiceArea)
+}
+
+func TestProviderServiceGetProviderDetailRollsServiceAreaUpToCityNames(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	regions := []model.Region{
+		{Code: "610000", Name: "陕西省", Level: 1, Enabled: true},
+		{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true},
+		{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true},
+		{Code: "610104", Name: "莲湖区", Level: 3, ParentCode: "610100", Enabled: true},
+	}
+	if err := db.Create(&regions).Error; err != nil {
+		t.Fatalf("create regions: %v", err)
+	}
+
+	user := model.User{Phone: "13800138119", Nickname: "详情设计师", PublicID: "user_public_detail_region"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		SubType:      "designer",
+		CompanyName:  "城市级设计工作室",
+		Verified:     true,
+		Status:       1,
+		ServiceArea:  `["610113","610104"]`,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	detail, err := service.GetProviderDetail(provider.ID)
+	if err != nil {
+		t.Fatalf("get provider detail: %v", err)
+	}
+	if len(detail.ServiceAreaCodes) != 1 || detail.ServiceAreaCodes[0] != "610100" {
+		t.Fatalf("expected rolled city code in detail, got %v", detail.ServiceAreaCodes)
+	}
+	if len(detail.ServiceArea) != 1 || detail.ServiceArea[0] != "西安市" {
+		t.Fatalf("expected city-only service area in detail, got %v", detail.ServiceArea)
 	}
 }
 

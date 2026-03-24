@@ -1113,7 +1113,7 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 			if app.Role == "foreman" {
 				portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
 			}
-			serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
+			serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
 
 			result["merchantKind"] = "provider"
 			result["rejectReason"] = app.RejectReason
@@ -1251,7 +1251,7 @@ func MerchantApplyDetailForResubmit(c *gin.Context) {
 	if app.Role == "foreman" {
 		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
 	}
-	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
 
 	response.Success(c, gin.H{
 		"applicationId": app.ID,
@@ -1509,7 +1509,7 @@ func AdminGetApplication(c *gin.Context) {
 		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
 	}
 
-	serviceAreaNames, _ := regionService.ConvertCodesToNames(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
 
 	var provider *model.Provider
 	if app.ProviderID > 0 {

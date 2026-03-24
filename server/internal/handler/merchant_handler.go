@@ -484,8 +484,8 @@ func MerchantGetInfo(c *gin.Context) {
 		json.Unmarshal([]byte(provider.ServiceArea), &serviceAreaCodes)
 	}
 
-	// 将区域代码转换为名称（用于前端展示）
-	serviceAreaNames, _ := merchantRegionService.ConvertCodesToNames(serviceAreaCodes)
+	// 历史脏数据可能仍存区县代码，统一回卷到城市级再返回给前端展示/编辑。
+	serviceAreaCodes, serviceAreaNames, _ := merchantRegionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
 
 	// 解析 Specialty (逗号或点分隔)
 	var specialty []string

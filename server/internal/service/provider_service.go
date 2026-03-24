@@ -377,62 +377,11 @@ func resolveProviderServiceAreaDisplayNames(regionService *RegionService, raw st
 		return []string{}
 	}
 
-	regionsByCode, err := regionService.GetRegionsByCodesBatch(values)
-	if err != nil || len(regionsByCode) == 0 {
+	_, cityNames, err := regionService.ResolveServiceAreaInputsToCityDisplay(values)
+	if err != nil || len(cityNames) == 0 {
 		return uniqueProviderTextValues(values)
 	}
-
-	parentCodes := make([]string, 0, len(values))
-	parentSeen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		region, ok := regionsByCode[value]
-		if !ok || region.ParentCode == "" {
-			continue
-		}
-		if _, exists := parentSeen[region.ParentCode]; exists {
-			continue
-		}
-		parentSeen[region.ParentCode] = struct{}{}
-		parentCodes = append(parentCodes, region.ParentCode)
-	}
-
-	parentRegions := make(map[string]model.Region)
-	if len(parentCodes) > 0 {
-		if items, parentErr := regionService.GetRegionsByCodesBatch(parentCodes); parentErr == nil {
-			parentRegions = items
-		}
-	}
-
-	display := make([]string, 0, len(values)*2)
-	seen := make(map[string]struct{}, len(values)*2)
-	appendIfMissing := func(text string) {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return
-		}
-		if _, exists := seen[text]; exists {
-			return
-		}
-		seen[text] = struct{}{}
-		display = append(display, text)
-	}
-
-	for _, value := range values {
-		region, ok := regionsByCode[value]
-		if !ok {
-			appendIfMissing(value)
-			continue
-		}
-		if parent, exists := parentRegions[region.ParentCode]; exists && parent.Level >= 2 {
-			appendIfMissing(parent.Name)
-		}
-		appendIfMissing(region.Name)
-	}
-
-	if len(display) == 0 {
-		return uniqueProviderTextValues(values)
-	}
-	return display
+	return cityNames
 }
 
 func parseProviderServiceAreaValues(raw string) []string {
@@ -555,8 +504,9 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	if err != nil {
 		serviceAreaCodes = []string{}
 	}
-	serviceAreaNames, err := regionService.ConvertCodesToNames(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, err := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
 	if err != nil {
+		serviceAreaCodes = []string{}
 		serviceAreaNames = []string{}
 	}
 	if namesJSON, err := json.Marshal(serviceAreaNames); err == nil {

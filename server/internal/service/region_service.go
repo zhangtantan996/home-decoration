@@ -260,6 +260,78 @@ func (s *RegionService) ParseServiceAreaJSON(serviceAreaJSON string) ([]string, 
 	return codes, nil
 }
 
+// RollupServiceAreaInputsToCityCodes 将服务区域输入回卷到地级市代码。
+// 输入既可为区域代码，也可为区域名称；区县级会回卷到所属城市。
+func (s *RegionService) RollupServiceAreaInputsToCityCodes(inputs []string) ([]string, error) {
+	normalizedInputs := normalizeRegionInputs(inputs)
+	if len(normalizedInputs) == 0 {
+		return []string{}, nil
+	}
+
+	var regions []model.Region
+	if err := repository.DB.
+		Where("code IN ? OR name IN ?", normalizedInputs, normalizedInputs).
+		Find(&regions).Error; err != nil {
+		return nil, fmt.Errorf("查询服务城市失败: %v", err)
+	}
+
+	codeToRegion := make(map[string]model.Region, len(regions))
+	nameToRegion := make(map[string]model.Region, len(regions))
+	for _, region := range regions {
+		codeToRegion[region.Code] = region
+		if _, exists := nameToRegion[region.Name]; !exists {
+			nameToRegion[region.Name] = region
+		}
+	}
+
+	cityCodes := make([]string, 0, len(normalizedInputs))
+	seen := make(map[string]struct{}, len(normalizedInputs))
+	for _, input := range normalizedInputs {
+		region, ok := codeToRegion[input]
+		if !ok {
+			region, ok = nameToRegion[input]
+		}
+		if !ok {
+			continue
+		}
+
+		targetCode := ""
+		switch region.Level {
+		case 2:
+			targetCode = region.Code
+		case 3:
+			targetCode = strings.TrimSpace(region.ParentCode)
+		default:
+			continue
+		}
+		if targetCode == "" {
+			continue
+		}
+		if _, exists := seen[targetCode]; exists {
+			continue
+		}
+		seen[targetCode] = struct{}{}
+		cityCodes = append(cityCodes, targetCode)
+	}
+
+	return cityCodes, nil
+}
+
+// ResolveServiceAreaInputsToCityDisplay 将服务区域输入统一转换成地级市代码与名称。
+func (s *RegionService) ResolveServiceAreaInputsToCityDisplay(inputs []string) ([]string, []string, error) {
+	cityCodes, err := s.RollupServiceAreaInputsToCityCodes(inputs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cityNames, err := s.ConvertCodesToNames(cityCodes)
+	if err != nil {
+		return cityCodes, nil, err
+	}
+
+	return cityCodes, cityNames, nil
+}
+
 // GetRegionsByCodesBatch 批量获取区域信息（用于展示）
 func (s *RegionService) GetRegionsByCodesBatch(codes []string) (map[string]model.Region, error) {
 	if len(codes) == 0 {
