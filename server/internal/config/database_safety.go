@@ -101,7 +101,7 @@ func isLocalSafeHost(host string) bool {
 	}
 
 	switch host {
-	case "localhost", "127.0.0.1", "::1", "db", "home_decor_db_local", "decorating_db", "test_db":
+	case "localhost", "127.0.0.1", "::1", "db", "redis", "prod_db", "prod_redis", "home_decor_db_local", "decorating_db", "test_db":
 		return true
 	}
 

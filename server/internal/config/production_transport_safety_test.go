@@ -27,11 +27,11 @@ func TestValidateProductionTransportSafety_ProductionAllowsPrivateInfra(t *testi
 			PublicURL: "https://api.example.com",
 		},
 		Database: DatabaseConfig{
-			Host:    "10.0.0.8",
+			Host:    "db",
 			SSLMode: "disable",
 		},
 		Redis: RedisConfig{
-			Host: "redis.internal",
+			Host: "redis",
 		},
 	}
 
