@@ -254,6 +254,48 @@ func ensureRuntimeSchemaColumns() error {
 		}
 	}
 
+	if DB.Dialector.Name() == "postgres" {
+		type textColumnAlignment struct {
+			model      interface{}
+			column     string
+			sql        string
+			label      string
+		}
+		for _, alignment := range []textColumnAlignment{
+			{
+				model:  &model.MerchantApplication{},
+				column: "LicenseNo",
+				sql:    `ALTER TABLE merchant_applications ALTER COLUMN license_no TYPE TEXT`,
+				label:  "merchant_applications.license_no",
+			},
+			{
+				model:  &model.Provider{},
+				column: "LicenseNo",
+				sql:    `ALTER TABLE providers ALTER COLUMN license_no TYPE TEXT`,
+				label:  "providers.license_no",
+			},
+			{
+				model:  &model.MaterialShop{},
+				column: "BusinessLicenseNo",
+				sql:    `ALTER TABLE material_shops ALTER COLUMN business_license_no TYPE TEXT`,
+				label:  "material_shops.business_license_no",
+			},
+			{
+				model:  &model.MaterialShopApplication{},
+				column: "BusinessLicenseNo",
+				sql:    `ALTER TABLE material_shop_applications ALTER COLUMN business_license_no TYPE TEXT`,
+				label:  "material_shop_applications.business_license_no",
+			},
+		} {
+			if !DB.Migrator().HasTable(alignment.model) || !DB.Migrator().HasColumn(alignment.model, alignment.column) {
+				continue
+			}
+			if err := DB.Exec(alignment.sql).Error; err != nil {
+				return fmt.Errorf("expand %s: %w", alignment.label, err)
+			}
+		}
+	}
+
 	onboardingModels := []interface{}{
 		&model.MerchantApplication{},
 		&model.Provider{},
