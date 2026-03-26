@@ -66,7 +66,7 @@ type Provider struct {
 	CompanyName         string  `json:"companyName" gorm:"size:100"`
 	SourceApplicationID uint64  `json:"sourceApplicationId" gorm:"index"`
 	Avatar              string  `json:"avatar" gorm:"size:500"`
-	LicenseNo           string  `json:"licenseNo" gorm:"size:50"`
+	LicenseNo           string  `json:"licenseNo" gorm:"type:text"` // AES加密存储
 	Rating              float32 `json:"rating" gorm:"default:0"`
 	RestoreRate         float32 `json:"restoreRate"`   // 还原度
 	BudgetControl       float32 `json:"budgetControl"` // 预算控制力
@@ -411,7 +411,7 @@ type MaterialShop struct {
 	CompanyName            string  `json:"companyName" gorm:"size:100"`
 	SourceApplicationID    uint64  `json:"sourceApplicationId" gorm:"index"`
 	Description            string  `json:"description" gorm:"type:text"`
-	BusinessLicenseNo      string  `json:"businessLicenseNo" gorm:"size:50"`
+	BusinessLicenseNo      string  `json:"businessLicenseNo" gorm:"type:text"` // AES加密存储
 	BusinessLicense        string  `json:"businessLicense" gorm:"size:500"`
 	LegalPersonName        string  `json:"legalPersonName" gorm:"size:50"`
 	LegalPersonIDCardNo    string  `json:"legalPersonIdCardNo" gorm:"size:100"`
@@ -460,7 +460,7 @@ type MaterialShopApplication struct {
 	ShopDescription        string     `json:"shopDescription" gorm:"type:text"`
 	BrandLogo              string     `json:"brandLogo" gorm:"size:500"`
 	CompanyName            string     `json:"companyName" gorm:"size:100"`
-	BusinessLicenseNo      string     `json:"businessLicenseNo" gorm:"size:50"`
+	BusinessLicenseNo      string     `json:"businessLicenseNo" gorm:"type:text"` // AES加密存储
 	BusinessLicense        string     `json:"businessLicense" gorm:"size:500"`
 	LegalPersonName        string     `json:"legalPersonName" gorm:"size:50"`
 	LegalPersonIDCardNo    string     `json:"legalPersonIdCardNo" gorm:"size:100"`
@@ -603,7 +603,7 @@ type MerchantApplication struct {
 
 	// 工作室/公司信息
 	CompanyName            string `json:"companyName" gorm:"size:100"`
-	LicenseNo              string `json:"licenseNo" gorm:"size:50"`     // 营业执照号
+	LicenseNo              string `json:"licenseNo" gorm:"type:text"`   // 营业执照号，AES加密存储
 	LicenseImage           string `json:"licenseImage" gorm:"size:500"` // 营业执照照片
 	LegalPersonName        string `json:"legalPersonName" gorm:"size:50"`
 	LegalPersonIDCardNo    string `json:"legalPersonIdCardNo" gorm:"size:100"`
