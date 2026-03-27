@@ -601,7 +601,30 @@ export async function mockUserWebApi(page: Page, options: UserWebMockOptions = {
     }
 
     if (path === `/material-shops/${userWebFixtureIds.materialShopId}` && method === 'GET') {
-      await ok(route, materialShops[0]);
+      await ok(route, {
+        ...materialShops[0],
+        description: '提供瓷砖、卫浴与地板的一站式到店选材服务。',
+        products: [
+          {
+            id: 1,
+            name: '750x1500 通体砖',
+            unit: '片',
+            description: '适合客餐厅大面铺贴，纹理自然，耐磨易打理。',
+            price: 168,
+            images: ['https://placehold.co/960x720/e4e4e7/27272a?text=SHOP-P1'],
+            coverImage: 'https://placehold.co/960x720/e4e4e7/27272a?text=SHOP-P1',
+          },
+          {
+            id: 2,
+            name: '极简岩板台盆',
+            unit: '套',
+            description: '适配现代简约卫生间，支持到店看样。',
+            price: 1299,
+            images: [],
+            coverImage: '',
+          },
+        ],
+      });
       return;
     }
 

@@ -35,7 +35,6 @@ jobs:
 
     - name: Lint
       run: npm run lint
-      continue-on-error: true # Not blocking build if there are lint warnings
 
     - name: Run tests
       run: npm test -- --no-watchman --runInBand

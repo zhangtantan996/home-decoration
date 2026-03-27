@@ -23,13 +23,26 @@
     "reset:user-web:rate-limit": "./scripts/user-web-clear-rate-limit.sh",
     "smoke:user-web:api": "npm run reset:user-web:rate-limit && ./scripts/user-web-real-api-smoke.sh",
     "verify:user-web": "npm run build:web && npm run fixture:user-web && npm run smoke:user-web:api && npm run test:e2e:user-web && npm run test:e2e:user-web:real",
+    "verify:backend": "./scripts/verify-backend.sh",
+    "verify:admin": "./scripts/verify-admin.sh",
+    "verify:merchant": "./scripts/verify-merchant.sh",
+    "verify:web": "./scripts/verify-web.sh",
+    "verify:mobile": "./scripts/verify-mobile.sh",
+    "verify:mini": "./scripts/verify-mini.sh",
+    "verify:ops": "./scripts/verify-ops.sh",
+    "smoke:test": "./scripts/smoke-test.sh",
+    "smoke:release": "./scripts/smoke-release.sh",
+    "regression:nightly": "./scripts/regression-nightly.sh",
+    "test:ops": "node --test tests/ops/*.mjs",
     "test:e2e": "npx playwright test",
     "test:e2e:user-web": "WEB_BASE_URL=http://127.0.0.1:5176 npx playwright test -c playwright.user-web.config.ts",
     "test:e2e:user-web:real": "npm run fixture:user-web && npm run reset:user-web:rate-limit && WEB_BASE_URL=http://127.0.0.1:5175 npx playwright test -c playwright.user-web.real.config.ts",
     "test:e2e:merchant:onboarding": "npx playwright test tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-extended-fields.test.ts",
     "test:e2e:merchant:onboarding:list": "npx playwright test --list tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-extended-fields.test.ts",
-    "test:e2e:merchant:smoke": "npx playwright test tests/e2e/merchant-login-unregistered-redirect.test.ts tests/e2e/merchant-entry-register-foreman.test.ts tests/e2e/merchant-onboarding-designer-rule.test.ts tests/e2e/merchant-onboarding-foreman-rule.test.ts tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-products-rule.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-threshold.test.ts tests/e2e/publish-visibility-extended-fields.test.ts tests/e2e/merchant-settings-foreman-worktypes.test.ts tests/e2e/merchant-finance-verification.test.ts tests/e2e/merchant-chat-attachments.test.ts",
-    "test:e2e:merchant:smoke:list": "npx playwright test --list tests/e2e/merchant-login-unregistered-redirect.test.ts tests/e2e/merchant-entry-register-foreman.test.ts tests/e2e/merchant-onboarding-designer-rule.test.ts tests/e2e/merchant-onboarding-foreman-rule.test.ts tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-products-rule.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-threshold.test.ts tests/e2e/publish-visibility-extended-fields.test.ts tests/e2e/merchant-settings-foreman-worktypes.test.ts tests/e2e/merchant-finance-verification.test.ts tests/e2e/merchant-chat-attachments.test.ts",
+    "test:e2e:merchant:smoke": "npx playwright test tests/e2e/merchant-login-unregistered-redirect.test.ts tests/e2e/merchant-entry-register-foreman.test.ts tests/e2e/merchant-onboarding-designer-rule.test.ts tests/e2e/merchant-onboarding-foreman-rule.test.ts tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-products-rule.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-threshold.test.ts tests/e2e/publish-visibility-extended-fields.test.ts tests/e2e/merchant-finance-verification.test.ts tests/e2e/merchant-chat-attachments.test.ts",
+    "test:e2e:merchant:smoke:list": "npx playwright test --list tests/e2e/merchant-login-unregistered-redirect.test.ts tests/e2e/merchant-entry-register-foreman.test.ts tests/e2e/merchant-onboarding-designer-rule.test.ts tests/e2e/merchant-onboarding-foreman-rule.test.ts tests/e2e/merchant-onboarding-designer-required-fields.test.ts tests/e2e/merchant-onboarding-foreman-required-fields.test.ts tests/e2e/material-shop-onboarding-products-rule.test.ts tests/e2e/material-shop-onboarding-required-contact.test.ts tests/e2e/publish-visibility-threshold.test.ts tests/e2e/publish-visibility-extended-fields.test.ts tests/e2e/merchant-finance-verification.test.ts tests/e2e/merchant-chat-attachments.test.ts",
+    "test:e2e:merchant:ci": "npx playwright test tests/e2e/merchant-login-unregistered-redirect.test.ts tests/e2e/merchant-entry-register-foreman.test.ts tests/e2e/merchant-onboarding-designer-rule.test.ts tests/e2e/merchant-onboarding-foreman-rule.test.ts",
+    "test:e2e:merchant:ci:list": "npx playwright test --list tests/e2e/merchant-login-unregistered-redirect.test.ts tests/e2e/merchant-entry-register-foreman.test.ts tests/e2e/merchant-onboarding-designer-rule.test.ts tests/e2e/merchant-onboarding-foreman-rule.test.ts",
     "test:identity:acceptance": "node scripts/identity-acceptance-runner.mjs",
     "test:identity:acceptance:api": "npx playwright test -c playwright.identity.config.ts --project=identity-api",
     "test:identity:acceptance:ui": "npx playwright test -c playwright.identity.config.ts --project=identity-admin-ui",
@@ -67,5 +80,9 @@
     "concurrently": "^9.2.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "diff": "4.0.4",
+    "minimatch": "3.1.5"
   }
 }

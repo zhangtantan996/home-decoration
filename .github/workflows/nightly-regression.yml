@@ -1,0 +1,104 @@
+name: Nightly Regression
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      USER_WEB_FIXTURE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/home_decoration?sslmode=disable
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: home_decoration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d home_decoration"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:6.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            admin/package-lock.json
+            merchant/package-lock.json
+            web/package-lock.json
+            mobile/package-lock.json
+            mini/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: server/go.sum
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install admin dependencies
+        working-directory: admin
+        run: npm ci --legacy-peer-deps
+
+      - name: Install merchant dependencies
+        working-directory: merchant
+        run: npm ci --legacy-peer-deps
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Install mini dependencies
+        working-directory: mini
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Restore base schema/data
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d home_decoration -f public.sql
+
+      - name: Run regression:nightly
+        run: npm run regression:nightly
+
+      - name: Upload nightly summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-regression-results
+          path: test-results/
+          if-no-files-found: ignore

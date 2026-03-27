@@ -4,15 +4,17 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DOCKER_BIN="${DOCKER_BIN:-$(command -v docker || true)}"
 DB_CONTAINER="${QUOTE_DB_CONTAINER:-}"
+DB_URL="${QUOTE_DB_URL:-${USER_WEB_FIXTURE_DB_URL:-}}"
+API_CONTAINER="${QUOTE_API_CONTAINER:-home_decor_api_local}"
 API_BASE_URL="${E2E_API_BASE_URL:-http://127.0.0.1:8080/api/v1}"
 ADMIN_PASSWORD_HASH='$2a$10$QEEz3QXaeR8E1MJ/P6U.0ut1TtEFu0Tq1n7iOuMVN3v8CE6SE5wGe'
 
-if [[ -z "${DOCKER_BIN}" ]]; then
-  echo "docker not found in PATH" >&2
+if [[ -z "${DB_URL}" && -z "${DOCKER_BIN}" ]]; then
+  echo "docker not found in PATH and QUOTE_DB_URL is empty" >&2
   exit 1
 fi
 
-if [[ -z "${DB_CONTAINER}" ]]; then
+if [[ -z "${DB_URL}" && -z "${DB_CONTAINER}" ]]; then
   if "${DOCKER_BIN}" ps --format '{{.Names}}' | grep -qx 'home_decor_db_local'; then
     DB_CONTAINER='home_decor_db_local'
   elif "${DOCKER_BIN}" ps --format '{{.Names}}' | grep -qx 'decorating_db'; then
@@ -24,6 +26,24 @@ if [[ -z "${DB_CONTAINER}" ]]; then
 fi
 
 cd "${ROOT_DIR}"
+
+psql_exec_file() {
+  local sql_file="$1"
+  if [[ -n "${DB_URL}" ]]; then
+    psql "${DB_URL}" -v ON_ERROR_STOP=1 -f "${sql_file}" >/dev/null
+  else
+    "${DOCKER_BIN}" exec -i "${DB_CONTAINER}" psql -U postgres -d home_decoration < "${sql_file}" >/dev/null
+  fi
+}
+
+psql_query() {
+  local sql="$1"
+  if [[ -n "${DB_URL}" ]]; then
+    psql "${DB_URL}" -v ON_ERROR_STOP=1 -P pager=off -F $'\t' -At -c "${sql}"
+  else
+    "${DOCKER_BIN}" exec "${DB_CONTAINER}" psql -U postgres -d home_decoration -P pager=off -F $'\t' -At -c "${sql}"
+  fi
+}
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -66,18 +86,18 @@ request_json() {
   return 1
 }
 
-if [[ -f "erp报价.xls" ]]; then
-  "${DOCKER_BIN}" cp "erp报价.xls" "home_decor_api_local:/app/erp报价.xls"
+if [[ -f "erp报价.xls" && -n "${DOCKER_BIN}" ]] && "${DOCKER_BIN}" ps --format '{{.Names}}' | grep -qx "${API_CONTAINER}"; then
+  "${DOCKER_BIN}" cp "erp报价.xls" "${API_CONTAINER}:/app/erp报价.xls"
 fi
-"${DOCKER_BIN}" exec -i "${DB_CONTAINER}" psql -U postgres -d home_decoration < "server/migrations/v1.7.0_add_quote_subsystem.sql" >/dev/null
-"${DOCKER_BIN}" exec -i "${DB_CONTAINER}" psql -U postgres -d home_decoration < "server/migrations/v1.7.1_add_quote_management_menu.sql" >/dev/null
-"${DOCKER_BIN}" exec -i "${DB_CONTAINER}" psql -U postgres -d home_decoration < "server/migrations/v1.7.2_upgrade_quote_workflow_v1.sql" >/dev/null
-"${DOCKER_BIN}" exec -i "${DB_CONTAINER}" psql -U postgres -d home_decoration < "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql" >/dev/null
-"${DOCKER_BIN}" exec -i "${DB_CONTAINER}" psql -U postgres -d home_decoration < "server/migrations/v1.6.7_extend_sms_audit_context.sql" >/dev/null
-"${DOCKER_BIN}" exec "${DB_CONTAINER}" psql -U postgres -d home_decoration -c "UPDATE sys_admins SET password = '${ADMIN_PASSWORD_HASH}', status = 1, is_super_admin = true WHERE username = 'admin';" >/dev/null
+psql_exec_file "server/migrations/v1.7.0_add_quote_subsystem.sql"
+psql_exec_file "server/migrations/v1.7.1_add_quote_management_menu.sql"
+psql_exec_file "server/migrations/v1.7.2_upgrade_quote_workflow_v1.sql"
+psql_exec_file "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
+psql_exec_file "server/migrations/v1.6.7_extend_sms_audit_context.sql"
+psql_query "UPDATE sys_admins SET password = '${ADMIN_PASSWORD_HASH}', status = 1, is_super_admin = true WHERE username = 'admin';" >/dev/null
 
-read -r merchant_provider_id merchant_phone <<<"$("${DOCKER_BIN}" exec "${DB_CONTAINER}" psql -U postgres -d home_decoration -P pager=off -F $'\t' -At -c "SELECT p.id, u.phone FROM providers p JOIN users u ON u.id = p.user_id WHERE p.provider_type = 3 ORDER BY p.id LIMIT 1;")"
-read -r owner_user_id owner_phone <<<"$("${DOCKER_BIN}" exec "${DB_CONTAINER}" psql -U postgres -d home_decoration -P pager=off -F $'\t' -At -c "SELECT id, phone FROM users WHERE user_type = 1 ORDER BY id LIMIT 1;")"
+read -r merchant_provider_id merchant_phone <<<"$(psql_query "SELECT p.id, u.phone FROM providers p JOIN users u ON u.id = p.user_id WHERE p.provider_type = 3 ORDER BY p.id LIMIT 1;")"
+read -r owner_user_id owner_phone <<<"$(psql_query "SELECT id, phone FROM users WHERE user_type = 1 ORDER BY id LIMIT 1;")"
 
 if [[ -z "${merchant_provider_id:-}" || -z "${merchant_phone:-}" ]]; then
   echo "unable to locate a foreman account for workflow smoke" >&2

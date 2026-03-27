@@ -1,0 +1,39 @@
+name: Mini CI
+
+on:
+  push:
+    branches: ["dev"]
+    paths:
+      - 'mini/**'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/ci-mini.yml'
+  pull_request:
+    branches: ["dev"]
+    paths:
+      - 'mini/**'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/ci-mini.yml'
+
+jobs:
+  verify-mini:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mini/package-lock.json
+
+      - name: Install mini dependencies
+        working-directory: mini
+        run: npm ci
+
+      - name: Run verify:mini
+        run: npm run verify:mini

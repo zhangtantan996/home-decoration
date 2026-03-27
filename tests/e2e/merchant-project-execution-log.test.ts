@@ -13,6 +13,7 @@ const DB_CONTAINER = process.env.USER_WEB_FIXTURE_DB_CONTAINER || 'home_decor_db
 const DB_NAME = process.env.USER_WEB_FIXTURE_DB_NAME || 'home_decoration';
 const DB_USER = process.env.USER_WEB_FIXTURE_DB_USER || 'postgres';
 const DB_URL = process.env.USER_WEB_FIXTURE_DB_URL || '';
+const merchantSessionCache = new Map<string, any>();
 
 function clearRateLimit() {
   execFileSync('bash', ['./scripts/user-web-clear-rate-limit.sh'], {
@@ -38,6 +39,9 @@ function applySql(sql: string) {
 
 function prepareMerchantProjectExecutionFixture(projectId: number, providerId: number) {
   const sql = `
+DELETE FROM business_flows WHERE project_id = ${projectId};
+DELETE FROM business_flows WHERE source_type = 'booking' AND source_id = ${projectId};
+
 UPDATE projects
 SET provider_id = ${providerId},
     construction_provider_id = ${providerId},
@@ -97,6 +101,9 @@ WHERE id = ${projectId}
 
 function prepareMerchantProjectReadyToStartFixture(projectId: number, providerId: number) {
   const sql = `
+DELETE FROM business_flows WHERE project_id = ${projectId};
+DELETE FROM business_flows WHERE source_type = 'booking' AND source_id = ${projectId};
+
 UPDATE projects
 SET provider_id = ${providerId},
     construction_provider_id = ${providerId},
@@ -201,6 +208,12 @@ async function loginMerchantSession(
   phone: string,
   fallbackCode: string,
 ) {
+  const cacheKey = `${apiBaseUrl}|${phone}`;
+  const cached = merchantSessionCache.get(cacheKey);
+  if (cached?.token) {
+    return cached;
+  }
+
   let code = fallbackCode;
   try {
     const sendCodeResponse = await request.post(`${apiBaseUrl}/auth/send-code`, {
@@ -228,6 +241,7 @@ async function loginMerchantSession(
       }
       expect(result.body.code, `merchant login business code should be 0, message=${result.body.message}`).toBe(0);
       expect(result.body.data?.token, 'merchant login should return token').toBeTruthy();
+      merchantSessionCache.set(cacheKey, result.body.data);
       return result.body.data;
     } catch (error) {
       lastError = error;
