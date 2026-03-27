@@ -32,9 +32,34 @@ jobs:
     name: Verify release candidate
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      USER_WEB_FIXTURE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/home_decoration?sslmode=disable
     outputs:
       release_tag: ${{ steps.release.outputs.tag }}
       service_scope: ${{ steps.release.outputs.service_scope }}
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: home_decoration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d home_decoration"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:6.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Resolve release inputs
@@ -79,6 +104,7 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: |
+            package-lock.json
             admin/package-lock.json
             merchant/package-lock.json
             web/package-lock.json
@@ -88,6 +114,9 @@ jobs:
         with:
           go-version: '1.23.0'
           cache-dependency-path: server/go.sum
+
+      - name: Install root dependencies
+        run: npm ci
 
       - name: Install admin dependencies
         working-directory: admin
@@ -117,6 +146,14 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Restore base schema/data
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d home_decoration -f public.sql
+
       - name: Build user web
         working-directory: web
         env:
@@ -126,9 +163,67 @@ jobs:
           VITE_PUBLIC_SITE_URL: /
         run: npm run build
 
-      - name: Run backend tests
-        working-directory: server
-        run: go test ./...
+      - name: Start API
+        env:
+          APP_ENV: local
+          DATABASE_HOST: 127.0.0.1
+          DATABASE_PORT: 5432
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          DATABASE_DBNAME: home_decoration
+          DATABASE_NAME: home_decoration
+          DATABASE_SSLMODE: disable
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          REDIS_PASSWORD: ""
+          JWT_SECRET: release_verify_jwt_secret_2026
+          SMS_PROVIDER: mock
+          SMS_DEBUG_BYPASS: "true"
+          SMS_RISK_ENABLED: "false"
+        run: |
+          cd server
+          nohup go run ./cmd/api >/tmp/release-prod-api.log 2>&1 &
+          echo $! >/tmp/release-prod-api.pid
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8080/api/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/release-prod-api.log || true
+          exit 1
+
+      - name: Run verify:backend
+        env:
+          DATABASE_HOST: 127.0.0.1
+          DATABASE_PORT: 5432
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          DATABASE_DBNAME: home_decoration
+          DATABASE_NAME: home_decoration
+          DATABASE_SSLMODE: disable
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          REDIS_PASSWORD: ""
+          JWT_SECRET: release_verify_jwt_secret_2026
+        run: npm run verify:backend
+
+      - name: Run smoke:release
+        run: npm run smoke:release
+
+      - name: Print API log on failure
+        if: failure()
+        run: cat /tmp/release-prod-api.log || true
+
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f /tmp/release-prod-api.pid ]; then
+            kill "$(cat /tmp/release-prod-api.pid)" || true
+          fi
 
   deploy-production:
     name: Deploy to production

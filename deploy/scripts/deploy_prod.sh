@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/deploy/docker-compose.prod.yml"
 DEPLOY_ENV_FILE="${REPO_ROOT}/deploy/.env"
 COMMON_LIB="${SCRIPT_DIR}/lib/release_common.sh"
+VERIFY_HTTPS_SCRIPT="${SCRIPT_DIR}/verify_https.sh"
 
 if [[ ! -f "${COMMON_LIB}" ]]; then
   echo "Missing shared release helper: ${COMMON_LIB}" >&2
@@ -220,6 +221,8 @@ update_services() {
 
 verify_release() {
   release_verify_stack
+  echo "==> Verifying external HTTPS routes"
+  bash "${VERIFY_HTTPS_SCRIPT}"
 }
 
 update_services
