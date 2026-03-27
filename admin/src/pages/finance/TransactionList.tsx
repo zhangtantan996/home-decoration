@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, message } from 'antd';
+import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Table, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -8,6 +8,7 @@ import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
 import { usePermission } from '../../hooks/usePermission';
+import { useAuthStore } from '../../stores/authStore';
 import { formatServerDateTime } from '../../utils/serverTime';
 import {
     adminFinanceApi,
@@ -17,7 +18,7 @@ import {
     type ManualReleaseInput,
     type UnfreezeFundsInput,
 } from '../../services/api';
-import { FINANCE_TRANSACTION_STATUS_META, FINANCE_TRANSACTION_TYPE_LABELS } from '../../constants/statuses';
+import { FINANCE_TRANSACTION_STATUS_META, FINANCE_TRANSACTION_TYPE_LABELS, isSecurityAuditorRole } from '../../constants/statuses';
 
 const { RangePicker } = DatePicker;
 
@@ -44,6 +45,7 @@ const getActionLabel = (action: FinanceAction) => {
 
 const TransactionList: React.FC = () => {
     const navigate = useNavigate();
+    const admin = useAuthStore((state) => state.admin);
     const { hasPermission } = usePermission();
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
@@ -59,9 +61,10 @@ const TransactionList: React.FC = () => {
     const [activeAction, setActiveAction] = useState<FinanceAction | null>(null);
     const [selectedTransaction, setSelectedTransaction] = useState<AdminFinanceTransactionItem | null>(null);
 
-    const canFreeze = hasPermission('finance:escrow:freeze');
-    const canUnfreeze = hasPermission('finance:escrow:unfreeze');
-    const canManualRelease = hasPermission('finance:transaction:approve');
+    const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
+    const canFreeze = !isSecurityAuditor && hasPermission('finance:escrow:freeze');
+    const canUnfreeze = !isSecurityAuditor && hasPermission('finance:escrow:unfreeze');
+    const canManualRelease = !isSecurityAuditor && hasPermission('finance:transaction:approve');
 
     const query = useMemo<AdminFinanceTransactionQuery>(() => ({
         page,
@@ -263,6 +266,16 @@ const TransactionList: React.FC = () => {
                 title="交易流水"
                 description="按项目、时间和类型筛选资金流水，并可发起冻结、解冻和手动放款。"
             />
+
+            {isSecurityAuditor ? (
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message="当前账号为安全审计员视角"
+                    description="本页仅保留交易查看与导出能力，冻结、解冻、手动放款入口已隐藏。"
+                />
+            ) : null}
 
             <ToolbarCard>
                 <div className="hz-toolbar">

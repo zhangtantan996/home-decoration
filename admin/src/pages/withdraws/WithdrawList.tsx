@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Input, Select, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, Card, Empty, Input, Select, Space, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -130,8 +130,8 @@ const WithdrawList: React.FC = () => {
     return (
         <div className="hz-page-stack">
             <PageHeader
-                title="提现审核"
-                description="审核商家提现申请并登记线下打款结果。"
+                title="历史提现记录"
+                description="`merchant_withdraws` 仅保留历史查询，不再承接支付中台自动出款主链。"
                 extra={(
                     <Space wrap>
                         <Select
@@ -171,6 +171,14 @@ const WithdrawList: React.FC = () => {
                 )}
             />
 
+            <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="历史兼容视图"
+                description="本页仅用于查询旧提现单的处理记录；新的结算与出款请在“自动出款”和“资金对账”中查看。"
+            />
+
             <Card className="hz-table-card">
                 <Table
                     rowKey="id"
@@ -178,7 +186,7 @@ const WithdrawList: React.FC = () => {
                     dataSource={items}
                     columns={columns}
                     locale={{
-                        emptyText: <Empty description="暂无提现申请记录" />,
+                        emptyText: <Empty description="暂无历史提现记录" />,
                     }}
                     pagination={{
                         current: page,

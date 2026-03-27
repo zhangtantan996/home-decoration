@@ -12,6 +12,9 @@ import {
 } from '../../services/quoteApi';
 import PageHeader from '../../components/PageHeader';
 import StatusTag from '../../components/StatusTag';
+import { ADMIN_BUSINESS_ACTION_LABELS, ADMIN_BUSINESS_STAGE_META, isSecurityAuditorRole } from '../../constants/statuses';
+import { isAdminConflictError } from '../../services/api';
+import { useAuthStore } from '../../stores/authStore';
 
 const { Text } = Typography;
 
@@ -41,43 +44,8 @@ const actionText = (action?: string) => {
     }
 };
 
-const businessStageText = (stage?: string) => {
-    switch (stage) {
-        case 'lead_pending': return '线索待推进';
-        case 'consulting': return '沟通中';
-        case 'proposal_pending': return '方案待确认';
-        case 'proposal_confirmed': return '设计已确认';
-        case 'constructor_pending': return '待选施工方';
-        case 'construction_quote_pending': return '施工报价待确认';
-        case 'ready_to_start': return '待开工';
-        case 'in_progress': return '施工中';
-        case 'milestone_review': return '节点验收中';
-        case 'completed': return '已完工';
-        case 'archived': return '已归档';
-        case 'disputed': return '争议中';
-        case 'cancelled': return '已取消';
-        default: return stage || '-';
-    }
-};
-
-const actionLabel = (action?: string) => {
-    switch (action) {
-        case 'create_proposal': return '提交方案';
-        case 'confirm_proposal': return '确认设计方案';
-        case 'reject_proposal': return '驳回设计方案';
-        case 'create_quote_task': return '创建施工报价任务';
-        case 'select_constructor': return '运营干预施工方';
-        case 'submit_construction_quote': return '跟进施工报价提交';
-        case 'confirm_construction_quote': return '运营干预施工报价';
-        case 'reject_construction_quote': return '驳回施工报价';
-        case 'start_project': return '发起开工';
-        case 'submit_milestone': return '提交节点验收';
-        case 'approve_milestone': return '通过节点验收';
-        case 'reject_milestone': return '驳回节点验收';
-        case 'generate_inspiration_draft': return '生成案例草稿';
-        default: return action || '-';
-    }
-};
+const businessStageText = (stage?: string) => ADMIN_BUSINESS_STAGE_META[stage || '']?.text || stage || '-';
+const actionLabel = (action?: string) => ADMIN_BUSINESS_ACTION_LABELS[action || ''] || action || '-';
 
 type RevisionDiffRow = {
     key: number;
@@ -127,6 +95,8 @@ const buildRevisionDiffRows = (
 
 const QuoteComparison: React.FC = () => {
     const navigate = useNavigate();
+    const adminRoles = useAuthStore((state) => state.admin?.roles || []);
+    const readonlyMode = isSecurityAuditorRole(adminRoles);
     const params = useParams();
     const quoteListId = Number(params.id);
     const [loading, setLoading] = useState(false);
@@ -285,7 +255,7 @@ const QuoteComparison: React.FC = () => {
                     >
                         历史记录
                     </Button>
-                    <Button
+                    {!readonlyMode ? <Button
                         type="primary"
                         icon={<SendOutlined />}
                         disabled={data?.quoteList.status === 'user_confirmed'}
@@ -302,6 +272,11 @@ const QuoteComparison: React.FC = () => {
                                         message.success('已提交给用户确认');
                                         await load();
                                     } catch (error: any) {
+                                        if (isAdminConflictError(error)) {
+                                            await load();
+                                            message.error('状态已变化，请刷新后重试');
+                                            return;
+                                        }
                                         message.error(error?.message || '提交用户确认失败');
                                     } finally {
                                         setSubmittingToUser(false);
@@ -311,11 +286,11 @@ const QuoteComparison: React.FC = () => {
                         }}
                     >
                         提交用户确认
-                    </Button>
+                    </Button> : null}
                 </Space>
             ),
         },
-    ], [data?.quoteList.status, quoteListId]);
+    ], [data?.quoteList.status, quoteListId, readonlyMode]);
 
     return (
         <div className="hz-page-stack">

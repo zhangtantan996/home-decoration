@@ -313,7 +313,7 @@ const MerchantDashboard: React.FC = () => {
                 tone: Number(stats?.todayBookings || 0) > 0 ? 'amber' : 'slate',
             },
             {
-                label: '本月回款 / 可提现',
+                label: '本月回款 / 待出款',
                 value: `¥${(income?.availableAmount || 0).toLocaleString()}`,
                 meta: `本月回款 ¥${(stats?.monthRevenue || 0).toLocaleString()}`,
                 percent: income?.totalIncome ? (income.availableAmount / income.totalIncome) * 100 : 0,
@@ -351,7 +351,7 @@ const MerchantDashboard: React.FC = () => {
                     tone: Number(stats?.activeProjects || 0) > 0 ? 'blue' : 'slate',
                 },
                 {
-                    label: '本月成交 / 可提现',
+                    label: '本月成交 / 待出款',
                     value: `¥${(income?.availableAmount || 0).toLocaleString()}`,
                     meta: `本月成交 ¥${(stats?.monthRevenue || 0).toLocaleString()}`,
                     percent: income?.totalIncome ? (income.availableAmount / income.totalIncome) * 100 : 0,
@@ -388,7 +388,7 @@ const MerchantDashboard: React.FC = () => {
                     tone: Number(stats?.activeProjects || 0) > 0 ? 'blue' : 'slate',
                 },
                 {
-                    label: '本月收入 / 可提现',
+                    label: '本月收入 / 待出款',
                     value: `¥${(income?.availableAmount || 0).toLocaleString()}`,
                     meta: `本月收入 ¥${(stats?.monthRevenue || 0).toLocaleString()}`,
                     percent: income?.totalIncome ? (income.availableAmount / income.totalIncome) * 100 : 0,
@@ -401,7 +401,7 @@ const MerchantDashboard: React.FC = () => {
             { icon: <NotificationOutlined />, label: '施工线索', path: '/leads' },
             { icon: <PictureOutlined />, label: '施工案例管理', path: '/cases' },
             { icon: <DollarOutlined />, label: '工长价格库', path: '/price-book' },
-            { icon: <BankOutlined />, label: '收入中心', path: '/income' },
+            { icon: <BankOutlined />, label: '结算中心', path: '/income' },
             { icon: <SettingOutlined />, label: '施工设置', path: '/settings' },
         ]
         : isCompany
@@ -409,13 +409,13 @@ const MerchantDashboard: React.FC = () => {
                 { icon: <NotificationOutlined />, label: '线索分配', path: '/leads' },
                 { icon: <FileTextOutlined />, label: '方案协同', path: '/proposals' },
                 { icon: <PictureOutlined />, label: '公司案例', path: '/cases' },
-                { icon: <BankOutlined />, label: '收入中心', path: '/income' },
+                { icon: <BankOutlined />, label: '结算中心', path: '/income' },
                 { icon: <SettingOutlined />, label: '企业设置', path: '/settings' },
             ]
             : [
                 { icon: <NotificationOutlined />, label: '线索管理', path: '/leads' },
                 { icon: <PictureOutlined />, label: '作品集管理', path: '/cases' },
-                { icon: <DollarOutlined />, label: '收入中心', path: '/income' },
+                { icon: <DollarOutlined />, label: '结算中心', path: '/income' },
                 { icon: <BankOutlined />, label: '银行账户', path: '/bank-accounts' },
                 { icon: <SettingOutlined />, label: '账户设置', path: '/settings' },
             ];
@@ -481,9 +481,9 @@ const MerchantDashboard: React.FC = () => {
                         <Button
                             type="primary"
                             icon={<ProjectOutlined />}
-                            onClick={() => navigate(isForeman ? '/projects' : (isCompany ? '/orders' : '/bookings'))}
+                            onClick={() => navigate(isForeman ? '/projects' : '/bookings')}
                         >
-                            {isForeman ? '进入项目执行' : isCompany ? '查看订单协同' : '查看预约进度'}
+                            {isForeman ? '进入项目执行' : '查看预约进度'}
                         </Button>
                     </Space>
                 )}
@@ -498,7 +498,7 @@ const MerchantDashboard: React.FC = () => {
                         {isForeman
                             ? `先跟进待开工项目与施工报价，再推进项目执行和验收。当前进行中项目 ${Number(stats?.activeProjects || 0)} 个。`
                             : isCompany
-                                ? `先处理待分配线索、待确认预约与方案，再统一推进企业订单协同。当前进行中订单 ${Number(stats?.activeProjects || 0)} 个。`
+                                ? `先处理待分配线索、待确认预约与方案，再从预约推进到项目执行。当前进行中项目 ${Number(stats?.activeProjects || 0)} 个。`
                                 : `先处理高意向线索、预约和待确认方案，再补齐作品展示与服务资料。当前进行中项目 ${Number(stats?.activeProjects || 0)} 个。`}
                     </div>
                 </Card>
@@ -535,8 +535,7 @@ const MerchantDashboard: React.FC = () => {
 
                     <MerchantSectionCard title="资金动作">
                         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                            <Button onClick={() => navigate('/income')}>查看收入明细</Button>
-                            <Button type="primary" onClick={() => navigate('/withdraw')} disabled={!income?.availableAmount}>申请提现</Button>
+                            <Button type="primary" onClick={() => navigate('/income')}>查看结算/出款状态</Button>
                             <Button onClick={() => navigate('/bank-accounts')}>管理银行卡</Button>
                         </Space>
                     </MerchantSectionCard>

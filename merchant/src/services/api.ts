@@ -17,6 +17,28 @@ const MERCHANT_ERROR_STATUS_KEY = '__merchantHandledStatus';
 const ACCESS_DENIED_MESSAGE_COOLDOWN_MS = 3000;
 let lastAccessDeniedAt = 0;
 
+type MerchantErrorPayload = {
+  code?: number;
+  message?: string;
+  data?: Record<string, unknown>;
+};
+
+export class MerchantRequestError<T = unknown> extends Error {
+  status?: number;
+  code?: number;
+  errorCode?: string;
+  data?: T;
+
+  constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+    super(message);
+    this.name = 'MerchantRequestError';
+    this.status = options.status;
+    this.code = options.code;
+    this.errorCode = options.errorCode;
+    this.data = options.data;
+  }
+}
+
 const getApiErrorStatus = (error: unknown): number | undefined => {
   if (typeof error !== 'object' || error === null || !('response' in error)) {
     return undefined;
@@ -60,6 +82,27 @@ const notifyMerchantAccessDenied = () => {
   message.error('无权限访问当前功能');
 };
 
+const normalizeMerchantError = (error: unknown) => {
+  if (error instanceof MerchantRequestError) {
+    return error;
+  }
+
+  const status = getApiErrorStatus(error);
+  const payload = typeof error === 'object' && error !== null && 'response' in error
+    ? ((error as { response?: { data?: MerchantErrorPayload } }).response?.data || undefined)
+    : undefined;
+  const errorCode = payload?.data && typeof payload.data === 'object' && 'errorCode' in payload.data
+    ? String(payload.data.errorCode || '')
+    : undefined;
+
+  return new MerchantRequestError(payload?.message || `请求失败${status ? `(${status})` : ''}`, {
+    status,
+    code: payload?.code,
+    errorCode,
+    data: payload?.data,
+  });
+};
+
 export const redirectToMerchantLogin = () => {
   useMerchantAuthStore.getState().logout();
 
@@ -99,9 +142,11 @@ api.interceptors.response.use(
       notifyMerchantAccessDenied();
     }
 
-    return Promise.reject(error);
+    return Promise.reject(normalizeMerchantError(error));
   },
 );
 
 export { getApiErrorStatus };
+export const isMerchantConflictError = (error: unknown) =>
+  error instanceof MerchantRequestError && error.status === 409;
 export default api;

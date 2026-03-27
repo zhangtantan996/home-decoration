@@ -23,10 +23,14 @@ import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
 import FinanceOverview from './pages/finance/FinanceOverview';
+import SettlementList from './pages/finance/SettlementList';
+import PayoutList from './pages/finance/PayoutList';
+import FinanceReconciliationList from './pages/finance/FinanceReconciliationList';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
 import TransactionList from './pages/finance/TransactionList';
+import BondRuleList from './pages/finance/BondRuleList';
+import BondAccountList from './pages/finance/BondAccountList';
 import RiskWarningList from './pages/risk/RiskWarningList';
-import ArbitrationCenter from './pages/risk/ArbitrationCenter';
 import SystemSettings from './pages/settings/SystemSettings';
 import RoleList from './pages/permissions/RoleList';
 import MenuList from './pages/permissions/MenuList';
@@ -115,6 +119,11 @@ const router = createBrowserRouter([
             { path: 'finance/overview', element: <ProtectedRoute permission="finance:escrow:list"><FinanceOverview /></ProtectedRoute> },
             { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
             { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
+            { path: 'finance/settlements', element: <ProtectedRoute permission="finance:transaction:list"><SettlementList /></ProtectedRoute> },
+            { path: 'finance/payouts', element: <ProtectedRoute permission="finance:transaction:list"><PayoutList /></ProtectedRoute> },
+            { path: 'finance/reconciliations', element: <ProtectedRoute permission="finance:transaction:list"><FinanceReconciliationList /></ProtectedRoute> },
+            { path: 'finance/bond-rules', element: <ProtectedRoute permission="finance:transaction:list"><BondRuleList /></ProtectedRoute> },
+            { path: 'finance/bond-accounts', element: <ProtectedRoute permission="finance:transaction:list"><BondAccountList /></ProtectedRoute> },
             { path: 'refunds', element: <ProtectedRoute permission="finance:transaction:list"><RefundList /></ProtectedRoute> },
             { path: 'refunds/:id', element: <ProtectedRoute permission="finance:transaction:view"><RefundDetail /></ProtectedRoute> },
             { path: 'withdraws', element: <ProtectedRoute permission="finance:transaction:list"><WithdrawList /></ProtectedRoute> },
@@ -127,7 +136,6 @@ const router = createBrowserRouter([
             // Risk
             { path: 'risk', element: <Navigate to="/risk/warnings" replace /> },
             { path: 'risk/warnings', element: <ProtectedRoute permission="risk:warning:list"><RiskWarningList /></ProtectedRoute> },
-            { path: 'risk/arbitration', element: <ProtectedRoute permission="risk:arbitration:list"><ArbitrationCenter /></ProtectedRoute> },
 
             { path: 'logs', element: <Navigate to="/logs/list" replace /> },
             { path: 'logs/list', element: <ProtectedRoute permission="system:log:list"><LogList /></ProtectedRoute> },

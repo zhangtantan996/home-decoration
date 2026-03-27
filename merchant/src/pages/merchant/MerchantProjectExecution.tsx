@@ -8,6 +8,7 @@ import MerchantPageHeader from '../../components/MerchantPageHeader';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import { BUSINESS_STAGE_META, MILESTONE_STATUS_META } from '../../constants/statuses';
+import { isMerchantConflictError } from '../../services/api';
 import { merchantProjectApi, merchantUploadApi, type MerchantProjectExecutionDetail, type MerchantProjectMilestone } from '../../services/merchantApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { formatServerDate, formatServerDateTime } from '../../utils/serverTime';
@@ -34,6 +35,18 @@ const parseLogPhotos = (raw?: string): string[] => {
   } catch {
     return [];
   }
+};
+
+const resolveActionError = async (
+  error: unknown,
+  reload: () => Promise<void>,
+  fallback: string,
+) => {
+  if (isMerchantConflictError(error)) {
+    await reload();
+    return '状态已变化，请刷新后重试';
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
 };
 
 const MerchantProjectExecution: React.FC = () => {
@@ -92,7 +105,7 @@ const MerchantProjectExecution: React.FC = () => {
       message.success(`节点 ${milestone.name} 已提交验收`);
       await load();
     } catch (error: any) {
-      message.error(error?.message || '提交节点失败');
+      message.error(await resolveActionError(error, load, '提交节点失败'));
     } finally {
       setSubmittingMilestoneId(null);
     }
@@ -152,7 +165,7 @@ const MerchantProjectExecution: React.FC = () => {
       await load();
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(error?.message || '创建施工日志失败');
+      message.error(await resolveActionError(error, load, '创建施工日志失败'));
     } finally {
       setLogSubmitting(false);
     }
@@ -165,7 +178,7 @@ const MerchantProjectExecution: React.FC = () => {
       message.success('项目已开工');
       await load();
     } catch (error: any) {
-      message.error(error?.message || '发起开工失败');
+      message.error(await resolveActionError(error, load, '发起开工失败'));
     } finally {
       setStartingProject(false);
     }
@@ -189,7 +202,7 @@ const MerchantProjectExecution: React.FC = () => {
       await load();
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(error?.message || '提交完工材料失败');
+      message.error(await resolveActionError(error, load, '提交完工材料失败'));
     } finally {
       setCompletionSubmitting(false);
     }
@@ -208,8 +221,8 @@ const MerchantProjectExecution: React.FC = () => {
         )}
         extra={(
           <>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
-              返回订单
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/projects')}>
+              返回项目列表
             </Button>
             <Button onClick={() => navigate(`/projects/${projectId}/dispute`)}>
               争议处理

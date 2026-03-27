@@ -155,8 +155,8 @@ const MerchantIncome: React.FC = () => {
     return (
         <MerchantPageShell>
             <MerchantPageHeader
-                title="收入中心"
-                description="查看累计收入、待结算与可提现金额，并从这里进入提现和账户管理。"
+                title="结算中心"
+                description="查看累计收入、待结算、待出款与已出款记录。"
                 extra={(
                     <>
                         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
@@ -184,21 +184,21 @@ const MerchantIncome: React.FC = () => {
                     {
                         label: '待结算',
                         value: `¥${summary.pendingSettle.toFixed(2)}`,
-                        meta: '平台处理中，尚未可提现',
+                        meta: '项目已入账，尚未进入出款阶段',
                         percent: summary.totalIncome > 0 ? (summary.pendingSettle / summary.totalIncome) * 100 : 0,
                         tone: 'amber',
                     },
                     {
-                        label: '可提现',
+                        label: '待出款',
                         value: `¥${summary.availableAmount.toFixed(2)}`,
-                        meta: '当前可申请提现金额',
+                        meta: '待平台自动出款的结算金额',
                         percent: summary.totalIncome > 0 ? (summary.availableAmount / summary.totalIncome) * 100 : 0,
                         tone: 'green',
                     },
                     {
-                        label: '已提现',
+                        label: '已出款',
                         value: `¥${summary.withdrawnAmount.toFixed(2)}`,
-                        meta: '历史累计提现金额',
+                        meta: '已完成平台出款的累计金额',
                         percent: summary.totalIncome > 0 ? (summary.withdrawnAmount / summary.totalIncome) * 100 : 0,
                         tone: 'slate',
                     },
@@ -207,11 +207,14 @@ const MerchantIncome: React.FC = () => {
 
             <MerchantContentPanel>
                 <MerchantSectionCard
-                    title="资金操作"
+                    title="结算记录"
                     extra={(
                         <Space>
-                            <Button type="primary" onClick={() => navigate('/withdraw')} disabled={!summary.availableAmount}>
-                                申请提现
+                            <Button type="primary" onClick={() => navigate('/withdraw')}>
+                                查看出款状态
+                            </Button>
+                            <Button onClick={() => navigate('/bond')}>
+                                保证金账户
                             </Button>
                             <Button onClick={() => navigate('/bank-accounts')}>
                                 银行账户管理
@@ -228,8 +231,8 @@ const MerchantIncome: React.FC = () => {
                         items={[
                             { key: 'all', label: '全部' },
                             { key: '0', label: '待结算' },
-                            { key: '1', label: '已结算' },
-                            { key: '2', label: '已提现' },
+                            { key: '1', label: '待出款' },
+                            { key: '2', label: '已出款' },
                         ]}
                         style={{ marginBottom: 16 }}
                     />

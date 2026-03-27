@@ -19,6 +19,28 @@ const ADMIN_ERROR_STATUS_KEY = "__adminHandledStatus";
 const ACCESS_DENIED_MESSAGE_COOLDOWN_MS = 3000;
 let lastAccessDeniedAt = 0;
 
+type AdminEnvelopeError = {
+  code?: number;
+  message?: string;
+  data?: Record<string, unknown>;
+};
+
+export class AdminApiError<T = unknown> extends Error {
+  status?: number;
+  code?: number;
+  errorCode?: string;
+  data?: T;
+
+  constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+    super(message);
+    this.name = 'AdminApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.errorCode = options.errorCode;
+    this.data = options.data;
+  }
+}
+
 const getApiErrorStatus = (error: unknown): number | undefined => {
   if (typeof error !== "object" || error === null || !("response" in error)) {
     return undefined;
@@ -64,6 +86,27 @@ const notifyAdminAccessDenied = () => {
   message.error("无权限访问当前功能");
 };
 
+const normalizeAdminError = (error: unknown) => {
+  if (error instanceof AdminApiError) {
+    return error;
+  }
+
+  const status = getApiErrorStatus(error);
+  const payload = typeof error === "object" && error !== null && "response" in error
+    ? ((error as { response?: { data?: AdminEnvelopeError } }).response?.data || undefined)
+    : undefined;
+  const errorCode = payload?.data && typeof payload.data === "object" && "errorCode" in payload.data
+    ? String(payload.data.errorCode || "")
+    : undefined;
+
+  return new AdminApiError(payload?.message || `请求失败${status ? `(${status})` : ""}`, {
+    status,
+    code: payload?.code,
+    errorCode,
+    data: payload?.data,
+  });
+};
+
 const redirectToAdminLogin = () => {
   useAuthStore.getState().logout();
 
@@ -104,11 +147,13 @@ api.interceptors.response.use(
       notifyAdminAccessDenied();
     }
 
-    return Promise.reject(error);
+    return Promise.reject(normalizeAdminError(error));
   },
 );
 
 export { getApiErrorStatus, getHandledAdminStatus, redirectToAdminLogin };
+export const isAdminConflictError = (error: unknown) =>
+  error instanceof AdminApiError && error.status === 409;
 
 // API 接口定义
 export const authApi = {
@@ -391,6 +436,100 @@ export interface AdminFinanceOverviewData {
   statistics?: AdminFinanceOverviewStatistics;
 }
 
+export interface AdminEscrowAccountItem {
+  id: number;
+  projectId: number;
+  projectName: string;
+  userId: number;
+  userName: string;
+  totalAmount: number;
+  frozenAmount: number;
+  availableAmount: number;
+  status: number;
+  createdAt: string;
+}
+
+export interface AdminEscrowAccountSummary {
+  totalAmount?: number;
+  frozenAmount?: number;
+  availableAmount?: number;
+}
+
+export interface AdminEscrowAccountListData {
+  list: AdminEscrowAccountItem[];
+  total: number;
+  summary?: AdminEscrowAccountSummary;
+}
+
+export interface AdminFinanceReconciliationItem {
+  id: number;
+  reconcileDate: string;
+  status: "success" | "warning" | "processing" | "resolved" | string;
+  findingCount: number;
+  ownerAdminId: number;
+  ownerNote?: string;
+  resolvedByAdminId: number;
+  resolutionNote?: string;
+  resolvedAt?: string;
+  lastRunAt: string;
+  createdAt: string;
+  updatedAt: string;
+  summary?: Record<string, unknown>;
+  findings?: Array<Record<string, unknown>>;
+}
+
+export interface AdminFinanceReconciliationDetailItem {
+  id: number;
+  reconciliationId: number;
+  itemType: string;
+  code: string;
+  level: string;
+  referenceType: string;
+  referenceId: number;
+  message: string;
+  expectedCount: number;
+  actualCount: number;
+  expectedAmount: number;
+  actualAmount: number;
+  detail?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AdminFinanceReconciliationQuery {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface AdminRiskWarningItem {
+  id: number;
+  projectId: number;
+  projectName: string;
+  type: string;
+  level: string;
+  description: string;
+  status: number;
+  createdAt: string;
+  handledAt?: string;
+  handledBy?: number;
+  handleResult?: string;
+}
+
+export interface AdminRiskWarningQuery {
+  page?: number;
+  pageSize?: number;
+  level?: string;
+  type?: string;
+  status?: number;
+}
+
+export interface AdminHandleRiskWarningInput {
+  status: number;
+  result: string;
+}
+
 export interface AdminFinanceTransactionItem {
   id: number;
   orderId?: string;
@@ -416,6 +555,103 @@ export interface AdminFinanceTransactionQuery {
   projectId?: number;
   startDate?: string;
   endDate?: string;
+}
+
+export interface AdminFinancePayoutItem {
+  id: number;
+  bizType: string;
+  bizId: number;
+  providerId: number;
+  providerName?: string;
+  amount: number;
+  channel: string;
+  fundScene: string;
+  outPayoutNo: string;
+  providerPayoutNo?: string;
+  status: "created" | "processing" | "paid" | "failed" | string;
+  failureReason?: string;
+  scheduledAt?: string;
+  paidAt?: string;
+  retryCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminFinancePayoutDetail {
+  payout?: AdminFinancePayoutItem;
+  merchantIncome?: {
+    id: number;
+    providerId: number;
+    orderId?: number;
+    bookingId?: number;
+    type: string;
+    amount: number;
+    platformFee: number;
+    netAmount: number;
+    status: number;
+    settledAt?: string;
+    payoutOrderId?: number;
+    payoutStatus?: string;
+    payoutFailedReason?: string;
+    payoutedAt?: string;
+  };
+}
+
+export interface AdminSettlementItem {
+  id: number;
+  bizType: string;
+  bizId: number;
+  projectId: number;
+  projectName?: string;
+  providerId: number;
+  providerName?: string;
+  fundScene: string;
+  grossAmount: number;
+  platformFee: number;
+  merchantNetAmount: number;
+  acceptedAt?: string;
+  dueAt?: string;
+  payoutOrderId?: number;
+  payoutStatus?: string;
+  status: string;
+  failureReason?: string;
+  recoveryStatus?: string;
+  recoveryAmount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminBondRuleItem {
+  id: number;
+  providerType: number;
+  providerSubType: string;
+  providerSubLabel?: string;
+  enabled: boolean;
+  ruleType: string;
+  fixedAmount: number;
+  ratio: number;
+  floorAmount: number;
+  capAmount: number;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+}
+
+export interface AdminBondAccountItem {
+  id: number;
+  providerId: number;
+  providerName?: string;
+  requiredAmount: number;
+  paidAmount: number;
+  frozenAmount: number;
+  availableAmount: number;
+  status: string;
+  lastRuleId?: number;
+  updatedAt: string;
+}
+
+export interface AdminBondAdjustInput {
+  amount: number;
+  reason: string;
 }
 
 export interface FreezeFundsInput {
@@ -1191,7 +1427,10 @@ export const adminFinanceApi = {
       AdminApiResponse<AdminFinanceOverviewData>
     >("/admin/finance/overview"),
   escrowAccounts: (params?: { page?: number; pageSize?: number }) =>
-    api.get("/admin/finance/escrow-accounts", { params }),
+    api.get<
+      AdminApiResponse<AdminEscrowAccountListData>,
+      AdminApiResponse<AdminEscrowAccountListData>
+    >("/admin/finance/escrow-accounts", { params }),
   transactions: (params?: AdminFinanceTransactionQuery) =>
     api.get<
       AdminApiResponse<
@@ -1207,6 +1446,43 @@ export const adminFinanceApi = {
         }
       >
     >("/admin/finance/transactions", { params }),
+  reconciliations: (params?: AdminFinanceReconciliationQuery) =>
+    api.get<
+      AdminApiResponse<
+        AdminListData<AdminFinanceReconciliationItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >,
+      AdminApiResponse<
+        AdminListData<AdminFinanceReconciliationItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >
+    >("/admin/finance/reconciliations", { params }),
+  reconciliationItems: (id: number) =>
+    api.get<
+      AdminApiResponse<{ list?: AdminFinanceReconciliationDetailItem[] }>,
+      AdminApiResponse<{ list?: AdminFinanceReconciliationDetailItem[] }>
+    >(`/admin/finance/reconciliations/${id}/items`),
+  runReconciliation: (date?: string) =>
+    api.post<
+      AdminApiResponse<{ item?: AdminFinanceReconciliationItem }>,
+      AdminApiResponse<{ item?: AdminFinanceReconciliationItem }>
+    >("/admin/finance/reconciliations/run", null, {
+      params: date ? { date } : undefined,
+    }),
+  claimReconciliation: (id: number, note?: string) =>
+    api.post<
+      AdminApiResponse<{ item?: AdminFinanceReconciliationItem }>,
+      AdminApiResponse<{ item?: AdminFinanceReconciliationItem }>
+    >(`/admin/finance/reconciliations/${id}/claim`, { note }),
+  resolveReconciliation: (id: number, note: string) =>
+    api.post<
+      AdminApiResponse<{ item?: AdminFinanceReconciliationItem }>,
+      AdminApiResponse<{ item?: AdminFinanceReconciliationItem }>
+    >(`/admin/finance/reconciliations/${id}/resolve`, { note }),
   exportTransactions: (
     params?: Omit<AdminFinanceTransactionQuery, "page" | "pageSize">,
   ) =>
@@ -1226,21 +1502,122 @@ export const adminFinanceApi = {
       "/admin/finance/manual-release",
       data,
     ),
+  payouts: (params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    providerId?: number;
+  }) =>
+    api.get<
+      AdminApiResponse<
+        AdminListData<AdminFinancePayoutItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >,
+      AdminApiResponse<
+        AdminListData<AdminFinancePayoutItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >
+    >("/admin/finance/payouts", { params }),
+  payoutDetail: (id: number) =>
+    api.get<
+      AdminApiResponse<AdminFinancePayoutDetail>,
+      AdminApiResponse<AdminFinancePayoutDetail>
+    >(`/admin/finance/payouts/${id}`),
+  retryPayout: (id: number) =>
+    api.post<
+      AdminApiResponse<{ item?: AdminFinancePayoutItem }>,
+      AdminApiResponse<{ item?: AdminFinancePayoutItem }>
+    >(`/admin/finance/payouts/${id}/retry`),
+  settlements: (params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    providerId?: number;
+  }) =>
+    api.get<
+      AdminApiResponse<
+        AdminListData<AdminSettlementItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >,
+      AdminApiResponse<
+        AdminListData<AdminSettlementItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >
+    >("/admin/finance/settlements", { params }),
+  retrySettlement: (id: number) =>
+    api.post<
+      AdminApiResponse<{ item?: AdminSettlementItem }>,
+      AdminApiResponse<{ item?: AdminSettlementItem }>
+    >(`/admin/finance/settlements/${id}/retry`),
+  bondRules: () =>
+    api.get<
+      AdminApiResponse<{ list?: AdminBondRuleItem[] }>,
+      AdminApiResponse<{ list?: AdminBondRuleItem[] }>
+    >("/admin/finance/bond-rules"),
+  updateBondRule: (id: number, data: Partial<AdminBondRuleItem>) =>
+    api.put<
+      AdminApiResponse<{ item?: AdminBondRuleItem }>,
+      AdminApiResponse<{ item?: AdminBondRuleItem }>
+    >(`/admin/finance/bond-rules/${id}`, data),
+  bondAccounts: (params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    providerId?: number;
+  }) =>
+    api.get<
+      AdminApiResponse<
+        AdminListData<AdminBondAccountItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >,
+      AdminApiResponse<
+        AdminListData<AdminBondAccountItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >
+    >("/admin/finance/bond-accounts", { params }),
+  refundBondAccount: (id: number, data: AdminBondAdjustInput) =>
+    api.post<
+      AdminApiResponse<{ item?: AdminBondAccountItem }>,
+      AdminApiResponse<{ item?: AdminBondAccountItem }>
+    >(`/admin/finance/bond-accounts/${id}/refund`, data),
+  forfeitBondAccount: (id: number, data: AdminBondAdjustInput) =>
+    api.post<
+      AdminApiResponse<{ item?: AdminBondAccountItem }>,
+      AdminApiResponse<{ item?: AdminBondAccountItem }>
+    >(`/admin/finance/bond-accounts/${id}/forfeit`, data),
   withdraw: (accountId: number, data: any) =>
     api.post(`/admin/finance/escrow-accounts/${accountId}/withdraw`, data),
 };
 
 // 风险管理
 export const adminRiskApi = {
-  warnings: (params?: { page?: number; pageSize?: number; level?: string }) =>
-    api.get("/admin/risk/warnings", { params }),
+  warnings: (params?: AdminRiskWarningQuery) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminRiskWarningItem>>,
+      AdminApiResponse<AdminListData<AdminRiskWarningItem>>
+    >("/admin/risk/warnings", { params }),
+  handleWarning: (id: number, data: AdminHandleRiskWarningInput) =>
+    api.post<AdminApiResponse, AdminApiResponse>(`/admin/risk/warnings/${id}/handle`, data),
+};
+
+export const adminLegacyRiskApi = {
   arbitrations: (params?: {
     page?: number;
     pageSize?: number;
     status?: number;
   }) => api.get("/admin/risk/arbitrations", { params }),
-  handleWarning: (id: number, data: any) =>
-    api.post(`/admin/risk/warnings/${id}/handle`, data),
   updateArbitration: (id: number, data: any) =>
     api.put(`/admin/risk/arbitrations/${id}`, data),
 };

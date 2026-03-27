@@ -146,8 +146,8 @@ const MerchantLayout: React.FC = () => {
             icon: <DollarOutlined />,
             label: '财务中心',
             children: [
-                { key: '/income', label: isCompanyProvider ? '成交与收入' : '收入明细' },
-                { key: '/withdraw', label: '提现管理' },
+                { key: '/income', label: '结算中心' },
+                { key: '/bond', label: '保证金账户' },
                 { key: '/bank-accounts', label: '银行卡' },
             ],
         },
@@ -223,8 +223,10 @@ const MerchantLayout: React.FC = () => {
 
     const fallbackPath = isMaterialShop ? '/dashboard' : '/dashboard';
     const isPathAllowed = availableKeys.has(location.pathname)
+        || (!isMaterialShop && location.pathname === '/withdraw')
         || (!isMaterialShop && location.pathname.startsWith('/projects/'))
         || Array.from(availableKeys).some((key) => key !== '/' && location.pathname.startsWith(`${key}/`));
+    const selectedMenuKey = location.pathname === '/withdraw' ? '/income' : location.pathname;
 
     useEffect(() => {
         if (!isPathAllowed) {
@@ -265,7 +267,7 @@ const MerchantLayout: React.FC = () => {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh' }}>
+        <Layout style={{ minHeight: '100vh', height: '100vh', overflow: 'hidden' }}>
             <Sider
                 trigger={null}
                 collapsible
@@ -274,6 +276,9 @@ const MerchantLayout: React.FC = () => {
                 style={{
                     background: '#001529',
                     boxShadow: '2px 0 8px 0 rgba(29,35,41,.05)',
+                    height: '100vh',
+                    overflowX: 'hidden',
+                    overflowY: 'auto',
                 }}
             >
                 <div style={{
@@ -314,7 +319,7 @@ const MerchantLayout: React.FC = () => {
                 <Menu
                     theme="dark"
                     mode="inline"
-                    selectedKeys={[location.pathname]}
+                    selectedKeys={[selectedMenuKey]}
                     defaultOpenKeys={[]}
                     items={filteredMenuItems}
                     onClick={({ key }) => {
@@ -327,7 +332,7 @@ const MerchantLayout: React.FC = () => {
                     style={{ borderRight: 0 }}
                 />
             </Sider>
-            <Layout>
+            <Layout style={{ minWidth: 0, minHeight: 0 }}>
                 <Header style={{
                     padding: '0 24px',
                     background: colorBgContainer,
@@ -336,6 +341,7 @@ const MerchantLayout: React.FC = () => {
                     justifyContent: 'space-between',
                     boxShadow: '0 1px 4px rgba(0,21,41,.08)',
                     zIndex: 1,
+                    flexShrink: 0,
                 }}>
                     <Button
                         type="text"
@@ -370,8 +376,10 @@ const MerchantLayout: React.FC = () => {
                 <Content style={{
                     margin: 0,
                     background: '#f0f2f5',
-                    minHeight: 280,
-                    overflow: 'auto',
+                    flex: 1,
+                    minHeight: 0,
+                    overflowX: 'hidden',
+                    overflowY: 'auto',
                     position: 'relative',
                 }}>
                     <div style={{ padding: 24, maxWidth: 1600, margin: '0 auto' }}>

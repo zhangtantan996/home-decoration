@@ -193,13 +193,12 @@ const MerchantBookings: React.FC = () => {
                     {record.status === 2 && (
                         (record as any).hasProposal ? (
                             <Button
-                                type="primary"
+                                type="default"
                                 size="small"
-                                style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => navigate('/proposals')}
+                                icon={<EyeOutlined />}
+                                onClick={() => showDetail(record)}
                             >
-                                方案已录入
+                                继续跟进
                             </Button>
                         ) : (
                             <Button
@@ -372,6 +371,18 @@ const MerchantBookings: React.FC = () => {
                                     }}>
                                         预算确认
                                     </Button>
+                                    {(currentBooking as any).hasProposal ? (
+                                        <Button
+                                            type="primary"
+                                            icon={<CheckCircleOutlined />}
+                                            onClick={() => {
+                                                setDetailVisible(false);
+                                                message.info('该预约方案已录入，主链继续留在预约管理和项目执行中。');
+                                            }}
+                                        >
+                                            方案已录入
+                                        </Button>
+                                    ) : null}
                                 </>
                             ) : null}
                             <Button onClick={() => setDetailVisible(false)}>关闭</Button>

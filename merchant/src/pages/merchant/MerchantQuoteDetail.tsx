@@ -16,13 +16,14 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useNavigate, useParams } from 'react-router-dom';
+import { isMerchantConflictError } from '../../services/api';
 import {
     merchantQuoteApi,
     type MerchantQuoteListDetail,
     type QuoteListItem,
     type QuoteSubmissionItem,
 } from '../../services/quoteApi';
-import { BUSINESS_STAGE_META, QUOTE_LIST_STATUS_META } from '../../constants/statuses';
+import { BUSINESS_ACTION_LABELS, BUSINESS_STAGE_META, QUOTE_LIST_STATUS_META } from '../../constants/statuses';
 import { normalizePriceCent, normalizePriceYuan, sharedForemanPriceInputProps } from '../../utils/priceInput';
 
 const { Title, Text } = Typography;
@@ -46,24 +47,7 @@ const statusLabel = (status: string): { text: string; color: string } => {
 const businessStageLabel = (stage?: string): { text: string; color: string } =>
     BUSINESS_STAGE_META[String(stage || '').toLowerCase()] || { text: stage || '-', color: 'default' };
 
-const actionLabel = (action?: string) => {
-    switch (action) {
-        case 'create_proposal': return '提交方案';
-        case 'confirm_proposal': return '确认设计方案';
-        case 'reject_proposal': return '驳回设计方案';
-        case 'create_quote_task': return '创建施工报价任务';
-        case 'select_constructor': return '选择施工方';
-        case 'submit_construction_quote': return '提交施工报价';
-        case 'confirm_construction_quote': return '确认施工报价';
-        case 'reject_construction_quote': return '驳回施工报价';
-        case 'start_project': return '发起开工';
-        case 'submit_milestone': return '提交节点验收';
-        case 'approve_milestone': return '通过节点验收';
-        case 'reject_milestone': return '驳回节点验收';
-        case 'generate_inspiration_draft': return '生成案例草稿';
-        default: return action || '-';
-    }
-};
+const actionLabel = (action?: string) => BUSINESS_ACTION_LABELS[String(action || '')] || action || '-';
 
 const centToYuan = (cent?: number): number | undefined => {
     if (cent === null || cent === undefined) return undefined;
@@ -109,8 +93,9 @@ const MerchantQuoteDetail: React.FC = () => {
 
     const canEdit = useMemo(() => {
         const status = detail?.quoteList?.status || '';
-        return ['quoting', 'pricing_in_progress'].includes(String(status).toLowerCase());
-    }, [detail?.quoteList?.status]);
+        const canSubmitQuote = (detail?.availableActions || []).includes('submit_construction_quote');
+        return canSubmitQuote && ['quoting', 'pricing_in_progress'].includes(String(status).toLowerCase());
+    }, [detail?.availableActions, detail?.quoteList?.status]);
 
     const load = async () => {
         if (!Number.isFinite(quoteListId) || quoteListId <= 0) {
@@ -176,6 +161,11 @@ const MerchantQuoteDetail: React.FC = () => {
             message.success('已保存草稿');
             await load();
         } catch (err: any) {
+            if (isMerchantConflictError(err)) {
+                await load();
+                message.error('状态已变化，请刷新后重试');
+                return;
+            }
             message.error(err?.message || '保存失败');
         } finally {
             setSaving(false);
@@ -199,6 +189,11 @@ const MerchantQuoteDetail: React.FC = () => {
                     message.success('报价已提交');
                     await load();
                 } catch (err: any) {
+                    if (isMerchantConflictError(err)) {
+                        await load();
+                        message.error('状态已变化，请刷新后重试');
+                        return;
+                    }
                     message.error(err?.message || '提交失败');
                 } finally {
                     setSaving(false);

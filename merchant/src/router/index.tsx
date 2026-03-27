@@ -21,6 +21,8 @@ import MerchantOrders from '../pages/merchant/MerchantOrders';
 import MerchantComplaints from '../pages/merchant/MerchantComplaints';
 import MerchantContractCreate from '../pages/merchant/MerchantContractCreate';
 import MerchantIncome from '../pages/merchant/MerchantIncome';
+import MerchantBond from '../pages/merchant/MerchantBond';
+import MerchantPaymentResult from '../pages/merchant/MerchantPaymentResult';
 import MerchantWithdraw from '../pages/merchant/MerchantWithdraw';
 import MerchantBankAccounts from '../pages/merchant/MerchantBankAccounts';
 import MerchantCases from '../pages/merchant/MerchantCases';
@@ -68,6 +70,8 @@ const router = createBrowserRouter([
           { path: '/complaints', element: <MerchantComplaints /> },
           { path: '/contracts/new', element: <MerchantContractCreate /> },
           { path: '/income', element: <MerchantIncome /> },
+          { path: '/bond', element: <MerchantBond /> },
+          { path: '/payments/result', element: <MerchantPaymentResult /> },
           { path: '/withdraw', element: <MerchantWithdraw /> },
           { path: '/bank-accounts', element: <MerchantBankAccounts /> },
           { path: '/cases', element: <MerchantCases /> },

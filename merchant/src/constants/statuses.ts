@@ -14,6 +14,22 @@ export const BUSINESS_STAGE_META: Record<string, { text: string; color: string }
   cancelled: { text: '已取消', color: 'default' },
 };
 
+export const BUSINESS_ACTION_LABELS: Record<string, string> = {
+  create_proposal: '提交方案',
+  confirm_proposal: '确认设计方案',
+  reject_proposal: '驳回设计方案',
+  create_quote_task: '创建施工报价任务',
+  select_constructor: '选择施工方',
+  submit_construction_quote: '提交施工报价',
+  confirm_construction_quote: '确认施工报价',
+  reject_construction_quote: '驳回施工报价',
+  start_project: '发起开工',
+  submit_milestone: '提交节点验收',
+  approve_milestone: '通过节点验收',
+  reject_milestone: '驳回节点验收',
+  generate_inspiration_draft: '生成案例草稿',
+};
+
 export const BOOKING_STATUS_META: Record<number, { text: string; color: string }> = {
   1: { text: '待处理', color: 'gold' },
   2: { text: '已确认', color: 'blue' },
@@ -90,6 +106,14 @@ export const MERCHANT_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   'proposal.submitted': '方案提醒',
   'proposal.confirmed': '方案提醒',
   'proposal.rejected': '方案提醒',
+  'proposal.timeout': '方案提醒',
+  'quote.confirmed': '报价提醒',
+  'quote.rejected': '报价提醒',
+  'project.milestone.approved': '节点提醒',
+  'project.milestone.rejected': '节点提醒',
+  'project.completion.submitted': '完工提醒',
+  'project.completion.approved': '完工提醒',
+  'project.completion.rejected': '完工提醒',
   'project.paused': '项目提醒',
   'project.resumed': '项目提醒',
   'project.dispute.created': '争议提醒',
