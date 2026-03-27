@@ -6,6 +6,8 @@ import (
 	"home-decoration-server/internal/repository"
 	"strconv"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // ConfigService 系统配置服务
@@ -41,9 +43,41 @@ func (s *ConfigService) GetConfig(key string) (string, error) {
 	return config.Value, nil
 }
 
+func (s *ConfigService) GetConfigTx(tx *gorm.DB, key string) (string, error) {
+	if tx == nil {
+		return s.GetConfig(key)
+	}
+
+	configCacheMu.RLock()
+	if val, ok := configCache[key]; ok {
+		configCacheMu.RUnlock()
+		return val, nil
+	}
+	configCacheMu.RUnlock()
+
+	var config model.SystemConfig
+	if err := tx.Where("key = ?", key).First(&config).Error; err != nil {
+		return "", err
+	}
+
+	configCacheMu.Lock()
+	configCache[key] = config.Value
+	configCacheMu.Unlock()
+
+	return config.Value, nil
+}
+
 // GetConfigFloat 获取浮点数配置
 func (s *ConfigService) GetConfigFloat(key string) (float64, error) {
 	val, err := s.GetConfig(key)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseFloat(val, 64)
+}
+
+func (s *ConfigService) GetConfigFloatTx(tx *gorm.DB, key string) (float64, error) {
+	val, err := s.GetConfigTx(tx, key)
 	if err != nil {
 		return 0, err
 	}
@@ -62,6 +96,14 @@ func (s *ConfigService) GetConfigBool(key string) (bool, error) {
 // GetConfigInt 获取整数配置
 func (s *ConfigService) GetConfigInt(key string) (int, error) {
 	val, err := s.GetConfig(key)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(val)
+}
+
+func (s *ConfigService) GetConfigIntTx(tx *gorm.DB, key string) (int, error) {
+	val, err := s.GetConfigTx(tx, key)
 	if err != nil {
 		return 0, err
 	}
@@ -144,6 +186,8 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		{model.ConfigKeyDesignFeeQuoteExpireHours, "72", "设计费报价有效期(小时)"},
 		{model.ConfigKeyDeliverableDeadlineDays, "30", "设计交付件截止天数"},
 		{model.ConfigKeyConstructionReleaseDelay, "3", "验收确认后T+N天自动放款"},
+		{model.ConfigKeyPaymentReleaseDelayDays, "3", "支付中台统一T+N出款延迟天数"},
+		{model.ConfigKeyPaymentPayoutAutoEnabled, "true", "是否启用自动出款"},
 	}
 
 	for _, d := range defaults {
@@ -259,6 +303,30 @@ func (s *ConfigService) GetConstructionReleaseDelayDays() int {
 	val, err := s.GetConfigInt(model.ConfigKeyConstructionReleaseDelay)
 	if err != nil || val < 0 {
 		return 3
+	}
+	return val
+}
+
+func (s *ConfigService) GetConstructionReleaseDelayDaysTx(tx *gorm.DB) int {
+	val, err := s.GetConfigIntTx(tx, model.ConfigKeyConstructionReleaseDelay)
+	if err != nil || val < 0 {
+		return 3
+	}
+	return val
+}
+
+func (s *ConfigService) GetPaymentReleaseDelayDays() int {
+	val, err := s.GetConfigInt(model.ConfigKeyPaymentReleaseDelayDays)
+	if err == nil && val >= 0 {
+		return val
+	}
+	return s.GetConstructionReleaseDelayDays()
+}
+
+func (s *ConfigService) GetPaymentPayoutAutoEnabled() bool {
+	val, err := s.GetConfigBool(model.ConfigKeyPaymentPayoutAutoEnabled)
+	if err != nil {
+		return true
 	}
 	return val
 }

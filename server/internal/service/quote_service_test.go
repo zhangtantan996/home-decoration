@@ -1,32 +1,48 @@
 package service
 
 import (
+	"encoding/base64"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	cryptoutil "home-decoration-server/pkg/utils"
 
+	"github.com/xuri/excelize/v2"
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"github.com/xuri/excelize/v2"
 )
 
 func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
+	dsn := "file:" + strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()) + "?mode=memory&cache=shared"
+	db, err := gorm.Open(gormsqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	if err := cryptoutil.InitCrypto(); err != nil {
+		t.Fatalf("init crypto: %v", err)
+	}
+
 	if err := db.AutoMigrate(
+		&model.User{},
 		&model.Notification{},
 		&model.AuditLog{},
 		&model.Provider{},
+		&model.Booking{},
+		&model.Proposal{},
 		&model.Project{},
+		&model.EscrowAccount{},
+		&model.ProjectPhase{},
+		&model.PhaseTask{},
+		&model.Milestone{},
 		&model.BusinessFlow{},
+		&model.SystemConfig{},
 		&model.MerchantServiceSetting{},
 		&model.QuoteCategory{},
 		&model.QuoteLibraryItem{},
@@ -46,8 +62,8 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("get sql db: %v", err)
 	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetMaxOpenConns(4)
+	sqlDB.SetMaxIdleConns(4)
 
 	previousDB := repository.DB
 	repository.DB = db
@@ -57,6 +73,126 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 	})
 
 	return db
+}
+
+func setupQuoteServiceDBWithoutAuditLog(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db := setupQuoteServiceDB(t)
+	if err := db.Migrator().DropTable(&model.AuditLog{}); err != nil {
+		t.Fatalf("drop audit_logs: %v", err)
+	}
+	return db
+}
+
+type quoteConfirmationFixture struct {
+	owner      model.User
+	designer   model.Provider
+	foreman    model.Provider
+	booking    model.Booking
+	proposal   model.Proposal
+	flow       model.BusinessFlow
+	quoteList  model.QuoteList
+	submission model.QuoteSubmission
+}
+
+func seedQuoteConfirmationFixture(t *testing.T, db *gorm.DB, quoteStatus string) quoteConfirmationFixture {
+	t.Helper()
+
+	configSvc.ClearCache()
+	if err := db.Create(&model.SystemConfig{
+		Key:      model.ConfigKeyConstructionPaymentMode,
+		Value:    "milestone",
+		Editable: true,
+	}).Error; err != nil {
+		t.Fatalf("seed construction payment config: %v", err)
+	}
+
+	owner := model.User{Base: model.Base{ID: 9101}, Phone: "13800139101", Nickname: "业主A", Status: 1}
+	designerUser := model.User{Base: model.Base{ID: 9102}, Phone: "13800139102", Nickname: "设计师A", Status: 1}
+	designer := model.Provider{Base: model.Base{ID: 9201}, UserID: designerUser.ID, ProviderType: 1, CompanyName: "设计工作室A", Status: 1}
+	foreman := model.Provider{Base: model.Base{ID: 9202}, ProviderType: 3, SubType: "foreman", CompanyName: "工长A", Status: 1}
+	booking := model.Booking{
+		Base:       model.Base{ID: 9301},
+		UserID:     owner.ID,
+		ProviderID: designer.ID,
+		Address:    "上海市浦东新区成山路 66 号",
+		Area:       96,
+		Status:     2,
+	}
+	proposal := model.Proposal{
+		Base:            model.Base{ID: 9401},
+		BookingID:       booking.ID,
+		DesignerID:      designer.ID,
+		Summary:         "施工确认前正式方案",
+		DesignFee:       10000,
+		ConstructionFee: 180000,
+		MaterialFee:     20000,
+		Status:          model.ProposalStatusConfirmed,
+		SourceType:      model.ProposalSourceBooking,
+		Version:         1,
+	}
+	flow := model.BusinessFlow{
+		Base:                      model.Base{ID: 9501},
+		SourceType:                model.BusinessFlowSourceBooking,
+		SourceID:                  booking.ID,
+		CustomerUserID:            owner.ID,
+		DesignerProviderID:        designer.ID,
+		SelectedForemanProviderID: foreman.ID,
+		CurrentStage:              model.BusinessFlowStageConstructionQuotePending,
+	}
+	quoteList := model.QuoteList{
+		Base:                   model.Base{ID: 9601},
+		ProposalID:             proposal.ID,
+		DesignerProviderID:     designer.ID,
+		OwnerUserID:            owner.ID,
+		Title:                  "施工报价确认单",
+		Status:                 quoteStatus,
+		Currency:               "CNY",
+		PrerequisiteStatus:     model.QuoteTaskPrerequisiteComplete,
+		UserConfirmationStatus: model.QuoteUserConfirmationPending,
+	}
+	submission := model.QuoteSubmission{
+		Base:            model.Base{ID: 9701},
+		QuoteListID:     quoteList.ID,
+		ProviderID:      foreman.ID,
+		ProviderType:    foreman.ProviderType,
+		ProviderSubType: foreman.SubType,
+		Status:          model.QuoteSubmissionStatusSubmitted,
+		TaskStatus:      model.QuoteListStatusSubmittedToUser,
+		Currency:        "CNY",
+		TotalCent:       18800000,
+		EstimatedDays:   45,
+		SubmittedToUser: true,
+		UserConfirmedAt: nil,
+	}
+
+	for _, record := range []interface{}{
+		&owner,
+		&designerUser,
+		&designer,
+		&foreman,
+		&booking,
+		&proposal,
+		&flow,
+		&quoteList,
+		&submission,
+	} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed quote confirmation fixture: %v", err)
+		}
+	}
+
+	return quoteConfirmationFixture{
+		owner:      owner,
+		designer:   designer,
+		foreman:    foreman,
+		booking:    booking,
+		proposal:   proposal,
+		flow:       flow,
+		quoteList:  quoteList,
+		submission: submission,
+	}
 }
 
 func TestImportQuoteLibraryFromERP_IsIdempotent(t *testing.T) {
@@ -791,6 +927,42 @@ func TestGetProviderPriceBook_IncludesAllEnabledStandardItems(t *testing.T) {
 func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 	svc := &QuoteService{}
+	owner := model.User{Base: model.Base{ID: 9001}, Phone: "13800139001", Nickname: "报价业主A", Status: 1}
+	designerUser := model.User{Base: model.Base{ID: 9002}, Phone: "13800139002", Nickname: "设计师A", Status: 1}
+	designer := model.Provider{Base: model.Base{ID: 8002}, UserID: designerUser.ID, ProviderType: 1, CompanyName: "设计工作室B", Status: 1}
+	booking := model.Booking{
+		Base:       model.Base{ID: 1002},
+		UserID:     owner.ID,
+		ProviderID: designer.ID,
+		Address:    "上海市浦东新区成山路 88 号",
+		Area:       100,
+		Status:     2,
+	}
+	proposal := model.Proposal{
+		Base:            model.Base{ID: 1003},
+		BookingID:       booking.ID,
+		DesignerID:      designer.ID,
+		Summary:         "报价前已确认方案",
+		DesignFee:       12000,
+		ConstructionFee: 188000,
+		MaterialFee:     20000,
+		Status:          model.ProposalStatusConfirmed,
+		SourceType:      model.ProposalSourceBooking,
+		Version:         1,
+	}
+	flow := model.BusinessFlow{
+		Base:                      model.Base{ID: 1004},
+		SourceType:                model.BusinessFlowSourceBooking,
+		SourceID:                  booking.ID,
+		CustomerUserID:            owner.ID,
+		DesignerProviderID:        designer.ID,
+		CurrentStage:              model.BusinessFlowStageConstructionQuotePending,
+	}
+	for _, record := range []interface{}{&owner, &designerUser, &designer, &booking, &proposal, &flow} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed quote generation flow fixture: %v", err)
+		}
+	}
 
 	foreman := model.Provider{
 		ProviderType: 3,
@@ -832,9 +1004,10 @@ func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
 		t.Fatalf("publish price book: %v", err)
 	}
 	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
-		ProjectID:          1002,
-		OwnerUserID:        9001,
-		DesignerProviderID: 8002,
+		ProposalID:         proposal.ID,
+		ProposalVersion:    proposal.Version,
+		OwnerUserID:        owner.ID,
+		DesignerProviderID: designer.ID,
 		Title:              "报价任务生成",
 	})
 	if err != nil {
@@ -899,7 +1072,7 @@ func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
 		t.Fatalf("unexpected task status after submit to user: %s", taskAfterSubmit.Status)
 	}
 
-	confirmedTask, err := svc.UserConfirmQuoteSubmission(submission.ID, 9001)
+	confirmedTask, err := svc.UserConfirmQuoteSubmission(submission.ID, owner.ID)
 	if err != nil {
 		t.Fatalf("user confirm quote: %v", err)
 	}
@@ -1009,6 +1182,209 @@ func TestQuoteListResponses_IncludeBusinessFlowSummary(t *testing.T) {
 	}
 	if !strings.Contains(comparison.FlowSummary, "待开工") {
 		t.Fatalf("unexpected comparison flow summary: %s", comparison.FlowSummary)
+	}
+}
+
+func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+	fixture := seedQuoteConfirmationFixture(t, db, model.QuoteListStatusSubmittedToUser)
+
+	confirmedTask, err := svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
+	if err != nil {
+		t.Fatalf("UserConfirmQuoteSubmission: %v", err)
+	}
+	if confirmedTask.Status != model.QuoteListStatusUserConfirmed {
+		t.Fatalf("unexpected quote list status: %s", confirmedTask.Status)
+	}
+	if confirmedTask.ProjectID == 0 {
+		t.Fatalf("expected project created after quote confirmation")
+	}
+
+	var projectCount int64
+	if err := db.Model(&model.Project{}).Where("proposal_id = ?", fixture.proposal.ID).Count(&projectCount).Error; err != nil {
+		t.Fatalf("count projects by proposal: %v", err)
+	}
+	if projectCount != 1 {
+		t.Fatalf("expected exactly one project, got %d", projectCount)
+	}
+
+	var project model.Project
+	if err := db.First(&project, confirmedTask.ProjectID).Error; err != nil {
+		t.Fatalf("load created project: %v", err)
+	}
+	if project.ProposalID != fixture.proposal.ID {
+		t.Fatalf("unexpected project proposal id: %d", project.ProposalID)
+	}
+	if project.BusinessStatus != model.ProjectBusinessStatusConstructionQuoteConfirmed {
+		t.Fatalf("unexpected project business status: %s", project.BusinessStatus)
+	}
+	if project.CurrentPhase != "待开工" {
+		t.Fatalf("unexpected project current phase: %s", project.CurrentPhase)
+	}
+	if project.ConstructionProviderID != fixture.foreman.ID || project.ForemanID != fixture.foreman.ID {
+		t.Fatalf("expected foreman bound to project, got construction_provider_id=%d foreman_id=%d", project.ConstructionProviderID, project.ForemanID)
+	}
+
+	var escrow model.EscrowAccount
+	if err := db.Where("project_id = ?", project.ID).First(&escrow).Error; err != nil {
+		t.Fatalf("load escrow: %v", err)
+	}
+
+	var phaseCount int64
+	if err := db.Model(&model.ProjectPhase{}).Where("project_id = ?", project.ID).Count(&phaseCount).Error; err != nil {
+		t.Fatalf("count phases: %v", err)
+	}
+	if phaseCount == 0 {
+		t.Fatalf("expected project phases initialized")
+	}
+
+	var milestoneCount int64
+	if err := db.Model(&model.Milestone{}).Where("project_id = ?", project.ID).Count(&milestoneCount).Error; err != nil {
+		t.Fatalf("count milestones: %v", err)
+	}
+	if milestoneCount == 0 {
+		t.Fatalf("expected milestones initialized")
+	}
+
+	var flow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, fixture.booking.ID).First(&flow).Error; err != nil {
+		t.Fatalf("reload business flow: %v", err)
+	}
+	if flow.ProjectID != project.ID {
+		t.Fatalf("expected flow bound to project %d, got %d", project.ID, flow.ProjectID)
+	}
+	if flow.CurrentStage != model.BusinessFlowStageReadyToStart {
+		t.Fatalf("expected flow ready_to_start, got %s", flow.CurrentStage)
+	}
+
+	var persistedQuoteList model.QuoteList
+	if err := db.First(&persistedQuoteList, fixture.quoteList.ID).Error; err != nil {
+		t.Fatalf("reload quote list: %v", err)
+	}
+	if persistedQuoteList.ProjectID != project.ID {
+		t.Fatalf("expected quote list bound to project %d, got %d", project.ID, persistedQuoteList.ProjectID)
+	}
+
+	var persistedSubmission model.QuoteSubmission
+	if err := db.First(&persistedSubmission, fixture.submission.ID).Error; err != nil {
+		t.Fatalf("reload submission: %v", err)
+	}
+	if persistedSubmission.Status != model.QuoteSubmissionStatusUserConfirmed {
+		t.Fatalf("expected submission user confirmed, got %s", persistedSubmission.Status)
+	}
+}
+
+func TestUserConfirmQuoteSubmissionDoesNotCreateSecondProjectOnRepeatOrInvalidStatus(t *testing.T) {
+	t.Run("repeat confirm reuses existing project without creating second one", func(t *testing.T) {
+		db := setupQuoteServiceDB(t)
+		svc := &QuoteService{}
+		fixture := seedQuoteConfirmationFixture(t, db, model.QuoteListStatusSubmittedToUser)
+
+		first, err := svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
+		if err != nil {
+			t.Fatalf("first UserConfirmQuoteSubmission: %v", err)
+		}
+		if first.ProjectID == 0 {
+			t.Fatalf("expected project created on first confirmation")
+		}
+
+		_, err = svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
+		if err == nil || !strings.Contains(err.Error(), "当前报价任务状态不允许确认") {
+			t.Fatalf("expected invalid status error on repeat confirm, got %v", err)
+		}
+
+		var projectCount int64
+		if err := db.Model(&model.Project{}).Where("proposal_id = ?", fixture.proposal.ID).Count(&projectCount).Error; err != nil {
+			t.Fatalf("count projects after repeat confirm: %v", err)
+		}
+		if projectCount != 1 {
+			t.Fatalf("expected project count remain 1, got %d", projectCount)
+		}
+	})
+
+	t.Run("invalid initial status does not create project", func(t *testing.T) {
+		db := setupQuoteServiceDB(t)
+		svc := &QuoteService{}
+		fixture := seedQuoteConfirmationFixture(t, db, model.QuoteListStatusDraft)
+
+		_, err := svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
+		if err == nil || !strings.Contains(err.Error(), "当前报价任务状态不允许确认") {
+			t.Fatalf("expected invalid status error, got %v", err)
+		}
+
+		var projectCount int64
+		if err := db.Model(&model.Project{}).Where("proposal_id = ?", fixture.proposal.ID).Count(&projectCount).Error; err != nil {
+			t.Fatalf("count projects after invalid status confirm: %v", err)
+		}
+		if projectCount != 0 {
+			t.Fatalf("expected no project created for invalid status, got %d", projectCount)
+		}
+	})
+}
+
+func TestUserConfirmQuoteSubmissionRollsBackProjectArtifactsWhenAuditWriteFails(t *testing.T) {
+	db := setupQuoteServiceDBWithoutAuditLog(t)
+	svc := &QuoteService{}
+	fixture := seedQuoteConfirmationFixture(t, db, model.QuoteListStatusSubmittedToUser)
+
+	_, err := svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
+	if err == nil {
+		t.Fatalf("expected confirmation to fail when audit_logs table is missing")
+	}
+
+	var projectCount int64
+	if err := db.Model(&model.Project{}).Where("proposal_id = ?", fixture.proposal.ID).Count(&projectCount).Error; err != nil {
+		t.Fatalf("count projects after rollback: %v", err)
+	}
+	if projectCount != 0 {
+		t.Fatalf("expected project rollback, got %d projects", projectCount)
+	}
+
+	var escrowCount int64
+	if err := db.Model(&model.EscrowAccount{}).Count(&escrowCount).Error; err != nil {
+		t.Fatalf("count escrow after rollback: %v", err)
+	}
+	if escrowCount != 0 {
+		t.Fatalf("expected escrow rollback, got %d", escrowCount)
+	}
+
+	var phaseCount int64
+	if err := db.Model(&model.ProjectPhase{}).Count(&phaseCount).Error; err != nil {
+		t.Fatalf("count phases after rollback: %v", err)
+	}
+	if phaseCount != 0 {
+		t.Fatalf("expected phase rollback, got %d", phaseCount)
+	}
+
+	var milestoneCount int64
+	if err := db.Model(&model.Milestone{}).Count(&milestoneCount).Error; err != nil {
+		t.Fatalf("count milestones after rollback: %v", err)
+	}
+	if milestoneCount != 0 {
+		t.Fatalf("expected milestone rollback, got %d", milestoneCount)
+	}
+
+	var quoteList model.QuoteList
+	if err := db.First(&quoteList, fixture.quoteList.ID).Error; err != nil {
+		t.Fatalf("reload quote list after rollback: %v", err)
+	}
+	if quoteList.ProjectID != 0 {
+		t.Fatalf("expected quote list project binding rolled back, got %d", quoteList.ProjectID)
+	}
+	if quoteList.Status != model.QuoteListStatusSubmittedToUser {
+		t.Fatalf("expected quote list status rolled back, got %s", quoteList.Status)
+	}
+
+	var flow model.BusinessFlow
+	if err := db.First(&flow, fixture.flow.ID).Error; err != nil {
+		t.Fatalf("reload business flow after rollback: %v", err)
+	}
+	if flow.ProjectID != 0 {
+		t.Fatalf("expected business flow project binding rolled back, got %d", flow.ProjectID)
+	}
+	if flow.CurrentStage != model.BusinessFlowStageConstructionQuotePending {
+		t.Fatalf("expected business flow stage rolled back, got %s", flow.CurrentStage)
 	}
 }
 

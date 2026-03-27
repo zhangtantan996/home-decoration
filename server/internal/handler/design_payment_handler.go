@@ -45,13 +45,13 @@ func RefundSurveyDeposit(c *gin.Context) {
 		return
 	}
 
-	err := designPaymentService.RefundSurveyDeposit(userID, bookingID)
+	message, err := designPaymentService.RefundSurveyDeposit(userID, bookingID)
 	if err != nil {
-		response.ServerError(c, err.Error())
+		response.Error(c, 400, err.Error())
 		return
 	}
 
-	response.SuccessWithMessage(c, "量房定金退款成功", nil)
+	response.SuccessWithMessage(c, message, nil)
 }
 
 // GetDesignFeeQuoteForUser 用户查看设计费报价

@@ -1670,6 +1670,7 @@ func AdminApproveApplication(c *gin.Context) {
 		CompanyAlbumJSON:    string(companyAlbumJSON),
 		PriceMin:            priceMin,
 		PriceMax:            priceMax,
+		PriceUnit:           model.ProviderPriceUnitPerSquareMeter,
 		Status:              1,
 		Verified:            true,
 	}

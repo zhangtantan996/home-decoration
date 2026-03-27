@@ -165,7 +165,7 @@ func createMenus() {
 		{ID: 92, ParentID: 90, Title: "查看预警", Type: 3, Permission: "risk:warning:view", Visible: false, Status: 1},
 		{ID: 93, ParentID: 90, Title: "处理风险", Type: 3, Permission: "risk:warning:handle", Visible: false, Status: 1},
 		{ID: 94, ParentID: 90, Title: "忽略风险", Type: 3, Permission: "risk:warning:ignore", Visible: false, Status: 1},
-		{ID: 95, ParentID: 90, Title: "仲裁中心", Type: 2, Path: "/risk/arbitration", Component: "pages/risk/ArbitrationCenter", Sort: 2, Permission: "risk:arbitration:list", Visible: true, Status: 1},
+		{ID: 95, ParentID: 90, Title: "仲裁中心", Type: 2, Path: "/risk/arbitration", Component: "pages/risk/ArbitrationCenter", Sort: 2, Permission: "risk:arbitration:list", Visible: false, Status: 1},
 		{ID: 134, ParentID: 90, Title: "投诉处理", Type: 2, Path: "/complaints", Component: "pages/complaints/ComplaintManagement", Sort: 3, Permission: "risk:arbitration:list", Visible: true, Status: 1},
 		{ID: 96, ParentID: 90, Title: "查看仲裁", Type: 3, Permission: "risk:arbitration:view", Visible: false, Status: 1},
 		{ID: 97, ParentID: 90, Title: "受理仲裁", Type: 3, Permission: "risk:arbitration:accept", Visible: false, Status: 1},

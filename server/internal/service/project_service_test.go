@@ -35,16 +35,29 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 		&model.BusinessFlow{},
 		&model.EscrowAccount{},
 		&model.Transaction{},
+		&model.MerchantIncome{},
 		&model.Order{},
 		&model.PaymentPlan{},
+		&model.PayoutOrder{},
+		&model.SettlementOrder{},
+		&model.LedgerAccount{},
+		&model.LedgerEntry{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 
 	previousDB := repository.DB
 	repository.DB = db
 	t.Cleanup(func() {
 		repository.DB = previousDB
+		_ = sqlDB.Close()
 	})
 
 	return db
@@ -343,10 +356,21 @@ func TestProjectServiceMilestoneSubmitAcceptAndComplete(t *testing.T) {
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	escrow := model.EscrowAccount{
+		Base:            model.Base{ID: 311},
+		ProjectID:       project.ID,
+		UserID:          user.ID,
+		TotalAmount:     28000,
+		AvailableAmount: 28000,
+		Status:          escrowStatusActive,
+	}
+	if err := db.Create(&escrow).Error; err != nil {
+		t.Fatalf("create escrow: %v", err)
+	}
 
 	milestones := []model.Milestone{
-		{Base: model.Base{ID: 301}, ProjectID: project.ID, Name: "开工交底", Seq: 1, Status: model.MilestoneStatusInProgress},
-		{Base: model.Base{ID: 302}, ProjectID: project.ID, Name: "竣工验收", Seq: 2, Status: model.MilestoneStatusPending},
+		{Base: model.Base{ID: 301}, ProjectID: project.ID, Name: "开工交底", Seq: 1, Amount: 14000, Status: model.MilestoneStatusInProgress},
+		{Base: model.Base{ID: 302}, ProjectID: project.ID, Name: "竣工验收", Seq: 2, Amount: 14000, Status: model.MilestoneStatusPending},
 	}
 	if err := db.Create(&milestones).Error; err != nil {
 		t.Fatalf("create milestones: %v", err)

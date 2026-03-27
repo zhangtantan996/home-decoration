@@ -1217,9 +1217,19 @@ func (s *ProjectService) AcceptMilestone(projectID, userID, milestoneID uint64) 
 
 		// T+N 放款调度
 		cfgSvc := &ConfigService{}
-		delayDays := cfgSvc.GetConstructionReleaseDelayDays()
+		delayDays := cfgSvc.GetConstructionReleaseDelayDaysTx(tx)
 		releaseAt := time.Now().Add(time.Duration(delayDays) * 24 * time.Hour)
 		if err := tx.Model(&milestone).Update("release_scheduled_at", releaseAt).Error; err != nil {
+			return err
+		}
+		milestone.ReleaseScheduledAt = &releaseAt
+		if _, _, _, _, err := (&SettlementService{}).CreateMilestoneSettlementScheduleTx(tx, &ReleaseMilestoneInput{
+			ProjectID:    project.ID,
+			MilestoneID:  milestone.ID,
+			OperatorType: "system",
+			Reason:       "节点验收后进入待结算",
+			Source:       "project.milestone_accept",
+		}); err != nil {
 			return err
 		}
 
@@ -1728,7 +1738,11 @@ func canProjectProviderOperate(project *model.Project, providerID uint64) bool {
 }
 
 func (s *ProjectService) resolveProjectFlowSummary(project *model.Project, milestones []model.Milestone) BusinessFlowSummary {
-	flow, _ := businessFlowSvc.GetByProjectID(project.ID)
+	return s.resolveProjectFlowSummaryTx(repository.DB, project, milestones)
+}
+
+func (s *ProjectService) resolveProjectFlowSummaryTx(db *gorm.DB, project *model.Project, milestones []model.Milestone) BusinessFlowSummary {
+	flow, _ := businessFlowSvc.GetByProjectIDTx(db, project.ID)
 	allAccepted := len(milestones) > 0
 	for _, milestone := range milestones {
 		if milestone.Status != model.MilestoneStatusAccepted && milestone.Status != model.MilestoneStatusPaid {

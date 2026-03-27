@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -27,6 +28,7 @@ func setupOrderServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Proposal{},
 		&model.Order{},
 		&model.PaymentPlan{},
+		&model.PaymentOrder{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
@@ -136,24 +138,51 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 		t.Fatalf("create orders: %v", err)
 	}
 
+	paidAt := orders[1].CreatedAt.Add(2 * time.Minute)
+	payment := model.PaymentOrder{
+		Base:          model.Base{ID: 72},
+		BizType:       model.PaymentBizTypeBookingSurveyDeposit,
+		BizID:         booking.ID,
+		PayerUserID:   user.ID,
+		Channel:       model.PaymentChannelAlipay,
+		Scene:         model.PaymentBizTypeBookingSurveyDeposit,
+		FundScene:     model.FundSceneSurveyDeposit,
+		TerminalType:  model.PaymentTerminalPCWeb,
+		Subject:       "量房定金 #40",
+		Amount:        500,
+		OutTradeNo:    "PAY-72",
+		Status:        model.PaymentStatusPaid,
+		PaidAt:        &paidAt,
+		ReturnContext: `{"successPath":"/bookings/40/site-survey","cancelPath":"/bookings/40","bizType":"booking_survey_deposit","bizId":40}`,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+
 	svc := &OrderService{}
 	got, total, err := svc.ListOrdersForUser(user.ID, nil, 1, 10)
 	if err != nil {
 		t.Fatalf("ListOrdersForUser: %v", err)
 	}
-	if total != 2 {
-		t.Fatalf("expected total=2, got %d", total)
+	if total != 3 {
+		t.Fatalf("expected total=3, got %d", total)
 	}
-	if len(got) != 2 {
-		t.Fatalf("expected 2 orders, got %d", len(got))
+	if len(got) != 3 {
+		t.Fatalf("expected 3 orders, got %d", len(got))
 	}
 
 	first := got[0]
+	if first.OrderNo != "量房定金 #40" {
+		t.Fatalf("expected latest item to be payment record, got %+v", first)
+	}
 	if first.ProviderName != "拾光设计" {
 		t.Fatalf("expected provider nickname, got %q", first.ProviderName)
 	}
-	if first.Amount != 56000 && first.Amount != 11500 {
+	if first.Amount != 500 {
 		t.Fatalf("unexpected amount in first row: %+v", first)
+	}
+	if first.ActionPath != "/payments/72" {
+		t.Fatalf("expected payment action path, got %+v", first)
 	}
 
 	var pending int8 = model.OrderStatusPending
@@ -169,6 +198,15 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 	}
 	if filtered[0].Amount != 11500 {
 		t.Fatalf("expected discounted amount, got %+v", filtered[0])
+	}
+
+	var paid int8 = model.OrderStatusPaid
+	paidItems, paidTotal, err := svc.ListOrdersForUser(user.ID, &paid, 1, 10)
+	if err != nil {
+		t.Fatalf("ListOrdersForUser paid: %v", err)
+	}
+	if paidTotal != 2 || len(paidItems) != 2 {
+		t.Fatalf("expected two paid records, got total=%d len=%d", paidTotal, len(paidItems))
 	}
 }
 

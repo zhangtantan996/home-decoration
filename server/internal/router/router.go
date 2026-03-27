@@ -10,38 +10,73 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func defaultAllowedOrigins() []string {
+	return []string{
+		"http://localhost:5173",        // Admin开发环境
+		"http://localhost:5174",        // Admin开发环境备用端口
+		"http://localhost:5175",        // Web开发环境备用端口
+		"http://localhost:5176",        // Web开发环境默认端口
+		"http://localhost:5177",        // 开发环境备用端口
+		"http://127.0.0.1:5173",        // Admin开发环境（本地回环）
+		"http://127.0.0.1:5174",        // Admin开发环境备用端口（本地回环）
+		"http://127.0.0.1:5175",        // Web开发环境备用端口（本地回环）
+		"http://127.0.0.1:5176",        // Web开发环境默认端口（本地回环）
+		"http://127.0.0.1:5177",        // 开发环境备用端口（本地回环）
+		"http://localhost:3000",        // Mobile开发环境
+		"https://admin.yourdomain.com", // 生产环境（需替换）
+	}
+}
+
+func parseAllowedOrigins(raw string) []string {
+	parts := strings.Split(raw, ",")
+	parsed := make([]string, 0, len(parts))
+	for _, p := range parts {
+		v := strings.TrimSpace(p)
+		if v == "" {
+			continue
+		}
+		parsed = append(parsed, v)
+	}
+	return parsed
+}
+
+func mergeAllowedOrigins(origins ...[]string) []string {
+	merged := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, group := range origins {
+		for _, origin := range group {
+			normalized := strings.TrimSpace(origin)
+			if normalized == "" {
+				continue
+			}
+			if _, exists := seen[normalized]; exists {
+				continue
+			}
+			seen[normalized] = struct{}{}
+			merged = append(merged, normalized)
+		}
+	}
+	return merged
+}
+
+func buildAllowedOrigins(serverMode, envValue string) []string {
+	defaults := defaultAllowedOrigins()
+	parsed := parseAllowedOrigins(envValue)
+	if len(parsed) == 0 {
+		return defaults
+	}
+	if strings.EqualFold(strings.TrimSpace(serverMode), "release") {
+		return parsed
+	}
+	// 本地/测试环境保留默认开发端口，避免 .env 只配置部分端口时把当前前端页面误拦成 403。
+	return mergeAllowedOrigins(defaults, parsed)
+}
+
 func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engine {
 	r := gin.Default()
 
 	// ✅ CORS白名单配置
-	allowedOrigins := []string{
-		"http://localhost:5173",        // Admin开发环境
-		"http://localhost:5174",        // Admin开发环境备用端口
-		"http://localhost:5175",        // Admin开发环境备用端口
-		"http://localhost:5176",        // Admin开发环境备用端口
-		"http://localhost:5177",        // Admin开发环境备用端口
-		"http://127.0.0.1:5173",        // Admin开发环境（本地回环）
-		"http://127.0.0.1:5174",        // Admin开发环境备用端口（本地回环）
-		"http://127.0.0.1:5175",        // Admin开发环境备用端口（本地回环）
-		"http://127.0.0.1:5176",        // Admin开发环境备用端口（本地回环）
-		"http://127.0.0.1:5177",        // Admin开发环境备用端口（本地回环）
-		"http://localhost:3000",        // Mobile开发环境
-		"https://admin.yourdomain.com", // 生产环境（需替换）
-	}
-	if raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); raw != "" {
-		parts := strings.Split(raw, ",")
-		parsed := make([]string, 0, len(parts))
-		for _, p := range parts {
-			v := strings.TrimSpace(p)
-			if v == "" {
-				continue
-			}
-			parsed = append(parsed, v)
-		}
-		if len(parsed) > 0 {
-			allowedOrigins = parsed
-		}
-	}
+	allowedOrigins := buildAllowedOrigins(cfg.Server.Mode, os.Getenv("CORS_ALLOWED_ORIGINS"))
 
 	// 全局中间件
 	r.Use(middleware.SecurityHeaders()) // 安全响应头
@@ -261,6 +296,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			userPayments := authorized.Group("/payments")
 			{
+				userPayments.GET("/:id", handler.PaymentDetail)
 				userPayments.GET("/:id/status", handler.PaymentStatus)
 			}
 
@@ -290,6 +326,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.GET("/:id/completion", handler.GetProjectCompletion)
 				projects.POST("/:id/completion/approve", handler.ApproveProjectCompletion)
 				projects.POST("/:id/completion/reject", handler.RejectProjectCompletion)
+				projects.POST("/:id/review", handler.SubmitProjectReview)
 
 				// 托管账户
 				projects.GET("/:id/escrow", handler.GetEscrowAccount)
@@ -601,6 +638,17 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/finance/reconciliations/run", financeTransactionApprovePerm, handler.AdminRunFinanceReconciliation)
 			admin.POST("/finance/reconciliations/:id/claim", financeTransactionApprovePerm, handler.AdminClaimFinanceReconciliation)
 			admin.POST("/finance/reconciliations/:id/resolve", financeTransactionApprovePerm, handler.AdminResolveFinanceReconciliation)
+			admin.GET("/finance/reconciliations/:id/items", financeTransactionListPerm, handler.AdminListFinanceReconciliationItems)
+			admin.GET("/finance/settlements", financeTransactionListPerm, handler.AdminListSettlements)
+			admin.POST("/finance/settlements/:id/retry", financeTransactionApprovePerm, handler.AdminRetrySettlement)
+			admin.GET("/finance/payouts", financeTransactionListPerm, handler.AdminListPayoutOrders)
+			admin.GET("/finance/payouts/:id", financeTransactionViewPerm, handler.AdminGetPayoutOrder)
+			admin.POST("/finance/payouts/:id/retry", financeTransactionApprovePerm, handler.AdminRetryPayoutOrder)
+			admin.GET("/finance/bond-rules", financeTransactionListPerm, handler.AdminListBondRules)
+			admin.PUT("/finance/bond-rules/:id", financeTransactionApprovePerm, handler.AdminUpdateBondRule)
+			admin.GET("/finance/bond-accounts", financeTransactionListPerm, handler.AdminListBondAccounts)
+			admin.POST("/finance/bond-accounts/:id/refund", financeTransactionApprovePerm, handler.AdminRefundBondAccount)
+			admin.POST("/finance/bond-accounts/:id/forfeit", financeTransactionApprovePerm, handler.AdminForfeitBondAccount)
 			admin.POST("/finance/freeze", financeEscrowFreezePerm, handler.AdminFreezeFunds)
 			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, handler.AdminUnfreezeFunds)
 			admin.POST("/finance/manual-release", financeTransactionApprovePerm, handler.AdminManualReleaseFunds)
@@ -849,6 +897,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 收入中心
 			merchant.GET("/income/summary", handler.MerchantIncomeSummary)
 			merchant.GET("/income/list", handler.MerchantIncomeList)
+			merchant.GET("/settlements", handler.MerchantSettlementList)
+			merchant.GET("/bond-account", handler.MerchantBondAccount)
+			merchant.POST("/bond-account/pay", handler.MerchantStartBondPayment)
+			merchant.GET("/bond-ledger", handler.MerchantBondLedger)
+			merchant.GET("/payments/:id/status", handler.MerchantPaymentStatus)
 
 			// 提现管理
 			merchant.GET("/withdraw/list", handler.MerchantWithdrawList)

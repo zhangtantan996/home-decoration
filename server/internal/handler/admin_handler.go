@@ -797,7 +797,6 @@ func AdminUpdateProvider(c *gin.Context) {
 		Specialty       string   `json:"specialty"`
 		YearsExperience int      `json:"yearsExperience"`
 		Status          int8     `json:"status"`
-		Rating          float32  `json:"rating"`          // 综合评分
 		RestoreRate     float32  `json:"restoreRate"`     // 还原度
 		BudgetControl   float32  `json:"budgetControl"`   // 预算控制力
 		WorkTypes       string   `json:"workTypes"`       // 工种类型（逗号分隔）
@@ -842,9 +841,6 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.YearsExperience > 0 {
 		updates["years_experience"] = req.YearsExperience
 	}
-	if req.Rating > 0 {
-		updates["rating"] = req.Rating
-	}
 	if req.RestoreRate >= 0 {
 		updates["restore_rate"] = req.RestoreRate
 	}
@@ -860,9 +856,7 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.PriceMax >= 0 {
 		updates["price_max"] = req.PriceMax
 	}
-	if req.PriceUnit != "" {
-		updates["price_unit"] = req.PriceUnit
-	}
+	updates["price_unit"] = model.ProviderPriceUnitPerSquareMeter
 	if req.CoverImage != "" {
 		updates["cover_image"] = req.CoverImage
 	}
@@ -1234,8 +1228,19 @@ func AdminListReviews(c *gin.Context) {
 // AdminDeleteReview 删除评价
 func AdminDeleteReview(c *gin.Context) {
 	id := c.Param("id")
-	if err := repository.DB.Delete(&model.ProviderReview{}, "id = ?", id).Error; err != nil {
+
+	var review model.ProviderReview
+	if err := repository.DB.First(&review, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "评价不存在")
+		return
+	}
+
+	if err := repository.DB.Delete(&review).Error; err != nil {
 		response.ServerError(c, "删除失败")
+		return
+	}
+	if err := providerService.RecalculateAggregatedRating(review.ProviderID); err != nil {
+		response.ServerError(c, "删除成功，但重算综合评分失败")
 		return
 	}
 	response.Success(c, nil)

@@ -29,7 +29,7 @@ func ConfirmContract(c *gin.Context) {
 	contractID := parseUint64(c.Param("id"))
 	contract, err := contractService.ConfirmContract(userID, contractID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "确认合同失败")
 		return
 	}
 	response.Success(c, contract)
@@ -40,7 +40,7 @@ func GetProjectContract(c *gin.Context) {
 	projectID := parseUint64(c.Param("id"))
 	contract, err := contractService.GetProjectContract(userID, projectID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondScopedAccessError(c, err, "获取项目合同失败")
 		return
 	}
 	response.Success(c, contract)
@@ -51,7 +51,7 @@ func GetContract(c *gin.Context) {
 	contractID := parseUint64(c.Param("id"))
 	contract, err := contractService.GetContract(userID, contractID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondScopedAccessError(c, err, "获取合同失败")
 		return
 	}
 	response.Success(c, contract)

@@ -55,6 +55,20 @@ func PaymentStatus(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func PaymentDetail(c *gin.Context) {
+	paymentID := parseUint64(c.Param("id"))
+	if paymentID == 0 {
+		response.BadRequest(c, "无效支付单ID")
+		return
+	}
+	result, err := paymentService.GetPaymentDetailForUser(paymentID, getCurrentUserID(c))
+	if err != nil {
+		respondScopedAccessError(c, err, "获取支付详情失败")
+		return
+	}
+	response.Success(c, result)
+}
+
 func PaymentAlipayNotify(c *gin.Context) {
 	if err := c.Request.ParseForm(); err != nil {
 		c.String(http.StatusBadRequest, "failure")

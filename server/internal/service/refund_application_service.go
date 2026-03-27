@@ -55,11 +55,12 @@ type RejectRefundApplicationInput struct {
 }
 
 type refundBreakdown struct {
-	ProjectID       uint64
-	DesignOrderID   uint64
-	IntentFee       float64
-	DesignFee       float64
-	ConstructionFee float64
+	ProjectID           uint64
+	DesignOrderID       uint64
+	ConstructionOrderID uint64
+	IntentFee           float64
+	DesignFee           float64
+	ConstructionFee     float64
 }
 
 type RefundApplicationService struct{}
@@ -137,15 +138,9 @@ func (s *RefundApplicationService) CreateApplication(bookingID, userID uint64, i
 		return nil, err
 	}
 
-	notificationService := &NotificationService{}
-	_ = notificationService.NotifyAdmins(&CreateNotificationInput{
-		Title:       "新的退款申请待审核",
-		Content:     fmt.Sprintf("预约 #%d 提交了退款申请", bookingID),
-		Type:        "refund.application.created",
-		RelatedID:   view.ID,
-		RelatedType: "refund_application",
-		ActionURL:   fmt.Sprintf("/admin/refunds/%d", view.ID),
-	})
+	dispatcher := NewNotificationDispatcher()
+	dispatcher.NotifyAdminRefundApplicationCreated(view.ID, view.BookingID, view.ProjectID)
+	dispatcher.NotifyProviderRefundApplicationCreated(resolveRefundProviderUserID(view), view.ID, view.ProjectID, view.BookingID)
 
 	return view, nil
 }
@@ -325,17 +320,9 @@ func (s *RefundApplicationService) ApproveApplication(id, adminID uint64, input 
 	if err != nil {
 		return nil, err
 	}
-	notificationService := &NotificationService{}
-	_ = notificationService.Create(&CreateNotificationInput{
-		UserID:      view.UserID,
-		UserType:    "user",
-		Title:       "退款申请已处理",
-		Content:     refundApprovedNotificationText(view),
-		Type:        "refund.application.approved",
-		RelatedID:   view.ID,
-		RelatedType: "refund_application",
-		ActionURL:   buildBookingRefundActionURL(view.BookingID),
-	})
+	dispatcher := NewNotificationDispatcher()
+	dispatcher.NotifyUserRefundApplicationDecision(view.UserID, view.ID, view.BookingID, true, refundApprovedNotificationText(view))
+	dispatcher.NotifyProviderRefundApplicationDecision(resolveRefundProviderUserID(view), view.ID, view.ProjectID, view.BookingID, true)
 	if hasFailed {
 		return view, errors.New("退款执行存在失败记录，请继续跟进处理")
 	}
@@ -406,16 +393,9 @@ func (s *RefundApplicationService) RejectApplication(id, adminID uint64, input *
 	if err != nil {
 		return nil, err
 	}
-	_ = (&NotificationService{}).Create(&CreateNotificationInput{
-		UserID:      view.UserID,
-		UserType:    "user",
-		Title:       "退款申请已驳回",
-		Content:     fmt.Sprintf("您的退款申请被驳回，原因：%s", view.AdminNotes),
-		Type:        "refund.application.rejected",
-		RelatedID:   view.ID,
-		RelatedType: "refund_application",
-		ActionURL:   buildBookingRefundActionURL(view.BookingID),
-	})
+	dispatcher := NewNotificationDispatcher()
+	dispatcher.NotifyUserRefundApplicationDecision(view.UserID, view.ID, view.BookingID, false, fmt.Sprintf("您的退款申请被驳回，原因：%s", view.AdminNotes))
+	dispatcher.NotifyProviderRefundApplicationDecision(resolveRefundProviderUserID(view), view.ID, view.ProjectID, view.BookingID, false)
 	return view, nil
 }
 
@@ -431,6 +411,25 @@ func refundApprovedNotificationText(view *RefundApplicationView) string {
 	default:
 		return fmt.Sprintf("您的退款申请状态已更新为 %s", view.Status)
 	}
+}
+
+func resolveRefundProviderUserID(view *RefundApplicationView) uint64 {
+	if view == nil {
+		return 0
+	}
+	if view.ProjectID > 0 {
+		var project model.Project
+		if err := repository.DB.Select("provider_id", "construction_provider_id").First(&project, view.ProjectID).Error; err == nil {
+			return providerUserIDFromProvider(effectiveProjectProviderID(&project))
+		}
+	}
+	if view.BookingID > 0 {
+		var booking model.Booking
+		if err := repository.DB.Select("provider_id").First(&booking, view.BookingID).Error; err == nil {
+			return providerUserIDFromProvider(booking.ProviderID)
+		}
+	}
+	return 0
 }
 
 func normalizeRefundType(refundType string) string {
@@ -561,6 +560,13 @@ func calculateRefundBreakdownTx(tx *gorm.DB, booking *model.Booking, project *mo
 		breakdown.DesignOrderID = order.ID
 		breakdown.DesignFee = order.PaidAmount
 	}
+	constructionOrder, err := findLatestPaidOrderTx(tx, 0, breakdown.ProjectID, model.OrderTypeConstruction)
+	if err != nil {
+		return nil, err
+	}
+	if constructionOrder != nil && constructionOrder.Status != model.OrderStatusRefunded {
+		breakdown.ConstructionOrderID = constructionOrder.ID
+	}
 	constructionAmount, _, err := refundableConstructionAmountTx(tx, breakdown.ProjectID)
 	if err != nil {
 		return nil, err
@@ -588,13 +594,20 @@ func requestedRefundAmountFromBreakdown(refundType string, breakdown *refundBrea
 		if breakdown.ConstructionFee <= 0 {
 			return 0, 0, errors.New("当前项目没有可退施工费")
 		}
-		return breakdown.ConstructionFee, 0, nil
+		if breakdown.ConstructionOrderID == 0 {
+			return 0, 0, errors.New("当前项目缺少可退施工订单")
+		}
+		return breakdown.ConstructionFee, breakdown.ConstructionOrderID, nil
 	case model.RefundTypeFull:
 		total := breakdown.IntentFee + breakdown.DesignFee + breakdown.ConstructionFee
 		if total <= 0 {
 			return 0, 0, errors.New("当前没有可退金额")
 		}
-		return total, breakdown.DesignOrderID, nil
+		orderID := breakdown.DesignOrderID
+		if orderID == 0 {
+			orderID = breakdown.ConstructionOrderID
+		}
+		return total, orderID, nil
 	default:
 		return 0, 0, errors.New("无效的退款类型")
 	}
@@ -637,7 +650,13 @@ func applyRefundApplicationTx(tx *gorm.DB, application *model.RefundApplication,
 		if remaining > breakdown.ConstructionFee {
 			return errors.New("施工费退款金额超过可退范围")
 		}
-		return applyConstructionRefundTx(tx, application.ProjectID, booking.UserID, remaining)
+		if breakdown.ConstructionOrderID == 0 {
+			return errors.New("当前项目缺少可退施工订单")
+		}
+		if application.OrderID == 0 || application.OrderID != breakdown.ConstructionOrderID {
+			return errors.New("退款申请未绑定合法施工订单")
+		}
+		return applyConstructionRefundTx(tx, application.ProjectID, booking.UserID, application.OrderID, application.ID, remaining)
 	}
 
 	if application.RefundType == model.RefundTypeFull {
@@ -663,7 +682,10 @@ func applyRefundApplicationTx(tx *gorm.DB, application *model.RefundApplication,
 			remaining -= breakdown.DesignFee
 		}
 		if remaining > 0 {
-			if err := applyConstructionRefundTx(tx, application.ProjectID, booking.UserID, remaining); err != nil {
+			if breakdown.ConstructionOrderID == 0 {
+				return errors.New("当前项目缺少可退施工订单")
+			}
+			if err := applyConstructionRefundTx(tx, application.ProjectID, booking.UserID, breakdown.ConstructionOrderID, application.ID, remaining); err != nil {
 				return err
 			}
 		}
@@ -717,12 +739,18 @@ func applyDesignFeeRefundTx(tx *gorm.DB, orderID, userID uint64, amount float64)
 	if err := tx.Model(&order).Updates(updates).Error; err != nil {
 		return err
 	}
+	if err := applySettlementRefundByOrderTx(tx, orderID, amount); err != nil {
+		return err
+	}
 	return createRefundTransactionTx(tx, order.ProjectID, userID, order.ID, amount, "设计费退款")
 }
 
-func applyConstructionRefundTx(tx *gorm.DB, projectID, userID uint64, amount float64) error {
+func applyConstructionRefundTx(tx *gorm.DB, projectID, userID, orderID, refundApplicationID uint64, amount float64) error {
 	if projectID == 0 {
 		return errors.New("项目不存在")
+	}
+	if orderID == 0 {
+		return errors.New("施工费订单不存在")
 	}
 	var escrow model.EscrowAccount
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
@@ -740,7 +768,96 @@ func applyConstructionRefundTx(tx *gorm.DB, projectID, userID uint64, amount flo
 	}).Error; err != nil {
 		return err
 	}
-	return createRefundTransactionTx(tx, projectID, userID, 0, amount, "施工费退款")
+	if err := applySettlementRefundByProjectTx(tx, projectID, amount); err != nil {
+		return err
+	}
+	return createRefundTransactionTx(tx, projectID, userID, orderID, amount, buildRefundTransactionRemark("施工费退款", projectID, orderID, refundApplicationID))
+}
+
+func applySettlementRefundByOrderTx(tx *gorm.DB, orderID uint64, amount float64) error {
+	if orderID == 0 || amount <= 0 {
+		return nil
+	}
+	var settlements []model.SettlementOrder
+	if err := tx.Table("settlement_orders AS so").
+		Joins("JOIN merchant_incomes AS mi ON mi.settlement_order_id = so.id").
+		Where("mi.order_id = ?", orderID).
+		Order("so.id DESC").
+		Find(&settlements).Error; err != nil {
+		return err
+	}
+	return applyRefundToSettlementsTx(tx, settlements, amount)
+}
+
+func applySettlementRefundByProjectTx(tx *gorm.DB, projectID uint64, amount float64) error {
+	if projectID == 0 || amount <= 0 {
+		return nil
+	}
+	var settlements []model.SettlementOrder
+	if err := tx.Where("project_id = ?", projectID).
+		Order("CASE WHEN status = 'paid' THEN 2 WHEN status = 'payout_processing' THEN 1 ELSE 0 END ASC, id DESC").
+		Find(&settlements).Error; err != nil {
+		return err
+	}
+	return applyRefundToSettlementsTx(tx, settlements, amount)
+}
+
+func applyRefundToSettlementsTx(tx *gorm.DB, settlements []model.SettlementOrder, amount float64) error {
+	remaining := normalizeAmount(amount)
+	for i := range settlements {
+		if remaining <= 0 {
+			break
+		}
+		settlement := settlements[i]
+		if settlement.ID == 0 || settlement.Status == model.SettlementStatusRefunded {
+			continue
+		}
+		scopeAmount := normalizeAmount(settlement.GrossAmount)
+		if scopeAmount <= 0 {
+			continue
+		}
+		used := scopeAmount
+		if remaining < scopeAmount {
+			used = remaining
+		}
+		remaining = normalizeAmount(remaining - used)
+
+		updates := map[string]any{}
+		incomeUpdates := map[string]any{}
+		switch settlement.Status {
+		case model.SettlementStatusPaid:
+			updates["status"] = model.SettlementStatusException
+			updates["recovery_status"] = model.SettlementRecoveryStatusPending
+			updates["recovery_amount"] = normalizeAmount(settlement.RecoveryAmount + used)
+			updates["failure_reason"] = "已出款后发生退款，待追偿"
+			incomeUpdates["settlement_status"] = model.SettlementStatusException
+			incomeUpdates["payout_failed_reason"] = "已出款后发生退款，待追偿"
+		default:
+			nextStatus := model.SettlementStatusRefunded
+			if used+0.01 < scopeAmount {
+				nextStatus = model.SettlementStatusRefundFrozen
+			}
+			updates["status"] = nextStatus
+			updates["failure_reason"] = "退款已完成"
+			incomeUpdates["status"] = 0
+			incomeUpdates["settlement_status"] = nextStatus
+			if settlement.PayoutOrderID == 0 {
+				incomeUpdates["payout_status"] = ""
+				incomeUpdates["payout_failed_reason"] = ""
+			}
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&model.SettlementOrder{}).Where("id = ?", settlement.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if len(incomeUpdates) > 0 {
+			if err := tx.Model(&model.MerchantIncome{}).Where("settlement_order_id = ?", settlement.ID).Updates(incomeUpdates).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *RefundApplicationService) buildRefundApplicationViewTx(db *gorm.DB, item *model.RefundApplication) (*RefundApplicationView, error) {

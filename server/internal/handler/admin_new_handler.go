@@ -53,7 +53,7 @@ func AdminCreateAdmin(c *gin.Context) {
 		return
 	}
 	if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
-		response.BadRequest(c, err.Error())
+		respondAdminRBACMutationError(c, err, "角色分配不合法")
 		return
 	}
 
@@ -170,7 +170,7 @@ func AdminUpdateAdmin(c *gin.Context) {
 	}
 	if len(req.RoleIDs) > 0 {
 		if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
-			response.BadRequest(c, err.Error())
+			respondAdminRBACMutationError(c, err, "角色分配不合法")
 			return
 		}
 	}
@@ -634,60 +634,44 @@ func AdminWithdraw(c *gin.Context) {
 func AdminListRiskWarnings(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("pageSize"), 10)
-	level := c.Query("level")
-	warningType := c.Query("type")
-	status := c.Query("status")
-
-	var warnings []model.RiskWarning
-	var total int64
-
-	db := repository.DB.Model(&model.RiskWarning{})
-	if level != "" {
-		db = db.Where("level = ?", level)
+	alertService := &service.SystemAlertService{}
+	warnings, total, err := alertService.ListRiskWarnings(service.ListRiskWarningFilter{
+		Page:     page,
+		PageSize: pageSize,
+		Level:    c.Query("level"),
+		Type:     c.Query("type"),
+		Status:   c.Query("status"),
+	})
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
-	if warningType != "" {
-		db = db.Where("type = ?", warningType)
-	}
-	if status != "" {
-		db = db.Where("status = ?", status)
-	}
-
-	db.Count(&total)
-	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&warnings)
 
 	response.Success(c, gin.H{
-		"list":  warnings,
-		"total": total,
+		"list":     warnings,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
 	})
 }
 
 // AdminHandleRiskWarning 处理风险预警
 func AdminHandleRiskWarning(c *gin.Context) {
-	id := c.Param("id")
-	adminID := c.GetUint64("admin_id")
-	var req struct {
-		Status int8   `json:"status" binding:"required"`
-		Result string `json:"result" binding:"required"`
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "无效预警ID")
+		return
 	}
+	adminID := c.GetUint64("admin_id")
+	var req service.HandleRiskWarningInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	var warning model.RiskWarning
-	if err := repository.DB.First(&warning, id).Error; err != nil {
-		response.NotFound(c, "预警不存在")
-		return
-	}
-
-	now := time.Now()
-	warning.Status = req.Status
-	warning.HandleResult = req.Result
-	warning.HandledAt = &now
-	warning.HandledBy = &adminID
-
-	if err := repository.DB.Save(&warning).Error; err != nil {
-		response.ServerError(c, "处理失败")
+	alertService := &service.SystemAlertService{}
+	if _, err := alertService.HandleRiskWarning(id, adminID, &req); err != nil {
+		respondDomainMutationError(c, err, "处理预警失败")
 		return
 	}
 

@@ -121,11 +121,18 @@ func (s *BusinessFlowService) BindProject(tx *gorm.DB, sourceType string, source
 }
 
 func (s *BusinessFlowService) GetByProjectID(projectID uint64) (*model.BusinessFlow, error) {
+	return s.GetByProjectIDTx(repository.DB, projectID)
+}
+
+func (s *BusinessFlowService) GetByProjectIDTx(queryDB *gorm.DB, projectID uint64) (*model.BusinessFlow, error) {
 	if projectID == 0 {
 		return nil, nil
 	}
+	if queryDB == nil {
+		queryDB = repository.DB
+	}
 	var flow model.BusinessFlow
-	if err := repository.DB.Where("project_id = ?", projectID).First(&flow).Error; err != nil {
+	if err := queryDB.Where("project_id = ?", projectID).First(&flow).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

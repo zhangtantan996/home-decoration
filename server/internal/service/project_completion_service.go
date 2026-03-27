@@ -20,16 +20,17 @@ type ProjectCompletionPayload struct {
 }
 
 type ProjectCompletionDetail struct {
-	ProjectID                 uint64     `json:"projectId"`
-	BusinessStage             string     `json:"businessStage"`
-	FlowSummary               string     `json:"flowSummary"`
-	AvailableActions          []string   `json:"availableActions"`
-	CompletedPhotos           []string   `json:"completedPhotos"`
-	CompletionNotes           string     `json:"completionNotes"`
-	CompletionSubmittedAt     *time.Time `json:"completionSubmittedAt,omitempty"`
-	CompletionRejectionReason string     `json:"completionRejectionReason,omitempty"`
-	CompletionRejectedAt      *time.Time `json:"completionRejectedAt,omitempty"`
-	InspirationCaseDraftID    uint64     `json:"inspirationCaseDraftId,omitempty"`
+	ProjectID                 uint64               `json:"projectId"`
+	BusinessStage             string               `json:"businessStage"`
+	FlowSummary               string               `json:"flowSummary"`
+	AvailableActions          []string             `json:"availableActions"`
+	CompletedPhotos           []string             `json:"completedPhotos"`
+	CompletionNotes           string               `json:"completionNotes"`
+	CompletionSubmittedAt     *time.Time           `json:"completionSubmittedAt,omitempty"`
+	CompletionRejectionReason string               `json:"completionRejectionReason,omitempty"`
+	CompletionRejectedAt      *time.Time           `json:"completionRejectedAt,omitempty"`
+	InspirationCaseDraftID    uint64               `json:"inspirationCaseDraftId,omitempty"`
+	ProjectReview             *ProjectReviewDetail `json:"projectReview,omitempty"`
 }
 
 type ProjectCompletionApprovalResult struct {
@@ -72,6 +73,7 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 	}
 
 	var detail *ProjectCompletionDetail
+	var ownerUserID uint64
 	now := time.Now()
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
@@ -81,6 +83,7 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 		if !canProjectProviderOperate(&project, providerID) {
 			return errors.New("无权操作此项目")
 		}
+		ownerUserID = project.OwnerID
 		if err := ensureProjectExecutionAllowed(&project, "提交完工材料"); err != nil {
 			return err
 		}
@@ -127,6 +130,7 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 	if err != nil {
 		return nil, err
 	}
+	NewNotificationDispatcher().NotifyProjectCompletionSubmitted(ownerUserID, projectID)
 	return detail, nil
 }
 
@@ -142,44 +146,64 @@ func (s *ProjectService) GetProjectCompletion(projectID, userID uint64) (*Projec
 }
 
 func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*ProjectCompletionApprovalResult, error) {
-	var project model.Project
-	if err := repository.DB.First(&project, projectID).Error; err != nil {
-		return nil, errors.New("项目不存在")
-	}
-	if project.OwnerID != userID {
-		return nil, errors.New("无权操作此项目")
-	}
-	if err := ensureCompletionSubmissionApprovable(&project, "审批完工材料"); err != nil {
-		return nil, err
-	}
+	var result *ProjectCompletionApprovalResult
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getOwnedProjectForUpdate(tx, projectID, userID)
+		if err != nil {
+			return err
+		}
+		if err := ensureCompletionSubmissionApprovable(project, "审批完工材料"); err != nil {
+			return err
+		}
 
-	// 完工结算：释放所有未放款的已验收里程碑资金
-	if err := s.settleAllUnreleasedMilestones(projectID, userID); err != nil {
-		return nil, err
-	}
+		if err := s.settleAllUnreleasedMilestonesTx(tx, projectID, userID); err != nil {
+			return err
+		}
+		if err := tx.Model(&model.EscrowAccount{}).
+			Where("project_id = ? AND status != ?", projectID, escrowStatusClosed).
+			Update("status", escrowStatusClosed).Error; err != nil {
+			return err
+		}
 
-	providerID := project.ConstructionProviderID
-	if providerID == 0 {
-		providerID = project.ProviderID
-	}
-	generatedProject, audit, err := GenerateCaseDraftFromProject(projectID, providerID, &ProjectCaseDraftInput{})
+		providerID := project.ConstructionProviderID
+		if providerID == 0 {
+			providerID = project.ProviderID
+		}
+		generatedProject, audit, err := GenerateCaseDraftFromProjectTx(tx, projectID, providerID, &ProjectCaseDraftInput{})
+		if err != nil {
+			return err
+		}
+		detail, err := s.getProjectCompletionDetailTx(tx, projectID)
+		if err != nil {
+			return err
+		}
+		result = &ProjectCompletionApprovalResult{
+			Detail:  detail,
+			AuditID: audit.ID,
+			Project: generatedProject,
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	detail, err := s.getProjectCompletionDetail(projectID)
-	if err != nil {
-		return nil, err
+	if result != nil && result.Project != nil {
+		providerUserID := providerUserIDFromProvider(effectiveProjectProviderID(result.Project))
+		NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
 	}
-	return &ProjectCompletionApprovalResult{Detail: detail, AuditID: audit.ID, Project: generatedProject}, nil
+	return result, nil
 }
 
-// settleAllUnreleasedMilestones 完工时释放所有已验收但未放款的里程碑资金
-func (s *ProjectService) settleAllUnreleasedMilestones(projectID, userID uint64) error {
+// settleAllUnreleasedMilestonesTx 完工时补齐所有已验收但未生成结算单的里程碑
+func (s *ProjectService) settleAllUnreleasedMilestonesTx(tx *gorm.DB, projectID, userID uint64) error {
+	if tx == nil {
+		return errors.New("事务不能为空")
+	}
 	var milestones []model.Milestone
-	if err := repository.DB.Where(
+	if err := tx.Where(
 		"project_id = ? AND status = ? AND released_at IS NULL",
 		projectID, model.MilestoneStatusAccepted,
-	).Find(&milestones).Error; err != nil {
+	).Order("seq ASC").Find(&milestones).Error; err != nil {
 		return err
 	}
 
@@ -190,27 +214,17 @@ func (s *ProjectService) settleAllUnreleasedMilestones(projectID, userID uint64)
 	settlementSvc := &SettlementService{}
 
 	for _, ms := range milestones {
-		err := repository.DB.Transaction(func(tx *gorm.DB) error {
-			_, err := settlementSvc.ReleaseMilestoneTx(tx, &ReleaseMilestoneInput{
-				ProjectID:    projectID,
-				MilestoneID:  ms.ID,
-				OperatorType: "user",
-				OperatorID:   userID,
-				Reason:       "整体验收一次性放款",
-				Source:       "project.completion_approve",
-			})
-			return err
-		})
-		if err != nil {
+		if _, _, _, _, err := settlementSvc.CreateMilestoneSettlementScheduleTx(tx, &ReleaseMilestoneInput{
+			ProjectID:    projectID,
+			MilestoneID:  ms.ID,
+			OperatorType: "user",
+			OperatorID:   userID,
+			Reason:       "整体验收补齐待结算",
+			Source:       "project.completion_approve",
+		}); err != nil {
 			return err
 		}
 	}
-
-	// 关闭托管账户
-	repository.DB.Model(&model.EscrowAccount{}).
-		Where("project_id = ? AND status != ?", projectID, escrowStatusClosed).
-		Update("status", escrowStatusClosed)
-
 	return nil
 }
 
@@ -220,6 +234,7 @@ func (s *ProjectService) RejectProjectCompletion(projectID, userID uint64, reaso
 		return nil, errors.New("请填写驳回原因")
 	}
 	var detail *ProjectCompletionDetail
+	var providerUserID uint64
 	now := time.Now()
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
@@ -229,6 +244,7 @@ func (s *ProjectService) RejectProjectCompletion(projectID, userID uint64, reaso
 		if project.OwnerID != userID {
 			return errors.New("无权操作此项目")
 		}
+		providerUserID = getProviderUserIDTx(tx, effectiveProjectProviderID(&project))
 		if err := ensureCompletionSubmissionApprovable(&project, "驳回完工材料"); err != nil {
 			return err
 		}
@@ -258,6 +274,7 @@ func (s *ProjectService) RejectProjectCompletion(projectID, userID uint64, reaso
 	if err != nil {
 		return nil, err
 	}
+	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, false, reason)
 	return detail, nil
 }
 
@@ -272,23 +289,32 @@ func (s *ProjectService) getProjectCompletionDetailTx(db *gorm.DB, projectID uin
 	}
 	var milestones []model.Milestone
 	_ = db.Where("project_id = ?", project.ID).Order("seq ASC").Find(&milestones).Error
-	flowSummary := s.resolveProjectFlowSummary(&project, milestones)
+	flowSummary := s.resolveProjectFlowSummaryTx(db, &project, milestones)
+	review, err := loadProjectReviewByProjectTx(db, project.ID)
+	if err != nil {
+		return nil, err
+	}
 	photos, err := parseProjectImageJSONArray(project.CompletedPhotos)
 	if err != nil {
 		return nil, err
 	}
 	photos = imgutil.GetFullImageURLs(photos)
+	availableActions := flowSummary.AvailableActions
+	if canSubmitOfficialProjectReview(&project, review) {
+		availableActions = appendUniqueAction(availableActions, "submit_review")
+	}
 	return &ProjectCompletionDetail{
 		ProjectID:                 project.ID,
 		BusinessStage:             flowSummary.CurrentStage,
 		FlowSummary:               flowSummary.FlowSummary,
-		AvailableActions:          flowSummary.AvailableActions,
+		AvailableActions:          availableActions,
 		CompletedPhotos:           photos,
 		CompletionNotes:           project.CompletionNotes,
 		CompletionSubmittedAt:     project.CompletionSubmittedAt,
 		CompletionRejectionReason: project.CompletionRejectionReason,
 		CompletionRejectedAt:      project.CompletionRejectedAt,
 		InspirationCaseDraftID:    project.InspirationCaseDraftID,
+		ProjectReview:             toProjectReviewDetail(review),
 	}, nil
 }
 

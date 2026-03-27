@@ -47,6 +47,8 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+const ProviderPriceUnitPerSquareMeter = "元/㎡"
+
 // UserWechatBinding 微信小程序绑定关系
 type UserWechatBinding struct {
 	Base
@@ -88,7 +90,7 @@ type Provider struct {
 	ReviewCount      int     `json:"reviewCount" gorm:"default:0"`           // 评价数量
 	PriceMin         float64 `json:"priceMin" gorm:"default:0"`              // 最低价格
 	PriceMax         float64 `json:"priceMax" gorm:"default:0"`              // 最高价格
-	PriceUnit        string  `json:"priceUnit" gorm:"size:20;default:'元/天'"` // 价格单位
+	PriceUnit        string  `json:"priceUnit" gorm:"size:20;default:'元/㎡'"` // 价格单位
 	// 详情页扩展字段
 	CoverImage         string  `json:"coverImage" gorm:"size:500"`          // 封面背景图
 	FollowersCount     int     `json:"followersCount" gorm:"default:0"`     // 粉丝/关注数
@@ -128,6 +130,7 @@ type ProviderCase struct {
 // ProviderReview 服务商评价
 type ProviderReview struct {
 	Base
+	ProjectID    uint64     `json:"projectId" gorm:"index"`
 	ProviderID   uint64     `json:"providerId" gorm:"index"`
 	UserID       uint64     `json:"userId" gorm:"index"`
 	Rating       float32    `json:"rating"`                        // 评分 1-5
@@ -564,6 +567,7 @@ func (Notification) TableName() string {
 
 // 通知类型常量
 const (
+	NotificationTypeBookingCreated    = "booking.created"
 	NotificationTypeBookingIntentPaid = "booking.intent_paid"
 	NotificationTypeBookingConfirmed  = "booking.confirmed"
 	NotificationTypeBookingCancelled  = "booking.cancelled"
@@ -704,16 +708,22 @@ func (CaseAudit) TableName() string {
 // MerchantIncome 商家收入记录
 type MerchantIncome struct {
 	Base
-	ProviderID      uint64     `json:"providerId" gorm:"index"`
-	OrderID         uint64     `json:"orderId" gorm:"index"`
-	BookingID       uint64     `json:"bookingId" gorm:"index"`
-	Type            string     `json:"type" gorm:"size:20"`     // intent_fee, design_fee, construction
-	Amount          float64    `json:"amount"`                  // 原始金额
-	PlatformFee     float64    `json:"platformFee"`             // 平台抽成
-	NetAmount       float64    `json:"netAmount"`               // 实际到账
-	Status          int8       `json:"status" gorm:"default:0"` // 0:待结算 1:已结算 2:已提现
-	SettledAt       *time.Time `json:"settledAt"`
-	WithdrawOrderNo string     `json:"withdrawOrderNo" gorm:"size:50"`
+	ProviderID         uint64     `json:"providerId" gorm:"index"`
+	OrderID            uint64     `json:"orderId" gorm:"index"`
+	BookingID          uint64     `json:"bookingId" gorm:"index"`
+	Type               string     `json:"type" gorm:"size:20"`     // intent_fee, design_fee, construction
+	Amount             float64    `json:"amount"`                  // 原始金额
+	PlatformFee        float64    `json:"platformFee"`             // 平台抽成
+	NetAmount          float64    `json:"netAmount"`               // 实际到账
+	Status             int8       `json:"status" gorm:"default:0"` // 0:待结算 1:待出款 2:已出款
+	SettledAt          *time.Time `json:"settledAt"`
+	SettlementOrderID  uint64     `json:"settlementOrderId" gorm:"index"`
+	SettlementStatus   string     `json:"settlementStatus" gorm:"size:30;index"`
+	WithdrawOrderNo    string     `json:"withdrawOrderNo" gorm:"size:50"`
+	PayoutOrderID      uint64     `json:"payoutOrderId" gorm:"index"`
+	PayoutStatus       string     `json:"payoutStatus" gorm:"size:20;index"`
+	PayoutFailedReason string     `json:"payoutFailedReason" gorm:"size:500"`
+	PayoutedAt         *time.Time `json:"payoutedAt"`
 }
 
 // TableName 指定表名

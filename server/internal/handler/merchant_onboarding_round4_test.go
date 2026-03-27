@@ -784,6 +784,9 @@ func TestAdminApproveProviderApplication_FreezePreviousMaterialShop(t *testing.T
 	if newProvider.Specialty != "全工种施工" {
 		t.Fatalf("unexpected foreman specialty: %s", newProvider.Specialty)
 	}
+	if newProvider.PriceUnit != model.ProviderPriceUnitPerSquareMeter {
+		t.Fatalf("unexpected provider price unit: %s", newProvider.PriceUnit)
+	}
 
 	var providerIdentity model.UserIdentity
 	if err := repository.DB.Where("user_id = ? AND identity_type = ?", user.ID, merchantIdentityTypeProvider).First(&providerIdentity).Error; err != nil {

@@ -200,7 +200,7 @@ func (s *HomepageService) featuredProviders(providerType int8, limit int) ([]Hom
 	var providers []model.Provider
 	db := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{}))
 	if err := db.Where("provider_type = ?", providerType).
-		Order("rating DESC, completed_cnt DESC").
+		Order("rating DESC, review_count DESC, completed_cnt DESC").
 		Limit(limit).
 		Find(&providers).Error; err != nil {
 		return nil, err
@@ -253,7 +253,7 @@ func (s *HomepageService) featuredProviders(providerType int8, limit int) ([]Hom
 			HighlightTags:   p.HighlightTags,
 			PriceMin:        p.PriceMin,
 			PriceMax:        p.PriceMax,
-			PriceUnit:       p.PriceUnit,
+			PriceUnit:       model.ProviderPriceUnitPerSquareMeter,
 		}
 	}
 	return items, nil

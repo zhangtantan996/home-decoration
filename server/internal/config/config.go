@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bufio"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -131,6 +133,8 @@ type NotificationRealtimeConfig struct {
 }
 
 func Load() (*Config, error) {
+	loadOptionalEnvFiles(".env", "server/.env")
+
 	if UsesLegacyDockerConfig() {
 		viper.SetConfigName("config.docker")
 	} else {
@@ -269,6 +273,54 @@ func Load() (*Config, error) {
 
 	globalConfig = &cfg
 	return &cfg, nil
+}
+
+func loadOptionalEnvFiles(paths ...string) {
+	for _, path := range paths {
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if strings.HasPrefix(line, "export ") {
+				line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+			}
+
+			key, value, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			if _, exists := os.LookupEnv(key); exists {
+				continue
+			}
+
+			value = strings.TrimSpace(value)
+			if len(value) >= 2 {
+				if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+					(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+					value = value[1 : len(value)-1]
+				}
+			}
+			if key == "ALIPAY_APP_PRIVATE_KEY" || key == "ALIPAY_PUBLIC_KEY" {
+				value = strings.ReplaceAll(value, "\\n", "\n")
+			}
+
+			_ = os.Setenv(key, value)
+		}
+
+		_ = file.Close()
+	}
 }
 
 var globalConfig *Config

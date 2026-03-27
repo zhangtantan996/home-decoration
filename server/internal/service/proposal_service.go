@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -842,7 +841,7 @@ func (s *ProposalService) RejectProposal(userID, proposalID uint64, input *Rejec
 				Type:        "refund.application.created",
 				RelatedID:   abnormalRefund.ID,
 				RelatedType: "refund_application",
-				ActionURL:   fmt.Sprintf("/admin/refunds/%d", abnormalRefund.ID),
+				ActionURL:   buildAdminRefundActionURL(abnormalRefund.ID),
 			})
 		}
 	}

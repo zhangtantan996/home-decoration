@@ -28,11 +28,21 @@ func setupDesignPaymentDB(t *testing.T) *gorm.DB {
 		&model.Order{},
 		&model.PaymentPlan{},
 		&model.MerchantIncome{},
+		&model.PaymentOrder{},
+		&model.PaymentCallback{},
+		&model.RefundOrder{},
+		&model.PayoutOrder{},
+		&model.SettlementOrder{},
+		&model.LedgerAccount{},
+		&model.LedgerEntry{},
+		&model.MerchantBondRule{},
+		&model.MerchantBondAccount{},
 		&model.MerchantServiceSetting{},
 		&model.BusinessFlow{},
 		&model.SystemConfig{},
 		&model.Notification{},
 		&model.AuditLog{},
+		&model.RiskWarning{},
 		&model.DesignWorkingDoc{},
 		&model.DesignFeeQuote{},
 		&model.DesignDeliverable{},
@@ -142,9 +152,9 @@ func TestCreateDesignFeeQuote(t *testing.T) {
 	svc := &DesignPaymentService{}
 
 	quote, err := svc.CreateDesignFeeQuote(providerID, bookingID, &CreateDesignFeeQuoteInput{
-		TotalFee:         8000,
-		PaymentMode:      "onetime",
-		Description:      "全套设计服务",
+		TotalFee:    8000,
+		PaymentMode: "onetime",
+		Description: "全套设计服务",
 	})
 
 	if err != nil {

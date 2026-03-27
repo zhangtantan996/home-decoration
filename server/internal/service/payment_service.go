@@ -18,6 +18,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 )
 
 type PaymentLaunchResponse struct {
@@ -40,11 +41,51 @@ type PaymentStatusResponse struct {
 	ReturnContext map[string]any `json:"returnContext,omitempty"`
 }
 
+type PaymentDetailProvider struct {
+	ID       uint64 `json:"id"`
+	Name     string `json:"name"`
+	RoleText string `json:"roleText"`
+	Avatar   string `json:"avatar"`
+	Verified bool   `json:"verified"`
+}
+
+type PaymentDetailBooking struct {
+	ID      uint64 `json:"id"`
+	Address string `json:"address"`
+}
+
+type PaymentDetailResponse struct {
+	PaymentID        uint64                 `json:"paymentId"`
+	Status           string                 `json:"status"`
+	StatusText       string                 `json:"statusText"`
+	Channel          string                 `json:"channel"`
+	ChannelText      string                 `json:"channelText"`
+	Amount           float64                `json:"amount"`
+	Subject          string                 `json:"subject"`
+	PurposeText      string                 `json:"purposeText"`
+	BizType          string                 `json:"bizType"`
+	BizTypeText      string                 `json:"bizTypeText"`
+	FundScene        string                 `json:"fundScene"`
+	FundSceneText    string                 `json:"fundSceneText"`
+	TerminalType     string                 `json:"terminalType"`
+	TerminalTypeText string                 `json:"terminalTypeText"`
+	OutTradeNo       string                 `json:"outTradeNo"`
+	ProviderTradeNo  string                 `json:"providerTradeNo,omitempty"`
+	CreatedAt        time.Time              `json:"createdAt"`
+	PaidAt           *time.Time             `json:"paidAt,omitempty"`
+	ExpiresAt        *time.Time             `json:"expiresAt,omitempty"`
+	UsageDescription string                 `json:"usageDescription"`
+	ActionPath       string                 `json:"actionPath,omitempty"`
+	Provider         *PaymentDetailProvider `json:"provider,omitempty"`
+	Booking          *PaymentDetailBooking  `json:"booking,omitempty"`
+}
+
 type paymentCreateSpec struct {
 	BizType      string
 	BizID        uint64
 	PayerUserID  uint64
 	Scene        string
+	FundScene    string
 	TerminalType string
 	Subject      string
 	Amount       float64
@@ -55,6 +96,7 @@ type paymentSideEffect struct {
 	Kind           string
 	BookingID      uint64
 	OrderID        uint64
+	ProjectID      uint64
 	ProviderID     uint64
 	ProviderUserID uint64
 	Amount         float64
@@ -70,18 +112,18 @@ type refundExecutionPlan struct {
 }
 
 type PaymentService struct {
-	gateway paymentGateway
+	channel PaymentChannelService
 }
 
-var paymentGatewayFactory = func() paymentGateway {
-	return NewAlipayGateway()
+var paymentChannelServiceFactory = func() PaymentChannelService {
+	return NewPaymentChannelService()
 }
 
-func NewPaymentService(gateway paymentGateway) *PaymentService {
-	if gateway == nil {
-		gateway = paymentGatewayFactory()
+func NewPaymentService(channel PaymentChannelService) *PaymentService {
+	if channel == nil {
+		channel = paymentChannelServiceFactory()
 	}
-	return &PaymentService{gateway: gateway}
+	return &PaymentService{channel: channel}
 }
 
 func (s *PaymentService) StartBookingIntentPayment(userID, bookingID uint64, terminalType string) (*PaymentLaunchResponse, error) {
@@ -101,11 +143,15 @@ func (s *PaymentService) StartBookingIntentPayment(userID, bookingID uint64, ter
 		if booking.IntentFeePaid {
 			return errors.New("量房定金已支付")
 		}
+		if err := ensureBookingReadyForDepositPayment(&booking); err != nil {
+			return err
+		}
 		payment, err = s.createOrReusePaymentOrderTx(tx, &paymentCreateSpec{
 			BizType:      model.PaymentBizTypeBookingIntent,
 			BizID:        booking.ID,
 			PayerUserID:  userID,
 			Scene:        model.PaymentBizTypeBookingIntent,
+			FundScene:    model.FundSceneSurveyDeposit,
 			TerminalType: terminalType,
 			Subject:      fmt.Sprintf("预约量房定金 #%d", booking.ID),
 			Amount:       normalizeAmount(booking.IntentFee),
@@ -141,6 +187,9 @@ func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, ter
 		if booking.SurveyDepositPaid {
 			return errors.New("量房定金已支付")
 		}
+		if err := ensureBookingReadyForDepositPayment(&booking); err != nil {
+			return err
+		}
 		depositAmount, amountErr := resolveBookingSurveyDepositAmountTx(tx, &booking)
 		if amountErr != nil {
 			return amountErr
@@ -150,6 +199,7 @@ func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, ter
 			BizID:        booking.ID,
 			PayerUserID:  userID,
 			Scene:        model.PaymentBizTypeBookingSurveyDeposit,
+			FundScene:    model.FundSceneSurveyDeposit,
 			TerminalType: terminalType,
 			Subject:      fmt.Sprintf("量房定金 #%d", booking.ID),
 			Amount:       depositAmount,
@@ -188,6 +238,7 @@ func (s *PaymentService) StartOrderPayment(userID, orderID uint64, terminalType 
 			BizID:        order.ID,
 			PayerUserID:  userID,
 			Scene:        model.PaymentBizTypeOrder,
+			FundScene:    resolveOrderFundScene(order),
 			TerminalType: terminalType,
 			Subject:      fmt.Sprintf("订单支付 #%s", order.OrderNo),
 			Amount:       amount,
@@ -225,6 +276,7 @@ func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminal
 			BizID:        plan.ID,
 			PayerUserID:  userID,
 			Scene:        model.PaymentBizTypePaymentPlan,
+			FundScene:    resolveOrderFundScene(order),
 			TerminalType: terminalType,
 			Subject:      fmt.Sprintf("%s %s", order.OrderNo, plan.Name),
 			Amount:       normalizeAmount(plan.Amount),
@@ -234,6 +286,62 @@ func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminal
 				"bizType":     model.PaymentBizTypePaymentPlan,
 				"bizId":       plan.ID,
 			},
+		})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.buildLaunchResponse(payment), nil
+}
+
+func (s *PaymentService) StartMerchantBondPayment(userID, providerID uint64, terminalType, returnBaseURL string) (*PaymentLaunchResponse, error) {
+	terminalType, err := normalizeTerminalType(terminalType)
+	if err != nil {
+		return nil, err
+	}
+	var payment *model.PaymentOrder
+	err = repository.DB.Transaction(func(tx *gorm.DB) error {
+		var provider model.Provider
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&provider, providerID).Error; err != nil {
+			return errors.New("服务商不存在")
+		}
+		if provider.UserID != userID {
+			return errors.New("无权操作该保证金账户")
+		}
+
+		account, err := NewBondService().SyncProviderBondAccountTx(tx, providerID)
+		if err != nil {
+			return err
+		}
+		if account == nil || account.RequiredAmount <= 0 {
+			return errors.New("当前无需缴纳保证金")
+		}
+		remaining := normalizeAmount(account.RequiredAmount - account.PaidAmount)
+		if remaining <= 0 {
+			return errors.New("保证金已缴清")
+		}
+
+		returnCtx := map[string]any{
+			"successPath": "/bond",
+			"cancelPath":  "/bond",
+			"bizType":     model.PaymentBizTypeMerchantBond,
+			"bizId":       providerID,
+		}
+		if normalized := normalizeReturnBaseURL(returnBaseURL); normalized != "" {
+			returnCtx["returnBaseUrl"] = normalized
+		}
+
+		payment, err = s.createOrReusePaymentOrderTx(tx, &paymentCreateSpec{
+			BizType:      model.PaymentBizTypeMerchantBond,
+			BizID:        providerID,
+			PayerUserID:  userID,
+			Scene:        model.PaymentBizTypeMerchantBond,
+			FundScene:    model.FundSceneMerchantDeposit,
+			TerminalType: terminalType,
+			Subject:      fmt.Sprintf("商家保证金 #%d", providerID),
+			Amount:       remaining,
+			ReturnCtx:    returnCtx,
 		})
 		return err
 	})
@@ -287,7 +395,7 @@ func (s *PaymentService) BuildLaunchDocument(paymentID uint64, token string) (st
 	if err != nil {
 		return "", err
 	}
-	html, err := s.gateway.BuildLaunchHTML(&payment)
+	html, err := s.channel.CreateCollectOrder(context.Background(), &payment)
 	if err != nil {
 		return "", err
 	}
@@ -299,12 +407,12 @@ func (s *PaymentService) BuildLaunchDocument(paymentID uint64, token string) (st
 	return html, nil
 }
 
-func (s *PaymentService) GetPaymentStatusForUser(paymentID, userID uint64) (*PaymentStatusResponse, error) {
+func (s *PaymentService) GetPaymentStatusForPayer(paymentID, payerUserID uint64) (*PaymentStatusResponse, error) {
 	var payment model.PaymentOrder
 	if err := repository.DB.First(&payment, paymentID).Error; err != nil {
 		return nil, errors.New("支付单不存在")
 	}
-	if payment.PayerUserID != userID {
+	if payment.PayerUserID != payerUserID {
 		return nil, errors.New("无权查看该支付单")
 	}
 	if payment.Status == model.PaymentStatusCreated || payment.Status == model.PaymentStatusLaunching || payment.Status == model.PaymentStatusPending {
@@ -326,6 +434,83 @@ func (s *PaymentService) GetPaymentStatusForUser(paymentID, userID uint64) (*Pay
 	}, nil
 }
 
+func (s *PaymentService) GetPaymentStatusForUser(paymentID, userID uint64) (*PaymentStatusResponse, error) {
+	return s.GetPaymentStatusForPayer(paymentID, userID)
+}
+
+func (s *PaymentService) GetPaymentDetailForPayer(paymentID, payerUserID uint64) (*PaymentDetailResponse, error) {
+	var payment model.PaymentOrder
+	if err := repository.DB.First(&payment, paymentID).Error; err != nil {
+		return nil, errors.New("支付单不存在")
+	}
+	if payment.PayerUserID != payerUserID {
+		return nil, errors.New("无权查看该支付单")
+	}
+	if payment.Status == model.PaymentStatusCreated || payment.Status == model.PaymentStatusLaunching || payment.Status == model.PaymentStatusPending {
+		synced, err := s.SyncPaymentState(payment.ID)
+		if err == nil && synced != nil {
+			payment = *synced
+		}
+	}
+
+	detail := &PaymentDetailResponse{
+		PaymentID:        payment.ID,
+		Status:           payment.Status,
+		StatusText:       paymentStatusText(payment.Status),
+		Channel:          payment.Channel,
+		ChannelText:      paymentChannelText(payment.Channel),
+		Amount:           payment.Amount,
+		Subject:          strings.TrimSpace(payment.Subject),
+		PurposeText:      paymentPurposeText(&payment),
+		BizType:          payment.BizType,
+		BizTypeText:      paymentBizTypeText(payment.BizType),
+		FundScene:        payment.FundScene,
+		FundSceneText:    paymentFundSceneText(payment.FundScene),
+		TerminalType:     payment.TerminalType,
+		TerminalTypeText: paymentTerminalText(payment.TerminalType),
+		OutTradeNo:       payment.OutTradeNo,
+		ProviderTradeNo:  payment.ProviderTradeNo,
+		CreatedAt:        payment.CreatedAt,
+		PaidAt:           payment.PaidAt,
+		ExpiresAt:        payment.ExpiredAt,
+		UsageDescription: paymentUsageDescription(&payment),
+		ActionPath:       paymentDetailActionPath(&payment),
+	}
+
+	if err := s.enrichPaymentDetail(detail, &payment); err != nil {
+		return nil, err
+	}
+	return detail, nil
+}
+
+func (s *PaymentService) GetPaymentDetailForUser(paymentID, userID uint64) (*PaymentDetailResponse, error) {
+	return s.GetPaymentDetailForPayer(paymentID, userID)
+}
+
+func (s *PaymentService) SyncLatestPendingBizPayment(bizType string, bizID uint64) (*model.PaymentOrder, error) {
+	if bizID == 0 || strings.TrimSpace(bizType) == "" {
+		return nil, errors.New("支付业务参数无效")
+	}
+
+	var payment model.PaymentOrder
+	err := repository.DB.
+		Where("biz_type = ? AND biz_id = ? AND status IN ?", bizType, bizID, []string{
+			model.PaymentStatusCreated,
+			model.PaymentStatusLaunching,
+			model.PaymentStatusPending,
+		}).
+		Order("id DESC").
+		First(&payment).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return s.SyncPaymentState(payment.ID)
+}
+
 func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder, error) {
 	var current model.PaymentOrder
 	if err := repository.DB.First(&current, paymentID).Error; err != nil {
@@ -334,7 +519,7 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 	if current.Status == model.PaymentStatusPaid || current.Status == model.PaymentStatusClosed || current.Status == model.PaymentStatusFailed {
 		return &current, nil
 	}
-	result, err := s.gateway.QueryTrade(context.Background(), &current)
+	result, err := s.channel.QueryCollectOrder(context.Background(), &current)
 	if err != nil {
 		return &current, err
 	}
@@ -352,14 +537,14 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 		}
 		switch result.TradeStatus {
 		case alipayTradeSuccess, alipayTradeFinished:
-			effect, err = s.confirmPaymentSuccessTx(tx, &current, result.TradeNo, result.RawJSON)
+			effect, err = s.confirmPaymentSuccessTx(tx, &current, result.ProviderTradeNo, result.RawJSON)
 			if err != nil {
 				return err
 			}
 		case alipayTradeClosed:
 			if err := tx.Model(&current).Updates(map[string]any{
 				"status":              model.PaymentStatusClosed,
-				"provider_trade_no":   firstNonEmpty(current.ProviderTradeNo, result.TradeNo),
+				"provider_trade_no":   firstNonEmpty(current.ProviderTradeNo, result.ProviderTradeNo),
 				"raw_response_digest": digestString(result.RawJSON),
 			}).Error; err != nil {
 				return err
@@ -377,7 +562,7 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 }
 
 func (s *PaymentService) HandleAlipayNotify(values url.Values) error {
-	payload, err := s.gateway.VerifyNotify(values)
+	payload, err := s.channel.VerifyNotify(values)
 	if err != nil {
 		return err
 	}
@@ -451,6 +636,9 @@ func (s *PaymentService) ResolveReturnURL(paymentID uint64, terminalType string)
 	if terminalType == model.PaymentTerminalMobileH5 {
 		base = strings.TrimSpace(cfg.ReturnURLH5)
 	}
+	if ctxBase := normalizeReturnBaseURL(stringMapValue(ctx, "returnBaseUrl")); ctxBase != "" {
+		base = ctxBase
+	}
 	if base == "" {
 		base = "/payments/result"
 	}
@@ -495,7 +683,7 @@ func (s *PaymentService) ExecuteRefundOrder(refundOrderID uint64) (*model.Refund
 		return nil, errors.New("关联支付单不存在")
 	}
 
-	result, err := s.gateway.Refund(context.Background(), &payment, &refund)
+	result, err := s.channel.RefundCollectOrder(context.Background(), &payment, &refund)
 	if err != nil {
 		_ = repository.DB.Model(&refund).Updates(map[string]any{
 			"status":         model.RefundOrderStatusProcessing,
@@ -529,6 +717,9 @@ func (s *PaymentService) ExecuteRefundOrder(refundOrderID uint64) (*model.Refund
 	if err := repository.DB.Model(&refund).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+	if refund.RefundApplicationID > 0 && refund.Status == model.RefundOrderStatusFailed {
+		_ = s.writeRefundExecutionFailureAudit(refund.RefundApplicationID, result.FailureReason, []model.RefundOrder{refund})
+	}
 	return &refund, nil
 }
 
@@ -546,7 +737,7 @@ func (s *PaymentService) SyncRefundOrder(refundOrderID uint64) (*model.RefundOrd
 		return nil, errors.New("关联支付单不存在")
 	}
 
-	result, err := s.gateway.QueryRefund(context.Background(), &payment, &refund)
+	result, err := s.channel.QueryRefundOrder(context.Background(), &payment, &refund)
 	if err != nil {
 		return &refund, err
 	}
@@ -573,6 +764,9 @@ func (s *PaymentService) SyncRefundOrder(refundOrderID uint64) (*model.RefundOrd
 	refund.FailureReason = result.FailureReason
 	if err := repository.DB.Model(&refund).Updates(updates).Error; err != nil {
 		return nil, err
+	}
+	if refund.RefundApplicationID > 0 && refund.Status == model.RefundOrderStatusFailed {
+		_ = s.writeRefundExecutionFailureAudit(refund.RefundApplicationID, result.FailureReason, []model.RefundOrder{refund})
 	}
 	return &refund, nil
 }
@@ -603,7 +797,7 @@ func (s *PaymentService) SyncPendingRefundOrders(limit int) (int, error) {
 			continue
 		}
 		if updated != nil {
-			if _, finalizeErr := s.FinalizeRefundApplicationIfReady(updated.RefundApplicationID); finalizeErr != nil {
+			if _, finalizeErr := s.FinalizeRefundOrderIfReady(updated.ID); finalizeErr != nil {
 				_, _, _ = alertSvc.UpsertAlert(&CreateSystemAlertInput{
 					Type:        SystemAlertTypeRefundSyncFailure,
 					Level:       "high",
@@ -618,6 +812,30 @@ func (s *PaymentService) SyncPendingRefundOrders(limit int) (int, error) {
 		}
 	}
 	return successCount, nil
+}
+
+func (s *PaymentService) FinalizeRefundOrderIfReady(refundOrderID uint64) (bool, error) {
+	if refundOrderID == 0 {
+		return false, errors.New("退款单不存在")
+	}
+
+	var refund model.RefundOrder
+	if err := repository.DB.First(&refund, refundOrderID).Error; err != nil {
+		return false, errors.New("退款单不存在")
+	}
+	if refund.RefundApplicationID > 0 {
+		return s.FinalizeRefundApplicationIfReady(refund.RefundApplicationID)
+	}
+
+	switch refund.BizType {
+	case model.PaymentBizTypeBookingSurveyDeposit:
+		return s.finalizeSurveyDepositRefundIfReady(refund.ID)
+	default:
+		if refund.Status == model.RefundOrderStatusSucceeded {
+			return false, errors.New("未支持的独立退款单类型")
+		}
+		return false, nil
+	}
 }
 
 func (s *PaymentService) FinalizeRefundApplicationIfReady(applicationID uint64) (bool, error) {
@@ -650,7 +868,11 @@ func (s *PaymentService) FinalizeRefundApplicationIfReady(applicationID uint64) 
 				return nil
 			}
 		}
-
+		bookingScope, projectScope, err := loadRefundExecutionScopeTx(tx, &application)
+		if err != nil {
+			return err
+		}
+		beforeState := refundExecutionSnapshot(&application, bookingScope, projectScope)
 		if err := applyRefundApplicationTx(tx, &application, application.ApprovedAmount); err != nil {
 			return err
 		}
@@ -661,6 +883,104 @@ func (s *PaymentService) FinalizeRefundApplicationIfReady(applicationID uint64) 
 		}).Error; err != nil {
 			return err
 		}
+		application.Status = model.RefundApplicationStatusCompleted
+		application.CompletedAt = &now
+		bookingScope, projectScope, err = loadRefundExecutionScopeTx(tx, &application)
+		if err != nil {
+			return err
+		}
+		if err := createRefundExecutionAuditTx(tx, "system", 0, &application, bookingScope, projectScope, refundOrders, beforeState, "success", application.AdminNotes); err != nil {
+			return err
+		}
+		completed = true
+		return nil
+	})
+	return completed, err
+}
+
+func (s *PaymentService) writeRefundExecutionFailureAudit(applicationID uint64, reason string, refundOrders []model.RefundOrder) error {
+	if applicationID == 0 {
+		return nil
+	}
+	var application model.RefundApplication
+	if err := repository.DB.First(&application, applicationID).Error; err != nil {
+		return err
+	}
+	bookingScope, projectScope, err := loadRefundExecutionScopeTx(repository.DB, &application)
+	if err != nil {
+		return err
+	}
+	return createRefundExecutionAuditTx(repository.DB, "system", 0, &application, bookingScope, projectScope, refundOrders, nil, "failed", reason)
+}
+
+func (s *PaymentService) finalizeSurveyDepositRefundIfReady(refundOrderID uint64) (bool, error) {
+	if refundOrderID == 0 {
+		return false, errors.New("退款单不存在")
+	}
+
+	completed := false
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var refund model.RefundOrder
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&refund, refundOrderID).Error; err != nil {
+			return errors.New("退款单不存在")
+		}
+		if refund.BizType != model.PaymentBizTypeBookingSurveyDeposit {
+			return errors.New("退款单类型不匹配")
+		}
+		if refund.Status == model.RefundOrderStatusFailed {
+			return errors.New("存在退款失败记录")
+		}
+		if refund.Status != model.RefundOrderStatusSucceeded {
+			return nil
+		}
+
+		var booking model.Booking
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&booking, refund.BizID).Error; err != nil {
+			return errors.New("预约不存在")
+		}
+		if booking.SurveyDepositRefunded {
+			completed = true
+			return nil
+		}
+
+		now := time.Now()
+		if err := tx.Model(&booking).Updates(map[string]any{
+			"survey_deposit_refunded":   true,
+			"survey_deposit_refund_amt": refund.Amount,
+			"survey_deposit_refund_at":  &now,
+		}).Error; err != nil {
+			return err
+		}
+
+		refundTxn := model.Transaction{
+			OrderID:     fmt.Sprintf("SDR-%d-%d", booking.ID, now.Unix()),
+			Type:        "refund",
+			Amount:      refund.Amount,
+			ToUserID:    booking.UserID,
+			Status:      1,
+			Remark:      "survey_deposit_refund",
+			CompletedAt: &now,
+		}
+		if err := tx.Create(&refundTxn).Error; err != nil {
+			return err
+		}
+
+		merchantAmount := normalizeAmount(booking.SurveyDeposit - refund.Amount)
+		if merchantAmount > 0 {
+			income := model.MerchantIncome{
+				ProviderID:  booking.ProviderID,
+				BookingID:   booking.ID,
+				Type:        "survey_deposit",
+				Amount:      merchantAmount,
+				PlatformFee: 0,
+				NetAmount:   merchantAmount,
+				Status:      0,
+			}
+			if err := tx.Create(&income).Error; err != nil {
+				return err
+			}
+		}
+
 		completed = true
 		return nil
 	})
@@ -696,6 +1016,7 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 		} else {
 			if err := tx.Model(&existing).Updates(map[string]any{
 				"scene":                   spec.Scene,
+				"fund_scene":              spec.FundScene,
 				"terminal_type":           spec.TerminalType,
 				"subject":                 spec.Subject,
 				"amount":                  spec.Amount,
@@ -713,6 +1034,7 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 			existing.Status = model.PaymentStatusLaunching
 			existing.TerminalType = spec.TerminalType
 			existing.Scene = spec.Scene
+			existing.FundScene = spec.FundScene
 			existing.Subject = spec.Subject
 			existing.Amount = spec.Amount
 			existing.ReturnContext = returnJSON
@@ -728,6 +1050,7 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 		PayerUserID:          spec.PayerUserID,
 		Channel:              model.PaymentChannelAlipay,
 		Scene:                spec.Scene,
+		FundScene:            spec.FundScene,
 		TerminalType:         spec.TerminalType,
 		Subject:              spec.Subject,
 		Amount:               spec.Amount,
@@ -778,6 +1101,8 @@ func (s *PaymentService) confirmPaymentSuccessTx(tx *gorm.DB, payment *model.Pay
 		effect, err = confirmOrderPaidTx(tx, payment.BizID)
 	case model.PaymentBizTypePaymentPlan:
 		err = confirmPaymentPlanPaidTx(tx, payment.BizID)
+	case model.PaymentBizTypeMerchantBond:
+		err = confirmMerchantBondPaidTx(tx, payment.BizID)
 	default:
 		return nil, errors.New("未知支付单类型")
 	}
@@ -798,6 +1123,9 @@ func (s *PaymentService) confirmPaymentSuccessTx(tx *gorm.DB, payment *model.Pay
 	payment.ProviderTradeNo = firstNonEmpty(payment.ProviderTradeNo, providerTradeNo)
 	payment.PaidAt = &now
 	payment.RawResponseDigest = digestString(rawPayload)
+	if err := s.recordPaymentSuccessProjectionTx(tx, payment, effect); err != nil {
+		return nil, err
+	}
 	return effect, nil
 }
 
@@ -819,7 +1147,7 @@ func (s *PaymentService) runPaymentSideEffect(effect *paymentSideEffect) {
 		if effect.ProviderUserID > 0 && effect.OrderID > 0 {
 			_ = notifService.NotifyOrderPaid(map[string]any{"id": effect.OrderID, "amount": effect.Amount}, effect.ProviderUserID)
 		}
-		if effect.ProviderID > 0 && effect.OrderType != model.OrderTypeConstruction {
+		if effect.ProviderID > 0 && effect.OrderType == model.OrderTypeMaterial {
 			_, _ = incomeService.CreateIncome(&CreateIncomeInput{
 				ProviderID:  effect.ProviderID,
 				OrderID:     effect.OrderID,
@@ -929,6 +1257,7 @@ func confirmOrderPaidTx(tx *gorm.DB, orderID uint64) (*paymentSideEffect, error)
 	} else if order.ProjectID > 0 {
 		var project model.Project
 		if err := tx.First(&project, order.ProjectID).Error; err == nil {
+			effect.ProjectID = project.ID
 			var provider model.Provider
 			if err := tx.First(&provider, project.ProviderID).Error; err == nil {
 				effect.ProviderID = provider.ID
@@ -1091,11 +1420,52 @@ func normalizeTerminalType(terminalType string) (string, error) {
 	}
 }
 
+func ensureBookingReadyForDepositPayment(booking *model.Booking) error {
+	if booking == nil || booking.ID == 0 {
+		return errors.New("预约不存在")
+	}
+	if booking.Status == 2 {
+		return nil
+	}
+	if booking.Status == 4 {
+		return errors.New("预约已关闭，不能支付量房定金")
+	}
+	return errors.New("请等待服务商确认预约后再支付量房定金")
+}
+
+func confirmMerchantBondPaidTx(tx *gorm.DB, providerID uint64) error {
+	var provider model.Provider
+	if err := tx.Select("id").First(&provider, providerID).Error; err != nil {
+		return errors.New("服务商不存在")
+	}
+	return nil
+}
+
 func ensureAlipayEnabled() error {
 	if !config.GetConfig().Alipay.Enabled {
 		return errors.New("支付宝支付未启用")
 	}
 	return nil
+}
+
+func normalizeReturnBaseURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	if parsed.Host == "" {
+		return ""
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "?")
 }
 
 func buildLaunchURL(paymentID uint64, token string) string {
@@ -1175,6 +1545,309 @@ func resolveOrderCancelPath(order *model.Order) string {
 		return fmt.Sprintf("/projects/%d", order.ProjectID)
 	}
 	return "/me/orders"
+}
+
+func paymentStatusText(status string) string {
+	switch strings.TrimSpace(status) {
+	case model.PaymentStatusPaid:
+		return "已支付"
+	case model.PaymentStatusClosed:
+		return "已关闭"
+	case model.PaymentStatusFailed:
+		return "支付失败"
+	case model.PaymentStatusPending, model.PaymentStatusLaunching:
+		return "等待确认"
+	default:
+		return "待支付"
+	}
+}
+
+func paymentChannelText(channel string) string {
+	switch strings.TrimSpace(channel) {
+	case model.PaymentChannelAlipay:
+		return "支付宝"
+	case "wechat_pay":
+		return "微信支付"
+	case "bank_transfer":
+		return "银行转账"
+	default:
+		if strings.TrimSpace(channel) == "" {
+			return "待分配"
+		}
+		return strings.TrimSpace(channel)
+	}
+}
+
+func paymentTerminalText(terminalType string) string {
+	switch strings.TrimSpace(terminalType) {
+	case model.PaymentTerminalPCWeb:
+		return "网页端"
+	case model.PaymentTerminalMobileH5:
+		return "手机网页"
+	default:
+		if strings.TrimSpace(terminalType) == "" {
+			return "待补充"
+		}
+		return strings.TrimSpace(terminalType)
+	}
+}
+
+func paymentBizTypeText(bizType string) string {
+	switch strings.TrimSpace(bizType) {
+	case model.PaymentBizTypeBookingIntent:
+		return "预约意向金"
+	case model.PaymentBizTypeBookingSurveyDeposit:
+		return "量房定金"
+	case model.PaymentBizTypeOrder:
+		return "订单支付"
+	case model.PaymentBizTypePaymentPlan:
+		return "阶段款支付"
+	case model.PaymentBizTypeMerchantBond:
+		return "保证金"
+	default:
+		if strings.TrimSpace(bizType) == "" {
+			return "支付记录"
+		}
+		return strings.TrimSpace(bizType)
+	}
+}
+
+func paymentFundSceneText(fundScene string) string {
+	switch strings.TrimSpace(fundScene) {
+	case model.FundSceneSurveyDeposit:
+		return "量房定金"
+	case model.FundSceneDesignFee:
+		return "设计费"
+	case model.FundSceneConstructionStage:
+		return "施工阶段款"
+	case model.FundSceneEntryFee:
+		return "入驻费用"
+	case model.FundSceneMerchantDeposit:
+		return "商家保证金"
+	case model.FundSceneRefund:
+		return "退款"
+	case model.FundSceneSettlementPayout:
+		return "结算打款"
+	default:
+		if strings.TrimSpace(fundScene) == "" {
+			return "支付款项"
+		}
+		return strings.TrimSpace(fundScene)
+	}
+}
+
+func paymentPurposeText(payment *model.PaymentOrder) string {
+	if payment == nil {
+		return "支付记录"
+	}
+	if subject := strings.TrimSpace(payment.Subject); subject != "" {
+		return subject
+	}
+	return paymentBizTypeText(payment.BizType)
+}
+
+func paymentUsageDescription(payment *model.PaymentOrder) string {
+	if payment == nil {
+		return "这笔款项用于当前业务流程的支付确认。"
+	}
+	switch payment.BizType {
+	case model.PaymentBizTypeBookingSurveyDeposit:
+		return "这笔款项用于确认本次量房安排。支付成功后，服务商可继续推进上门量房、预算沟通和后续方案服务。"
+	case model.PaymentBizTypeBookingIntent:
+		return "这笔款项用于锁定当前预约意向，便于服务商继续跟进需求沟通与服务安排。"
+	case model.PaymentBizTypePaymentPlan:
+		return "这笔款项对应项目阶段支付，用于推进当前施工节点或合同约定的阶段结算。"
+	case model.PaymentBizTypeOrder:
+		return "这笔款项对应正式订单支付，平台会按项目流程记录支付状态并同步后续进度。"
+	case model.PaymentBizTypeMerchantBond:
+		return "这笔款项对应商家保证金支付，用于平台准入和履约保障。"
+	default:
+		return "这笔款项用于当前业务流程的支付确认。"
+	}
+}
+
+func paymentDetailActionPath(payment *model.PaymentOrder) string {
+	if payment == nil {
+		return "/me/orders"
+	}
+	switch payment.BizType {
+	case model.PaymentBizTypeBookingIntent, model.PaymentBizTypeBookingSurveyDeposit:
+		if payment.BizID > 0 {
+			return fmt.Sprintf("/bookings/%d", payment.BizID)
+		}
+	case model.PaymentBizTypeOrder:
+		if payment.BizID > 0 {
+			var order model.Order
+			if err := repository.DB.Select("id", "project_id").First(&order, payment.BizID).Error; err == nil {
+				return resolveOrderSuccessPath(&order)
+			}
+		}
+	case model.PaymentBizTypePaymentPlan:
+		if payment.BizID > 0 {
+			var plan model.PaymentPlan
+			if err := repository.DB.Select("id", "order_id").First(&plan, payment.BizID).Error; err == nil && plan.OrderID > 0 {
+				var order model.Order
+				if err := repository.DB.Select("id", "project_id").First(&order, plan.OrderID).Error; err == nil {
+					return resolveOrderSuccessPath(&order)
+				}
+			}
+		}
+	}
+	return "/me/orders"
+}
+
+func paymentProviderRoleText(bookingProviderType, providerSubType string, providerType int8) string {
+	switch strings.TrimSpace(bookingProviderType) {
+	case "company":
+		return "装修公司"
+	case "worker", "foreman":
+		return "工长"
+	case "designer":
+		return "设计师"
+	}
+
+	switch strings.TrimSpace(providerSubType) {
+	case "company":
+		return "装修公司"
+	case "foreman", "worker":
+		return "工长"
+	case "designer":
+		return "设计师"
+	}
+
+	switch providerType {
+	case 2:
+		return "装修公司"
+	case 3:
+		return "工长"
+	default:
+		return "设计师"
+	}
+}
+
+func (s *PaymentService) enrichPaymentDetail(detail *PaymentDetailResponse, payment *model.PaymentOrder) error {
+	if detail == nil || payment == nil {
+		return nil
+	}
+
+	switch payment.BizType {
+	case model.PaymentBizTypeBookingIntent, model.PaymentBizTypeBookingSurveyDeposit:
+		var booking model.Booking
+		if err := repository.DB.Select("id", "provider_id", "provider_type", "address").First(&booking, payment.BizID).Error; err != nil {
+			return errors.New("关联预约不存在")
+		}
+		detail.Booking = &PaymentDetailBooking{
+			ID:      booking.ID,
+			Address: booking.Address,
+		}
+		detail.ActionPath = fmt.Sprintf("/bookings/%d", booking.ID)
+		provider, err := loadPaymentProviderDetail(booking.ProviderID, booking.ProviderType)
+		if err != nil {
+			return err
+		}
+		detail.Provider = provider
+	case model.PaymentBizTypeOrder, model.PaymentBizTypePaymentPlan:
+		order, booking, project, err := loadOrderContextForPayment(payment)
+		if err != nil {
+			return err
+		}
+		if order != nil {
+			detail.ActionPath = resolveOrderSuccessPath(order)
+		}
+		if booking != nil {
+			detail.Booking = &PaymentDetailBooking{
+				ID:      booking.ID,
+				Address: booking.Address,
+			}
+		}
+
+		var providerID uint64
+		if booking != nil {
+			providerID = booking.ProviderID
+		}
+		if providerID == 0 && project != nil {
+			providerID = project.ProviderID
+		}
+		if providerID > 0 {
+			bookingProviderType := ""
+			if booking != nil {
+				bookingProviderType = booking.ProviderType
+			}
+			provider, err := loadPaymentProviderDetail(providerID, bookingProviderType)
+			if err != nil {
+				return err
+			}
+			detail.Provider = provider
+		}
+	}
+
+	return nil
+}
+
+func loadOrderContextForPayment(payment *model.PaymentOrder) (*model.Order, *model.Booking, *model.Project, error) {
+	if payment == nil {
+		return nil, nil, nil, nil
+	}
+
+	var order model.Order
+	switch payment.BizType {
+	case model.PaymentBizTypeOrder:
+		if err := repository.DB.First(&order, payment.BizID).Error; err != nil {
+			return nil, nil, nil, errors.New("关联订单不存在")
+		}
+	case model.PaymentBizTypePaymentPlan:
+		var plan model.PaymentPlan
+		if err := repository.DB.First(&plan, payment.BizID).Error; err != nil {
+			return nil, nil, nil, errors.New("关联付款计划不存在")
+		}
+		if err := repository.DB.First(&order, plan.OrderID).Error; err != nil {
+			return nil, nil, nil, errors.New("关联订单不存在")
+		}
+	default:
+		return nil, nil, nil, nil
+	}
+
+	orderService := &OrderService{}
+	booking, project, err := orderService.resolveBookingAndProject(&order)
+	if err != nil {
+		return &order, nil, nil, err
+	}
+	return &order, booking, project, nil
+}
+
+func loadPaymentProviderDetail(providerID uint64, bookingProviderType string) (*PaymentDetailProvider, error) {
+	if providerID == 0 {
+		return nil, nil
+	}
+
+	var provider model.Provider
+	if err := repository.DB.Select("id", "user_id", "company_name", "avatar", "provider_type", "sub_type", "verified").First(&provider, providerID).Error; err != nil {
+		return nil, errors.New("关联服务商不存在")
+	}
+
+	var user model.User
+	_ = repository.DB.Select("id", "nickname", "avatar").First(&user, provider.UserID).Error
+
+	name := strings.TrimSpace(user.Nickname)
+	if name == "" {
+		name = strings.TrimSpace(provider.CompanyName)
+	}
+	if name == "" {
+		name = fmt.Sprintf("服务商 #%d", provider.ID)
+	}
+
+	avatar := strings.TrimSpace(user.Avatar)
+	if avatar == "" {
+		avatar = strings.TrimSpace(provider.Avatar)
+	}
+
+	return &PaymentDetailProvider{
+		ID:       provider.ID,
+		Name:     name,
+		RoleText: paymentProviderRoleText(bookingProviderType, provider.SubType, provider.ProviderType),
+		Avatar:   imgutil.GetFullImageURL(avatar),
+		Verified: provider.Verified,
+	}, nil
 }
 
 func (s *PaymentService) buildRefundExecutionPlansTx(tx *gorm.DB, application *model.RefundApplication, approvedAmount float64) ([]refundExecutionPlan, error) {
@@ -1412,6 +2085,7 @@ func (s *PaymentService) createRefundOrderTx(tx *gorm.DB, refundApplicationID ui
 		PaymentOrderID:      payment.ID,
 		BizType:             plan.BizType,
 		BizID:               plan.BizID,
+		FundScene:           payment.FundScene,
 		RefundApplicationID: refundApplicationID,
 		OutRefundNo:         generateOutRefundNo(payment.ID, refundApplicationID),
 		Amount:              plan.Amount,
@@ -1422,6 +2096,147 @@ func (s *PaymentService) createRefundOrderTx(tx *gorm.DB, refundApplicationID ui
 		return nil, err
 	}
 	return refund, nil
+}
+
+func resolveOrderFundScene(order *model.Order) string {
+	if order == nil {
+		return ""
+	}
+	switch order.OrderType {
+	case model.OrderTypeDesign:
+		return model.FundSceneDesignFee
+	case model.OrderTypeConstruction:
+		return model.FundSceneConstructionStage
+	default:
+		return ""
+	}
+}
+
+func (s *PaymentService) recordPaymentSuccessProjectionTx(tx *gorm.DB, payment *model.PaymentOrder, effect *paymentSideEffect) error {
+	if tx == nil || payment == nil || strings.TrimSpace(payment.FundScene) == "" {
+		return nil
+	}
+	projectID, providerID, milestoneID, err := resolvePaymentProjectionScopeTx(tx, payment, effect)
+	if err != nil {
+		return err
+	}
+	if err := (&LedgerService{}).RecordPaymentReceivedTx(tx, payment, projectID, providerID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payment.FundScene) == model.FundSceneMerchantDeposit && providerID > 0 {
+		if _, err := NewBondService().SyncProviderBondAccountTx(tx, providerID); err != nil {
+			return err
+		}
+	}
+	if projectID == 0 || !shouldProjectToEscrow(payment.FundScene) {
+		return nil
+	}
+	return syncEscrowDepositProjectionTx(tx, projectID, payment, milestoneID)
+}
+
+func resolvePaymentProjectionScopeTx(tx *gorm.DB, payment *model.PaymentOrder, effect *paymentSideEffect) (uint64, uint64, uint64, error) {
+	if payment == nil {
+		return 0, 0, 0, nil
+	}
+	if effect != nil && effect.ProjectID > 0 {
+		return effect.ProjectID, effect.ProviderID, 0, nil
+	}
+	switch payment.BizType {
+	case model.PaymentBizTypeOrder:
+		var order model.Order
+		if err := tx.Select("id, project_id").First(&order, payment.BizID).Error; err != nil {
+			return 0, 0, 0, err
+		}
+		if order.ProjectID == 0 {
+			return 0, 0, 0, nil
+		}
+		var project model.Project
+		if err := tx.Select("id, provider_id, construction_provider_id").First(&project, order.ProjectID).Error; err != nil {
+			return 0, 0, 0, err
+		}
+		providerID := project.ConstructionProviderID
+		if providerID == 0 {
+			providerID = project.ProviderID
+		}
+		return project.ID, providerID, 0, nil
+	case model.PaymentBizTypePaymentPlan:
+		var plan model.PaymentPlan
+		if err := tx.Select("id, order_id, milestone_id").First(&plan, payment.BizID).Error; err != nil {
+			return 0, 0, 0, err
+		}
+		var order model.Order
+		if err := tx.Select("id, project_id").First(&order, plan.OrderID).Error; err != nil {
+			return 0, 0, 0, err
+		}
+		if order.ProjectID == 0 {
+			return 0, 0, plan.MilestoneID, nil
+		}
+		var project model.Project
+		if err := tx.Select("id, provider_id, construction_provider_id").First(&project, order.ProjectID).Error; err != nil {
+			return 0, 0, 0, err
+		}
+		providerID := project.ConstructionProviderID
+		if providerID == 0 {
+			providerID = project.ProviderID
+		}
+		return project.ID, providerID, plan.MilestoneID, nil
+	case model.PaymentBizTypeMerchantBond:
+		var provider model.Provider
+		if err := tx.Select("id").First(&provider, payment.BizID).Error; err != nil {
+			return 0, 0, 0, err
+		}
+		return 0, provider.ID, 0, nil
+	default:
+		return 0, 0, 0, nil
+	}
+}
+
+func shouldProjectToEscrow(fundScene string) bool {
+	switch strings.TrimSpace(fundScene) {
+	case model.FundSceneDesignFee, model.FundSceneConstructionStage:
+		return true
+	default:
+		return false
+	}
+}
+
+func syncEscrowDepositProjectionTx(tx *gorm.DB, projectID uint64, payment *model.PaymentOrder, milestoneID uint64) error {
+	if projectID == 0 || payment == nil || payment.ID == 0 || payment.Amount <= 0 {
+		return nil
+	}
+	orderID := fmt.Sprintf("PAY-%d", payment.ID)
+	var existing model.Transaction
+	if err := tx.Where("order_id = ?", orderID).First(&existing).Error; err == nil {
+		return nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	var escrow model.EscrowAccount
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
+		return err
+	}
+	escrow.TotalAmount = normalizeAmount(escrow.TotalAmount + payment.Amount)
+	escrow.AvailableAmount = normalizeAmount(escrow.AvailableAmount + payment.Amount)
+	escrow.Status = reconcileEscrowStatus(&escrow)
+	if err := tx.Save(&escrow).Error; err != nil {
+		return err
+	}
+	completedAt := payment.PaidAt
+	if completedAt == nil {
+		now := time.Now()
+		completedAt = &now
+	}
+	return tx.Create(&model.Transaction{
+		OrderID:     orderID,
+		EscrowID:    escrow.ID,
+		MilestoneID: milestoneID,
+		Type:        "deposit",
+		Amount:      payment.Amount,
+		FromUserID:  payment.PayerUserID,
+		Status:      1,
+		Remark:      payment.FundScene,
+		CompletedAt: completedAt,
+	}).Error
 }
 
 func (s *PaymentService) findPaidPaymentOrderTx(tx *gorm.DB, bizType string, bizID uint64) (*model.PaymentOrder, error) {

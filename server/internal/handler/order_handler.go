@@ -201,6 +201,12 @@ func GetOrder(c *gin.Context) {
 		return
 	}
 
+	if order.Status == model.OrderStatusPending {
+		if _, syncErr := paymentService.SyncLatestPendingBizPayment(model.PaymentBizTypeOrder, order.ID); syncErr == nil {
+			_ = repository.DB.First(&order, order.ID).Error
+		}
+	}
+
 	response.Success(c, order)
 }
 

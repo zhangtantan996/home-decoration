@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"home-decoration-server/internal/model"
@@ -199,16 +200,19 @@ func TestAdminFinanceServiceManualReleaseWritesAudit(t *testing.T) {
 	if err := db.Where("provider_id = ? AND type = ?", provider.ID, "construction").Order("id DESC").First(&income).Error; err != nil {
 		t.Fatalf("expected merchant income created: %v", err)
 	}
-	if income.Status != 1 {
-		t.Fatalf("expected settled merchant income, got %+v", income)
+	if income.Status != 2 {
+		t.Fatalf("expected payout completed merchant income, got %+v", income)
 	}
 
 	var auditLog model.AuditLog
-	if err := db.Where("operation_type = ?", "manual_release_funds").Order("id DESC").First(&auditLog).Error; err != nil {
+	if err := db.Where("operation_type = ?", "release_milestone_funds").Order("id DESC").First(&auditLog).Error; err != nil {
 		t.Fatalf("expected manual release audit log: %v", err)
 	}
-	if auditLog.ResourceID != project.ID {
+	if auditLog.ResourceID != project.ID || auditLog.OperatorType != "admin" {
 		t.Fatalf("unexpected audit log resource: %+v", auditLog)
+	}
+	if !strings.Contains(auditLog.Metadata, "admin.manual_release") {
+		t.Fatalf("expected admin manual release source in audit metadata, got %+v", auditLog)
 	}
 
 	var providerNotification model.Notification

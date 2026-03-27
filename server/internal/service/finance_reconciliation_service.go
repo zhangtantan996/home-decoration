@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -39,6 +40,23 @@ type FinanceReconciliationView struct {
 	UpdatedAt         time.Time                `json:"updatedAt"`
 	Summary           map[string]interface{}   `json:"summary"`
 	Findings          []map[string]interface{} `json:"findings"`
+}
+
+type FinanceReconciliationItemView struct {
+	ID               uint64                 `json:"id"`
+	ReconciliationID uint64                 `json:"reconciliationId"`
+	ItemType         string                 `json:"itemType"`
+	Code             string                 `json:"code"`
+	Level            string                 `json:"level"`
+	ReferenceType    string                 `json:"referenceType"`
+	ReferenceID      uint64                 `json:"referenceId"`
+	Message          string                 `json:"message"`
+	ExpectedCount    int64                  `json:"expectedCount"`
+	ActualCount      int64                  `json:"actualCount"`
+	ExpectedAmount   float64                `json:"expectedAmount"`
+	ActualAmount     float64                `json:"actualAmount"`
+	Detail           map[string]interface{} `json:"detail"`
+	CreatedAt        time.Time              `json:"createdAt"`
 }
 
 type financeAggregate struct {
@@ -84,6 +102,11 @@ func (s *FinanceReconciliationService) RunDailyReconciliation(targetDate time.Ti
 	if err != nil {
 		return nil, err
 	}
+	externalFindings, err := s.collectExternalBillFindings(reconcileDate, startAt, endAt)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, externalFindings...)
 	summary.Date = reconcileDate.Format("2006-01-02")
 
 	var result model.FinanceReconciliation
@@ -127,16 +150,24 @@ func (s *FinanceReconciliationService) RunDailyReconciliation(targetDate time.Ti
 				return err
 			}
 			result = record
-			return nil
+		} else {
+			if err := tx.Model(&current).Updates(updates).Error; err != nil {
+				return err
+			}
+			if err := tx.First(&current, current.ID).Error; err != nil {
+				return err
+			}
+			result = current
 		}
-
-		if err := tx.Model(&current).Updates(updates).Error; err != nil {
+		if err := tx.Where("reconciliation_id = ?", result.ID).Delete(&model.FinanceReconciliationItem{}).Error; err != nil {
 			return err
 		}
-		if err := tx.First(&current, current.ID).Error; err != nil {
-			return err
+		items := buildFinanceReconciliationItemModels(result.ID, findings)
+		if len(items) > 0 {
+			if err := tx.Create(&items).Error; err != nil {
+				return err
+			}
 		}
-		result = current
 		return nil
 	})
 	if err != nil {
@@ -144,6 +175,36 @@ func (s *FinanceReconciliationService) RunDailyReconciliation(targetDate time.Ti
 	}
 
 	return buildFinanceReconciliationView(&result), nil
+}
+
+func (s *FinanceReconciliationService) ListFinanceReconciliationItems(id uint64) ([]FinanceReconciliationItemView, error) {
+	if id == 0 {
+		return nil, errors.New("对账记录不存在")
+	}
+	var items []model.FinanceReconciliationItem
+	if err := repository.DB.Where("reconciliation_id = ?", id).Order("id ASC").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	result := make([]FinanceReconciliationItemView, 0, len(items))
+	for i := range items {
+		result = append(result, FinanceReconciliationItemView{
+			ID:               items[i].ID,
+			ReconciliationID: items[i].ReconciliationID,
+			ItemType:         items[i].ItemType,
+			Code:             items[i].Code,
+			Level:            items[i].Level,
+			ReferenceType:    items[i].ReferenceType,
+			ReferenceID:      items[i].ReferenceID,
+			Message:          items[i].Message,
+			ExpectedCount:    items[i].ExpectedCount,
+			ActualCount:      items[i].ActualCount,
+			ExpectedAmount:   roundFinanceAmount(items[i].ExpectedAmount),
+			ActualAmount:     roundFinanceAmount(items[i].ActualAmount),
+			Detail:           parseJSONObject(items[i].DetailJSON),
+			CreatedAt:        items[i].CreatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (s *FinanceReconciliationService) ListFinanceReconciliations(filter FinanceReconciliationFilter) ([]FinanceReconciliationView, int64, error) {
@@ -280,6 +341,38 @@ func (s *FinanceReconciliationService) collectDailyReconciliation(startAt, endAt
 	if err != nil {
 		return nil, nil, err
 	}
+	settlementAgg, err := querySettlementAggregate(startAt, endAt)
+	if err != nil {
+		return nil, nil, err
+	}
+	settlementProjectionAgg, err := querySettlementProjectionAggregate(startAt, endAt)
+	if err != nil {
+		return nil, nil, err
+	}
+	settlementLedgerAgg, err := querySettlementPendingLedgerAggregate(startAt, endAt)
+	if err != nil {
+		return nil, nil, err
+	}
+	payoutLedgerAgg, err := querySettlementPaidLedgerAggregate(startAt, endAt)
+	if err != nil {
+		return nil, nil, err
+	}
+	paidPayoutAgg, err := queryPayoutAggregate(startAt, endAt)
+	if err != nil {
+		return nil, nil, err
+	}
+	orphanSettlementCount, err := queryOrphanSettlementCount()
+	if err != nil {
+		return nil, nil, err
+	}
+	orphanPayoutCount, err := queryOrphanPayoutCount()
+	if err != nil {
+		return nil, nil, err
+	}
+	statusMismatchCount, err := querySettlementStatusMismatchCount()
+	if err != nil {
+		return nil, nil, err
+	}
 	escrowBalancedCount, escrowUnbalancedCount, escrowExamples, err := queryEscrowBalanceSummary()
 	if err != nil {
 		return nil, nil, err
@@ -338,6 +431,91 @@ func (s *FinanceReconciliationService) collectDailyReconciliation(startAt, endAt
 		})
 	}
 
+	if settlementAgg.Count != settlementProjectionAgg.Count {
+		findings = append(findings, financeReconciliationFinding{
+			Code:          "missing_runtime",
+			Level:         "warning",
+			Message:       "结算单与商家结算投影数量不一致",
+			ExpectedCount: settlementAgg.Count,
+			ActualCount:   settlementProjectionAgg.Count,
+			Details:       map[string]interface{}{"scope": "settlement_projection"},
+		})
+	}
+	if amountDiffers(settlementAgg.Amount, settlementProjectionAgg.Amount) {
+		findings = append(findings, financeReconciliationFinding{
+			Code:           "amount_mismatch",
+			Level:          "warning",
+			Message:        "结算单金额与商家结算投影金额不一致",
+			ExpectedAmount: roundFinanceAmount(settlementAgg.Amount),
+			ActualAmount:   roundFinanceAmount(settlementProjectionAgg.Amount),
+			Details:        map[string]interface{}{"scope": "settlement_projection"},
+		})
+	}
+	if settlementAgg.Count != settlementLedgerAgg.Count {
+		findings = append(findings, financeReconciliationFinding{
+			Code:          "missing_ledger",
+			Level:         "warning",
+			Message:       "结算单与待结算账务分录数量不一致",
+			ExpectedCount: settlementAgg.Count,
+			ActualCount:   settlementLedgerAgg.Count,
+			Details:       map[string]interface{}{"scope": "settlement_pending_ledger"},
+		})
+	}
+	if amountDiffers(settlementProjectionAgg.Amount, settlementLedgerAgg.Amount) {
+		findings = append(findings, financeReconciliationFinding{
+			Code:           "amount_mismatch",
+			Level:          "warning",
+			Message:        "结算净额与待结算账务分录金额不一致",
+			ExpectedAmount: roundFinanceAmount(settlementProjectionAgg.Amount),
+			ActualAmount:   roundFinanceAmount(settlementLedgerAgg.Amount),
+			Details:        map[string]interface{}{"scope": "settlement_pending_ledger"},
+		})
+	}
+	if paidPayoutAgg.Count != payoutLedgerAgg.Count {
+		findings = append(findings, financeReconciliationFinding{
+			Code:          "missing_ledger",
+			Level:         "warning",
+			Message:       "出款运行时与已出款账务分录数量不一致",
+			ExpectedCount: paidPayoutAgg.Count,
+			ActualCount:   payoutLedgerAgg.Count,
+			Details:       map[string]interface{}{"scope": "payout_paid_ledger"},
+		})
+	}
+	if amountDiffers(paidPayoutAgg.Amount, payoutLedgerAgg.Amount) {
+		findings = append(findings, financeReconciliationFinding{
+			Code:           "amount_mismatch",
+			Level:          "warning",
+			Message:        "出款运行时与已出款账务分录金额不一致",
+			ExpectedAmount: roundFinanceAmount(paidPayoutAgg.Amount),
+			ActualAmount:   roundFinanceAmount(payoutLedgerAgg.Amount),
+			Details:        map[string]interface{}{"scope": "payout_paid_ledger"},
+		})
+	}
+	if orphanSettlementCount > 0 {
+		findings = append(findings, financeReconciliationFinding{
+			Code:        "orphan_settlement",
+			Level:       "warning",
+			Message:     "存在未关联商家结算投影的结算单",
+			ActualCount: orphanSettlementCount,
+		})
+	}
+	if orphanPayoutCount > 0 {
+		findings = append(findings, financeReconciliationFinding{
+			Code:        "orphan_payout",
+			Level:       "warning",
+			Message:     "存在未关联结算单的出款运行时",
+			ActualCount: orphanPayoutCount,
+		})
+	}
+	if statusMismatchCount > 0 {
+		findings = append(findings, financeReconciliationFinding{
+			Code:        "status_mismatch",
+			Level:       "warning",
+			Message:     "结算单状态与出款运行时状态不一致",
+			ActualCount: statusMismatchCount,
+		})
+	}
+
 	if escrowUnbalancedCount > 0 {
 		details := map[string]interface{}{"examples": escrowExamples}
 		findings = append(findings, financeReconciliationFinding{
@@ -353,10 +531,126 @@ func (s *FinanceReconciliationService) collectDailyReconciliation(startAt, endAt
 	return summary, findings, nil
 }
 
+func (s *FinanceReconciliationService) collectExternalBillFindings(reconcileDate, startAt, endAt time.Time) ([]financeReconciliationFinding, error) {
+	bills, err := NewCustodyGateway().PullBill(context.Background(), reconcileDate)
+	if err != nil {
+		return nil, err
+	}
+	externalInbound := financeAggregate{}
+	externalRefund := financeAggregate{}
+	externalPayout := financeAggregate{}
+	for _, item := range bills {
+		switch item.Direction {
+		case "inbound":
+			externalInbound.Count++
+			externalInbound.Amount += item.Amount
+		case "refund":
+			externalRefund.Count++
+			externalRefund.Amount += item.Amount
+		case "payout":
+			externalPayout.Count++
+			externalPayout.Amount += item.Amount
+		}
+	}
+
+	internalInbound, err := queryPaidPaymentOrderAggregate(startAt, endAt)
+	if err != nil {
+		return nil, err
+	}
+	internalRefund, err := queryRefundOrderAggregate(startAt, endAt)
+	if err != nil {
+		return nil, err
+	}
+	internalPayout, err := queryPayoutAggregate(startAt, endAt)
+	if err != nil {
+		return nil, err
+	}
+
+	findings := make([]financeReconciliationFinding, 0, 3)
+	if internalInbound.Count != externalInbound.Count || amountDiffers(internalInbound.Amount, externalInbound.Amount) {
+		findings = append(findings, financeReconciliationFinding{
+			Code:           "external_inbound_mismatch",
+			Level:          "warning",
+			Message:        "托管外部入金账单与内部支付成功记录不一致",
+			ExpectedCount:  internalInbound.Count,
+			ActualCount:    externalInbound.Count,
+			ExpectedAmount: roundFinanceAmount(internalInbound.Amount),
+			ActualAmount:   roundFinanceAmount(externalInbound.Amount),
+			Details:        map[string]interface{}{"source": "custody_bill"},
+		})
+	}
+	if internalRefund.Count != externalRefund.Count || amountDiffers(internalRefund.Amount, externalRefund.Amount) {
+		findings = append(findings, financeReconciliationFinding{
+			Code:           "external_refund_mismatch",
+			Level:          "warning",
+			Message:        "托管外部退款账单与内部退款单不一致",
+			ExpectedCount:  internalRefund.Count,
+			ActualCount:    externalRefund.Count,
+			ExpectedAmount: roundFinanceAmount(internalRefund.Amount),
+			ActualAmount:   roundFinanceAmount(externalRefund.Amount),
+			Details:        map[string]interface{}{"source": "custody_bill"},
+		})
+	}
+	if internalPayout.Count != externalPayout.Count || amountDiffers(internalPayout.Amount, externalPayout.Amount) {
+		findings = append(findings, financeReconciliationFinding{
+			Code:           "external_payout_mismatch",
+			Level:          "warning",
+			Message:        "托管外部出款账单与内部自动出款记录不一致",
+			ExpectedCount:  internalPayout.Count,
+			ActualCount:    externalPayout.Count,
+			ExpectedAmount: roundFinanceAmount(internalPayout.Amount),
+			ActualAmount:   roundFinanceAmount(externalPayout.Amount),
+			Details:        map[string]interface{}{"source": "custody_bill"},
+		})
+	}
+	return findings, nil
+}
+
+func buildFinanceReconciliationItemModels(reconciliationID uint64, findings []financeReconciliationFinding) []model.FinanceReconciliationItem {
+	if reconciliationID == 0 || len(findings) == 0 {
+		return nil
+	}
+	items := make([]model.FinanceReconciliationItem, 0, len(findings))
+	for _, finding := range findings {
+		items = append(items, model.FinanceReconciliationItem{
+			ReconciliationID: reconciliationID,
+			ItemType:         deriveReconciliationItemType(finding.Code),
+			Code:             finding.Code,
+			Level:            finding.Level,
+			Message:          finding.Message,
+			ExpectedCount:    finding.ExpectedCount,
+			ActualCount:      finding.ActualCount,
+			ExpectedAmount:   roundFinanceAmount(finding.ExpectedAmount),
+			ActualAmount:     roundFinanceAmount(finding.ActualAmount),
+			DetailJSON:       mustMarshalJSON(finding.Details),
+		})
+	}
+	return items
+}
+
+func deriveReconciliationItemType(code string) string {
+	if strings.HasPrefix(strings.TrimSpace(code), "external_") {
+		return "external_bill"
+	}
+	return "internal"
+}
+
 func queryTransactionAggregate(txType string, startAt, endAt time.Time) (*financeAggregate, error) {
 	var row financeAggregate
 	err := repository.DB.Model(&model.Transaction{}).
 		Where("type = ? AND status = ? AND COALESCE(completed_at, created_at) >= ? AND COALESCE(completed_at, created_at) < ?", txType, 1, startAt, endAt).
+		Select("COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount").
+		Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func queryPaidPaymentOrderAggregate(startAt, endAt time.Time) (*financeAggregate, error) {
+	var row financeAggregate
+	err := repository.DB.Model(&model.PaymentOrder{}).
+		Where("status = ? AND COALESCE(paid_at, created_at) >= ? AND COALESCE(paid_at, created_at) < ?", model.PaymentStatusPaid, startAt, endAt).
 		Select("COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount").
 		Scan(&row).Error
 	if err != nil {
@@ -423,6 +717,98 @@ func queryWithdrawAggregate(startAt, endAt time.Time) (*financeAggregate, *finan
 		return nil, nil, err
 	}
 	return &withdrawAgg, &incomeAgg, nil
+}
+
+func queryPayoutAggregate(startAt, endAt time.Time) (*financeAggregate, error) {
+	var row financeAggregate
+	err := repository.DB.Model(&model.PayoutOrder{}).
+		Where("status = ? AND COALESCE(paid_at, created_at) >= ? AND COALESCE(paid_at, created_at) < ?", model.PayoutStatusPaid, startAt, endAt).
+		Select("COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount").
+		Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func querySettlementAggregate(startAt, endAt time.Time) (*financeAggregate, error) {
+	var row financeAggregate
+	err := repository.DB.Model(&model.SettlementOrder{}).
+		Where("COALESCE(accepted_at, created_at) >= ? AND COALESCE(accepted_at, created_at) < ?", startAt, endAt).
+		Select("COUNT(*) AS count, COALESCE(SUM(gross_amount), 0) AS amount").
+		Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func querySettlementProjectionAggregate(startAt, endAt time.Time) (*financeAggregate, error) {
+	var row financeAggregate
+	err := repository.DB.Model(&model.MerchantIncome{}).
+		Where("settlement_order_id > 0 AND COALESCE(settled_at, created_at) >= ? AND COALESCE(settled_at, created_at) < ?", startAt, endAt).
+		Select("COUNT(DISTINCT settlement_order_id) AS count, COALESCE(SUM(amount), 0) AS amount").
+		Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func querySettlementPendingLedgerAggregate(startAt, endAt time.Time) (*financeAggregate, error) {
+	var row financeAggregate
+	err := repository.DB.Model(&model.LedgerEntry{}).
+		Where("runtime_type = ? AND occurred_at >= ? AND occurred_at < ? AND CAST(metadata_json AS TEXT) LIKE ?", "settlement_order", startAt, endAt, "%merchant_settlement_pending%").
+		Select("COUNT(DISTINCT runtime_id) AS count, COALESCE(SUM(amount), 0) AS amount").
+		Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func querySettlementPaidLedgerAggregate(startAt, endAt time.Time) (*financeAggregate, error) {
+	var row financeAggregate
+	err := repository.DB.Model(&model.LedgerEntry{}).
+		Where("runtime_type = ? AND occurred_at >= ? AND occurred_at < ? AND CAST(metadata_json AS TEXT) LIKE ?", "payout_order", startAt, endAt, "%merchant_settlement_paid%").
+		Select("COUNT(DISTINCT runtime_id) AS count, COALESCE(SUM(amount), 0) AS amount").
+		Scan(&row).Error
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func queryOrphanSettlementCount() (int64, error) {
+	var count int64
+	err := repository.DB.Table("settlement_orders AS so").
+		Joins("LEFT JOIN merchant_incomes AS mi ON mi.settlement_order_id = so.id").
+		Where("mi.id IS NULL").
+		Count(&count).Error
+	return count, err
+}
+
+func queryOrphanPayoutCount() (int64, error) {
+	var count int64
+	err := repository.DB.Table("payout_orders AS po").
+		Joins("LEFT JOIN settlement_orders AS so ON po.biz_type = ? AND po.biz_id = so.id", model.PayoutBizTypeSettlementOrder).
+		Where("po.biz_type = ? AND so.id IS NULL", model.PayoutBizTypeSettlementOrder).
+		Count(&count).Error
+	return count, err
+}
+
+func querySettlementStatusMismatchCount() (int64, error) {
+	var count int64
+	err := repository.DB.Table("payout_orders AS po").
+		Joins("JOIN settlement_orders AS so ON po.biz_type = ? AND po.biz_id = so.id", model.PayoutBizTypeSettlementOrder).
+		Where(`(po.status = ? AND so.status <> ?)
+			OR (po.status = ? AND so.status <> ?)
+			OR (po.status = ? AND so.status <> ?)`,
+			model.PayoutStatusPaid, model.SettlementStatusPaid,
+			model.PayoutStatusProcessing, model.SettlementStatusPayoutProcessing,
+			model.PayoutStatusFailed, model.SettlementStatusPayoutFailed).
+		Count(&count).Error
+	return count, err
 }
 
 type financeEscrowGapExample struct {

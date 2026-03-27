@@ -31,7 +31,7 @@ func SubmitProposal(c *gin.Context) {
 
 	proposal, err := proposalService.SubmitProposal(userID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "提交方案失败")
 		return
 	}
 
@@ -44,7 +44,7 @@ func GetProposal(c *gin.Context) {
 
 	proposal, err := proposalService.GetProposal(proposalID)
 	if err != nil {
-		response.Error(c, 404, err.Error())
+		respondScopedAccessError(c, err, "获取方案失败")
 		return
 	}
 
@@ -53,6 +53,11 @@ func GetProposal(c *gin.Context) {
 	var hasOrder bool
 	deliveryUnlocked := false
 	if err := repository.DB.Where("proposal_id = ? AND order_type = ?", proposalID, "design").Order("created_at desc").First(&order).Error; err == nil {
+		if order.Status == model.OrderStatusPending {
+			if _, syncErr := paymentService.SyncLatestPendingBizPayment(model.PaymentBizTypeOrder, order.ID); syncErr == nil {
+				_ = repository.DB.First(&order, order.ID).Error
+			}
+		}
 		hasOrder = true
 		if order.Status == model.OrderStatusPaid && configSvc.GetDesignFeeUnlockDownload() {
 			deliveryUnlocked = true
@@ -80,7 +85,7 @@ func GetProposalByBooking(c *gin.Context) {
 
 	proposal, err := proposalService.GetProposalByBooking(bookingID)
 	if err != nil {
-		response.Error(c, 404, err.Error())
+		respondScopedAccessError(c, err, "获取方案失败")
 		return
 	}
 
@@ -94,7 +99,7 @@ func ConfirmProposal(c *gin.Context) {
 
 	order, err := proposalService.ConfirmProposal(userID, proposalID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "确认方案失败")
 		return
 	}
 
@@ -117,7 +122,7 @@ func RejectProposal(c *gin.Context) {
 
 	result, err := proposalService.RejectProposal(userID, proposalID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "拒绝方案失败")
 		return
 	}
 
@@ -135,7 +140,7 @@ func GetProposalVersionHistory(c *gin.Context) {
 
 	proposals, err := proposalService.GetProposalVersionHistory(bookingID)
 	if err != nil {
-		response.Error(c, 500, err.Error())
+		respondScopedAccessError(c, err, "获取方案历史失败")
 		return
 	}
 
@@ -154,7 +159,7 @@ func ResubmitProposal(c *gin.Context) {
 
 	proposal, err := proposalService.ResubmitProposal(designerID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "重新提交方案失败")
 		return
 	}
 
@@ -171,7 +176,7 @@ func GetRejectionInfo(c *gin.Context) {
 
 	info, err := proposalService.GetRejectionInfo(designerID, proposalID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取拒绝信息失败")
 		return
 	}
 
@@ -221,21 +226,7 @@ func ListDesignerProposals(c *gin.Context) {
 
 // GenerateBill 生成项目账单
 func GenerateBill(c *gin.Context) {
-	userID := c.GetUint64("userId")
-
-	var input service.GenerateBillInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.Error(c, 400, "参数错误: "+err.Error())
-		return
-	}
-
-	bill, err := orderService.GenerateBill(userID, &input)
-	if err != nil {
-		response.Error(c, 400, err.Error())
-		return
-	}
-
-	response.Success(c, bill)
+	respondLegacyConflict(c, "旧项目账单生成入口已禁用，请改用正式订单与支付计划链路", projectBillLegacyDisabledCode)
 }
 
 // GetProjectBill 获取项目账单
@@ -268,7 +259,7 @@ func PayOrder(c *gin.Context) {
 
 	result, err := paymentService.StartOrderPayment(userID, orderID, req.TerminalType)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "发起订单支付失败")
 		return
 	}
 
@@ -281,7 +272,7 @@ func CancelOrder(c *gin.Context) {
 	orderID := parseUint64(c.Param("id"))
 
 	if err := orderService.CancelOrder(userID, orderID); err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "取消订单失败")
 		return
 	}
 
@@ -304,7 +295,7 @@ func PayPaymentPlan(c *gin.Context) {
 
 	result, err := paymentService.StartPaymentPlanPayment(userID, planID, req.TerminalType)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "发起分期支付失败")
 		return
 	}
 
@@ -318,7 +309,7 @@ func GetProjectFiles(c *gin.Context) {
 
 	canAccess, err := orderService.CanAccessDesignFiles(userID, projectID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "校验图纸访问权限失败")
 		return
 	}
 
@@ -397,7 +388,7 @@ func MerchantReopenProposal(c *gin.Context) {
 	proposalID := parseUint64(c.Param("id"))
 
 	if err := proposalService.ReopenProposal(userID, proposalID); err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "重新发起方案失败")
 		return
 	}
 
