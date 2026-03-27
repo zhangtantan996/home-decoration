@@ -8,7 +8,7 @@ import { Empty } from '@/components/Empty';
 import { ListItem } from '@/components/ListItem';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import { getBookingDetail, payIntentFee, type BookingDetailResponse } from '@/services/bookings';
+import { getBookingDetail, type BookingDetailResponse } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 
@@ -32,7 +32,6 @@ const BookingDetailPage: React.FC = () => {
   const [id, setId] = useState<number>(0);
   const [detail, setDetail] = useState<BookingDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
 
   useLoad((options) => {
     if (options.id) {
@@ -72,19 +71,14 @@ const BookingDetailPage: React.FC = () => {
   });
 
   const handlePayIntent = async () => {
-    if (!detail?.booking || paying) {
+    if (!detail?.booking) {
       return;
     }
-    setPaying(true);
-    try {
-      await payIntentFee(detail.booking.id);
-      Taro.showToast({ title: '支付成功', icon: 'success' });
-      await fetchDetail();
-    } catch (error) {
-      showErrorToast(error, '支付失败');
-    } finally {
-      setPaying(false);
-    }
+    Taro.showModal({
+      title: '请前往 Web/H5 支付',
+      content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',
+      showCancel: false,
+    });
   };
 
   if (!auth.token) {
@@ -147,8 +141,8 @@ const BookingDetailPage: React.FC = () => {
               <Text className="text-sm text-gray-500">意向金</Text>
               <Text className="text-lg font-bold text-brand">¥{booking.intentFee?.toLocaleString() || '0'}</Text>
             </View>
-            <Button variant="primary" size="sm" onClick={handlePayIntent} loading={paying} disabled={paying}>
-              支付意向金
+            <Button variant="primary" size="sm" onClick={handlePayIntent}>
+              前往 Web/H5 支付
             </Button>
           </View>
         ) : detail.proposalId ? (

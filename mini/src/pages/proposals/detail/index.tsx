@@ -74,7 +74,7 @@ const ProposalDetail: React.FC = () => {
         try {
           setSubmitting(true);
           const result = await confirmProposal(id);
-          Taro.showToast({ title: result.message || '已确认方案', icon: 'success' });
+          Taro.showToast({ title: result.message || '已确认方案，请继续支付设计费', icon: 'success' });
           Taro.navigateTo({ url: '/pages/orders/pending/index?type=design_fee' });
         } catch (error) {
           showErrorToast(error, '操作失败');
@@ -170,6 +170,9 @@ const ProposalDetail: React.FC = () => {
 
         <View className="bg-white p-md mb-xl">
           <View className="font-bold mb-md text-base">方案详情</View>
+          <View className="mb-md p-sm bg-yellow-50 rounded">
+            <View className="text-sm text-yellow-700">设计确认不会直接创建项目。支付设计费后，待服务商提交施工报价，再到“进度”页确认施工报价。</View>
+          </View>
           <View className="mb-md">
             <View className="text-sm text-gray-500 mb-xs">预估工期</View>
             <View className="font-medium">{detail.estimatedDays} 天</View>

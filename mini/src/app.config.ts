@@ -26,6 +26,7 @@ export default {
     'pages/booking/detail/index',
     'pages/proposals/list/index',
     'pages/proposals/detail/index',
+    'pages/quote-tasks/detail/index',
     'pages/orders/pending/index',
     'pages/orders/list/index',
     'pages/orders/detail/index',

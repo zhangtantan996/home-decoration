@@ -16,9 +16,9 @@ import {
     Clock,
     CreditCard,
     ChevronRight,
-    AlertCircle,
+    Hammer,
 } from 'lucide-react-native';
-import { proposalApi, orderApi } from '../services/api';
+import { proposalApi, orderApi, quoteTaskApi } from '../services/api';
 import { ProposalStatus, ProposalStatusType, getProposalStatusText } from '../types/businessFlow';
 import { formatServerDate, getServerTimeMs } from '../utils/serverTime';
 
@@ -51,13 +51,32 @@ interface PendingPayment {
     createdAt: string;
 }
 
-interface PendingScreenProps {
-    navigation: any;
+interface QuoteTask {
+    id: number;
+    title: string;
+    status: string;
+    userConfirmationStatus: string;
+    flowSummary?: string;
+    businessStage?: string;
 }
 
-const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
-    const [activeTab, setActiveTab] = useState<'payment' | 'confirm'>('payment');
-    const [proposals, setProposals] = useState<Proposal[]>([]);
+type ConfirmItem =
+    | ({ type: 'proposal' } & Proposal)
+    | ({ type: 'quote_task' } & QuoteTask);
+
+interface PendingScreenProps {
+    navigation: any;
+    route?: {
+        params?: {
+            tab?: 'payment' | 'confirm';
+        };
+    };
+}
+
+const PendingScreen: React.FC<PendingScreenProps> = ({ navigation, route }) => {
+    const initialTab = route?.params?.tab === 'confirm' ? 'confirm' : 'payment';
+    const [activeTab, setActiveTab] = useState<'payment' | 'confirm'>(initialTab);
+    const [confirmItems, setConfirmItems] = useState<ConfirmItem[]>([]);
     const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -68,11 +87,17 @@ const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
                 const res = await orderApi.listPendingPayments();
                 setPendingPayments(res.data?.items || []);
             } else {
-                const res = await proposalApi.list();
-                const pendingProposals = (res.data || []).filter(
-                    (p: Proposal) => p.status === ProposalStatus.PENDING
-                );
-                setProposals(pendingProposals);
+                const [proposalRes, quoteTaskRes] = await Promise.all([
+                    proposalApi.list(),
+                    quoteTaskApi.listMine(),
+                ]);
+                const pendingProposals = (proposalRes.data || [])
+                    .filter((p: Proposal) => p.status === ProposalStatus.PENDING)
+                    .map((item: Proposal) => ({ ...item, type: 'proposal' as const }));
+                const pendingQuoteTasks = (quoteTaskRes.data?.list || [])
+                    .filter((item: QuoteTask) => item.userConfirmationStatus === 'pending')
+                    .map((item: QuoteTask) => ({ ...item, type: 'quote_task' as const }));
+                setConfirmItems([...pendingQuoteTasks, ...pendingProposals]);
             }
         } catch (error) {
             console.error('Failed to load data:', error);
@@ -159,7 +184,41 @@ const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
         );
     };
 
-    const renderProposalItem = ({ item }: { item: Proposal }) => {
+    const renderConfirmItem = ({ item }: { item: ConfirmItem }) => {
+        if (item.type === 'quote_task') {
+            return (
+                <TouchableOpacity
+                    style={styles.card}
+                    onPress={() => navigation.navigate('QuoteTaskConfirm', { quoteTaskId: item.id })}
+                    activeOpacity={0.7}
+                >
+                    <View style={styles.cardHeader}>
+                        <View style={[styles.cardIcon, { backgroundColor: '#FEF3C7' }]}>
+                            <Hammer size={20} color="#D97706" />
+                        </View>
+                        <View style={styles.cardInfo}>
+                            <Text style={styles.cardTitle} numberOfLines={1}>
+                                {item.title || '施工报价确认'}
+                            </Text>
+                            <Text style={styles.cardSubtitle}>
+                                {item.flowSummary || '施工报价已提交，确认后才会创建项目'}
+                            </Text>
+                        </View>
+                        <View style={[styles.statusBadge, { backgroundColor: '#F59E0B20' }]}>
+                            <Text style={[styles.statusText, { color: '#D97706' }]}>
+                                {item.status || '待确认'}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.actionFooter}>
+                        <Text style={styles.actionText}>点击确认施工报价</Text>
+                        <ChevronRight size={16} color="#71717A" />
+                    </View>
+                </TouchableOpacity>
+            );
+        }
+
         const totalEstimate = item.designFee + item.constructionFee + item.materialFee;
 
         return (
@@ -219,9 +278,9 @@ const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
             ) : (
                 <>
                     <Clock size={48} color="#D4D4D8" />
-                    <Text style={styles.emptyTitle}>暂无待确认方案</Text>
+                    <Text style={styles.emptyTitle}>暂无待确认事项</Text>
                     <Text style={styles.emptySubtitle}>
-                        设计师提交方案后，您可以在这里查看并确认
+                        设计方案确认和施工报价确认都会在这里统一处理
                     </Text>
                 </>
             )}
@@ -229,7 +288,7 @@ const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
     );
 
     const getData = () => {
-        return activeTab === 'payment' ? pendingPayments : proposals;
+        return activeTab === 'payment' ? pendingPayments : confirmItems;
     };
 
     return (
@@ -267,7 +326,7 @@ const PendingScreen: React.FC<PendingScreenProps> = ({ navigation }) => {
             ) : (
                 <FlatList
                     data={getData() as any[]}
-                    renderItem={activeTab === 'payment' ? renderPaymentItem as any : renderProposalItem}
+                    renderItem={activeTab === 'payment' ? renderPaymentItem as any : renderConfirmItem}
                     keyExtractor={(item) => `${activeTab}-${item.id}`}
                     contentContainerStyle={styles.listContent}
                     showsVerticalScrollIndicator={false}

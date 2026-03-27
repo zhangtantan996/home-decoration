@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { StatusBanner } from '../components/StatusBanner';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { getBusinessStageLabel } from '../constants/statuses';
+import { getWebApiErrorMessage, isWebApiConflict } from '../services/http';
 import { confirmQuoteTaskSubmission, getQuoteTaskDetail, rejectQuoteTaskSubmission } from '../services/quoteTasks';
 
 export function QuoteTaskDetailPage() {
@@ -26,7 +28,7 @@ export function QuoteTaskDetailPage() {
         meta={(
           <>
             <span className="status-chip" data-tone="warning">{data.statusText}</span>
-            {data.businessStage ? <span className="status-chip">{data.businessStage}</span> : null}
+            {data.businessStage ? <span className="status-chip">{getBusinessStageLabel(data.businessStage)}</span> : null}
           </>
         )}
         title={data.title}
@@ -103,7 +105,12 @@ export function QuoteTaskDetailPage() {
                   setMessage('施工报价已确认，项目已进入待开工阶段。');
                   navigate('/progress');
                 } catch (submitError) {
-                  setMessage(submitError instanceof Error ? submitError.message : '确认失败');
+                  if (isWebApiConflict(submitError)) {
+                    await reload();
+                    setMessage('状态已变化，请刷新后重试');
+                    return;
+                  }
+                  setMessage(getWebApiErrorMessage(submitError, '确认失败'));
                 } finally {
                   setSubmitting(false);
                 }
@@ -123,7 +130,12 @@ export function QuoteTaskDetailPage() {
                   await reload();
                   setMessage('施工报价已驳回，任务已退回待重新报价。');
                 } catch (submitError) {
-                  setMessage(submitError instanceof Error ? submitError.message : '驳回失败');
+                  if (isWebApiConflict(submitError)) {
+                    await reload();
+                    setMessage('状态已变化，请刷新后重试');
+                    return;
+                  }
+                  setMessage(getWebApiErrorMessage(submitError, '驳回失败'));
                 } finally {
                   setSubmitting(false);
                 }

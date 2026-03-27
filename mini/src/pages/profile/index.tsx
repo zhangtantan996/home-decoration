@@ -136,6 +136,10 @@ export default function Profile() {
 
   const handleProgress = () => {
     requireAuth(() => {
+      if (auth.user?.activeRole && !['owner', 'homeowner'].includes(auth.user.activeRole)) {
+        Taro.showToast({ title: '请切换回业主身份后查看项目进度', icon: 'none' });
+        return;
+      }
       Taro.switchTab({ url: '/pages/progress/index' });
     });
   };
@@ -218,7 +222,7 @@ export default function Profile() {
         <View className="profile-page__stats">
           <View className="profile-page__stat">
             <Text className="profile-page__stat-value">{favoriteCaseCount}</Text>
-            <Text className="profile-page__stat-label">我的收藏</Text>
+            <Text className="profile-page__stat-label">灵感收藏</Text>
           </View>
           <View className="profile-page__stat">
             <Text className="profile-page__stat-value">{pendingPayments.length}</Text>
@@ -274,8 +278,8 @@ export default function Profile() {
             onClick={handleProgress}
           />
           <ListItem
-            title="我的收藏"
-            description="查看已收藏的灵感与案例"
+            title="灵感收藏"
+            description="查看已收藏的灵感案例"
             arrow
             icon={<Icon name="favorites" size={28} color="#71717A" />}
             extra={<View className="profile-page__list-extra">{favoriteCaseCount}</View>}

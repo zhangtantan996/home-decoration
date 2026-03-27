@@ -48,6 +48,7 @@ interface DemandProviderDTO {
   name?: string;
   avatar?: string;
   rating?: number;
+  reviewCount?: number;
   completedCnt?: number;
   verified?: boolean;
   providerType?: number;
@@ -115,6 +116,7 @@ function adaptProvider(dto: DemandProviderDTO): DemandProviderVM {
     name: dto.name || `服务商 #${dto.id}`,
     avatar: dto.avatar || 'https://placehold.co/120x120/e4e4e7/27272a?text=SP',
     rating: Number(dto.rating || 0),
+    reviewCount: Number(dto.reviewCount || 0),
     completedCnt: Number(dto.completedCnt || 0),
     verified: Boolean(dto.verified),
     providerType: Number(dto.providerType || 0),

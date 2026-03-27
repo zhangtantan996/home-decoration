@@ -21,6 +21,10 @@ import {
 } from '../constants/statuses';
 import { compactPhone, formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
 import { requestJson } from './http';
+import { readThroughCache } from './runtimeCache';
+
+const PROJECT_LIST_TTL_MS = 15 * 1000;
+const PROJECT_DETAIL_TTL_MS = 15 * 1000;
 
 interface ProjectListDTO {
   id: number;
@@ -69,6 +73,21 @@ interface ProjectCompletionResponse {
   completionRejectedAt?: string;
   completionRejectionReason?: string;
   inspirationCaseDraftId?: number;
+  projectReview?: {
+    id: number;
+    projectId: number;
+    providerId: number;
+    rating: number;
+    content?: string;
+    images?: string[];
+    createdAt?: string;
+  };
+}
+
+export interface ProjectReviewPayload {
+  rating: number;
+  content: string;
+  images: string[];
 }
 
 export interface ProjectDisputePayload {
@@ -239,58 +258,71 @@ function adaptBillingPlan(item: NonNullable<ProjectBillDTO['paymentPlans']>[numb
 }
 
 export async function listProjects(params: { page?: number; pageSize?: number } = {}) {
-  const data = await requestJson<PageEnvelope<ProjectListDTO>>('/projects', {
-    query: {
-      page: params.page || 1,
-      pageSize: params.pageSize || 10,
-    },
-  });
-
-  return {
-    list: data.list.map(toProjectListItem),
-    total: data.total,
-    page: data.page,
-    pageSize: data.pageSize,
+  const query = {
+    page: params.page || 1,
+    pageSize: params.pageSize || 10,
   };
+
+  return readThroughCache(
+    `projects:list:${JSON.stringify(query)}`,
+    PROJECT_LIST_TTL_MS,
+    async () => {
+      const data = await requestJson<PageEnvelope<ProjectListDTO>>('/projects', { query });
+      return {
+        list: data.list.map(toProjectListItem),
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+      };
+    },
+    'user',
+  );
 }
 
 export async function getProjectDetail(id: number) {
-  const [detail, phaseResponse, milestoneResponse] = await Promise.all([
-    requestJson<ProjectDetailResponse>(`/projects/${id}`),
-    requestJson<{ phases: ProjectPhaseDTO[] }>(`/projects/${id}/phases`),
-    requestJson<{ milestones: ProjectMilestoneDTO[] }>(`/projects/${id}/milestones`),
-  ]);
+  return readThroughCache(
+    `projects:detail:${id}`,
+    PROJECT_DETAIL_TTL_MS,
+    async () => {
+      const [detail, phaseResponse, milestoneResponse] = await Promise.all([
+        requestJson<ProjectDetailResponse>(`/projects/${id}`),
+        requestJson<{ phases: ProjectPhaseDTO[] }>(`/projects/${id}/phases`),
+        requestJson<{ milestones: ProjectMilestoneDTO[] }>(`/projects/${id}/milestones`),
+      ]);
 
-  const result: ProjectDetailVM = {
-    id: detail.id,
-    name: detail.name || '项目',
-    address: detail.address || '地址待补充',
-    currentPhase: detail.currentPhase || '待同步',
-    statusText: PROJECT_STATUS_LABELS[Number(detail.status || 0)] || '处理中',
-    startDateText: formatDate(detail.startDate),
-    expectedEndText: formatDate(detail.expectedEnd),
-    businessStage: detail.businessStage || undefined,
-    flowSummary: detail.flowSummary || undefined,
-    availableActions: detail.availableActions || [],
-    selectedQuoteTaskId: detail.selectedQuoteTaskId || undefined,
-    areaText: formatArea(detail.area),
-    budgetText: formatCurrency(detail.budget),
-    ownerName: detail.ownerName || '业主',
-    providerName: detail.providerName || '服务商',
-    providerAvatar: detail.providerAvatar || undefined,
-    providerPhoneHint: compactPhone(detail.providerPhone || ''),
-    providerRoleText: detail.providerType === 1 ? '设计师' : detail.providerType === 2 ? '装修公司' : detail.providerType === 3 ? '工长' : '服务商',
-    escrowBalanceText: formatCurrency(detail.escrowBalance),
-    phases: adaptPhases(phaseResponse.phases || []),
-    milestones: adaptMilestones(milestoneResponse.milestones || []),
-    completedPhotos: detail.completedPhotos || [],
-    completionNotes: detail.completionNotes || undefined,
-    completionSubmittedAt: formatDateTime(detail.completionSubmittedAt),
-    completionRejectedAt: formatDateTime(detail.completionRejectedAt),
-    completionRejectionReason: detail.completionRejectionReason || undefined,
-  };
+      const result: ProjectDetailVM = {
+        id: detail.id,
+        name: detail.name || '项目',
+        address: detail.address || '地址待补充',
+        currentPhase: detail.currentPhase || '待同步',
+        statusText: PROJECT_STATUS_LABELS[Number(detail.status || 0)] || '处理中',
+        startDateText: formatDate(detail.startDate),
+        expectedEndText: formatDate(detail.expectedEnd),
+        businessStage: detail.businessStage || undefined,
+        flowSummary: detail.flowSummary || undefined,
+        availableActions: detail.availableActions || [],
+        selectedQuoteTaskId: detail.selectedQuoteTaskId || undefined,
+        areaText: formatArea(detail.area),
+        budgetText: formatCurrency(detail.budget),
+        ownerName: detail.ownerName || '业主',
+        providerName: detail.providerName || '服务商',
+        providerAvatar: detail.providerAvatar || undefined,
+        providerPhoneHint: compactPhone(detail.providerPhone || ''),
+        providerRoleText: detail.providerType === 1 ? '设计师' : detail.providerType === 2 ? '装修公司' : detail.providerType === 3 ? '工长' : '服务商',
+        escrowBalanceText: formatCurrency(detail.escrowBalance),
+        phases: adaptPhases(phaseResponse.phases || []),
+        milestones: adaptMilestones(milestoneResponse.milestones || []),
+        completedPhotos: detail.completedPhotos || [],
+        completionNotes: detail.completionNotes || undefined,
+        completionSubmittedAt: formatDateTime(detail.completionSubmittedAt),
+        completionRejectedAt: formatDateTime(detail.completionRejectedAt),
+        completionRejectionReason: detail.completionRejectionReason || undefined,
+      };
 
-  return result;
+      return result;
+    },
+    'user',
+  );
 }
 
 export async function listProjectLogs(projectId: number, params: { page?: number; pageSize?: number } = {}) {
@@ -406,6 +438,17 @@ function adaptProjectCompletion(data: ProjectCompletionResponse): ProjectComplet
     completionRejectedAt: formatDateTime(data.completionRejectedAt),
     completionRejectionReason: data.completionRejectionReason || undefined,
     inspirationCaseDraftId: data.inspirationCaseDraftId || undefined,
+    projectReview: data.projectReview
+      ? {
+          id: data.projectReview.id,
+          projectId: data.projectReview.projectId,
+          providerId: data.projectReview.providerId,
+          rating: Number(data.projectReview.rating || 0),
+          content: data.projectReview.content || '',
+          images: data.projectReview.images || [],
+          createdAt: formatDateTime(data.projectReview.createdAt),
+        }
+      : undefined,
   };
 }
 
@@ -430,4 +473,12 @@ export async function rejectProjectCompletion(projectId: number, reason: string)
     body: { reason },
   });
   return adaptProjectCompletion(data.completion);
+}
+
+export async function submitProjectReview(projectId: number, payload: ProjectReviewPayload) {
+  const data = await requestJson<{ review: ProjectCompletionResponse['projectReview'] }>(`/projects/${projectId}/review`, {
+    method: 'POST',
+    body: payload,
+  });
+  return data.review;
 }

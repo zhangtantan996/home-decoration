@@ -3,6 +3,9 @@ import type { InspirationDetailVM, InspirationListItemVM } from '../types/viewMo
 import { formatCurrency } from '../utils/format';
 import { parseTextArray } from '../utils/provider';
 import { requestJson } from './http';
+import { readThroughCache } from './runtimeCache';
+
+const INSPIRATION_LIST_TTL_MS = 20 * 1000;
 
 interface AuthorDTO {
   id?: number;
@@ -59,19 +62,26 @@ function toInspirationCard(dto: InspirationItemDTO): InspirationListItemVM {
 }
 
 export async function listInspiration(params: { page?: number; pageSize?: number } = {}) {
-  const data = await requestJson<PageEnvelope<InspirationItemDTO>>('/inspiration', {
-    query: {
-      page: params.page || 1,
-      pageSize: params.pageSize || 6,
-    },
-  });
+  const page = params.page || 1;
+  const pageSize = params.pageSize || 6;
 
-  return {
-    list: data.list.map(toInspirationCard),
-    total: data.total,
-    page: data.page,
-    pageSize: data.pageSize,
-  };
+  return readThroughCache(
+    `inspiration:list:${JSON.stringify({ page, pageSize })}`,
+    INSPIRATION_LIST_TTL_MS,
+    async () => {
+      const data = await requestJson<PageEnvelope<InspirationItemDTO>>('/inspiration', {
+        query: { page, pageSize },
+      });
+
+      return {
+        list: data.list.map(toInspirationCard),
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+      };
+    },
+    'public',
+  );
 }
 
 export async function getInspirationDetail(id: number) {

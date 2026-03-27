@@ -118,11 +118,17 @@ export function ProfileHomePage() {
           <div className={styles.orderList}>
             {data.pendingPayments.map((item) => (
               <Link className={styles.orderCard} key={item.id} to={item.href || '/me/orders'}>
-                <div className={styles.orderInfo}>
-                  <strong>{item.title}</strong>
-                  <span>{item.subtitle}</span>
+                <div className={styles.orderContent}>
+                  <div className={styles.orderHeadRow}>
+                    <strong>{item.title}</strong>
+                    <span className={styles.orderStatus}>{item.meta}</span>
+                  </div>
+                  <p className={styles.orderProvider}>{item.subtitle}</p>
                 </div>
-                <em className={styles.orderAmount}>{item.meta}</em>
+                <div className={styles.orderAmountBlock}>
+                  <span className={styles.orderAmountLabel}>订单金额</span>
+                  <em className={styles.orderAmount}>{item.amountText || item.meta}</em>
+                </div>
               </Link>
             ))}
           </div>

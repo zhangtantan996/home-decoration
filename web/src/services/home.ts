@@ -9,6 +9,7 @@ import { listProjects } from './projects';
 import { listProposals } from './proposals';
 import { listProviders } from './providers';
 import { requestJson } from './http';
+import { readThroughCache } from './runtimeCache';
 
 const categories: HomePageDataVM['categories'] = [
   { id: 'designer', label: '设计师', description: '先看风格、方案能力和空间规划。' },
@@ -18,6 +19,7 @@ const categories: HomePageDataVM['categories'] = [
 ];
 
 const hotTerms = ['极简设计', '全案交付', '旧房翻新', '水电改造', '定制柜体', '卫浴主材'];
+const PUBLIC_HOME_TTL_MS = 20 * 1000;
 
 export async function getHomePageData(): Promise<HomePageDataVM> {
   const [designers, companies, foremen, materialShops, inspiration, bookings, demands, proposals, projects, notifications] = await Promise.all([
@@ -133,7 +135,7 @@ interface HomepageResponse {
 
 function toProviderVM(dto: HomepageProviderDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
-  const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit);
+  const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit, role);
   const displayName = resolveProviderDisplayName(role, dto.companyName, dto.nickname);
   return {
     id: dto.id,
@@ -200,15 +202,22 @@ export interface PublicHomePageData {
 }
 
 export async function getPublicHomePageData(): Promise<PublicHomePageData> {
-  const resp = await requestJson<HomepageResponse>('/homepage', { skipAuth: true });
-  return {
-    stats: resp.stats,
-    designers: resp.featuredDesigners.map(toProviderVM),
-    companies: resp.featuredCompanies.map(toProviderVM),
-    foremen: resp.featuredForemen.map(toProviderVM),
-    materialShops: resp.materialShops.map(toShopVM),
-    inspirationHighlights: resp.inspirations.map(toInspirationVM),
-    hotTerms: resp.hotSearchTerms,
-    categories,
-  };
+  return readThroughCache(
+    'homepage:public',
+    PUBLIC_HOME_TTL_MS,
+    async () => {
+      const resp = await requestJson<HomepageResponse>('/homepage', { skipAuth: true });
+      return {
+        stats: resp.stats,
+        designers: resp.featuredDesigners.map(toProviderVM),
+        companies: resp.featuredCompanies.map(toProviderVM),
+        foremen: resp.featuredForemen.map(toProviderVM),
+        materialShops: resp.materialShops.map(toShopVM),
+        inspirationHighlights: resp.inspirations.map(toInspirationVM),
+        hotTerms: resp.hotSearchTerms,
+        categories,
+      };
+    },
+    'public',
+  );
 }

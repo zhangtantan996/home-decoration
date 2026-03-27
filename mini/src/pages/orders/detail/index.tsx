@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getOrderStatus, getOrderTypeLabel } from '@/constants/status';
 import { getBookingDetail } from '@/services/bookings';
-import { cancelOrder, getOrderDetail, payOrder, getInstallmentPlans, payInstallment, type OrderItem, type InstallmentPlan } from '@/services/orders';
+import { cancelOrder, getOrderDetail, getInstallmentPlans, type OrderItem, type InstallmentPlan } from '@/services/orders';
 import { getProjectDetail } from '@/services/projects';
 import { getProviderDetail, type ProviderType } from '@/services/providers';
 import { useAuthStore } from '@/store/auth';
@@ -178,21 +178,16 @@ const OrderDetail: React.FC = () => {
     fetchDetail();
   });
 
-  const handlePay = async () => {
+  const handlePay = () => {
     if (!order || submitting) {
       return;
     }
 
-    setSubmitting(true);
-    try {
-      await payOrder(order.id);
-      Taro.showToast({ title: '支付成功', icon: 'success' });
-      await fetchDetail();
-    } catch (error) {
-      showErrorToast(error, '支付失败');
-    } finally {
-      setSubmitting(false);
-    }
+    Taro.showModal({
+      title: '请前往 Web/H5 支付',
+      content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',
+      showCancel: false,
+    });
   };
 
   const handleCancel = async () => {
@@ -229,30 +224,15 @@ const OrderDetail: React.FC = () => {
     });
   };
 
-  const handlePayInstallment = async (planId: number) => {
+  const handlePayInstallment = () => {
     if (submitting) {
       return;
     }
 
     Taro.showModal({
-      title: '确认支付',
-      content: '确定要支付该期款项吗？',
-      success: async (res) => {
-        if (!res.confirm) {
-          return;
-        }
-
-        setSubmitting(true);
-        try {
-          await payInstallment(planId);
-          Taro.showToast({ title: '支付成功', icon: 'success' });
-          await fetchDetail();
-        } catch (error) {
-          showErrorToast(error, '支付失败');
-        } finally {
-          setSubmitting(false);
-        }
-      }
+      title: '请前往 Web/H5 支付',
+      content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',
+      showCancel: false,
     });
   };
 
@@ -394,7 +374,7 @@ const OrderDetail: React.FC = () => {
                         <Button
                           variant="primary"
                           size="sm"
-                          onClick={() => handlePayInstallment(plan.id)}
+                                                            onClick={() => handlePayInstallment()}
                           disabled={submitting}
                         >
                           立即支付

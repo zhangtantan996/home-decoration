@@ -25,9 +25,54 @@ const AUTH_REFRESH_POLICY: AutoRetryPolicy = {
 };
 const authRefreshGuard = new AutoRetryGuard(AUTH_REFRESH_POLICY);
 
+type MobileErrorPayload = {
+    code?: number;
+    message?: string;
+    data?: Record<string, unknown>;
+};
+
+export class MobileApiError<T = unknown> extends Error {
+    status?: number;
+    code?: number;
+    errorCode?: string;
+    data?: T;
+
+    constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+        super(message);
+        this.name = 'MobileApiError';
+        this.status = options.status;
+        this.code = options.code;
+        this.errorCode = options.errorCode;
+        this.data = options.data;
+    }
+}
+
 export const resetAuthRefreshGuard = () => {
     authRefreshGuard.resetByManual();
 };
+
+const normalizeMobileError = (error: unknown) => {
+    if (error instanceof MobileApiError) {
+        return error;
+    }
+
+    const payload = typeof error === 'object' && error !== null && 'response' in error
+        ? ((error as { response?: { status?: number; data?: MobileErrorPayload } }).response)
+        : undefined;
+    const errorCode = payload?.data?.data && typeof payload.data.data === 'object' && 'errorCode' in payload.data.data
+        ? String(payload.data.data.errorCode || '')
+        : undefined;
+
+    return new MobileApiError(payload?.data?.message || (error instanceof Error ? error.message : '请求失败'), {
+        status: payload?.status,
+        code: payload?.data?.code,
+        errorCode,
+        data: payload?.data?.data,
+    });
+};
+
+export const isMobileConflictError = (error: unknown) =>
+    error instanceof MobileApiError && error.status === 409;
 
 // 刷新 Token 辅助方法：尝试多个后端路径，兼容不同实现
 const tryRefreshToken = async (refreshToken: string) => {
@@ -165,9 +210,13 @@ const shouldRetryWithAlternateBaseUrl = (error: any, request: any): boolean => {
 api.interceptors.request.use(
     async (config) => {
         try {
-            const token = await SecureStorage.getToken();
+            const store = useAuthStore.getState();
+            const token = store.token || await SecureStorage.getToken();
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
+            }
+            if (store.user?.activeRole) {
+                config.headers['X-Active-Role'] = store.user.activeRole;
             }
         } catch (error) {
             if (__DEV__) {
@@ -185,13 +234,15 @@ api.interceptors.response.use(
         // 如果后端返回了业务错误码 (非0)，手动抛出错误
         const res = response.data;
         if (res.code && res.code !== 0) {
-            // 构造一个类似 AxiosError 的对象，以便前端 catch 块能统一处理
-            const error = new Error(res.message || 'Error') as any;
-            error.response = {
-                status: 200,
-                data: res
-            };
-            return Promise.reject(error);
+            const errorCode = res?.data && typeof res.data === 'object' && 'errorCode' in res.data
+                ? String(res.data.errorCode || '')
+                : undefined;
+            return Promise.reject(new MobileApiError(res.message || 'Error', {
+                status: typeof res.code === 'number' && [401, 403, 409].includes(res.code) ? res.code : 200,
+                code: res.code,
+                errorCode,
+                data: res.data,
+            }));
         }
         return res;
     },
@@ -284,7 +335,7 @@ api.interceptors.response.use(
             }
         }
 
-        return Promise.reject(error);
+        return Promise.reject(normalizeMobileError(error));
     }
 );
 
@@ -321,17 +372,6 @@ export const providerApi = {
         api.get<any>(`/${type}/${id}/reviews`, { params: { page, pageSize: 10, filter } }),
     getReviewStats: (type: 'designers' | 'companies' | 'foremen', id: number) =>
         api.get<any>(`/${type}/${id}/review-stats`),
-    // 关注/收藏
-    follow: (id: number, type = 'designer') =>
-        api.post(`/providers/${id}/follow`, null, { params: { type } }),
-    unfollow: (id: number, type = 'designer') =>
-        api.delete(`/providers/${id}/follow`, { params: { type } }),
-    favorite: (id: number, type = 'provider') =>
-        api.post(`/providers/${id}/favorite`, null, { params: { type } }),
-    unfavorite: (id: number, type = 'provider') =>
-        api.delete(`/providers/${id}/favorite`, { params: { type } }),
-    getUserStatus: (id: number) =>
-        api.get<{ isFollowed: boolean; isFavorited: boolean }>(`/providers/${id}/user-status`),
 };
 
 export const caseApi = {
@@ -342,7 +382,13 @@ export const caseApi = {
 export const projectApi = {
     list: () => api.get('/projects'),
     detail: (id: string) => api.get(`/projects/${id}`),
-    create: (data: any) => api.post('/projects', data),
+    create: async (_data: any): Promise<{ data: { id: number } }> => {
+        throw new MobileApiError('业主侧旧建项目入口已禁用，请改用施工报价确认主链', {
+            status: 409,
+            code: 409,
+            errorCode: 'PROJECT_CREATE_LEGACY_DISABLED',
+        });
+    },
     logs: (id: string) => api.get(`/projects/${id}/logs`),
     milestones: (id: string) => api.get(`/projects/${id}/milestones`),
     phases: (projectId: string) => api.get<any>(`/projects/${projectId}/phases`),
@@ -359,8 +405,11 @@ export const escrowApi = {
     getAccount: (projectId: string) => api.get(`/projects/${projectId}/escrow`),
     deposit: (projectId: string, amount: number) =>
         api.post(`/projects/${projectId}/deposit`, { amount }),
-    release: (projectId: string, milestoneId: number, amount: number) =>
-        api.post(`/projects/${projectId}/release`, { milestone_id: milestoneId, amount }),
+    release: (_projectId: string, _milestoneId: number, _amount: number) => Promise.reject(new MobileApiError('业主侧旧放款入口已禁用，请改用正式验收与结算链路', {
+        status: 409,
+        code: 409,
+        errorCode: 'PROJECT_RELEASE_LEGACY_DISABLED',
+    })),
 };
 
 export const bookingApi = {
@@ -429,6 +478,14 @@ export const proposalApi = {
     getVersionHistory: (bookingId: number) => api.get<any>(`/proposals/booking/${bookingId}/history`),
 };
 
+export const quoteTaskApi = {
+    listMine: () => api.get<any>('/quote-tasks/my'),
+    detailUser: (id: number) => api.get<any>(`/quote-tasks/${id}/user-view`),
+    confirmSubmission: (submissionId: number) => api.post<any>(`/quote-submissions/${submissionId}/confirm`),
+    rejectSubmission: (submissionId: number, data: { reason: string }) =>
+        api.post<any>(`/quote-submissions/${submissionId}/reject`, data),
+};
+
 export const orderApi = {
     // 获取所有待付款项（意向金+设计费）
     listPendingPayments: () => {
@@ -449,12 +506,18 @@ export const orderApi = {
 
 export const billApi = {
     // 生成账单
-    generate: (projectId: number, data: {
+    generate: async (_projectId: number, _data: {
         designFee: number;
         constructionFee: number;
         materialFee: number;
         paymentType?: 'milestone' | 'onetime';
-    }) => api.post<any>(`/projects/${projectId}/bill`, { projectId, ...data }),
+    }): Promise<never> => {
+        throw new MobileApiError('旧项目账单生成入口已禁用，请改用正式订单与支付计划链路', {
+            status: 409,
+            code: 409,
+            errorCode: 'PROJECT_BILL_LEGACY_DISABLED',
+        });
+    },
     // 获取账单
     get: (projectId: number) => api.get<any>(`/projects/${projectId}/bill`),
     // 获取项目文件（需付设计费）

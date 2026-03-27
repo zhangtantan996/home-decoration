@@ -37,6 +37,7 @@ import DesignFeePaymentScreen from '../screens/DesignFeePaymentScreen';
 import ProposalPaidDetailScreen from '../screens/ProposalPaidDetailScreen';
 import CreateProjectScreen from '../screens/CreateProjectScreen';
 import ProjectListScreen from '../screens/ProjectListScreen';
+import QuoteTaskConfirmScreen from '../screens/QuoteTaskConfirmScreen';
 import NotificationScreen from '../screens/NotificationScreen';
 import DesignFilesScreen from '../screens/DesignFilesScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
@@ -349,6 +350,11 @@ const AppNavigator = () => {
                         <Stack.Screen
                             name="ProjectList"
                             component={ProjectListScreen}
+                            options={{ animation: 'slide_from_right' }}
+                        />
+                        <Stack.Screen
+                            name="QuoteTaskConfirm"
+                            component={QuoteTaskConfirmScreen}
                             options={{ animation: 'slide_from_right' }}
                         />
                         <Stack.Screen

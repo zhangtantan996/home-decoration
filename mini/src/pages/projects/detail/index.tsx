@@ -57,8 +57,14 @@ const ProjectDetailPage: React.FC = () => {
     fetch();
   }, [id, auth.token]);
 
+  const ownerScopeDisabled = Boolean(auth.user?.activeRole) && !['owner', 'homeowner'].includes(auth.user?.activeRole || '');
+
   if (!auth.token) {
     return <View className="p-md text-center text-gray-500">登录后查看项目详情</View>;
+  }
+
+  if (ownerScopeDisabled) {
+    return <View className="p-md text-center text-gray-500">当前身份无权查看业主项目详情，请切换回业主身份后重试</View>;
   }
 
   if (loading) return (

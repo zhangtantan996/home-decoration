@@ -10,6 +10,7 @@ import { LoginGateCard } from '@/components/LoginGateCard';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getProjectPhaseStatus, getProjectStatus } from '@/constants/status';
+import { listMyQuoteTasks, type QuoteTaskSummary } from '@/services/quoteTasks';
 import { getProjectPhases, listProjects, type ProjectItem, type ProjectPhase } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
 import { syncCurrentTabBar } from '@/utils/customTabBar';
@@ -26,12 +27,14 @@ export default function Progress() {
   const auth = useAuthStore();
   const [project, setProject] = useState<ProjectItem | null>(null);
   const [phases, setPhases] = useState<ProjectPhase[]>([]);
+  const [pendingQuoteTask, setPendingQuoteTask] = useState<QuoteTaskSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!auth.token) {
       setProject(null);
       setPhases([]);
+      setPendingQuoteTask(null);
       setLoading(false);
       return;
     }
@@ -39,7 +42,12 @@ export default function Progress() {
     const fetchProject = async () => {
       setLoading(true);
       try {
-        const data = await listProjects(1, 1);
+        const [data, quoteTasks] = await Promise.all([
+          listProjects(1, 1),
+          listMyQuoteTasks().catch(() => []),
+        ]);
+        const nextPendingQuoteTask = quoteTasks.find((item) => item.userConfirmationStatus === 'pending') || null;
+        setPendingQuoteTask(nextPendingQuoteTask);
         const current = data.list?.[0];
         if (!current) {
           setProject(null);
@@ -59,6 +67,8 @@ export default function Progress() {
 
     void fetchProject();
   }, [auth.token]);
+
+  const ownerScopeDisabled = Boolean(auth.user?.activeRole) && !['owner', 'homeowner'].includes(auth.user?.activeRole || '');
 
   const getProjectDays = (createdAt?: string) => {
     if (!createdAt) return 0;
@@ -102,6 +112,17 @@ export default function Progress() {
     );
   }
 
+  if (ownerScopeDisabled) {
+    return (
+      <View className="progress-page">
+        <View className="progress-page__hero progress-page__hero--empty">
+          <Text className="progress-page__hero-title">项目进度</Text>
+          <Text className="progress-page__hero-subtitle">当前身份无权查看业主项目进度，请切换回业主身份后重试。</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View className="progress-page">
       <View className="progress-page__hero">
@@ -128,6 +149,17 @@ export default function Progress() {
               <Tag variant={projectStatus.variant}>{projectStatus.label}</Tag>
             </View>
           </>
+        ) : pendingQuoteTask ? (
+          <>
+            <Text className="progress-page__hero-label">待确认施工报价</Text>
+            <Text className="progress-page__hero-title">{pendingQuoteTask.title}</Text>
+            <Text className="progress-page__hero-subtitle">
+              {pendingQuoteTask.flowSummary || '设计确认后不会直接建项目，请先确认施工报价。'}
+            </Text>
+            <View className="progress-page__hero-chip">
+              <Tag variant="warning">{pendingQuoteTask.status}</Tag>
+            </View>
+          </>
         ) : (
           <>
             <Text className="progress-page__hero-title">项目进度</Text>
@@ -144,10 +176,20 @@ export default function Progress() {
               <Skeleton height={120} className="progress-page__loading-gap" />
             </View>
           ) : !project ? (
-            <Empty
-              description="还没有可展示的项目"
-              action={{ text: '去首页找服务', onClick: () => Taro.switchTab({ url: '/pages/home/index' }) }}
-            />
+            pendingQuoteTask ? (
+              <Empty
+                description="施工报价已提交，确认后才会创建项目。"
+                action={{
+                  text: '去确认施工报价',
+                  onClick: () => Taro.navigateTo({ url: `/pages/quote-tasks/detail/index?id=${pendingQuoteTask.id}` }),
+                }}
+              />
+            ) : (
+              <Empty
+                description="还没有可展示的项目"
+                action={{ text: '去首页找服务', onClick: () => Taro.switchTab({ url: '/pages/home/index' }) }}
+              />
+            )
           ) : (
             <View className="progress-page__summary">
               <View className="progress-page__summary-item">
@@ -218,7 +260,12 @@ export default function Progress() {
         </Card>
 
         <Card className="progress-page__card" title="当前待办">
-          {pendingTasks.length > 0 ? (
+          {pendingQuoteTask ? (
+            <View className="progress-page__todo-item">
+              <Text className="progress-page__todo-title">{pendingQuoteTask.title}</Text>
+              <Text className="progress-page__todo-subtitle">施工报价待你确认，确认后项目才会创建。</Text>
+            </View>
+          ) : pendingTasks.length > 0 ? (
             pendingTasks.map((task) => (
               <View key={task.id} className="progress-page__todo-item">
                 <Text className="progress-page__todo-title">{task.title}</Text>
@@ -244,6 +291,16 @@ export default function Progress() {
               onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${project.id}` })}
             >
               查看项目详情
+            </Button>
+          </View>
+        ) : null}
+        {!project && pendingQuoteTask ? (
+          <View className="progress-page__footer-actions">
+            <Button
+              className="progress-page__footer-button"
+              onClick={() => Taro.navigateTo({ url: `/pages/quote-tasks/detail/index?id=${pendingQuoteTask.id}` })}
+            >
+              去确认施工报价
             </Button>
           </View>
         ) : null}

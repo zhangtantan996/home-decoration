@@ -7,7 +7,7 @@ import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/Skeleton';
 import { MINI_ENV } from '@/config/env';
-import { getProviderCases, getProviderDetail, getProviderReviews, getProviderUserStatus, type ProviderCaseItem, type ProviderDetail, type ProviderReviewItem, type ProviderType, followProvider, unfollowProvider } from '@/services/providers';
+import { getProviderCases, getProviderDetail, getProviderReviews, type ProviderCaseItem, type ProviderDetail, type ProviderReviewItem, type ProviderType } from '@/services/providers';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { formatProviderPricing } from '@/utils/providerPricing';
@@ -73,8 +73,6 @@ const ProviderDetailPage: React.FC = () => {
   const [caseTotal, setCaseTotal] = useState(0);
   const [reviewTotal, setReviewTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [following, setFollowing] = useState(false);
-  const [isFollowed, setIsFollowed] = useState(false);
   const [introExpanded, setIntroExpanded] = useState(false);
   const [params, setParams] = useState<ProviderDetailParams>({ id: '', type: 'designer' });
 
@@ -91,9 +89,9 @@ const ProviderDetailPage: React.FC = () => {
     return ((detail as unknown as { provider?: Record<string, unknown> })?.provider || {}) as Record<string, unknown>;
   }, [detail]);
 
-  const providerDetail = useMemo<Partial<ProviderDetail & { yearsExperience?: number; followersCount?: number }>>(() => {
-    const nested = (detail as unknown as { provider?: Partial<ProviderDetail & { yearsExperience?: number; followersCount?: number }> })?.provider;
-    return (nested || detail || {}) as Partial<ProviderDetail & { yearsExperience?: number; followersCount?: number }>;
+  const providerDetail = useMemo<Partial<ProviderDetail & { yearsExperience?: number }>>(() => {
+    const nested = (detail as unknown as { provider?: Partial<ProviderDetail & { yearsExperience?: number }> })?.provider;
+    return (nested || detail || {}) as Partial<ProviderDetail & { yearsExperience?: number }>;
   }, [detail]);
 
   const userDetail = useMemo<{ id?: number; publicId?: string; nickname?: string; avatar?: string } | null>(() => {
@@ -134,30 +132,6 @@ const ProviderDetailPage: React.FC = () => {
     if (!params.id) return;
     void fetchDetail();
   }, [params.id, params.type]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!auth.token || !params.id) {
-      setIsFollowed(false);
-      return;
-    }
-
-    let cancelled = false;
-    getProviderUserStatus(Number(params.id))
-      .then((res) => {
-        if (!cancelled) {
-          setIsFollowed(Boolean(res.isFollowed));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setIsFollowed(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [auth.token, params.id]);
 
   usePullDownRefresh(() => {
     void fetchDetail();
@@ -236,7 +210,6 @@ const ProviderDetailPage: React.FC = () => {
 
   const settled = providerDetail?.isSettled !== false && providerRaw.isSettled !== false;
   const ratingValue = Number(providerDetail?.rating || 0);
-  const followersCount = Number(providerRaw.followersCount || 0);
 
   useShareAppMessage(() => ({
     title: `${displayName} - 服务商详情`,
@@ -272,26 +245,6 @@ const ProviderDetailPage: React.FC = () => {
     Taro.navigateTo({
       url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}`,
     });
-  };
-
-  const handleFollow = async () => {
-    if (!ensureLogin()) return;
-    if (!params.id || following) return;
-
-    setFollowing(true);
-    try {
-      if (isFollowed) {
-        await unfollowProvider(Number(params.id), params.type);
-        setIsFollowed(false);
-      } else {
-        await followProvider(Number(params.id), params.type);
-        setIsFollowed(true);
-      }
-    } catch (error) {
-      showErrorToast(error, '操作失败');
-    } finally {
-      setFollowing(false);
-    }
   };
 
   const handleOpenCaseGallery = () => {
@@ -373,15 +326,6 @@ const ProviderDetailPage: React.FC = () => {
             <View className="provider-detail-page__profile-main">
               <View className="provider-detail-page__profile-title-row">
                 <Text className="provider-detail-page__name">{displayName}</Text>
-                <View
-                  className={`provider-detail-page__follow-button ${isFollowed ? 'provider-detail-page__follow-button--followed' : ''}`}
-                  onClick={handleFollow}
-                >
-                  {!isFollowed ? <Icon name="plus" size={16} color="#FFFFFF" className="provider-detail-page__follow-icon" /> : null}
-                  <Text className={`provider-detail-page__follow-text ${isFollowed ? 'provider-detail-page__follow-text--followed' : ''}`}>
-                    {following ? '处理中' : isFollowed ? '已关注' : '关注'}
-                  </Text>
-                </View>
               </View>
 
               <Text className="provider-detail-page__experience">{experienceText}</Text>
@@ -403,8 +347,8 @@ const ProviderDetailPage: React.FC = () => {
             </View>
             <View className="provider-detail-page__stat-divider" />
             <View className="provider-detail-page__stat">
-              <Text className="provider-detail-page__stat-value">{compactCount(followersCount)}</Text>
-              <Text className="provider-detail-page__stat-label">粉丝关注</Text>
+              <Text className="provider-detail-page__stat-value">{compactCount(reviewTotal || reviews.length)}</Text>
+              <Text className="provider-detail-page__stat-label">业主评价</Text>
             </View>
             <View className="provider-detail-page__stat-divider" />
             <View className="provider-detail-page__stat">

@@ -112,7 +112,7 @@ const ProfileScreen = ({ navigation }: any) => {
 
     // 快捷统计数据
     const quickStats = [
-        { label: '我的收藏', value: 12, key: 'favorites' },
+        { label: '内容收藏', value: 12, key: 'favorites' },
         { label: '我的项目', value: 3, key: 'projects' }, // TODO: Fetch real project count
         { label: '卡券包', value: 3, key: 'coupons' },
         { label: '待处理', value: pendingCount, hasRedDot: pendingCount > 0, key: 'pending' },

@@ -9,6 +9,22 @@ interface RequestOptions {
   retry?: boolean;
 }
 
+export class WebApiError<T = unknown> extends Error {
+  status?: number;
+  code?: number;
+  errorCode?: string;
+  data?: T;
+
+  constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+    super(message);
+    this.name = 'WebApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.errorCode = options.errorCode;
+    this.data = options.data;
+  }
+}
+
 const API_BASE = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
 const ROUTER_BASENAME = normalizeBasename(import.meta.env.VITE_ROUTER_BASENAME || '/');
 
@@ -119,15 +135,15 @@ async function resolveAuthToken(skipAuth: boolean, retry?: boolean) {
 function normalizeRequestError(error: unknown): Error {
   if (error instanceof Error) {
     if (error.name === 'AbortError') {
-      return new Error('请求超时，请稍后重试');
+      return new WebApiError('请求超时，请稍后重试');
     }
     if (error.message === 'Failed to fetch' || error.message === 'Load failed') {
-      return new Error('服务连接失败，请检查接口地址或确认后端服务已启动');
+      return new WebApiError('服务连接失败，请检查接口地址或确认后端服务已启动');
     }
     return error;
   }
 
-  return new Error('网络请求失败，请稍后重试');
+  return new WebApiError('网络请求失败，请稍后重试');
 }
 
 async function safeFetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -173,13 +189,29 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
 
   const payload = (await response.json().catch(() => null)) as ApiEnvelope<T> | null;
   if (!response.ok) {
-    throw new Error(payload?.message || `请求失败(${response.status})`);
+    const errorCode = payload && typeof payload.data === 'object' && payload.data !== null && 'errorCode' in payload.data
+      ? String((payload.data as Record<string, unknown>).errorCode || '')
+      : undefined;
+    throw new WebApiError(payload?.message || `请求失败(${response.status})`, {
+      status: response.status,
+      code: payload?.code,
+      errorCode,
+      data: payload?.data,
+    });
   }
   if (!payload || typeof payload !== 'object') {
-    throw new Error('响应格式错误');
+    throw new WebApiError('响应格式错误', { status: response.status });
   }
   if (payload.code !== 0) {
-    throw new Error(payload.message || `业务请求失败(code=${payload.code})`);
+    const errorCode = payload && typeof payload.data === 'object' && payload.data !== null && 'errorCode' in payload.data
+      ? String((payload.data as Record<string, unknown>).errorCode || '')
+      : undefined;
+    throw new WebApiError(payload.message || `业务请求失败(code=${payload.code})`, {
+      status: response.status,
+      code: payload.code,
+      errorCode,
+      data: payload.data,
+    });
   }
   return payload.data;
 }
@@ -208,8 +240,24 @@ export async function uploadFile(path: string, file: File, fieldName = 'file') {
   }> | null;
 
   if (!response.ok || !payload || payload.code !== 0) {
-    throw new Error(payload?.message || `上传失败(${response.status})`);
+    const errorCode = payload && typeof payload.data === 'object' && payload.data !== null && 'errorCode' in payload.data
+      ? String((payload.data as Record<string, unknown>).errorCode || '')
+      : undefined;
+    throw new WebApiError(payload?.message || `上传失败(${response.status})`, {
+      status: response.status,
+      code: payload?.code,
+      errorCode,
+      data: payload?.data,
+    });
   }
 
   return payload.data;
+}
+
+export function getWebApiErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+export function isWebApiConflict(error: unknown) {
+  return error instanceof WebApiError && error.status === 409;
 }

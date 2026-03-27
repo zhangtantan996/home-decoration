@@ -1,4 +1,5 @@
 import { request } from '@/utils/request';
+import { MiniApiError } from '@/utils/request';
 import type { PageData } from './types';
 import type { ProjectDTO, ProjectDetailDTO, ProjectPhaseDTO } from './dto';
 
@@ -21,11 +22,11 @@ export interface CreateProjectPayload {
 }
 
 export async function createProject(payload: CreateProjectPayload) {
-  return request<{ id: number }>({
-    url: '/projects',
-    method: 'POST',
-    data: payload,
-    showLoading: true
+  void payload;
+  throw new MiniApiError('业主侧旧建项目入口已禁用，请改用施工报价确认主链', {
+    status: 409,
+    code: 409,
+    errorCode: 'PROJECT_CREATE_LEGACY_DISABLED',
   });
 }
 
@@ -50,11 +51,12 @@ export async function getProjectLogs(id: number, page = 1, pageSize = 20) {
 }
 
 export async function createProjectLog(id: number, description: string, photos: string) {
-  return request<{ message: string }>({
-    url: `/projects/${id}/logs`,
-    method: 'POST',
-    data: { description, photos },
-    showLoading: true
+  void id;
+  void description;
+  void photos;
+  throw new MiniApiError('业主侧施工日志入口已禁用，请使用商家侧施工日志入口', {
+    status: 403,
+    code: 403,
   });
 }
 
@@ -98,11 +100,12 @@ export async function depositEscrow(id: number, amount: number, milestoneId?: nu
 }
 
 export async function releaseEscrow(id: number, milestoneId: number) {
-  return request<{ message: string }>({
-    url: `/projects/${id}/release`,
-    method: 'POST',
-    data: { milestoneId },
-    showLoading: true
+  void id;
+  void milestoneId;
+  throw new MiniApiError('业主侧旧放款入口已禁用，请改用正式验收与结算链路', {
+    status: 409,
+    code: 409,
+    errorCode: 'PROJECT_RELEASE_LEGACY_DISABLED',
   });
 }
 

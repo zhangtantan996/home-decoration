@@ -6,6 +6,7 @@ import { UserPageFrame } from '../components/UserPageFrame';
 import shellStyles from '../components/UserWorkspaceShell.module.scss';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getProjectDetail, getProjectEscrow, listProjectLogs, listProjects } from '../services/projects';
+import { listMyQuoteTasks, type QuoteTaskSummaryVM } from '../services/quoteTasks';
 import type { ProjectDetailVM, ProjectListItemVM, ProjectPhaseVM } from '../types/viewModels';
 import styles from './ProgressPage.module.scss';
 
@@ -51,6 +52,13 @@ type TeamMemberVM = {
   phoneText: string;
   avatarSrc?: string;
   initial: string;
+};
+
+type PendingQuoteTaskVM = {
+  id: number;
+  title: string;
+  statusText: string;
+  summary: string;
 };
 
 function calcProgress(currentPhase: string) {
@@ -181,6 +189,19 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
 
   const items: TodoItemVM[] = [];
 
+  if (detail.selectedQuoteTaskId) {
+    items.push({
+      id: `quote-task-${detail.selectedQuoteTaskId}`,
+      title: '确认施工报价',
+      description: detail.flowSummary || '施工报价已提交到用户侧，需先确认施工报价后再进入正式执行。',
+      amountText: '待确认',
+      tone: 'urgent',
+      badgeText: '待确认',
+      actionLabel: '去确认',
+      actionTo: `/quote-tasks/${detail.selectedQuoteTaskId}`,
+    });
+  }
+
   detail.milestones.forEach((milestone) => {
     if (milestone.status === '2') {
       items.push({
@@ -225,6 +246,17 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
   });
 
   return items;
+}
+
+function pickPendingQuoteTask(tasks: QuoteTaskSummaryVM[]): PendingQuoteTaskVM | null {
+  const task = tasks.find((item) => item.userConfirmationStatus === 'pending');
+  if (!task) return null;
+  return {
+    id: task.id,
+    title: task.title,
+    statusText: task.statusText,
+    summary: task.flowSummary || '施工报价已提交，请先确认施工报价，项目会在确认后创建。',
+  };
 }
 
 function buildTeamMembers(detail: ProjectDetailVM | null | undefined, currentPhase: { responsiblePerson?: string; id?: number } | null) {
@@ -281,6 +313,8 @@ export function ProgressPage() {
   const hasRouteProjectId = Number.isFinite(routeProjectId) && routeProjectId > 0;
 
   const { data, loading, error, reload } = useAsyncData(async () => {
+    const pendingQuoteTasks = pickPendingQuoteTask(await listMyQuoteTasks().catch(() => []));
+
     if (hasProjectParam && !hasRouteProjectId) {
       throw new Error('项目编号无效');
     }
@@ -293,7 +327,7 @@ export function ProgressPage() {
       ]);
 
       const focusProject = buildFocusProject(detail);
-      return { cards: [focusProject], focusProject, detail, logs: logResult.list, escrow };
+      return { cards: [focusProject], focusProject, detail, logs: logResult.list, escrow, pendingQuoteTask: pendingQuoteTasks };
     }
 
     const result = await listProjects({ page: 1, pageSize: PROJECT_PAGE_SIZE });
@@ -315,10 +349,10 @@ export function ProgressPage() {
     })[0];
 
     if (!focusProject) {
-      return { cards, focusProject: null, detail: null, logs: [], escrow: null, redirectToProjectId: null };
+      return { cards, focusProject: null, detail: null, logs: [], escrow: null, redirectToProjectId: null, pendingQuoteTask: pendingQuoteTasks };
     }
 
-    return { cards, focusProject, detail: null, logs: [], escrow: null, redirectToProjectId: focusProject.id };
+    return { cards, focusProject, detail: null, logs: [], escrow: null, redirectToProjectId: focusProject.id, pendingQuoteTask: pendingQuoteTasks };
   }, [hasProjectParam, hasRouteProjectId, routeProjectId]);
 
   const phaseItems = useMemo(() => {
@@ -420,11 +454,19 @@ export function ProgressPage() {
       wrapClassName={shellStyles.wrap}
     >
       {!data.focusProject ? (
-        <EmptyBlock
-          title="暂无项目"
-          description="当前还没有进行中的项目。"
-          action={<Link className="button-secondary" to="/providers">去找服务商</Link>}
-        />
+        data.pendingQuoteTask ? (
+          <EmptyBlock
+            title="待确认施工报价"
+            description={`${data.pendingQuoteTask.summary}（当前状态：${data.pendingQuoteTask.statusText}）`}
+            action={<Link className="button-secondary" to={`/quote-tasks/${data.pendingQuoteTask.id}`}>去确认施工报价</Link>}
+          />
+        ) : (
+          <EmptyBlock
+            title="暂无项目"
+            description="当前还没有进行中的项目。"
+            action={<Link className="button-secondary" to="/providers">去找服务商</Link>}
+          />
+        )
       ) : (
         <main className={styles.mainContainer}>
           {/* Row 1: Hero Layout (Full width) */}

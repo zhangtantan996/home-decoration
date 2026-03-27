@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -7,9 +7,7 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    Dimensions,
     Platform,
-    Alert,
 } from 'react-native';
 import {
     ArrowLeft,
@@ -19,16 +17,13 @@ import {
     Check,
     X,
     Clock,
-    Download,
     CheckCircle,
 } from 'lucide-react-native';
 import { proposalApi } from '../services/api';
 import { useToast } from '../components/Toast';
-import { Proposal, ProposalStatus, getProposalStatusText, Order } from '../types/businessFlow';
+import { Proposal, ProposalStatus, getProposalStatusText } from '../types/businessFlow';
 import RejectionReasonModal from '../components/RejectionReasonModal';
 import { formatServerDate } from '../utils/serverTime';
-
-const { width } = Dimensions.get('window');
 
 interface ProposalDetailScreenProps {
     route: any;
@@ -50,11 +45,7 @@ const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navi
     const [successMessage, setSuccessMessage] = useState({ title: '', subtitle: '' });
     const [resultProjectId, setResultProjectId] = useState<number | null>(null);
 
-    useEffect(() => {
-        loadProposal();
-    }, [proposalId]);
-
-    const loadProposal = async () => {
+    const loadProposal = useCallback(async () => {
         try {
             setLoading(true);
             const res = await proposalApi.detail(proposalId);
@@ -70,7 +61,11 @@ const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navi
         } finally {
             setLoading(false);
         }
-    };
+    }, [proposalId, showAlert]);
+
+    useEffect(() => {
+        loadProposal();
+    }, [loadProposal]);
 
     const handleConfirm = async () => {
         setConfirmModalVisible(true);
@@ -251,6 +246,9 @@ const ProposalDetailScreen: React.FC<ProposalDetailScreenProps> = ({ route, navi
                         </Text>
                         <Text style={styles.infoText}>
                             • 支付设计费后可下载详细施工图纸
+                        </Text>
+                        <Text style={styles.infoText}>
+                            • 设计确认不会直接建项目，后续还需确认施工报价
                         </Text>
                         <Text style={styles.infoText}>
                             • 施工费和主材费为预估，具体以选材后报价为准
