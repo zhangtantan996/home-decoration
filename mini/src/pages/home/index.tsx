@@ -1,10 +1,11 @@
 import Taro, { useDidShow } from "@tarojs/taro";
-import { Image, Input, Text, View } from "@tarojs/components";
+import { Image, Text, View } from "@tarojs/components";
 import React, { useEffect, useMemo, useState } from "react";
 
 import { Empty } from "@/components/Empty";
 import { Icon, type IconName } from "@/components/Icon";
 import { Skeleton } from "@/components/Skeleton";
+import { Tag } from "@/components/Tag";
 import {
   listMaterialShops,
   type MaterialShopItem,
@@ -17,6 +18,7 @@ import {
 import { showErrorToast } from "@/utils/error";
 import { formatProviderPricing } from "@/utils/providerPricing";
 import { syncCurrentTabBar } from "@/utils/customTabBar";
+import { getMiniNavMetrics } from "@/utils/navLayout";
 import "./index.scss";
 
 type HomeProviderCategory = "designer" | "foreman" | "company";
@@ -63,6 +65,7 @@ const PROVIDER_FILTER_OPTIONS = [
 ] as const;
 
 const HOME_FETCH_PAGE_SIZE = 50;
+const HIDDEN_DISPLAY_TAGS = new Set(["沟通中"]);
 
 const getProviderType = (providerType: number): ProviderType => {
   if (providerType === 2) return "company";
@@ -85,17 +88,37 @@ const splitTextList = (value?: string | string[]) => {
     return value.map((item) => String(item).trim()).filter(Boolean);
   }
 
-  return value
-    .split(/[、，,|/]/)
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "[]") {
+    return [];
+  }
+
+  if (
+    (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+    (trimmed.startsWith("{") && trimmed.endsWith("}"))
+  ) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => String(item).trim())
+          .filter((item) => item && item !== "[]");
+      }
+    } catch {
+      // ignore malformed legacy data and fallback to plain-text split
+    }
+  }
+
+  return trimmed
+    .split(/[、，,|/]|\s*·\s*/)
     .map((item) => item.trim())
-    .filter(Boolean);
+    .filter((item) => Boolean(item) && item !== "[]");
 };
 
 const getProviderTags = (provider: ProviderListItem) => {
   const tags = [
     ...splitTextList(provider.highlightTags),
     ...splitTextList(provider.specialty),
-    ...splitTextList(provider.serviceArea),
   ];
 
   return Array.from(new Set(tags)).slice(0, 3);
@@ -149,12 +172,6 @@ const getForemanMetaText = (provider: ProviderListItem) => {
     : "工龄待补充";
 };
 
-const getCompanyMetaText = (provider: ProviderListItem) => {
-  return provider.completedCnt
-    ? `${provider.completedCnt}单交付`
-    : "服务信息待补充";
-};
-
 const getProviderChipLabel = (provider: ProviderListItem) => {
   const providerType = getProviderType(provider.providerType);
 
@@ -195,10 +212,6 @@ const getForemanIdentityText = (provider: ProviderListItem) => {
   return provider.companyName || provider.nickname || "综合施工";
 };
 
-const getCompanyIdentityText = (provider: ProviderListItem) => {
-  return provider.specialty || provider.companyName || "整装施工服务";
-};
-
 const getForemanFooterText = (provider: ProviderListItem) => {
   const workTags = getProviderWorkTags(provider);
   if (workTags.length > 0) return workTags.join(" · ");
@@ -206,19 +219,56 @@ const getForemanFooterText = (provider: ProviderListItem) => {
   return "综合施工 · 现场管理";
 };
 
-const getCompanyFooterText = (provider: ProviderListItem) => {
-  const parts: string[] = [];
-  if (provider.restoreRate) parts.push(`还原度${provider.restoreRate}%`);
-  if (provider.budgetControl) parts.push(`预算控制${provider.budgetControl}%`);
-  if (parts.length > 0) return parts.join(" · ");
-
-  const tags = getProviderWorkTags(provider);
-  if (tags.length > 0) return tags.join(" · ");
-  return provider.specialty || "整装施工 · 品质交付";
-};
-
 const getAvatarFallback = (provider: ProviderListItem) => {
   return getProviderName(provider).slice(0, 1) || "家";
+};
+
+const isMeaningfulText = (value?: string) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+
+  const placeholders = [
+    "待补充",
+    "信息待补充",
+    "地址待补充",
+    "服务信息待补充",
+    "主营品类待补充",
+    "主材采购",
+    "附近",
+  ];
+
+  return !placeholders.some((placeholder) => normalized.includes(placeholder));
+};
+
+const getCompanyDisplayTags = (provider: ProviderListItem) => {
+  const tags = [
+    ...splitTextList(provider.highlightTags),
+    ...splitTextList(provider.workTypes),
+    ...splitTextList(provider.specialty),
+  ];
+
+  return Array.from(new Set(tags))
+    .filter((tag) => tag && !HIDDEN_DISPLAY_TAGS.has(tag))
+    .slice(0, 2);
+};
+
+const getCompanyInfoLine = (provider: ProviderListItem) => {
+  return [
+    provider.reviewCount ? `${provider.reviewCount}条评价` : "",
+    provider.completedCnt ? `${provider.completedCnt}单交付` : "",
+    provider.yearsExperience ? `${provider.yearsExperience}年经验` : "",
+  ].filter(Boolean).slice(0, 2);
+};
+
+const getProviderServiceAreaText = (provider: ProviderListItem) => {
+  return splitTextList(provider.serviceArea).slice(0, 2).join(" / ");
+};
+
+const getProviderDistanceText = (provider: ProviderListItem) => {
+  const distance = Number(provider.distance || 0);
+  if (!distance || Number.isNaN(distance)) return "";
+  if (distance < 1) return `${Math.round(distance * 1000)}m`;
+  return `${distance.toFixed(distance >= 10 ? 0 : 1)}km`;
 };
 
 const sortProviders = (
@@ -268,13 +318,25 @@ const sortProviders = (
 };
 
 const getMaterialTags = (shop: MaterialShopItem) => {
-  const tags = [...shop.tags, ...shop.productCategories, ...shop.mainProducts];
+  const hiddenCategoryTags = new Set([
+    ...shop.mainProducts,
+    ...shop.productCategories,
+  ]);
+  const tags = shop.tags.filter((tag) => !hiddenCategoryTags.has(tag));
   return Array.from(new Set(tags)).slice(0, 3);
 };
 
-const getMaterialStyleText = (shop: MaterialShopItem) => {
-  const tags = getMaterialTags(shop);
-  return tags.length > 0 ? tags.join(" · ") : "主材采购";
+const getMaterialDisplayTags = (shop: MaterialShopItem) => {
+  return getMaterialTags(shop)
+    .filter((tag) => tag && !HIDDEN_DISPLAY_TAGS.has(tag))
+    .slice(0, 3);
+};
+
+const getMaterialInfoLine = (shop: MaterialShopItem) => {
+  return [
+    shop.reviewCount ? `${shop.reviewCount}条评价` : "",
+    isMeaningfulText(shop.openTime) ? shop.openTime : "",
+  ].filter(Boolean).slice(0, 2);
 };
 
 const loadAllProviders = async ({
@@ -312,8 +374,6 @@ export default function Home() {
 
   const [activeCategory, setActiveCategory] =
     useState<HomeCategory>("designer");
-  const [searchInput, setSearchInput] = useState("");
-  const [searchKeyword, setSearchKeyword] = useState("");
   const [designerSortBy, setDesignerSortBy] = useState("recommend");
   const [foremanSortBy, setForemanSortBy] = useState("recommend");
   const [companySortBy, setCompanySortBy] = useState("recommend");
@@ -324,6 +384,34 @@ export default function Home() {
   const [materialItems, setMaterialItems] = useState<MaterialShopItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
+  const navMetrics = useMemo(() => getMiniNavMetrics(), []);
+  const headerInsetStyle = useMemo(
+    () => ({
+      paddingTop: `${navMetrics.menuTop}px`,
+      paddingRight: `${navMetrics.menuRightInset}px`,
+      paddingBottom: `${navMetrics.contentTop - navMetrics.menuBottom}px`,
+    }),
+    [navMetrics.contentTop, navMetrics.menuBottom, navMetrics.menuRightInset, navMetrics.menuTop],
+  );
+  const headerMainStyle = useMemo(
+    () => ({ height: `${navMetrics.menuHeight}px` }),
+    [navMetrics.menuHeight],
+  );
+  const headerPlaceholderStyle = useMemo(
+    () => ({ height: `${navMetrics.contentTop}px` }),
+    [navMetrics.contentTop],
+  );
+  const capsuleSpacerStyle = useMemo(
+    () => ({
+      width: `${navMetrics.menuWidth}px`,
+      height: `${navMetrics.menuHeight}px`,
+    }),
+    [navMetrics.menuHeight, navMetrics.menuWidth],
+  );
+  const stickyFilterStyle = useMemo(
+    () => ({ top: `${navMetrics.contentTop}px` }),
+    [navMetrics.contentTop],
+  );
 
   const currentSortOptions =
     activeCategory === "designer"
@@ -360,13 +448,6 @@ export default function Home() {
     );
   }, [currentSortOptions, currentSortValue]);
 
-  const searchPlaceholder = useMemo(() => {
-    if (activeCategory === "designer") return "搜索设计师";
-    if (activeCategory === "foreman") return "搜索工长";
-    if (activeCategory === "company") return "搜索装修公司";
-    return "搜索主材门店";
-  }, [activeCategory]);
-
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -375,8 +456,8 @@ export default function Home() {
         if (activeCategory === "designer") {
           const list = await loadAllProviders({
             type: "designer",
-            keyword: searchKeyword.trim(),
             sortBy: designerSortBy === "rating" ? "rating" : undefined,
+            keyword: "",
           });
 
           const filtered = list.filter((provider) =>
@@ -396,8 +477,8 @@ export default function Home() {
             activeCategory === "foreman" ? foremanSortBy : companySortBy;
           const list = await loadAllProviders({
             type: requestType,
-            keyword: searchKeyword.trim(),
             sortBy: sortBy === "rating" ? "rating" : undefined,
+            keyword: "",
           });
 
           const filtered = list.filter((provider) =>
@@ -416,24 +497,7 @@ export default function Home() {
           materialSortBy === "distance" ? "distance" : "recommend",
         );
 
-        let filtered = list;
-        if (searchKeyword.trim()) {
-          const keyword = searchKeyword.trim().toLowerCase();
-          filtered = filtered.filter((shop) => {
-            const searchable = [
-              shop.name,
-              ...shop.mainProducts,
-              ...shop.productCategories,
-              ...shop.tags,
-              shop.address,
-            ]
-              .join(" ")
-              .toLowerCase();
-            return searchable.includes(keyword);
-          });
-        }
-
-        setMaterialItems(filtered);
+        setMaterialItems(list);
         setProviderItems([]);
       } catch (error) {
         showErrorToast(error, "加载失败");
@@ -445,7 +509,6 @@ export default function Home() {
     fetchData();
   }, [
     activeCategory,
-    searchKeyword,
     designerSortBy,
     foremanSortBy,
     companySortBy,
@@ -457,22 +520,9 @@ export default function Home() {
     Taro.showToast({ title: "当前试点城市为西安", icon: "none" });
   };
 
-  const handleSearch = () => {
-    setSortMenuVisible(false);
-    setSearchKeyword(searchInput.trim());
-  };
-
-  const handleClearSearch = () => {
-    setSortMenuVisible(false);
-    setSearchInput("");
-    setSearchKeyword("");
-  };
-
   const handleCategoryChange = (category: HomeCategory) => {
     setSortMenuVisible(false);
     setActiveCategory(category);
-    setSearchInput("");
-    setSearchKeyword("");
     setProviderOrgFilter("all");
   };
 
@@ -555,7 +605,12 @@ export default function Home() {
               key={`provider-skeleton-${index}`}
               className="home-page__provider-skeleton"
             >
-              <Skeleton width={112} height={112} circle />
+              <Skeleton
+                width={112}
+                height={112}
+                circle={activeCategory !== "company"}
+                className={activeCategory === "company" ? "home-page__provider-skeleton-avatar--square" : ""}
+              />
               <View className="home-page__provider-skeleton-content">
                 <Skeleton height={32} width="50%" />
                 <Skeleton height={24} width="78%" />
@@ -571,7 +626,6 @@ export default function Home() {
       return (
         <Empty
           description={`暂无${activeCategoryMeta.title}数据`}
-          action={{ text: "清空搜索", onClick: handleClearSearch }}
         />
       );
     }
@@ -579,26 +633,23 @@ export default function Home() {
     return (
       <View className="home-page__content-list">
         {providerItems.map((provider) => {
-          const metaText =
+          const isCompanyCard = activeCategory === "company";
+          const companyTags = getCompanyDisplayTags(provider);
+          const companyInfoLine = getCompanyInfoLine(provider);
+          const companyAreaText = getProviderServiceAreaText(provider);
+          const companyDistanceText = getProviderDistanceText(provider);
+          const providerMetaText =
             activeCategory === "designer"
               ? getExperienceText(provider)
-              : activeCategory === "foreman"
-                ? getForemanMetaText(provider)
-                : getCompanyMetaText(provider);
-
-          const identityText =
+              : getForemanMetaText(provider);
+          const providerIdentityText =
             activeCategory === "designer"
               ? getProviderIdentityText(provider)
-              : activeCategory === "foreman"
-                ? getForemanIdentityText(provider)
-                : getCompanyIdentityText(provider);
-
-          const footerText =
+              : getForemanIdentityText(provider);
+          const providerFooterText =
             activeCategory === "designer"
               ? getProviderPrimaryStyleText(provider)
-              : activeCategory === "foreman"
-                ? getForemanFooterText(provider)
-                : getCompanyFooterText(provider);
+              : getForemanFooterText(provider);
 
           return (
             <View
@@ -606,65 +657,142 @@ export default function Home() {
               className="home-page__provider-card"
               onClick={() => handleProviderClick(provider)}
             >
-              <View className="home-page__provider-head">
-                {provider.avatar ? (
-                  <Image
-                    className="home-page__provider-avatar"
-                    src={provider.avatar}
-                    mode="aspectFill"
-                    lazyLoad
-                  />
-                ) : (
-                  <View className="home-page__provider-avatar home-page__provider-avatar--fallback">
-                    {getAvatarFallback(provider)}
-                  </View>
-                )}
+              {isCompanyCard ? (
+                <View className="home-page__entity-layout">
+                  <View className="home-page__entity-aside">
+                    {provider.avatar ? (
+                      <Image
+                        className="home-page__provider-avatar home-page__provider-avatar--square"
+                        src={provider.avatar}
+                        mode="aspectFill"
+                        lazyLoad
+                      />
+                    ) : (
+                      <View className="home-page__provider-avatar home-page__provider-avatar--square home-page__provider-avatar--fallback">
+                        {getAvatarFallback(provider)}
+                      </View>
+                    )}
 
-                <View className="home-page__provider-main">
-                  <Text className="home-page__provider-name">
-                    {getProviderName(provider)}
-                  </Text>
-
-                  <View className="home-page__provider-meta-row">
-                    <Text className="home-page__provider-meta-text">
-                      {metaText}
-                    </Text>
-                    <View className="home-page__provider-dot" />
-                    <View className="home-page__provider-rating">
-                      <Icon name="star" size={22} color="#111111" />
-                      <Text className="home-page__provider-rating-text">
-                        {provider.rating?.toFixed(1) || "0.0"}
-                      </Text>
-                    </View>
                   </View>
 
-                  <View className="home-page__provider-identity-row">
-                    <View className="home-page__provider-chip">
-                      <Text className="home-page__provider-chip-text">
-                        {getProviderChipLabel(provider)}
+                  <View className="home-page__entity-main">
+                    <View className="home-page__entity-title-row">
+                      <Text className="home-page__entity-name">
+                        {getProviderName(provider)}
                       </Text>
+                      {provider.isSettled !== true ? (
+                        <Tag variant="warning" className="home-page__entity-status-tag">
+                          未入驻
+                        </Tag>
+                      ) : null}
                     </View>
-                    <Text className="home-page__provider-identity-text">
-                      {identityText}
-                    </Text>
-                    <View className="home-page__provider-nearby">
-                      <Icon name="nearby" size={22} color="#9CA3AF" />
-                      <Text className="home-page__provider-nearby-text">
-                        {getProviderLocationText(provider)}
-                      </Text>
+
+                    <View className="home-page__entity-meta-row">
+                      <View className="home-page__entity-rating">
+                        <Icon name="star" size={22} color="#F59E0B" />
+                        <Text className="home-page__entity-rating-text">
+                          {provider.rating?.toFixed(1) || "0.0"}
+                        </Text>
+                      </View>
+                      {companyInfoLine.map((item) => (
+                        <Text key={item} className="home-page__entity-meta-text">
+                          {item}
+                        </Text>
+                      ))}
                     </View>
+
+                    {companyTags.length > 0 ? (
+                      <View className="home-page__entity-tag-row">
+                        {companyTags.map((tag) => (
+                          <View key={tag} className="home-page__entity-tag">
+                            <Text className="home-page__entity-tag-text">{tag}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    {isMeaningfulText(companyAreaText) || isMeaningfulText(companyDistanceText) ? (
+                      <View className="home-page__entity-info-row">
+                        {isMeaningfulText(companyAreaText) ? (
+                          <Text className="home-page__entity-info-text">
+                            {companyAreaText}
+                          </Text>
+                        ) : null}
+                        {isMeaningfulText(companyDistanceText) ? (
+                          <View className="home-page__provider-nearby">
+                            <Icon name="nearby" size={22} color="#9CA3AF" />
+                            <Text className="home-page__provider-nearby-text">
+                              {companyDistanceText}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : null}
                   </View>
                 </View>
-              </View>
+              ) : (
+                <>
+                  <View className="home-page__provider-head">
+                    {provider.avatar ? (
+                      <Image
+                        className="home-page__provider-avatar"
+                        src={provider.avatar}
+                        mode="aspectFill"
+                        lazyLoad
+                      />
+                    ) : (
+                      <View className="home-page__provider-avatar home-page__provider-avatar--fallback">
+                        {getAvatarFallback(provider)}
+                      </View>
+                    )}
 
-              <View className="home-page__provider-footer">
-                <Text className="home-page__provider-price">
-                  {getProviderPriceText(provider)}
-                </Text>
-                <Text className="home-page__provider-style-text">
-                  {footerText}
-                </Text>
-              </View>
+                    <View className="home-page__provider-main">
+                      <Text className="home-page__provider-name">
+                        {getProviderName(provider)}
+                      </Text>
+
+                      <View className="home-page__provider-meta-row">
+                        <Text className="home-page__provider-meta-text">
+                          {providerMetaText}
+                        </Text>
+                        <View className="home-page__provider-dot" />
+                        <View className="home-page__provider-rating">
+                          <Icon name="star" size={22} color="#111111" />
+                          <Text className="home-page__provider-rating-text">
+                            {provider.rating?.toFixed(1) || "0.0"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View className="home-page__provider-identity-row">
+                        <View className="home-page__provider-chip">
+                          <Text className="home-page__provider-chip-text">
+                            {getProviderChipLabel(provider)}
+                          </Text>
+                        </View>
+                        <Text className="home-page__provider-identity-text">
+                          {providerIdentityText}
+                        </Text>
+                        <View className="home-page__provider-nearby">
+                          <Icon name="nearby" size={22} color="#9CA3AF" />
+                          <Text className="home-page__provider-nearby-text">
+                            {getProviderLocationText(provider)}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View className="home-page__provider-footer">
+                    <Text className="home-page__provider-price">
+                      {getProviderPriceText(provider)}
+                    </Text>
+                    <Text className="home-page__provider-style-text">
+                      {providerFooterText}
+                    </Text>
+                  </View>
+                </>
+              )}
             </View>
           );
         })}
@@ -696,101 +824,113 @@ export default function Home() {
       return (
         <Empty
           description="暂无主材门店数据"
-          action={{ text: "清空搜索", onClick: handleClearSearch }}
         />
       );
     }
 
     return (
       <View className="home-page__content-list">
-        {materialItems.map((shop) => (
-          <View
-            key={shop.id}
-            className="home-page__material-card"
-            onClick={() => handleMaterialShopClick(shop)}
-          >
-            <View className="home-page__material-head">
-              {shop.cover ? (
-                <Image
-                  className="home-page__material-cover"
-                  src={shop.cover}
-                  mode="aspectFill"
-                  lazyLoad
-                />
-              ) : (
-                <View className="home-page__material-cover home-page__material-cover--placeholder">
-                  <Icon name="material-service" size={36} color="#111111" />
-                </View>
-              )}
+        {materialItems.map((shop) => {
+          const materialTags = getMaterialDisplayTags(shop);
+          const materialInfoLine = getMaterialInfoLine(shop);
 
-              <View className="home-page__material-main">
-                <Text className="home-page__provider-name">{shop.name}</Text>
-
-                <View className="home-page__provider-meta-row">
-                  <Text className="home-page__provider-meta-text">
-                    {shop.productCategories[0] || "主材门店"}
-                  </Text>
-                  <View className="home-page__provider-dot" />
-                  <View className="home-page__provider-rating">
-                    <Icon name="star" size={22} color="#111111" />
-                    <Text className="home-page__provider-rating-text">
-                      {shop.rating?.toFixed(1) || "0.0"}
-                    </Text>
-                  </View>
+          return (
+            <View
+              key={shop.id}
+              className="home-page__material-card"
+              onClick={() => handleMaterialShopClick(shop)}
+            >
+              <View className="home-page__entity-layout">
+                <View className="home-page__entity-aside">
+                  {shop.brandLogo || shop.cover ? (
+                    <Image
+                      className="home-page__material-cover"
+                      src={shop.brandLogo || shop.cover}
+                      mode="aspectFill"
+                      lazyLoad
+                    />
+                  ) : (
+                    <View className="home-page__material-cover home-page__material-cover--placeholder">
+                      <Icon name="material-service" size={36} color="#111111" />
+                    </View>
+                  )}
                 </View>
 
-                <View className="home-page__provider-identity-row">
-                  <View className="home-page__provider-chip">
-                    <Text className="home-page__provider-chip-text">
-                      {shop.isSettled ? "入驻" : "门店"}
-                    </Text>
+                <View className="home-page__entity-main">
+                  <View className="home-page__entity-title-row">
+                    <Text className="home-page__entity-name">{shop.name}</Text>
+                    {shop.isSettled !== true ? (
+                      <Tag variant="warning" className="home-page__entity-status-tag">
+                        未入驻
+                      </Tag>
+                    ) : null}
                   </View>
-                  <Text className="home-page__provider-identity-text">
-                    {shop.mainProducts[0] || "主营品类待补充"}
-                  </Text>
-                  <View className="home-page__provider-nearby">
-                    <Icon name="nearby" size={22} color="#9CA3AF" />
-                    <Text className="home-page__provider-nearby-text">
-                      {shop.distance || "附近"}
-                    </Text>
+
+                  <View className="home-page__entity-meta-row">
+                    <View className="home-page__entity-rating">
+                      <Icon name="star" size={22} color="#F59E0B" />
+                      <Text className="home-page__entity-rating-text">
+                        {shop.rating?.toFixed(1) || "0.0"}
+                      </Text>
+                    </View>
+                    {materialInfoLine.map((item) => (
+                      <Text key={item} className="home-page__entity-meta-text">
+                        {item}
+                      </Text>
+                    ))}
                   </View>
+
+                  {materialTags.length > 0 ? (
+                    <View className="home-page__entity-tag-row">
+                      {materialTags.map((tag) => (
+                        <View key={tag} className="home-page__entity-tag">
+                          <Text className="home-page__entity-tag-text">{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {isMeaningfulText(shop.address) || isMeaningfulText(shop.distance) ? (
+                    <View className="home-page__entity-info-row">
+                      {isMeaningfulText(shop.address) ? (
+                        <Text className="home-page__entity-info-text">
+                          {shop.address}
+                        </Text>
+                      ) : null}
+                      {isMeaningfulText(shop.distance) ? (
+                        <View className="home-page__provider-nearby">
+                          <Icon name="nearby" size={22} color="#9CA3AF" />
+                          <Text className="home-page__provider-nearby-text">
+                            {shop.distance}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
               </View>
             </View>
-
-            <View className="home-page__provider-footer">
-              <Text className="home-page__material-address">
-                {shop.address || "地址待补充"}
-              </Text>
-              <Text className="home-page__provider-style-text">
-                {getMaterialStyleText(shop)}
-              </Text>
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
     );
   };
 
   return (
     <View className="home-page">
-      <View className="home-page__header">
-        <View className="home-page__location" onClick={handleLocationPress}>
-          <Icon name="location-pin" size={32} color="#111111" />
-          <Text className="home-page__location-text">西安</Text>
-        </View>
-        <View className="home-page__search-wrap">
-          <Icon name="search" size={30} color="#A1A1AA" />
-          <Input
-            className="home-page__search-input"
-            value={searchInput}
-            placeholder={searchPlaceholder}
-            confirmType="search"
-            onInput={(event) => setSearchInput(event.detail.value)}
-            onConfirm={handleSearch}
+      <View className="home-page__header" style={headerInsetStyle}>
+        <View className="home-page__header-main" style={headerMainStyle}>
+          <View className="home-page__location" onClick={handleLocationPress}>
+            <Icon name="location-pin" size={32} color="#111111" />
+            <Text className="home-page__location-text">西安</Text>
+          </View>
+          <View
+            className="home-page__capsule-spacer"
+            style={capsuleSpacerStyle}
           />
         </View>
       </View>
+      <View className="home-page__header-placeholder" style={headerPlaceholderStyle} />
 
       <View className="home-page__category-row">
         {HOME_CATEGORIES.map((item) => {
@@ -828,6 +968,7 @@ export default function Home() {
 
       <View
         className={`home-page__filters ${showsProviderOrgFilter ? "" : "home-page__filters--compact"}`}
+        style={stickyFilterStyle}
       >
         <View className="home-page__sort-anchor">
           <View
@@ -870,20 +1011,6 @@ export default function Home() {
         </View>
         {renderFilterRow()}
       </View>
-
-      {searchKeyword ? (
-        <View className="home-page__search-result">
-          <Text className="home-page__search-result-text">
-            搜索结果：{searchKeyword || activeCategoryMeta.title}
-          </Text>
-          <Text
-            className="home-page__search-result-clear"
-            onClick={handleClearSearch}
-          >
-            清空
-          </Text>
-        </View>
-      ) : null}
 
       {activeCategory === "material"
         ? renderMaterialList()

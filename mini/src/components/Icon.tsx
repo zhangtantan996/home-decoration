@@ -22,6 +22,7 @@ export type IconName =
   | 'pending'
   | 'search'
   | 'location-pin'
+  | 'filter'
   | 'expand'
   | 'designer-service'
   | 'construction-service'
@@ -81,6 +82,8 @@ const iconSvgMap: Record<IconName, (color: string) => string> = {
   search: (color) => wrapSvg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>', color),
   'location-pin': (color) =>
     wrapSvg('<path d="M12 21s-6-4.4-6-10a6 6 0 1 1 12 0c0 5.6-6 10-6 10z"/><circle cx="12" cy="11" r="2.3"/>', color),
+  filter: (color) =>
+    wrapSvg('<path d="M4 6h16l-6.2 7.1v4.5l-3.6 1.8v-6.3L4 6z"/>', color),
   expand: (color) =>
     wrapSvg('<path d="M9 5H5v4"/><path d="M15 5h4v4"/><path d="M5 9l5-5"/><path d="M19 9l-5-5"/><path d="M5 15l5 5"/><path d="M15 19h4v-4"/><path d="M9 19H5v-4"/><path d="M19 15l-5 5"/>', color),
   'designer-service': (color) =>
@@ -121,6 +124,7 @@ const fallbackGlyphMap: Record<IconName, string> = {
   pending: '…',
   search: '⌕',
   'location-pin': '⌖',
+  filter: '⌯',
   expand: '⤢',
   'designer-service': '✎',
   'construction-service': '⌁',

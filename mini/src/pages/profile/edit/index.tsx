@@ -1,7 +1,7 @@
 import Taro from '@tarojs/taro';
 import { View } from '@tarojs/components';
-import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Cell, Avatar, Toast } from '@nutui/nutui-react-taro';
+import { useEffect, useState } from 'react';
+import { Form, Input, Button, Cell, Avatar } from '@nutui/nutui-react-taro';
 import { User, Photograph } from '@nutui/icons-react-taro';
 
 import { getUserProfile, updateUserProfile, type UpdateProfileDTO } from '@/services/profile';
@@ -56,9 +56,9 @@ export default function ProfileEdit() {
       const filePath = res.tempFilePaths[0];
 
       // 上传头像
-      const uploadRes = await uploadFile(filePath, 'avatar');
+      const uploadRes = await uploadFile(filePath, { category: 'avatar' });
       setFormData({ ...formData, avatar: uploadRes.url });
-      Toast.show({ content: '头像上传成功', icon: 'success' });
+      Taro.showToast({ title: '头像上传成功', icon: 'success' });
     } catch (err) {
       showErrorToast(err, '上传失败');
     } finally {
@@ -68,7 +68,7 @@ export default function ProfileEdit() {
 
   const handleSubmit = async () => {
     if (!formData.nickname.trim()) {
-      Toast.show({ content: '请输入昵称', icon: 'fail' });
+      Taro.showToast({ title: '请输入昵称', icon: 'none' });
       return;
     }
 
@@ -86,14 +86,13 @@ export default function ProfileEdit() {
 
       // 更新 auth store 中的用户信息
       if (auth.user) {
-        auth.setUser({
-          ...auth.user,
+        auth.updateUser({
           nickname: updatedProfile.nickname,
           avatar: updatedProfile.avatar,
         });
       }
 
-      Toast.show({ content: '保存成功', icon: 'success' });
+      Taro.showToast({ title: '保存成功', icon: 'success' });
       setTimeout(() => {
         Taro.navigateBack();
       }, 1500);

@@ -3,11 +3,12 @@ import Taro, {
   useReachBottom,
   useRouter,
 } from "@tarojs/taro";
-import { View } from "@tarojs/components";
-import React, { useEffect, useRef, useState } from "react";
+import { Text, View } from "@tarojs/components";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card } from "@/components/Card";
 import { Empty } from "@/components/Empty";
+import { Icon } from "@/components/Icon";
 import { Input } from "@/components/Input";
 import { ListItem } from "@/components/ListItem";
 import { Skeleton } from "@/components/Skeleton";
@@ -19,6 +20,9 @@ import {
 } from "@/services/providers";
 import { useAuthStore } from "@/store/auth";
 import { showErrorToast } from "@/utils/error";
+import { getMiniNavMetrics } from "@/utils/navLayout";
+
+import "./index.scss";
 
 const normalizeProviderType = (value?: string): ProviderType => {
   if (value === "company" || value === "2") {
@@ -33,6 +37,7 @@ const normalizeProviderType = (value?: string): ProviderType => {
 export default function ProviderList() {
   const router = useRouter();
   const auth = useAuthStore();
+  const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const [activeTab, setActiveTab] = useState<ProviderType>(
     normalizeProviderType(router.params.type),
   );
@@ -43,6 +48,32 @@ export default function ProviderList() {
   const [search, setSearch] = useState((router.params.keyword || "").trim());
   const requestIdRef = useRef(0);
   const skipSearchFirstRunRef = useRef(true);
+  const headerInsetStyle = useMemo(
+    () => ({
+      paddingTop: `${navMetrics.menuTop}px`,
+      paddingRight: `${navMetrics.menuRightInset}px`,
+    }),
+    [navMetrics.menuRightInset, navMetrics.menuTop],
+  );
+  const headerMainStyle = useMemo(
+    () => ({ height: `${navMetrics.menuHeight}px` }),
+    [navMetrics.menuHeight],
+  );
+  const headerPlaceholderStyle = useMemo(
+    () => ({ height: `${navMetrics.menuBottom}px` }),
+    [navMetrics.menuBottom],
+  );
+  const capsuleSpacerStyle = useMemo(
+    () => ({
+      width: `${navMetrics.menuWidth}px`,
+      height: `${navMetrics.menuHeight}px`,
+    }),
+    [navMetrics.menuHeight, navMetrics.menuWidth],
+  );
+  const toolbarStyle = useMemo(
+    () => ({ top: `${navMetrics.menuBottom}px` }),
+    [navMetrics.menuBottom],
+  );
 
   const providerTypes = [
     { label: "设计师", value: "designer" },
@@ -122,6 +153,15 @@ export default function ProviderList() {
     });
   };
 
+  const handleBack = () => {
+    if (Taro.getCurrentPages().length > 1) {
+      Taro.navigateBack();
+      return;
+    }
+
+    Taro.switchTab({ url: "/pages/home/index" });
+  };
+
   const handleEmptyAction = () => {
     if (search.trim()) {
       setSearch("");
@@ -143,9 +183,22 @@ export default function ProviderList() {
       : "去登录";
 
   return (
-    <View className="page bg-gray-50 min-h-screen">
-      <View className="sticky top-0 z-10 bg-white shadow-sm">
-        <View className="p-md">
+    <View className="provider-list-page">
+      <View className="provider-list-page__header" style={headerInsetStyle}>
+        <View className="provider-list-page__header-main" style={headerMainStyle}>
+          <View className="provider-list-page__header-left">
+            <View className="provider-list-page__back-button" onClick={handleBack}>
+              <Icon name="arrow-left" size={22} color="#111111" />
+            </View>
+            <Text className="provider-list-page__header-title">服务商列表</Text>
+          </View>
+          <View className="provider-list-page__capsule-spacer" style={capsuleSpacerStyle} />
+        </View>
+      </View>
+      <View className="provider-list-page__header-placeholder" style={headerPlaceholderStyle} />
+
+      <View className="provider-list-page__toolbar" style={toolbarStyle}>
+        <View className="provider-list-page__search">
           <Input
             value={search}
             onChange={setSearch}
@@ -153,22 +206,23 @@ export default function ProviderList() {
           />
         </View>
         <Tabs
+          className="provider-list-page__tabs"
           options={providerTypes}
           value={activeTab}
           onChange={(val) => setActiveTab(val as ProviderType)}
         />
       </View>
 
-      <View className="p-md">
+      <View className="provider-list-page__content">
         {loading && page === 1 ? (
           <View>
-            <View className="mb-sm">
+            <View className="provider-list-page__loading-block">
               <Skeleton width="100%" height={100} />
             </View>
-            <View className="mb-sm">
+            <View className="provider-list-page__loading-block">
               <Skeleton width="100%" height={100} />
             </View>
-            <View className="mb-sm">
+            <View className="provider-list-page__loading-block">
               <Skeleton width="100%" height={100} />
             </View>
           </View>
@@ -181,20 +235,20 @@ export default function ProviderList() {
           providers.map((provider) => (
             <Card
               key={provider.id}
-              className="mb-md"
+              className="provider-list-page__card"
               onClick={() => handleCardClick(provider.id)}
             >
               <ListItem
                 title={provider.nickname || provider.companyName || "服务商"}
                 description={provider.specialty || "暂无介绍"}
                 extra={
-                  <View className="text-secondary">
+                  <View className="provider-list-page__score">
                     {provider.rating?.toFixed(1) || "0.0"}分
                   </View>
                 }
               />
-              <View className="mt-sm flex flex-wrap gap-xs px-md pb-md">
-                <View className="text-xs text-gray-500">
+              <View className="provider-list-page__meta-row">
+                <View className="provider-list-page__meta-text">
                   {provider.yearsExperience
                     ? `${provider.yearsExperience}年经验`
                     : "新入驻"}
@@ -207,13 +261,13 @@ export default function ProviderList() {
         )}
 
         {loading && page > 1 && (
-          <View className="text-center py-md text-gray-400 text-sm">
+          <View className="provider-list-page__loading-state">
             加载中...
           </View>
         )}
 
         {!hasMore && providers.length > 0 && (
-          <View className="text-center py-md text-gray-400 text-sm">
+          <View className="provider-list-page__loading-state">
             没有更多了
           </View>
         )}

@@ -1,56 +1,580 @@
 .booking-create-page {
   min-height: 100vh;
-  background-color: #FFFFFF;
-  padding: 40rpx;
-  padding-bottom: 140rpx;
+  background: #f7f7f8;
 
-  .header {
-    font-size: 32rpx;
-    margin-bottom: 40rpx;
-    color: #52525B;
-    
-    .provider-name {
-      display: inline;
-      font-weight: 600;
-      color: #09090B;
-    }
-  }
-
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: 32rpx;
-  }
-
-  .picker-field {
-    .label {
-      font-size: 28rpx;
-      margin-bottom: 16rpx;
-      color: #52525B;
-    }
-    
-    .picker-value {
-      padding: 24rpx;
-      background: #F4F4F5;
-      border-radius: 12rpx;
-      font-size: 28rpx;
-      color: #09090B;
-      
-      &.placeholder {
-        color: #A1A1AA;
-      }
-    }
-  }
-
-  .footer {
+  &__header {
     position: fixed;
-    bottom: 0;
+    top: 0;
     left: 0;
     right: 0;
-    padding: 24rpx 40rpx;
-    background: #FFFFFF;
-    border-top: 1rpx solid #F4F4F5;
-    padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));
-    padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+    z-index: 28;
+    padding: 0 24rpx;
+    background: rgba(255, 255, 255, 0.98);
+    border-bottom: 1rpx solid rgba(17, 17, 17, 0.04);
+    backdrop-filter: blur(14rpx);
+  }
+
+  &__header-main {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+  }
+
+  &__back-button {
+    width: 96rpx;
+    height: 96rpx;
+    margin-left: -14rpx;
+    border-radius: 999rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__header-title {
+    flex: 1;
+    min-width: 0;
+    color: #111111;
+    font-size: 38rpx;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+  }
+
+  &__capsule-spacer {
+    flex-shrink: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &__header-placeholder {
+    width: 100%;
+  }
+
+  &__content {
+    padding: 24rpx;
+  }
+
+  &__provider-card,
+  &__form-card {
+    border-radius: 32rpx;
+    background: #ffffff;
+    box-shadow: 0 16rpx 34rpx rgba(17, 17, 17, 0.08);
+  }
+
+  &__provider-card {
+    display: flex;
+    gap: 20rpx;
+    padding: 28rpx;
+  }
+
+  &__provider-skeleton {
+    height: 220rpx;
+    border-radius: 32rpx;
+  }
+
+  &__provider-avatar {
+    width: 132rpx;
+    height: 132rpx;
+    border-radius: 28rpx;
+    flex-shrink: 0;
+    background: #ececec;
+
+    &--placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #18181b 0%, #52525b 100%);
+    }
+  }
+
+  &__provider-avatar-text {
+    color: #ffffff;
+    font-size: 42rpx;
+    font-weight: 700;
+  }
+
+  &__provider-copy {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__provider-top {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+  }
+
+  &__provider-name {
+    flex: 1;
+    min-width: 0;
+    color: #111111;
+    font-size: 34rpx;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  &__provider-badge {
+    padding: 6rpx 14rpx;
+    border-radius: 999rpx;
+
+    &--settled {
+      background: #e6f7ee;
+    }
+
+    &--unsettled {
+      background: #fff7ed;
+    }
+  }
+
+  &__provider-badge-text {
+    font-size: 20rpx;
+    font-weight: 600;
+
+    &--settled {
+      color: #389e6a;
+    }
+
+    &--unsettled {
+      color: #d97706;
+    }
+  }
+
+  &__provider-rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 8rpx;
+    margin-top: 12rpx;
+  }
+
+  &__provider-rating-text {
+    color: #4b5563;
+    font-size: 24rpx;
+    font-weight: 600;
+  }
+
+  &__provider-subtitle {
+    display: block;
+    margin-top: 12rpx;
+    color: #71717a;
+    font-size: 24rpx;
+    line-height: 1.6;
+  }
+
+  &__form-card {
+    margin-top: 24rpx;
+    padding: 30rpx 28rpx 20rpx;
+  }
+
+  &__section-title {
+    display: block;
+    color: #111111;
+    font-size: 34rpx;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  &__row {
+    display: flex;
+    gap: 20rpx;
+  }
+
+  &__field {
+    margin-top: 28rpx;
+
+    &--half {
+      flex: 1;
+      min-width: 0;
+    }
+
+    &--textarea {
+      margin-bottom: 10rpx;
+    }
+  }
+
+  &__label {
+    color: #111111;
+    font-size: 28rpx;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  &__required {
+    color: #ef4444;
+    margin-left: 6rpx;
+  }
+
+  &__input-shell,
+  &__select-shell,
+  &__textarea-shell {
+    margin-top: 14rpx;
+    border-radius: 24rpx;
+    background: #f6f7f8;
+    border: 1rpx solid rgba(17, 17, 17, 0.05);
+  }
+
+  &__input-shell,
+  &__select-shell {
+    min-height: 96rpx;
+    padding: 0 24rpx;
+    display: flex;
+    align-items: center;
+  }
+
+  &__input-shell--with-unit {
+    justify-content: space-between;
+  }
+
+  &__input {
+    width: 100%;
+    color: #111111;
+    font-size: 28rpx;
+    min-height: 96rpx;
+  }
+
+  &__readonly-text {
+    color: #111111;
+    font-size: 28rpx;
+  }
+
+  &__unit {
+    color: #71717a;
+    font-size: 26rpx;
+    font-weight: 600;
+  }
+
+  &__select-shell {
+    justify-content: space-between;
+    gap: 16rpx;
+  }
+
+  &__select-text {
+    flex: 1;
+    min-width: 0;
+    color: #111111;
+    font-size: 28rpx;
+
+    &--placeholder {
+      color: #a1a1aa;
+    }
+  }
+
+  &__pill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14rpx;
+    margin-top: 14rpx;
+  }
+
+  &__pill {
+    min-height: 72rpx;
+    padding: 0 24rpx;
+    border-radius: 999rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f5f5f5;
+    border: 1rpx solid transparent;
+
+    &--active {
+      background: #111111;
+      border-color: #111111;
+    }
+  }
+
+  &__pill-text {
+    color: #525252;
+    font-size: 24rpx;
+    font-weight: 600;
+
+    &--active {
+      color: #ffffff;
+    }
+  }
+
+  &__textarea-shell {
+    position: relative;
+    padding: 18rpx 22rpx 40rpx;
+  }
+
+  &__textarea {
+    width: 100%;
+    min-height: 220rpx;
+    color: #111111;
+    font-size: 28rpx;
+    line-height: 1.7;
+  }
+
+  &__textarea-count {
+    position: absolute;
+    right: 20rpx;
+    bottom: 16rpx;
+    color: #a1a1aa;
+    font-size: 22rpx;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+  }
+
+  &__footer-action {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__fee-copy {
+    min-width: 0;
+    flex-shrink: 0;
+  }
+
+  &__fee-label {
+    display: block;
+    color: #71717a;
+    font-size: 22rpx;
+  }
+
+  &__fee-amount {
+    display: block;
+    margin-top: 4rpx;
+    color: #111111;
+    font-size: 34rpx;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  &__fee-note {
+    display: block;
+    margin-top: 2rpx;
+    color: #a1a1aa;
+    font-size: 20rpx;
+  }
+
+  &__sheet-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 58;
+    background: rgba(17, 17, 17, 0.36);
+  }
+
+  &__sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    max-height: 80vh;
+    padding: 28rpx 24rpx calc(28rpx + constant(safe-area-inset-bottom));
+    padding: 28rpx 24rpx calc(28rpx + env(safe-area-inset-bottom));
+    border-radius: 36rpx 36rpx 0 0;
+    background: #ffffff;
+    box-shadow: 0 -18rpx 40rpx rgba(17, 17, 17, 0.14);
+  }
+
+  &__sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16rpx;
+  }
+
+  &__sheet-title {
+    color: #111111;
+    font-size: 32rpx;
+    font-weight: 700;
+  }
+
+  &__sheet-close {
+    width: 56rpx;
+    height: 56rpx;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #71717a;
+    font-size: 42rpx;
+    line-height: 1;
+    background: #f5f5f5;
+  }
+
+  &__sheet-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14rpx;
+    margin-top: 24rpx;
+  }
+
+  &__sheet-option {
+    min-height: 92rpx;
+    padding: 0 24rpx;
+    border-radius: 24rpx;
+    display: flex;
+    align-items: center;
+    background: #f6f7f8;
+    border: 1rpx solid transparent;
+
+    &--active {
+      border-color: rgba(17, 17, 17, 0.12);
+      background: #111111;
+    }
+  }
+
+  &__sheet-option-text {
+    color: #111111;
+    font-size: 28rpx;
+    font-weight: 600;
+
+    &--active {
+      color: #ffffff;
+    }
+  }
+
+  &__layout-columns {
+    display: flex;
+    gap: 20rpx;
+    margin-top: 24rpx;
+  }
+
+  &__layout-column {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__layout-column-title {
+    display: block;
+    margin-bottom: 14rpx;
+    color: #71717a;
+    font-size: 24rpx;
+    text-align: center;
+  }
+
+  &__layout-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12rpx;
+  }
+
+  &__layout-chip {
+    height: 72rpx;
+    border-radius: 20rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f6f7f8;
+    border: 1rpx solid transparent;
+
+    &--active {
+      background: #111111;
+      border-color: #111111;
+    }
+  }
+
+  &__layout-chip-text {
+    color: #111111;
+    font-size: 24rpx;
+    font-weight: 600;
+
+    &--active {
+      color: #ffffff;
+    }
+  }
+
+  &__schedule-section {
+    margin-top: 24rpx;
+
+    &--slots {
+      margin-top: 28rpx;
+    }
+  }
+
+  &__schedule-title {
+    display: block;
+    margin-bottom: 14rpx;
+    color: #71717a;
+    font-size: 24rpx;
+    font-weight: 600;
+  }
+
+  &__schedule-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14rpx;
+  }
+
+  &__day-chip {
+    width: calc(25% - 11rpx);
+    min-height: 94rpx;
+    border-radius: 22rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6rpx;
+    background: #f6f7f8;
+    border: 1rpx solid transparent;
+
+    &--active {
+      background: #111111;
+      border-color: #111111;
+    }
+  }
+
+  &__day-chip-date {
+    color: #111111;
+    font-size: 24rpx;
+    font-weight: 700;
+
+    &--active {
+      color: #ffffff;
+    }
+  }
+
+  &__day-chip-week {
+    color: #71717a;
+    font-size: 22rpx;
+
+    &--active {
+      color: rgba(255, 255, 255, 0.78);
+    }
+  }
+
+  &__slot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14rpx;
+  }
+
+  &__slot-item {
+    min-height: 88rpx;
+    padding: 0 24rpx;
+    border-radius: 24rpx;
+    display: flex;
+    align-items: center;
+    background: #f6f7f8;
+    border: 1rpx solid transparent;
+
+    &--active {
+      background: #111111;
+      border-color: #111111;
+    }
+  }
+
+  &__slot-text {
+    color: #111111;
+    font-size: 26rpx;
+    font-weight: 600;
+
+    &--active {
+      color: #ffffff;
+    }
+  }
+
+  &__sheet-footer {
+    margin-top: 28rpx;
   }
 }

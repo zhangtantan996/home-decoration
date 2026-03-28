@@ -1,21 +1,25 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Image, Text, View } from '@tarojs/components';
-import Taro, { usePullDownRefresh, useRouter } from '@tarojs/taro';
+import { Image, ScrollView, Text, View } from '@tarojs/components';
+import Taro, { usePageScroll, usePullDownRefresh, useRouter } from '@tarojs/taro';
 
-import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
+import MiniPageNav from '@/components/MiniPageNav';
+import PageStateCard from '@/components/PageStateCard';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import { getMaterialShopDetail, type MaterialShopItem } from '@/services/materialShops';
-import { showErrorToast } from '@/utils/error';
+import { getMaterialShopDetail, type MaterialShopItem, type MaterialShopProductItem } from '@/services/materialShops';
+import useSlowLoadingHint from '@/hooks/useSlowLoadingHint';
 import './index.scss';
 
-const getShopTypeLabel = (type?: string) => {
-  if (type === 'brand') return '品牌馆';
-  if (type === 'showroom') return '展厅';
-  return '主材门店';
+const NAV_SCROLL_DISTANCE = 200;
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const formatProductPrice = (product: MaterialShopProductItem) => {
+  if (product.price > 0) {
+    return `¥${product.price.toLocaleString()}${product.unit ? `/${product.unit}` : ''}`;
+  }
+  return product.unit ? `按${product.unit}计价` : '到店咨询';
 };
 
 const buildSummaryText = (shop: MaterialShopItem) => {
@@ -36,22 +40,31 @@ const MaterialShopDetailPage: React.FC = () => {
 
   const [detail, setDetail] = useState<MaterialShopItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [navProgress, setNavProgress] = useState(0);
+
+  usePageScroll(({ scrollTop }) => {
+    const next = clamp(scrollTop / NAV_SCROLL_DISTANCE, 0, 1);
+    setNavProgress((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
+  });
 
   const fetchDetail = async () => {
     if (!shopId) {
       setDetail(null);
       setLoading(false);
+      setLoadError('缺少门店参数，请返回上一页后重试。');
       Taro.stopPullDownRefresh();
       return;
     }
 
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await getMaterialShopDetail(shopId);
       setDetail(data);
     } catch (error) {
       setDetail(null);
-      showErrorToast(error, '加载失败');
+      setLoadError('门店详情加载失败，请检查网络后重试。');
     } finally {
       setLoading(false);
       Taro.stopPullDownRefresh();
@@ -91,36 +104,86 @@ const MaterialShopDetailPage: React.FC = () => {
     });
   };
 
+  const handlePreviewProduct = (product: MaterialShopProductItem) => {
+    const urls = [product.coverImage, ...product.images].filter(Boolean) as string[];
+    if (urls.length === 0) return;
+    Taro.previewImage({
+      current: product.coverImage || urls[0],
+      urls,
+    });
+  };
+
+  const settled = detail?.isSettled !== false;
+  const slowLoadingVisible = useSlowLoadingHint(loading);
+  const fixedNav = <MiniPageNav title={detail?.name || '主材详情'} onBack={handleBack} variant="overlay" progress={navProgress} />;
+  const solidNav = <MiniPageNav title="主材详情" onBack={handleBack} placeholder />;
+
   if (loading) {
     return (
-      <View className="material-detail-page">
-        <Skeleton height={420} className="material-detail-page__hero" />
+      <View className="material-detail-page material-detail-page--loading">
+        {fixedNav}
+        <View className="material-detail-page__hero material-detail-page__hero--loading">
+          <Skeleton height={560} className="material-detail-page__hero-skeleton" />
+        </View>
         <Skeleton className="material-detail-page__skeleton-block" />
         <Skeleton className="material-detail-page__skeleton-block" />
+        {slowLoadingVisible ? (
+          <View className="material-detail-page__state-card-wrap">
+            <PageStateCard
+              variant="loading"
+              title="正在加载门店详情"
+              description="网络较慢时会多等待一点，门店信息正在继续加载。"
+              className="material-detail-page__state-card"
+            />
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View className="material-detail-page material-detail-page--empty">
+        {solidNav}
+        <View className="material-detail-page__empty-content">
+          <PageStateCard
+            variant="error"
+            title="门店页面加载失败"
+            description={loadError}
+            className="material-detail-page__state-card"
+            action={shopId ? { text: '重新加载', onClick: () => void fetchDetail() } : { text: '返回上一页', onClick: handleBack }}
+          />
+        </View>
       </View>
     );
   }
 
   if (!shopId || !detail) {
     return (
-      <View className="material-detail-page">
-        <Empty
-          description={shopId ? '主材详情加载失败' : '无效的主材门店编号'}
-          action={{ text: '返回上一页', onClick: handleBack }}
-        />
+      <View className="material-detail-page material-detail-page--empty">
+        {solidNav}
+        <View className="material-detail-page__empty-content">
+          <Empty
+            description={shopId ? '主材详情加载失败' : '无效的主材门店编号'}
+            action={{ text: '返回上一页', onClick: handleBack }}
+          />
+        </View>
       </View>
     );
   }
 
-  const settled = detail.isSettled !== false;
   const displayTags = Array.from(new Set([
     ...detail.productCategories,
     ...detail.mainProducts,
     ...detail.tags,
-  ])).slice(0, 8);
+  ]))
+    .filter((tag) => !['沟通中', '未入驻', '已入驻'].includes(tag))
+    .slice(0, 6);
 
   return (
-    <View className="material-detail-page">
+    <View className={`material-detail-page ${settled ? 'material-detail-page--no-fixed-footer' : ''}`}>
+      {fixedNav}
+
       <View className="material-detail-page__hero">
         {detail.cover ? (
           <Image
@@ -137,22 +200,12 @@ const MaterialShopDetailPage: React.FC = () => {
         )}
 
         <View className="material-detail-page__hero-overlay">
-          <View className="material-detail-page__hero-kicker">
-            <Icon name="material-service" size={20} color="#F5F5F5" />
-            <Text>{getShopTypeLabel(detail.type)}</Text>
-          </View>
           <Text className="material-detail-page__hero-title">{detail.name}</Text>
           <Text className="material-detail-page__hero-subtitle">
             {detail.productCategories.join(' / ') || '主材采购服务'}
           </Text>
         </View>
       </View>
-
-      {!settled ? (
-        <View className="material-detail-page__settled-banner">
-          该商家暂未入驻平台，当前展示信息来自已同步的门店资料，仅供选材参考。
-        </View>
-      ) : null}
 
       <Card className="material-detail-page__summary-card">
         <View className="material-detail-page__summary">
@@ -174,8 +227,10 @@ const MaterialShopDetailPage: React.FC = () => {
             <View className="material-detail-page__summary-main">
               <View className="material-detail-page__summary-title-row">
                 <Text className="material-detail-page__summary-title">{detail.name}</Text>
-                {detail.isVerified ? <Tag variant="success">已认证</Tag> : null}
-                <Tag variant={settled ? 'secondary' : 'warning'}>{settled ? '已入驻' : '未入驻'}</Tag>
+                <View className="material-detail-page__summary-badges">
+                  {detail.isVerified ? <Tag variant="success">已认证</Tag> : null}
+                  <Tag variant={settled ? 'secondary' : 'warning'}>{settled ? '已入驻' : '未入驻'}</Tag>
+                </View>
               </View>
 
               <View className="material-detail-page__meta-row">
@@ -187,20 +242,15 @@ const MaterialShopDetailPage: React.FC = () => {
                 <Text>{detail.distance || '附近'}</Text>
               </View>
 
-              <View className="material-detail-page__address-row">
-                <Icon name="location-pin" size={22} color="#737373" />
-                <Text className="material-detail-page__address-text">{detail.address || '地址待补充'}</Text>
-              </View>
+              {displayTags.length > 0 ? (
+                <View className="material-detail-page__tag-list material-detail-page__tag-list--inline">
+                  {displayTags.map((tag) => (
+                    <Tag key={tag} variant="secondary">{tag}</Tag>
+                  ))}
+                </View>
+              ) : null}
             </View>
           </View>
-
-          {displayTags.length > 0 ? (
-            <View className="material-detail-page__tag-list">
-              {displayTags.map((tag) => (
-                <Tag key={tag} variant="secondary">{tag}</Tag>
-              ))}
-            </View>
-          ) : null}
         </View>
       </Card>
 
@@ -237,11 +287,74 @@ const MaterialShopDetailPage: React.FC = () => {
         </View>
       </Card>
 
-      <View className="material-detail-page__footer">
-        <Button block className="material-detail-page__footer-button" onClick={handleBack}>
-          返回上一页
-        </Button>
-      </View>
+      <Card className="material-detail-page__section-card">
+        <View className="material-detail-page__section">
+          <Text className="material-detail-page__section-title">门店位置</Text>
+          <View className="material-detail-page__location-card">
+            <View className="material-detail-page__location-icon">
+              <Icon name="location-pin" size={28} color="#F97316" />
+            </View>
+            <View className="material-detail-page__location-main">
+              <Text className="material-detail-page__location-label">门店地址</Text>
+              <Text className="material-detail-page__location-text">{detail.address || '地址待补充'}</Text>
+            </View>
+            <View className="material-detail-page__location-distance">
+              <Text className="material-detail-page__location-distance-text">{detail.distance || '附近'}</Text>
+            </View>
+          </View>
+        </View>
+      </Card>
+
+      {detail.products.length > 0 ? (
+        <Card className="material-detail-page__section-card">
+          <View className="material-detail-page__section">
+            <Text className="material-detail-page__section-title">门店商品</Text>
+            <ScrollView scrollX className="material-detail-page__product-scroll" showScrollbar={false}>
+              <View className="material-detail-page__product-list">
+                {detail.products.map((product) => {
+                  const coverImage = product.coverImage || product.images[0] || detail.cover || detail.brandLogo;
+                  return (
+                    <View
+                      key={product.id || product.name}
+                      className="material-detail-page__product-card"
+                      onClick={() => handlePreviewProduct(product)}
+                    >
+                      {coverImage ? (
+                        <Image className="material-detail-page__product-image" src={coverImage} mode="aspectFill" lazyLoad />
+                      ) : (
+                        <View className="material-detail-page__product-image material-detail-page__product-image--placeholder">
+                          <Icon name="material-service" size={48} color="#FFFFFF" />
+                        </View>
+                      )}
+                      <View className="material-detail-page__product-body">
+                        <Text className="material-detail-page__product-title" numberOfLines={1}>{product.name}</Text>
+                        <Text className="material-detail-page__product-price">{formatProductPrice(product)}</Text>
+                        {product.description ? (
+                          <Text className="material-detail-page__product-desc" numberOfLines={2}>{product.description}</Text>
+                        ) : (
+                          <Text className="material-detail-page__product-desc material-detail-page__product-desc--muted" numberOfLines={2}>
+                            商品信息待补充
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+        </Card>
+      ) : null}
+
+      {!settled ? (
+        <View className="material-detail-page__unsettled-bar">
+          <View className="material-detail-page__unsettled-head">
+            <View className="material-detail-page__unsettled-dot" />
+            <Text className="material-detail-page__unsettled-title">未入驻提醒</Text>
+          </View>
+          <Text className="material-detail-page__unsettled-text">该商家信息来源于公开渠道，尚未在本平台入驻，当前展示内容仅供参考。</Text>
+        </View>
+      ) : null}
     </View>
   );
 };

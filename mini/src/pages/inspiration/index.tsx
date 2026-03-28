@@ -1,5 +1,5 @@
 import Taro, { useDidShow, useLoad, usePullDownRefresh, useReachBottom } from '@tarojs/taro';
-import { Image, Input, Text, View } from '@tarojs/components';
+import { Image, Text, View } from '@tarojs/components';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Empty } from '@/components/Empty';
@@ -8,18 +8,26 @@ import { Skeleton } from '@/components/Skeleton';
 import type { FavoriteItemDTO, InspirationItemDTO } from '@/services/dto';
 import { favoriteService, inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
-import { syncCurrentTabBar } from '@/utils/customTabBar';
+import { setCustomTabBarHidden, syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getInspirationCoverImage } from '@/utils/inspirationImages';
+import { getMiniNavMetrics } from '@/utils/navLayout';
 import { formatServerMonthDay, getServerTimeMs } from '@/utils/serverTime';
 
 import './index.scss';
 
-const STYLES = ['现代', '原木', '极简', '侘寂', '美式', '法式'];
-const SPACE_TAGS = ['全部', '客厅', '卧室', '厨卫', '阳台', '办公区'];
-const PAGE_SIZE = 10;
-const INSPIRATION_CASE_SYNC_KEY = 'inspiration_case_sync';
-const INSPIRATION_FILTER_KEY = 'inspiration_filter_state';
+type SortMode = 'recommend' | 'latest' | 'hot';
+type FilterGroupKey = 'style' | 'layout' | 'area';
+
+interface FilterOption {
+  value: string;
+  label: string;
+}
+
+interface AreaBucketOption extends FilterOption {
+  min: number | null;
+  max: number | null;
+}
 
 interface InspirationCaseSyncPayload {
   id: number;
@@ -31,10 +39,55 @@ interface InspirationCaseSyncPayload {
 
 interface InspirationFilterState {
   activeStyle?: string;
-  activeSpace?: string;
+  activeLayout?: string;
+  activeArea?: string;
+  sortMode?: SortMode;
   activeTab?: 'all' | 'favorites';
-  keyword?: string;
 }
+
+const ALL_FILTER_VALUE = '__all__';
+const PAGE_SIZE = 20;
+const INSPIRATION_CASE_SYNC_KEY = 'inspiration_case_sync';
+const INSPIRATION_FILTER_KEY = 'inspiration_filter_state';
+const FILTER_SHEET_ANIMATION_MS = 280;
+
+const STYLE_OPTIONS: FilterOption[] = [
+  { value: '现代简约', label: '现代简约' },
+  { value: '奶油风', label: '奶油风' },
+  { value: '原木风', label: '原木风' },
+  { value: '北欧风格', label: '北欧风格' },
+  { value: '新中式', label: '新中式' },
+  { value: '轻奢风格', label: '轻奢风格' },
+  { value: '美式风格', label: '美式风格' },
+  { value: '欧式风格', label: '欧式风格' },
+  { value: '日式风格', label: '日式风格' },
+  { value: '工业风格', label: '工业风格' },
+  { value: '法式风格', label: '法式风格' },
+  { value: '地中海风格', label: '地中海风格' },
+];
+
+const LAYOUT_OPTIONS: FilterOption[] = [
+  { value: '一居', label: '一居' },
+  { value: '二居', label: '二居' },
+  { value: '三居', label: '三居' },
+  { value: '四居及以上', label: '四居及以上' },
+  { value: '复式', label: '复式' },
+  { value: '别墅', label: '别墅' },
+  { value: '其他', label: '其他' },
+];
+
+const AREA_OPTIONS: AreaBucketOption[] = [
+  { value: 'small', label: '90㎡以下', min: 0, max: 90 },
+  { value: 'medium', label: '90-140㎡', min: 90, max: 140 },
+  { value: 'large', label: '140-200㎡', min: 140, max: 200 },
+  { value: 'villa', label: '200㎡以上', min: 200, max: null },
+];
+
+const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
+  { value: 'recommend', label: '推荐' },
+  { value: 'latest', label: '最新' },
+  { value: 'hot', label: '热度' },
+];
 
 const getDateTimestamp = (value?: string) => {
   if (!value) {
@@ -59,7 +112,9 @@ const dedupeFavorites = (items: FavoriteItemDTO[]) => {
     }
   });
 
-  return Array.from(map.values()).sort((left, right) => getDateTimestamp(right.createdAt) - getDateTimestamp(left.createdAt));
+  return Array.from(map.values()).sort(
+    (left, right) => getDateTimestamp(right.createdAt) - getDateTimestamp(left.createdAt),
+  );
 };
 
 const compactCount = (value?: number) => {
@@ -82,21 +137,34 @@ const formatFavoriteDate = (value?: string) => {
   return formatServerMonthDay(value, '最近收藏');
 };
 
-const matchesSpace = (title: string, space: string) => {
-  if (!space || space === '全部') {
+const parseAreaValue = (areaText?: string) => {
+  const matched = String(areaText || '').match(/(\d+(?:\.\d+)?)/);
+  return matched ? Number(matched[1]) : 0;
+};
+
+const matchAreaBucket = (areaText: string, option: AreaBucketOption) => {
+  const value = parseAreaValue(areaText);
+  if (value <= 0) {
+    return false;
+  }
+
+  if (option.min != null && value < option.min) {
+    return false;
+  }
+
+  if (option.max == null) {
     return true;
   }
 
-  const text = title.toLowerCase();
-  const patternMap: Record<string, RegExp> = {
-    客厅: /(客厅|会客|沙发|电视墙)/,
-    卧室: /(卧室|主卧|次卧|睡眠|床头)/,
-    厨卫: /(厨房|餐厨|卫生间|浴室|厨卫)/,
-    阳台: /(阳台|露台)/,
-    办公区: /(书房|办公|工作区|书桌)/,
-  };
+  if (option.min === 0) {
+    return value < option.max;
+  }
 
-  return (patternMap[space] || /.*/).test(text);
+  return value <= option.max;
+};
+
+const resolveOptionLabel = (options: FilterOption[], value: string) => {
+  return options.find((item) => item.value === value)?.label || value;
 };
 
 const splitColumns = <T,>(items: T[]) => {
@@ -147,10 +215,16 @@ export default function Inspiration() {
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [loadingFavoritesMore, setLoadingFavoritesMore] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'all' | 'favorites'>('all');
-  const [activeStyle, setActiveStyle] = useState('');
-  const [activeSpace, setActiveSpace] = useState('全部');
-  const [keyword, setKeyword] = useState('');
+  const [activeStyle, setActiveStyle] = useState(ALL_FILTER_VALUE);
+  const [activeLayout, setActiveLayout] = useState(ALL_FILTER_VALUE);
+  const [activeArea, setActiveArea] = useState(ALL_FILTER_VALUE);
+  const [sortMode, setSortMode] = useState<SortMode>('recommend');
+
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [filterSheetMounted, setFilterSheetMounted] = useState(false);
+  const [draftStyle, setDraftStyle] = useState(ALL_FILTER_VALUE);
+  const [draftLayout, setDraftLayout] = useState(ALL_FILTER_VALUE);
+  const [draftArea, setDraftArea] = useState(ALL_FILTER_VALUE);
 
   const [likingIds, setLikingIds] = useState<number[]>([]);
   const [favoritingIds, setFavoritingIds] = useState<number[]>([]);
@@ -159,40 +233,81 @@ export default function Inspiration() {
   const favoritesRequestIdRef = useRef(0);
   const loadingCasesMoreRef = useRef(false);
   const loadingFavoritesMoreRef = useRef(false);
+  const filterSheetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const likingIdSet = useMemo(() => new Set(likingIds), [likingIds]);
   const favoritingIdSet = useMemo(() => new Set(favoritingIds), [favoritingIds]);
-  const statusBarHeight = useMemo(() => Taro.getSystemInfoSync().statusBarHeight || 24, []);
-  const navInsetStyle = useMemo(() => ({ paddingTop: `${statusBarHeight + 10}px` }), [statusBarHeight]);
+  const navMetrics = useMemo(() => getMiniNavMetrics(), []);
+  const headerInsetStyle = useMemo(
+    () => ({
+      paddingTop: `${navMetrics.menuTop}px`,
+      paddingRight: `${navMetrics.menuRightInset}px`,
+    }),
+    [navMetrics.menuRightInset, navMetrics.menuTop],
+  );
+  const headerMainStyle = useMemo(
+    () => ({ height: `${navMetrics.menuHeight}px` }),
+    [navMetrics.menuHeight],
+  );
+  const headerPlaceholderStyle = useMemo(
+    () => ({ height: `${navMetrics.menuBottom}px` }),
+    [navMetrics.menuBottom],
+  );
+  const capsuleSpacerStyle = useMemo(
+    () => ({
+      width: `${navMetrics.menuWidth}px`,
+      height: `${navMetrics.menuHeight}px`,
+    }),
+    [navMetrics.menuHeight, navMetrics.menuWidth],
+  );
+  const toolbarInsetStyle = useMemo(
+    () => ({ top: `${navMetrics.menuBottom}px` }),
+    [navMetrics.menuBottom],
+  );
 
   useLoad((options) => {
     const savedFilter = Taro.getStorageSync(INSPIRATION_FILTER_KEY) as Partial<InspirationFilterState> | undefined;
-    if (savedFilter?.activeStyle && STYLES.includes(savedFilter.activeStyle)) {
+
+    if (savedFilter?.activeStyle && STYLE_OPTIONS.some((item) => item.value === savedFilter.activeStyle)) {
       setActiveStyle(savedFilter.activeStyle);
     }
-    if (savedFilter?.activeSpace && SPACE_TAGS.includes(savedFilter.activeSpace)) {
-      setActiveSpace(savedFilter.activeSpace);
+    if (savedFilter?.activeLayout && LAYOUT_OPTIONS.some((item) => item.value === savedFilter.activeLayout)) {
+      setActiveLayout(savedFilter.activeLayout);
     }
-    if (typeof savedFilter?.keyword === 'string') {
-      setKeyword(savedFilter.keyword);
+    if (savedFilter?.activeArea && AREA_OPTIONS.some((item) => item.value === savedFilter.activeArea)) {
+      setActiveArea(savedFilter.activeArea);
     }
-    if (savedFilter?.activeTab === 'favorites' && auth.token) {
-      setActiveTab('favorites');
-    }
-    if (options.tab === 'favorites' && auth.token) {
-      setActiveTab('favorites');
+    if (savedFilter?.sortMode && SORT_OPTIONS.some((item) => item.value === savedFilter.sortMode)) {
+      setSortMode(savedFilter.sortMode);
     }
   });
 
   useEffect(() => {
     const nextFilter: InspirationFilterState = {
       activeStyle,
-      activeSpace,
-      keyword,
-      activeTab: activeTab === 'favorites' && !auth.token ? 'all' : activeTab,
+      activeLayout,
+      activeArea,
+      sortMode,
+      activeTab: 'all',
     };
     Taro.setStorageSync(INSPIRATION_FILTER_KEY, nextFilter);
-  }, [activeStyle, activeSpace, activeTab, auth.token, keyword]);
+  }, [activeArea, activeLayout, activeStyle, sortMode]);
+
+  useEffect(() => {
+    setCustomTabBarHidden(filterSheetMounted);
+
+    return () => {
+      setCustomTabBarHidden(false);
+    };
+  }, [filterSheetMounted]);
+
+  useEffect(() => {
+    return () => {
+      if (filterSheetTimerRef.current) {
+        clearTimeout(filterSheetTimerRef.current);
+      }
+    };
+  }, []);
 
   const fetchCases = async (reset = false) => {
     if (reset) {
@@ -200,6 +315,7 @@ export default function Inspiration() {
       setLoadingCasesMore(false);
       setCasesHasMore(true);
       setCasesPage(1);
+      setCases([]);
       loadingCasesMoreRef.current = false;
     } else {
       if (loadingCases || loadingCasesMore || loadingCasesMoreRef.current || !casesHasMore) {
@@ -216,7 +332,8 @@ export default function Inspiration() {
       const caseData = await inspirationService.list({
         page: targetPage,
         pageSize: PAGE_SIZE,
-        style: activeStyle,
+        style: activeStyle !== ALL_FILTER_VALUE ? activeStyle : undefined,
+        layout: activeLayout !== ALL_FILTER_VALUE ? activeLayout : undefined,
       });
 
       if (requestId !== casesRequestIdRef.current) {
@@ -265,6 +382,7 @@ export default function Inspiration() {
       setLoadingFavoritesMore(false);
       setFavoritesHasMore(true);
       setFavoritesPage(1);
+      setFavorites([]);
       loadingFavoritesMoreRef.current = false;
     } else {
       if (loadingFavorites || loadingFavoritesMore || loadingFavoritesMoreRef.current || !favoritesHasMore) {
@@ -311,12 +429,6 @@ export default function Inspiration() {
   useDidShow(() => {
     syncCurrentTabBar('/pages/inspiration/index');
 
-    const nextTab = Taro.getStorageSync('inspiration_active_tab');
-    if (nextTab === 'favorites' && auth.token) {
-      setActiveTab('favorites');
-    }
-    Taro.removeStorageSync('inspiration_active_tab');
-
     const syncPayload = Taro.getStorageSync(INSPIRATION_CASE_SYNC_KEY) as Partial<InspirationCaseSyncPayload> | undefined;
     if (!syncPayload || typeof syncPayload.id !== 'number') {
       return;
@@ -349,38 +461,15 @@ export default function Inspiration() {
 
   useEffect(() => {
     void fetchCases(true);
-  }, [activeStyle]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (auth.token && activeTab === 'favorites') {
-      void fetchFavorites(true);
-    }
-  }, [activeTab, auth.token]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!auth.token && activeTab === 'favorites') {
-      setActiveTab('all');
-    }
-  }, [auth.token, activeTab]);
+  }, [activeLayout, activeStyle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   usePullDownRefresh(() => {
-    const refreshTask = activeTab === 'favorites'
-      ? fetchFavorites(true)
-      : fetchCases(true);
-
-    refreshTask.finally(() => {
+    fetchCases(true).finally(() => {
       Taro.stopPullDownRefresh();
     });
   });
 
   useReachBottom(() => {
-    if (activeTab === 'favorites') {
-      if (auth.token) {
-        void fetchFavorites();
-      }
-      return;
-    }
-
     void fetchCases();
   });
 
@@ -473,36 +562,117 @@ export default function Inspiration() {
   };
 
   const filteredCases = useMemo(() => {
-    const query = keyword.trim().toLowerCase();
-    return cases.filter((item) => {
-      const text = `${item.title} ${item.style} ${item.layout} ${item.area} ${item.author?.name || ''}`.toLowerCase();
-      return (!query || text.includes(query)) && matchesSpace(text, activeSpace);
-    });
-  }, [activeSpace, cases, keyword]);
+    const list = [...cases];
 
-  const filteredFavorites = useMemo(() => {
-    const query = keyword.trim().toLowerCase();
-    return favorites.filter((item) => {
-      const text = `${item.title} ${item.targetType}`.toLowerCase();
-      return (!query || text.includes(query)) && matchesSpace(text, activeSpace);
-    });
-  }, [activeSpace, favorites, keyword]);
+    const areaFiltered = activeArea === ALL_FILTER_VALUE
+      ? list
+      : list.filter((item) => {
+          const selectedArea = AREA_OPTIONS.find((option) => option.value === activeArea);
+          if (!selectedArea) {
+            return true;
+          }
+          return matchAreaBucket(item.area, selectedArea);
+        });
+
+    if (sortMode === 'latest') {
+      return areaFiltered.sort((left, right) => right.id - left.id);
+    }
+
+    if (sortMode === 'hot') {
+      return areaFiltered.sort((left, right) => {
+        if ((right.likeCount || 0) !== (left.likeCount || 0)) {
+          return (right.likeCount || 0) - (left.likeCount || 0);
+        }
+        return right.id - left.id;
+      });
+    }
+
+    return areaFiltered;
+  }, [activeArea, cases, sortMode]);
 
   const [leftCases, rightCases] = useMemo(() => splitColumns(filteredCases), [filteredCases]);
-  const [leftFavorites, rightFavorites] = useMemo(() => splitColumns(filteredFavorites), [filteredFavorites]);
+  const [leftFavorites, rightFavorites] = useMemo(() => splitColumns(favorites), [favorites]);
+
+  const selectedFilters = useMemo(() => {
+    const result: Array<{ key: FilterGroupKey; label: string }> = [];
+
+    if (activeStyle !== ALL_FILTER_VALUE) {
+      result.push({ key: 'style', label: resolveOptionLabel(STYLE_OPTIONS, activeStyle) });
+    }
+    if (activeLayout !== ALL_FILTER_VALUE) {
+      result.push({ key: 'layout', label: resolveOptionLabel(LAYOUT_OPTIONS, activeLayout) });
+    }
+    if (activeArea !== ALL_FILTER_VALUE) {
+      result.push({ key: 'area', label: resolveOptionLabel(AREA_OPTIONS, activeArea) });
+    }
+
+    return result;
+  }, [activeArea, activeLayout, activeStyle]);
+
+  const selectedFilterCount = selectedFilters.length;
+  const showEmpty = filteredCases.length === 0;
+
+  const clearFilterSheetTimer = () => {
+    if (filterSheetTimerRef.current) {
+      clearTimeout(filterSheetTimerRef.current);
+      filterSheetTimerRef.current = null;
+    }
+  };
+
+  const handleOpenFilterSheet = () => {
+    clearFilterSheetTimer();
+    setDraftStyle(activeStyle);
+    setDraftLayout(activeLayout);
+    setDraftArea(activeArea);
+    setFilterSheetMounted(true);
+    filterSheetTimerRef.current = setTimeout(() => {
+      setFilterSheetVisible(true);
+      filterSheetTimerRef.current = null;
+    }, 16);
+  };
+
+  const handleCloseFilterSheet = () => {
+    setFilterSheetVisible(false);
+    clearFilterSheetTimer();
+    filterSheetTimerRef.current = setTimeout(() => {
+      setFilterSheetMounted(false);
+      filterSheetTimerRef.current = null;
+    }, FILTER_SHEET_ANIMATION_MS);
+  };
+
+  const handleApplyFilters = () => {
+    setActiveStyle(draftStyle);
+    setActiveLayout(draftLayout);
+    setActiveArea(draftArea);
+    setFilterSheetVisible(false);
+  };
+
+  const handleResetDraftFilters = () => {
+    setDraftStyle(ALL_FILTER_VALUE);
+    setDraftLayout(ALL_FILTER_VALUE);
+    setDraftArea(ALL_FILTER_VALUE);
+  };
+
+  const handleClearFilters = () => {
+    setActiveStyle(ALL_FILTER_VALUE);
+    setActiveLayout(ALL_FILTER_VALUE);
+    setActiveArea(ALL_FILTER_VALUE);
+  };
+
+  const handleRemoveFilter = (key: FilterGroupKey) => {
+    if (key === 'style') {
+      setActiveStyle(ALL_FILTER_VALUE);
+      return;
+    }
+    if (key === 'layout') {
+      setActiveLayout(ALL_FILTER_VALUE);
+      return;
+    }
+    setActiveArea(ALL_FILTER_VALUE);
+  };
 
   const renderCaseCard = (item: InspirationItemDTO) => (
     <View key={item.id} className="inspiration-page__card" onClick={() => openInspirationDetail(item.id)}>
-      <View
-        className={`inspiration-page__favorite-chip ${item.isFavorited ? 'inspiration-page__favorite-chip--active' : ''}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          void handleFavorite(item);
-        }}
-      >
-        <Text className="inspiration-page__favorite-chip-text">{item.isFavorited ? '已藏' : '收藏'}</Text>
-      </View>
-
       {item.coverImage ? (
         <Image
           className="inspiration-page__card-cover"
@@ -516,7 +686,9 @@ export default function Inspiration() {
 
       <View className="inspiration-page__card-body">
         <Text className="inspiration-page__card-title line-clamp-2">{item.title}</Text>
-        <Text className="inspiration-page__card-subtitle">{item.style || item.layout || '空间灵感'}</Text>
+        <Text className="inspiration-page__card-subtitle">
+          {[item.style, item.layout, item.area].filter(Boolean).join(' · ') || '空间灵感'}
+        </Text>
         <View className="inspiration-page__card-footer">
           <View className="inspiration-page__author">
             {item.author?.avatar ? (
@@ -562,135 +734,156 @@ export default function Inspiration() {
     </View>
   );
 
-  const isFavoritesTab = activeTab === 'favorites';
-  const showEmpty = isFavoritesTab ? filteredFavorites.length === 0 : filteredCases.length === 0;
+  const renderFilterGroup = <T extends FilterOption>(
+    label: string,
+    options: T[],
+    activeValue: string,
+    onSelect: (value: string) => void,
+  ) => {
+    return (
+      <View className="inspiration-page__sheet-group">
+        <View className="inspiration-page__sheet-group-head">
+          <Text className="inspiration-page__sheet-group-title">{label}</Text>
+        </View>
+        <View className="inspiration-page__sheet-options">
+          <View
+            className={`inspiration-page__sheet-chip ${activeValue === ALL_FILTER_VALUE ? 'inspiration-page__sheet-chip--active' : ''}`}
+            onClick={() => onSelect(ALL_FILTER_VALUE)}
+          >
+            <Text className="inspiration-page__sheet-chip-text">全部</Text>
+          </View>
+          {options.map((item) => (
+            <View
+              key={item.value}
+              className={`inspiration-page__sheet-chip ${activeValue === item.value ? 'inspiration-page__sheet-chip--active' : ''}`}
+              onClick={() => onSelect(item.value)}
+            >
+              <Text className="inspiration-page__sheet-chip-text">{item.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <View className="inspiration-page">
-      <View className="inspiration-page__nav" style={navInsetStyle}>
-        <Text className="inspiration-page__nav-title">发现灵感</Text>
-        <View className="inspiration-page__nav-icon">
-          <Icon name="search" size={30} color="#111111" />
-        </View>
-      </View>
-
-      <View className="inspiration-page__content">
-        <View className="inspiration-page__search">
-          <Icon name="search" size={28} color="#8b8b8b" className="inspiration-page__search-icon" />
-          <Input
-            className="inspiration-page__search-input"
-            type="text"
-            confirmType="search"
-            value={keyword}
-            maxlength={30}
-            placeholder="搜索 极简 客厅 文艺 灵感"
-            placeholderClass="inspiration-page__search-placeholder"
-            onInput={(event) => setKeyword(event.detail.value)}
+      <View className="inspiration-page__header" style={headerInsetStyle}>
+        <View className="inspiration-page__header-main" style={headerMainStyle}>
+          <Text className="inspiration-page__header-title">灵感图库</Text>
+          <View
+            className="inspiration-page__capsule-spacer"
+            style={capsuleSpacerStyle}
           />
         </View>
+      </View>
+      <View className="inspiration-page__header-placeholder" style={headerPlaceholderStyle} />
 
-        <View className="inspiration-page__filters">
-          <View className="inspiration-page__chip-row">
-            <View
-              className={`inspiration-page__chip ${activeTab === 'all' ? 'inspiration-page__chip--active' : ''}`}
-              onClick={() => setActiveTab('all')}
-            >
-              <Text className="inspiration-page__chip-text">推荐</Text>
-            </View>
-            <View
-              className={`inspiration-page__chip ${activeTab === 'favorites' ? 'inspiration-page__chip--active' : ''}`}
-              onClick={() => {
-                if (!ensureAuth()) {
-                  return;
-                }
-                setActiveTab('favorites');
-              }}
-            >
-              <Text className="inspiration-page__chip-text">收藏</Text>
-            </View>
-            {STYLES.map((style) => (
+      <View className="inspiration-page__content">
+        <View className="inspiration-page__toolbar" style={toolbarInsetStyle}>
+          <View className="inspiration-page__sort-tabs">
+            {SORT_OPTIONS.map((option) => (
               <View
-                key={style}
-                className={`inspiration-page__chip ${activeStyle === style ? 'inspiration-page__chip--active' : ''}`}
-                onClick={() => setActiveStyle(activeStyle === style ? '' : style)}
+                key={option.value}
+                className={`inspiration-page__sort-tab ${sortMode === option.value ? 'inspiration-page__sort-tab--active' : ''}`}
+                onClick={() => setSortMode(option.value)}
               >
-                <Text className="inspiration-page__chip-text">{style}</Text>
+                <Text className="inspiration-page__sort-tab-text">{option.label}</Text>
               </View>
             ))}
           </View>
-
-          <View className="inspiration-page__chip-row inspiration-page__chip-row--secondary">
-            {SPACE_TAGS.map((space) => (
-              <View
-                key={space}
-                className={`inspiration-page__chip inspiration-page__chip--soft ${activeSpace === space ? 'inspiration-page__chip--active' : ''}`}
-                onClick={() => setActiveSpace(space)}
-              >
-                <Text className="inspiration-page__chip-text">{space}</Text>
+          <View className="inspiration-page__filter-trigger" onClick={handleOpenFilterSheet}>
+            <Icon name="filter" size={26} color="#111111" />
+            {selectedFilterCount > 0 ? (
+              <View className="inspiration-page__filter-trigger-badge">
+                <Text className="inspiration-page__filter-trigger-badge-text">{selectedFilterCount}</Text>
               </View>
-            ))}
+            ) : null}
           </View>
         </View>
 
-        {isFavoritesTab && !auth.token ? (
+        {selectedFilterCount > 0 ? (
+          <View className="inspiration-page__active-bar">
+            <View className="inspiration-page__active-list">
+              {selectedFilters.map((item) => (
+                <View
+                  key={item.key}
+                  className="inspiration-page__active-chip"
+                  onClick={() => handleRemoveFilter(item.key)}
+                >
+                  <Text className="inspiration-page__active-chip-text">{item.label}</Text>
+                  <Text className="inspiration-page__active-chip-close">×</Text>
+                </View>
+              ))}
+            </View>
+            <Text className="inspiration-page__active-clear" onClick={handleClearFilters}>清空</Text>
+          </View>
+        ) : null}
+
+        {showEmpty && !loadingCases ? (
           <View className="inspiration-page__empty">
             <Empty
-              description="登录后查看收藏灵感"
-              action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
+              description="当前筛选下暂无灵感案例"
+              action={
+                selectedFilterCount > 0
+                  ? { text: '清空筛选', onClick: handleClearFilters }
+                  : undefined
+              }
             />
           </View>
-        ) : null}
-
-        {isFavoritesTab && auth.token && loadingFavorites && favorites.length === 0 ? (
+        ) : (
           <View className="inspiration-page__waterfall">
-            <View className="inspiration-page__column">{renderSkeletonCards('favorite-left')}</View>
-            <View className="inspiration-page__column">{renderSkeletonCards('favorite-right')}</View>
+            <View className="inspiration-page__column">
+              {leftCases.map((item) => renderCaseCard(item))}
+              {(loadingCases || loadingCasesMore) ? renderSkeletonCards('left') : null}
+            </View>
+            <View className="inspiration-page__column">
+              {rightCases.map((item) => renderCaseCard(item))}
+              {(loadingCases || loadingCasesMore) ? renderSkeletonCards('right') : null}
+            </View>
           </View>
-        ) : null}
+        )}
 
-        {!isFavoritesTab && loadingCases && cases.length === 0 ? (
-          <View className="inspiration-page__waterfall">
-            <View className="inspiration-page__column">{renderSkeletonCards('case-left')}</View>
-            <View className="inspiration-page__column">{renderSkeletonCards('case-right')}</View>
-          </View>
-        ) : null}
-
-        {!loadingCases && !loadingFavorites && showEmpty && (!isFavoritesTab || auth.token) ? (
-          <View className="inspiration-page__empty">
-            <Empty
-              description={isFavoritesTab ? '还没有收藏灵感' : '暂无匹配的灵感内容'}
-              action={isFavoritesTab ? { text: '去逛逛', onClick: () => setActiveTab('all') } : undefined}
-            />
-          </View>
-        ) : null}
-
-        {isFavoritesTab && auth.token && filteredFavorites.length > 0 ? (
-          <View className="inspiration-page__waterfall">
-            <View className="inspiration-page__column">{leftFavorites.map((item) => renderFavoriteCard(item))}</View>
-            <View className="inspiration-page__column">{rightFavorites.map((item) => renderFavoriteCard(item))}</View>
-          </View>
-        ) : null}
-
-        {!isFavoritesTab && filteredCases.length > 0 ? (
-          <View className="inspiration-page__waterfall">
-            <View className="inspiration-page__column">{leftCases.map((item) => renderCaseCard(item))}</View>
-            <View className="inspiration-page__column">{rightCases.map((item) => renderCaseCard(item))}</View>
-          </View>
-        ) : null}
-
-        {!isFavoritesTab && loadingCasesMore ? (
-          <Text className="inspiration-page__status">加载更多灵感中...</Text>
-        ) : null}
-        {!isFavoritesTab && !casesHasMore && filteredCases.length > 0 ? (
-          <Text className="inspiration-page__status">已经到底了</Text>
-        ) : null}
-        {isFavoritesTab && loadingFavoritesMore ? (
-          <Text className="inspiration-page__status">加载更多收藏中...</Text>
-        ) : null}
-        {isFavoritesTab && !favoritesHasMore && filteredFavorites.length > 0 ? (
-          <Text className="inspiration-page__status">收藏已全部展示</Text>
+        {!showEmpty && !loadingCases ? (
+          <Text className="inspiration-page__status">
+            {casesHasMore ? '上拉继续发现更多灵感' : '已经看到全部灵感了'}
+          </Text>
         ) : null}
       </View>
+
+      {filterSheetMounted ? (
+        <>
+          <View
+            className={`inspiration-page__sheet-backdrop ${filterSheetVisible ? 'inspiration-page__sheet-backdrop--active' : ''}`}
+            onClick={handleCloseFilterSheet}
+          />
+          <View
+            className={`inspiration-page__sheet ${filterSheetVisible ? 'inspiration-page__sheet--active' : ''}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <View className="inspiration-page__sheet-handle" />
+            <View className="inspiration-page__sheet-head">
+              <Text className="inspiration-page__sheet-title">筛选</Text>
+              <Text className="inspiration-page__sheet-close" onClick={handleCloseFilterSheet}>×</Text>
+            </View>
+
+            <View className="inspiration-page__sheet-body">
+              {renderFilterGroup('风格', STYLE_OPTIONS, draftStyle, setDraftStyle)}
+              {renderFilterGroup('户型', LAYOUT_OPTIONS, draftLayout, setDraftLayout)}
+              {renderFilterGroup('面积', AREA_OPTIONS, draftArea, setDraftArea)}
+            </View>
+
+            <View className="inspiration-page__sheet-footer">
+              <View className="inspiration-page__sheet-button inspiration-page__sheet-button--ghost" onClick={handleResetDraftFilters}>
+                <Text className="inspiration-page__sheet-button-text inspiration-page__sheet-button-text--ghost">重置</Text>
+              </View>
+              <View className="inspiration-page__sheet-button inspiration-page__sheet-button--primary" onClick={handleApplyFilters}>
+                <Text className="inspiration-page__sheet-button-text">确认</Text>
+              </View>
+            </View>
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
