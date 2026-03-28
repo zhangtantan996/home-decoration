@@ -1,6 +1,6 @@
 import Taro, { useDidShow } from '@tarojs/taro';
 import { Text, View } from '@tarojs/components';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Edit } from '@nutui/icons-react-taro';
 
 import { Button } from '@/components/Button';
@@ -8,29 +8,79 @@ import { Card } from '@/components/Card';
 import { Icon } from '@/components/Icon';
 import { IdentitySwitcher } from '@/components/IdentitySwitcher';
 import { ListItem } from '@/components/ListItem';
-import { bindPhone, loginWithWxCode } from '@/services/auth';
-import { getWechatH5AuthorizeUrl } from '@/services/auth_h5';
 import { favoriteService } from '@/services/inspiration';
 import { listPendingPayments, type PendingPaymentItem } from '@/services/orders';
 import { useAuthStore } from '@/store/auth';
 import { useIdentityStore } from '@/store/identity';
+import { openAuthLoginPage } from '@/utils/authRedirect';
 import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
+import { getMiniNavMetrics } from '@/utils/navLayout';
 
 import './index.scss';
+
+const PROFILE_HEADER_EXTRA_BOTTOM = 10;
+
+const GUEST_SHORTCUTS = [
+  {
+    key: 'orders',
+    title: '我的订单',
+    description: '同步方案、支付与履约状态',
+    icon: 'orders' as const,
+  },
+  {
+    key: 'bookings',
+    title: '我的预约',
+    description: '查看量房预约与服务进展',
+    icon: 'orders' as const,
+  },
+  {
+    key: 'progress',
+    title: '项目进度',
+    description: '跟进阶段节点与异常闭环',
+    icon: 'progress' as const,
+  },
+  {
+    key: 'refunds',
+    title: '退款记录',
+    description: '回看申请状态与处理结果',
+    icon: 'history' as const,
+  },
+];
 
 export default function Profile() {
   useDidShow(() => {
     syncCurrentTabBar('/pages/profile/index');
   });
 
-  const isH5 = process.env.TARO_ENV === 'h5';
   const auth = useAuthStore();
   const { currentIdentity, fetchIdentities } = useIdentityStore();
-  const [bindToken, setBindToken] = useState('');
+  const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const [pendingPayments, setPendingPayments] = useState<PendingPaymentItem[]>([]);
   const [favoriteCaseCount, setFavoriteCaseCount] = useState(0);
   const [showIdentitySwitcher, setShowIdentitySwitcher] = useState(false);
+  const headerInsetStyle = useMemo(
+    () => ({
+      paddingTop: `${navMetrics.menuTop}px`,
+      paddingRight: `${navMetrics.menuRightInset}px`,
+    }),
+    [navMetrics.menuRightInset, navMetrics.menuTop],
+  );
+  const headerMainStyle = useMemo(
+    () => ({ height: `${navMetrics.menuHeight}px` }),
+    [navMetrics.menuHeight],
+  );
+  const headerPlaceholderStyle = useMemo(
+    () => ({ height: `${navMetrics.menuBottom + PROFILE_HEADER_EXTRA_BOTTOM}px` }),
+    [navMetrics.menuBottom],
+  );
+  const capsuleSpacerStyle = useMemo(
+    () => ({
+      width: `${navMetrics.menuWidth}px`,
+      height: `${navMetrics.menuHeight}px`,
+    }),
+    [navMetrics.menuHeight, navMetrics.menuWidth],
+  );
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -56,66 +106,14 @@ export default function Profile() {
     void fetchProfileData();
   }, [auth.token, fetchIdentities]);
 
-  const handleWxLogin = async () => {
-    try {
-      const { code } = await Taro.login();
-      if (!code) {
-        Taro.showToast({ title: '登录失败，请稍后再试', icon: 'none' });
-        return;
-      }
-      const result = await loginWithWxCode(code);
-      if (result.needBindPhone && result.bindToken) {
-        setBindToken(result.bindToken);
-        Taro.showToast({ title: '请授权手机号完成绑定', icon: 'none' });
-      } else {
-        Taro.showToast({ title: '登录成功', icon: 'success' });
-      }
-    } catch (err) {
-      Taro.showToast({ title: err instanceof Error ? err.message : '登录失败', icon: 'none' });
-    }
-  };
-
-  const handlePhoneLogin = () => {
-    Taro.navigateTo({ url: '/pages/auth/login/index' });
-  };
-
-  const handleWechatOAuthLogin = async () => {
-    if (!isH5) {
-      Taro.showToast({ title: '仅支持在 H5 使用微信网页授权', icon: 'none' });
-      return;
-    }
-    try {
-      const { url } = await getWechatH5AuthorizeUrl();
-      window.location.href = url;
-    } catch (err) {
-      showErrorToast(err, '跳转失败');
-    }
-  };
-
-  const handleBindPhone = async (e: any) => {
-    const phoneCode = e.detail?.code;
-    if (!phoneCode || !bindToken) {
-      Taro.showToast({ title: '缺少手机号授权信息', icon: 'none' });
-      return;
-    }
-    try {
-      await bindPhone(bindToken, phoneCode);
-      setBindToken('');
-      Taro.showToast({ title: '绑定成功', icon: 'success' });
-    } catch (err) {
-      Taro.showToast({ title: err instanceof Error ? err.message : '绑定失败', icon: 'none' });
-    }
-  };
-
   const handleLogout = () => {
     auth.clear();
-    setBindToken('');
     Taro.showToast({ title: '已退出', icon: 'none' });
   };
 
   const requireAuth = (action: () => void) => {
     if (!auth.token) {
-      Taro.showToast({ title: '请先登录', icon: 'none' });
+      void openAuthLoginPage('/pages/profile/index');
       return;
     }
     action();
@@ -131,6 +129,12 @@ export default function Profile() {
   const handleOrders = () => {
     requireAuth(() => {
       Taro.navigateTo({ url: '/pages/orders/list/index' });
+    });
+  };
+
+  const handleBookings = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/booking/list/index' });
     });
   };
 
@@ -151,10 +155,14 @@ export default function Profile() {
     });
   };
 
-  const handleSettings = () => {
+  const handleRefundRecords = () => {
     requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/settings/index' });
+      Taro.navigateTo({ url: '/pages/refunds/list/index' });
     });
+  };
+
+  const handleSettings = () => {
+    Taro.navigateTo({ url: '/pages/settings/index' });
   };
 
   const handleSupport = () => {
@@ -183,6 +191,10 @@ export default function Profile() {
     });
   };
 
+  const handleGuestLogin = () => {
+    void openAuthLoginPage('/pages/profile/index');
+  };
+
   const getIdentityDisplay = () => {
     if (!currentIdentity) return '业主';
     const identityNames: Record<string, string> = {
@@ -198,97 +210,91 @@ export default function Profile() {
   };
 
   return (
-    <View className="profile-page">
-      <View className="profile-page__hero">
-        <View className="profile-page__hero-main">
-          <View className="profile-page__avatar">
-            <Text className="profile-page__avatar-text">
-              {(auth.user?.nickname || '家').slice(0, 1)}
-            </Text>
-          </View>
-          <View className="profile-page__identity">
-            <Text className="profile-page__title">{auth.user ? auth.user.nickname : '我的'}</Text>
-            <Text className="profile-page__subtitle">
-              {auth.user ? `手机号：${auth.user.phone}` : '登录后同步预约、订单与项目进度'}
-            </Text>
-          </View>
-          {auth.user ? (
-            <View className="profile-page__edit" onClick={handleEditProfile}>
-              <Edit size="20" color="#71717A" />
-            </View>
-          ) : null}
-        </View>
-
-        <View className="profile-page__stats">
-          <View className="profile-page__stat">
-            <Text className="profile-page__stat-value">{favoriteCaseCount}</Text>
-            <Text className="profile-page__stat-label">灵感收藏</Text>
-          </View>
-          <View className="profile-page__stat">
-            <Text className="profile-page__stat-value">{pendingPayments.length}</Text>
-            <Text className="profile-page__stat-label">待支付</Text>
-          </View>
-          <View className="profile-page__stat">
-            <Text className="profile-page__stat-value">{auth.user ? getIdentityDisplay() : '业主'}</Text>
-            <Text className="profile-page__stat-label">当前身份</Text>
-          </View>
+    <View className="profile-page page-with-tabbar">
+      <View className="profile-page__header" style={headerInsetStyle}>
+        <View className="profile-page__header-main" style={headerMainStyle}>
+          <Text className="profile-page__header-title">我的</Text>
+          <View className="profile-page__capsule-spacer" style={capsuleSpacerStyle} />
         </View>
       </View>
+      <View className="profile-page__header-placeholder" style={headerPlaceholderStyle} />
 
-      <View className="profile-page__content">
-        {!auth.user && !bindToken ? (
-          <Card className="profile-page__card">
-            <View className="profile-page__login-copy">
-              一键登录后，可查看项目进度、管理订单与预约记录。
+      {auth.user ? (
+        <>
+          <View className="profile-page__hero">
+            <View className="profile-page__hero-main">
+              <View className="profile-page__avatar">
+                <Text className="profile-page__avatar-text">
+                  {(auth.user.nickname || '家').slice(0, 1)}
+                </Text>
+              </View>
+              <View className="profile-page__identity">
+                <Text className="profile-page__title">{auth.user.nickname}</Text>
+                <Text className="profile-page__subtitle">
+                  {`手机号：${auth.user.phone}`}
+                </Text>
+              </View>
+              <View className="profile-page__edit" onClick={handleEditProfile}>
+                <Edit size="20" color="#71717A" />
+              </View>
             </View>
-            {isH5 ? (
-              <>
-                <Button onClick={handlePhoneLogin}>手机号登录</Button>
-                <View className="profile-page__button-gap" />
-                <Button onClick={handleWechatOAuthLogin} variant="outline">微信登录（网页授权）</Button>
-              </>
-            ) : (
-              <Button onClick={handleWxLogin}>微信一键登录</Button>
-            )}
-          </Card>
-        ) : null}
 
-        {bindToken && !isH5 ? (
-          <Card className="profile-page__card" title="绑定手机号">
-            <View className="profile-page__login-copy">请完成手机号绑定，以便同步订单与项目服务。</View>
-            <Button openType="getPhoneNumber" onGetPhoneNumber={handleBindPhone}>
-              授权手机号
-            </Button>
-          </Card>
-        ) : null}
+            <View className="profile-page__stats">
+              <View className="profile-page__stat">
+                <Text className="profile-page__stat-value">{favoriteCaseCount}</Text>
+                <Text className="profile-page__stat-label">灵感收藏</Text>
+              </View>
+              <View className="profile-page__stat">
+                <Text className="profile-page__stat-value">{pendingPayments.length}</Text>
+                <Text className="profile-page__stat-label">待支付</Text>
+              </View>
+              <View className="profile-page__stat">
+                <Text className="profile-page__stat-value">{getIdentityDisplay()}</Text>
+                <Text className="profile-page__stat-label">当前身份</Text>
+              </View>
+            </View>
+          </View>
 
-        <Card className="profile-page__card" title="装修管理">
-          <ListItem
-            title="我的订单"
-            description="查看预约、方案与订单状态"
-            arrow
-            icon={<Icon name="orders" size={28} color="#71717A" />}
-            onClick={handleOrders}
-          />
-          <ListItem
-            title="项目进度"
-            description="施工阶段、节点验收与当前待办"
-            arrow
-            icon={<Icon name="progress" size={28} color="#71717A" />}
-            onClick={handleProgress}
-          />
-          <ListItem
-            title="灵感收藏"
-            description="查看已收藏的灵感案例"
-            arrow
-            icon={<Icon name="favorites" size={28} color="#71717A" />}
-            extra={<View className="profile-page__list-extra">{favoriteCaseCount}</View>}
-            onClick={handleFavorites}
-          />
-        </Card>
+          <View className="profile-page__content">
+            <Card className="profile-page__card" title="装修管理">
+              <ListItem
+                title="我的订单"
+                description="查看预约、方案与订单状态"
+                arrow
+                icon={<Icon name="orders" size={28} color="#71717A" />}
+                onClick={handleOrders}
+              />
+              <ListItem
+                title="我的预约"
+                description="查看量房预约、退款入口与方案进度"
+                arrow
+                icon={<Icon name="orders" size={28} color="#71717A" />}
+                onClick={handleBookings}
+              />
+              <ListItem
+                title="项目进度"
+                description="施工阶段、节点验收与当前待办"
+                arrow
+                icon={<Icon name="progress" size={28} color="#71717A" />}
+                onClick={handleProgress}
+              />
+              <ListItem
+                title="灵感收藏"
+                description="查看已收藏的灵感案例"
+                arrow
+                icon={<Icon name="favorites" size={28} color="#71717A" />}
+                extra={<View className="profile-page__list-extra">{favoriteCaseCount}</View>}
+                onClick={handleFavorites}
+              />
+              <ListItem
+                title="退款记录"
+                description="查看退款申请进度与处理结果"
+                arrow
+                icon={<Icon name="orders" size={28} color="#71717A" />}
+                onClick={handleRefundRecords}
+              />
+            </Card>
 
-        {auth.user ? (
-          <>
             <Card className="profile-page__card" title="身份与支付">
               <ListItem
                 title="当前身份"
@@ -333,39 +339,77 @@ export default function Profile() {
                 ))
               )}
             </Card>
-          </>
-        ) : null}
 
-        <Card className="profile-page__card" title="平台服务">
-          <ListItem
-            title="联系客服"
-            description="热线与常见问题入口"
-            arrow
-            icon={<Icon name="support" size={28} color="#71717A" />}
-            onClick={handleSupport}
-          />
-          <ListItem
-            title="关于我们"
-            description="了解平台介绍与使用说明"
-            arrow
-            icon={<Icon name="about" size={28} color="#71717A" />}
-            onClick={handleAbout}
-          />
-          <ListItem
-            title="设置"
-            description="账号与小程序基础设置"
-            arrow
-            icon={<Icon name="settings" size={28} color="#71717A" />}
-            onClick={handleSettings}
-          />
-        </Card>
+            <Card className="profile-page__card" title="平台服务">
+              <ListItem
+                title="联系客服"
+                description="热线与常见问题入口"
+                arrow
+                icon={<Icon name="support" size={28} color="#71717A" />}
+                onClick={handleSupport}
+              />
+              <ListItem
+                title="关于我们"
+                description="了解平台介绍与使用说明"
+                arrow
+                icon={<Icon name="about" size={28} color="#71717A" />}
+                onClick={handleAbout}
+              />
+              <ListItem
+                title="设置"
+                description="账号与小程序基础设置"
+                arrow
+                icon={<Icon name="settings" size={28} color="#71717A" />}
+                onClick={handleSettings}
+              />
+            </Card>
 
-        {auth.user ? (
-          <Button variant="outline" onClick={handleLogout} className="profile-page__logout">
-            退出登录
-          </Button>
-        ) : null}
-      </View>
+            <Button variant="outline" onClick={handleLogout} className="profile-page__logout">
+              退出登录
+            </Button>
+          </View>
+        </>
+      ) : (
+        <View className="profile-page__content">
+          <View className="profile-page__guest-hero">
+            <View className="profile-page__guest-top">
+              <View className="profile-page__guest-avatar">
+                <Icon name="profile" size={44} color="#FFFFFF" />
+              </View>
+              <View className="profile-page__guest-copy" onClick={handleGuestLogin}>
+                <Text className="profile-page__guest-title">点击登录 / 注册</Text>
+                <Text className="profile-page__guest-description">同步预约、订单、项目进度与退款记录</Text>
+              </View>
+            </View>
+          </View>
+
+          <View className="profile-page__guest-shortcuts">
+            {GUEST_SHORTCUTS.map((item) => (
+              <View
+                key={item.key}
+                className="profile-page__guest-shortcut"
+                onClick={handleGuestLogin}
+              >
+                <View className="profile-page__guest-shortcut-icon">
+                  <Icon name={item.icon} size={34} color="#111111" />
+                </View>
+                <Text className="profile-page__guest-shortcut-title">{item.title}</Text>
+                <Text className="profile-page__guest-shortcut-description">{item.description}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Card className="profile-page__card profile-page__card--guest-services" title="平台服务">
+            <ListItem
+              title="关于我们"
+              description="了解平台介绍与使用说明"
+              arrow
+              icon={<Icon name="about" size={28} color="#71717A" />}
+              onClick={handleAbout}
+            />
+          </Card>
+        </View>
+      )}
 
       <IdentitySwitcher visible={showIdentitySwitcher} onClose={() => setShowIdentitySwitcher(false)} />
     </View>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
@@ -13,6 +13,7 @@ import {
 } from '@/services/quoteTasks';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 
 const QuoteTaskDetailPage: React.FC = () => {
   const auth = useAuthStore();
@@ -20,6 +21,8 @@ const QuoteTaskDetailPage: React.FC = () => {
   const [detail, setDetail] = useState<QuoteTaskDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
+  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -72,7 +75,7 @@ const QuoteTaskDetailPage: React.FC = () => {
       content: '如需重新报价，请补充原因。',
       editable: true,
       placeholderText: '请输入驳回原因',
-      success: async (res) => {
+      success: async (res: { confirm: boolean; content?: string }) => {
         if (!res.confirm) return;
         try {
           setSubmitting(true);
@@ -85,7 +88,7 @@ const QuoteTaskDetailPage: React.FC = () => {
           setSubmitting(false);
         }
       },
-    });
+    } as any);
   };
 
   if (!auth.token) {
@@ -107,7 +110,7 @@ const QuoteTaskDetailPage: React.FC = () => {
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen pb-xl">
+    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
         <View className="bg-white p-md mb-sm flex justify-between items-center">
           <View>
@@ -166,7 +169,7 @@ const QuoteTaskDetailPage: React.FC = () => {
         </View>
       </ScrollView>
 
-      <View className="fixed bottom-0 left-0 right-0 bg-white p-md shadow-top safe-area-bottom flex gap-md">
+      <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
         <Button variant="secondary" onClick={handleReject} className="flex-1" disabled={submitting}>
           驳回重报
         </Button>

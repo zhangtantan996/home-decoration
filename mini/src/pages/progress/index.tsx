@@ -1,34 +1,69 @@
 import Taro, { useDidShow } from '@tarojs/taro';
 import { Text, View } from '@tarojs/components';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
-import { LoginGateCard } from '@/components/LoginGateCard';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getProjectPhaseStatus, getProjectStatus } from '@/constants/status';
 import { listMyQuoteTasks, type QuoteTaskSummary } from '@/services/quoteTasks';
-import { getProjectPhases, listProjects, type ProjectItem, type ProjectPhase } from '@/services/projects';
+import { getProjectDetail, getProjectPhases, listProjects, type ProjectDetail, type ProjectPhase } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
+import { openAuthLoginPage } from '@/utils/authRedirect';
 import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
+import { getMiniNavMetrics } from '@/utils/navLayout';
 import { getServerTimeMs } from '@/utils/serverTime';
 
 import './index.scss';
 
 export default function Progress() {
+  const redirectingRef = useRef(false);
+
   useDidShow(() => {
     syncCurrentTabBar('/pages/progress/index');
+
+    if (!useAuthStore.getState().token && !redirectingRef.current) {
+      redirectingRef.current = true;
+      void openAuthLoginPage('/pages/progress/index').finally(() => {
+        setTimeout(() => {
+          redirectingRef.current = false;
+        }, 240);
+      });
+    }
   });
 
   const auth = useAuthStore();
-  const [project, setProject] = useState<ProjectItem | null>(null);
+  const navMetrics = useMemo(() => getMiniNavMetrics(), []);
+  const [project, setProject] = useState<ProjectDetail | null>(null);
   const [phases, setPhases] = useState<ProjectPhase[]>([]);
   const [pendingQuoteTask, setPendingQuoteTask] = useState<QuoteTaskSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const headerInsetStyle = useMemo(
+    () => ({
+      paddingTop: `${navMetrics.menuTop}px`,
+      paddingRight: `${navMetrics.menuRightInset}px`,
+    }),
+    [navMetrics.menuRightInset, navMetrics.menuTop],
+  );
+  const headerMainStyle = useMemo(
+    () => ({ height: `${navMetrics.menuHeight}px` }),
+    [navMetrics.menuHeight],
+  );
+  const headerPlaceholderStyle = useMemo(
+    () => ({ height: `${navMetrics.menuBottom}px` }),
+    [navMetrics.menuBottom],
+  );
+  const capsuleSpacerStyle = useMemo(
+    () => ({
+      width: `${navMetrics.menuWidth}px`,
+      height: `${navMetrics.menuHeight}px`,
+    }),
+    [navMetrics.menuHeight, navMetrics.menuWidth],
+  );
 
   useEffect(() => {
     if (!auth.token) {
@@ -44,7 +79,7 @@ export default function Progress() {
       try {
         const [data, quoteTasks] = await Promise.all([
           listProjects(1, 1),
-          listMyQuoteTasks().catch(() => []),
+          listMyQuoteTasks().catch(() => [] as QuoteTaskSummary[]),
         ]);
         const nextPendingQuoteTask = quoteTasks.find((item) => item.userConfirmationStatus === 'pending') || null;
         setPendingQuoteTask(nextPendingQuoteTask);
@@ -55,8 +90,12 @@ export default function Progress() {
           return;
         }
 
-        setProject(current);
-        const phaseData = await getProjectPhases(current.id);
+        const [projectDetail, phaseData] = await Promise.all([
+          getProjectDetail(current.id).catch(() => current as ProjectDetail),
+          getProjectPhases(current.id),
+        ]);
+
+        setProject(projectDetail);
         setPhases(phaseData.phases || []);
       } catch (err) {
         showErrorToast(err, '加载失败');
@@ -92,29 +131,29 @@ export default function Progress() {
     .slice(0, 3);
   const completedPhaseCount = phases.filter((item) => item.status === 'completed').length;
   const projectDays = getProjectDays(project?.createdAt);
-
-  if (!auth.token) {
-    return (
-      <View className="progress-page">
-        <View className="progress-page__hero progress-page__hero--empty">
-          <Text className="progress-page__hero-title">项目进度</Text>
-          <Text className="progress-page__hero-subtitle">登录后查看施工阶段、节点验收与当前待办。</Text>
-        </View>
-        <View className="progress-page__content">
-          <LoginGateCard
-            iconName="progress"
-            title="登录后查看项目进度"
-            description="施工阶段、关键节点和当前待办都会在这里统一展示，登录后才能获取你的项目数据。"
-            returnUrl="/pages/progress/index"
-          />
+  const riskSummary = project?.riskSummary;
+  const hasRisk = Boolean(riskSummary?.pausedAt || riskSummary?.disputedAt || riskSummary?.escrowFrozen);
+  const projectStageText = project?.businessStage || activePhase?.name || '待排期';
+  const pageHeader = (
+    <>
+      <View className="progress-page__header" style={headerInsetStyle}>
+        <View className="progress-page__header-main" style={headerMainStyle}>
+          <Text className="progress-page__header-title">项目进度</Text>
+          <View className="progress-page__capsule-spacer" style={capsuleSpacerStyle} />
         </View>
       </View>
-    );
+      <View className="progress-page__header-placeholder" style={headerPlaceholderStyle} />
+    </>
+  );
+
+  if (!auth.token) {
+    return <View className="progress-page" />;
   }
 
   if (ownerScopeDisabled) {
     return (
-      <View className="progress-page">
+      <View className="progress-page page-with-tabbar">
+        {pageHeader}
         <View className="progress-page__hero progress-page__hero--empty">
           <Text className="progress-page__hero-title">项目进度</Text>
           <Text className="progress-page__hero-subtitle">当前身份无权查看业主项目进度，请切换回业主身份后重试。</Text>
@@ -124,13 +163,14 @@ export default function Progress() {
   }
 
   return (
-    <View className="progress-page">
+    <View className="progress-page page-with-tabbar">
+      {pageHeader}
       <View className="progress-page__hero">
         {project ? (
           <>
             <Text className="progress-page__hero-label">当前项目</Text>
             <Text className="progress-page__hero-title">{project.name}</Text>
-            <Text className="progress-page__hero-subtitle">{project.address || '项目地址待补充'}</Text>
+            <Text className="progress-page__hero-subtitle">{project.flowSummary || project.address || '项目地址待补充'}</Text>
             <View className="progress-page__hero-stats">
               <View className="progress-page__hero-stat">
                 <Text className="progress-page__hero-stat-value">{projectDays}</Text>
@@ -194,7 +234,7 @@ export default function Progress() {
             <View className="progress-page__summary">
               <View className="progress-page__summary-item">
                 <Text className="progress-page__summary-label">当前阶段</Text>
-                <Text className="progress-page__summary-value">{activePhase?.name || '待排期'}</Text>
+                <Text className="progress-page__summary-value">{projectStageText}</Text>
               </View>
               <View className="progress-page__summary-item">
                 <Text className="progress-page__summary-label">项目预算</Text>
@@ -211,6 +251,40 @@ export default function Progress() {
             </View>
           )}
         </Card>
+
+        {project && hasRisk ? (
+          <Card className="progress-page__card" title="异常提醒">
+            <View className="flex flex-col gap-sm">
+              {riskSummary?.pausedAt ? (
+                <View className="flex items-start justify-between gap-sm">
+                  <View>
+                    <Text className="text-sm font-medium text-gray-900">项目已暂停</Text>
+                    <Text className="text-sm text-gray-500">{riskSummary.pauseReason || '等待恢复后继续推进'}</Text>
+                  </View>
+                  <Tag variant="warning">暂停中</Tag>
+                </View>
+              ) : null}
+              {riskSummary?.disputedAt ? (
+                <View className="flex items-start justify-between gap-sm">
+                  <View>
+                    <Text className="text-sm font-medium text-gray-900">争议处理中</Text>
+                    <Text className="text-sm text-gray-500">{riskSummary.disputeReason || '平台正在介入仲裁'}</Text>
+                  </View>
+                  <Tag variant="error">{riskSummary.auditStatus || '处理中'}</Tag>
+                </View>
+              ) : null}
+              {riskSummary?.escrowFrozen ? (
+                <View className="text-sm text-gray-500">
+                  托管账户已冻结
+                  {riskSummary.frozenAmount ? `，冻结金额 ¥${riskSummary.frozenAmount.toLocaleString()}` : ''}
+                </View>
+              ) : null}
+              <Button onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${project.id}` })}>
+                查看项目异常详情
+              </Button>
+            </View>
+          </Card>
+        ) : null}
 
         <Card className="progress-page__card" title="施工时间线">
           {loading ? (

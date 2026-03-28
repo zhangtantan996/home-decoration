@@ -1,0 +1,74 @@
+.mini-page-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+
+  &__main {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  &__back-button {
+    margin-left: 24rpx;
+    width: 80rpx;
+    height: 80rpx;
+    border-radius: 40rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    flex-shrink: 0;
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__icon-stack {
+    position: relative;
+    width: 48rpx;
+    height: 48rpx;
+  }
+
+  &__icon-layer {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s ease;
+  }
+
+  &__title-slot {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    box-sizing: border-box;
+  }
+
+  &__title {
+    width: 100%;
+    text-align: center;
+    font-size: 30rpx;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  &__right-spacer {
+    margin-left: auto;
+    flex-shrink: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &__placeholder {
+    width: 100%;
+  }
+}

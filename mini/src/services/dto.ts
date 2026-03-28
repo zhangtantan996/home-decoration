@@ -31,6 +31,7 @@ export interface ProviderDTO {
   priceMax: number;
   priceUnit: string;
   serviceArea?: StringListValue;
+  isSettled?: boolean;
 }
 
 export interface ProviderDetailDTO {
@@ -54,6 +55,9 @@ export interface ProviderDetailDTO {
     teamSize?: number;
     establishedYear?: number;
     followersCount?: number;
+    officeAddress?: string;
+    certifications?: StringListValue;
+    companyAlbumJson?: StringListValue;
     priceMin?: number;
     priceMax?: number;
     priceUnit?: string;
@@ -82,6 +86,7 @@ export interface ProviderDetailDTO {
   certifications?: StringListValue;
   serviceArea?: StringListValue;
   officeAddress?: string;
+  companyAlbumJson?: StringListValue;
   specialty?: string;
   highlightTags?: StringListValue;
   pricingJson?: string;
@@ -91,14 +96,20 @@ export interface ProviderDetailDTO {
   priceMax?: number;
   priceUnit?: string;
   isSettled?: boolean;
+  cases?: ProviderCaseDTO[];
+  caseCount?: number;
 }
 
 export interface ProviderCaseDTO {
   id: number;
   title: string;
   coverImage: string;
+  images?: StringListValue;
   style?: string;
-  area?: number;
+  area?: string | number;
+  layout?: string;
+  year?: string | number;
+  price?: number;
 }
 
 export interface ProposalDTO {
@@ -155,7 +166,25 @@ export interface ProjectDTO {
   area?: number;
   budget?: number;
   status?: number;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
   createdAt?: string;
+}
+
+export interface ProjectRiskSummaryDTO {
+  pausedAt?: string;
+  resumedAt?: string;
+  pauseReason?: string;
+  pauseInitiator?: string;
+  disputedAt?: string;
+  disputeReason?: string;
+  disputeEvidence?: string[];
+  auditId?: number;
+  auditStatus?: string;
+  escrowFrozen?: boolean;
+  escrowStatus?: number;
+  frozenAmount?: number;
 }
 
 export interface ProjectPhaseTaskDTO {
@@ -174,9 +203,67 @@ export interface ProjectPhaseDTO {
 }
 
 export interface ProjectDetailDTO extends ProjectDTO {
+  selectedQuoteTaskId?: number;
   milestones?: Array<Record<string, unknown>>;
   logs?: Array<Record<string, unknown>>;
   escrow?: Record<string, unknown>;
+  riskSummary?: ProjectRiskSummaryDTO;
+}
+
+export interface RefundTypeEstimateDTO {
+  type: 'intent_fee' | 'design_fee' | 'construction_fee' | 'full';
+  label: string;
+  amount: number;
+  orderId?: number;
+}
+
+export interface RefundSummaryDTO {
+  canApplyRefund: boolean;
+  latestRefundId?: number;
+  latestRefundStatus?: string;
+  refundableAmount: number;
+  refundableTypes: RefundTypeEstimateDTO[];
+}
+
+export interface RefundApplicationDTO {
+  id: number;
+  bookingId: number;
+  projectId?: number;
+  orderId?: number;
+  userId: number;
+  refundType: 'intent_fee' | 'design_fee' | 'construction_fee' | 'full';
+  refundAmount: number;
+  requestedAmount: number;
+  approvedAmount: number;
+  reason: string;
+  evidence: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  adminId?: number;
+  adminNotes?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  booking?: {
+    id: number;
+    address?: string;
+    status?: number;
+    intentFee?: number;
+  };
+  project?: {
+    id: number;
+    name?: string;
+    status?: number;
+    currentPhase?: string;
+  };
+  order?: {
+    id: number;
+    orderNo?: string;
+    orderType?: string;
+    totalAmount?: number;
+    status?: number;
+  };
 }
 
 export interface NotificationDTO {

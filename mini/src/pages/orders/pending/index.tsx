@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { usePullDownRefresh, useRouter } from '@tarojs/taro';
 
@@ -57,7 +57,7 @@ const PendingOrders: React.FC = () => {
     Taro.navigateTo({ url: `/pages/orders/detail/index?id=${item.id}` });
   };
 
-  const handlePay = async (item: PendingPaymentItem) => {
+  const handlePay = async (_item: PendingPaymentItem) => {
     Taro.showModal({
       title: '请前往 Web/H5 支付',
       content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',

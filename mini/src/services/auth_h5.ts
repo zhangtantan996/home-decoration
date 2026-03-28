@@ -1,3 +1,4 @@
+import { MINI_CHAT_ENABLED } from '@/config/features';
 import { useAuthStore, type AuthUser } from '@/store/auth';
 import { refreshTinodeToken } from '@/services/tinode';
 import { request } from '@/utils/request';
@@ -35,6 +36,11 @@ interface WechatH5LoginResult {
 }
 
 async function refreshTinodeAuthBestEffort() {
+  if (!MINI_CHAT_ENABLED) {
+    useAuthStore.getState().updateTinodeAuth({ tinodeToken: '', tinodeError: '' });
+    return;
+  }
+
   try {
     const result = await refreshTinodeToken();
     useAuthStore.getState().updateTinodeAuth({

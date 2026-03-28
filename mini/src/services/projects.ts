@@ -1,13 +1,14 @@
 import { request } from '@/utils/request';
 import { MiniApiError } from '@/utils/request';
 import type { PageData } from './types';
-import type { ProjectDTO, ProjectDetailDTO, ProjectPhaseDTO } from './dto';
+import type { ProjectDTO, ProjectDetailDTO, ProjectPhaseDTO, ProjectRiskSummaryDTO } from './dto';
 
 export type ProjectItem = ProjectDTO;
 
 export type ProjectPhase = ProjectPhaseDTO;
 
 export type ProjectDetail = ProjectDetailDTO;
+export type ProjectRiskSummary = ProjectRiskSummaryDTO;
 
 export interface CreateProjectPayload {
   proposalId?: number;
@@ -40,6 +41,32 @@ export async function listProjects(page = 1, pageSize = 10) {
 export async function getProjectDetail(id: number) {
   return request<ProjectDetail>({
     url: `/projects/${id}`
+  });
+}
+
+export async function pauseProject(id: number, payload: { reason: string; initiator?: string }) {
+  return request<{ project: ProjectDetail }>({
+    url: `/projects/${id}/pause`,
+    method: 'POST',
+    data: payload,
+    showLoading: true,
+  });
+}
+
+export async function resumeProject(id: number) {
+  return request<{ project: ProjectDetail }>({
+    url: `/projects/${id}/resume`,
+    method: 'POST',
+    showLoading: true,
+  });
+}
+
+export async function submitProjectDispute(id: number, payload: { reason: string; evidence?: string[] }) {
+  return request<{ project: ProjectDetail; complaintId?: number; auditId?: number }>({
+    url: `/projects/${id}/dispute`,
+    method: 'POST',
+    data: payload,
+    showLoading: true,
   });
 }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { usePullDownRefresh, useRouter } from '@tarojs/taro';
 
@@ -8,13 +8,15 @@ import { Empty } from '@/components/Empty';
 import { ListItem } from '@/components/ListItem';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import { getOrderStatus, getOrderTypeLabel } from '@/constants/status';
-import { getBookingDetail } from '@/services/bookings';
+import { getOrderStatus, getOrderTypeLabel, getRefundStatus } from '@/constants/status';
+import { getBookingDetail, type BookingDetailResponse } from '@/services/bookings';
 import { cancelOrder, getOrderDetail, getInstallmentPlans, type OrderItem, type InstallmentPlan } from '@/services/orders';
-import { getProjectDetail } from '@/services/projects';
+import { getProjectDetail, type ProjectRiskSummary } from '@/services/projects';
 import { getProviderDetail, type ProviderType } from '@/services/providers';
+import type { RefundSummary } from '@/services/refunds';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDate, formatServerDateTime } from '@/utils/serverTime';
 
 type ProviderSummary = {
@@ -23,23 +25,16 @@ type ProviderSummary = {
   providerType: ProviderType;
 };
 
-type BookingDetail = {
-  id: number;
-  providerId: number;
-  providerType: ProviderType | number | string;
-  address?: string;
-  intentFee?: number;
-  provider?: {
-    id?: number;
-    name?: string;
-    providerType?: number | string;
-  };
+type BookingDetail = BookingDetailResponse['booking'] & {
+  provider?: BookingDetailResponse['provider'];
+  refundSummary?: RefundSummary;
 };
 
 type ProjectSummary = {
   id: number;
   name: string;
   address?: string;
+  riskSummary?: ProjectRiskSummary;
 };
 
 const normalizeProviderType = (value?: string | number): ProviderType => {
@@ -80,6 +75,8 @@ const OrderDetail: React.FC = () => {
   const [installmentPlans, setInstallmentPlans] = useState<InstallmentPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
+  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   const fetchRelatedInfo = async (detail: OrderItem) => {
     setBooking(null);
@@ -97,24 +94,22 @@ const OrderDetail: React.FC = () => {
     const [nextBooking, projectRes] = await Promise.all([bookingPromise, projectPromise]);
 
     if (nextBooking) {
-      const providerType = normalizeProviderType(nextBooking.providerType);
+      const bookingData = nextBooking.booking;
+      const providerType = normalizeProviderType(bookingData.providerType);
       const providerInfo = nextBooking.provider?.name
-        ? { id: nextBooking.providerId, name: nextBooking.provider.name, providerType }
+        ? { id: bookingData.providerId, name: nextBooking.provider.name, providerType }
         : null;
 
       setBooking({
-        id: nextBooking.id,
-        providerId: nextBooking.providerId,
-        providerType: nextBooking.providerType,
-        address: nextBooking.address,
-        intentFee: nextBooking.intentFee,
-        provider: nextBooking.provider
+        ...bookingData,
+        provider: nextBooking.provider,
+        refundSummary: nextBooking.refundSummary,
       });
 
       if (providerInfo) {
         setProvider(providerInfo);
-      } else if (nextBooking.providerId) {
-        const providerRes = await getProviderDetail(providerType, nextBooking.providerId).catch(() => null);
+      } else if (bookingData.providerId) {
+        const providerRes = await getProviderDetail(providerType, bookingData.providerId).catch(() => null);
         if (providerRes) {
           setProvider({
             id: providerRes.id,
@@ -129,7 +124,8 @@ const OrderDetail: React.FC = () => {
       setProject({
         id: projectRes.id,
         name: projectRes.name,
-        address: projectRes.address
+        address: projectRes.address,
+        riskSummary: projectRes.riskSummary,
       });
     }
   };
@@ -267,9 +263,13 @@ const OrderDetail: React.FC = () => {
 
   const statusConfig = getOrderStatus(order.status);
   const payableAmount = Math.max(0, order.totalAmount - order.discount);
+  const projectRisk = project?.riskSummary;
+  const bookingRefund = booking?.refundSummary;
+  const hasRisk = Boolean(projectRisk?.pausedAt || projectRisk?.disputedAt || projectRisk?.escrowFrozen);
+  const refundStatus = getRefundStatus(bookingRefund?.latestRefundStatus);
 
   return (
-    <View className="page bg-gray-50 min-h-screen pb-xl">
+    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <View className="bg-white p-md mb-md flex justify-between items-center">
         <View>
           <View className="text-xl font-bold mb-xs flex items-center gap-xs">
@@ -324,6 +324,75 @@ const OrderDetail: React.FC = () => {
           </Card>
         ) : null}
 
+        {hasRisk ? (
+          <Card className="mb-md" title="项目异常状态">
+            <View className="flex flex-col gap-sm py-sm">
+              {projectRisk?.pausedAt ? (
+                <ListItem
+                  title="项目暂停"
+                  description={projectRisk.pauseReason || '项目已暂停，等待恢复'}
+                  extra={<Tag variant="warning">已暂停</Tag>}
+                />
+              ) : null}
+              {projectRisk?.disputedAt ? (
+                <ListItem
+                  title="争议处理中"
+                  description={projectRisk.disputeReason || '平台正在处理中'}
+                  extra={<Tag variant="error">{projectRisk.auditStatus || '待仲裁'}</Tag>}
+                />
+              ) : null}
+              {projectRisk?.escrowFrozen ? (
+                <ListItem
+                  title="托管状态"
+                  description={projectRisk.frozenAmount ? `当前冻结 ¥${projectRisk.frozenAmount.toLocaleString()}` : '托管资金已冻结'}
+                  extra={<Tag variant="brand">已冻结</Tag>}
+                />
+              ) : null}
+              {project ? (
+                <Button variant="outline" block onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${project.id}` })}>
+                  查看项目异常详情
+                </Button>
+              ) : null}
+            </View>
+          </Card>
+        ) : null}
+
+        {bookingRefund ? (
+          <Card className="mb-md" title="退款进度">
+            <View className="flex flex-col gap-sm py-sm">
+              <ListItem
+                title="退款状态"
+                description={bookingRefund.latestRefundId ? `申请单 #${bookingRefund.latestRefundId}` : '当前未发起退款'}
+                extra={<Tag variant={refundStatus.variant}>{refundStatus.label}</Tag>}
+              />
+              <ListItem
+                title="可退金额"
+                description={`¥${bookingRefund.refundableAmount.toLocaleString()}`}
+              />
+              <View className="flex gap-sm">
+                <View className="flex-1">
+                  <Button
+                    variant="outline"
+                    block
+                    onClick={() => Taro.navigateTo({ url: `/pages/refunds/list/index?bookingId=${booking?.id}` })}
+                  >
+                    查看记录
+                  </Button>
+                </View>
+                <View className="flex-1">
+                  <Button
+                    block
+                    disabled={!bookingRefund.canApplyRefund}
+                    onClick={() => Taro.navigateTo({ url: `/pages/bookings/refund/index?id=${booking?.id}` })}
+                  >
+                    申请退款
+                  </Button>
+                </View>
+              </View>
+            </View>
+          </Card>
+        ) : null}
+
         <Card className="mb-md" title="金额信息">
           <View className="flex flex-col gap-md py-sm">
             <View className="flex justify-between items-center">
@@ -363,7 +432,7 @@ const OrderDetail: React.FC = () => {
                           到期日: {formatServerDate(plan.dueDate)}
                         </Text>
                       </View>
-                      <Tag variant={isPaid ? 'success' : isOverdue ? 'danger' : 'warning'}>
+                      <Tag variant={isPaid ? 'success' : isOverdue ? 'error' : 'warning'}>
                         {isPaid ? '已支付' : isOverdue ? '已逾期' : '待支付'}
                       </Tag>
                     </View>
@@ -427,7 +496,7 @@ const OrderDetail: React.FC = () => {
       </View>
 
       {order.status === 0 ? (
-        <View className="fixed bottom-0 left-0 right-0 bg-white p-md border-t border-gray-100 safe-area-bottom flex gap-md">
+        <View className="flex gap-md" style={fixedBottomBarStyle}>
           <Button
             variant="outline"
             size="lg"

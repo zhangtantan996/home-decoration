@@ -32,8 +32,6 @@ export const identityService = {
     return data.identities || [];
   },
 
-  getCurrent: () => request<Identity>({ url: '/identities/current' }),
-
   switch: (identityId: number) =>
     request<SwitchIdentityResponse>({
       url: '/identities/switch',

@@ -47,6 +47,13 @@ export const businessStageMap: Record<string, { label: string; variant: TagVaria
   cancelled: { label: '已取消', variant: 'default' },
 };
 
+export const refundStatusMap: Record<string, { label: string; variant: TagVariant }> = {
+  pending: { label: '待审核', variant: 'warning' },
+  approved: { label: '已通过', variant: 'brand' },
+  rejected: { label: '已驳回', variant: 'error' },
+  completed: { label: '已完成', variant: 'success' },
+};
+
 export const orderTypeLabelMap: Record<string, string> = {
   design: '设计费订单',
   construction: '施工费订单',
@@ -81,6 +88,13 @@ export const getBusinessStageStatus = (stage?: string) => {
 
 export const getProjectPhaseStatus = (status: string) => {
   return projectPhaseStatusMap[status] || { label: '待开始', variant: 'default' as TagVariant };
+};
+
+export const getRefundStatus = (status?: string) => {
+  if (!status) {
+    return { label: '未申请', variant: 'default' as TagVariant };
+  }
+  return refundStatusMap[status] || { label: status, variant: 'default' as TagVariant };
 };
 
 export const getOrderTypeLabel = (type?: string) => {

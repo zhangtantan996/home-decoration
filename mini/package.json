@@ -9,6 +9,7 @@
     "build:h5": "npm run gen:tab-icons && NODE_ENV=production taro build --type h5",
     "build:weapp": "npm run clean:weapp && npm run gen:tab-icons && NODE_ENV=production taro build --type weapp",
     "lint": "eslint --ext .ts,.tsx src && npm run check:no-emoji",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
     "format": "prettier --write \"src/**/*.{ts,tsx,scss}\"",
     "check:no-emoji": "node scripts/check-no-emoji.mjs",
     "gen:tab-icons": "python3 scripts/generate_tab_icons.py"

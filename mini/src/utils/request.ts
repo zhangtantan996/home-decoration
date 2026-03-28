@@ -3,6 +3,7 @@ import Taro from "@tarojs/taro";
 import { useAuthStore } from "@/store/auth";
 import { buildMiniApiUrl, MINI_ENV } from "@/config/env";
 import { AutoRetryGuard, type AutoRetryPolicy } from "@/utils/autoRetryGuard";
+import { getMiniDeviceLogContext } from "@/utils/deviceProfile";
 
 interface ApiResponse<T> {
   code: number;
@@ -75,11 +76,13 @@ if (API_BASE_CONFIG_ERROR) {
     apiBase: API_BASE,
     appEnv: MINI_ENV.APP_ENV,
     message: API_BASE_CONFIG_ERROR,
+    device: getMiniDeviceLogContext(),
   });
 } else {
   console.info("[mini][api-config]", {
     apiBase: API_BASE,
     appEnv: MINI_ENV.APP_ENV,
+    device: getMiniDeviceLogContext(),
   });
 }
 
@@ -107,6 +110,7 @@ async function refreshAuth(refreshToken: string) {
       attempt: state.autoAttempts,
       consecutiveFailures: state.consecutiveFailures,
       pausedReason: "max_auto_attempts_reached",
+      device: getMiniDeviceLogContext(),
     });
     return null;
   }
@@ -143,6 +147,7 @@ async function refreshAuth(refreshToken: string) {
     attempt: state.autoAttempts,
     consecutiveFailures: state.consecutiveFailures,
     paused: state.paused,
+    device: getMiniDeviceLogContext(),
   });
 
   return null;
@@ -201,6 +206,7 @@ export async function request<T>(options: RequestOptions): Promise<T> {
           attempt: state.autoAttempts,
           consecutiveFailures: state.consecutiveFailures,
           paused: state.paused,
+          device: getMiniDeviceLogContext(),
         });
       }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
@@ -9,6 +9,7 @@ import { getProposalStatus } from '@/constants/status';
 import { confirmProposal, getProposalDetail, rejectProposal, type ProposalItem } from '@/services/proposals';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 
 const isPendingProposal = (status: number) => {
   return status === 0 || status === 1;
@@ -20,6 +21,8 @@ const ProposalDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [id, setId] = useState<number>(0);
+  const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
+  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -95,7 +98,7 @@ const ProposalDetail: React.FC = () => {
       content: '是否拒绝该方案？',
       editable: true,
       placeholderText: '请输入拒绝理由',
-      success: async (res) => {
+      success: async (res: { confirm: boolean; content?: string }) => {
         if (!res.confirm) {
           return;
         }
@@ -110,8 +113,8 @@ const ProposalDetail: React.FC = () => {
         } finally {
           setSubmitting(false);
         }
-      }
-    });
+      },
+    } as any);
   };
 
   if (!auth.token) {
@@ -136,7 +139,7 @@ const ProposalDetail: React.FC = () => {
   const statusConfig = getProposalStatus(detail.status);
 
   return (
-    <View className="page bg-gray-50 min-h-screen pb-xl">
+    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
         <View className="bg-white p-md mb-sm flex justify-between items-center">
           <View>
@@ -193,7 +196,7 @@ const ProposalDetail: React.FC = () => {
       </ScrollView>
 
       {isPendingProposal(detail.status) ? (
-        <View className="fixed bottom-0 left-0 right-0 bg-white p-md shadow-top safe-area-bottom flex gap-md">
+        <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
           <Button
             variant="secondary"
             onClick={handleReject}

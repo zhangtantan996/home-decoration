@@ -1,7 +1,7 @@
 import type { RequestOptions } from '@/utils/request';
 
 export interface RequestAdapter {
-  request<T>(options: RequestOptions<T>): Promise<T>;
+  request<T>(options: RequestOptions): Promise<T>;
   get<T>(url: string, data?: Record<string, unknown>): Promise<T>;
   post<T>(url: string, data?: unknown): Promise<T>;
   put<T>(url: string, data?: unknown): Promise<T>;

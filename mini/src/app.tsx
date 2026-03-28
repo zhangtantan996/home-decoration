@@ -4,12 +4,16 @@ import Taro from '@tarojs/taro';
 import '@nutui/nutui-react-taro/dist/style.css';
 import './styles/base.scss';
 import './app.scss';
+import { MINI_CHAT_ENABLED } from '@/config/features';
+import { getMiniDeviceLogContext } from '@/utils/deviceProfile';
 import { loadTinodeService } from '@/services/loadTinodeService';
 import { useAuthStore } from '@/store/auth';
 import { useChatStore } from '@/store/chat';
 
 function App({ children }: PropsWithChildren<any>) {
   useEffect(() => {
+    console.info('[mini][device]', getMiniDeviceLogContext());
+
     const canWatchNetwork = typeof Taro.onNetworkStatusChange === 'function';
     if (canWatchNetwork) {
       Taro.onNetworkStatusChange(({ isConnected }) => {
@@ -17,6 +21,25 @@ function App({ children }: PropsWithChildren<any>) {
           Taro.showToast({ title: '网络不可用', icon: 'none' });
         }
       });
+    }
+
+    const unsubscribeAuth = useAuthStore.subscribe((state, prevState) => {
+      if (prevState.token && !state.token) {
+        if (MINI_CHAT_ENABLED) {
+          loadTinodeService()
+            .then((TinodeService) => TinodeService.disconnect())
+            .catch(() => {
+              // ignore
+            });
+        }
+        useChatStore.getState().clear();
+      }
+    });
+
+    if (!MINI_CHAT_ENABLED) {
+      return () => {
+        unsubscribeAuth();
+      };
     }
 
     const handleAppShow = () => {
@@ -44,17 +67,6 @@ function App({ children }: PropsWithChildren<any>) {
     if (typeof Taro.onAppHide === 'function') {
       Taro.onAppHide(handleAppHide);
     }
-
-    const unsubscribeAuth = useAuthStore.subscribe((state, prevState) => {
-      if (prevState.token && !state.token) {
-        loadTinodeService()
-          .then((TinodeService) => TinodeService.disconnect())
-          .catch(() => {
-            // ignore
-          });
-        useChatStore.getState().clear();
-      }
-    });
 
     return () => {
       if (typeof Taro.offAppShow === 'function') {
