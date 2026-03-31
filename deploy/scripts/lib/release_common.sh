@@ -66,6 +66,22 @@ release_compose_has_service() {
   printf '%s\n' "${services}" | grep -q "^${service_name}$"
 }
 
+release_scope_includes_api() {
+  case "${1:-}" in
+    api|all)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+release_update_service_isolated() {
+  local service_name="$1"
+  release_compose up -d --build --no-deps "${service_name}"
+}
+
 release_wait_for_postgres() {
   local attempts="${1:-30}"
   local delay_seconds="${2:-2}"
