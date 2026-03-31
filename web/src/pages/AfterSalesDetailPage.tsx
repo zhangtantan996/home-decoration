@@ -43,7 +43,7 @@ export function AfterSalesDetailPage() {
                 <p className="kicker eyebrow-accent">申请信息</p>
                 <h2 className="section-title">单号 {data.orderNo}</h2>
               </div>
-              <Link className="button-link" to="/after-sales">返回售后中心</Link>
+              <Link className="button-link" to="/me/after-sales">返回售后中心</Link>
             </div>
             <div className="data-grid detail-grid-two">
               <article>

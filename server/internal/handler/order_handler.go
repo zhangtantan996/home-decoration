@@ -3,8 +3,8 @@ package handler
 import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
-	"log"
 	"strconv"
 	"time"
 
@@ -13,7 +13,7 @@ import (
 
 // PendingPaymentItem 待付款项
 type PendingPaymentItem struct {
-	Type         string     `json:"type"`         // intent_fee, design_fee, construction_fee
+	Type         string     `json:"type"`         // intent_fee, design_fee, construction_fee, material_fee
 	ID           uint64     `json:"id"`           // Booking ID 或 Order ID
 	OrderNo      string     `json:"orderNo"`      // 订单号
 	Amount       float64    `json:"amount"`       // 金额
@@ -40,120 +40,41 @@ func ListOrders(c *gin.Context) {
 		status = &value
 	}
 
-	items, total, err := orderService.ListOrdersForUser(c.GetUint64("userId"), status, page, pageSize)
+	entries, total, err := orderCenterService.ListEntriesForUser(getCurrentUserID(c), service.OrderCenterQuery{
+		StatusGroup: legacyOrderStatusGroup(status),
+		EntryKind:   service.OrderCenterEntryKindPayable,
+		Page:        page,
+		PageSize:    pageSize,
+	})
 	if err != nil {
 		response.ServerError(c, err.Error())
 		return
 	}
 
+	items := make([]service.UserOrderListItem, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, legacyOrderListItemFromEntry(entry))
+	}
+
 	response.PageSuccess(c, items, total, page, pageSize)
 }
 
-// ListPendingPayments 获取所有待付款项（含意向金+设计费订单）
+// ListPendingPayments 获取所有待付款项（含量房费+设计费订单）
 func ListPendingPayments(c *gin.Context) {
-	userID := c.GetUint64("userId")
-
-	var items []PendingPaymentItem
-
-	// 1. 查询未付意向金的 Booking
-	var bookings []model.Booking
-	if err := repository.DB.Where("user_id = ? AND intent_fee_paid = ? AND status != ?", userID, false, 4).
-		Order("created_at DESC").
-		Find(&bookings).Error; err == nil {
-
-		for _, b := range bookings {
-			// 获取服务商信息
-			var provider model.Provider
-			var providerName string
-			if repository.DB.First(&provider, b.ProviderID).Error == nil {
-				var user model.User
-				if repository.DB.First(&user, provider.UserID).Error == nil {
-					providerName = user.Nickname
-					if providerName == "" && provider.CompanyName != "" {
-						providerName = provider.CompanyName
-					}
-				}
-			}
-
-			items = append(items, PendingPaymentItem{
-				Type:         "intent_fee",
-				ID:           b.ID,
-				OrderNo:      "BK" + padOrderNo(b.ID),
-				Amount:       b.IntentFee,
-				ProviderID:   b.ProviderID,
-				ProviderName: providerName,
-				Address:      b.Address,
-				ExpireAt:     nil, // 意向金无过期时间
-				CreatedAt:    b.CreatedAt,
-			})
-		}
+	entries, _, err := orderCenterService.ListEntriesForUser(getCurrentUserID(c), service.OrderCenterQuery{
+		StatusGroup: service.OrderCenterStatusPendingPayment,
+		EntryKind:   service.OrderCenterEntryKindPayable,
+		Page:        1,
+		PageSize:    200,
+	})
+	if err != nil {
+		response.ServerError(c, err.Error())
+		return
 	}
 
-	// 2. 查询未付设计费的 Order
-	// 首先获取用户所有的 Booking IDs
-	var userBookingIDs []uint64
-	repository.DB.Model(&model.Booking{}).Where("user_id = ?", userID).Pluck("id", &userBookingIDs)
-	log.Printf("[DEBUG] User %d has %d bookings: %v", userID, len(userBookingIDs), userBookingIDs)
-
-	if len(userBookingIDs) > 0 {
-		// 获取这些 Booking 关联的 Proposal IDs
-		var proposalIDs []uint64
-		repository.DB.Model(&model.Proposal{}).Where("booking_id IN ?", userBookingIDs).Pluck("id", &proposalIDs)
-		log.Printf("[DEBUG] Found %d proposals: %v", len(proposalIDs), proposalIDs)
-
-		if len(proposalIDs) > 0 {
-			// 查询这些 Proposal 关联的未付设计费订单
-			var orders []model.Order
-			if err := repository.DB.Where("proposal_id IN ? AND status = ? AND order_type = ?",
-				proposalIDs, model.OrderStatusPending, model.OrderTypeDesign).
-				Order("created_at DESC").
-				Find(&orders).Error; err == nil {
-
-				log.Printf("[DEBUG] Found %d pending design orders", len(orders))
-
-				// 也查一下所有的 Order（不管状态）看看数据
-				var allOrders []model.Order
-				repository.DB.Where("proposal_id IN ?", proposalIDs).Find(&allOrders)
-				for _, o := range allOrders {
-					log.Printf("[DEBUG] Order ID=%d, ProposalID=%d, Status=%d, Type=%s", o.ID, o.ProposalID, o.Status, o.OrderType)
-				}
-
-				for _, o := range orders {
-					// 获取服务商信息（通过 Proposal -> Booking）
-					var providerName string
-					var providerID uint64
-
-					var proposal model.Proposal
-					if repository.DB.First(&proposal, o.ProposalID).Error == nil {
-						var booking model.Booking
-						if repository.DB.First(&booking, proposal.BookingID).Error == nil {
-							providerID = booking.ProviderID
-							var provider model.Provider
-							if repository.DB.First(&provider, booking.ProviderID).Error == nil {
-								var user model.User
-								if repository.DB.First(&user, provider.UserID).Error == nil {
-									providerName = user.Nickname
-									if providerName == "" && provider.CompanyName != "" {
-										providerName = provider.CompanyName
-									}
-								}
-							}
-						}
-					}
-
-					items = append(items, PendingPaymentItem{
-						Type:         "design_fee",
-						ID:           o.ID,
-						OrderNo:      o.OrderNo,
-						Amount:       o.TotalAmount - o.Discount,
-						ProviderID:   providerID,
-						ProviderName: providerName,
-						ExpireAt:     o.ExpireAt,
-						CreatedAt:    o.CreatedAt,
-					})
-				}
-			}
-		}
+	items := make([]PendingPaymentItem, 0, len(entries))
+	for _, entry := range entries {
+		items = append(items, legacyPendingPaymentItemFromEntry(entry))
 	}
 
 	response.Success(c, gin.H{
@@ -162,43 +83,233 @@ func ListPendingPayments(c *gin.Context) {
 	})
 }
 
-// padOrderNo 补齐订单号为8位
-func padOrderNo(id uint64) string {
-	s := ""
-	for i := 0; i < 8; i++ {
-		s = string('0'+byte(id%10)) + s
-		id /= 10
+func legacyOrderStatusGroup(status *int8) string {
+	if status == nil {
+		return ""
 	}
-	return s
+	switch *status {
+	case model.OrderStatusPending:
+		return service.OrderCenterStatusPendingPayment
+	case model.OrderStatusPaid:
+		return service.OrderCenterStatusPaid
+	case model.OrderStatusCancelled:
+		return service.OrderCenterStatusCancelled
+	case model.OrderStatusRefunded:
+		return service.OrderCenterStatusRefund
+	default:
+		return ""
+	}
+}
+
+func legacyOrderStatusFromEntry(entry service.OrderCenterEntrySummary) int8 {
+	switch entry.StatusGroup {
+	case service.OrderCenterStatusPendingPayment:
+		return model.OrderStatusPending
+	case service.OrderCenterStatusPaid:
+		return model.OrderStatusPaid
+	case service.OrderCenterStatusCancelled:
+		return model.OrderStatusCancelled
+	case service.OrderCenterStatusRefund:
+		return model.OrderStatusRefunded
+	default:
+		return model.OrderStatusPending
+	}
+}
+
+func legacyOrderTypeFromEntry(entry service.OrderCenterEntrySummary) string {
+	switch entry.SourceKind {
+	case service.OrderCenterSourceSurveyDeposit:
+		return "survey_deposit"
+	case service.OrderCenterSourceDesignOrder:
+		return model.OrderTypeDesign
+	case service.OrderCenterSourceConstruction:
+		return model.OrderTypeConstruction
+	case service.OrderCenterSourceMaterial:
+		return model.OrderTypeMaterial
+	default:
+		return ""
+	}
+}
+
+func legacyOrderListItemFromEntry(entry service.OrderCenterEntrySummary) service.UserOrderListItem {
+	item := service.UserOrderListItem{
+		ID:            legacyPrimaryID(entry),
+		RecordType:    "order",
+		OrderNo:       entry.ReferenceNo,
+		OrderType:     legacyOrderTypeFromEntry(entry),
+		Status:        legacyOrderStatusFromEntry(entry),
+		Amount:        entry.Amount,
+		TotalAmount:   entry.Amount,
+		PaidAmount:    normalizeLegacyPaidAmount(entry),
+		Discount:      normalizeLegacyDiscount(entry),
+		CreatedAt:     entry.CreatedAt,
+		ProviderName:  entryProviderName(entry.Provider),
+		Address:       entryBookingAddress(entry.Booking, entry.Project),
+		NextPayableAt: entry.ExpireAt,
+		ActionPath:    legacyActionPath(entry),
+	}
+	if entry.SourceKind == service.OrderCenterSourceSurveyDeposit {
+		item.RecordType = "payment"
+		item.BookingID = legacyPrimaryID(entry)
+		item.ProposalID = entryBookingProposalID(entry.Booking)
+		if entry.StatusGroup == service.OrderCenterStatusPaid {
+			item.PaidAt = entryBookingPaidAt(entry.Booking)
+		}
+		return item
+	}
+	item.ProjectID = entryProjectID(entry.Project)
+	item.BookingID = entryBookingID(entry.Booking)
+	item.ProposalID = entryBookingProposalID(entry.Booking)
+	return item
+}
+
+func legacyPendingPaymentItemFromEntry(entry service.OrderCenterEntrySummary) PendingPaymentItem {
+	return PendingPaymentItem{
+		Type:         legacyPendingPaymentType(entry.SourceKind),
+		ID:           legacyPrimaryID(entry),
+		OrderNo:      entry.ReferenceNo,
+		Amount:       payableAmountFromEntry(entry),
+		ProviderID:   entryProviderID(entry.Provider),
+		ProviderName: entryProviderName(entry.Provider),
+		Address:      entryBookingAddress(entry.Booking, entry.Project),
+		ExpireAt:     entry.ExpireAt,
+		CreatedAt:    legacyCreatedAt(entry.CreatedAt),
+	}
+}
+
+func legacyPendingPaymentType(sourceKind string) string {
+	switch sourceKind {
+	case service.OrderCenterSourceSurveyDeposit:
+		return "intent_fee"
+	case service.OrderCenterSourceDesignOrder:
+		return "design_fee"
+	case service.OrderCenterSourceMaterial:
+		return "material_fee"
+	default:
+		return "construction_fee"
+	}
+}
+
+func legacyPrimaryID(entry service.OrderCenterEntrySummary) uint64 {
+	if entry.SourceKind == service.OrderCenterSourceSurveyDeposit {
+		return entryBookingID(entry.Booking)
+	}
+	return parseUint64FromEntryKey(entry.EntryKey)
+}
+
+func entryProviderID(provider *service.OrderCenterProviderSummary) uint64 {
+	if provider == nil {
+		return 0
+	}
+	return provider.ID
+}
+
+func entryProviderName(provider *service.OrderCenterProviderSummary) string {
+	if provider == nil {
+		return ""
+	}
+	return provider.Name
+}
+
+func entryProjectID(project *service.OrderCenterProjectSummary) uint64 {
+	if project == nil {
+		return 0
+	}
+	return project.ID
+}
+
+func entryBookingID(booking *service.OrderCenterBookingSummary) uint64 {
+	if booking == nil {
+		return 0
+	}
+	return booking.ID
+}
+
+func entryBookingProposalID(booking *service.OrderCenterBookingSummary) uint64 {
+	if booking == nil {
+		return 0
+	}
+	return booking.ProposalID
+}
+
+func entryBookingAddress(booking *service.OrderCenterBookingSummary, project *service.OrderCenterProjectSummary) string {
+	if booking != nil && booking.Address != "" {
+		return booking.Address
+	}
+	if project != nil {
+		return project.Address
+	}
+	return ""
+}
+
+func entryBookingPaidAt(booking *service.OrderCenterBookingSummary) *time.Time {
+	if booking == nil || booking.SurveyDepositPaidAt == nil {
+		return nil
+	}
+	paidAt := *booking.SurveyDepositPaidAt
+	return &paidAt
+}
+
+func payableAmountFromEntry(entry service.OrderCenterEntrySummary) float64 {
+	if entry.PayableAmount > 0 {
+		return entry.PayableAmount
+	}
+	return entry.Amount
+}
+
+func legacyCreatedAt(createdAt *time.Time) time.Time {
+	if createdAt != nil {
+		return *createdAt
+	}
+	return time.Time{}
+}
+
+func parseUint64FromEntryKey(entryKey string) uint64 {
+	for i := len(entryKey) - 1; i >= 0; i-- {
+		if entryKey[i] == ':' {
+			value, _ := strconv.ParseUint(entryKey[i+1:], 10, 64)
+			return value
+		}
+	}
+	return 0
+}
+
+func normalizeLegacyPaidAmount(entry service.OrderCenterEntrySummary) float64 {
+	if entry.StatusGroup == service.OrderCenterStatusPaid || entry.StatusGroup == service.OrderCenterStatusRefund {
+		return entry.Amount
+	}
+	return 0
+}
+
+func normalizeLegacyDiscount(entry service.OrderCenterEntrySummary) float64 {
+	return 0
+}
+
+func legacyActionPath(entry service.OrderCenterEntrySummary) string {
+	if entry.SourceKind == service.OrderCenterSourceSurveyDeposit {
+		return ""
+	}
+	return ""
 }
 
 // GetOrder 获取订单详情
 func GetOrder(c *gin.Context) {
-	orderID := c.Param("id")
-	userID := c.GetUint64("userId")
-
-	var order model.Order
-	if err := repository.DB.Where("id = ?", orderID).First(&order).Error; err != nil {
-		response.NotFound(c, "订单不存在")
+	orderID := parseUint64(c.Param("id"))
+	if orderID == 0 {
+		response.BadRequest(c, "无效订单ID")
 		return
 	}
 
-	// 权限验证：通过 Proposal -> Booking -> UserID
-	var proposal model.Proposal
-	if err := repository.DB.First(&proposal, order.ProposalID).Error; err != nil {
-		response.ServerError(c, "关联方案数据异常")
+	order, err := orderService.GetOrderForUser(c.GetUint64("userId"), orderID)
+	if err != nil {
+		respondScopedAccessError(c, err, "获取订单失败")
 		return
 	}
 
-	var booking model.Booking
-	if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
-		response.ServerError(c, "关联预约数据异常")
-		return
-	}
-
-	if booking.UserID != userID {
-		response.Forbidden(c, "无权查看此订单")
-		return
+	if order.Status == model.OrderStatusPending {
+		if _, syncErr := paymentService.SyncLatestPendingBizPayment(model.PaymentBizTypeOrder, order.ID); syncErr == nil {
+			_ = repository.DB.First(order, order.ID).Error
+		}
 	}
 
 	response.Success(c, order)

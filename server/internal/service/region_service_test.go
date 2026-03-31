@@ -100,3 +100,20 @@ func TestRegionServiceValidateServiceCityCodesAllowsOpenProvinceAndSingleCity(t 
 		t.Fatal("expected missing city code to fail validation")
 	}
 }
+
+func TestRegionServiceResolveServiceAreaInputsToCityDisplayRollsUpDistrict(t *testing.T) {
+	db := setupRegionServiceTestDB(t)
+	seedServiceRegionOpenData(t, db)
+
+	svc := RegionService{}
+	codes, names, err := svc.ResolveServiceAreaInputsToCityDisplay([]string{"610113", "610100", "雁塔区", "999999"})
+	if err != nil {
+		t.Fatalf("resolve service area city display: %v", err)
+	}
+	if len(codes) != 1 || codes[0] != "610100" {
+		t.Fatalf("expected rolled city code only, got %v", codes)
+	}
+	if len(names) != 1 || names[0] != "西安市" {
+		t.Fatalf("expected rolled city name only, got %v", names)
+	}
+}

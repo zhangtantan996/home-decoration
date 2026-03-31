@@ -10,38 +10,72 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var defaultDevAllowedOrigins = []string{
+	"http://localhost:5173", // Admin开发环境
+	"http://localhost:5174", // Admin开发环境备用端口
+	"http://localhost:5175", // Admin开发环境备用端口
+	"http://localhost:5176", // Admin开发环境备用端口
+	"http://localhost:5177", // Admin开发环境备用端口
+	"http://127.0.0.1:5173", // Admin开发环境（本地回环）
+	"http://127.0.0.1:5174", // Admin开发环境备用端口（本地回环）
+	"http://127.0.0.1:5175", // Admin开发环境备用端口（本地回环）
+	"http://127.0.0.1:5176", // Admin开发环境备用端口（本地回环）
+	"http://127.0.0.1:5177", // Admin开发环境备用端口（本地回环）
+	"http://localhost:3000", // Mobile开发环境
+}
+
+const defaultReleaseAllowedOrigin = "https://admin.yourdomain.com"
+
+func buildAllowedOrigins(serverMode string, raw string) []string {
+	parsed := parseAllowedOrigins(raw)
+	if strings.EqualFold(serverMode, "release") {
+		if len(parsed) > 0 {
+			return parsed
+		}
+		return []string{defaultReleaseAllowedOrigin}
+	}
+
+	origins := append([]string{}, defaultDevAllowedOrigins...)
+	for _, origin := range parsed {
+		if !containsString(origins, origin) {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
+}
+
+func parseAllowedOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	parsed := make([]string, 0, len(parts))
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin == "" || containsString(parsed, origin) {
+			continue
+		}
+		parsed = append(parsed, origin)
+	}
+	return parsed
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
 func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engine {
 	r := gin.Default()
 
 	// ✅ CORS白名单配置
-	allowedOrigins := []string{
-		"http://localhost:5173",        // Admin开发环境
-		"http://localhost:5174",        // Admin开发环境备用端口
-		"http://localhost:5175",        // Admin开发环境备用端口
-		"http://localhost:5176",        // Admin开发环境备用端口
-		"http://localhost:5177",        // Admin开发环境备用端口
-		"http://127.0.0.1:5173",        // Admin开发环境（本地回环）
-		"http://127.0.0.1:5174",        // Admin开发环境备用端口（本地回环）
-		"http://127.0.0.1:5175",        // Admin开发环境备用端口（本地回环）
-		"http://127.0.0.1:5176",        // Admin开发环境备用端口（本地回环）
-		"http://127.0.0.1:5177",        // Admin开发环境备用端口（本地回环）
-		"http://localhost:3000",        // Mobile开发环境
-		"https://admin.yourdomain.com", // 生产环境（需替换）
-	}
-	if raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); raw != "" {
-		parts := strings.Split(raw, ",")
-		parsed := make([]string, 0, len(parts))
-		for _, p := range parts {
-			v := strings.TrimSpace(p)
-			if v == "" {
-				continue
-			}
-			parsed = append(parsed, v)
-		}
-		if len(parsed) > 0 {
-			allowedOrigins = parsed
-		}
-	}
+	allowedOrigins := buildAllowedOrigins(cfg.Server.Mode, os.Getenv("CORS_ALLOWED_ORIGINS"))
 
 	// 全局中间件
 	r.Use(middleware.SecurityHeaders()) // 安全响应头
@@ -85,7 +119,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		payments := v1.Group("/payments")
 		{
 			payments.GET("/:id/launch", handler.PaymentLaunch)
+			payments.GET("/:id/qr", handler.PaymentQRCode)
 			payments.POST("/alipay/notify", handler.PaymentAlipayNotify)
+			payments.POST("/wechat/notify", handler.PaymentWechatNotify)
 			payments.GET("/alipay/return", handler.PaymentAlipayReturn)
 		}
 
@@ -262,6 +298,13 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			userPayments := authorized.Group("/payments")
 			{
 				userPayments.GET("/:id/status", handler.PaymentStatus)
+			}
+
+			orderCenter := authorized.Group("/order-center")
+			{
+				orderCenter.GET("/entries", handler.ListOrderCenterEntries)
+				orderCenter.GET("/entries/:entryKey", handler.GetOrderCenterEntry)
+				orderCenter.POST("/entries/:entryKey/payments", handler.StartOrderCenterEntryPayment)
 			}
 
 			// 项目
@@ -486,6 +529,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			projectListPerm := middleware.RequirePermission("project:list")
 			projectViewPerm := middleware.RequirePermission("project:view")
 			projectEditPerm := middleware.RequirePermission("project:edit")
+			supervisionWorkspaceViewPerm := middleware.RequirePermission("supervision:workspace:view")
+			supervisionWorkspaceEditPerm := middleware.RequirePermission("supervision:workspace:edit")
+			supervisionRiskCreatePerm := middleware.RequirePermission("supervision:risk:create")
+			orderCenterListPerm := middleware.RequirePermission("order:center:list")
+			orderCenterViewPerm := middleware.RequirePermission("order:center:view")
+			proposalReviewPerm := middleware.RequirePermission("proposal:review")
 			demandListPerm := middleware.RequirePermission("demand:list")
 			demandReviewPerm := middleware.RequirePermission("demand:review")
 			demandAssignPerm := middleware.RequirePermission("demand:assign")
@@ -660,18 +709,39 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/identity-applications/:id/reject", identityAuditPerm, handler.AdminRejectIdentityApplication)
 
 			// ========== 项目管理 ==========
+			admin.GET("/business-flows", orderCenterListPerm, handler.AdminListBusinessFlows)
+			admin.GET("/business-flows/:id", orderCenterViewPerm, handler.AdminGetBusinessFlow)
+			admin.POST("/proposals/:id/confirm", proposalReviewPerm, handler.AdminConfirmProposal)
+			admin.POST("/proposals/:id/reject", proposalReviewPerm, handler.AdminRejectProposal)
 			admin.GET("/projects", projectListPerm, handler.AdminListProjects)
 			admin.GET("/projects/:id", projectViewPerm, handler.AdminGetProject)
 			admin.POST("/projects/:id/audit", complaintResolvePerm, handler.AdminCreateProjectAudit)
 			admin.PUT("/projects/:id/status", projectEditPerm, handler.AdminUpdateProjectStatus)
 			admin.POST("/projects/:id/construction/confirm", projectEditPerm, handler.AdminConfirmProjectConstruction)
 			admin.POST("/projects/:id/construction/quote/confirm", projectEditPerm, handler.AdminConfirmProjectConstructionQuote)
+			admin.POST("/projects/:id/start", projectEditPerm, handler.AdminStartProject)
+			admin.POST("/projects/:id/pause", projectEditPerm, handler.AdminPauseProject)
+			admin.POST("/projects/:id/resume", projectEditPerm, handler.AdminResumeProject)
+			admin.POST("/projects/:id/milestones/:milestoneId/approve", projectEditPerm, handler.AdminApproveProjectMilestone)
+			admin.POST("/projects/:id/milestones/:milestoneId/reject", projectEditPerm, handler.AdminRejectProjectMilestone)
+			admin.POST("/projects/:id/completion/approve", projectEditPerm, handler.AdminApproveProjectCompletion)
+			admin.POST("/projects/:id/completion/reject", projectEditPerm, handler.AdminRejectProjectCompletion)
 			admin.GET("/projects/:id/phases", projectViewPerm, handler.AdminGetProjectPhases)
 			admin.PUT("/projects/:id/phases/:phaseId", projectEditPerm, handler.AdminUpdatePhase)
 			admin.GET("/projects/:id/logs", projectViewPerm, handler.AdminGetProjectLogs)
 			admin.POST("/projects/:id/phases/:phaseId/logs", projectEditPerm, handler.AdminCreateWorkLog)
 			admin.PUT("/logs/:logId", projectEditPerm, handler.AdminUpdateWorkLog)
 			admin.DELETE("/logs/:logId", projectEditPerm, handler.AdminDeleteWorkLog)
+
+			// ========== 监理工作台 ==========
+			admin.GET("/supervision/projects", supervisionWorkspaceViewPerm, handler.AdminListSupervisionProjects)
+			admin.GET("/supervision/projects/:id", supervisionWorkspaceViewPerm, handler.AdminGetSupervisionProject)
+			admin.GET("/supervision/projects/:id/phases", supervisionWorkspaceViewPerm, handler.AdminGetSupervisionProjectPhases)
+			admin.GET("/supervision/projects/:id/logs", supervisionWorkspaceViewPerm, handler.AdminGetSupervisionProjectLogs)
+			admin.POST("/supervision/projects/:id/phases/:phaseId/logs", supervisionWorkspaceEditPerm, handler.AdminCreateSupervisionWorkLog)
+			admin.PUT("/supervision/projects/:id/phases/:phaseId", supervisionWorkspaceEditPerm, handler.AdminUpdateSupervisionPhase)
+			admin.PUT("/supervision/projects/:id/phases/:phaseId/tasks/:taskId", supervisionWorkspaceEditPerm, handler.AdminUpdateSupervisionPhaseTask)
+			admin.POST("/supervision/projects/:id/risk-warnings", supervisionRiskCreatePerm, handler.AdminCreateSupervisionRiskWarning)
 			admin.POST("/quote-library/import", projectEditPerm, handler.AdminImportQuoteLibrary)
 			admin.POST("/quote-library/import-preview", projectEditPerm, handler.AdminImportQuoteLibraryPreview)
 			admin.GET("/quote-categories", projectListPerm, handler.AdminListQuoteCategories)

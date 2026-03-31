@@ -60,7 +60,14 @@ export function OrdersPage() {
       ) : (
         <div className={styles.list}>
           {filtered.map((item) => {
-            const href = item.projectId ? `/projects/${item.projectId}` : item.proposalId ? `/proposals/${item.proposalId}` : undefined;
+            const href = item.actionPath
+              || (item.recordType === 'payment'
+                ? `/payments/${item.id}`
+                : item.projectId
+                  ? `/projects/${item.projectId}`
+                  : item.proposalId
+                    ? `/proposals/${item.proposalId}`
+                    : undefined);
             const progress = calcProgress(item.status);
 
             const card = (
@@ -82,20 +89,20 @@ export function OrdersPage() {
             );
 
             return href ? (
-              <Link key={item.id} to={href}>{card}</Link>
+              <Link key={`${item.recordType}-${item.id}`} to={href}>{card}</Link>
             ) : (
-              <div key={item.id}>{card}</div>
+              <div key={`${item.recordType}-${item.id}`}>{card}</div>
             );
           })}
         </div>
       )}
 
-      {filtered.some((item) => item.status === 0) && (
+      {filtered.some((item) => item.recordType === 'order' && item.status === 0) && (
         <div className={styles.inlineActionWrap}>
-          {filtered.filter((item) => item.status === 0).slice(0, 1).map((item) => (
+          {filtered.filter((item) => item.recordType === 'order' && item.status === 0).slice(0, 1).map((item) => (
             <button
               className={styles.primaryInlineAction}
-              key={item.id}
+              key={`${item.recordType}-${item.id}`}
               onClick={async () => {
                 setActionMessage('');
                 try {

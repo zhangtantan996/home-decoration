@@ -192,3 +192,47 @@ func TestMaterialShopServiceDetailAllowsVerifiedShopWithoutEnoughProducts(t *tes
 		t.Fatalf("expected detail to stay visible for verified shop without enough products: %v", err)
 	}
 }
+
+func TestMaterialShopServiceDetailReturnsPublicProductsAndUsesProductCoverFallback(t *testing.T) {
+	db := setupMaterialShopServiceDB(t)
+	service := &MaterialShopService{}
+
+	shop := createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:       "公开商品门店",
+		Type:       "showroom",
+		IsVerified: true,
+		Cover:      "",
+	}, 0)
+
+	product := model.MaterialShopProduct{
+		ShopID:      shop.ID,
+		Name:        "橡木地板",
+		Unit:        "平方米",
+		Description: "适合卧室与客厅通铺",
+		Price:       299,
+		ImagesJSON:  `["/uploads/material/floor.jpg","/uploads/material/floor-2.jpg"]`,
+		CoverImage:  "/uploads/material/floor.jpg",
+		Status:      1,
+		SortOrder:   0,
+	}
+	if err := db.Create(&product).Error; err != nil {
+		t.Fatalf("create material shop product: %v", err)
+	}
+
+	detail, err := service.GetMaterialShopByID(shop.ID)
+	if err != nil {
+		t.Fatalf("get material shop detail: %v", err)
+	}
+	if detail.Cover == "" {
+		t.Fatal("expected detail cover to fallback to first active product cover")
+	}
+	if len(detail.Products) != 1 {
+		t.Fatalf("expected one public product, got=%d", len(detail.Products))
+	}
+	if detail.Products[0].Name != "橡木地板" {
+		t.Fatalf("unexpected public product: %+v", detail.Products[0])
+	}
+	if len(detail.Products[0].Images) != 2 {
+		t.Fatalf("expected product images to be returned, got=%v", detail.Products[0].Images)
+	}
+}

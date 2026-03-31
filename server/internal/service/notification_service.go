@@ -23,6 +23,17 @@ type CreateNotificationInput struct {
 	Extra       map[string]interface{}
 }
 
+func readBookingProviderRoleText(providerType string) string {
+	switch providerType {
+	case "company":
+		return "装修公司"
+	case "worker", "foreman":
+		return "工长"
+	default:
+		return "设计师"
+	}
+}
+
 // Create 创建通知
 func (s *NotificationService) Create(input *CreateNotificationInput) error {
 	if input.UserID == 0 {
@@ -77,17 +88,36 @@ func (s *NotificationService) NotifyAdmins(input *CreateNotificationInput) error
 }
 
 // NotifyBookingIntentPaid 通知商家收到新预约
+func (s *NotificationService) NotifyBookingCreated(booking *model.Booking, providerUserID uint64) error {
+	providerRoleText := readBookingProviderRoleText(booking.ProviderType)
+	return s.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "新预约待确认",
+		Content:     fmt.Sprintf("你收到一条新的%s预约，请尽快确认是否接单。", providerRoleText),
+		Type:        model.NotificationTypeBookingCreated,
+		RelatedID:   booking.ID,
+		RelatedType: "booking",
+		ActionURL:   "/bookings",
+		Extra: map[string]interface{}{
+			"bookingId":  booking.ID,
+			"address":    booking.Address,
+			"providerId": booking.ProviderID,
+		},
+	})
+}
+
+// NotifyBookingIntentPaid 通知商家量房定金已支付
 func (s *NotificationService) NotifyBookingIntentPaid(booking *model.Booking, providerUserID uint64) error {
-	// 1. 通知商家
 	err := s.Create(&CreateNotificationInput{
 		UserID:      providerUserID,
 		UserType:    "provider",
-		Title:       "新预约通知",
-		Content:     "您有一个新的预约请求，请尽快处理",
+		Title:       "量房定金已支付",
+		Content:     "业主已完成量房定金支付，请继续安排量房与后续沟通。",
 		Type:        model.NotificationTypeBookingIntentPaid,
 		RelatedID:   booking.ID,
 		RelatedType: "booking",
-		ActionURL:   fmt.Sprintf("/merchant/bookings/%d", booking.ID),
+		ActionURL:   "/bookings",
 		Extra: map[string]interface{}{
 			"bookingId": booking.ID,
 			"address":   booking.Address,
@@ -95,7 +125,6 @@ func (s *NotificationService) NotifyBookingIntentPaid(booking *model.Booking, pr
 		},
 	})
 
-	// 2. 通知后台管理员 (场景 1)
 	_ = s.NotifyAdmins(&CreateNotificationInput{
 		Title:   "新支付通知",
 		Content: fmt.Sprintf("用户已支付意向金 %.2f 元，对应预约 ID: %d", booking.IntentFee, booking.ID),
@@ -111,18 +140,41 @@ func (s *NotificationService) NotifyBookingIntentPaid(booking *model.Booking, pr
 
 // NotifyBookingConfirmed 通知用户商家已接单
 func (s *NotificationService) NotifyBookingConfirmed(booking *model.Booking) error {
+	providerRoleText := readBookingProviderRoleText(booking.ProviderType)
 	return s.Create(&CreateNotificationInput{
 		UserID:      booking.UserID,
 		UserType:    "user",
-		Title:       "商家已接单",
-		Content:     "商家已确认接单，请等待方案提交",
+		Title:       "预约已确认",
+		Content:     fmt.Sprintf("%s已确认本次预约，请及时支付量房定金以继续推进。", providerRoleText),
 		Type:        model.NotificationTypeBookingConfirmed,
 		RelatedID:   booking.ID,
 		RelatedType: "booking",
 		ActionURL:   fmt.Sprintf("/bookings/%d", booking.ID),
 		Extra: map[string]interface{}{
-			"bookingId":  booking.ID,
-			"providerId": booking.ProviderID,
+			"bookingId":        booking.ID,
+			"providerId":       booking.ProviderID,
+			"providerRoleText": providerRoleText,
+		},
+	})
+}
+
+// NotifyBookingRejected 通知用户预约已被服务商拒绝
+func (s *NotificationService) NotifyBookingRejected(booking *model.Booking) error {
+	providerRoleText := readBookingProviderRoleText(booking.ProviderType)
+	return s.Create(&CreateNotificationInput{
+		UserID:      booking.UserID,
+		UserType:    "user",
+		Title:       "预约已关闭",
+		Content:     fmt.Sprintf("%s已拒绝本次预约，你可以重新发起预约。", providerRoleText),
+		Type:        model.NotificationTypeBookingCancelled,
+		RelatedID:   booking.ID,
+		RelatedType: "booking",
+		ActionURL:   fmt.Sprintf("/bookings/%d", booking.ID),
+		Extra: map[string]interface{}{
+			"bookingId":        booking.ID,
+			"providerId":       booking.ProviderID,
+			"providerRoleText": providerRoleText,
+			"reason":           "merchant_rejected_booking",
 		},
 	})
 }
@@ -179,7 +231,7 @@ func (s *NotificationService) NotifyProposalConfirmed(proposal interface{}, prov
 		Type:        model.NotificationTypeProposalConfirmed,
 		RelatedID:   proposalID,
 		RelatedType: "proposal",
-		ActionURL:   fmt.Sprintf("/merchant/proposals/%d", proposalID),
+		ActionURL:   "/proposals",
 		Extra: map[string]interface{}{
 			"proposalId": proposalID,
 		},
@@ -204,7 +256,7 @@ func (s *NotificationService) NotifyProposalRejected(proposal interface{}, provi
 		Type:        model.NotificationTypeProposalRejected,
 		RelatedID:   proposalID,
 		RelatedType: "proposal",
-		ActionURL:   fmt.Sprintf("/merchant/proposals/%d", proposalID),
+		ActionURL:   "/proposals",
 		Extra: map[string]interface{}{
 			"proposalId": proposalID,
 			"version":    version,
@@ -257,7 +309,7 @@ func (s *NotificationService) NotifyOrderPaid(order interface{}, providerUserID 
 		Type:        model.NotificationTypeOrderPaid,
 		RelatedID:   orderID,
 		RelatedType: "order",
-		ActionURL:   fmt.Sprintf("/merchant/orders/%d", orderID),
+		ActionURL:   "/orders",
 		Extra: map[string]interface{}{
 			"orderId": orderID,
 			"amount":  amount,
@@ -275,7 +327,7 @@ func (s *NotificationService) NotifyWithdrawApproved(withdraw *model.MerchantWit
 		Type:        model.NotificationTypeWithdrawApproved,
 		RelatedID:   withdraw.ID,
 		RelatedType: "withdraw",
-		ActionURL:   fmt.Sprintf("/merchant/withdraws/%d", withdraw.ID),
+		ActionURL:   "/withdraw",
 		Extra: map[string]interface{}{
 			"withdrawId": withdraw.ID,
 			"amount":     withdraw.Amount,
@@ -294,7 +346,7 @@ func (s *NotificationService) NotifyWithdrawCompleted(withdraw *model.MerchantWi
 		Type:        model.NotificationTypeWithdrawCompleted,
 		RelatedID:   withdraw.ID,
 		RelatedType: "withdraw",
-		ActionURL:   fmt.Sprintf("/merchant/withdraws/%d", withdraw.ID),
+		ActionURL:   "/withdraw",
 		Extra: map[string]interface{}{
 			"withdrawId": withdraw.ID,
 			"amount":     withdraw.Amount,
@@ -313,7 +365,7 @@ func (s *NotificationService) NotifyWithdrawRejected(withdraw *model.MerchantWit
 		Type:        model.NotificationTypeWithdrawRejected,
 		RelatedID:   withdraw.ID,
 		RelatedType: "withdraw",
-		ActionURL:   fmt.Sprintf("/merchant/withdraws/%d", withdraw.ID),
+		ActionURL:   "/withdraw",
 		Extra: map[string]interface{}{
 			"withdrawId": withdraw.ID,
 			"amount":     withdraw.Amount,

@@ -24,6 +24,7 @@ import { InspirationDetailPage } from '../pages/InspirationDetailPage';
 import { InspirationPage } from '../pages/InspirationPage';
 import { LoginPage } from '../pages/LoginPage';
 import { MaterialShopDetailPage } from '../pages/MaterialShopDetailPage';
+import { PaymentDetailPage } from '../pages/PaymentDetailPage';
 import { ProfileHomePage } from '../pages/ProfileHomePage';
 import { ProgressPage } from '../pages/ProgressPage';
 import { PaymentResultPage } from '../pages/PaymentResultPage';
@@ -110,6 +111,7 @@ const router = createBrowserRouter(
         { path: 'progress', element: <ProjectsPage /> },
         { path: 'messages', element: <Navigate to="/me/notifications" replace /> },
         { path: 'notifications', element: <Navigate to="/me/notifications" replace /> },
+        { path: 'payments/:id', element: <PaymentDetailPage /> },
         { path: 'payments/result', element: <PaymentResultPage /> },
         { path: 'me', element: <ProfileWorkspaceLayout />, children: [
           { index: true, element: <ProfileHomePage /> },
@@ -125,7 +127,7 @@ const router = createBrowserRouter(
           { path: 'settings', element: <SettingsPage /> },
           { path: 'edit', element: <Navigate replace to="/me/settings?tab=profile" /> },
         ] },
-        { path: 'after-sales', element: <AfterSalesPage /> },
+        { path: 'after-sales', element: <Navigate replace to="/me/after-sales" /> },
         { path: 'after-sales/new', element: <AfterSalesCreatePage /> },
         { path: 'after-sales/:id', element: <AfterSalesDetailPage /> },
         { path: 'complaints/new', element: <ComplaintCreatePage /> },

@@ -2,10 +2,15 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
+	appconfig "home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"strconv"
+	"strings"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // ConfigService 系统配置服务
@@ -17,8 +22,7 @@ var (
 	configCacheInit sync.Once
 )
 
-// GetConfig 获取配置值
-func (s *ConfigService) GetConfig(key string) (string, error) {
+func (s *ConfigService) getConfigValue(tx *gorm.DB, key string) (string, error) {
 	// 先从缓存读取
 	configCacheMu.RLock()
 	if val, ok := configCache[key]; ok {
@@ -27,9 +31,13 @@ func (s *ConfigService) GetConfig(key string) (string, error) {
 	}
 	configCacheMu.RUnlock()
 
-	// 从数据库读取
+	queryDB := repository.DB
+	if tx != nil {
+		queryDB = tx
+	}
+
 	var config model.SystemConfig
-	if err := repository.DB.Where("key = ?", key).First(&config).Error; err != nil {
+	if err := queryDB.Where("key = ?", key).First(&config).Error; err != nil {
 		return "", err
 	}
 
@@ -41,9 +49,26 @@ func (s *ConfigService) GetConfig(key string) (string, error) {
 	return config.Value, nil
 }
 
+// GetConfig 获取配置值
+func (s *ConfigService) GetConfig(key string) (string, error) {
+	return s.getConfigValue(nil, key)
+}
+
+func (s *ConfigService) GetConfigTx(tx *gorm.DB, key string) (string, error) {
+	return s.getConfigValue(tx, key)
+}
+
 // GetConfigFloat 获取浮点数配置
 func (s *ConfigService) GetConfigFloat(key string) (float64, error) {
 	val, err := s.GetConfig(key)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseFloat(val, 64)
+}
+
+func (s *ConfigService) GetConfigFloatTx(tx *gorm.DB, key string) (float64, error) {
+	val, err := s.GetConfigTx(tx, key)
 	if err != nil {
 		return 0, err
 	}
@@ -59,9 +84,25 @@ func (s *ConfigService) GetConfigBool(key string) (bool, error) {
 	return strconv.ParseBool(val)
 }
 
+func (s *ConfigService) GetConfigBoolTx(tx *gorm.DB, key string) (bool, error) {
+	val, err := s.GetConfigTx(tx, key)
+	if err != nil {
+		return false, err
+	}
+	return strconv.ParseBool(val)
+}
+
 // GetConfigInt 获取整数配置
 func (s *ConfigService) GetConfigInt(key string) (int, error) {
 	val, err := s.GetConfig(key)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(val)
+}
+
+func (s *ConfigService) GetConfigIntTx(tx *gorm.DB, key string) (int, error) {
+	val, err := s.GetConfigTx(tx, key)
 	if err != nil {
 		return 0, err
 	}
@@ -144,6 +185,10 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		{model.ConfigKeyDesignFeeQuoteExpireHours, "72", "设计费报价有效期(小时)"},
 		{model.ConfigKeyDeliverableDeadlineDays, "30", "设计交付件截止天数"},
 		{model.ConfigKeyConstructionReleaseDelay, "3", "验收确认后T+N天自动放款"},
+		{model.ConfigKeyPaymentReleaseDelayDays, "3", "支付中台统一T+N出款延迟天数"},
+		{model.ConfigKeyPaymentPayoutAutoEnabled, "true", "是否启用自动出款"},
+		{model.ConfigKeyPaymentChannelWechatEnabled, "false", "是否启用微信支付"},
+		{model.ConfigKeyPaymentChannelAlipayEnabled, strconv.FormatBool(appconfig.GetConfig().Alipay.Enabled), "是否启用支付宝"},
 	}
 
 	for _, d := range defaults {
@@ -176,6 +221,14 @@ func (s *ConfigService) GetSurveyDepositDefault() (float64, error) {
 		return val, nil
 	}
 	return s.GetIntentFee()
+}
+
+func (s *ConfigService) GetSurveyDepositDefaultTx(tx *gorm.DB) (float64, error) {
+	val, err := s.GetConfigFloatTx(tx, model.ConfigKeySurveyDepositDefault)
+	if err == nil {
+		return val, nil
+	}
+	return s.GetConfigFloatTx(tx, model.ConfigKeyIntentFee)
 }
 
 func (s *ConfigService) GetSurveyRefundNotice() string {
@@ -224,6 +277,137 @@ func (s *ConfigService) GetDesignFeeStages() ([]MilestoneConfig, error) {
 	return milestones, nil
 }
 
+func (s *ConfigService) IsPaymentChannelEnabled(channel string) bool {
+	key := paymentChannelConfigKey(channel)
+	if key == "" {
+		return false
+	}
+	value, err := s.GetConfigBool(key)
+	if err == nil {
+		return value
+	}
+	if channel == model.PaymentChannelAlipay {
+		return appconfig.GetConfig().Alipay.Enabled
+	}
+	return false
+}
+
+func (s *ConfigService) IsPaymentChannelEnabledTx(tx *gorm.DB, channel string) bool {
+	key := paymentChannelConfigKey(channel)
+	if key == "" {
+		return false
+	}
+	value, err := s.GetConfigBoolTx(tx, key)
+	if err == nil {
+		return value
+	}
+	if channel == model.PaymentChannelAlipay {
+		return appconfig.GetConfig().Alipay.Enabled
+	}
+	return false
+}
+
+func (s *ConfigService) ValidatePaymentChannelEnabled(channel string) error {
+	if !s.IsPaymentChannelEnabled(channel) {
+		return paymentChannelDisabledError(channel)
+	}
+	return s.ValidatePaymentChannelRuntimeConfig(channel)
+}
+
+func (s *ConfigService) ValidatePaymentChannelEnabledTx(tx *gorm.DB, channel string) error {
+	if !s.IsPaymentChannelEnabledTx(tx, channel) {
+		return paymentChannelDisabledError(channel)
+	}
+	return s.ValidatePaymentChannelRuntimeConfig(channel)
+}
+
+func (s *ConfigService) ValidatePaymentChannelToggle(key, value string) error {
+	if !parseBoolLoose(value) {
+		return nil
+	}
+	switch key {
+	case model.ConfigKeyPaymentChannelWechatEnabled:
+		return s.ValidatePaymentChannelRuntimeConfig(model.PaymentChannelWechat)
+	case model.ConfigKeyPaymentChannelAlipayEnabled:
+		return s.ValidatePaymentChannelRuntimeConfig(model.PaymentChannelAlipay)
+	default:
+		return nil
+	}
+}
+
+func (s *ConfigService) ValidatePaymentChannelRuntimeConfig(channel string) error {
+	switch channel {
+	case model.PaymentChannelWechat:
+		cfg := appconfig.GetConfig()
+		appID := strings.TrimSpace(cfg.WechatPay.AppID)
+		if appID == "" {
+			appID = strings.TrimSpace(cfg.WechatMini.AppID)
+		}
+		switch {
+		case appID == "":
+			return errors.New("微信支付未配置小程序 AppID")
+		case strings.TrimSpace(cfg.WechatPay.MchID) == "":
+			return errors.New("微信支付未配置商户号")
+		case strings.TrimSpace(cfg.WechatPay.SerialNo) == "":
+			return errors.New("微信支付未配置证书序列号")
+		case strings.TrimSpace(cfg.WechatPay.PrivateKey) == "":
+			return errors.New("微信支付未配置商户私钥")
+		case strings.TrimSpace(cfg.WechatPay.APIv3Key) == "":
+			return errors.New("微信支付未配置 APIv3 密钥")
+		case strings.TrimSpace(cfg.WechatPay.NotifyURL) == "":
+			return errors.New("微信支付未配置支付回调地址")
+		default:
+			return nil
+		}
+	case model.PaymentChannelAlipay:
+		runtimeCfg := appconfig.GetConfig()
+		cfg := runtimeCfg.Alipay
+		switch {
+		case strings.TrimSpace(cfg.AppID) == "":
+			return errors.New("支付宝未配置 AppID")
+		case strings.TrimSpace(cfg.AppPrivateKey) == "":
+			return errors.New("支付宝未配置应用私钥")
+		case strings.TrimSpace(cfg.PublicKey) == "":
+			return errors.New("支付宝未配置平台公钥")
+		case strings.TrimSpace(cfg.NotifyURL) == "" && strings.TrimSpace(runtimeCfg.Server.PublicURL) == "":
+			return errors.New("支付宝未配置支付回调地址")
+		case strings.TrimSpace(cfg.GatewayURL) == "":
+			return errors.New("支付宝未配置网关地址")
+		default:
+			return nil
+		}
+	default:
+		return errors.New("不支持的支付渠道")
+	}
+}
+
+func paymentChannelConfigKey(channel string) string {
+	switch strings.TrimSpace(channel) {
+	case model.PaymentChannelWechat:
+		return model.ConfigKeyPaymentChannelWechatEnabled
+	case model.PaymentChannelAlipay:
+		return model.ConfigKeyPaymentChannelAlipayEnabled
+	default:
+		return ""
+	}
+}
+
+func parseBoolLoose(value string) bool {
+	result, err := strconv.ParseBool(strings.TrimSpace(value))
+	return err == nil && result
+}
+
+func paymentChannelDisabledError(channel string) error {
+	switch strings.TrimSpace(channel) {
+	case model.PaymentChannelWechat:
+		return errors.New("微信支付未启用")
+	case model.PaymentChannelAlipay:
+		return errors.New("支付宝支付未启用")
+	default:
+		return errors.New("支付渠道未启用")
+	}
+}
+
 // GetConstructionMilestones 获取施工分期配置
 type MilestoneConfig struct {
 	Name       string  `json:"name"`
@@ -259,6 +443,30 @@ func (s *ConfigService) GetConstructionReleaseDelayDays() int {
 	val, err := s.GetConfigInt(model.ConfigKeyConstructionReleaseDelay)
 	if err != nil || val < 0 {
 		return 3
+	}
+	return val
+}
+
+func (s *ConfigService) GetConstructionReleaseDelayDaysTx(tx *gorm.DB) int {
+	val, err := s.GetConfigIntTx(tx, model.ConfigKeyConstructionReleaseDelay)
+	if err != nil || val < 0 {
+		return 3
+	}
+	return val
+}
+
+func (s *ConfigService) GetPaymentReleaseDelayDays() int {
+	val, err := s.GetConfigInt(model.ConfigKeyPaymentReleaseDelayDays)
+	if err == nil && val >= 0 {
+		return val
+	}
+	return s.GetConstructionReleaseDelayDays()
+}
+
+func (s *ConfigService) GetPaymentPayoutAutoEnabled() bool {
+	val, err := s.GetConfigBool(model.ConfigKeyPaymentPayoutAutoEnabled)
+	if err != nil {
+		return true
 	}
 	return val
 }

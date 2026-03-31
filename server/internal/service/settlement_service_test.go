@@ -7,6 +7,65 @@ import (
 	"home-decoration-server/internal/model"
 )
 
+func TestSettlementServiceReleaseMilestoneWritesArtifactsAndAudit(t *testing.T) {
+	db := setupProjectRiskServiceTestDB(t)
+	user, provider, project, milestone, _ := seedProjectRiskFixture(t, db)
+
+	if err := db.Model(&milestone).Update("status", model.MilestoneStatusAccepted).Error; err != nil {
+		t.Fatalf("set milestone accepted: %v", err)
+	}
+
+	result, err := (&SettlementService{}).ReleaseMilestone(&ReleaseMilestoneInput{
+		ProjectID:    project.ID,
+		MilestoneID:  milestone.ID,
+		OperatorType: "user",
+		OperatorID:   user.ID,
+		Reason:       "阶段验收后正常放款",
+		Source:       "test.stage_release",
+	})
+	if err != nil {
+		t.Fatalf("ReleaseMilestone: %v", err)
+	}
+	if result == nil || result.Transaction == nil || result.MerchantIncome == nil {
+		t.Fatalf("expected release artifacts, got %+v", result)
+	}
+
+	var refreshedMilestone model.Milestone
+	if err := db.First(&refreshedMilestone, milestone.ID).Error; err != nil {
+		t.Fatalf("reload milestone: %v", err)
+	}
+	if refreshedMilestone.Status != model.MilestoneStatusPaid || refreshedMilestone.ReleasedAt == nil {
+		t.Fatalf("expected paid milestone with releasedAt, got %+v", refreshedMilestone)
+	}
+
+	var escrow model.EscrowAccount
+	if err := db.Where("project_id = ?", project.ID).First(&escrow).Error; err != nil {
+		t.Fatalf("reload escrow: %v", err)
+	}
+	if escrow.AvailableAmount != 25000 || escrow.ReleasedAmount != 5000 {
+		t.Fatalf("unexpected escrow balances: %+v", escrow)
+	}
+
+	var incomes int64
+	if err := db.Model(&model.MerchantIncome{}).Where("provider_id = ? AND type = ?", provider.ID, "construction").Count(&incomes).Error; err != nil {
+		t.Fatalf("count merchant incomes: %v", err)
+	}
+	if incomes != 1 {
+		t.Fatalf("expected 1 merchant income, got %d", incomes)
+	}
+
+	var auditLog model.AuditLog
+	if err := db.Where("operation_type = ?", "release_milestone_funds").Order("id DESC").First(&auditLog).Error; err != nil {
+		t.Fatalf("expected release audit log: %v", err)
+	}
+	if auditLog.OperatorType != "user" || auditLog.ResourceID != project.ID {
+		t.Fatalf("unexpected release audit log: %+v", auditLog)
+	}
+	if !strings.Contains(auditLog.Metadata, "test.stage_release") {
+		t.Fatalf("expected release source in audit metadata, got %+v", auditLog)
+	}
+}
+
 func TestSettlementServiceRejectsCrossProjectMilestoneRelease(t *testing.T) {
 	db := setupProjectRiskServiceTestDB(t)
 	user, provider, _, milestoneA, _ := seedProjectRiskFixture(t, db)
@@ -48,6 +107,79 @@ func TestSettlementServiceRejectsCrossProjectMilestoneRelease(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "不属于当前项目") {
 		t.Fatalf("expected cross-project release to fail, got %v", err)
+	}
+}
+
+func TestSettlementServiceRejectsInvalidReleaseMatrixWithoutArtifacts(t *testing.T) {
+	db := setupProjectRiskServiceTestDB(t)
+	user, _, project, milestone, _ := seedProjectRiskFixture(t, db)
+
+	otherUser := model.User{Base: model.Base{ID: 993}, Phone: "13800138993", Status: 1}
+	if err := db.Create(&otherUser).Error; err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+
+	svc := &SettlementService{}
+	if _, err := svc.ReleaseMilestone(&ReleaseMilestoneInput{
+		ProjectID:    project.ID,
+		MilestoneID:  milestone.ID,
+		OperatorType: "user",
+		OperatorID:   otherUser.ID,
+		Reason:       "越权放款",
+		Source:       "test.invalid_owner",
+	}); err == nil || !strings.Contains(err.Error(), "无权") {
+		t.Fatalf("expected foreign owner release failure, got %v", err)
+	}
+
+	if _, err := svc.ReleaseMilestone(&ReleaseMilestoneInput{
+		ProjectID:    project.ID,
+		MilestoneID:  milestone.ID,
+		OperatorType: "user",
+		OperatorID:   user.ID,
+		Reason:       "未验收放款",
+		Source:       "test.invalid_status",
+	}); err == nil || !strings.Contains(err.Error(), "未通过验收") {
+		t.Fatalf("expected unaccepted milestone release failure, got %v", err)
+	}
+
+	if err := db.Model(&milestone).Update("status", model.MilestoneStatusAccepted).Error; err != nil {
+		t.Fatalf("set milestone accepted: %v", err)
+	}
+	if _, err := svc.ReleaseMilestone(&ReleaseMilestoneInput{
+		ProjectID:    project.ID,
+		MilestoneID:  milestone.ID,
+		OperatorType: "user",
+		OperatorID:   user.ID,
+		Reason:       "首次放款",
+		Source:       "test.first_release",
+	}); err != nil {
+		t.Fatalf("first release: %v", err)
+	}
+	if _, err := svc.ReleaseMilestone(&ReleaseMilestoneInput{
+		ProjectID:    project.ID,
+		MilestoneID:  milestone.ID,
+		OperatorType: "user",
+		OperatorID:   user.ID,
+		Reason:       "重复放款",
+		Source:       "test.duplicate_release",
+	}); err == nil || !strings.Contains(err.Error(), "未通过验收") {
+		t.Fatalf("expected duplicate release failure, got %v", err)
+	}
+
+	var transactions int64
+	if err := db.Model(&model.Transaction{}).Where("type = ?", "release").Count(&transactions).Error; err != nil {
+		t.Fatalf("count release transactions: %v", err)
+	}
+	if transactions != 1 {
+		t.Fatalf("expected exactly 1 release transaction, got %d", transactions)
+	}
+
+	var incomes int64
+	if err := db.Model(&model.MerchantIncome{}).Where("type = ?", "construction").Count(&incomes).Error; err != nil {
+		t.Fatalf("count merchant incomes: %v", err)
+	}
+	if incomes != 1 {
+		t.Fatalf("expected exactly 1 construction income, got %d", incomes)
 	}
 }
 

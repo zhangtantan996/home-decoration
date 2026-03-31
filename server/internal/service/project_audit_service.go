@@ -334,10 +334,17 @@ func resolveAuditRefundTx(tx *gorm.DB, audit *model.ProjectAudit, project *model
 	if audit.ComplaintID > 0 {
 		_ = tx.First(&complaint, audit.ComplaintID).Error
 	}
+	constructionOrder, err := findLatestPaidOrderTx(tx, 0, project.ID, model.OrderTypeConstruction)
+	if err != nil {
+		return err
+	}
+	if constructionOrder == nil || constructionOrder.ID == 0 {
+		return errors.New("未找到施工支付订单")
+	}
 	application := &model.RefundApplication{
 		BookingID:       0,
 		ProjectID:       project.ID,
-		OrderID:         0,
+		OrderID:         constructionOrder.ID,
 		UserID:          project.OwnerID,
 		RefundType:      model.RefundTypeConstructionFee,
 		RequestedAmount: refundAmount,
@@ -358,10 +365,30 @@ func resolveAuditRefundTx(tx *gorm.DB, audit *model.ProjectAudit, project *model
 	if err := tx.Create(application).Error; err != nil {
 		return err
 	}
-	if err := applyConstructionRefundTx(tx, project.ID, project.OwnerID, refundAmount); err != nil {
+	paymentService := NewPaymentService(nil)
+	refundOrders, err := paymentService.CreateRefundOrdersForApplicationTx(tx, application, refundAmount)
+	if err != nil {
 		return err
 	}
 	now := time.Now()
+	for i := range refundOrders {
+		if err := tx.Model(&refundOrders[i]).Updates(map[string]interface{}{
+			"status":       model.RefundOrderStatusSucceeded,
+			"succeeded_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		refundOrders[i].Status = model.RefundOrderStatusSucceeded
+		refundOrders[i].SucceededAt = &now
+	}
+	bookingScope, projectScope, err := loadRefundExecutionScopeTx(tx, application)
+	if err != nil {
+		return err
+	}
+	beforeState := refundExecutionSnapshot(application, bookingScope, projectScope)
+	if err := applyConstructionRefundTx(tx, project.ID, project.OwnerID, application.OrderID, application.ID, refundAmount); err != nil {
+		return err
+	}
 	if err := tx.Model(application).Updates(map[string]interface{}{
 		"status":          model.RefundApplicationStatusCompleted,
 		"admin_id":        adminID,
@@ -370,6 +397,19 @@ func resolveAuditRefundTx(tx *gorm.DB, audit *model.ProjectAudit, project *model
 		"approved_at":     now,
 		"completed_at":    now,
 	}).Error; err != nil {
+		return err
+	}
+	application.Status = model.RefundApplicationStatusCompleted
+	application.AdminID = adminID
+	application.AdminNotes = conclusionReason
+	application.ApprovedAmount = refundAmount
+	application.ApprovedAt = &now
+	application.CompletedAt = &now
+	bookingScope, projectScope, err = loadRefundExecutionScopeTx(tx, application)
+	if err != nil {
+		return err
+	}
+	if err := createRefundExecutionAuditTx(tx, "admin", adminID, application, bookingScope, projectScope, refundOrders, beforeState, "success", conclusionReason); err != nil {
 		return err
 	}
 	if err := tx.Model(audit).Update("refund_application_id", application.ID).Error; err != nil {

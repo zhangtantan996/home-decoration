@@ -35,6 +35,22 @@ export const ADMIN_BUSINESS_STAGE_META: Record<string, { text: string; color: st
   cancelled: { text: '已取消', color: 'default' },
 };
 
+export const ADMIN_BUSINESS_ACTION_LABELS: Record<string, string> = {
+  create_proposal: '提交方案',
+  confirm_proposal: '确认设计方案',
+  reject_proposal: '驳回设计方案',
+  create_quote_task: '创建施工报价任务',
+  select_constructor: '运营干预施工方',
+  submit_construction_quote: '跟进施工报价提交',
+  confirm_construction_quote: '运营干预施工报价',
+  reject_construction_quote: '驳回施工报价',
+  start_project: '发起开工',
+  submit_milestone: '提交节点验收',
+  approve_milestone: '通过节点验收',
+  reject_milestone: '驳回节点验收',
+  generate_inspiration_draft: '生成案例草稿',
+};
+
 export const ADMIN_PROJECT_STAGE_FILTERS: Array<{ value: string; label: string }> = [
   { value: 'construction_party_pending', label: '待确定施工方（可干预）' },
   { value: 'construction_quote_pending', label: '施工报价待确认（可干预）' },
@@ -144,6 +160,13 @@ export const RISK_WARNING_STATUS_OPTIONS: Array<{ label: string; value: number }
   { label: '忽略', value: 3 },
 ];
 
+export const RISK_WARNING_FILTER_OPTIONS: Array<{ label: string; value: number }> = [
+  { label: '待处理', value: 0 },
+  { label: '处理中', value: 1 },
+  { label: '已处理', value: 2 },
+  { label: '忽略', value: 3 },
+];
+
 export const ARBITRATION_STATUS_META: Record<number, { text: string; color: string }> = {
   0: { text: '待受理', color: 'orange' },
   1: { text: '审理中', color: 'blue' },
@@ -213,6 +236,75 @@ export const FINANCE_TRANSACTION_STATUS_META: Record<number, { text: string; tag
   2: { text: '失败', tagStatus: 'rejected' },
 };
 
+export const FINANCE_RECONCILIATION_STATUS_META: Record<string, { text: string; tagStatus: 'warning' | 'approved' | 'completed' | 'info' }> = {
+  success: { text: '正常', tagStatus: 'approved' },
+  warning: { text: '待处理', tagStatus: 'warning' },
+  processing: { text: '处理中', tagStatus: 'info' },
+  resolved: { text: '已处理', tagStatus: 'completed' },
+};
+
+export const FINANCE_RECONCILIATION_STATUS_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '正常', value: 'success' },
+  { label: '待处理', value: 'warning' },
+  { label: '处理中', value: 'processing' },
+  { label: '已处理', value: 'resolved' },
+];
+
+export const FINANCE_PAYOUT_STATUS_META: Record<string, { text: string; tagStatus: 'warning' | 'approved' | 'completed' | 'rejected' | 'info' }> = {
+  created: { text: '待出款', tagStatus: 'warning' },
+  processing: { text: '出款中', tagStatus: 'info' },
+  paid: { text: '已出款', tagStatus: 'completed' },
+  failed: { text: '出款失败', tagStatus: 'rejected' },
+};
+
+export const FINANCE_PAYOUT_STATUS_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '待出款', value: 'created' },
+  { label: '出款中', value: 'processing' },
+  { label: '已出款', value: 'paid' },
+  { label: '出款失败', value: 'failed' },
+];
+
+export const FINANCE_SETTLEMENT_STATUS_META: Record<string, { text: string; tagStatus: 'warning' | 'info' | 'approved' | 'completed' | 'rejected' }> = {
+  scheduled: { text: '待结算', tagStatus: 'warning' },
+  payout_processing: { text: '出款中', tagStatus: 'info' },
+  paid: { text: '已出款', tagStatus: 'approved' },
+  refund_frozen: { text: '退款冻结', tagStatus: 'warning' },
+  refunded: { text: '已退款', tagStatus: 'completed' },
+  payout_failed: { text: '出款失败', tagStatus: 'rejected' },
+  exception: { text: '异常处理', tagStatus: 'rejected' },
+};
+
+export const FINANCE_SETTLEMENT_STATUS_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '待结算', value: 'scheduled' },
+  { label: '出款中', value: 'payout_processing' },
+  { label: '已出款', value: 'paid' },
+  { label: '退款冻结', value: 'refund_frozen' },
+  { label: '已退款', value: 'refunded' },
+  { label: '出款失败', value: 'payout_failed' },
+  { label: '异常处理', value: 'exception' },
+];
+
+export const BOND_RULE_TYPE_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '固定金额', value: 'fixed_amount' },
+  { label: '比例 + 上下限', value: 'ratio_with_floor_cap' },
+];
+
+export const BOND_ACCOUNT_STATUS_META: Record<string, { text: string; tagStatus: 'warning' | 'info' | 'approved' | 'completed' | 'rejected' }> = {
+  disabled: { text: '未启用', tagStatus: 'info' },
+  pending: { text: '待补缴', tagStatus: 'warning' },
+  active: { text: '正常', tagStatus: 'approved' },
+  refunding: { text: '退款中', tagStatus: 'completed' },
+  forfeited: { text: '已扣罚', tagStatus: 'rejected' },
+};
+
+export const BOND_ACCOUNT_STATUS_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '未启用', value: 'disabled' },
+  { label: '待补缴', value: 'pending' },
+  { label: '正常', value: 'active' },
+  { label: '退款中', value: 'refunding' },
+  { label: '已扣罚', value: 'forfeited' },
+];
+
 export const CASE_AUDIT_ACTION_META: Record<string, { text: string; color: string }> = {
   create: { text: '新增', color: 'orange' },
   update: { text: '修改', color: 'blue' },
@@ -235,6 +327,9 @@ export const PROVIDER_ROLE_META: Record<string, { text: string; color: string }>
   company: { text: '装修公司', color: 'blue' },
   foreman: { text: '工长', color: 'gold' },
 };
+
+export const isSecurityAuditorRole = (roles?: string[]) =>
+  Array.isArray(roles) && roles.includes('security_auditor');
 
 export const IDENTITY_TYPE_LABELS: Record<string, string> = {
   provider: '服务类商家',

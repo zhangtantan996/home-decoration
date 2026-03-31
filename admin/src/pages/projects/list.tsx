@@ -3,7 +3,8 @@ import { Card, Table, Tag, Button, Space, Input, Select, message } from 'antd';
 import { SearchOutlined, EyeOutlined, FileTextOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { adminProjectApi } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
-import { ADMIN_BUSINESS_STAGE_META, ADMIN_PROJECT_STAGE_FILTERS, ADMIN_PROJECT_STATUS_META } from '../../constants/statuses';
+import { ADMIN_BUSINESS_STAGE_META, ADMIN_PROJECT_STAGE_FILTERS, ADMIN_PROJECT_STATUS_META, isSecurityAuditorRole } from '../../constants/statuses';
+import { useAuthStore } from '../../stores/authStore';
 
 interface ProjectItem {
     id: number;
@@ -19,15 +20,18 @@ interface ProjectItem {
 
 interface ProjectListResponse {
     code: number;
-    data?: ProjectItem[];
-    total?: number;
-    stageStats?: Record<string, number>;
+    data?: {
+        list?: ProjectItem[];
+        total?: number;
+        stageStats?: Record<string, number>;
+    };
     message?: string;
-    error?: string;
 }
 
 const ProjectList: React.FC = () => {
     const navigate = useNavigate();
+    const adminRoles = useAuthStore((state) => state.admin?.roles || []);
+    const readonlyMode = isSecurityAuditorRole(adminRoles);
     const [loading, setLoading] = useState(false);
     const [projects, setProjects] = useState<ProjectItem[]>([]);
     const [total, setTotal] = useState(0);
@@ -61,17 +65,17 @@ const ProjectList: React.FC = () => {
                 businessStage: nextBusinessStage,
             }) as unknown as ProjectListResponse | undefined;
             if (payload?.code === 0) {
-                setProjects(payload.data || []);
-                setTotal(payload.total || 0);
-                setStageStats(payload.stageStats || {});
+                setProjects(payload.data?.list || []);
+                setTotal(payload.data?.total || 0);
+                setStageStats(payload.data?.stageStats || {});
                 setPage(nextPage);
                 return;
             }
 
-            message.error(payload?.message || payload?.error || '加载工地列表失败');
+            message.error(payload?.message || '加载工地列表失败');
         } catch (error) {
             console.error(error);
-            message.error('加载工地列表失败');
+            message.error(error instanceof Error ? error.message : '加载工地列表失败');
         } finally {
             setLoading(false);
         }
@@ -123,14 +127,14 @@ const ProjectList: React.FC = () => {
             render: (_: unknown, record: ProjectItem) => (
                 <Space size={4}>
                     <Button type="link" icon={<EyeOutlined />} onClick={() => navigate(`/projects/detail/${record.id}`)}>查看</Button>
-                    {record.businessStage === 'construction_party_pending' ? (
+                    {!readonlyMode && record.businessStage === 'construction_party_pending' ? (
                         <>
                             <Button type="link" onClick={() => navigate(`/projects/detail/${record.id}?action=construction`)}>
                                 干预施工方
                             </Button>
                         </>
                     ) : null}
-                    {record.businessStage === 'construction_party_pending' || record.businessStage === 'construction_quote_pending' ? (
+                    {!readonlyMode && (record.businessStage === 'construction_party_pending' || record.businessStage === 'construction_quote_pending') ? (
                         <>
                             <Button type="link" onClick={() => navigate(`/projects/detail/${record.id}?action=quote`)}>
                                 干预报价
@@ -178,7 +182,7 @@ const ProjectList: React.FC = () => {
                     </Button>
                     <Button icon={<FileTextOutlined />} onClick={() => navigate('/projects/quotes/library')}>报价库</Button>
                     <Button icon={<UnorderedListOutlined />} onClick={() => navigate('/projects/quotes/lists')}>报价清单</Button>
-                    <Button type="primary">导出</Button>
+                    {!readonlyMode ? <Button type="primary">导出</Button> : null}
                 </Space>
             }
         >

@@ -21,6 +21,8 @@ import MerchantOrders from '../pages/merchant/MerchantOrders';
 import MerchantComplaints from '../pages/merchant/MerchantComplaints';
 import MerchantContractCreate from '../pages/merchant/MerchantContractCreate';
 import MerchantIncome from '../pages/merchant/MerchantIncome';
+import MerchantBond from '../pages/merchant/MerchantBond';
+import MerchantPaymentResult from '../pages/merchant/MerchantPaymentResult';
 import MerchantWithdraw from '../pages/merchant/MerchantWithdraw';
 import MerchantBankAccounts from '../pages/merchant/MerchantBankAccounts';
 import MerchantCases from '../pages/merchant/MerchantCases';
@@ -28,6 +30,7 @@ import MerchantSettings from '../pages/merchant/MerchantSettings';
 import MaterialShopSettings from '../pages/merchant/MaterialShopSettings';
 import MaterialShopProducts from '../pages/merchant/MaterialShopProducts';
 import MerchantDesignWorkflow from '../pages/merchant/MerchantDesignWorkflow';
+import MerchantProjectFlow from '../pages/merchant/MerchantProjectFlow';
 import OnboardingAgreementPage from '../pages/merchant/legal/OnboardingAgreementPage';
 import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
@@ -57,6 +60,7 @@ const router = createBrowserRouter([
           { path: '/bookings/:id/site-survey', element: <MerchantBookingSiteSurvey /> },
           { path: '/bookings/:id/budget-confirm', element: <MerchantBookingBudgetConfirm /> },
           { path: '/bookings/:id/design-workflow', element: <MerchantDesignWorkflow /> },
+          { path: '/bookings/:id/flow', element: <MerchantProjectFlow /> },
           { path: '/proposals', element: <MerchantProposals /> },
           { path: '/price-book', element: <MerchantPriceBook /> },
           { path: '/quote-lists', element: <MerchantQuoteLists /> },
@@ -68,6 +72,8 @@ const router = createBrowserRouter([
           { path: '/complaints', element: <MerchantComplaints /> },
           { path: '/contracts/new', element: <MerchantContractCreate /> },
           { path: '/income', element: <MerchantIncome /> },
+          { path: '/bond', element: <MerchantBond /> },
+          { path: '/payments/result', element: <MerchantPaymentResult /> },
           { path: '/withdraw', element: <MerchantWithdraw /> },
           { path: '/bank-accounts', element: <MerchantBankAccounts /> },
           { path: '/cases', element: <MerchantCases /> },

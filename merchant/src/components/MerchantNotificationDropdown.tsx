@@ -333,8 +333,9 @@ const MerchantNotificationDropdown: React.FC = () => {
                 setUnreadCount(prev => Math.max(0, prev - 1));
             }
 
-            // 根据通知类型跳转
-            if (item.relatedType === 'booking' && item.relatedId) {
+            if (item.actionUrl) {
+                window.location.href = withRouterBasename(item.actionUrl);
+            } else if (item.relatedType === 'booking' && item.relatedId) {
                 window.location.href = withRouterBasename('/bookings');
             } else if (item.relatedType === 'proposal' && item.relatedId) {
                 window.location.href = withRouterBasename('/proposals');

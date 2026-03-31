@@ -6,6 +6,22 @@ export const PROJECT_STATUS_LABELS: Record<number, string> = {
   [-1]: '待完善',
 };
 
+export const BUSINESS_STAGE_LABELS: Record<string, string> = {
+  lead_pending: '线索待推进',
+  negotiating: '沟通中',
+  design_pending_submission: '待设计师提交方案',
+  design_pending_confirmation: '设计方案待确认',
+  construction_party_pending: '待确认施工方',
+  construction_quote_pending: '施工报价待确认',
+  ready_to_start: '待开工',
+  in_construction: '施工中',
+  node_acceptance_in_progress: '节点验收中',
+  completed: '已完工待验收',
+  archived: '已归档',
+  disputed: '争议中',
+  cancelled: '已取消',
+};
+
 export const BOOKING_STATUS_LABELS: Record<number, string> = {
   1: '待沟通',
   2: '已确认',
@@ -69,7 +85,7 @@ export const REFUND_STATUS_LABELS: Record<string, string> = {
 };
 
 export const REFUND_TYPE_LABELS: Record<string, string> = {
-  intent_fee: '意向金退款',
+  intent_fee: '量房定金退款',
   design_fee: '设计费退款',
   construction_fee: '施工费退款',
   full: '全部可退金额',
@@ -87,3 +103,8 @@ export const TRANSACTION_STATUS_LABELS: Record<number, string> = {
   1: '成功',
   2: '失败',
 };
+
+export function getBusinessStageLabel(stage?: string) {
+  const normalized = String(stage || '').trim().toLowerCase();
+  return BUSINESS_STAGE_LABELS[normalized] || stage || '-';
+}

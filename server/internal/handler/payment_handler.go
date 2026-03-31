@@ -13,6 +13,7 @@ import (
 )
 
 type paymentLaunchRequest struct {
+	Channel      string `json:"channel"`
 	TerminalType string `json:"terminalType"`
 }
 
@@ -41,6 +42,20 @@ func PaymentLaunch(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(document))
 }
 
+func PaymentQRCode(c *gin.Context) {
+	paymentID := parseUint64(c.Param("id"))
+	if paymentID == 0 {
+		c.String(http.StatusBadRequest, "无效支付单ID")
+		return
+	}
+	image, err := paymentService.BuildQRCodeImage(paymentID, strings.TrimSpace(c.Query("token")))
+	if err != nil {
+		c.String(http.StatusBadRequest, err.Error())
+		return
+	}
+	c.Data(http.StatusOK, "image/png", image)
+}
+
 func PaymentStatus(c *gin.Context) {
 	paymentID := parseUint64(c.Param("id"))
 	if paymentID == 0 {
@@ -50,6 +65,20 @@ func PaymentStatus(c *gin.Context) {
 	result, err := paymentService.GetPaymentStatusForUser(paymentID, getCurrentUserID(c))
 	if err != nil {
 		respondScopedAccessError(c, err, "获取支付状态失败")
+		return
+	}
+	response.Success(c, result)
+}
+
+func PaymentDetail(c *gin.Context) {
+	paymentID := parseUint64(c.Param("id"))
+	if paymentID == 0 {
+		response.BadRequest(c, "无效支付单ID")
+		return
+	}
+	result, err := paymentService.GetPaymentDetailForUser(paymentID, getCurrentUserID(c))
+	if err != nil {
+		respondScopedAccessError(c, err, "获取支付详情失败")
 		return
 	}
 	response.Success(c, result)
@@ -65,6 +94,20 @@ func PaymentAlipayNotify(c *gin.Context) {
 		return
 	}
 	c.String(http.StatusOK, "success")
+}
+
+func PaymentWechatNotify(c *gin.Context) {
+	if err := paymentService.HandleWechatNotify(c.Request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "FAIL",
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    "SUCCESS",
+		"message": "成功",
+	})
 }
 
 func PaymentAlipayReturn(c *gin.Context) {

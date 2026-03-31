@@ -83,7 +83,7 @@ func AdminListQuoteLists(c *gin.Context) {
 func AdminGetQuoteListDetail(c *gin.Context) {
 	result, err := quoteService.GetAdminQuoteListDetail(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取报价清单失败")
 		return
 	}
 	response.Success(c, result)
@@ -130,7 +130,7 @@ func AdminCreateQuoteList(c *gin.Context) {
 		DeadlineAt:         deadlineAt,
 	})
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "创建报价清单失败")
 		return
 	}
 	response.Success(c, quoteList)
@@ -147,7 +147,7 @@ func AdminBatchUpsertQuoteListItems(c *gin.Context) {
 	}
 	items, err := quoteService.BatchUpsertQuoteListItems(quoteListID, input.Items)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "更新报价清单项目失败")
 		return
 	}
 	response.Success(c, gin.H{"items": items})
@@ -165,7 +165,7 @@ func AdminCreateQuoteInvitations(c *gin.Context) {
 	}
 	invitations, err := quoteService.InviteProviders(quoteListID, adminID, input.ProviderIDs)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "邀请服务商失败")
 		return
 	}
 	response.Success(c, gin.H{"invitations": invitations})
@@ -174,7 +174,7 @@ func AdminCreateQuoteInvitations(c *gin.Context) {
 func AdminStartQuoteList(c *gin.Context) {
 	quoteList, err := quoteService.StartQuoteList(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "启动报价清单失败")
 		return
 	}
 	response.Success(c, quoteList)
@@ -183,7 +183,7 @@ func AdminStartQuoteList(c *gin.Context) {
 func AdminGetQuoteComparison(c *gin.Context) {
 	result, err := quoteService.GetQuoteComparison(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取报价对比失败")
 		return
 	}
 	response.Success(c, result)
@@ -200,7 +200,7 @@ func AdminAwardQuote(c *gin.Context) {
 	}
 	quoteList, err := quoteService.AwardQuote(quoteListID, input.SubmissionID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "定标失败")
 		return
 	}
 	response.Success(c, quoteList)
@@ -214,7 +214,7 @@ func MerchantListQuoteLists(c *gin.Context) {
 	}
 	list, err := quoteService.ListMerchantQuoteLists(providerID)
 	if err != nil {
-		response.Error(c, 500, err.Error())
+		respondScopedAccessError(c, err, "获取报价清单失败")
 		return
 	}
 	response.Success(c, gin.H{"list": list})
@@ -236,7 +236,7 @@ func MerchantGetQuoteListDetail(c *gin.Context) {
 			response.Forbidden(c, err.Error())
 			return
 		}
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取报价清单失败")
 		return
 	}
 	response.Success(c, detail)
@@ -267,7 +267,7 @@ func handleMerchantQuoteSubmission(c *gin.Context, submit bool) {
 			response.Forbidden(c, err.Error())
 			return
 		}
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "提交报价失败")
 		return
 	}
 	response.Success(c, submission)

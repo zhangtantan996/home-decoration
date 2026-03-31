@@ -4,6 +4,7 @@ import "time"
 
 const (
 	PaymentChannelAlipay = "alipay"
+	PaymentChannelWechat = "wechat"
 )
 
 const (
@@ -11,11 +12,24 @@ const (
 	PaymentBizTypeBookingSurveyDeposit = "booking_survey_deposit"
 	PaymentBizTypeOrder                = "order"
 	PaymentBizTypePaymentPlan          = "payment_plan"
+	PaymentBizTypeMerchantBond         = "merchant_bond"
 )
 
 const (
-	PaymentTerminalPCWeb    = "pc_web"
-	PaymentTerminalMobileH5 = "mobile_h5"
+	FundSceneEntryFee          = "entry_fee"
+	FundSceneMerchantDeposit   = "merchant_deposit"
+	FundSceneSurveyDeposit     = "survey_deposit"
+	FundSceneDesignFee         = "design_fee"
+	FundSceneConstructionStage = "construction_stage"
+	FundSceneRefund            = "refund"
+	FundSceneSettlementPayout  = "settlement_payout"
+)
+
+const (
+	PaymentTerminalPCWeb           = "pc_web"
+	PaymentTerminalMobileH5        = "mobile_h5"
+	PaymentTerminalMiniQR          = "mini_qr"
+	PaymentTerminalMiniWechatJSAPI = "mini_wechat_jsapi"
 )
 
 const (
@@ -43,6 +57,7 @@ type PaymentOrder struct {
 	PayerUserID          uint64     `json:"payerUserId" gorm:"index"`
 	Channel              string     `json:"channel" gorm:"size:20;index"`
 	Scene                string     `json:"scene" gorm:"size:50"`
+	FundScene            string     `json:"fundScene" gorm:"size:40;index"`
 	TerminalType         string     `json:"terminalType" gorm:"size:20"`
 	Subject              string     `json:"subject" gorm:"size:128"`
 	Amount               float64    `json:"amount"`
@@ -85,6 +100,7 @@ type RefundOrder struct {
 	PaymentOrderID       uint64     `json:"paymentOrderId" gorm:"index"`
 	BizType              string     `json:"bizType" gorm:"size:50;index"`
 	BizID                uint64     `json:"bizId" gorm:"index"`
+	FundScene            string     `json:"fundScene" gorm:"size:40;index"`
 	RefundApplicationID  uint64     `json:"refundApplicationId" gorm:"index"`
 	OutRefundNo          string     `json:"outRefundNo" gorm:"size:64;uniqueIndex"`
 	Amount               float64    `json:"amount"`

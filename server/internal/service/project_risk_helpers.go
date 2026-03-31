@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -277,6 +278,136 @@ func createRefundTransactionTx(tx *gorm.DB, projectID, userID, orderID uint64, a
 	}).Error
 }
 
+func buildRefundTransactionRemark(base string, projectID, orderID, refundApplicationID uint64) string {
+	parts := make([]string, 0, 4)
+	if trimmed := strings.TrimSpace(base); trimmed != "" {
+		parts = append(parts, trimmed)
+	}
+	if projectID > 0 {
+		parts = append(parts, fmt.Sprintf("projectId=%d", projectID))
+	}
+	if orderID > 0 {
+		parts = append(parts, fmt.Sprintf("orderId=%d", orderID))
+	}
+	if refundApplicationID > 0 {
+		parts = append(parts, fmt.Sprintf("refundApplicationId=%d", refundApplicationID))
+	}
+	return strings.Join(parts, " | ")
+}
+
+func loadRefundExecutionScopeTx(tx *gorm.DB, application *model.RefundApplication) (*model.Booking, *model.Project, error) {
+	if application == nil {
+		return nil, nil, errors.New("退款申请不存在")
+	}
+	if tx == nil {
+		tx = repository.DB
+	}
+
+	var booking *model.Booking
+	if application.BookingID > 0 {
+		var loaded model.Booking
+		if err := tx.First(&loaded, application.BookingID).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, err
+			}
+		} else {
+			booking = &loaded
+		}
+	}
+
+	var project *model.Project
+	if application.ProjectID > 0 {
+		var loaded model.Project
+		if err := tx.First(&loaded, application.ProjectID).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, err
+			}
+		} else {
+			project = &loaded
+		}
+	}
+
+	return booking, project, nil
+}
+
+func refundExecutionSnapshot(application *model.RefundApplication, booking *model.Booking, project *model.Project) map[string]interface{} {
+	state := map[string]interface{}{}
+	if application != nil {
+		state["refundApplication"] = map[string]interface{}{
+			"id":              application.ID,
+			"bookingId":       application.BookingID,
+			"projectId":       application.ProjectID,
+			"orderId":         application.OrderID,
+			"refundType":      application.RefundType,
+			"requestedAmount": application.RequestedAmount,
+			"approvedAmount":  application.ApprovedAmount,
+			"status":          application.Status,
+			"approvedAt":      application.ApprovedAt,
+			"completedAt":     application.CompletedAt,
+		}
+	}
+	if booking != nil {
+		state["booking"] = map[string]interface{}{
+			"id":                    booking.ID,
+			"status":                booking.Status,
+			"intentFeeRefunded":     booking.IntentFeeRefunded,
+			"surveyDepositRefunded": booking.SurveyDepositRefunded,
+		}
+	}
+	if project != nil {
+		state["project"] = map[string]interface{}{
+			"id":             project.ID,
+			"status":         project.Status,
+			"businessStatus": project.BusinessStatus,
+			"currentPhase":   project.CurrentPhase,
+		}
+	}
+	return state
+}
+
+func createRefundExecutionAuditTx(tx *gorm.DB, operatorType string, operatorID uint64, application *model.RefundApplication, booking *model.Booking, project *model.Project, refundOrders []model.RefundOrder, beforeState map[string]interface{}, result, reason string) error {
+	if application == nil {
+		return nil
+	}
+	if tx == nil {
+		tx = repository.DB
+	}
+	if beforeState == nil {
+		beforeState = refundExecutionSnapshot(application, booking, project)
+	}
+
+	orderIDs := make([]uint64, 0, len(refundOrders))
+	paymentOrderIDs := make([]uint64, 0, len(refundOrders))
+	statuses := make([]string, 0, len(refundOrders))
+	for _, refundOrder := range refundOrders {
+		orderIDs = append(orderIDs, refundOrder.ID)
+		paymentOrderIDs = append(paymentOrderIDs, refundOrder.PaymentOrderID)
+		statuses = append(statuses, refundOrder.Status)
+	}
+
+	return (&AuditLogService{}).CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+		OperatorType:  strings.TrimSpace(operatorType),
+		OperatorID:    operatorID,
+		OperationType: "execute_refund_application",
+		ResourceType:  "refund_application",
+		ResourceID:    application.ID,
+		Reason:        strings.TrimSpace(reason),
+		Result:        strings.TrimSpace(result),
+		BeforeState:   beforeState,
+		AfterState:    refundExecutionSnapshot(application, booking, project),
+		Metadata: map[string]interface{}{
+			"bookingId":        application.BookingID,
+			"projectId":        application.ProjectID,
+			"orderId":          application.OrderID,
+			"refundType":       application.RefundType,
+			"refundOrderIds":   orderIDs,
+			"paymentOrderIds":  paymentOrderIDs,
+			"refundOrderCount": len(refundOrders),
+			"refundStatuses":   statuses,
+		},
+	})
+}
+
 func getProviderUserIDTx(tx *gorm.DB, providerID uint64) uint64 {
 	if providerID == 0 {
 		return 0
@@ -328,7 +459,11 @@ func buildProjectPauseActionURL(projectID uint64) string {
 }
 
 func buildAdminProjectAuditActionURL(auditID uint64) string {
-	return fmt.Sprintf("/admin/project-audits/%d", auditID)
+	return fmt.Sprintf("/project-audits/%d", auditID)
+}
+
+func buildAdminRefundActionURL(refundApplicationID uint64) string {
+	return fmt.Sprintf("/refunds/%d", refundApplicationID)
 }
 
 func buildBookingRefundActionURL(bookingID uint64) string {

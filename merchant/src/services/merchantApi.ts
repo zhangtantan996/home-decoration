@@ -1,4 +1,4 @@
-import api from './api';
+import api, { MerchantRequestError } from './api';
 
 const merchantApi = api;
 
@@ -8,15 +8,13 @@ export interface ApiEnvelope<T> {
     data?: T;
 }
 
-export class MerchantApiError<T = unknown> extends Error {
+export class MerchantApiError<T = unknown> extends MerchantRequestError<T> {
     code: number;
-    data?: T;
 
-    constructor(code: number, message: string, data?: T) {
-        super(message);
+    constructor(code: number, message: string, data?: T, status?: number, errorCode?: string) {
+        super(message, { status, code, errorCode, data });
         this.name = 'MerchantApiError';
         this.code = code;
-        this.data = data;
     }
 }
 
@@ -38,7 +36,10 @@ const unwrapEnvelope = <T,>(payload: unknown): ApiEnvelope<T> => {
 const unwrapData = <T,>(payload: unknown, fallbackMessage: string): T => {
     const envelope = unwrapEnvelope<T>(payload);
     if (envelope.code !== 0) {
-        throw new MerchantApiError(envelope.code, envelope.message || fallbackMessage, envelope.data);
+        const errorCode = isRecord(envelope.data) && 'errorCode' in envelope.data
+            ? String(envelope.data.errorCode || '')
+            : undefined;
+        throw new MerchantApiError(envelope.code, envelope.message || fallbackMessage, envelope.data, 200, errorCode);
     }
     return (envelope.data as T) ?? ({} as T);
 };
@@ -744,13 +745,24 @@ export interface MerchantProjectLog {
     description?: string;
     logDate?: string;
     photos?: string;
+    phaseId?: number;
 }
 
 export interface MerchantCreateProjectLogPayload {
+    phaseId: number;
     title: string;
     description?: string;
     photos?: string;
     logDate?: string;
+}
+
+export interface MerchantProjectPhase {
+    id: number;
+    name?: string;
+    phaseType?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
 }
 
 export interface MerchantStartProjectPayload {
@@ -769,6 +781,7 @@ export interface MerchantProjectExecutionDetail {
     ownerName?: string;
     providerName?: string;
     budget?: number;
+    phases?: MerchantProjectPhase[];
     milestones: MerchantProjectMilestone[];
     recentLogs?: MerchantProjectLog[];
     completedPhotos?: string[];
@@ -895,6 +908,72 @@ export interface MerchantWithdrawListData<T> {
     page: number;
     pageSize: number;
 }
+
+export const merchantSettlementApi = {
+    list: async <T = Record<string, unknown>>(params?: Record<string, unknown>) =>
+        unwrapData<MerchantWithdrawListData<T>>(await merchantApi.get('/merchant/settlements', { params }), '获取结算/出款记录失败'),
+};
+
+export interface MerchantBondAccountInfo {
+    id: number;
+    providerId: number;
+    providerName?: string;
+    requiredAmount: number;
+    paidAmount: number;
+    frozenAmount: number;
+    availableAmount: number;
+    status: string;
+    lastRuleId?: number;
+    updatedAt?: string;
+}
+
+export interface MerchantBondLedgerItem {
+    id: number;
+    fundScene: string;
+    direction: string;
+    amount: number;
+    bizType: string;
+    bizId: number;
+    runtimeType: string;
+    runtimeId: number;
+    remark?: string;
+    metadata?: Record<string, unknown>;
+    occurredAt: string;
+}
+
+export interface MerchantPaymentLaunchPayload {
+    paymentId: number;
+    channel: string;
+    launchMode: 'redirect';
+    launchUrl: string;
+    expiresAt?: string;
+}
+
+export interface MerchantPaymentStatusPayload {
+    paymentId: number;
+    status: string;
+    channel: string;
+    amount: number;
+    subject: string;
+    paidAt?: string;
+    expiresAt?: string;
+    terminalType: string;
+    returnContext?: Record<string, unknown>;
+}
+
+export const merchantBondApi = {
+    account: async () =>
+        unwrapData<MerchantBondAccountInfo>(await merchantApi.get('/merchant/bond-account'), '获取保证金账户失败'),
+    ledger: async (params?: Record<string, unknown>) =>
+        unwrapData<MerchantWithdrawListData<MerchantBondLedgerItem>>(await merchantApi.get('/merchant/bond-ledger', { params }), '获取保证金流水失败'),
+    pay: async (data?: { terminalType?: string; resultPath?: string }) =>
+        unwrapData<MerchantPaymentLaunchPayload>(await merchantApi.post('/merchant/bond-account/pay', data), '发起保证金支付失败'),
+};
+
+export const merchantPaymentApi = {
+    status: async (paymentId: number) =>
+        unwrapData<MerchantPaymentStatusPayload>(await merchantApi.get(`/merchant/payments/${paymentId}/status`), '获取支付状态失败'),
+};
 
 export const merchantWithdrawApi = {
     list: async <T = Record<string, unknown>>(params?: Record<string, unknown>) =>
@@ -1074,6 +1153,11 @@ export const merchantDesignApi = {
         unwrapData<{ quote: DesignFeeQuoteItem | null }>(
             await merchantApi.get(`/merchant/bookings/${bookingId}/design-fee-quote`),
             '获取设计费报价失败'
+        ),
+    getDeliverable: async (bookingId: number) =>
+        unwrapData<{ deliverable: DesignDeliverableItem | null }>(
+            await merchantApi.get(`/merchant/bookings/${bookingId}/deliverable`),
+            '获取设计交付件失败'
         ),
     submitDeliverable: async (bookingId: number, data: {
         colorFloorPlan?: string;

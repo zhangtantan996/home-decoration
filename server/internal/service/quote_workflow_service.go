@@ -1476,6 +1476,22 @@ func (s *QuoteService) getOrCreateProjectForQuoteConfirmationTx(tx *gorm.DB, quo
 	if quoteList == nil {
 		return 0, errors.New("报价任务不存在")
 	}
+
+	if quoteList.ProposalID == 0 {
+		return 0, errors.New("施工报价确认缺少已确认设计方案，无法创建项目")
+	}
+
+	var proposal model.Proposal
+	if err := tx.First(&proposal, quoteList.ProposalID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, errors.New("关联设计方案不存在")
+		}
+		return 0, fmt.Errorf("查询设计方案失败: %w", err)
+	}
+	if proposal.Status != model.ProposalStatusConfirmed {
+		return 0, errors.New("设计方案未确认，不能创建项目")
+	}
+
 	if quoteList.ProjectID > 0 {
 		var existing model.Project
 		if err := tx.First(&existing, quoteList.ProjectID).Error; err == nil {
@@ -1483,9 +1499,6 @@ func (s *QuoteService) getOrCreateProjectForQuoteConfirmationTx(tx *gorm.DB, quo
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, fmt.Errorf("查询项目失败: %w", err)
 		}
-	}
-	if quoteList.ProposalID == 0 {
-		return 0, nil
 	}
 
 	var project model.Project

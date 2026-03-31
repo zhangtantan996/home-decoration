@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import type { UploadFile } from 'antd';
-import { Table, Tag, Button, Space, Typography, message, Modal, Form, Input, InputNumber, Descriptions, Upload } from 'antd';
-import { ArrowLeftOutlined, FileAddOutlined, EyeOutlined, ReloadOutlined, UploadOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Table, Tag, Button, Space, message, Modal, Descriptions } from 'antd';
+import { ArrowLeftOutlined, FileAddOutlined, EyeOutlined, ReloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { merchantBookingApi, merchantProposalApi, merchantUploadApi } from '../../services/merchantApi';
+import { merchantBookingApi } from '../../services/merchantApi';
 import { useDictStore } from '../../stores/dictStore';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
@@ -11,9 +10,6 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
 import { BOOKING_STATUS_META } from '../../constants/statuses';
-
-const { Text } = Typography;
-const { TextArea } = Input;
 
 interface Booking {
     id: number;
@@ -36,13 +32,8 @@ interface Booking {
 const MerchantBookings: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [bookings, setBookings] = useState<Booking[]>([]);
-    const [proposalModalVisible, setProposalModalVisible] = useState(false);
-    const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
-    const [submitting, setSubmitting] = useState(false);
     const [detailVisible, setDetailVisible] = useState(false);
     const [currentBooking, setCurrentBooking] = useState<Booking | null>(null);
-    const [fileList, setFileList] = useState<UploadFile[]>([]);
-    const [form] = Form.useForm();
     const navigate = useNavigate();
 
     const { loadDict, getDictOptions } = useDictStore();
@@ -79,48 +70,9 @@ const MerchantBookings: React.FC = () => {
         }
     };
 
-    const openProposalModal = (booking: Booking) => {
-        setSelectedBooking(booking);
-        form.resetFields();
-        setFileList([]);
-        setProposalModalVisible(true);
-    };
-
     const showDetail = (record: Booking) => {
         setCurrentBooking(record);
         setDetailVisible(true);
-    };
-
-    const handleSubmitProposal = async () => {
-        if (!selectedBooking) return;
-
-        try {
-            const values = await form.validateFields();
-            setSubmitting(true);
-
-            // 提取附件 URL
-            const attachments = fileList
-                .filter(file => file.status === 'done' && file.response?.url)
-                .map(file => file.response.url);
-
-            const res = await merchantProposalApi.submit({
-                bookingId: selectedBooking.id,
-                ...values,
-                attachments: JSON.stringify(attachments),
-            }) as any;
-
-            if (res.code === 0) {
-                message.success('方案提交成功');
-                setProposalModalVisible(false);
-                loadBookings();
-            } else {
-                message.error(res.message || '提交失败');
-            }
-        } catch (error: any) {
-            message.error(error.response?.data?.message || '提交失败');
-        } finally {
-            setSubmitting(false);
-        }
     };
 
     const handleBooking = async (id: number, action: 'confirm' | 'reject') => {
@@ -191,27 +143,15 @@ const MerchantBookings: React.FC = () => {
                         </>
                     )}
                     {record.status === 2 && (
-                        (record as any).hasProposal ? (
-                            <Button
-                                type="primary"
-                                size="small"
-                                style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
-                                icon={<CheckCircleOutlined />}
-                                onClick={() => navigate('/proposals')}
-                            >
-                                方案已录入
-                            </Button>
-                        ) : (
-                            <Button
-                                type="primary"
-                                ghost
-                                size="small"
-                                icon={<FileAddOutlined />}
-                                onClick={() => openProposalModal(record)}
-                            >
-                                录入方案
-                            </Button>
-                        )
+                        <Button
+                            type="primary"
+                            ghost
+                            size="small"
+                            icon={<FileAddOutlined />}
+                            onClick={() => navigate(`/bookings/${record.id}/design-workflow`)}
+                        >
+                            {(record as any).hasProposal ? '继续跟进' : '推进流程'}
+                        </Button>
                     )}
                 </Space>
             ),
@@ -250,106 +190,6 @@ const MerchantBookings: React.FC = () => {
                 </MerchantContentPanel>
             </MerchantPageShell>
 
-            {/* 方案录入弹窗 */}
-            <Modal
-                title="录入设计方案"
-                open={proposalModalVisible}
-                onCancel={() => setProposalModalVisible(false)}
-                onOk={handleSubmitProposal}
-                confirmLoading={submitting}
-                width={600}
-            >
-                {selectedBooking && (
-                    <div style={{ marginBottom: 16, background: '#f5f5f5', padding: 12, borderRadius: 8 }}>
-                        <Text strong>预约信息：</Text>
-                        <br />
-                        <Text>地址：{selectedBooking.address}</Text>
-                        <br />
-                        <Text>面积：{selectedBooking.area}㎡ | 户型：{selectedBooking.houseLayout}</Text>
-                        <br />
-                        <Text>装修类型：{getRenovationTypeLabel(selectedBooking.renovationType)} | 预算：{getBudgetRangeLabel(selectedBooking.budgetRange)}</Text>
-                    </div>
-                )}
-
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        name="summary"
-                        label="方案概述"
-                        rules={[{ required: true, message: '请输入方案概述' }]}
-                    >
-                        <TextArea rows={4} placeholder="描述设计理念、整体风格等" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="designFee"
-                        label="设计费 (元)"
-                        rules={[{ required: true, message: '请输入设计费' }]}
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} placeholder="如 8000" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="constructionFee"
-                        label="施工费预估 (元)"
-                        rules={[{ required: true, message: '请输入施工费' }]}
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} placeholder="如 50000" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="materialFee"
-                        label="主材费预估 (元)"
-                        rules={[{ required: true, message: '请输入主材费' }]}
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} placeholder="如 30000" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="estimatedDays"
-                        label="预计工期 (天)"
-                        rules={[{ required: true, message: '请输入工期' }]}
-                    >
-                        <InputNumber min={1} style={{ width: '100%' }} placeholder="如 60" />
-                    </Form.Item>
-
-                    <Form.Item
-                        label="附件上传"
-                        extra="支持图片/PDF/Word/Zip，最大20MB，最多5个文件"
-                    >
-                        <Upload
-                            fileList={fileList}
-                            onChange={({ fileList }) => setFileList(fileList)}
-                            customRequest={async (options) => {
-                                const { file, onSuccess, onError } = options;
-                                try {
-                                    const res = await merchantUploadApi.uploadImage(file as File) as any;
-                                    if (res.code === 0) {
-                                        onSuccess?.(res.data);
-                                    } else {
-                                        onError?.(new Error(res.message));
-                                        message.error(res.message);
-                                    }
-                                } catch (err) {
-                                    onError?.(err as Error);
-                                    message.error('上传失败');
-                                }
-                            }}
-                            maxCount={5}
-                            beforeUpload={(file) => {
-                                const isLt20M = file.size / 1024 / 1024 < 20;
-                                if (!isLt20M) {
-                                    message.error('文件必须小于 20MB!');
-                                    return Upload.LIST_IGNORE;
-                                }
-                                return true;
-                            }}
-                        >
-                            <Button icon={<UploadOutlined />}>选择文件</Button>
-                        </Upload>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
             {/* 预约详情弹窗 */}
             <Modal
                 title="预约详情"
@@ -371,6 +211,16 @@ const MerchantBookings: React.FC = () => {
                                         navigate(`/bookings/${currentBooking.id}/budget-confirm`);
                                     }}>
                                         预算确认
+                                    </Button>
+                                    <Button
+                                        type="primary"
+                                        icon={<CheckCircleOutlined />}
+                                        onClick={() => {
+                                            setDetailVisible(false);
+                                            navigate(`/bookings/${currentBooking.id}/design-workflow`);
+                                        }}
+                                    >
+                                        进入设计流程
                                     </Button>
                                 </>
                             ) : null}

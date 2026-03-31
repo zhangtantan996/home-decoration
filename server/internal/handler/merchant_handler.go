@@ -484,8 +484,8 @@ func MerchantGetInfo(c *gin.Context) {
 		json.Unmarshal([]byte(provider.ServiceArea), &serviceAreaCodes)
 	}
 
-	// 将区域代码转换为名称（用于前端展示）
-	serviceAreaNames, _ := merchantRegionService.ConvertCodesToNames(serviceAreaCodes)
+	// 历史脏数据可能仍存区县代码，统一回卷到城市级再返回给前端展示/编辑。
+	serviceAreaCodes, serviceAreaNames, _ := merchantRegionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
 
 	// 解析 Specialty (逗号或点分隔)
 	var specialty []string
@@ -619,6 +619,7 @@ func MerchantUpdateInfo(c *gin.Context) {
 		updates["pricing_json"] = string(pricingJSON)
 		updates["price_min"] = priceMin
 		updates["price_max"] = priceMax
+		updates["price_unit"] = model.ProviderPriceUnitPerSquareMeter
 	}
 	if input.GraduateSchool != "" {
 		updates["graduate_school"] = strings.TrimSpace(input.GraduateSchool)
@@ -865,15 +866,18 @@ func MerchantHandleBooking(c *gin.Context) {
 		response.Error(c, 500, "操作失败")
 		return
 	}
+	booking.Status = int8(updates["status"].(int))
 	if input.Action == "confirm" {
 		_ = businessFlowService.AdvanceBySource(nil, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
 			"current_stage": model.BusinessFlowStageNegotiating,
 		})
+		_ = (&service.NotificationService{}).NotifyBookingConfirmed(&booking)
 	} else {
 		_ = businessFlowService.AdvanceBySource(nil, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
 			"current_stage": model.BusinessFlowStageCancelled,
 			"closed_reason": "merchant_rejected_booking",
 		})
+		_ = (&service.NotificationService{}).NotifyBookingRejected(&booking)
 	}
 
 	response.Success(c, gin.H{"status": "ok"})
@@ -947,7 +951,7 @@ func MerchantListProjects(c *gin.Context) {
 		PageSize:      pageSize,
 	})
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取项目执行列表失败")
 		return
 	}
 
@@ -969,7 +973,7 @@ func MerchantGetProjectDetail(c *gin.Context) {
 
 	detail, err := projectService.GetMerchantProjectDetail(projectID, providerID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取项目详情失败")
 		return
 	}
 
@@ -991,7 +995,7 @@ func MerchantCreateProjectLog(c *gin.Context) {
 	}
 
 	if err := projectService.CreateMerchantProjectLog(projectID, providerID, &req); err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "创建施工日志失败")
 		return
 	}
 
@@ -1009,7 +1013,7 @@ func MerchantSubmitProjectMilestone(c *gin.Context) {
 
 	milestone, err := projectService.SubmitMilestone(projectID, providerID, milestoneID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "提交节点失败")
 		return
 	}
 
@@ -1037,7 +1041,7 @@ func MerchantStartProject(c *gin.Context) {
 
 	project, err := projectService.MerchantStartProject(projectID, providerID, &req)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "发起开工失败")
 		return
 	}
 
@@ -1133,10 +1137,9 @@ func MerchantUploadAvatar(c *gin.Context) {
 		return
 	}
 
-	// 验证文件类型
-	ext := strings.ToLower(filepath.Ext(file.Filename))
-	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".gif" {
-		response.Error(c, 400, "只支持 jpg, png, gif 格式的图片")
+	ext, err := validateUploadFileHeader(file, avatarUploadAllowedExts)
+	if err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -1145,7 +1148,7 @@ func MerchantUploadAvatar(c *gin.Context) {
 	uploadDir := "./uploads/avatars"
 
 	// 确保目录存在
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+	if err := os.MkdirAll(uploadDir, 0750); err != nil {
 		response.Error(c, 500, "创建目录失败")
 		return
 	}
@@ -1210,13 +1213,9 @@ func MerchantUploadImage(c *gin.Context) {
 		return
 	}
 
-	// 验证文件类型
-	ext := strings.ToLower(filepath.Ext(file.Filename))
-	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" &&
-		ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".xls" && ext != ".xlsx" &&
-		ext != ".ppt" && ext != ".pptx" && ext != ".txt" && ext != ".zip" && ext != ".rar" &&
-		ext != ".dwg" && ext != ".dxf" {
-		response.Error(c, 400, "不支持的文件格式")
+	ext, err := validateUploadFileHeader(file, merchantUploadAllowedExts)
+	if err != nil {
+		response.Error(c, 400, err.Error())
 		return
 	}
 
@@ -1225,7 +1224,7 @@ func MerchantUploadImage(c *gin.Context) {
 	uploadDir := "./uploads/cases"
 
 	// 确保目录存在
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+	if err := os.MkdirAll(uploadDir, 0750); err != nil {
 		response.Error(c, 500, "创建目录失败")
 		return
 	}

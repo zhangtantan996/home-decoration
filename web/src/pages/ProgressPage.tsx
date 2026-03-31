@@ -2,10 +2,12 @@ import { useMemo } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../components/AsyncState';
+import { TodoCard, type TodoCardAction } from '../components/TodoCard';
 import { UserPageFrame } from '../components/UserPageFrame';
 import shellStyles from '../components/UserWorkspaceShell.module.scss';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getProjectDetail, getProjectEscrow, listProjectLogs, listProjects } from '../services/projects';
+import { listMyQuoteTasks, type QuoteTaskSummaryVM } from '../services/quoteTasks';
 import type { ProjectDetailVM, ProjectListItemVM, ProjectPhaseVM } from '../types/viewModels';
 import styles from './ProgressPage.module.scss';
 
@@ -40,8 +42,7 @@ type TodoItemVM = {
   amountText: string;
   tone: TodoTone;
   badgeText: string;
-  actionLabel: string;
-  actionTo: string;
+  actions: TodoCardAction[];
 };
 
 type TeamMemberVM = {
@@ -51,6 +52,13 @@ type TeamMemberVM = {
   phoneText: string;
   avatarSrc?: string;
   initial: string;
+};
+
+type PendingQuoteTaskVM = {
+  id: number;
+  title: string;
+  statusText: string;
+  summary: string;
 };
 
 function calcProgress(currentPhase: string) {
@@ -181,6 +189,18 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
 
   const items: TodoItemVM[] = [];
 
+  if (detail.selectedQuoteTaskId) {
+    items.push({
+      id: `quote-task-${detail.selectedQuoteTaskId}`,
+      title: '确认施工报价',
+      description: detail.flowSummary || '施工报价已提交到用户侧，需先确认施工报价后再进入正式执行。',
+      amountText: '待确认',
+      tone: 'urgent',
+      badgeText: '待确认',
+      actions: [{ label: '去确认', to: `/quote-tasks/${detail.selectedQuoteTaskId}` }],
+    });
+  }
+
   detail.milestones.forEach((milestone) => {
     if (milestone.status === '2') {
       items.push({
@@ -190,8 +210,10 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
         amountText: milestone.amountText,
         tone: 'urgent',
         badgeText: '待验收',
-        actionLabel: '去验收',
-        actionTo: `/projects/${focusProject.id}/acceptance`,
+        actions: [
+          { label: '去验收', to: `/projects/${focusProject.id}/acceptance` },
+          { label: '查看详情', to: `/projects/${focusProject.id}` },
+        ],
       });
       return;
     }
@@ -204,8 +226,7 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
         amountText: milestone.amountText,
         tone: 'pending',
         badgeText: '待付款',
-        actionLabel: '看费用',
-        actionTo: billingPath,
+        actions: [{ label: '看费用', to: billingPath }],
       });
       return;
     }
@@ -218,8 +239,7 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
         amountText: milestone.amountText,
         tone: 'urgent',
         badgeText: '待整改',
-        actionLabel: '看整改',
-        actionTo: `/projects/${focusProject.id}/acceptance`,
+        actions: [{ label: '看整改', to: `/projects/${focusProject.id}/acceptance` }],
       });
     }
   });
@@ -227,13 +247,46 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
   return items;
 }
 
+function pickPendingQuoteTask(tasks: QuoteTaskSummaryVM[]): PendingQuoteTaskVM | null {
+  const task = tasks.find((item) => item.userConfirmationStatus === 'pending');
+  if (!task) return null;
+  return {
+    id: task.id,
+    title: task.title,
+    statusText: task.statusText,
+    summary: task.flowSummary || '施工报价已提交，请先确认施工报价，项目会在确认后创建。',
+  };
+}
+
 function buildTeamMembers(detail: ProjectDetailVM | null | undefined, currentPhase: { responsiblePerson?: string; id?: number } | null) {
   const members: TeamMemberVM[] = [];
+  const pushMember = (member: TeamMemberVM | null) => {
+    if (!member) return;
+    const normalizedName = member.name.trim();
+    if (!normalizedName) return;
+    const existed = members.some((item) => item.name.trim() === normalizedName || item.id === member.id);
+    if (!existed) {
+      members.push(member);
+    }
+  };
+
   const providerName = detail?.providerName?.trim() || '';
   const hasRealProvider = providerName !== '' && providerName !== '服务商';
+  const designerName = detail?.designerName?.trim() || '';
+
+  if (designerName && designerName !== providerName) {
+    pushMember({
+      id: 'designer',
+      name: designerName,
+      role: '设计师',
+      phoneText: detail?.designerPhoneHint || '电话待同步',
+      avatarSrc: detail?.designerAvatar,
+      initial: getInitial(designerName),
+    });
+  }
 
   if (hasRealProvider) {
-    members.push({
+    pushMember({
       id: 'provider',
       name: providerName,
       role: detail?.providerRoleText || '项目管家 / 交付专家',
@@ -244,7 +297,7 @@ function buildTeamMembers(detail: ProjectDetailVM | null | undefined, currentPha
   }
 
   if (currentPhase?.responsiblePerson && currentPhase.responsiblePerson !== providerName) {
-    members.push({
+    pushMember({
       id: `phase-${currentPhase.id}`,
       name: currentPhase.responsiblePerson,
       role: '当前施工负责人',
@@ -281,6 +334,8 @@ export function ProgressPage() {
   const hasRouteProjectId = Number.isFinite(routeProjectId) && routeProjectId > 0;
 
   const { data, loading, error, reload } = useAsyncData(async () => {
+    const pendingQuoteTasks = pickPendingQuoteTask(await listMyQuoteTasks().catch(() => []));
+
     if (hasProjectParam && !hasRouteProjectId) {
       throw new Error('项目编号无效');
     }
@@ -293,7 +348,7 @@ export function ProgressPage() {
       ]);
 
       const focusProject = buildFocusProject(detail);
-      return { cards: [focusProject], focusProject, detail, logs: logResult.list, escrow };
+      return { cards: [focusProject], focusProject, detail, logs: logResult.list, escrow, pendingQuoteTask: pendingQuoteTasks };
     }
 
     const result = await listProjects({ page: 1, pageSize: PROJECT_PAGE_SIZE });
@@ -315,10 +370,10 @@ export function ProgressPage() {
     })[0];
 
     if (!focusProject) {
-      return { cards, focusProject: null, detail: null, logs: [], escrow: null, redirectToProjectId: null };
+      return { cards, focusProject: null, detail: null, logs: [], escrow: null, redirectToProjectId: null, pendingQuoteTask: pendingQuoteTasks };
     }
 
-    return { cards, focusProject, detail: null, logs: [], escrow: null, redirectToProjectId: focusProject.id };
+    return { cards, focusProject, detail: null, logs: [], escrow: null, redirectToProjectId: focusProject.id, pendingQuoteTask: pendingQuoteTasks };
   }, [hasProjectParam, hasRouteProjectId, routeProjectId]);
 
   const phaseItems = useMemo(() => {
@@ -420,11 +475,19 @@ export function ProgressPage() {
       wrapClassName={shellStyles.wrap}
     >
       {!data.focusProject ? (
-        <EmptyBlock
-          title="暂无项目"
-          description="当前还没有进行中的项目。"
-          action={<Link className="button-secondary" to="/providers">去找服务商</Link>}
-        />
+        data.pendingQuoteTask ? (
+          <EmptyBlock
+            title="待确认施工报价"
+            description={`${data.pendingQuoteTask.summary}（当前状态：${data.pendingQuoteTask.statusText}）`}
+            action={<Link className="button-secondary" to={`/quote-tasks/${data.pendingQuoteTask.id}`}>去确认施工报价</Link>}
+          />
+        ) : (
+          <EmptyBlock
+            title="暂无项目"
+            description="当前还没有进行中的项目。"
+            action={<Link className="button-secondary" to="/providers">去找服务商</Link>}
+          />
+        )
       ) : (
         <main className={styles.mainContainer}>
           {/* Row 1: Hero Layout (Full width) */}
@@ -603,7 +666,6 @@ export function ProgressPage() {
                     </div>
                     <h2>用户待办</h2>
                   </div>
-                  <span className={styles.badgeCount}>{todoItems.length}</span>
                 </div>
 
                 <div className={styles.todoList}>
@@ -612,19 +674,7 @@ export function ProgressPage() {
                       当前暂无待处理任务。
                     </div>
                   ) : todoItems.map((item) => (
-                    <div key={item.id} className={styles.todoItem}>
-                      <div className={styles.todoTop}>
-                        <div>
-                          <strong>{item.title}</strong>
-                          <p>{item.description}</p>
-                        </div>
-                        <span className={`${styles.todoStatusBadge} ${styles[item.tone]}`}>{item.badgeText}</span>
-                      </div>
-                      <div className={styles.todoBottom}>
-                        <em>{item.amountText}</em>
-                        <Link className={styles.todoAction} to={item.actionTo}>{item.actionLabel}</Link>
-                      </div>
-                    </div>
+                    <TodoCard key={item.id} {...item} />
                   ))}
                 </div>
               </section>

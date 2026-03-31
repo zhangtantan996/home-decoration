@@ -1,0 +1,245 @@
+.page {
+  width: min(960px, calc(100% - 32px));
+  min-height: calc(100vh - 240px);
+  margin: 0 auto;
+  padding: 40px 0 72px;
+  display: grid;
+  align-content: center;
+  gap: 24px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 20px;
+  align-items: start;
+  padding: 28px 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(29, 78, 216, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.94));
+  box-shadow: var(--shadow-soft);
+}
+
+.heroMark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1;
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.heroMark[data-tone='success'] {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.heroMark[data-tone='warning'] {
+  background: rgba(202, 138, 4, 0.12);
+  color: #a16207;
+}
+
+.heroMark[data-tone='danger'] {
+  background: rgba(185, 28, 28, 0.1);
+  color: #b91c1c;
+}
+
+.heroBody {
+  display: grid;
+  gap: 16px;
+}
+
+.heroIntro {
+  display: grid;
+  gap: 8px;
+}
+
+.kicker {
+  margin: 0;
+  color: var(--color-brand-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heroIntro h1 {
+  margin: 0;
+  font-family: var(--font-family-heading);
+  font-size: clamp(2rem, 2.8vw, 2.6rem);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  color: var(--color-ink);
+}
+
+.heroIntro p {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--color-secondary);
+  line-height: 1.7;
+}
+
+.heroBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.95fr);
+  gap: 20px;
+}
+
+.panel {
+  padding: 26px 28px;
+  border-radius: 26px;
+}
+
+.panelHead {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.panelHead h2 {
+  margin: 0;
+  font-family: var(--font-family-heading);
+  font-size: 1.45rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--color-ink);
+}
+
+.panelHead p {
+  margin: 0;
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.infoCard {
+  display: grid;
+  gap: 8px;
+  min-height: 108px;
+  padding: 16px 18px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(247, 250, 252, 0.92), rgba(255, 255, 255, 0.98));
+}
+
+.infoCard span {
+  color: var(--color-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.infoCard strong {
+  font-size: 1.3rem;
+  line-height: 1.35;
+  color: var(--color-ink);
+  word-break: break-word;
+}
+
+.metaList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin: 18px 0 0;
+}
+
+.metaList div {
+  display: grid;
+  gap: 4px;
+}
+
+.metaList dt {
+  color: var(--color-muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.metaList dd {
+  margin: 0;
+  color: var(--color-primary);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.inlineNotice {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(185, 28, 28, 0.06);
+  color: #9f1239;
+  line-height: 1.6;
+}
+
+.actionPanel {
+  align-self: start;
+}
+
+.actionStack {
+  display: grid;
+  gap: 12px;
+}
+
+.helperText {
+  margin: 16px 0 0;
+  color: var(--color-muted);
+  line-height: 1.7;
+}
+
+@media (max-width: 900px) {
+  .page {
+    min-height: auto;
+    align-content: start;
+    padding: 28px 0 56px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    width: min(100%, calc(100% - 24px));
+    gap: 18px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 22px 20px;
+  }
+
+  .heroMark {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+  }
+
+  .panel {
+    padding: 22px 20px;
+  }
+
+  .infoGrid,
+  .metaList {
+    grid-template-columns: 1fr;
+  }
+
+  .infoCard {
+    min-height: auto;
+  }
+}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, Descriptions, Empty, Form, Image, Input, List, Modal, Space, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, DatePicker, Descriptions, Empty, Form, Image, Input, List, Modal, Select, Space, Tag, Typography, Upload, message } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { ArrowLeftOutlined, CheckCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -8,7 +8,8 @@ import MerchantPageHeader from '../../components/MerchantPageHeader';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import { BUSINESS_STAGE_META, MILESTONE_STATUS_META } from '../../constants/statuses';
-import { merchantProjectApi, merchantUploadApi, type MerchantProjectExecutionDetail, type MerchantProjectMilestone } from '../../services/merchantApi';
+import { isMerchantConflictError } from '../../services/api';
+import { merchantProjectApi, merchantUploadApi, type MerchantProjectExecutionDetail, type MerchantProjectMilestone, type MerchantProjectPhase } from '../../services/merchantApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { formatServerDate, formatServerDateTime } from '../../utils/serverTime';
 
@@ -34,6 +35,25 @@ const parseLogPhotos = (raw?: string): string[] => {
   } catch {
     return [];
   }
+};
+
+const pickActivePhase = (phases: MerchantProjectPhase[] = []) => {
+  if (phases.length === 0) return undefined;
+  return phases.find((item) => item.status === 'in_progress')
+    || phases.find((item) => item.status === 'pending')
+    || phases[phases.length - 1];
+};
+
+const resolveActionError = async (
+  error: unknown,
+  reload: () => Promise<void>,
+  fallback: string,
+) => {
+  if (isMerchantConflictError(error)) {
+    await reload();
+    return '状态已变化，请刷新后重试';
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
 };
 
 const MerchantProjectExecution: React.FC = () => {
@@ -84,6 +104,14 @@ const MerchantProjectExecution: React.FC = () => {
     () => (detail?.milestones || []).find((item) => item.status === 1),
     [detail?.milestones],
   );
+  const activePhase = useMemo(() => pickActivePhase(detail?.phases || []), [detail?.phases]);
+
+  const handleOpenLogModal = () => {
+    logForm.setFieldsValue({
+      phaseId: activePhase?.id,
+    });
+    setLogModalVisible(true);
+  };
 
   const handleSubmitMilestone = async (milestone: MerchantProjectMilestone) => {
     try {
@@ -92,7 +120,7 @@ const MerchantProjectExecution: React.FC = () => {
       message.success(`节点 ${milestone.name} 已提交验收`);
       await load();
     } catch (error: any) {
-      message.error(error?.message || '提交节点失败');
+      message.error(await resolveActionError(error, load, '提交节点失败'));
     } finally {
       setSubmittingMilestoneId(null);
     }
@@ -140,6 +168,7 @@ const MerchantProjectExecution: React.FC = () => {
         })
         .filter((url): url is string => Boolean(url));
       await merchantProjectApi.createLog(projectId, {
+        phaseId: Number(values.phaseId),
         title: values.title,
         description: values.description,
         logDate: values.logDate?.format('YYYY-MM-DD'),
@@ -152,7 +181,7 @@ const MerchantProjectExecution: React.FC = () => {
       await load();
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(error?.message || '创建施工日志失败');
+      message.error(await resolveActionError(error, load, '创建施工日志失败'));
     } finally {
       setLogSubmitting(false);
     }
@@ -165,7 +194,7 @@ const MerchantProjectExecution: React.FC = () => {
       message.success('项目已开工');
       await load();
     } catch (error: any) {
-      message.error(error?.message || '发起开工失败');
+      message.error(await resolveActionError(error, load, '发起开工失败'));
     } finally {
       setStartingProject(false);
     }
@@ -189,7 +218,7 @@ const MerchantProjectExecution: React.FC = () => {
       await load();
     } catch (error: any) {
       if (error?.errorFields) return;
-      message.error(error?.message || '提交完工材料失败');
+      message.error(await resolveActionError(error, load, '提交完工材料失败'));
     } finally {
       setCompletionSubmitting(false);
     }
@@ -208,8 +237,8 @@ const MerchantProjectExecution: React.FC = () => {
         )}
         extra={(
           <>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
-              返回订单
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/projects')}>
+              返回项目列表
             </Button>
             <Button onClick={() => navigate(`/projects/${projectId}/dispute`)}>
               争议处理
@@ -309,7 +338,7 @@ const MerchantProjectExecution: React.FC = () => {
         <MerchantSectionCard
           title="施工日志"
           extra={canCreateLog ? (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setLogModalVisible(true)}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenLogModal}>
               新增日志
             </Button>
           ) : undefined}
@@ -427,8 +456,21 @@ const MerchantProjectExecution: React.FC = () => {
         <Form
           form={logForm}
           layout="vertical"
-          initialValues={{ title: '', description: '' }}
+          initialValues={{ title: '', description: '', phaseId: activePhase?.id }}
         >
+          <Form.Item
+            name="phaseId"
+            label="所属阶段"
+            rules={[{ required: true, message: '请选择所属阶段' }]}
+          >
+            <Select
+              placeholder="请选择施工阶段"
+              options={(detail?.phases || []).map((phase) => ({
+                value: phase.id,
+                label: phase.name || phase.phaseType || `阶段 #${phase.id}`,
+              }))}
+            />
+          </Form.Item>
           <Form.Item
             name="title"
             label="日志标题"

@@ -63,18 +63,33 @@ type MenuRoute = {
     hideInMenu?: boolean;
 };
 
+const isDynamicDetailPath = (path?: string) => typeof path === 'string' && /\/:[^/]+/.test(path);
+
 const transformMenuData = (data: MenuNode[]): MenuRoute[] => {
     if (!data || !Array.isArray(data)) {
         console.warn('菜单数据不是数组:', data);
         return [];
     }
-    return data.map(item => ({
-        path: item.path,
-        name: item.title,
-        icon: item.icon ? iconMap[item.icon] : null,
-        children: item.children ? transformMenuData(item.children) : undefined,
-        hideInMenu: !item.visible,
-    }));
+    const seenPaths = new Set<string>();
+
+    return data.reduce<MenuRoute[]>((acc, item) => {
+        if (item.path) {
+            if (seenPaths.has(item.path)) {
+                return acc;
+            }
+            seenPaths.add(item.path);
+        }
+
+        acc.push({
+            path: item.path,
+            name: item.title,
+            icon: item.icon ? iconMap[item.icon] : null,
+            children: item.children ? transformMenuData(item.children) : undefined,
+            hideInMenu: !item.visible || isDynamicDetailPath(item.path),
+        });
+
+        return acc;
+    }, []);
 };
 
 const BasicLayout: React.FC = () => {

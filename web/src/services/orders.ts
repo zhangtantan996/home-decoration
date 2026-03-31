@@ -8,28 +8,33 @@ import type { PaymentLaunchPayload } from './payments';
 
 interface OrderListDTO {
   id: number;
+  recordType?: 'order' | 'payment';
   orderNo?: string;
   status?: number;
+  statusText?: string;
   amount?: number;
   providerName?: string;
   address?: string;
   nextPayableAt?: string;
   proposalId?: number;
   projectId?: number;
+  actionPath?: string;
 }
 
 function toOrderItem(dto: OrderListDTO): OrderListItemVM {
   return {
     id: dto.id,
+    recordType: dto.recordType || 'order',
     orderNo: dto.orderNo || `ORD-${dto.id}`,
     status: Number(dto.status || 0),
-    statusText: ORDER_STATUS_LABELS[Number(dto.status || 0)] || '处理中',
+    statusText: dto.statusText || ORDER_STATUS_LABELS[Number(dto.status || 0)] || '处理中',
     amountText: formatCurrency(dto.amount),
     providerName: dto.providerName || '服务商',
     address: dto.address || '地址待补充',
     nextPayableAt: formatDateTime(dto.nextPayableAt),
     proposalId: dto.proposalId || undefined,
     projectId: dto.projectId || undefined,
+    actionPath: dto.actionPath || undefined,
   };
 }
 

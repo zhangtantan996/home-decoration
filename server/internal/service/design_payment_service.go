@@ -1,16 +1,19 @@
 package service
 
 import (
+	crand "crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/big"
+	"strings"
 	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DesignPaymentService 设计付款工作流服务
@@ -123,62 +126,99 @@ func (s *DesignPaymentService) PaySurveyDeposit(userID, bookingID uint64) (*mode
 // 2. RefundSurveyDeposit 退还量房定金
 // ---------------------------------------------------------------------------
 
-func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) error {
-	var booking model.Booking
-	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
-		return errors.New("预约不存在")
-	}
-	if booking.UserID != userID {
-		return errors.New("无权操作此预约")
-	}
-	if !booking.SurveyDepositPaid {
-		return errors.New("量房定金未支付，无法退款")
-	}
-	if booking.SurveyDepositRefunded {
-		return errors.New("量房定金已退款，请勿重复操作")
-	}
-
+func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) (string, error) {
+	paymentService := NewPaymentService(nil)
 	refundRate := configSvc.GetSurveyDepositRefundRate()
-	refundAmount := booking.SurveyDeposit * refundRate
-	merchantAmount := booking.SurveyDeposit - refundAmount
+	var refundOrder model.RefundOrder
 
-	return repository.DB.Transaction(func(tx *gorm.DB) error {
-		// 创建退款交易
-		txn := model.Transaction{
-			OrderID:    fmt.Sprintf("SDR-%d-%d", bookingID, time.Now().Unix()),
-			Type:       "refund",
-			Amount:     refundAmount,
-			ToUserID:   userID,
-			Status:     1,
-			Remark:     "survey_deposit_refund",
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var booking model.Booking
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&booking, bookingID).Error; err != nil {
+			return errors.New("预约不存在")
 		}
-		if err := tx.Create(&txn).Error; err != nil {
+		if booking.UserID != userID {
+			return errors.New("无权操作此预约")
+		}
+		if !booking.SurveyDepositPaid {
+			return errors.New("量房定金未支付，无法退款")
+		}
+		if booking.SurveyDepositRefunded {
+			return errors.New("量房定金已退款，请勿重复操作")
+		}
+
+		paymentOrder, err := paymentService.findPaidPaymentOrderTx(tx, model.PaymentBizTypeBookingSurveyDeposit, booking.ID)
+		if err != nil {
 			return err
 		}
 
-		// 标记已退款
-		if err := tx.Model(&booking).Updates(map[string]interface{}{
-			"survey_deposit_refunded":   true,
-			"survey_deposit_refund_amt": refundAmount,
-		}).Error; err != nil {
+		var existing model.RefundOrder
+		if err := tx.Where("payment_order_id = ? AND status IN ?", paymentOrder.ID, []string{
+			model.RefundOrderStatusCreated,
+			model.RefundOrderStatusProcessing,
+			model.RefundOrderStatusSucceeded,
+		}).Order("id DESC").First(&existing).Error; err == nil {
+			refundOrder = existing
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 
-		// 给设计师创建收入（扣除平台抽成后的部分）
-		if merchantAmount > 0 {
-			_, err := incomeService.CreateIncome(&CreateIncomeInput{
-				ProviderID:  booking.ProviderID,
-				BookingID:   bookingID,
-				Type:        "survey_deposit",
-				Amount:      merchantAmount,
-				Description: "量房定金-用户取消后商家收入",
-			})
-			if err != nil {
-				return err
-			}
+		refundAmount := normalizeAmount(booking.SurveyDeposit * refundRate)
+		if refundAmount <= 0 || refundAmount > normalizeAmount(booking.SurveyDeposit) {
+			return errors.New("量房定金退款配置无效")
 		}
+
+		created, err := paymentService.createRefundOrderTx(tx, 0, refundExecutionPlan{
+			PaymentOrderID: paymentOrder.ID,
+			BizType:        model.PaymentBizTypeBookingSurveyDeposit,
+			BizID:          booking.ID,
+			Amount:         refundAmount,
+			Reason:         "用户申请退还量房定金",
+		})
+		if err != nil {
+			return err
+		}
+		refundOrder = *created
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
+
+	if refundOrder.ID == 0 {
+		return "", errors.New("退款单创建失败")
+	}
+
+	switch refundOrder.Status {
+	case model.RefundOrderStatusCreated:
+		updated, execErr := paymentService.ExecuteRefundOrder(refundOrder.ID)
+		if updated != nil {
+			refundOrder = *updated
+		}
+		if execErr != nil && refundOrder.Status != model.RefundOrderStatusProcessing {
+			if strings.TrimSpace(refundOrder.FailureReason) != "" {
+				return "", errors.New(refundOrder.FailureReason)
+			}
+			return "", execErr
+		}
+	case model.RefundOrderStatusFailed:
+		if strings.TrimSpace(refundOrder.FailureReason) != "" {
+			return "", errors.New(refundOrder.FailureReason)
+		}
+		return "", errors.New("量房定金退款失败")
+	}
+
+	if refundOrder.Status == model.RefundOrderStatusSucceeded {
+		completed, finalizeErr := paymentService.FinalizeRefundOrderIfReady(refundOrder.ID)
+		if finalizeErr != nil {
+			return "", finalizeErr
+		}
+		if completed {
+			return "量房定金退款成功", nil
+		}
+	}
+
+	return "量房定金退款处理中，请稍后确认", nil
 }
 
 // ---------------------------------------------------------------------------
@@ -344,9 +384,13 @@ func (s *DesignPaymentService) ConfirmDesignFeeQuote(userID, quoteID uint64) (*m
 		}
 
 		// c. 创建订单
+		orderNo, err := generateDesignOrderNo()
+		if err != nil {
+			return err
+		}
 		order = &model.Order{
 			BookingID:   quote.BookingID,
-			OrderNo:     generateDesignOrderNo(),
+			OrderNo:     orderNo,
 			OrderType:   model.OrderTypeDesign,
 			TotalAmount: quote.TotalFee,
 			Discount:    quote.DepositDeduction,
@@ -488,16 +532,16 @@ func (s *DesignPaymentService) SubmitDesignDeliverable(providerID uint64, input 
 	} else {
 		// 更新已有记录
 		updates := map[string]interface{}{
-			"color_floor_plan":  input.ColorFloorPlan,
-			"renderings":        input.Renderings,
-			"rendering_link":    input.RenderingLink,
-			"text_description":  input.TextDescription,
-			"cad_drawings":      input.CADDrawings,
-			"attachments":       input.Attachments,
-			"status":            model.DesignDeliverableStatusSubmitted,
-			"submitted_at":      now,
-			"rejected_at":       nil,
-			"rejection_reason":  "",
+			"color_floor_plan": input.ColorFloorPlan,
+			"renderings":       input.Renderings,
+			"rendering_link":   input.RenderingLink,
+			"text_description": input.TextDescription,
+			"cad_drawings":     input.CADDrawings,
+			"attachments":      input.Attachments,
+			"status":           model.DesignDeliverableStatusSubmitted,
+			"submitted_at":     now,
+			"rejected_at":      nil,
+			"rejection_reason": "",
 		}
 		if input.ProjectID > 0 {
 			updates["project_id"] = input.ProjectID
@@ -563,18 +607,13 @@ func (s *DesignPaymentService) AcceptDesignDeliverable(userID, deliverableID uin
 				})
 		}
 
-		// c. 创建商家收入（设计费）
+		// c. 创建设计费待结算投影
 		if deliverable.OrderID > 0 {
 			var order model.Order
 			if err := tx.First(&order, deliverable.OrderID).Error; err == nil {
-				_, _ = incomeService.CreateIncome(&CreateIncomeInput{
-					ProviderID:  deliverable.ProviderID,
-					OrderID:     order.ID,
-					BookingID:   deliverable.BookingID,
-					Type:        "design_fee",
-					Amount:      order.TotalAmount - order.Discount,
-					Description: "设计费-验收通过",
-				})
+				if _, _, err := (&SettlementService{}).CreateDesignSettlementScheduleTx(tx, &deliverable, &order); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -632,6 +671,23 @@ func (s *DesignPaymentService) RejectDesignDeliverable(userID, deliverableID uin
 // helpers
 // ---------------------------------------------------------------------------
 
-func generateDesignOrderNo() string {
-	return fmt.Sprintf("DF%s%04d", time.Now().Format("20060102150405"), rand.Intn(10000))
+func generateDesignOrderNo() (string, error) {
+	randomNumber, err := secureRandomInt(10000)
+	if err != nil {
+		return "", fmt.Errorf("generate design order number: %w", err)
+	}
+	return fmt.Sprintf("DF%s%04d", time.Now().Format("20060102150405"), randomNumber), nil
+}
+
+func secureRandomInt(max int64) (int64, error) {
+	if max <= 0 {
+		return 0, errors.New("max must be positive")
+	}
+
+	n, err := crand.Int(crand.Reader, big.NewInt(max))
+	if err != nil {
+		return 0, err
+	}
+
+	return n.Int64(), nil
 }

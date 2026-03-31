@@ -23,12 +23,21 @@ var (
 	escrowService       = &service.EscrowService{}
 	bookingService      = &service.BookingService{}
 	paymentService      = service.NewPaymentService(nil)
+	orderCenterService  = service.NewOrderCenterService(paymentService)
 	materialShopService = &service.MaterialShopService{}
 	demandService       = service.NewDemandService()
 	wechatAuthService   *service.WechatAuthService
 	wechatH5AuthService *service.WechatH5AuthService
 	jwtConfig           *config.JWTConfig
 	wechatH5BasePath    string
+)
+
+const (
+	projectCreateLegacyDisabledCode           = "PROJECT_CREATE_LEGACY_DISABLED"
+	projectBillLegacyDisabledCode             = "PROJECT_BILL_LEGACY_DISABLED"
+	projectConstructionConfirmLegacyCode      = "PROJECT_CONSTRUCTION_CONFIRM_LEGACY_DISABLED"
+	projectConstructionQuoteConfirmLegacyCode = "PROJECT_CONSTRUCTION_QUOTE_CONFIRM_LEGACY_DISABLED"
+	projectCompleteLegacyDisabledCode         = "PROJECT_COMPLETE_LEGACY_DISABLED"
 )
 
 // InitHandlers 初始化处理器
@@ -76,7 +85,7 @@ func respondScopedAccessError(c *gin.Context, err error, fallback string) {
 	switch {
 	case strings.Contains(message, "无权"):
 		response.Forbidden(c, message)
-	case strings.Contains(message, "不存在"):
+	case strings.Contains(message, "不存在"), strings.Contains(message, "未找到"):
 		response.NotFound(c, message)
 	default:
 		response.ServerError(c, message)
@@ -94,13 +103,57 @@ func respondDomainMutationError(c *gin.Context, err error, fallback string) {
 	switch {
 	case strings.Contains(message, "无权"):
 		response.Forbidden(c, message)
-	case strings.Contains(message, "不存在"):
+	case strings.Contains(message, "不存在"), strings.Contains(message, "未找到"):
 		response.NotFound(c, message)
-	case strings.Contains(message, "冲突"), strings.Contains(message, "不匹配"), strings.Contains(message, "不属于"):
+	case strings.Contains(message, "冲突"),
+		strings.Contains(message, "不匹配"),
+		strings.Contains(message, "不属于"),
+		strings.Contains(message, "当前状态"),
+		strings.Contains(message, "状态不正确"),
+		strings.Contains(message, "状态不允许"),
+		strings.Contains(message, "已发送"),
+		strings.Contains(message, "已存在"),
+		strings.Contains(message, "已锁定"),
+		strings.Contains(message, "已归档"),
+		strings.Contains(message, "已关闭"),
+		strings.Contains(message, "已处理"),
+		strings.Contains(message, "不能重复"),
+		(strings.Contains(message, "不可") && !strings.Contains(message, "参数")):
 		response.Conflict(c, message)
 	default:
 		response.BadRequest(c, message)
 	}
+}
+
+func respondAdminRBACMutationError(c *gin.Context, err error, fallback string) {
+	if err == nil {
+		return
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		message = fallback
+	}
+	switch {
+	case strings.Contains(message, "不存在"), strings.Contains(message, "未找到"):
+		response.NotFound(c, message)
+	case strings.Contains(message, "必须独立分配"),
+		strings.Contains(message, "不能同时分配"),
+		strings.Contains(message, "已禁用"),
+		strings.Contains(message, "只能分配只读权限"):
+		response.Conflict(c, message)
+	default:
+		response.BadRequest(c, message)
+	}
+}
+
+func respondLegacyConflict(c *gin.Context, message, errorCode string) {
+	c.JSON(http.StatusConflict, response.Response{
+		Code:    409,
+		Message: message,
+		Data: gin.H{
+			"errorCode": errorCode,
+		},
+	})
 }
 
 // HealthCheck 健康检查
@@ -655,24 +708,7 @@ func GetReviewStats(c *gin.Context) {
 
 // CreateProject 创建项目
 func CreateProject(c *gin.Context) {
-	userId := getCurrentUserID(c)
-
-	var req service.CreateProjectRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误: "+err.Error())
-		return
-	}
-
-	// 如果是业主创建，强制设置ownerId
-	req.OwnerID = userId
-
-	project, err := projectService.CreateProject(&req)
-	if err != nil {
-		response.ServerError(c, err.Error())
-		return
-	}
-
-	response.SuccessWithMessage(c, "项目创建成功", gin.H{"id": project.ID})
+	respondLegacyConflict(c, "旧项目创建入口已禁用，请改用施工确认成交链路创建项目", projectCreateLegacyDisabledCode)
 }
 
 // ListProjects 项目列表
@@ -753,56 +789,12 @@ func GetMilestones(c *gin.Context) {
 
 // ConfirmProjectConstruction 确认施工方与工长
 func ConfirmProjectConstruction(c *gin.Context) {
-	projectID := parseUint64(c.Param("id"))
-	if projectID == 0 {
-		response.BadRequest(c, "无效项目ID")
-		return
-	}
-
-	userID := getCurrentUserID(c)
-	var req service.ConfirmConstructionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-
-	project, err := projectService.ConfirmConstruction(projectID, userID, &req)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-
-	response.Success(c, gin.H{
-		"message": "施工方确认成功",
-		"project": project,
-	})
+	respondLegacyConflict(c, "业主侧旧施工方确认入口已禁用，请改用施工报价确认主链", projectConstructionConfirmLegacyCode)
 }
 
 // ConfirmProjectConstructionQuote 确认施工报价
 func ConfirmProjectConstructionQuote(c *gin.Context) {
-	projectID := parseUint64(c.Param("id"))
-	if projectID == 0 {
-		response.BadRequest(c, "无效项目ID")
-		return
-	}
-
-	userID := getCurrentUserID(c)
-	var req service.ConfirmConstructionQuoteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-
-	project, err := projectService.ConfirmConstructionQuote(projectID, userID, &req)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-
-	response.Success(c, gin.H{
-		"message": "施工报价确认成功",
-		"project": project,
-	})
+	respondLegacyConflict(c, "业主侧旧施工报价确认入口已禁用，请改用报价确认主链", projectConstructionQuoteConfirmLegacyCode)
 }
 
 // StartProject 显式开工
@@ -937,13 +929,7 @@ func RejectMilestone(c *gin.Context) {
 
 // CompleteProject 显式收口项目为完工
 func CompleteProject(c *gin.Context) {
-	c.JSON(http.StatusConflict, response.Response{
-		Code:    409,
-		Message: "旧项目完工入口已禁用，请改用商家提交完工材料并由业主在整体验收页处理",
-		Data: gin.H{
-			"errorCode": "PROJECT_COMPLETE_LEGACY_DISABLED",
-		},
-	})
+	respondLegacyConflict(c, "旧项目完工入口已禁用，请改用商家提交完工材料并由业主在整体验收页处理", projectCompleteLegacyDisabledCode)
 }
 
 // ========== 项目阶段 ==========
@@ -956,7 +942,7 @@ func GetProjectPhases(c *gin.Context) {
 		return
 	}
 
-	phases, err := projectService.GetProjectPhasesForOwner(projectId, getCurrentUserID(c))
+	phases, err := projectService.GetProjectPhaseViewsForOwner(projectId, getCurrentUserID(c))
 	if err != nil {
 		respondScopedAccessError(c, err, "查询阶段失败")
 		return
@@ -1053,86 +1039,44 @@ func ReleaseFunds(c *gin.Context) {
 
 // ========== 关注/收藏 ==========
 
+func blockProviderSocialFeature(c *gin.Context) bool {
+	response.Forbidden(c, "服务商关注/收藏功能暂未上线")
+	return true
+}
+
 // FollowProvider 关注服务商
 func FollowProvider(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	providerID := parseUint64(c.Param("id"))
-	targetType := c.Query("type")
-	if targetType == "" {
-		targetType = "designer"
-	}
-
-	if err := providerService.FollowProvider(userID, providerID, targetType); err != nil {
-		response.ServerError(c, "关注失败")
+	if blockProviderSocialFeature(c) {
 		return
 	}
-
-	response.Success(c, gin.H{"message": "关注成功"})
 }
 
 // UnfollowProvider 取消关注服务商
 func UnfollowProvider(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	providerID := parseUint64(c.Param("id"))
-	targetType := c.Query("type")
-	if targetType == "" {
-		targetType = "designer"
-	}
-
-	if err := providerService.UnfollowProvider(userID, providerID, targetType); err != nil {
-		response.ServerError(c, "取消关注失败")
+	if blockProviderSocialFeature(c) {
 		return
 	}
-
-	response.Success(c, gin.H{"message": "已取消关注"})
 }
 
 // FavoriteProvider 收藏服务商
 func FavoriteProvider(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	providerID := parseUint64(c.Param("id"))
-	targetType := c.Query("type")
-	if targetType == "" {
-		targetType = "provider"
-	}
-
-	if err := providerService.FavoriteProvider(userID, providerID, targetType); err != nil {
-		response.ServerError(c, "收藏失败")
+	if blockProviderSocialFeature(c) {
 		return
 	}
-
-	response.Success(c, gin.H{"message": "收藏成功"})
 }
 
 // UnfavoriteProvider 取消收藏服务商
 func UnfavoriteProvider(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	providerID := parseUint64(c.Param("id"))
-	targetType := c.Query("type")
-	if targetType == "" {
-		targetType = "provider"
-	}
-
-	if err := providerService.UnfavoriteProvider(userID, providerID, targetType); err != nil {
-		response.ServerError(c, "取消收藏失败")
+	if blockProviderSocialFeature(c) {
 		return
 	}
-
-	response.Success(c, gin.H{"message": "已取消收藏"})
 }
 
 // GetProviderUserStatus 获取用户对服务商的关注/收藏状态
 func GetProviderUserStatus(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	providerID := parseUint64(c.Param("id"))
-
-	status, err := providerService.GetUserProviderStatus(userID, providerID)
-	if err != nil {
-		response.ServerError(c, "查询失败")
+	if blockProviderSocialFeature(c) {
 		return
 	}
-
-	response.Success(c, status)
 }
 
 // ========== 主材门店 ==========

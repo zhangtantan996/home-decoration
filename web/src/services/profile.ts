@@ -9,6 +9,7 @@ import { listNotifications } from './notifications';
 import { listOrders } from './orders';
 import { listProjects } from './projects';
 import { listProposals } from './proposals';
+import { readThroughCache } from './runtimeCache';
 import { getUserSettings } from './settings';
 
 interface RawProfile {
@@ -21,6 +22,8 @@ interface RawProfile {
   bio?: string;
   userType?: number;
 }
+
+const PROFILE_HOME_TTL_MS = 15 * 1000;
 
 function toMessageFeed(item: Awaited<ReturnType<typeof listNotifications>>['list'][number]): ProfileFeedItemVM {
   return {
@@ -36,8 +39,9 @@ function toOrderFeed(item: Awaited<ReturnType<typeof listOrders>>['list'][number
   return {
     id: item.id,
     title: item.orderNo,
-    subtitle: item.statusText,
-    meta: `${item.amountText} · ${item.providerName}`,
+    subtitle: item.providerName || '服务商待确认',
+    meta: item.statusText,
+    amountText: item.amountText,
     href: item.projectId ? `/projects/${item.projectId}` : item.proposalId ? `/proposals/${item.proposalId}` : undefined,
   };
 }
@@ -130,76 +134,83 @@ function buildShortcuts(input: {
 }
 
 export async function getProfileHomeData(): Promise<ProfileHomeVM> {
-  const sessionUser = useSessionStore.getState().user;
+  return readThroughCache(
+    'profile:home',
+    PROFILE_HOME_TTL_MS,
+    async () => {
+      const sessionUser = useSessionStore.getState().user;
 
-  const [profile, bookings, demands, proposals, projects, orders, messages, settings] = await Promise.all([
-    requestJson<RawProfile>('/user/profile').catch(() => null),
-    listBookings().catch(() => []),
-    listDemands({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
-    listProposals().catch(() => []),
-    listProjects({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
-    listOrders({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
-    listNotifications({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
-    getUserSettings().catch(() => null),
-  ]);
+      const [profile, bookings, demands, proposals, projects, orders, messages, settings] = await Promise.all([
+        requestJson<RawProfile>('/user/profile').catch(() => null),
+        listBookings().catch(() => []),
+        listDemands({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
+        listProposals().catch(() => []),
+        listProjects({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
+        listOrders({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
+        listNotifications({ page: 1, pageSize: 6 }).catch(() => ({ list: [], total: 0, page: 1, pageSize: 6 })),
+        getUserSettings().catch(() => null),
+      ]);
 
-  const effectiveProfile = profile || (sessionUser as SessionUser | null);
-  const settingsSummary = makeSettingsSummary(settings);
-  const unreadCount = messages.list.filter((item) => !item.isRead).length;
-  const pendingPaymentsCount = orders.list.filter((item) => item.status === 0).length;
+      const effectiveProfile = profile || (sessionUser as SessionUser | null);
+      const settingsSummary = makeSettingsSummary(settings);
+      const unreadCount = messages.list.filter((item) => !item.isRead).length;
+      const pendingPaymentsCount = orders.list.filter((item) => item.status === 0).length;
 
-  return {
-    displayName: effectiveProfile?.nickname || '已登录用户',
-    avatar: effectiveProfile?.avatar || '',
-    unreadCount,
-    pendingPaymentsCount,
-    summaryCards: [
-      { title: '进行中需求', value: `${demands.list.filter((item) => item.status === 'matching' || item.status === 'matched').length}`, description: '审核或匹配中的真实需求', href: '/me/demands' },
-      { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '需要你尽快决定的方案', href: '/me/proposals' },
-      { title: '进行中项目', value: `${projects.list.filter((item) => item.statusText.includes('进行中')).length}`, description: '正在推进的施工项目', href: '/me/projects' },
-      { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '与报价或阶段付款相关', href: '/me/orders' },
-    ],
-    todos: [
-      { title: '需求进度', value: `${demands.list.filter((item) => item.status === 'submitted' || item.status === 'matching').length}`, description: '查看平台审核和商家响应进度', href: '/me/demands' },
-      { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '优先处理新的报价方案', href: '/me/proposals' },
-      { title: '待处理预约', value: `${bookings.filter((item) => item.statusText.includes('待')).length}`, description: '跟进待沟通或待确认预约', href: '/me/bookings' },
-      { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '避免设计费或阶段款逾期', href: '/me/orders' },
-      { title: '最新通知', value: `${unreadCount}`, description: '查看系统提醒与业务变化', href: '/me/messages' },
-    ],
-    shortcuts: buildShortcuts({
-      bookings,
-      demands: demands.list,
-      proposals,
-      projects: projects.list,
-      orders: orders.list,
-      messages: messages.list,
-      settingsSummary,
-    }),
-    recentBookings: bookings.slice(0, 3).map((item) => ({
-      id: item.id,
-      title: item.title,
-      subtitle: item.statusText,
-      meta: `${item.preferredDate} · ${item.budgetRange}`,
-      href: item.href,
-    })),
-    recentProposals: proposals.slice(0, 3).map((item) => ({
-      id: item.id,
-      title: item.summary,
-      subtitle: item.statusText,
-      meta: `${item.designFeeText} · ${item.submittedAt}`,
-      href: item.href,
-    })),
-    activeProjects: projects.list.slice(0, 3).map((item) => ({
-      id: item.id,
-      title: item.name,
-      subtitle: item.currentPhase,
-      meta: `${item.statusText} · ${item.budgetText}`,
-      href: item.href,
-    })),
-    pendingPayments: orders.list.slice(0, 3).map(toOrderFeed),
-    latestMessages: messages.list.slice(0, 3).map(toMessageFeed),
-    settingsSummary,
-  };
+      return {
+        displayName: effectiveProfile?.nickname || '已登录用户',
+        avatar: effectiveProfile?.avatar || '',
+        unreadCount,
+        pendingPaymentsCount,
+        summaryCards: [
+          { title: '进行中需求', value: `${demands.list.filter((item) => item.status === 'matching' || item.status === 'matched').length}`, description: '审核或匹配中的真实需求', href: '/me/demands' },
+          { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '需要你尽快决定的方案', href: '/me/proposals' },
+          { title: '进行中项目', value: `${projects.list.filter((item) => item.statusText.includes('进行中')).length}`, description: '正在推进的施工项目', href: '/me/projects' },
+          { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '与报价或阶段付款相关', href: '/me/orders' },
+        ],
+        todos: [
+          { title: '需求进度', value: `${demands.list.filter((item) => item.status === 'submitted' || item.status === 'matching').length}`, description: '查看平台审核和商家响应进度', href: '/me/demands' },
+          { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '优先处理新的报价方案', href: '/me/proposals' },
+          { title: '待处理预约', value: `${bookings.filter((item) => item.statusText.includes('待')).length}`, description: '跟进待沟通或待确认预约', href: '/me/bookings' },
+          { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '避免设计费或阶段款逾期', href: '/me/orders' },
+          { title: '最新通知', value: `${unreadCount}`, description: '查看系统提醒与业务变化', href: '/me/messages' },
+        ],
+        shortcuts: buildShortcuts({
+          bookings,
+          demands: demands.list,
+          proposals,
+          projects: projects.list,
+          orders: orders.list,
+          messages: messages.list,
+          settingsSummary,
+        }),
+        recentBookings: bookings.slice(0, 3).map((item) => ({
+          id: item.id,
+          title: item.title,
+          subtitle: item.statusText,
+          meta: `${item.preferredDate} · ${item.budgetRange}`,
+          href: item.href,
+        })),
+        recentProposals: proposals.slice(0, 3).map((item) => ({
+          id: item.id,
+          title: item.summary,
+          subtitle: item.statusText,
+          meta: `${item.designFeeText} · ${item.submittedAt}`,
+          href: item.href,
+        })),
+        activeProjects: projects.list.slice(0, 3).map((item) => ({
+          id: item.id,
+          title: item.name,
+          subtitle: item.currentPhase,
+          meta: `${item.statusText} · ${item.budgetText}`,
+          href: item.href,
+        })),
+        pendingPayments: orders.list.slice(0, 3).map(toOrderFeed),
+        latestMessages: messages.list.slice(0, 3).map(toMessageFeed),
+        settingsSummary,
+      };
+    },
+    'user',
+  );
 }
 
 export function formatRecordUpdatedAt(value: string | null | undefined) {

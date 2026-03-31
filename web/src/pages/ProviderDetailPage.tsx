@@ -1,26 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 
 import { EmptyBlock, ErrorBlock } from '../components/AsyncState';
 import { useAsyncData } from '../hooks/useAsyncData';
-import { useSessionStore } from '../modules/session/sessionStore';
-import { favoriteProvider, followProvider, getProviderDetail, getProviderUserStatus, unfavoriteProvider, unfollowProvider } from '../services/providers';
+import { getProviderDetail } from '../services/providers';
 import type { ProviderDetailVM, ProviderRole } from '../types/viewModels';
-
-interface NoteState {
-  text: string;
-  tone: 'brand' | 'success' | 'warning' | 'danger';
-}
-
-interface ProviderUserStatus {
-  isFollowed: boolean;
-  isFavorited: boolean;
-}
-
-const fallbackStatus: ProviderUserStatus = {
-  isFollowed: false,
-  isFavorited: false,
-};
+import { getProviderRatingMeta } from '../utils/provider';
 
 const baseTabItems = [
   { id: 'services', label: '服务内容' },
@@ -40,10 +25,6 @@ function readRole(value: string | undefined): ProviderRole | null {
 
 function formatRating(value: number) {
   return value > 0 ? value.toFixed(1) : '暂无';
-}
-
-function formatPercent(value: number) {
-  return value > 0 ? `${value.toFixed(1)}%` : '待补充';
 }
 
 function formatServiceArea(areas: string[]) {
@@ -198,27 +179,18 @@ function ProviderDetailSkeleton() {
 
 export function ProviderDetailPage() {
   const params = useParams();
-  const navigate = useNavigate();
   const location = useLocation();
-  const user = useSessionStore((state) => state.user);
   const role = readRole(params.role);
   const providerId = Number(params.id || 0);
-  const [actionSubmitting, setActionSubmitting] = useState<'follow' | 'favorite' | null>(null);
-  const [actionNote, setActionNote] = useState<NoteState | null>(null);
   const [activeTab, setActiveTab] = useState<ProviderDetailTabId>('services');
   const [avatarSrc, setAvatarSrc] = useState('');
 
   const { data, loading, error, reload } = useAsyncData(async () => {
     if (!role || !providerId) throw new Error('服务商参数无效');
-    const detail = await getProviderDetail(role, providerId);
-    const status = user
-      ? await getProviderUserStatus(providerId).catch(() => fallbackStatus)
-      : fallbackStatus;
-    return { detail, status };
-  }, [role, providerId, user?.phone]);
+    return getProviderDetail(role, providerId);
+  }, [role, providerId]);
 
-  const detail = data?.detail;
-  const status = data?.status || fallbackStatus;
+  const detail = data;
   const currentPath = `${location.pathname}${location.search}`;
   const isForeman = detail?.role === 'foreman';
   const showAboutSection = detail ? detail.role !== 'foreman' : true;
@@ -263,7 +235,8 @@ export function ProviderDetailPage() {
   const showBookingAction = canShowInteractiveActions && !isReferenceCompany;
   const areaSummary = formatServiceArea(detail.serviceArea);
   const totalReviewCount = detail.reviewStats.totalCount || detail.reviewCount || detail.reviews.length;
-  const reviewCountText = totalReviewCount > 0 ? `${totalReviewCount} 条真实评价` : '暂无真实评价';
+  const ratingMeta = getProviderRatingMeta(detail.reviewStats.displayRating || detail.rating, totalReviewCount);
+  const reviewCountText = ratingMeta.detailText;
   const caseSectionTitle = isForeman ? '工艺展示' : '作品案例';
   const caseCountText = detail.cases.length > 0
     ? (isForeman ? `工艺展示 ${detail.cases.length} 项` : `公开案例 ${detail.cases.length} 套`)
@@ -404,67 +377,6 @@ export function ProviderDetailPage() {
       ? `${detail.orgLabel}当前已公开完成 ${detail.completedCount} 个项目，可先提交预约需求，再继续确认合作细节。`
       : '当前可先浏览案例、服务内容和评价，再决定是否继续提交预约需求。';
 
-  const favoriteLabel = status.isFavorited ? '已收藏' : `收藏该${detail.orgLabel}`;
-  const followLabel = status.isFollowed ? '已关注该服务商' : '关注该服务商';
-
-  const handleRequireAuth = () => {
-    navigate(`/login?redirect=${encodeURIComponent(currentPath)}`);
-  };
-
-  const handleFollow = async () => {
-    if (!user) {
-      handleRequireAuth();
-      return;
-    }
-
-    setActionNote(null);
-    setActionSubmitting('follow');
-    try {
-      if (status.isFollowed) {
-        await unfollowProvider(detail.id, detail.role);
-        setActionNote({ text: '已取消关注。', tone: 'brand' });
-      } else {
-        await followProvider(detail.id, detail.role);
-        setActionNote({ text: '已关注该服务商。', tone: 'success' });
-      }
-      await reload();
-    } catch (actionError) {
-      setActionNote({
-        text: actionError instanceof Error ? actionError.message : '关注操作失败，请稍后重试。',
-        tone: 'danger',
-      });
-    } finally {
-      setActionSubmitting(null);
-    }
-  };
-
-  const handleFavorite = async () => {
-    if (!user) {
-      handleRequireAuth();
-      return;
-    }
-
-    setActionNote(null);
-    setActionSubmitting('favorite');
-    try {
-      if (status.isFavorited) {
-        await unfavoriteProvider(detail.id);
-        setActionNote({ text: '已取消收藏。', tone: 'brand' });
-      } else {
-        await favoriteProvider(detail.id);
-        setActionNote({ text: '已加入收藏。', tone: 'success' });
-      }
-      await reload();
-    } catch (actionError) {
-      setActionNote({
-        text: actionError instanceof Error ? actionError.message : '收藏操作失败，请稍后重试。',
-        tone: 'danger',
-      });
-    } finally {
-      setActionSubmitting(null);
-    }
-  };
-
   const renderServicesPanel = () => (
     <div className="provider-detail-services-panel">
       <div className="provider-detail-service-grid">
@@ -598,23 +510,18 @@ export function ProviderDetailPage() {
       <div className="provider-detail-review-summary">
         <article className="summary-card provider-detail-summary-card" data-highlight="true">
           <span>综合评分</span>
-          <strong>{formatRating(detail.reviewStats.rating || detail.rating)}</strong>
+          <strong>{ratingMeta.scoreText}</strong>
           <p>{reviewCountText}</p>
         </article>
         <article className="summary-card provider-detail-summary-card">
-          <span>累计评价</span>
-          <strong>{totalReviewCount > 0 ? totalReviewCount : '暂无'}</strong>
-          <p>持续沉淀口碑反馈</p>
+          <span>正式评价</span>
+          <strong>{totalReviewCount > 0 ? `${totalReviewCount}` : '暂无'}</strong>
+          <p>仅统计完工验收后的业主正式评价</p>
         </article>
         <article className="summary-card provider-detail-summary-card">
-          <span>还原度</span>
-          <strong>{formatPercent(detail.reviewStats.restoreRate)}</strong>
-          <p>基于现有评价统计</p>
-        </article>
-        <article className="summary-card provider-detail-summary-card">
-          <span>预算控制</span>
-          <strong>{formatPercent(detail.reviewStats.budgetControl)}</strong>
-          <p>预算匹配表现</p>
+          <span>样本状态</span>
+          <strong>{ratingMeta.sampleState === 'small' ? '样本较少' : ratingMeta.sampleState === 'stable' ? '样本稳定' : '暂无评分'}</strong>
+          <p>{ratingMeta.sampleState === 'small' ? '当前评分会继续随正式评价更新' : ratingMeta.sampleState === 'stable' ? '已具备稳定参考意义' : '需完工验收后才会产生正式评价'}</p>
         </article>
       </div>
 
@@ -632,7 +539,7 @@ export function ProviderDetailPage() {
 
       {detail.reviews.length === 0 ? (
         <div className="provider-detail-panel-card provider-detail-empty">
-          <EmptyBlock description="当前还没有公开评价，后续签约业主反馈会展示在这里。" title="暂无业主评价" />
+          <EmptyBlock description="当前还没有正式评价，后续完工验收后的业主反馈会展示在这里。" title="暂无业主评价" />
         </div>
       ) : null}
 
@@ -735,8 +642,8 @@ export function ProviderDetailPage() {
               <article className="provider-detail-summary-stat provider-detail-summary-stat--rating">
                 <span>综合评分</span>
                 <div className="provider-detail-rating-line">
-                  <strong>{formatRating(detail.reviewStats.rating || detail.rating)}</strong>
-                  <div className="provider-detail-stars">{renderStars(detail.reviewStats.rating || detail.rating)}</div>
+                  <strong>{ratingMeta.scoreText}</strong>
+                  {ratingMeta.hasRating ? <div className="provider-detail-stars">{renderStars(detail.reviewStats.displayRating || detail.rating)}</div> : null}
                 </div>
               </article>
 
@@ -799,18 +706,7 @@ export function ProviderDetailPage() {
               {showBookingAction ? (
                 <div className="provider-detail-aside-actions">
                   <Link className="provider-detail-primary-action" state={{ from: currentPath }} to={bookingPath}>提交预约需求</Link>
-                  <button className="provider-detail-secondary-action" disabled={actionSubmitting !== null} onClick={() => void handleFavorite()} type="button">
-                    {actionSubmitting === 'favorite' ? '处理中…' : favoriteLabel}
-                  </button>
                 </div>
-              ) : null}
-
-              {actionNote ? <div className="status-note provider-detail-action-note" data-tone={actionNote.tone}>{actionNote.text}</div> : null}
-
-              {!isReferenceCompany ? (
-                <button className="button-link provider-detail-follow-link" disabled={actionSubmitting !== null} onClick={() => void handleFollow()} type="button">
-                  {actionSubmitting === 'follow' ? '处理中…' : followLabel}
-                </button>
               ) : null}
 
               <div className="provider-detail-aside-cert">

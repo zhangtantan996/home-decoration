@@ -34,6 +34,42 @@ interface QuoteTaskUserViewResponse {
   flowSummary?: string;
 }
 
+interface QuoteTaskSummaryResponse {
+  id: number;
+  title?: string;
+  status?: string;
+  userConfirmationStatus?: string;
+  deadlineAt?: string;
+  activeSubmissionId?: number;
+  businessStage?: string;
+  flowSummary?: string;
+}
+
+export interface QuoteTaskSummaryVM {
+  id: number;
+  title: string;
+  statusText: string;
+  userConfirmationStatus: string;
+  deadlineAt?: string;
+  activeSubmissionId?: number;
+  businessStage?: string;
+  flowSummary?: string;
+}
+
+export async function listMyQuoteTasks(): Promise<QuoteTaskSummaryVM[]> {
+  const data = await requestJson<{ list?: QuoteTaskSummaryResponse[] }>('/quote-tasks/my');
+  return (data.list || []).map((item) => ({
+    id: item.id,
+    title: item.title || `施工报价任务 #${item.id}`,
+    statusText: item.status || '处理中',
+    userConfirmationStatus: item.userConfirmationStatus || 'pending',
+    deadlineAt: item.deadlineAt || undefined,
+    activeSubmissionId: item.activeSubmissionId || undefined,
+    businessStage: item.businessStage || undefined,
+    flowSummary: item.flowSummary || undefined,
+  }));
+}
+
 export async function getQuoteTaskDetail(id: number): Promise<QuoteTaskDetailVM> {
   const data = await requestJson<QuoteTaskUserViewResponse>(`/quote-tasks/${id}/user-view`);
   return {

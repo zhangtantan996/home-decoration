@@ -797,7 +797,6 @@ func AdminUpdateProvider(c *gin.Context) {
 		Specialty       string   `json:"specialty"`
 		YearsExperience int      `json:"yearsExperience"`
 		Status          int8     `json:"status"`
-		Rating          float32  `json:"rating"`          // 综合评分
 		RestoreRate     float32  `json:"restoreRate"`     // 还原度
 		BudgetControl   float32  `json:"budgetControl"`   // 预算控制力
 		WorkTypes       string   `json:"workTypes"`       // 工种类型（逗号分隔）
@@ -842,9 +841,6 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.YearsExperience > 0 {
 		updates["years_experience"] = req.YearsExperience
 	}
-	if req.Rating > 0 {
-		updates["rating"] = req.Rating
-	}
 	if req.RestoreRate >= 0 {
 		updates["restore_rate"] = req.RestoreRate
 	}
@@ -860,9 +856,7 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.PriceMax >= 0 {
 		updates["price_max"] = req.PriceMax
 	}
-	if req.PriceUnit != "" {
-		updates["price_unit"] = req.PriceUnit
-	}
+	updates["price_unit"] = model.ProviderPriceUnitPerSquareMeter
 	if req.CoverImage != "" {
 		updates["cover_image"] = req.CoverImage
 	}
@@ -964,7 +958,7 @@ func AdminClaimProviderAccount(c *gin.Context) {
 		strings.TrimSpace(req.ContactName),
 		strings.TrimSpace(provider.CompanyName),
 	)
-	user, err := createMerchantUserWithCompatibility(tx, phone, displayName)
+	user, err := createOrLoadMerchantUserWithCompatibility(tx, phone, displayName)
 	if err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "认领失败: 创建或加载用户失败")
@@ -1234,8 +1228,19 @@ func AdminListReviews(c *gin.Context) {
 // AdminDeleteReview 删除评价
 func AdminDeleteReview(c *gin.Context) {
 	id := c.Param("id")
-	if err := repository.DB.Delete(&model.ProviderReview{}, "id = ?", id).Error; err != nil {
+
+	var review model.ProviderReview
+	if err := repository.DB.First(&review, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "评价不存在")
+		return
+	}
+
+	if err := repository.DB.Delete(&review).Error; err != nil {
 		response.ServerError(c, "删除失败")
+		return
+	}
+	if err := providerService.RecalculateAggregatedRating(review.ProviderID); err != nil {
+		response.ServerError(c, "删除成功，但重算综合评分失败")
 		return
 	}
 	response.Success(c, nil)
@@ -1683,11 +1688,28 @@ func AdminGetRefundableBookings(c *gin.Context) {
 
 // AdminGetSystemConfigs 获取所有系统配置
 func AdminGetSystemConfigs(c *gin.Context) {
+	configSvc := &service.ConfigService{}
+	_ = configSvc.InitDefaultConfigs()
+
 	var configs []model.SystemConfig
 	if err := repository.DB.Order("key ASC").Find(&configs).Error; err != nil {
 		response.Error(c, 500, err.Error())
 		return
 	}
+	configs = append(configs,
+		model.SystemConfig{
+			Key:         "payment.channel.wechat.runtime_ready",
+			Value:       strconv.FormatBool(configSvc.ValidatePaymentChannelRuntimeConfig(model.PaymentChannelWechat) == nil),
+			Description: "微信支付运行时环境变量是否完整",
+			Type:        "boolean",
+		},
+		model.SystemConfig{
+			Key:         "payment.channel.alipay.runtime_ready",
+			Value:       strconv.FormatBool(configSvc.ValidatePaymentChannelRuntimeConfig(model.PaymentChannelAlipay) == nil),
+			Description: "支付宝运行时环境变量是否完整",
+			Type:        "boolean",
+		},
+	)
 
 	response.Success(c, gin.H{
 		"configs": configs,
@@ -1731,6 +1753,14 @@ func AdminBatchUpdateSystemConfigs(c *gin.Context) {
 	}
 
 	configSvc := &service.ConfigService{}
+	_ = configSvc.InitDefaultConfigs()
+
+	for key, value := range input {
+		if err := configSvc.ValidatePaymentChannelToggle(key, value); err != nil {
+			response.Error(c, 400, err.Error())
+			return
+		}
+	}
 
 	// 批量更新，SetConfig需要3个参数，这里简化处理
 	for key, value := range input {

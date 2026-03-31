@@ -230,26 +230,10 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 }
 
 func createOrLoadUserForMaterialApply(tx *gorm.DB, phone, nickname string) (*model.User, error) {
-	var user model.User
-	err := tx.Where("phone = ?", phone).First(&user).Error
-	if err == nil {
-		return &user, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	user, err := createOrLoadMerchantUserWithCompatibility(tx, phone, nickname)
+	if err != nil {
 		return nil, err
 	}
-
-	createdUser, createErr := createMerchantUserWithCompatibility(tx, phone, nickname)
-	if createErr != nil {
-		if isUserPhoneDuplicateError(createErr) {
-			if findErr := tx.Where("phone = ?", phone).First(&user).Error; findErr == nil {
-				return &user, nil
-			}
-		}
-		return nil, createErr
-	}
-
-	user = createdUser
 	return &user, nil
 }
 
@@ -715,6 +699,59 @@ func parseMaterialProduct(product model.MaterialShopProduct) gin.H {
 	}
 }
 
+func syncMaterialShopSummaryFromProducts(tx *gorm.DB, shopID uint64) error {
+	if !tx.Migrator().HasTable(&model.MaterialShop{}) {
+		return nil
+	}
+
+	var products []model.MaterialShopProduct
+	if err := tx.Where("shop_id = ? AND status = ?", shopID, 1).Order("sort_order ASC, id DESC").Find(&products).Error; err != nil {
+		return err
+	}
+
+	mainProducts := make([]string, 0, len(products))
+	seen := make(map[string]struct{}, len(products))
+	coverImage := ""
+	for _, product := range products {
+		name := strings.TrimSpace(product.Name)
+		if name != "" {
+			if _, exists := seen[name]; !exists {
+				seen[name] = struct{}{}
+				mainProducts = append(mainProducts, name)
+			}
+		}
+
+		if coverImage == "" {
+			coverImage = strings.TrimSpace(product.CoverImage)
+			if coverImage == "" {
+				var images []string
+				_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
+				for _, image := range images {
+					trimmed := strings.TrimSpace(image)
+					if trimmed != "" {
+						coverImage = trimmed
+						break
+					}
+				}
+			}
+		}
+	}
+
+	var shop model.MaterialShop
+	if err := tx.Select("id", "cover").First(&shop, shopID).Error; err != nil {
+		return err
+	}
+
+	updates := map[string]interface{}{
+		"main_products": marshalStringArrayField(mainProducts),
+	}
+	if strings.TrimSpace(shop.Cover) == "" && coverImage != "" {
+		updates["cover"] = coverImage
+	}
+
+	return tx.Model(&model.MaterialShop{}).Where("id = ?", shopID).Updates(updates).Error
+}
+
 func MaterialShopGetMe(c *gin.Context) {
 	shopID, ok := requireMaterialShopID(c)
 	if !ok {
@@ -973,7 +1010,12 @@ func MaterialShopCreateProduct(c *gin.Context) {
 	product.ShopID = shopID
 	product.SortOrder = int(count)
 
-	if err := repository.DB.Create(&product).Error; err != nil {
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&product).Error; err != nil {
+			return err
+		}
+		return syncMaterialShopSummaryFromProducts(tx, shopID)
+	}); err != nil {
 		response.Error(c, 500, "创建失败")
 		return
 	}
@@ -1020,7 +1062,12 @@ func MaterialShopUpdateProduct(c *gin.Context) {
 		existing.Status = int8(input.Status)
 	}
 
-	if err := repository.DB.Save(&existing).Error; err != nil {
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&existing).Error; err != nil {
+			return err
+		}
+		return syncMaterialShopSummaryFromProducts(tx, shopID)
+	}); err != nil {
 		response.Error(c, 500, "更新失败")
 		return
 	}
@@ -1035,13 +1082,21 @@ func MaterialShopDeleteProduct(c *gin.Context) {
 	}
 	productID := parseUint64(c.Param("id"))
 
-	result := repository.DB.Where("id = ? AND shop_id = ?", productID, shopID).Delete(&model.MaterialShopProduct{})
-	if result.Error != nil {
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("id = ? AND shop_id = ?", productID, shopID).Delete(&model.MaterialShopProduct{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return syncMaterialShopSummaryFromProducts(tx, shopID)
+	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, 404, "商品不存在")
+			return
+		}
 		response.Error(c, 500, "删除失败")
-		return
-	}
-	if result.RowsAffected == 0 {
-		response.Error(c, 404, "商品不存在")
 		return
 	}
 

@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Space, Spin, Tag, message } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Space, Spin, Tag, message } from 'antd';
+import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import PageHeader from '../../components/PageHeader';
 import { adminRefundApi, type AdminRefundApplicationItem } from '../../services/api';
 import { usePermission } from '../../hooks/usePermission';
-import { REFUND_STATUS_META, REFUND_TYPE_LABELS } from '../../constants/statuses';
+import { useAuthStore } from '../../stores/authStore';
+import { REFUND_STATUS_META, REFUND_TYPE_LABELS, isSecurityAuditorRole } from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
 
 const normalizeDetail = (raw: any): AdminRefundApplicationItem | null => {
@@ -33,9 +34,22 @@ const parseEvidence = (value: unknown): string[] => {
     return [];
 };
 
+const downloadJson = (filename: string, payload: unknown) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
+
 const RefundDetail: React.FC = () => {
     const navigate = useNavigate();
     const params = useParams();
+    const admin = useAuthStore((state) => state.admin);
     const refundId = Number(params.id || 0);
     const [approveForm] = Form.useForm();
     const [rejectForm] = Form.useForm();
@@ -46,6 +60,7 @@ const RefundDetail: React.FC = () => {
     const [rejectVisible, setRejectVisible] = useState(false);
     const [item, setItem] = useState<AdminRefundApplicationItem | null>(null);
     const { hasPermission } = usePermission();
+    const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
 
     const loadData = async () => {
         if (!Number.isFinite(refundId) || refundId <= 0) {
@@ -79,7 +94,20 @@ const RefundDetail: React.FC = () => {
         return <Tag color={config.color}>{config.text}</Tag>;
     }, [item]);
 
-    const canAudit = item?.status === 'pending' && hasPermission('finance:transaction:approve');
+    const canAudit = item?.status === 'pending' && !isSecurityAuditor && hasPermission('finance:transaction:approve');
+    const evidence = parseEvidence(item?.evidence);
+
+    const handleExport = () => {
+        if (!item) {
+            return;
+        }
+        downloadJson(`refund-application-${item.id}.json`, {
+            generatedAt: new Date().toISOString(),
+            refundApplication: item,
+            evidence,
+        });
+        message.success('退款详情快照已导出');
+    };
 
     const handleApprove = async () => {
         if (!item) return;
@@ -128,8 +156,6 @@ const RefundDetail: React.FC = () => {
         }
     };
 
-    const evidence = parseEvidence(item?.evidence);
-
     return (
         <div className="hz-page-stack">
             <PageHeader
@@ -140,6 +166,11 @@ const RefundDetail: React.FC = () => {
                         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/refunds')}>
                             返回列表
                         </Button>
+                        {item ? (
+                            <Button icon={<DownloadOutlined />} onClick={handleExport}>
+                                导出快照
+                            </Button>
+                        ) : null}
                         {canAudit ? (
                             <>
                                 <Button type="primary" onClick={() => setApproveVisible(true)}>
@@ -162,32 +193,42 @@ const RefundDetail: React.FC = () => {
                 ) : !item ? (
                     <Empty description="未找到退款详情" />
                 ) : (
-                    <Descriptions bordered column={2}>
-                        <Descriptions.Item label="申请ID">{item.id}</Descriptions.Item>
-                        <Descriptions.Item label="状态">{statusTag}</Descriptions.Item>
-                        <Descriptions.Item label="预约ID">{item.bookingId}</Descriptions.Item>
-                        <Descriptions.Item label="项目ID">{item.projectId || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="订单ID">{item.orderId || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="用户ID">{item.userId}</Descriptions.Item>
-                        <Descriptions.Item label="退款类型">{REFUND_TYPE_LABELS[item.refundType] || item.refundType}</Descriptions.Item>
-                        <Descriptions.Item label="申请金额">¥{Number(item.requestedAmount || 0).toLocaleString()}</Descriptions.Item>
-                        <Descriptions.Item label="批准金额">{item.approvedAmount != null ? `¥${Number(item.approvedAmount).toLocaleString()}` : '-'}</Descriptions.Item>
-                        <Descriptions.Item label="申请原因" span={2}>{item.reason || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="证据材料" span={2}>
-                            {evidence.length === 0 ? '-' : (
-                                <Space direction="vertical">
-                                    {evidence.map((url) => (
-                                        <a key={url} href={url} target="_blank" rel="noreferrer">{url}</a>
-                                    ))}
-                                </Space>
-                            )}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="审核意见" span={2}>{item.adminNotes || '-'}</Descriptions.Item>
-                        <Descriptions.Item label="创建时间">{formatServerDateTime(item.createdAt)}</Descriptions.Item>
-                        <Descriptions.Item label="批准时间">{formatServerDateTime(item.approvedAt)}</Descriptions.Item>
-                        <Descriptions.Item label="拒绝时间">{formatServerDateTime(item.rejectedAt)}</Descriptions.Item>
-                        <Descriptions.Item label="完成时间">{formatServerDateTime(item.completedAt)}</Descriptions.Item>
-                    </Descriptions>
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                        {isSecurityAuditor ? (
+                            <Alert
+                                type="info"
+                                showIcon
+                                message="当前账号为安全审计员视角"
+                                description="本页仅保留退款详情查看与快照导出能力，审批写操作已隐藏。"
+                            />
+                        ) : null}
+                        <Descriptions bordered column={2}>
+                            <Descriptions.Item label="申请ID">{item.id}</Descriptions.Item>
+                            <Descriptions.Item label="状态">{statusTag}</Descriptions.Item>
+                            <Descriptions.Item label="预约ID">{item.bookingId}</Descriptions.Item>
+                            <Descriptions.Item label="项目ID">{item.projectId || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="订单ID">{item.orderId || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="用户ID">{item.userId}</Descriptions.Item>
+                            <Descriptions.Item label="退款类型">{REFUND_TYPE_LABELS[item.refundType] || item.refundType}</Descriptions.Item>
+                            <Descriptions.Item label="申请金额">¥{Number(item.requestedAmount || 0).toLocaleString()}</Descriptions.Item>
+                            <Descriptions.Item label="批准金额">{item.approvedAmount != null ? `¥${Number(item.approvedAmount).toLocaleString()}` : '-'}</Descriptions.Item>
+                            <Descriptions.Item label="申请原因" span={2}>{item.reason || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="证据材料" span={2}>
+                                {evidence.length === 0 ? '-' : (
+                                    <Space direction="vertical">
+                                        {evidence.map((url) => (
+                                            <a key={url} href={url} target="_blank" rel="noreferrer">{url}</a>
+                                        ))}
+                                    </Space>
+                                )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="审核意见" span={2}>{item.adminNotes || '-'}</Descriptions.Item>
+                            <Descriptions.Item label="创建时间">{formatServerDateTime(item.createdAt)}</Descriptions.Item>
+                            <Descriptions.Item label="批准时间">{formatServerDateTime(item.approvedAt)}</Descriptions.Item>
+                            <Descriptions.Item label="拒绝时间">{formatServerDateTime(item.rejectedAt)}</Descriptions.Item>
+                            <Descriptions.Item label="完成时间">{formatServerDateTime(item.completedAt)}</Descriptions.Item>
+                        </Descriptions>
+                    </Space>
                 )}
             </Card>
 

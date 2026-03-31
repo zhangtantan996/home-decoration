@@ -5,6 +5,7 @@ import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { StatusBanner } from '../components/StatusBanner';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getDemandDetail } from '../services/demands';
+import { getProviderRatingMeta } from '../utils/provider';
 
 function statusTone(status: string) {
   if (status === 'matched') return 'success';
@@ -70,23 +71,26 @@ export function DemandDetailPage() {
               <div className="status-note">需求提交后，这里会显示平台分配的商家与响应状态。</div>
             ) : (
               <div className="list-stack">
-                {data.matches.map((item) => (
-                  <div className="list-card" key={item.id}>
-                    <div>
-                      <div className="inline-actions" style={{ marginBottom: 10 }}>
-                        <span className="status-chip" data-tone={item.proposal ? 'success' : item.status === 'declined' ? 'warning' : 'brand'}>{item.status}</span>
-                        <span className="status-chip">{item.provider.rating.toFixed(1)} 分</span>
+                {data.matches.map((item) => {
+                  const ratingMeta = getProviderRatingMeta(item.provider.rating, item.provider.reviewCount);
+                  return (
+                    <div className="list-card" key={item.id}>
+                      <div>
+                        <div className="inline-actions" style={{ marginBottom: 10 }}>
+                          <span className="status-chip" data-tone={item.proposal ? 'success' : item.status === 'declined' ? 'warning' : 'brand'}>{item.status}</span>
+                          <span className="status-chip">{ratingMeta.inlineText}</span>
+                        </div>
+                        <h3>{item.provider.name}</h3>
+                        <p>{item.provider.specialty || '平台认证服务商'}</p>
+                        {item.declineReason ? <p>拒绝原因：{item.declineReason}</p> : null}
                       </div>
-                      <h3>{item.provider.name}</h3>
-                      <p>{item.provider.specialty || '平台认证服务商'}</p>
-                      {item.declineReason ? <p>拒绝原因：{item.declineReason}</p> : null}
+                      <div className="list-meta">
+                        <strong>{item.proposal ? '已提交方案' : '待响应'}</strong>
+                        <span>{item.responseDeadline || '等待平台同步'}</span>
+                      </div>
                     </div>
-                    <div className="list-meta">
-                      <strong>{item.proposal ? '已提交方案' : '待响应'}</strong>
-                      <span>{item.responseDeadline || '等待平台同步'}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>

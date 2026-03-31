@@ -136,10 +136,6 @@ export function NotificationCenter({ title, pageSize = 12, topPage = false, show
         void loadData(pageRef.current);
         return;
       }
-
-      if ((event.type === 'notification.init' || event.type === 'notification.unread_count') && pageRef.current === 1) {
-        void loadData(1);
-      }
     });
   }, [loadData]);
 

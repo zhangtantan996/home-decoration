@@ -1,14 +1,19 @@
 package handler
 
 import (
+	crand "crypto/rand"
 	"errors"
+	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
-	"math/rand"
-	"strconv"
+	"io"
 	"time"
+
+	"math/big"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -63,18 +68,17 @@ func MerchantIncomeSummary(c *gin.Context) {
 		Scan(&totalSettled)
 	summary.SettledAmount = totalSettled
 
-	// 4. 已占用提现金额（待审核/待打款/已打款都会占用可提现余额）
-	repository.DB.Model(&model.MerchantWithdraw{}).
-		Where("provider_id = ? AND status IN ?", providerID, []int8{
-			model.MerchantWithdrawStatusPendingReview,
-			model.MerchantWithdrawStatusApprovedPendingTransfer,
-			model.MerchantWithdrawStatusPaid,
-		}).
+	// 4. 已出款金额（新主链直接从商家收入投影读取）
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ? AND status = 2", providerID).
 		Select("COALESCE(SUM(amount), 0)").
 		Scan(&summary.WithdrawnAmount)
 
-	// 5. 可提现 = (已结算总额) - (已占用提现金额)
-	summary.AvailableAmount = summary.SettledAmount - summary.WithdrawnAmount
+	// 5. 待出款 = status=1
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ? AND status = 1", providerID).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&summary.AvailableAmount)
 	if summary.AvailableAmount < 0 {
 		summary.AvailableAmount = 0
 	}
@@ -148,12 +152,124 @@ func getIncomeStatusLabel(status int8) string {
 	case 0:
 		return "待结算"
 	case 1:
-		return "已结算"
+		return "待出款"
 	case 2:
-		return "已提现"
+		return "已出款"
 	default:
 		return "未知"
 	}
+}
+
+// MerchantSettlementList 结算/出款记录列表
+func MerchantSettlementList(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	page := parseIntDefault(c.Query("page"), 1)
+	pageSize := parseIntDefault(c.Query("pageSize"), 20)
+	list, total, err := service.NewPayoutService().ListMerchantSettlements(providerID, page, pageSize)
+	if err != nil {
+		response.ServerError(c, "获取结算记录失败")
+		return
+	}
+	response.Success(c, gin.H{
+		"list":     list,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
+}
+
+func MerchantBondAccount(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	item, err := service.NewBondService().GetProviderBondAccount(providerID)
+	if err != nil {
+		response.ServerError(c, "获取保证金账户失败")
+		return
+	}
+	response.Success(c, item)
+}
+
+type merchantBondPaymentLaunchRequest struct {
+	TerminalType string `json:"terminalType"`
+	ResultPath   string `json:"resultPath"`
+}
+
+func bindMerchantBondPaymentLaunchRequest(c *gin.Context) (*merchantBondPaymentLaunchRequest, error) {
+	var req merchantBondPaymentLaunchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			return &req, nil
+		}
+		return nil, err
+	}
+	return &req, nil
+}
+
+func resolveMerchantPaymentResultBaseURL(c *gin.Context, resultPath string) string {
+	path := strings.TrimSpace(resultPath)
+	if path == "" {
+		path = "/payments/result"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if origin := strings.TrimSpace(c.GetHeader("Origin")); origin != "" {
+		return strings.TrimRight(origin, "/") + path
+	}
+	scheme := "http"
+	if c.Request.TLS != nil || strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https") {
+		scheme = "https"
+	}
+	if host := strings.TrimSpace(c.Request.Host); host != "" {
+		return fmt.Sprintf("%s://%s%s", scheme, host, path)
+	}
+	return ""
+}
+
+func MerchantStartBondPayment(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	userID := getCurrentUserID(c)
+	req, err := bindMerchantBondPaymentLaunchRequest(c)
+	if err != nil {
+		response.BadRequest(c, "支付参数无效")
+		return
+	}
+	result, err := paymentService.StartMerchantBondPayment(userID, providerID, req.TerminalType, resolveMerchantPaymentResultBaseURL(c, req.ResultPath))
+	if err != nil {
+		respondDomainMutationError(c, err, "发起保证金支付失败")
+		return
+	}
+	response.Success(c, result)
+}
+
+func MerchantBondLedger(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	page := parseIntDefault(c.Query("page"), 1)
+	pageSize := parseIntDefault(c.Query("pageSize"), 20)
+	list, total, err := service.NewBondService().ListProviderBondLedger(providerID, page, pageSize)
+	if err != nil {
+		response.ServerError(c, "获取保证金流水失败")
+		return
+	}
+	response.Success(c, gin.H{
+		"list":     list,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
+}
+
+func MerchantPaymentStatus(c *gin.Context) {
+	paymentID := parseUint64(c.Param("id"))
+	if paymentID == 0 {
+		response.BadRequest(c, "无效支付单ID")
+		return
+	}
+	result, err := paymentService.GetPaymentStatusForPayer(paymentID, getCurrentUserID(c))
+	if err != nil {
+		respondScopedAccessError(c, err, "获取支付状态失败")
+		return
+	}
+	response.Success(c, result)
 }
 
 // ==================== 商家提现 Handler ====================
@@ -233,91 +349,16 @@ func maskBankAccount(account string) string {
 
 // MerchantWithdrawCreate 申请提现（需要二次验证）
 func MerchantWithdrawCreate(c *gin.Context) {
-	providerID := c.GetUint64("providerId")
-
-	var input struct {
-		Amount           float64 `json:"amount" binding:"required,gt=0"`
-		BankAccountID    uint64  `json:"bankAccountId" binding:"required"`
-		VerificationCode string  `json:"verificationCode" binding:"required"` // 二次验证码
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.Error(c, 400, "参数错误: "+err.Error())
-		return
-	}
-
-	// 二次验证：验证码检查（高风险操作）
-	phone, err := resolveProviderPhone(providerID)
-	if err != nil {
-		response.Error(c, 400, "验证码校验失败")
-		return
-	}
-	if err := service.VerifySMSCode(phone, service.SMSPurposeMerchantWithdraw, input.VerificationCode); err != nil {
-		response.Error(c, 400, err.Error())
-		return
-	}
-
-	// 1. 计算可提现金额 (逻辑同 MerchantIncomeSummary)
-	var totalSettled float64
-	repository.DB.Model(&model.MerchantIncome{}).
-		Where("provider_id = ? AND status IN (1, 2)", providerID).
-		Select("COALESCE(SUM(net_amount), 0)").
-		Scan(&totalSettled)
-
-	var totalWithdrawn float64
-	repository.DB.Model(&model.MerchantWithdraw{}).
-		Where("provider_id = ? AND status IN ?", providerID, []int8{
-			model.MerchantWithdrawStatusPendingReview,
-			model.MerchantWithdrawStatusApprovedPendingTransfer,
-			model.MerchantWithdrawStatusPaid,
-		}).
-		Select("COALESCE(SUM(amount), 0)").
-		Scan(&totalWithdrawn)
-
-	availableAmount := totalSettled - totalWithdrawn
-
-	if input.Amount > availableAmount {
-		response.Error(c, 400, "提现金额超过可提现余额")
-		return
-	}
-
-	// 2. 检查银行账户
-	var bankAccount model.MerchantBankAccount
-	if err := repository.DB.Where("id = ? AND provider_id = ? AND status = 1",
-		input.BankAccountID, providerID).First(&bankAccount).Error; err != nil {
-		response.Error(c, 400, "银行账户不存在或已禁用")
-		return
-	}
-
-	// 3. 生成提现订单号
-	orderNo := generateWithdrawOrderNo()
-
-	// 4. 创建提现记录
-	withdraw := model.MerchantWithdraw{
-		ProviderID:  providerID,
-		OrderNo:     orderNo,
-		Amount:      input.Amount,
-		BankAccount: bankAccount.AccountNo,
-		BankName:    bankAccount.BankName,
-		Status:      model.MerchantWithdrawStatusPendingReview,
-	}
-
-	if err := repository.DB.Create(&withdraw).Error; err != nil {
-		response.Error(c, 500, "提现申请失败")
-		return
-	}
-
-	// TODO: 实际生产环境需要触发提现任务或通知财务审核
-
-	response.Success(c, gin.H{
-		"withdrawId": withdraw.ID,
-		"orderNo":    orderNo,
-		"message":    "提现申请已提交，等待平台审核",
-	})
+	response.Error(c, 400, "提现申请入口已下线，请查看结算记录与出款状态")
 }
 
-func generateWithdrawOrderNo() string {
-	// 使用时间戳+随机数
-	return "W" + time.Now().Format("20060102150405") + randomString(6)
+func generateWithdrawOrderNo() (string, error) {
+	max := big.NewInt(1000000)
+	n, err := crand.Int(crand.Reader, max)
+	if err != nil {
+		return "", err
+	}
+	return "W" + time.Now().Format("20060102150405") + fmt.Sprintf("%06d", n.Int64()), nil
 }
 
 // ==================== 商家银行账户 Handler ====================
@@ -472,11 +513,15 @@ func parseIntFrom(s string, v *int) (int, error) {
 	return val, nil
 }
 
-func randomString(n int) string {
+func secureRandomString(n int) (string, error) {
 	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		randomIndex, err := crand.Int(crand.Reader, big.NewInt(int64(len(letters))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = letters[randomIndex.Int64()]
 	}
-	return string(b)
+	return string(b), nil
 }

@@ -217,7 +217,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	// 排序
 	switch query.SortBy {
 	case "rating":
-		db = db.Order("rating DESC")
+		db = db.Order("rating DESC, review_count DESC, completed_cnt DESC")
 	case "completed", "orders":
 		db = db.Order("completed_cnt DESC")
 	case "price", "price_low":
@@ -225,8 +225,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	case "price_high":
 		db = db.Order("price_min DESC")
 	default:
-		// 默认综合排序
-		db = db.Order("(restore_rate * 0.4 + budget_control * 0.3 + rating * 10 * 0.3) DESC")
+		db = db.Order("rating DESC, review_count DESC, completed_cnt DESC")
 	}
 
 	// 分页
@@ -291,7 +290,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			ReviewCount:     p.ReviewCount,
 			PriceMin:        p.PriceMin,
 			PriceMax:        p.PriceMax,
-			PriceUnit:       p.PriceUnit,
+			PriceUnit:       model.ProviderPriceUnitPerSquareMeter,
 			ServiceArea:     serviceArea,
 			IsSettled:       providerSettlementValue(&p),
 		}
@@ -377,62 +376,11 @@ func resolveProviderServiceAreaDisplayNames(regionService *RegionService, raw st
 		return []string{}
 	}
 
-	regionsByCode, err := regionService.GetRegionsByCodesBatch(values)
-	if err != nil || len(regionsByCode) == 0 {
+	_, cityNames, err := regionService.ResolveServiceAreaInputsToCityDisplay(values)
+	if err != nil || len(cityNames) == 0 {
 		return uniqueProviderTextValues(values)
 	}
-
-	parentCodes := make([]string, 0, len(values))
-	parentSeen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		region, ok := regionsByCode[value]
-		if !ok || region.ParentCode == "" {
-			continue
-		}
-		if _, exists := parentSeen[region.ParentCode]; exists {
-			continue
-		}
-		parentSeen[region.ParentCode] = struct{}{}
-		parentCodes = append(parentCodes, region.ParentCode)
-	}
-
-	parentRegions := make(map[string]model.Region)
-	if len(parentCodes) > 0 {
-		if items, parentErr := regionService.GetRegionsByCodesBatch(parentCodes); parentErr == nil {
-			parentRegions = items
-		}
-	}
-
-	display := make([]string, 0, len(values)*2)
-	seen := make(map[string]struct{}, len(values)*2)
-	appendIfMissing := func(text string) {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return
-		}
-		if _, exists := seen[text]; exists {
-			return
-		}
-		seen[text] = struct{}{}
-		display = append(display, text)
-	}
-
-	for _, value := range values {
-		region, ok := regionsByCode[value]
-		if !ok {
-			appendIfMissing(value)
-			continue
-		}
-		if parent, exists := parentRegions[region.ParentCode]; exists && parent.Level >= 2 {
-			appendIfMissing(parent.Name)
-		}
-		appendIfMissing(region.Name)
-	}
-
-	if len(display) == 0 {
-		return uniqueProviderTextValues(values)
-	}
-	return display
+	return cityNames
 }
 
 func parseProviderServiceAreaValues(raw string) []string {
@@ -513,6 +461,7 @@ type ProviderReviewItem struct {
 	ServiceType  string  `json:"serviceType"`  // 服务类型
 	Area         string  `json:"area"`         // 面积
 	Style        string  `json:"style"`        // 风格
+	Tags         string  `json:"tags"`         // 标签 JSON
 	HelpfulCount int     `json:"helpfulCount"` // 有用数
 	CreatedAt    string  `json:"createdAt"`
 }
@@ -539,6 +488,7 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 			provider.Specialty = "全工种施工"
 		}
 	}
+	provider.PriceUnit = model.ProviderPriceUnitPerSquareMeter
 
 	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
 	// Also fallback to provider cover image for legacy/seeded data.
@@ -555,8 +505,9 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	if err != nil {
 		serviceAreaCodes = []string{}
 	}
-	serviceAreaNames, err := regionService.ConvertCodesToNames(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, err := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
 	if err != nil {
+		serviceAreaCodes = []string{}
 		serviceAreaNames = []string{}
 	}
 	if namesJSON, err := json.Marshal(serviceAreaNames); err == nil {
@@ -581,13 +532,24 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		Where("provider_id = ?", id).
 		Count(&caseCount)
 
-	// 获取评价（前5条）
+	// 获取正式评价（前5条）
 	var reviews []model.ProviderReview
-	repository.DB.Where("provider_id = ?", id).Order("created_at DESC").Limit(5).Find(&reviews)
+	if err := validOfficialProviderReviewScope(repository.DB).
+		Where("provider_reviews.provider_id = ?", id).
+		Select("provider_reviews.*").
+		Order("provider_reviews.created_at DESC").
+		Limit(5).
+		Find(&reviews).Error; err != nil {
+		return nil, err
+	}
 
-	// 统计评价总数
+	// 统计正式评价总数
 	var reviewCount int64
-	repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ?", id).Count(&reviewCount)
+	if err := validOfficialProviderReviewScope(repository.DB).
+		Where("provider_reviews.provider_id = ?", id).
+		Count(&reviewCount).Error; err != nil {
+		return nil, err
+	}
 
 	// 转换评价为带用户信息的格式
 	reviewItems := make([]ProviderReviewItem, len(reviews))
@@ -604,6 +566,7 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 			ServiceType:  r.ServiceType,
 			Area:         r.Area,
 			Style:        r.Style,
+			Tags:         r.Tags,
 			HelpfulCount: r.HelpfulCount,
 			CreatedAt:    r.CreatedAt.Format("2006-01-02"),
 		}
@@ -664,28 +627,40 @@ func (s *ProviderService) GetProviderReviews(providerID uint64, page, pageSize i
 		pageSize = 10
 	}
 
+	var provider model.Provider
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).Select("id").First(&provider, providerID).Error; err != nil {
+		return nil, 0, err
+	}
+
 	var reviews []model.ProviderReview
 	var total int64
 
-	db := repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ?", providerID)
+	db := validOfficialProviderReviewScope(repository.DB).
+		Where("provider_reviews.provider_id = ?", providerID)
 
 	// 根据 filter 添加查询条件
 	switch filter {
 	case "pic":
-		db = db.Where("images != '' AND images IS NOT NULL")
+		db = db.Where("provider_reviews.images != '' AND provider_reviews.images IS NOT NULL")
 	case "good":
-		db = db.Where("rating >= 4.5")
+		db = db.Where("provider_reviews.rating >= 4.5")
 	case "all", "":
 		// 不添加额外条件
 	default:
-		// 按标签筛选 (tags 是 JSON 数组，使用 LIKE 模糊匹配)
-		db = db.Where("tags LIKE ?", "%\""+filter+"\"%")
+		db = db.Where("provider_reviews.tags LIKE ?", "%\""+filter+"\"%")
 	}
 
-	db.Count(&total)
+	if err := db.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	offset := (page - 1) * pageSize
-	if err := db.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&reviews).Error; err != nil {
+	if err := db.Session(&gorm.Session{}).
+		Select("provider_reviews.*").
+		Order("provider_reviews.created_at DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&reviews).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -704,6 +679,7 @@ func (s *ProviderService) GetProviderReviews(providerID uint64, page, pageSize i
 			ServiceType:  r.ServiceType,
 			Area:         r.Area,
 			Style:        r.Style,
+			Tags:         r.Tags,
 			HelpfulCount: r.HelpfulCount,
 			CreatedAt:    r.CreatedAt.Format("2006-01-02"),
 		}
@@ -715,9 +691,15 @@ func (s *ProviderService) GetProviderReviews(providerID uint64, page, pageSize i
 // ReviewStats 评价统计
 type ReviewStats struct {
 	Total            int64            `json:"total"`            // 总数
+	TotalCount       int64            `json:"totalCount"`       // 总数（兼容新前端）
 	WithImage        int64            `json:"withImage"`        // 有图数
 	GoodCount        int64            `json:"goodCount"`        // 好评数(rating >= 4.5)
-	AvgRating        float32          `json:"avgRating"`        // 平均评分
+	AvgRating        float32          `json:"avgRating"`        // 原始平均评分
+	Rating           float32          `json:"rating"`           // 展示评分（兼容旧字段）
+	DisplayRating    float32          `json:"displayRating"`    // 展示评分
+	SampleState      string           `json:"sampleState"`      // none | small | stable
+	RestoreRate      float32          `json:"restoreRate"`      // 兼容旧端，保留运营字段
+	BudgetControl    float32          `json:"budgetControl"`    // 兼容旧端，保留运营字段
 	StarDistribution map[int]int64    `json:"starDistribution"` // 星级分布 {5: 10, 4: 5, ...}
 	Tags             map[string]int64 `json:"tags"`             // 标签统计
 }
@@ -729,34 +711,67 @@ func (s *ProviderService) GetReviewStats(providerID uint64) (*ReviewStats, error
 		StarDistribution: make(map[int]int64),
 	}
 
-	// 总数
-	repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ?", providerID).Count(&stats.Total)
+	var provider model.Provider
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).
+		Select("id", "provider_type", "restore_rate", "budget_control").
+		First(&provider, providerID).Error; err != nil {
+		return nil, err
+	}
 
-	// 有图数 (images 不为空)
-	repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ? AND images != '' AND images IS NOT NULL", providerID).Count(&stats.WithImage)
+	base := validOfficialProviderReviewScope(repository.DB).
+		Where("provider_reviews.provider_id = ?", providerID)
 
-	// 好评数 (rating >= 4.5)
-	repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ? AND rating >= 4.5", providerID).Count(&stats.GoodCount)
+	agg, err := loadValidProviderReviewAggregateTx(repository.DB, providerID)
+	if err != nil {
+		return nil, err
+	}
+	priorMean, err := loadProviderTypePriorMeanTx(repository.DB, provider.ProviderType, providerID)
+	if err != nil {
+		return nil, err
+	}
 
-	// 平均评分
-	var avgResult struct{ Avg float32 }
-	repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ?", providerID).Select("COALESCE(AVG(rating), 0) as avg").Scan(&avgResult)
-	stats.AvgRating = avgResult.Avg
+	stats.Total = agg.Count
+	stats.TotalCount = agg.Count
+	stats.DisplayRating = calculateProviderDisplayRating(agg.Sum, agg.Count, priorMean)
+	stats.Rating = stats.DisplayRating
+	stats.SampleState = normalizeProviderReviewSampleState(agg.Count)
+	stats.RestoreRate = provider.RestoreRate
+	stats.BudgetControl = provider.BudgetControl
+	if agg.Count > 0 {
+		stats.AvgRating = float32(agg.Sum / float64(agg.Count))
+	}
+
+	base.Session(&gorm.Session{}).
+		Where("provider_reviews.images != '' AND provider_reviews.images IS NOT NULL").
+		Count(&stats.WithImage)
+
+	base.Session(&gorm.Session{}).
+		Where("provider_reviews.rating >= 4.5").
+		Count(&stats.GoodCount)
 
 	// 星级分布 (向下取整统计)
 	for star := 1; star <= 5; star++ {
 		var count int64
 		if star == 5 {
-			repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ? AND rating = 5", providerID).Count(&count)
+			base.Session(&gorm.Session{}).
+				Where("provider_reviews.rating = 5").
+				Count(&count)
 		} else {
-			repository.DB.Model(&model.ProviderReview{}).Where("provider_id = ? AND rating >= ? AND rating < ?", providerID, star, star+1).Count(&count)
+			base.Session(&gorm.Session{}).
+				Where("provider_reviews.rating >= ? AND provider_reviews.rating < ?", star, star+1).
+				Count(&count)
 		}
 		stats.StarDistribution[star] = count
 	}
 
 	// 标签统计
 	var reviews []model.ProviderReview
-	repository.DB.Where("provider_id = ? AND tags != '' AND tags IS NOT NULL", providerID).Select("tags").Find(&reviews)
+	if err := base.Session(&gorm.Session{}).
+		Where("provider_reviews.tags != '' AND provider_reviews.tags IS NOT NULL").
+		Select("provider_reviews.tags").
+		Find(&reviews).Error; err != nil {
+		return nil, err
+	}
 
 	for _, r := range reviews {
 		// 解析 JSON 标签数组
