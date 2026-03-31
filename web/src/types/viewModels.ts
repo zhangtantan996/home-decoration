@@ -59,6 +59,7 @@ export interface ProviderCaseVM {
   coverImage: string;
   style: string;
   area: string;
+  showInInspiration: boolean;
 }
 
 export interface ProviderReviewVM {
