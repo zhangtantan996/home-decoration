@@ -6,6 +6,12 @@ DECLARE
     supervision_edit_id BIGINT;
     supervision_risk_id BIGINT;
 BEGIN
+    PERFORM setval(
+        pg_get_serial_sequence('sys_roles', 'id'),
+        GREATEST(COALESCE((SELECT MAX(id) FROM sys_roles), 0) + 1, 1),
+        false
+    );
+
     INSERT INTO sys_roles (name, key, remark, sort, status, created_at, updated_at)
     VALUES ('监理专员', 'project_supervisor', '负责项目阶段推进、施工日志录入与风险上报', 65, 1, NOW(), NOW())
     ON CONFLICT (key) DO UPDATE
