@@ -7,6 +7,8 @@ API_HOST="${API_HOST:-api.${ROOT_DOMAIN}}"
 CURL_BIN="${CURL_BIN:-curl}"
 OPENSSL_BIN="${OPENSSL_BIN:-openssl}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-12}"
+VERIFY_TINODE="${VERIFY_TINODE:-auto}"
+TINODE_DATABASE_DSN="${TINODE_DATABASE_DSN:-}"
 
 if ! command -v "${CURL_BIN}" >/dev/null 2>&1; then
   echo "curl not found: ${CURL_BIN}" >&2
@@ -29,6 +31,29 @@ pass() {
 fail() {
   printf '[FAIL] %s\n' "$1" >&2
   fail_count=$((fail_count + 1))
+}
+
+skip() {
+  printf '[SKIP] %s\n' "$1"
+}
+
+should_verify_tinode() {
+  case "${VERIFY_TINODE}" in
+    true|TRUE|1|yes|YES)
+      return 0
+      ;;
+    false|FALSE|0|no|NO)
+      return 1
+      ;;
+    auto|AUTO)
+      [[ -n "${TINODE_DATABASE_DSN}" ]]
+      return
+      ;;
+    *)
+      fail "Unknown VERIFY_TINODE=${VERIFY_TINODE}"
+      return 1
+      ;;
+  esac
 }
 
 check_status() {
@@ -95,7 +120,12 @@ check_status "https://${ROOT_DOMAIN}/api/v1/health" "404" "Root domain blocks AP
 check_status "https://${ADMIN_HOST}/admin/login" "200" "Admin login page"
 check_status "https://${ADMIN_HOST}/api/v1/health" "404" "Admin domain blocks API path"
 check_status "https://${API_HOST}/api/v1/health" "200" "API health endpoint"
-check_status "https://${API_HOST}/tinode/v0/version" "200" "Tinode version endpoint"
+
+if should_verify_tinode; then
+  check_status "https://${API_HOST}/tinode/v0/version" "200" "Tinode version endpoint"
+else
+  skip "Tinode version endpoint (Tinode not enabled in current deploy env)"
+fi
 
 echo
 echo "PASS=${ok_count} FAIL=${fail_count}"
