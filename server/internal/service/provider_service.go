@@ -441,13 +441,53 @@ type ProviderDetail struct {
 	Provider    *model.Provider      `json:"provider"`
 	User        *model.User          `json:"user"`
 	Cases       []model.ProviderCase `json:"cases"`
+	SceneCases  []ProviderSceneItem  `json:"sceneCases"`
 	Reviews     []ProviderReviewItem `json:"reviews"`
 	ReviewCount int64                `json:"reviewCount"`
 	CaseCount   int64                `json:"caseCount"`
+	SceneCount  int64                `json:"sceneCount"`
 	// 服务区域（名称数组 + 代码数组，方便前端展示/编辑）
 	ServiceArea      []string `json:"serviceArea"`
 	ServiceAreaCodes []string `json:"serviceAreaCodes"`
 	UserPublicID     string   `json:"userPublicId,omitempty"`
+}
+
+type ProviderSceneItem struct {
+	ID          uint64 `json:"id"`
+	CaseID      uint64 `json:"caseId"`
+	ProjectID   uint64 `json:"projectId"`
+	Title       string `json:"title"`
+	CoverImage  string `json:"coverImage"`
+	Description string `json:"description"`
+	Images      string `json:"images"`
+	Year        string `json:"year"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+type ProviderSceneDetail struct {
+	ID          uint64 `json:"id"`
+	CaseID      uint64 `json:"caseId"`
+	ProjectID   uint64 `json:"projectId"`
+	ProviderID  uint64 `json:"providerId"`
+	Title       string `json:"title"`
+	CoverImage  string `json:"coverImage"`
+	Description string `json:"description"`
+	Images      string `json:"images"`
+	Year        string `json:"year"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+type ProviderShowcaseDetail struct {
+	ID          uint64 `json:"id"`
+	ProviderID  uint64 `json:"providerId"`
+	Title       string `json:"title"`
+	CoverImage  string `json:"coverImage"`
+	Style       string `json:"style"`
+	Layout      string `json:"layout"`
+	Area        string `json:"area"`
+	Description string `json:"description"`
+	Images      string `json:"images"`
+	Year        string `json:"year"`
 }
 
 // ProviderReviewItem 评价列表项
@@ -464,6 +504,124 @@ type ProviderReviewItem struct {
 	Tags         string  `json:"tags"`         // 标签 JSON
 	HelpfulCount int     `json:"helpfulCount"` // 有用数
 	CreatedAt    string  `json:"createdAt"`
+}
+
+func ensureVisibleProvider(providerID uint64) error {
+	if providerID == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	var provider model.Provider
+	return applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).
+		Select("id").
+		First(&provider, providerID).Error
+}
+
+func approvedProjectSceneCreateAuditScope(providerID uint64) *gorm.DB {
+	return repository.DB.Model(&model.CaseAudit{}).
+		Where(
+			"provider_id = ? AND action_type = ? AND source_type = ? AND status = ? AND case_id IS NOT NULL",
+			providerID,
+			"create",
+			"project_completion",
+			1,
+		)
+}
+
+func craftProviderCaseScope(providerID uint64) *gorm.DB {
+	return repository.DB.Model(&model.ProviderCase{}).
+		Where("provider_id = ?", providerID).
+		Where("id NOT IN (?)", approvedProjectSceneCreateAuditScope(providerID).Select("case_id"))
+}
+
+func normalizeProviderCasesForPublic(items []model.ProviderCase) {
+	for i := range items {
+		items[i].CoverImage = imgutil.GetFullImageURL(items[i].CoverImage)
+		items[i].Images = imgutil.NormalizeImageURLsJSON(items[i].Images)
+	}
+}
+
+func pickFirstNonEmptyProviderString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func loadLatestApprovedCaseAuditSnapshots(caseIDs []uint64) (map[uint64]model.CaseAudit, error) {
+	result := make(map[uint64]model.CaseAudit, len(caseIDs))
+	if len(caseIDs) == 0 {
+		return result, nil
+	}
+
+	var audits []model.CaseAudit
+	if err := repository.DB.
+		Where("case_id IN ? AND status = ?", caseIDs, 1).
+		Order("case_id ASC, created_at DESC").
+		Find(&audits).Error; err != nil {
+		return nil, err
+	}
+
+	for _, audit := range audits {
+		if audit.CaseID == nil {
+			continue
+		}
+		caseID := *audit.CaseID
+		if _, exists := result[caseID]; exists {
+			continue
+		}
+		result[caseID] = audit
+	}
+
+	return result, nil
+}
+
+func buildProviderSceneItem(createAudit model.CaseAudit, latestAudit model.CaseAudit) ProviderSceneItem {
+	snapshot := latestAudit
+	if snapshot.ID == 0 {
+		snapshot = createAudit
+	}
+
+	caseID := uint64(0)
+	if createAudit.CaseID != nil {
+		caseID = *createAudit.CaseID
+	}
+
+	coverImage := imgutil.GetFullImageURL(snapshot.CoverImage)
+	images := imgutil.NormalizeImageURLsJSON(snapshot.Images)
+	if coverImage == "" {
+		coverImage = imgutil.GetFullImageURL(createAudit.CoverImage)
+	}
+
+	return ProviderSceneItem{
+		ID:          createAudit.ID,
+		CaseID:      caseID,
+		ProjectID:   createAudit.SourceProjectID,
+		Title:       pickFirstNonEmptyProviderString(snapshot.Title, createAudit.Title, "真实项目案例"),
+		CoverImage:  coverImage,
+		Description: pickFirstNonEmptyProviderString(snapshot.Description, createAudit.Description, "项目案例说明待补充"),
+		Images:      images,
+		Year:        pickFirstNonEmptyProviderString(snapshot.Year, createAudit.Year),
+		CreatedAt:   snapshot.CreatedAt.Format("2006-01-02"),
+	}
+}
+
+func buildProviderSceneDetail(createAudit model.CaseAudit, latestAudit model.CaseAudit) ProviderSceneDetail {
+	item := buildProviderSceneItem(createAudit, latestAudit)
+	return ProviderSceneDetail{
+		ID:          item.ID,
+		CaseID:      item.CaseID,
+		ProjectID:   item.ProjectID,
+		ProviderID:  createAudit.ProviderID,
+		Title:       item.Title,
+		CoverImage:  item.CoverImage,
+		Description: item.Description,
+		Images:      item.Images,
+		Year:        item.Year,
+		CreatedAt:   item.CreatedAt,
+	}
 }
 
 // GetProviderDetail 获取服务商完整详情
@@ -515,22 +673,15 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		provider.ServiceArea = string(namesJSON)
 	}
 
-	// 获取案例（前5条）
-	var cases []model.ProviderCase
-	repository.DB.Where("provider_id = ?", id).
-		Order("sort_order ASC, created_at DESC").
-		Limit(5).
-		Find(&cases)
-	for i := range cases {
-		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
-		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
+	cases, caseCount, err := s.GetProviderCases(id, 1, 5)
+	if err != nil {
+		return nil, err
 	}
 
-	// 统计案例总数
-	var caseCount int64
-	repository.DB.Model(&model.ProviderCase{}).
-		Where("provider_id = ?", id).
-		Count(&caseCount)
+	sceneCases, sceneCount, err := s.GetProviderSceneCases(id, 1, 5)
+	if err != nil {
+		return nil, err
+	}
 
 	// 获取正式评价（前5条）
 	var reviews []model.ProviderReview
@@ -576,9 +727,11 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		Provider:         &provider,
 		User:             &user,
 		Cases:            cases,
+		SceneCases:       sceneCases,
 		Reviews:          reviewItems,
 		ReviewCount:      reviewCount,
 		CaseCount:        caseCount,
+		SceneCount:       sceneCount,
 		ServiceArea:      serviceAreaNames,
 		ServiceAreaCodes: serviceAreaCodes,
 		UserPublicID:     user.PublicID,
@@ -597,24 +750,149 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 	var cases []model.ProviderCase
 	var total int64
 
-	var provider model.Provider
-	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).Select("id").First(&provider, providerID).Error; err != nil {
+	if err := ensureVisibleProvider(providerID); err != nil {
 		return nil, 0, err
 	}
 
-	db := repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", providerID)
-	db.Count(&total)
+	db := applyVisibleCaseFilter(craftProviderCaseScope(providerID))
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	offset := (page - 1) * pageSize
 	if err := db.Order("sort_order ASC, created_at DESC").Offset(offset).Limit(pageSize).Find(&cases).Error; err != nil {
 		return nil, 0, err
 	}
-	for i := range cases {
-		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
-		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
-	}
+	normalizeProviderCasesForPublic(cases)
 
 	return cases, total, nil
+}
+
+func (s *ProviderService) GetProviderSceneCases(providerID uint64, page, pageSize int) ([]ProviderSceneItem, int64, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 20 {
+		pageSize = 10
+	}
+	if err := ensureVisibleProvider(providerID); err != nil {
+		return nil, 0, err
+	}
+
+	var createAudits []model.CaseAudit
+	if err := approvedProjectSceneCreateAuditScope(providerID).
+		Order("created_at DESC").
+		Find(&createAudits).Error; err != nil {
+		return nil, 0, err
+	}
+
+	caseIDs := make([]uint64, 0, len(createAudits))
+	for _, audit := range createAudits {
+		if audit.CaseID == nil {
+			continue
+		}
+		caseIDs = append(caseIDs, *audit.CaseID)
+	}
+
+	latestByCase, err := loadLatestApprovedCaseAuditSnapshots(caseIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]ProviderSceneItem, 0, len(createAudits))
+	for _, createAudit := range createAudits {
+		if createAudit.CaseID == nil {
+			continue
+		}
+		latestAudit := latestByCase[*createAudit.CaseID]
+		if latestAudit.ActionType == "delete" {
+			continue
+		}
+		items = append(items, buildProviderSceneItem(createAudit, latestAudit))
+	}
+
+	total := int64(len(items))
+	offset := (page - 1) * pageSize
+	if offset >= len(items) {
+		return []ProviderSceneItem{}, total, nil
+	}
+	end := offset + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+
+	return items[offset:end], total, nil
+}
+
+func (s *ProviderService) GetProviderSceneDetail(sceneID uint64) (*ProviderSceneDetail, error) {
+	var createAudit model.CaseAudit
+	if err := repository.DB.
+		Where("id = ? AND action_type = ? AND source_type = ? AND status = ?", sceneID, "create", "project_completion", 1).
+		First(&createAudit).Error; err != nil {
+		return nil, err
+	}
+
+	if err := ensureVisibleProvider(createAudit.ProviderID); err != nil {
+		return nil, err
+	}
+
+	latestAudit := createAudit
+	if createAudit.CaseID != nil {
+		latestByCase, err := loadLatestApprovedCaseAuditSnapshots([]uint64{*createAudit.CaseID})
+		if err != nil {
+			return nil, err
+		}
+		if snapshot, ok := latestByCase[*createAudit.CaseID]; ok {
+			latestAudit = snapshot
+		}
+	}
+
+	if latestAudit.ActionType == "delete" {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	detail := buildProviderSceneDetail(createAudit, latestAudit)
+	return &detail, nil
+}
+
+func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderShowcaseDetail, error) {
+	var providerCase model.ProviderCase
+	if err := repository.DB.First(&providerCase, caseID).Error; err != nil {
+		return nil, err
+	}
+
+	if err := ensureVisibleProvider(providerCase.ProviderID); err != nil {
+		return nil, err
+	}
+	if !IsCasePublicVisible(&providerCase) {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	var linkedSceneCount int64
+	if err := approvedProjectSceneCreateAuditScope(providerCase.ProviderID).
+		Where("case_id = ?", providerCase.ID).
+		Count(&linkedSceneCount).Error; err != nil {
+		return nil, err
+	}
+	if linkedSceneCount > 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	providerCase.CoverImage = imgutil.GetFullImageURL(providerCase.CoverImage)
+	providerCase.Images = imgutil.NormalizeImageURLsJSON(providerCase.Images)
+
+	return &ProviderShowcaseDetail{
+		ID:          providerCase.ID,
+		ProviderID:  providerCase.ProviderID,
+		Title:       pickFirstNonEmptyProviderString(providerCase.Title, "工艺展示"),
+		CoverImage:  providerCase.CoverImage,
+		Style:       providerCase.Style,
+		Layout:      providerCase.Layout,
+		Area:        providerCase.Area,
+		Description: pickFirstNonEmptyProviderString(providerCase.Description, "工艺展示说明待补充"),
+		Images:      providerCase.Images,
+		Year:        providerCase.Year,
+	}, nil
 }
 
 // GetProviderReviews 获取服务商评价列表（分页+筛选）
