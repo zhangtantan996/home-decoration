@@ -141,6 +141,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			designers.GET("", handler.ListDesigners)
 			designers.GET("/:id", handler.GetDesigner)
 			designers.GET("/:id/cases", handler.GetProviderCases)
+			designers.GET("/:id/scene-cases", handler.GetProviderSceneCases)
 			designers.GET("/:id/reviews", handler.GetProviderReviews)
 			designers.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -151,6 +152,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			companies.GET("", handler.ListCompanies)
 			companies.GET("/:id", handler.GetCompany)
 			companies.GET("/:id/cases", handler.GetProviderCases)
+			companies.GET("/:id/scene-cases", handler.GetProviderSceneCases)
 			companies.GET("/:id/reviews", handler.GetProviderReviews)
 			companies.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -161,6 +163,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			foremen.GET("", handler.ListForemen)
 			foremen.GET("/:id", handler.GetForeman)
 			foremen.GET("/:id/cases", handler.GetProviderCases)
+			foremen.GET("/:id/scene-cases", handler.GetProviderSceneCases)
 			foremen.GET("/:id/reviews", handler.GetProviderReviews)
 			foremen.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -170,6 +173,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 		// 案例详情 (公开)
 		v1.GET("/cases/:id", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetCaseDetail)
+		v1.GET("/provider-cases/:id", handler.GetProviderShowcaseDetail)
+		v1.GET("/provider-scenes/:id", handler.GetProviderSceneDetail)
 
 		// 灵感图库 (公开，支持未登录访问)
 		v1.GET("/inspiration", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetInspirationList)
