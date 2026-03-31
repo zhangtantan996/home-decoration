@@ -91,14 +91,36 @@ export interface ProviderDetailDTO {
   priceMax?: number;
   priceUnit?: string;
   isSettled?: boolean;
+  caseCount?: number;
+  cases?: ProviderCaseDTO[];
+  sceneCount?: number;
+  sceneCases?: ProviderSceneDTO[];
 }
 
 export interface ProviderCaseDTO {
   id: number;
   title: string;
   coverImage: string;
+  images?: StringListValue;
   style?: string;
-  area?: number;
+  area?: string | number;
+  layout?: string;
+  year?: string | number;
+  description?: string;
+  price?: number;
+}
+
+export interface ProviderSceneDTO {
+  id: number;
+  caseId?: number;
+  projectId?: number;
+  providerId?: number;
+  title: string;
+  coverImage: string;
+  description?: string;
+  images?: StringListValue;
+  year?: string | number;
+  createdAt?: string;
 }
 
 export interface ProposalDTO {

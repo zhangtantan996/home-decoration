@@ -4,6 +4,7 @@ import type {
   ProviderCaseDTO,
   ProviderDTO,
   ProviderDetailDTO,
+  ProviderSceneDTO,
   ProviderType,
 } from './dto';
 
@@ -26,6 +27,34 @@ export interface ProviderQuery {
 export type ProviderDetail = ProviderDetailDTO;
 
 export type ProviderCaseItem = ProviderCaseDTO;
+export type ProviderSceneItem = ProviderSceneDTO;
+
+export interface ProviderCaseDetail {
+  id: number;
+  providerId: number;
+  title: string;
+  coverImage: string;
+  style?: string;
+  layout?: string;
+  area?: string | number;
+  description?: string;
+  images?: string | string[];
+  year?: string | number;
+  price?: number;
+}
+
+export interface ProviderSceneDetail {
+  id: number;
+  caseId?: number;
+  projectId?: number;
+  providerId?: number;
+  title: string;
+  coverImage: string;
+  description?: string;
+  images?: string | string[];
+  year?: string | number;
+  createdAt?: string;
+}
 
 export interface ProviderReviewItem {
   id: number;
@@ -82,6 +111,25 @@ export async function getProviderCases(type: ProviderType, id: number, page = 1,
   return request<PageData<ProviderCaseItem>>({
     url: `/${providerBasePath(type)}/${id}/cases`,
     data: { page, pageSize }
+  });
+}
+
+export async function getProviderSceneCases(type: ProviderType, id: number, page = 1, pageSize = 10) {
+  return request<PageData<ProviderSceneItem>>({
+    url: `/${providerBasePath(type)}/${id}/scene-cases`,
+    data: { page, pageSize }
+  });
+}
+
+export async function getProviderCaseDetail(id: number) {
+  return request<ProviderCaseDetail>({
+    url: `/provider-cases/${id}`
+  });
+}
+
+export async function getProviderSceneDetail(id: number) {
+  return request<ProviderSceneDetail>({
+    url: `/provider-scenes/${id}`
   });
 }
 
