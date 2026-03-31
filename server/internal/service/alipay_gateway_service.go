@@ -23,11 +23,13 @@ import (
 
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
+	qrcode "home-decoration-server/internal/third_party/goqrcode"
 )
 
 const (
 	alipayMethodPagePay     = "alipay.trade.page.pay"
 	alipayMethodWapPay      = "alipay.trade.wap.pay"
+	alipayMethodPrecreate   = "alipay.trade.precreate"
 	alipayMethodTradeQuery  = "alipay.trade.query"
 	alipayMethodRefund      = "alipay.trade.refund"
 	alipayMethodRefundQuery = "alipay.trade.fastpay.refund.query"
@@ -38,6 +40,7 @@ const (
 
 type paymentGateway interface {
 	BuildLaunchHTML(order *model.PaymentOrder) (string, error)
+	BuildQRCodeImage(ctx context.Context, order *model.PaymentOrder) ([]byte, error)
 	VerifyNotify(values url.Values) (map[string]string, error)
 	QueryTrade(ctx context.Context, order *model.PaymentOrder) (*AlipayTradeQueryResult, error)
 	Refund(ctx context.Context, order *model.PaymentOrder, refund *model.RefundOrder) (*AlipayRefundResult, error)
@@ -119,6 +122,34 @@ func (g *AlipayGateway) BuildLaunchHTML(order *model.PaymentOrder) (string, erro
 	}
 	builder.WriteString("</form><script>document.getElementById('alipay-submit').submit();</script></body></html>")
 	return builder.String(), nil
+}
+
+func (g *AlipayGateway) BuildQRCodeImage(ctx context.Context, order *model.PaymentOrder) ([]byte, error) {
+	if order == nil || order.ID == 0 {
+		return nil, errors.New("支付单不存在")
+	}
+	payload, err := g.callJSONAPI(ctx, alipayMethodPrecreate, map[string]any{
+		"out_trade_no":    order.OutTradeNo,
+		"subject":         order.Subject,
+		"total_amount":    formatAmount(order.Amount),
+		"timeout_express": fmt.Sprintf("%dm", maxInt(g.cfg.TimeoutMinutes, 1)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := extractAlipayResponse(payload, "alipay_trade_precreate_response")
+	if err != nil {
+		return nil, err
+	}
+	qrCode := stringField(resp, "qr_code")
+	if qrCode == "" {
+		return nil, errors.New("支付宝预下单未返回二维码")
+	}
+	png, err := qrcode.Encode(qrCode, qrcode.Medium, 320)
+	if err != nil {
+		return nil, fmt.Errorf("生成支付宝二维码失败: %w", err)
+	}
+	return png, nil
 }
 
 func (g *AlipayGateway) VerifyNotify(values url.Values) (map[string]string, error) {

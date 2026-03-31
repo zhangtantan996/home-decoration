@@ -17,8 +17,20 @@ import (
 
 type handlerPaymentReconcileChannel struct{}
 
+func (handlerPaymentReconcileChannel) Channel() string {
+	return model.PaymentChannelAlipay
+}
+
 func (handlerPaymentReconcileChannel) CreateCollectOrder(context.Context, *model.PaymentOrder) (string, error) {
 	return "", nil
+}
+
+func (handlerPaymentReconcileChannel) CreateCollectQRCode(context.Context, *model.PaymentOrder) ([]byte, error) {
+	return nil, nil
+}
+
+func (handlerPaymentReconcileChannel) CreateMiniProgramPayment(context.Context, *model.PaymentOrder, string) (*service.PaymentChannelMiniProgramResult, error) {
+	return nil, nil
 }
 
 func (handlerPaymentReconcileChannel) VerifyNotify(values url.Values) (map[string]string, error) {
@@ -27,6 +39,10 @@ func (handlerPaymentReconcileChannel) VerifyNotify(values url.Values) (map[strin
 		result[key] = values.Get(key)
 	}
 	return result, nil
+}
+
+func (handlerPaymentReconcileChannel) ParseNotifyRequest(context.Context, *http.Request) (*service.PaymentChannelNotifyResult, error) {
+	return nil, nil
 }
 
 func (handlerPaymentReconcileChannel) QueryCollectOrder(context.Context, *model.PaymentOrder) (*service.PaymentChannelTradeResult, error) {
@@ -202,5 +218,65 @@ func TestGetOrderRefreshesPendingOrderStatus(t *testing.T) {
 	}
 	if data.Status != model.OrderStatusPaid {
 		t.Fatalf("expected order status paid, got %d", data.Status)
+	}
+}
+
+func TestGetOrderSupportsProjectOnlyOrderAccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Project{}, &model.Order{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	project := model.Project{
+		Base:       model.Base{ID: 1201},
+		OwnerID:    88,
+		Name:       "项目订单测试",
+		Address:    "高新区测试地址",
+		ProviderID: 66,
+	}
+	order := model.Order{
+		Base:        model.Base{ID: 1202},
+		ProjectID:   project.ID,
+		OrderNo:     "ORD-1202",
+		OrderType:   model.OrderTypeConstruction,
+		Status:      model.OrderStatusPaid,
+		TotalAmount: 2600,
+	}
+
+	for _, value := range []any{&project, &order} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("seed fixture: %v", err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{{Key: "id", Value: "1202"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/orders/1202", nil)
+	c.Set("userId", project.OwnerID)
+
+	GetOrder(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: %d message=%s", resp.Code, resp.Message)
+	}
+
+	var data struct {
+		ID uint64 `json:"id"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("decode response data: %v", err)
+	}
+	if data.ID != order.ID {
+		t.Fatalf("expected order id %d, got %+v", order.ID, data)
 	}
 }

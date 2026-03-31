@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"home-decoration-server/internal/model"
-	"home-decoration-server/internal/repository"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -19,7 +18,7 @@ func setupDesignPaymentDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(withPaymentCentralTestModels(
 		&model.User{},
 		&model.Provider{},
 		&model.Booking{},
@@ -28,15 +27,6 @@ func setupDesignPaymentDB(t *testing.T) *gorm.DB {
 		&model.Order{},
 		&model.PaymentPlan{},
 		&model.MerchantIncome{},
-		&model.PaymentOrder{},
-		&model.PaymentCallback{},
-		&model.RefundOrder{},
-		&model.PayoutOrder{},
-		&model.SettlementOrder{},
-		&model.LedgerAccount{},
-		&model.LedgerEntry{},
-		&model.MerchantBondRule{},
-		&model.MerchantBondAccount{},
 		&model.MerchantServiceSetting{},
 		&model.BusinessFlow{},
 		&model.SystemConfig{},
@@ -46,23 +36,10 @@ func setupDesignPaymentDB(t *testing.T) *gorm.DB {
 		&model.DesignWorkingDoc{},
 		&model.DesignFeeQuote{},
 		&model.DesignDeliverable{},
-	); err != nil {
+	)...); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql db: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-
-	previousDB := repository.DB
-	repository.DB = db
-	t.Cleanup(func() {
-		repository.DB = previousDB
-		_ = sqlDB.Close()
-	})
+	bindRepositorySQLiteTestDB(t, db)
 
 	return db
 }

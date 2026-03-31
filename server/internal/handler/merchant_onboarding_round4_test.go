@@ -414,6 +414,12 @@ func TestAdminApproveMaterialShopApplication_FreezePreviousProvider(t *testing.T
 	if err := repository.DB.Create(&provider).Error; err != nil {
 		t.Fatalf("create provider failed: %v", err)
 	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
 	refID := provider.ID
 	identity := model.UserIdentity{UserID: user.ID, IdentityType: merchantIdentityTypeProvider, IdentityRefID: &refID, Status: 1, Verified: true}
 	if err := repository.DB.Create(&identity).Error; err != nil {
@@ -569,6 +575,12 @@ func TestAdminCompleteMaterialShopAccount_RejectsActiveProviderUser(t *testing.T
 	if err := repository.DB.Create(&provider).Error; err != nil {
 		t.Fatalf("create provider failed: %v", err)
 	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
 	shop := model.MaterialShop{Name: "待补全店", IsVerified: true}
 	if err := repository.DB.Create(&shop).Error; err != nil {
 		t.Fatalf("create shop failed: %v", err)
@@ -658,6 +670,154 @@ func TestAdminCompleteProviderSettlement_ActivatesBoundUser(t *testing.T) {
 	}
 	if identity.Status != merchantIdentityStatusActive || !identity.Verified {
 		t.Fatalf("provider identity should be active, got=%+v", identity)
+	}
+}
+
+func TestAdminClaimProviderAccount_BindsExistingUser(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	app := model.MerchantApplication{Phone: "13800138029", CompanyName: "复用账号装修公司"}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create application failed: %v", err)
+	}
+
+	user := model.User{Phone: "13800138029", Nickname: "已有手机号用户", Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+
+	provider := model.Provider{
+		ProviderType:        2,
+		CompanyName:         "复用账号装修公司",
+		Status:              merchantProviderStatusActive,
+		Verified:            true,
+		IsSettled:           false,
+		SourceApplicationID: app.ID,
+	}
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", provider.ID)}}
+	c.Set("adminId", uint64(99))
+	c.Request = newJSONRequest(t, http.MethodPost, gin.H{
+		"phone":       user.Phone,
+		"contactName": "联系人甲",
+		"nickname":    "复用账号装修公司",
+	})
+
+	AdminClaimProviderAccount(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			UserID      uint64 `json:"userId"`
+			CreatedUser bool   `json:"createdUser"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Fatalf("unexpected response code: %d body=%s", resp.Code, w.Body.String())
+	}
+	if resp.Data.UserID != user.ID {
+		t.Fatalf("expected bound user id=%d got=%d", user.ID, resp.Data.UserID)
+	}
+	if resp.Data.CreatedUser {
+		t.Fatalf("expected existing user to be reused")
+	}
+
+	var updatedProvider model.Provider
+	if err := repository.DB.First(&updatedProvider, provider.ID).Error; err != nil {
+		t.Fatalf("reload provider failed: %v", err)
+	}
+	if updatedProvider.UserID != user.ID || !updatedProvider.IsSettled {
+		t.Fatalf("unexpected provider after claim: %+v", updatedProvider)
+	}
+
+	var updatedApp model.MerchantApplication
+	if err := repository.DB.First(&updatedApp, app.ID).Error; err != nil {
+		t.Fatalf("reload application failed: %v", err)
+	}
+	if updatedApp.UserID != user.ID {
+		t.Fatalf("expected application user id=%d got=%d", user.ID, updatedApp.UserID)
+	}
+}
+
+func TestAdminClaimProviderAccount_RejectsUserBoundToOtherProvider(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	gin.SetMode(gin.TestMode)
+
+	user := model.User{Phone: "13800138030", Nickname: "冲突手机号用户", Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+
+	otherProvider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 2,
+		CompanyName:  "已绑定装修公司",
+		Status:       merchantProviderStatusActive,
+		Verified:     true,
+		IsSettled:    true,
+	}
+	if err := repository.DB.Create(&otherProvider).Error; err != nil {
+		t.Fatalf("create other provider failed: %v", err)
+	}
+
+	provider := model.Provider{
+		ProviderType: 2,
+		CompanyName:  "待认领装修公司",
+		Status:       merchantProviderStatusActive,
+		Verified:     true,
+		IsSettled:    false,
+	}
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+	if err := repository.DB.Model(&provider).Update("is_settled", false).Error; err != nil {
+		t.Fatalf("set provider unsettled failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", provider.ID)}}
+	c.Set("adminId", uint64(99))
+	c.Request = newJSONRequest(t, http.MethodPost, gin.H{
+		"phone": user.Phone,
+	})
+
+	AdminClaimProviderAccount(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected http status: %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp responseEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if !strings.Contains(resp.Message, "已绑定其他服务商账号") {
+		t.Fatalf("unexpected error message: %s", resp.Message)
+	}
+
+	var updatedProvider model.Provider
+	if err := repository.DB.First(&updatedProvider, provider.ID).Error; err != nil {
+		t.Fatalf("reload provider failed: %v", err)
+	}
+	if updatedProvider.UserID != 0 || updatedProvider.IsSettled {
+		t.Fatalf("provider should remain unbound, got %+v", updatedProvider)
 	}
 }
 

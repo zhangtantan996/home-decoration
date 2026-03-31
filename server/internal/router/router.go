@@ -10,66 +10,65 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func defaultAllowedOrigins() []string {
-	return []string{
-		"http://localhost:5173",        // Admin开发环境
-		"http://localhost:5174",        // Admin开发环境备用端口
-		"http://localhost:5175",        // Web开发环境备用端口
-		"http://localhost:5176",        // Web开发环境默认端口
-		"http://localhost:5177",        // 开发环境备用端口
-		"http://127.0.0.1:5173",        // Admin开发环境（本地回环）
-		"http://127.0.0.1:5174",        // Admin开发环境备用端口（本地回环）
-		"http://127.0.0.1:5175",        // Web开发环境备用端口（本地回环）
-		"http://127.0.0.1:5176",        // Web开发环境默认端口（本地回环）
-		"http://127.0.0.1:5177",        // 开发环境备用端口（本地回环）
-		"http://localhost:3000",        // Mobile开发环境
-		"https://admin.yourdomain.com", // 生产环境（需替换）
+var defaultDevAllowedOrigins = []string{
+	"http://localhost:5173", // Admin开发环境
+	"http://localhost:5174", // Admin开发环境备用端口
+	"http://localhost:5175", // Admin开发环境备用端口
+	"http://localhost:5176", // Admin开发环境备用端口
+	"http://localhost:5177", // Admin开发环境备用端口
+	"http://127.0.0.1:5173", // Admin开发环境（本地回环）
+	"http://127.0.0.1:5174", // Admin开发环境备用端口（本地回环）
+	"http://127.0.0.1:5175", // Admin开发环境备用端口（本地回环）
+	"http://127.0.0.1:5176", // Admin开发环境备用端口（本地回环）
+	"http://127.0.0.1:5177", // Admin开发环境备用端口（本地回环）
+	"http://localhost:3000", // Mobile开发环境
+}
+
+const defaultReleaseAllowedOrigin = "https://admin.yourdomain.com"
+
+func buildAllowedOrigins(serverMode string, raw string) []string {
+	parsed := parseAllowedOrigins(raw)
+	if strings.EqualFold(serverMode, "release") {
+		if len(parsed) > 0 {
+			return parsed
+		}
+		return []string{defaultReleaseAllowedOrigin}
 	}
+
+	origins := append([]string{}, defaultDevAllowedOrigins...)
+	for _, origin := range parsed {
+		if !containsString(origins, origin) {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }
 
 func parseAllowedOrigins(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
 	parts := strings.Split(raw, ",")
 	parsed := make([]string, 0, len(parts))
-	for _, p := range parts {
-		v := strings.TrimSpace(p)
-		if v == "" {
+	for _, part := range parts {
+		origin := strings.TrimSpace(part)
+		if origin == "" || containsString(parsed, origin) {
 			continue
 		}
-		parsed = append(parsed, v)
+		parsed = append(parsed, origin)
 	}
 	return parsed
 }
 
-func mergeAllowedOrigins(origins ...[]string) []string {
-	merged := make([]string, 0)
-	seen := make(map[string]struct{})
-	for _, group := range origins {
-		for _, origin := range group {
-			normalized := strings.TrimSpace(origin)
-			if normalized == "" {
-				continue
-			}
-			if _, exists := seen[normalized]; exists {
-				continue
-			}
-			seen[normalized] = struct{}{}
-			merged = append(merged, normalized)
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
 		}
 	}
-	return merged
-}
-
-func buildAllowedOrigins(serverMode, envValue string) []string {
-	defaults := defaultAllowedOrigins()
-	parsed := parseAllowedOrigins(envValue)
-	if len(parsed) == 0 {
-		return defaults
-	}
-	if strings.EqualFold(strings.TrimSpace(serverMode), "release") {
-		return parsed
-	}
-	// 本地/测试环境保留默认开发端口，避免 .env 只配置部分端口时把当前前端页面误拦成 403。
-	return mergeAllowedOrigins(defaults, parsed)
+	return false
 }
 
 func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engine {
@@ -120,7 +119,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		payments := v1.Group("/payments")
 		{
 			payments.GET("/:id/launch", handler.PaymentLaunch)
+			payments.GET("/:id/qr", handler.PaymentQRCode)
 			payments.POST("/alipay/notify", handler.PaymentAlipayNotify)
+			payments.POST("/wechat/notify", handler.PaymentWechatNotify)
 			payments.GET("/alipay/return", handler.PaymentAlipayReturn)
 		}
 
@@ -296,8 +297,14 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			userPayments := authorized.Group("/payments")
 			{
-				userPayments.GET("/:id", handler.PaymentDetail)
 				userPayments.GET("/:id/status", handler.PaymentStatus)
+			}
+
+			orderCenter := authorized.Group("/order-center")
+			{
+				orderCenter.GET("/entries", handler.ListOrderCenterEntries)
+				orderCenter.GET("/entries/:entryKey", handler.GetOrderCenterEntry)
+				orderCenter.POST("/entries/:entryKey/payments", handler.StartOrderCenterEntryPayment)
 			}
 
 			// 项目
@@ -326,7 +333,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.GET("/:id/completion", handler.GetProjectCompletion)
 				projects.POST("/:id/completion/approve", handler.ApproveProjectCompletion)
 				projects.POST("/:id/completion/reject", handler.RejectProjectCompletion)
-				projects.POST("/:id/review", handler.SubmitProjectReview)
 
 				// 托管账户
 				projects.GET("/:id/escrow", handler.GetEscrowAccount)
@@ -523,6 +529,12 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			projectListPerm := middleware.RequirePermission("project:list")
 			projectViewPerm := middleware.RequirePermission("project:view")
 			projectEditPerm := middleware.RequirePermission("project:edit")
+			supervisionWorkspaceViewPerm := middleware.RequirePermission("supervision:workspace:view")
+			supervisionWorkspaceEditPerm := middleware.RequirePermission("supervision:workspace:edit")
+			supervisionRiskCreatePerm := middleware.RequirePermission("supervision:risk:create")
+			orderCenterListPerm := middleware.RequirePermission("order:center:list")
+			orderCenterViewPerm := middleware.RequirePermission("order:center:view")
+			proposalReviewPerm := middleware.RequirePermission("proposal:review")
 			demandListPerm := middleware.RequirePermission("demand:list")
 			demandReviewPerm := middleware.RequirePermission("demand:review")
 			demandAssignPerm := middleware.RequirePermission("demand:assign")
@@ -638,17 +650,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/finance/reconciliations/run", financeTransactionApprovePerm, handler.AdminRunFinanceReconciliation)
 			admin.POST("/finance/reconciliations/:id/claim", financeTransactionApprovePerm, handler.AdminClaimFinanceReconciliation)
 			admin.POST("/finance/reconciliations/:id/resolve", financeTransactionApprovePerm, handler.AdminResolveFinanceReconciliation)
-			admin.GET("/finance/reconciliations/:id/items", financeTransactionListPerm, handler.AdminListFinanceReconciliationItems)
-			admin.GET("/finance/settlements", financeTransactionListPerm, handler.AdminListSettlements)
-			admin.POST("/finance/settlements/:id/retry", financeTransactionApprovePerm, handler.AdminRetrySettlement)
-			admin.GET("/finance/payouts", financeTransactionListPerm, handler.AdminListPayoutOrders)
-			admin.GET("/finance/payouts/:id", financeTransactionViewPerm, handler.AdminGetPayoutOrder)
-			admin.POST("/finance/payouts/:id/retry", financeTransactionApprovePerm, handler.AdminRetryPayoutOrder)
-			admin.GET("/finance/bond-rules", financeTransactionListPerm, handler.AdminListBondRules)
-			admin.PUT("/finance/bond-rules/:id", financeTransactionApprovePerm, handler.AdminUpdateBondRule)
-			admin.GET("/finance/bond-accounts", financeTransactionListPerm, handler.AdminListBondAccounts)
-			admin.POST("/finance/bond-accounts/:id/refund", financeTransactionApprovePerm, handler.AdminRefundBondAccount)
-			admin.POST("/finance/bond-accounts/:id/forfeit", financeTransactionApprovePerm, handler.AdminForfeitBondAccount)
 			admin.POST("/finance/freeze", financeEscrowFreezePerm, handler.AdminFreezeFunds)
 			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, handler.AdminUnfreezeFunds)
 			admin.POST("/finance/manual-release", financeTransactionApprovePerm, handler.AdminManualReleaseFunds)
@@ -708,18 +709,39 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/identity-applications/:id/reject", identityAuditPerm, handler.AdminRejectIdentityApplication)
 
 			// ========== 项目管理 ==========
+			admin.GET("/business-flows", orderCenterListPerm, handler.AdminListBusinessFlows)
+			admin.GET("/business-flows/:id", orderCenterViewPerm, handler.AdminGetBusinessFlow)
+			admin.POST("/proposals/:id/confirm", proposalReviewPerm, handler.AdminConfirmProposal)
+			admin.POST("/proposals/:id/reject", proposalReviewPerm, handler.AdminRejectProposal)
 			admin.GET("/projects", projectListPerm, handler.AdminListProjects)
 			admin.GET("/projects/:id", projectViewPerm, handler.AdminGetProject)
 			admin.POST("/projects/:id/audit", complaintResolvePerm, handler.AdminCreateProjectAudit)
 			admin.PUT("/projects/:id/status", projectEditPerm, handler.AdminUpdateProjectStatus)
 			admin.POST("/projects/:id/construction/confirm", projectEditPerm, handler.AdminConfirmProjectConstruction)
 			admin.POST("/projects/:id/construction/quote/confirm", projectEditPerm, handler.AdminConfirmProjectConstructionQuote)
+			admin.POST("/projects/:id/start", projectEditPerm, handler.AdminStartProject)
+			admin.POST("/projects/:id/pause", projectEditPerm, handler.AdminPauseProject)
+			admin.POST("/projects/:id/resume", projectEditPerm, handler.AdminResumeProject)
+			admin.POST("/projects/:id/milestones/:milestoneId/approve", projectEditPerm, handler.AdminApproveProjectMilestone)
+			admin.POST("/projects/:id/milestones/:milestoneId/reject", projectEditPerm, handler.AdminRejectProjectMilestone)
+			admin.POST("/projects/:id/completion/approve", projectEditPerm, handler.AdminApproveProjectCompletion)
+			admin.POST("/projects/:id/completion/reject", projectEditPerm, handler.AdminRejectProjectCompletion)
 			admin.GET("/projects/:id/phases", projectViewPerm, handler.AdminGetProjectPhases)
 			admin.PUT("/projects/:id/phases/:phaseId", projectEditPerm, handler.AdminUpdatePhase)
 			admin.GET("/projects/:id/logs", projectViewPerm, handler.AdminGetProjectLogs)
 			admin.POST("/projects/:id/phases/:phaseId/logs", projectEditPerm, handler.AdminCreateWorkLog)
 			admin.PUT("/logs/:logId", projectEditPerm, handler.AdminUpdateWorkLog)
 			admin.DELETE("/logs/:logId", projectEditPerm, handler.AdminDeleteWorkLog)
+
+			// ========== 监理工作台 ==========
+			admin.GET("/supervision/projects", supervisionWorkspaceViewPerm, handler.AdminListSupervisionProjects)
+			admin.GET("/supervision/projects/:id", supervisionWorkspaceViewPerm, handler.AdminGetSupervisionProject)
+			admin.GET("/supervision/projects/:id/phases", supervisionWorkspaceViewPerm, handler.AdminGetSupervisionProjectPhases)
+			admin.GET("/supervision/projects/:id/logs", supervisionWorkspaceViewPerm, handler.AdminGetSupervisionProjectLogs)
+			admin.POST("/supervision/projects/:id/phases/:phaseId/logs", supervisionWorkspaceEditPerm, handler.AdminCreateSupervisionWorkLog)
+			admin.PUT("/supervision/projects/:id/phases/:phaseId", supervisionWorkspaceEditPerm, handler.AdminUpdateSupervisionPhase)
+			admin.PUT("/supervision/projects/:id/phases/:phaseId/tasks/:taskId", supervisionWorkspaceEditPerm, handler.AdminUpdateSupervisionPhaseTask)
+			admin.POST("/supervision/projects/:id/risk-warnings", supervisionRiskCreatePerm, handler.AdminCreateSupervisionRiskWarning)
 			admin.POST("/quote-library/import", projectEditPerm, handler.AdminImportQuoteLibrary)
 			admin.POST("/quote-library/import-preview", projectEditPerm, handler.AdminImportQuoteLibraryPreview)
 			admin.GET("/quote-categories", projectListPerm, handler.AdminListQuoteCategories)
@@ -897,11 +919,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 收入中心
 			merchant.GET("/income/summary", handler.MerchantIncomeSummary)
 			merchant.GET("/income/list", handler.MerchantIncomeList)
-			merchant.GET("/settlements", handler.MerchantSettlementList)
-			merchant.GET("/bond-account", handler.MerchantBondAccount)
-			merchant.POST("/bond-account/pay", handler.MerchantStartBondPayment)
-			merchant.GET("/bond-ledger", handler.MerchantBondLedger)
-			merchant.GET("/payments/:id/status", handler.MerchantPaymentStatus)
 
 			// 提现管理
 			merchant.GET("/withdraw/list", handler.MerchantWithdrawList)

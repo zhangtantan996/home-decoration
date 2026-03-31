@@ -18,9 +18,6 @@ import (
 var (
 	adminFinanceService               = service.NewAdminFinanceService()
 	adminFinanceReconciliationService = &service.FinanceReconciliationService{}
-	adminSettlementService            = &service.SettlementService{}
-	adminPayoutService                = service.NewPayoutService()
-	adminBondService                  = service.NewBondService()
 	adminAuditService                 = &service.AuditLogService{}
 )
 
@@ -52,7 +49,7 @@ func AdminExportTransactions(c *gin.Context) {
 }
 
 func AdminFreezeFunds(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
+	adminID := c.GetUint64("adminId")
 	var input service.FreezeFundsInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -68,7 +65,7 @@ func AdminFreezeFunds(c *gin.Context) {
 }
 
 func AdminUnfreezeFunds(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
+	adminID := c.GetUint64("adminId")
 	var input service.UnfreezeFundsInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -84,7 +81,7 @@ func AdminUnfreezeFunds(c *gin.Context) {
 }
 
 func AdminManualReleaseFunds(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
+	adminID := c.GetUint64("adminId")
 	var input service.ManualReleaseInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -180,165 +177,6 @@ func AdminResolveFinanceReconciliation(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"message": "资金对账已处理", "item": result})
-}
-
-func AdminListFinanceReconciliationItems(c *gin.Context) {
-	reconciliationID := parseUint64(c.Param("id"))
-	items, err := adminFinanceReconciliationService.ListFinanceReconciliationItems(reconciliationID)
-	if err != nil {
-		response.ServerError(c, "获取对账明细失败")
-		return
-	}
-	response.Success(c, gin.H{"list": items})
-}
-
-func AdminListPayoutOrders(c *gin.Context) {
-	page := parseInt(c.Query("page"), 1)
-	pageSize := parseInt(c.Query("pageSize"), 20)
-	list, total, err := adminPayoutService.ListPayouts(service.PayoutListFilter{
-		Status:     c.Query("status"),
-		ProviderID: parseUint64(c.Query("providerId")),
-		Page:       page,
-		PageSize:   pageSize,
-	})
-	if err != nil {
-		response.ServerError(c, "获取自动出款列表失败")
-		return
-	}
-	response.Success(c, gin.H{
-		"list":     list,
-		"total":    total,
-		"page":     page,
-		"pageSize": pageSize,
-	})
-}
-
-func AdminListSettlements(c *gin.Context) {
-	page := parseInt(c.Query("page"), 1)
-	pageSize := parseInt(c.Query("pageSize"), 20)
-	list, total, err := adminSettlementService.ListSettlements(service.SettlementListFilter{
-		Status:     c.Query("status"),
-		ProviderID: parseUint64(c.Query("providerId")),
-		Page:       page,
-		PageSize:   pageSize,
-	})
-	if err != nil {
-		response.ServerError(c, "获取结算单列表失败")
-		return
-	}
-	response.Success(c, gin.H{
-		"list":     list,
-		"total":    total,
-		"page":     page,
-		"pageSize": pageSize,
-	})
-}
-
-func AdminRetrySettlement(c *gin.Context) {
-	settlementID := parseUint64(c.Param("id"))
-	item, err := adminSettlementService.RetrySettlement(settlementID)
-	if err != nil {
-		response.Error(c, 400, err.Error())
-		return
-	}
-	response.Success(c, gin.H{"message": "结算单已重新执行", "item": item})
-}
-
-func AdminGetPayoutOrder(c *gin.Context) {
-	payoutID := parseUint64(c.Param("id"))
-	item, err := adminPayoutService.GetPayoutDetail(payoutID)
-	if err != nil {
-		response.Error(c, 404, err.Error())
-		return
-	}
-	response.Success(c, item)
-}
-
-func AdminRetryPayoutOrder(c *gin.Context) {
-	payoutID := parseUint64(c.Param("id"))
-	item, err := adminPayoutService.RetryPayout(payoutID)
-	if err != nil {
-		response.Error(c, 400, err.Error())
-		return
-	}
-	response.Success(c, gin.H{"message": "出款重试已触发", "item": item})
-}
-
-func AdminListBondRules(c *gin.Context) {
-	list, err := adminBondService.ListRules()
-	if err != nil {
-		response.ServerError(c, "获取保证金规则失败")
-		return
-	}
-	response.Success(c, gin.H{"list": list})
-}
-
-func AdminUpdateBondRule(c *gin.Context) {
-	ruleID := parseUint64(c.Param("id"))
-	var input service.UpdateBondRuleInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-	item, err := adminBondService.UpdateRule(ruleID, &input)
-	if err != nil {
-		response.Error(c, 400, err.Error())
-		return
-	}
-	response.Success(c, gin.H{"message": "保证金规则已更新", "item": item})
-}
-
-func AdminListBondAccounts(c *gin.Context) {
-	page := parseInt(c.Query("page"), 1)
-	pageSize := parseInt(c.Query("pageSize"), 20)
-	list, total, err := adminBondService.ListAccounts(service.BondAccountFilter{
-		Status:     c.Query("status"),
-		ProviderID: parseUint64(c.Query("providerId")),
-		Page:       page,
-		PageSize:   pageSize,
-	})
-	if err != nil {
-		response.ServerError(c, "获取保证金账户失败")
-		return
-	}
-	response.Success(c, gin.H{
-		"list":     list,
-		"total":    total,
-		"page":     page,
-		"pageSize": pageSize,
-	})
-}
-
-func AdminRefundBondAccount(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
-	accountID := parseUint64(c.Param("id"))
-	var input service.BondAdjustInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-	item, err := adminBondService.RefundBondByAccountID(adminID, accountID, &input)
-	if err != nil {
-		response.Error(c, 400, err.Error())
-		return
-	}
-	response.Success(c, gin.H{"message": "保证金退款已登记", "item": item})
-}
-
-func AdminForfeitBondAccount(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
-	accountID := parseUint64(c.Param("id"))
-	var input service.BondAdjustInput
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-	item, err := adminBondService.ForfeitBondByAccountID(adminID, accountID, &input)
-	if err != nil {
-		response.Error(c, 400, err.Error())
-		return
-	}
-	response.Success(c, gin.H{"message": "保证金扣罚已登记", "item": item})
 }
 
 func AdminListAuditLogs(c *gin.Context) {

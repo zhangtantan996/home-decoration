@@ -210,6 +210,29 @@ func isUserPhoneDuplicateError(err error) bool {
 		(strings.Contains(message, "users_phone") || strings.Contains(message, "(phone)"))
 }
 
+func createOrLoadMerchantUserWithCompatibility(tx *gorm.DB, phone, nickname string) (model.User, error) {
+	var user model.User
+	err := tx.Where("phone = ?", phone).First(&user).Error
+	if err == nil {
+		return user, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.User{}, err
+	}
+
+	createdUser, createErr := createMerchantUserWithCompatibility(tx, phone, nickname)
+	if createErr != nil {
+		if isUserPhoneDuplicateError(createErr) {
+			if findErr := tx.Where("phone = ?", phone).First(&user).Error; findErr == nil {
+				return user, nil
+			}
+		}
+		return model.User{}, createErr
+	}
+
+	return createdUser, nil
+}
+
 func createMerchantUserWithCompatibility(tx *gorm.DB, phone, realName string) (model.User, error) {
 	now := time.Now()
 	createData := map[string]interface{}{

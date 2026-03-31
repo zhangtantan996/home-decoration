@@ -1,0 +1,84 @@
+.card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+
+  strong {
+    font-size: 15px;
+    color: #1e293b;
+    display: block;
+    margin-bottom: 4px;
+  }
+  p {
+    font-size: 13px;
+    color: #64748b;
+    margin: 0;
+  }
+}
+
+.badge {
+  font-size: 12px;
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+
+  &.urgent { background: #fef2f2; color: #ef4444; }
+  &.pending { background: #fffbeb; color: #d97706; }
+  &.normal { background: #e0e7ff; color: #4338ca; }
+}
+
+.bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  em {
+    font-style: normal;
+    font-weight: bold;
+    color: #0f172a;
+    font-size: 14px;
+  }
+}
+
+.actionRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.actionBtn {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2563eb;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+
+  &:hover {
+    background: #eff6ff;
+    text-decoration: none;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &.danger {
+    color: #ef4444;
+    &:hover { background: #fef2f2; }
+  }
+}

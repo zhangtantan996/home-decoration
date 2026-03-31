@@ -4,7 +4,7 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
-	"home-decoration-server/pkg/response"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +38,7 @@ func AdminListProjects(c *gin.Context) {
 	}
 
 	if err := db.Order("created_at DESC").Find(&projects).Error; err != nil {
-		response.ServerError(c, "获取项目列表失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "获取项目列表失败"})
 		return
 	}
 
@@ -104,8 +104,9 @@ func AdminListProjects(c *gin.Context) {
 		end = len(result)
 	}
 
-	response.Success(c, gin.H{
-		"list":       result[offset:end],
+	c.JSON(http.StatusOK, gin.H{
+		"code":       0,
+		"data":       result[offset:end],
 		"total":      total,
 		"stageStats": stageStats,
 		"page":       page,
@@ -119,11 +120,11 @@ func AdminGetProject(c *gin.Context) {
 
 	detail, err := adminProjectService.GetProjectDetail(parseUint(id))
 	if err != nil {
-		respondScopedAccessError(c, err, "项目不存在")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "项目不存在"})
 		return
 	}
 
-	response.Success(c, detail)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": detail})
 }
 
 // AdminUpdateProjectStatus 更新项目状态
@@ -135,7 +136,7 @@ func AdminUpdateProjectStatus(c *gin.Context) {
 		CurrentPhase string `json:"currentPhase"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "参数错误"})
 		return
 	}
 
@@ -146,60 +147,62 @@ func AdminUpdateProjectStatus(c *gin.Context) {
 	}
 
 	if err := repository.DB.Model(&model.Project{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		response.ServerError(c, "更新失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "更新失败"})
 		return
 	}
 
-	response.SuccessWithMessage(c, "更新成功", gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "更新成功"})
 }
 
 func AdminConfirmProjectConstruction(c *gin.Context) {
 	id := c.Param("id")
+	adminID := c.GetUint64("adminId")
 
 	var req service.ConfirmConstructionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "参数错误"})
 		return
 	}
 
-	project, err := adminProjectService.AdminConfirmConstruction(parseUint(id), &req)
+	project, err := adminProjectService.AdminConfirmConstruction(parseUint(id), adminID, &req)
 	if err != nil {
-		respondDomainMutationError(c, err, "施工方确认失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
 		return
 	}
 
-	response.SuccessWithMessage(c, "施工方确认成功", project)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": project, "message": "施工方确认成功"})
 }
 
 func AdminConfirmProjectConstructionQuote(c *gin.Context) {
 	id := c.Param("id")
+	adminID := c.GetUint64("adminId")
 
 	var req service.ConfirmConstructionQuoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "参数错误"})
 		return
 	}
 
-	project, err := adminProjectService.AdminConfirmConstructionQuote(parseUint(id), &req)
+	project, err := adminProjectService.AdminConfirmConstructionQuote(parseUint(id), adminID, &req)
 	if err != nil {
-		respondDomainMutationError(c, err, "施工报价确认失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
 		return
 	}
 
-	response.SuccessWithMessage(c, "施工报价确认成功", project)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": project, "message": "施工报价确认成功"})
 }
 
 // AdminGetProjectPhases 获取项目阶段列表
 func AdminGetProjectPhases(c *gin.Context) {
 	id := c.Param("id")
 
-	phases, err := adminProjectService.GetProjectPhases(parseUint(id))
+	phases, err := adminProjectService.GetProjectPhaseViews(parseUint(id))
 	if err != nil {
-		respondScopedAccessError(c, err, "获取阶段列表失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "获取阶段列表失败"})
 		return
 	}
 
-	response.Success(c, gin.H{"phases": phases})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"phases": phases}})
 }
 
 // AdminUpdatePhase 更新阶段状态（仅管理员）
@@ -208,16 +211,16 @@ func AdminUpdatePhase(c *gin.Context) {
 
 	var req service.UpdatePhaseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "参数错误"})
 		return
 	}
 
 	if err := adminProjectService.UpdatePhase(parseUint(phaseId), &req); err != nil {
-		respondDomainMutationError(c, err, "更新阶段失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
 		return
 	}
 
-	response.SuccessWithMessage(c, "更新成功", gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "更新成功"})
 }
 
 // ==================== 施工日志管理 ====================
@@ -225,29 +228,19 @@ func AdminUpdatePhase(c *gin.Context) {
 // AdminGetProjectLogs 获取项目施工日志
 func AdminGetProjectLogs(c *gin.Context) {
 	id := c.Param("id")
-	phaseId := c.Query("phaseId")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	phaseID := parseUint(c.Query("phaseId"))
 
-	var logs []model.WorkLog
-	var total int64
-
-	db := repository.DB.Model(&model.WorkLog{}).Where("project_id = ?", id)
-
-	if phaseId != "" {
-		db = db.Where("phase_id = ?", phaseId)
-	}
-
-	db.Count(&total)
-
-	offset := (page - 1) * pageSize
-	if err := db.Order("log_date DESC, created_at DESC").Offset(offset).Limit(pageSize).Find(&logs).Error; err != nil {
-		response.ServerError(c, "获取日志失败")
+	logs, total, err := adminProjectService.GetProjectLogs(parseUint(id), page, pageSize, phaseID)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "获取日志失败"})
 		return
 	}
 
-	response.Success(c, gin.H{
-		"list":     logs,
+	c.JSON(http.StatusOK, gin.H{
+		"code":     0,
+		"data":     logs,
 		"total":    total,
 		"page":     page,
 		"pageSize": pageSize,
@@ -259,43 +252,22 @@ func AdminCreateWorkLog(c *gin.Context) {
 	projectId := c.Param("id")
 	phaseId := c.Param("phaseId")
 
-	var req struct {
-		Title       string `json:"title" binding:"required"`
-		Description string `json:"description"`
-		Photos      string `json:"photos"` // JSON 数组字符串
-		LogDate     string `json:"logDate"`
-	}
+	var req service.CreateWorkLogRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "标题不能为空")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "标题不能为空"})
 		return
 	}
 
-	// 获取当前管理员ID
-	adminID, _ := c.Get("adminId")
+	req.PhaseID = parseUint(phaseId)
+	adminID := c.GetUint64("admin_id")
 
-	log := &model.WorkLog{
-		ProjectID:   parseUint(projectId),
-		PhaseID:     parseUint(phaseId),
-		Title:       req.Title,
-		Description: req.Description,
-		Photos:      req.Photos,
-		CreatedBy:   adminID.(uint64),
-		LogDate:     time.Now(),
-	}
-
-	// 解析日期
-	if req.LogDate != "" {
-		if t, err := time.Parse("2006-01-02", req.LogDate); err == nil {
-			log.LogDate = t
-		}
-	}
-
-	if err := repository.DB.Create(log).Error; err != nil {
-		response.ServerError(c, "创建日志失败")
+	log, err := adminProjectService.CreateAdminWorkLog(parseUint(projectId), adminID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
 		return
 	}
 
-	response.SuccessWithMessage(c, "创建成功", log)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": log, "message": "创建成功"})
 }
 
 // AdminUpdateWorkLog 更新施工日志（仅管理员）
@@ -309,7 +281,7 @@ func AdminUpdateWorkLog(c *gin.Context) {
 		LogDate     string `json:"logDate"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "参数错误"})
 		return
 	}
 
@@ -330,11 +302,11 @@ func AdminUpdateWorkLog(c *gin.Context) {
 	}
 
 	if err := repository.DB.Model(&model.WorkLog{}).Where("id = ?", logId).Updates(updates).Error; err != nil {
-		response.ServerError(c, "更新失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "更新失败"})
 		return
 	}
 
-	response.SuccessWithMessage(c, "更新成功", gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "更新成功"})
 }
 
 // AdminDeleteWorkLog 删除施工日志（仅管理员）
@@ -342,11 +314,11 @@ func AdminDeleteWorkLog(c *gin.Context) {
 	logId := c.Param("logId")
 
 	if err := repository.DB.Delete(&model.WorkLog{}, logId).Error; err != nil {
-		response.ServerError(c, "删除失败")
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "删除失败"})
 		return
 	}
 
-	response.SuccessWithMessage(c, "删除成功", gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"code": 0, "message": "删除成功"})
 }
 
 // parseUint 辅助函数

@@ -45,6 +45,28 @@ type CreateRefundApplicationInput struct {
 	Evidence   []string `json:"evidence"`
 }
 
+type ListMyRefundApplicationsQuery struct {
+	BookingID uint64
+	Status    string
+	Page      int
+	PageSize  int
+}
+
+type RefundTypeEstimate struct {
+	Type    string  `json:"type"`
+	Label   string  `json:"label"`
+	Amount  float64 `json:"amount"`
+	OrderID uint64  `json:"orderId,omitempty"`
+}
+
+type BookingRefundSummary struct {
+	CanApplyRefund    bool                 `json:"canApplyRefund"`
+	LatestRefundID    uint64               `json:"latestRefundId,omitempty"`
+	LatestRefundStatus string              `json:"latestRefundStatus,omitempty"`
+	RefundableAmount  float64              `json:"refundableAmount"`
+	RefundableTypes   []RefundTypeEstimate `json:"refundableTypes"`
+}
+
 type ReviewRefundApplicationInput struct {
 	ApprovedAmount float64 `json:"approvedAmount"`
 	AdminNotes     string  `json:"adminNotes"`
@@ -145,20 +167,48 @@ func (s *RefundApplicationService) CreateApplication(bookingID, userID uint64, i
 	return view, nil
 }
 
-func (s *RefundApplicationService) ListMyApplications(userID uint64) ([]RefundApplicationView, error) {
+func (s *RefundApplicationService) ListMyApplications(userID uint64, query *ListMyRefundApplicationsQuery) ([]RefundApplicationView, int64, error) {
+	page := 1
+	pageSize := 20
+	bookingID := uint64(0)
+	status := ""
+	if query != nil {
+		if query.Page > 0 {
+			page = query.Page
+		}
+		if query.PageSize > 0 {
+			pageSize = query.PageSize
+		}
+		bookingID = query.BookingID
+		status = strings.TrimSpace(query.Status)
+	}
+
+	db := repository.DB.Model(&model.RefundApplication{}).Where("user_id = ?", userID)
+	if bookingID > 0 {
+		db = db.Where("booking_id = ?", bookingID)
+	}
+	if status != "" {
+		db = db.Where("status = ?", status)
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
 	var items []model.RefundApplication
-	if err := repository.DB.Where("user_id = ?", userID).Order("created_at DESC").Find(&items).Error; err != nil {
-		return nil, err
+	if err := db.Order("created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error; err != nil {
+		return nil, 0, err
 	}
 	result := make([]RefundApplicationView, 0, len(items))
 	for i := range items {
 		view, err := s.buildRefundApplicationViewTx(repository.DB, &items[i])
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		result = append(result, *view)
 	}
-	return result, nil
+	return result, total, nil
 }
 
 func (s *RefundApplicationService) ListAdminApplications(status string, page, pageSize int) ([]RefundApplicationView, int64, error) {
@@ -772,6 +822,86 @@ func applyConstructionRefundTx(tx *gorm.DB, projectID, userID, orderID, refundAp
 		return err
 	}
 	return createRefundTransactionTx(tx, projectID, userID, orderID, amount, buildRefundTransactionRemark("施工费退款", projectID, orderID, refundApplicationID))
+}
+
+func (s *RefundApplicationService) BuildBookingRefundSummary(bookingID uint64) (*BookingRefundSummary, error) {
+	if bookingID == 0 {
+		return nil, errors.New("预约不存在")
+	}
+
+	var summary *BookingRefundSummary
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var booking model.Booking
+		if err := tx.First(&booking, bookingID).Error; err != nil {
+			return errors.New("预约不存在")
+		}
+
+		project, err := findProjectByBookingTx(tx, bookingID)
+		if err != nil {
+			return err
+		}
+		breakdown, err := calculateRefundBreakdownTx(tx, &booking, project)
+		if err != nil {
+			return err
+		}
+
+		latest := model.RefundApplication{}
+		if err := tx.
+			Where("booking_id = ?", bookingID).
+			Order("id DESC").
+			First(&latest).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		refundableTypes := make([]RefundTypeEstimate, 0, 4)
+		appendRefundType := func(refundType, label string, amount float64, orderID uint64) {
+			if amount <= 0 {
+				return
+			}
+			refundableTypes = append(refundableTypes, RefundTypeEstimate{
+				Type:    refundType,
+				Label:   label,
+				Amount:  amount,
+				OrderID: orderID,
+			})
+		}
+		appendRefundType(model.RefundTypeIntentFee, "意向金", breakdown.IntentFee, 0)
+		appendRefundType(model.RefundTypeDesignFee, "设计费", breakdown.DesignFee, breakdown.DesignOrderID)
+		appendRefundType(model.RefundTypeConstructionFee, "施工费", breakdown.ConstructionFee, breakdown.ConstructionOrderID)
+		total := normalizeAmount(breakdown.IntentFee + breakdown.DesignFee + breakdown.ConstructionFee)
+		if total > 0 {
+			orderID := breakdown.DesignOrderID
+			if orderID == 0 {
+				orderID = breakdown.ConstructionOrderID
+			}
+			appendRefundType(model.RefundTypeFull, "全部可退金额", total, orderID)
+		}
+
+		latestID := uint64(0)
+		latestStatus := ""
+		if latest.ID > 0 {
+			latestID = latest.ID
+			latestStatus = latest.Status
+		}
+
+		canApply := total > 0
+		if latestStatus == model.RefundApplicationStatusPending || latestStatus == model.RefundApplicationStatusApproved {
+			canApply = false
+		}
+
+		summary = &BookingRefundSummary{
+			CanApplyRefund:     canApply,
+			LatestRefundID:     latestID,
+			LatestRefundStatus: latestStatus,
+			RefundableAmount:   total,
+			RefundableTypes:    refundableTypes,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return summary, nil
 }
 
 func applySettlementRefundByOrderTx(tx *gorm.DB, orderID uint64, amount float64) error {

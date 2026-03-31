@@ -23,6 +23,7 @@ var (
 	escrowService       = &service.EscrowService{}
 	bookingService      = &service.BookingService{}
 	paymentService      = service.NewPaymentService(nil)
+	orderCenterService  = service.NewOrderCenterService(paymentService)
 	materialShopService = &service.MaterialShopService{}
 	demandService       = service.NewDemandService()
 	wechatAuthService   *service.WechatAuthService
@@ -941,7 +942,7 @@ func GetProjectPhases(c *gin.Context) {
 		return
 	}
 
-	phases, err := projectService.GetProjectPhasesForOwner(projectId, getCurrentUserID(c))
+	phases, err := projectService.GetProjectPhaseViewsForOwner(projectId, getCurrentUserID(c))
 	if err != nil {
 		respondScopedAccessError(c, err, "查询阶段失败")
 		return

@@ -472,6 +472,9 @@ export interface ProjectDetailVM {
   providerAvatar?: string;
   providerPhoneHint?: string;
   providerRoleText?: string;
+  designerName?: string;
+  designerAvatar?: string;
+  designerPhoneHint?: string;
   escrowBalanceText: string;
   phases: ProjectPhaseVM[];
   milestones: ProjectMilestoneVM[];

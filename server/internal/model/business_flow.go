@@ -57,15 +57,17 @@ const (
 	ConfigKeyPublicIDRollbackForceLegacyLookup = "id.public_id_rollback_force_legacy_lookup" // 紧急回滚: 强制仅按内部ID查询
 
 	// 量房定金与设计费支付配置
-	ConfigKeySurveyDepositRefundRate   = "booking.survey_deposit_refund_rate" // 退款比例(0-1)
-	ConfigKeySurveyDepositMin          = "booking.survey_deposit_min"         // 设计师可设最低
-	ConfigKeySurveyDepositMax          = "booking.survey_deposit_max"         // 设计师可设最高
-	ConfigKeyDesignFeeQuoteExpireHours = "design.fee_quote_expire_hours"      // 报价有效期(小时)
-	ConfigKeyDeliverableDeadlineDays   = "design.deliverable_deadline_days"   // 交付截止天数
-	ConfigKeyConstructionReleaseDelay  = "construction.release_delay_days"    // T+N 放款延迟天数
-	ConfigKeyMerchantDepositRules      = "payment.merchant_deposit_rules"
-	ConfigKeyPaymentReleaseDelayDays   = "payment.release_delay_days"
-	ConfigKeyPaymentPayoutAutoEnabled  = "payment.payout_auto_enabled"
+	ConfigKeySurveyDepositRefundRate     = "booking.survey_deposit_refund_rate" // 退款比例(0-1)
+	ConfigKeySurveyDepositMin            = "booking.survey_deposit_min"         // 设计师可设最低
+	ConfigKeySurveyDepositMax            = "booking.survey_deposit_max"         // 设计师可设最高
+	ConfigKeyDesignFeeQuoteExpireHours   = "design.fee_quote_expire_hours"      // 报价有效期(小时)
+	ConfigKeyDeliverableDeadlineDays     = "design.deliverable_deadline_days"   // 交付截止天数
+	ConfigKeyConstructionReleaseDelay    = "construction.release_delay_days"    // T+N 放款延迟天数
+	ConfigKeyMerchantDepositRules        = "payment.merchant_deposit_rules"
+	ConfigKeyPaymentReleaseDelayDays     = "payment.release_delay_days"
+	ConfigKeyPaymentPayoutAutoEnabled    = "payment.payout_auto_enabled"
+	ConfigKeyPaymentChannelWechatEnabled = "payment.channel.wechat.enabled"
+	ConfigKeyPaymentChannelAlipayEnabled = "payment.channel.alipay.enabled"
 )
 
 // Proposal 设计方案

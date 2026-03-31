@@ -27,7 +27,7 @@ func PaySurveyDeposit(c *gin.Context) {
 		return
 	}
 
-	result, err := paymentService.StartSurveyDepositPayment(userID, bookingID, req.TerminalType)
+	result, err := paymentService.StartSurveyDepositPayment(userID, bookingID, req.Channel, req.TerminalType)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

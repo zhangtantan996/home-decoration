@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"testing"
 
@@ -16,8 +17,20 @@ type paymentReconcileTestChannel struct {
 	tradeStatus string
 }
 
+func (c paymentReconcileTestChannel) Channel() string {
+	return model.PaymentChannelAlipay
+}
+
 func (c paymentReconcileTestChannel) CreateCollectOrder(context.Context, *model.PaymentOrder) (string, error) {
 	return "", nil
+}
+
+func (c paymentReconcileTestChannel) CreateCollectQRCode(context.Context, *model.PaymentOrder) ([]byte, error) {
+	return nil, nil
+}
+
+func (c paymentReconcileTestChannel) CreateMiniProgramPayment(context.Context, *model.PaymentOrder, string) (*PaymentChannelMiniProgramResult, error) {
+	return nil, nil
 }
 
 func (c paymentReconcileTestChannel) VerifyNotify(values url.Values) (map[string]string, error) {
@@ -26,6 +39,10 @@ func (c paymentReconcileTestChannel) VerifyNotify(values url.Values) (map[string
 		result[key] = values.Get(key)
 	}
 	return result, nil
+}
+
+func (c paymentReconcileTestChannel) ParseNotifyRequest(context.Context, *http.Request) (*PaymentChannelNotifyResult, error) {
+	return nil, nil
 }
 
 func (c paymentReconcileTestChannel) QueryCollectOrder(context.Context, *model.PaymentOrder) (*PaymentChannelTradeResult, error) {

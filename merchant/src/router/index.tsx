@@ -30,6 +30,7 @@ import MerchantSettings from '../pages/merchant/MerchantSettings';
 import MaterialShopSettings from '../pages/merchant/MaterialShopSettings';
 import MaterialShopProducts from '../pages/merchant/MaterialShopProducts';
 import MerchantDesignWorkflow from '../pages/merchant/MerchantDesignWorkflow';
+import MerchantProjectFlow from '../pages/merchant/MerchantProjectFlow';
 import OnboardingAgreementPage from '../pages/merchant/legal/OnboardingAgreementPage';
 import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
           { path: '/bookings/:id/site-survey', element: <MerchantBookingSiteSurvey /> },
           { path: '/bookings/:id/budget-confirm', element: <MerchantBookingBudgetConfirm /> },
           { path: '/bookings/:id/design-workflow', element: <MerchantDesignWorkflow /> },
+          { path: '/bookings/:id/flow', element: <MerchantProjectFlow /> },
           { path: '/proposals', element: <MerchantProposals /> },
           { path: '/price-book', element: <MerchantPriceBook /> },
           { path: '/quote-lists', element: <MerchantQuoteLists /> },

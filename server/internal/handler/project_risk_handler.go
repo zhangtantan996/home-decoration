@@ -92,12 +92,27 @@ func CreateBookingRefundApplication(c *gin.Context) {
 
 func ListMyRefundApplications(c *gin.Context) {
 	userID := c.GetUint64("userId")
-	list, err := refundApplicationService.ListMyApplications(userID)
+	page := parseInt(c.DefaultQuery("page", "1"), 1)
+	pageSize := parseInt(c.DefaultQuery("pageSize", "20"), 20)
+	bookingID := parseUint64(c.Query("bookingId"))
+	status := strings.TrimSpace(c.Query("status"))
+	list, total, err := refundApplicationService.ListMyApplications(userID, &service.ListMyRefundApplicationsQuery{
+		BookingID: bookingID,
+		Status:    status,
+		Page:      page,
+		PageSize:  pageSize,
+	})
 	if err != nil {
 		response.ServerError(c, "获取退款申请失败")
 		return
 	}
-	response.Success(c, gin.H{"list": list, "count": len(list)})
+	response.Success(c, gin.H{
+		"list":     list,
+		"count":    len(list),
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
 }
 
 func AdminCreateProjectAudit(c *gin.Context) {

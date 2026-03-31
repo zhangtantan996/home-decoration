@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"home-decoration-server/internal/model"
-	"home-decoration-server/internal/repository"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -19,7 +18,7 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(withPaymentCentralTestModels(
 		&model.User{},
 		&model.Provider{},
 		&model.Notification{},
@@ -38,27 +37,10 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 		&model.MerchantIncome{},
 		&model.Order{},
 		&model.PaymentPlan{},
-		&model.PayoutOrder{},
-		&model.SettlementOrder{},
-		&model.LedgerAccount{},
-		&model.LedgerEntry{},
-	); err != nil {
+	)...); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql db: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-
-	previousDB := repository.DB
-	repository.DB = db
-	t.Cleanup(func() {
-		repository.DB = previousDB
-		_ = sqlDB.Close()
-	})
+	bindRepositorySQLiteTestDB(t, db)
 
 	return db
 }
@@ -486,6 +468,52 @@ func TestProjectServiceGetProjectDetail_FallbackWhenBusinessFlowMissing(t *testi
 	}
 	if detail.FlowSummary == "" || detail.FlowSummary == "业务主链待初始化" {
 		t.Fatalf("unexpected fallback flow summary: %s", detail.FlowSummary)
+	}
+}
+
+func TestProjectServiceGetProjectDetailIncludesDesignerProfile(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 701}, Phone: "13800138701", Status: 1, Nickname: "业主C"}
+	designerUser := model.User{Base: model.Base{ID: 702}, Phone: "13800138702", Status: 1, Nickname: "设计师李"}
+	designer := model.Provider{Base: model.Base{ID: 703}, UserID: designerUser.ID, ProviderType: 1, CompanyName: "李设计工作室"}
+	constructionUser := model.User{Base: model.Base{ID: 704}, Phone: "13800138703", Status: 1, Nickname: "施工经理"}
+	construction := model.Provider{Base: model.Base{ID: 705}, UserID: constructionUser.ID, ProviderType: 2, CompanyName: "施工公司C"}
+	proposal := model.Proposal{Base: model.Base{ID: 706}, DesignerID: designer.ID, Summary: "设计方案"}
+	for _, record := range []interface{}{&owner, &designerUser, &designer, &constructionUser, &construction, &proposal} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	project := model.Project{
+		Base:                   model.Base{ID: 707},
+		OwnerID:                owner.ID,
+		ProviderID:             construction.ID,
+		ConstructionProviderID: construction.ID,
+		ProposalID:             proposal.ID,
+		Name:                   "团队展示项目",
+		Address:                "测试地址 707",
+		Status:                 model.ProjectStatusActive,
+		CurrentPhase:           "待开工",
+		BusinessStatus:         model.ProjectBusinessStatusConstructionQuoteConfirmed,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	detail, err := (&ProjectService{}).GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectDetail: %v", err)
+	}
+	if detail.ProviderName != "施工经理" {
+		t.Fatalf("expected current provider name from construction provider, got %q", detail.ProviderName)
+	}
+	if detail.DesignerName != "设计师李" {
+		t.Fatalf("expected designer name, got %q", detail.DesignerName)
+	}
+	if detail.DesignerPhone != "13800138702" {
+		t.Fatalf("expected designer phone, got %q", detail.DesignerPhone)
 	}
 }
 

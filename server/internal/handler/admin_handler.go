@@ -958,7 +958,7 @@ func AdminClaimProviderAccount(c *gin.Context) {
 		strings.TrimSpace(req.ContactName),
 		strings.TrimSpace(provider.CompanyName),
 	)
-	user, err := createMerchantUserWithCompatibility(tx, phone, displayName)
+	user, err := createOrLoadMerchantUserWithCompatibility(tx, phone, displayName)
 	if err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "认领失败: 创建或加载用户失败")
@@ -1688,11 +1688,28 @@ func AdminGetRefundableBookings(c *gin.Context) {
 
 // AdminGetSystemConfigs 获取所有系统配置
 func AdminGetSystemConfigs(c *gin.Context) {
+	configSvc := &service.ConfigService{}
+	_ = configSvc.InitDefaultConfigs()
+
 	var configs []model.SystemConfig
 	if err := repository.DB.Order("key ASC").Find(&configs).Error; err != nil {
 		response.Error(c, 500, err.Error())
 		return
 	}
+	configs = append(configs,
+		model.SystemConfig{
+			Key:         "payment.channel.wechat.runtime_ready",
+			Value:       strconv.FormatBool(configSvc.ValidatePaymentChannelRuntimeConfig(model.PaymentChannelWechat) == nil),
+			Description: "微信支付运行时环境变量是否完整",
+			Type:        "boolean",
+		},
+		model.SystemConfig{
+			Key:         "payment.channel.alipay.runtime_ready",
+			Value:       strconv.FormatBool(configSvc.ValidatePaymentChannelRuntimeConfig(model.PaymentChannelAlipay) == nil),
+			Description: "支付宝运行时环境变量是否完整",
+			Type:        "boolean",
+		},
+	)
 
 	response.Success(c, gin.H{
 		"configs": configs,
@@ -1736,6 +1753,14 @@ func AdminBatchUpdateSystemConfigs(c *gin.Context) {
 	}
 
 	configSvc := &service.ConfigService{}
+	_ = configSvc.InitDefaultConfigs()
+
+	for key, value := range input {
+		if err := configSvc.ValidatePaymentChannelToggle(key, value); err != nil {
+			response.Error(c, 400, err.Error())
+			return
+		}
+	}
 
 	// 批量更新，SetConfig需要3个参数，这里简化处理
 	for key, value := range input {

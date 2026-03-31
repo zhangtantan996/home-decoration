@@ -20,17 +20,16 @@ type ProjectCompletionPayload struct {
 }
 
 type ProjectCompletionDetail struct {
-	ProjectID                 uint64               `json:"projectId"`
-	BusinessStage             string               `json:"businessStage"`
-	FlowSummary               string               `json:"flowSummary"`
-	AvailableActions          []string             `json:"availableActions"`
-	CompletedPhotos           []string             `json:"completedPhotos"`
-	CompletionNotes           string               `json:"completionNotes"`
-	CompletionSubmittedAt     *time.Time           `json:"completionSubmittedAt,omitempty"`
-	CompletionRejectionReason string               `json:"completionRejectionReason,omitempty"`
-	CompletionRejectedAt      *time.Time           `json:"completionRejectedAt,omitempty"`
-	InspirationCaseDraftID    uint64               `json:"inspirationCaseDraftId,omitempty"`
-	ProjectReview             *ProjectReviewDetail `json:"projectReview,omitempty"`
+	ProjectID                 uint64     `json:"projectId"`
+	BusinessStage             string     `json:"businessStage"`
+	FlowSummary               string     `json:"flowSummary"`
+	AvailableActions          []string   `json:"availableActions"`
+	CompletedPhotos           []string   `json:"completedPhotos"`
+	CompletionNotes           string     `json:"completionNotes"`
+	CompletionSubmittedAt     *time.Time `json:"completionSubmittedAt,omitempty"`
+	CompletionRejectionReason string     `json:"completionRejectionReason,omitempty"`
+	CompletionRejectedAt      *time.Time `json:"completionRejectedAt,omitempty"`
+	InspirationCaseDraftID    uint64     `json:"inspirationCaseDraftId,omitempty"`
 }
 
 type ProjectCompletionApprovalResult struct {
@@ -83,7 +82,6 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 		if !canProjectProviderOperate(&project, providerID) {
 			return errors.New("无权操作此项目")
 		}
-		ownerUserID = project.OwnerID
 		if err := ensureProjectExecutionAllowed(&project, "提交完工材料"); err != nil {
 			return err
 		}
@@ -97,6 +95,7 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 		if !ready {
 			return errors.New("仍有未完成验收节点，不能提交完工")
 		}
+		ownerUserID = project.OwnerID
 
 		photosJSON, err := json.Marshal(req.Photos)
 		if err != nil {
@@ -146,86 +145,173 @@ func (s *ProjectService) GetProjectCompletion(projectID, userID uint64) (*Projec
 }
 
 func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*ProjectCompletionApprovalResult, error) {
-	var result *ProjectCompletionApprovalResult
+	var (
+		detail           *ProjectCompletionDetail
+		generatedProject *model.Project
+		audit            *model.CaseAudit
+		providerUserID   uint64
+	)
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
-		project, err := s.getOwnedProjectForUpdate(tx, projectID, userID)
-		if err != nil {
-			return err
+		var project model.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
+			return errors.New("项目不存在")
 		}
-		if err := ensureCompletionSubmissionApprovable(project, "审批完工材料"); err != nil {
-			return err
+		if project.OwnerID != userID {
+			return errors.New("无权操作此项目")
 		}
-
-		if err := s.settleAllUnreleasedMilestonesTx(tx, projectID, userID); err != nil {
-			return err
-		}
-		if err := tx.Model(&model.EscrowAccount{}).
-			Where("project_id = ? AND status != ?", projectID, escrowStatusClosed).
-			Update("status", escrowStatusClosed).Error; err != nil {
+		if err := ensureCompletionSubmissionApprovable(&project, "审批完工材料"); err != nil {
 			return err
 		}
 
-		providerID := project.ConstructionProviderID
-		if providerID == 0 {
-			providerID = project.ProviderID
-		}
-		generatedProject, audit, err := GenerateCaseDraftFromProjectTx(tx, projectID, providerID, &ProjectCaseDraftInput{})
-		if err != nil {
-			return err
-		}
-		detail, err := s.getProjectCompletionDetailTx(tx, projectID)
-		if err != nil {
-			return err
-		}
-		result = &ProjectCompletionApprovalResult{
-			Detail:  detail,
-			AuditID: audit.ID,
-			Project: generatedProject,
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if result != nil && result.Project != nil {
-		providerUserID := providerUserIDFromProvider(effectiveProjectProviderID(result.Project))
-		NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
-	}
-	return result, nil
-}
-
-// settleAllUnreleasedMilestonesTx 完工时补齐所有已验收但未生成结算单的里程碑
-func (s *ProjectService) settleAllUnreleasedMilestonesTx(tx *gorm.DB, projectID, userID uint64) error {
-	if tx == nil {
-		return errors.New("事务不能为空")
-	}
-	var milestones []model.Milestone
-	if err := tx.Where(
-		"project_id = ? AND status = ? AND released_at IS NULL",
-		projectID, model.MilestoneStatusAccepted,
-	).Order("seq ASC").Find(&milestones).Error; err != nil {
-		return err
-	}
-
-	if len(milestones) == 0 {
-		return nil
-	}
-
-	settlementSvc := &SettlementService{}
-
-	for _, ms := range milestones {
-		if _, _, _, _, err := settlementSvc.CreateMilestoneSettlementScheduleTx(tx, &ReleaseMilestoneInput{
+		providerID := effectiveProjectProviderID(&project)
+		providerUserID = getProviderUserIDTx(tx, providerID)
+		if err := s.scheduleAllUnreleasedMilestoneSettlementsTx(tx, &project, &ReleaseMilestoneInput{
 			ProjectID:    projectID,
-			MilestoneID:  ms.ID,
 			OperatorType: "user",
 			OperatorID:   userID,
-			Reason:       "整体验收补齐待结算",
+			Reason:       "整体验收进入待结算",
 			Source:       "project.completion_approve",
 		}); err != nil {
 			return err
 		}
+
+		var err error
+		generatedProject, audit, err = GenerateCaseDraftFromProjectTx(tx, projectID, providerID, &ProjectCaseDraftInput{})
+		if err != nil {
+			return err
+		}
+		detail, err = s.getProjectCompletionDetailTx(tx, projectID)
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	return &ProjectCompletionApprovalResult{Detail: detail, AuditID: audit.ID, Project: generatedProject}, nil
+}
+
+func (s *ProjectService) scheduleAllUnreleasedMilestoneSettlementsTx(tx *gorm.DB, project *model.Project, input *ReleaseMilestoneInput) error {
+	if tx == nil {
+		return errors.New("事务不能为空")
+	}
+	if project == nil || project.ID == 0 {
+		return errors.New("项目不存在")
+	}
+	if input == nil {
+		return errors.New("结算参数不能为空")
+	}
+	var milestones []model.Milestone
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("project_id = ? AND status = ? AND released_at IS NULL", project.ID, model.MilestoneStatusAccepted).
+		Order("seq ASC, id ASC").
+		Find(&milestones).Error; err != nil {
+		return err
+	}
+
+	settlementSvc := &SettlementService{}
+	for _, milestone := range milestones {
+		if _, _, _, _, err := settlementSvc.CreateMilestoneSettlementScheduleTx(tx, &ReleaseMilestoneInput{
+			ProjectID:    project.ID,
+			MilestoneID:  milestone.ID,
+			OperatorType: input.OperatorType,
+			OperatorID:   input.OperatorID,
+			Reason:       input.Reason,
+			Source:       input.Source,
+		}); err != nil {
+			return err
+		}
+	}
+	return tx.Model(&model.EscrowAccount{}).
+		Where("project_id = ? AND status != ?", project.ID, escrowStatusClosed).
+		Update("status", escrowStatusClosed).Error
+}
+
+func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64, reason string) (*ProjectCompletionApprovalResult, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写操作原因")
+	}
+
+	var (
+		detail           *ProjectCompletionDetail
+		generatedProject *model.Project
+		audit            *model.CaseAudit
+		providerUserID   uint64
+	)
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var project model.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		if err := ensureCompletionSubmissionApprovable(&project, "管理员审批完工材料"); err != nil {
+			return err
+		}
+		providerID := effectiveProjectProviderID(&project)
+		providerUserID = getProviderUserIDTx(tx, providerID)
+
+		beforeState := map[string]interface{}{
+			"project": map[string]interface{}{
+				"id":                     project.ID,
+				"status":                 project.Status,
+				"businessStatus":         project.BusinessStatus,
+				"currentPhase":           project.CurrentPhase,
+				"completionSubmittedAt":  project.CompletionSubmittedAt,
+				"inspirationCaseDraftId": project.InspirationCaseDraftID,
+			},
+		}
+
+		if err := s.scheduleAllUnreleasedMilestoneSettlementsTx(tx, &project, &ReleaseMilestoneInput{
+			ProjectID:    projectID,
+			OperatorType: "admin",
+			OperatorID:   adminID,
+			Reason:       reason,
+			Source:       "admin.project_completion_approve",
+		}); err != nil {
+			return err
+		}
+
+		var err error
+		generatedProject, audit, err = GenerateCaseDraftFromProjectTx(tx, projectID, providerID, &ProjectCaseDraftInput{})
+		if err != nil {
+			return err
+		}
+		if err := (&AuditLogService{}).CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "approve_project_completion",
+			ResourceType:  "project",
+			ResourceID:    projectID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":                     generatedProject.ID,
+					"status":                 generatedProject.Status,
+					"businessStatus":         generatedProject.BusinessStatus,
+					"currentPhase":           generatedProject.CurrentPhase,
+					"inspirationCaseDraftId": generatedProject.InspirationCaseDraftID,
+				},
+				"caseAudit": map[string]interface{}{
+					"id":     audit.ID,
+					"status": audit.Status,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"projectId":   projectID,
+				"caseAuditId": audit.ID,
+			},
+		}); err != nil {
+			return err
+		}
+		detail, err = s.getProjectCompletionDetailTx(tx, projectID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	return &ProjectCompletionApprovalResult{Detail: detail, AuditID: audit.ID, Project: generatedProject}, nil
 }
 
 func (s *ProjectService) RejectProjectCompletion(projectID, userID uint64, reason string) (*ProjectCompletionDetail, error) {
@@ -244,10 +330,10 @@ func (s *ProjectService) RejectProjectCompletion(projectID, userID uint64, reaso
 		if project.OwnerID != userID {
 			return errors.New("无权操作此项目")
 		}
-		providerUserID = getProviderUserIDTx(tx, effectiveProjectProviderID(&project))
 		if err := ensureCompletionSubmissionApprovable(&project, "驳回完工材料"); err != nil {
 			return err
 		}
+		providerUserID = getProviderUserIDTx(tx, effectiveProjectProviderID(&project))
 		if err := tx.Model(&project).Updates(map[string]interface{}{
 			"status":                      model.ProjectStatusActive,
 			"business_status":             model.ProjectBusinessStatusInProgress,
@@ -278,6 +364,86 @@ func (s *ProjectService) RejectProjectCompletion(projectID, userID uint64, reaso
 	return detail, nil
 }
 
+func (s *ProjectService) AdminRejectProjectCompletion(projectID, adminID uint64, reason string) (*ProjectCompletionDetail, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写驳回原因")
+	}
+
+	var detail *ProjectCompletionDetail
+	var providerUserID uint64
+	now := time.Now()
+	auditService := &AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var project model.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		if err := ensureCompletionSubmissionApprovable(&project, "管理员驳回完工材料"); err != nil {
+			return err
+		}
+		providerUserID = getProviderUserIDTx(tx, effectiveProjectProviderID(&project))
+		beforeState := map[string]interface{}{
+			"project": map[string]interface{}{
+				"id":                    project.ID,
+				"status":                project.Status,
+				"businessStatus":        project.BusinessStatus,
+				"currentPhase":          project.CurrentPhase,
+				"completionSubmittedAt": project.CompletionSubmittedAt,
+			},
+		}
+		if err := tx.Model(&project).Updates(map[string]interface{}{
+			"status":                      model.ProjectStatusActive,
+			"business_status":             model.ProjectBusinessStatusInProgress,
+			"current_phase":               "完工整改中",
+			"completion_submitted_at":     nil,
+			"completion_rejection_reason": reason,
+			"completion_rejected_at":      now,
+		}).Error; err != nil {
+			return err
+		}
+		if err := businessFlowSvc.AdvanceByProject(tx, projectID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageInConstruction,
+			"closed_reason": "",
+		}); err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "reject_project_completion",
+			ResourceType:  "project",
+			ResourceID:    project.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":                        project.ID,
+					"status":                    model.ProjectStatusActive,
+					"businessStatus":            model.ProjectBusinessStatusInProgress,
+					"currentPhase":              "完工整改中",
+					"completionRejectedAt":      now,
+					"completionRejectionReason": reason,
+				},
+			},
+		}); err != nil {
+			return err
+		}
+		reloaded, err := s.getProjectCompletionDetailTx(tx, projectID)
+		if err != nil {
+			return err
+		}
+		detail = reloaded
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, false, reason)
+	return detail, nil
+}
+
 func (s *ProjectService) getProjectCompletionDetail(projectID uint64) (*ProjectCompletionDetail, error) {
 	return s.getProjectCompletionDetailTx(repository.DB, projectID)
 }
@@ -290,31 +456,22 @@ func (s *ProjectService) getProjectCompletionDetailTx(db *gorm.DB, projectID uin
 	var milestones []model.Milestone
 	_ = db.Where("project_id = ?", project.ID).Order("seq ASC").Find(&milestones).Error
 	flowSummary := s.resolveProjectFlowSummaryTx(db, &project, milestones)
-	review, err := loadProjectReviewByProjectTx(db, project.ID)
-	if err != nil {
-		return nil, err
-	}
 	photos, err := parseProjectImageJSONArray(project.CompletedPhotos)
 	if err != nil {
 		return nil, err
 	}
 	photos = imgutil.GetFullImageURLs(photos)
-	availableActions := flowSummary.AvailableActions
-	if canSubmitOfficialProjectReview(&project, review) {
-		availableActions = appendUniqueAction(availableActions, "submit_review")
-	}
 	return &ProjectCompletionDetail{
 		ProjectID:                 project.ID,
 		BusinessStage:             flowSummary.CurrentStage,
 		FlowSummary:               flowSummary.FlowSummary,
-		AvailableActions:          availableActions,
+		AvailableActions:          flowSummary.AvailableActions,
 		CompletedPhotos:           photos,
 		CompletionNotes:           project.CompletionNotes,
 		CompletionSubmittedAt:     project.CompletionSubmittedAt,
 		CompletionRejectionReason: project.CompletionRejectionReason,
 		CompletionRejectedAt:      project.CompletionRejectedAt,
 		InspirationCaseDraftID:    project.InspirationCaseDraftID,
-		ProjectReview:             toProjectReviewDetail(review),
 	}, nil
 }
 

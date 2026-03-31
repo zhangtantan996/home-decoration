@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -22,11 +24,27 @@ import (
 )
 
 type PaymentLaunchResponse struct {
-	PaymentID  uint64     `json:"paymentId"`
-	Channel    string     `json:"channel"`
-	LaunchMode string     `json:"launchMode"`
-	LaunchURL  string     `json:"launchUrl"`
-	ExpiresAt  *time.Time `json:"expiresAt"`
+	PaymentID       uint64               `json:"paymentId"`
+	Channel         string               `json:"channel"`
+	LaunchMode      string               `json:"launchMode"`
+	LaunchURL       string               `json:"launchUrl,omitempty"`
+	QRCodeImageURL  string               `json:"qrCodeImageUrl,omitempty"`
+	WechatPayParams *WechatMiniPayParams `json:"wechatPayParams,omitempty"`
+	ExpiresAt       *time.Time           `json:"expiresAt"`
+}
+
+type WechatMiniPayParams struct {
+	TimeStamp string `json:"timeStamp"`
+	NonceStr  string `json:"nonceStr"`
+	Package   string `json:"package"`
+	SignType  string `json:"signType"`
+	PaySign   string `json:"paySign"`
+}
+
+type SurveyDepositPaymentOption struct {
+	Channel    string `json:"channel"`
+	Label      string `json:"label"`
+	LaunchMode string `json:"launchMode"`
 }
 
 type PaymentStatusResponse struct {
@@ -84,6 +102,7 @@ type paymentCreateSpec struct {
 	BizType      string
 	BizID        uint64
 	PayerUserID  uint64
+	Channel      string
 	Scene        string
 	FundScene    string
 	TerminalType string
@@ -112,22 +131,34 @@ type refundExecutionPlan struct {
 }
 
 type PaymentService struct {
-	channel PaymentChannelService
+	channels map[string]PaymentChannelService
 }
 
-var paymentChannelServiceFactory = func() PaymentChannelService {
-	return NewPaymentChannelService()
+var paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+	return NewPaymentChannels()
 }
 
 func NewPaymentService(channel PaymentChannelService) *PaymentService {
 	if channel == nil {
-		channel = paymentChannelServiceFactory()
+		return NewPaymentServiceWithChannels(paymentChannelServiceFactory())
 	}
-	return &PaymentService{channel: channel}
+	return NewPaymentServiceWithChannels(map[string]PaymentChannelService{
+		model.PaymentChannelAlipay: channel,
+	})
+}
+
+func NewPaymentServiceWithChannels(channels map[string]PaymentChannelService) *PaymentService {
+	cloned := make(map[string]PaymentChannelService, len(channels))
+	for key, value := range channels {
+		if value != nil {
+			cloned[key] = value
+		}
+	}
+	return &PaymentService{channels: cloned}
 }
 
 func (s *PaymentService) StartBookingIntentPayment(userID, bookingID uint64, terminalType string) (*PaymentLaunchResponse, error) {
-	terminalType, err := normalizeTerminalType(terminalType)
+	_, terminalType, err := normalizePaymentChannelAndTerminal(model.PaymentChannelAlipay, terminalType)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +181,7 @@ func (s *PaymentService) StartBookingIntentPayment(userID, bookingID uint64, ter
 			BizType:      model.PaymentBizTypeBookingIntent,
 			BizID:        booking.ID,
 			PayerUserID:  userID,
+			Channel:      model.PaymentChannelAlipay,
 			Scene:        model.PaymentBizTypeBookingIntent,
 			FundScene:    model.FundSceneSurveyDeposit,
 			TerminalType: terminalType,
@@ -167,15 +199,21 @@ func (s *PaymentService) StartBookingIntentPayment(userID, bookingID uint64, ter
 	if err != nil {
 		return nil, err
 	}
-	return s.buildLaunchResponse(payment), nil
+	return s.buildLaunchResponse(payment, nil), nil
 }
 
-func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, terminalType string) (*PaymentLaunchResponse, error) {
-	terminalType, err := normalizeTerminalType(terminalType)
+func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, channel, terminalType string) (*PaymentLaunchResponse, error) {
+	channel, terminalType, err := normalizePaymentChannelAndTerminal(channel, terminalType)
 	if err != nil {
 		return nil, err
 	}
+	if channel == model.PaymentChannelAlipay && terminalType == model.PaymentTerminalMobileH5 {
+		if err := validateMiniAlipayH5Runtime(); err != nil {
+			return nil, err
+		}
+	}
 	var payment *model.PaymentOrder
+	var miniProgramPay *PaymentChannelMiniProgramResult
 	err = repository.DB.Transaction(func(tx *gorm.DB) error {
 		var booking model.Booking
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&booking, bookingID).Error; err != nil {
@@ -198,6 +236,7 @@ func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, ter
 			BizType:      model.PaymentBizTypeBookingSurveyDeposit,
 			BizID:        booking.ID,
 			PayerUserID:  userID,
+			Channel:      channel,
 			Scene:        model.PaymentBizTypeBookingSurveyDeposit,
 			FundScene:    model.FundSceneSurveyDeposit,
 			TerminalType: terminalType,
@@ -215,11 +254,21 @@ func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, ter
 	if err != nil {
 		return nil, err
 	}
-	return s.buildLaunchResponse(payment), nil
+	if channel == model.PaymentChannelWechat && terminalType == model.PaymentTerminalMiniWechatJSAPI {
+		openID, openIDErr := s.resolveMiniWechatOpenID(userID)
+		if openIDErr != nil {
+			return nil, openIDErr
+		}
+		miniProgramPay, err = s.createMiniProgramLaunch(payment, openID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s.buildLaunchResponse(payment, miniProgramPay), nil
 }
 
 func (s *PaymentService) StartOrderPayment(userID, orderID uint64, terminalType string) (*PaymentLaunchResponse, error) {
-	terminalType, err := normalizeTerminalType(terminalType)
+	_, terminalType, err := normalizePaymentChannelAndTerminal(model.PaymentChannelAlipay, terminalType)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +286,7 @@ func (s *PaymentService) StartOrderPayment(userID, orderID uint64, terminalType 
 			BizType:      model.PaymentBizTypeOrder,
 			BizID:        order.ID,
 			PayerUserID:  userID,
+			Channel:      model.PaymentChannelAlipay,
 			Scene:        model.PaymentBizTypeOrder,
 			FundScene:    resolveOrderFundScene(order),
 			TerminalType: terminalType,
@@ -254,11 +304,11 @@ func (s *PaymentService) StartOrderPayment(userID, orderID uint64, terminalType 
 	if err != nil {
 		return nil, err
 	}
-	return s.buildLaunchResponse(payment), nil
+	return s.buildLaunchResponse(payment, nil), nil
 }
 
 func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminalType string) (*PaymentLaunchResponse, error) {
-	terminalType, err := normalizeTerminalType(terminalType)
+	_, terminalType, err := normalizePaymentChannelAndTerminal(model.PaymentChannelAlipay, terminalType)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +325,7 @@ func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminal
 			BizType:      model.PaymentBizTypePaymentPlan,
 			BizID:        plan.ID,
 			PayerUserID:  userID,
+			Channel:      model.PaymentChannelAlipay,
 			Scene:        model.PaymentBizTypePaymentPlan,
 			FundScene:    resolveOrderFundScene(order),
 			TerminalType: terminalType,
@@ -292,11 +343,11 @@ func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminal
 	if err != nil {
 		return nil, err
 	}
-	return s.buildLaunchResponse(payment), nil
+	return s.buildLaunchResponse(payment, nil), nil
 }
 
 func (s *PaymentService) StartMerchantBondPayment(userID, providerID uint64, terminalType, returnBaseURL string) (*PaymentLaunchResponse, error) {
-	terminalType, err := normalizeTerminalType(terminalType)
+	_, terminalType, err := normalizePaymentChannelAndTerminal(model.PaymentChannelAlipay, terminalType)
 	if err != nil {
 		return nil, err
 	}
@@ -336,6 +387,7 @@ func (s *PaymentService) StartMerchantBondPayment(userID, providerID uint64, ter
 			BizType:      model.PaymentBizTypeMerchantBond,
 			BizID:        providerID,
 			PayerUserID:  userID,
+			Channel:      model.PaymentChannelAlipay,
 			Scene:        model.PaymentBizTypeMerchantBond,
 			FundScene:    model.FundSceneMerchantDeposit,
 			TerminalType: terminalType,
@@ -348,7 +400,7 @@ func (s *PaymentService) StartMerchantBondPayment(userID, providerID uint64, ter
 	if err != nil {
 		return nil, err
 	}
-	return s.buildLaunchResponse(payment), nil
+	return s.buildLaunchResponse(payment, nil), nil
 }
 
 func (s *PaymentService) BuildLaunchDocument(paymentID uint64, token string) (string, error) {
@@ -395,7 +447,11 @@ func (s *PaymentService) BuildLaunchDocument(paymentID uint64, token string) (st
 	if err != nil {
 		return "", err
 	}
-	html, err := s.channel.CreateCollectOrder(context.Background(), &payment)
+	channel, err := s.getChannelService(payment.Channel)
+	if err != nil {
+		return "", err
+	}
+	html, err := channel.CreateCollectOrder(context.Background(), &payment)
 	if err != nil {
 		return "", err
 	}
@@ -405,6 +461,55 @@ func (s *PaymentService) BuildLaunchDocument(paymentID uint64, token string) (st
 			Update("status", model.PaymentStatusPending).Error
 	}
 	return html, nil
+}
+
+func (s *PaymentService) BuildQRCodeImage(paymentID uint64, token string) ([]byte, error) {
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.New("支付二维码参数缺失")
+	}
+	var payment model.PaymentOrder
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&payment, paymentID).Error; err != nil {
+			return errors.New("支付单不存在")
+		}
+		if payment.TerminalType != model.PaymentTerminalMiniQR {
+			return errors.New("当前支付单不支持二维码支付")
+		}
+		if payment.Status == model.PaymentStatusPaid {
+			return errors.New("支付单已完成")
+		}
+		if payment.Status == model.PaymentStatusClosed || payment.Status == model.PaymentStatusFailed {
+			return errors.New("支付单已关闭")
+		}
+		now := time.Now()
+		if payment.ExpiredAt != nil && payment.ExpiredAt.Before(now) {
+			if err := tx.Model(&payment).Update("status", model.PaymentStatusClosed).Error; err != nil {
+				return err
+			}
+			return errors.New("支付单已过期")
+		}
+		if payment.LaunchTokenHash == "" || payment.LaunchTokenExpiredAt == nil || payment.LaunchTokenExpiredAt.Before(now) {
+			return errors.New("支付二维码已失效")
+		}
+		if hashLaunchToken(token) != payment.LaunchTokenHash {
+			return errors.New("支付二维码无效")
+		}
+		if payment.Status == model.PaymentStatusCreated || payment.Status == model.PaymentStatusLaunching {
+			if err := tx.Model(&payment).Update("status", model.PaymentStatusPending).Error; err != nil {
+				return err
+			}
+			payment.Status = model.PaymentStatusPending
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	channel, err := s.getChannelService(payment.Channel)
+	if err != nil {
+		return nil, err
+	}
+	return channel.CreateCollectQRCode(context.Background(), &payment)
 }
 
 func (s *PaymentService) GetPaymentStatusForPayer(paymentID, payerUserID uint64) (*PaymentStatusResponse, error) {
@@ -519,7 +624,11 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 	if current.Status == model.PaymentStatusPaid || current.Status == model.PaymentStatusClosed || current.Status == model.PaymentStatusFailed {
 		return &current, nil
 	}
-	result, err := s.channel.QueryCollectOrder(context.Background(), &current)
+	channel, err := s.getChannelService(current.Channel)
+	if err != nil {
+		return &current, err
+	}
+	result, err := channel.QueryCollectOrder(context.Background(), &current)
 	if err != nil {
 		return &current, err
 	}
@@ -535,15 +644,15 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 			updated = current
 			return nil
 		}
-		switch result.TradeStatus {
-		case alipayTradeSuccess, alipayTradeFinished:
+		switch interpretPaymentTradeState(current.Channel, result.TradeStatus) {
+		case model.PaymentStatusPaid:
 			effect, err = s.confirmPaymentSuccessTx(tx, &current, result.ProviderTradeNo, result.RawJSON)
 			if err != nil {
 				return err
 			}
-		case alipayTradeClosed:
+		case model.PaymentStatusClosed, model.PaymentStatusFailed:
 			if err := tx.Model(&current).Updates(map[string]any{
-				"status":              model.PaymentStatusClosed,
+				"status":              interpretPaymentTradeState(current.Channel, result.TradeStatus),
 				"provider_trade_no":   firstNonEmpty(current.ProviderTradeNo, result.ProviderTradeNo),
 				"raw_response_digest": digestString(result.RawJSON),
 			}).Error; err != nil {
@@ -562,7 +671,11 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 }
 
 func (s *PaymentService) HandleAlipayNotify(values url.Values) error {
-	payload, err := s.channel.VerifyNotify(values)
+	channel, err := s.getChannelService(model.PaymentChannelAlipay)
+	if err != nil {
+		return err
+	}
+	payload, err := channel.VerifyNotify(values)
 	if err != nil {
 		return err
 	}
@@ -609,6 +722,77 @@ func (s *PaymentService) HandleAlipayNotify(values url.Values) error {
 				}
 			}
 		}
+		now := time.Now()
+		return tx.Model(callback).Updates(map[string]any{
+			"processed":    true,
+			"processed_at": &now,
+			"verified":     true,
+		}).Error
+	})
+	if err != nil {
+		return err
+	}
+	if effect != nil {
+		s.runPaymentSideEffect(effect)
+	}
+	return nil
+}
+
+func (s *PaymentService) HandleWechatNotify(request *http.Request) error {
+	channel, err := s.getChannelService(model.PaymentChannelWechat)
+	if err != nil {
+		return err
+	}
+	notifyResult, err := channel.ParseNotifyRequest(context.Background(), request)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(notifyResult.OutTradeNo) == "" {
+		return errors.New("微信支付回调缺少 out_trade_no")
+	}
+	var effect *paymentSideEffect
+	err = repository.DB.Transaction(func(tx *gorm.DB) error {
+		var payment model.PaymentOrder
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("out_trade_no = ?", notifyResult.OutTradeNo).First(&payment).Error; err != nil {
+			return errors.New("支付单不存在")
+		}
+		callback, err := upsertPaymentCallbackTx(tx, &payment, notifyResult.NotifyID, notifyResult.EventType, map[string]string{
+			"out_trade_no": notifyResult.OutTradeNo,
+			"trade_state":  notifyResult.TradeStatus,
+			"trade_no":     notifyResult.ProviderTradeNo,
+		})
+		if err != nil {
+			return err
+		}
+		if callback.Processed {
+			return nil
+		}
+
+		switch interpretPaymentTradeState(payment.Channel, notifyResult.TradeStatus) {
+		case model.PaymentStatusPaid:
+			effect, err = s.confirmPaymentSuccessTx(tx, &payment, notifyResult.ProviderTradeNo, notifyResult.RawJSON)
+			if err != nil {
+				_ = tx.Model(callback).Updates(map[string]any{"error_message": err.Error()}).Error
+				return err
+			}
+		case model.PaymentStatusClosed, model.PaymentStatusFailed:
+			if payment.Status != model.PaymentStatusPaid {
+				if err := tx.Model(&payment).Updates(map[string]any{
+					"status":              interpretPaymentTradeState(payment.Channel, notifyResult.TradeStatus),
+					"provider_trade_no":   firstNonEmpty(payment.ProviderTradeNo, notifyResult.ProviderTradeNo),
+					"raw_response_digest": digestString(notifyResult.RawJSON),
+				}).Error; err != nil {
+					return err
+				}
+			}
+		default:
+			if payment.Status == model.PaymentStatusCreated || payment.Status == model.PaymentStatusLaunching {
+				if err := tx.Model(&payment).Update("status", model.PaymentStatusPending).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		now := time.Now()
 		return tx.Model(callback).Updates(map[string]any{
 			"processed":    true,
@@ -683,7 +867,11 @@ func (s *PaymentService) ExecuteRefundOrder(refundOrderID uint64) (*model.Refund
 		return nil, errors.New("关联支付单不存在")
 	}
 
-	result, err := s.channel.RefundCollectOrder(context.Background(), &payment, &refund)
+	channel, err := s.getChannelService(payment.Channel)
+	if err != nil {
+		return nil, err
+	}
+	result, err := channel.RefundCollectOrder(context.Background(), &payment, &refund)
 	if err != nil {
 		_ = repository.DB.Model(&refund).Updates(map[string]any{
 			"status":         model.RefundOrderStatusProcessing,
@@ -737,7 +925,11 @@ func (s *PaymentService) SyncRefundOrder(refundOrderID uint64) (*model.RefundOrd
 		return nil, errors.New("关联支付单不存在")
 	}
 
-	result, err := s.channel.QueryRefundOrder(context.Background(), &payment, &refund)
+	channel, err := s.getChannelService(payment.Channel)
+	if err != nil {
+		return nil, err
+	}
+	result, err := channel.QueryRefundOrder(context.Background(), &payment, &refund)
 	if err != nil {
 		return &refund, err
 	}
@@ -991,20 +1183,24 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 	if spec == nil {
 		return nil, errors.New("支付参数不能为空")
 	}
-	if err := ensureAlipayEnabled(); err != nil {
+	channel := strings.TrimSpace(spec.Channel)
+	if channel == "" {
+		channel = model.PaymentChannelAlipay
+	}
+	if err := s.ensurePaymentChannelAvailableTx(tx, channel); err != nil {
 		return nil, err
 	}
 	if spec.Amount <= 0 {
 		return nil, errors.New("支付金额无效")
 	}
 	now := time.Now()
-	expiresAt := now.Add(time.Duration(maxInt(config.GetConfig().Alipay.TimeoutMinutes, 15)) * time.Minute)
+	expiresAt := now.Add(time.Duration(resolvePaymentExpiryMinutes(channel)) * time.Minute)
 	rawToken, tokenHash := generateLaunchToken()
 	returnJSON := mustMarshalJSON(spec.ReturnCtx)
 
 	var existing model.PaymentOrder
 	err := tx.Where("biz_type = ? AND biz_id = ? AND payer_user_id = ? AND channel = ? AND status IN ?",
-		spec.BizType, spec.BizID, spec.PayerUserID, model.PaymentChannelAlipay,
+		spec.BizType, spec.BizID, spec.PayerUserID, channel,
 		[]string{model.PaymentStatusCreated, model.PaymentStatusLaunching, model.PaymentStatusPending}).
 		Order("id DESC").
 		First(&existing).Error
@@ -1038,6 +1234,9 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 			existing.Subject = spec.Subject
 			existing.Amount = spec.Amount
 			existing.ReturnContext = returnJSON
+			if channel == model.PaymentChannelWechat {
+				return &existing, nil
+			}
 			return decorateLaunchURL(&existing, rawToken), nil
 		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1048,7 +1247,7 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 		BizType:              spec.BizType,
 		BizID:                spec.BizID,
 		PayerUserID:          spec.PayerUserID,
-		Channel:              model.PaymentChannelAlipay,
+		Channel:              channel,
 		Scene:                spec.Scene,
 		FundScene:            spec.FundScene,
 		TerminalType:         spec.TerminalType,
@@ -1064,6 +1263,9 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 	if err := tx.Create(order).Error; err != nil {
 		return nil, err
 	}
+	if channel == model.PaymentChannelWechat {
+		return order, nil
+	}
 	return decorateLaunchURL(order, rawToken), nil
 }
 
@@ -1073,9 +1275,44 @@ func decorateLaunchURL(order *model.PaymentOrder, rawToken string) *model.Paymen
 	return &cloned
 }
 
-func (s *PaymentService) buildLaunchResponse(payment *model.PaymentOrder) *PaymentLaunchResponse {
+func (s *PaymentService) buildLaunchResponse(payment *model.PaymentOrder, wechatParams *PaymentChannelMiniProgramResult) *PaymentLaunchResponse {
+	if payment == nil {
+		return nil
+	}
+	if payment.Channel == model.PaymentChannelWechat && payment.TerminalType == model.PaymentTerminalMiniWechatJSAPI {
+		if wechatParams == nil {
+			return &PaymentLaunchResponse{
+				PaymentID:  payment.ID,
+				Channel:    payment.Channel,
+				LaunchMode: "wechat_jsapi",
+				ExpiresAt:  payment.ExpiredAt,
+			}
+		}
+		return &PaymentLaunchResponse{
+			PaymentID:  payment.ID,
+			Channel:    payment.Channel,
+			LaunchMode: "wechat_jsapi",
+			WechatPayParams: &WechatMiniPayParams{
+				TimeStamp: wechatParams.TimeStamp,
+				NonceStr:  wechatParams.NonceStr,
+				Package:   wechatParams.Package,
+				SignType:  wechatParams.SignType,
+				PaySign:   wechatParams.PaySign,
+			},
+			ExpiresAt: payment.ExpiredAt,
+		}
+	}
 	launchToken := payment.ReturnContext
 	payment.ReturnContext = ""
+	if payment.TerminalType == model.PaymentTerminalMiniQR {
+		return &PaymentLaunchResponse{
+			PaymentID:      payment.ID,
+			Channel:        payment.Channel,
+			LaunchMode:     "qr_code",
+			QRCodeImageURL: buildQRCodeURL(payment.ID, launchToken),
+			ExpiresAt:      payment.ExpiredAt,
+		}
+	}
 	return &PaymentLaunchResponse{
 		PaymentID:  payment.ID,
 		Channel:    payment.Channel,
@@ -1083,6 +1320,170 @@ func (s *PaymentService) buildLaunchResponse(payment *model.PaymentOrder) *Payme
 		LaunchURL:  buildLaunchURL(payment.ID, launchToken),
 		ExpiresAt:  payment.ExpiredAt,
 	}
+}
+
+func (s *PaymentService) getChannelService(channel string) (PaymentChannelService, error) {
+	normalized := strings.TrimSpace(channel)
+	service, ok := s.channels[normalized]
+	if ok && service != nil {
+		return service, nil
+	}
+	return nil, errors.New("支付渠道未接入")
+}
+
+func (s *PaymentService) ensurePaymentChannelAvailable(channel string) error {
+	return (&ConfigService{}).ValidatePaymentChannelEnabled(channel)
+}
+
+func (s *PaymentService) ensurePaymentChannelAvailableTx(tx *gorm.DB, channel string) error {
+	return (&ConfigService{}).ValidatePaymentChannelEnabledTx(tx, channel)
+}
+
+func (s *PaymentService) createMiniProgramLaunch(payment *model.PaymentOrder, openID string) (*PaymentChannelMiniProgramResult, error) {
+	channel, err := s.getChannelService(model.PaymentChannelWechat)
+	if err != nil {
+		return nil, err
+	}
+	result, err := channel.CreateMiniProgramPayment(context.Background(), payment, openID)
+	if err != nil {
+		return nil, err
+	}
+	_ = repository.DB.Model(&model.PaymentOrder{}).
+		Where("id = ? AND status IN ?", payment.ID, []string{model.PaymentStatusCreated, model.PaymentStatusLaunching}).
+		Updates(map[string]any{
+			"status":              model.PaymentStatusPending,
+			"raw_response_digest": digestString(result.RawJSON),
+		}).Error
+	payment.Status = model.PaymentStatusPending
+	payment.RawResponseDigest = digestString(result.RawJSON)
+	return result, nil
+}
+
+func (s *PaymentService) resolveMiniWechatOpenID(userID uint64) (string, error) {
+	if userID == 0 {
+		return "", errors.New("用户未登录")
+	}
+	appID := strings.TrimSpace(config.GetConfig().WechatPay.AppID)
+	if appID == "" {
+		appID = strings.TrimSpace(config.GetConfig().WechatMini.AppID)
+	}
+	if appID == "" {
+		return "", errors.New("微信支付未配置小程序 AppID")
+	}
+	var binding model.UserWechatBinding
+	if err := repository.DB.Where("user_id = ? AND app_id = ?", userID, appID).First(&binding).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("当前账号未绑定小程序微信，请先使用微信快捷登录")
+		}
+		return "", err
+	}
+	if strings.TrimSpace(binding.OpenID) == "" {
+		return "", errors.New("当前账号未绑定小程序 OpenID")
+	}
+	return strings.TrimSpace(binding.OpenID), nil
+}
+
+func (s *PaymentService) GetSurveyDepositPaymentOptions(booking *model.Booking) []SurveyDepositPaymentOption {
+	if booking == nil || booking.ID == 0 || booking.SurveyDepositPaid || ensureBookingReadyForDepositPayment(booking) != nil {
+		return nil
+	}
+	options := make([]SurveyDepositPaymentOption, 0, 2)
+	if s.ensurePaymentChannelAvailable(model.PaymentChannelWechat) == nil {
+		options = append(options, SurveyDepositPaymentOption{
+			Channel:    model.PaymentChannelWechat,
+			Label:      "微信支付",
+			LaunchMode: "wechat_jsapi",
+		})
+	}
+	if s.ensurePaymentChannelAvailable(model.PaymentChannelAlipay) == nil {
+		if err := validateMiniAlipayH5Runtime(); err == nil {
+			options = append(options, SurveyDepositPaymentOption{
+				Channel:    model.PaymentChannelAlipay,
+				Label:      "支付宝支付",
+				LaunchMode: "redirect",
+			})
+			return options
+		}
+		options = append(options, SurveyDepositPaymentOption{
+			Channel:    model.PaymentChannelAlipay,
+			Label:      "支付宝扫码支付",
+			LaunchMode: "qr_code",
+		})
+	}
+	return options
+}
+
+func validateMiniAlipayH5Runtime() error {
+	cfg := config.GetConfig()
+	publicURL := strings.TrimSpace(cfg.Server.PublicURL)
+	if err := validateMiniAlipayH5URL(publicURL, "SERVER_PUBLIC_URL"); err != nil {
+		return err
+	}
+	returnURL := strings.TrimSpace(cfg.Alipay.ReturnURLH5)
+	if err := validateMiniAlipayH5URL(returnURL, "ALIPAY_RETURN_URL_H5"); err != nil {
+		return err
+	}
+	publicHost, err := parsePublicHTTPSHost(publicURL)
+	if err != nil {
+		return err
+	}
+	returnHost, err := parsePublicHTTPSHost(returnURL)
+	if err != nil {
+		return err
+	}
+	if !sameTrustedRootDomain(publicHost, returnHost) {
+		return errors.New("支付宝 H5 返回页域名与服务端公网域名不一致")
+	}
+	return nil
+}
+
+func validateMiniAlipayH5URL(rawURL, envName string) error {
+	if strings.TrimSpace(rawURL) == "" {
+		return fmt.Errorf("支付宝 H5 未配置 %s", envName)
+	}
+	_, err := parsePublicHTTPSHost(rawURL)
+	if err != nil {
+		return fmt.Errorf("支付宝 H5 配置无效（%s）: %w", envName, err)
+	}
+	return nil
+}
+
+func parsePublicHTTPSHost(rawURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", errors.New("URL 解析失败")
+	}
+	if parsed.Scheme != "https" {
+		return "", errors.New("必须使用 HTTPS")
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	if host == "" {
+		return "", errors.New("域名不能为空")
+	}
+	if parsed.Host == "" {
+		return "", errors.New("Host 不能为空")
+	}
+	if host == "localhost" || host == "127.0.0.1" {
+		return "", errors.New("不能使用本地域名")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return "", errors.New("不能使用 IP 地址")
+	}
+	return strings.ToLower(host), nil
+}
+
+func sameTrustedRootDomain(leftHost, rightHost string) bool {
+	left := rootDomain(leftHost)
+	right := rootDomain(rightHost)
+	return left != "" && right != "" && left == right
+}
+
+func rootDomain(host string) string {
+	parts := strings.Split(strings.ToLower(strings.TrimSpace(host)), ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-2] + "." + parts[len(parts)-1]
 }
 
 func (s *PaymentService) confirmPaymentSuccessTx(tx *gorm.DB, payment *model.PaymentOrder, providerTradeNo, rawPayload string) (*paymentSideEffect, error) {
@@ -1398,25 +1799,49 @@ func resolveBookingSurveyDepositAmountTx(tx *gorm.DB, booking *model.Booking) (f
 	if booking == nil || booking.ID == 0 {
 		return 0, errors.New("预约不存在")
 	}
-	depositAmount, err := configSvc.GetSurveyDepositDefault()
-	if err != nil {
-		depositAmount = 500
+	depositAmount := normalizeAmount(booking.SurveyDeposit)
+	if depositAmount <= 0 {
+		var provider model.Provider
+		if err := tx.First(&provider, booking.ProviderID).Error; err == nil && provider.SurveyDepositPrice > 0 {
+			depositAmount = normalizeAmount(provider.SurveyDepositPrice)
+		}
 	}
-	var provider model.Provider
-	if err := tx.First(&provider, booking.ProviderID).Error; err == nil && provider.SurveyDepositPrice > 0 {
-		depositAmount = provider.SurveyDepositPrice
+	if depositAmount <= 0 {
+		fallbackAmount, err := configSvc.GetSurveyDepositDefaultTx(tx)
+		if err != nil {
+			fallbackAmount = 500
+		}
+		depositAmount = normalizeAmount(fallbackAmount)
 	}
 	return normalizeAmount(depositAmount), nil
 }
 
-func normalizeTerminalType(terminalType string) (string, error) {
-	switch strings.TrimSpace(terminalType) {
-	case "", model.PaymentTerminalPCWeb:
-		return model.PaymentTerminalPCWeb, nil
-	case model.PaymentTerminalMobileH5:
-		return model.PaymentTerminalMobileH5, nil
+func normalizePaymentChannelAndTerminal(channel, terminalType string) (string, string, error) {
+	normalizedChannel := strings.TrimSpace(channel)
+	if normalizedChannel == "" {
+		normalizedChannel = model.PaymentChannelAlipay
+	}
+	switch normalizedChannel {
+	case model.PaymentChannelAlipay:
+		switch strings.TrimSpace(terminalType) {
+		case "", model.PaymentTerminalPCWeb:
+			return normalizedChannel, model.PaymentTerminalPCWeb, nil
+		case model.PaymentTerminalMobileH5:
+			return normalizedChannel, model.PaymentTerminalMobileH5, nil
+		case model.PaymentTerminalMiniQR:
+			return normalizedChannel, model.PaymentTerminalMiniQR, nil
+		default:
+			return "", "", errors.New("支付宝不支持当前支付终端")
+		}
+	case model.PaymentChannelWechat:
+		switch strings.TrimSpace(terminalType) {
+		case "", model.PaymentTerminalMiniWechatJSAPI:
+			return normalizedChannel, model.PaymentTerminalMiniWechatJSAPI, nil
+		default:
+			return "", "", errors.New("微信支付仅支持小程序内支付")
+		}
 	default:
-		return "", errors.New("不支持的支付终端")
+		return "", "", errors.New("不支持的支付渠道")
 	}
 }
 
@@ -1441,11 +1866,38 @@ func confirmMerchantBondPaidTx(tx *gorm.DB, providerID uint64) error {
 	return nil
 }
 
-func ensureAlipayEnabled() error {
-	if !config.GetConfig().Alipay.Enabled {
-		return errors.New("支付宝支付未启用")
+func resolvePaymentExpiryMinutes(channel string) int {
+	switch strings.TrimSpace(channel) {
+	case model.PaymentChannelWechat:
+		return maxInt(config.GetConfig().WechatPay.TimeoutMinutes, 15)
+	default:
+		return maxInt(config.GetConfig().Alipay.TimeoutMinutes, 15)
 	}
-	return nil
+}
+
+func interpretPaymentTradeState(channel, tradeStatus string) string {
+	switch strings.TrimSpace(channel) {
+	case model.PaymentChannelWechat:
+		switch strings.ToUpper(strings.TrimSpace(tradeStatus)) {
+		case "SUCCESS":
+			return model.PaymentStatusPaid
+		case "CLOSED", "REVOKED":
+			return model.PaymentStatusClosed
+		case "PAYERROR":
+			return model.PaymentStatusFailed
+		default:
+			return model.PaymentStatusPending
+		}
+	default:
+		switch strings.TrimSpace(tradeStatus) {
+		case alipayTradeSuccess, alipayTradeFinished:
+			return model.PaymentStatusPaid
+		case alipayTradeClosed:
+			return model.PaymentStatusClosed
+		default:
+			return model.PaymentStatusPending
+		}
+	}
 }
 
 func normalizeReturnBaseURL(raw string) string {
@@ -1470,6 +1922,16 @@ func normalizeReturnBaseURL(raw string) string {
 
 func buildLaunchURL(paymentID uint64, token string) string {
 	base := "/api/v1/payments/%d/launch?token=%s"
+	serverPublic := strings.TrimSpace(config.GetConfig().Server.PublicURL)
+	path := fmt.Sprintf(base, paymentID, url.QueryEscape(token))
+	if serverPublic == "" {
+		return path
+	}
+	return strings.TrimRight(serverPublic, "/") + path
+}
+
+func buildQRCodeURL(paymentID uint64, token string) string {
+	base := "/api/v1/payments/%d/qr?token=%s"
 	serverPublic := strings.TrimSpace(config.GetConfig().Server.PublicURL)
 	path := fmt.Sprintf(base, paymentID, url.QueryEscape(token))
 	if serverPublic == "" {
@@ -1566,7 +2028,7 @@ func paymentChannelText(channel string) string {
 	switch strings.TrimSpace(channel) {
 	case model.PaymentChannelAlipay:
 		return "支付宝"
-	case "wechat_pay":
+	case model.PaymentChannelWechat:
 		return "微信支付"
 	case "bank_transfer":
 		return "银行转账"
@@ -1584,6 +2046,10 @@ func paymentTerminalText(terminalType string) string {
 		return "网页端"
 	case model.PaymentTerminalMobileH5:
 		return "手机网页"
+	case model.PaymentTerminalMiniQR:
+		return "小程序扫码"
+	case model.PaymentTerminalMiniWechatJSAPI:
+		return "小程序微信支付"
 	default:
 		if strings.TrimSpace(terminalType) == "" {
 			return "待补充"

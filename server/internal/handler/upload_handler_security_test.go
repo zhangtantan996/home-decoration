@@ -12,7 +12,7 @@ func TestValidateUploadFileHeaderRejectsImageMismatch(t *testing.T) {
 	file := buildMultipartFileHeader(t, "file", "shell.php.jpg", []byte("<?php echo 'x';"))
 
 	_, err := validateUploadFileHeader(file, caseUploadAllowedExts)
-	if err == nil || !strings.Contains(err.Error(), "图片内容与扩展名不匹配") {
+	if err == nil || !strings.Contains(err.Error(), "不允许上传可执行或脚本文件") {
 		t.Fatalf("expected image mismatch error, got %v", err)
 	}
 }
@@ -45,6 +45,28 @@ func TestValidateUploadFileHeaderAllowsValidPNG(t *testing.T) {
 	}
 	if ext != ".png" {
 		t.Fatalf("expected .png ext, got %s", ext)
+	}
+}
+
+func TestValidateUploadFileHeaderNormalizesImageExtFromContent(t *testing.T) {
+	file := buildMultipartFileHeader(t, "file", "现场照片.jpg", []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+		0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92,
+		0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+		0x44, 0xae, 0x42, 0x60, 0x82,
+	})
+
+	ext, err := validateUploadFileHeader(file, caseUploadAllowedExts)
+	if err != nil {
+		t.Fatalf("expected png content to be accepted, got %v", err)
+	}
+	if ext != ".png" {
+		t.Fatalf("expected normalized ext .png, got %s", ext)
 	}
 }
 

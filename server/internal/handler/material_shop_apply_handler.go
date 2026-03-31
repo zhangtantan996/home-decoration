@@ -230,26 +230,10 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 }
 
 func createOrLoadUserForMaterialApply(tx *gorm.DB, phone, nickname string) (*model.User, error) {
-	var user model.User
-	err := tx.Where("phone = ?", phone).First(&user).Error
-	if err == nil {
-		return &user, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	user, err := createOrLoadMerchantUserWithCompatibility(tx, phone, nickname)
+	if err != nil {
 		return nil, err
 	}
-
-	createdUser, createErr := createMerchantUserWithCompatibility(tx, phone, nickname)
-	if createErr != nil {
-		if isUserPhoneDuplicateError(createErr) {
-			if findErr := tx.Where("phone = ?", phone).First(&user).Error; findErr == nil {
-				return &user, nil
-			}
-		}
-		return nil, createErr
-	}
-
-	user = createdUser
 	return &user, nil
 }
 

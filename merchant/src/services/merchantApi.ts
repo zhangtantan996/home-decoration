@@ -745,13 +745,24 @@ export interface MerchantProjectLog {
     description?: string;
     logDate?: string;
     photos?: string;
+    phaseId?: number;
 }
 
 export interface MerchantCreateProjectLogPayload {
+    phaseId: number;
     title: string;
     description?: string;
     photos?: string;
     logDate?: string;
+}
+
+export interface MerchantProjectPhase {
+    id: number;
+    name?: string;
+    phaseType?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
 }
 
 export interface MerchantStartProjectPayload {
@@ -770,6 +781,7 @@ export interface MerchantProjectExecutionDetail {
     ownerName?: string;
     providerName?: string;
     budget?: number;
+    phases?: MerchantProjectPhase[];
     milestones: MerchantProjectMilestone[];
     recentLogs?: MerchantProjectLog[];
     completedPhotos?: string[];
@@ -1141,6 +1153,11 @@ export const merchantDesignApi = {
         unwrapData<{ quote: DesignFeeQuoteItem | null }>(
             await merchantApi.get(`/merchant/bookings/${bookingId}/design-fee-quote`),
             '获取设计费报价失败'
+        ),
+    getDeliverable: async (bookingId: number) =>
+        unwrapData<{ deliverable: DesignDeliverableItem | null }>(
+            await merchantApi.get(`/merchant/bookings/${bookingId}/deliverable`),
+            '获取设计交付件失败'
         ),
     submitDeliverable: async (bookingId: number, data: {
         colorFloorPlan?: string;

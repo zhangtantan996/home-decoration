@@ -20,11 +20,18 @@ type UserOrderListItem struct {
 	ID            uint64     `json:"id"`
 	RecordType    string     `json:"recordType"`
 	OrderNo       string     `json:"orderNo"`
+	OrderType     string     `json:"orderType,omitempty"`
 	Status        int8       `json:"status"`
 	Amount        float64    `json:"amount"`
+	TotalAmount   float64    `json:"totalAmount"`
+	PaidAmount    float64    `json:"paidAmount"`
+	Discount      float64    `json:"discount"`
+	CreatedAt     *time.Time `json:"createdAt,omitempty"`
+	PaidAt        *time.Time `json:"paidAt,omitempty"`
 	ProviderName  string     `json:"providerName"`
 	Address       string     `json:"address"`
 	NextPayableAt *time.Time `json:"nextPayableAt"`
+	BookingID     uint64     `json:"bookingId,omitempty"`
 	ProposalID    uint64     `json:"proposalId"`
 	ProjectID     uint64     `json:"projectId"`
 	ActionPath    string     `json:"actionPath,omitempty"`
@@ -515,11 +522,6 @@ func (s *OrderService) ListOrdersForUser(userID uint64, status *int8, page, page
 		query = query.Where("status = ?", *status)
 	}
 
-	var orderTotal int64
-	if err := query.Count(&orderTotal).Error; err != nil {
-		return nil, 0, err
-	}
-
 	var orders []model.Order
 	if err := query.Order("created_at DESC").Find(&orders).Error; err != nil {
 		return nil, 0, err
@@ -537,16 +539,44 @@ func (s *OrderService) ListOrdersForUser(userID uint64, status *int8, page, page
 				ID:            order.ID,
 				RecordType:    "order",
 				OrderNo:       order.OrderNo,
+				OrderType:     order.OrderType,
 				Status:        order.Status,
 				Amount:        order.TotalAmount - order.Discount,
+				TotalAmount:   order.TotalAmount,
+				PaidAmount:    order.PaidAmount,
+				Discount:      order.Discount,
+				CreatedAt:     &order.CreatedAt,
+				PaidAt:        order.PaidAt,
 				ProviderName:  providerName,
 				Address:       address,
 				NextPayableAt: order.ExpireAt,
+				BookingID:     order.BookingID,
 				ProposalID:    order.ProposalID,
 				ProjectID:     order.ProjectID,
 			},
 			createdAt: order.CreatedAt,
 		})
+	}
+
+	if status == nil || *status == model.OrderStatusPending {
+		var pendingSurveyBookings []model.Booking
+		if err := repository.DB.
+			Where("user_id = ? AND survey_deposit_paid = ? AND status = ?", userID, false, 2).
+			Order("created_at DESC").
+			Find(&pendingSurveyBookings).Error; err != nil {
+			return nil, 0, err
+		}
+
+		for _, booking := range pendingSurveyBookings {
+			item, err := s.buildPendingSurveyDepositListItem(&booking)
+			if err != nil {
+				return nil, 0, err
+			}
+			records = append(records, userOrderAggregateRecord{
+				item:      item,
+				createdAt: booking.CreatedAt,
+			})
+		}
 	}
 
 	if status == nil || *status == model.OrderStatusPaid {
@@ -597,8 +627,39 @@ func (s *OrderService) ListOrdersForUser(userID uint64, status *int8, page, page
 		items = append(items, record.item)
 	}
 
-	_ = orderTotal
 	return items, total, nil
+}
+
+// GetOrderForUser 获取用户可访问的订单详情
+func (s *OrderService) GetOrderForUser(userID, orderID uint64) (*model.Order, error) {
+	var order model.Order
+	if err := repository.DB.First(&order, orderID).Error; err != nil {
+		return nil, errors.New("订单不存在")
+	}
+
+	if order.ProjectID > 0 {
+		var project model.Project
+		if err := repository.DB.First(&project, order.ProjectID).Error; err != nil {
+			return nil, errors.New("关联项目不存在")
+		}
+		if project.OwnerID != userID {
+			return nil, errors.New("无权查看此订单")
+		}
+		return &order, nil
+	}
+
+	booking, _, err := s.resolveBookingAndProject(&order)
+	if err != nil {
+		return nil, err
+	}
+	if booking == nil {
+		return nil, errors.New("订单不存在")
+	}
+	if booking.UserID != userID {
+		return nil, errors.New("无权查看此订单")
+	}
+
+	return &order, nil
 }
 
 // GetPaymentPlansForUser 获取用户可访问订单的支付计划
@@ -760,15 +821,65 @@ func (s *OrderService) buildPaymentListItem(payment *model.PaymentOrder) (UserOr
 		title = fmt.Sprintf("支付记录 #%d", payment.ID)
 	}
 
+	orderType := "survey_deposit"
+	bookingID := uint64(0)
+	switch payment.BizType {
+	case model.PaymentBizTypeBookingIntent, model.PaymentBizTypeBookingSurveyDeposit:
+		bookingID = payment.BizID
+	}
+
+	createdAt := payment.CreatedAt
+	paidAt := payment.PaidAt
+
 	return UserOrderListItem{
 		ID:           payment.ID,
 		RecordType:   "payment",
 		OrderNo:      title,
+		OrderType:    orderType,
 		Status:       model.OrderStatusPaid,
 		Amount:       payment.Amount,
+		TotalAmount:  payment.Amount,
+		PaidAmount:   payment.Amount,
+		Discount:     0,
+		CreatedAt:    &createdAt,
+		PaidAt:       paidAt,
 		ProviderName: providerName,
 		Address:      address,
+		BookingID:    bookingID,
 		ActionPath:   fmt.Sprintf("/payments/%d", payment.ID),
+	}, nil
+}
+
+func (s *OrderService) buildPendingSurveyDepositListItem(booking *model.Booking) (UserOrderListItem, error) {
+	if booking == nil {
+		return UserOrderListItem{}, errors.New("预约不存在")
+	}
+
+	providerName, err := s.getProviderName(booking.ProviderID)
+	if err != nil {
+		return UserOrderListItem{}, err
+	}
+
+	amount := booking.SurveyDeposit
+	if amount <= 0 {
+		amount = booking.IntentFee
+	}
+	createdAt := booking.CreatedAt
+
+	return UserOrderListItem{
+		ID:           booking.ID,
+		RecordType:   "payment",
+		OrderNo:      fmt.Sprintf("BK%08d", booking.ID),
+		OrderType:    "survey_deposit",
+		Status:       model.OrderStatusPending,
+		Amount:       amount,
+		TotalAmount:  amount,
+		PaidAmount:   0,
+		Discount:     0,
+		CreatedAt:    &createdAt,
+		ProviderName: providerName,
+		Address:      booking.Address,
+		BookingID:    booking.ID,
 	}, nil
 }
 

@@ -4,6 +4,7 @@ import "time"
 
 const (
 	PaymentChannelAlipay = "alipay"
+	PaymentChannelWechat = "wechat"
 )
 
 const (
@@ -25,8 +26,10 @@ const (
 )
 
 const (
-	PaymentTerminalPCWeb    = "pc_web"
-	PaymentTerminalMobileH5 = "mobile_h5"
+	PaymentTerminalPCWeb           = "pc_web"
+	PaymentTerminalMobileH5        = "mobile_h5"
+	PaymentTerminalMiniQR          = "mini_qr"
+	PaymentTerminalMiniWechatJSAPI = "mini_wechat_jsapi"
 )
 
 const (

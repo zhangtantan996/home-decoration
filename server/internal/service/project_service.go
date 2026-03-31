@@ -40,26 +40,46 @@ type CreateProjectRequest struct {
 // ProjectDetail 项目详情响应
 type ProjectDetail struct {
 	model.Project
-	OwnerName                 string            `json:"ownerName"`
-	ProviderName              string            `json:"providerName"`
-	ProviderAvatar            string            `json:"providerAvatar"`
-	ProviderPhone             string            `json:"providerPhone"`
-	ProviderType              int8              `json:"providerType"`
-	Milestones                []model.Milestone `json:"milestones"`
-	RecentLogs                []model.WorkLog   `json:"recentLogs"`
-	EscrowBalance             float64           `json:"escrowBalance"`
-	BusinessStage             string            `json:"businessStage"`
-	FlowSummary               string            `json:"flowSummary"`
-	AvailableActions          []string          `json:"availableActions"`
-	SelectedQuoteTaskID       uint64            `json:"selectedQuoteTaskId"`
-	SelectedForemanProviderID uint64            `json:"selectedForemanProviderId"`
-	SelectedQuoteSubmissionID uint64            `json:"selectedQuoteSubmissionId"`
-	InspirationCaseDraftID    uint64            `json:"inspirationCaseDraftId"`
-	CompletedPhotos           []string          `json:"completedPhotos"`
-	CompletionNotes           string            `json:"completionNotes"`
-	CompletionSubmittedAt     *time.Time        `json:"completionSubmittedAt,omitempty"`
-	CompletionRejectionReason string            `json:"completionRejectionReason,omitempty"`
-	CompletionRejectedAt      *time.Time        `json:"completionRejectedAt,omitempty"`
+	OwnerName                 string              `json:"ownerName"`
+	ProviderName              string              `json:"providerName"`
+	ProviderAvatar            string              `json:"providerAvatar"`
+	ProviderPhone             string              `json:"providerPhone"`
+	ProviderType              int8                `json:"providerType"`
+	DesignerName              string              `json:"designerName"`
+	DesignerAvatar            string              `json:"designerAvatar"`
+	DesignerPhone             string              `json:"designerPhone"`
+	RiskSummary               *ProjectRiskSummary `json:"riskSummary,omitempty"`
+	Phases                    []ProjectPhaseView  `json:"phases,omitempty"`
+	Milestones                []model.Milestone   `json:"milestones"`
+	RecentLogs                []model.WorkLog     `json:"recentLogs"`
+	EscrowBalance             float64             `json:"escrowBalance"`
+	BusinessStage             string              `json:"businessStage"`
+	FlowSummary               string              `json:"flowSummary"`
+	AvailableActions          []string            `json:"availableActions"`
+	SelectedQuoteTaskID       uint64              `json:"selectedQuoteTaskId"`
+	SelectedForemanProviderID uint64              `json:"selectedForemanProviderId"`
+	SelectedQuoteSubmissionID uint64              `json:"selectedQuoteSubmissionId"`
+	InspirationCaseDraftID    uint64              `json:"inspirationCaseDraftId"`
+	CompletedPhotos           []string            `json:"completedPhotos"`
+	CompletionNotes           string              `json:"completionNotes"`
+	CompletionSubmittedAt     *time.Time          `json:"completionSubmittedAt,omitempty"`
+	CompletionRejectionReason string              `json:"completionRejectionReason,omitempty"`
+	CompletionRejectedAt      *time.Time          `json:"completionRejectedAt,omitempty"`
+}
+
+type ProjectRiskSummary struct {
+	PausedAt        *time.Time `json:"pausedAt,omitempty"`
+	ResumedAt       *time.Time `json:"resumedAt,omitempty"`
+	PauseReason     string     `json:"pauseReason,omitempty"`
+	PauseInitiator  string     `json:"pauseInitiator,omitempty"`
+	DisputedAt      *time.Time `json:"disputedAt,omitempty"`
+	DisputeReason   string     `json:"disputeReason,omitempty"`
+	DisputeEvidence []string   `json:"disputeEvidence,omitempty"`
+	AuditID         uint64     `json:"auditId,omitempty"`
+	AuditStatus     string     `json:"auditStatus,omitempty"`
+	EscrowFrozen    bool       `json:"escrowFrozen"`
+	EscrowStatus    int8       `json:"escrowStatus,omitempty"`
+	FrozenAmount    float64    `json:"frozenAmount,omitempty"`
 }
 
 type MerchantProjectListItem struct {
@@ -84,6 +104,7 @@ type MerchantProjectListQuery struct {
 type ConfirmConstructionRequest struct {
 	ConstructionProviderID uint64 `json:"constructionProviderId"`
 	ForemanID              uint64 `json:"foremanId"`
+	Reason                 string `json:"reason"`
 }
 
 type ConfirmConstructionQuoteRequest struct {
@@ -91,17 +112,57 @@ type ConfirmConstructionQuoteRequest struct {
 	MaterialMethod    string  `json:"materialMethod"`
 	PlannedStartDate  string  `json:"plannedStartDate"`
 	ExpectedEnd       string  `json:"expectedEnd"`
+	Reason            string  `json:"reason"`
 }
 
 type StartProjectRequest struct {
 	StartDate string `json:"startDate"`
+	Reason    string `json:"reason"`
 }
 
 type CreateWorkLogRequest struct {
+	PhaseID     uint64 `json:"phaseId"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Photos      string `json:"photos"`
 	LogDate     string `json:"logDate"`
+}
+
+type ProjectPhaseView struct {
+	model.ProjectPhase
+	Name string `json:"name"`
+}
+
+var projectPhaseNameMap = map[string]string{
+	"preparation":  "开工准备",
+	"demolition":   "拆改阶段",
+	"electrical":   "水电阶段",
+	"masonry":      "泥木阶段",
+	"painting":     "油漆阶段",
+	"installation": "安装阶段",
+	"inspection":   "竣工验收",
+}
+
+func GetProjectPhaseDisplayName(phaseType string) string {
+	normalized := strings.TrimSpace(strings.ToLower(phaseType))
+	if name, ok := projectPhaseNameMap[normalized]; ok {
+		return name
+	}
+	if normalized != "" {
+		return normalized
+	}
+	return "施工阶段"
+}
+
+func buildProjectPhaseViews(phases []model.ProjectPhase) []ProjectPhaseView {
+	result := make([]ProjectPhaseView, 0, len(phases))
+	for _, phase := range phases {
+		result = append(result, ProjectPhaseView{
+			ProjectPhase: phase,
+			Name:         GetProjectPhaseDisplayName(phase.PhaseType),
+		})
+	}
+	return result
 }
 
 // CreateProject 创建项目
@@ -361,15 +422,15 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 	var owner model.User
 	repository.DB.Select("nickname").First(&owner, project.OwnerID)
 
-	var provider model.Provider
-	repository.DB.Select("id", "user_id", "company_name", "provider_type", "avatar").First(&provider, project.ProviderID)
-	var providerUser model.User
-	if provider.UserID > 0 {
-		_ = repository.DB.Select("nickname", "phone", "avatar").First(&providerUser, provider.UserID).Error
-	}
+	providerProfile := loadProjectParticipantProfile(repository.DB, project.ProviderID)
+	designerProfile := loadProjectParticipantProfile(repository.DB, resolveProjectDesignerProviderID(repository.DB, project))
 
 	var milestones []model.Milestone
 	repository.DB.Where("project_id = ?", id).Order("seq ASC").Find(&milestones)
+	phases, err := s.GetProjectPhaseViews(id)
+	if err != nil {
+		return nil, err
+	}
 
 	var logs []model.WorkLog
 	repository.DB.Where("project_id = ?", id).Order("log_date DESC").Limit(5).Find(&logs)
@@ -386,27 +447,20 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 		return nil, err
 	}
 	completedPhotos = imgutil.GetFullImageURLs(completedPhotos)
+	riskSummary := s.buildProjectRiskSummary(project)
 
 	return &ProjectDetail{
-		Project:   *project,
-		OwnerName: owner.Nickname,
-		ProviderName: ResolveProviderDisplayName(provider, func() *model.User {
-			if provider.UserID > 0 {
-				return &providerUser
-			}
-			return nil
-		}()),
-		ProviderAvatar: func() string {
-			if providerUser.Avatar != "" {
-				return imgutil.GetFullImageURL(providerUser.Avatar)
-			}
-			if provider.Avatar != "" {
-				return imgutil.GetFullImageURL(provider.Avatar)
-			}
-			return ""
-		}(),
-		ProviderPhone:             providerUser.Phone,
-		ProviderType:              provider.ProviderType,
+		Project:                   *project,
+		OwnerName:                 owner.Nickname,
+		ProviderName:              providerProfile.Name,
+		ProviderAvatar:            providerProfile.Avatar,
+		ProviderPhone:             providerProfile.Phone,
+		ProviderType:              providerProfile.ProviderType,
+		DesignerName:              designerProfile.Name,
+		DesignerAvatar:            designerProfile.Avatar,
+		DesignerPhone:             designerProfile.Phone,
+		RiskSummary:               riskSummary,
+		Phases:                    phases,
 		Milestones:                milestones,
 		RecentLogs:                logs,
 		EscrowBalance:             escrow.TotalAmount - escrow.ReleasedAmount,
@@ -423,6 +477,103 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 		CompletionRejectionReason: project.CompletionRejectionReason,
 		CompletionRejectedAt:      project.CompletionRejectedAt,
 	}, nil
+}
+
+type projectParticipantProfile struct {
+	ProviderID   uint64
+	Name         string
+	Avatar       string
+	Phone        string
+	ProviderType int8
+}
+
+func loadProjectParticipantProfile(db *gorm.DB, providerID uint64) projectParticipantProfile {
+	if db == nil || providerID == 0 {
+		return projectParticipantProfile{}
+	}
+
+	var provider model.Provider
+	if err := db.Select("id", "user_id", "company_name", "provider_type", "avatar").First(&provider, providerID).Error; err != nil {
+		return projectParticipantProfile{}
+	}
+
+	var providerUser model.User
+	var providerUserRef *model.User
+	if provider.UserID > 0 {
+		if err := db.Select("nickname", "phone", "avatar").First(&providerUser, provider.UserID).Error; err == nil {
+			providerUserRef = &providerUser
+		}
+	}
+
+	avatar := ""
+	if providerUser.Avatar != "" {
+		avatar = imgutil.GetFullImageURL(providerUser.Avatar)
+	} else if provider.Avatar != "" {
+		avatar = imgutil.GetFullImageURL(provider.Avatar)
+	}
+
+	return projectParticipantProfile{
+		ProviderID:   provider.ID,
+		Name:         ResolveProviderDisplayName(provider, providerUserRef),
+		Avatar:       avatar,
+		Phone:        providerUser.Phone,
+		ProviderType: provider.ProviderType,
+	}
+}
+
+func resolveProjectDesignerProviderID(db *gorm.DB, project *model.Project) uint64 {
+	if db == nil || project == nil {
+		return 0
+	}
+	if project.ProposalID > 0 {
+		var proposal model.Proposal
+		if err := db.Select("designer_id").First(&proposal, project.ProposalID).Error; err == nil && proposal.DesignerID > 0 {
+			return proposal.DesignerID
+		}
+	}
+	if flow, err := businessFlowSvc.GetByProjectIDTx(db, project.ID); err == nil && flow != nil && flow.DesignerProviderID > 0 {
+		return flow.DesignerProviderID
+	}
+	if project.ConstructionProviderID == 0 && project.ForemanID == 0 {
+		return project.ProviderID
+	}
+	return 0
+}
+
+func (s *ProjectService) buildProjectRiskSummary(project *model.Project) *ProjectRiskSummary {
+	if project == nil {
+		return nil
+	}
+
+	summary := &ProjectRiskSummary{
+		PausedAt:        project.PausedAt,
+		ResumedAt:       project.ResumedAt,
+		PauseReason:     project.PauseReason,
+		PauseInitiator:  project.PauseInitiator,
+		DisputedAt:      project.DisputedAt,
+		DisputeReason:   project.DisputeReason,
+		DisputeEvidence: ParseStringList(project.DisputeEvidence),
+	}
+
+	var audit model.ProjectAudit
+	if err := repository.DB.
+		Where("project_id = ?", project.ID).
+		Order("id DESC").
+		First(&audit).Error; err == nil {
+		summary.AuditID = audit.ID
+		summary.AuditStatus = audit.Status
+	}
+
+	var escrow model.EscrowAccount
+	if err := repository.DB.
+		Where("project_id = ?", project.ID).
+		First(&escrow).Error; err == nil {
+		summary.EscrowStatus = escrow.Status
+		summary.FrozenAmount = escrow.FrozenAmount
+		summary.EscrowFrozen = escrow.Status == escrowStatusFrozen || escrow.FrozenAmount > 0
+	}
+
+	return summary
 }
 
 func (s *ProjectService) GetProjectDetailForOwner(projectID, userID uint64) (*ProjectDetail, error) {
@@ -542,38 +693,57 @@ func (s *ProjectService) CreateMerchantProjectLog(projectID, providerID uint64, 
 
 // CreateWorkLog 创建施工日志
 func (s *ProjectService) CreateWorkLog(projectID, workerID uint64, req *CreateWorkLogRequest) error {
-	return s.createWorkLog(projectID, workerID, req)
+	_, err := s.createWorkLog(projectID, workerID, 0, req)
+	return err
 }
 
 func (s *ProjectService) CreateWorkLogForProvider(projectID, providerID uint64, req *CreateWorkLogRequest) error {
 	if _, err := s.getProviderProject(projectID, providerID); err != nil {
 		return err
 	}
-	return s.createWorkLog(projectID, providerID, req)
+	_, err := s.createWorkLog(projectID, providerID, 0, req)
+	return err
 }
 
-func (s *ProjectService) createWorkLog(projectID, workerID uint64, req *CreateWorkLogRequest) error {
+func (s *ProjectService) CreateAdminWorkLog(projectID, adminID uint64, req *CreateWorkLogRequest) (*model.WorkLog, error) {
+	return s.createWorkLog(projectID, 0, adminID, req)
+}
+
+func (s *ProjectService) createWorkLog(projectID, workerID, adminID uint64, req *CreateWorkLogRequest) (*model.WorkLog, error) {
 	if req == nil {
 		req = &CreateWorkLogRequest{}
 	}
 	var project model.Project
 	if err := repository.DB.First(&project, projectID).Error; err != nil {
-		return errors.New("项目不存在")
+		return nil, errors.New("项目不存在")
 	}
 	if err := ensureProjectExecutionAllowed(&project, "创建施工日志"); err != nil {
-		return err
+		return nil, err
+	}
+	phaseID := req.PhaseID
+	if phaseID == 0 {
+		return nil, errors.New("请选择所属施工阶段")
+	}
+	var phase model.ProjectPhase
+	if err := repository.DB.Where("id = ? AND project_id = ?", phaseID, projectID).First(&phase).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("施工阶段不存在")
+		}
+		return nil, err
 	}
 	logDate := time.Now()
 	if strings.TrimSpace(req.LogDate) != "" {
 		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(req.LogDate))
 		if err != nil {
-			return errors.New("日志日期格式错误")
+			return nil, errors.New("日志日期格式错误")
 		}
 		logDate = parsed
 	}
 	log := &model.WorkLog{
 		ProjectID:   projectID,
+		PhaseID:     phaseID,
 		WorkerID:    workerID,
+		CreatedBy:   adminID,
 		Title:       strings.TrimSpace(req.Title),
 		LogDate:     logDate,
 		Description: strings.TrimSpace(req.Description),
@@ -586,19 +756,26 @@ func (s *ProjectService) createWorkLog(projectID, workerID uint64, req *CreateWo
 	// 简单模拟AI分析
 	log.AIAnalysis = `{"status": "normal", "detect": ["wall", "pipe"]}`
 
-	return repository.DB.Create(log).Error
+	if err := repository.DB.Create(log).Error; err != nil {
+		return nil, err
+	}
+
+	return log, nil
 }
 
 // GetProjectLogs 获取项目日志
-func (s *ProjectService) GetProjectLogs(projectID uint64, page, pageSize int) ([]model.WorkLog, int64, error) {
+func (s *ProjectService) GetProjectLogs(projectID uint64, page, pageSize int, phaseIDs ...uint64) ([]model.WorkLog, int64, error) {
 	var logs []model.WorkLog
 	var total int64
 
 	db := repository.DB.Model(&model.WorkLog{}).Where("project_id = ?", projectID)
+	if len(phaseIDs) > 0 && phaseIDs[0] > 0 {
+		db = db.Where("phase_id = ?", phaseIDs[0])
+	}
 	db.Count(&total)
 
 	offset := (page - 1) * pageSize
-	if err := db.Order("log_date DESC").Offset(offset).Limit(pageSize).Find(&logs).Error; err != nil {
+	if err := db.Order("log_date DESC, created_at DESC").Offset(offset).Limit(pageSize).Find(&logs).Error; err != nil {
 		return nil, 0, err
 	}
 	for i := range logs {
@@ -637,6 +814,14 @@ func (s *ProjectService) GetProjectPhases(projectID uint64) ([]model.ProjectPhas
 	return phases, nil
 }
 
+func (s *ProjectService) GetProjectPhaseViews(projectID uint64) ([]ProjectPhaseView, error) {
+	phases, err := s.GetProjectPhases(projectID)
+	if err != nil {
+		return nil, err
+	}
+	return buildProjectPhaseViews(phases), nil
+}
+
 func (s *ProjectService) GetProjectPhasesForOwner(projectID, userID uint64) ([]model.ProjectPhase, error) {
 	if _, err := s.getOwnedProject(projectID, userID); err != nil {
 		return nil, err
@@ -644,11 +829,25 @@ func (s *ProjectService) GetProjectPhasesForOwner(projectID, userID uint64) ([]m
 	return s.GetProjectPhases(projectID)
 }
 
+func (s *ProjectService) GetProjectPhaseViewsForOwner(projectID, userID uint64) ([]ProjectPhaseView, error) {
+	if _, err := s.getOwnedProject(projectID, userID); err != nil {
+		return nil, err
+	}
+	return s.GetProjectPhaseViews(projectID)
+}
+
 func (s *ProjectService) GetProjectPhasesForProvider(projectID, providerID uint64) ([]model.ProjectPhase, error) {
 	if _, err := s.getProviderProject(projectID, providerID); err != nil {
 		return nil, err
 	}
 	return s.GetProjectPhases(projectID)
+}
+
+func (s *ProjectService) GetProjectPhaseViewsForProvider(projectID, providerID uint64) ([]ProjectPhaseView, error) {
+	if _, err := s.getProviderProject(projectID, providerID); err != nil {
+		return nil, err
+	}
+	return s.GetProjectPhaseViews(projectID)
 }
 
 // GetProjectMilestones 获取项目验收节点
@@ -719,8 +918,13 @@ func (s *ProjectService) ConfirmConstruction(projectID, userID uint64, req *Conf
 	return &updated, nil
 }
 
-func (s *ProjectService) AdminConfirmConstruction(projectID uint64, req *ConfirmConstructionRequest) (*model.Project, error) {
+func (s *ProjectService) AdminConfirmConstruction(projectID, adminID uint64, req *ConfirmConstructionRequest) (*model.Project, error) {
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return nil, errors.New("请填写操作原因")
+	}
 	var updated model.Project
+	auditService := &AuditLogService{}
 
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		project, err := s.getProjectForUpdate(tx, projectID)
@@ -733,6 +937,16 @@ func (s *ProjectService) AdminConfirmConstruction(projectID uint64, req *Confirm
 		selectedPartyID, err := s.ensureConstructionParticipants(tx, req.ConstructionProviderID, req.ForemanID)
 		if err != nil {
 			return err
+		}
+		beforeState := map[string]interface{}{
+			"project": map[string]interface{}{
+				"id":                     project.ID,
+				"providerId":             project.ProviderID,
+				"constructionProviderId": project.ConstructionProviderID,
+				"foremanId":              project.ForemanID,
+				"businessStatus":         project.BusinessStatus,
+				"currentPhase":           project.CurrentPhase,
+			},
 		}
 
 		now := time.Now()
@@ -751,6 +965,34 @@ func (s *ProjectService) AdminConfirmConstruction(projectID uint64, req *Confirm
 			"current_stage":                model.BusinessFlowStageConstructorPending,
 			"selected_foreman_provider_id": selectedPartyID,
 			"project_id":                   projectID,
+		}); err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "confirm_construction",
+			ResourceType:  "project",
+			ResourceID:    project.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":                      project.ID,
+					"providerId":              selectedPartyID,
+					"constructionProviderId":  req.ConstructionProviderID,
+					"foremanId":               req.ForemanID,
+					"businessStatus":          model.ProjectBusinessStatusConstructionConfirmed,
+					"currentPhase":            "施工方已确认",
+					"constructionConfirmedAt": now,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"selectedPartyId":        selectedPartyID,
+				"constructionProviderId": req.ConstructionProviderID,
+				"foremanId":              req.ForemanID,
+			},
 		}); err != nil {
 			return err
 		}
@@ -889,12 +1131,17 @@ func (s *ProjectService) ConfirmConstructionQuote(projectID, userID uint64, req 
 	return &updated, nil
 }
 
-func (s *ProjectService) AdminConfirmConstructionQuote(projectID uint64, req *ConfirmConstructionQuoteRequest) (*model.Project, error) {
+func (s *ProjectService) AdminConfirmConstructionQuote(projectID, adminID uint64, req *ConfirmConstructionQuoteRequest) (*model.Project, error) {
 	if req.ConstructionQuote <= 0 {
 		return nil, errors.New("施工报价必须大于0")
 	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return nil, errors.New("请填写操作原因")
+	}
 
 	var updated model.Project
+	auditService := &AuditLogService{}
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		project, err := s.getProjectForUpdate(tx, projectID)
 		if err != nil {
@@ -918,6 +1165,14 @@ func (s *ProjectService) AdminConfirmConstructionQuote(projectID uint64, req *Co
 		}
 		if plannedStartDate == nil {
 			return errors.New("计划开工日期不能为空")
+		}
+		beforeState := map[string]interface{}{
+			"project": map[string]interface{}{
+				"id":                project.ID,
+				"businessStatus":    project.BusinessStatus,
+				"currentPhase":      project.CurrentPhase,
+				"constructionQuote": project.ConstructionQuote,
+			},
 		}
 
 		var expectedEnd *time.Time
@@ -951,6 +1206,129 @@ func (s *ProjectService) AdminConfirmConstructionQuote(projectID uint64, req *Co
 		}
 		if err := businessFlowSvc.AdvanceByProject(tx, projectID, map[string]interface{}{
 			"current_stage": model.BusinessFlowStageReadyToStart,
+		}); err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "confirm_construction_quote",
+			ResourceType:  "project",
+			ResourceID:    project.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":                project.ID,
+					"businessStatus":    model.ProjectBusinessStatusConstructionQuoteConfirmed,
+					"currentPhase":      "待开工",
+					"constructionQuote": req.ConstructionQuote,
+					"quoteConfirmedAt":  now,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"plannedStartDate": plannedStartDate,
+				"expectedEnd":      expectedEnd,
+				"materialMethod":   req.MaterialMethod,
+			},
+		}); err != nil {
+			return err
+		}
+
+		return tx.First(&updated, projectID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
+}
+
+func (s *ProjectService) AdminStartProject(projectID, adminID uint64, req *StartProjectRequest) (*model.Project, error) {
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return nil, errors.New("请填写操作原因")
+	}
+
+	var updated model.Project
+	auditService := &AuditLogService{}
+
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getProjectForUpdate(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if project.BusinessStatus != model.ProjectBusinessStatusConstructionQuoteConfirmed {
+			return errors.New("当前项目状态不允许开工")
+		}
+		if !hasConfirmedConstructionParty(project) || project.ConstructionQuote <= 0 {
+			return errors.New("施工条件未确认完成，不能开工")
+		}
+
+		startedAt := time.Now()
+		if req != nil && req.StartDate != "" {
+			parsed, err := parseProjectDate(req.StartDate)
+			if err != nil {
+				return errors.New("开工日期格式错误")
+			}
+			startedAt = *parsed
+		} else if project.EntryStartDate != nil {
+			startedAt = *project.EntryStartDate
+		}
+
+		beforeState := map[string]interface{}{
+			"project": map[string]interface{}{
+				"id":             project.ID,
+				"businessStatus": project.BusinessStatus,
+				"currentPhase":   project.CurrentPhase,
+			},
+		}
+
+		currentMilestoneName, err := s.activateCurrentMilestone(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if err := s.activateFirstProjectPhase(tx, projectID, startedAt); err != nil {
+			return err
+		}
+
+		currentPhase := "施工中"
+		if currentMilestoneName != "" {
+			currentPhase = currentMilestoneName + "施工中"
+		}
+		updates := map[string]interface{}{
+			"status":          model.ProjectStatusActive,
+			"business_status": model.ProjectBusinessStatusInProgress,
+			"started_at":      startedAt,
+			"start_date":      startedAt,
+			"current_phase":   currentPhase,
+		}
+		if err := tx.Model(project).Updates(updates).Error; err != nil {
+			return err
+		}
+		if err := businessFlowSvc.AdvanceByProject(tx, projectID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageInProgress,
+		}); err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "start_project",
+			ResourceType:  "project",
+			ResourceID:    project.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":             project.ID,
+					"businessStatus": model.ProjectBusinessStatusInProgress,
+					"currentPhase":   currentPhase,
+					"startedAt":      startedAt,
+				},
+			},
 		}); err != nil {
 			return err
 		}
@@ -1217,19 +1595,9 @@ func (s *ProjectService) AcceptMilestone(projectID, userID, milestoneID uint64) 
 
 		// T+N 放款调度
 		cfgSvc := &ConfigService{}
-		delayDays := cfgSvc.GetConstructionReleaseDelayDaysTx(tx)
+		delayDays := cfgSvc.GetConstructionReleaseDelayDays()
 		releaseAt := time.Now().Add(time.Duration(delayDays) * 24 * time.Hour)
 		if err := tx.Model(&milestone).Update("release_scheduled_at", releaseAt).Error; err != nil {
-			return err
-		}
-		milestone.ReleaseScheduledAt = &releaseAt
-		if _, _, _, _, err := (&SettlementService{}).CreateMilestoneSettlementScheduleTx(tx, &ReleaseMilestoneInput{
-			ProjectID:    project.ID,
-			MilestoneID:  milestone.ID,
-			OperatorType: "system",
-			Reason:       "节点验收后进入待结算",
-			Source:       "project.milestone_accept",
-		}); err != nil {
 			return err
 		}
 
@@ -1321,6 +1689,166 @@ func (s *ProjectService) AcceptMilestone(projectID, userID, milestoneID uint64) 
 	return &updated, nil
 }
 
+func (s *ProjectService) AdminAcceptMilestone(projectID, adminID, milestoneID uint64, reason string) (*model.Milestone, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写操作原因")
+	}
+
+	var updated model.Milestone
+	var providerUserID uint64
+	var projectOwnerID uint64
+	var projectPhaseName string
+
+	auditService := &AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getProjectForUpdate(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if err := ensureProjectExecutionAllowed(project, "管理员验收节点"); err != nil {
+			return err
+		}
+
+		var milestone model.Milestone
+		if err := tx.Where("id = ? AND project_id = ?", milestoneID, projectID).First(&milestone).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("验收节点不存在")
+			}
+			return err
+		}
+		if milestone.Status == model.MilestoneStatusAccepted || milestone.Status == model.MilestoneStatusPaid {
+			return errors.New("验收节点已处理")
+		}
+		if milestone.Status != model.MilestoneStatusSubmitted {
+			return errors.New("请先提交节点完成，再进行验收")
+		}
+
+		projectOwnerID = project.OwnerID
+		projectPhaseName = milestone.Name
+		providerID := project.ConstructionProviderID
+		if providerID == 0 {
+			providerID = project.ProviderID
+		}
+		providerUserID = getProviderUserIDTx(tx, providerID)
+		beforeState := map[string]interface{}{
+			"project": map[string]interface{}{
+				"id":             project.ID,
+				"businessStatus": project.BusinessStatus,
+				"currentPhase":   project.CurrentPhase,
+			},
+			"milestone": map[string]interface{}{
+				"id":          milestone.ID,
+				"name":        milestone.Name,
+				"status":      milestone.Status,
+				"amount":      milestone.Amount,
+				"submittedAt": milestone.SubmittedAt,
+			},
+		}
+
+		now := time.Now()
+		if err := tx.Model(&milestone).Updates(map[string]interface{}{
+			"status":      model.MilestoneStatusAccepted,
+			"accepted_at": now,
+		}).Error; err != nil {
+			return err
+		}
+
+		cfgSvc := &ConfigService{}
+		delayDays := cfgSvc.GetConstructionReleaseDelayDays()
+		releaseAt := time.Now().Add(time.Duration(delayDays) * 24 * time.Hour)
+		if err := tx.Model(&milestone).Update("release_scheduled_at", releaseAt).Error; err != nil {
+			return err
+		}
+
+		activateNext := true
+		paymentPaused := false
+		if usesMilestonePaymentMode(project) {
+			nextPlan, err := findNextConstructionPaymentPlanTx(tx, project.ID, milestone.Seq)
+			if err != nil {
+				return err
+			}
+			if nextPlan != nil && nextPlan.Status != 1 {
+				activateNext = false
+				paymentPaused = true
+			}
+		}
+
+		nextName, remaining, err := s.advanceMilestoneFlow(tx, projectID, milestone.Seq, activateNext)
+		if err != nil {
+			return err
+		}
+
+		projectUpdates := map[string]interface{}{
+			"status":                model.ProjectStatusActive,
+			"business_status":       model.ProjectBusinessStatusInProgress,
+			"current_phase":         milestone.Name + "已验收",
+			"payment_paused":        false,
+			"payment_paused_at":     nil,
+			"payment_paused_reason": "",
+		}
+		if remaining == 0 {
+			projectUpdates["status"] = model.ProjectStatusActive
+			projectUpdates["business_status"] = model.ProjectBusinessStatusInProgress
+			projectUpdates["current_phase"] = "待提交完工材料"
+			projectUpdates["actual_end"] = nil
+		} else if paymentPaused {
+			projectUpdates["payment_paused"] = true
+			projectUpdates["payment_paused_at"] = &now
+			projectUpdates["payment_paused_reason"] = "等待支付下一期施工款"
+			projectUpdates["current_phase"] = "等待支付下一期施工款"
+		} else if nextName != "" {
+			projectUpdates["current_phase"] = nextName + "施工中"
+		}
+		if err := tx.Model(project).Updates(projectUpdates).Error; err != nil {
+			return err
+		}
+		if err := businessFlowSvc.AdvanceByProject(tx, projectID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageInProgress,
+		}); err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "approve_milestone",
+			ResourceType:  "milestone",
+			ResourceID:    milestone.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":             project.ID,
+					"businessStatus": model.ProjectBusinessStatusInProgress,
+					"currentPhase":   projectUpdates["current_phase"],
+				},
+				"milestone": map[string]interface{}{
+					"id":         milestone.ID,
+					"name":       milestone.Name,
+					"status":     model.MilestoneStatusAccepted,
+					"acceptedAt": now,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"projectId": project.ID,
+				"remaining": remaining,
+				"nextPhase": nextName,
+			},
+		}); err != nil {
+			return err
+		}
+
+		return tx.First(&updated, milestoneID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	NewNotificationDispatcher().NotifyMilestoneDecision(projectOwnerID, providerUserID, projectID, milestoneID, projectPhaseName, true, reason)
+	return &updated, nil
+}
+
 func (s *ProjectService) RejectMilestone(projectID, userID, milestoneID uint64, reason string) (*model.Milestone, error) {
 	var updated model.Milestone
 	var providerUserID uint64
@@ -1408,6 +1936,118 @@ func (s *ProjectService) RejectMilestone(projectID, userID, milestoneID uint64, 
 					"name":            milestone.Name,
 					"status":          model.MilestoneStatusRejected,
 					"rejectionReason": strings.TrimSpace(reason),
+				},
+			},
+			Metadata: map[string]interface{}{
+				"projectId": project.ID,
+			},
+		}); err != nil {
+			return err
+		}
+
+		return tx.First(&updated, milestoneID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	NewNotificationDispatcher().NotifyMilestoneDecision(projectOwnerID, providerUserID, projectID, milestoneID, milestoneName, false, reason)
+	return &updated, nil
+}
+
+func (s *ProjectService) AdminRejectMilestone(projectID, adminID, milestoneID uint64, reason string) (*model.Milestone, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写驳回原因")
+	}
+
+	var updated model.Milestone
+	var providerUserID uint64
+	var projectOwnerID uint64
+	var milestoneName string
+
+	auditService := &AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getProjectForUpdate(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if err := ensureProjectExecutionAllowed(project, "管理员驳回验收节点"); err != nil {
+			return err
+		}
+
+		var milestone model.Milestone
+		if err := tx.Where("id = ? AND project_id = ?", milestoneID, projectID).First(&milestone).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("验收节点不存在")
+			}
+			return err
+		}
+		if milestone.Status != model.MilestoneStatusSubmitted {
+			return errors.New("当前节点未提交验收，不能驳回")
+		}
+
+		projectOwnerID = project.OwnerID
+		milestoneName = milestone.Name
+		providerID := project.ConstructionProviderID
+		if providerID == 0 {
+			providerID = project.ProviderID
+		}
+		providerUserID = getProviderUserIDTx(tx, providerID)
+		beforeState := map[string]interface{}{
+			"project": map[string]interface{}{
+				"id":             project.ID,
+				"businessStatus": project.BusinessStatus,
+				"currentPhase":   project.CurrentPhase,
+			},
+			"milestone": map[string]interface{}{
+				"id":          milestone.ID,
+				"name":        milestone.Name,
+				"status":      milestone.Status,
+				"submittedAt": milestone.SubmittedAt,
+			},
+		}
+
+		if err := tx.Model(&milestone).Updates(map[string]interface{}{
+			"status":           model.MilestoneStatusRejected,
+			"rejection_reason": reason,
+		}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(project).Updates(map[string]interface{}{
+			"business_status": model.ProjectBusinessStatusInProgress,
+			"current_phase":   milestone.Name + "待整改",
+		}).Error; err != nil {
+			return err
+		}
+
+		if err := businessFlowSvc.AdvanceByProject(tx, projectID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageMilestoneReview,
+			"closed_reason": reason,
+		}); err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "reject_milestone",
+			ResourceType:  "milestone",
+			ResourceID:    milestone.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":             project.ID,
+					"businessStatus": model.ProjectBusinessStatusInProgress,
+					"currentPhase":   milestone.Name + "待整改",
+				},
+				"milestone": map[string]interface{}{
+					"id":              milestone.ID,
+					"name":            milestone.Name,
+					"status":          model.MilestoneStatusRejected,
+					"rejectionReason": reason,
 				},
 			},
 			Metadata: map[string]interface{}{
@@ -1741,8 +2381,8 @@ func (s *ProjectService) resolveProjectFlowSummary(project *model.Project, miles
 	return s.resolveProjectFlowSummaryTx(repository.DB, project, milestones)
 }
 
-func (s *ProjectService) resolveProjectFlowSummaryTx(db *gorm.DB, project *model.Project, milestones []model.Milestone) BusinessFlowSummary {
-	flow, _ := businessFlowSvc.GetByProjectIDTx(db, project.ID)
+func (s *ProjectService) resolveProjectFlowSummaryTx(queryDB *gorm.DB, project *model.Project, milestones []model.Milestone) BusinessFlowSummary {
+	flow, _ := businessFlowSvc.GetByProjectIDTx(queryDB, project.ID)
 	allAccepted := len(milestones) > 0
 	for _, milestone := range milestones {
 		if milestone.Status != model.MilestoneStatusAccepted && milestone.Status != model.MilestoneStatusPaid {

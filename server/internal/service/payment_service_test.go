@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -21,8 +23,20 @@ type paymentServiceTestGateway struct {
 	queryRefundResult *AlipayRefundResult
 }
 
+func (g paymentServiceTestGateway) Channel() string {
+	return model.PaymentChannelAlipay
+}
+
 func (g paymentServiceTestGateway) CreateCollectOrder(ctx context.Context, order *model.PaymentOrder) (string, error) {
 	return "<html>redirect</html>", nil
+}
+
+func (g paymentServiceTestGateway) CreateCollectQRCode(ctx context.Context, order *model.PaymentOrder) ([]byte, error) {
+	return []byte("png"), nil
+}
+
+func (g paymentServiceTestGateway) CreateMiniProgramPayment(context.Context, *model.PaymentOrder, string) (*PaymentChannelMiniProgramResult, error) {
+	return nil, nil
 }
 
 func (g paymentServiceTestGateway) VerifyNotify(values url.Values) (map[string]string, error) {
@@ -34,6 +48,10 @@ func (g paymentServiceTestGateway) VerifyNotify(values url.Values) (map[string]s
 		result[key] = values.Get(key)
 	}
 	return result, nil
+}
+
+func (g paymentServiceTestGateway) ParseNotifyRequest(context.Context, *http.Request) (*PaymentChannelNotifyResult, error) {
+	return nil, nil
 }
 
 func (g paymentServiceTestGateway) QueryCollectOrder(ctx context.Context, order *model.PaymentOrder) (*PaymentChannelTradeResult, error) {
@@ -146,6 +164,11 @@ func enableAlipayForPaymentTests(t *testing.T) {
 	cfg := config.GetConfig()
 	previous := *cfg
 	cfg.Alipay.Enabled = true
+	cfg.Alipay.AppID = "test-app-id"
+	cfg.Alipay.AppPrivateKey = "test-private-key"
+	cfg.Alipay.PublicKey = "test-public-key"
+	cfg.Alipay.GatewayURL = "https://openapi-sandbox.dl.alipaydev.com/gateway.do"
+	cfg.Alipay.NotifyURL = "https://server.example.com/api/v1/payments/alipay/notify"
 	cfg.Alipay.TimeoutMinutes = 15
 	cfg.Server.PublicURL = "https://server.example.com"
 	cfg.Alipay.ReturnURLWeb = "https://web.example.com/payments/result"
@@ -153,6 +176,20 @@ func enableAlipayForPaymentTests(t *testing.T) {
 	t.Cleanup(func() {
 		*cfg = previous
 	})
+}
+
+func seedPaymentChannelConfigs(t *testing.T, db *gorm.DB, alipayEnabled bool) {
+	t.Helper()
+
+	for _, item := range []model.SystemConfig{
+		{Key: model.ConfigKeyPaymentChannelWechatEnabled, Value: "false", Type: "bool"},
+		{Key: model.ConfigKeyPaymentChannelAlipayEnabled, Value: strconv.FormatBool(alipayEnabled), Type: "bool"},
+	} {
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("seed payment channel config: %v", err)
+		}
+	}
+	(&ConfigService{}).ClearCache()
 }
 
 func seedPaymentIntentFixture(t *testing.T, db *gorm.DB) (userID, bookingID uint64) {
@@ -345,7 +382,7 @@ func TestPaymentServiceStartSurveyDepositPaymentRejectsUnconfirmedBooking(t *tes
 	userID, bookingID := seedPendingBookingIntentFixture(t, db)
 
 	svc := NewPaymentService(paymentServiceTestGateway{})
-	_, err := svc.StartSurveyDepositPayment(userID, bookingID, model.PaymentTerminalPCWeb)
+	_, err := svc.StartSurveyDepositPayment(userID, bookingID, model.PaymentChannelAlipay, model.PaymentTerminalPCWeb)
 	if err == nil {
 		t.Fatalf("expected unconfirmed survey deposit payment to be rejected")
 	}
@@ -359,6 +396,70 @@ func TestPaymentServiceStartSurveyDepositPaymentRejectsUnconfirmedBooking(t *tes
 	}
 	if count != 0 {
 		t.Fatalf("expected no survey deposit payment order created, got %d", count)
+	}
+}
+
+func TestPaymentServiceGetSurveyDepositPaymentOptionsPrefersRedirectWhenMiniH5Ready(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	_, bookingID := seedPaymentIntentFixture(t, db)
+
+	var booking model.Booking
+	if err := db.First(&booking, bookingID).Error; err != nil {
+		t.Fatalf("load booking: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	options := svc.GetSurveyDepositPaymentOptions(&booking)
+	if len(options) != 1 {
+		t.Fatalf("expected single payment option, got %+v", options)
+	}
+	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "redirect" {
+		t.Fatalf("expected alipay redirect option, got %+v", options[0])
+	}
+}
+
+func TestPaymentServiceGetSurveyDepositPaymentOptionsFallsBackToQRCodeWhenMiniH5Unavailable(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	_, bookingID := seedPaymentIntentFixture(t, db)
+
+	cfg := config.GetConfig()
+	cfg.Alipay.ReturnURLH5 = ""
+
+	var booking model.Booking
+	if err := db.First(&booking, bookingID).Error; err != nil {
+		t.Fatalf("load booking: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	options := svc.GetSurveyDepositPaymentOptions(&booking)
+	if len(options) != 1 {
+		t.Fatalf("expected single payment option, got %+v", options)
+	}
+	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "qr_code" {
+		t.Fatalf("expected alipay qr fallback option, got %+v", options[0])
+	}
+}
+
+func TestPaymentServiceStartSurveyDepositPaymentRejectsMiniH5WithoutRuntime(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	cfg := config.GetConfig()
+	cfg.Alipay.ReturnURLH5 = ""
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	_, err := svc.StartSurveyDepositPayment(userID, bookingID, model.PaymentChannelAlipay, model.PaymentTerminalMobileH5)
+	if err == nil {
+		t.Fatal("expected mobile h5 launch to be rejected when runtime config is incomplete")
+	}
+	if err.Error() == "" {
+		t.Fatal("expected explicit runtime config error")
 	}
 }
 
@@ -390,6 +491,108 @@ func TestPaymentServiceBuildLaunchDocumentConsumesToken(t *testing.T) {
 	}
 	if payment.LaunchTokenHash != "" || payment.LaunchTokenExpiredAt != nil {
 		t.Fatalf("expected launch token to be consumed, got %+v", payment)
+	}
+}
+
+func TestPaymentServiceStartSurveyDepositPaymentReturnsQRCodeLaunch(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	launch, err := svc.StartSurveyDepositPayment(userID, bookingID, model.PaymentChannelAlipay, model.PaymentTerminalMiniQR)
+	if err != nil {
+		t.Fatalf("StartSurveyDepositPayment: %v", err)
+	}
+	if launch.LaunchMode != "qr_code" {
+		t.Fatalf("expected qr_code launch mode, got %+v", launch)
+	}
+	if launch.QRCodeImageURL == "" {
+		t.Fatalf("expected qrCodeImageUrl, got %+v", launch)
+	}
+	token := launchTokenFromURL(t, launch.QRCodeImageURL)
+	png, err := svc.BuildQRCodeImage(launch.PaymentID, token)
+	if err != nil {
+		t.Fatalf("BuildQRCodeImage: %v", err)
+	}
+	if string(png) != "png" {
+		t.Fatalf("unexpected qr image payload: %q", string(png))
+	}
+
+	var payment model.PaymentOrder
+	if err := db.First(&payment, launch.PaymentID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if payment.Status != model.PaymentStatusPending {
+		t.Fatalf("expected pending payment after qr generation, got %+v", payment)
+	}
+	if payment.TerminalType != model.PaymentTerminalMiniQR {
+		t.Fatalf("unexpected terminal type: %+v", payment)
+	}
+}
+
+func TestPaymentServiceStartSurveyDepositPaymentReturnsRedirectLaunchForMobileH5(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	launch, err := svc.StartSurveyDepositPayment(userID, bookingID, model.PaymentChannelAlipay, model.PaymentTerminalMobileH5)
+	if err != nil {
+		t.Fatalf("StartSurveyDepositPayment: %v", err)
+	}
+	if launch.LaunchMode != "redirect" {
+		t.Fatalf("expected redirect launch mode, got %+v", launch)
+	}
+	if launch.LaunchURL == "" {
+		t.Fatalf("expected launchUrl, got %+v", launch)
+	}
+}
+
+func TestPaymentServiceGetSurveyDepositPaymentOptionsPrefersAlipayRedirect(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	_, bookingID := seedPaymentIntentFixture(t, db)
+
+	var booking model.Booking
+	if err := db.First(&booking, bookingID).Error; err != nil {
+		t.Fatalf("load booking: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	options := svc.GetSurveyDepositPaymentOptions(&booking)
+	if len(options) != 1 {
+		t.Fatalf("expected one payment option, got %+v", options)
+	}
+	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "redirect" {
+		t.Fatalf("expected alipay redirect option, got %+v", options[0])
+	}
+}
+
+func TestPaymentServiceGetSurveyDepositPaymentOptionsFallsBackToQRCodeWhenH5Unavailable(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	_, bookingID := seedPaymentIntentFixture(t, db)
+
+	cfg := config.GetConfig()
+	previous := cfg.Alipay.ReturnURLH5
+	cfg.Alipay.ReturnURLH5 = ""
+	t.Cleanup(func() {
+		cfg.Alipay.ReturnURLH5 = previous
+	})
+
+	var booking model.Booking
+	if err := db.First(&booking, bookingID).Error; err != nil {
+		t.Fatalf("load booking: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	options := svc.GetSurveyDepositPaymentOptions(&booking)
+	if len(options) != 1 {
+		t.Fatalf("expected one payment option, got %+v", options)
+	}
+	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "qr_code" {
+		t.Fatalf("expected alipay qr_code option, got %+v", options[0])
 	}
 }
 
@@ -610,7 +813,11 @@ func TestDesignPaymentServiceRefundSurveyDepositCreatesTrueRefund(t *testing.T) 
 	userID, bookingID := seedSurveyDepositFixture(t, db)
 
 	previousGatewayFactory := paymentChannelServiceFactory
-	paymentChannelServiceFactory = func() PaymentChannelService { return paymentServiceTestGateway{} }
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: paymentServiceTestGateway{},
+		}
+	}
 	t.Cleanup(func() {
 		paymentChannelServiceFactory = previousGatewayFactory
 	})
@@ -662,21 +869,23 @@ func TestPaymentServiceSyncPendingRefundOrdersFinalizesSurveyDeposit(t *testing.
 	userID, bookingID := seedSurveyDepositFixture(t, db)
 
 	previousGatewayFactory := paymentChannelServiceFactory
-	paymentChannelServiceFactory = func() PaymentChannelService {
-		return paymentServiceTestGateway{
-			refundResult: &AlipayRefundResult{
-				TradeNo:     "TRADE-PENDING",
-				OutTradeNo:  "survey-trade-001",
-				OutRefundNo: "RF-PENDING",
-				Pending:     true,
-				RawJSON:     `{"code":"10000","pending":true}`,
-			},
-			queryRefundResult: &AlipayRefundResult{
-				TradeNo:     "TRADE-SUCCESS",
-				OutTradeNo:  "survey-trade-001",
-				OutRefundNo: "RF-PENDING",
-				Success:     true,
-				RawJSON:     `{"code":"10000","refund_amount":"300.00"}`,
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: paymentServiceTestGateway{
+				refundResult: &AlipayRefundResult{
+					TradeNo:     "TRADE-PENDING",
+					OutTradeNo:  "survey-trade-001",
+					OutRefundNo: "RF-PENDING",
+					Pending:     true,
+					RawJSON:     `{"code":"10000","pending":true}`,
+				},
+				queryRefundResult: &AlipayRefundResult{
+					TradeNo:     "TRADE-SUCCESS",
+					OutTradeNo:  "survey-trade-001",
+					OutRefundNo: "RF-PENDING",
+					Success:     true,
+					RawJSON:     `{"code":"10000","refund_amount":"300.00"}`,
+				},
 			},
 		}
 	}

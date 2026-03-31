@@ -110,6 +110,7 @@ const QuoteComparison: React.FC = () => {
     const load = async () => {
         if (!Number.isFinite(quoteListId) || quoteListId <= 0) {
             message.error('报价清单 ID 无效');
+            navigate('/projects/quotes/lists', { replace: true });
             return;
         }
         try {

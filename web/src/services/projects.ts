@@ -54,6 +54,9 @@ interface ProjectDetailResponse {
   providerAvatar?: string;
   providerPhone?: string;
   providerType?: number;
+  designerName?: string;
+  designerAvatar?: string;
+  designerPhone?: string;
   escrowBalance?: number;
   completedPhotos?: string[];
   completionNotes?: string;
@@ -309,6 +312,9 @@ export async function getProjectDetail(id: number) {
         providerAvatar: detail.providerAvatar || undefined,
         providerPhoneHint: compactPhone(detail.providerPhone || ''),
         providerRoleText: detail.providerType === 1 ? '设计师' : detail.providerType === 2 ? '装修公司' : detail.providerType === 3 ? '工长' : '服务商',
+        designerName: detail.designerName || undefined,
+        designerAvatar: detail.designerAvatar || undefined,
+        designerPhoneHint: compactPhone(detail.designerPhone || ''),
         escrowBalanceText: formatCurrency(detail.escrowBalance),
         phases: adaptPhases(phaseResponse.phases || []),
         milestones: adaptMilestones(milestoneResponse.milestones || []),

@@ -2,13 +2,13 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"home-decoration-server/internal/model"
-	"home-decoration-server/internal/repository"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -22,7 +22,7 @@ func setupProjectRiskServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(withPaymentCentralTestModels(
 		&model.User{},
 		&model.Provider{},
 		&model.SysAdmin{},
@@ -44,45 +44,39 @@ func setupProjectRiskServiceTestDB(t *testing.T) *gorm.DB {
 		&model.MerchantIncome{},
 		&model.SystemConfig{},
 		&model.PaymentPlan{},
-		&model.PaymentOrder{},
-		&model.PaymentCallback{},
-		&model.RefundOrder{},
-		&model.PayoutOrder{},
-		&model.SettlementOrder{},
-		&model.LedgerAccount{},
-		&model.LedgerEntry{},
-		&model.MerchantBondRule{},
-		&model.MerchantBondAccount{},
 		&model.FinanceReconciliationItem{},
-	); err != nil {
+	)...); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql db: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-
-	previousDB := repository.DB
-	repository.DB = db
-	t.Cleanup(func() {
-		repository.DB = previousDB
-		_ = sqlDB.Close()
-	})
+	bindRepositorySQLiteTestDB(t, db)
 
 	return db
 }
 
 type projectRiskMockGateway struct{}
 
+func (projectRiskMockGateway) Channel() string {
+	return model.PaymentChannelAlipay
+}
+
 func (projectRiskMockGateway) CreateCollectOrder(ctx context.Context, order *model.PaymentOrder) (string, error) {
 	return "<html></html>", nil
 }
 
+func (projectRiskMockGateway) CreateCollectQRCode(ctx context.Context, order *model.PaymentOrder) ([]byte, error) {
+	return nil, nil
+}
+
+func (projectRiskMockGateway) CreateMiniProgramPayment(context.Context, *model.PaymentOrder, string) (*PaymentChannelMiniProgramResult, error) {
+	return nil, nil
+}
+
 func (projectRiskMockGateway) VerifyNotify(values url.Values) (map[string]string, error) {
 	return map[string]string{}, nil
+}
+
+func (projectRiskMockGateway) ParseNotifyRequest(context.Context, *http.Request) (*PaymentChannelNotifyResult, error) {
+	return nil, nil
 }
 
 func (projectRiskMockGateway) QueryCollectOrder(ctx context.Context, order *model.PaymentOrder) (*PaymentChannelTradeResult, error) {
@@ -361,6 +355,20 @@ func TestProjectDisputeServiceCreatesComplaintAndAudit(t *testing.T) {
 	}
 	if auditLog.RecordKind != "business" || auditLog.ResourceID != project.ID {
 		t.Fatalf("unexpected dispute audit log: %+v", auditLog)
+	}
+
+	detail, err := (&ProjectService{}).GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectDetail: %v", err)
+	}
+	if detail.RiskSummary == nil {
+		t.Fatalf("expected risk summary")
+	}
+	if detail.RiskSummary.DisputeReason != "施工质量存在严重问题" {
+		t.Fatalf("unexpected risk dispute reason: %+v", detail.RiskSummary)
+	}
+	if !detail.RiskSummary.EscrowFrozen || detail.RiskSummary.AuditStatus != model.ProjectAuditStatusPending {
+		t.Fatalf("unexpected risk summary state: %+v", detail.RiskSummary)
 	}
 }
 
@@ -705,7 +713,11 @@ func TestProjectAuditServiceArbitratePartialRefundClosesProjectWhenNotContinuing
 func TestRefundApplicationApproveIntentFee(t *testing.T) {
 	db := setupProjectRiskServiceTestDB(t)
 	previousGatewayFactory := paymentChannelServiceFactory
-	paymentChannelServiceFactory = func() PaymentChannelService { return projectRiskMockGateway{} }
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: projectRiskMockGateway{},
+		}
+	}
 	t.Cleanup(func() {
 		paymentChannelServiceFactory = previousGatewayFactory
 	})
@@ -804,7 +816,11 @@ func TestRefundApplicationRejectKeepsBookingUnchanged(t *testing.T) {
 func TestRefundApplicationPartialDesignFeeTracksRemainingBalance(t *testing.T) {
 	db := setupProjectRiskServiceTestDB(t)
 	previousGatewayFactory := paymentChannelServiceFactory
-	paymentChannelServiceFactory = func() PaymentChannelService { return projectRiskMockGateway{} }
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: projectRiskMockGateway{},
+		}
+	}
 	t.Cleanup(func() {
 		paymentChannelServiceFactory = previousGatewayFactory
 	})
@@ -852,5 +868,79 @@ func TestRefundApplicationPartialDesignFeeTracksRemainingBalance(t *testing.T) {
 		Reason:     "第三次申请设计费",
 	}); err == nil {
 		t.Fatalf("expected no refundable design fee after full refund")
+	}
+}
+
+func TestRefundApplicationBuildBookingSummaryAndListFilters(t *testing.T) {
+	db := setupProjectRiskServiceTestDB(t)
+	user, _, _, _, booking := seedProjectRiskFixture(t, db)
+	service := &RefundApplicationService{}
+
+	secondBooking := model.Booking{
+		Base:          model.Base{ID: 22},
+		UserID:        user.ID,
+		ProviderID:    booking.ProviderID,
+		Address:       "第二套房",
+		IntentFee:     1500,
+		IntentFeePaid: true,
+	}
+	if err := db.Create(&secondBooking).Error; err != nil {
+		t.Fatalf("create second booking: %v", err)
+	}
+
+	first, err := service.CreateApplication(booking.ID, user.ID, &CreateRefundApplicationInput{
+		RefundType: model.RefundTypeIntentFee,
+		Reason:     "第一笔退款",
+	})
+	if err != nil {
+		t.Fatalf("CreateApplication first: %v", err)
+	}
+	if _, err := service.RejectApplication(first.ID, 8001, &RejectRefundApplicationInput{AdminNotes: "资料不足"}); err != nil {
+		t.Fatalf("RejectApplication first: %v", err)
+	}
+	if _, err := service.CreateApplication(secondBooking.ID, user.ID, &CreateRefundApplicationInput{
+		RefundType: model.RefundTypeIntentFee,
+		Reason:     "第二笔退款",
+	}); err != nil {
+		t.Fatalf("CreateApplication second: %v", err)
+	}
+
+	summary, err := service.BuildBookingRefundSummary(secondBooking.ID)
+	if err != nil {
+		t.Fatalf("BuildBookingRefundSummary: %v", err)
+	}
+	if summary == nil || summary.CanApplyRefund {
+		t.Fatalf("expected pending refund to block duplicate apply, got %+v", summary)
+	}
+	if summary.LatestRefundStatus != model.RefundApplicationStatusPending || summary.LatestRefundID == 0 {
+		t.Fatalf("unexpected latest refund summary: %+v", summary)
+	}
+	if summary.RefundableAmount <= 0 || len(summary.RefundableTypes) == 0 {
+		t.Fatalf("expected refundable breakdown, got %+v", summary)
+	}
+
+	filtered, total, err := service.ListMyApplications(user.ID, &ListMyRefundApplicationsQuery{
+		BookingID: secondBooking.ID,
+		Status:    model.RefundApplicationStatusPending,
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListMyApplications filtered: %v", err)
+	}
+	if total != 1 || len(filtered) != 1 || filtered[0].BookingID != secondBooking.ID {
+		t.Fatalf("unexpected filtered refunds: total=%d list=%+v", total, filtered)
+	}
+
+	rejected, rejectedTotal, err := service.ListMyApplications(user.ID, &ListMyRefundApplicationsQuery{
+		Status:   model.RefundApplicationStatusRejected,
+		Page:     1,
+		PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListMyApplications rejected: %v", err)
+	}
+	if rejectedTotal != 1 || len(rejected) != 1 || rejected[0].Status != model.RefundApplicationStatusRejected {
+		t.Fatalf("unexpected rejected refunds: total=%d list=%+v", rejectedTotal, rejected)
 	}
 }

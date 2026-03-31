@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
@@ -11,17 +12,73 @@ import (
 	"log"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
-// 完整的 RBAC 权限初始化脚本
+type menuSpec struct {
+	Key        string
+	ParentKey  string
+	Title      string
+	Type       int8
+	Permission string
+	Path       string
+	Component  string
+	Icon       string
+	Sort       int
+	Visible    bool
+	Status     int8
+}
+
+func menuDir(key, parentKey, title, path, icon string, sort int, permission string) menuSpec {
+	return menuSpec{
+		Key:        key,
+		ParentKey:  parentKey,
+		Title:      title,
+		Type:       1,
+		Permission: permission,
+		Path:       path,
+		Icon:       icon,
+		Sort:       sort,
+		Visible:    true,
+		Status:     1,
+	}
+}
+
+func menuPage(key, parentKey, title, path, component, icon string, sort int, permission string) menuSpec {
+	return menuSpec{
+		Key:        key,
+		ParentKey:  parentKey,
+		Title:      title,
+		Type:       2,
+		Permission: permission,
+		Path:       path,
+		Component:  component,
+		Icon:       icon,
+		Sort:       sort,
+		Visible:    true,
+		Status:     1,
+	}
+}
+
+func menuButton(key, parentKey, title, permission string, sort int) menuSpec {
+	return menuSpec{
+		Key:        key,
+		ParentKey:  parentKey,
+		Title:      title,
+		Type:       3,
+		Permission: permission,
+		Sort:       sort,
+		Visible:    false,
+		Status:     1,
+	}
+}
+
 func main() {
-	// 加载配置
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("加载配置失败:", err)
 	}
 
-	// 初始化数据库
 	if err := repository.InitDB(&cfg.Database); err != nil {
 		log.Fatal("数据库连接失败:", err)
 	}
@@ -30,23 +87,18 @@ func main() {
 	fmt.Println("开始初始化完整的 RBAC 权限数据...")
 	fmt.Println("========================================\n")
 
-	// 1. 创建所有菜单权限
 	fmt.Println("📋 步骤 1/5: 创建菜单和权限...")
-	createMenus()
+	menus := createMenus()
 
-	// 2. 创建所有角色
 	fmt.Println("\n👥 步骤 2/5: 创建角色...")
 	roles := createRoles()
 
-	// 3. 分配角色权限
 	fmt.Println("\n🔐 步骤 3/5: 分配角色权限...")
-	assignRolePermissions(roles)
+	assignRolePermissions(roles, menus)
 
-	// 4. 创建测试管理员账号
 	fmt.Println("\n👤 步骤 4/5: 创建测试管理员账号...")
 	admins := createAdmins()
 
-	// 5. 分配管理员角色
 	fmt.Println("\n🎭 步骤 5/5: 分配管理员角色...")
 	assignAdminRoles(admins, roles)
 
@@ -64,225 +116,255 @@ func main() {
 	fmt.Println("│ risk        │ risk123      │ 风控管理          │")
 	fmt.Println("│ service     │ service123   │ 客服              │")
 	fmt.Println("│ viewer      │ viewer123    │ 只读用户          │")
+	fmt.Println("│ supervisor  │ supervisor123│ 监理专员          │")
 	fmt.Println("└─────────────┴──────────────┴───────────────────┘")
 	fmt.Println("\n🌐 管理后台地址: http://localhost:5175/admin/")
 }
 
-// 创建所有菜单和权限
-func createMenus() {
-	menus := []model.SysMenu{
-		// 工作台
-		{ID: 1, ParentID: 0, Title: "工作台", Type: 2, Path: "/dashboard", Component: "pages/dashboard", Icon: "DashboardOutlined", Sort: 1, Permission: "dashboard:view", Visible: true, Status: 1},
+func createMenus() map[string]*model.SysMenu {
+	specs := menuSpecs()
+	menuMap := make(map[string]*model.SysMenu, len(specs))
 
-		// 用户管理
-		{ID: 10, ParentID: 0, Title: "用户管理", Type: 1, Path: "/users", Icon: "UserOutlined", Sort: 10, Visible: true, Status: 1},
-		{ID: 11, ParentID: 10, Title: "用户列表", Type: 2, Path: "/users/list", Component: "pages/users/UserList", Sort: 1, Permission: "system:user:list", Visible: true, Status: 1},
-		{ID: 12, ParentID: 10, Title: "查看用户", Type: 3, Permission: "system:user:view", Visible: false, Status: 1},
-		{ID: 13, ParentID: 10, Title: "编辑用户", Type: 3, Permission: "system:user:edit", Visible: false, Status: 1},
-		{ID: 14, ParentID: 10, Title: "删除用户", Type: 3, Permission: "system:user:delete", Visible: false, Status: 1},
-		{ID: 15, ParentID: 10, Title: "导出用户", Type: 3, Permission: "system:user:export", Visible: false, Status: 1},
-		{ID: 16, ParentID: 10, Title: "管理员管理", Type: 2, Path: "/users/admins", Component: "pages/admins/AdminList", Sort: 2, Permission: "system:admin:list", Visible: true, Status: 1},
-		{ID: 17, ParentID: 10, Title: "创建管理员", Type: 3, Permission: "system:admin:create", Visible: false, Status: 1},
-		{ID: 18, ParentID: 10, Title: "编辑管理员", Type: 3, Permission: "system:admin:edit", Visible: false, Status: 1},
-		{ID: 19, ParentID: 10, Title: "删除管理员", Type: 3, Permission: "system:admin:delete", Visible: false, Status: 1},
+	for _, spec := range specs {
+		parentID := uint64(0)
+		if spec.ParentKey != "" {
+			parent, ok := menuMap[spec.ParentKey]
+			if !ok {
+				log.Fatalf("菜单 %s 的父级 %s 未初始化", spec.Key, spec.ParentKey)
+			}
+			parentID = parent.ID
+		}
 
-		// 服务商管理
-		{ID: 20, ParentID: 0, Title: "服务商管理", Type: 1, Path: "/providers", Icon: "TeamOutlined", Sort: 20, Visible: true, Status: 1},
-		{ID: 21, ParentID: 20, Title: "设计师", Type: 2, Path: "/providers/designers", Component: "pages/providers/ProviderList", Sort: 1, Permission: "provider:designer:list", Visible: true, Status: 1},
-		{ID: 22, ParentID: 20, Title: "查看设计师", Type: 3, Permission: "provider:designer:view", Visible: false, Status: 1},
-		{ID: 23, ParentID: 20, Title: "创建设计师", Type: 3, Permission: "provider:designer:create", Visible: false, Status: 1},
-		{ID: 24, ParentID: 20, Title: "编辑设计师", Type: 3, Permission: "provider:designer:edit", Visible: false, Status: 1},
-		{ID: 25, ParentID: 20, Title: "删除设计师", Type: 3, Permission: "provider:designer:delete", Visible: false, Status: 1},
-		{ID: 26, ParentID: 20, Title: "装修公司", Type: 2, Path: "/providers/companies", Component: "pages/providers/ProviderList", Sort: 2, Permission: "provider:company:list", Visible: true, Status: 1},
-		{ID: 27, ParentID: 20, Title: "查看装修公司", Type: 3, Permission: "provider:company:view", Visible: false, Status: 1},
-		{ID: 28, ParentID: 20, Title: "创建装修公司", Type: 3, Permission: "provider:company:create", Visible: false, Status: 1},
-		{ID: 29, ParentID: 20, Title: "编辑装修公司", Type: 3, Permission: "provider:company:edit", Visible: false, Status: 1},
-		{ID: 30, ParentID: 20, Title: "删除装修公司", Type: 3, Permission: "provider:company:delete", Visible: false, Status: 1},
-		{ID: 31, ParentID: 20, Title: "工长", Type: 2, Path: "/providers/foremen", Component: "pages/providers/ProviderList", Sort: 3, Permission: "provider:foreman:list", Visible: true, Status: 1},
-		{ID: 32, ParentID: 20, Title: "查看工长", Type: 3, Permission: "provider:foreman:view", Visible: false, Status: 1},
-		{ID: 33, ParentID: 20, Title: "创建工长", Type: 3, Permission: "provider:foreman:create", Visible: false, Status: 1},
-		{ID: 34, ParentID: 20, Title: "编辑工长", Type: 3, Permission: "provider:foreman:edit", Visible: false, Status: 1},
-		{ID: 35, ParentID: 20, Title: "删除工长", Type: 3, Permission: "provider:foreman:delete", Visible: false, Status: 1},
-		{ID: 36, ParentID: 20, Title: "资质审核", Type: 2, Path: "/providers/audit", Component: "pages/audits/ProviderAudit", Sort: 4, Permission: "provider:audit:list", Visible: true, Status: 1},
-		{ID: 37, ParentID: 20, Title: "查看审核", Type: 3, Permission: "provider:audit:view", Visible: false, Status: 1},
-		{ID: 38, ParentID: 20, Title: "审核通过", Type: 3, Permission: "provider:audit:approve", Visible: false, Status: 1},
-		{ID: 39, ParentID: 20, Title: "审核拒绝", Type: 3, Permission: "provider:audit:reject", Visible: false, Status: 1},
-
-		// 主材门店
-		{ID: 40, ParentID: 0, Title: "主材门店", Type: 1, Path: "/materials", Icon: "ShopOutlined", Sort: 30, Visible: true, Status: 1},
-		{ID: 41, ParentID: 40, Title: "门店列表", Type: 2, Path: "/materials/list", Component: "pages/materials/MaterialShopList", Sort: 1, Permission: "material:shop:list", Visible: true, Status: 1},
-		{ID: 42, ParentID: 40, Title: "查看门店", Type: 3, Permission: "material:shop:view", Visible: false, Status: 1},
-		{ID: 43, ParentID: 40, Title: "创建门店", Type: 3, Permission: "material:shop:create", Visible: false, Status: 1},
-		{ID: 44, ParentID: 40, Title: "编辑门店", Type: 3, Permission: "material:shop:edit", Visible: false, Status: 1},
-		{ID: 45, ParentID: 40, Title: "删除门店", Type: 3, Permission: "material:shop:delete", Visible: false, Status: 1},
-		{ID: 46, ParentID: 40, Title: "认证审核", Type: 2, Path: "/materials/audit", Component: "pages/audits/MaterialShopAudit", Sort: 2, Permission: "material:audit:list", Visible: true, Status: 1},
-		{ID: 47, ParentID: 40, Title: "查看门店审核", Type: 3, Permission: "material:audit:view", Visible: false, Status: 1},
-		{ID: 48, ParentID: 40, Title: "门店审核通过", Type: 3, Permission: "material:audit:approve", Visible: false, Status: 1},
-		{ID: 49, ParentID: 40, Title: "门店审核拒绝", Type: 3, Permission: "material:audit:reject", Visible: false, Status: 1},
-
-		// 项目管理
-		{ID: 50, ParentID: 0, Title: "项目管理", Type: 1, Path: "/projects", Icon: "ProjectOutlined", Sort: 40, Visible: true, Status: 1},
-		{ID: 51, ParentID: 50, Title: "工地列表", Type: 2, Path: "/projects/list", Component: "pages/projects/list", Sort: 1, Permission: "project:list", Visible: true, Status: 1},
-		{ID: 52, ParentID: 50, Title: "查看项目", Type: 3, Permission: "project:view", Visible: false, Status: 1},
-		{ID: 53, ParentID: 50, Title: "编辑项目", Type: 3, Permission: "project:edit", Visible: false, Status: 1},
-		{ID: 54, ParentID: 50, Title: "删除项目", Type: 3, Permission: "project:delete", Visible: false, Status: 1},
-		{ID: 55, ParentID: 50, Title: "全景地图", Type: 2, Path: "/projects/map", Component: "pages/projects/ProjectMap", Sort: 2, Permission: "project:map", Visible: true, Status: 1},
-
-		// 需求中心
-		{ID: 130, ParentID: 0, Title: "需求中心", Type: 1, Path: "/demands", Icon: "UnorderedListOutlined", Sort: 45, Visible: true, Status: 1},
-		{ID: 131, ParentID: 130, Title: "需求管理", Type: 2, Path: "/demands/list", Component: "pages/demands/DemandList", Sort: 1, Permission: "demand:list", Visible: true, Status: 1},
-		{ID: 132, ParentID: 130, Title: "审核需求", Type: 3, Permission: "demand:review", Visible: false, Status: 1},
-		{ID: 133, ParentID: 130, Title: "分配需求", Type: 3, Permission: "demand:assign", Visible: false, Status: 1},
-
-		// 预约管理
-		{ID: 60, ParentID: 0, Title: "预约管理", Type: 2, Path: "/bookings", Component: "pages/bookings/BookingList", Icon: "CalendarOutlined", Sort: 50, Permission: "booking:list", Visible: true, Status: 1},
-		{ID: 61, ParentID: 0, Title: "查看预约", Type: 3, Permission: "booking:view", Visible: false, Status: 1},
-		{ID: 62, ParentID: 0, Title: "创建预约", Type: 3, Permission: "booking:create", Visible: false, Status: 1},
-		{ID: 63, ParentID: 0, Title: "编辑预约", Type: 3, Permission: "booking:edit", Visible: false, Status: 1},
-		{ID: 64, ParentID: 0, Title: "取消预约", Type: 3, Permission: "booking:cancel", Visible: false, Status: 1},
-
-		// 资金中心
-		{ID: 70, ParentID: 0, Title: "资金中心", Type: 1, Path: "/finance", Icon: "BankOutlined", Sort: 60, Visible: true, Status: 1},
-		{ID: 79, ParentID: 70, Title: "资金概览", Type: 2, Path: "/finance/overview", Component: "pages/finance/FinanceOverview", Sort: 0, Permission: "finance:escrow:list", Visible: true, Status: 1},
-		{ID: 71, ParentID: 70, Title: "托管账户", Type: 2, Path: "/finance/escrow", Component: "pages/finance/EscrowAccountList", Sort: 1, Permission: "finance:escrow:list", Visible: true, Status: 1},
-		{ID: 72, ParentID: 70, Title: "查看账户", Type: 3, Permission: "finance:escrow:view", Visible: false, Status: 1},
-		{ID: 73, ParentID: 70, Title: "冻结账户", Type: 3, Permission: "finance:escrow:freeze", Visible: false, Status: 1},
-		{ID: 74, ParentID: 70, Title: "解冻账户", Type: 3, Permission: "finance:escrow:unfreeze", Visible: false, Status: 1},
-		{ID: 75, ParentID: 70, Title: "交易记录", Type: 2, Path: "/finance/transactions", Component: "pages/finance/TransactionList", Sort: 2, Permission: "finance:transaction:list", Visible: true, Status: 1},
-		{ID: 76, ParentID: 70, Title: "查看交易", Type: 3, Permission: "finance:transaction:view", Visible: false, Status: 1},
-		{ID: 77, ParentID: 70, Title: "导出交易", Type: 3, Permission: "finance:transaction:export", Visible: false, Status: 1},
-		{ID: 78, ParentID: 70, Title: "审批交易", Type: 3, Permission: "finance:transaction:approve", Visible: false, Status: 1},
-
-		// 评价管理
-		{ID: 80, ParentID: 0, Title: "评价管理", Type: 2, Path: "/reviews", Component: "pages/reviews/ReviewList", Icon: "StarOutlined", Sort: 70, Permission: "review:list", Visible: true, Status: 1},
-		{ID: 81, ParentID: 0, Title: "查看评价", Type: 3, Permission: "review:view", Visible: false, Status: 1},
-		{ID: 82, ParentID: 0, Title: "删除评价", Type: 3, Permission: "review:delete", Visible: false, Status: 1},
-		{ID: 83, ParentID: 0, Title: "隐藏评价", Type: 3, Permission: "review:hide", Visible: false, Status: 1},
-
-		// 风控中心
-		{ID: 90, ParentID: 0, Title: "风控中心", Type: 1, Path: "/risk", Icon: "SafetyOutlined", Sort: 80, Visible: true, Status: 1},
-		{ID: 91, ParentID: 90, Title: "风险预警", Type: 2, Path: "/risk/warnings", Component: "pages/risk/RiskWarningList", Sort: 1, Permission: "risk:warning:list", Visible: true, Status: 1},
-		{ID: 92, ParentID: 90, Title: "查看预警", Type: 3, Permission: "risk:warning:view", Visible: false, Status: 1},
-		{ID: 93, ParentID: 90, Title: "处理风险", Type: 3, Permission: "risk:warning:handle", Visible: false, Status: 1},
-		{ID: 94, ParentID: 90, Title: "忽略风险", Type: 3, Permission: "risk:warning:ignore", Visible: false, Status: 1},
-		{ID: 95, ParentID: 90, Title: "仲裁中心", Type: 2, Path: "/risk/arbitration", Component: "pages/risk/ArbitrationCenter", Sort: 2, Permission: "risk:arbitration:list", Visible: false, Status: 1},
-		{ID: 134, ParentID: 90, Title: "投诉处理", Type: 2, Path: "/complaints", Component: "pages/complaints/ComplaintManagement", Sort: 3, Permission: "risk:arbitration:list", Visible: true, Status: 1},
-		{ID: 96, ParentID: 90, Title: "查看仲裁", Type: 3, Permission: "risk:arbitration:view", Visible: false, Status: 1},
-		{ID: 97, ParentID: 90, Title: "受理仲裁", Type: 3, Permission: "risk:arbitration:accept", Visible: false, Status: 1},
-		{ID: 98, ParentID: 90, Title: "驳回仲裁", Type: 3, Permission: "risk:arbitration:reject", Visible: false, Status: 1},
-		{ID: 99, ParentID: 90, Title: "裁决仲裁", Type: 3, Permission: "risk:arbitration:judge", Visible: false, Status: 1},
-
-		// 操作日志
-		{ID: 100, ParentID: 0, Title: "操作日志", Type: 2, Path: "/logs", Component: "pages/system/LogList", Icon: "FileTextOutlined", Sort: 90, Permission: "system:log:list", Visible: true, Status: 1},
-		{ID: 101, ParentID: 0, Title: "查看日志", Type: 3, Permission: "system:log:view", Visible: false, Status: 1},
-		{ID: 102, ParentID: 0, Title: "业务审计日志", Type: 2, Path: "/audit-logs", Component: "pages/system/AuditLogList", Icon: "FileTextOutlined", Sort: 91, Permission: "system:log:list", Visible: true, Status: 1},
-
-		// 系统设置
-		{ID: 110, ParentID: 0, Title: "系统设置", Type: 2, Path: "/settings", Component: "pages/settings/SystemSettings", Icon: "SettingOutlined", Sort: 100, Permission: "system:setting:list", Visible: true, Status: 1},
-		{ID: 111, ParentID: 0, Title: "编辑设置", Type: 3, Permission: "system:setting:edit", Visible: false, Status: 1},
-
-		// 权限管理
-		{ID: 120, ParentID: 0, Title: "权限管理", Type: 1, Path: "/permission", Icon: "LockOutlined", Sort: 110, Visible: true, Status: 1},
-		{ID: 121, ParentID: 120, Title: "角色管理", Type: 2, Path: "/permission/roles", Component: "pages/permission/RoleList", Sort: 1, Permission: "system:role:list", Visible: true, Status: 1},
-		{ID: 122, ParentID: 120, Title: "创建角色", Type: 3, Permission: "system:role:create", Visible: false, Status: 1},
-		{ID: 123, ParentID: 120, Title: "编辑角色", Type: 3, Permission: "system:role:edit", Visible: false, Status: 1},
-		{ID: 124, ParentID: 120, Title: "删除角色", Type: 3, Permission: "system:role:delete", Visible: false, Status: 1},
-		{ID: 125, ParentID: 120, Title: "分配权限", Type: 3, Permission: "system:role:assign", Visible: false, Status: 1},
-		{ID: 126, ParentID: 120, Title: "菜单管理", Type: 2, Path: "/permission/menus", Component: "pages/permission/MenuList", Sort: 2, Permission: "system:menu:list", Visible: true, Status: 1},
-		{ID: 127, ParentID: 120, Title: "创建菜单", Type: 3, Permission: "system:menu:create", Visible: false, Status: 1},
-		{ID: 128, ParentID: 120, Title: "编辑菜单", Type: 3, Permission: "system:menu:edit", Visible: false, Status: 1},
-		{ID: 129, ParentID: 120, Title: "删除菜单", Type: 3, Permission: "system:menu:delete", Visible: false, Status: 1},
+		menu, err := upsertMenu(spec, parentID)
+		if err != nil {
+			log.Fatalf("同步菜单 %s 失败: %v", spec.Key, err)
+		}
+		menuMap[spec.Key] = menu
 	}
 
-	for _, menu := range menus {
-		repository.DB.FirstOrCreate(&menu, model.SysMenu{ID: menu.ID})
-	}
-	fmt.Printf("   ✓ 创建了 %d 个菜单和权限点\n", len(menus))
+	fmt.Printf("   ✓ 同步了 %d 个菜单/权限点\n", len(specs))
+	fmt.Println("   ✓ 菜单按 path/permission 幂等同步，不再依赖固定菜单 ID")
+	return menuMap
 }
 
-// 创建所有角色
-func createRoles() map[string]*model.SysRole {
-	roles := []model.SysRole{
-		{
-			ID:     1,
-			Name:   "超级管理员",
-			Key:    "super_admin",
-			Remark: "系统超级管理员，拥有所有权限",
-			Sort:   0,
-			Status: 1,
-		},
-		{
-			ID:     2,
-			Name:   "产品管理",
-			Key:    "product_manager",
-			Remark: "负责产品数据维护、服务商/门店管理",
-			Sort:   10,
-			Status: 1,
-		},
-		{
-			ID:     3,
-			Name:   "运营管理",
-			Key:    "operations",
-			Remark: "负责审核、内容管理、用户管理",
-			Sort:   20,
-			Status: 1,
-		},
-		{
-			ID:     4,
-			Name:   "财务管理",
-			Key:    "finance",
-			Remark: "负责资金管理、交易审核",
-			Sort:   30,
-			Status: 1,
-		},
-		{
-			ID:     5,
-			Name:   "风控管理",
-			Key:    "risk",
-			Remark: "负责风险预警、纠纷仲裁",
-			Sort:   40,
-			Status: 1,
-		},
-		{
-			ID:     6,
-			Name:   "客服",
-			Key:    "customer_service",
-			Remark: "处理用户咨询、预约管理",
-			Sort:   50,
-			Status: 1,
-		},
-		{
-			ID:     7,
-			Name:   "只读用户",
-			Key:    "viewer",
-			Remark: "数据分析、报表查看",
-			Sort:   60,
-			Status: 1,
-		},
-		{
-			Name:   "系统管理员",
-			Key:    "system_admin",
-			Remark: "三员分立保留角色：负责系统配置与账号体系，必须独立分配",
-			Sort:   70,
-			Status: 1,
-		},
-		{
-			Name:   "安全管理员",
-			Key:    "security_admin",
-			Remark: "三员分立保留角色：负责安全策略与安全事件处置，必须独立分配",
-			Sort:   71,
-			Status: 1,
-		},
-		{
-			Name:   "安全审计员",
-			Key:    "security_auditor",
-			Remark: "三员分立保留角色：默认只读审计角色，必须独立分配",
-			Sort:   72,
-			Status: 1,
-		},
+func upsertMenu(spec menuSpec, parentID uint64) (*model.SysMenu, error) {
+	var menu model.SysMenu
+	var err error
+
+	switch {
+	case spec.Path != "":
+		err = repository.DB.Where("path = ?", spec.Path).Order("id ASC").First(&menu).Error
+	case spec.Permission != "":
+		err = repository.DB.Where("permission = ?", spec.Permission).Order("id ASC").First(&menu).Error
+	default:
+		return nil, fmt.Errorf("菜单 %s 缺少 path/permission 业务键", spec.Key)
 	}
 
-	roleMap := make(map[string]*model.SysRole)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		menu = model.SysMenu{}
+	}
+
+	menu.ParentID = parentID
+	menu.Title = spec.Title
+	menu.Type = spec.Type
+	menu.Permission = spec.Permission
+	menu.Path = spec.Path
+	menu.Component = spec.Component
+	menu.Icon = spec.Icon
+	menu.Sort = spec.Sort
+	menu.Visible = spec.Visible
+	menu.Status = spec.Status
+
+	if menu.ID == 0 {
+		if err := repository.DB.Create(&menu).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		if err := repository.DB.Model(&model.SysMenu{}).Where("id = ?", menu.ID).Updates(map[string]any{
+			"parent_id":  menu.ParentID,
+			"title":      menu.Title,
+			"type":       menu.Type,
+			"permission": menu.Permission,
+			"path":       menu.Path,
+			"component":  menu.Component,
+			"icon":       menu.Icon,
+			"sort":       menu.Sort,
+			"visible":    menu.Visible,
+			"status":     menu.Status,
+		}).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return &menu, nil
+}
+
+func menuSpecs() []menuSpec {
+	return []menuSpec{
+		menuPage("dashboard", "", "工作台", "/dashboard", "pages/dashboard", "DashboardOutlined", 1, "dashboard:view"),
+
+		menuDir("users_root", "", "用户管理", "/users", "UserOutlined", 10, ""),
+		menuPage("users_list", "users_root", "用户列表", "/users/list", "pages/users/UserList", "", 1, "system:user:list"),
+		menuButton("user_view", "users_root", "查看用户", "system:user:view", 1),
+		menuButton("user_edit", "users_root", "编辑用户", "system:user:edit", 2),
+		menuButton("user_delete", "users_root", "删除用户", "system:user:delete", 3),
+		menuButton("user_export", "users_root", "导出用户", "system:user:export", 4),
+		menuPage("admins_list", "users_root", "管理员管理", "/users/admins", "pages/admins/AdminList", "", 2, "system:admin:list"),
+		menuButton("admin_create", "users_root", "创建管理员", "system:admin:create", 5),
+		menuButton("admin_edit", "users_root", "编辑管理员", "system:admin:edit", 6),
+		menuButton("admin_delete", "users_root", "删除管理员", "system:admin:delete", 7),
+
+		menuDir("providers_root", "", "服务商管理", "/providers", "TeamOutlined", 20, ""),
+		menuPage("provider_designers", "providers_root", "设计师", "/providers/designers", "pages/providers/ProviderList", "", 1, "provider:designer:list"),
+		menuButton("provider_designer_view", "providers_root", "查看设计师", "provider:designer:view", 1),
+		menuButton("provider_designer_create", "providers_root", "创建设计师", "provider:designer:create", 2),
+		menuButton("provider_designer_edit", "providers_root", "编辑设计师", "provider:designer:edit", 3),
+		menuButton("provider_designer_delete", "providers_root", "删除设计师", "provider:designer:delete", 4),
+		menuPage("provider_companies", "providers_root", "装修公司", "/providers/companies", "pages/providers/ProviderList", "", 2, "provider:company:list"),
+		menuButton("provider_company_view", "providers_root", "查看装修公司", "provider:company:view", 5),
+		menuButton("provider_company_create", "providers_root", "创建装修公司", "provider:company:create", 6),
+		menuButton("provider_company_edit", "providers_root", "编辑装修公司", "provider:company:edit", 7),
+		menuButton("provider_company_delete", "providers_root", "删除装修公司", "provider:company:delete", 8),
+		menuPage("provider_foremen", "providers_root", "工长", "/providers/foremen", "pages/providers/ProviderList", "", 3, "provider:foreman:list"),
+		menuButton("provider_foreman_view", "providers_root", "查看工长", "provider:foreman:view", 9),
+		menuButton("provider_foreman_create", "providers_root", "创建工长", "provider:foreman:create", 10),
+		menuButton("provider_foreman_edit", "providers_root", "编辑工长", "provider:foreman:edit", 11),
+		menuButton("provider_foreman_delete", "providers_root", "删除工长", "provider:foreman:delete", 12),
+		menuPage("provider_audit", "providers_root", "资质审核", "/providers/audit", "pages/audits/ProviderAudit", "", 4, "provider:audit:list"),
+		menuButton("provider_audit_view", "providers_root", "查看审核", "provider:audit:view", 13),
+		menuButton("provider_audit_approve", "providers_root", "审核通过", "provider:audit:approve", 14),
+		menuButton("provider_audit_reject", "providers_root", "审核拒绝", "provider:audit:reject", 15),
+
+		menuDir("materials_root", "", "主材门店", "/materials", "ShopOutlined", 30, ""),
+		menuPage("materials_list", "materials_root", "门店列表", "/materials/list", "pages/materials/MaterialShopList", "", 1, "material:shop:list"),
+		menuButton("material_shop_view", "materials_root", "查看门店", "material:shop:view", 1),
+		menuButton("material_shop_create", "materials_root", "创建门店", "material:shop:create", 2),
+		menuButton("material_shop_edit", "materials_root", "编辑门店", "material:shop:edit", 3),
+		menuButton("material_shop_delete", "materials_root", "删除门店", "material:shop:delete", 4),
+		menuPage("materials_audit", "materials_root", "认证审核", "/materials/audit", "pages/audits/MaterialShopAudit", "", 2, "material:audit:list"),
+		menuButton("material_audit_view", "materials_root", "查看门店审核", "material:audit:view", 5),
+		menuButton("material_audit_approve", "materials_root", "门店审核通过", "material:audit:approve", 6),
+		menuButton("material_audit_reject", "materials_root", "门店审核拒绝", "material:audit:reject", 7),
+
+		menuDir("projects_root", "", "项目管理", "/projects", "ProjectOutlined", 40, ""),
+		menuPage("projects_list", "projects_root", "工地列表", "/projects/list", "pages/projects/list", "", 1, "project:list"),
+		menuButton("project_view", "projects_root", "查看项目", "project:view", 1),
+		menuButton("project_edit", "projects_root", "编辑项目", "project:edit", 2),
+		menuButton("project_delete", "projects_root", "删除项目", "project:delete", 3),
+		menuPage("projects_map", "projects_root", "全景地图", "/projects/map", "pages/projects/ProjectMap", "", 2, "project:map"),
+		menuPage("project_quote_library", "projects_root", "报价库", "/projects/quotes/library", "pages/quotes/QuoteLibraryManagement", "FileTextOutlined", 3, "project:list"),
+		menuPage("project_quote_lists", "projects_root", "报价清单", "/projects/quotes/lists", "pages/quotes/QuoteListManagement", "UnorderedListOutlined", 4, "project:edit"),
+		menuPage("project_quote_compare", "projects_root", "报价对比", "/projects/quotes/compare/:id", "pages/quotes/QuoteComparison", "FileSearchOutlined", 5, "project:view"),
+
+		menuPage("order_center", "", "订单控制台", "/orders", "pages/orders/OrderList", "ProjectOutlined", 45, "order:center:list"),
+		menuButton("order_center_view", "order_center", "查看订单控制台", "order:center:view", 1),
+		menuButton("proposal_review", "order_center", "审核方案", "proposal:review", 2),
+
+		menuDir("demands_root", "", "需求中心", "/demands", "UnorderedListOutlined", 46, "demand:center"),
+		menuPage("demands_list", "demands_root", "需求管理", "/demands/list", "pages/demands/DemandList", "UnorderedListOutlined", 1, "demand:list"),
+		menuButton("demand_review", "demands_root", "审核需求", "demand:review", 2),
+		menuButton("demand_assign", "demands_root", "分配需求", "demand:assign", 3),
+
+		menuDir("bookings_root", "", "预约管理", "/bookings", "CalendarOutlined", 50, "booking:list"),
+		menuPage("bookings_list", "bookings_root", "预约列表", "/bookings/list", "pages/bookings/BookingList", "CalendarOutlined", 1, "booking:list"),
+		menuButton("booking_view", "bookings_list", "查看预约", "booking:view", 1),
+		menuButton("booking_create", "bookings_list", "创建预约", "booking:create", 2),
+		menuButton("booking_edit", "bookings_list", "编辑预约", "booking:edit", 3),
+		menuButton("booking_cancel", "bookings_list", "取消预约", "booking:cancel", 4),
+		menuPage("bookings_disputed", "bookings_root", "争议预约", "/bookings/disputed", "pages/bookings/DisputedBookings", "WarningOutlined", 2, "booking:dispute:list"),
+		menuButton("booking_dispute_detail", "bookings_disputed", "查看详情", "booking:dispute:detail", 1),
+		menuButton("booking_dispute_resolve", "bookings_disputed", "处理争议", "booking:dispute:resolve", 2),
+
+		menuDir("cases_root", "", "作品管理", "/cases", "FileImageOutlined", 55, "system:case:list"),
+		menuPage("cases_manage", "cases_root", "作品列表", "/cases/manage", "pages/cases/CaseManagement", "UnorderedListOutlined", 1, "system:case:view"),
+		menuButton("case_audit_view", "cases_manage", "查看审核", "case:audit:view", 1),
+		menuButton("case_audit_approve", "cases_manage", "审核通过", "case:audit:approve", 2),
+		menuButton("case_audit_reject", "cases_manage", "审核拒绝", "case:audit:reject", 3),
+
+		menuDir("supervision_root", "", "监理工作台", "/supervision", "ProjectOutlined", 58, ""),
+		menuPage("supervision_projects", "supervision_root", "项目巡检", "/supervision/projects", "pages/supervision/WorkbenchList", "", 1, "supervision:workspace:view"),
+		menuButton("supervision_workspace_edit", "supervision_root", "编辑监理工作台", "supervision:workspace:edit", 1),
+		menuButton("supervision_risk_create", "supervision_root", "上报监理风险", "supervision:risk:create", 2),
+
+		menuDir("finance_root", "", "资金中心", "/finance", "BankOutlined", 60, ""),
+		menuPage("finance_overview", "finance_root", "资金概览", "/finance/overview", "pages/finance/FinanceOverview", "AccountBookOutlined", 0, "finance:escrow:list"),
+		menuPage("finance_escrow", "finance_root", "托管账户", "/finance/escrow", "pages/finance/EscrowAccountList", "", 1, "finance:escrow:list"),
+		menuButton("finance_escrow_view", "finance_root", "查看账户", "finance:escrow:view", 1),
+		menuButton("finance_escrow_freeze", "finance_root", "冻结账户", "finance:escrow:freeze", 2),
+		menuButton("finance_escrow_unfreeze", "finance_root", "解冻账户", "finance:escrow:unfreeze", 3),
+		menuPage("finance_transactions", "finance_root", "交易记录", "/finance/transactions", "pages/finance/TransactionList", "", 2, "finance:transaction:list"),
+		menuButton("finance_transaction_view", "finance_root", "查看交易", "finance:transaction:view", 4),
+		menuButton("finance_transaction_export", "finance_root", "导出交易", "finance:transaction:export", 5),
+		menuButton("finance_transaction_approve", "finance_root", "审批交易", "finance:transaction:approve", 6),
+		menuPage("refunds", "finance_root", "退款审核", "/refunds", "pages/refunds/RefundList", "AccountBookOutlined", 5, "finance:transaction:list"),
+
+		menuDir("reviews_root", "", "评价管理", "/reviews", "StarOutlined", 70, "review:list"),
+		menuPage("reviews_list", "reviews_root", "评价列表", "/reviews/list", "pages/reviews/ReviewList", "StarOutlined", 0, "review:list"),
+		menuButton("review_view", "reviews_list", "查看评价", "review:view", 1),
+		menuButton("review_delete", "reviews_list", "删除评价", "review:delete", 2),
+		menuButton("review_hide", "reviews_list", "隐藏评价", "review:hide", 3),
+
+		menuDir("risk_root", "", "风控中心", "/risk", "SafetyOutlined", 80, ""),
+		menuPage("risk_warnings", "risk_root", "风险预警", "/risk/warnings", "pages/risk/RiskWarningList", "", 1, "risk:warning:list"),
+		menuButton("risk_warning_view", "risk_root", "查看预警", "risk:warning:view", 1),
+		menuButton("risk_warning_handle", "risk_root", "处理风险", "risk:warning:handle", 2),
+		menuButton("risk_warning_ignore", "risk_root", "忽略风险", "risk:warning:ignore", 3),
+		menuPage("risk_arbitration", "risk_root", "仲裁中心", "/risk/arbitration", "pages/risk/ArbitrationCenter", "", 2, "risk:arbitration:list"),
+		menuButton("risk_arbitration_view", "risk_root", "查看仲裁", "risk:arbitration:view", 4),
+		menuButton("risk_arbitration_accept", "risk_root", "受理仲裁", "risk:arbitration:accept", 5),
+		menuButton("risk_arbitration_reject", "risk_root", "驳回仲裁", "risk:arbitration:reject", 6),
+		menuButton("risk_arbitration_judge", "risk_root", "裁决仲裁", "risk:arbitration:judge", 7),
+		menuPage("complaints", "risk_root", "投诉处理", "/complaints", "pages/complaints/ComplaintManagement", "WarningOutlined", 3, "risk:arbitration:list"),
+		menuPage("project_audits", "risk_root", "项目审计", "/project-audits", "pages/projectAudits/ProjectAuditList", "AuditOutlined", 4, "risk:arbitration:list"),
+
+		menuDir("logs_root", "", "操作日志", "/logs", "FileTextOutlined", 90, "system:log:list"),
+		menuPage("logs_list", "logs_root", "日志列表", "/logs/list", "pages/logs/LogList", "FileTextOutlined", 0, "system:log:list"),
+		menuButton("log_view", "logs_list", "查看日志", "system:log:view", 1),
+		menuPage("audit_logs", "", "业务审计日志", "/audit-logs", "pages/system/AuditLogList", "FileTextOutlined", 91, "system:log:list"),
+
+		menuDir("settings_root", "", "系统设置", "/settings", "SettingOutlined", 100, "system:setting:list"),
+		menuPage("settings_config", "settings_root", "系统配置", "/settings/config", "pages/settings/SystemSettings", "SettingOutlined", 0, "system:setting:list"),
+		menuButton("setting_edit", "settings_config", "编辑设置", "system:setting:edit", 1),
+		menuPage("settings_regions", "settings_root", "行政区划管理", "/settings/regions", "pages/settings/RegionManagement", "EnvironmentOutlined", 10, ""),
+		menuPage("dictionary", "settings_root", "字典管理", "/system/dictionary", "pages/settings/DictionaryManagement", "UnorderedListOutlined", 11, ""),
+		menuButton("dictionary_view", "dictionary", "查看字典", "dict:view", 1),
+		menuButton("dictionary_create", "dictionary", "创建字典", "dict:create", 2),
+		menuButton("dictionary_update", "dictionary", "编辑字典", "dict:update", 3),
+		menuButton("dictionary_delete", "dictionary", "删除字典", "dict:delete", 4),
+
+		menuDir("permission_root", "", "权限管理", "/permission", "LockOutlined", 110, ""),
+		menuPage("roles_list", "permission_root", "角色管理", "/permission/roles", "pages/permission/RoleList", "", 1, "system:role:list"),
+		menuButton("role_create", "permission_root", "创建角色", "system:role:create", 1),
+		menuButton("role_edit", "permission_root", "编辑角色", "system:role:edit", 2),
+		menuButton("role_delete", "permission_root", "删除角色", "system:role:delete", 3),
+		menuButton("role_assign", "permission_root", "分配权限", "system:role:assign", 4),
+		menuPage("menus_list", "permission_root", "菜单管理", "/permission/menus", "pages/permission/MenuList", "", 2, "system:menu:list"),
+		menuButton("menu_create", "permission_root", "创建菜单", "system:menu:create", 5),
+		menuButton("menu_edit", "permission_root", "编辑菜单", "system:menu:edit", 6),
+		menuButton("menu_delete", "permission_root", "删除菜单", "system:menu:delete", 7),
+	}
+}
+
+func createRoles() map[string]*model.SysRole {
+	roles := []model.SysRole{
+		{Name: "超级管理员", Key: "super_admin", Remark: "系统超级管理员，拥有所有权限", Sort: 0, Status: 1},
+		{Name: "产品管理", Key: "product_manager", Remark: "负责产品数据维护、服务商/门店管理", Sort: 10, Status: 1},
+		{Name: "运营管理", Key: "operations", Remark: "负责审核、内容管理、用户管理", Sort: 20, Status: 1},
+		{Name: "财务管理", Key: "finance", Remark: "负责资金管理、交易审核", Sort: 30, Status: 1},
+		{Name: "风控管理", Key: "risk", Remark: "负责风险预警、纠纷仲裁", Sort: 40, Status: 1},
+		{Name: "客服", Key: "customer_service", Remark: "处理用户咨询、预约管理", Sort: 50, Status: 1},
+		{Name: "只读用户", Key: "viewer", Remark: "数据分析、报表查看", Sort: 60, Status: 1},
+		{Name: "监理专员", Key: "project_supervisor", Remark: "负责项目阶段推进、施工日志录入与风险上报", Sort: 65, Status: 1},
+		{Name: "系统管理员", Key: "system_admin", Remark: "三员分立保留角色：负责系统配置与账号体系，必须独立分配", Sort: 70, Status: 1},
+		{Name: "安全管理员", Key: "security_admin", Remark: "三员分立保留角色：负责安全策略与安全事件处置，必须独立分配", Sort: 71, Status: 1},
+		{Name: "安全审计员", Key: "security_auditor", Remark: "三员分立保留角色：默认只读审计角色，必须独立分配", Sort: 72, Status: 1},
+	}
+
+	roleMap := make(map[string]*model.SysRole, len(roles))
 	for i := range roles {
 		repository.DB.FirstOrCreate(&roles[i], model.SysRole{Key: roles[i].Key})
 		roleMap[roles[i].Key] = &roles[i]
@@ -292,104 +374,107 @@ func createRoles() map[string]*model.SysRole {
 	return roleMap
 }
 
-// 分配角色权限
-func assignRolePermissions(roles map[string]*model.SysRole) {
-	// 超级管理员 - 所有权限
-	assignPermissions(roles["super_admin"].ID, []uint64{
-		// 获取所有菜单ID (1-129)
-	}, "全部权限")
+func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*model.SysMenu) {
+	assignAllMenusToSuperAdmin(roles["super_admin"].ID)
 
-	// 为超级管理员分配所有菜单
-	var allMenus []model.SysMenu
-	repository.DB.Find(&allMenus)
-	for _, menu := range allMenus {
-		roleMenu := model.SysRoleMenu{
-			RoleID: roles["super_admin"].ID,
-			MenuID: menu.ID,
-		}
-		repository.DB.FirstOrCreate(&roleMenu, roleMenu)
-	}
+	assignPermissionsByKeys(roles["product_manager"].ID, []string{
+		"dashboard",
+		"users_root", "users_list", "user_view", "user_export",
+		"providers_root", "provider_designers", "provider_designer_view", "provider_designer_create", "provider_designer_edit", "provider_designer_delete",
+		"provider_companies", "provider_company_view", "provider_company_create", "provider_company_edit", "provider_company_delete",
+		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit", "provider_foreman_delete",
+		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit", "material_shop_delete",
+		"projects_root", "projects_list", "project_view", "project_edit", "projects_map", "project_quote_library", "project_quote_lists", "project_quote_compare",
+		"order_center", "order_center_view", "proposal_review",
+		"demands_root", "demands_list", "demand_assign",
+		"reviews_root", "reviews_list", "review_view",
+	}, "产品管理", menus)
 
-	// 产品管理
-	assignPermissions(roles["product_manager"].ID, []uint64{
-		1,              // 工作台
-		10, 11, 12, 15, // 用户管理(只读+导出)
-		20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, // 服务商管理(完整权限)
-		40, 41, 42, 43, 44, 45, // 主材门店管理(完整权限)
-		50, 51, 52, 53, 55, // 项目管理(查看+编辑+地图)
-		130, 131, 133, // 需求中心（查看+分配）
-		80, 81, // 评价管理(只读)
-	}, "产品管理")
+	assignPermissionsByKeys(roles["operations"].ID, []string{
+		"dashboard",
+		"users_root", "users_list", "user_view",
+		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
+		"provider_audit", "provider_audit_view", "provider_audit_approve", "provider_audit_reject",
+		"materials_root", "materials_audit", "material_audit_view", "material_audit_approve", "material_audit_reject",
+		"order_center", "order_center_view", "proposal_review",
+		"demands_root", "demands_list", "demand_review", "demand_assign",
+		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail", "booking_dispute_resolve",
+		"reviews_root", "reviews_list", "review_view", "review_delete", "review_hide",
+	}, "运营管理", menus)
 
-	// 运营管理
-	assignPermissions(roles["operations"].ID, []uint64{
-		1,          // 工作台
-		10, 11, 12, // 用户管理(只读)
-		20, 21, 22, 26, 27, 31, 32, 36, 37, 38, 39, // 服务商管理(只读+审核)
-		40, 46, 47, 48, 49, // 主材门店审核
-		130, 131, 132, 133, // 需求中心
-		60, 61, 62, 63, 64, // 预约管理(完整权限)
-		80, 81, 82, 83, // 评价管理(完整权限)
-	}, "运营管理")
+	assignPermissionsByKeys(roles["finance"].ID, []string{
+		"dashboard",
+		"users_root", "users_list", "user_view",
+		"projects_root", "projects_list", "project_view",
+		"order_center", "order_center_view",
+		"finance_root", "finance_overview", "finance_escrow", "finance_escrow_view", "finance_escrow_freeze", "finance_escrow_unfreeze",
+		"finance_transactions", "finance_transaction_view", "finance_transaction_export", "finance_transaction_approve", "refunds",
+	}, "财务管理", menus)
 
-	// 财务管理
-	assignPermissions(roles["finance"].ID, []uint64{
-		1,          // 工作台
-		10, 11, 12, // 用户管理(只读)
-		50, 51, 52, // 项目管理(只读)
-		70, 71, 72, 73, 74, 75, 76, 77, 78, // 资金中心(完整权限)
-	}, "财务管理")
+	assignPermissionsByKeys(roles["risk"].ID, []string{
+		"dashboard",
+		"users_root", "users_list", "user_view",
+		"projects_root", "projects_list", "project_view",
+		"order_center", "order_center_view",
+		"risk_root", "risk_warnings", "risk_warning_view", "risk_warning_handle", "risk_warning_ignore",
+		"risk_arbitration", "risk_arbitration_view", "risk_arbitration_accept", "risk_arbitration_reject", "risk_arbitration_judge",
+		"complaints", "project_audits",
+	}, "风控管理", menus)
 
-	// 风控管理
-	assignPermissions(roles["risk"].ID, []uint64{
-		1,          // 工作台
-		10, 11, 12, // 用户管理(只读)
-		50, 51, 52, // 项目管理(只读)
-		90, 91, 92, 93, 94, 95, 96, 97, 98, 99, // 风控中心(完整权限)
-	}, "风控管理")
+	assignPermissionsByKeys(roles["customer_service"].ID, []string{
+		"dashboard",
+		"users_root", "users_list", "user_view", "user_edit",
+		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
+		"order_center", "order_center_view", "proposal_review",
+		"demands_root", "demands_list", "demand_review",
+		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail",
+		"reviews_root", "reviews_list", "review_view",
+	}, "客服", menus)
 
-	// 客服
-	assignPermissions(roles["customer_service"].ID, []uint64{
-		1,              // 工作台
-		10, 11, 12, 13, // 用户管理(查看+基础编辑)
-		20, 21, 22, 26, 27, 31, 32, // 服务商管理(只读)
-		130, 131, 132, // 需求中心（查看+审核）
-		60, 61, 62, 63, 64, // 预约管理(完整权限)
-		80, 81, // 评价管理(只读)
-	}, "客服")
+	assignPermissionsByKeys(roles["viewer"].ID, []string{
+		"dashboard",
+		"users_root", "users_list", "user_view", "user_export",
+		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
+		"materials_root", "materials_list", "material_shop_view",
+		"projects_root", "projects_list", "project_view", "projects_map",
+		"order_center", "order_center_view",
+		"demands_root", "demands_list",
+		"bookings_root", "bookings_list", "booking_view",
+		"finance_root", "finance_overview", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view", "finance_transaction_export",
+		"reviews_root", "reviews_list", "review_view",
+		"risk_root", "risk_warnings", "risk_warning_view", "risk_arbitration", "risk_arbitration_view",
+		"logs_root", "logs_list", "log_view", "audit_logs",
+	}, "只读用户", menus)
 
-	// 只读用户
-	assignPermissions(roles["viewer"].ID, []uint64{
-		1,              // 工作台
-		10, 11, 12, 15, // 用户管理(只读+导出)
-		20, 21, 22, 26, 27, 31, 32, // 服务商管理(只读)
-		40, 41, 42, // 主材门店(只读)
-		50, 51, 52, 55, // 项目管理(只读+地图)
-		130, 131, // 需求中心（只读）
-		60, 61, // 预约管理(只读)
-		70, 71, 72, 75, 76, 77, // 资金中心(只读+导出)
-		80, 81, // 评价管理(只读)
-		90, 91, 92, 95, 96, // 风控中心(只读)
-		100, 101, // 操作日志
-	}, "只读用户")
+	assignPermissionsByKeys(roles["project_supervisor"].ID, []string{
+		"supervision_root", "supervision_projects", "supervision_workspace_edit", "supervision_risk_create",
+	}, "监理专员", menus)
 
-	// 三员分立保留角色默认不自动分配菜单，避免初始化时直接放开权限
 	fmt.Println("   ✓ 三员分立保留角色: 默认不自动分配菜单，需按制度单独授权")
 }
 
-// 辅助函数：分配权限
-func assignPermissions(roleID uint64, menuIDs []uint64, roleName string) {
-	for _, menuID := range menuIDs {
-		roleMenu := model.SysRoleMenu{
-			RoleID: roleID,
-			MenuID: menuID,
-		}
+func assignAllMenusToSuperAdmin(roleID uint64) {
+	var allMenus []model.SysMenu
+	repository.DB.Find(&allMenus)
+	for _, menu := range allMenus {
+		roleMenu := model.SysRoleMenu{RoleID: roleID, MenuID: menu.ID}
 		repository.DB.FirstOrCreate(&roleMenu, roleMenu)
 	}
-	fmt.Printf("   ✓ %s: 分配了 %d 个权限\n", roleName, len(menuIDs))
+	fmt.Printf("   ✓ 超级管理员: 分配了 %d 个权限\n", len(allMenus))
 }
 
-// 创建测试管理员账号
+func assignPermissionsByKeys(roleID uint64, menuKeys []string, roleName string, menus map[string]*model.SysMenu) {
+	for _, key := range menuKeys {
+		menu, ok := menus[key]
+		if !ok {
+			log.Fatalf("角色 %s 依赖的菜单 key 不存在: %s", roleName, key)
+		}
+		roleMenu := model.SysRoleMenu{RoleID: roleID, MenuID: menu.ID}
+		repository.DB.FirstOrCreate(&roleMenu, roleMenu)
+	}
+	fmt.Printf("   ✓ %s: 分配了 %d 个权限\n", roleName, len(menuKeys))
+}
+
 func createAdmins() map[string]*model.SysAdmin {
 	admins := []struct {
 		Username     string
@@ -404,9 +489,10 @@ func createAdmins() map[string]*model.SysAdmin {
 		{"risk", "risk123", "风控专员", false},
 		{"service", "service123", "客服专员", false},
 		{"viewer", "viewer123", "数据分析师", false},
+		{"supervisor", "supervisor123", "监理专员", false},
 	}
 
-	adminMap := make(map[string]*model.SysAdmin)
+	adminMap := make(map[string]*model.SysAdmin, len(admins))
 	for _, a := range admins {
 		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(a.Password), bcrypt.DefaultCost)
 		admin := model.SysAdmin{
@@ -424,7 +510,6 @@ func createAdmins() map[string]*model.SysAdmin {
 	return adminMap
 }
 
-// 分配管理员角色
 func assignAdminRoles(admins map[string]*model.SysAdmin, roles map[string]*model.SysRole) {
 	assignments := map[string]string{
 		"admin":      "super_admin",
@@ -434,13 +519,11 @@ func assignAdminRoles(admins map[string]*model.SysAdmin, roles map[string]*model
 		"risk":       "risk",
 		"service":    "customer_service",
 		"viewer":     "viewer",
+		"supervisor": "project_supervisor",
 	}
 
 	for adminKey, roleKey := range assignments {
-		adminRole := model.SysAdminRole{
-			AdminID: admins[adminKey].ID,
-			RoleID:  roles[roleKey].ID,
-		}
+		adminRole := model.SysAdminRole{AdminID: admins[adminKey].ID, RoleID: roles[roleKey].ID}
 		repository.DB.FirstOrCreate(&adminRole, adminRole)
 		fmt.Printf("   ✓ %s -> %s\n", admins[adminKey].Nickname, roles[roleKey].Name)
 	}

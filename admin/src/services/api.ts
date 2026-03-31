@@ -151,7 +151,7 @@ api.interceptors.response.use(
   },
 );
 
-export { getApiErrorStatus, getHandledAdminStatus, redirectToAdminLogin };
+export { api, getApiErrorStatus, getHandledAdminStatus, redirectToAdminLogin };
 export const isAdminConflictError = (error: unknown) =>
   error instanceof AdminApiError && error.status === 409;
 
@@ -203,7 +203,7 @@ export const adminProjectApi = {
   ) => api.put(`/admin/projects/${id}/status`, data),
   confirmConstruction: (
     id: string | number,
-    data: { constructionProviderId?: number; foremanId?: number },
+    data: { constructionProviderId?: number; foremanId?: number; reason?: string },
   ) => api.post(`/admin/projects/${id}/construction/confirm`, data),
   confirmConstructionQuote: (
     id: string | number,
@@ -212,6 +212,7 @@ export const adminProjectApi = {
       materialMethod?: string;
       plannedStartDate?: string;
       expectedEnd?: string;
+      reason?: string;
     },
   ) => api.post(`/admin/projects/${id}/construction/quote/confirm`, data),
 
@@ -248,6 +249,126 @@ export const adminProjectApi = {
     },
   ) => api.put(`/admin/logs/${logId}`, data),
   deleteLog: (logId: string | number) => api.delete(`/admin/logs/${logId}`),
+};
+
+export interface AdminSupervisionPhaseTask {
+  id: number;
+  name: string;
+  isCompleted: boolean;
+}
+
+export interface AdminSupervisionPhase {
+  id: number;
+  projectId: number;
+  phaseType: string;
+  seq: number;
+  status: string;
+  responsiblePerson?: string;
+  startDate?: string;
+  endDate?: string;
+  estimatedDays?: number;
+  name: string;
+  tasks?: AdminSupervisionPhaseTask[];
+}
+
+export interface AdminSupervisionWorkLog {
+  id: number;
+  projectId: number;
+  phaseId: number;
+  title: string;
+  description?: string;
+  photos?: string;
+  logDate?: string;
+  createdAt?: string;
+  createdBy?: number;
+}
+
+export interface AdminSupervisionProjectItem {
+  id: number;
+  name: string;
+  address?: string;
+  ownerName?: string;
+  providerName?: string;
+  currentPhase?: string;
+  currentPhaseStatus?: string;
+  lastLogAt?: string;
+  unhandledRiskCount: number;
+}
+
+export interface AdminSupervisionWorkspace {
+  projectId: number;
+  name: string;
+  address?: string;
+  ownerName?: string;
+  providerName?: string;
+  currentPhase?: string;
+  currentPhaseStatus?: string;
+  lastInspectionAt?: string;
+  unhandledRiskCount: number;
+  riskWarnings: AdminRiskWarningItem[];
+}
+
+export interface AdminSupervisionProjectQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  phaseStatus?: string;
+  hasPendingRisk?: boolean;
+}
+
+export interface AdminCreateSupervisionRiskWarningInput {
+  type: 'delay' | 'quality' | 'payment' | 'dispute';
+  level: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  phaseId?: number;
+}
+
+export const adminSupervisionApi = {
+  listProjects: (params?: AdminSupervisionProjectQuery) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminSupervisionProjectItem>>,
+      AdminApiResponse<AdminListData<AdminSupervisionProjectItem>>
+    >('/admin/supervision/projects', { params }),
+  getProject: (id: number) =>
+    api.get<
+      AdminApiResponse<AdminSupervisionWorkspace>,
+      AdminApiResponse<AdminSupervisionWorkspace>
+    >(`/admin/supervision/projects/${id}`),
+  getPhases: (id: number) =>
+    api.get<
+      AdminApiResponse<{ phases: AdminSupervisionPhase[] }>,
+      AdminApiResponse<{ phases: AdminSupervisionPhase[] }>
+    >(`/admin/supervision/projects/${id}/phases`),
+  getLogs: (id: number, params?: { page?: number; pageSize?: number; phaseId?: number }) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminSupervisionWorkLog> & { page?: number; pageSize?: number }>,
+      AdminApiResponse<AdminListData<AdminSupervisionWorkLog> & { page?: number; pageSize?: number }>
+    >(`/admin/supervision/projects/${id}/logs`, { params }),
+  updatePhase: (projectId: number, phaseId: number, data: {
+    status?: string;
+    responsiblePerson?: string;
+    startDate?: string;
+    endDate?: string;
+    estimatedDays?: number;
+  }) =>
+    api.put<AdminApiResponse, AdminApiResponse>(`/admin/supervision/projects/${projectId}/phases/${phaseId}`, data),
+  updatePhaseTask: (projectId: number, phaseId: number, taskId: number, data: { isCompleted: boolean }) =>
+    api.put<AdminApiResponse, AdminApiResponse>(`/admin/supervision/projects/${projectId}/phases/${phaseId}/tasks/${taskId}`, data),
+  createLog: (projectId: number, phaseId: number, data: {
+    title: string;
+    description?: string;
+    photos?: string;
+    logDate?: string;
+  }) =>
+    api.post<
+      AdminApiResponse<{ log: AdminSupervisionWorkLog }>,
+      AdminApiResponse<{ log: AdminSupervisionWorkLog }>
+    >(`/admin/supervision/projects/${projectId}/phases/${phaseId}/logs`, data),
+  createRiskWarning: (projectId: number, data: AdminCreateSupervisionRiskWarningInput) =>
+    api.post<
+      AdminApiResponse<{ warning: AdminRiskWarningItem }>,
+      AdminApiResponse<{ warning: AdminRiskWarningItem }>
+    >(`/admin/supervision/projects/${projectId}/risk-warnings`, data),
 };
 
 export interface AdminDemandSummary {
@@ -1627,6 +1748,12 @@ export const adminSettingsApi = {
   get: () => api.get("/admin/settings"),
   update: (data: any) => api.put("/admin/settings", data),
 };
+
+export interface AdminSystemConfigItem {
+  key: string;
+  value: string;
+  description?: string;
+}
 
 export const adminSystemConfigApi = {
   list: () => api.get("/admin/system-configs"),

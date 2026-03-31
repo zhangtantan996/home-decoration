@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, message, Tabs, Switch, Space, Divider, Select, InputNumber, Row, Col, Typography } from 'antd';
+import { Card, Form, Input, Button, message, Tabs, Switch, Space, Divider, Select, InputNumber, Row, Col, Typography, Alert, Tag } from 'antd';
 import { SaveOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
-import { adminSettingsApi, adminSystemConfigApi } from '../../services/api';
+import { adminSettingsApi, adminSystemConfigApi, type AdminSystemConfigItem } from '../../services/api';
 
 const { TabPane } = Tabs;
+
+const PAYMENT_CHANNEL_KEYS = {
+    wechatEnabled: 'payment.channel.wechat.enabled',
+    alipayEnabled: 'payment.channel.alipay.enabled',
+    wechatReady: 'payment.channel.wechat.runtime_ready',
+    alipayReady: 'payment.channel.alipay.runtime_ready',
+} as const;
 
 const safeParseStages = (raw: string | undefined, fallback: { name: string; percentage: number }[]) => {
     if (!raw) return fallback;
@@ -55,52 +62,60 @@ const StageListEditor: React.FC<{ name: string; form: any }> = ({ name, form }) 
     );
 };
 
+const isConfigEnabled = (value?: string) => value === 'true' || value === '1';
+
+const renderRuntimeStatus = (ready: boolean) => (
+    <Tag color={ready ? 'success' : 'default'}>{ready ? '运行时已配置' : '运行时未配置'}</Tag>
+);
+
 const SystemSettings: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [savingBiz, setSavingBiz] = useState(false);
+    const [savingPayment, setSavingPayment] = useState(false);
+    const [paymentRuntimeReady, setPaymentRuntimeReady] = useState({
+        wechat: false,
+        alipay: false,
+    });
     const [form] = Form.useForm();
     const [bizForm] = Form.useForm();
+    const [paymentForm] = Form.useForm();
 
     useEffect(() => {
         loadSettings();
     }, []);
+
+    const applyPaymentConfig = (configs: AdminSystemConfigItem[]) => {
+        const configMap = configs.reduce((acc: Record<string, string>, item) => {
+            acc[item.key] = item.value;
+            return acc;
+        }, {});
+        paymentForm.setFieldsValue({
+            wechatEnabled: isConfigEnabled(configMap[PAYMENT_CHANNEL_KEYS.wechatEnabled]),
+            alipayEnabled: isConfigEnabled(configMap[PAYMENT_CHANNEL_KEYS.alipayEnabled]),
+        });
+        setPaymentRuntimeReady({
+            wechat: isConfigEnabled(configMap[PAYMENT_CHANNEL_KEYS.wechatReady]),
+            alipay: isConfigEnabled(configMap[PAYMENT_CHANNEL_KEYS.alipayReady]),
+        });
+        return configMap;
+    };
 
     const loadSettings = async () => {
         setLoading(true);
         try {
             const res = await adminSettingsApi.get() as any;
             if (res.code === 0) {
-                // 转换布尔值字符串为布尔类型
                 const settings = { ...res.data };
-                if (settings.enable_registration === 'true' || settings.enable_registration === true) {
-                    settings.enable_registration = true;
-                } else {
-                    settings.enable_registration = false;
-                }
-                if (settings.enable_sms_verify === 'true' || settings.enable_sms_verify === true) {
-                    settings.enable_sms_verify = true;
-                } else {
-                    settings.enable_sms_verify = false;
-                }
-                if (settings.enable_email_verify === 'true' || settings.enable_email_verify === true) {
-                    settings.enable_email_verify = true;
-                } else {
-                    settings.enable_email_verify = false;
-                }
-                // 腾讯云 IM 启用状态
-                if (settings.im_tencent_enabled === 'true' || settings.im_tencent_enabled === true) {
-                    settings.im_tencent_enabled = true;
-                } else {
-                    settings.im_tencent_enabled = false;
-                }
+                settings.enable_registration = settings.enable_registration === 'true' || settings.enable_registration === true;
+                settings.enable_sms_verify = settings.enable_sms_verify === 'true' || settings.enable_sms_verify === true;
+                settings.enable_email_verify = settings.enable_email_verify === 'true' || settings.enable_email_verify === true;
+                settings.im_tencent_enabled = settings.im_tencent_enabled === 'true' || settings.im_tencent_enabled === true;
                 form.setFieldsValue(settings);
             }
             const bizRes = await adminSystemConfigApi.list() as any;
-            const bizConfigMap = (bizRes?.data?.configs || []).reduce((acc: Record<string, string>, item: any) => {
-                acc[item.key] = item.value;
-                return acc;
-            }, {});
+            const configs: AdminSystemConfigItem[] = bizRes?.data?.configs || [];
+            const bizConfigMap = applyPaymentConfig(configs);
             bizForm.setFieldsValue({
                 surveyDepositDefault: Number(bizConfigMap['booking.survey_deposit_default'] || 500),
                 surveyRefundNotice: bizConfigMap['booking.survey_refund_notice'] || '',
@@ -109,19 +124,16 @@ const SystemSettings: React.FC = () => {
                 constructionPaymentMode: bizConfigMap['order.construction_payment_mode'] || 'milestone',
                 constructionFeeStages: safeParseStages(bizConfigMap['order.construction_fee_stages'], [{ name: '开工款', percentage: 30 }, { name: '水电验收款', percentage: 30 }, { name: '中期验收款', percentage: 25 }, { name: '竣工验收款', percentage: 15 }]),
                 designFeeUnlockDownload: bizConfigMap['order.design_fee_unlock_download'] || 'true',
-                // 金额与天数
                 surveyDepositMin: Number(bizConfigMap['booking.survey_deposit_min'] || 100),
                 surveyDepositMax: Number(bizConfigMap['booking.survey_deposit_max'] || 2000),
                 designFeeQuoteExpireHours: Number(bizConfigMap['design.fee_quote_expire_hours'] || 72),
                 deliverableDeadlineDays: Number(bizConfigMap['design.deliverable_deadline_days'] || 30),
                 constructionReleaseDelayDays: Number(bizConfigMap['construction.release_delay_days'] || 3),
-                // 比例字段统一用 0-100 百分比展示
                 surveyDepositRefundRate: Math.round(Number(bizConfigMap['booking.survey_deposit_refund_rate'] || 0.6) * 100),
                 intentFeeRate: Math.round(Number(bizConfigMap['fee.platform.intent_fee_rate'] || 0) * 100),
                 designFeeRate: Math.round(Number(bizConfigMap['fee.platform.design_fee_rate'] || 0.10) * 100),
                 constructionFeeRate: Math.round(Number(bizConfigMap['fee.platform.construction_fee_rate'] || 0.10) * 100),
                 materialFeeRate: Math.round(Number(bizConfigMap['fee.platform.material_fee_rate'] || 0.05) * 100),
-                // 提现与结算
                 withdrawMinAmount: Number(bizConfigMap['withdraw.min_amount'] || 100),
                 settlementAutoDays: Number(bizConfigMap['settlement.auto_days'] || 7),
             });
@@ -137,7 +149,6 @@ const SystemSettings: React.FC = () => {
         setSaving(true);
         try {
             const values = await form.validateFields();
-            // 转换布尔值为字符串以匹配后端存储格式
             const settings = { ...values };
             if (typeof settings.enable_registration === 'boolean') {
                 settings.enable_registration = settings.enable_registration ? 'true' : 'false';
@@ -148,7 +159,6 @@ const SystemSettings: React.FC = () => {
             if (typeof settings.enable_email_verify === 'boolean') {
                 settings.enable_email_verify = settings.enable_email_verify ? 'true' : 'false';
             }
-            // 腾讯云 IM 启用状态
             if (typeof settings.im_tencent_enabled === 'boolean') {
                 settings.im_tencent_enabled = settings.im_tencent_enabled ? 'true' : 'false';
             }
@@ -161,11 +171,28 @@ const SystemSettings: React.FC = () => {
         }
     };
 
+    const handleSavePaymentConfigs = async () => {
+        setSavingPayment(true);
+        try {
+            const values = await paymentForm.validateFields();
+            await adminSystemConfigApi.batchUpdate({
+                [PAYMENT_CHANNEL_KEYS.wechatEnabled]: values.wechatEnabled ? 'true' : 'false',
+                [PAYMENT_CHANNEL_KEYS.alipayEnabled]: values.alipayEnabled ? 'true' : 'false',
+            });
+            message.success('支付开关保存成功');
+            await loadSettings();
+        } catch (error) {
+            console.error(error);
+            message.error('支付开关保存失败');
+        } finally {
+            setSavingPayment(false);
+        }
+    };
+
     const handleSaveBizConfigs = async () => {
         setSavingBiz(true);
         try {
             const values = await bizForm.validateFields();
-            // 校验分阶段比例之和
             const checkStages = (stages: { name: string; percentage: number }[] | undefined, label: string) => {
                 if (!stages || stages.length === 0) return true;
                 const total = stages.reduce((s, item) => s + (Number(item?.percentage) || 0), 0);
@@ -188,7 +215,6 @@ const SystemSettings: React.FC = () => {
                 'design.fee_quote_expire_hours': String(values.designFeeQuoteExpireHours || 72),
                 'design.deliverable_deadline_days': String(values.deliverableDeadlineDays || 30),
                 'construction.release_delay_days': String(values.constructionReleaseDelayDays || 3),
-                // 比例字段：UI 用 0-100 整数，存储为 0-1 小数
                 'booking.survey_deposit_refund_rate': String((values.surveyDepositRefundRate || 60) / 100),
                 'fee.platform.intent_fee_rate': String((values.intentFeeRate ?? 0) / 100),
                 'fee.platform.design_fee_rate': String((values.designFeeRate ?? 10) / 100),
@@ -244,28 +270,51 @@ const SystemSettings: React.FC = () => {
                 </TabPane>
 
                 <TabPane tab="支付设置" key="4">
-                    <Form form={form} labelCol={{ span: 4 }} wrapperCol={{ span: 16 }}>
-                        <Divider orientation="left">微信支付</Divider>
-                        <Form.Item label="AppID" name="wechat_app_id">
-                            <Input placeholder="请输入微信支付AppID" />
-                        </Form.Item>
-                        <Form.Item label="商户号" name="wechat_mch_id">
-                            <Input placeholder="请输入微信支付商户号" />
-                        </Form.Item>
-                        <Form.Item label="API密钥" name="wechat_api_key">
-                            <Input.Password placeholder="请输入API密钥" />
-                        </Form.Item>
+                    <Form form={paymentForm} labelCol={{ span: 5 }} wrapperCol={{ span: 16 }}>
+                        <Alert
+                            showIcon
+                            type="info"
+                            style={{ marginBottom: 24 }}
+                            message="支付密钥、证书与回调配置统一以服务端环境变量为准"
+                            description="后台本页只负责控制渠道开关与查看运行时状态，不再录入微信支付或支付宝的私钥、证书、公钥。"
+                        />
 
-                        <Divider orientation="left">支付宝</Divider>
-                        <Form.Item label="AppID" name="alipay_app_id">
-                            <Input placeholder="请输入支付宝AppID" />
-                        </Form.Item>
-                        <Form.Item label="应用私钥" name="alipay_private_key">
-                            <Input.TextArea rows={3} placeholder="请输入应用私钥" />
-                        </Form.Item>
-                        <Form.Item label="支付宝公钥" name="alipay_public_key">
-                            <Input.TextArea rows={3} placeholder="请输入支付宝公钥" />
-                        </Form.Item>
+                        <Card size="small" title="微信支付" style={{ marginBottom: 16 }}>
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <Space size={12}>
+                                    {renderRuntimeStatus(paymentRuntimeReady.wechat)}
+                                    <Typography.Text type="secondary">小程序内支付主通道</Typography.Text>
+                                </Space>
+                                <Form.Item label="启用渠道" name="wechatEnabled" valuePropName="checked" style={{ marginBottom: 0 }}>
+                                    <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                                </Form.Item>
+                            </Space>
+                        </Card>
+
+                        <Card size="small" title="支付宝" style={{ marginBottom: 16 }}>
+                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                                <Space size={12}>
+                                    {renderRuntimeStatus(paymentRuntimeReady.alipay)}
+                                    <Typography.Text type="secondary">小程序扫码支付与现有 H5/Web 支付通道</Typography.Text>
+                                </Space>
+                                <Form.Item label="启用渠道" name="alipayEnabled" valuePropName="checked" style={{ marginBottom: 0 }}>
+                                    <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                                </Form.Item>
+                            </Space>
+                        </Card>
+
+                        <Typography.Text type="secondary">
+                            若开启失败，请先检查服务端对应环境变量是否完整，再重新保存渠道开关。
+                        </Typography.Text>
+
+                        <div style={{ textAlign: 'right', marginTop: 16 }}>
+                            <Space>
+                                <Button onClick={loadSettings}>重置</Button>
+                                <Button type="primary" loading={savingPayment} onClick={handleSavePaymentConfigs}>
+                                    保存支付设置
+                                </Button>
+                            </Space>
+                        </div>
                     </Form>
                 </TabPane>
 
@@ -314,11 +363,7 @@ const SystemSettings: React.FC = () => {
 
                 <TabPane tab="业务配置" key="7">
                     <Form form={bizForm} layout="vertical">
-                        <Card
-                            size="small"
-                            title="量房定金"
-                            style={{ marginBottom: 16 }}
-                        >
+                        <Card size="small" title="量房定金" style={{ marginBottom: 16 }}>
                             <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
                                 用户预约量房时支付的定金，取消预约可按比例退还，继续签约时可抵扣设计费
                             </Typography.Text>
@@ -353,11 +398,7 @@ const SystemSettings: React.FC = () => {
                             </Row>
                         </Card>
 
-                        <Card
-                            size="small"
-                            title="设计费"
-                            style={{ marginBottom: 16 }}
-                        >
+                        <Card size="small" title="设计费" style={{ marginBottom: 16 }}>
                             <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
                                 设计师提交设计费报价，用户确认后生成订单，支持一次性或分阶段付款
                             </Typography.Text>
@@ -409,11 +450,7 @@ const SystemSettings: React.FC = () => {
                             </Row>
                         </Card>
 
-                        <Card
-                            size="small"
-                            title="施工费"
-                            style={{ marginBottom: 16 }}
-                        >
+                        <Card size="small" title="施工费" style={{ marginBottom: 16 }}>
                             <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
                                 施工阶段按里程碑验收放款，验收通过后延迟 N 天自动转入商家账户
                             </Typography.Text>
@@ -446,11 +483,7 @@ const SystemSettings: React.FC = () => {
                             </Form.Item>
                         </Card>
 
-                        <Card
-                            size="small"
-                            title="平台抽成"
-                            style={{ marginBottom: 16 }}
-                        >
+                        <Card size="small" title="平台抽成" style={{ marginBottom: 16 }}>
                             <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
                                 平台从各类交易中抽取的服务费比例，设为 0 表示不抽成
                             </Typography.Text>
@@ -478,10 +511,7 @@ const SystemSettings: React.FC = () => {
                             </Row>
                         </Card>
 
-                        <Card
-                            size="small"
-                            title="提现与结算"
-                        >
+                        <Card size="small" title="提现与结算">
                             <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
                                 商家收入在订单完成后经过冷静期自动变为可提现状态
                             </Typography.Text>
