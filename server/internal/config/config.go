@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bufio"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -14,6 +16,7 @@ type Config struct {
 	Log                  LogConfig                  `mapstructure:"log"`
 	WechatMini           WechatMiniConfig           `mapstructure:"wechat_mini"`
 	WechatH5             WechatH5Config             `mapstructure:"wechat_h5"`
+	WechatPay            WechatPayConfig            `mapstructure:"wechat_pay"`
 	Alipay               AlipayConfig               `mapstructure:"alipay"`
 	SMS                  SMSConfig                  `mapstructure:"sms"`
 	NotificationRealtime NotificationRealtimeConfig `mapstructure:"notification_realtime"`
@@ -77,6 +80,16 @@ type WechatH5Config struct {
 	BasePath               string `mapstructure:"base_path"`
 }
 
+type WechatPayConfig struct {
+	AppID          string `mapstructure:"app_id"`
+	MchID          string `mapstructure:"mch_id"`
+	SerialNo       string `mapstructure:"serial_no"`
+	PrivateKey     string `mapstructure:"private_key"`
+	APIv3Key       string `mapstructure:"api_v3_key"`
+	NotifyURL      string `mapstructure:"notify_url"`
+	TimeoutMinutes int    `mapstructure:"timeout_minutes"`
+}
+
 type AlipayConfig struct {
 	Enabled        bool   `mapstructure:"enabled"`
 	GatewayURL     string `mapstructure:"gateway_url"`
@@ -131,6 +144,8 @@ type NotificationRealtimeConfig struct {
 }
 
 func Load() (*Config, error) {
+	loadOptionalEnvFiles("../.env", ".env", "server/.env")
+
 	if UsesLegacyDockerConfig() {
 		viper.SetConfigName("config.docker")
 	} else {
@@ -198,6 +213,13 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("sms.template_code_delete_account", "SMS_TEMPLATE_CODE_DELETE_ACCOUNT")
 	_ = viper.BindEnv("sms.region_id", "SMS_REGION_ID")
 	_ = viper.BindEnv("wechat_h5.base_path", "WECHAT_H5_BASE_PATH")
+	_ = viper.BindEnv("wechat_pay.app_id", "WECHAT_PAY_APP_ID")
+	_ = viper.BindEnv("wechat_pay.mch_id", "WECHAT_PAY_MCH_ID")
+	_ = viper.BindEnv("wechat_pay.serial_no", "WECHAT_PAY_SERIAL_NO")
+	_ = viper.BindEnv("wechat_pay.private_key", "WECHAT_PAY_PRIVATE_KEY")
+	_ = viper.BindEnv("wechat_pay.api_v3_key", "WECHAT_PAY_API_V3_KEY")
+	_ = viper.BindEnv("wechat_pay.notify_url", "WECHAT_PAY_NOTIFY_URL")
+	_ = viper.BindEnv("wechat_pay.timeout_minutes", "WECHAT_PAY_TIMEOUT_MINUTES")
 	_ = viper.BindEnv("notification_realtime.enabled", "NOTIFICATION_REALTIME_ENABLED")
 	_ = viper.BindEnv("notification_realtime.max_connections_per_user", "NOTIFICATION_WS_MAX_CONN_PER_USER")
 	_ = viper.BindEnv("notification_realtime.max_connections_per_ip", "NOTIFICATION_WS_MAX_CONN_PER_IP")
@@ -229,6 +251,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("wechat_h5.bind_token_expire_minutes", 5)
 	viper.SetDefault("wechat_h5.oauth_scope", "snsapi_base")
 	viper.SetDefault("wechat_h5.base_path", "/app")
+	viper.SetDefault("wechat_pay.timeout_minutes", 15)
 	viper.SetDefault("alipay.enabled", false)
 	viper.SetDefault("alipay.gateway_url", "https://openapi.alipay.com/gateway.do")
 	viper.SetDefault("alipay.notify_url", "")
@@ -269,6 +292,54 @@ func Load() (*Config, error) {
 
 	globalConfig = &cfg
 	return &cfg, nil
+}
+
+func loadOptionalEnvFiles(paths ...string) {
+	for _, path := range paths {
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if strings.HasPrefix(line, "export ") {
+				line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+			}
+
+			key, value, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+
+			key = strings.TrimSpace(key)
+			if key == "" {
+				continue
+			}
+			if _, exists := os.LookupEnv(key); exists {
+				continue
+			}
+
+			value = strings.TrimSpace(value)
+			if len(value) >= 2 {
+				if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+					(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+					value = value[1 : len(value)-1]
+				}
+			}
+			if key == "ALIPAY_APP_PRIVATE_KEY" || key == "ALIPAY_PUBLIC_KEY" || key == "WECHAT_PAY_PRIVATE_KEY" {
+				value = strings.ReplaceAll(value, "\\n", "\n")
+			}
+
+			_ = os.Setenv(key, value)
+		}
+
+		_ = file.Close()
+	}
 }
 
 var globalConfig *Config

@@ -104,6 +104,32 @@ release_apply_postgres_sql_file() {
     psql -v ON_ERROR_STOP=1 -U "${DB_USER:-postgres}" -d "${DB_NAME:-home_decoration}" < "${sql_file}"
 }
 
+release_apply_known_migrations() {
+  local migration_files=(
+    "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
+    "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
+    "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
+    "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
+    "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
+    "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
+    "server/migrations/v1.13.0_add_order_center_menu_and_indexes.sql"
+    "server/migrations/v1.13.1_cleanup_duplicate_admin_menus.sql"
+    "server/migrations/v1.13.2_add_unique_index_sys_menus_button_permission.sql"
+    "server/migrations/v1.13.3_add_supervision_workspace_menu.sql"
+  )
+  local migration_file
+
+  if ! release_compose_has_service db; then
+    echo "==> Compose database service not present; skip bundled SQL migrations"
+    return 0
+  fi
+
+  for migration_file in "${migration_files[@]}"; do
+    echo "==> Applying database migration: ${migration_file}"
+    release_apply_postgres_sql_file "${REPO_ROOT}/${migration_file}" >/dev/null
+  done
+}
+
 release_checkout_ref() {
   local ref="$1"
   git checkout --detach "${ref}"

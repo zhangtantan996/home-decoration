@@ -1,6 +1,9 @@
 import type { PageEnvelope } from '../types/api';
-import type { MaterialShopListItemVM } from '../types/viewModels';
+import type { MaterialShopDetailVM, MaterialShopListItemVM, MaterialShopProductVM } from '../types/viewModels';
 import { requestJson } from './http';
+import { readThroughCache } from './runtimeCache';
+
+const MATERIAL_SHOP_LIST_TTL_MS = 20 * 1000;
 
 interface MaterialShopDTO {
   id: number;
@@ -8,6 +11,7 @@ interface MaterialShopDTO {
   name?: string;
   cover?: string;
   brandLogo?: string;
+  description?: string;
   rating?: number;
   reviewCount?: number;
   mainProducts?: string[];
@@ -18,6 +22,17 @@ interface MaterialShopDTO {
   tags?: string[];
   isVerified?: boolean;
   isSettled?: boolean;
+  products?: MaterialShopProductDTO[];
+}
+
+interface MaterialShopProductDTO {
+  id: number;
+  name?: string;
+  unit?: string;
+  description?: string;
+  price?: number;
+  images?: string[];
+  coverImage?: string;
 }
 
 function toMaterialShop(dto: MaterialShopDTO): MaterialShopListItemVM {
@@ -25,8 +40,9 @@ function toMaterialShop(dto: MaterialShopDTO): MaterialShopListItemVM {
     id: dto.id,
     type: dto.type || 'showroom',
     name: dto.name || '主材门店',
-    cover: dto.cover || 'https://placehold.co/960x720/e7e0da/1f2937?text=%E4%B8%BB%E6%9D%90',
+    cover: dto.cover || '',
     brandLogo: dto.brandLogo || undefined,
+    description: dto.description || '',
     rating: Number(dto.rating || 0),
     reviewCount: Number(dto.reviewCount || 0),
     mainProducts: dto.mainProducts || [],
@@ -37,6 +53,25 @@ function toMaterialShop(dto: MaterialShopDTO): MaterialShopListItemVM {
     tags: dto.tags || [],
     isVerified: Boolean(dto.isVerified),
     isSettled: dto.isSettled,
+  };
+}
+
+function toMaterialShopProduct(dto: MaterialShopProductDTO): MaterialShopProductVM {
+  return {
+    id: Number(dto.id || 0),
+    name: dto.name || '未命名商品',
+    unit: dto.unit || '',
+    description: dto.description || '',
+    price: Number(dto.price || 0),
+    images: dto.images || [],
+    coverImage: dto.coverImage || dto.images?.[0] || '',
+  };
+}
+
+function toMaterialShopDetail(dto: MaterialShopDTO): MaterialShopDetailVM {
+  return {
+    ...toMaterialShop(dto),
+    products: (dto.products || []).map(toMaterialShopProduct),
   };
 }
 
@@ -51,27 +86,33 @@ interface ListMaterialShopsParams {
 }
 
 export async function listMaterialShops(params: ListMaterialShopsParams = {}) {
-  const data = await requestJson<PageEnvelope<MaterialShopDTO>>('/material-shops', {
-    query: {
-      page: params.page || 1,
-      pageSize: params.pageSize || 8,
-      sortBy: params.sortBy || 'recommend',
-      type: params.type,
-      keyword: params.keyword,
-      city: params.city,
-      ratingMin: params.ratingMin,
-    },
-  });
-
-  return {
-    list: data.list.map(toMaterialShop),
-    total: data.total,
-    page: data.page,
-    pageSize: data.pageSize,
+  const query = {
+    page: params.page || 1,
+    pageSize: params.pageSize || 8,
+    sortBy: params.sortBy || 'recommend',
+    type: params.type,
+    keyword: params.keyword,
+    city: params.city,
+    ratingMin: params.ratingMin,
   };
+
+  return readThroughCache(
+    `material-shops:list:${JSON.stringify(query)}`,
+    MATERIAL_SHOP_LIST_TTL_MS,
+    async () => {
+      const data = await requestJson<PageEnvelope<MaterialShopDTO>>('/material-shops', { query });
+      return {
+        list: data.list.map(toMaterialShop),
+        total: data.total,
+        page: data.page,
+        pageSize: data.pageSize,
+      };
+    },
+    'public',
+  );
 }
 
 export async function getMaterialShopDetail(id: number) {
   const data = await requestJson<MaterialShopDTO>(`/material-shops/${id}`);
-  return toMaterialShop(data);
+  return toMaterialShopDetail(data);
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -27,6 +28,7 @@ func setupOrderServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Proposal{},
 		&model.Order{},
 		&model.PaymentPlan{},
+		&model.PaymentOrder{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
@@ -102,7 +104,14 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 		t.Fatalf("create provider: %v", err)
 	}
 
-	booking := model.Booking{Base: model.Base{ID: 40}, UserID: user.ID, ProviderID: provider.ID, Address: "雁塔区测试地址", Status: 1}
+	booking := model.Booking{
+		Base:          model.Base{ID: 40},
+		UserID:        user.ID,
+		ProviderID:    provider.ID,
+		Address:       "雁塔区测试地址",
+		Status:        2,
+		SurveyDeposit: 800,
+	}
 	project := model.Project{Base: model.Base{ID: 50}, OwnerID: user.ID, ProviderID: provider.ID, Address: "高新区项目地址", CurrentPhase: "construction"}
 	proposal := model.Proposal{Base: model.Base{ID: 60}, BookingID: booking.ID, DesignerID: provider.ID, Summary: "方案 A", Status: model.ProposalStatusConfirmed}
 
@@ -136,24 +145,51 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 		t.Fatalf("create orders: %v", err)
 	}
 
+	paidAt := orders[1].CreatedAt.Add(2 * time.Minute)
+	payment := model.PaymentOrder{
+		Base:          model.Base{ID: 72},
+		BizType:       model.PaymentBizTypeBookingSurveyDeposit,
+		BizID:         booking.ID,
+		PayerUserID:   user.ID,
+		Channel:       model.PaymentChannelAlipay,
+		Scene:         model.PaymentBizTypeBookingSurveyDeposit,
+		FundScene:     model.FundSceneSurveyDeposit,
+		TerminalType:  model.PaymentTerminalPCWeb,
+		Subject:       "量房定金 #40",
+		Amount:        500,
+		OutTradeNo:    "PAY-72",
+		Status:        model.PaymentStatusPaid,
+		PaidAt:        &paidAt,
+		ReturnContext: `{"successPath":"/bookings/40/site-survey","cancelPath":"/bookings/40","bizType":"booking_survey_deposit","bizId":40}`,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+
 	svc := &OrderService{}
 	got, total, err := svc.ListOrdersForUser(user.ID, nil, 1, 10)
 	if err != nil {
 		t.Fatalf("ListOrdersForUser: %v", err)
 	}
-	if total != 2 {
-		t.Fatalf("expected total=2, got %d", total)
+	if total != 4 {
+		t.Fatalf("expected total=4, got %d", total)
 	}
-	if len(got) != 2 {
-		t.Fatalf("expected 2 orders, got %d", len(got))
+	if len(got) != 4 {
+		t.Fatalf("expected 4 orders, got %d", len(got))
 	}
 
 	first := got[0]
+	if first.OrderNo != "量房定金 #40" {
+		t.Fatalf("expected latest item to be payment record, got %+v", first)
+	}
 	if first.ProviderName != "拾光设计" {
 		t.Fatalf("expected provider nickname, got %q", first.ProviderName)
 	}
-	if first.Amount != 56000 && first.Amount != 11500 {
+	if first.Amount != 500 {
 		t.Fatalf("unexpected amount in first row: %+v", first)
+	}
+	if first.ActionPath != "/payments/72" {
+		t.Fatalf("expected payment action path, got %+v", first)
 	}
 
 	var pending int8 = model.OrderStatusPending
@@ -161,14 +197,94 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListOrdersForUser filtered: %v", err)
 	}
-	if filteredTotal != 1 || len(filtered) != 1 {
-		t.Fatalf("expected one pending order, got total=%d len=%d", filteredTotal, len(filtered))
+	if filteredTotal != 2 || len(filtered) != 2 {
+		t.Fatalf("expected two pending records, got total=%d len=%d", filteredTotal, len(filtered))
 	}
-	if filtered[0].Address != "雁塔区测试地址" {
-		t.Fatalf("expected booking address, got %+v", filtered[0])
+
+	var foundSurveyDeposit bool
+	var foundPendingDesign bool
+	for _, item := range filtered {
+		switch item.OrderType {
+		case "survey_deposit":
+			foundSurveyDeposit = true
+			if item.Status != model.OrderStatusPending || item.Address != "雁塔区测试地址" || item.Amount != 800 {
+				t.Fatalf("unexpected survey deposit record: %+v", item)
+			}
+		case model.OrderTypeDesign:
+			foundPendingDesign = true
+			if item.Amount != 11500 {
+				t.Fatalf("expected discounted design order amount, got %+v", item)
+			}
+		}
 	}
-	if filtered[0].Amount != 11500 {
-		t.Fatalf("expected discounted amount, got %+v", filtered[0])
+	if !foundSurveyDeposit || !foundPendingDesign {
+		t.Fatalf("missing pending records, got %+v", filtered)
+	}
+
+	var paid int8 = model.OrderStatusPaid
+	paidItems, paidTotal, err := svc.ListOrdersForUser(user.ID, &paid, 1, 10)
+	if err != nil {
+		t.Fatalf("ListOrdersForUser paid: %v", err)
+	}
+	if paidTotal != 2 || len(paidItems) != 2 {
+		t.Fatalf("expected two paid records, got total=%d len=%d", paidTotal, len(paidItems))
+	}
+}
+
+func TestOrderServiceGetOrderForUserSupportsProjectAndBookingOnlyOrders(t *testing.T) {
+	db := setupOrderServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 101}, Phone: "13800138101", Status: 1}
+	providerUser := model.User{Base: model.Base{ID: 102}, Phone: "13800138102", Nickname: "工地服务商", Status: 1}
+	provider := model.Provider{Base: model.Base{ID: 103}, UserID: providerUser.ID, CompanyName: "工地服务商"}
+	project := model.Project{Base: model.Base{ID: 104}, OwnerID: user.ID, ProviderID: provider.ID, Address: "项目地址"}
+	booking := model.Booking{Base: model.Base{ID: 105}, UserID: user.ID, ProviderID: provider.ID, Address: "预约地址", Status: 2}
+
+	for _, record := range []any{&user, &providerUser, &provider, &project, &booking} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed order owner fixture: %v", err)
+		}
+	}
+
+	projectOrder := model.Order{
+		Base:        model.Base{ID: 106},
+		ProjectID:   project.ID,
+		OrderNo:     "ORD-PROJECT-106",
+		OrderType:   model.OrderTypeConstruction,
+		TotalAmount: 3999,
+		Status:      model.OrderStatusPaid,
+	}
+	bookingOrder := model.Order{
+		Base:        model.Base{ID: 107},
+		BookingID:   booking.ID,
+		OrderNo:     "ORD-BOOKING-107",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 1999,
+		Status:      model.OrderStatusPending,
+	}
+
+	for _, record := range []any{&projectOrder, &bookingOrder} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("create order fixture: %v", err)
+		}
+	}
+
+	svc := &OrderService{}
+
+	gotProjectOrder, err := svc.GetOrderForUser(user.ID, projectOrder.ID)
+	if err != nil {
+		t.Fatalf("GetOrderForUser project order: %v", err)
+	}
+	if gotProjectOrder.ID != projectOrder.ID {
+		t.Fatalf("expected project order %d, got %+v", projectOrder.ID, gotProjectOrder)
+	}
+
+	gotBookingOrder, err := svc.GetOrderForUser(user.ID, bookingOrder.ID)
+	if err != nil {
+		t.Fatalf("GetOrderForUser booking order: %v", err)
+	}
+	if gotBookingOrder.ID != bookingOrder.ID {
+		t.Fatalf("expected booking order %d, got %+v", bookingOrder.ID, gotBookingOrder)
 	}
 }
 

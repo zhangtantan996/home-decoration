@@ -29,21 +29,33 @@ type MaterialShopQuery struct {
 
 // MaterialShopListItem 列表返回项
 type MaterialShopListItem struct {
-	ID                uint64   `json:"id"`
-	Type              string   `json:"type"`
-	Name              string   `json:"name"`
-	Cover             string   `json:"cover"`
-	BrandLogo         string   `json:"brandLogo,omitempty"`
-	Rating            float32  `json:"rating"`
-	ReviewCount       int      `json:"reviewCount"`
-	MainProducts      []string `json:"mainProducts"`
-	ProductCategories []string `json:"productCategories"`
-	Address           string   `json:"address"`
-	Distance          string   `json:"distance"`
-	OpenTime          string   `json:"openTime"`
-	Tags              []string `json:"tags"`
-	IsVerified        bool     `json:"isVerified"`
-	IsSettled         bool     `json:"isSettled"`
+	ID                uint64                    `json:"id"`
+	Type              string                    `json:"type"`
+	Name              string                    `json:"name"`
+	Cover             string                    `json:"cover"`
+	BrandLogo         string                    `json:"brandLogo,omitempty"`
+	Description       string                    `json:"description,omitempty"`
+	Rating            float32                   `json:"rating"`
+	ReviewCount       int                       `json:"reviewCount"`
+	MainProducts      []string                  `json:"mainProducts"`
+	ProductCategories []string                  `json:"productCategories"`
+	Address           string                    `json:"address"`
+	Distance          string                    `json:"distance"`
+	OpenTime          string                    `json:"openTime"`
+	Tags              []string                  `json:"tags"`
+	IsVerified        bool                      `json:"isVerified"`
+	IsSettled         bool                      `json:"isSettled"`
+	Products          []MaterialShopProductItem `json:"products,omitempty"`
+}
+
+type MaterialShopProductItem struct {
+	ID          uint64   `json:"id"`
+	Name        string   `json:"name"`
+	Unit        string   `json:"unit"`
+	Description string   `json:"description"`
+	Price       float64  `json:"price"`
+	Images      []string `json:"images"`
+	CoverImage  string   `json:"coverImage"`
 }
 
 // ListMaterialShops 获取门店列表
@@ -144,6 +156,7 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			Name:              shop.Name,
 			Cover:             imgutil.GetFullImageURL(shop.Cover),
 			BrandLogo:         imgutil.GetFullImageURL(shop.BrandLogo),
+			Description:       shop.Description,
 			Rating:            shop.Rating,
 			ReviewCount:       shop.ReviewCount,
 			MainProducts:      mainProducts,
@@ -179,12 +192,46 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		productCategories = append(productCategories, cat)
 	}
 
+	var products []model.MaterialShopProduct
+	if err := repository.DB.
+		Where("shop_id = ? AND status = ?", id, 1).
+		Order("sort_order ASC, id DESC").
+		Find(&products).Error; err != nil {
+		return nil, err
+	}
+
+	productItems := make([]MaterialShopProductItem, 0, len(products))
+	resolvedCover := strings.TrimSpace(shop.Cover)
+	for _, product := range products {
+		var images []string
+		_ = json.Unmarshal([]byte(product.ImagesJSON), &images)
+
+		coverImage := strings.TrimSpace(product.CoverImage)
+		if coverImage == "" && len(images) > 0 {
+			coverImage = strings.TrimSpace(images[0])
+		}
+		if resolvedCover == "" && coverImage != "" {
+			resolvedCover = coverImage
+		}
+
+		productItems = append(productItems, MaterialShopProductItem{
+			ID:          product.ID,
+			Name:        product.Name,
+			Unit:        product.Unit,
+			Description: product.Description,
+			Price:       product.Price,
+			Images:      imgutil.GetFullImageURLs(images),
+			CoverImage:  imgutil.GetFullImageURL(coverImage),
+		})
+	}
+
 	return &MaterialShopListItem{
 		ID:                shop.ID,
 		Type:              shop.Type,
 		Name:              shop.Name,
-		Cover:             imgutil.GetFullImageURL(shop.Cover),
+		Cover:             imgutil.GetFullImageURL(resolvedCover),
 		BrandLogo:         imgutil.GetFullImageURL(shop.BrandLogo),
+		Description:       shop.Description,
 		Rating:            shop.Rating,
 		ReviewCount:       shop.ReviewCount,
 		MainProducts:      mainProducts,
@@ -195,6 +242,7 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		Tags:              tags,
 		IsVerified:        shop.IsVerified,
 		IsSettled:         materialShopSettlementValue(&shop),
+		Products:          productItems,
 	}, nil
 }
 

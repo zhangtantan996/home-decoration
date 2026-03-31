@@ -131,7 +131,7 @@ func TestMerchantSubmitQuoteSubmission_BlockedWhenAwarded(t *testing.T) {
 	MerchantSubmitQuoteSubmission(c)
 
 	envelope := decodeQuoteHandlerEnvelope(t, recorder)
-	if envelope.Code != 400 {
-		t.Fatalf("unexpected code: got=%d want=400", envelope.Code)
+	if envelope.Code != 409 {
+		t.Fatalf("unexpected code: got=%d want=409", envelope.Code)
 	}
 }

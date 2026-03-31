@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+    Alert,
     App,
     Button,
     Card,
@@ -29,6 +30,9 @@ import { adminMenuApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import StatusTag from '../../components/StatusTag';
 import ToolbarCard from '../../components/ToolbarCard';
+import { usePermission } from '../../hooks/usePermission';
+import { useAuthStore } from '../../stores/authStore';
+import { isSecurityAuditorRole } from '../../constants/statuses';
 
 interface Menu {
     id: number;
@@ -117,6 +121,8 @@ const readErrorMessage = (error: unknown, fallback: string) => {
 
 const MenuList: React.FC = () => {
     const { modal, message } = App.useApp();
+    const admin = useAuthStore((state) => state.admin);
+    const { hasPermission } = usePermission();
     const [loading, setLoading] = useState(false);
     const [menus, setMenus] = useState<Menu[]>([]);
     const [flatMenus, setFlatMenus] = useState<FlatMenu[]>([]);
@@ -124,6 +130,10 @@ const MenuList: React.FC = () => {
     const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
     const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
     const [form] = Form.useForm();
+    const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
+    const canCreateMenu = !isSecurityAuditor && hasPermission('system:menu:create');
+    const canEditMenu = !isSecurityAuditor && hasPermission('system:menu:edit');
+    const canDeleteMenu = !isSecurityAuditor && hasPermission('system:menu:delete');
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -148,13 +158,19 @@ const MenuList: React.FC = () => {
     }, [loadData]);
 
     const handleAdd = useCallback((parentId = 0) => {
+        if (!canCreateMenu) {
+            return;
+        }
         setEditingMenu(null);
         form.resetFields();
         form.setFieldsValue({ parentId, type: 2, sort: 0, visible: true, status: 1 });
         setModalVisible(true);
-    }, [form]);
+    }, [canCreateMenu, form]);
 
     const handleEdit = useCallback((record: Menu) => {
+        if (!canEditMenu) {
+            return;
+        }
         setEditingMenu(record);
         form.setFieldsValue({
             parentId: record.parentId,
@@ -169,9 +185,12 @@ const MenuList: React.FC = () => {
             status: record.status,
         });
         setModalVisible(true);
-    }, [form]);
+    }, [canEditMenu, form]);
 
     const handleDelete = useCallback((record: Menu) => {
+        if (!canDeleteMenu) {
+            return;
+        }
         if (record.children?.length) {
             message.warning('请先删除子菜单或按钮');
             return;
@@ -193,7 +212,7 @@ const MenuList: React.FC = () => {
                 }
             },
         });
-    }, [loadData, message, modal]);
+    }, [canDeleteMenu, loadData, message, modal]);
 
     const handleSubmit = async () => {
         try {
@@ -278,21 +297,25 @@ const MenuList: React.FC = () => {
             fixed: 'right',
             render: (_value, record) => (
                 <Space size={0}>
-                    {record.type !== 3 ? (
+                    {record.type !== 3 && canCreateMenu ? (
                         <Button type="link" size="small" icon={<PlusOutlined />} onClick={() => handleAdd(record.id)}>
                             添加下级
                         </Button>
                     ) : null}
-                    <Tooltip title="编辑">
-                        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-                            编辑
-                        </Button>
-                    </Tooltip>
-                    <Tooltip title="删除">
-                        <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
-                            删除
-                        </Button>
-                    </Tooltip>
+                    {canEditMenu ? (
+                        <Tooltip title="编辑">
+                            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
+                                编辑
+                            </Button>
+                        </Tooltip>
+                    ) : null}
+                    {canDeleteMenu ? (
+                        <Tooltip title="删除">
+                            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
+                                删除
+                            </Button>
+                        </Tooltip>
+                    ) : null}
                 </Space>
                 ),
         },
@@ -318,12 +341,24 @@ const MenuList: React.FC = () => {
                 description="维护后台路由树、按钮权限、排序与可见性规则，保证菜单与 RBAC 配置一致。"
             />
 
+            {isSecurityAuditor ? (
+                <Alert
+                    type="info"
+                    showIcon
+                    message="当前账号为安全审计员视角"
+                    description="本页仅保留菜单查看能力，不展示新增、编辑、删除等写操作。"
+                    style={{ marginBottom: 16 }}
+                />
+            ) : null}
+
             <ToolbarCard>
                 <div className="hz-toolbar">
                     <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>刷新</Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={() => handleAdd()}>
-                        新增菜单
-                    </Button>
+                    {canCreateMenu ? (
+                        <Button type="primary" icon={<PlusOutlined />} onClick={() => handleAdd()}>
+                            新增菜单
+                        </Button>
+                    ) : null}
                 </div>
             </ToolbarCard>
 

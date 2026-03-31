@@ -5,6 +5,7 @@ import { StatusBanner } from '../components/StatusBanner';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getDemandDetail } from '../services/demands';
 import { formatCurrency } from '../utils/format';
+import { getProviderRatingMeta } from '../utils/provider';
 
 export function DemandComparePage() {
   const params = useParams();
@@ -38,6 +39,7 @@ export function DemandComparePage() {
           {quotedMatches.map((item) => {
             const proposal = item.proposal!;
             const total = proposal.designFee + proposal.constructionFee + proposal.materialFee;
+            const ratingMeta = getProviderRatingMeta(item.provider.rating, item.provider.reviewCount);
             return (
               <article className="card section-card" key={item.id}>
                 <div className="panel-head">
@@ -60,7 +62,7 @@ export function DemandComparePage() {
                   <div className="surface-card">
                     <div>
                       <h3>服务商评分</h3>
-                      <p>{item.provider.rating.toFixed(1)} 分 · 完工 {item.provider.completedCnt} 单</p>
+                      <p>{ratingMeta.inlineText} · 完工 {item.provider.completedCnt} 单</p>
                     </div>
                   </div>
                   <div className="surface-card">

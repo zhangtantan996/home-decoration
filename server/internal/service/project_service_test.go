@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"home-decoration-server/internal/model"
-	"home-decoration-server/internal/repository"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -19,7 +18,7 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 
-	if err := db.AutoMigrate(
+	if err := db.AutoMigrate(withPaymentCentralTestModels(
 		&model.User{},
 		&model.Provider{},
 		&model.Notification{},
@@ -35,17 +34,13 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 		&model.BusinessFlow{},
 		&model.EscrowAccount{},
 		&model.Transaction{},
+		&model.MerchantIncome{},
 		&model.Order{},
 		&model.PaymentPlan{},
-	); err != nil {
+	)...); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
-
-	previousDB := repository.DB
-	repository.DB = db
-	t.Cleanup(func() {
-		repository.DB = previousDB
-	})
+	bindRepositorySQLiteTestDB(t, db)
 
 	return db
 }
@@ -343,10 +338,21 @@ func TestProjectServiceMilestoneSubmitAcceptAndComplete(t *testing.T) {
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	escrow := model.EscrowAccount{
+		Base:            model.Base{ID: 311},
+		ProjectID:       project.ID,
+		UserID:          user.ID,
+		TotalAmount:     28000,
+		AvailableAmount: 28000,
+		Status:          escrowStatusActive,
+	}
+	if err := db.Create(&escrow).Error; err != nil {
+		t.Fatalf("create escrow: %v", err)
+	}
 
 	milestones := []model.Milestone{
-		{Base: model.Base{ID: 301}, ProjectID: project.ID, Name: "开工交底", Seq: 1, Status: model.MilestoneStatusInProgress},
-		{Base: model.Base{ID: 302}, ProjectID: project.ID, Name: "竣工验收", Seq: 2, Status: model.MilestoneStatusPending},
+		{Base: model.Base{ID: 301}, ProjectID: project.ID, Name: "开工交底", Seq: 1, Amount: 14000, Status: model.MilestoneStatusInProgress},
+		{Base: model.Base{ID: 302}, ProjectID: project.ID, Name: "竣工验收", Seq: 2, Amount: 14000, Status: model.MilestoneStatusPending},
 	}
 	if err := db.Create(&milestones).Error; err != nil {
 		t.Fatalf("create milestones: %v", err)
@@ -462,6 +468,52 @@ func TestProjectServiceGetProjectDetail_FallbackWhenBusinessFlowMissing(t *testi
 	}
 	if detail.FlowSummary == "" || detail.FlowSummary == "业务主链待初始化" {
 		t.Fatalf("unexpected fallback flow summary: %s", detail.FlowSummary)
+	}
+}
+
+func TestProjectServiceGetProjectDetailIncludesDesignerProfile(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 701}, Phone: "13800138701", Status: 1, Nickname: "业主C"}
+	designerUser := model.User{Base: model.Base{ID: 702}, Phone: "13800138702", Status: 1, Nickname: "设计师李"}
+	designer := model.Provider{Base: model.Base{ID: 703}, UserID: designerUser.ID, ProviderType: 1, CompanyName: "李设计工作室"}
+	constructionUser := model.User{Base: model.Base{ID: 704}, Phone: "13800138703", Status: 1, Nickname: "施工经理"}
+	construction := model.Provider{Base: model.Base{ID: 705}, UserID: constructionUser.ID, ProviderType: 2, CompanyName: "施工公司C"}
+	proposal := model.Proposal{Base: model.Base{ID: 706}, DesignerID: designer.ID, Summary: "设计方案"}
+	for _, record := range []interface{}{&owner, &designerUser, &designer, &constructionUser, &construction, &proposal} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	project := model.Project{
+		Base:                   model.Base{ID: 707},
+		OwnerID:                owner.ID,
+		ProviderID:             construction.ID,
+		ConstructionProviderID: construction.ID,
+		ProposalID:             proposal.ID,
+		Name:                   "团队展示项目",
+		Address:                "测试地址 707",
+		Status:                 model.ProjectStatusActive,
+		CurrentPhase:           "待开工",
+		BusinessStatus:         model.ProjectBusinessStatusConstructionQuoteConfirmed,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	detail, err := (&ProjectService{}).GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectDetail: %v", err)
+	}
+	if detail.ProviderName != "施工经理" {
+		t.Fatalf("expected current provider name from construction provider, got %q", detail.ProviderName)
+	}
+	if detail.DesignerName != "设计师李" {
+		t.Fatalf("expected designer name, got %q", detail.DesignerName)
+	}
+	if detail.DesignerPhone != "13800138702" {
+		t.Fatalf("expected designer phone, got %q", detail.DesignerPhone)
 	}
 }
 

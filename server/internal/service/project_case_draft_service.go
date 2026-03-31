@@ -27,16 +27,39 @@ type ProjectCaseDraftInput struct {
 }
 
 func GenerateCaseDraftFromProject(projectID, providerID uint64, req *ProjectCaseDraftInput) (*model.Project, *model.CaseAudit, error) {
+	var (
+		project *model.Project
+		audit   *model.CaseAudit
+	)
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		loadedProject, loadedAudit, err := GenerateCaseDraftFromProjectTx(tx, projectID, providerID, req)
+		if err != nil {
+			return err
+		}
+		project = loadedProject
+		audit = loadedAudit
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return project, audit, nil
+}
+
+func GenerateCaseDraftFromProjectTx(tx *gorm.DB, projectID, providerID uint64, req *ProjectCaseDraftInput) (*model.Project, *model.CaseAudit, error) {
 	if projectID == 0 || providerID == 0 {
 		return nil, nil, fmt.Errorf("无效项目")
 	}
 	if req == nil {
 		req = &ProjectCaseDraftInput{}
 	}
+	if tx == nil {
+		return nil, nil, fmt.Errorf("事务不能为空")
+	}
 
 	flowSvc := &BusinessFlowService{}
 	var project model.Project
-	if err := repository.DB.First(&project, projectID).Error; err != nil {
+	if err := tx.First(&project, projectID).Error; err != nil {
 		return nil, nil, fmt.Errorf("项目不存在")
 	}
 	if project.ProviderID != providerID && project.ConstructionProviderID != providerID {
@@ -44,22 +67,22 @@ func GenerateCaseDraftFromProject(projectID, providerID uint64, req *ProjectCase
 	}
 	if project.InspirationCaseDraftID > 0 {
 		var existing model.CaseAudit
-		if err := repository.DB.First(&existing, project.InspirationCaseDraftID).Error; err == nil {
+		if err := tx.First(&existing, project.InspirationCaseDraftID).Error; err == nil {
 			return &project, &existing, nil
 		}
 	}
 
 	var proposal model.Proposal
 	if project.ProposalID > 0 {
-		if err := repository.DB.First(&proposal, project.ProposalID).Error; err != nil {
+		if err := tx.First(&proposal, project.ProposalID).Error; err != nil {
 			return nil, nil, fmt.Errorf("项目缺少关联方案")
 		}
 	} else {
-		repository.DB.Where("designer_id = ?", providerID).Order("created_at DESC").First(&proposal)
+		tx.Where("designer_id = ?", providerID).Order("created_at DESC").First(&proposal)
 	}
 
 	var workLogs []model.WorkLog
-	repository.DB.Where("project_id = ?", projectID).Order("created_at DESC").Find(&workLogs)
+	tx.Where("project_id = ?", projectID).Order("created_at DESC").Find(&workLogs)
 	images := make([]string, 0, 12)
 	for _, logItem := range workLogs {
 		var logImages []string
@@ -184,20 +207,18 @@ func GenerateCaseDraftFromProject(projectID, providerID uint64, req *ProjectCase
 		SortOrder:        0,
 	}
 
-	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&audit).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.Project{}).Where("id = ?", project.ID).Updates(map[string]interface{}{
-			"inspiration_case_draft_id": audit.ID,
-			"current_phase":             "已归档",
-		}).Error; err != nil {
-			return err
-		}
-		return flowSvc.AdvanceByProject(tx, project.ID, map[string]interface{}{
-			"current_stage":             model.BusinessFlowStageArchived,
-			"inspiration_case_draft_id": audit.ID,
-		})
+	if err := tx.Create(&audit).Error; err != nil {
+		return nil, nil, fmt.Errorf("保存灵感案例草稿失败")
+	}
+	if err := tx.Model(&model.Project{}).Where("id = ?", project.ID).Updates(map[string]interface{}{
+		"inspiration_case_draft_id": audit.ID,
+		"current_phase":             "已归档",
+	}).Error; err != nil {
+		return nil, nil, fmt.Errorf("保存灵感案例草稿失败")
+	}
+	if err := flowSvc.AdvanceByProject(tx, project.ID, map[string]interface{}{
+		"current_stage":             model.BusinessFlowStageArchived,
+		"inspiration_case_draft_id": audit.ID,
 	}); err != nil {
 		return nil, nil, fmt.Errorf("保存灵感案例草稿失败")
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -27,7 +28,7 @@ func setupProviderServiceDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 
-	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.ProviderCase{}, &model.Region{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.ProviderCase{}, &model.ProviderReview{}, &model.Project{}, &model.Region{}); err != nil {
 		t.Fatalf("auto migrate provider tables: %v", err)
 	}
 
@@ -425,4 +426,129 @@ func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *tes
 	if total != 2 || len(cases) != 2 {
 		t.Fatalf("expected all provider cases in public provider list, total=%d cases=%+v", total, cases)
 	}
+}
+
+func TestProviderServiceExposesUnifiedPriceUnit(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138125", Nickname: "统一报价服务商", PublicID: "user_public_price_unit"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		CompanyName:  "统一报价设计师",
+		Verified:     true,
+		Status:       1,
+		PriceMin:     300,
+		PriceMax:     500,
+		PriceUnit:    "元/天",
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+	if list[0].PriceUnit != model.ProviderPriceUnitPerSquareMeter {
+		t.Fatalf("unexpected list price unit: %s", list[0].PriceUnit)
+	}
+
+	detail, err := service.GetProviderDetail(provider.ID)
+	if err != nil {
+		t.Fatalf("get provider detail: %v", err)
+	}
+	if detail.Provider == nil || detail.Provider.PriceUnit != model.ProviderPriceUnitPerSquareMeter {
+		t.Fatalf("unexpected detail price unit: %+v", detail.Provider)
+	}
+}
+
+func TestProviderServiceOfficialReviewReadsAndStats(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	owner := model.User{Phone: "13800138126", Nickname: "正式评价业主", PublicID: "user_public_official_review_owner"}
+	providerUser := model.User{Phone: "13800138127", Nickname: "正式评价设计师", PublicID: "user_public_official_review_provider"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&providerUser).Error; err != nil {
+		t.Fatalf("create provider user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       providerUser.ID,
+		ProviderType: 1,
+		CompanyName:  "正式评价设计工作室",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	project := model.Project{
+		OwnerID:                owner.ID,
+		ProviderID:             provider.ID,
+		Name:                   "正式评价项目",
+		Status:                 model.ProjectStatusCompleted,
+		BusinessStatus:         model.ProjectBusinessStatusCompleted,
+		CurrentPhase:           "已归档",
+		InspirationCaseDraftID: 1,
+		CompletionSubmittedAt:  ptrTime(time.Now()),
+		ConstructionProviderID: 0,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	review := model.ProviderReview{
+		ProviderID:   provider.ID,
+		UserID:       owner.ID,
+		ProjectID:    project.ID,
+		Rating:       5,
+		Content:      "正式评价读链测试",
+		Images:       `["/uploads/review-1.jpg"]`,
+		ServiceType:  "完工验收",
+		Area:         "88㎡",
+		Tags:         `["沟通顺畅"]`,
+		HelpfulCount: 0,
+	}
+	if err := db.Create(&review).Error; err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	reviews, total, err := service.GetProviderReviews(provider.ID, 1, 10, "all")
+	if err != nil {
+		t.Fatalf("get provider reviews: %v", err)
+	}
+	if total != 1 || len(reviews) != 1 {
+		t.Fatalf("expected one official review, total=%d len=%d", total, len(reviews))
+	}
+
+	stats, err := service.GetReviewStats(provider.ID)
+	if err != nil {
+		t.Fatalf("get review stats: %v", err)
+	}
+	if stats.Total != 1 || stats.TotalCount != 1 {
+		t.Fatalf("unexpected review stats total: %+v", stats)
+	}
+	if stats.WithImage != 1 || stats.GoodCount != 1 || stats.StarDistribution[5] != 1 {
+		t.Fatalf("unexpected review stats buckets: %+v", stats)
+	}
+	if stats.SampleState != providerReviewSampleStateSmall {
+		t.Fatalf("unexpected sample state: %+v", stats)
+	}
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
 }

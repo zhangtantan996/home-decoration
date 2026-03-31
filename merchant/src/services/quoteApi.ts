@@ -1,4 +1,4 @@
-import api from './api';
+import api, { MerchantRequestError } from './api';
 
 const quoteApi = api;
 
@@ -23,22 +23,23 @@ const unwrapEnvelope = <T,>(payload: unknown): ApiEnvelope<T> => {
     throw new Error('接口返回格式异常');
 };
 
-export class QuoteApiError<T = unknown> extends Error {
+export class QuoteApiError<T = unknown> extends MerchantRequestError<T> {
     code: number;
-    data?: T;
 
-    constructor(code: number, message: string, data?: T) {
-        super(message);
+    constructor(code: number, message: string, data?: T, status?: number, errorCode?: string) {
+        super(message, { status, code, errorCode, data });
         this.name = 'QuoteApiError';
         this.code = code;
-        this.data = data;
     }
 }
 
 const unwrapData = <T,>(payload: unknown, fallbackMessage: string): T => {
     const envelope = unwrapEnvelope<T>(payload);
     if (envelope.code !== 0) {
-        throw new QuoteApiError(envelope.code, envelope.message || fallbackMessage, envelope.data);
+        const errorCode = isRecord(envelope.data) && 'errorCode' in envelope.data
+            ? String(envelope.data.errorCode || '')
+            : undefined;
+        throw new QuoteApiError(envelope.code, envelope.message || fallbackMessage, envelope.data, 200, errorCode);
     }
     return (envelope.data as T) ?? ({} as T);
 };

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -16,14 +18,28 @@ type OrderService struct{}
 // UserOrderListItem 用户端订单列表项
 type UserOrderListItem struct {
 	ID            uint64     `json:"id"`
+	RecordType    string     `json:"recordType"`
 	OrderNo       string     `json:"orderNo"`
+	OrderType     string     `json:"orderType,omitempty"`
 	Status        int8       `json:"status"`
 	Amount        float64    `json:"amount"`
+	TotalAmount   float64    `json:"totalAmount"`
+	PaidAmount    float64    `json:"paidAmount"`
+	Discount      float64    `json:"discount"`
+	CreatedAt     *time.Time `json:"createdAt,omitempty"`
+	PaidAt        *time.Time `json:"paidAt,omitempty"`
 	ProviderName  string     `json:"providerName"`
 	Address       string     `json:"address"`
 	NextPayableAt *time.Time `json:"nextPayableAt"`
+	BookingID     uint64     `json:"bookingId,omitempty"`
 	ProposalID    uint64     `json:"proposalId"`
 	ProjectID     uint64     `json:"projectId"`
+	ActionPath    string     `json:"actionPath,omitempty"`
+}
+
+type userOrderAggregateRecord struct {
+	item      UserOrderListItem
+	createdAt time.Time
 }
 
 var configService = &ConfigService{}
@@ -506,40 +522,144 @@ func (s *OrderService) ListOrdersForUser(userID uint64, status *int8, page, page
 		query = query.Where("status = ?", *status)
 	}
 
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
 	var orders []model.Order
-	if err := query.Order("created_at DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
-		Find(&orders).Error; err != nil {
+	if err := query.Order("created_at DESC").Find(&orders).Error; err != nil {
 		return nil, 0, err
 	}
 
-	items := make([]UserOrderListItem, 0, len(orders))
+	records := make([]userOrderAggregateRecord, 0, len(orders))
 	for _, order := range orders {
 		providerName, address, err := s.resolveOrderContext(&order)
 		if err != nil {
 			return nil, 0, err
 		}
 
-		items = append(items, UserOrderListItem{
-			ID:            order.ID,
-			OrderNo:       order.OrderNo,
-			Status:        order.Status,
-			Amount:        order.TotalAmount - order.Discount,
-			ProviderName:  providerName,
-			Address:       address,
-			NextPayableAt: order.ExpireAt,
-			ProposalID:    order.ProposalID,
-			ProjectID:     order.ProjectID,
+		records = append(records, userOrderAggregateRecord{
+			item: UserOrderListItem{
+				ID:            order.ID,
+				RecordType:    "order",
+				OrderNo:       order.OrderNo,
+				OrderType:     order.OrderType,
+				Status:        order.Status,
+				Amount:        order.TotalAmount - order.Discount,
+				TotalAmount:   order.TotalAmount,
+				PaidAmount:    order.PaidAmount,
+				Discount:      order.Discount,
+				CreatedAt:     &order.CreatedAt,
+				PaidAt:        order.PaidAt,
+				ProviderName:  providerName,
+				Address:       address,
+				NextPayableAt: order.ExpireAt,
+				BookingID:     order.BookingID,
+				ProposalID:    order.ProposalID,
+				ProjectID:     order.ProjectID,
+			},
+			createdAt: order.CreatedAt,
 		})
 	}
 
+	if status == nil || *status == model.OrderStatusPending {
+		var pendingSurveyBookings []model.Booking
+		if err := repository.DB.
+			Where("user_id = ? AND survey_deposit_paid = ? AND status = ?", userID, false, 2).
+			Order("created_at DESC").
+			Find(&pendingSurveyBookings).Error; err != nil {
+			return nil, 0, err
+		}
+
+		for _, booking := range pendingSurveyBookings {
+			item, err := s.buildPendingSurveyDepositListItem(&booking)
+			if err != nil {
+				return nil, 0, err
+			}
+			records = append(records, userOrderAggregateRecord{
+				item:      item,
+				createdAt: booking.CreatedAt,
+			})
+		}
+	}
+
+	if status == nil || *status == model.OrderStatusPaid {
+		var paymentOrders []model.PaymentOrder
+		if err := repository.DB.
+			Where("payer_user_id = ? AND biz_type IN ? AND status = ?",
+				userID,
+				[]string{model.PaymentBizTypeBookingIntent, model.PaymentBizTypeBookingSurveyDeposit},
+				model.PaymentStatusPaid,
+			).
+			Order("created_at DESC").
+			Find(&paymentOrders).Error; err != nil {
+			return nil, 0, err
+		}
+
+		for _, payment := range paymentOrders {
+			item, err := s.buildPaymentListItem(&payment)
+			if err != nil {
+				return nil, 0, err
+			}
+			recordTime := payment.CreatedAt
+			if payment.PaidAt != nil {
+				recordTime = *payment.PaidAt
+			}
+			records = append(records, userOrderAggregateRecord{
+				item:      item,
+				createdAt: recordTime,
+			})
+		}
+	}
+
+	sort.SliceStable(records, func(i, j int) bool {
+		return records[i].createdAt.After(records[j].createdAt)
+	})
+
+	total := int64(len(records))
+	start := (page - 1) * pageSize
+	if start >= len(records) {
+		return []UserOrderListItem{}, total, nil
+	}
+	end := start + pageSize
+	if end > len(records) {
+		end = len(records)
+	}
+
+	items := make([]UserOrderListItem, 0, end-start)
+	for _, record := range records[start:end] {
+		items = append(items, record.item)
+	}
+
 	return items, total, nil
+}
+
+// GetOrderForUser 获取用户可访问的订单详情
+func (s *OrderService) GetOrderForUser(userID, orderID uint64) (*model.Order, error) {
+	var order model.Order
+	if err := repository.DB.First(&order, orderID).Error; err != nil {
+		return nil, errors.New("订单不存在")
+	}
+
+	if order.ProjectID > 0 {
+		var project model.Project
+		if err := repository.DB.First(&project, order.ProjectID).Error; err != nil {
+			return nil, errors.New("关联项目不存在")
+		}
+		if project.OwnerID != userID {
+			return nil, errors.New("无权查看此订单")
+		}
+		return &order, nil
+	}
+
+	booking, _, err := s.resolveBookingAndProject(&order)
+	if err != nil {
+		return nil, err
+	}
+	if booking == nil {
+		return nil, errors.New("订单不存在")
+	}
+	if booking.UserID != userID {
+		return nil, errors.New("无权查看此订单")
+	}
+
+	return &order, nil
 }
 
 // GetPaymentPlansForUser 获取用户可访问订单的支付计划
@@ -684,4 +804,102 @@ func (s *OrderService) getProviderName(providerID uint64) (string, error) {
 	}
 
 	return provider.CompanyName, nil
+}
+
+func (s *OrderService) buildPaymentListItem(payment *model.PaymentOrder) (UserOrderListItem, error) {
+	if payment == nil {
+		return UserOrderListItem{}, errors.New("支付记录不存在")
+	}
+
+	providerName, address, err := s.resolvePaymentContext(payment)
+	if err != nil {
+		return UserOrderListItem{}, err
+	}
+
+	title := strings.TrimSpace(payment.Subject)
+	if title == "" {
+		title = fmt.Sprintf("支付记录 #%d", payment.ID)
+	}
+
+	orderType := "survey_deposit"
+	bookingID := uint64(0)
+	switch payment.BizType {
+	case model.PaymentBizTypeBookingIntent, model.PaymentBizTypeBookingSurveyDeposit:
+		bookingID = payment.BizID
+	}
+
+	createdAt := payment.CreatedAt
+	paidAt := payment.PaidAt
+
+	return UserOrderListItem{
+		ID:           payment.ID,
+		RecordType:   "payment",
+		OrderNo:      title,
+		OrderType:    orderType,
+		Status:       model.OrderStatusPaid,
+		Amount:       payment.Amount,
+		TotalAmount:  payment.Amount,
+		PaidAmount:   payment.Amount,
+		Discount:     0,
+		CreatedAt:    &createdAt,
+		PaidAt:       paidAt,
+		ProviderName: providerName,
+		Address:      address,
+		BookingID:    bookingID,
+		ActionPath:   fmt.Sprintf("/payments/%d", payment.ID),
+	}, nil
+}
+
+func (s *OrderService) buildPendingSurveyDepositListItem(booking *model.Booking) (UserOrderListItem, error) {
+	if booking == nil {
+		return UserOrderListItem{}, errors.New("预约不存在")
+	}
+
+	providerName, err := s.getProviderName(booking.ProviderID)
+	if err != nil {
+		return UserOrderListItem{}, err
+	}
+
+	amount := booking.SurveyDeposit
+	if amount <= 0 {
+		amount = booking.IntentFee
+	}
+	createdAt := booking.CreatedAt
+
+	return UserOrderListItem{
+		ID:           booking.ID,
+		RecordType:   "payment",
+		OrderNo:      fmt.Sprintf("BK%08d", booking.ID),
+		OrderType:    "survey_deposit",
+		Status:       model.OrderStatusPending,
+		Amount:       amount,
+		TotalAmount:  amount,
+		PaidAmount:   0,
+		Discount:     0,
+		CreatedAt:    &createdAt,
+		ProviderName: providerName,
+		Address:      booking.Address,
+		BookingID:    booking.ID,
+	}, nil
+}
+
+func (s *OrderService) resolvePaymentContext(payment *model.PaymentOrder) (string, string, error) {
+	if payment == nil {
+		return "", "", errors.New("支付记录不存在")
+	}
+
+	switch payment.BizType {
+	case model.PaymentBizTypeBookingIntent, model.PaymentBizTypeBookingSurveyDeposit:
+		var booking model.Booking
+		if err := repository.DB.First(&booking, payment.BizID).Error; err != nil {
+			return "", "", errors.New("关联预约不存在")
+		}
+		providerName, err := s.getProviderName(booking.ProviderID)
+		if err != nil {
+			return "", "", err
+		}
+		return providerName, booking.Address, nil
+	default:
+		return "", "", nil
+	}
 }

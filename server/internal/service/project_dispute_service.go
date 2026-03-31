@@ -212,6 +212,147 @@ func (s *ProjectDisputeService) ResumeProject(projectID, userID uint64) (*model.
 	return &updated, nil
 }
 
+func (s *ProjectDisputeService) AdminPauseProject(projectID, adminID uint64, input *ProjectPauseInput) (*model.Project, error) {
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		return nil, errors.New("请填写暂停原因")
+	}
+
+	var updated model.Project
+	auditService := &AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := lockProjectByID(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if project.BusinessStatus != model.ProjectBusinessStatusInProgress {
+			return errors.New("当前项目状态不允许暂停")
+		}
+		if isProjectPaused(project) {
+			return errors.New("项目已处于暂停状态")
+		}
+		if isProjectDisputed(project) {
+			return errors.New("项目争议处理中，不能再发起暂停")
+		}
+		beforeState := financeSnapshot(project, nil)
+
+		now := time.Now()
+		updates := map[string]interface{}{
+			"status":          model.ProjectStatusPaused,
+			"paused_at":       now,
+			"resumed_at":      nil,
+			"pause_reason":    reason,
+			"pause_initiator": "admin",
+		}
+		if err := tx.Model(project).Updates(updates).Error; err != nil {
+			return err
+		}
+		if escrow, err := loadProjectEscrowTx(tx, projectID); err != nil {
+			return err
+		} else if escrow != nil && escrow.AvailableAmount > 0 {
+			if _, err := freezeEscrowBalanceTx(tx, projectID, escrow.AvailableAmount); err != nil {
+				return err
+			}
+		}
+		if _, err := setProjectEscrowStatusTx(tx, projectID, escrowStatusFrozen); err != nil {
+			return err
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "pause_project",
+			ResourceType:  "project",
+			ResourceID:    project.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":             project.ID,
+					"status":         model.ProjectStatusPaused,
+					"pausedAt":       now,
+					"pauseReason":    reason,
+					"pauseInitiator": "admin",
+				},
+			},
+			Metadata: map[string]interface{}{
+				"initiator": "admin",
+			},
+		}); err != nil {
+			return err
+		}
+		return tx.First(&updated, projectID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &updated, nil
+}
+
+func (s *ProjectDisputeService) AdminResumeProject(projectID, adminID uint64, reason string) (*model.Project, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写恢复原因")
+	}
+
+	var updated model.Project
+	auditService := &AuditLogService{}
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := lockProjectByID(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if !isProjectPaused(project) {
+			return errors.New("项目当前未暂停")
+		}
+		beforeState := financeSnapshot(project, nil)
+		now := time.Now()
+		if err := tx.Model(project).Updates(map[string]interface{}{
+			"status":     model.ProjectStatusActive,
+			"resumed_at": now,
+		}).Error; err != nil {
+			return err
+		}
+		if !isProjectDisputed(project) {
+			if escrow, err := loadProjectEscrowTx(tx, projectID); err != nil {
+				return err
+			} else if escrow != nil && escrow.FrozenAmount > 0 {
+				if _, err := unfreezeEscrowBalanceTx(tx, projectID, escrow.FrozenAmount); err != nil {
+					return err
+				}
+			}
+			if _, err := setProjectEscrowStatusTx(tx, projectID, escrowStatusActive); err != nil {
+				return err
+			}
+		}
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "resume_project",
+			ResourceType:  "project",
+			ResourceID:    project.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":        project.ID,
+					"status":    model.ProjectStatusActive,
+					"resumedAt": now,
+				},
+			},
+		}); err != nil {
+			return err
+		}
+		return tx.First(&updated, projectID).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &updated, nil
+}
+
 func (s *ProjectDisputeService) SubmitProjectDispute(projectID, userID uint64, input *ProjectDisputeInput) (*ProjectDisputeSubmissionResult, error) {
 	reason := strings.TrimSpace(input.Reason)
 	if reason == "" {

@@ -29,7 +29,7 @@ func PauseProject(c *gin.Context) {
 	}
 	project, err := projectDisputeService.PauseProject(projectID, userID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "暂停项目失败")
 		return
 	}
 	response.Success(c, gin.H{"project": project})
@@ -44,7 +44,7 @@ func ResumeProject(c *gin.Context) {
 	userID := c.GetUint64("userId")
 	project, err := projectDisputeService.ResumeProject(projectID, userID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "恢复项目失败")
 		return
 	}
 	response.Success(c, gin.H{"project": project})
@@ -64,7 +64,7 @@ func SubmitProjectDispute(c *gin.Context) {
 	}
 	result, err := projectDisputeService.SubmitProjectDispute(projectID, userID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "提交项目争议失败")
 		return
 	}
 	response.Success(c, result)
@@ -84,7 +84,7 @@ func CreateBookingRefundApplication(c *gin.Context) {
 	}
 	result, err := refundApplicationService.CreateApplication(bookingID, userID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "创建退款申请失败")
 		return
 	}
 	response.Success(c, gin.H{"refundApplication": result})
@@ -92,12 +92,27 @@ func CreateBookingRefundApplication(c *gin.Context) {
 
 func ListMyRefundApplications(c *gin.Context) {
 	userID := c.GetUint64("userId")
-	list, err := refundApplicationService.ListMyApplications(userID)
+	page := parseInt(c.DefaultQuery("page", "1"), 1)
+	pageSize := parseInt(c.DefaultQuery("pageSize", "20"), 20)
+	bookingID := parseUint64(c.Query("bookingId"))
+	status := strings.TrimSpace(c.Query("status"))
+	list, total, err := refundApplicationService.ListMyApplications(userID, &service.ListMyRefundApplicationsQuery{
+		BookingID: bookingID,
+		Status:    status,
+		Page:      page,
+		PageSize:  pageSize,
+	})
 	if err != nil {
 		response.ServerError(c, "获取退款申请失败")
 		return
 	}
-	response.Success(c, gin.H{"list": list, "count": len(list)})
+	response.Success(c, gin.H{
+		"list":     list,
+		"count":    len(list),
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
 }
 
 func AdminCreateProjectAudit(c *gin.Context) {
@@ -116,7 +131,7 @@ func AdminCreateProjectAudit(c *gin.Context) {
 	}
 	result, err := projectAuditService.EnsureAudit(projectID, adminID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "创建审计单失败")
 		return
 	}
 	response.Success(c, gin.H{"audit": result})
@@ -142,7 +157,7 @@ func AdminGetProjectAudit(c *gin.Context) {
 	}
 	result, err := projectAuditService.GetAuditDetail(auditID)
 	if err != nil {
-		response.Error(c, 404, err.Error())
+		respondScopedAccessError(c, err, "获取审计单失败")
 		return
 	}
 	response.Success(c, gin.H{"audit": result})
@@ -162,7 +177,7 @@ func AdminArbitrateProjectAudit(c *gin.Context) {
 	}
 	result, err := projectAuditService.Arbitrate(auditID, adminID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "执行仲裁失败")
 		return
 	}
 	response.Success(c, gin.H{"audit": result})
@@ -188,7 +203,7 @@ func AdminGetRefundApplication(c *gin.Context) {
 	}
 	result, err := refundApplicationService.GetApplicationDetail(id)
 	if err != nil {
-		response.Error(c, 404, err.Error())
+		respondScopedAccessError(c, err, "获取退款申请失败")
 		return
 	}
 	response.Success(c, gin.H{"refundApplication": result})
@@ -208,7 +223,7 @@ func AdminApproveRefundApplication(c *gin.Context) {
 	}
 	result, err := refundApplicationService.ApproveApplication(id, adminID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "审核退款申请失败")
 		return
 	}
 	response.Success(c, gin.H{"refundApplication": result})
@@ -228,7 +243,7 @@ func AdminRejectRefundApplication(c *gin.Context) {
 	}
 	result, err := refundApplicationService.RejectApplication(id, adminID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "驳回退款申请失败")
 		return
 	}
 	response.Success(c, gin.H{"refundApplication": result})
@@ -243,7 +258,7 @@ func MerchantGetProjectDispute(c *gin.Context) {
 	}
 	result, err := projectDisputeService.GetMerchantProjectDisputeDetail(projectID, providerID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取项目争议失败")
 		return
 	}
 	response.Success(c, result)
@@ -265,7 +280,7 @@ func MerchantRespondProjectDispute(c *gin.Context) {
 	}
 	complaint, err := projectDisputeService.RespondProjectDispute(projectID, providerID, input.Response)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "处理项目争议失败")
 		return
 	}
 	response.Success(c, gin.H{"complaint": complaint})

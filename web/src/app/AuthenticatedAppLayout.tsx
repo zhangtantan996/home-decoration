@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import companyLogo from '../assets/company-logo.png';
+import { RouteScrollReset } from '../components/RouteScrollReset';
 import { useSessionStore } from '../modules/session/sessionStore';
-import { getNotificationUnreadCount } from '../services/notifications';
+import { getNotificationUnreadCount, syncNotificationUnreadCountCache } from '../services/notifications';
 import { notificationRealtimeClient } from '../services/notificationRealtime';
 import styles from './AuthenticatedAppLayout.module.scss';
 
@@ -50,12 +51,17 @@ export function AuthenticatedAppLayout() {
 
     const unsubscribe = notificationRealtimeClient.subscribe((event) => {
       if ((event.type === 'notification.init' || event.type === 'notification.unread_count') && typeof event.data?.count === 'number') {
+        syncNotificationUnreadCountCache(event.data.count);
         setUnreadCount(event.data.count);
         return;
       }
 
       if (event.type === 'notification.new') {
-        setUnreadCount((current) => current + 1);
+        setUnreadCount((current) => {
+          const next = current + 1;
+          syncNotificationUnreadCountCache(next);
+          return next;
+        });
       }
     });
 
@@ -67,6 +73,7 @@ export function AuthenticatedAppLayout() {
 
   return (
     <div className={styles.shell}>
+      <RouteScrollReset />
       <a className="skip-link" href="#app-main">跳到正文</a>
       <header className={styles.header}>
         <div className={styles.headerInner}>
@@ -83,10 +90,7 @@ export function AuthenticatedAppLayout() {
                 key={item.to}
                 to={item.to}
               >
-                <span>
-                  {item.label}
-                  {item.to === '/messages' && unreadCount && unreadCount > 0 ? <em className={styles.navBadge}>{unreadCount}</em> : null}
-                </span>
+                <span>{item.label}</span>
               </NavLink>
             ))}
           </nav>

@@ -26,7 +26,7 @@ func AdminCreateQuoteCategory(c *gin.Context) {
 	}
 	category, err := quoteService.CreateQuoteCategory(&input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "创建报价类目失败")
 		return
 	}
 	response.Success(c, category)
@@ -34,7 +34,7 @@ func AdminCreateQuoteCategory(c *gin.Context) {
 
 func AdminDeleteQuoteCategory(c *gin.Context) {
 	if err := quoteService.DeleteQuoteCategory(parseUint(c.Param("id"))); err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "删除报价类目失败")
 		return
 	}
 	response.Success(c, gin.H{"id": parseUint(c.Param("id"))})
@@ -48,7 +48,7 @@ func AdminCreateQuoteLibraryItem(c *gin.Context) {
 	}
 	item, err := quoteService.CreateQuoteLibraryItem(&input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "创建标准项失败")
 		return
 	}
 	response.Success(c, item)
@@ -62,7 +62,7 @@ func AdminUpdateQuoteLibraryItem(c *gin.Context) {
 	}
 	item, err := quoteService.UpdateQuoteLibraryItem(parseUint(c.Param("id")), &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "更新标准项失败")
 		return
 	}
 	response.Success(c, item)
@@ -70,7 +70,7 @@ func AdminUpdateQuoteLibraryItem(c *gin.Context) {
 
 func AdminDeleteQuoteLibraryItem(c *gin.Context) {
 	if err := quoteService.DeleteQuoteLibraryItem(parseUint(c.Param("id"))); err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "删除标准项失败")
 		return
 	}
 	response.Success(c, gin.H{"id": parseUint(c.Param("id"))})
@@ -79,7 +79,7 @@ func AdminDeleteQuoteLibraryItem(c *gin.Context) {
 func AdminGetProviderPriceBook(c *gin.Context) {
 	detail, err := quoteService.GetProviderPriceBook(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取工长价格库失败")
 		return
 	}
 	response.Success(c, detail)
@@ -93,7 +93,7 @@ func AdminUpdateQuoteTaskPrerequisites(c *gin.Context) {
 	}
 	task, err := quoteService.UpdateTaskPrerequisites(parseUint(c.Param("id")), &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "更新报价前置数据失败")
 		return
 	}
 	response.Success(c, task)
@@ -102,7 +102,7 @@ func AdminUpdateQuoteTaskPrerequisites(c *gin.Context) {
 func AdminValidateQuoteTaskPrerequisites(c *gin.Context) {
 	result, err := quoteService.ValidateTaskPrerequisites(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "校验报价前置数据失败")
 		return
 	}
 	response.Success(c, result)
@@ -111,7 +111,7 @@ func AdminValidateQuoteTaskPrerequisites(c *gin.Context) {
 func AdminRecommendForemen(c *gin.Context) {
 	recommendations, err := quoteService.RecommendForemen(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取工长推荐失败")
 		return
 	}
 	response.Success(c, gin.H{"list": recommendations})
@@ -128,7 +128,7 @@ func AdminSelectForemen(c *gin.Context) {
 	adminID := c.GetUint64("adminId")
 	invitations, err := quoteService.SelectForemen(parseUint(c.Param("id")), adminID, input.ProviderIDs)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "选择工长失败")
 		return
 	}
 	response.Success(c, gin.H{"invitations": invitations})
@@ -137,7 +137,7 @@ func AdminSelectForemen(c *gin.Context) {
 func AdminGenerateQuoteDrafts(c *gin.Context) {
 	result, err := quoteService.GenerateDrafts(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "生成报价草稿失败")
 		return
 	}
 	response.Success(c, result)
@@ -146,7 +146,7 @@ func AdminGenerateQuoteDrafts(c *gin.Context) {
 func AdminListQuoteSubmissionRevisions(c *gin.Context) {
 	revisions, err := quoteService.ListQuoteSubmissionRevisions(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取报价版本历史失败")
 		return
 	}
 	response.Success(c, gin.H{"list": revisions})
@@ -162,7 +162,7 @@ func AdminSubmitQuoteTaskToUser(c *gin.Context) {
 	}
 	task, err := quoteService.SubmitTaskToUser(parseUint(c.Param("id")), input.SubmissionID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "提交用户确认失败")
 		return
 	}
 	response.Success(c, task)
@@ -171,7 +171,7 @@ func AdminSubmitQuoteTaskToUser(c *gin.Context) {
 func AdminRequoteTask(c *gin.Context) {
 	task, err := quoteService.RequoteTask(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "重开报价任务失败")
 		return
 	}
 	response.Success(c, task)
@@ -207,7 +207,7 @@ func MerchantUpdatePriceBook(c *gin.Context) {
 	}
 	detail, err := quoteService.UpsertProviderPriceBook(providerID, &input)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "更新工长价格库失败")
 		return
 	}
 	response.Success(c, detail)
@@ -217,7 +217,7 @@ func MerchantPublishPriceBook(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 	detail, err := quoteService.PublishProviderPriceBook(providerID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "发布工长价格库失败")
 		return
 	}
 	response.Success(c, detail)
@@ -239,7 +239,7 @@ func UserListQuoteTasks(c *gin.Context) {
 	}
 	result, err := quoteService.ListUserQuoteTasks(userID)
 	if err != nil {
-		response.Error(c, 500, err.Error())
+		respondScopedAccessError(c, err, "获取报价任务失败")
 		return
 	}
 	response.Success(c, gin.H{"list": result})
@@ -249,7 +249,7 @@ func UserGetQuoteTask(c *gin.Context) {
 	userID := c.GetUint64("userId")
 	view, err := quoteService.GetUserQuoteTask(parseUint(c.Param("id")), userID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "获取报价任务失败")
 		return
 	}
 	response.Success(c, view)
@@ -259,7 +259,7 @@ func UserConfirmQuoteSubmission(c *gin.Context) {
 	userID := c.GetUint64("userId")
 	task, err := quoteService.UserConfirmQuoteSubmission(parseUint(c.Param("id")), userID)
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "确认施工报价失败")
 		return
 	}
 	response.Success(c, task)
@@ -276,7 +276,7 @@ func UserRejectQuoteSubmission(c *gin.Context) {
 	}
 	task, err := quoteService.UserRejectQuoteSubmission(parseUint(c.Param("id")), userID, strings.TrimSpace(input.Reason))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondDomainMutationError(c, err, "拒绝施工报价失败")
 		return
 	}
 	response.Success(c, task)
@@ -285,7 +285,7 @@ func UserRejectQuoteSubmission(c *gin.Context) {
 func UserPrintQuoteSubmission(c *gin.Context) {
 	html, err := quoteService.BuildSubmissionPrintHTML(parseUint(c.Param("id")))
 	if err != nil {
-		response.Error(c, 400, err.Error())
+		respondScopedAccessError(c, err, "生成报价打印页失败")
 		return
 	}
 	c.Data(200, "text/html; charset=utf-8", []byte(html))

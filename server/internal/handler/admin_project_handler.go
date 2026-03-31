@@ -156,6 +156,7 @@ func AdminUpdateProjectStatus(c *gin.Context) {
 
 func AdminConfirmProjectConstruction(c *gin.Context) {
 	id := c.Param("id")
+	adminID := c.GetUint64("adminId")
 
 	var req service.ConfirmConstructionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -163,7 +164,7 @@ func AdminConfirmProjectConstruction(c *gin.Context) {
 		return
 	}
 
-	project, err := adminProjectService.AdminConfirmConstruction(parseUint(id), &req)
+	project, err := adminProjectService.AdminConfirmConstruction(parseUint(id), adminID, &req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
 		return
@@ -174,6 +175,7 @@ func AdminConfirmProjectConstruction(c *gin.Context) {
 
 func AdminConfirmProjectConstructionQuote(c *gin.Context) {
 	id := c.Param("id")
+	adminID := c.GetUint64("adminId")
 
 	var req service.ConfirmConstructionQuoteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -181,7 +183,7 @@ func AdminConfirmProjectConstructionQuote(c *gin.Context) {
 		return
 	}
 
-	project, err := adminProjectService.AdminConfirmConstructionQuote(parseUint(id), &req)
+	project, err := adminProjectService.AdminConfirmConstructionQuote(parseUint(id), adminID, &req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
 		return
@@ -194,7 +196,7 @@ func AdminConfirmProjectConstructionQuote(c *gin.Context) {
 func AdminGetProjectPhases(c *gin.Context) {
 	id := c.Param("id")
 
-	phases, err := adminProjectService.GetProjectPhases(parseUint(id))
+	phases, err := adminProjectService.GetProjectPhaseViews(parseUint(id))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "获取阶段列表失败"})
 		return
@@ -226,23 +228,12 @@ func AdminUpdatePhase(c *gin.Context) {
 // AdminGetProjectLogs 获取项目施工日志
 func AdminGetProjectLogs(c *gin.Context) {
 	id := c.Param("id")
-	phaseId := c.Query("phaseId")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	phaseID := parseUint(c.Query("phaseId"))
 
-	var logs []model.WorkLog
-	var total int64
-
-	db := repository.DB.Model(&model.WorkLog{}).Where("project_id = ?", id)
-
-	if phaseId != "" {
-		db = db.Where("phase_id = ?", phaseId)
-	}
-
-	db.Count(&total)
-
-	offset := (page - 1) * pageSize
-	if err := db.Order("log_date DESC, created_at DESC").Offset(offset).Limit(pageSize).Find(&logs).Error; err != nil {
+	logs, total, err := adminProjectService.GetProjectLogs(parseUint(id), page, pageSize, phaseID)
+	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "获取日志失败"})
 		return
 	}
@@ -261,39 +252,18 @@ func AdminCreateWorkLog(c *gin.Context) {
 	projectId := c.Param("id")
 	phaseId := c.Param("phaseId")
 
-	var req struct {
-		Title       string `json:"title" binding:"required"`
-		Description string `json:"description"`
-		Photos      string `json:"photos"` // JSON 数组字符串
-		LogDate     string `json:"logDate"`
-	}
+	var req service.CreateWorkLogRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "标题不能为空"})
 		return
 	}
 
-	// 获取当前管理员ID
-	adminID, _ := c.Get("adminId")
+	req.PhaseID = parseUint(phaseId)
+	adminID := c.GetUint64("admin_id")
 
-	log := &model.WorkLog{
-		ProjectID:   parseUint(projectId),
-		PhaseID:     parseUint(phaseId),
-		Title:       req.Title,
-		Description: req.Description,
-		Photos:      req.Photos,
-		CreatedBy:   adminID.(uint64),
-		LogDate:     time.Now(),
-	}
-
-	// 解析日期
-	if req.LogDate != "" {
-		if t, err := time.Parse("2006-01-02", req.LogDate); err == nil {
-			log.LogDate = t
-		}
-	}
-
-	if err := repository.DB.Create(log).Error; err != nil {
-		c.JSON(http.StatusOK, gin.H{"code": 1, "error": "创建日志失败"})
+	log, err := adminProjectService.CreateAdminWorkLog(parseUint(projectId), adminID, &req)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"code": 1, "error": err.Error()})
 		return
 	}
 

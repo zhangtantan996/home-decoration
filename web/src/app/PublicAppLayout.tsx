@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import companyLogo from '../assets/company-logo.png';
+import { RouteScrollReset } from '../components/RouteScrollReset';
 import { hasRecoverableSession, useSessionStore } from '../modules/session/sessionStore';
-import { getNotificationUnreadCount } from '../services/notifications';
+import { getNotificationUnreadCount, syncNotificationUnreadCountCache } from '../services/notifications';
 import { notificationRealtimeClient } from '../services/notificationRealtime';
 import styles from './AuthenticatedAppLayout.module.scss';
 
@@ -12,7 +13,6 @@ const navItems = [
   { to: '/providers', label: '服务商' },
   { to: '/inspiration', label: '灵感案例' },
   { to: '/progress', label: '我的项目' },
-  { to: '/messages', label: '通知' },
   { to: '/me', label: '个人中心' },
 ];
 
@@ -66,12 +66,17 @@ export function PublicAppLayout() {
 
     const unsubscribe = notificationRealtimeClient.subscribe((event) => {
       if ((event.type === 'notification.init' || event.type === 'notification.unread_count') && typeof event.data?.count === 'number') {
+        syncNotificationUnreadCountCache(event.data.count);
         setUnreadCount(event.data.count);
         return;
       }
 
       if (event.type === 'notification.new') {
-        setUnreadCount((current) => current + 1);
+        setUnreadCount((current) => {
+          const next = current + 1;
+          syncNotificationUnreadCountCache(next);
+          return next;
+        });
       }
     });
 
@@ -83,6 +88,7 @@ export function PublicAppLayout() {
 
   return (
     <div className={styles.shell}>
+      <RouteScrollReset />
       <a className="skip-link" href="#app-main">跳到正文</a>
       <header className={styles.header}>
         <div className={styles.headerInner}>
@@ -99,10 +105,7 @@ export function PublicAppLayout() {
                 key={item.to}
                 to={isLoggedIn || ['/', '/providers', '/inspiration'].includes(item.to) ? item.to : '/login'}
               >
-                <span>
-                  {item.label}
-                  {item.to === '/messages' && isLoggedIn && unreadCount && unreadCount > 0 ? <em className={styles.navBadge}>{unreadCount}</em> : null}
-                </span>
+                <span>{item.label}</span>
               </NavLink>
             ))}
           </nav>

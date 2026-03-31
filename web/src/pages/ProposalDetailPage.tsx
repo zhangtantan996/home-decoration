@@ -118,6 +118,11 @@ export function ProposalDetailPage() {
           <section className="card section-card">
             <div className="section-head"><h2>订单与动作</h2></div>
             {message ? <div className="status-note">{message}</div> : null}
+            {!data.projectId ? (
+              <div className="detail-note" style={{ marginBottom: 16 }}>
+                设计确认不会直接创建项目。支付设计费后，待服务商提交施工报价，再到进度看板确认施工报价进入项目阶段。
+              </div>
+            ) : null}
             <div className="project-list">
               <div className="proj-card"><div><div className="proj-name">订单状态</div><div className="proj-phase">{data.orderStatusText}</div></div></div>
               {data.rejectionReason ? <div className="proj-card"><div><div className="proj-name">拒绝原因</div><div className="proj-phase">{data.rejectionReason}</div></div></div> : null}
@@ -130,7 +135,7 @@ export function ProposalDetailPage() {
                   setMessage('');
                   await confirmProposal(data.id);
                   await reload();
-                  setMessage('报价已确认，设计费订单已生成。');
+                  setMessage('报价已确认，设计费订单已生成。项目会在确认施工报价后创建。');
                 }}
                 type="button"
               >
@@ -153,6 +158,7 @@ export function ProposalDetailPage() {
                   支付设计费
                 </button>
               ) : null}
+              {!data.projectId ? <Link className="button-outline" to="/progress">去进度看板</Link> : null}
               {data.projectId ? <Link className="button-outline" to={`/projects/${data.projectId}`}>进入项目</Link> : null}
             </div>
           </section>

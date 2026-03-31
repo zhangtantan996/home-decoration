@@ -49,7 +49,7 @@ func AdminExportTransactions(c *gin.Context) {
 }
 
 func AdminFreezeFunds(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
+	adminID := c.GetUint64("adminId")
 	var input service.FreezeFundsInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -65,7 +65,7 @@ func AdminFreezeFunds(c *gin.Context) {
 }
 
 func AdminUnfreezeFunds(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
+	adminID := c.GetUint64("adminId")
 	var input service.UnfreezeFundsInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -81,7 +81,7 @@ func AdminUnfreezeFunds(c *gin.Context) {
 }
 
 func AdminManualReleaseFunds(c *gin.Context) {
-	adminID := c.GetUint64("admin_id")
+	adminID := c.GetUint64("adminId")
 	var input service.ManualReleaseInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "参数错误")

@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { StatusBanner } from '../components/StatusBanner';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { getBusinessStageLabel } from '../constants/statuses';
+import { getWebApiErrorMessage, isWebApiConflict } from '../services/http';
 import { getProjectDetail, pauseProject, resumeProject } from '../services/projects';
 
 export function ProjectPausePage() {
@@ -45,7 +47,7 @@ export function ProjectPausePage() {
             </div>
             <div className="data-grid detail-grid-two">
               <article><span>当前阶段</span><strong>{data.currentPhase}</strong></article>
-              <article><span>业务阶段</span><strong>{data.businessStage || '-'}</strong></article>
+              <article><span>业务阶段</span><strong>{getBusinessStageLabel(data.businessStage)}</strong></article>
               <article><span>服务商</span><strong>{data.providerName}</strong></article>
               <article><span>预算</span><strong>{data.budgetText}</strong></article>
             </div>
@@ -82,7 +84,12 @@ export function ProjectPausePage() {
                   setMessage('暂停申请已提交。');
                   await reload();
                 } catch (submitError) {
-                  setMessage(submitError instanceof Error ? submitError.message : '暂停失败');
+                  if (isWebApiConflict(submitError)) {
+                    await reload();
+                    setMessage('状态已变化，请刷新后重试');
+                    return;
+                  }
+                  setMessage(getWebApiErrorMessage(submitError, '暂停失败'));
                 } finally {
                   setSubmitting(false);
                 }
@@ -102,7 +109,12 @@ export function ProjectPausePage() {
                   setMessage('项目已恢复施工。');
                   await reload();
                 } catch (resumeError) {
-                  setMessage(resumeError instanceof Error ? resumeError.message : '恢复失败');
+                  if (isWebApiConflict(resumeError)) {
+                    await reload();
+                    setMessage('状态已变化，请刷新后重试');
+                    return;
+                  }
+                  setMessage(getWebApiErrorMessage(resumeError, '恢复失败'));
                 } finally {
                   setResuming(false);
                 }

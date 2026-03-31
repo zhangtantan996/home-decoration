@@ -26,6 +26,7 @@ export interface MaterialShopListItemVM {
   name: string;
   cover: string;
   brandLogo?: string;
+  description?: string;
   rating: number;
   reviewCount: number;
   mainProducts: string[];
@@ -36,6 +37,20 @@ export interface MaterialShopListItemVM {
   tags: string[];
   isVerified: boolean;
   isSettled?: boolean;
+}
+
+export interface MaterialShopProductVM {
+  id: number;
+  name: string;
+  unit: string;
+  description: string;
+  price: number;
+  images: string[];
+  coverImage: string;
+}
+
+export interface MaterialShopDetailVM extends MaterialShopListItemVM {
+  products: MaterialShopProductVM[];
 }
 
 export interface ProviderCaseVM {
@@ -58,8 +73,9 @@ export interface ProviderReviewVM {
 
 export interface ReviewStatsVM {
   rating: number;
-  restoreRate: number;
-  budgetControl: number;
+  avgRating: number;
+  displayRating: number;
+  sampleState: 'none' | 'small' | 'stable';
   totalCount: number;
 }
 
@@ -115,27 +131,43 @@ export interface BookingListItemVM {
 export interface BookingTimelineItemVM {
   title: string;
   description: string;
-  state: 'done' | 'active' | 'pending';
+  state: 'done' | 'active' | 'pending' | 'danger';
+}
+
+export interface BookingInfoFieldVM {
+  label: string;
+  value: string;
+}
+
+export interface BookingStageOverviewVM {
+  title: string;
+  description: string;
+  helperText: string;
 }
 
 export interface BookingDetailVM {
   id: number;
+  statusCode: number;
   statusText: string;
+  providerId: number;
   address: string;
   areaText: string;
   preferredDate: string;
   renovationType: string;
   budgetRange: string;
   notes: string;
-  intentFeeText: string;
-  intentFeePaid: boolean;
+  depositAmountText: string;
+  depositPaid: boolean;
   proposalId?: number;
   providerName: string;
   providerSummary: string;
+  providerTags: string[];
+  providerFacts: BookingInfoFieldVM[];
   providerAvatar: string;
   providerType: ProviderRole;
   updatedAt: string;
   timeline: BookingTimelineItemVM[];
+  stageOverview: BookingStageOverviewVM;
   flowSummary?: string;
   availableActions?: string[];
   currentStage?: string;
@@ -155,6 +187,7 @@ export interface SurveyDimensionVM {
 export interface BookingSiteSurveyVM {
   id: number;
   status: string;
+  statusText: string;
   notes: string;
   photos: string[];
   dimensions: Record<string, SurveyDimensionVM>;
@@ -167,6 +200,7 @@ export interface BookingSiteSurveyVM {
 export interface BookingBudgetConfirmVM {
   id: number;
   status: string;
+  statusText: string;
   budgetMin: number;
   budgetMax: number;
   notes: string;
@@ -276,6 +310,7 @@ export interface DemandProviderVM {
   name: string;
   avatar: string;
   rating: number;
+  reviewCount: number;
   completedCnt: number;
   verified: boolean;
   providerType: number;
@@ -437,6 +472,9 @@ export interface ProjectDetailVM {
   providerAvatar?: string;
   providerPhoneHint?: string;
   providerRoleText?: string;
+  designerName?: string;
+  designerAvatar?: string;
+  designerPhoneHint?: string;
   escrowBalanceText: string;
   phases: ProjectPhaseVM[];
   milestones: ProjectMilestoneVM[];
@@ -458,6 +496,15 @@ export interface ProjectCompletionVM {
   completionRejectedAt?: string;
   completionRejectionReason?: string;
   inspirationCaseDraftId?: number;
+  projectReview?: {
+    id: number;
+    projectId: number;
+    providerId: number;
+    rating: number;
+    content: string;
+    images: string[];
+    createdAt?: string;
+  };
 }
 
 export interface ProgressPageVM {
@@ -499,6 +546,7 @@ export interface QuoteTaskDetailVM {
 
 export interface OrderListItemVM {
   id: number;
+  recordType: 'order' | 'payment';
   orderNo: string;
   status: number;
   statusText: string;
@@ -508,6 +556,7 @@ export interface OrderListItemVM {
   nextPayableAt: string;
   proposalId?: number;
   projectId?: number;
+  actionPath?: string;
 }
 
 export interface MessageListItemVM {
@@ -563,6 +612,7 @@ export interface ProfileFeedItemVM {
   subtitle: string;
   meta: string;
   href?: string;
+  amountText?: string;
 }
 
 export interface ProfileHomeVM {

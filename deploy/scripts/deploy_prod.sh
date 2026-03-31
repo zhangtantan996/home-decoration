@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/deploy/docker-compose.prod.yml"
 DEPLOY_ENV_FILE="${REPO_ROOT}/deploy/.env"
 COMMON_LIB="${SCRIPT_DIR}/lib/release_common.sh"
+VERIFY_HTTPS_SCRIPT="${SCRIPT_DIR}/verify_https.sh"
 
 if [[ ! -f "${COMMON_LIB}" ]]; then
   echo "Missing shared release helper: ${COMMON_LIB}" >&2
@@ -105,6 +106,17 @@ fi
 
 release_load_deploy_env
 
+is_truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | xargs)" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 is_safe_internal_host() {
   local host="${1:-}"
   host="$(printf '%s' "${host}" | tr '[:upper:]' '[:lower:]')"
@@ -129,6 +141,39 @@ is_safe_internal_host() {
   return 1
 }
 
+validate_release_runtime() {
+  local sms_provider
+  sms_provider="$(printf '%s' "${SMS_PROVIDER:-}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  if [[ -z "${sms_provider}" ]]; then
+    echo "Production deploy requires SMS_PROVIDER to be explicitly set." >&2
+    exit 1
+  fi
+  if [[ "${sms_provider}" != "aliyun" ]]; then
+    echo "Production deploy requires SMS_PROVIDER=aliyun, current=${SMS_PROVIDER}" >&2
+    exit 1
+  fi
+
+  if [[ -z "${VITE_PUBLIC_SITE_URL:-}" || ! "${VITE_PUBLIC_SITE_URL}" =~ ^https:// ]]; then
+    echo "Production deploy requires VITE_PUBLIC_SITE_URL to use https://, current=${VITE_PUBLIC_SITE_URL:-<empty>}" >&2
+    exit 1
+  fi
+
+  if is_truthy "${ALIPAY_ENABLED:-false}"; then
+    local required_alipay_keys=(
+      ALIPAY_APP_ID
+      ALIPAY_APP_PRIVATE_KEY
+      ALIPAY_PUBLIC_KEY
+    )
+    local key
+    for key in "${required_alipay_keys[@]}"; do
+      if [[ -z "${!key:-}" ]]; then
+        echo "Production deploy requires ${key} when ALIPAY_ENABLED=true." >&2
+        exit 1
+      fi
+    done
+  fi
+}
+
 validate_transport_safety() {
   if [[ -z "${SERVER_PUBLIC_URL:-}" || ! "${SERVER_PUBLIC_URL}" =~ ^https:// ]]; then
     echo "Production deploy requires SERVER_PUBLIC_URL to use https://, current=${SERVER_PUBLIC_URL:-<empty>}" >&2
@@ -147,6 +192,7 @@ validate_transport_safety() {
 }
 
 validate_transport_safety
+validate_release_runtime
 
 cd "${REPO_ROOT}"
 
@@ -201,6 +247,18 @@ if [[ "${SKIP_GIT}" == "false" ]]; then
   release_checkout_tag "${TAG}"
 fi
 
+ensure_prod_schema() {
+  if ! release_compose_has_service db; then
+    echo "==> Managed production database mode detected; skip local schema bootstrap"
+    return 0
+  fi
+
+  echo "==> Starting production database dependencies"
+  release_compose up -d db redis
+  release_wait_for_postgres 30 2
+  release_apply_known_migrations
+}
+
 update_services() {
   case "${SERVICE_SCOPE}" in
     api)
@@ -220,8 +278,11 @@ update_services() {
 
 verify_release() {
   release_verify_stack
+  echo "==> Verifying external HTTPS routes"
+  bash "${VERIFY_HTTPS_SCRIPT}"
 }
 
+ensure_prod_schema
 update_services
 verify_release
 release_record_state "production" "deploy" "${TAG}" "${SERVICE_SCOPE}" "${SKIP_GIT}" "tag"

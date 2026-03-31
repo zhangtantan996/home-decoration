@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/pkg/response"
 	"sync"
@@ -79,6 +80,11 @@ func RateLimitWithConfig(config RateLimitConfig) gin.HandlerFunc {
 // middleware 返回gin中间件
 func (rl *rateLimiter) middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if rl.name == "api" && config.IsLocalLikeAppEnv() {
+			c.Next()
+			return
+		}
+
 		// 获取客户端标识（IP）
 		clientIP := c.ClientIP()
 

@@ -5,6 +5,7 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"log"
+	"strconv"
 	"time"
 )
 
@@ -94,7 +95,7 @@ func handleUserConfirmTimeout() {
 				Type:        "proposal.timeout",
 				RelatedID:   proposal.ID,
 				RelatedType: "proposal",
-				ActionURL:   "/bookings/" + string(rune(booking.ID)),
+				ActionURL:   "/bookings/" + strconv.FormatUint(booking.ID, 10),
 				Extra:       notifData,
 			})
 
@@ -109,7 +110,7 @@ func handleUserConfirmTimeout() {
 					Type:        "proposal.timeout",
 					RelatedID:   proposal.ID,
 					RelatedType: "proposal",
-					ActionURL:   "/merchant/proposals/" + string(rune(proposal.ID)),
+					ActionURL:   "/proposals",
 					Extra:       notifData,
 				})
 			}

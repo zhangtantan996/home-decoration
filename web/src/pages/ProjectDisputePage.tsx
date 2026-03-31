@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { StatusBanner } from '../components/StatusBanner';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { getBusinessStageLabel } from '../constants/statuses';
+import { getWebApiErrorMessage, isWebApiConflict } from '../services/http';
 import { disputeProject, getProjectDetail } from '../services/projects';
 
 export function ProjectDisputePage() {
@@ -43,7 +45,7 @@ export function ProjectDisputePage() {
             </div>
             <div className="data-grid detail-grid-two">
               <article><span>当前阶段</span><strong>{data.currentPhase}</strong></article>
-              <article><span>业务阶段</span><strong>{data.businessStage || '-'}</strong></article>
+              <article><span>业务阶段</span><strong>{getBusinessStageLabel(data.businessStage)}</strong></article>
               <article><span>服务商</span><strong>{data.providerName}</strong></article>
               <article><span>预算</span><strong>{data.budgetText}</strong></article>
             </div>
@@ -94,7 +96,12 @@ export function ProjectDisputePage() {
                   setMessage('争议已提交，平台将介入处理。');
                   await reload();
                 } catch (submitError) {
-                  setMessage(submitError instanceof Error ? submitError.message : '提交争议失败');
+                  if (isWebApiConflict(submitError)) {
+                    await reload();
+                    setMessage('状态已变化，请刷新后重试');
+                    return;
+                  }
+                  setMessage(getWebApiErrorMessage(submitError, '提交争议失败'));
                 } finally {
                   setSubmitting(false);
                 }

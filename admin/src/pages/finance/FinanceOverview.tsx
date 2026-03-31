@@ -63,7 +63,7 @@ const FinanceOverview: React.FC = () => {
         <div className="hz-page-stack">
             <PageHeader
                 title="资金概览"
-                description="聚合查看平台托管余额、待放款与冻结资金，并快速进入流水与托管账户。"
+                description="聚合查看项目托管业务视图、待出款与冻结资金，并快速进入流水、自动出款和对账。"
                 extra={(
                     <Button icon={<ReloadOutlined />} onClick={() => void loadData()} loading={loading}>
                         刷新概览
@@ -82,6 +82,8 @@ const FinanceOverview: React.FC = () => {
                 <div className="hz-toolbar">
                     <Button type="primary" onClick={() => navigate('/finance/transactions')}>查看交易流水</Button>
                     <Button onClick={() => navigate('/finance/escrow')}>查看托管账户</Button>
+                    <Button onClick={() => navigate('/finance/payouts')}>查看自动出款</Button>
+                    <Button onClick={() => navigate('/finance/reconciliations')}>查看资金对账</Button>
                 </div>
             </ToolbarCard>
 

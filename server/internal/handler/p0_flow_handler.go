@@ -18,7 +18,7 @@ func MerchantGetSiteSurvey(c *gin.Context) {
 	}
 	result, err := bookingService.GetMerchantSiteSurvey(providerID, bookingID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondScopedAccessError(c, err, "获取量房记录失败")
 		return
 	}
 	response.Success(c, gin.H{"siteSurvey": result})
@@ -38,7 +38,7 @@ func MerchantSubmitSiteSurvey(c *gin.Context) {
 	}
 	result, err := bookingService.SubmitMerchantSiteSurvey(providerID, bookingID, &req)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "提交量房记录失败")
 		return
 	}
 	response.SuccessWithMessage(c, "量房记录提交成功", gin.H{"siteSurvey": result})
@@ -53,7 +53,7 @@ func GetSiteSurvey(c *gin.Context) {
 	}
 	result, err := bookingService.GetUserSiteSurvey(userID, bookingID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondScopedAccessError(c, err, "获取量房记录失败")
 		return
 	}
 	response.Success(c, gin.H{"siteSurvey": result})
@@ -68,7 +68,7 @@ func ConfirmSiteSurvey(c *gin.Context) {
 	}
 	result, err := bookingService.ConfirmSiteSurvey(userID, bookingID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "确认量房记录失败")
 		return
 	}
 	response.SuccessWithMessage(c, "量房确认成功", gin.H{"siteSurvey": result})
@@ -90,7 +90,7 @@ func RejectSiteSurvey(c *gin.Context) {
 	}
 	result, err := bookingService.RejectSiteSurvey(userID, bookingID, req.Reason)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "退回量房记录失败")
 		return
 	}
 	response.SuccessWithMessage(c, "已要求重新量房", gin.H{"siteSurvey": result})
@@ -105,7 +105,7 @@ func MerchantGetBudgetConfirmation(c *gin.Context) {
 	}
 	result, err := bookingService.GetMerchantBudgetConfirmation(providerID, bookingID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondScopedAccessError(c, err, "获取预算确认失败")
 		return
 	}
 	response.Success(c, gin.H{"budgetConfirmation": result})
@@ -125,7 +125,7 @@ func MerchantSubmitBudgetConfirmation(c *gin.Context) {
 	}
 	result, err := bookingService.SubmitMerchantBudgetConfirmation(providerID, bookingID, &req)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "提交预算确认失败")
 		return
 	}
 	response.SuccessWithMessage(c, "预算确认提交成功", gin.H{"budgetConfirmation": result})
@@ -140,7 +140,7 @@ func GetBudgetConfirmation(c *gin.Context) {
 	}
 	result, err := bookingService.GetUserBudgetConfirmation(userID, bookingID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondScopedAccessError(c, err, "获取预算确认失败")
 		return
 	}
 	response.Success(c, gin.H{"budgetConfirmation": result})
@@ -155,7 +155,7 @@ func AcceptBudgetConfirmation(c *gin.Context) {
 	}
 	result, err := bookingService.AcceptBudgetConfirmation(userID, bookingID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "确认预算失败")
 		return
 	}
 	response.SuccessWithMessage(c, "预算确认成功，可进入设计方案阶段", gin.H{"budgetConfirmation": result})
@@ -177,7 +177,7 @@ func RejectBudgetConfirmation(c *gin.Context) {
 	}
 	result, err := bookingService.RejectBudgetConfirmation(userID, bookingID, req.Reason)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "拒绝预算失败")
 		return
 	}
 	response.SuccessWithMessage(c, "已拒绝预算，预约已关闭", gin.H{"budgetConfirmation": result})
@@ -197,7 +197,7 @@ func MerchantCompleteProject(c *gin.Context) {
 	}
 	result, err := projectService.SubmitProjectCompletion(projectID, providerID, &req)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "提交完工失败")
 		return
 	}
 	response.SuccessWithMessage(c, "项目完工提交成功", gin.H{"completion": result})
@@ -212,7 +212,7 @@ func GetProjectCompletion(c *gin.Context) {
 	}
 	result, err := projectService.GetProjectCompletion(projectID, userID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondScopedAccessError(c, err, "获取完工信息失败")
 		return
 	}
 	response.Success(c, gin.H{"completion": result})
@@ -227,7 +227,7 @@ func ApproveProjectCompletion(c *gin.Context) {
 	}
 	result, err := projectService.ApproveProjectCompletion(projectID, userID)
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "整体验收失败")
 		return
 	}
 	response.SuccessWithMessage(c, "项目验收通过，已自动生成灵感案例草稿", gin.H{
@@ -253,8 +253,31 @@ func RejectProjectCompletion(c *gin.Context) {
 	}
 	result, err := projectService.RejectProjectCompletion(projectID, userID, strings.TrimSpace(req.Reason))
 	if err != nil {
-		response.BadRequest(c, err.Error())
+		respondDomainMutationError(c, err, "驳回完工失败")
 		return
 	}
 	response.SuccessWithMessage(c, "已驳回完工，项目退回整改", gin.H{"completion": result})
+}
+
+func SubmitProjectReview(c *gin.Context) {
+	userID := c.GetUint64("userId")
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+
+	var req service.ProjectReviewPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	result, err := projectService.SubmitProjectReview(projectID, userID, &req)
+	if err != nil {
+		respondDomainMutationError(c, err, "提交正式评价失败")
+		return
+	}
+
+	response.SuccessWithMessage(c, "正式评价提交成功", gin.H{"review": result})
 }

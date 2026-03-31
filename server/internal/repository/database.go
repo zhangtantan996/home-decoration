@@ -5,6 +5,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -147,11 +148,18 @@ func autoMigrate() error {
 		&model.PaymentOrder{},
 		&model.PaymentCallback{},
 		&model.RefundOrder{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
+		&model.LedgerAccount{},
+		&model.LedgerEntry{},
 		&model.BusinessFlow{},
 		// 商家中心 (2025-12-29)
 		&model.MerchantApplication{},
 		&model.MerchantIncome{},
+		&model.MerchantBondRule{},
+		&model.MerchantBondAccount{},
 		&model.FinanceReconciliation{},
+		&model.FinanceReconciliationItem{},
 		&model.MerchantWithdraw{},
 		&model.MerchantBankAccount{},
 		&model.MerchantServiceSetting{},
@@ -256,10 +264,10 @@ func ensureRuntimeSchemaColumns() error {
 
 	if DB.Dialector.Name() == "postgres" {
 		type textColumnAlignment struct {
-			model      interface{}
-			column     string
-			sql        string
-			label      string
+			model  interface{}
+			column string
+			sql    string
+			label  string
 		}
 		for _, alignment := range []textColumnAlignment{
 			{
@@ -292,6 +300,32 @@ func ensureRuntimeSchemaColumns() error {
 			}
 			if err := DB.Exec(alignment.sql).Error; err != nil {
 				return fmt.Errorf("expand %s: %w", alignment.label, err)
+			}
+		}
+	}
+
+	type runtimeColumnAlignment struct {
+		model interface{}
+		field string
+		label string
+		index string
+	}
+
+	for _, alignment := range []runtimeColumnAlignment{
+		{model: &model.PaymentOrder{}, field: "FundScene", label: "payment_orders.fund_scene", index: "CREATE INDEX IF NOT EXISTS idx_payment_orders_fund_scene ON payment_orders(fund_scene)"},
+		{model: &model.RefundOrder{}, field: "FundScene", label: "refund_orders.fund_scene", index: "CREATE INDEX IF NOT EXISTS idx_refund_orders_fund_scene ON refund_orders(fund_scene)"},
+	} {
+		if !DB.Migrator().HasTable(alignment.model) {
+			continue
+		}
+		if !DB.Migrator().HasColumn(alignment.model, alignment.field) {
+			if err := DB.Migrator().AddColumn(alignment.model, alignment.field); err != nil {
+				return fmt.Errorf("add %s: %w", alignment.label, err)
+			}
+		}
+		if strings.TrimSpace(alignment.index) != "" {
+			if err := DB.Exec(alignment.index).Error; err != nil {
+				return fmt.Errorf("ensure index for %s: %w", alignment.label, err)
 			}
 		}
 	}

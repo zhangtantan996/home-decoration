@@ -2,19 +2,11 @@ import { useState, type CSSProperties } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 import type { ProviderListItemVM } from '../types/viewModels';
-import { buildCoverLabel, extractPlaceholderTone, isGeneratedPlaceholder, resolveCardPalette } from '../utils/cardPlaceholder';
-import { parseTextArray } from '../utils/provider';
+import { extractPlaceholderTone, isGeneratedPlaceholder, resolveCardPalette } from '../utils/cardPlaceholder';
+import { getProviderRatingMeta, parseTextArray } from '../utils/provider';
 
 interface ProviderCardProps {
   provider: ProviderListItemVM;
-}
-
-function normalizeCardPriceText(role: ProviderListItemVM['role'], value: string) {
-  if (role !== 'designer' && role !== 'foreman') {
-    return value;
-  }
-
-  return value.replace(/\/(平方米|平米|㎡|m²|m2|天|日)/gi, '/㎡');
 }
 
 function uniqueTexts(items: string[]) {
@@ -57,7 +49,9 @@ export function ProviderCard({ provider }: ProviderCardProps) {
     .filter(Boolean)
     .join(' · ') || '经验待补充';
   const thirdLine = displayTags.join(' · ') || '风格标签待补充';
-  const displayPriceText = normalizeCardPriceText(provider.role, provider.priceText);
+  const ratingMeta = getProviderRatingMeta(provider.rating, provider.reviewCount);
+  const firstLine = ratingMeta.hasRating ? `${ratingMeta.inlineText} · ${locationText}` : `${ratingMeta.inlineText} · ${locationText}`;
+  const displayPriceText = provider.priceText;
   const palette = resolveCardPalette(`${provider.orgLabel} ${provider.tags.join(' ')}`, extractPlaceholderTone(provider.avatar) || (isUnsettled ? '#F59E0B' : '#DBEAFE'));
   const coverStyle = {
     '--pcard-cover-accent': palette.primary,
@@ -73,16 +67,9 @@ export function ProviderCard({ provider }: ProviderCardProps) {
     >
       <div className={`pcard-cover ${useFallbackCover ? 'pcard-cover-fallback' : ''}`} style={useFallbackCover ? coverStyle : undefined}>
         {useFallbackCover ? (
-          <div className="pcard-cover-placeholder" aria-hidden="true">
-            <div className="pcard-cover-topline">
-              <span className="pcard-cover-placeholder-chip">{provider.orgLabel}</span>
-            </div>
-            <div className="pcard-cover-placeholder-copy">
-              <strong>{buildCoverLabel(provider.name, 8)}</strong>
-              <div className="pcard-cover-placeholder-meta">
-                <span>{isUnsettled ? '公开线索主体' : '服务类商家'}</span>
-                <span>{displayPriceText}</span>
-              </div>
+          <div className="pcard-cover-placeholder pcard-cover-placeholder-portrait" aria-hidden="true">
+            <div className="pcard-cover-avatar-fallback">
+              <span>{provider.name.trim().charAt(0) || provider.orgLabel.trim().charAt(0) || '匠'}</span>
             </div>
           </div>
         ) : (
@@ -103,13 +90,13 @@ export function ProviderCard({ provider }: ProviderCardProps) {
           <span className="pcard-badge">{provider.orgLabel}</span>
         </div>
         <div className="pcard-provider-lines">
-          <div className="pcard-provider-line">{provider.rating.toFixed(1)} 分 · {locationText}</div>
+          <div className="pcard-provider-line">{firstLine}</div>
           <div className="pcard-provider-line">{secondLine}</div>
           <div className="pcard-provider-line pcard-provider-line-muted">{thirdLine}</div>
         </div>
         <div className="pcard-price">
           <strong>{displayPriceText}</strong>
-          <span>{provider.reviewCount} 条评价</span>
+          <span>{ratingMeta.detailText}</span>
         </div>
       </div>
     </Link>

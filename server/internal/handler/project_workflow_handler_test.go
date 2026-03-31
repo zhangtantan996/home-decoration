@@ -21,7 +21,26 @@ func setupProjectWorkflowHandlerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.Notification{}, &model.AuditLog{}, &model.Project{}, &model.Milestone{}, &model.BusinessFlow{}, &model.Order{}, &model.PaymentPlan{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Provider{},
+		&model.Notification{},
+		&model.AuditLog{},
+		&model.Project{},
+		&model.Milestone{},
+		&model.BusinessFlow{},
+		&model.ProjectPhase{},
+		&model.EscrowAccount{},
+		&model.Transaction{},
+		&model.Order{},
+		&model.PaymentPlan{},
+		&model.MerchantIncome{},
+		&model.SystemConfig{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
+		&model.LedgerAccount{},
+		&model.LedgerEntry{},
+	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
@@ -44,6 +63,8 @@ func TestProjectMilestoneHandlers(t *testing.T) {
 		OwnerID:                owner.ID,
 		ProviderID:             provider.ID,
 		ConstructionProviderID: provider.ID,
+		Name:                   "测试项目",
+		Address:                "测试地址",
 		ConstructionQuote:      12000,
 		Status:                 model.ProjectStatusActive,
 		BusinessStatus:         model.ProjectBusinessStatusInProgress,
@@ -54,9 +75,35 @@ func TestProjectMilestoneHandlers(t *testing.T) {
 		ProjectID: project.ID,
 		Name:      "开工交底",
 		Seq:       1,
+		Amount:    5000,
 		Status:    model.MilestoneStatusInProgress,
 	}
-	for _, record := range []interface{}{&owner, &provider, &project, &milestone} {
+	flow := model.BusinessFlow{
+		Base:         model.Base{ID: 151},
+		ProjectID:    project.ID,
+		CurrentStage: model.BusinessFlowStageInProgress,
+	}
+	escrow := model.EscrowAccount{
+		Base:            model.Base{ID: 161},
+		ProjectID:       project.ID,
+		UserID:          owner.ID,
+		TotalAmount:     30000,
+		AvailableAmount: 30000,
+		Status:          1,
+	}
+	constructionFeeRate := model.SystemConfig{
+		Base:  model.Base{ID: 171},
+		Key:   model.ConfigKeyConstructionFeeRate,
+		Value: "0.1",
+		Type:  "number",
+	}
+	releaseDelayDays := model.SystemConfig{
+		Base:  model.Base{ID: 172},
+		Key:   model.ConfigKeyPaymentReleaseDelayDays,
+		Value: "3",
+		Type:  "number",
+	}
+	for _, record := range []interface{}{&owner, &provider, &project, &milestone, &flow, &escrow, &constructionFeeRate, &releaseDelayDays} {
 		if err := db.Create(record).Error; err != nil {
 			t.Fatalf("seed workflow record: %v", err)
 		}
@@ -138,7 +185,122 @@ func TestLegacyCompleteProjectEndpointDisabled(t *testing.T) {
 		t.Fatalf("expected business code 409, got %+v", payload)
 	}
 	data, _ := payload["data"].(map[string]any)
-	if data["errorCode"] != "PROJECT_COMPLETE_LEGACY_DISABLED" {
-		t.Fatalf("expected errorCode PROJECT_COMPLETE_LEGACY_DISABLED, got %+v", payload)
+	if data["errorCode"] != projectCompleteLegacyDisabledCode {
+		t.Fatalf("expected errorCode %s, got %+v", projectCompleteLegacyDisabledCode, payload)
+	}
+}
+
+func TestLegacyCreateProjectEndpointDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects", nil)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = req
+	ctx.Set("userId", uint64(7))
+
+	CreateProject(ctx)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if int(payload["code"].(float64)) != 409 {
+		t.Fatalf("expected business code 409, got %+v", payload)
+	}
+	data, _ := payload["data"].(map[string]any)
+	if data["errorCode"] != projectCreateLegacyDisabledCode {
+		t.Fatalf("expected errorCode %s, got %+v", projectCreateLegacyDisabledCode, payload)
+	}
+}
+
+func TestLegacyGenerateBillEndpointDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/21/bill", nil)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = req
+	ctx.Params = gin.Params{{Key: "id", Value: "21"}}
+	ctx.Set("userId", uint64(7))
+
+	GenerateBill(ctx)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if int(payload["code"].(float64)) != 409 {
+		t.Fatalf("expected business code 409, got %+v", payload)
+	}
+	data, _ := payload["data"].(map[string]any)
+	if data["errorCode"] != projectBillLegacyDisabledCode {
+		t.Fatalf("expected errorCode %s, got %+v", projectBillLegacyDisabledCode, payload)
+	}
+}
+
+func TestLegacyConstructionConfirmEndpointDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/21/construction/confirm", nil)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = req
+	ctx.Params = gin.Params{{Key: "id", Value: "21"}}
+	ctx.Set("userId", uint64(7))
+
+	ConfirmProjectConstruction(ctx)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if int(payload["code"].(float64)) != 409 {
+		t.Fatalf("expected business code 409, got %+v", payload)
+	}
+	data, _ := payload["data"].(map[string]any)
+	if data["errorCode"] != projectConstructionConfirmLegacyCode {
+		t.Fatalf("expected errorCode %s, got %+v", projectConstructionConfirmLegacyCode, payload)
+	}
+}
+
+func TestLegacyConstructionQuoteConfirmEndpointDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/21/construction/quote/confirm", nil)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = req
+	ctx.Params = gin.Params{{Key: "id", Value: "21"}}
+	ctx.Set("userId", uint64(7))
+
+	ConfirmProjectConstructionQuote(ctx)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if int(payload["code"].(float64)) != 409 {
+		t.Fatalf("expected business code 409, got %+v", payload)
+	}
+	data, _ := payload["data"].(map[string]any)
+	if data["errorCode"] != projectConstructionQuoteConfirmLegacyCode {
+		t.Fatalf("expected errorCode %s, got %+v", projectConstructionQuoteConfirmLegacyCode, payload)
 	}
 }

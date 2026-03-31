@@ -1,0 +1,115 @@
+package handler
+
+import (
+	"bytes"
+	"mime/multipart"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestValidateUploadFileHeaderRejectsImageMismatch(t *testing.T) {
+	file := buildMultipartFileHeader(t, "file", "shell.php.jpg", []byte("<?php echo 'x';"))
+
+	_, err := validateUploadFileHeader(file, caseUploadAllowedExts)
+	if err == nil || !strings.Contains(err.Error(), "不允许上传可执行或脚本文件") {
+		t.Fatalf("expected image mismatch error, got %v", err)
+	}
+}
+
+func TestValidateUploadFileHeaderRejectsDangerousTextPayload(t *testing.T) {
+	file := buildMultipartFileHeader(t, "file", "note.txt", []byte("<html><body>alert(1)</body></html>"))
+
+	_, err := validateUploadFileHeader(file, chatUploadAllowedExts)
+	if err == nil || !strings.Contains(err.Error(), "不允许上传可执行或脚本文件") {
+		t.Fatalf("expected dangerous payload error, got %v", err)
+	}
+}
+
+func TestValidateUploadFileHeaderAllowsValidPNG(t *testing.T) {
+	file := buildMultipartFileHeader(t, "file", "avatar.png", []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+		0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92,
+		0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+		0x44, 0xae, 0x42, 0x60, 0x82,
+	})
+
+	ext, err := validateUploadFileHeader(file, avatarUploadAllowedExts)
+	if err != nil {
+		t.Fatalf("expected valid png, got %v", err)
+	}
+	if ext != ".png" {
+		t.Fatalf("expected .png ext, got %s", ext)
+	}
+}
+
+func TestValidateUploadFileHeaderNormalizesImageExtFromContent(t *testing.T) {
+	file := buildMultipartFileHeader(t, "file", "现场照片.jpg", []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+		0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92,
+		0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+		0x44, 0xae, 0x42, 0x60, 0x82,
+	})
+
+	ext, err := validateUploadFileHeader(file, caseUploadAllowedExts)
+	if err != nil {
+		t.Fatalf("expected png content to be accepted, got %v", err)
+	}
+	if ext != ".png" {
+		t.Fatalf("expected normalized ext .png, got %s", ext)
+	}
+}
+
+func TestGenerateWithdrawOrderNoFormat(t *testing.T) {
+	orderNo, err := generateWithdrawOrderNo()
+	if err != nil {
+		t.Fatalf("expected order number, got %v", err)
+	}
+	if len(orderNo) != 21 {
+		t.Fatalf("expected order length 21, got %d (%s)", len(orderNo), orderNo)
+	}
+	if orderNo[0] != 'W' {
+		t.Fatalf("expected W prefix, got %s", orderNo)
+	}
+}
+
+func buildMultipartFileHeader(t *testing.T, fieldName string, filename string, content []byte) *multipart.FileHeader {
+	t.Helper()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	part, err := writer.CreateFormFile(fieldName, filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if err := req.ParseMultipartForm(int64(body.Len()) + 1024); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+
+	file, header, err := req.FormFile(fieldName)
+	if err != nil {
+		t.Fatalf("form file: %v", err)
+	}
+	_ = file.Close()
+	return header
+}

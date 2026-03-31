@@ -488,7 +488,7 @@ func AdminAssignRoleMenus(c *gin.Context) {
 		return
 	}
 	if _, role, err := service.ValidateRoleMenuAssignment(roleID, req.MenuIDs); err != nil {
-		response.BadRequest(c, err.Error())
+		respondAdminRBACMutationError(c, err, "角色权限分配不合法")
 		return
 	} else if role == nil {
 		response.NotFound(c, "角色不存在")

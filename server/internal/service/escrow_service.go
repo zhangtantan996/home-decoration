@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -152,72 +151,18 @@ func (s *EscrowService) releaseFundsTx(tx *gorm.DB, projectID, userID uint64, mi
 // ProcessScheduledReleases 定时任务: 处理已到期的 T+N 自动放款
 // 由 cron job 定期调用（建议每小时一次）
 func (s *EscrowService) ProcessScheduledReleases() (int, error) {
-	var milestones []model.Milestone
-	now := time.Now()
-
-	// 查询所有到期且未放款的里程碑
-	if err := repository.DB.Where(
-		"status = ? AND release_scheduled_at IS NOT NULL AND release_scheduled_at <= ? AND released_at IS NULL",
-		model.MilestoneStatusAccepted, now,
-	).Find(&milestones).Error; err != nil {
-		return 0, fmt.Errorf("查询到期里程碑失败: %w", err)
-	}
-
-	if len(milestones) == 0 {
-		return 0, nil
-	}
-
-	successCount := 0
-	settlementSvc := &SettlementService{}
-	alertSvc := &SystemAlertService{}
-
-	for _, ms := range milestones {
-		released := false
-		scope := fmt.Sprintf("自动放款/项目%d/节点%d", ms.ProjectID, ms.ID)
-		err := repository.DB.Transaction(func(tx *gorm.DB) error {
-			// 查询关联项目
-			var project model.Project
-			if err := tx.First(&project, ms.ProjectID).Error; err != nil {
-				return fmt.Errorf("项目不存在: %w", err)
-			}
-
-			// 暂停中的项目跳过
-			if project.PaymentPaused {
-				return nil
-			}
-
-			if _, err := settlementSvc.ReleaseMilestoneTx(tx, &ReleaseMilestoneInput{
-				ProjectID:    ms.ProjectID,
-				MilestoneID:  ms.ID,
-				OperatorType: "system",
-				OperatorID:   0,
-				Reason:       "定时自动放款",
-				Source:       "scheduled.release",
-			}); err != nil {
-				return fmt.Errorf("释放资金失败: %w", err)
-			}
-			released = true
-			return nil
+	count, err := (&SettlementService{}).ProcessDueSettlements(100)
+	if err != nil {
+		log.Printf("[ProcessScheduledReleases] 处理结算单失败: %v", err)
+		_, _, _ = (&SystemAlertService{}).UpsertAlert(&CreateSystemAlertInput{
+			Type:        SystemAlertTypeEscrowReleaseFailure,
+			Level:       "high",
+			Scope:       "自动放款/结算单批处理",
+			Description: err.Error(),
+			ActionURL:   "/risk/warnings",
 		})
-
-		if err != nil {
-			log.Printf("[ProcessScheduledReleases] milestone %d 放款失败: %v", ms.ID, err)
-			_, _, _ = alertSvc.UpsertAlert(&CreateSystemAlertInput{
-				Type:        SystemAlertTypeEscrowReleaseFailure,
-				Level:       "high",
-				Scope:       scope,
-				ProjectID:   ms.ProjectID,
-				Description: err.Error(),
-				ActionURL:   "/risk/warnings",
-			})
-			continue
-		}
-
-		if released {
-			successCount++
-			_, _ = alertSvc.ResolveAlert(SystemAlertTypeEscrowReleaseFailure, scope, "自动放款恢复成功")
-		}
+		return 0, err
 	}
-
-	return successCount, nil
+	_, _ = (&SystemAlertService{}).ResolveAlert(SystemAlertTypeEscrowReleaseFailure, "自动放款/结算单批处理", "自动放款恢复成功")
+	return count, nil
 }

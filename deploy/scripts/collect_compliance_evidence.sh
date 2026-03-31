@@ -10,6 +10,12 @@ OUTPUT_FILE=""
 SKIP_HTTPS="false"
 SKIP_DB="false"
 APP_LOG_FILE="${APP_LOG_FILE:-}"
+HTTPS_RESULT="信息不足"
+BACKUP_CRON_RESULT="信息不足"
+BACKUP_FILES_RESULT="信息不足"
+RETENTION_RESULT="信息不足"
+SEPARATION_RESULT="信息不足"
+RECONCILIATION_RESULT="信息不足"
 
 usage() {
   cat <<'EOF'
@@ -95,6 +101,23 @@ maybe_capture() {
   "$@" 2>&1 || true
 }
 
+render_check_result() {
+  local label="$1"
+  local result="$2"
+
+  case "${result}" in
+    pass)
+      printf -- '- %s：PASS\n' "${label}"
+      ;;
+    fail)
+      printf -- '- %s：FAIL\n' "${label}"
+      ;;
+    *)
+      printf -- '- %s：信息不足\n' "${label}"
+      ;;
+  esac
+}
+
 resolve_log_paths() {
   if [[ -n "${APP_LOG_FILE}" && -f "${APP_LOG_FILE}" ]]; then
     printf '%s\n' "${APP_LOG_FILE}"
@@ -176,9 +199,12 @@ echo
 echo "- \`APP_ENV\`：\`${APP_ENV:-<empty>}\`"
 echo "- \`SERVER_MODE\`：\`${SERVER_MODE:-<empty>}\`"
 echo "- \`SERVER_PUBLIC_URL\`：\`${SERVER_PUBLIC_URL:-<empty>}\`"
+echo "- \`VITE_PUBLIC_SITE_URL\`：\`${VITE_PUBLIC_SITE_URL:-<empty>}\`"
 echo "- \`DATABASE_HOST\`：\`${DATABASE_HOST:-<empty>}\`"
 echo "- \`DATABASE_SSLMODE\`：\`${DATABASE_SSLMODE:-<empty>}\`"
 echo "- \`REDIS_HOST\`：\`${REDIS_HOST:-<empty>}\`"
+echo "- \`SMS_PROVIDER\`：\`${SMS_PROVIDER:-<empty>}\`"
+echo "- \`ALIPAY_ENABLED\`：\`${ALIPAY_ENABLED:-<empty>}\`"
 echo "- \`ROOT_DOMAIN\`：\`${ROOT_DOMAIN}\`"
 echo "- \`ADMIN_HOST\`：\`${ADMIN_HOST}\`"
 echo "- \`API_HOST\`：\`${API_HOST}\`"
@@ -190,6 +216,11 @@ if [[ "${SKIP_HTTPS}" == "true" ]]; then
   echo "信息不足，已按参数跳过 HTTPS 验证。"
 elif [[ -x "${VERIFY_HTTPS_SCRIPT}" || -f "${VERIFY_HTTPS_SCRIPT}" ]]; then
   https_output="$(maybe_capture bash "${VERIFY_HTTPS_SCRIPT}")"
+  if [[ "${https_output}" == *"[FAIL]"* ]]; then
+    HTTPS_RESULT="fail"
+  elif [[ "${https_output}" == *"[PASS]"* ]]; then
+    HTTPS_RESULT="pass"
+  fi
   print_code_block "${https_output}"
 else
   echo "信息不足，未找到 \`deploy/scripts/verify_https.sh\`。"
@@ -202,11 +233,17 @@ echo "### 3.1 当前 cron"
 cron_output="$(maybe_capture sh -c "crontab -l | grep 'backup_and_sync_oss.sh'")"
 if [[ -z "${cron_output}" ]]; then
   cron_output="信息不足，当前用户 crontab 未发现 backup_and_sync_oss.sh"
+else
+  BACKUP_CRON_RESULT="pass"
 fi
 print_code_block "${cron_output}"
 echo
 echo "### 3.2 最近备份文件"
-print_code_block "$(latest_backup_files)"
+backup_files_output="$(latest_backup_files)"
+if [[ -n "${backup_files_output}" ]] && [[ "${backup_files_output}" != 信息不足* ]]; then
+  BACKUP_FILES_RESULT="pass"
+fi
+print_code_block "${backup_files_output}"
 echo
 
 echo "## 4. 审计日志保留"
@@ -216,6 +253,8 @@ if [[ -n "${log_files}" ]]; then
   retention_log="$(printf '%s\n' "${log_files}" | xargs grep -h 'Audit log retention' 2>/dev/null | tail -n 10 || true)"
   if [[ -z "${retention_log}" ]]; then
     retention_log="信息不足，未在现有日志中检索到 Audit log retention 相关记录"
+  else
+    RETENTION_RESULT="pass"
   fi
   print_code_block "${retention_log}"
 else
@@ -226,7 +265,11 @@ echo
 if can_query_db; then
   echo "### 4.1 audit_logs 抽样"
   audit_sql="SELECT COUNT(*) AS total, COALESCE(MIN(created_at)::text,'') AS earliest_created_at, COALESCE(MAX(created_at)::text,'') AS latest_created_at FROM audit_logs;"
-  print_code_block "$(maybe_capture run_sql "${audit_sql}")"
+  audit_sql_output="$(maybe_capture run_sql "${audit_sql}")"
+  if [[ -n "${audit_sql_output}" ]] && [[ "${audit_sql_output}" != 信息不足* ]]; then
+    RETENTION_RESULT="pass"
+  fi
+  print_code_block "${audit_sql_output}"
 else
   echo "信息不足，未提供完整数据库连接环境，跳过 audit_logs 取证。"
 fi
@@ -236,7 +279,11 @@ echo "## 5. 三员分立"
 echo
 if can_query_db; then
   role_sql="SELECT key, name, status FROM sys_roles WHERE key IN ('system_admin','security_admin','security_auditor') ORDER BY key;"
-  print_code_block "$(maybe_capture run_sql "${role_sql}")"
+  role_sql_output="$(maybe_capture run_sql "${role_sql}")"
+  if [[ -n "${role_sql_output}" ]] && [[ "${role_sql_output}" != 信息不足* ]]; then
+    SEPARATION_RESULT="pass"
+  fi
+  print_code_block "${role_sql_output}"
 else
   echo "信息不足，未提供完整数据库连接环境，跳过三员分立种子取证。"
 fi
@@ -255,7 +302,11 @@ fi
 if can_query_db; then
   echo "### 6.2 finance_reconciliations 最近记录"
   reconcile_sql="SELECT id, reconcile_date, status, finding_count, owner_admin_id, resolved_by_admin_id, COALESCE(last_run_at::text,'') FROM finance_reconciliations ORDER BY reconcile_date DESC, id DESC LIMIT 10;"
-  print_code_block "$(maybe_capture run_sql "${reconcile_sql}")"
+  reconcile_sql_output="$(maybe_capture run_sql "${reconcile_sql}")"
+  if [[ -n "${reconcile_sql_output}" ]] && [[ "${reconcile_sql_output}" != 信息不足* ]]; then
+    RECONCILIATION_RESULT="pass"
+  fi
+  print_code_block "${reconcile_sql_output}"
 
   echo
   echo "### 6.3 风险告警联动"
@@ -270,6 +321,23 @@ echo "## 7. 人工补证项"
 echo
 echo "- 宿主机 \`443\` 监听截图"
 echo "- 浏览器 Mixed Content 截图"
-echo "- 备份恢复演练后的业务抽样截图"
+echo "- 备份执行 / 恢复演练输出与业务抽样截图"
 echo "- 审计员只读菜单截图"
 echo "- 异常对账认领/处理页面截图"
+echo
+
+echo "## 8. 上线准入预检查"
+echo
+render_check_result "HTTPS 三域验收" "${HTTPS_RESULT}"
+if [[ "${BACKUP_CRON_RESULT}" == "pass" && "${BACKUP_FILES_RESULT}" == "pass" ]]; then
+  render_check_result "备份任务与备份产物" "pass"
+elif [[ "${BACKUP_CRON_RESULT}" == "fail" || "${BACKUP_FILES_RESULT}" == "fail" ]]; then
+  render_check_result "备份任务与备份产物" "fail"
+else
+  render_check_result "备份任务与备份产物" "unknown"
+fi
+render_check_result "审计日志 retention 取证" "${RETENTION_RESULT}"
+render_check_result "三员分立取证" "${SEPARATION_RESULT}"
+render_check_result "对账闭环取证" "${RECONCILIATION_RESULT}"
+echo
+echo "> 说明：本节只是脚本级预检查，不替代最终 Go/No-Go 签字。缺少人工截图、恢复演练结果或真实环境验证时，仍不能判定最终达标。"

@@ -31,6 +31,9 @@ import { adminMenuApi, adminRoleApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import StatusTag from '../../components/StatusTag';
 import ToolbarCard from '../../components/ToolbarCard';
+import { usePermission } from '../../hooks/usePermission';
+import { useAuthStore } from '../../stores/authStore';
+import { isSecurityAuditorRole } from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Role {
@@ -138,8 +141,30 @@ const readErrorMessage = (error: unknown, fallback: string) => {
 
 const getReservedRoleMeta = (roleKey: string) => RESERVED_ROLE_META[roleKey];
 
+const readOnlyPermissionActions = new Set(['list', 'view', 'detail', 'export']);
+
+const isReadOnlyPermission = (permission?: string) => {
+    const trimmed = permission?.trim();
+    if (!trimmed) {
+        return true;
+    }
+
+    const parts = trimmed.split(':');
+    const action = parts[parts.length - 1]?.trim();
+    return readOnlyPermissionActions.has(action || '');
+};
+
+const canAssignNodeToAuditor = (node: MenuNode): boolean => {
+    if (!isReadOnlyPermission(node.permission)) {
+        return false;
+    }
+    return node.children.every((child) => canAssignNodeToAuditor(child));
+};
+
 const RoleList: React.FC = () => {
     const { modal, message } = App.useApp();
+    const admin = useAuthStore((state) => state.admin);
+    const { hasPermission } = usePermission();
     const [loading, setLoading] = useState(false);
     const [roles, setRoles] = useState<Role[]>([]);
     const [modalVisible, setModalVisible] = useState(false);
@@ -150,6 +175,11 @@ const RoleList: React.FC = () => {
     const [checkedKeys, setCheckedKeys] = useState<number[]>([]);
     const [menuLoading, setMenuLoading] = useState(false);
     const [form] = Form.useForm();
+    const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
+    const canCreateRole = !isSecurityAuditor && hasPermission('system:role:create');
+    const canEditRole = !isSecurityAuditor && hasPermission('system:role:edit');
+    const canDeleteRole = !isSecurityAuditor && hasPermission('system:role:delete');
+    const canAssignRole = !isSecurityAuditor && hasPermission('system:role:assign');
 
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -171,13 +201,19 @@ const RoleList: React.FC = () => {
     }, [loadData]);
 
     const handleAdd = useCallback(() => {
+        if (!canCreateRole) {
+            return;
+        }
         setEditingRole(null);
         form.resetFields();
         form.setFieldsValue({ sort: 0 });
         setModalVisible(true);
-    }, [form]);
+    }, [canCreateRole, form]);
 
     const handleEdit = useCallback((record: Role) => {
+        if (!canEditRole) {
+            return;
+        }
         setEditingRole(record);
         form.setFieldsValue({
             name: record.name,
@@ -186,9 +222,12 @@ const RoleList: React.FC = () => {
             sort: record.sort,
         });
         setModalVisible(true);
-    }, [form]);
+    }, [canEditRole, form]);
 
     const handleDelete = useCallback((record: Role) => {
+        if (!canDeleteRole) {
+            return;
+        }
         modal.confirm({
             title: '确认删除角色',
             content: `确定要删除角色“${record.name}”吗？删除后该角色下的管理员将失去对应权限。`,
@@ -205,7 +244,7 @@ const RoleList: React.FC = () => {
                 }
             },
         });
-    }, [loadData, message, modal]);
+    }, [canDeleteRole, loadData, message, modal]);
 
     const handleSubmit = async () => {
         try {
@@ -228,6 +267,9 @@ const RoleList: React.FC = () => {
     };
 
     const handleAssignPermission = useCallback(async (record: Role) => {
+        if (!canAssignRole) {
+            return;
+        }
         setCurrentRole(record);
         setPermissionModalVisible(true);
         setMenuLoading(true);
@@ -255,7 +297,7 @@ const RoleList: React.FC = () => {
         } finally {
             setMenuLoading(false);
         }
-    }, [message]);
+    }, [canAssignRole, message]);
 
     const toggleExpand = (nodeId: number) => {
         const toggleNode = (nodes: MenuNode[]): MenuNode[] =>
@@ -298,6 +340,10 @@ const RoleList: React.FC = () => {
         if (!targetNode) {
             return;
         }
+        if (currentRole?.key === 'security_auditor' && !canAssignNodeToAuditor(targetNode)) {
+            message.warning('安全审计员角色只能分配只读权限');
+            return;
+        }
 
         const affectedIds = collectDescendantIds(targetNode);
 
@@ -326,7 +372,7 @@ const RoleList: React.FC = () => {
     };
 
     const handleSavePermission = async () => {
-        if (!currentRole) {
+        if (!currentRole || !canAssignRole) {
             return;
         }
 
@@ -417,23 +463,29 @@ const RoleList: React.FC = () => {
                 const reservedMeta = getReservedRoleMeta(record.key);
                 return (
                     <Space size={0}>
-                        <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => void handleAssignPermission(record)}>
-                            分配权限
-                        </Button>
-                        <Button type="link" size="small" onClick={() => handleEdit(record)}>
-                            编辑
-                        </Button>
-                        {reservedMeta ? (
-                            <Tooltip title="三员分立保留角色不可删除">
-                                <Button type="link" size="small" danger disabled>
+                        {canAssignRole ? (
+                            <Button type="link" size="small" icon={<SafetyCertificateOutlined />} onClick={() => void handleAssignPermission(record)}>
+                                分配权限
+                            </Button>
+                        ) : null}
+                        {canEditRole ? (
+                            <Button type="link" size="small" onClick={() => handleEdit(record)}>
+                                编辑
+                            </Button>
+                        ) : null}
+                        {canDeleteRole ? (
+                            reservedMeta ? (
+                                <Tooltip title="三员分立保留角色不可删除">
+                                    <Button type="link" size="small" danger disabled>
+                                        删除
+                                    </Button>
+                                </Tooltip>
+                            ) : (
+                                <Button type="link" size="small" danger onClick={() => handleDelete(record)}>
                                     删除
                                 </Button>
-                            </Tooltip>
-                        ) : (
-                            <Button type="link" size="small" danger onClick={() => handleDelete(record)}>
-                                删除
-                            </Button>
-                        )}
+                            )
+                        ) : null}
                     </Space>
                 );
             },
@@ -445,6 +497,7 @@ const RoleList: React.FC = () => {
         const checked = isChecked(node.id);
         const indeterminate = isIndeterminate(node);
         const meta = getNodeMeta(node.type, node.expanded);
+        const disabledForAuditorRole = currentRole?.key === 'security_auditor' && !canAssignNodeToAuditor(node);
 
         return (
             <div key={node.id} style={{ marginLeft: level * 24, marginBottom: 6 }}>
@@ -471,6 +524,7 @@ const RoleList: React.FC = () => {
                     <Checkbox
                         checked={checked}
                         indeterminate={indeterminate}
+                        disabled={disabledForAuditorRole}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => handleCheck(node.id, event.target.checked)}
                     />
@@ -501,9 +555,11 @@ const RoleList: React.FC = () => {
             <ToolbarCard>
                 <div className="hz-toolbar">
                     <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>刷新</Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-                        新增角色
-                    </Button>
+                    {canCreateRole ? (
+                        <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+                            新增角色
+                        </Button>
+                    ) : null}
                 </div>
             </ToolbarCard>
 
@@ -513,6 +569,16 @@ const RoleList: React.FC = () => {
                 message="三员分立保留角色已收口"
                 description="system_admin、security_admin、security_auditor 为保留角色。它们必须独立分配；其中安全审计员仅允许只读权限。"
             />
+
+            {isSecurityAuditor ? (
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginTop: 16 }}
+                    message="当前账号为安全审计员视角"
+                    description="本页仅保留查看能力，不展示角色新增、编辑、删除和授权写操作。"
+                />
+            ) : null}
 
             <Card className="hz-table-card">
                 <Table<Role>

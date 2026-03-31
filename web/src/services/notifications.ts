@@ -3,6 +3,11 @@ import type { MessageListItemVM } from '../types/viewModels';
 import { formatDateTime } from '../utils/format';
 import { requestJson } from './http';
 
+const UNREAD_COUNT_CACHE_TTL_MS = 8000;
+
+let unreadCountCache: { value: number; expiresAt: number } | null = null;
+let unreadCountInFlight: Promise<number> | null = null;
+
 interface NotificationDTO {
   id: number;
   title?: string;
@@ -49,24 +54,59 @@ export async function listNotifications(params: { page?: number; pageSize?: numb
 }
 
 export async function getNotificationUnreadCount() {
-  const data = await requestJson<{ count: number }>('/notifications/unread-count');
-  return Number(data.count || 0);
+  const now = Date.now();
+  if (unreadCountCache && unreadCountCache.expiresAt > now) {
+    return unreadCountCache.value;
+  }
+
+  if (unreadCountInFlight) {
+    return unreadCountInFlight;
+  }
+
+  unreadCountInFlight = requestJson<{ count: number }>('/notifications/unread-count')
+    .then((data) => {
+      const count = Number(data.count || 0);
+      unreadCountCache = {
+        value: count,
+        expiresAt: Date.now() + UNREAD_COUNT_CACHE_TTL_MS,
+      };
+      return count;
+    })
+    .finally(() => {
+      unreadCountInFlight = null;
+    });
+
+  return unreadCountInFlight;
+}
+
+export function syncNotificationUnreadCountCache(count: number) {
+  unreadCountCache = {
+    value: Math.max(0, Number(count) || 0),
+    expiresAt: Date.now() + UNREAD_COUNT_CACHE_TTL_MS,
+  };
+}
+
+export function invalidateNotificationUnreadCountCache() {
+  unreadCountCache = null;
 }
 
 export async function markNotificationAsRead(id: number) {
   await requestJson<{ message?: string }>(`/notifications/${id}/read`, {
     method: 'PUT',
   });
+  invalidateNotificationUnreadCountCache();
 }
 
 export async function markAllNotificationsAsRead() {
   await requestJson<{ message?: string }>('/notifications/read-all', {
     method: 'PUT',
   });
+  invalidateNotificationUnreadCountCache();
 }
 
 export async function deleteNotification(id: number) {
   await requestJson<{ message?: string }>(`/notifications/${id}`, {
     method: 'DELETE',
   });
+  invalidateNotificationUnreadCountCache();
 }

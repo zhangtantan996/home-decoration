@@ -1,13 +1,20 @@
 import type {
   BookingBudgetConfirmVM,
   BookingDetailVM,
+  BookingInfoFieldVM,
   BookingListItemVM,
+  BookingStageOverviewVM,
   BookingSiteSurveyVM,
   BookingTimelineItemVM,
   ProviderRole,
 } from '../types/viewModels';
-import { BOOKING_STATUS_LABELS } from '../constants/statuses';
+import {
+  BOOKING_STATUS_LABELS,
+  BUDGET_CONFIRM_STATUS_LABELS,
+  SITE_SURVEY_STATUS_LABELS,
+} from '../constants/statuses';
 import { formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
+import { getProviderRatingMeta, parseTextArray } from '../utils/provider';
 import { detectTerminalType } from '../utils/terminal';
 import { requestJson } from './http';
 import type { PaymentLaunchPayload } from './payments';
@@ -26,6 +33,7 @@ interface CreateBookingPayload {
 
 interface BookingDTO {
   id: number;
+  providerId?: number;
   address?: string;
   area?: number;
   preferredDate?: string;
@@ -34,6 +42,8 @@ interface BookingDTO {
   notes?: string;
   intentFee?: number;
   intentFeePaid?: boolean;
+  surveyDeposit?: number;
+  surveyDepositPaid?: boolean;
   surveyDepositSource?: string;
   surveyRefundNotice?: string;
   status?: number;
@@ -44,13 +54,16 @@ interface BookingDTO {
 interface BookingDetailResponse {
   booking: BookingDTO;
   provider?: {
+    id?: number;
     name?: string;
     avatar?: string;
     rating?: number;
+    reviewCount?: number;
     completedCnt?: number;
     yearsExperience?: number;
     specialty?: string;
     providerType?: string;
+    verified?: boolean;
   };
   proposalId?: number;
   flowSummary?: string;
@@ -112,37 +125,215 @@ function formatProviderTypeText(type: ProviderRole) {
     return '装修公司';
   }
   if (type === 'foreman') {
-    return '工长施工';
+    return '工长';
   }
   return '设计师';
 }
 
-function buildBookingTimeline(dto: BookingDTO, proposalId?: number): BookingTimelineItemVM[] {
-  const currentStatus = Number(dto.status || 1);
-  const hasIntentFee = Boolean(dto.intentFeePaid);
+function readTimelineState(active: boolean, done: boolean): BookingTimelineItemVM['state'] {
+  if (done) {
+    return 'done';
+  }
+  if (active) {
+    return 'active';
+  }
+  return 'pending';
+}
+
+function buildBookingTimeline(
+  dto: BookingDTO,
+  providerType: ProviderRole,
+  proposalId?: number,
+  siteSurveyStatus?: string,
+  budgetConfirmStatus?: string,
+): BookingTimelineItemVM[] {
+  const providerTypeText = formatProviderTypeText(providerType);
+  const depositPaid = readDepositPaid(dto);
+  const bookingStatus = Number(dto.status || 1);
+  const isClosed = bookingStatus === 4;
+  const hasMerchantConfirmed = bookingStatus >= 2 || Boolean(siteSurveyStatus) || Boolean(budgetConfirmStatus) || Boolean(proposalId);
+  const hasSurveyConfirmed = siteSurveyStatus === 'confirmed' || Boolean(budgetConfirmStatus) || Boolean(proposalId);
+  const hasBudgetAccepted = budgetConfirmStatus === 'accepted' || Boolean(proposalId);
+  const confirmStepState: BookingTimelineItemVM['state'] = isClosed ? 'danger' : readTimelineState(!hasMerchantConfirmed, hasMerchantConfirmed);
 
   return [
     {
-      title: '已提交预约',
-      description: '平台已记录你的地址、面积、预算和预约时间。',
+      title: '提交预约需求',
+      description: '地址、面积、预算和期望时间已保存，预约单已经创建。',
       state: 'done',
     },
     {
-      title: '意向金确认',
-      description: hasIntentFee ? '意向金已支付，服务商可继续推进方案。' : '支付意向金后，预约会进入报价推进阶段。',
-      state: hasIntentFee ? 'done' : currentStatus === 1 ? 'active' : 'pending',
+      title: `${providerTypeText}确认预约`,
+      description: isClosed
+        ? `${providerTypeText}已拒绝本次预约，后续支付、量房与方案流程已终止。`
+        : hasMerchantConfirmed
+          ? `${providerTypeText}已确认预约，接下来由你支付量房定金。`
+          : `${providerTypeText}会先判断档期与需求匹配度，也可以拒绝本次预约。`,
+      state: confirmStepState,
     },
     {
-      title: '服务商沟通',
-      description: proposalId ? '服务商已给出可查看的报价方案。' : '等待服务商响应并确认沟通时间。',
-      state: proposalId ? 'done' : currentStatus >= 2 ? 'active' : 'pending',
+      title: '支付量房定金',
+      description: depositPaid
+        ? '量房定金已支付，预约正式进入量房与后续沟通阶段。'
+        : hasMerchantConfirmed
+          ? `${providerTypeText}确认预约后，再由你完成量房定金支付。`
+          : `需等待${providerTypeText}确认预约后，才会进入量房定金支付。`,
+      state: readTimelineState(hasMerchantConfirmed && !depositPaid, depositPaid),
     },
     {
-      title: '进入报价确认',
-      description: proposalId ? '继续查看报价详情并决定是否确认。' : '报价生成后会自动显示在这里。',
+      title: '量房记录确认',
+      description:
+        siteSurveyStatus === 'submitted'
+          ? `${providerTypeText}已上传量房照片与尺寸，等待你确认。`
+          : siteSurveyStatus === 'revision_requested'
+            ? `你已要求重新量房，等待${providerTypeText}重新提交现场记录。`
+            : hasSurveyConfirmed
+              ? '量房记录已确认，接下来进入预算与设计意向确认。'
+              : `${providerTypeText}确认预约后，会先安排量房并同步现场记录。`,
+      state: readTimelineState(hasMerchantConfirmed && !hasSurveyConfirmed, hasSurveyConfirmed),
+    },
+    {
+      title: '预算与意向确认',
+      description:
+        budgetConfirmStatus === 'submitted'
+          ? `${providerTypeText}已提交预算区间和设计方向，等待你确认。`
+          : budgetConfirmStatus === 'rejected'
+            ? '当前预算方案未确认，需要重新沟通后才能继续。'
+            : hasBudgetAccepted
+              ? '预算与设计方向已确认，正在准备正式方案。'
+              : `量房确认后，${providerTypeText}会提交预算区间和设计方向。`,
+      state: readTimelineState(hasSurveyConfirmed && !hasBudgetAccepted, hasBudgetAccepted),
+    },
+    {
+      title: '查看并确认方案',
+      description: proposalId ? `${providerTypeText}已提交方案或报价，可继续查看详情并决定是否确认。` : `${providerTypeText}提交正式方案后，会自动显示在这里。`,
       state: proposalId ? 'active' : 'pending',
     },
   ];
+}
+
+function buildProviderFacts(
+  providerName: string,
+  providerType: ProviderRole,
+  specialty: string | undefined,
+  yearsExperience: number | undefined,
+  completedCnt: number | undefined,
+  ratingText: string,
+): BookingInfoFieldVM[] {
+  const specialties = parseTextArray(specialty).slice(0, 3);
+
+  return [
+    { label: '姓名', value: providerName },
+    { label: '身份', value: formatProviderTypeText(providerType) },
+    { label: '擅长风格', value: specialties.length ? specialties.join(' / ') : '待补充' },
+    { label: '口碑参考', value: ratingText },
+    { label: '从业经验', value: yearsExperience && yearsExperience > 0 ? `${yearsExperience} 年` : '待补充' },
+    { label: '完成项目', value: completedCnt && completedCnt > 0 ? `${completedCnt} 单` : '待补充' },
+  ];
+}
+
+function buildStageOverview(response: BookingDetailResponse): BookingStageOverviewVM {
+  const providerType = readProviderType(response.provider?.providerType || response.booking.providerType);
+  const providerTypeText = formatProviderTypeText(providerType);
+  const bookingStatus = Number(response.booking.status || 1);
+  const siteSurveyStatus = response.siteSurveySummary?.status;
+  const budgetConfirmStatus = response.budgetConfirmSummary?.status;
+  const hasMerchantConfirmed = bookingStatus >= 2 || Boolean(siteSurveyStatus) || Boolean(budgetConfirmStatus) || Boolean(response.proposalId);
+  const depositPaid = readDepositPaid(response.booking);
+
+  if (bookingStatus === 4 || response.currentStage === 'cancelled') {
+    return {
+      title: '预约已关闭',
+      description: '该预约已取消或被服务商拒绝，当前不会继续往下推进。',
+      helperText: '如仍有需求，可重新发起预约并选择新的服务商或沟通时间。',
+    };
+  }
+
+  if (!hasMerchantConfirmed) {
+    return {
+      title: `待${providerTypeText}确认预约`,
+      description: `${providerTypeText}正在确认是否接单和档期安排，确认前无需支付量房定金。`,
+      helperText: `${providerTypeText}确认预约后，你再支付量房定金并进入量房安排。`,
+    };
+  }
+
+  if (!depositPaid) {
+    return {
+      title: '待支付量房定金',
+      description: `${providerTypeText}已确认预约，完成支付后才会正式安排量房与后续沟通。`,
+      helperText: '这一步由业主支付，支付完成后才会进入量房记录与预算确认。',
+    };
+  }
+
+  if (response.proposalId) {
+    return {
+      title: '待查看并确认方案',
+      description: `${providerTypeText}已经提交方案或报价，当前由你查看细节并决定是否确认。`,
+      helperText: '如需调整方向，建议先沟通修改，再决定是否继续。',
+    };
+  }
+
+  if (budgetConfirmStatus === 'submitted') {
+    return {
+      title: '待确认预算与设计意向',
+      description: `${providerTypeText}已提交预算区间和设计方向，确认后才会继续深化正式方案。`,
+      helperText: `预算确认完成后，${providerTypeText}会继续提交正式方案或报价。`,
+    };
+  }
+
+  if (budgetConfirmStatus === 'accepted') {
+    return {
+      title: `待${providerTypeText}提交方案`,
+      description: `预算范围与设计方向已经确认，${providerTypeText}正在准备下一版正式方案。`,
+      helperText: '方案提交后会直接出现在本页，无需额外查找。',
+    };
+  }
+
+  if (budgetConfirmStatus === 'rejected') {
+    return {
+      title: '预算未确认',
+      description: '你已拒绝当前预算与设计方向，需要重新沟通后才能继续推进。',
+      helperText: '如果还想继续合作，请先和服务商重新确认预算范围与设计需求。',
+    };
+  }
+
+  if (siteSurveyStatus === 'submitted') {
+    return {
+      title: '待确认量房记录',
+      description: `${providerTypeText}已经上传量房照片与尺寸，确认后会进入预算与设计方向确认。`,
+      helperText: `如果现场记录不完整，可以要求${providerTypeText}重新量房。`,
+    };
+  }
+
+  if (siteSurveyStatus === 'revision_requested') {
+    return {
+      title: '待重新量房',
+      description: `你已提出重测要求，${providerTypeText}需要重新提交量房记录后，预约才会继续推进。`,
+      helperText: '新的量房记录提交后，本页会自动更新下一步状态。',
+    };
+  }
+
+  if (siteSurveyStatus === 'confirmed') {
+    return {
+      title: '待提交预算与设计意向',
+      description: `量房记录已经确认，${providerTypeText}下一步会给出预算区间和设计方向。`,
+      helperText: '预算与设计意向确认完成后，才会进入正式方案阶段。',
+    };
+  }
+
+  if (bookingStatus === 2) {
+    return {
+      title: '待安排量房',
+      description: `${providerTypeText}已确认预约，正在安排首次沟通与上门量房时间。`,
+      helperText: '量房完成并经你确认后，才会进入预算与设计意向确认。',
+    };
+  }
+
+  return {
+    title: `待${providerTypeText}确认预约`,
+    description: `${providerTypeText}正在确认是否接单和档期安排，确认前无需支付量房定金。`,
+    helperText: `${providerTypeText}确认预约后，你再支付量房定金并进入量房安排。`,
+  };
 }
 
 function toBookingListItem(dto: BookingDTO): BookingListItemVM {
@@ -162,27 +353,60 @@ function toBookingListItem(dto: BookingDTO): BookingListItemVM {
   };
 }
 
+function readDepositPaid(dto: BookingDTO) {
+  return Boolean(dto.surveyDepositPaid || dto.intentFeePaid);
+}
+
+function readDepositAmount(dto: BookingDTO) {
+  if (typeof dto.surveyDeposit === 'number' && dto.surveyDeposit > 0) {
+    return dto.surveyDeposit;
+  }
+  return dto.intentFee;
+}
+
 function adaptBookingDetail(response: BookingDetailResponse): BookingDetailVM {
   const providerType = readProviderType(response.provider?.providerType || response.booking.providerType);
+  const ratingMeta = getProviderRatingMeta(response.provider?.rating || 0, response.provider?.reviewCount || 0);
+  const providerName = response.provider?.name || '服务商';
+  const providerTags = parseTextArray(response.provider?.specialty).slice(0, 3);
+  const depositPaid = readDepositPaid(response.booking);
 
   return {
     id: response.booking.id,
+    statusCode: Number(response.booking.status || 1),
     statusText: BOOKING_STATUS_LABELS[Number(response.booking.status || 1)] || '处理中',
+    providerId: Number(response.provider?.id || response.booking.providerId || 0),
     address: response.booking.address || '地址待补充',
     areaText: formatArea(response.booking.area),
     preferredDate: formatDate(response.booking.preferredDate),
     renovationType: response.booking.renovationType || '待确认',
     budgetRange: response.booking.budgetRange || '预算待确认',
     notes: response.booking.notes || '无补充说明',
-    intentFeeText: formatCurrency(response.booking.intentFee),
-    intentFeePaid: Boolean(response.booking.intentFeePaid),
+    depositAmountText: formatCurrency(readDepositAmount(response.booking)),
+    depositPaid,
     proposalId: response.proposalId,
-    providerName: response.provider?.name || '服务商',
-    providerSummary: response.provider?.specialty || `评分 ${(response.provider?.rating || 0).toFixed(1)} · ${response.provider?.completedCnt || 0} 单成交 · ${response.provider?.yearsExperience || 0} 年经验`,
+    providerName,
+    providerSummary: providerTags.length ? `擅长 ${providerTags.join('、')}` : '可根据你的户型、预算与时间安排继续沟通方案方向。',
+    providerTags,
+    providerFacts: buildProviderFacts(
+      providerName,
+      providerType,
+      response.provider?.specialty,
+      response.provider?.yearsExperience,
+      response.provider?.completedCnt,
+      ratingMeta.inlineText,
+    ),
     providerAvatar: response.provider?.avatar || 'https://placehold.co/120x120/e4e4e7/27272a?text=HZ',
     providerType,
     updatedAt: formatDateTime(response.booking.updatedAt),
-    timeline: buildBookingTimeline(response.booking, response.proposalId),
+    timeline: buildBookingTimeline(
+      response.booking,
+      providerType,
+      response.proposalId,
+      response.siteSurveySummary?.status,
+      response.budgetConfirmSummary?.status,
+    ),
+    stageOverview: buildStageOverview(response),
     flowSummary: response.flowSummary || undefined,
     availableActions: response.availableActions || [],
     currentStage: response.currentStage || undefined,
@@ -197,6 +421,7 @@ function adaptSiteSurvey(dto: SiteSurveyDTO): BookingSiteSurveyVM {
   return {
     id: dto.id,
     status: dto.status,
+    statusText: SITE_SURVEY_STATUS_LABELS[dto.status] || dto.status || '待更新',
     notes: dto.notes || '',
     photos: dto.photos || [],
     dimensions: dto.dimensions || {},
@@ -211,6 +436,7 @@ function adaptBudgetConfirm(dto: BudgetConfirmDTO): BookingBudgetConfirmVM {
   return {
     id: dto.id,
     status: dto.status,
+    statusText: BUDGET_CONFIRM_STATUS_LABELS[dto.status] || dto.status || '待更新',
     budgetMin: Number(dto.budgetMin || 0),
     budgetMax: Number(dto.budgetMax || 0),
     notes: dto.notes || '',

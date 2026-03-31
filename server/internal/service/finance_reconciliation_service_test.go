@@ -23,8 +23,14 @@ func setupFinanceReconciliationTestDB(t *testing.T) *gorm.DB {
 		&model.EscrowAccount{},
 		&model.MerchantIncome{},
 		&model.MerchantWithdraw{},
+		&model.PaymentOrder{},
 		&model.RefundOrder{},
+		&model.PayoutOrder{},
+		&model.SettlementOrder{},
+		&model.LedgerAccount{},
+		&model.LedgerEntry{},
 		&model.FinanceReconciliation{},
+		&model.FinanceReconciliationItem{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}

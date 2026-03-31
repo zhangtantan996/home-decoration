@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Card, Select, Tag, Button, Space, message, Modal, Form, Input, Upload, Descriptions } from 'antd';
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons';
-import { adminRiskApi } from '../../services/api';
+import { adminLegacyRiskApi } from '../../services/api';
 import { ARBITRATION_HANDLE_STATUS_OPTIONS, ARBITRATION_STATUS_META, ARBITRATION_STATUS_OPTIONS } from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
 
@@ -38,7 +38,7 @@ const ArbitrationCenter: React.FC = () => {
     const loadData = async () => {
         setLoading(true);
         try {
-            const res = await adminRiskApi.arbitrations({ page, pageSize, status: statusFilter }) as any;
+            const res = await adminLegacyRiskApi.arbitrations({ page, pageSize, status: statusFilter }) as any;
             if (res.code === 0) {
                 setArbitrations(res.data.list || []);
                 setTotal(res.data.total || 0);
@@ -66,7 +66,7 @@ const ArbitrationCenter: React.FC = () => {
         try {
             const values = await form.validateFields();
             if (currentItem) {
-                await adminRiskApi.updateArbitration(currentItem.id, values);
+                await adminLegacyRiskApi.updateArbitration(currentItem.id, values);
                 message.success('处理成功');
                 setHandleVisible(false);
                 loadData();

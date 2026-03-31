@@ -95,6 +95,11 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 	if _, err := businessFlowSvc.EnsureLeadFlow(nil, model.BusinessFlowSourceBooking, booking.ID, userID, req.ProviderID); err != nil {
 		log.Printf("[business_flow] ensure booking flow failed: %v", err)
 	}
+	if provider.UserID > 0 {
+		if err := (&NotificationService{}).NotifyBookingCreated(booking, provider.UserID); err != nil {
+			log.Printf("[booking] notify provider booking created failed: %v", err)
+		}
+	}
 
 	return booking, nil
 }
@@ -139,6 +144,9 @@ func (s *BookingService) PayIntentFee(userID uint64, bookingID string) (*model.B
 	// 幂等性检查
 	if booking.IntentFeePaid {
 		return &booking, nil // 已支付，直接返回
+	}
+	if err := ensureBookingReadyForDepositPayment(&booking); err != nil {
+		return nil, err
 	}
 
 	// 模拟支付成功，更新状态

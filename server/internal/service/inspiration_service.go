@@ -38,8 +38,12 @@ func normalizeInspirationStyleFilter(v string) []string {
 	// Mobile uses simplified labels (e.g. "北欧"), while DB typically stores dictionary values
 	// (e.g. "北欧风格"). Keep this mapping tolerant to avoid empty filter results.
 	switch v {
+	case "现代":
+		return []string{"现代", "现代风格", "现代简约"}
 	case "北欧":
 		return []string{"北欧", "北欧风格"}
+	case "极简":
+		return []string{"极简", "极简风", "极简风格", "现代简约"}
 	case "日式":
 		return []string{"日式", "日式风格"}
 	case "工业风":
@@ -47,6 +51,14 @@ func normalizeInspirationStyleFilter(v string) []string {
 	case "轻奢":
 		// Some existing data uses "现代轻奢".
 		return []string{"轻奢", "轻奢风格", "现代轻奢"}
+	case "原木":
+		return []string{"原木", "原木风", "原木风格"}
+	case "侘寂":
+		return []string{"侘寂", "侘寂风", "侘寂风格"}
+	case "美式":
+		return []string{"美式", "美式风格"}
+	case "法式":
+		return []string{"法式", "法式风格"}
 	default:
 		return []string{v}
 	}

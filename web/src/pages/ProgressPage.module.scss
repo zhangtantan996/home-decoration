@@ -387,7 +387,6 @@
 .todoHeader {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 24px;
 
   .left {
@@ -405,15 +404,6 @@
       color: #1e293b;
       margin: 0;
     }
-  }
-
-  .badgeCount {
-    background: #ef4444;
-    color: white;
-    font-size: 12px;
-    font-weight: bold;
-    border-radius: 999px;
-    padding: 2px 8px;
   }
 }
 

@@ -32,11 +32,14 @@ import {
   DollarCircleOutlined,
 } from "@ant-design/icons";
 import { adminProjectApi } from "../../services/api";
+import { isAdminConflictError } from "../../services/api";
 import { adminQuoteApi } from "../../services/quoteApi";
 import dayjs from "dayjs";
 import PageHeader from "../../components/PageHeader";
 import StatusTag from "../../components/StatusTag";
 import { formatServerDate } from "../../utils/serverTime";
+import { ADMIN_BUSINESS_ACTION_LABELS, ADMIN_BUSINESS_STAGE_META, isSecurityAuditorRole } from "../../constants/statuses";
+import { useAuthStore } from "../../stores/authStore";
 
 const { TextArea } = Input;
 
@@ -55,38 +58,6 @@ const PHASE_STATUS_MAP: Record<string, { color: string; text: string }> = {
   pending: { color: "default", text: "待开始" },
   in_progress: { color: "blue", text: "进行中" },
   completed: { color: "green", text: "已完成" },
-};
-
-const BUSINESS_STAGE_MAP: Record<string, string> = {
-  lead_pending: "线索待推进",
-  consulting: "沟通中",
-  proposal_pending: "方案待确认",
-  proposal_confirmed: "设计已确认",
-  constructor_pending: "待选施工方",
-  construction_quote_pending: "施工报价待确认",
-  ready_to_start: "待开工",
-  in_progress: "施工中",
-  milestone_review: "节点验收中",
-  completed: "已完工",
-  archived: "已归档",
-  disputed: "争议中",
-  cancelled: "已取消",
-};
-
-const BUSINESS_ACTION_MAP: Record<string, string> = {
-  create_proposal: "提交方案",
-  confirm_proposal: "确认设计方案",
-  reject_proposal: "驳回设计方案",
-  create_quote_task: "创建施工报价任务",
-  select_constructor: "运营干预施工方",
-  submit_construction_quote: "跟进施工报价提交",
-  confirm_construction_quote: "运营干预施工报价",
-  reject_construction_quote: "驳回施工报价",
-  start_project: "发起开工",
-  submit_milestone: "提交节点验收",
-  approve_milestone: "通过节点验收",
-  reject_milestone: "驳回节点验收",
-  generate_inspiration_draft: "生成案例草稿",
 };
 
 interface WorkLog {
@@ -117,6 +88,8 @@ const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const adminRoles = useAuthStore((state) => state.admin?.roles || []);
+  const readonlyMode = isSecurityAuditorRole(adminRoles);
   const [loading, setLoading] = useState(false);
   const [project, setProject] = useState<any>(null);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -181,7 +154,7 @@ const ProjectDetail: React.FC = () => {
       }
     } catch (error) {
       console.error(error);
-      message.error("加载失败");
+      message.error(error instanceof Error ? error.message : "加载失败");
     } finally {
       setLoading(false);
     }
@@ -207,7 +180,7 @@ const ProjectDetail: React.FC = () => {
     try {
       const res = (await adminProjectApi.getLogs(id!)) as any;
       if (res.code === 0) {
-        setLogs(res.data || []);
+        setLogs(res.data?.list || []);
       }
     } catch (error) {
       console.error(error);
@@ -229,11 +202,14 @@ const ProjectDetail: React.FC = () => {
           if (res.code === 0) {
             message.success("状态已更新");
             loadData();
-          } else {
-            message.error(res.error || "更新失败");
           }
-        } catch (error) {
-          message.error("更新失败");
+        } catch (error: any) {
+          if (isAdminConflictError(error)) {
+            await loadData();
+            message.error("状态已变化，请刷新后重试");
+            return;
+          }
+          message.error(error?.message || "更新失败");
         }
       },
     });
@@ -250,11 +226,14 @@ const ProjectDetail: React.FC = () => {
       if (res.code === 0) {
         message.success("阶段状态已更新");
         loadData();
-      } else {
-        message.error(res.error || "更新失败");
       }
-    } catch (error) {
-      message.error("更新失败");
+    } catch (error: any) {
+      if (isAdminConflictError(error)) {
+        await loadData();
+        message.error("状态已变化，请刷新后重试");
+        return;
+      }
+      message.error(error?.message || "更新失败");
     }
   };
 
@@ -291,11 +270,14 @@ const ProjectDetail: React.FC = () => {
         message.success("施工方已确认");
         setConstructionModalVisible(false);
         await loadData();
-      } else {
-        message.error(res.error || res.message || "施工方确认失败");
       }
     } catch (error: any) {
       if (error?.errorFields) return;
+      if (isAdminConflictError(error)) {
+        await loadData();
+        message.error("状态已变化，请刷新后重试");
+        return;
+      }
       message.error(error?.message || "施工方确认失败");
     } finally {
       setActionLoading(false);
@@ -334,11 +316,14 @@ const ProjectDetail: React.FC = () => {
         message.success("施工报价已确认");
         setQuoteModalVisible(false);
         await loadData();
-      } else {
-        message.error(res.error || res.message || "施工报价确认失败");
       }
     } catch (error: any) {
       if (error?.errorFields) return;
+      if (isAdminConflictError(error)) {
+        await loadData();
+        message.error("状态已变化，请刷新后重试");
+        return;
+      }
       message.error(error?.message || "施工报价确认失败");
     } finally {
       setActionLoading(false);
@@ -372,11 +357,9 @@ const ProjectDetail: React.FC = () => {
       if (res.code === 0) {
         message.success("删除成功");
         loadLogs();
-      } else {
-        message.error(res.error || "删除失败");
       }
-    } catch (error) {
-      message.error("删除失败");
+    } catch (error: any) {
+      message.error(error?.message || "删除失败");
     }
   };
 
@@ -407,11 +390,11 @@ const ProjectDetail: React.FC = () => {
         message.success(editingLog ? "更新成功" : "创建成功");
         setLogModalVisible(false);
         loadLogs();
-      } else {
-        message.error(res.error || "操作失败");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      if (error?.errorFields) return;
+      message.error(error?.message || "操作失败");
     }
   };
 
@@ -438,12 +421,12 @@ const ProjectDetail: React.FC = () => {
         description="后台运营干预入口：正常主链由用户、设计师与施工方推进，这里仅用于异常兜底、人工协助与状态修正。"
         extra={
           <Space>
-            {project.status === 0 && (
+            {!readonlyMode && project.status === 0 && (
               <Button type="primary" onClick={() => handleStatusChange(1)}>
                 开始施工
               </Button>
             )}
-            {project.status === 1 && (
+            {!readonlyMode && project.status === 1 && (
               <Button
                 danger
                 icon={<StopOutlined />}
@@ -452,7 +435,7 @@ const ProjectDetail: React.FC = () => {
                 暂停项目
               </Button>
             )}
-            {project.status === 2 && (
+            {!readonlyMode && project.status === 2 && (
               <Button
                 type="primary"
                 icon={<PlayCircleOutlined />}
@@ -461,7 +444,7 @@ const ProjectDetail: React.FC = () => {
                 恢复项目
               </Button>
             )}
-            {project.businessStage === "construction_party_pending" && (
+            {!readonlyMode && project.businessStage === "construction_party_pending" && (
               <Button
                 icon={<ApartmentOutlined />}
                 onClick={() => void handleOpenConstructionModal()}
@@ -469,7 +452,7 @@ const ProjectDetail: React.FC = () => {
                 干预施工方
               </Button>
             )}
-            {(project.businessStage === "construction_party_pending" ||
+            {!readonlyMode && (project.businessStage === "construction_party_pending" ||
               project.businessStage === "ready_to_start") && (
               <Button
                 icon={<DollarCircleOutlined />}
@@ -505,7 +488,7 @@ const ProjectDetail: React.FC = () => {
                     : "info"
                 }
                 text={
-                  BUSINESS_STAGE_MAP[project.businessStage] ||
+                  ADMIN_BUSINESS_STAGE_META[project.businessStage]?.text ||
                   project.businessStage
                 }
               />
@@ -527,7 +510,7 @@ const ProjectDetail: React.FC = () => {
             {project.currentPhase}
           </Descriptions.Item>
           <Descriptions.Item label="闭环阶段">
-            {BUSINESS_STAGE_MAP[project.businessStage] ||
+            {ADMIN_BUSINESS_STAGE_META[project.businessStage]?.text ||
               project.businessStage ||
               "-"}
           </Descriptions.Item>
@@ -546,7 +529,7 @@ const ProjectDetail: React.FC = () => {
             project.availableActions.length > 0
               ? project.availableActions
                   .map(
-                    (action: string) => BUSINESS_ACTION_MAP[action] || action,
+                    (action: string) => ADMIN_BUSINESS_ACTION_LABELS[action] || action,
                   )
                   .join(" / ")
               : "-"}

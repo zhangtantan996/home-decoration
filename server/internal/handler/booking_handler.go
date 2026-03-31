@@ -58,11 +58,13 @@ func GetBooking(c *gin.Context) {
 		proposalID = proposal.ID
 	}
 	p0Summary, _ := bookingService.GetBookingP0Summary(booking.ID)
+	refundSummary, _ := refundApplicationService.BuildBookingRefundSummary(booking.ID)
 	var siteSurveySummary interface{}
 	var budgetConfirmSummary interface{}
 	var availableActions []string
 	var flowSummary string
 	var currentStage string
+	surveyDepositPaymentOptions := paymentService.GetSurveyDepositPaymentOptions(booking)
 	if p0Summary != nil {
 		siteSurveySummary = p0Summary.SiteSurvey
 		budgetConfirmSummary = p0Summary.BudgetConfirm
@@ -72,14 +74,16 @@ func GetBooking(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"booking":              booking,
-		"provider":             providerInfo,
-		"proposalId":           proposalID,
-		"siteSurveySummary":    siteSurveySummary,
-		"budgetConfirmSummary": budgetConfirmSummary,
-		"availableActions":     availableActions,
-		"flowSummary":          flowSummary,
-		"currentStage":         currentStage,
+		"booking":                     booking,
+		"provider":                    providerInfo,
+		"proposalId":                  proposalID,
+		"siteSurveySummary":           siteSurveySummary,
+		"budgetConfirmSummary":        budgetConfirmSummary,
+		"availableActions":            availableActions,
+		"flowSummary":                 flowSummary,
+		"currentStage":                currentStage,
+		"refundSummary":               refundSummary,
+		"surveyDepositPaymentOptions": surveyDepositPaymentOptions,
 	})
 }
 

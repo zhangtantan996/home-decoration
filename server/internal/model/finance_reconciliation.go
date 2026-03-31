@@ -28,3 +28,23 @@ type FinanceReconciliation struct {
 func (FinanceReconciliation) TableName() string {
 	return "finance_reconciliations"
 }
+
+type FinanceReconciliationItem struct {
+	Base
+	ReconciliationID uint64  `json:"reconciliationId" gorm:"index"`
+	ItemType         string  `json:"itemType" gorm:"size:40;index"`
+	Code             string  `json:"code" gorm:"size:80;index"`
+	Level            string  `json:"level" gorm:"size:20;index"`
+	ReferenceType    string  `json:"referenceType" gorm:"size:40;index"`
+	ReferenceID      uint64  `json:"referenceId" gorm:"index"`
+	Message          string  `json:"message" gorm:"size:500"`
+	ExpectedCount    int64   `json:"expectedCount"`
+	ActualCount      int64   `json:"actualCount"`
+	ExpectedAmount   float64 `json:"expectedAmount"`
+	ActualAmount     float64 `json:"actualAmount"`
+	DetailJSON       string  `json:"detailJson" gorm:"type:jsonb;default:'{}'"`
+}
+
+func (FinanceReconciliationItem) TableName() string {
+	return "finance_reconciliation_items"
+}

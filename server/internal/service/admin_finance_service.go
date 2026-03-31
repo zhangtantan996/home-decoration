@@ -424,7 +424,6 @@ func (s *AdminFinanceService) ManualRelease(adminID uint64, input *ManualRelease
 			return errors.New("可释放资金不足")
 		}
 
-		before := financeSnapshot(project, escrow)
 		releasedResult, err := s.settlementService.ReleaseMilestoneTx(tx, &ReleaseMilestoneInput{
 			ProjectID:    input.ProjectID,
 			MilestoneID:  input.MilestoneID,
@@ -439,31 +438,6 @@ func (s *AdminFinanceService) ManualRelease(adminID uint64, input *ManualRelease
 		if err := tx.First(escrow, escrow.ID).Error; err != nil {
 			return err
 		}
-		after := financeSnapshot(project, escrow)
-
-		if err := s.auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
-			OperatorType:  "admin",
-			OperatorID:    adminID,
-			OperationType: "manual_release_funds",
-			ResourceType:  "project",
-			ResourceID:    project.ID,
-			Reason:        strings.TrimSpace(input.Reason),
-			Result:        "success",
-			BeforeState:   before,
-			AfterState:    after,
-			Metadata: map[string]interface{}{
-				"amount":        input.Amount,
-				"escrowId":      escrow.ID,
-				"projectId":     project.ID,
-				"projectName":   project.Name,
-				"milestoneId":   input.MilestoneID,
-				"milestoneName": releasedResult.Milestone.Name,
-				"transactionId": releasedResult.Transaction.ID,
-			},
-		}); err != nil {
-			return err
-		}
-
 		released = releasedResult.Transaction
 		return notifyFinanceParticipantsTx(tx, project, "project.finance.released", "节点款项已放款", fmt.Sprintf("项目 #%d 的节点“%s”已完成放款，金额 %.2f 元。原因：%s", project.ID, releasedResult.Milestone.Name, input.Amount, strings.TrimSpace(input.Reason)), fmt.Sprintf("/projects/%d", project.ID))
 	})

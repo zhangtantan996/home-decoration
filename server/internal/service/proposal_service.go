@@ -458,6 +458,179 @@ func (s *ProposalService) ConfirmProposal(userID, proposalID uint64) (*model.Ord
 	return order, nil
 }
 
+func (s *ProposalService) AdminConfirmProposal(adminID, proposalID uint64, reason string) (*model.Order, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, errors.New("请填写操作原因")
+	}
+
+	var proposal model.Proposal
+	if err := repository.DB.First(&proposal, proposalID).Error; err != nil {
+		return nil, errors.New("方案不存在")
+	}
+	if proposal.SourceType == model.ProposalSourceDemand {
+		return nil, errors.New("需求报价确认将在下一阶段开放")
+	}
+
+	var booking model.Booking
+	if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
+		return nil, errors.New("预约记录不存在")
+	}
+	if proposal.Status != model.ProposalStatusPending {
+		return nil, errors.New("方案状态不正确")
+	}
+
+	var existingOrder model.Order
+	if err := repository.DB.Where("proposal_id = ? AND order_type = ? AND status = ?",
+		proposalID, model.OrderTypeDesign, model.OrderStatusPending).First(&existingOrder).Error; err == nil {
+		if existingOrder.ExpireAt != nil && existingOrder.ExpireAt.After(time.Now()) {
+			return &existingOrder, nil
+		}
+		repository.DB.Model(&existingOrder).Update("status", model.OrderStatusCancelled)
+	}
+
+	tx := repository.DB.Begin()
+	auditService := &AuditLogService{}
+	beforeState := map[string]interface{}{
+		"proposal": map[string]interface{}{
+			"id":        proposal.ID,
+			"status":    proposal.Status,
+			"bookingId": proposal.BookingID,
+			"designFee": proposal.DesignFee,
+		},
+		"booking": map[string]interface{}{
+			"id":            booking.ID,
+			"status":        booking.Status,
+			"intentFeePaid": booking.IntentFeePaid,
+			"providerId":    booking.ProviderID,
+		},
+	}
+
+	now := time.Now()
+	expireAt := now.Add(48 * time.Hour)
+	proposal.Status = model.ProposalStatusConfirmed
+	proposal.ConfirmedAt = &now
+	if err := tx.Save(&proposal).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	discount := 0.0
+	if booking.IntentFeePaid {
+		discount = booking.IntentFee
+	}
+	totalAmount := proposal.DesignFee - discount
+	if totalAmount < 0 {
+		totalAmount = 0
+	}
+
+	order := &model.Order{
+		ProposalID:  proposalID,
+		BookingID:   proposal.BookingID,
+		OrderNo:     generateOrderNo("DF"),
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: totalAmount,
+		Discount:    discount,
+		Status:      model.OrderStatusPending,
+		ExpireAt:    &expireAt,
+	}
+	if err := tx.Create(order).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	designPaymentMode := configSvc.GetDesignFeePaymentMode()
+	if designPaymentMode == "staged" {
+		stages, _ := configSvc.GetDesignFeeStages()
+		for index, stage := range stages {
+			plan := model.PaymentPlan{
+				OrderID:    order.ID,
+				Type:       "design_stage",
+				Seq:        index + 1,
+				Name:       stage.Name,
+				Percentage: stage.Percentage,
+				Amount:     order.TotalAmount * float64(stage.Percentage) / 100,
+				Status:     0,
+			}
+			if err := tx.Create(&plan).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+		}
+	} else {
+		plan := model.PaymentPlan{
+			OrderID:    order.ID,
+			Type:       "onetime",
+			Seq:        1,
+			Name:       "设计费全款",
+			Percentage: 100,
+			Amount:     order.TotalAmount,
+			Status:     0,
+		}
+		if err := tx.Create(&plan).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
+
+	if _, err := businessFlowSvc.EnsureLeadFlow(tx, model.BusinessFlowSourceBooking, booking.ID, booking.UserID, booking.ProviderID); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
+		"current_stage":         model.BusinessFlowStageConstructionPartyPending,
+		"confirmed_proposal_id": proposal.ID,
+		"designer_provider_id":  booking.ProviderID,
+		"project_id":            0,
+	}); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "confirm_proposal",
+		ResourceType:  "proposal",
+		ResourceID:    proposal.ID,
+		Reason:        reason,
+		Result:        "success",
+		BeforeState:   beforeState,
+		AfterState: map[string]interface{}{
+			"proposal": map[string]interface{}{
+				"id":          proposal.ID,
+				"status":      proposal.Status,
+				"confirmedAt": proposal.ConfirmedAt,
+			},
+			"order": map[string]interface{}{
+				"id":          order.ID,
+				"orderType":   order.OrderType,
+				"totalAmount": order.TotalAmount,
+				"projectId":   order.ProjectID,
+				"expireAt":    order.ExpireAt,
+			},
+		},
+		Metadata: map[string]interface{}{
+			"bookingId":  booking.ID,
+			"providerId": booking.ProviderID,
+			"projectId":  0,
+		},
+	}); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	tx.Commit()
+
+	notifService := &NotificationService{}
+	proposalData := map[string]interface{}{"id": proposal.ID}
+	var provider model.Provider
+	if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
+		_ = notifService.NotifyProposalConfirmed(proposalData, provider.UserID)
+	}
+
+	return order, nil
+}
+
 // ResubmitProposalInput 重新提交方案入参
 type ResubmitProposalInput struct {
 	ProposalID      uint64                       `json:"proposalId" binding:"required"`
@@ -845,6 +1018,209 @@ func (s *ProposalService) RejectProposal(userID, proposalID uint64, input *Rejec
 				ActionURL:   fmt.Sprintf("/admin/refunds/%d", abnormalRefund.ID),
 			})
 		}
+	}
+
+	return result, nil
+}
+
+func (s *ProposalService) AdminRejectProposal(adminID, proposalID uint64, input *RejectProposalInput) (*ProposalRejectResult, error) {
+	if input == nil {
+		return nil, errors.New("参数不能为空")
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		return nil, errors.New("请填写驳回原因")
+	}
+
+	var proposal model.Proposal
+	if err := repository.DB.First(&proposal, proposalID).Error; err != nil {
+		return nil, errors.New("方案不存在")
+	}
+	var booking model.Booking
+	var demand model.Demand
+	if proposal.SourceType == model.ProposalSourceDemand {
+		if err := repository.DB.First(&demand, proposal.DemandID).Error; err != nil {
+			return nil, errors.New("关联需求不存在")
+		}
+	} else {
+		if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
+			return nil, errors.New("预约记录不存在")
+		}
+	}
+	if proposal.Status != model.ProposalStatusPending {
+		return nil, errors.New("方案状态不正确")
+	}
+
+	var totalRejections int64
+	query := repository.DB.Model(&model.Proposal{}).Where("status = ?", model.ProposalStatusRejected)
+	if proposal.SourceType == model.ProposalSourceDemand {
+		query = query.Where("demand_id = ?", proposal.DemandID)
+	} else {
+		query = query.Where("booking_id = ?", proposal.BookingID)
+	}
+	query.Count(&totalRejections)
+
+	newRejectionCount := int(totalRejections) + 1
+	enteredAbnormal := proposal.SourceType != model.ProposalSourceDemand && !canResubmitRejectedProposal(newRejectionCount)
+	result := &ProposalRejectResult{
+		ProposalID:      proposal.ID,
+		RejectionCount:  newRejectionCount,
+		CanResubmit:     canResubmitRejectedProposal(newRejectionCount),
+		EnteredAbnormal: enteredAbnormal,
+	}
+
+	auditService := &AuditLogService{}
+	beforeState := map[string]interface{}{
+		"proposal": map[string]interface{}{
+			"id":             proposal.ID,
+			"status":         proposal.Status,
+			"version":        proposal.Version,
+			"rejectionCount": proposal.RejectionCount,
+		},
+	}
+	if proposal.SourceType == model.ProposalSourceDemand {
+		beforeState["demand"] = map[string]interface{}{
+			"id":     demand.ID,
+			"userId": demand.UserID,
+			"status": demand.Status,
+		}
+	} else {
+		beforeState["booking"] = map[string]interface{}{
+			"id":     booking.ID,
+			"userId": booking.UserID,
+			"status": booking.Status,
+		}
+	}
+
+	now := time.Now()
+	proposal.Status = model.ProposalStatusRejected
+	proposal.RejectionReason = reason
+	proposal.RejectedAt = &now
+	proposal.RejectionCount = newRejectionCount
+
+	if proposal.SourceType == model.ProposalSourceDemand {
+		if err := repository.DB.Save(&proposal).Error; err != nil {
+			return nil, err
+		}
+		afterState := map[string]interface{}{
+			"proposal": map[string]interface{}{
+				"id":             proposal.ID,
+				"status":         proposal.Status,
+				"version":        proposal.Version,
+				"rejectionCount": proposal.RejectionCount,
+				"rejectedAt":     proposal.RejectedAt,
+			},
+		}
+		_ = auditService.CreateBusinessRecord(&CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "reject_proposal",
+			ResourceType:  "proposal",
+			ResourceID:    proposal.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState:    afterState,
+			Metadata: map[string]interface{}{
+				"demandId":        demand.ID,
+				"rejectionCount":  newRejectionCount,
+				"enteredAbnormal": false,
+			},
+		})
+		notifService := &NotificationService{}
+		var provider model.Provider
+		if err := repository.DB.First(&provider, proposal.DesignerID).Error; err == nil {
+			proposalData := map[string]interface{}{
+				"id":             proposal.ID,
+				"version":        proposal.Version,
+				"rejectionCount": newRejectionCount,
+				"canResubmit":    result.CanResubmit,
+			}
+			_ = notifService.NotifyProposalRejected(proposalData, provider.UserID, reason)
+		}
+		return result, nil
+	}
+
+	var abnormalRefund *model.RefundApplication
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&proposal).Error; err != nil {
+			return err
+		}
+
+		afterState := map[string]interface{}{
+			"proposal": map[string]interface{}{
+				"id":             proposal.ID,
+				"status":         proposal.Status,
+				"version":        proposal.Version,
+				"rejectionCount": proposal.RejectionCount,
+				"rejectedAt":     proposal.RejectedAt,
+			},
+		}
+		metadata := map[string]interface{}{
+			"bookingId":       booking.ID,
+			"providerId":      booking.ProviderID,
+			"rejectionCount":  newRejectionCount,
+			"enteredAbnormal": enteredAbnormal,
+			"proposalVersion": proposal.Version,
+		}
+
+		if enteredAbnormal {
+			project, err := findProjectByBookingTx(tx, booking.ID)
+			if err != nil {
+				return err
+			}
+			abnormalReason := "设计方案改稿超过 3 轮，转入异常订单处理：" + reason
+			abnormalRefund, err = ensurePendingAbnormalRefundApplicationTx(tx, &booking, project, booking.UserID, abnormalReason)
+			if err != nil {
+				return err
+			}
+			if err := markRefundLifecycleDisputedTx(tx, &booking, project, abnormalReason); err != nil {
+				return err
+			}
+			afterState["booking"] = map[string]interface{}{
+				"id":     booking.ID,
+				"userId": booking.UserID,
+				"status": 5,
+			}
+			if abnormalRefund != nil {
+				result.RefundApplicationID = abnormalRefund.ID
+				afterState["refundApplication"] = map[string]interface{}{
+					"id":              abnormalRefund.ID,
+					"refundType":      abnormalRefund.RefundType,
+					"requestedAmount": abnormalRefund.RequestedAmount,
+					"status":          abnormalRefund.Status,
+				}
+				metadata["refundApplicationId"] = abnormalRefund.ID
+			}
+		}
+
+		return auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "reject_proposal",
+			ResourceType:  "proposal",
+			ResourceID:    proposal.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState:    afterState,
+			Metadata:      metadata,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	notifService := &NotificationService{}
+	var provider model.Provider
+	if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
+		proposalData := map[string]interface{}{
+			"id":             proposal.ID,
+			"rejectionCount": newRejectionCount,
+			"canResubmit":    result.CanResubmit,
+			"disputed":       enteredAbnormal,
+		}
+		_ = notifService.NotifyProposalRejected(proposalData, provider.UserID, reason)
 	}
 
 	return result, nil

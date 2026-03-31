@@ -93,7 +93,7 @@ func main() {
 		// 风控中心
 		{ID: 80, ParentID: 0, Title: "风控中心", Type: 1, Path: "/risk", Icon: "SafetyOutlined", Sort: 80},
 		{ID: 81, ParentID: 80, Title: "风险预警", Type: 2, Path: "/risk/warnings", Component: "pages/risk/RiskWarningList", Sort: 1, Permission: "risk:warning:list"},
-		{ID: 82, ParentID: 80, Title: "仲裁中心", Type: 2, Path: "/risk/arbitration", Component: "pages/risk/ArbitrationCenter", Sort: 2, Permission: "risk:arbitration:list"},
+		{ID: 82, ParentID: 80, Title: "仲裁中心", Type: 2, Path: "/risk/arbitration", Component: "pages/risk/ArbitrationCenter", Sort: 2, Permission: "risk:arbitration:list", Visible: false},
 
 		// 操作日志
 		{ID: 90, ParentID: 0, Title: "操作日志", Type: 2, Path: "/logs", Component: "pages/system/LogList", Icon: "FileTextOutlined", Sort: 90, Permission: "system:log:list"},
@@ -104,7 +104,11 @@ func main() {
 	}
 
 	for _, menu := range menus {
-		menu.Visible = true
+		if menu.ID == 82 {
+			menu.Visible = false
+		} else {
+			menu.Visible = true
+		}
 		menu.Status = 1
 		repository.DB.FirstOrCreate(&menu, model.SysMenu{ID: menu.ID})
 	}

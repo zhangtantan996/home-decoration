@@ -1,6 +1,7 @@
 import type { ProviderRole } from "../types/viewModels";
 
 type PricingValue = number | string | undefined | null;
+export type ProviderRatingSampleState = "none" | "small" | "stable";
 
 const PRICING_LABELS: Record<ProviderRole, Record<string, string>> = {
   designer: {
@@ -100,34 +101,27 @@ function trimNumber(value: number) {
 
 function normalizeDisplayPriceUnit(
   unit: string | null | undefined,
+  role?: ProviderRole,
   fallback = "元",
 ) {
   const raw = String(unit || "").trim();
+  const providerFallback = role ? "元/㎡" : fallback;
   if (!raw) {
-    return fallback;
+    return providerFallback;
   }
   if (AREA_UNIT_RE.test(raw)) {
-    return "元/平方米";
-  }
-  if (/万/.test(raw) && /全包/.test(raw)) {
-    return "万/全包";
-  }
-  if (/万/.test(raw) && /半包/.test(raw)) {
-    return "万/半包";
+    return "元/㎡";
   }
   if (/(元\/?天|元\/?日|天|日)/.test(raw)) {
-    return "元/天";
-  }
-  if (/全包/.test(raw)) {
-    return "元/全包";
-  }
-  if (/半包/.test(raw)) {
-    return "元/半包";
+    return role ? "元/㎡" : "元/天";
   }
   if (/^\/.+/.test(raw)) {
-    return `元${raw.replace(AREA_UNIT_RE, "平方米")}`;
+    return role ? "元/㎡" : `元${raw.replace(AREA_UNIT_RE, "平方米")}`;
   }
-  return raw;
+  if (role && /元/.test(raw)) {
+    return "元/㎡";
+  }
+  return role ? providerFallback : raw;
 }
 
 function formatStructuredAmount(amount: number, unit: string) {
@@ -155,7 +149,7 @@ function getStructuredPricingSummary(
     }
 
     const labelMap = PRICING_LABELS[role];
-    const unit = normalizeDisplayPriceUnit(priceUnit, "元/平方米");
+    const unit = normalizeDisplayPriceUnit(priceUnit, role, "元/㎡");
     const details = PRICING_ORDER[role]
       .map((key) => {
         const amount = toPositiveNumber(parsed[key] as PricingValue);
@@ -199,23 +193,22 @@ export function summarizePricing(
   role?: ProviderRole,
 ) {
   const structured = getStructuredPricingSummary(role, pricingJson, priceUnit);
-  if (structured) {
-    return structured;
-  }
-
-  const unit = normalizeDisplayPriceUnit(priceUnit, "元");
+  const unit = normalizeDisplayPriceUnit(priceUnit, role, role ? "元/㎡" : "元");
   const tags = parseTextArray(pricingJson);
   if (priceMin && priceMax) {
     return {
       priceText: `${priceMin}-${priceMax}${unit}`,
-      details: tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"],
+      details: structured?.details || (tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"]),
     };
   }
   if (priceMin) {
     return {
       priceText: `${priceMin}${unit}起`,
-      details: tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"],
+      details: structured?.details || (tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"]),
     };
+  }
+  if (structured) {
+    return structured;
   }
   return {
     priceText: "按需报价",
@@ -258,4 +251,47 @@ export function resolveProviderDisplayName(
     fallbackNickname ||
     "未命名服务商"
   );
+}
+
+export function getProviderRatingMeta(
+  rating: number | null | undefined,
+  reviewCount: number | null | undefined,
+): {
+  hasRating: boolean;
+  scoreText: string;
+  inlineText: string;
+  detailText: string;
+  sampleState: ProviderRatingSampleState;
+} {
+  const normalizedCount = Number(reviewCount || 0);
+  const normalizedRating = Number(rating || 0);
+
+  if (normalizedCount <= 0 || normalizedRating <= 0) {
+    return {
+      hasRating: false,
+      scoreText: "暂无综合评分",
+      inlineText: "暂无综合评分",
+      detailText: "暂无正式评价",
+      sampleState: "none",
+    };
+  }
+
+  const scoreText = normalizedRating.toFixed(1);
+  if (normalizedCount <= 2) {
+    return {
+      hasRating: true,
+      scoreText,
+      inlineText: `${scoreText} 分`,
+      detailText: `${normalizedCount} 条正式评价`,
+      sampleState: "small",
+    };
+  }
+
+  return {
+    hasRating: true,
+    scoreText,
+    inlineText: `${scoreText} 分`,
+    detailText: `${normalizedCount} 条正式评价`,
+    sampleState: "stable",
+  };
 }

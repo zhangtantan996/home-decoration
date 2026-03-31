@@ -22,6 +22,8 @@ import ComplaintManagement from './pages/complaints/ComplaintManagement';
 import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
+import WorkbenchDetail from './pages/supervision/WorkbenchDetail';
+import WorkbenchList from './pages/supervision/WorkbenchList';
 import FinanceOverview from './pages/finance/FinanceOverview';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
 import TransactionList from './pages/finance/TransactionList';
@@ -42,6 +44,7 @@ import RefundList from './pages/refunds/RefundList';
 import RefundDetail from './pages/refunds/RefundDetail';
 import WithdrawList from './pages/withdraws/WithdrawList';
 import WithdrawDetail from './pages/withdraws/WithdrawDetail';
+import OrderList from './pages/orders/OrderList';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { getRouterBasename } from './utils/env';
 
@@ -94,6 +97,11 @@ const router = createBrowserRouter([
             { path: 'projects/quotes/lists', element: <ProtectedRoute permission="project:edit"><QuoteListManagement /></ProtectedRoute> },
             { path: 'projects/quotes/compare/:id', element: <ProtectedRoute permission="project:view"><QuoteComparison /></ProtectedRoute> },
 
+            // Supervision Workspace
+            { path: 'supervision', element: <Navigate to="/supervision/projects" replace /> },
+            { path: 'supervision/projects', element: <ProtectedRoute permission="supervision:workspace:view"><WorkbenchList /></ProtectedRoute> },
+            { path: 'supervision/projects/:id', element: <ProtectedRoute permission="supervision:workspace:view"><WorkbenchDetail /></ProtectedRoute> },
+
             // Demands
             { path: 'demands', element: <Navigate to="/demands/list" replace /> },
             { path: 'demands/list', element: <ProtectedRoute permission="demand:list"><DemandList /></ProtectedRoute> },
@@ -115,6 +123,7 @@ const router = createBrowserRouter([
             { path: 'finance/overview', element: <ProtectedRoute permission="finance:escrow:list"><FinanceOverview /></ProtectedRoute> },
             { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
             { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
+            { path: 'orders', element: <ProtectedRoute permission="order:center:list"><OrderList /></ProtectedRoute> },
             { path: 'refunds', element: <ProtectedRoute permission="finance:transaction:list"><RefundList /></ProtectedRoute> },
             { path: 'refunds/:id', element: <ProtectedRoute permission="finance:transaction:view"><RefundDetail /></ProtectedRoute> },
             { path: 'withdraws', element: <ProtectedRoute permission="finance:transaction:list"><WithdrawList /></ProtectedRoute> },

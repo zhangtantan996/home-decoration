@@ -32,6 +32,19 @@ const formatText = (value?: string | number | null) => {
     return normalized || '-';
 };
 
+const renderArea = (value?: string | number | null) => {
+    const normalized = formatText(value);
+    if (normalized === '-') {
+        return normalized;
+    }
+
+    if (/[㎡]|m²|M²|平方米|平米/.test(normalized)) {
+        return normalized;
+    }
+
+    return `${normalized}㎡`;
+};
+
 const renderTags = (values: string[] | undefined, color: string) => {
     if (!values?.length) {
         return '-';
@@ -297,7 +310,7 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
                                 <Descriptions.Item label="标题" span={2}>{formatText(caseItem.title)}</Descriptions.Item>
                                 <Descriptions.Item label="风格">{formatText(caseItem.style)}</Descriptions.Item>
                                 <Descriptions.Item label="面积">
-                                    {caseItem.area ? `${caseItem.area} m²` : '-'}
+                                    {renderArea(caseItem.area)}
                                 </Descriptions.Item>
                                 <Descriptions.Item label="案例说明" span={2}>
                                     <div style={{ whiteSpace: 'pre-wrap' }}>
