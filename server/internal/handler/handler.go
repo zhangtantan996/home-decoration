@@ -538,6 +538,75 @@ func GetProviderCases(c *gin.Context) {
 	response.PageSuccess(c, list, total, page, pageSize)
 }
 
+func GetProviderSceneCases(c *gin.Context) {
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	page := 1
+	pageSize := 10
+	if p := c.Query("page"); p != "" {
+		page = int(parseUint64(p))
+	}
+	if ps := c.Query("pageSize"); ps != "" {
+		pageSize = int(parseUint64(ps))
+	}
+
+	list, total, err := providerService.GetProviderSceneCases(id, page, pageSize)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "服务商不存在")
+			return
+		}
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.PageSuccess(c, list, total, page, pageSize)
+}
+
+func GetProviderShowcaseDetail(c *gin.Context) {
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	detail, err := providerService.GetProviderShowcaseDetail(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "工艺展示不存在")
+			return
+		}
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.Success(c, detail)
+}
+
+func GetProviderSceneDetail(c *gin.Context) {
+	id := parseUint64(c.Param("id"))
+	if id == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	detail, err := providerService.GetProviderSceneDetail(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "案例实景不存在")
+			return
+		}
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.Success(c, detail)
+}
+
 // GetProviderReviews 获取服务商评价列表
 func GetProviderReviews(c *gin.Context) {
 	id := parseUint64(c.Param("id"))
