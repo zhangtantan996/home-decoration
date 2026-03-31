@@ -263,11 +263,11 @@ update_services() {
   case "${SERVICE_SCOPE}" in
     api)
       echo "==> Updating service: api"
-      release_compose up -d --build api
+      release_update_service_isolated api
       ;;
     web)
       echo "==> Updating service: web"
-      release_compose up -d --build web
+      release_update_service_isolated web
       ;;
     all)
       echo "==> Updating services: api web"
@@ -282,7 +282,11 @@ verify_release() {
   bash "${VERIFY_HTTPS_SCRIPT}"
 }
 
-ensure_prod_schema
+if release_scope_includes_api "${SERVICE_SCOPE}"; then
+  ensure_prod_schema
+else
+  echo "==> Service scope does not include api; skip schema bootstrap"
+fi
 update_services
 verify_release
 release_record_state "production" "deploy" "${TAG}" "${SERVICE_SCOPE}" "${SKIP_GIT}" "tag"
