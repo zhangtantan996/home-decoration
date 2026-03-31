@@ -6,49 +6,29 @@ import { Button } from '@/components/Button';
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
 import { Skeleton } from '@/components/Skeleton';
-import { MINI_ENV } from '@/config/env';
-import { getProviderCases, getProviderDetail, getProviderReviews, getProviderUserStatus, type ProviderCaseItem, type ProviderDetail, type ProviderReviewItem, type ProviderType, followProvider, unfollowProvider } from '@/services/providers';
+import {
+  followProvider,
+  getProviderCases,
+  getProviderDetail,
+  getProviderReviews,
+  getProviderUserStatus,
+  type ProviderCaseItem,
+  type ProviderDetail,
+  type ProviderReviewItem,
+  type ProviderSceneItem,
+  type ProviderType,
+  unfollowProvider,
+} from '@/services/providers';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { normalizeProviderMediaUrl, parseStringListValue } from '@/utils/providerMedia';
 import { formatProviderPricing } from '@/utils/providerPricing';
 import './index.scss';
-
-const API_ORIGIN = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 const normalizeProviderType = (value?: string): ProviderType => {
   if (value === 'company' || value === '2') return 'company';
   if (value === 'foreman' || value === '3') return 'foreman';
   return 'designer';
-};
-
-const parseStringList = (raw?: string | string[]): string[] => {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map((item) => String(item).trim()).filter(Boolean);
-
-  const text = raw.trim();
-  if (!text) return [];
-
-  if (text.startsWith('[') && text.endsWith(']')) {
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        return parsed.map((item) => String(item).trim()).filter(Boolean);
-      }
-    } catch {
-      // ignore parse error
-    }
-  }
-
-  if (text.includes(' · ')) {
-    return text.split(' · ').map((item) => item.trim()).filter(Boolean);
-  }
-
-  return text.split(/[,，、|/]/).map((item) => item.trim()).filter(Boolean);
-};
-
-const normalizeMediaUrl = (raw?: string) => {
-  if (!raw) return '';
-  return raw.replace(/^http:\/\/localhost:8080/i, API_ORIGIN);
 };
 
 const compactCount = (value: number) => {
@@ -58,6 +38,12 @@ const compactCount = (value: number) => {
   }
 
   return `${value}`;
+};
+
+const formatCaseArea = (value?: string | number) => {
+  if (value === undefined || value === null || value === '') return '';
+  const text = String(value);
+  return text.includes('㎡') ? text : `${text}㎡`;
 };
 
 interface ProviderDetailParams {
@@ -163,30 +149,34 @@ const ProviderDetailPage: React.FC = () => {
     void fetchDetail();
   });
 
+  const sceneCases = useMemo(() => detail?.sceneCases || [], [detail?.sceneCases]);
+  const sceneTotal = Number(detail?.sceneCount || sceneCases.length || 0);
+  const craftTotal = Number(detail?.caseCount || caseTotal || cases.length || 0);
+
   const displayName = useMemo(
     () => userDetail?.nickname || providerDetail?.nickname || providerDetail?.companyName || '服务商',
     [providerDetail?.companyName, providerDetail?.nickname, userDetail?.nickname]
   );
 
   const avatarUrl = useMemo(
-    () => normalizeMediaUrl(userDetail?.avatar || providerDetail?.avatar || providerDetail?.coverImage || detail?.coverImage || ''),
+    () => normalizeProviderMediaUrl(userDetail?.avatar || providerDetail?.avatar || providerDetail?.coverImage || detail?.coverImage || ''),
     [detail?.coverImage, providerDetail?.avatar, providerDetail?.coverImage, userDetail?.avatar]
   );
 
   const coverImage = useMemo(
-    () => normalizeMediaUrl(providerDetail?.coverImage || detail?.coverImage || userDetail?.avatar || providerDetail?.avatar || ''),
+    () => normalizeProviderMediaUrl(providerDetail?.coverImage || detail?.coverImage || userDetail?.avatar || providerDetail?.avatar || ''),
     [detail?.coverImage, providerDetail?.avatar, providerDetail?.coverImage, userDetail?.avatar]
   );
 
   const serviceAreaTags = useMemo(() => {
-    const parsed = parseStringList(providerDetail?.serviceArea);
+    const parsed = parseStringListValue(providerDetail?.serviceArea);
     return parsed.length > 0 ? parsed : ['本地服务'];
   }, [providerDetail?.serviceArea]);
 
   const highlightTags = useMemo(() => {
     const tags = [
-      ...parseStringList(providerDetail?.highlightTags),
-      ...parseStringList(providerDetail?.specialty),
+      ...parseStringListValue(providerDetail?.highlightTags),
+      ...parseStringListValue(providerDetail?.specialty),
     ];
     return Array.from(new Set(tags)).slice(0, 6);
   }, [providerDetail?.highlightTags, providerDetail?.specialty]);
@@ -220,7 +210,7 @@ const ProviderDetailPage: React.FC = () => {
   }, [params.type]);
 
   const caseSectionTitle = useMemo(() => {
-    if (params.type === 'foreman') return '施工案例';
+    if (params.type === 'foreman') return '工艺展示';
     return '精选作品';
   }, [params.type]);
 
@@ -237,6 +227,7 @@ const ProviderDetailPage: React.FC = () => {
   const settled = providerDetail?.isSettled !== false && providerRaw.isSettled !== false;
   const ratingValue = Number(providerDetail?.rating || 0);
   const followersCount = Number(providerRaw.followersCount || 0);
+  const showcaseTotal = craftTotal + sceneTotal || providerDetail?.completedCnt || 0;
 
   useShareAppMessage(() => ({
     title: `${displayName} - 服务商详情`,
@@ -294,11 +285,11 @@ const ProviderDetailPage: React.FC = () => {
     }
   };
 
-  const handleOpenCaseGallery = () => {
+  const handleOpenCaseGallery = (kind: 'craft' | 'scene' = 'craft') => {
     if (!params.id) return;
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
-      url: `/pages/cases/gallery/index?providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
+      url: `/pages/cases/gallery/index?providerId=${params.id}&providerType=${params.type}&providerName=${providerName}&kind=${kind}`,
     });
   };
 
@@ -307,6 +298,14 @@ const ProviderDetailPage: React.FC = () => {
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
       url: `/pages/cases/detail/index?caseId=${caseId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
+    });
+  };
+
+  const handleOpenSceneDetail = (sceneId: number) => {
+    if (!sceneId || !params.id) return;
+    const providerName = encodeURIComponent(displayName);
+    Taro.navigateTo({
+      url: `/pages/cases/scene-detail/index?sceneId=${sceneId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
     });
   };
 
@@ -408,8 +407,8 @@ const ProviderDetailPage: React.FC = () => {
             </View>
             <View className="provider-detail-page__stat-divider" />
             <View className="provider-detail-page__stat">
-              <Text className="provider-detail-page__stat-value">{caseTotal || providerDetail?.completedCnt || 0}</Text>
-              <Text className="provider-detail-page__stat-label">{params.type === 'foreman' ? '施工案例' : '案例数量'}</Text>
+              <Text className="provider-detail-page__stat-value">{showcaseTotal}</Text>
+              <Text className="provider-detail-page__stat-label">{params.type === 'foreman' ? '展示数量' : '案例数量'}</Text>
             </View>
           </View>
         </View>
@@ -460,8 +459,8 @@ const ProviderDetailPage: React.FC = () => {
         <View className="provider-detail-page__section">
           <View className="provider-detail-page__section-head">
             <Text className="provider-detail-page__section-title">{caseSectionTitle}</Text>
-            <Text className="provider-detail-page__section-more" onClick={handleOpenCaseGallery}>
-              全部{caseTotal || cases.length}个
+            <Text className="provider-detail-page__section-more" onClick={() => handleOpenCaseGallery('craft')}>
+              全部{craftTotal || cases.length}个
             </Text>
           </View>
 
@@ -469,7 +468,11 @@ const ProviderDetailPage: React.FC = () => {
             <ScrollView scrollX className="provider-detail-page__case-scroll" showScrollbar={false}>
               <View className="provider-detail-page__case-list">
                 {cases.map((item) => {
-                  const caseImage = normalizeMediaUrl(item.coverImage);
+                  const caseImage = normalizeProviderMediaUrl(item.coverImage);
+                  const caseMeta = [item.style, formatCaseArea(item.area), item.year ? `${item.year}` : '']
+                    .filter(Boolean)
+                    .join(' · ');
+
                   return (
                     <View key={item.id} className="provider-detail-page__case-card" onClick={() => handleOpenCaseDetail(item.id)}>
                       {caseImage ? (
@@ -480,7 +483,7 @@ const ProviderDetailPage: React.FC = () => {
                       <View className="provider-detail-page__case-overlay">
                         <Text className="provider-detail-page__case-title" numberOfLines={1}>{item.title || '案例作品'}</Text>
                         <Text className="provider-detail-page__case-meta" numberOfLines={1}>
-                          {[item.style, item.area ? `${item.area}㎡` : ''].filter(Boolean).join(' · ') || '案例信息待补充'}
+                          {caseMeta || (params.type === 'foreman' ? '工艺信息待补充' : '案例信息待补充')}
                         </Text>
                       </View>
                     </View>
@@ -490,10 +493,52 @@ const ProviderDetailPage: React.FC = () => {
             </ScrollView>
           ) : (
             <View className="provider-detail-page__placeholder-card">
-              <Text className="provider-detail-page__placeholder-text">暂无作品展示</Text>
+              <Text className="provider-detail-page__placeholder-text">{params.type === 'foreman' ? '暂无工艺展示' : '暂无作品展示'}</Text>
             </View>
           )}
         </View>
+
+        {sceneTotal > 0 ? (
+          <View className="provider-detail-page__section">
+            <View className="provider-detail-page__section-head">
+              <Text className="provider-detail-page__section-title">案例实景</Text>
+              <Text className="provider-detail-page__section-more" onClick={() => handleOpenCaseGallery('scene')}>
+                全部{sceneTotal}个
+              </Text>
+            </View>
+
+            {sceneCases.length > 0 ? (
+              <ScrollView scrollX className="provider-detail-page__case-scroll" showScrollbar={false}>
+                <View className="provider-detail-page__case-list">
+                  {sceneCases.map((item: ProviderSceneItem) => {
+                    const sceneImage = normalizeProviderMediaUrl(item.coverImage);
+                    const sceneMeta = [item.year ? `${item.year}` : '', item.createdAt || '']
+                      .filter(Boolean)
+                      .join(' · ');
+
+                    return (
+                      <View key={item.id} className="provider-detail-page__case-card" onClick={() => handleOpenSceneDetail(item.id)}>
+                        {sceneImage ? (
+                          <Image className="provider-detail-page__case-image" src={sceneImage} mode="aspectFill" lazyLoad />
+                        ) : (
+                          <View className="provider-detail-page__case-image provider-detail-page__case-image--placeholder" />
+                        )}
+                        <View className="provider-detail-page__case-overlay">
+                          <Text className="provider-detail-page__case-title" numberOfLines={1}>{item.title || '真实项目案例'}</Text>
+                          <Text className="provider-detail-page__case-meta" numberOfLines={1}>{sceneMeta || '真实项目案例'}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            ) : (
+              <View className="provider-detail-page__placeholder-card">
+                <Text className="provider-detail-page__placeholder-text">暂无案例实景</Text>
+              </View>
+            )}
+          </View>
+        ) : null}
 
         <View className="provider-detail-page__section provider-detail-page__section--reviews">
           <View className="provider-detail-page__section-head">
@@ -509,7 +554,7 @@ const ProviderDetailPage: React.FC = () => {
                 <View key={item.id} className="provider-detail-page__review-card">
                   <View className="provider-detail-page__review-head">
                     {item.userAvatar ? (
-                      <Image className="provider-detail-page__review-avatar" src={normalizeMediaUrl(item.userAvatar)} mode="aspectFill" lazyLoad />
+                      <Image className="provider-detail-page__review-avatar" src={normalizeProviderMediaUrl(item.userAvatar)} mode="aspectFill" lazyLoad />
                     ) : (
                       <View className="provider-detail-page__review-avatar provider-detail-page__review-avatar--placeholder" />
                     )}
