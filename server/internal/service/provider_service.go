@@ -517,6 +517,32 @@ func ensureVisibleProvider(providerID uint64) error {
 		First(&provider, providerID).Error
 }
 
+func loadVisibleProvider(providerID uint64) (*model.Provider, error) {
+	if providerID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	var provider model.Provider
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).
+		Select("id", "provider_type").
+		First(&provider, providerID).Error; err != nil {
+		return nil, err
+	}
+
+	return &provider, nil
+}
+
+func loadVisibleForeman(providerID uint64) (*model.Provider, error) {
+	provider, err := loadVisibleProvider(providerID)
+	if err != nil {
+		return nil, err
+	}
+	if provider.ProviderType != 3 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return provider, nil
+}
+
 func approvedProjectSceneCreateAuditScope(providerID uint64) *gorm.DB {
 	return repository.DB.Model(&model.CaseAudit{}).
 		Where(
@@ -678,9 +704,13 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		return nil, err
 	}
 
-	sceneCases, sceneCount, err := s.GetProviderSceneCases(id, 1, 5)
-	if err != nil {
-		return nil, err
+	sceneCases := []ProviderSceneItem{}
+	var sceneCount int64
+	if provider.ProviderType == 3 {
+		sceneCases, sceneCount, err = s.GetProviderSceneCases(id, 1, 5)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 获取正式评价（前5条）
@@ -750,11 +780,15 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 	var cases []model.ProviderCase
 	var total int64
 
-	if err := ensureVisibleProvider(providerID); err != nil {
+	provider, err := loadVisibleProvider(providerID)
+	if err != nil {
 		return nil, 0, err
 	}
 
-	db := applyVisibleCaseFilter(craftProviderCaseScope(providerID))
+	db := repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", providerID)
+	if provider.ProviderType == 3 {
+		db = craftProviderCaseScope(providerID)
+	}
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -775,7 +809,7 @@ func (s *ProviderService) GetProviderSceneCases(providerID uint64, page, pageSiz
 	if pageSize <= 0 || pageSize > 20 {
 		pageSize = 10
 	}
-	if err := ensureVisibleProvider(providerID); err != nil {
+	if _, err := loadVisibleForeman(providerID); err != nil {
 		return nil, 0, err
 	}
 
@@ -832,7 +866,7 @@ func (s *ProviderService) GetProviderSceneDetail(sceneID uint64) (*ProviderScene
 		return nil, err
 	}
 
-	if err := ensureVisibleProvider(createAudit.ProviderID); err != nil {
+	if _, err := loadVisibleForeman(createAudit.ProviderID); err != nil {
 		return nil, err
 	}
 
@@ -861,11 +895,8 @@ func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderSho
 		return nil, err
 	}
 
-	if err := ensureVisibleProvider(providerCase.ProviderID); err != nil {
+	if _, err := loadVisibleForeman(providerCase.ProviderID); err != nil {
 		return nil, err
-	}
-	if !IsCasePublicVisible(&providerCase) {
-		return nil, gorm.ErrRecordNotFound
 	}
 
 	var linkedSceneCount int64

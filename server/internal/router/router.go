@@ -141,7 +141,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			designers.GET("", handler.ListDesigners)
 			designers.GET("/:id", handler.GetDesigner)
 			designers.GET("/:id/cases", handler.GetProviderCases)
-			designers.GET("/:id/scene-cases", handler.GetProviderSceneCases)
 			designers.GET("/:id/reviews", handler.GetProviderReviews)
 			designers.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -152,7 +151,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			companies.GET("", handler.ListCompanies)
 			companies.GET("/:id", handler.GetCompany)
 			companies.GET("/:id/cases", handler.GetProviderCases)
-			companies.GET("/:id/scene-cases", handler.GetProviderSceneCases)
 			companies.GET("/:id/reviews", handler.GetProviderReviews)
 			companies.GET("/:id/review-stats", handler.GetReviewStats)
 		}

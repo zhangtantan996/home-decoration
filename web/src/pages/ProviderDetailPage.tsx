@@ -193,8 +193,8 @@ export function ProviderDetailPage() {
   const detail = data;
   const currentPath = `${location.pathname}${location.search}`;
   const isForeman = detail?.role === 'foreman';
-  const inspirationCases = detail?.cases.filter((item) => item.showInInspiration) ?? [];
-  const sceneCases = isForeman ? (detail?.cases.filter((item) => !item.showInInspiration) ?? []) : [];
+  const showcaseCases = detail?.cases ?? [];
+  const sceneCases = isForeman ? (detail?.scenes ?? []) : [];
   const showAboutSection = detail ? detail.role !== 'foreman' : true;
   const tabItems = baseTabItems
     .filter((item) => {
@@ -242,8 +242,8 @@ export function ProviderDetailPage() {
   const ratingMeta = getProviderRatingMeta(detail.reviewStats.displayRating || detail.rating, totalReviewCount);
   const reviewCountText = ratingMeta.detailText;
   const caseSectionTitle = isForeman ? '工艺展示' : '作品案例';
-  const caseCountText = inspirationCases.length > 0
-    ? (isForeman ? `工艺展示 ${inspirationCases.length} 项` : `公开案例 ${inspirationCases.length} 套`)
+  const caseCountText = showcaseCases.length > 0
+    ? (isForeman ? `工艺展示 ${showcaseCases.length} 项` : `公开案例 ${showcaseCases.length} 套`)
     : (isForeman ? '当前暂无更多工艺展示' : '当前暂无更多公开案例');
   const summaryIntro = extractLeadText(detail.serviceIntro, 1, 88, detail.summary);
   const aboutCopy = extractLeadText(detail.serviceIntro, 3, 220, detail.summary);
@@ -437,7 +437,7 @@ export function ProviderDetailPage() {
   );
 
   const renderCasesPanel = () => {
-    if (inspirationCases.length === 0) {
+    if (showcaseCases.length === 0) {
       return (
         <div className="provider-detail-panel-card provider-detail-empty">
           <EmptyBlock description={isForeman ? '当前还没有可公开查看的工艺案例。' : '当前还没有可展示的更多作品案例。'} title={isForeman ? '暂无工艺展示' : '暂无公开案例'} />
@@ -452,8 +452,12 @@ export function ProviderDetailPage() {
           <p>{caseCountText}</p>
         </div>
         <div className="provider-detail-case-grid provider-detail-case-grid--uniform">
-          {inspirationCases.map((item) => (
-            <Link className="provider-detail-case-card provider-detail-case-card--uniform" key={item.id} to={`/inspiration/${item.id}`}>
+          {showcaseCases.map((item) => (
+            <Link
+              className="provider-detail-case-card provider-detail-case-card--uniform"
+              key={item.id}
+              to={isForeman ? `/provider-cases/${item.id}` : `/inspiration/${item.id}`}
+            >
               <div className="provider-detail-case-card-media">
                 <img alt={item.title} className="provider-detail-case-card-image" src={item.coverImage} />
               </div>
@@ -485,19 +489,19 @@ export function ProviderDetailPage() {
       <div className="provider-detail-panel-stack">
         <div className="provider-detail-panel-headline">
           <h2>案例实景</h2>
-          <p>仅在商家详情页展示，不进入灵感图库</p>
+          <p>展示工长参与过的真实项目案例</p>
         </div>
         <div className="provider-detail-case-grid provider-detail-case-grid--uniform">
           {sceneCases.map((item) => (
-            <article className="provider-detail-case-card provider-detail-case-card--uniform" key={`scene-${item.id}`}>
+            <Link className="provider-detail-case-card provider-detail-case-card--uniform" key={`scene-${item.id}`} to={`/provider-scenes/${item.id}`}>
               <div className="provider-detail-case-card-media">
                 <img alt={item.title} className="provider-detail-case-card-image" src={item.coverImage} />
               </div>
               <div className="provider-detail-case-card-body provider-detail-case-card-body--plain">
                 <h3>{item.title}</h3>
-                <p>现场实拍 · 工艺节点</p>
+                <p>{item.description}</p>
               </div>
-            </article>
+            </Link>
           ))}
         </div>
       </div>
