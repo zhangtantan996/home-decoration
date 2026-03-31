@@ -195,15 +195,23 @@ export function summarizePricing(
   const structured = getStructuredPricingSummary(role, pricingJson, priceUnit);
   const unit = normalizeDisplayPriceUnit(priceUnit, role, role ? "元/㎡" : "元");
   const tags = parseTextArray(pricingJson);
-  if (priceMin && priceMax) {
+  const min = toPositiveNumber(priceMin);
+  const max = toPositiveNumber(priceMax);
+  if (min && max) {
+    if (Math.abs(min - max) < 0.001) {
+      return {
+        priceText: `${trimNumber(min)}${unit}`,
+        details: structured?.details || (tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"]),
+      };
+    }
     return {
-      priceText: `${priceMin}-${priceMax}${unit}`,
+      priceText: `${trimNumber(min)}-${trimNumber(max)}${unit}`,
       details: structured?.details || (tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"]),
     };
   }
-  if (priceMin) {
+  if (min) {
     return {
-      priceText: `${priceMin}${unit}起`,
+      priceText: `${trimNumber(min)}${unit}起`,
       details: structured?.details || (tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"]),
     };
   }
