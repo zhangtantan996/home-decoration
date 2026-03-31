@@ -67,7 +67,17 @@ export interface ProviderCaseVM {
   coverImage: string;
   style: string;
   area: string;
-  showInInspiration: boolean;
+}
+
+export interface ProviderSceneVM {
+  id: number;
+  caseId: number;
+  projectId: number;
+  title: string;
+  coverImage: string;
+  description: string;
+  images: string[];
+  year: string;
 }
 
 export interface ProviderReviewVM {
@@ -96,10 +106,37 @@ export interface ProviderDetailVM extends ProviderListItemVM {
   establishedText: string;
   certifications: string[];
   cases: ProviderCaseVM[];
+  scenes: ProviderSceneVM[];
   reviews: ProviderReviewVM[];
   reviewStats: ReviewStatsVM;
   phoneHint: string;
   surveyDepositPrice?: number;
+}
+
+export interface ProviderShowcaseDetailVM {
+  id: number;
+  providerId: number;
+  title: string;
+  coverImage: string;
+  style: string;
+  layout: string;
+  area: string;
+  description: string;
+  galleryImages: string[];
+  year: string;
+}
+
+export interface ProviderSceneDetailVM {
+  id: number;
+  caseId: number;
+  projectId: number;
+  providerId: number;
+  title: string;
+  coverImage: string;
+  description: string;
+  galleryImages: string[];
+  year: string;
+  createdAt: string;
 }
 
 export interface InspirationListItemVM {

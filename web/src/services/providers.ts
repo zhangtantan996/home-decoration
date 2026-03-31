@@ -1,5 +1,16 @@
 import type { PageEnvelope } from '../types/api';
-import type { ProviderCaseVM, ProviderDetailVM, ProviderListItemVM, ProviderPriceDisplayVM, ProviderReviewVM, ProviderRole, ReviewStatsVM } from '../types/viewModels';
+import type {
+  ProviderCaseVM,
+  ProviderDetailVM,
+  ProviderListItemVM,
+  ProviderPriceDisplayVM,
+  ProviderReviewVM,
+  ProviderRole,
+  ProviderSceneDetailVM,
+  ProviderSceneVM,
+  ProviderShowcaseDetailVM,
+  ReviewStatsVM,
+} from '../types/viewModels';
 import { compactPhone, formatDateTime } from '../utils/format';
 import { normalizeProviderPriceDisplay, normalizeProviderRole, parseTextArray, resolveProviderDisplayName, roleToBasePath } from '../utils/provider';
 import { requestJson } from './http';
@@ -33,6 +44,7 @@ interface ProviderDetailResponse {
   provider?: Record<string, unknown>;
   user?: Record<string, unknown>;
   cases?: ProviderCaseDTO[];
+  sceneCases?: ProviderSceneDTO[];
   reviews?: ProviderReviewDTO[];
   reviewCount?: number;
   priceDisplay?: PriceDisplayDTO;
@@ -51,7 +63,35 @@ interface ProviderCaseDTO {
   coverImage?: string;
   style?: string;
   area?: string | number;
-  showInInspiration?: boolean;
+}
+
+interface ProviderSceneDTO {
+  id: number;
+  caseId?: number;
+  projectId?: number;
+  title?: string;
+  coverImage?: string;
+  description?: string;
+  images?: string | string[];
+  year?: string;
+  createdAt?: string;
+}
+
+interface ProviderShowcaseDetailDTO {
+  id: number;
+  providerId?: number;
+  title?: string;
+  coverImage?: string;
+  style?: string;
+  layout?: string;
+  area?: string;
+  description?: string;
+  images?: string | string[];
+  year?: string;
+}
+
+interface ProviderSceneDetailDTO extends ProviderSceneDTO {
+  providerId?: number;
 }
 
 interface ProviderReviewDTO {
@@ -99,7 +139,14 @@ function readStringRecord(source: Record<string, unknown>, key: string) {
   return typeof value === 'string' ? value : String(value || '');
 }
 
-function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, cases: ProviderCaseVM[], reviews: ProviderReviewVM[], reviewStats: ReviewStatsVM): ProviderDetailVM {
+function toProviderDetail(
+  role: ProviderRole,
+  response: ProviderDetailResponse,
+  cases: ProviderCaseVM[],
+  scenes: ProviderSceneVM[],
+  reviews: ProviderReviewVM[],
+  reviewStats: ReviewStatsVM,
+): ProviderDetailVM {
   const provider = (response.provider || {}) as Record<string, unknown>;
   const user = (response.user || {}) as Record<string, unknown>;
   const displayName = resolveProviderDisplayName(
@@ -134,6 +181,7 @@ function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, 
     establishedText: readNumericRecord(provider, 'establishedYear') ? `${readNumericRecord(provider, 'establishedYear')} 年成立` : `${readNumericRecord(provider, 'yearsExperience')} 年从业经验`,
     certifications: parseTextArray(readStringRecord(provider, 'certifications')),
     cases,
+    scenes,
     reviews,
     reviewStats,
     phoneHint: compactPhone(readStringRecord(user, 'phone')),
@@ -148,7 +196,22 @@ function toCase(dto: ProviderCaseDTO): ProviderCaseVM {
     coverImage: dto.coverImage || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E6%A1%88%E4%BE%8B',
     style: dto.style || '风格待补充',
     area: dto.area ? `${dto.area}` : '面积待补充',
-    showInInspiration: dto.showInInspiration !== false,
+  };
+}
+
+function toScene(dto: ProviderSceneDTO): ProviderSceneVM {
+  const galleryImages = parseTextArray(dto.images);
+  const coverImage = dto.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E5%AE%9E%E6%99%AF';
+
+  return {
+    id: dto.id,
+    caseId: Number(dto.caseId || 0),
+    projectId: Number(dto.projectId || 0),
+    title: dto.title || '真实项目案例',
+    coverImage,
+    description: dto.description || '项目案例说明待补充',
+    images: galleryImages.length > 0 ? galleryImages : [coverImage],
+    year: dto.year || '',
   };
 }
 
@@ -216,13 +279,26 @@ export async function listProviders(params: ListProvidersParams) {
 export async function getProviderDetail(role: ProviderRole, id: number) {
   const basePath = roleToBasePath(role);
   const detail = await requestJson<ProviderDetailResponse>(`/${basePath}/${id}`);
-  const [casesData, reviewsData, reviewStats] = await Promise.all([
+  const [casesData, scenesData, reviewsData, reviewStats] = await Promise.all([
     requestJson<PageEnvelope<ProviderCaseDTO>>(`/${basePath}/${id}/cases`, { query: { page: 1, pageSize: 6 } }).catch(() => ({
       list: detail.cases || [],
       total: detail.cases?.length || 0,
       page: 1,
       pageSize: 6,
     })),
+    role === 'foreman'
+      ? requestJson<PageEnvelope<ProviderSceneDTO>>(`/${basePath}/${id}/scene-cases`, { query: { page: 1, pageSize: 6 } }).catch(() => ({
+        list: detail.sceneCases || [],
+        total: detail.sceneCases?.length || 0,
+        page: 1,
+        pageSize: 6,
+      }))
+      : Promise.resolve({
+        list: [] as ProviderSceneDTO[],
+        total: 0,
+        page: 1,
+        pageSize: 6,
+      }),
     requestJson<PageEnvelope<ProviderReviewDTO>>(`/${basePath}/${id}/reviews`, { query: { page: 1, pageSize: 4 } }).catch(() => ({
       list: detail.reviews || [],
       total: detail.reviews?.length || 0,
@@ -238,11 +314,53 @@ export async function getProviderDetail(role: ProviderRole, id: number) {
     })),
   ]);
 
-  return toProviderDetail(role, detail, casesData.list.map(toCase), reviewsData.list.map(toReview), {
+  return toProviderDetail(role, detail, casesData.list.map(toCase), scenesData.list.map(toScene), reviewsData.list.map(toReview), {
     rating: Number(reviewStats.rating || 0),
     avgRating: Number(reviewStats.avgRating || 0),
     displayRating: Number(reviewStats.displayRating || reviewStats.rating || 0),
     sampleState: reviewStats.sampleState || 'none',
     totalCount: Number(reviewStats.totalCount || 0),
   });
+}
+
+export async function getProviderShowcaseDetail(id: number) {
+  const data = await requestJson<ProviderShowcaseDetailDTO>(`/provider-cases/${id}`);
+  const galleryImages = parseTextArray(data.images);
+  const coverImage = data.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E5%B7%A5%E8%89%BA';
+
+  const detail: ProviderShowcaseDetailVM = {
+    id: data.id,
+    providerId: Number(data.providerId || 0),
+    title: data.title || '工艺展示',
+    coverImage,
+    style: data.style || '',
+    layout: data.layout || '',
+    area: data.area || '',
+    description: data.description || '工艺展示说明待补充。',
+    galleryImages: galleryImages.length > 0 ? galleryImages : [coverImage],
+    year: data.year || '',
+  };
+
+  return detail;
+}
+
+export async function getProviderSceneDetail(id: number) {
+  const data = await requestJson<ProviderSceneDetailDTO>(`/provider-scenes/${id}`);
+  const galleryImages = parseTextArray(data.images);
+  const coverImage = data.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E5%AE%9E%E6%99%AF';
+
+  const detail: ProviderSceneDetailVM = {
+    id: data.id,
+    caseId: Number(data.caseId || 0),
+    projectId: Number(data.projectId || 0),
+    providerId: Number(data.providerId || 0),
+    title: data.title || '真实项目案例',
+    coverImage,
+    description: data.description || '案例实景待补充。',
+    galleryImages: galleryImages.length > 0 ? galleryImages : [coverImage],
+    year: data.year || '',
+    createdAt: formatDateTime(data.createdAt),
+  };
+
+  return detail;
 }

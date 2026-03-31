@@ -537,11 +537,7 @@ func GetDesigner(c *gin.Context) {
 
 	detail, err := providerService.GetProviderDetail(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.NotFound(c, "设计师不存在")
-			return
-		}
-		response.ServerError(c, "设计师详情加载失败")
+		response.NotFound(c, "设计师不存在")
 		return
 	}
 
@@ -574,11 +570,7 @@ func GetCompany(c *gin.Context) {
 
 	detail, err := providerService.GetProviderDetail(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.NotFound(c, "公司不存在")
-			return
-		}
-		response.ServerError(c, "公司详情加载失败")
+		response.NotFound(c, "公司不存在")
 		return
 	}
 
@@ -611,11 +603,7 @@ func GetForeman(c *gin.Context) {
 
 	detail, err := providerService.GetProviderDetail(id)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			response.NotFound(c, "工长不存在")
-			return
-		}
-		response.ServerError(c, "工长详情加载失败")
+		response.NotFound(c, "工长不存在")
 		return
 	}
 

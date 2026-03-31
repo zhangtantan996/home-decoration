@@ -35,6 +35,7 @@ import { ProjectDisputePage } from '../pages/ProjectDisputePage';
 import { ProjectChangeRequestPage } from '../pages/ProjectChangeRequestPage';
 import { ProjectPausePage } from '../pages/ProjectPausePage';
 import { ProposalDetailPage } from '../pages/ProposalDetailPage';
+import { ProviderSceneDetailPage, ProviderShowcaseDetailPage } from '../pages/ProviderAssetDetailPages';
 import { ProviderBookingCreatePage } from '../pages/ProviderBookingCreatePage';
 import { QuoteTaskDetailPage } from '../pages/QuoteTaskDetailPage';
 import { ProviderDetailPage } from '../pages/ProviderDetailPage';
@@ -94,6 +95,8 @@ const router = createBrowserRouter(
         { path: 'inspiration', element: <InspirationPage /> },
         { path: 'inspiration/:id', element: <InspirationDetailPage /> },
         { path: 'providers', element: <ProvidersPage /> },
+        { path: 'provider-cases/:id', element: <ProviderShowcaseDetailPage /> },
+        { path: 'provider-scenes/:id', element: <ProviderSceneDetailPage /> },
         { path: 'providers/:role/:id/booking', element: <ProviderBookingCreatePage /> },
         { path: 'providers/:role/:id', element: <ProviderDetailPage /> },
         { path: 'material-shops/:id', element: <MaterialShopDetailPage /> },

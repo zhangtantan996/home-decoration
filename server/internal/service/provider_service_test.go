@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -524,19 +525,19 @@ func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *tes
 	}
 	provider := model.Provider{
 		UserID:       user.ID,
-		ProviderType: 1,
-		CompanyName:  "可公开设计师",
+		ProviderType: 3,
+		CompanyName:  "可公开工长",
 		Verified:     true,
 		Status:       1,
 	}
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	craftCase := model.ProviderCase{ProviderID: provider.ID, Title: "公开工艺", ShowInInspiration: true}
+	craftCase := model.ProviderCase{ProviderID: provider.ID, Title: "水工施工展示", ShowInInspiration: false}
 	if err := db.Create(&craftCase).Error; err != nil {
 		t.Fatalf("create craft case: %v", err)
 	}
-	sceneCase := model.ProviderCase{ProviderID: provider.ID, Title: "归档项目案例", ShowInInspiration: true}
+	sceneCase := model.ProviderCase{ProviderID: provider.ID, Title: "归档项目案例", ShowInInspiration: false}
 	if err := db.Create(&sceneCase).Error; err != nil {
 		t.Fatalf("create scene case: %v", err)
 	}
@@ -561,10 +562,10 @@ func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *tes
 		t.Fatalf("get provider detail: %v", err)
 	}
 	if detail.CaseCount != 1 || len(detail.Cases) != 1 || detail.Cases[0].ID != craftCase.ID {
-		t.Fatalf("expected craft-only cases in detail, got count=%d cases=%+v", detail.CaseCount, detail.Cases)
+		t.Fatalf("expected craft-only cases in detail, count=%d cases=%+v", detail.CaseCount, detail.Cases)
 	}
 	if detail.SceneCount != 1 || len(detail.SceneCases) != 1 || detail.SceneCases[0].CaseID != sceneCase.ID {
-		t.Fatalf("expected scene cases in detail, got sceneCount=%d sceneCases=%+v", detail.SceneCount, detail.SceneCases)
+		t.Fatalf("expected one project scene in detail, sceneCount=%d sceneCases=%+v", detail.SceneCount, detail.SceneCases)
 	}
 
 	cases, total, err := service.GetProviderCases(provider.ID, 1, 10)
@@ -572,7 +573,7 @@ func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *tes
 		t.Fatalf("get provider cases: %v", err)
 	}
 	if total != 1 || len(cases) != 1 || cases[0].ID != craftCase.ID {
-		t.Fatalf("expected only craft cases in public list, total=%d cases=%+v", total, cases)
+		t.Fatalf("expected only craft cases in provider case list, total=%d cases=%+v", total, cases)
 	}
 
 	sceneCases, sceneTotal, err := service.GetProviderSceneCases(provider.ID, 1, 10)
@@ -580,7 +581,73 @@ func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *tes
 		t.Fatalf("get provider scene cases: %v", err)
 	}
 	if sceneTotal != 1 || len(sceneCases) != 1 || sceneCases[0].ID == 0 {
-		t.Fatalf("expected project scenes in public list, total=%d sceneCases=%+v", sceneTotal, sceneCases)
+		t.Fatalf("expected project scenes from case audits, total=%d sceneCases=%+v", sceneTotal, sceneCases)
+	}
+}
+
+func TestProviderServiceKeepsDesignerCasesUnified(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138129", Nickname: "设计师案例归一", PublicID: "user_public_designer_cases"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		CompanyName:  "案例归一设计师",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	regularCase := model.ProviderCase{ProviderID: provider.ID, Title: "常规案例"}
+	if err := db.Create(&regularCase).Error; err != nil {
+		t.Fatalf("create regular case: %v", err)
+	}
+	projectCase := model.ProviderCase{ProviderID: provider.ID, Title: "项目归档案例"}
+	if err := db.Create(&projectCase).Error; err != nil {
+		t.Fatalf("create project case: %v", err)
+	}
+	if err := db.Create(&model.CaseAudit{
+		CaseID:          &projectCase.ID,
+		ProviderID:      provider.ID,
+		ActionType:      "create",
+		SourceType:      "project_completion",
+		SourceProjectID: 3001,
+		Status:          1,
+		Title:           "项目归档案例",
+	}).Error; err != nil {
+		t.Fatalf("create project audit: %v", err)
+	}
+
+	cases, total, err := service.GetProviderCases(provider.ID, 1, 10)
+	if err != nil {
+		t.Fatalf("get provider cases: %v", err)
+	}
+	if total != 2 || len(cases) != 2 {
+		t.Fatalf("expected designer cases to stay unified, total=%d cases=%+v", total, cases)
+	}
+
+	detail, err := service.GetProviderDetail(provider.ID)
+	if err != nil {
+		t.Fatalf("get provider detail: %v", err)
+	}
+	if detail.CaseCount != 2 || len(detail.Cases) != 2 {
+		t.Fatalf("expected unified cases in detail, count=%d cases=%+v", detail.CaseCount, detail.Cases)
+	}
+	if detail.SceneCount != 0 || len(detail.SceneCases) != 0 {
+		t.Fatalf("expected no scene cases for designer, sceneCount=%d sceneCases=%+v", detail.SceneCount, detail.SceneCases)
+	}
+
+	if _, _, err := service.GetProviderSceneCases(provider.ID, 1, 10); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected designer scene cases to be unavailable, got %v", err)
+	}
+	if _, err := service.GetProviderShowcaseDetail(regularCase.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected non-foreman showcase detail to be unavailable, got %v", err)
 	}
 }
 
@@ -653,12 +720,10 @@ func TestProviderSceneDetailUsesLatestApprovedAuditSnapshot(t *testing.T) {
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-
-	sceneCase := model.ProviderCase{ProviderID: provider.ID, Title: "初始案例", ShowInInspiration: true}
+	sceneCase := model.ProviderCase{ProviderID: provider.ID, Title: "初始案例"}
 	if err := db.Create(&sceneCase).Error; err != nil {
 		t.Fatalf("create scene case: %v", err)
 	}
-
 	createAudit := model.CaseAudit{
 		CaseID:          &sceneCase.ID,
 		ProviderID:      provider.ID,
