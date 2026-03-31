@@ -15,6 +15,7 @@ import {
   type ProviderCaseItem,
   type ProviderDetail,
   type ProviderReviewItem,
+  type ProviderSceneItem,
   type ProviderType,
 } from '@/services/providers';
 import { useAuthStore } from '@/store/auth';
@@ -211,6 +212,9 @@ const ProviderDetailPage: React.FC = () => {
     [cases, detail, isCompany],
   );
   const companyAlbumPreview = useMemo(() => companyAlbumImages.slice(0, 5), [companyAlbumImages]);
+  const sceneCases = useMemo(() => detail?.sceneCases || [], [detail?.sceneCases]);
+  const sceneTotal = Number(detail?.sceneCount || sceneCases.length || 0);
+  const showcaseTotal = caseTotal + sceneTotal || providerDetail?.completedCnt || 0;
 
   const settled = providerDetail?.isSettled !== false && providerRaw.isSettled !== false;
   const hasFixedFooter = !settled || !isForeman;
@@ -257,11 +261,11 @@ const ProviderDetailPage: React.FC = () => {
     });
   };
 
-  const handleOpenCaseGallery = () => {
+  const handleOpenCaseGallery = (kind: 'craft' | 'scene') => {
     if (!params.id) return;
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
-      url: `/pages/cases/gallery/index?providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
+      url: `/pages/cases/gallery/index?providerId=${params.id}&providerType=${params.type}&providerName=${providerName}&kind=${kind}`,
     });
   };
 
@@ -270,6 +274,14 @@ const ProviderDetailPage: React.FC = () => {
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
       url: `/pages/cases/detail/index?caseId=${caseId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
+    });
+  };
+
+  const handleOpenSceneDetail = (sceneId: number) => {
+    if (!sceneId || !params.id) return;
+    const providerName = encodeURIComponent(displayName);
+    Taro.navigateTo({
+      url: `/pages/cases/scene-detail/index?sceneId=${sceneId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
     });
   };
 
@@ -430,6 +442,95 @@ const ProviderDetailPage: React.FC = () => {
   const caseSectionMore = isForeman ? '全部工艺' : isCompany ? '全部案例' : '全部作品';
   const caseSectionEmpty = isForeman ? '暂无工艺展示' : isCompany ? '暂无作品案例' : '暂无作品展示';
   const caseCardFallbackTitle = isForeman ? '工艺展示' : isCompany ? '公司案例' : '案例作品';
+  const sceneSectionTitle = '案例实景';
+  const sceneSectionMore = '全部实景';
+  const sceneSectionEmpty = '暂无案例实景';
+
+  const renderCraftSection = (
+    <View className="provider-detail-page__section">
+      <View className="provider-detail-page__section-head">
+        <Text className="provider-detail-page__section-title">{caseSectionTitle}</Text>
+        <Text className="provider-detail-page__section-more" onClick={() => handleOpenCaseGallery('craft')}>
+          {caseSectionMore}
+        </Text>
+      </View>
+
+      {cases.length > 0 ? (
+        <ScrollView scrollX className="provider-detail-page__case-scroll" showScrollbar={false}>
+          <View className="provider-detail-page__case-list">
+            {cases.map((item) => {
+              const caseImage = normalizeProviderMediaUrl(item.coverImage);
+              return (
+                <View key={item.id} className="provider-detail-page__case-card" onClick={() => handleOpenCaseDetail(item.id)}>
+                  {caseImage ? (
+                    <Image className="provider-detail-page__case-image" src={caseImage} mode="aspectFill" lazyLoad />
+                  ) : (
+                    <View className="provider-detail-page__case-image provider-detail-page__case-image--placeholder" />
+                  )}
+                  <View className="provider-detail-page__case-overlay">
+                    <Text className="provider-detail-page__case-title" numberOfLines={1}>
+                      {item.title || caseCardFallbackTitle}
+                    </Text>
+                    <Text className="provider-detail-page__case-meta" numberOfLines={1}>
+                      {[item.style, formatCaseArea(item.area), item.year ? `${item.year}` : ''].filter(Boolean).join(' · ')
+                        || (isForeman ? '工艺信息待补充' : '案例信息待补充')}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      ) : (
+        <View className="provider-detail-page__placeholder-card">
+          <Text className="provider-detail-page__placeholder-text">{caseSectionEmpty}</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderSceneSection = sceneTotal > 0 ? (
+    <View className="provider-detail-page__section">
+      <View className="provider-detail-page__section-head">
+        <Text className="provider-detail-page__section-title">{sceneSectionTitle}</Text>
+        <Text className="provider-detail-page__section-more" onClick={() => handleOpenCaseGallery('scene')}>
+          {sceneSectionMore}
+        </Text>
+      </View>
+
+      {sceneCases.length > 0 ? (
+        <ScrollView scrollX className="provider-detail-page__case-scroll" showScrollbar={false}>
+          <View className="provider-detail-page__case-list">
+            {sceneCases.map((item: ProviderSceneItem) => {
+              const sceneImage = normalizeProviderMediaUrl(item.coverImage);
+              const sceneMeta = [item.year ? `${item.year}` : '', item.createdAt || ''].filter(Boolean).join(' · ') || '真实项目案例';
+              return (
+                <View key={item.id} className="provider-detail-page__case-card" onClick={() => handleOpenSceneDetail(item.id)}>
+                  {sceneImage ? (
+                    <Image className="provider-detail-page__case-image" src={sceneImage} mode="aspectFill" lazyLoad />
+                  ) : (
+                    <View className="provider-detail-page__case-image provider-detail-page__case-image--placeholder" />
+                  )}
+                  <View className="provider-detail-page__case-overlay">
+                    <Text className="provider-detail-page__case-title" numberOfLines={1}>
+                      {item.title || '真实项目案例'}
+                    </Text>
+                    <Text className="provider-detail-page__case-meta" numberOfLines={1}>
+                      {sceneMeta}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      ) : (
+        <View className="provider-detail-page__placeholder-card">
+          <Text className="provider-detail-page__placeholder-text">{sceneSectionEmpty}</Text>
+        </View>
+      )}
+    </View>
+  ) : null;
 
   return (
     <View className={`provider-detail-page ${!hasFixedFooter ? 'provider-detail-page--no-fixed-footer' : ''}`}>
@@ -482,7 +583,7 @@ const ProviderDetailPage: React.FC = () => {
           </View>
           <View className="provider-detail-page__stat-divider" />
           <View className="provider-detail-page__stat">
-            <Text className="provider-detail-page__stat-value">{caseTotal || providerDetail?.completedCnt || 0}</Text>
+            <Text className="provider-detail-page__stat-value">{showcaseTotal}</Text>
             <Text className="provider-detail-page__stat-label">案例数量</Text>
           </View>
         </View>
@@ -503,46 +604,8 @@ const ProviderDetailPage: React.FC = () => {
       {isCompany ? renderQuoteSection : isDesigner ? renderQuoteSection : renderIntroSection}
       {renderCompanyAlbumSection}
 
-      <View className="provider-detail-page__section">
-        <View className="provider-detail-page__section-head">
-          <Text className="provider-detail-page__section-title">{caseSectionTitle}</Text>
-          <Text className="provider-detail-page__section-more" onClick={handleOpenCaseGallery}>
-            {caseSectionMore}
-          </Text>
-        </View>
-
-        {cases.length > 0 ? (
-          <ScrollView scrollX className="provider-detail-page__case-scroll" showScrollbar={false}>
-            <View className="provider-detail-page__case-list">
-              {cases.map((item) => {
-                const caseImage = normalizeProviderMediaUrl(item.coverImage);
-                return (
-                  <View key={item.id} className="provider-detail-page__case-card" onClick={() => handleOpenCaseDetail(item.id)}>
-                    {caseImage ? (
-                      <Image className="provider-detail-page__case-image" src={caseImage} mode="aspectFill" lazyLoad />
-                    ) : (
-                      <View className="provider-detail-page__case-image provider-detail-page__case-image--placeholder" />
-                    )}
-                    <View className="provider-detail-page__case-overlay">
-                      <Text className="provider-detail-page__case-title" numberOfLines={1}>
-                        {item.title || caseCardFallbackTitle}
-                      </Text>
-                      <Text className="provider-detail-page__case-meta" numberOfLines={1}>
-                        {[item.style, formatCaseArea(item.area), item.year ? `${item.year}` : ''].filter(Boolean).join(' · ')
-                          || (isForeman ? '工艺信息待补充' : isCompany ? '案例信息待补充' : '案例信息待补充')}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </ScrollView>
-        ) : (
-          <View className="provider-detail-page__placeholder-card">
-            <Text className="provider-detail-page__placeholder-text">{caseSectionEmpty}</Text>
-          </View>
-        )}
-      </View>
+      {renderCraftSection}
+      {renderSceneSection}
 
       <View className="provider-detail-page__section provider-detail-page__section--reviews">
         <View className="provider-detail-page__section-head">

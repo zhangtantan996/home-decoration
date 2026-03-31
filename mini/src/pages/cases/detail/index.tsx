@@ -10,10 +10,12 @@ import { Skeleton } from '@/components/Skeleton';
 import type { InspirationDetailDTO } from '@/services/dto';
 import type { CaseQuote } from '@/services/inspiration';
 import { inspirationService } from '@/services/inspiration';
+import { getProviderCaseDetail, type ProviderCaseDetail } from '@/services/providers';
 import { useAuthStore } from '@/store/auth';
 import useSlowLoadingHint from '@/hooks/useSlowLoadingHint';
 import { showErrorToast } from '@/utils/error';
 import { getInspirationGalleryImages } from '@/utils/inspirationImages';
+import { normalizeProviderMediaUrl, parseStringListValue } from '@/utils/providerMedia';
 import { MiniApiError } from '@/utils/request';
 
 import './index.scss';
@@ -38,13 +40,48 @@ const formatArea = (value?: string) => {
 
 const formatAmount = (value?: number) => `¥${Number(value || 0).toLocaleString()}`;
 
+type CaseDetailViewModel = InspirationDetailDTO & {
+  source: 'inspiration' | 'provider_showcase';
+};
+
+const normalizeProviderShowcaseDetail = (raw: ProviderCaseDetail): CaseDetailViewModel => {
+  const normalizedImages = [
+    normalizeProviderMediaUrl(raw.coverImage),
+    ...parseStringListValue(raw.images).map((item) => normalizeProviderMediaUrl(item)),
+  ].filter(Boolean);
+  const galleryImages = Array.from(new Set(normalizedImages));
+
+  return {
+    id: raw.id,
+    providerId: raw.providerId,
+    title: raw.title || '案例详情',
+    coverImage: galleryImages[0] || '',
+    style: raw.style || '',
+    layout: raw.layout || '',
+    area: String(raw.area || ''),
+    price: 0,
+    description: raw.description || '',
+    images: galleryImages.slice(1),
+    likeCount: 0,
+    commentCount: 0,
+    isLiked: false,
+    isFavorited: false,
+    author: {
+      id: 0,
+      name: '服务商',
+      avatar: '',
+    },
+    source: 'provider_showcase',
+  };
+};
+
 const CaseDetailPage: React.FC = () => {
   const auth = useAuthStore();
   const [caseId, setCaseId] = useState(0);
   const [providerId, setProviderId] = useState(0);
   const [providerType, setProviderType] = useState('designer');
   const [providerName, setProviderName] = useState('');
-  const [detail, setDetail] = useState<InspirationDetailDTO | null>(null);
+  const [detail, setDetail] = useState<CaseDetailViewModel | null>(null);
   const [quote, setQuote] = useState<CaseQuote | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -74,7 +111,12 @@ const CaseDetailPage: React.FC = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const detailRes = await inspirationService.detail(caseId);
+      const detailRes = providerId > 0
+        ? normalizeProviderShowcaseDetail(await getProviderCaseDetail(caseId))
+        : {
+          ...(await inspirationService.detail(caseId)),
+          source: 'inspiration' as const,
+        };
       setDetail(detailRes);
     } catch (error) {
       setDetail(null);
@@ -87,10 +129,10 @@ const CaseDetailPage: React.FC = () => {
   useEffect(() => {
     if (!caseId) return;
     void fetchDetail();
-  }, [caseId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [caseId, providerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadQuoteDetail = async () => {
-    if (!caseId || quoteLoading || quote) return;
+    if (!caseId || quoteLoading || quote || detail?.source === 'provider_showcase') return;
 
     setQuoteLoading(true);
     try {
@@ -131,6 +173,7 @@ const CaseDetailPage: React.FC = () => {
   };
 
   const handleToggleQuote = () => {
+    if (detail?.source === 'provider_showcase') return;
     if (!quoteExpanded && !quote && !quoteLoading) {
       if (!auth.token) {
         Taro.showModal({
@@ -155,6 +198,8 @@ const CaseDetailPage: React.FC = () => {
   const quoteTotal = Number(quote?.totalAmount || detail?.price || 0);
   const quoteItems = quote?.items || [];
   const detailTitle = detail?.title || '案例详情';
+  const showQuoteSection = detail?.source !== 'provider_showcase';
+  const descriptionTitle = providerType === 'foreman' ? '工艺说明' : '案例说明';
 
   const infoItems = useMemo(
     () => [
@@ -270,66 +315,68 @@ const CaseDetailPage: React.FC = () => {
           </View>
         </View>
 
-        <View className="case-detail-page__section case-detail-page__section--quote">
-          <View className="case-detail-page__quote-summary">
-            <View className="case-detail-page__quote-header">
-              <Text className="case-detail-page__section-title">装修报价</Text>
-              <View className="case-detail-page__quote-price">
-                {quoteTotal > 0 ? (
-                  <>
-                    <Text className="case-detail-page__quote-symbol">¥</Text>
-                    <Text className="case-detail-page__quote-amount">{Number(quoteTotal).toLocaleString()}</Text>
-                  </>
-                ) : (
-                  <Text className="case-detail-page__quote-empty">报价待沟通</Text>
-                )}
+        {showQuoteSection ? (
+          <View className="case-detail-page__section case-detail-page__section--quote">
+            <View className="case-detail-page__quote-summary">
+              <View className="case-detail-page__quote-header">
+                <Text className="case-detail-page__section-title">装修报价</Text>
+                <View className="case-detail-page__quote-price">
+                  {quoteTotal > 0 ? (
+                    <>
+                      <Text className="case-detail-page__quote-symbol">¥</Text>
+                      <Text className="case-detail-page__quote-amount">{Number(quoteTotal).toLocaleString()}</Text>
+                    </>
+                  ) : (
+                    <Text className="case-detail-page__quote-empty">报价待沟通</Text>
+                  )}
+                </View>
+              </View>
+              <Text className="case-detail-page__quote-hint">含设计费、施工费、主材费等项目参考</Text>
+            </View>
+
+            <View className="case-detail-page__quote-toggle" onClick={handleToggleQuote}>
+              <Text className="case-detail-page__quote-toggle-text">
+                {quoteExpanded ? '收起详细报价' : '查看详细报价'}
+              </Text>
+              <View className={`case-detail-page__quote-toggle-icon ${quoteExpanded ? 'case-detail-page__quote-toggle-icon--expanded' : ''}`}>
+                <Icon name="arrow-down" size={18} color="#111111" />
               </View>
             </View>
-            <Text className="case-detail-page__quote-hint">含设计费、施工费、主材费等项目参考</Text>
-          </View>
 
-          <View className="case-detail-page__quote-toggle" onClick={handleToggleQuote}>
-            <Text className="case-detail-page__quote-toggle-text">
-              {quoteExpanded ? '收起详细报价' : '查看详细报价'}
-            </Text>
-            <View className={`case-detail-page__quote-toggle-icon ${quoteExpanded ? 'case-detail-page__quote-toggle-icon--expanded' : ''}`}>
-              <Icon name="arrow-down" size={18} color="#111111" />
-            </View>
-          </View>
-
-          {quoteExpanded ? (
-            quoteLoading ? (
-              <View className="case-detail-page__quote-loading">
-                <Skeleton row={3} />
-              </View>
-            ) : quoteItems.length > 0 ? (
-              <View className="case-detail-page__quote-list">
-                {quoteItems.map((item, index) => (
-                  <View
-                    key={`${item.name}-${item.unit}-${index}`}
-                    className={`case-detail-page__quote-item ${index === quoteItems.length - 1 ? 'case-detail-page__quote-item--last' : ''}`}
-                  >
-                    <View className="case-detail-page__quote-item-main">
-                      <Text className="case-detail-page__quote-name">{item.name}</Text>
-                      <Text className="case-detail-page__quote-desc">
-                        {item.quantity}{item.unit} × {formatAmount(item.unitPrice)}
-                      </Text>
+            {quoteExpanded ? (
+              quoteLoading ? (
+                <View className="case-detail-page__quote-loading">
+                  <Skeleton row={3} />
+                </View>
+              ) : quoteItems.length > 0 ? (
+                <View className="case-detail-page__quote-list">
+                  {quoteItems.map((item, index) => (
+                    <View
+                      key={`${item.name}-${item.unit}-${index}`}
+                      className={`case-detail-page__quote-item ${index === quoteItems.length - 1 ? 'case-detail-page__quote-item--last' : ''}`}
+                    >
+                      <View className="case-detail-page__quote-item-main">
+                        <Text className="case-detail-page__quote-name">{item.name}</Text>
+                        <Text className="case-detail-page__quote-desc">
+                          {item.quantity}{item.unit} × {formatAmount(item.unitPrice)}
+                        </Text>
+                      </View>
+                      <Text className="case-detail-page__quote-value">{formatAmount(item.totalPrice)}</Text>
                     </View>
-                    <Text className="case-detail-page__quote-value">{formatAmount(item.totalPrice)}</Text>
-                  </View>
-                ))}
-                {quote?.notes ? <Text className="case-detail-page__quote-notes">{quote.notes}</Text> : null}
-              </View>
-            ) : (
-              <View className="case-detail-page__quote-empty-block">
-                <Text className="case-detail-page__quote-empty-text">暂无详细报价信息</Text>
-              </View>
-            )
-          ) : null}
-        </View>
+                  ))}
+                  {quote?.notes ? <Text className="case-detail-page__quote-notes">{quote.notes}</Text> : null}
+                </View>
+              ) : (
+                <View className="case-detail-page__quote-empty-block">
+                  <Text className="case-detail-page__quote-empty-text">暂无详细报价信息</Text>
+                </View>
+              )
+            ) : null}
+          </View>
+        ) : null}
 
         <View className="case-detail-page__section">
-          <Text className="case-detail-page__section-title">设计理念</Text>
+          <Text className="case-detail-page__section-title">{descriptionTitle}</Text>
           <Text className="case-detail-page__description">{detail.description || '暂无案例说明'}</Text>
         </View>
 

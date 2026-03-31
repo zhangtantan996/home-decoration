@@ -6,9 +6,16 @@ import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
 import MiniPageNav from '@/components/MiniPageNav';
 import { Skeleton } from '@/components/Skeleton';
-import { getProviderCases, type ProviderCaseItem, type ProviderType } from '@/services/providers';
+import {
+  getProviderCases,
+  getProviderSceneCases,
+  type ProviderCaseItem,
+  type ProviderSceneItem,
+  type ProviderType,
+} from '@/services/providers';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
+import { normalizeProviderMediaUrl } from '@/utils/providerMedia';
 
 import './index.scss';
 
@@ -37,16 +44,19 @@ const formatArea = (area?: string | number) => {
 };
 
 interface DecoratedCaseItem {
-  item: ProviderCaseItem;
+  item: ProviderCaseItem | ProviderSceneItem;
   index: number;
 }
+
+type GalleryKind = 'craft' | 'scene';
 
 const CaseGalleryPage: React.FC = () => {
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const [providerId, setProviderId] = useState(0);
   const [providerType, setProviderType] = useState<ProviderType>('designer');
   const [providerName, setProviderName] = useState('');
-  const [list, setList] = useState<ProviderCaseItem[]>([]);
+  const [galleryKind, setGalleryKind] = useState<GalleryKind>('craft');
+  const [list, setList] = useState<Array<ProviderCaseItem | ProviderSceneItem>>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -56,6 +66,7 @@ const CaseGalleryPage: React.FC = () => {
     setProviderId(Number(options.providerId || 0));
     setProviderType(normalizeProviderType(options.providerType));
     setProviderName(decodeText(options.providerName) || '服务商');
+    setGalleryKind(options.kind === 'scene' ? 'scene' : 'craft');
   });
 
   const fetchList = async (reset = false) => {
@@ -75,7 +86,9 @@ const CaseGalleryPage: React.FC = () => {
     }
 
     try {
-      const res = await getProviderCases(providerType, providerId, targetPage, PAGE_SIZE);
+      const res = galleryKind === 'scene'
+        ? await getProviderSceneCases(providerType, providerId, targetPage, PAGE_SIZE)
+        : await getProviderCases(providerType, providerId, targetPage, PAGE_SIZE);
       const nextList = res.list || [];
       setList((prev) => (reset ? nextList : [...prev, ...nextList]));
       setPage(targetPage + 1);
@@ -91,7 +104,7 @@ const CaseGalleryPage: React.FC = () => {
   useEffect(() => {
     if (!providerId) return;
     void fetchList(true);
-  }, [providerId, providerType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [galleryKind, providerId, providerType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useReachBottom(() => {
     void fetchList();
@@ -106,10 +119,12 @@ const CaseGalleryPage: React.FC = () => {
     Taro.switchTab({ url: '/pages/home/index' });
   };
 
-  const openDetail = (item: ProviderCaseItem) => {
+  const openDetail = (item: ProviderCaseItem | ProviderSceneItem) => {
     const encodedName = encodeURIComponent(providerName);
     Taro.navigateTo({
-      url: `/pages/cases/detail/index?caseId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}`,
+      url: galleryKind === 'scene'
+        ? `/pages/cases/scene-detail/index?sceneId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}`
+        : `/pages/cases/detail/index?caseId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}`,
     });
   };
 
@@ -124,22 +139,33 @@ const CaseGalleryPage: React.FC = () => {
     );
   }, [list]);
 
-  const galleryTitle = providerType === 'foreman' ? '工艺展示' : '作品案例';
-  const emptyText = providerType === 'foreman' ? '暂无工艺展示' : '暂无作品案例';
-  const cardFallbackTitle = providerType === 'foreman' ? '工艺展示' : '作品案例';
-  const cardFallbackMeta = providerType === 'foreman' ? '工艺信息待补充' : '案例信息待补充';
+  const galleryTitle = galleryKind === 'scene'
+    ? '案例实景'
+    : providerType === 'foreman' ? '工艺展示' : '作品案例';
+  const emptyText = galleryKind === 'scene'
+    ? '暂无案例实景'
+    : providerType === 'foreman' ? '暂无工艺展示' : '暂无作品案例';
+  const cardFallbackTitle = galleryKind === 'scene'
+    ? '真实项目案例'
+    : providerType === 'foreman' ? '工艺展示' : '作品案例';
+  const cardFallbackMeta = galleryKind === 'scene'
+    ? '真实项目案例'
+    : providerType === 'foreman' ? '工艺信息待补充' : '案例信息待补充';
 
   const renderCard = ({ item, index }: DecoratedCaseItem) => {
     const coverHeight = COVER_HEIGHTS[index % COVER_HEIGHTS.length];
-    const meta = [item.style, formatArea(item.area)].filter(Boolean).join(' · ') || cardFallbackMeta;
+    const meta = galleryKind === 'scene'
+      ? [item.year, 'createdAt' in item ? item.createdAt : ''].filter(Boolean).join(' · ') || cardFallbackMeta
+      : [('style' in item ? item.style : ''), ('area' in item ? formatArea(item.area) : '')].filter(Boolean).join(' · ') || cardFallbackMeta;
+    const coverImage = normalizeProviderMediaUrl(item.coverImage);
 
     return (
       <View key={item.id} className="case-gallery-page__card" onClick={() => openDetail(item)}>
-        {item.coverImage ? (
+        {coverImage ? (
           <Image
             className="case-gallery-page__cover"
             style={{ height: `${coverHeight}rpx` }}
-            src={item.coverImage}
+            src={coverImage}
             mode="aspectFill"
             lazyLoad
           />

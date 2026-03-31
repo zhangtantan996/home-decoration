@@ -2,10 +2,26 @@ import { MINI_ENV } from '@/config/env';
 import type { ProviderCaseItem, ProviderDetail } from '@/services/providers';
 
 const API_ORIGIN = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+const LOCAL_MEDIA_HOST_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i;
 
 export const normalizeProviderMediaUrl = (raw?: string) => {
   if (!raw) return '';
-  return raw.replace(/^http:\/\/localhost:8080/i, API_ORIGIN);
+
+  const normalized = String(raw).trim();
+  if (!normalized) return '';
+  if (normalized.startsWith('data:image/')) return normalized;
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(normalized) && !/^https?:/i.test(normalized)) {
+    return '';
+  }
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized.replace(LOCAL_MEDIA_HOST_PATTERN, API_ORIGIN);
+  }
+  if (normalized.startsWith('//')) {
+    const protocol = API_ORIGIN.startsWith('https://') ? 'https:' : 'http:';
+    return `${protocol}${normalized}`;
+  }
+
+  return `${API_ORIGIN}/${normalized.replace(/^\/+/, '')}`;
 };
 
 export const parseStringListValue = (raw?: unknown): string[] => {

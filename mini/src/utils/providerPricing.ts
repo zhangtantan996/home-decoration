@@ -114,14 +114,17 @@ const formatAmount = (amount: number, role: ProviderPricingRole, unit: string): 
   if (shouldUseWan(role, unit, amount)) {
     return `${trimNumber(amount / 10000)}万${joinWanUnit(unit)}`;
   }
-  return `¥${trimNumber(amount)}${unit}`;
+  return `${trimNumber(amount)}元${unit}`;
 };
 
 const formatRange = (min: number, max: number, role: ProviderPricingRole, unit: string): string => {
+  if (Math.abs(min - max) < 0.001) {
+    return formatAmount(max, role, unit);
+  }
   if (shouldUseWan(role, unit, Math.max(min, max))) {
     return `${trimNumber(min / 10000)}-${trimNumber(max / 10000)}万${joinWanUnit(unit)}`;
   }
-  return `¥${trimNumber(min)}-${trimNumber(max)}${unit}`;
+  return `${trimNumber(min)}-${trimNumber(max)}元${unit}`;
 };
 
 const parseStructuredPricing = (

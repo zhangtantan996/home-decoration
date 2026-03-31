@@ -98,6 +98,8 @@ export interface ProviderDetailDTO {
   isSettled?: boolean;
   cases?: ProviderCaseDTO[];
   caseCount?: number;
+  sceneCases?: ProviderSceneDTO[];
+  sceneCount?: number;
 }
 
 export interface ProviderCaseDTO {
@@ -110,6 +112,19 @@ export interface ProviderCaseDTO {
   layout?: string;
   year?: string | number;
   price?: number;
+}
+
+export interface ProviderSceneDTO {
+  id: number;
+  caseId: number;
+  projectId: number;
+  providerId?: number;
+  title: string;
+  coverImage: string;
+  description?: string;
+  images?: StringListValue;
+  year?: string | number;
+  createdAt?: string;
 }
 
 export interface ProposalDTO {

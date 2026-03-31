@@ -14,6 +14,7 @@ export default {
     'pages/inspiration/quote/index',
     'pages/cases/gallery/index',
     'pages/cases/detail/index',
+    'pages/cases/scene-detail/index',
     'pages/reviews/index',
     'pages/progress/index',
     'pages/messages/index',
