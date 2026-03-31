@@ -42,6 +42,7 @@ interface ProviderCaseDTO {
   coverImage?: string;
   style?: string;
   area?: string | number;
+  showInInspiration?: boolean;
 }
 
 interface ProviderReviewDTO {
@@ -145,6 +146,7 @@ function toCase(dto: ProviderCaseDTO): ProviderCaseVM {
     coverImage: dto.coverImage || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E6%A1%88%E4%BE%8B',
     style: dto.style || '风格待补充',
     area: dto.area ? `${dto.area}` : '面积待补充',
+    showInInspiration: dto.showInInspiration !== false,
   };
 }
 
