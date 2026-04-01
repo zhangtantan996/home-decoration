@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	SchemaGuardMigrationPath = "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
+	SchemaGuardMigrationPath = "server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql"
 )
 
 const (

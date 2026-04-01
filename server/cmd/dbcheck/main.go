@@ -65,7 +65,7 @@ func printMigrationStatus() {
 		fmt.Println("  当前项目无统一 migration version 表，按 server/migrations/*.sql 治理")
 	}
 	fmt.Println()
-	fmt.Println("  Canonical repair path: server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql")
+	fmt.Println("  Canonical repair path: server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql")
 }
 
 func printHighRiskColumnCheck() {
@@ -86,7 +86,7 @@ func printHighRiskColumnCheck() {
 
 		if len(result.Missing) > 0 {
 			fmt.Printf("  [FAIL] Table '%s' missing columns: %s\n", result.Table, strings.Join(result.Missing, ", "))
-			fmt.Printf("         -> 提示：缺列请跑 v1.6.9 补洞\n")
+			fmt.Printf("         -> 提示：缺列请跑 v1.9.14 补洞\n")
 			allPassed = false
 		} else {
 			fmt.Printf("  [PASS] Table '%s' all key columns present\n", result.Table)
@@ -100,7 +100,7 @@ func printHighRiskColumnCheck() {
 		fmt.Println()
 		fmt.Println("  WARNING: Some columns missing. To fix, run:")
 		fmt.Println("    docker exec -i home_decor_db_local psql -U postgres -d home_decoration \\")
-		fmt.Println("      < server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql")
+		fmt.Println("      < server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql")
 	}
 }
 
@@ -141,9 +141,9 @@ func printSmokeResults() {
 			fmt.Println("  -> 检测到缺表：当前仓库可能仍未完成全量空库 bootstrap，本轮仅守高风险增量 schema")
 			fmt.Println("  -> 缺表属于更底层 bootstrap 缺口，请先完成全量 bootstrap 再排查")
 		} else {
-			fmt.Println("  -> 这可能是高风险增量 schema 缺口，请跑 v1.6.9 修复")
+			fmt.Println("  -> 这可能是高风险增量 schema 缺口，请跑 v1.9.14 修复")
 		}
-		fmt.Println("  Canonical repair path: v1.6.9_reconcile_high_risk_schema_guard.sql")
+		fmt.Println("  Canonical repair path: v1.9.14_add_claimed_completion_onboarding_columns.sql")
 	}
 }
 
