@@ -24,7 +24,6 @@ import merchantAppIcon from '../assets/branding/company-logo.png';
 
 const { Header, Sider, Content } = Layout;
 
-type MerchantApplicantType = 'personal' | 'studio' | 'company' | 'foreman';
 type MerchantProviderSubType = 'designer' | 'company' | 'foreman';
 type MerchantKind = 'provider' | 'material_shop';
 
@@ -43,20 +42,7 @@ const MerchantLayout: React.FC = () => {
         : 'provider';
     const isMaterialShop = merchantKind === 'material_shop';
 
-    const normalizedApplicantType: MerchantApplicantType = (() => {
-        const raw = String(provider?.applicantType || '').toLowerCase();
-        if (raw === 'personal' || raw === 'studio' || raw === 'company' || raw === 'foreman') {
-            return raw;
-        }
-        switch (Number(provider?.providerType)) {
-            case 2:
-                return 'company';
-            case 3:
-                return 'foreman';
-            default:
-                return 'personal';
-        }
-    })();
+    const normalizedApplicantType = String(provider?.applicantType || '').toLowerCase();
 
     const normalizedProviderSubType: MerchantProviderSubType = (() => {
         const raw = String(provider?.providerSubType || '').toLowerCase();
@@ -75,6 +61,17 @@ const MerchantLayout: React.FC = () => {
         switch (normalizedApplicantType) {
             case 'studio':
                 return '设计工作室';
+            case 'company':
+                return '装修公司';
+            case 'foreman':
+                return '工长';
+            default:
+                return normalizedProviderSubType === 'designer' ? '设计师' : '商家';
+        }
+    })();
+
+    const identityTagLabel = (() => {
+        switch (normalizedProviderSubType) {
             case 'company':
                 return '装修公司';
             case 'foreman':
@@ -366,7 +363,7 @@ const MerchantLayout: React.FC = () => {
                                 <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
                                     <span style={{ fontWeight: 500 }}>{provider?.name || 'Merchant'}</span>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                        <Tag color="blue" style={{ marginInlineEnd: 0 }}>{subtypeLabel}</Tag>
+                                        <Tag color="blue" style={{ marginInlineEnd: 0 }}>{identityTagLabel}</Tag>
                                     </div>
                                 </div>
                             </div>

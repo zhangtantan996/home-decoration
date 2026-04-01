@@ -13,7 +13,10 @@ export default function MerchantCompletionGuard() {
     const setOnboardingState = useMerchantAuthStore((state) => state.setOnboardingState);
     const [checking, setChecking] = useState(true);
 
-    const isMaterialShop = provider?.merchantKind === 'material_shop' || provider?.role === 'material_shop';
+    const providerId = provider?.id;
+    const providerMerchantKind = provider?.merchantKind;
+    const providerRole = provider?.role;
+    const isMaterialShop = providerMerchantKind === 'material_shop' || providerRole === 'material_shop';
 
     useEffect(() => {
         if (!isAuthenticated || !provider) {
@@ -45,12 +48,15 @@ export default function MerchantCompletionGuard() {
         return () => {
             disposed = true;
         };
-    }, [isAuthenticated, isMaterialShop, provider?.id, setOnboardingState, provider]);
+    }, [isAuthenticated, isMaterialShop, providerId, setOnboardingState]);
 
     if (checking) {
         return (
             <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f5f7fb' }}>
-                <Spin size="large" tip="正在校验商家补全状态..." />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                    <Spin size="large" />
+                    <div style={{ color: '#64748b', fontSize: 14 }}>正在校验商家补全状态...</div>
+                </div>
             </div>
         );
     }
