@@ -14,6 +14,9 @@ func IsProviderPublicVisible(provider *model.Provider) bool {
 	if provider == nil {
 		return false
 	}
+	if !providerPlatformDisplayEnabled(provider) || !providerMerchantDisplayEnabled(provider) {
+		return false
+	}
 	if !supportsProviderSettlementVisibility() {
 		return provider.Verified && provider.Status == 1
 	}
@@ -24,6 +27,12 @@ func IsProviderPublicVisible(provider *model.Provider) bool {
 }
 
 func applyVisibleProviderFilter(db *gorm.DB) *gorm.DB {
+	if supportsProviderPlatformDisplayEnabled() {
+		db = db.Where("providers.platform_display_enabled = ?", true)
+	}
+	if supportsProviderMerchantDisplayEnabled() {
+		db = db.Where("providers.merchant_display_enabled = ?", true)
+	}
 	if !supportsProviderSettlementVisibility() {
 		return db.Where("providers.verified = ? AND providers.status = ?", true, 1)
 	}
@@ -47,6 +56,12 @@ func EvaluateProviderPublicVisibility(provider *model.Provider) VisibilityData {
 	}
 	if provider == nil {
 		return addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成服务商实体")
+	}
+	if !providerPlatformDisplayEnabled(provider) {
+		result = addPublicVisibilityBlocker(result, "platform_hidden", "平台已下线该服务商")
+	}
+	if !providerMerchantDisplayEnabled(provider) {
+		result = addPublicVisibilityBlocker(result, "merchant_hidden", "商家已手动下线")
 	}
 	if !supportsProviderSettlementVisibility() {
 		if !provider.Verified {
@@ -107,6 +122,9 @@ func IsMaterialShopPublicVisible(shop *model.MaterialShop, activeProductCount in
 	if shop == nil {
 		return false
 	}
+	if !materialShopPlatformDisplayEnabled(shop) || !materialShopMerchantDisplayEnabled(shop) {
+		return false
+	}
 	if materialShopStatusEnabled(shop) && !IsMaterialShopActive(shop) {
 		return false
 	}
@@ -120,6 +138,12 @@ func IsMaterialShopPublicVisible(shop *model.MaterialShop, activeProductCount in
 }
 
 func applyVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
+	if supportsMaterialShopPlatformDisplayEnabled() {
+		db = db.Where("material_shops.platform_display_enabled = ?", true)
+	}
+	if supportsMaterialShopMerchantDisplayEnabled() {
+		db = db.Where("material_shops.merchant_display_enabled = ?", true)
+	}
 	if !supportsMaterialShopStatus() {
 		if !supportsMaterialShopSettlementVisibility() {
 			return db.Where("is_verified = ?", true)
@@ -146,6 +170,12 @@ func EvaluateMaterialShopPublicVisibility(shop *model.MaterialShop, activeProduc
 	}
 	if shop == nil {
 		return addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成主材商实体")
+	}
+	if !materialShopPlatformDisplayEnabled(shop) {
+		result = addPublicVisibilityBlocker(result, "platform_hidden", "平台已下线该主材商")
+	}
+	if !materialShopMerchantDisplayEnabled(shop) {
+		result = addPublicVisibilityBlocker(result, "merchant_hidden", "商家已手动下线")
 	}
 	if materialShopStatusEnabled(shop) && !IsMaterialShopActive(shop) {
 		result = addPublicVisibilityBlocker(result, "shop_frozen", "主材门店已被封禁，公开列表不可见")
@@ -200,6 +230,12 @@ func applyVisibleInspirationCaseFilter(db *gorm.DB) *gorm.DB {
 	}
 	filtered := db.Joins("LEFT JOIN providers ON providers.id = provider_cases.provider_id").
 		Where("provider_cases.show_in_inspiration = ?", true)
+	if supportsProviderPlatformDisplayEnabled() {
+		filtered = filtered.Where("(provider_cases.provider_id = 0) OR (providers.platform_display_enabled = ?)", true)
+	}
+	if supportsProviderMerchantDisplayEnabled() {
+		filtered = filtered.Where("(provider_cases.provider_id = 0) OR (providers.merchant_display_enabled = ?)", true)
+	}
 	if !supportsProviderSettlementVisibility() {
 		return filtered.Where("(provider_cases.provider_id = 0) OR (providers.verified = ? AND providers.status = ?)", true, 1)
 	}
@@ -233,8 +269,24 @@ func supportsProviderSettlementVisibility() bool {
 	return cachedHasColumn("providers.is_settled", &model.Provider{}, "is_settled")
 }
 
+func supportsProviderPlatformDisplayEnabled() bool {
+	return cachedHasColumn("providers.platform_display_enabled", &model.Provider{}, "platform_display_enabled")
+}
+
+func supportsProviderMerchantDisplayEnabled() bool {
+	return cachedHasColumn("providers.merchant_display_enabled", &model.Provider{}, "merchant_display_enabled")
+}
+
 func supportsMaterialShopSettlementVisibility() bool {
 	return cachedHasColumn("material_shops.is_settled", &model.MaterialShop{}, "is_settled")
+}
+
+func supportsMaterialShopPlatformDisplayEnabled() bool {
+	return cachedHasColumn("material_shops.platform_display_enabled", &model.MaterialShop{}, "platform_display_enabled")
+}
+
+func supportsMaterialShopMerchantDisplayEnabled() bool {
+	return cachedHasColumn("material_shops.merchant_display_enabled", &model.MaterialShop{}, "merchant_display_enabled")
 }
 
 func supportsMaterialShopStatus() bool {
@@ -255,6 +307,28 @@ func providerSettlementValue(provider *model.Provider) bool {
 	return provider.IsSettled
 }
 
+func providerPlatformDisplayEnabled(provider *model.Provider) bool {
+	if provider == nil || !supportsProviderPlatformDisplayEnabled() {
+		return true
+	}
+	return provider.PlatformDisplayEnabled
+}
+
+func providerMerchantDisplayEnabled(provider *model.Provider) bool {
+	if provider == nil || !supportsProviderMerchantDisplayEnabled() {
+		return true
+	}
+	return provider.MerchantDisplayEnabled
+}
+
+func ProviderPlatformDisplayEnabled(provider *model.Provider) bool {
+	return providerPlatformDisplayEnabled(provider)
+}
+
+func ProviderMerchantDisplayEnabled(provider *model.Provider) bool {
+	return providerMerchantDisplayEnabled(provider)
+}
+
 func materialShopSettlementValue(shop *model.MaterialShop) bool {
 	if shop == nil {
 		return false
@@ -263,6 +337,28 @@ func materialShopSettlementValue(shop *model.MaterialShop) bool {
 		return true
 	}
 	return shop.IsSettled
+}
+
+func materialShopPlatformDisplayEnabled(shop *model.MaterialShop) bool {
+	if shop == nil || !supportsMaterialShopPlatformDisplayEnabled() {
+		return true
+	}
+	return shop.PlatformDisplayEnabled
+}
+
+func materialShopMerchantDisplayEnabled(shop *model.MaterialShop) bool {
+	if shop == nil || !supportsMaterialShopMerchantDisplayEnabled() {
+		return true
+	}
+	return shop.MerchantDisplayEnabled
+}
+
+func MaterialShopPlatformDisplayEnabled(shop *model.MaterialShop) bool {
+	return materialShopPlatformDisplayEnabled(shop)
+}
+
+func MaterialShopMerchantDisplayEnabled(shop *model.MaterialShop) bool {
+	return materialShopMerchantDisplayEnabled(shop)
 }
 
 func cachedHasColumn(cacheKey string, schema any, column string) bool {

@@ -4,10 +4,11 @@ import type {
   ProviderCaseDTO,
   ProviderDTO,
   ProviderDetailDTO,
+  ProviderPriceDisplayDTO,
   ProviderType,
 } from './dto';
 
-export type { ProviderType } from './dto';
+export type { ProviderPriceDisplayDTO, ProviderType } from './dto';
 
 export type ProviderListItem = ProviderDTO;
 
@@ -77,6 +78,12 @@ export async function getProviderCases(type: ProviderType, id: number, page = 1,
   return request<PageData<ProviderCaseItem>>({
     url: `/${providerBasePath(type)}/${id}/cases`,
     data: { page, pageSize }
+  });
+}
+
+export async function getProviderCaseDetail(type: ProviderType, providerId: number, caseId: number) {
+  return request<ProviderCaseItem>({
+    url: `/${providerBasePath(type)}/${providerId}/cases/${caseId}`
   });
 }
 

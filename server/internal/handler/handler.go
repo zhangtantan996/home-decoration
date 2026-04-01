@@ -660,6 +660,27 @@ func GetProviderCases(c *gin.Context) {
 	response.PageSuccess(c, list, total, page, pageSize)
 }
 
+func GetProviderCaseDetail(c *gin.Context) {
+	providerID := parseUint64(c.Param("id"))
+	caseID := parseUint64(c.Param("caseId"))
+	if providerID == 0 || caseID == 0 {
+		response.BadRequest(c, "ID无效")
+		return
+	}
+
+	providerCase, err := providerService.GetProviderCaseDetail(providerID, caseID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "案例不存在")
+			return
+		}
+		response.ServerError(c, "查询失败")
+		return
+	}
+
+	response.Success(c, providerCase)
+}
+
 // GetProviderReviews 获取服务商评价列表
 func GetProviderReviews(c *gin.Context) {
 	id := parseUint64(c.Param("id"))

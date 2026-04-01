@@ -1,6 +1,13 @@
 export type ProviderType = 'designer' | 'company' | 'foreman';
 type StringListValue = string | string[];
 
+export interface ProviderPriceDisplayDTO {
+  primary?: string;
+  secondary?: string;
+  details?: string[];
+  mode?: 'single' | 'range' | 'structured' | 'negotiable';
+}
+
 export interface ProviderDTO {
   id: number;
   userId: number;
@@ -30,6 +37,7 @@ export interface ProviderDTO {
   priceMin: number;
   priceMax: number;
   priceUnit: string;
+  priceDisplay?: ProviderPriceDisplayDTO;
   serviceArea?: StringListValue;
   isSettled?: boolean;
 }
@@ -61,6 +69,7 @@ export interface ProviderDetailDTO {
     priceMin?: number;
     priceMax?: number;
     priceUnit?: string;
+    priceDisplay?: ProviderPriceDisplayDTO;
     coverImage?: string;
     isSettled?: boolean;
   };
@@ -95,6 +104,7 @@ export interface ProviderDetailDTO {
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;
+  priceDisplay?: ProviderPriceDisplayDTO;
   isSettled?: boolean;
   cases?: ProviderCaseDTO[];
   caseCount?: number;
@@ -102,6 +112,7 @@ export interface ProviderDetailDTO {
 
 export interface ProviderCaseDTO {
   id: number;
+  providerId?: number;
   title: string;
   coverImage: string;
   images?: StringListValue;
@@ -110,6 +121,13 @@ export interface ProviderCaseDTO {
   layout?: string;
   year?: string | number;
   price?: number;
+  description?: string;
+  quoteTotalCent?: number;
+  quoteCurrency?: string;
+  sortOrder?: number;
+  showInInspiration?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ProposalDTO {

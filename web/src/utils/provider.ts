@@ -1,30 +1,22 @@
-import type { ProviderRole } from "../types/viewModels";
+import type { ProviderPriceDisplayMode, ProviderPriceDisplayVM, ProviderRole } from "../types/viewModels";
 
-type PricingValue = number | string | undefined | null;
 export type ProviderRatingSampleState = "none" | "small" | "stable";
 
-const PRICING_LABELS: Record<ProviderRole, Record<string, string>> = {
-  designer: {
-    flat: "平层",
-    duplex: "复式",
-    other: "其他户型",
-  },
-  foreman: {
-    perSqm: "施工报价",
-  },
-  company: {
-    fullPackage: "全包",
-    halfPackage: "半包",
-  },
-};
+export function normalizeProviderPriceDisplay(
+  value?: Partial<ProviderPriceDisplayVM> | null,
+): ProviderPriceDisplayVM {
+  const primary = String(value?.primary || "").trim() || "按需报价";
+  const details = Array.isArray(value?.details)
+    ? value!.details.map((item) => String(item).trim()).filter(Boolean)
+    : [];
 
-const PRICING_ORDER: Record<ProviderRole, string[]> = {
-  designer: ["flat", "duplex", "other"],
-  foreman: ["perSqm"],
-  company: ["fullPackage", "halfPackage"],
-};
-
-const AREA_UNIT_RE = /(平方米|平米|㎡|m²|m2)/i;
+  return {
+    primary,
+    secondary: String(value?.secondary || "").trim(),
+    details: details.length > 0 ? details : [primary],
+    mode: (value?.mode || "negotiable") as ProviderPriceDisplayMode,
+  };
+}
 
 export function roleToBasePath(role: ProviderRole) {
   switch (role) {
@@ -82,138 +74,6 @@ export function parseTextArray(value: string | string[] | null | undefined) {
     .split(/[、,，|/]/)
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function toPositiveNumber(value: PricingValue) {
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount > 0 ? amount : null;
-}
-
-function trimNumber(value: number) {
-  if (!Number.isFinite(value)) {
-    return "0";
-  }
-  if (Math.abs(value - Math.round(value)) < 0.001) {
-    return String(Math.round(value));
-  }
-  return value.toFixed(1).replace(/\.0$/, "");
-}
-
-function normalizeDisplayPriceUnit(
-  unit: string | null | undefined,
-  role?: ProviderRole,
-  fallback = "元",
-) {
-  const raw = String(unit || "").trim();
-  const providerFallback = role ? "元/㎡" : fallback;
-  if (!raw) {
-    return providerFallback;
-  }
-  if (AREA_UNIT_RE.test(raw)) {
-    return "元/㎡";
-  }
-  if (/(元\/?天|元\/?日|天|日)/.test(raw)) {
-    return role ? "元/㎡" : "元/天";
-  }
-  if (/^\/.+/.test(raw)) {
-    return role ? "元/㎡" : `元${raw.replace(AREA_UNIT_RE, "平方米")}`;
-  }
-  if (role && /元/.test(raw)) {
-    return "元/㎡";
-  }
-  return role ? providerFallback : raw;
-}
-
-function formatStructuredAmount(amount: number, unit: string) {
-  return `${trimNumber(amount)}${unit}`;
-}
-
-function getStructuredPricingSummary(
-  role: ProviderRole | undefined,
-  pricingJson: string | null | undefined,
-  priceUnit: string | null | undefined,
-) {
-  if (!role) {
-    return null;
-  }
-
-  const text = String(pricingJson || "").trim();
-  if (!text.startsWith("{") || !text.endsWith("}")) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(text) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-
-    const labelMap = PRICING_LABELS[role];
-    const unit = normalizeDisplayPriceUnit(priceUnit, role, "元/㎡");
-    const details = PRICING_ORDER[role]
-      .map((key) => {
-        const amount = toPositiveNumber(parsed[key] as PricingValue);
-        if (!amount) {
-          return null;
-        }
-        return `${labelMap[key]} ${formatStructuredAmount(amount, unit)}`;
-      })
-      .filter((item): item is string => Boolean(item));
-
-    if (details.length > 0) {
-      return {
-        priceText: details[0].replace(/^[^ ]+\s+/, ""),
-        details,
-      };
-    }
-
-    const fallbackAmount = Object.values(parsed)
-      .map((value) => toPositiveNumber(value as PricingValue))
-      .find((value): value is number => value !== null);
-
-    if (!fallbackAmount) {
-      return null;
-    }
-
-    const amountText = formatStructuredAmount(fallbackAmount, unit);
-    return {
-      priceText: amountText,
-      details: [`参考报价 ${amountText}`],
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function summarizePricing(
-  pricingJson: string | null | undefined,
-  priceMin: number | null | undefined,
-  priceMax: number | null | undefined,
-  priceUnit: string | null | undefined,
-  role?: ProviderRole,
-) {
-  const structured = getStructuredPricingSummary(role, pricingJson, priceUnit);
-  const unit = normalizeDisplayPriceUnit(priceUnit, role, role ? "元/㎡" : "元");
-  const tags = parseTextArray(pricingJson);
-  if (priceMin && priceMax) {
-    return {
-      priceText: `${priceMin}-${priceMax}${unit}`,
-      details: structured?.details || (tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"]),
-    };
-  }
-  if (priceMin) {
-    return {
-      priceText: `${priceMin}${unit}起`,
-      details: structured?.details || (tags.length > 0 ? tags : ["报价以现场勘测和方案深度为准"]),
-    };
-  }
-  if (structured) {
-    return structured;
-  }
-  return {
-    priceText: "按需报价",
-    details: tags.length > 0 ? tags : ["支持先沟通需求，再给分项报价"],
-  };
 }
 
 function normalizeDisplayName(value: string | null | undefined) {

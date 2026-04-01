@@ -663,7 +663,8 @@ export function ProviderDetailPage() {
 
               <article className="provider-detail-summary-stat provider-detail-summary-stat--price">
                 <span>价格参考</span>
-                <strong>{detail.priceText}</strong>
+                <strong>{detail.priceDisplay.primary}</strong>
+                {detail.priceDisplay.secondary ? <p>{detail.priceDisplay.secondary}</p> : null}
               </article>
             </div>
           </div>

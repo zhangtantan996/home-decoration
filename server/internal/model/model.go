@@ -63,20 +63,22 @@ type UserWechatBinding struct {
 // Provider 服务商
 type Provider struct {
 	Base
-	UserID              uint64  `json:"userId" gorm:"index"`
-	ProviderType        int8    `json:"providerType"` // 1设计师 2公司 3工长
-	CompanyName         string  `json:"companyName" gorm:"size:100"`
-	SourceApplicationID uint64  `json:"sourceApplicationId" gorm:"index"`
-	Avatar              string  `json:"avatar" gorm:"size:500"`
-	LicenseNo           string  `json:"licenseNo" gorm:"type:text"` // AES加密存储
-	Rating              float32 `json:"rating" gorm:"default:0"`
-	RestoreRate         float32 `json:"restoreRate"`   // 还原度
-	BudgetControl       float32 `json:"budgetControl"` // 预算控制力
-	CompletedCnt        int     `json:"completedCnt" gorm:"default:0"`
-	Verified            bool    `json:"verified" gorm:"default:false"`
-	Status              int8    `json:"status" gorm:"default:1"` // 1:正常 0:封禁
-	Latitude            float64 `json:"latitude"`
-	Longitude           float64 `json:"longitude"`
+	UserID                 uint64  `json:"userId" gorm:"index"`
+	ProviderType           int8    `json:"providerType"` // 1设计师 2公司 3工长
+	CompanyName            string  `json:"companyName" gorm:"size:100"`
+	SourceApplicationID    uint64  `json:"sourceApplicationId" gorm:"index"`
+	Avatar                 string  `json:"avatar" gorm:"size:500"`
+	LicenseNo              string  `json:"licenseNo" gorm:"type:text"` // AES加密存储
+	Rating                 float32 `json:"rating" gorm:"default:0"`
+	RestoreRate            float32 `json:"restoreRate"`   // 还原度
+	BudgetControl          float32 `json:"budgetControl"` // 预算控制力
+	CompletedCnt           int     `json:"completedCnt" gorm:"default:0"`
+	Verified               bool    `json:"verified" gorm:"default:false"`
+	Status                 int8    `json:"status" gorm:"default:1"` // 1:正常 0:封禁
+	PlatformDisplayEnabled bool    `json:"platformDisplayEnabled" gorm:"default:true"`
+	MerchantDisplayEnabled bool    `json:"merchantDisplayEnabled" gorm:"default:true"`
+	Latitude               float64 `json:"latitude"`
+	Longitude              float64 `json:"longitude"`
 	// 新增字段
 	SubType          string  `json:"subType" gorm:"size:20;default:'personal'"` // 子类型：personal, studio, company
 	EntityType       string  `json:"entityType" gorm:"size:20;default:'personal'"`
@@ -444,6 +446,8 @@ type MaterialShop struct {
 	Tags                   string  `json:"tags" gorm:"type:text"` // JSON 数组
 	IsVerified             bool    `json:"isVerified" gorm:"default:false"`
 	Status                 *int8   `json:"status" gorm:"column:status;default:1;->;<-:false"` // 1:正常 0:封禁
+	PlatformDisplayEnabled bool    `json:"platformDisplayEnabled" gorm:"default:true"`
+	MerchantDisplayEnabled bool    `json:"merchantDisplayEnabled" gorm:"default:true"`
 	// 入驻状态
 	IsSettled                 bool   `json:"isSettled" gorm:"default:true"`   // true=已入驻 false=平台收录
 	CollectedSource           string `json:"collectedSource" gorm:"size:200"` // 收录来源

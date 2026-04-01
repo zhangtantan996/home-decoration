@@ -95,6 +95,34 @@ func providerRoleFromSubType(providerSubType string) string {
 	}
 }
 
+type merchantProviderIdentity struct {
+	applicantType   string
+	providerSubType string
+	role            string
+	entityType      string
+}
+
+func resolveMerchantProviderIdentity(provider *model.Provider) merchantProviderIdentity {
+	if provider == nil {
+		return merchantProviderIdentity{
+			applicantType:   "personal",
+			providerSubType: "designer",
+			role:            "designer",
+			entityType:      "personal",
+		}
+	}
+
+	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
+	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
+
+	return merchantProviderIdentity{
+		applicantType:   applicantType,
+		providerSubType: providerSubType,
+		role:            providerRoleFromSubType(providerSubType),
+		entityType:      normalizeProviderEntityType(provider.EntityType, applicantType),
+	}
+}
+
 func normalizeProviderEntityType(raw string, applicantType string) string {
 	entityType := strings.ToLower(strings.TrimSpace(raw))
 	if entityType == "personal" || entityType == "company" {
@@ -494,12 +522,15 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 				return
 			}
 
-			// 获取显示名称：个人设计师优先显示昵称，工作室/公司显示公司名
-			displayName := user.Nickname
-			if provider.ProviderType != 1 || provider.SubType == "company" || provider.SubType == "studio" {
-				if provider.CompanyName != "" {
-					displayName = provider.CompanyName
-				}
+			identity := resolveMerchantProviderIdentity(&provider)
+
+			// 当前登录账号展示名按角色展示，而不是按主体资质展示。
+			displayName := strings.TrimSpace(user.Nickname)
+			if identity.providerSubType == "company" && strings.TrimSpace(provider.CompanyName) != "" {
+				displayName = strings.TrimSpace(provider.CompanyName)
+			}
+			if displayName == "" {
+				displayName = strings.TrimSpace(provider.CompanyName)
 			}
 			// 兜底：如果昵称也为空，使用手机号后4位
 			if displayName == "" {
@@ -522,10 +553,10 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 				}
 			}
 
-			applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
-			providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
-			role := providerRoleFromSubType(providerSubType)
-			entityType := normalizeProviderEntityType(provider.EntityType, applicantType)
+			applicantType := identity.applicantType
+			providerSubType := identity.providerSubType
+			role := identity.role
+			entityType := identity.entityType
 			avatar := strings.TrimSpace(provider.Avatar)
 			if avatar == "" {
 				avatar = user.Avatar
@@ -714,9 +745,13 @@ func MerchantGetInfo(c *gin.Context) {
 	var user model.User
 	repository.DB.First(&user, provider.UserID)
 
-	displayName := user.Nickname
+	identity := resolveMerchantProviderIdentity(&provider)
+	displayName := strings.TrimSpace(user.Nickname)
+	if identity.providerSubType == "company" && strings.TrimSpace(provider.CompanyName) != "" {
+		displayName = strings.TrimSpace(provider.CompanyName)
+	}
 	if displayName == "" {
-		displayName = provider.CompanyName
+		displayName = strings.TrimSpace(provider.CompanyName)
 	}
 
 	// 解析 ServiceArea (JSON数组) - 存储的是区域代码
@@ -738,10 +773,10 @@ func MerchantGetInfo(c *gin.Context) {
 		}
 	}
 
-	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
-	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
-	role := providerRoleFromSubType(providerSubType)
-	entityType := normalizeProviderEntityType(provider.EntityType, applicantType)
+	applicantType := identity.applicantType
+	providerSubType := identity.providerSubType
+	role := identity.role
+	entityType := identity.entityType
 	highlightTags := parseJSONOrDelimitedSlice(provider.HighlightTags)
 	companyAlbum := parseJSONStringSlice(provider.CompanyAlbumJSON)
 	pricing := parsePricingObject(provider.PricingJSON)
@@ -751,32 +786,35 @@ func MerchantGetInfo(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"id":                  provider.ID,
-		"sourceApplicationId": provider.SourceApplicationID,
-		"name":                displayName,
-		"avatar":              imgutil.GetFullImageURL(avatar),
-		"providerType":        provider.ProviderType,
-		"applicantType":       applicantType,
-		"providerSubType":     providerSubType,
-		"role":                role,
-		"entityType":          entityType,
-		"companyName":         provider.CompanyName,
-		"rating":              provider.Rating,
-		"completedCnt":        provider.CompletedCnt,
-		"verified":            provider.Verified,
-		"yearsExperience":     provider.YearsExperience,
-		"specialty":           specialty,
-		"highlightTags":       highlightTags,
-		"pricing":             pricing,
-		"graduateSchool":      provider.GraduateSchool,
-		"designPhilosophy":    provider.DesignPhilosophy,
-		"serviceArea":         serviceAreaNames, // 返回区域名称数组
-		"serviceAreaCodes":    serviceAreaCodes, // 返回区域代码数组（用于编辑）
-		"introduction":        provider.ServiceIntro,
-		"teamSize":            provider.TeamSize,
-		"officeAddress":       provider.OfficeAddress,
-		"companyAlbum":        imgutil.GetFullImageURLs(companyAlbum),
-		"surveyDepositPrice":  provider.SurveyDepositPrice,
+		"id":                     provider.ID,
+		"sourceApplicationId":    provider.SourceApplicationID,
+		"name":                   displayName,
+		"avatar":                 imgutil.GetFullImageURL(avatar),
+		"providerType":           provider.ProviderType,
+		"applicantType":          applicantType,
+		"providerSubType":        providerSubType,
+		"role":                   role,
+		"entityType":             entityType,
+		"companyName":            provider.CompanyName,
+		"rating":                 provider.Rating,
+		"completedCnt":           provider.CompletedCnt,
+		"verified":               provider.Verified,
+		"yearsExperience":        provider.YearsExperience,
+		"specialty":              specialty,
+		"highlightTags":          highlightTags,
+		"pricing":                pricing,
+		"graduateSchool":         provider.GraduateSchool,
+		"designPhilosophy":       provider.DesignPhilosophy,
+		"serviceArea":            serviceAreaNames, // 返回区域名称数组
+		"serviceAreaCodes":       serviceAreaCodes, // 返回区域代码数组（用于编辑）
+		"introduction":           provider.ServiceIntro,
+		"teamSize":               provider.TeamSize,
+		"officeAddress":          provider.OfficeAddress,
+		"companyAlbum":           imgutil.GetFullImageURLs(companyAlbum),
+		"surveyDepositPrice":     provider.SurveyDepositPrice,
+		"merchantDisplayEnabled": service.ProviderMerchantDisplayEnabled(&provider),
+		"platformDisplayEnabled": service.ProviderPlatformDisplayEnabled(&provider),
+		"publicVisible":          service.IsProviderPublicVisible(&provider),
 	})
 }
 
@@ -786,20 +824,21 @@ func MerchantUpdateInfo(c *gin.Context) {
 	userID := c.GetUint64("userId")
 
 	var input struct {
-		Name               string             `json:"name"` // 显示名称
-		CompanyName        string             `json:"companyName"`
-		CompanyAlbum       []string           `json:"companyAlbum"`
-		YearsExperience    int                `json:"yearsExperience"`
-		Specialty          []string           `json:"specialty"`
-		HighlightTags      []string           `json:"highlightTags"`
-		Pricing            map[string]float64 `json:"pricing"`
-		GraduateSchool     string             `json:"graduateSchool"`
-		DesignPhilosophy   string             `json:"designPhilosophy"`
-		ServiceArea        []string           `json:"serviceArea"` // 区域代码数组
-		Introduction       string             `json:"introduction"`
-		TeamSize           int                `json:"teamSize"`
-		OfficeAddress      string             `json:"officeAddress"`
-		SurveyDepositPrice float64            `json:"surveyDepositPrice"`
+		Name                   string             `json:"name"` // 显示名称
+		CompanyName            string             `json:"companyName"`
+		CompanyAlbum           []string           `json:"companyAlbum"`
+		MerchantDisplayEnabled *bool              `json:"merchantDisplayEnabled"`
+		YearsExperience        int                `json:"yearsExperience"`
+		Specialty              []string           `json:"specialty"`
+		HighlightTags          []string           `json:"highlightTags"`
+		Pricing                map[string]float64 `json:"pricing"`
+		GraduateSchool         string             `json:"graduateSchool"`
+		DesignPhilosophy       string             `json:"designPhilosophy"`
+		ServiceArea            []string           `json:"serviceArea"` // 区域代码数组
+		Introduction           string             `json:"introduction"`
+		TeamSize               int                `json:"teamSize"`
+		OfficeAddress          string             `json:"officeAddress"`
+		SurveyDepositPrice     float64            `json:"surveyDepositPrice"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -831,6 +870,13 @@ func MerchantUpdateInfo(c *gin.Context) {
 	updates := map[string]interface{}{}
 	if input.CompanyName != "" {
 		updates["company_name"] = input.CompanyName
+	}
+	if input.MerchantDisplayEnabled != nil {
+		if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.Provider{}, "MerchantDisplayEnabled") {
+			response.Error(c, 503, repository.SchemaServiceUnavailableMessage("商家展示开关"))
+			return
+		}
+		updates["merchant_display_enabled"] = *input.MerchantDisplayEnabled
 	}
 	updates["years_experience"] = input.YearsExperience
 

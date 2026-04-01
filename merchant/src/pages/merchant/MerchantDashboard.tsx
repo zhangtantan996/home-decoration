@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Card, Space, Spin, Tag, message } from 'antd';
 import {
     AppstoreOutlined,
@@ -29,14 +29,7 @@ import {
     type MerchantDashboardStats,
     type MerchantIncomeSummary,
 } from '../../services/merchantApi';
-
-type MerchantProviderSnapshot = {
-    name?: string;
-    role?: string;
-    merchantKind?: string;
-    providerSubType?: string;
-    applicantType?: string;
-};
+import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 
 const MerchantDashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -45,13 +38,7 @@ const MerchantDashboard: React.FC = () => {
     const [products, setProducts] = useState<MaterialShopProduct[]>([]);
     const [profileCompletePercent, setProfileCompletePercent] = useState(0);
     const navigate = useNavigate();
-    const provider = useMemo<MerchantProviderSnapshot>(() => {
-        try {
-            return JSON.parse(localStorage.getItem('merchant_provider') || '{}') as MerchantProviderSnapshot;
-        } catch {
-            return {};
-        }
-    }, []);
+    const provider = useMerchantAuthStore((state) => state.provider);
 
     const isMaterialShop = provider?.merchantKind === 'material_shop' || provider?.role === 'material_shop';
 
@@ -85,9 +72,6 @@ const MerchantDashboard: React.FC = () => {
                         profile.shopName,
                         profile.companyName,
                         profile.shopDescription,
-                        profile.businessLicenseNo,
-                        profile.businessLicense,
-                        profile.legalPersonName,
                         profile.contactPhone,
                         profile.contactName,
                         profile.address,
@@ -265,9 +249,8 @@ const MerchantDashboard: React.FC = () => {
     }
 
     const providerSubType = String(provider?.providerSubType || '').toLowerCase();
-    const applicantType = String(provider?.applicantType || '').toLowerCase();
     const isForeman = providerSubType === 'foreman';
-    const isCompany = providerSubType === 'company' || applicantType === 'company';
+    const isCompany = providerSubType === 'company';
     const roleTag = isForeman ? '工长' : isCompany ? '装修公司' : '设计师';
 
     const dashboardTitle = isForeman

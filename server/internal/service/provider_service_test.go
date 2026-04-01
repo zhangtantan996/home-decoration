@@ -261,6 +261,58 @@ func TestProviderServiceGetProviderDetailRollsServiceAreaUpToCityNames(t *testin
 	}
 }
 
+func TestProviderServiceGetProviderCaseDetailReturnsSpecificCase(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138188", Nickname: "案例详情测试", PublicID: "user_public_case_detail"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:                 user.ID,
+		ProviderType:           1,
+		SubType:                "designer",
+		CompanyName:            "案例详情工作室",
+		Verified:               true,
+		Status:                 1,
+		IsSettled:              true,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	for index := 1; index <= 6; index++ {
+		item := model.ProviderCase{
+			ProviderID: provider.ID,
+			Title:      "案例",
+			SortOrder:  index,
+		}
+		if index == 6 {
+			item.Title = "第六个案例"
+		}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("create provider case %d: %v", index, err)
+		}
+	}
+
+	var target model.ProviderCase
+	if err := db.Where("provider_id = ? AND title = ?", provider.ID, "第六个案例").First(&target).Error; err != nil {
+		t.Fatalf("find target case: %v", err)
+	}
+
+	got, err := service.GetProviderCaseDetail(provider.ID, target.ID)
+	if err != nil {
+		t.Fatalf("get provider case detail: %v", err)
+	}
+	if got.ID != target.ID {
+		t.Fatalf("unexpected case id: got=%d want=%d", got.ID, target.ID)
+	}
+}
+
 func TestProviderServiceListKeepsLegacyCompanySubtypeInDesignerTab(t *testing.T) {
 	db := setupProviderServiceDB(t)
 	service := &ProviderService{}
@@ -383,6 +435,82 @@ func TestProviderServiceGetProviderDetail_HidesInvisibleProvider(t *testing.T) {
 
 	if _, err := service.GetProviderDetail(provider.ID); err == nil {
 		t.Fatalf("expected hidden provider detail to be blocked")
+	}
+}
+
+func TestProviderServiceHidesProviderWhenPlatformDisplayDisabled(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138133", Nickname: "平台关闭设计师", PublicID: "user_public_platform_hidden"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:                 user.ID,
+		ProviderType:           1,
+		SubType:                "designer",
+		CompanyName:            "平台关闭设计工作室",
+		Verified:               true,
+		Status:                 1,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Model(&model.Provider{}).Where("id = ?", provider.ID).Update("platform_display_enabled", false).Error; err != nil {
+		t.Fatalf("disable platform display: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 0 || len(list) != 0 {
+		t.Fatalf("expected platform hidden provider excluded, total=%d list=%v", total, list)
+	}
+
+	if _, err := service.GetProviderDetail(provider.ID); err == nil {
+		t.Fatalf("expected platform hidden provider detail to be blocked")
+	}
+}
+
+func TestProviderServiceHidesProviderWhenMerchantDisplayDisabled(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138134", Nickname: "商家关闭设计师", PublicID: "user_public_merchant_hidden"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:                 user.ID,
+		ProviderType:           1,
+		SubType:                "designer",
+		CompanyName:            "商家关闭设计工作室",
+		Verified:               true,
+		Status:                 1,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Model(&model.Provider{}).Where("id = ?", provider.ID).Update("merchant_display_enabled", false).Error; err != nil {
+		t.Fatalf("disable merchant display: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 0 || len(list) != 0 {
+		t.Fatalf("expected merchant hidden provider excluded, total=%d list=%v", total, list)
+	}
+
+	if _, err := service.GetProviderDetail(provider.ID); err == nil {
+		t.Fatalf("expected merchant hidden provider detail to be blocked")
 	}
 }
 
@@ -546,6 +674,111 @@ func TestProviderServiceOfficialReviewReadsAndStats(t *testing.T) {
 	}
 	if stats.SampleState != providerReviewSampleStateSmall {
 		t.Fatalf("unexpected sample state: %+v", stats)
+	}
+}
+
+func TestProviderServiceRecommendSortPrioritizesSettledProviders(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	settledUser := model.User{Phone: "13800138130", Nickname: "正式公司", PublicID: "user_public_settled_company"}
+	referenceUser := model.User{Phone: "13800138131", Nickname: "公开资料公司", PublicID: "user_public_reference_company"}
+	if err := db.Create(&settledUser).Error; err != nil {
+		t.Fatalf("create settled user: %v", err)
+	}
+	if err := db.Create(&referenceUser).Error; err != nil {
+		t.Fatalf("create reference user: %v", err)
+	}
+
+	settledProvider := model.Provider{
+		UserID:       settledUser.ID,
+		ProviderType: 2,
+		CompanyName:  "正式入驻公司",
+		Verified:     true,
+		Status:       1,
+		IsSettled:    true,
+		Rating:       3.9,
+		ReviewCount:  2,
+		CompletedCnt: 1,
+	}
+	if err := db.Create(&settledProvider).Error; err != nil {
+		t.Fatalf("create settled provider: %v", err)
+	}
+
+	referenceProvider := model.Provider{
+		UserID:       referenceUser.ID,
+		ProviderType: 2,
+		CompanyName:  "公开资料公司",
+		Status:       1,
+		Rating:       4.9,
+		ReviewCount:  120,
+		CompletedCnt: 80,
+	}
+	if err := db.Create(&referenceProvider).Error; err != nil {
+		t.Fatalf("create reference provider: %v", err)
+	}
+	if err := db.Model(&model.Provider{}).
+		Where("id = ?", referenceProvider.ID).
+		Updates(map[string]any{
+			"is_settled": false,
+			"verified":   false,
+		}).Error; err != nil {
+		t.Fatalf("mark reference provider as unsettled: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "company", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers by recommend: %v", err)
+	}
+	if total != 2 || len(list) != 2 {
+		t.Fatalf("unexpected recommend list result: total=%d len=%d", total, len(list))
+	}
+	if list[0].ID != settledProvider.ID {
+		t.Fatalf("expected settled provider first in recommend sort, got order=%d,%d", list[0].ID, list[1].ID)
+	}
+
+	ratingList, total, err := service.ListProviders(&ProviderQuery{Type: "company", SortBy: "rating", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers by rating: %v", err)
+	}
+	if total != 2 || len(ratingList) != 2 {
+		t.Fatalf("unexpected rating list result: total=%d len=%d", total, len(ratingList))
+	}
+	if ratingList[0].ID != referenceProvider.ID {
+		t.Fatalf("expected explicit rating sort to honor rating first, got order=%d,%d", ratingList[0].ID, ratingList[1].ID)
+	}
+}
+
+func TestBuildProviderPriceDisplayUsesSingleValueForEqualRange(t *testing.T) {
+	display := buildProviderPriceDisplay(1, "", 330, 330, model.ProviderPriceUnitPerSquareMeter)
+	if display.Mode != ProviderPriceDisplayModeSingle {
+		t.Fatalf("expected single mode, got %+v", display)
+	}
+	if display.Primary != "330元/㎡" {
+		t.Fatalf("expected single price display, got %+v", display)
+	}
+}
+
+func TestBuildProviderPriceDisplayKeepsCompanyStructuredLabels(t *testing.T) {
+	display := buildProviderPriceDisplay(2, `{"fullPackage":800,"halfPackage":500}`, 500, 800, model.ProviderPriceUnitPerSquareMeter)
+	if display.Mode != ProviderPriceDisplayModeStructured {
+		t.Fatalf("expected structured mode, got %+v", display)
+	}
+	if display.Primary != "全包 800元/㎡" || display.Secondary != "半包 500元/㎡" {
+		t.Fatalf("expected labeled company pricing, got %+v", display)
+	}
+	if len(display.Details) != 2 {
+		t.Fatalf("expected full company price details, got %+v", display)
+	}
+}
+
+func TestBuildProviderPriceDisplayNormalizesForemanUnitToSquareMeter(t *testing.T) {
+	display := buildProviderPriceDisplay(3, `{"perSqm":599}`, 599, 599, "元/天")
+	if display.Primary != "599元/㎡" {
+		t.Fatalf("expected foreman pricing to normalize to sqm, got %+v", display)
+	}
+	if len(display.Details) != 1 || display.Details[0] != "施工报价 599元/㎡" {
+		t.Fatalf("unexpected foreman pricing details: %+v", display)
 	}
 }
 

@@ -125,6 +125,9 @@ export interface MerchantProviderInfo {
     officeAddress: string;
     companyAlbum?: string[];
     surveyDepositPrice?: number;
+    merchantDisplayEnabled?: boolean;
+    platformDisplayEnabled?: boolean;
+    publicVisible?: boolean;
 }
 
 export interface MerchantServiceSetting {
@@ -489,6 +492,9 @@ export interface MaterialShopProfile {
     afterSalesPolicy?: string;
     invoiceCapability?: string;
     isVerified?: boolean;
+    merchantDisplayEnabled?: boolean;
+    platformDisplayEnabled?: boolean;
+    publicVisible?: boolean;
 }
 
 export interface MaterialShopProduct {

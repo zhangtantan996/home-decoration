@@ -1,5 +1,5 @@
-import type { HomePageDataVM, InspirationListItemVM, MaterialShopListItemVM, ProviderListItemVM } from '../types/viewModels';
-import { normalizeProviderRole, parseTextArray, resolveProviderDisplayName, summarizePricing } from '../utils/provider';
+import type { HomePageDataVM, InspirationListItemVM, MaterialShopListItemVM, ProviderListItemVM, ProviderPriceDisplayVM } from '../types/viewModels';
+import { normalizeProviderPriceDisplay, normalizeProviderRole, parseTextArray, resolveProviderDisplayName } from '../utils/provider';
 import { listBookings } from './bookings';
 import { listDemands } from './demands';
 import { listInspiration } from './inspiration';
@@ -97,6 +97,15 @@ interface HomepageProviderDTO {
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;
+  priceDisplay?: PriceDisplayDTO;
+  isSettled?: boolean;
+}
+
+interface PriceDisplayDTO {
+  primary?: string;
+  secondary?: string;
+  details?: string[];
+  mode?: ProviderPriceDisplayVM['mode'];
 }
 
 interface HomepageShopDTO {
@@ -135,8 +144,8 @@ interface HomepageResponse {
 
 function toProviderVM(dto: HomepageProviderDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
-  const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit, role);
   const displayName = resolveProviderDisplayName(role, dto.companyName, dto.nickname);
+  const priceDisplay = normalizeProviderPriceDisplay(dto.priceDisplay);
   return {
     id: dto.id,
     role,
@@ -149,7 +158,8 @@ function toProviderVM(dto: HomepageProviderDTO): ProviderListItemVM {
     completedCount: Number(dto.completedCnt || 0),
     yearsExperience: Number(dto.yearsExperience || 0),
     verified: Boolean(dto.verified),
-    priceText: pricing.priceText,
+    isSettled: dto.isSettled !== undefined ? Boolean(dto.isSettled) : undefined,
+    priceDisplay,
     tags: parseTextArray(dto.highlightTags).slice(0, 3),
     serviceArea: [],
   };

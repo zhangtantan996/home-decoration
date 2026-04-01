@@ -54,11 +54,15 @@ type materialShopApplyInput struct {
 }
 
 type materialShopUpdateInput struct {
+	Avatar                 string                    `json:"avatar"`
+	ShopName               string                    `json:"shopName"`
 	Name                   string                    `json:"name"`
+	ShopDescription        string                    `json:"shopDescription"`
 	CompanyName            string                    `json:"companyName"`
 	Description            string                    `json:"description"`
 	BusinessHours          string                    `json:"businessHours"`
 	BusinessHoursRanges    []BusinessHoursRangeInput `json:"businessHoursRanges"`
+	MerchantDisplayEnabled *bool                     `json:"merchantDisplayEnabled"`
 	ContactPhone           string                    `json:"contactPhone"`
 	ContactName            string                    `json:"contactName"`
 	LegalPersonName        string                    `json:"legalPersonName"`
@@ -799,6 +803,7 @@ func MaterialShopGetMe(c *gin.Context) {
 
 	entityType := resolveMaterialShopEntityType(shop.ID, shop.UserID)
 	businessHoursRanges := parseBusinessHoursRanges(shop.BusinessHoursJSON)
+	activeProductCount, _ := service.CountActiveMaterialShopProducts(shop.ID)
 
 	response.Success(c, gin.H{
 		"id":                     shop.ID,
@@ -825,6 +830,9 @@ func MaterialShopGetMe(c *gin.Context) {
 		"afterSalesPolicy":       shop.AfterSalesPolicy,
 		"invoiceCapability":      shop.InvoiceCapability,
 		"isVerified":             shop.IsVerified,
+		"merchantDisplayEnabled": service.MaterialShopMerchantDisplayEnabled(&shop),
+		"platformDisplayEnabled": service.MaterialShopPlatformDisplayEnabled(&shop),
+		"publicVisible":          service.IsMaterialShopPublicVisible(&shop, activeProductCount),
 	})
 }
 
@@ -840,9 +848,25 @@ func MaterialShopUpdateMe(c *gin.Context) {
 		return
 	}
 
+	if strings.TrimSpace(input.BusinessLicenseNo) != "" ||
+		strings.TrimSpace(input.BusinessLicense) != "" ||
+		strings.TrimSpace(input.LegalPersonName) != "" {
+		response.Error(c, 400, "主体资质信息不可在店铺设置中修改")
+		return
+	}
+
 	updates := map[string]interface{}{}
-	if strings.TrimSpace(input.Name) != "" {
-		name := strings.TrimSpace(input.Name)
+	if strings.TrimSpace(input.Avatar) != "" {
+		avatar := strings.TrimSpace(input.Avatar)
+		if len([]rune(avatar)) > 500 {
+			response.Error(c, 400, "店铺头像地址不能超过500个字符")
+			return
+		}
+		updates["brand_logo"] = avatar
+	}
+	shopName := firstNonEmpty(strings.TrimSpace(input.ShopName), strings.TrimSpace(input.Name))
+	if shopName != "" {
+		name := shopName
 		if len([]rune(name)) < 2 || len([]rune(name)) > 100 {
 			response.Error(c, 400, "店铺名称长度需为2-100个字符")
 			return
@@ -858,8 +882,8 @@ func MaterialShopUpdateMe(c *gin.Context) {
 		}
 		updates["company_name"] = companyName
 	}
-	if input.Description != "" {
-		desc := strings.TrimSpace(input.Description)
+	if input.ShopDescription != "" || input.Description != "" {
+		desc := firstNonEmpty(strings.TrimSpace(input.ShopDescription), strings.TrimSpace(input.Description))
 		if len([]rune(desc)) > 5000 {
 			response.Error(c, 400, "店铺描述不能超过5000个字符")
 			return
@@ -892,22 +916,15 @@ func MaterialShopUpdateMe(c *gin.Context) {
 	if input.ContactName != "" {
 		updates["contact_name"] = strings.TrimSpace(input.ContactName)
 	}
-	if input.LegalPersonName != "" {
-		legalPersonName := strings.TrimSpace(input.LegalPersonName)
-		if !utils.ValidateRealName(legalPersonName) {
-			response.Error(c, 400, "法人/经营者姓名长度应在2-20个字符之间")
+	if input.MerchantDisplayEnabled != nil {
+		if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.MaterialShop{}, "MerchantDisplayEnabled") {
+			response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商营业状态开关"))
 			return
 		}
-		updates["legal_person_name"] = legalPersonName
+		updates["merchant_display_enabled"] = *input.MerchantDisplayEnabled
 	}
 	if input.Address != "" {
 		updates["address"] = strings.TrimSpace(input.Address)
-	}
-	if input.BusinessLicenseNo != "" {
-		updates["business_license_no"] = encryptSensitiveOrPlain(input.BusinessLicenseNo)
-	}
-	if input.BusinessLicense != "" {
-		updates["business_license"] = strings.TrimSpace(input.BusinessLicense)
 	}
 	if input.ServiceArea != nil {
 		updates["service_area"] = marshalStringArrayField(input.ServiceArea)

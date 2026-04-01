@@ -51,7 +51,7 @@ export function ProviderCard({ provider }: ProviderCardProps) {
   const thirdLine = displayTags.join(' · ') || '风格标签待补充';
   const ratingMeta = getProviderRatingMeta(provider.rating, provider.reviewCount);
   const firstLine = ratingMeta.hasRating ? `${ratingMeta.inlineText} · ${locationText}` : `${ratingMeta.inlineText} · ${locationText}`;
-  const displayPriceText = provider.priceText;
+  const displayPriceText = provider.priceDisplay.primary;
   const palette = resolveCardPalette(`${provider.orgLabel} ${provider.tags.join(' ')}`, extractPlaceholderTone(provider.avatar) || (isUnsettled ? '#F59E0B' : '#DBEAFE'));
   const coverStyle = {
     '--pcard-cover-accent': palette.primary,

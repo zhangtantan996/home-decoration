@@ -16,7 +16,6 @@ import {
   type ProviderType,
 } from "@/services/providers";
 import { showErrorToast } from "@/utils/error";
-import { formatProviderPricing } from "@/utils/providerPricing";
 import { syncCurrentTabBar } from "@/utils/customTabBar";
 import { getMiniNavMetrics } from "@/utils/navLayout";
 import "./index.scss";
@@ -151,13 +150,7 @@ const getProviderOrgType = (provider: ProviderListItem): ProviderOrgFilter => {
 };
 
 const getProviderPriceText = (provider: ProviderListItem) => {
-  return formatProviderPricing({
-    role: getProviderType(provider.providerType),
-    pricingJson: provider.pricingJson,
-    priceMin: provider.priceMin,
-    priceMax: provider.priceMax,
-    priceUnit: provider.priceUnit,
-  }).quoteDisplay.primary;
+  return provider.priceDisplay?.primary || "按需报价";
 };
 
 const getExperienceText = (provider: ProviderListItem) => {
@@ -274,9 +267,11 @@ const getProviderDistanceText = (provider: ProviderListItem) => {
 const sortProviders = (
   items: ProviderListItem[],
   sortBy: string,
-  category: HomeProviderCategory,
 ) => {
   const list = [...items];
+  if (sortBy === "recommend") {
+    return list;
+  }
   if (sortBy === "rating") {
     return list.sort((left, right) => (right.rating || 0) - (left.rating || 0));
   }
@@ -285,29 +280,6 @@ const sortProviders = (
       (left, right) =>
         (right.yearsExperience || 0) - (left.yearsExperience || 0),
     );
-  }
-  if (category === "company") {
-    return list.sort((left, right) => {
-      const leftHasRealSignals = Number(
-        (left.reviewCount || 0) > 0 || (left.completedCnt || 0) > 0,
-      );
-      const rightHasRealSignals = Number(
-        (right.reviewCount || 0) > 0 || (right.completedCnt || 0) > 0,
-      );
-      if (rightHasRealSignals !== leftHasRealSignals) {
-        return rightHasRealSignals - leftHasRealSignals;
-      }
-      if ((right.completedCnt || 0) !== (left.completedCnt || 0)) {
-        return (right.completedCnt || 0) - (left.completedCnt || 0);
-      }
-      if ((right.reviewCount || 0) !== (left.reviewCount || 0)) {
-        return (right.reviewCount || 0) - (left.reviewCount || 0);
-      }
-      if (Number(right.verified) !== Number(left.verified)) {
-        return Number(right.verified) - Number(left.verified);
-      }
-      return (right.rating || 0) - (left.rating || 0);
-    });
   }
   return list.sort((left, right) => {
     if ((right.rating || 0) !== (left.rating || 0)) {
@@ -465,7 +437,7 @@ export default function Home() {
               ? true
               : getProviderOrgType(provider) === providerOrgFilter,
           );
-          setProviderItems(sortProviders(filtered, designerSortBy, "designer"));
+          setProviderItems(sortProviders(filtered, designerSortBy));
           setMaterialItems([]);
           return;
         }
@@ -488,7 +460,7 @@ export default function Home() {
                 ? true
                 : getProviderOrgType(provider) === providerOrgFilter,
           );
-          setProviderItems(sortProviders(filtered, sortBy, activeCategory));
+          setProviderItems(sortProviders(filtered, sortBy));
           setMaterialItems([]);
           return;
         }

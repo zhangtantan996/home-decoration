@@ -41,11 +41,14 @@ interface DecoratedCaseItem {
   index: number;
 }
 
+type CaseGallerySource = 'provider_case' | 'inspiration';
+
 const CaseGalleryPage: React.FC = () => {
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const [providerId, setProviderId] = useState(0);
   const [providerType, setProviderType] = useState<ProviderType>('designer');
   const [providerName, setProviderName] = useState('');
+  const [source, setSource] = useState<CaseGallerySource>('provider_case');
   const [list, setList] = useState<ProviderCaseItem[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -56,6 +59,7 @@ const CaseGalleryPage: React.FC = () => {
     setProviderId(Number(options.providerId || 0));
     setProviderType(normalizeProviderType(options.providerType));
     setProviderName(decodeText(options.providerName) || '服务商');
+    setSource(options.source === 'inspiration' ? 'inspiration' : 'provider_case');
   });
 
   const fetchList = async (reset = false) => {
@@ -109,7 +113,7 @@ const CaseGalleryPage: React.FC = () => {
   const openDetail = (item: ProviderCaseItem) => {
     const encodedName = encodeURIComponent(providerName);
     Taro.navigateTo({
-      url: `/pages/cases/detail/index?caseId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}`,
+      url: `/pages/cases/detail/index?caseId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}&source=${source}`,
     });
   };
 

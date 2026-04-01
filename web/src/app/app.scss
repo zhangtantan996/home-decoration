@@ -4755,18 +4755,24 @@ main {
   display: grid;
   gap: 10px;
   padding: 18px 16px 16px;
+  min-width: 0;
 }
 
 .pcard-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
 
 .pcard-name {
   color: var(--color-ink);
   line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pcard-badge {
@@ -4787,6 +4793,10 @@ main {
   margin-top: 0;
   font-size: 0.8rem;
   line-height: 1.5;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pcard-supporting {
@@ -4815,16 +4825,28 @@ main {
 }
 
 .pcard-price {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
   justify-content: space-between;
   margin-top: 2px;
+  min-width: 0;
 }
 
 .pcard-price strong {
   font-size: 1.02rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pcard-price span {
+  min-width: 0;
   text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pcard-provider {
@@ -4883,8 +4905,7 @@ main {
 }
 
 .pcard-provider .pcard-price {
-  align-items: baseline;
-  gap: 10px;
+  gap: 12px;
   margin-top: 4px;
   padding-top: 8px;
 }
@@ -4896,10 +4917,15 @@ main {
 
 .pcard-provider .pcard-price strong {
   font-size: 1rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pcard-provider .pcard-price span {
-  min-width: 0;
+  flex-shrink: 0;
+  max-width: 8.5em;
   overflow: hidden;
   text-overflow: ellipsis;
 }

@@ -1,7 +1,7 @@
 import type { PageEnvelope } from '../types/api';
-import type { ProviderCaseVM, ProviderDetailVM, ProviderListItemVM, ProviderReviewVM, ProviderRole, ReviewStatsVM } from '../types/viewModels';
+import type { ProviderCaseVM, ProviderDetailVM, ProviderListItemVM, ProviderPriceDisplayVM, ProviderReviewVM, ProviderRole, ReviewStatsVM } from '../types/viewModels';
 import { compactPhone, formatDateTime } from '../utils/format';
-import { normalizeProviderRole, parseTextArray, resolveProviderDisplayName, roleToBasePath, summarizePricing } from '../utils/provider';
+import { normalizeProviderPriceDisplay, normalizeProviderRole, parseTextArray, resolveProviderDisplayName, roleToBasePath } from '../utils/provider';
 import { requestJson } from './http';
 import { readThroughCache } from './runtimeCache';
 
@@ -26,6 +26,7 @@ interface ProviderListDTO {
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;
+  priceDisplay?: PriceDisplayDTO;
 }
 
 interface ProviderDetailResponse {
@@ -34,6 +35,14 @@ interface ProviderDetailResponse {
   cases?: ProviderCaseDTO[];
   reviews?: ProviderReviewDTO[];
   reviewCount?: number;
+  priceDisplay?: PriceDisplayDTO;
+}
+
+interface PriceDisplayDTO {
+  primary?: string;
+  secondary?: string;
+  details?: string[];
+  mode?: ProviderPriceDisplayVM['mode'];
 }
 
 interface ProviderCaseDTO {
@@ -57,8 +66,8 @@ interface ProviderReviewDTO {
 
 function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
-  const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit, role);
   const displayName = resolveProviderDisplayName(role, dto.companyName, dto.nickname);
+  const priceDisplay = normalizeProviderPriceDisplay(dto.priceDisplay);
 
   return {
     id: dto.id,
@@ -73,7 +82,7 @@ function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
     yearsExperience: Number(dto.yearsExperience || 0),
     verified: Boolean(dto.verified),
     isSettled: dto.isSettled !== undefined ? Boolean(dto.isSettled) : undefined,
-    priceText: pricing.priceText,
+    priceDisplay,
     tags: parseTextArray(dto.highlightTags).slice(0, 3),
     serviceArea: parseTextArray(dto.serviceArea),
     userPublicId: dto.userPublicId,
@@ -93,19 +102,13 @@ function readStringRecord(source: Record<string, unknown>, key: string) {
 function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, cases: ProviderCaseVM[], reviews: ProviderReviewVM[], reviewStats: ReviewStatsVM): ProviderDetailVM {
   const provider = (response.provider || {}) as Record<string, unknown>;
   const user = (response.user || {}) as Record<string, unknown>;
-  const pricing = summarizePricing(
-    readStringRecord(provider, 'pricingJson'),
-    readNumericRecord(provider, 'priceMin'),
-    readNumericRecord(provider, 'priceMax'),
-    readStringRecord(provider, 'priceUnit'),
-    role,
-  );
   const displayName = resolveProviderDisplayName(
     role,
     readStringRecord(provider, 'companyName'),
     readStringRecord(user, 'nickname'),
     readStringRecord(provider, 'nickname'),
   );
+  const priceDisplay = normalizeProviderPriceDisplay(response.priceDisplay);
 
   return {
     id: Number(provider.id || 0),
@@ -120,7 +123,7 @@ function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, 
     yearsExperience: readNumericRecord(provider, 'yearsExperience'),
     verified: Boolean(provider.verified),
     isSettled: provider.isSettled !== undefined ? Boolean(provider.isSettled) : undefined,
-    priceText: pricing.priceText,
+    priceDisplay,
     tags: parseTextArray(readStringRecord(provider, 'highlightTags')),
     serviceArea: parseTextArray(readStringRecord(provider, 'serviceArea')),
     userPublicId: readStringRecord(user, 'publicId') || undefined,
@@ -130,7 +133,6 @@ function toProviderDetail(role: ProviderRole, response: ProviderDetailResponse, 
     teamSize: readNumericRecord(provider, 'teamSize'),
     establishedText: readNumericRecord(provider, 'establishedYear') ? `${readNumericRecord(provider, 'establishedYear')} 年成立` : `${readNumericRecord(provider, 'yearsExperience')} 年从业经验`,
     certifications: parseTextArray(readStringRecord(provider, 'certifications')),
-    priceDetails: pricing.details,
     cases,
     reviews,
     reviewStats,

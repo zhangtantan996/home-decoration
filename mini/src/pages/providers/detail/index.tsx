@@ -14,12 +14,12 @@ import {
   getProviderReviews,
   type ProviderCaseItem,
   type ProviderDetail,
+  type ProviderPriceDisplayDTO,
   type ProviderReviewItem,
   type ProviderType,
 } from '@/services/providers';
 import { useAuthStore } from '@/store/auth';
 import useSlowLoadingHint from '@/hooks/useSlowLoadingHint';
-import { formatProviderPricing } from '@/utils/providerPricing';
 import {
   collectCompanyAlbumImages,
   normalizeProviderMediaUrl,
@@ -30,6 +30,12 @@ import './index.scss';
 
 const DESIGNER_INTRO_COLLAPSE_LIMIT = 60;
 const NAV_SCROLL_DISTANCE = 200;
+const DEFAULT_PRICE_DISPLAY: ProviderPriceDisplayDTO = {
+  primary: '按需报价',
+  secondary: '',
+  details: ['按需报价'],
+  mode: 'negotiable',
+};
 
 const normalizeProviderType = (value?: string): ProviderType => {
   if (value === 'company' || value === '2') return 'company';
@@ -171,16 +177,7 @@ const ProviderDetailPage: React.FC = () => {
     return parsed.length > 0 ? parsed : ['本地服务'];
   }, [providerDetail?.serviceArea]);
 
-  const quoteDisplay = useMemo(
-    () => formatProviderPricing({
-      role: params.type,
-      pricingJson: providerDetail?.pricingJson,
-      priceMin: providerDetail?.priceMin,
-      priceMax: providerDetail?.priceMax,
-      priceUnit: providerDetail?.priceUnit,
-    }).quoteDisplay,
-    [params.type, providerDetail?.priceMax, providerDetail?.priceMin, providerDetail?.priceUnit, providerDetail?.pricingJson],
-  );
+  const quoteDisplay = detail?.priceDisplay || providerDetail?.priceDisplay || DEFAULT_PRICE_DISPLAY;
 
   const introText = useMemo(
     () => providerDetail?.designPhilosophy || providerDetail?.serviceIntro || '暂无服务介绍',
@@ -261,7 +258,7 @@ const ProviderDetailPage: React.FC = () => {
     if (!params.id) return;
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
-      url: `/pages/cases/gallery/index?providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
+      url: `/pages/cases/gallery/index?providerId=${params.id}&providerType=${params.type}&providerName=${providerName}&source=provider_case`,
     });
   };
 
@@ -269,7 +266,7 @@ const ProviderDetailPage: React.FC = () => {
     if (!caseId || !params.id) return;
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
-      url: `/pages/cases/detail/index?caseId=${caseId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
+      url: `/pages/cases/detail/index?caseId=${caseId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}&source=provider_case`,
     });
   };
 
@@ -370,7 +367,7 @@ const ProviderDetailPage: React.FC = () => {
     <View className="provider-detail-page__section provider-detail-page__section--quote">
       <Text className="provider-detail-page__section-title">报价参考</Text>
       <View className="provider-detail-page__quote-box">
-        <Text className="provider-detail-page__quote-title">{isDesigner ? '设计报价' : quoteDisplay.title}</Text>
+        <Text className="provider-detail-page__quote-title">{isDesigner ? '设计报价' : isCompany ? '公司报价' : '施工报价'}</Text>
         <Text className="provider-detail-page__quote-primary">{quoteDisplay.primary}</Text>
         {quoteDisplay.secondary ? (
           <Text className="provider-detail-page__quote-secondary">{quoteDisplay.secondary}</Text>
