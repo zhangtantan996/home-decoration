@@ -26,6 +26,13 @@ const (
 	CommerceRuntimeMigrationPath   = "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
 )
 
+var claimedCompletionSchemaFields = map[string]struct{}{
+	"merchant_applications.application_scene":      {},
+	"material_shop_applications.application_scene": {},
+	"providers.needs_onboarding_completion":        {},
+	"material_shops.needs_onboarding_completion":   {},
+}
+
 // SMSAuditLogHealthSnapshot describes runtime health for SMS audit persistence.
 type SMSAuditLogHealthSnapshot struct {
 	Status            string    `json:"status"`
@@ -96,7 +103,7 @@ var merchantOnboardingHealthStore = struct {
 		Status:            SMSAuditHealthStatusDegraded,
 		Component:         MerchantOnboardingComponent,
 		MigrationRequired: true,
-		RequiredMigration: CanonicalSchemaReconcileMigrationPath,
+		RequiredMigration: CanonicalSchemaReconcileMigrationPath + "," + SchemaGuardMigrationPath,
 	},
 }
 
@@ -339,8 +346,33 @@ func RefreshUserAuthSchemaHealth() CriticalSchemaHealthSnapshot {
 
 func RefreshMerchantOnboardingSchemaHealth() CriticalSchemaHealthSnapshot {
 	missing, err := checkSchemaRequirements(merchantOnboardingRequirements)
-	recordCriticalSchemaCheck(&merchantOnboardingHealthStore, MerchantOnboardingComponent, CanonicalSchemaReconcileMigrationPath, missing, err)
+	recordCriticalSchemaCheck(&merchantOnboardingHealthStore, MerchantOnboardingComponent, resolveMerchantOnboardingMigrationPath(missing), missing, err)
 	return snapshotCriticalSchemaHealth(&merchantOnboardingHealthStore)
+}
+
+func resolveMerchantOnboardingMigrationPath(missing []string) string {
+	if len(missing) == 0 {
+		return CanonicalSchemaReconcileMigrationPath
+	}
+
+	hasBaseSchemaGap := false
+	hasClaimedCompletionGap := false
+	for _, item := range missing {
+		if _, ok := claimedCompletionSchemaFields[item]; ok {
+			hasClaimedCompletionGap = true
+			continue
+		}
+		hasBaseSchemaGap = true
+	}
+
+	switch {
+	case hasBaseSchemaGap && hasClaimedCompletionGap:
+		return CanonicalSchemaReconcileMigrationPath + "," + SchemaGuardMigrationPath
+	case hasClaimedCompletionGap:
+		return SchemaGuardMigrationPath
+	default:
+		return CanonicalSchemaReconcileMigrationPath
+	}
 }
 
 func RefreshBookingP0SchemaHealth() CriticalSchemaHealthSnapshot {
