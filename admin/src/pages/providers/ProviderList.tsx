@@ -42,6 +42,7 @@ import {
   ADMIN_PROVIDER_TYPE_META,
   ADMIN_PROVIDER_TYPE_OPTIONS,
   LEGACY_PATH_BADGE,
+  MERCHANT_ONBOARDING_STATUS_META,
   PROVIDER_SUBTYPE_LABELS,
   PUBLIC_VISIBILITY_META,
   SETTLED_STATUS_META,
@@ -76,6 +77,43 @@ const resolveVisibilityTag = (provider: Provider) => {
       isVisible === true ? "true" : isVisible === false ? "false" : "unknown"
     ];
   return <Tag color={config.color}>{config.text}</Tag>;
+};
+
+const resolveAccountStatusTag = (provider: Provider) => {
+  const accountBound = provider.accountBound ?? Boolean(provider.userId);
+  if (!accountBound) {
+    return <Tag color="default">未绑定</Tag>;
+  }
+  if (provider.loginEnabled) {
+    return <Tag color="green">可登录</Tag>;
+  }
+  return <Tag color="orange">已绑定待启用</Tag>;
+};
+
+const resolveOnboardingStatusTag = (provider: Provider) => {
+  const accountBound = provider.accountBound ?? Boolean(provider.userId);
+  if (!accountBound) {
+    return <Text type="secondary">-</Text>;
+  }
+  const onboardingStatus = provider.completionRequired
+    ? provider.onboardingStatus || "required"
+    : "approved";
+  const meta =
+    MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
+    MERCHANT_ONBOARDING_STATUS_META.unknown;
+  return <Tag color={meta.color}>{meta.text}</Tag>;
+};
+
+const resolveOperatingStatusTag = (provider: Provider) => {
+  const accountBound = provider.accountBound ?? Boolean(provider.userId);
+  if (!accountBound) {
+    return <Tag color="default">未开通</Tag>;
+  }
+  return provider.operatingEnabled ? (
+    <Tag color="green">已开放</Tag>
+  ) : (
+    <Tag color="orange">受限</Tag>
+  );
 };
 
 const renderBlockerSummary = (provider: Provider) => {
@@ -430,11 +468,7 @@ const ProviderList: React.FC = () => {
         values,
       )) as any;
       if (res.code === 0) {
-        message.success(
-          res.data?.createdUser
-            ? "账号已创建并绑定，入驻状态已更新"
-            : "已绑定现有账号，入驻状态已更新",
-        );
+        message.success("账号已绑定，首次登录将补全正式入驻资料");
         setClaimModalVisible(false);
         setClaimTargetProvider(null);
         claimForm.resetFields();
@@ -515,6 +549,24 @@ const ProviderList: React.FC = () => {
           SETTLED_STATUS_META[String(val)] || SETTLED_STATUS_META["true"];
         return <Tag color={config.color}>{config.text}</Tag>;
       },
+    },
+    {
+      title: "账号状态",
+      key: "accountStatus",
+      width: 100,
+      render: (_: unknown, record: Provider) => resolveAccountStatusTag(record),
+    },
+    {
+      title: "补全状态",
+      key: "onboardingStatus",
+      width: 100,
+      render: (_: unknown, record: Provider) => resolveOnboardingStatusTag(record),
+    },
+    {
+      title: "经营权限",
+      key: "operatingEnabled",
+      width: 100,
+      render: (_: unknown, record: Provider) => resolveOperatingStatusTag(record),
     },
     {
       title: "主体类型",
@@ -763,6 +815,31 @@ const ProviderList: React.FC = () => {
               </Descriptions.Item>
               <Descriptions.Item label="主体名称">
                 {getProviderSubjectName(currentProvider)}
+              </Descriptions.Item>
+              <Descriptions.Item label="入驻状态">
+                <Tag
+                  color={
+                    SETTLED_STATUS_META[String(Boolean(currentProvider.isSettled))]
+                      ?.color || "default"
+                  }
+                >
+                  {
+                    SETTLED_STATUS_META[String(Boolean(currentProvider.isSettled))]
+                      ?.text || "-"
+                  }
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="账号状态">
+                {resolveAccountStatusTag(currentProvider)}
+              </Descriptions.Item>
+              <Descriptions.Item label="补全状态">
+                {resolveOnboardingStatusTag(currentProvider)}
+              </Descriptions.Item>
+              <Descriptions.Item label="经营权限">
+                {resolveOperatingStatusTag(currentProvider)}
+              </Descriptions.Item>
+              <Descriptions.Item label="补全申请单">
+                {currentProvider.completionApplicationId || "-"}
               </Descriptions.Item>
               <Descriptions.Item label="类型">
                 {ADMIN_PROVIDER_TYPE_META[currentProvider.providerType]?.text ||
@@ -1080,14 +1157,19 @@ const ProviderList: React.FC = () => {
       >
         <Form form={claimForm} layout="vertical">
           <Form.Item label="服务商名称">
-            <Input value={claimTargetProvider?.companyName || ""} disabled />
+            <Input
+              value={
+                claimTargetProvider
+                  ? getProviderDisplayName(claimTargetProvider)
+                  : ""
+              }
+              disabled
+            />
           </Form.Item>
           <Form.Item
             name="phone"
             label="登录手机号"
-            extra={
-              "该手机号将作为商户端登录账号，入驻状态同时自动更新为「已入驻」"
-            }
+            extra={"认领后将开通登录，并进入资料待补全状态"}
             rules={[
               { required: true, message: "请输入手机号" },
               { pattern: /^1[3-9]\d{9}$/, message: "请输入正确的11位手机号" },

@@ -100,7 +100,7 @@ func IsMaterialShopLoginEnabled(shop *model.MaterialShop) bool {
 	if shop == nil {
 		return false
 	}
-	return shop.IsVerified && IsMaterialShopActive(shop)
+	return IsMaterialShopActive(shop) && (shop.IsVerified || shop.NeedsOnboardingCompletion)
 }
 
 func IsMaterialShopPublicVisible(shop *model.MaterialShop, activeProductCount int64) bool {

@@ -13,7 +13,7 @@ import MerchantApplicationDetail from './components/MerchantApplicationDetail';
 import AuditStatusSummary from './components/AuditStatusSummary';
 import VisibilityStatusPanel from './components/VisibilityStatusPanel';
 import AuditDetailSection from './components/AuditDetailSection';
-import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS, PROVIDER_ROLE_META } from '../../constants/statuses';
+import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS, APPLICATION_SCENE_META, PROVIDER_ROLE_META } from '../../constants/statuses';
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -160,6 +160,14 @@ const ProviderAudit: React.FC = () => {
         { title: '负责人', dataIndex: 'realName' },
         { title: '手机号', dataIndex: 'phone' },
         {
+            title: '申请场景',
+            dataIndex: 'applicationScene',
+            render: (value?: string) => {
+                const meta = APPLICATION_SCENE_META[value || ''] || { text: value || '-', color: 'default' };
+                return <Tag color={meta.color}>{meta.text}</Tag>;
+            },
+        },
+        {
             title: '状态',
             dataIndex: 'status',
             render: (value: number) => {
@@ -286,6 +294,11 @@ const ProviderAudit: React.FC = () => {
                                 <Descriptions.Item label="状态">
                                     <Tag color={APPLICATION_AUDIT_STATUS_META[currentItem.status]?.color || 'default'}>
                                         {APPLICATION_AUDIT_STATUS_META[currentItem.status]?.text || currentItem.status}
+                                    </Tag>
+                                </Descriptions.Item>
+                                <Descriptions.Item label="申请场景">
+                                    <Tag color={APPLICATION_SCENE_META[currentItem.applicationScene || '']?.color || 'default'}>
+                                        {APPLICATION_SCENE_META[currentItem.applicationScene || '']?.text || currentItem.applicationScene || '-'}
                                     </Tag>
                                 </Descriptions.Item>
                                 <Descriptions.Item label="主体名称">

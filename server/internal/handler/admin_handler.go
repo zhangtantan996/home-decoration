@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/monitor"
@@ -535,23 +536,33 @@ func parseUserIDsFromPayload(value any) []uint64 {
 
 type adminProviderListRow struct {
 	model.Provider
-	RealName    string                        `json:"realName"`
-	SourceLabel string                        `json:"sourceLabel"`
-	Visibility  service.VisibilityData        `json:"visibility"`
-	Actions     service.VisibilityActions     `json:"actions"`
-	LegacyInfo  *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+	RealName           string                        `json:"realName"`
+	SourceLabel        string                        `json:"sourceLabel"`
+	AccountBound       bool                          `json:"accountBound"`
+	LoginEnabled       bool                          `json:"loginEnabled"`
+	CompletionRequired bool                          `json:"completionRequired"`
+	OnboardingStatus   string                        `json:"onboardingStatus"`
+	OperatingEnabled   bool                          `json:"operatingEnabled"`
+	CompletionAppID    uint64                        `json:"completionApplicationId,omitempty"`
+	Visibility         service.VisibilityData        `json:"visibility"`
+	Actions            service.VisibilityActions     `json:"actions"`
+	LegacyInfo         *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
 }
 
 type adminMaterialShopListRow struct {
 	model.MaterialShop
-	UserPhone    string                        `json:"userPhone"`
-	UserNickname string                        `json:"userNickname"`
-	AccountBound bool                          `json:"accountBound"`
-	LoginEnabled bool                          `json:"loginEnabled"`
-	SourceLabel  string                        `json:"sourceLabel"`
-	Visibility   service.VisibilityData        `json:"visibility"`
-	Actions      service.VisibilityActions     `json:"actions"`
-	LegacyInfo   *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+	UserPhone          string                        `json:"userPhone"`
+	UserNickname       string                        `json:"userNickname"`
+	AccountBound       bool                          `json:"accountBound"`
+	LoginEnabled       bool                          `json:"loginEnabled"`
+	CompletionRequired bool                          `json:"completionRequired"`
+	OnboardingStatus   string                        `json:"onboardingStatus"`
+	OperatingEnabled   bool                          `json:"operatingEnabled"`
+	CompletionAppID    uint64                        `json:"completionApplicationId"`
+	SourceLabel        string                        `json:"sourceLabel"`
+	Visibility         service.VisibilityData        `json:"visibility"`
+	Actions            service.VisibilityActions     `json:"actions"`
+	LegacyInfo         *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
 }
 
 func findProviderVisibilitySource(provider model.Provider) (*model.MerchantApplication, bool) {
@@ -593,6 +604,48 @@ func resolveMaterialShopSourceLabel(shop model.MaterialShop) string {
 		return "后台补全"
 	}
 	return "历史直建"
+}
+
+func findLatestClaimedMaterialShopCompletionApplication(tx *gorm.DB, shopID, userID uint64) (*model.MaterialShopApplication, error) {
+	query := tx.Model(&model.MaterialShopApplication{}).
+		Where("application_scene = ?", model.MerchantApplicationSceneClaimedCompletion)
+
+	switch {
+	case shopID > 0:
+		query = query.Where("shop_id = ?", shopID)
+	case userID > 0:
+		query = query.Where("user_id = ?", userID)
+	default:
+		return nil, nil
+	}
+
+	var app model.MaterialShopApplication
+	if err := query.Order("updated_at DESC, id DESC").First(&app).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &app, nil
+}
+
+func resolveMaterialShopOnboardingStatus(shop model.MaterialShop, app *model.MaterialShopApplication) string {
+	if !shop.NeedsOnboardingCompletion {
+		return merchantOnboardingStatusApproved
+	}
+	if app == nil {
+		return merchantOnboardingStatusRequired
+	}
+	switch app.Status {
+	case 0:
+		return merchantOnboardingStatusPendingReview
+	case 2:
+		return merchantOnboardingStatusRejected
+	case 1:
+		return merchantOnboardingStatusApproved
+	default:
+		return merchantOnboardingStatusRequired
+	}
 }
 
 func resolveMaterialShopIdentityStatus(shop model.MaterialShop) int8 {
@@ -644,7 +697,12 @@ func AdminListProviders(c *gin.Context) {
 	}
 
 	db.Count(&total)
-	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&providers)
+	db.Order("is_settled DESC").
+		Order("verified DESC").
+		Order("id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&providers)
 
 	userIDs := make([]uint64, 0, len(providers))
 	for _, provider := range providers {
@@ -664,6 +722,19 @@ func AdminListProviders(c *gin.Context) {
 
 	list := make([]adminProviderListRow, 0, len(providers))
 	for _, provider := range providers {
+		completionApp, _ := findLatestClaimedCompletionApplication(repository.DB, provider.ID, provider.UserID)
+		onboardingStatus := "-"
+		if provider.UserID > 0 {
+			onboardingStatus = resolveProviderOnboardingStatus(provider, completionApp)
+		}
+		loginEnabled := provider.UserID > 0 && resolveProviderIdentityStatus(provider) == merchantIdentityStatusActive
+		completionRequired := provider.UserID > 0 && provider.NeedsOnboardingCompletion
+		operatingEnabled := provider.UserID > 0 && !provider.NeedsOnboardingCompletion && provider.Status == merchantProviderStatusActive
+		completionAppID := uint64(0)
+		if completionApp != nil {
+			completionAppID = completionApp.ID
+		}
+
 		visibilityResult := service.VisibilityResult{
 			Visibility: service.VisibilityData{
 				CurrentLabel:  "缺少入驻申请",
@@ -698,12 +769,18 @@ func AdminListProviders(c *gin.Context) {
 		}
 
 		list = append(list, adminProviderListRow{
-			Provider:    provider,
-			RealName:    userNameMap[provider.UserID],
-			SourceLabel: resolveProviderSourceLabel(provider),
-			Visibility:  visibilityResult.Visibility,
-			Actions:     visibilityResult.Actions,
-			LegacyInfo:  visibilityResult.LegacyInfo,
+			Provider:           provider,
+			RealName:           userNameMap[provider.UserID],
+			SourceLabel:        resolveProviderSourceLabel(provider),
+			AccountBound:       provider.UserID > 0,
+			LoginEnabled:       loginEnabled,
+			CompletionRequired: completionRequired,
+			OnboardingStatus:   onboardingStatus,
+			OperatingEnabled:   operatingEnabled,
+			CompletionAppID:    completionAppID,
+			Visibility:         visibilityResult.Visibility,
+			Actions:            visibilityResult.Actions,
+			LegacyInfo:         visibilityResult.LegacyInfo,
 		})
 	}
 
@@ -989,10 +1066,11 @@ func AdminClaimProviderAccount(c *gin.Context) {
 		return
 	}
 
-	// 更新 provider：绑定 user_id，标记为已入驻
+	// 更新 provider：绑定 user_id，标记为已入驻，并开启补全门禁
 	providerUpdates := map[string]interface{}{
-		"user_id":    user.ID,
-		"is_settled": true,
+		"user_id":                     user.ID,
+		"is_settled":                  true,
+		"needs_onboarding_completion": true,
 	}
 	if err := tx.Model(&provider).Updates(providerUpdates).Error; err != nil {
 		tx.Rollback()
@@ -1011,7 +1089,11 @@ func AdminClaimProviderAccount(c *gin.Context) {
 		}
 	}
 
-	// 确保商家身份记录（已认证则激活，否则冻结）
+	provider.UserID = user.ID
+	provider.IsSettled = true
+	provider.NeedsOnboardingCompletion = true
+
+	// 确保商家身份记录（认领后默认允许登录，但经营仍受补全门禁控制）
 	identityStatus := resolveProviderIdentityStatus(provider)
 	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeProvider, provider.ID, adminID, identityStatus); err != nil {
 		tx.Rollback()
@@ -1025,17 +1107,20 @@ func AdminClaimProviderAccount(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"providerId":   provider.ID,
-		"userId":       user.ID,
-		"phone":        phone,
-		"createdUser":  !userExists,
-		"sourceLabel":  resolveProviderSourceLabel(model.Provider{SourceApplicationID: provider.SourceApplicationID, UserID: user.ID, IsSettled: true}),
-		"loginEnabled": identityStatus == merchantIdentityStatusActive,
+		"providerId":         provider.ID,
+		"userId":             user.ID,
+		"phone":              phone,
+		"createdUser":        !userExists,
+		"accountBound":       true,
+		"sourceLabel":        resolveProviderSourceLabel(model.Provider{SourceApplicationID: provider.SourceApplicationID, UserID: user.ID, IsSettled: true}),
+		"loginEnabled":       identityStatus == merchantIdentityStatusActive,
+		"completionRequired": true,
+		"onboardingStatus":   merchantOnboardingStatusRequired,
 	})
 }
 
 func resolveProviderIdentityStatus(provider model.Provider) int8 {
-	if provider.Verified && provider.Status == merchantProviderStatusActive {
+	if provider.Status == merchantProviderStatusActive {
 		return merchantIdentityStatusActive
 	}
 	return merchantIdentityStatusFrozen
@@ -1269,7 +1354,12 @@ func AdminListMaterialShops(c *gin.Context) {
 	}
 
 	db.Count(&total)
-	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&shops)
+	db.Order("is_settled DESC").
+		Order("is_verified DESC").
+		Order("id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&shops)
 
 	userIDs := make([]uint64, 0, len(shops))
 	for _, shop := range shops {
@@ -1323,17 +1413,32 @@ func AdminListMaterialShops(c *gin.Context) {
 
 		userInfo, hasUser := userMap[shop.UserID]
 		sourceLabel := resolveMaterialShopSourceLabel(shop)
+		completionApp, _ := findLatestClaimedMaterialShopCompletionApplication(repository.DB, shop.ID, shop.UserID)
+		onboardingStatus := "-"
+		if shop.UserID > 0 {
+			onboardingStatus = resolveMaterialShopOnboardingStatus(shop, completionApp)
+		}
+		completionRequired := shop.UserID > 0 && shop.NeedsOnboardingCompletion
+		operatingEnabled := shop.UserID > 0 && !shop.NeedsOnboardingCompletion && service.IsMaterialShopActive(&shop)
+		completionAppID := uint64(0)
+		if completionApp != nil {
+			completionAppID = completionApp.ID
+		}
 
 		list = append(list, adminMaterialShopListRow{
-			MaterialShop: shop,
-			UserPhone:    userInfo.Phone,
-			UserNickname: userInfo.Nickname,
-			AccountBound: shop.UserID > 0 && hasUser,
-			LoginEnabled: shop.UserID > 0 && hasUser && service.IsMaterialShopLoginEnabled(&shop),
-			SourceLabel:  sourceLabel,
-			Visibility:   visibilityResult.Visibility,
-			Actions:      visibilityResult.Actions,
-			LegacyInfo:   visibilityResult.LegacyInfo,
+			MaterialShop:       shop,
+			UserPhone:          userInfo.Phone,
+			UserNickname:       userInfo.Nickname,
+			AccountBound:       shop.UserID > 0 && hasUser,
+			LoginEnabled:       shop.UserID > 0 && hasUser && service.IsMaterialShopLoginEnabled(&shop),
+			CompletionRequired: completionRequired,
+			OnboardingStatus:   onboardingStatus,
+			OperatingEnabled:   operatingEnabled,
+			CompletionAppID:    completionAppID,
+			SourceLabel:        sourceLabel,
+			Visibility:         visibilityResult.Visibility,
+			Actions:            visibilityResult.Actions,
+			LegacyInfo:         visibilityResult.LegacyInfo,
 		})
 	}
 
@@ -1467,7 +1572,9 @@ func AdminCompleteMaterialShopAccount(c *gin.Context) {
 	}
 
 	shopUpdates := map[string]interface{}{
-		"user_id": user.ID,
+		"user_id":                     user.ID,
+		"is_settled":                  true,
+		"needs_onboarding_completion": true,
 	}
 	if strings.TrimSpace(shop.ContactPhone) == "" {
 		shopUpdates["contact_phone"] = phone
@@ -1491,10 +1598,16 @@ func AdminCompleteMaterialShopAccount(c *gin.Context) {
 		}
 	}
 
-	identityStatus := merchantIdentityStatusFrozen
-	if shop.IsVerified {
-		identityStatus = merchantIdentityStatusActive
+	shop.UserID = user.ID
+	shop.IsSettled = true
+	shop.NeedsOnboardingCompletion = true
+	if strings.TrimSpace(shop.ContactPhone) == "" {
+		shop.ContactPhone = phone
 	}
+	if strings.TrimSpace(shop.ContactName) == "" && strings.TrimSpace(req.ContactName) != "" {
+		shop.ContactName = strings.TrimSpace(req.ContactName)
+	}
+	identityStatus := resolveMaterialShopIdentityStatus(shop)
 	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeMaterial, shop.ID, adminID, identityStatus); err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "补全主材商身份失败: "+err.Error())
@@ -1507,12 +1620,17 @@ func AdminCompleteMaterialShopAccount(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"shopId":       shop.ID,
-		"userId":       user.ID,
-		"phone":        phone,
-		"createdUser":  !userExists,
-		"sourceLabel":  resolveMaterialShopSourceLabel(model.MaterialShop{SourceApplicationID: shop.SourceApplicationID, UserID: user.ID}),
-		"loginEnabled": resolveMaterialShopIdentityStatus(shop) == merchantIdentityStatusActive,
+		"shopId":                  shop.ID,
+		"userId":                  user.ID,
+		"phone":                   phone,
+		"createdUser":             !userExists,
+		"accountBound":            true,
+		"sourceLabel":             resolveMaterialShopSourceLabel(shop),
+		"loginEnabled":            identityStatus == merchantIdentityStatusActive,
+		"completionRequired":      true,
+		"onboardingStatus":        merchantOnboardingStatusRequired,
+		"operatingEnabled":        false,
+		"completionApplicationId": uint64(0),
 	})
 }
 

@@ -323,6 +323,39 @@ func persistMaterialApplyProducts(tx *gorm.DB, applicationID uint64, products []
 	return nil
 }
 
+func replaceMaterialShopProductsFromApplication(tx *gorm.DB, shopID uint64, appProducts []model.MaterialShopApplicationProduct) error {
+	if err := tx.Where("shop_id = ?", shopID).Delete(&model.MaterialShopProduct{}).Error; err != nil {
+		return err
+	}
+
+	for _, appProduct := range appProducts {
+		var images []string
+		_ = json.Unmarshal([]byte(appProduct.ImagesJSON), &images)
+		coverImage := ""
+		if len(images) > 0 {
+			coverImage = images[0]
+		}
+
+		product := model.MaterialShopProduct{
+			ShopID:      shopID,
+			Name:        appProduct.Name,
+			Unit:        resolveMaterialProductUnit(appProduct.Unit, appProduct.ParamsJSON),
+			Description: resolveMaterialProductDescription("", appProduct.ParamsJSON),
+			ParamsJSON:  firstNonEmpty(strings.TrimSpace(appProduct.ParamsJSON), "{}"),
+			Price:       appProduct.Price,
+			ImagesJSON:  appProduct.ImagesJSON,
+			CoverImage:  coverImage,
+			Status:      1,
+			SortOrder:   appProduct.SortOrder,
+		}
+		if err := tx.Create(&product).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func MaterialShopApply(c *gin.Context) {
 	var input materialShopApplyInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -1148,19 +1181,20 @@ func AdminListMaterialShopApplications(c *gin.Context) {
 		visibilityResult := adminVisibilityResolver.ResolveMaterialShopApplication(app, shop, productCount)
 
 		item := gin.H{
-			"id":           app.ID,
-			"phone":        app.Phone,
-			"entityType":   app.EntityType,
-			"shopName":     app.ShopName,
-			"companyName":  app.CompanyName,
-			"contactName":  app.ContactName,
-			"contactPhone": app.ContactPhone,
-			"status":       app.Status,
-			"rejectReason": app.RejectReason,
-			"createdAt":    formatServerDateTime(app.CreatedAt),
-			"auditedAt":    formatServerDateTimePtr(app.AuditedAt),
-			"visibility":   visibilityResult.Visibility,
-			"actions":      visibilityResult.Actions,
+			"id":               app.ID,
+			"phone":            app.Phone,
+			"entityType":       app.EntityType,
+			"applicationScene": normalizeMerchantApplicationScene(app.ApplicationScene),
+			"shopName":         app.ShopName,
+			"companyName":      app.CompanyName,
+			"contactName":      app.ContactName,
+			"contactPhone":     app.ContactPhone,
+			"status":           app.Status,
+			"rejectReason":     app.RejectReason,
+			"createdAt":        formatServerDateTime(app.CreatedAt),
+			"auditedAt":        formatServerDateTimePtr(app.AuditedAt),
+			"visibility":       visibilityResult.Visibility,
+			"actions":          visibilityResult.Actions,
 		}
 		if visibilityResult.LegacyInfo != nil {
 			item["legacyInfo"] = visibilityResult.LegacyInfo
@@ -1218,6 +1252,7 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		"merchantKind":           "material_shop",
 		"phone":                  app.Phone,
 		"sourceApplicationId":    app.ID,
+		"applicationScene":       normalizeMerchantApplicationScene(app.ApplicationScene),
 		"entityType":             app.EntityType,
 		"avatar":                 imgutil.GetFullImageURL(app.BrandLogo),
 		"shopName":               app.ShopName,
@@ -1263,6 +1298,7 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 		response.Error(c, 400, "该申请已处理")
 		return
 	}
+	app.ApplicationScene = normalizeMerchantApplicationScene(app.ApplicationScene)
 
 	tx := repository.DB.Begin()
 
@@ -1305,66 +1341,111 @@ func AdminApproveMaterialShopApplication(c *gin.Context) {
 	}
 	mainProductsJSON, _ := json.Marshal(mainProducts)
 
-	shop := model.MaterialShop{
-		UserID:                 user.ID,
-		Type:                   "showroom",
-		Name:                   app.ShopName,
-		SourceApplicationID:    app.ID,
-		CompanyName:            app.CompanyName,
-		Description:            app.ShopDescription,
-		BrandLogo:              app.BrandLogo,
-		BusinessLicenseNo:      app.BusinessLicenseNo,
-		BusinessLicense:        app.BusinessLicense,
-		LegalPersonName:        app.LegalPersonName,
-		LegalPersonIDCardNo:    app.LegalPersonIDCardNo,
-		LegalPersonIDCardFront: app.LegalPersonIDCardFront,
-		LegalPersonIDCardBack:  app.LegalPersonIDCardBack,
-		ContactPhone:           app.ContactPhone,
-		ContactName:            app.ContactName,
-		Address:                app.Address,
-		OpenTime:               app.BusinessHours,
-		BusinessHoursJSON:      firstNonEmpty(strings.TrimSpace(app.BusinessHoursJSON), "[]"),
-		MainProducts:           string(mainProductsJSON),
-		IsVerified:             true,
-	}
-	if err := tx.Create(&shop).Error; err != nil {
-		tx.Rollback()
-		response.Error(c, 500, "创建主材商失败")
-		return
-	}
-
-	for _, appProduct := range appProducts {
-		var images []string
-		_ = json.Unmarshal([]byte(appProduct.ImagesJSON), &images)
-		coverImage := ""
-		if len(images) > 0 {
-			coverImage = images[0]
-		}
-
-		product := model.MaterialShopProduct{
-			ShopID:      shop.ID,
-			Name:        appProduct.Name,
-			Unit:        resolveMaterialProductUnit(appProduct.Unit, appProduct.ParamsJSON),
-			Description: resolveMaterialProductDescription("", appProduct.ParamsJSON),
-			ParamsJSON:  firstNonEmpty(strings.TrimSpace(appProduct.ParamsJSON), "{}"),
-			Price:       appProduct.Price,
-			ImagesJSON:  appProduct.ImagesJSON,
-			CoverImage:  coverImage,
-			Status:      1,
-			SortOrder:   appProduct.SortOrder,
-		}
-		if err := tx.Create(&product).Error; err != nil {
+	var shop model.MaterialShop
+	if app.ApplicationScene == model.MerchantApplicationSceneClaimedCompletion && app.ShopID > 0 {
+		if err := tx.First(&shop, app.ShopID).Error; err != nil {
 			tx.Rollback()
-			response.Error(c, 500, "创建商品失败")
+			response.Error(c, 404, "待补全主材门店不存在")
+			return
+		}
+
+		updates := map[string]interface{}{
+			"user_id":                     user.ID,
+			"name":                        app.ShopName,
+			"company_name":                app.CompanyName,
+			"description":                 app.ShopDescription,
+			"brand_logo":                  app.BrandLogo,
+			"business_license_no":         app.BusinessLicenseNo,
+			"business_license":            app.BusinessLicense,
+			"legal_person_name":           app.LegalPersonName,
+			"legal_person_id_card_no":     app.LegalPersonIDCardNo,
+			"legal_person_id_card_front":  app.LegalPersonIDCardFront,
+			"legal_person_id_card_back":   app.LegalPersonIDCardBack,
+			"contact_phone":               app.ContactPhone,
+			"contact_name":                firstNonEmpty(strings.TrimSpace(app.ContactName), strings.TrimSpace(app.LegalPersonName)),
+			"address":                     app.Address,
+			"open_time":                   app.BusinessHours,
+			"business_hours_json":         firstNonEmpty(strings.TrimSpace(app.BusinessHoursJSON), "[]"),
+			"main_products":               string(mainProductsJSON),
+			"is_verified":                 true,
+			"is_settled":                  true,
+			"needs_onboarding_completion": false,
+		}
+		if strings.TrimSpace(shop.Type) == "" {
+			updates["type"] = "showroom"
+		}
+		if err := tx.Model(&shop).Updates(updates).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "更新主材门店失败")
+			return
+		}
+
+		shop.UserID = user.ID
+		if strings.TrimSpace(shop.Type) == "" {
+			shop.Type = "showroom"
+		}
+		shop.Name = app.ShopName
+		shop.CompanyName = app.CompanyName
+		shop.Description = app.ShopDescription
+		shop.BrandLogo = app.BrandLogo
+		shop.BusinessLicenseNo = app.BusinessLicenseNo
+		shop.BusinessLicense = app.BusinessLicense
+		shop.LegalPersonName = app.LegalPersonName
+		shop.LegalPersonIDCardNo = app.LegalPersonIDCardNo
+		shop.LegalPersonIDCardFront = app.LegalPersonIDCardFront
+		shop.LegalPersonIDCardBack = app.LegalPersonIDCardBack
+		shop.ContactPhone = app.ContactPhone
+		shop.ContactName = firstNonEmpty(strings.TrimSpace(app.ContactName), strings.TrimSpace(app.LegalPersonName))
+		shop.Address = app.Address
+		shop.OpenTime = app.BusinessHours
+		shop.BusinessHoursJSON = firstNonEmpty(strings.TrimSpace(app.BusinessHoursJSON), "[]")
+		shop.MainProducts = string(mainProductsJSON)
+		shop.IsVerified = true
+		shop.IsSettled = true
+		shop.NeedsOnboardingCompletion = false
+	} else {
+		shop = model.MaterialShop{
+			UserID:                 user.ID,
+			Type:                   "showroom",
+			Name:                   app.ShopName,
+			SourceApplicationID:    app.ID,
+			CompanyName:            app.CompanyName,
+			Description:            app.ShopDescription,
+			BrandLogo:              app.BrandLogo,
+			BusinessLicenseNo:      app.BusinessLicenseNo,
+			BusinessLicense:        app.BusinessLicense,
+			LegalPersonName:        app.LegalPersonName,
+			LegalPersonIDCardNo:    app.LegalPersonIDCardNo,
+			LegalPersonIDCardFront: app.LegalPersonIDCardFront,
+			LegalPersonIDCardBack:  app.LegalPersonIDCardBack,
+			ContactPhone:           app.ContactPhone,
+			ContactName:            app.ContactName,
+			Address:                app.Address,
+			OpenTime:               app.BusinessHours,
+			BusinessHoursJSON:      firstNonEmpty(strings.TrimSpace(app.BusinessHoursJSON), "[]"),
+			MainProducts:           string(mainProductsJSON),
+			IsVerified:             true,
+		}
+		if err := tx.Create(&shop).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "创建主材商失败")
 			return
 		}
 	}
 
-	now := time.Now()
-	if err := freezeMerchantIdentity(tx, user.ID, previousIdentity); err != nil {
+	if err := replaceMaterialShopProductsFromApplication(tx, shop.ID, appProducts); err != nil {
 		tx.Rollback()
-		response.Error(c, 500, "冻结旧商家身份失败: "+err.Error())
+		response.Error(c, 500, "同步商品失败")
 		return
+	}
+
+	now := time.Now()
+	if app.ApplicationScene != model.MerchantApplicationSceneClaimedCompletion {
+		if err := freezeMerchantIdentity(tx, user.ID, previousIdentity); err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "冻结旧商家身份失败: "+err.Error())
+			return
+		}
 	}
 	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeMaterial, shop.ID, adminID, merchantIdentityStatusActive); err != nil {
 		tx.Rollback()
@@ -1417,12 +1498,28 @@ func AdminRejectMaterialShopApplication(c *gin.Context) {
 	}
 
 	now := time.Now()
+	app.ApplicationScene = normalizeMerchantApplicationScene(app.ApplicationScene)
 	app.Status = 2
 	app.RejectReason = strings.TrimSpace(input.Reason)
 	app.AuditedBy = adminID
 	app.AuditedAt = &now
 
-	if err := repository.DB.Save(&app).Error; err != nil {
+	tx := repository.DB.Begin()
+	if err := tx.Save(&app).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "操作失败")
+		return
+	}
+	if app.ShopID > 0 && app.ApplicationScene == model.MerchantApplicationSceneClaimedCompletion {
+		if err := tx.Model(&model.MaterialShop{}).
+			Where("id = ?", app.ShopID).
+			Update("needs_onboarding_completion", true).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "更新主材门店补全状态失败")
+			return
+		}
+	}
+	if err := tx.Commit().Error; err != nil {
 		response.Error(c, 500, "操作失败")
 		return
 	}

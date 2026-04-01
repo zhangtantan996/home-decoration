@@ -842,7 +842,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		contracts := v1.Group("/contracts")
 		contracts.Use(middleware.MerchantJWT(cfg.JWT.Secret))
 		{
-			contracts.POST("", handler.CreateContract)
+			contracts.POST("", handler.MerchantRequireCompletedOnboarding(), handler.CreateContract)
 		}
 
 		// 商家端路由（使用 MerchantJWT 中间件验证 token 类型）
@@ -854,49 +854,51 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 获取当前商家信息
 			merchant.GET("/info", handler.MerchantGetInfo)
-			merchant.PUT("/info", handler.MerchantUpdateInfo)
+			merchant.GET("/onboarding/completion", handler.MerchantGetOnboardingCompletion)
+			merchant.POST("/onboarding/completion", handler.MerchantSubmitOnboardingCompletion)
+			merchant.PUT("/info", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateInfo)
 			merchant.POST("/avatar", handler.MerchantUploadAvatar)
 			merchant.POST("/upload", handler.MerchantUploadImage)
 			merchant.GET("/service-settings", handler.MerchantGetServiceSettings)
-			merchant.PUT("/service-settings", handler.MerchantUpdateServiceSettings)
+			merchant.PUT("/service-settings", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateServiceSettings)
 			merchant.GET("/price-book", handler.MerchantGetPriceBook)
-			merchant.PUT("/price-book", handler.MerchantUpdatePriceBook)
-			merchant.POST("/price-book/publish", handler.MerchantPublishPriceBook)
+			merchant.PUT("/price-book", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdatePriceBook)
+			merchant.POST("/price-book/publish", handler.MerchantRequireCompletedOnboarding(), handler.MerchantPublishPriceBook)
 
 			// 预约管理
 			merchant.GET("/bookings", handler.MerchantListBookings)
 			merchant.GET("/bookings/:id", handler.MerchantGetBookingDetail)
-			merchant.PUT("/bookings/:id/handle", handler.MerchantHandleBooking)
+			merchant.PUT("/bookings/:id/handle", handler.MerchantRequireCompletedOnboarding(), handler.MerchantHandleBooking)
 			merchant.GET("/bookings/:id/site-survey", handler.MerchantGetSiteSurvey)
-			merchant.POST("/bookings/:id/site-survey", handler.MerchantSubmitSiteSurvey)
+			merchant.POST("/bookings/:id/site-survey", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitSiteSurvey)
 			merchant.GET("/bookings/:id/budget-confirm", handler.MerchantGetBudgetConfirmation)
-			merchant.POST("/bookings/:id/budget-confirm", handler.MerchantSubmitBudgetConfirmation)
+			merchant.POST("/bookings/:id/budget-confirm", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitBudgetConfirmation)
 			merchant.GET("/quote-lists", handler.MerchantListQuoteLists)
 			merchant.GET("/quote-lists/:id", handler.MerchantGetQuoteListDetail)
-			merchant.PUT("/quote-lists/:id/submission", handler.MerchantSaveQuoteSubmission)
-			merchant.POST("/quote-lists/:id/submission/submit", handler.MerchantSubmitQuoteSubmission)
+			merchant.PUT("/quote-lists/:id/submission", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSaveQuoteSubmission)
+			merchant.POST("/quote-lists/:id/submission/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuoteSubmission)
 			merchant.GET("/quote-tasks", handler.MerchantListQuoteTasks)
 			merchant.GET("/quote-tasks/:id", handler.MerchantGetQuoteTask)
-			merchant.POST("/bookings/:id/working-docs", handler.MerchantUploadWorkingDoc)
+			merchant.POST("/bookings/:id/working-docs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)
 			merchant.GET("/bookings/:id/working-docs", handler.MerchantListWorkingDocs)
-			merchant.POST("/bookings/:id/design-fee-quote", handler.MerchantCreateDesignFeeQuote)
+			merchant.POST("/bookings/:id/design-fee-quote", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateDesignFeeQuote)
 			merchant.GET("/bookings/:id/design-fee-quote", handler.MerchantGetDesignFeeQuote)
-			merchant.POST("/bookings/:id/deliverable", handler.MerchantSubmitDeliverable)
+			merchant.POST("/bookings/:id/deliverable", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitDeliverable)
 
 			// 方案管理
-			merchant.POST("/proposals", handler.MerchantSubmitProposal)
+			merchant.POST("/proposals", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitProposal)
 			merchant.GET("/proposals", handler.MerchantListProposals)
 			merchant.GET("/proposals/:id", handler.MerchantGetProposal)
-			merchant.PUT("/proposals/:id", handler.MerchantUpdateProposal)
-			merchant.DELETE("/proposals/:id", handler.MerchantCancelProposal)
-			merchant.POST("/proposals/:id/reopen", handler.MerchantReopenProposal)
-			merchant.POST("/proposals/resubmit", handler.ResubmitProposal)          // 重新提交方案（生成新版本）
-			merchant.GET("/proposals/:id/rejection-info", handler.GetRejectionInfo) // 获取拒绝信息
+			merchant.PUT("/proposals/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateProposal)
+			merchant.DELETE("/proposals/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCancelProposal)
+			merchant.POST("/proposals/:id/reopen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantReopenProposal)
+			merchant.POST("/proposals/resubmit", handler.MerchantRequireCompletedOnboarding(), handler.ResubmitProposal) // 重新提交方案（生成新版本）
+			merchant.GET("/proposals/:id/rejection-info", handler.GetRejectionInfo)                                      // 获取拒绝信息
 
 			// 线索管理
 			merchant.GET("/leads", handler.MerchantListLeads)
-			merchant.POST("/leads/:id/accept", handler.MerchantAcceptLead)
-			merchant.POST("/leads/:id/decline", handler.MerchantDeclineLead)
+			merchant.POST("/leads/:id/accept", handler.MerchantRequireCompletedOnboarding(), handler.MerchantAcceptLead)
+			merchant.POST("/leads/:id/decline", handler.MerchantRequireCompletedOnboarding(), handler.MerchantDeclineLead)
 
 			// 投诉响应
 			merchant.GET("/complaints", handler.MerchantListComplaints)
@@ -907,11 +909,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/projects", handler.MerchantListProjects)
 			merchant.GET("/projects/:projectId", handler.MerchantGetProjectDetail)
 			merchant.GET("/projects/:projectId/dispute", handler.MerchantGetProjectDispute)
-			merchant.POST("/projects/:projectId/dispute/respond", handler.MerchantRespondProjectDispute)
-			merchant.POST("/projects/:projectId/logs", handler.MerchantCreateProjectLog)
-			merchant.POST("/projects/:projectId/start", handler.MerchantStartProject)
-			merchant.POST("/projects/:projectId/milestones/:milestoneId/submit", handler.MerchantSubmitProjectMilestone)
-			merchant.POST("/projects/:projectId/complete", handler.MerchantCompleteProject)
+			merchant.POST("/projects/:projectId/dispute/respond", handler.MerchantRequireCompletedOnboarding(), handler.MerchantRespondProjectDispute)
+			merchant.POST("/projects/:projectId/logs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateProjectLog)
+			merchant.POST("/projects/:projectId/start", handler.MerchantRequireCompletedOnboarding(), handler.MerchantStartProject)
+			merchant.POST("/projects/:projectId/milestones/:milestoneId/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitProjectMilestone)
+			merchant.POST("/projects/:projectId/complete", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCompleteProject)
 
 			// 仪表盘
 			merchant.GET("/dashboard", handler.MerchantDashboardStats)
@@ -922,23 +924,23 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 提现管理
 			merchant.GET("/withdraw/list", handler.MerchantWithdrawList)
-			merchant.POST("/withdraw", handler.MerchantWithdrawCreate)
+			merchant.POST("/withdraw", handler.MerchantRequireCompletedOnboarding(), handler.MerchantWithdrawCreate)
 
 			// 银行账户
 			merchant.GET("/bank-accounts", handler.MerchantBankAccountList)
-			merchant.POST("/bank-accounts", handler.MerchantBankAccountCreate)
-			merchant.DELETE("/bank-accounts/:id", handler.MerchantBankAccountDelete)
-			merchant.PUT("/bank-accounts/:id/default", handler.MerchantBankAccountSetDefault)
+			merchant.POST("/bank-accounts", handler.MerchantRequireCompletedOnboarding(), handler.MerchantBankAccountCreate)
+			merchant.DELETE("/bank-accounts/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantBankAccountDelete)
+			merchant.PUT("/bank-accounts/:id/default", handler.MerchantRequireCompletedOnboarding(), handler.MerchantBankAccountSetDefault)
 
 			// 作品集管理
 			merchant.GET("/cases", handler.MerchantCaseList)
 			merchant.GET("/cases/:id", handler.MerchantCaseGet)
-			merchant.POST("/cases", handler.MerchantCaseCreate)
-			merchant.POST("/projects/:projectId/cases", handler.MerchantCaseCreateFromProject)
-			merchant.PUT("/cases/:id", handler.MerchantCaseUpdate)
-			merchant.DELETE("/cases/:id", handler.MerchantCaseDelete)
-			merchant.PUT("/cases/reorder", handler.MerchantCaseReorder)
-			merchant.DELETE("/cases/audit/:auditId", handler.MerchantCaseCancelAudit) // 取消审核
+			merchant.POST("/cases", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCreate)
+			merchant.POST("/projects/:projectId/cases", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCreateFromProject)
+			merchant.PUT("/cases/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseUpdate)
+			merchant.DELETE("/cases/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseDelete)
+			merchant.PUT("/cases/reorder", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseReorder)
+			merchant.DELETE("/cases/audit/:auditId", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCancelAudit) // 取消审核
 
 			// 通知系统
 			merchant.GET("/notifications", handler.GetNotifications)
@@ -955,13 +957,15 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		materialShop.Use(middleware.MerchantJWT(cfg.JWT.Secret))
 		{
 			materialShop.GET("/me", handler.MaterialShopGetMe)
-			materialShop.PUT("/me", handler.MaterialShopUpdateMe)
+			materialShop.GET("/onboarding/completion", handler.MaterialShopGetOnboardingCompletion)
+			materialShop.POST("/onboarding/completion", handler.MaterialShopSubmitOnboardingCompletion)
+			materialShop.PUT("/me", handler.MaterialShopRequireCompletedOnboarding(), handler.MaterialShopUpdateMe)
 			materialShop.GET("/service-settings", handler.MerchantGetServiceSettings)
-			materialShop.PUT("/service-settings", handler.MerchantUpdateServiceSettings)
+			materialShop.PUT("/service-settings", handler.MaterialShopRequireCompletedOnboarding(), handler.MerchantUpdateServiceSettings)
 			materialShop.GET("/me/products", handler.MaterialShopListProducts)
-			materialShop.POST("/me/products", handler.MaterialShopCreateProduct)
-			materialShop.PUT("/me/products/:id", handler.MaterialShopUpdateProduct)
-			materialShop.DELETE("/me/products/:id", handler.MaterialShopDeleteProduct)
+			materialShop.POST("/me/products", handler.MaterialShopRequireCompletedOnboarding(), handler.MaterialShopCreateProduct)
+			materialShop.PUT("/me/products/:id", handler.MaterialShopRequireCompletedOnboarding(), handler.MaterialShopUpdateProduct)
+			materialShop.DELETE("/me/products/:id", handler.MaterialShopRequireCompletedOnboarding(), handler.MaterialShopDeleteProduct)
 		}
 	}
 

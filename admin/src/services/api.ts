@@ -1070,6 +1070,12 @@ export interface AdminProviderListItem {
   isSettled?: boolean;
   collectedSource?: string;
   sourceLabel?: string;
+  accountBound?: boolean;
+  loginEnabled?: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
+  operatingEnabled?: boolean;
+  completionApplicationId?: number;
   visibility?: AdminAuditVisibility;
   actions?: AdminAuditActions;
   legacyInfo?: AdminAuditLegacyInfo;
@@ -1102,6 +1108,10 @@ export interface AdminMaterialShopListItem {
   userNickname?: string;
   accountBound?: boolean;
   loginEnabled?: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
+  operatingEnabled?: boolean;
+  completionApplicationId?: number;
   sourceLabel?: string;
   sourceApplicationId?: number;
   createdAt: string;
@@ -1115,15 +1125,23 @@ export interface AdminMaterialShopAccountCompletionResult {
   userId: number;
   phone: string;
   createdUser: boolean;
+  accountBound?: boolean;
   sourceLabel: string;
   loginEnabled: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
+  operatingEnabled?: boolean;
+  completionApplicationId?: number;
 }
 
 export interface AdminProviderSettlementResult {
   providerId: number;
   userId: number;
   sourceLabel: string;
+  accountBound?: boolean;
   loginEnabled: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
   phone?: string;
   createdUser?: boolean;
 }
@@ -1343,6 +1361,7 @@ export interface AdminMerchantApplicationListItem {
   phone: string;
   role: string;
   entityType: string;
+  applicationScene?: "new_onboarding" | "claimed_completion";
   realName: string;
   companyName?: string;
   status: number;
@@ -1378,6 +1397,7 @@ export interface AdminMaterialShopApplicationListItem {
   id: number;
   phone: string;
   entityType: string;
+  applicationScene?: "new_onboarding" | "claimed_completion";
   shopName: string;
   companyName?: string;
   contactName: string;

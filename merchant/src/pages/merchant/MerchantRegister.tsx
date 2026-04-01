@@ -43,11 +43,14 @@ import {
     MerchantApiError,
     merchantApplyApi,
     merchantAuthApi,
+    merchantCompletionApi,
     merchantUploadApi,
     onboardingValidationApi,
     type MerchantApplicantType,
     type MerchantApplyDetailData,
     type MerchantApplyPayload,
+    type MerchantCompletionStatusResponse,
+    type MerchantCompletionSubmitPayload,
 } from '../../services/merchantApi';
 import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
@@ -59,6 +62,12 @@ const { TextArea } = Input;
 
 type MerchantApplyRole = 'designer' | 'foreman' | 'company';
 type MerchantEntityType = 'personal' | 'company';
+
+interface MerchantRegisterProps {
+    mode?: 'apply' | 'completion';
+    completionData?: MerchantCompletionStatusResponse | null;
+    onCompletionSubmitted?: () => void | Promise<void>;
+}
 
 const FOREMAN_HIGHLIGHT_OPTIONS = [
     '工期可控',
@@ -274,21 +283,42 @@ const caseImageRuleText = (role: MerchantApplyRole, entityType: MerchantEntityTy
     return '每套至少 3 张图';
 };
 
-const MerchantRegister: React.FC = () => {
+const MerchantRegister: React.FC<MerchantRegisterProps> = ({
+    mode = 'apply',
+    completionData = null,
+    onCompletionSubmitted,
+}) => {
     const [searchParams] = useSearchParams();
     const phoneFromUrl = searchParams.get('phone') || '';
     const fromLogin = searchParams.get('from') || '';
     const resubmitId = searchParams.get('resubmit');
     const navigate = useNavigate();
+    const isCompletionMode = mode === 'completion';
+    const completionForm = completionData?.form;
 
-    const applyMeta = useMemo(() => resolveApplyMeta(searchParams), [searchParams]);
+    const applyMeta = useMemo(() => {
+        if (isCompletionMode && completionForm) {
+            const role = (completionForm.role || 'designer') as MerchantApplyRole;
+            const entityType = (completionForm.entityType || 'personal') as MerchantEntityType;
+            const applicantType = (completionForm.applicantType
+                || (role === 'company'
+                    ? 'company'
+                    : role === 'foreman'
+                        ? 'foreman'
+                        : entityType === 'company'
+                            ? 'studio'
+                            : 'personal')) as MerchantApplicantType;
+            return { role, entityType, applicantType };
+        }
+        return resolveApplyMeta(searchParams);
+    }, [completionForm, isCompletionMode, searchParams]);
     const { role, entityType, applicantType } = applyMeta;
 
     const [currentStep, setCurrentStep] = useState(0);
     const [loading, setLoading] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
-    const [showRedirectAlert, setShowRedirectAlert] = useState(fromLogin.startsWith('login_'));
+    const [showRedirectAlert, setShowRedirectAlert] = useState(!isCompletionMode && fromLogin.startsWith('login_'));
     const [form] = Form.useForm();
     const [portfolioCases, setPortfolioCases] = useState<PortfolioCase[]>(
         role === 'foreman' ? createForemanPortfolioCases() : [
@@ -321,9 +351,12 @@ const MerchantRegister: React.FC = () => {
     const currentVerificationApplicationId = resubmitId ? Number(resubmitId) : undefined;
     const currentVerificationMerchantKind = 'provider' as const;
 
-    const draftStorageKey = useMemo(() => (
-        resubmitId ? `${DRAFT_STORAGE_KEY}:resubmit:${resubmitId}` : DRAFT_STORAGE_KEY
-    ), [resubmitId]);
+    const draftStorageKey = useMemo(() => {
+        if (isCompletionMode) {
+            return `${DRAFT_STORAGE_KEY}:completion:${completionData?.applicationId || 'required'}`;
+        }
+        return resubmitId ? `${DRAFT_STORAGE_KEY}:resubmit:${resubmitId}` : DRAFT_STORAGE_KEY;
+    }, [completionData?.applicationId, isCompletionMode, resubmitId]);
 
     const isForeman = role === 'foreman';
     const isCompanyRole = role === 'company';
@@ -454,20 +487,26 @@ const MerchantRegister: React.FC = () => {
     const caseMinCount = isForeman ? 5 : 3;
     const caseMinImages = role === 'designer' ? (entityType === 'company' ? 6 : 4) : (role === 'foreman' ? 2 : 3);
     const caseMaxImages = role === 'designer' ? 12 : (role === 'foreman' ? 6 : 12);
-
-    const pageTitle = useMemo(() => {
-        if (role === 'company') return '装修公司入驻申请';
-        if (role === 'foreman') return entityType === 'company' ? '工长入驻申请（公司主体）' : '工长入驻申请（个人主体）';
-        return entityType === 'company' ? '设计师入驻申请（公司主体）' : '设计师入驻申请（个人主体）';
-    }, [entityType, role]);
-
-    const steps = [
+    const flowSteps = useMemo(() => ([
         { title: '手机号验证' },
         { title: '基础信息' },
         { title: '资质上传' },
         { title: isForeman ? '施工案例' : '案例作品' },
         { title: '服务与报价' },
-    ];
+    ]), [isForeman]);
+    const steps = isCompletionMode ? flowSteps.slice(1) : flowSteps;
+    const flowStep = isCompletionMode ? currentStep + 1 : currentStep;
+
+    const pageTitle = useMemo(() => {
+        if (isCompletionMode) {
+            if (role === 'company') return '装修公司正式入驻资料补全';
+            if (role === 'foreman') return entityType === 'company' ? '工长正式入驻资料补全（公司主体）' : '工长正式入驻资料补全（个人主体）';
+            return entityType === 'company' ? '设计师正式入驻资料补全（公司主体）' : '设计师正式入驻资料补全（个人主体）';
+        }
+        if (role === 'company') return '装修公司入驻申请';
+        if (role === 'foreman') return entityType === 'company' ? '工长入驻申请（公司主体）' : '工长入驻申请（个人主体）';
+        return entityType === 'company' ? '设计师入驻申请（公司主体）' : '设计师入驻申请（个人主体）';
+    }, [entityType, isCompletionMode, role]);
 
     const validateLicenseRemote = useCallback(async (licenseNo: string, companyName?: string) => {
         const normalized = normalizeLicenseNo(licenseNo);
@@ -566,16 +605,53 @@ const MerchantRegister: React.FC = () => {
     }, [draftStorageKey, form, isForeman]);
 
     useEffect(() => {
-        form.setFieldsValue({
+        const baseValues: Record<string, unknown> = {
             role,
             entityType,
             applicantType,
-            phone: phoneFromUrl || undefined,
-        });
+            phone: phoneFromUrl || completionForm?.phone || undefined,
+        };
+        if (isCompletionMode && completionForm) {
+            baseValues.realName = completionForm.realName;
+            baseValues.avatar = completionForm.avatar;
+            baseValues.idCardNo = completionForm.idCardNo;
+            baseValues.idCardFront = completionForm.idCardFront;
+            baseValues.idCardBack = completionForm.idCardBack;
+            baseValues.companyName = completionForm.companyName;
+            baseValues.licenseNo = completionForm.licenseNo;
+            baseValues.licenseImage = completionForm.licenseImage;
+            baseValues.legalPersonName = completionForm.legalPersonName;
+            baseValues.legalPersonIdCardNo = completionForm.legalPersonIdCardNo;
+            baseValues.legalPersonIdCardFront = completionForm.legalPersonIdCardFront;
+            baseValues.legalPersonIdCardBack = completionForm.legalPersonIdCardBack;
+            baseValues.teamSize = completionForm.teamSize;
+            baseValues.officeAddress = completionForm.officeAddress;
+            baseValues.yearsExperience = completionForm.yearsExperience;
+            baseValues.highlightTags = completionForm.highlightTags;
+            baseValues.graduateSchool = completionForm.graduateSchool;
+            baseValues.designPhilosophy = completionForm.designPhilosophy;
+            baseValues.serviceArea = completionForm.serviceAreaCodes || completionForm.serviceArea;
+            baseValues.styles = completionForm.styles;
+            baseValues.introduction = completionForm.introduction;
+            baseValues.companyAlbum = completionForm.companyAlbum;
+            baseValues.priceFlat = completionForm.pricing?.flat;
+            baseValues.priceDuplex = completionForm.pricing?.duplex;
+            baseValues.priceOther = completionForm.pricing?.other;
+            baseValues.pricePerSqm = completionForm.pricing?.perSqm;
+            baseValues.priceFullPackage = completionForm.pricing?.fullPackage;
+            baseValues.priceHalfPackage = completionForm.pricing?.halfPackage;
+        }
+        form.setFieldsValue(baseValues);
+        if (isCompletionMode && completionForm) {
+            const completionCases = normalizePortfolioCasesForForm(completionForm.portfolioCases, isForeman);
+            if (completionCases.length > 0) {
+                setPortfolioCases(completionCases);
+            }
+        }
         void loadStyleOptions();
         void loadAreaOptions();
         void restoreDraft();
-    }, [applicantType, entityType, form, phoneFromUrl, role, loadStyleOptions, loadAreaOptions, restoreDraft]);
+    }, [applicantType, completionForm, entityType, form, isCompletionMode, isForeman, phoneFromUrl, role, loadStyleOptions, loadAreaOptions, restoreDraft]);
 
     useEffect(() => {
         return () => {
@@ -586,6 +662,19 @@ const MerchantRegister: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (isCompletionMode) {
+            setPhoneVerified(false);
+            setVerifiedPhone('');
+            setVerificationToken('');
+            setVerificationExpiresAt(null);
+            setVerificationContext({
+                mode: currentVerificationMode,
+                merchantKind: currentVerificationMerchantKind,
+                applicationId: currentVerificationApplicationId,
+            });
+            sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
+            return;
+        }
         if (resubmitId) {
             setPhoneVerified(false);
             setVerifiedPhone('');
@@ -632,7 +721,7 @@ const MerchantRegister: React.FC = () => {
         setVerificationExpiresAt(null);
         setVerificationContext({ mode: currentVerificationMode, merchantKind: currentVerificationMerchantKind, applicationId: currentVerificationApplicationId });
         sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
-    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, draftStorageKey, form, phoneFromUrl, resubmitId]);
+    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, draftStorageKey, form, isCompletionMode, phoneFromUrl, resubmitId]);
 
     const handleStepValidationError = useCallback((error: unknown, fallbackMessage = '请完善当前步骤必填信息') => {
         const errorFields = (
@@ -1173,7 +1262,7 @@ const MerchantRegister: React.FC = () => {
 
     const handleNext = async () => {
         try {
-            if (currentStep === 0) {
+            if (flowStep === 0) {
                 const authValues = await form.validateFields(['phone', 'code']);
                 const phone = String(authValues.phone || '').trim();
                 const code = String(authValues.code || '').trim();
@@ -1186,7 +1275,7 @@ const MerchantRegister: React.FC = () => {
                 if (showRedirectAlert) {
                     setShowRedirectAlert(false);
                 }
-            } else if (currentStep === 1) {
+            } else if (flowStep === 1) {
                 const fields = ['realName', 'avatar', 'officeAddress'];
                 if (entityType === 'company' || role === 'company') {
                     fields.push('companyName');
@@ -1195,7 +1284,7 @@ const MerchantRegister: React.FC = () => {
                     fields.push('companyAlbum');
                 }
                 await form.validateFields(fields);
-            } else if (currentStep === 2) {
+            } else if (flowStep === 2) {
                 const fields = ['idCardNo', 'idCardFront', 'idCardBack'];
                 if (requiresCompanyLicense) {
                     fields.push('licenseNo', 'licenseImage');
@@ -1207,7 +1296,7 @@ const MerchantRegister: React.FC = () => {
                     fields.push('yearsExperience');
                 }
                 await form.validateFields(fields);
-            } else if (currentStep === 3) {
+            } else if (flowStep === 3) {
                 if (hasPendingCaseUploads) {
                     message.warning('案例图片仍在上传中，请等待上传完成后再进入下一步');
                     return;
@@ -1256,7 +1345,10 @@ const MerchantRegister: React.FC = () => {
     };
 
     const handleSubmit = async () => {
-        const fields = ['phone', 'realName', 'avatar', 'idCardNo', 'idCardFront', 'idCardBack', 'serviceArea', 'legalAccepted'];
+        const fields = ['realName', 'avatar', 'idCardNo', 'idCardFront', 'idCardBack', 'serviceArea', 'legalAccepted'];
+        if (!isCompletionMode) {
+            fields.unshift('phone');
+        }
         if (requiresCompanyLicense) {
             fields.push('companyName', 'licenseNo', 'licenseImage');
         }
@@ -1282,7 +1374,7 @@ const MerchantRegister: React.FC = () => {
             ...validatedValues,
         };
 
-        if (!hasValidVerification(String(values.phone || '').trim())) {
+        if (!isCompletionMode && !hasValidVerification(String(values.phone || '').trim())) {
             setCurrentStep(0);
             message.error('请先完成手机号验证码校验');
             return;
@@ -1318,17 +1410,13 @@ const MerchantRegister: React.FC = () => {
 
         Modal.confirm({
             title: '确认提交',
-            content: resubmitId ? '确认重新提交申请？' : '确认提交入驻申请？',
+            content: isCompletionMode ? '确认提交正式入驻资料补全？' : (resubmitId ? '确认重新提交申请？' : '确认提交入驻申请？'),
             okText: '确认',
             cancelText: '取消',
             onOk: async () => {
                 setLoading(true);
                 try {
-                    const payload: MerchantApplyPayload = {
-                        phone: String(values.phone || '').trim(),
-                        code: String(values.code || '').trim(),
-                        verificationToken,
-                        resubmitToken: resubmitId ? (verificationToken || undefined) : undefined,
+                    const payloadBase = {
                         role,
                         entityType,
                         applicantType,
@@ -1373,9 +1461,23 @@ const MerchantRegister: React.FC = () => {
                         },
                     };
 
-                    const result = resubmitId
-                        ? await merchantApplyApi.resubmit(Number(resubmitId), payload)
-                        : await merchantApplyApi.apply(payload);
+                    const result = isCompletionMode
+                        ? await merchantCompletionApi.submit(payloadBase as MerchantCompletionSubmitPayload)
+                        : resubmitId
+                            ? await merchantApplyApi.resubmit(Number(resubmitId), {
+                                ...(payloadBase as MerchantApplyPayload),
+                                phone: String(values.phone || '').trim(),
+                                code: String(values.code || '').trim(),
+                                verificationToken,
+                                resubmitToken: resubmitId ? (verificationToken || undefined) : undefined,
+                            })
+                            : await merchantApplyApi.apply({
+                                ...(payloadBase as MerchantApplyPayload),
+                                phone: String(values.phone || '').trim(),
+                                code: String(values.code || '').trim(),
+                                verificationToken,
+                                resubmitToken: undefined,
+                            });
 
                     if (!result.applicationId) {
                         message.error('提交失败：申请编号缺失');
@@ -1383,8 +1485,14 @@ const MerchantRegister: React.FC = () => {
                     }
 
                     clearDraft();
+                    if (isCompletionMode) {
+                        message.success('补全资料已提交，请等待审核');
+                        await onCompletionSubmitted?.();
+                        return;
+                    }
+
                     message.success(resubmitId ? '已重新提交，请等待审核' : '申请已提交，请等待审核');
-                    navigate(`/apply-status?phone=${encodeURIComponent(values.phone)}`);
+                    navigate(`/apply-status?phone=${encodeURIComponent(String(values.phone || ''))}`);
                 } catch (error) {
                     message.error(getErrorMessage(error, '提交失败'));
                 } finally {
@@ -1426,7 +1534,7 @@ const MerchantRegister: React.FC = () => {
     };
 
     const renderStepContent = () => {
-        switch (currentStep) {
+        switch (flowStep) {
             case 0:
                 return (
                     <div className="animate-fade-in glassmorphism-form">
@@ -2208,13 +2316,33 @@ const MerchantRegister: React.FC = () => {
     return (
         <MerchantOnboardingShell
             pageTitle={pageTitle}
-            pageSubtitle="请按步骤完善资质、案例和服务信息，提交后将进入人工审核。"
+            pageSubtitle={isCompletionMode ? '账号已绑定，请按正式入驻标准补全资料并提交审核。' : '请按步骤完善资质、案例和服务信息，提交后将进入人工审核。'}
             heroTitle={pageTitle.replace('（公司主体）', '').replace('（个人主体）', '')}
-            heroSubtitle="入驻即注册。完善品牌资料、上传案例作品，并用统一的服务信息向平台展示你的专业能力。"
+            heroSubtitle={isCompletionMode ? '补全完成并审核通过后，接单、报价、项目推进、资金等经营能力才会重新开放。' : '入驻即注册。完善品牌资料、上传案例作品，并用统一的服务信息向平台展示你的专业能力。'}
             currentStep={currentStep}
             steps={steps}
             onBack={() => navigate('/')}
-            alertNode={showRedirectAlert ? (
+            alertNode={isCompletionMode ? (
+                completionData?.onboardingStatus === 'rejected' ? (
+                    <Alert
+                        type="error"
+                        showIcon
+                        message="补全资料已被驳回，请按驳回原因修正后重新提交。"
+                        description={completionData?.rejectReason || '请对照资料要求补齐后重新提交。'}
+                        style={{ marginBottom: 24, borderRadius: 8 }}
+                        role="alert"
+                    />
+                ) : (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="账号已绑定，当前仍处于资料待补全状态。"
+                        description="在审核通过前，你可以登录和查看消息，但接单、报价、项目推进、提现等经营操作会继续受限。"
+                        style={{ marginBottom: 24, borderRadius: 8 }}
+                        role="alert"
+                    />
+                )
+            ) : showRedirectAlert ? (
                 <Alert
                     type="warning"
                     showIcon
@@ -2235,7 +2363,7 @@ const MerchantRegister: React.FC = () => {
                 className="premium-form"
                 data-testid="merchant-register-form"
             >
-                {resubmitLoading && (
+                {!isCompletionMode && resubmitLoading && (
                     <Alert
                         type="info"
                         showIcon
@@ -2244,7 +2372,7 @@ const MerchantRegister: React.FC = () => {
                         data-testid="merchant-register-resubmit-loading"
                     />
                 )}
-                {resubmitId && resubmitPrefillFailed && (
+                {!isCompletionMode && resubmitId && resubmitPrefillFailed && (
                     <Alert
                         type="warning"
                         showIcon
@@ -2253,7 +2381,7 @@ const MerchantRegister: React.FC = () => {
                         data-testid="merchant-register-resubmit-failed"
                     />
                 )}
-                {phoneVerified && hasValidVerification(String(form.getFieldValue('phone') || phoneFromUrl || '').trim()) && (
+                {!isCompletionMode && phoneVerified && hasValidVerification(String(form.getFieldValue('phone') || phoneFromUrl || '').trim()) && (
                     <Alert
                         type="success"
                         showIcon
@@ -2335,10 +2463,10 @@ const MerchantRegister: React.FC = () => {
                             onClick={handleSubmit}
                             icon={<CheckOutlined aria-hidden="true" />}
                             style={{ borderRadius: 8, padding: '0 32px' }}
-                            aria-label="提交商家入驻申请"
+                            aria-label={isCompletionMode ? '提交正式入驻资料补全' : '提交商家入驻申请'}
                             data-testid="merchant-register-submit"
                         >
-                            提交申请
+                            {isCompletionMode ? '提交补全资料' : '提交申请'}
                         </Button>
                     )}
                 </div>

@@ -22,6 +22,9 @@ export default defineConfig(({ mode }) => {
   return {
     base,
     plugins: [react()],
+    build: {
+      chunkSizeWarningLimit: 4000,
+    },
     server: {
       host: true,
       port: 5173,

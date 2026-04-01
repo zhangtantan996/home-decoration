@@ -922,6 +922,7 @@ createProviderApplication:
 		LegalAcceptanceJSON: buildLegalAcceptanceJSON(input.LegalAcceptance),
 		LegalAcceptedAt:     &acceptedAt,
 		LegalAcceptSource:   "merchant_web",
+		ApplicationScene:    model.MerchantApplicationSceneNewOnboarding,
 		Status:              0, // 待审核
 	}
 
@@ -1411,6 +1412,7 @@ func MerchantResubmit(c *gin.Context) {
 	app.RejectReason = ""
 	app.AuditedBy = 0
 	app.AuditedAt = nil
+	app.ApplicationScene = normalizeMerchantApplicationScene(app.ApplicationScene)
 
 	if err := repository.DB.Save(&app).Error; err != nil {
 		response.Error(c, 500, "重新提交失败")
@@ -1484,18 +1486,19 @@ func AdminListApplications(c *gin.Context) {
 		visibilityResult := adminVisibilityResolver.ResolveMerchantApplication(app, provider)
 
 		item := gin.H{
-			"id":           app.ID,
-			"phone":        app.Phone,
-			"role":         app.Role,
-			"entityType":   app.EntityType,
-			"realName":     app.RealName,
-			"companyName":  app.CompanyName,
-			"status":       app.Status,
-			"rejectReason": app.RejectReason,
-			"createdAt":    formatServerDateTime(app.CreatedAt),
-			"auditedAt":    formatServerDateTimePtr(app.AuditedAt),
-			"visibility":   visibilityResult.Visibility,
-			"actions":      visibilityResult.Actions,
+			"id":               app.ID,
+			"phone":            app.Phone,
+			"role":             app.Role,
+			"entityType":       app.EntityType,
+			"applicationScene": normalizeMerchantApplicationScene(app.ApplicationScene),
+			"realName":         app.RealName,
+			"companyName":      app.CompanyName,
+			"status":           app.Status,
+			"rejectReason":     app.RejectReason,
+			"createdAt":        formatServerDateTime(app.CreatedAt),
+			"auditedAt":        formatServerDateTimePtr(app.AuditedAt),
+			"visibility":       visibilityResult.Visibility,
+			"actions":          visibilityResult.Actions,
 		}
 		if visibilityResult.LegacyInfo != nil {
 			item["legacyInfo"] = visibilityResult.LegacyInfo
@@ -1550,6 +1553,7 @@ func AdminGetApplication(c *gin.Context) {
 		"applicantType":          app.ApplicantType,
 		"role":                   app.Role,
 		"entityType":             app.EntityType,
+		"applicationScene":       normalizeMerchantApplicationScene(app.ApplicationScene),
 		"sourceApplicationId":    app.ID,
 		"realName":               app.RealName,
 		"avatar":                 imgutil.GetFullImageURL(app.Avatar),
@@ -1639,164 +1643,159 @@ func AdminApproveApplication(c *gin.Context) {
 		user.Avatar = app.Avatar
 	}
 
-	// 2. 解析申请角色映射
-	providerType, subType, entityType, compatApplicantType, normalizeErr := normalizeApprovedApplicationMeta(&app)
-	if normalizeErr != nil {
+	snapshot, snapshotErr := buildProviderApprovalSnapshot(&app)
+	if snapshotErr != nil {
 		tx.Rollback()
-		response.Error(c, 400, normalizeErr.Error())
+		response.Error(c, 400, snapshotErr.Error())
 		return
 	}
 
-	// 2.1 审核通过时允许“新商家替换旧商家”：冻结旧身份，再激活新身份
-	previousIdentity, err := findLatestActiveMerchantIdentity(tx, user.ID, "", 0)
-	if err != nil {
-		tx.Rollback()
-		response.Error(c, 500, "校验旧商家身份失败: "+err.Error())
-		return
-	}
-
-	styles := parseJSONOrDelimitedSlice(app.Styles)
-	highlightTags := normalizeStringSlice(parseJSONOrDelimitedSlice(app.HighlightTags))
-	companyAlbum := parseJSONStringSlice(app.CompanyAlbumJSON)
-	pricing := parsePricingObject(app.PricingJSON)
-	priceMin, priceMax := getPricingRange(pricing)
-
-	highlightTagsJSON, _ := json.Marshal(highlightTags)
-	pricingJSON, _ := json.Marshal(pricing)
-	companyAlbumJSON, _ := json.Marshal(companyAlbum)
-
-	specialty := strings.Join(styles, " · ")
-	if providerType == 3 {
-		specialty = "全工种施工"
-	}
-
-	// 3. 创建 Provider
-	provider := model.Provider{
-		UserID:              user.ID,
-		ProviderType:        providerType,
-		SubType:             subType,
-		EntityType:          entityType,
-		CompanyName:         app.CompanyName,
-		SourceApplicationID: app.ID,
-		Avatar:              app.Avatar,
-		LicenseNo:           app.LicenseNo,
-		ServiceArea:         app.ServiceArea,
-		Specialty:           specialty,
-		HighlightTags:       string(highlightTagsJSON),
-		PricingJSON:         string(pricingJSON),
-		GraduateSchool:      app.GraduateSchool,
-		DesignPhilosophy:    app.DesignPhilosophy,
-		YearsExperience:     app.YearsExperience,
-		ServiceIntro:        app.Introduction,
-		TeamSize:            app.TeamSize,
-		OfficeAddress:       app.OfficeAddress,
-		CompanyAlbumJSON:    string(companyAlbumJSON),
-		PriceMin:            priceMin,
-		PriceMax:            priceMax,
-		PriceUnit:           model.ProviderPriceUnitPerSquareMeter,
-		Status:              1,
-		Verified:            true,
-	}
-	if err := tx.Create(&provider).Error; err != nil {
-		tx.Rollback()
-		response.Error(c, 500, "创建服务商失败: "+err.Error())
-		return
-	}
-
-	// 3.1. 冻结旧身份，并激活新的 user_identities 记录（多身份系统）
 	now := time.Now()
-	if err := freezeMerchantIdentity(tx, user.ID, previousIdentity); err != nil {
-		tx.Rollback()
-		response.Error(c, 500, "冻结旧商家身份失败: "+err.Error())
-		return
+	provider := model.Provider{}
+	isClaimedCompletion := normalizeMerchantApplicationScene(app.ApplicationScene) == model.MerchantApplicationSceneClaimedCompletion || app.ProviderID > 0
+	if isClaimedCompletion {
+		if app.ProviderID == 0 {
+			tx.Rollback()
+			response.Error(c, 400, "补全申请缺少服务商关联")
+			return
+		}
+		if err := tx.First(&provider, app.ProviderID).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 404, "待补全服务商不存在")
+			return
+		}
+
+		updates := map[string]interface{}{
+			"user_id":                     user.ID,
+			"provider_type":               snapshot.ProviderType,
+			"sub_type":                    snapshot.SubType,
+			"entity_type":                 snapshot.EntityType,
+			"company_name":                app.CompanyName,
+			"avatar":                      app.Avatar,
+			"license_no":                  app.LicenseNo,
+			"service_area":                app.ServiceArea,
+			"specialty":                   snapshot.Specialty,
+			"highlight_tags":              snapshot.HighlightTagsJSON,
+			"pricing_json":                snapshot.PricingJSON,
+			"graduate_school":             app.GraduateSchool,
+			"design_philosophy":           app.DesignPhilosophy,
+			"years_experience":            app.YearsExperience,
+			"service_intro":               app.Introduction,
+			"team_size":                   app.TeamSize,
+			"office_address":              app.OfficeAddress,
+			"company_album_json":          snapshot.CompanyAlbumJSON,
+			"price_min":                   snapshot.PriceMin,
+			"price_max":                   snapshot.PriceMax,
+			"price_unit":                  model.ProviderPriceUnitPerSquareMeter,
+			"status":                      merchantProviderStatusActive,
+			"verified":                    true,
+			"is_settled":                  true,
+			"needs_onboarding_completion": false,
+		}
+		if err := tx.Model(&provider).Updates(updates).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "更新服务商失败: "+err.Error())
+			return
+		}
+		provider.UserID = user.ID
+		provider.ProviderType = snapshot.ProviderType
+		provider.SubType = snapshot.SubType
+		provider.EntityType = snapshot.EntityType
+		provider.CompanyName = app.CompanyName
+		provider.Avatar = app.Avatar
+		provider.LicenseNo = app.LicenseNo
+		provider.ServiceArea = app.ServiceArea
+		provider.Specialty = snapshot.Specialty
+		provider.HighlightTags = snapshot.HighlightTagsJSON
+		provider.PricingJSON = snapshot.PricingJSON
+		provider.GraduateSchool = app.GraduateSchool
+		provider.DesignPhilosophy = app.DesignPhilosophy
+		provider.YearsExperience = app.YearsExperience
+		provider.ServiceIntro = app.Introduction
+		provider.TeamSize = app.TeamSize
+		provider.OfficeAddress = app.OfficeAddress
+		provider.CompanyAlbumJSON = snapshot.CompanyAlbumJSON
+		provider.PriceMin = snapshot.PriceMin
+		provider.PriceMax = snapshot.PriceMax
+		provider.PriceUnit = model.ProviderPriceUnitPerSquareMeter
+		provider.Status = merchantProviderStatusActive
+		provider.Verified = true
+		provider.IsSettled = true
+		provider.NeedsOnboardingCompletion = false
+	} else {
+		previousIdentity, err := findLatestActiveMerchantIdentity(tx, user.ID, "", 0)
+		if err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "校验旧商家身份失败: "+err.Error())
+			return
+		}
+
+		provider = model.Provider{
+			UserID:              user.ID,
+			ProviderType:        snapshot.ProviderType,
+			SubType:             snapshot.SubType,
+			EntityType:          snapshot.EntityType,
+			CompanyName:         app.CompanyName,
+			SourceApplicationID: app.ID,
+			Avatar:              app.Avatar,
+			LicenseNo:           app.LicenseNo,
+			ServiceArea:         app.ServiceArea,
+			Specialty:           snapshot.Specialty,
+			HighlightTags:       snapshot.HighlightTagsJSON,
+			PricingJSON:         snapshot.PricingJSON,
+			GraduateSchool:      app.GraduateSchool,
+			DesignPhilosophy:    app.DesignPhilosophy,
+			YearsExperience:     app.YearsExperience,
+			ServiceIntro:        app.Introduction,
+			TeamSize:            app.TeamSize,
+			OfficeAddress:       app.OfficeAddress,
+			CompanyAlbumJSON:    snapshot.CompanyAlbumJSON,
+			PriceMin:            snapshot.PriceMin,
+			PriceMax:            snapshot.PriceMax,
+			PriceUnit:           model.ProviderPriceUnitPerSquareMeter,
+			Status:              merchantProviderStatusActive,
+			Verified:            true,
+		}
+		if err := tx.Create(&provider).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "创建服务商失败: "+err.Error())
+			return
+		}
+
+		if err := freezeMerchantIdentity(tx, user.ID, previousIdentity); err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "冻结旧商家身份失败: "+err.Error())
+			return
+		}
 	}
+
 	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeProvider, provider.ID, adminID, merchantIdentityStatusActive); err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "激活服务商身份失败: "+err.Error())
 		return
 	}
 
-	// 4. 迁移作品集到 ProviderCase
-	var portfolioCases []PortfolioCaseInput
-	json.Unmarshal([]byte(app.PortfolioCases), &portfolioCases)
-	if app.Role == "foreman" {
-		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
+	if err := replaceProviderCasesFromApplication(tx, provider.ID, &app, snapshot); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "迁移案例失败: "+err.Error())
+		return
 	}
 
-	// 作品风格若未填写，回退到商家擅长风格的第一个选项，保证灵感库筛选字段有值。
-	fallbackStyles := styles
-	fallbackStyle := ""
-	if len(fallbackStyles) > 0 {
-		fallbackStyle = strings.TrimSpace(fallbackStyles[0])
-	}
-
-	for i, pc := range portfolioCases {
-		imagesJSON, _ := json.Marshal(pc.Images)
-		coverImage := ""
-		if len(pc.Images) > 0 {
-			coverImage = pc.Images[0]
-		}
-
-		style := strings.TrimSpace(pc.Style)
-		if app.Role != "foreman" {
-			if style == "" {
-				style = fallbackStyle
-			}
-			if style == "" {
-				style = "现代简约"
-			}
-		}
-		layout := "其他"
-		title := pc.Title
-		area := pc.Area
-		if app.Role == "foreman" {
-			title = foremanCategoryDisplayNames[normalizeForemanCategory(firstNonEmpty(pc.Category, pc.Title))]
-			style = ""
-			area = ""
-		}
-
-		providerCase := model.ProviderCase{
-			ProviderID:  provider.ID,
-			Title:       title,
-			Description: pc.Description,
-			CoverImage:  coverImage,
-			Style:       style,
-			Layout:      layout,
-			Area:        area,
-			Price:       0,
-			Images:      string(imagesJSON),
-			SortOrder:   i,
-			// 商家案例仅在商家详情页展示，不进入独立灵感图库。
-			ShowInInspiration: false,
-		}
-		if err := tx.Create(&providerCase).Error; err != nil {
-			tx.Rollback()
-			response.Error(c, 500, "迁移案例失败: "+err.Error())
-			return
-		}
-	}
-
-	// 5. 创建服务设置
-	serviceSetting := model.MerchantServiceSetting{
-		ProviderID:    provider.ID,
-		AcceptBooking: true,
-	}
-	if err := tx.Create(&serviceSetting).Error; err != nil {
+	if err := ensureMerchantServiceSettingExists(tx, provider.ID); err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "创建服务设置失败: "+err.Error())
 		return
 	}
 
-	// 6. 更新申请状态
 	normalizedRole := "designer"
-	if providerType == 3 {
+	if snapshot.ProviderType == 3 {
 		normalizedRole = "foreman"
-	} else if providerType == 2 {
+	} else if snapshot.ProviderType == 2 {
 		normalizedRole = "company"
 	}
 	app.Role = normalizedRole
-	app.EntityType = entityType
-	app.ApplicantType = compatApplicantType
+	app.EntityType = snapshot.EntityType
+	app.ApplicantType = snapshot.CompatApplicantType
 	app.Status = 1
 	app.AuditedBy = adminID
 	app.AuditedAt = &now
@@ -1860,12 +1859,28 @@ func AdminRejectApplication(c *gin.Context) {
 	}
 
 	now := time.Now()
+	app.ApplicationScene = normalizeMerchantApplicationScene(app.ApplicationScene)
 	app.Status = 2
 	app.RejectReason = input.Reason
 	app.AuditedBy = adminID
 	app.AuditedAt = &now
 
-	if err := repository.DB.Save(&app).Error; err != nil {
+	tx := repository.DB.Begin()
+	if err := tx.Save(&app).Error; err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "操作失败")
+		return
+	}
+	if app.ProviderID > 0 && app.ApplicationScene == model.MerchantApplicationSceneClaimedCompletion {
+		if err := tx.Model(&model.Provider{}).
+			Where("id = ?", app.ProviderID).
+			Update("needs_onboarding_completion", true).Error; err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "更新服务商补全状态失败")
+			return
+		}
+	}
+	if err := tx.Commit().Error; err != nil {
 		response.Error(c, 500, "操作失败")
 		return
 	}

@@ -13,7 +13,7 @@ import MaterialShopApplicationDetail from './components/MaterialShopApplicationD
 import AuditStatusSummary from './components/AuditStatusSummary';
 import VisibilityStatusPanel from './components/VisibilityStatusPanel';
 import AuditDetailSection from './components/AuditDetailSection';
-import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS } from '../../constants/statuses';
+import { APPLICATION_AUDIT_STATUS_META, APPLICATION_AUDIT_STATUS_OPTIONS, APPLICATION_SCENE_META } from '../../constants/statuses';
 
 const formatDateTime = (value?: string) => {
     if (!value) return '-';
@@ -85,9 +85,10 @@ const MaterialShopAudit: React.FC = () => {
     };
 
     const approve = async (record: AdminMaterialShopApplicationListItem) => {
+        const sceneLabel = APPLICATION_SCENE_META[record.applicationScene || '']?.text || '主材商';
         Modal.confirm({
             title: '确认通过审核',
-            content: `确认通过 ${record.shopName} 的主材商入驻申请吗？`,
+            content: `确认通过 ${record.shopName} 的${sceneLabel}申请吗？`,
             onOk: async () => {
                 try {
                     const res = await adminMaterialShopApplicationApi.approve(record.id);
@@ -148,6 +149,14 @@ const MaterialShopAudit: React.FC = () => {
         { title: '联系人', dataIndex: 'contactName' },
         { title: '联系电话', dataIndex: 'contactPhone' },
         {
+            title: '申请场景',
+            dataIndex: 'applicationScene',
+            render: (value?: string) => {
+                const meta = APPLICATION_SCENE_META[value || ''] || { text: value || '-', color: 'default' };
+                return <Tag color={meta.color}>{meta.text}</Tag>;
+            },
+        },
+        {
             title: '状态',
             dataIndex: 'status',
             render: (value: number) => {
@@ -185,7 +194,7 @@ const MaterialShopAudit: React.FC = () => {
         <div className="hz-page-stack">
             <PageHeader
                 title="主材商入驻审核"
-                description="查看门店、法人和商品资料，统一完成主材商申请审批。"
+                description="统一处理主材商新入驻和认领补全申请，查看门店、法人和商品资料后完成审批。"
             />
 
             <ToolbarCard>

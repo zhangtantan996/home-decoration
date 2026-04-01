@@ -18,7 +18,8 @@ func TestSmokeWriteMerchantApplicationSuccess(t *testing.T) {
 			team_size INTEGER,
 			service_area TEXT,
 			user_id INTEGER,
-			provider_id INTEGER
+			provider_id INTEGER,
+			application_scene TEXT
 		)
 	`).Error; err != nil {
 		t.Fatalf("create merchant_applications table: %v", err)

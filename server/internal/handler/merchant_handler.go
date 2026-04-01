@@ -117,6 +117,190 @@ type merchantApplyGuide struct {
 	applicantType string
 }
 
+func normalizeLegacyClaimedProviderState(tx *gorm.DB, provider *model.Provider) error {
+	if provider == nil || provider.UserID == 0 || provider.NeedsOnboardingCompletion || provider.Verified || provider.Status != merchantProviderStatusActive {
+		return nil
+	}
+	updates := map[string]interface{}{
+		"needs_onboarding_completion": true,
+	}
+	if !provider.IsSettled {
+		updates["is_settled"] = true
+	}
+	if err := tx.Model(&model.Provider{}).
+		Where("id = ?", provider.ID).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+	provider.IsSettled = true
+	provider.NeedsOnboardingCompletion = true
+	return nil
+}
+
+func normalizeLegacyClaimedMaterialShopState(tx *gorm.DB, shop *model.MaterialShop) error {
+	if shop == nil || shop.UserID == 0 || shop.NeedsOnboardingCompletion || shop.IsVerified || !service.IsMaterialShopActive(shop) {
+		return nil
+	}
+	updates := map[string]interface{}{
+		"needs_onboarding_completion": true,
+	}
+	if !shop.IsSettled {
+		updates["is_settled"] = true
+	}
+	if err := tx.Model(&model.MaterialShop{}).
+		Where("id = ?", shop.ID).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+	shop.IsSettled = true
+	shop.NeedsOnboardingCompletion = true
+	return nil
+}
+
+func findLegacyProviderLoginCandidate(tx *gorm.DB, user model.User) (*model.Provider, error) {
+	var app model.MerchantApplication
+	appQuery := tx.Where("application_scene = ? AND provider_id > 0", model.MerchantApplicationSceneClaimedCompletion).
+		Order("updated_at DESC, id DESC")
+	switch phone := strings.TrimSpace(user.Phone); {
+	case user.ID > 0 && phone != "":
+		appQuery = appQuery.Where("user_id = ? OR phone = ?", user.ID, phone)
+	case user.ID > 0:
+		appQuery = appQuery.Where("user_id = ?", user.ID)
+	case phone != "":
+		appQuery = appQuery.Where("phone = ?", phone)
+	}
+	if err := appQuery.First(&app).Error; err == nil {
+		var provider model.Provider
+		if err := tx.First(&provider, app.ProviderID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		updates := map[string]interface{}{}
+		if provider.UserID == 0 {
+			updates["user_id"] = user.ID
+			provider.UserID = user.ID
+		}
+		if !provider.IsSettled {
+			updates["is_settled"] = true
+			provider.IsSettled = true
+		}
+		needsCompletion := app.Status != 1
+		if provider.NeedsOnboardingCompletion != needsCompletion {
+			updates["needs_onboarding_completion"] = needsCompletion
+			provider.NeedsOnboardingCompletion = needsCompletion
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&model.Provider{}).Where("id = ?", provider.ID).Updates(updates).Error; err != nil {
+				return nil, err
+			}
+		}
+		return &provider, nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var identity model.UserIdentity
+	if err := tx.Where("user_id = ? AND identity_type = ?", user.ID, merchantIdentityTypeProvider).
+		Order("verified DESC, updated_at DESC, id DESC").
+		First(&identity).Error; err == nil && identity.IdentityRefID != nil && *identity.IdentityRefID > 0 {
+		var provider model.Provider
+		if err := tx.First(&provider, *identity.IdentityRefID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		if provider.UserID == 0 {
+			if err := tx.Model(&model.Provider{}).Where("id = ?", provider.ID).Update("user_id", user.ID).Error; err != nil {
+				return nil, err
+			}
+			provider.UserID = user.ID
+		}
+		if err := normalizeLegacyClaimedProviderState(tx, &provider); err != nil {
+			return nil, err
+		}
+		return &provider, nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func findLegacyMaterialShopLoginCandidate(tx *gorm.DB, user model.User) (*model.MaterialShop, error) {
+	var app model.MaterialShopApplication
+	appQuery := tx.Where("application_scene = ? AND shop_id > 0", model.MerchantApplicationSceneClaimedCompletion).
+		Order("updated_at DESC, id DESC")
+	switch phone := strings.TrimSpace(user.Phone); {
+	case user.ID > 0 && phone != "":
+		appQuery = appQuery.Where("user_id = ? OR phone = ?", user.ID, phone)
+	case user.ID > 0:
+		appQuery = appQuery.Where("user_id = ?", user.ID)
+	case phone != "":
+		appQuery = appQuery.Where("phone = ?", phone)
+	}
+	if err := appQuery.First(&app).Error; err == nil {
+		var shop model.MaterialShop
+		if err := tx.First(&shop, app.ShopID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		updates := map[string]interface{}{}
+		if shop.UserID == 0 {
+			updates["user_id"] = user.ID
+			shop.UserID = user.ID
+		}
+		if !shop.IsSettled {
+			updates["is_settled"] = true
+			shop.IsSettled = true
+		}
+		needsCompletion := app.Status != 1
+		if shop.NeedsOnboardingCompletion != needsCompletion {
+			updates["needs_onboarding_completion"] = needsCompletion
+			shop.NeedsOnboardingCompletion = needsCompletion
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&model.MaterialShop{}).Where("id = ?", shop.ID).Updates(updates).Error; err != nil {
+				return nil, err
+			}
+		}
+		return &shop, nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var identity model.UserIdentity
+	if err := tx.Where("user_id = ? AND identity_type = ?", user.ID, merchantIdentityTypeMaterial).
+		Order("verified DESC, updated_at DESC, id DESC").
+		First(&identity).Error; err == nil && identity.IdentityRefID != nil && *identity.IdentityRefID > 0 {
+		var shop model.MaterialShop
+		if err := tx.First(&shop, *identity.IdentityRefID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		if shop.UserID == 0 {
+			if err := tx.Model(&model.MaterialShop{}).Where("id = ?", shop.ID).Update("user_id", user.ID).Error; err != nil {
+				return nil, err
+			}
+			shop.UserID = user.ID
+		}
+		if err := normalizeLegacyClaimedMaterialShopState(tx, &shop); err != nil {
+			return nil, err
+		}
+		return &shop, nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
 func resolveMaterialShopEntityType(shopID, userID uint64) string {
 	var app model.MaterialShopApplication
 	query := repository.DB.Where("status = ?", 1).Order("audited_at DESC, created_at DESC")
@@ -263,10 +447,32 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 
 		var provider model.Provider
 		providerErr := repository.DB.Where("user_id = ?", user.ID).First(&provider).Error
+		if providerErr == nil {
+			if err := normalizeLegacyClaimedProviderState(repository.DB, &provider); err != nil {
+				response.Error(c, 500, "登录失败，请稍后重试")
+				return
+			}
+		} else if errors.Is(providerErr, gorm.ErrRecordNotFound) {
+			candidate, err := findLegacyProviderLoginCandidate(repository.DB, user)
+			if err != nil {
+				response.Error(c, 500, "登录失败，请稍后重试")
+				return
+			}
+			if candidate != nil {
+				provider = *candidate
+				providerErr = nil
+			}
+		}
 
 		if providerErr == nil {
 			if provider.Status != 1 {
 				response.Error(c, 403, "账号已被禁用")
+				return
+			}
+
+			onboardingState, err := loadProviderOnboardingState(repository.DB, provider.ID, user.ID)
+			if err != nil {
+				response.Error(c, 500, "登录失败，请稍后重试")
 				return
 			}
 
@@ -326,23 +532,30 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			}
 
 			response.Success(c, gin.H{
-				"token":        tokenString,
-				"tinodeToken":  tinodeToken,
-				"merchantKind": "provider",
-				"role":         role,
-				"entityType":   entityType,
+				"token":                   tokenString,
+				"tinodeToken":             tinodeToken,
+				"merchantKind":            "provider",
+				"role":                    role,
+				"entityType":              entityType,
+				"completionRequired":      onboardingState.CompletionRequired,
+				"onboardingStatus":        onboardingState.OnboardingStatus,
+				"completionApplicationId": onboardingState.CompletionAppID,
+				"redirectToCompletion":    onboardingState.CompletionRequired,
 				"provider": gin.H{
-					"id":              provider.ID,
-					"name":            displayName,
-					"avatar":          imgutil.GetFullImageURL(avatar),
-					"providerType":    provider.ProviderType,
-					"applicantType":   applicantType,
-					"providerSubType": providerSubType,
-					"merchantKind":    "provider",
-					"role":            role,
-					"entityType":      entityType,
-					"phone":           input.Phone,
-					"verified":        provider.Verified,
+					"id":                      provider.ID,
+					"name":                    displayName,
+					"avatar":                  imgutil.GetFullImageURL(avatar),
+					"providerType":            provider.ProviderType,
+					"applicantType":           applicantType,
+					"providerSubType":         providerSubType,
+					"merchantKind":            "provider",
+					"role":                    role,
+					"entityType":              entityType,
+					"phone":                   input.Phone,
+					"verified":                provider.Verified,
+					"completionRequired":      onboardingState.CompletionRequired,
+					"onboardingStatus":        onboardingState.OnboardingStatus,
+					"completionApplicationId": onboardingState.CompletionAppID,
 				},
 			})
 			return
@@ -356,12 +569,33 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 		var materialShop model.MaterialShop
 		materialErr := repository.DB.Where("user_id = ?", user.ID).Order("id DESC").First(&materialShop).Error
 		if materialErr == nil {
+			if err := normalizeLegacyClaimedMaterialShopState(repository.DB, &materialShop); err != nil {
+				response.Error(c, 500, "登录失败，请稍后重试")
+				return
+			}
+		} else if errors.Is(materialErr, gorm.ErrRecordNotFound) {
+			candidate, err := findLegacyMaterialShopLoginCandidate(repository.DB, user)
+			if err != nil {
+				response.Error(c, 500, "登录失败，请稍后重试")
+				return
+			}
+			if candidate != nil {
+				materialShop = *candidate
+				materialErr = nil
+			}
+		}
+		if materialErr == nil {
 			if !service.IsMaterialShopActive(&materialShop) {
 				response.Error(c, 403, "账号已被禁用")
 				return
 			}
 		}
-		if materialErr == nil && materialShop.IsVerified {
+		if materialErr == nil && service.IsMaterialShopLoginEnabled(&materialShop) {
+			onboardingState, err := loadMaterialShopOnboardingState(repository.DB, materialShop.ID, user.ID)
+			if err != nil {
+				response.Error(c, 500, "登录失败，请稍后重试")
+				return
+			}
 			entityType := resolveMaterialShopEntityType(materialShop.ID, user.ID)
 
 			claims := jwt.MapClaims{
@@ -409,23 +643,30 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			}
 
 			response.Success(c, gin.H{
-				"token":        tokenString,
-				"tinodeToken":  tinodeToken,
-				"merchantKind": "material_shop",
-				"role":         "material_shop",
-				"entityType":   entityType,
+				"token":                   tokenString,
+				"tinodeToken":             tinodeToken,
+				"merchantKind":            "material_shop",
+				"role":                    "material_shop",
+				"entityType":              entityType,
+				"completionRequired":      onboardingState.CompletionRequired,
+				"onboardingStatus":        onboardingState.OnboardingStatus,
+				"completionApplicationId": onboardingState.CompletionAppID,
+				"redirectToCompletion":    onboardingState.CompletionRequired,
 				"provider": gin.H{
-					"id":              materialShop.ID,
-					"name":            displayName,
-					"avatar":          imgutil.GetFullImageURL(avatar),
-					"providerType":    4,
-					"applicantType":   "company",
-					"providerSubType": "company",
-					"merchantKind":    "material_shop",
-					"role":            "material_shop",
-					"entityType":      entityType,
-					"phone":           input.Phone,
-					"verified":        materialShop.IsVerified,
+					"id":                      materialShop.ID,
+					"name":                    displayName,
+					"avatar":                  imgutil.GetFullImageURL(avatar),
+					"providerType":            4,
+					"applicantType":           "company",
+					"providerSubType":         "company",
+					"merchantKind":            "material_shop",
+					"role":                    "material_shop",
+					"entityType":              entityType,
+					"phone":                   input.Phone,
+					"verified":                materialShop.IsVerified,
+					"completionRequired":      onboardingState.CompletionRequired,
+					"onboardingStatus":        onboardingState.OnboardingStatus,
+					"completionApplicationId": onboardingState.CompletionAppID,
 				},
 			})
 			return
