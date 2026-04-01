@@ -13,6 +13,7 @@ type Config struct {
 	Database             DatabaseConfig             `mapstructure:"database"`
 	Redis                RedisConfig                `mapstructure:"redis"`
 	JWT                  JWTConfig                  `mapstructure:"jwt"`
+	AdminAuth            AdminAuthConfig            `mapstructure:"admin_auth"`
 	Log                  LogConfig                  `mapstructure:"log"`
 	WechatMini           WechatMiniConfig           `mapstructure:"wechat_mini"`
 	WechatH5             WechatH5Config             `mapstructure:"wechat_h5"`
@@ -23,10 +24,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host      string `mapstructure:"host"`
-	Port      string `mapstructure:"port"`
-	Mode      string `mapstructure:"mode"` // debug, release
-	PublicURL string `mapstructure:"public_url"`
+	Host           string `mapstructure:"host"`
+	Port           string `mapstructure:"port"`
+	Mode           string `mapstructure:"mode"` // debug, release
+	PublicURL      string `mapstructure:"public_url"`
+	TrustedProxies string `mapstructure:"trusted_proxies"`
 }
 
 type DatabaseConfig struct {
@@ -57,10 +59,26 @@ type JWTConfig struct {
 	ExpireHour int    `mapstructure:"expire_hour"`
 }
 
+type AdminAuthConfig struct {
+	AccessTokenMinutes int    `mapstructure:"access_token_minutes"`
+	RefreshTokenDays   int    `mapstructure:"refresh_token_days"`
+	LoginFailLimit     int    `mapstructure:"login_fail_limit"`
+	LoginLockMinutes   int    `mapstructure:"login_lock_minutes"`
+	PasswordMinLength  int    `mapstructure:"password_min_length"`
+	PasswordMaxAgeDays int    `mapstructure:"password_max_age_days"`
+	TOTPEnabled        bool   `mapstructure:"totp_enabled"`
+	TOTPIssuer         string `mapstructure:"totp_issuer"`
+	RequiredRoleKeys   string `mapstructure:"required_role_keys"`
+	ReauthTTLMinutes   int    `mapstructure:"reauth_ttl_minutes"`
+	MaxActiveSessions  int    `mapstructure:"max_active_sessions"`
+	APIIPEnforced      bool   `mapstructure:"api_ip_enforced"`
+	AllowedCIDRs       string `mapstructure:"allowed_cidrs"`
+}
+
 type LogConfig struct {
 	Level              string `mapstructure:"level"`                // debug, info, warn, error
 	File               string `mapstructure:"file"`                 // 日志文件路径
-	AuditRetentionDays int    `mapstructure:"audit_retention_days"` // 审计日志保留天数（最少 60 天）
+	AuditRetentionDays int    `mapstructure:"audit_retention_days"` // 审计日志保留天数（生产环境最少 180 天）
 }
 
 // WechatMiniConfig 微信小程序配置
@@ -161,6 +179,7 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("server.port", "SERVER_PORT")
 	_ = viper.BindEnv("server.mode", "SERVER_MODE")
 	_ = viper.BindEnv("server.public_url", "SERVER_PUBLIC_URL")
+	_ = viper.BindEnv("server.trusted_proxies", "SERVER_TRUSTED_PROXIES")
 
 	_ = viper.BindEnv("database.host", "DATABASE_HOST")
 	_ = viper.BindEnv("database.port", "DATABASE_PORT")
@@ -184,6 +203,19 @@ func Load() (*Config, error) {
 
 	_ = viper.BindEnv("jwt.secret", "JWT_SECRET")
 	_ = viper.BindEnv("jwt.expire_hour", "JWT_EXPIRE_HOUR")
+	_ = viper.BindEnv("admin_auth.access_token_minutes", "ADMIN_AUTH_ACCESS_TOKEN_MINUTES")
+	_ = viper.BindEnv("admin_auth.refresh_token_days", "ADMIN_AUTH_REFRESH_TOKEN_DAYS")
+	_ = viper.BindEnv("admin_auth.login_fail_limit", "ADMIN_AUTH_LOGIN_FAIL_LIMIT")
+	_ = viper.BindEnv("admin_auth.login_lock_minutes", "ADMIN_AUTH_LOGIN_LOCK_MINUTES")
+	_ = viper.BindEnv("admin_auth.password_min_length", "ADMIN_AUTH_PASSWORD_MIN_LENGTH")
+	_ = viper.BindEnv("admin_auth.password_max_age_days", "ADMIN_AUTH_PASSWORD_MAX_AGE_DAYS")
+	_ = viper.BindEnv("admin_auth.totp_enabled", "ADMIN_AUTH_TOTP_ENABLED")
+	_ = viper.BindEnv("admin_auth.totp_issuer", "ADMIN_AUTH_TOTP_ISSUER")
+	_ = viper.BindEnv("admin_auth.required_role_keys", "ADMIN_AUTH_2FA_REQUIRED_ROLE_KEYS")
+	_ = viper.BindEnv("admin_auth.reauth_ttl_minutes", "ADMIN_AUTH_REAUTH_TTL_MINUTES")
+	_ = viper.BindEnv("admin_auth.max_active_sessions", "ADMIN_AUTH_MAX_ACTIVE_SESSIONS")
+	_ = viper.BindEnv("admin_auth.api_ip_enforced", "ADMIN_AUTH_API_IP_ENFORCED")
+	_ = viper.BindEnv("admin_auth.allowed_cidrs", "ADMIN_AUTH_ALLOWED_CIDRS")
 	_ = viper.BindEnv("log.audit_retention_days", "LOG_AUDIT_RETENTION_DAYS")
 
 	_ = viper.BindEnv("sms.provider", "SMS_PROVIDER")
@@ -232,6 +264,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.mode", "debug")
 	viper.SetDefault("server.public_url", "http://localhost:8080")
+	viper.SetDefault("server.trusted_proxies", "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", "5432")
 	viper.SetDefault("database.sslmode", "disable")
@@ -244,6 +277,19 @@ func Load() (*Config, error) {
 	viper.SetDefault("redis.db", 0)
 	viper.SetDefault("redis.operation_timeout_ms", 3000)
 	viper.SetDefault("jwt.expire_hour", 72)
+	viper.SetDefault("admin_auth.access_token_minutes", 30)
+	viper.SetDefault("admin_auth.refresh_token_days", 7)
+	viper.SetDefault("admin_auth.login_fail_limit", 5)
+	viper.SetDefault("admin_auth.login_lock_minutes", 30)
+	viper.SetDefault("admin_auth.password_min_length", 10)
+	viper.SetDefault("admin_auth.password_max_age_days", 90)
+	viper.SetDefault("admin_auth.totp_enabled", true)
+	viper.SetDefault("admin_auth.totp_issuer", "禾泽云管理后台")
+	viper.SetDefault("admin_auth.required_role_keys", "*")
+	viper.SetDefault("admin_auth.reauth_ttl_minutes", 10)
+	viper.SetDefault("admin_auth.max_active_sessions", 5)
+	viper.SetDefault("admin_auth.api_ip_enforced", false)
+	viper.SetDefault("admin_auth.allowed_cidrs", "")
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", "logs/backend.log")
 	viper.SetDefault("log.audit_retention_days", 180)
@@ -288,6 +334,9 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, err
+	}
+	if NormalizeAppEnv(cfg.Server.Mode) == AppEnvProduction && cfg.Log.AuditRetentionDays < 180 {
+		cfg.Log.AuditRetentionDays = 180
 	}
 
 	globalConfig = &cfg

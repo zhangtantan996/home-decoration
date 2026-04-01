@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Card, Select, Tag, Button, Space, message, Modal, Form, Input, Upload, Descriptions } from 'antd';
 import { ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { adminLegacyRiskApi } from '../../services/api';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import { ARBITRATION_HANDLE_STATUS_OPTIONS, ARBITRATION_STATUS_META, ARBITRATION_STATUS_OPTIONS } from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
 
@@ -29,6 +30,8 @@ const ArbitrationCenter: React.FC = () => {
     const [detailVisible, setDetailVisible] = useState(false);
     const [handleVisible, setHandleVisible] = useState(false);
     const [currentItem, setCurrentItem] = useState<Arbitration | null>(null);
+    const [reauthOpen, setReauthOpen] = useState(false);
+    const [pendingValues, setPendingValues] = useState<Record<string, unknown> | null>(null);
     const [form] = Form.useForm();
 
     useEffect(() => {
@@ -66,14 +69,24 @@ const ArbitrationCenter: React.FC = () => {
         try {
             const values = await form.validateFields();
             if (currentItem) {
-                await adminLegacyRiskApi.updateArbitration(currentItem.id, values);
-                message.success('处理成功');
-                setHandleVisible(false);
-                loadData();
+                setPendingValues(values);
+                setReauthOpen(true);
             }
         } catch (error) {
             message.error('操作失败');
         }
+    };
+
+    const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (!currentItem || !pendingValues) return;
+        await adminLegacyRiskApi.updateArbitration(currentItem.id, {
+            ...pendingValues,
+            recentReauthProof: payload.recentReauthProof,
+        });
+        message.success('处理成功');
+        setPendingValues(null);
+        setHandleVisible(false);
+        loadData();
     };
 
     const columns = [
@@ -238,6 +251,18 @@ const ArbitrationCenter: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            <AdminReauthModal
+                open={reauthOpen}
+                title="处理仲裁申请"
+                description={`即将处理仲裁申请 #${currentItem?.id || '-'}`}
+                reasonRequired={false}
+                onCancel={() => {
+                    setReauthOpen(false);
+                    setPendingValues(null);
+                }}
+                onConfirmed={handleReauthConfirmed}
+            />
         </Card>
     );
 };

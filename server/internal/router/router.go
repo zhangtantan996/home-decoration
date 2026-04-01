@@ -4,6 +4,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/handler"
 	"home-decoration-server/internal/middleware"
+	"log"
 	"os"
 	"strings"
 
@@ -26,11 +27,29 @@ var defaultDevAllowedOrigins = []string{
 
 const defaultReleaseAllowedOrigin = "https://admin.yourdomain.com"
 
+var defaultTrustedProxies = []string{
+	"127.0.0.1",
+	"::1",
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+}
+
 func buildAllowedOrigins(serverMode string, raw string) []string {
 	parsed := parseAllowedOrigins(raw)
 	if strings.EqualFold(serverMode, "release") {
+		filtered := make([]string, 0, len(parsed))
+		for _, origin := range parsed {
+			if origin == "*" {
+				continue
+			}
+			filtered = append(filtered, origin)
+		}
+		if len(filtered) > 0 {
+			return filtered
+		}
 		if len(parsed) > 0 {
-			return parsed
+			log.Printf("[router] ignored wildcard CORS origin in release mode")
 		}
 		return []string{defaultReleaseAllowedOrigin}
 	}
@@ -62,6 +81,14 @@ func parseAllowedOrigins(raw string) []string {
 	return parsed
 }
 
+func buildTrustedProxies(raw string) []string {
+	parsed := parseAllowedOrigins(raw)
+	if len(parsed) == 0 {
+		return append([]string{}, defaultTrustedProxies...)
+	}
+	return parsed
+}
+
 func containsString(items []string, target string) bool {
 	for _, item := range items {
 		if item == target {
@@ -73,6 +100,10 @@ func containsString(items []string, target string) bool {
 
 func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engine {
 	r := gin.Default()
+	if err := r.SetTrustedProxies(buildTrustedProxies(cfg.Server.TrustedProxies)); err != nil {
+		log.Printf("[router] invalid trusted proxies config, fallback to defaults: %v", err)
+		_ = r.SetTrustedProxies(defaultTrustedProxies)
+	}
 
 	// ✅ CORS白名单配置
 	allowedOrigins := buildAllowedOrigins(cfg.Server.Mode, os.Getenv("CORS_ALLOWED_ORIGINS"))
@@ -141,6 +172,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			designers.GET("", handler.ListDesigners)
 			designers.GET("/:id", handler.GetDesigner)
 			designers.GET("/:id/cases", handler.GetProviderCases)
+			designers.GET("/:id/cases/:caseId", handler.GetProviderCaseDetail)
 			designers.GET("/:id/reviews", handler.GetProviderReviews)
 			designers.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -151,6 +183,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			companies.GET("", handler.ListCompanies)
 			companies.GET("/:id", handler.GetCompany)
 			companies.GET("/:id/cases", handler.GetProviderCases)
+			companies.GET("/:id/cases/:caseId", handler.GetProviderCaseDetail)
 			companies.GET("/:id/reviews", handler.GetProviderReviews)
 			companies.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -161,6 +194,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			foremen.GET("", handler.ListForemen)
 			foremen.GET("/:id", handler.GetForeman)
 			foremen.GET("/:id/cases", handler.GetProviderCases)
+			foremen.GET("/:id/cases/:caseId", handler.GetProviderCaseDetail)
 			foremen.GET("/:id/reviews", handler.GetProviderReviews)
 			foremen.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -461,12 +495,35 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		}
 
 		// ==================== Admin 管理后台 ====================
-		// 管理员登录 (无需认证)
-		v1.POST("/admin/login", handler.AdminLogin)
+		adminPublic := v1.Group("/admin")
+		adminPublic.Use(middleware.AdminNetworkGate())
+		{
+			adminPublic.POST("/login", middleware.LoginRateLimit(), handler.AdminLogin)
+			adminPublic.POST("/token/refresh", middleware.LoginRateLimit(), handler.AdminRefreshToken)
+		}
+
+		adminSecurity := v1.Group("/admin")
+		adminSecurity.Use(middleware.AdminNetworkGate())
+		adminSecurity.Use(middleware.AdminJWT(cfg.JWT.Secret))
+		{
+			adminSecurity.GET("/info", handler.AdminGetInfo)
+			adminSecurity.POST("/logout", handler.AdminLogout)
+			adminSecurity.GET("/security/status", handler.AdminGetSecurityStatus)
+			adminSecurity.POST("/security/password/reset-initial", handler.AdminResetInitialPassword)
+			adminSecurity.POST("/security/2fa/bind", handler.AdminBeginBind2FA)
+			adminSecurity.POST("/security/2fa/verify", handler.AdminVerify2FA)
+			adminSecurity.POST("/security/2fa/reset", middleware.RequireActiveAdminSession(), middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminReset2FA)
+			adminSecurity.POST("/security/2fa/recovery/request", middleware.LoginRateLimit(), handler.AdminRequest2FARecovery)
+			adminSecurity.GET("/security/sessions", middleware.RequireActiveAdminSession(), handler.AdminListSecuritySessions)
+			adminSecurity.POST("/security/sessions/:sid/revoke", middleware.RequireActiveAdminSession(), middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminRevokeSecuritySession)
+			adminSecurity.POST("/security/reauth", middleware.RequireActiveAdminSession(), handler.AdminReauth)
+		}
 
 		// ✅ 管理后台路由（使用AdminJWT中间件验证token类型）
 		admin := v1.Group("/admin")
+		admin.Use(middleware.AdminNetworkGate())
 		admin.Use(middleware.AdminJWT(cfg.JWT.Secret))
+		admin.Use(middleware.RequireActiveAdminSession())
 		admin.Use(middleware.AdminLog()) // ✅ 记录操作日志
 		{
 			dashboardRead := middleware.RequirePermission("dashboard:view")
@@ -541,8 +598,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			complaintListPerm := middleware.RequirePermission("risk:arbitration:list")
 			complaintResolvePerm := middleware.RequirePermission("risk:arbitration:judge")
 
-			// 获取当前管理员信息和权限
-			admin.GET("/info", handler.AdminGetInfo)
 			admin.POST("/upload", caseListPerm, handler.AdminUploadImage)
 
 			// 统计
@@ -561,10 +616,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 管理员管理
 			admin.GET("/admins", adminListPerm, handler.AdminListAdmins)
-			admin.POST("/admins", adminCreatePerm, handler.AdminCreateAdmin)
-			admin.PUT("/admins/:id", adminEditPerm, handler.AdminUpdateAdmin)
-			admin.DELETE("/admins/:id", adminDeletePerm, handler.AdminDeleteAdmin)
-			admin.PATCH("/admins/:id/status", adminEditPerm, handler.AdminUpdateAdminStatus)
+			admin.POST("/admins", adminCreatePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateAdmin)
+			admin.PUT("/admins/:id", adminEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateAdmin)
+			admin.DELETE("/admins/:id", adminDeletePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteAdmin)
+			admin.PATCH("/admins/:id/status", adminEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateAdminStatus)
 
 			// 服务商管理
 			admin.GET("/providers", providerListPerm, handler.AdminListProviders)
@@ -572,7 +627,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PUT("/providers/:id", providerEditPerm, handler.AdminUpdateProvider)
 			admin.PATCH("/providers/:id/verify", providerEditPerm, handler.AdminVerifyProvider)
 			admin.PATCH("/providers/:id/status", providerEditPerm, handler.AdminUpdateProviderStatus)
-			admin.POST("/providers/:id/claim-account", providerEditPerm, handler.AdminClaimProviderAccount)
+			admin.PATCH("/providers/:id/platform-display", providerEditPerm, handler.AdminUpdateProviderPlatformDisplay)
+			admin.POST("/providers/:id/claim-account", providerEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminClaimProviderAccount)
 			admin.POST("/providers/:id/complete-settlement", providerEditPerm, handler.AdminCompleteProviderSettlement)
 
 			// 预约管理
@@ -592,12 +648,13 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.DELETE("/material-shops/:id", materialShopDeletePerm, handler.AdminDeleteMaterialShop)
 			admin.PATCH("/material-shops/:id/verify", materialShopEditPerm, handler.AdminVerifyMaterialShop)
 			admin.PATCH("/material-shops/:id/status", materialShopEditPerm, handler.AdminUpdateMaterialShopStatus)
-			admin.POST("/material-shops/:id/complete-account", materialShopEditPerm, handler.AdminCompleteMaterialShopAccount)
+			admin.PATCH("/material-shops/:id/platform-display", materialShopEditPerm, handler.AdminUpdateMaterialShopPlatformDisplay)
+			admin.POST("/material-shops/:id/complete-account", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCompleteMaterialShopAccount)
 
 			// 审核管理
 			admin.GET("/project-audits", complaintListPerm, handler.AdminListProjectAudits)
 			admin.GET("/project-audits/:id", complaintListPerm, handler.AdminGetProjectAudit)
-			admin.POST("/project-audits/:id/arbitrate", complaintResolvePerm, handler.AdminArbitrateProjectAudit)
+			admin.POST("/project-audits/:id/arbitrate", complaintResolvePerm, middleware.RequireAdminReason("conclusionReason", "reason"), middleware.RequireAdminReauth(), handler.AdminArbitrateProjectAudit)
 			admin.GET("/audits/providers", providerAuditListPerm, handler.AdminListProviderAudits)
 			admin.GET("/audits/material-shops", materialAuditListPerm, handler.AdminListMaterialShopAudits)
 			admin.POST("/audits/:type/:id/approve", middleware.RequireAnyPermission("provider:audit:approve", "material:audit:approve"), handler.AdminApproveAudit)
@@ -650,30 +707,30 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/finance/reconciliations/run", financeTransactionApprovePerm, handler.AdminRunFinanceReconciliation)
 			admin.POST("/finance/reconciliations/:id/claim", financeTransactionApprovePerm, handler.AdminClaimFinanceReconciliation)
 			admin.POST("/finance/reconciliations/:id/resolve", financeTransactionApprovePerm, handler.AdminResolveFinanceReconciliation)
-			admin.POST("/finance/freeze", financeEscrowFreezePerm, handler.AdminFreezeFunds)
-			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, handler.AdminUnfreezeFunds)
-			admin.POST("/finance/manual-release", financeTransactionApprovePerm, handler.AdminManualReleaseFunds)
+			admin.POST("/finance/freeze", financeEscrowFreezePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminFreezeFunds)
+			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUnfreezeFunds)
+			admin.POST("/finance/manual-release", financeTransactionApprovePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminManualReleaseFunds)
 			admin.POST("/finance/escrow-accounts/:accountId/withdraw", financeTransactionApprovePerm, handler.AdminWithdraw)
 
 			// 风险管理
 			admin.GET("/risk/warnings", riskWarningListPerm, handler.AdminListRiskWarnings)
-			admin.POST("/risk/warnings/:id/handle", riskWarningHandlePerm, handler.AdminHandleRiskWarning)
+			admin.POST("/risk/warnings/:id/handle", riskWarningHandlePerm, middleware.RequireAdminReason("result", "reason"), middleware.RequireAdminReauth(), handler.AdminHandleRiskWarning)
 			admin.GET("/risk/arbitrations", riskArbitrationListPerm, handler.AdminListArbitrations)
-			admin.PUT("/risk/arbitrations/:id", riskArbitrationJudgePerm, handler.AdminUpdateArbitration)
+			admin.PUT("/risk/arbitrations/:id", riskArbitrationJudgePerm, middleware.RequireAdminReason("result", "reason"), middleware.RequireAdminReauth(), handler.AdminUpdateArbitration)
 
 			// 系统设置
 			admin.GET("/settings", settingListPerm, handler.AdminGetSettings)
-			admin.PUT("/settings", settingEditPerm, handler.AdminUpdateSettings)
+			admin.PUT("/settings", settingEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateSettings)
 			admin.GET("/system-configs", settingListPerm, handler.AdminGetSystemConfigs)
-			admin.PUT("/system-configs/:key", settingEditPerm, handler.AdminUpdateSystemConfig)
-			admin.PUT("/system-configs/batch", settingEditPerm, handler.AdminBatchUpdateSystemConfigs)
+			admin.PUT("/system-configs/:key", settingEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateSystemConfig)
+			admin.PUT("/system-configs/batch", settingEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminBatchUpdateSystemConfigs)
 
 			// 提现审核管理
 			admin.GET("/withdraws", financeTransactionListPerm, handler.AdminWithdrawList)
 			admin.GET("/withdraws/:id", financeTransactionViewPerm, handler.AdminWithdrawDetail)
-			admin.POST("/withdraws/:id/approve", financeTransactionApprovePerm, handler.AdminWithdrawApprove)
-			admin.POST("/withdraws/:id/mark-paid", financeTransactionApprovePerm, handler.AdminWithdrawMarkPaid)
-			admin.POST("/withdraws/:id/reject", financeTransactionApprovePerm, handler.AdminWithdrawReject)
+			admin.POST("/withdraws/:id/approve", financeTransactionApprovePerm, middleware.RequireAdminReason("remark", "reason"), middleware.RequireAdminReauth(), handler.AdminWithdrawApprove)
+			admin.POST("/withdraws/:id/mark-paid", financeTransactionApprovePerm, middleware.RequireAdminReason("remark", "reason"), middleware.RequireAdminReauth(), handler.AdminWithdrawMarkPaid)
+			admin.POST("/withdraws/:id/reject", financeTransactionApprovePerm, middleware.RequireAdminReason("reason", "remark"), middleware.RequireAdminReauth(), handler.AdminWithdrawReject)
 
 			// 操作日志
 			admin.GET("/logs", logListPerm, handler.AdminListLogs)
@@ -682,15 +739,15 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// ========== RBAC 权限管理 ==========
 			admin.GET("/roles", roleListPerm, handler.AdminListRoles)
-			admin.POST("/roles", roleCreatePerm, handler.AdminCreateRole)
-			admin.PUT("/roles/:id", roleEditPerm, handler.AdminUpdateRole)
-			admin.DELETE("/roles/:id", roleDeletePerm, handler.AdminDeleteRole)
+			admin.POST("/roles", roleCreatePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateRole)
+			admin.PUT("/roles/:id", roleEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateRole)
+			admin.DELETE("/roles/:id", roleDeletePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteRole)
 			admin.GET("/roles/:id/menus", roleAssignPerm, handler.AdminGetRoleMenus)
-			admin.POST("/roles/:id/menus", roleAssignPerm, handler.AdminAssignRoleMenus)
+			admin.POST("/roles/:id/menus", roleAssignPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), middleware.RequireAdminReauth(), handler.AdminAssignRoleMenus)
 			admin.GET("/menus", menuListPerm, handler.AdminListMenus)
-			admin.POST("/menus", menuCreatePerm, handler.AdminCreateMenu)
-			admin.PUT("/menus/:id", menuEditPerm, handler.AdminUpdateMenu)
-			admin.DELETE("/menus/:id", menuDeletePerm, handler.AdminDeleteMenu)
+			admin.POST("/menus", menuCreatePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateMenu)
+			admin.PUT("/menus/:id", menuEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateMenu)
+			admin.DELETE("/menus/:id", menuDeletePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteMenu)
 
 			// 商家入驻审核
 			admin.GET("/merchant-applications", providerAuditListPerm, handler.AdminListApplications)
@@ -804,8 +861,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 退款申请审核
 			admin.GET("/refunds", financeTransactionListPerm, handler.AdminListRefundApplications)
 			admin.GET("/refunds/:id", financeTransactionViewPerm, handler.AdminGetRefundApplication)
-			admin.POST("/refunds/:id/approve", financeTransactionApprovePerm, handler.AdminApproveRefundApplication)
-			admin.POST("/refunds/:id/reject", financeTransactionApprovePerm, handler.AdminRejectRefundApplication)
+			admin.POST("/refunds/:id/approve", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminApproveRefundApplication)
+			admin.POST("/refunds/:id/reject", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminRejectRefundApplication)
 
 			// ========== 争议预约管理 ==========
 			admin.GET("/disputed-bookings", bookingListPerm, handler.AdminListDisputedBookings)

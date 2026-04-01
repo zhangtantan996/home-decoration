@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Table, Card, Select, Tag, Button, Space, message, Switch, Modal, Form, Input, InputNumber, Tooltip, Typography, Descriptions } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { adminMaterialShopApi, type AdminMaterialShopListItem } from '../../services/api';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import { PermissionWrapper } from '../../components/PermissionWrapper';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
@@ -103,6 +104,8 @@ const MaterialShopList: React.FC = () => {
     const [accountModalVisible, setAccountModalVisible] = useState(false);
     const [accountSubmitting, setAccountSubmitting] = useState(false);
     const [accountTargetShop, setAccountTargetShop] = useState<MaterialShop | null>(null);
+    const [accountReauthOpen, setAccountReauthOpen] = useState(false);
+    const [pendingAccountValues, setPendingAccountValues] = useState<Record<string, unknown> | null>(null);
     const [accountForm] = Form.useForm();
 
     useEffect(() => {
@@ -149,6 +152,16 @@ const MaterialShopList: React.FC = () => {
         try {
             await adminMaterialShopApi.update(id, { isSettled: settled });
             message.success(settled ? '已标记为入驻' : '已标记为未入驻');
+            loadData();
+        } catch (error) {
+            message.error('操作失败');
+        }
+    };
+
+    const handleTogglePlatformDisplay = async (id: number, enabled: boolean) => {
+        try {
+            await adminMaterialShopApi.updatePlatformDisplay(id, enabled);
+            message.success(enabled ? '已上线' : '已下线');
             loadData();
         } catch (error) {
             message.error('操作失败');
@@ -217,20 +230,37 @@ const MaterialShopList: React.FC = () => {
         if (!accountTargetShop) return;
         try {
             const values = await accountForm.validateFields();
+            setPendingAccountValues(values);
+            setAccountReauthOpen(true);
+        } catch (error: any) {
+            if (error?.errorFields) return;
+            message.error(error?.message || '补全账号失败');
+        }
+    };
+
+    const handleAccountConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (!accountTargetShop || !pendingAccountValues) return;
+        try {
             setAccountSubmitting(true);
-            const res = await adminMaterialShopApi.completeAccount(accountTargetShop.id, values) as any;
+            const res = await adminMaterialShopApi.completeAccount(accountTargetShop.id, {
+                ...(pendingAccountValues as {
+                    phone: string;
+                    contactName?: string;
+                    nickname?: string;
+                }),
+                reason: payload.reason,
+                recentReauthProof: payload.recentReauthProof,
+            }) as any;
             if (res.code === 0) {
                 message.success('账号已绑定，首次登录将补全正式入驻资料');
                 setAccountModalVisible(false);
                 setAccountTargetShop(null);
+                setPendingAccountValues(null);
                 accountForm.resetFields();
                 loadData();
-            } else {
-                message.error(res.message || '补全账号失败');
+                return;
             }
-        } catch (error: any) {
-            if (error?.errorFields) return;
-            message.error(error?.message || '补全账号失败');
+            throw new Error(res.message || '补全账号失败');
         } finally {
             setAccountSubmitting(false);
         }
@@ -366,6 +396,20 @@ const MaterialShopList: React.FC = () => {
                         checkedChildren="正常"
                         unCheckedChildren="封禁"
                         onChange={(checked) => handleStatusChange(record.id, checked ? 1 : 0)}
+                    />
+                </PermissionWrapper>
+            ),
+        },
+        {
+            title: '平台上线',
+            key: 'platformDisplayEnabled',
+            render: (_: any, record: MaterialShop) => (
+                <PermissionWrapper permission="material:shop:edit">
+                    <Switch
+                        checked={record.platformDisplayEnabled ?? true}
+                        checkedChildren="上线"
+                        unCheckedChildren="下线"
+                        onChange={(checked) => handleTogglePlatformDisplay(record.id, checked)}
                     />
                 </PermissionWrapper>
             ),
@@ -691,6 +735,18 @@ const MaterialShopList: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            <AdminReauthModal
+                open={accountReauthOpen}
+                title="认领主材商账号"
+                description={`认领后将为「${accountTargetShop?.name || '-'}」开通后台登录，并进入资料待补全状态。`}
+                confirmText="确认认领"
+                onCancel={() => {
+                    setAccountReauthOpen(false);
+                    setPendingAccountValues(null);
+                }}
+                onConfirmed={handleAccountConfirmed}
+            />
         </div>
     );
 };

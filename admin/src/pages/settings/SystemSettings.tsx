@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, message, Tabs, Switch, Space, Divider, Select, InputNumber, Row, Col, Typography, Alert, Tag } from 'antd';
+import { App, Card, Form, Input, Button, Tabs, Switch, Space, Divider, Select, InputNumber, Row, Col, Typography, Alert, Tag } from 'antd';
 import { SaveOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { adminSettingsApi, adminSystemConfigApi, type AdminSystemConfigItem } from '../../services/api';
+import AdminReauthModal from '../../components/AdminReauthModal';
 
 const { TabPane } = Tabs;
 
@@ -69,10 +70,14 @@ const renderRuntimeStatus = (ready: boolean) => (
 );
 
 const SystemSettings: React.FC = () => {
+    const { message } = App.useApp();
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [savingBiz, setSavingBiz] = useState(false);
     const [savingPayment, setSavingPayment] = useState(false);
+    const [reauthOpen, setReauthOpen] = useState(false);
+    const [pendingAction, setPendingAction] = useState<'base' | 'payment' | 'biz' | null>(null);
+    const [pendingPayload, setPendingPayload] = useState<Record<string, string> | null>(null);
     const [paymentRuntimeReady, setPaymentRuntimeReady] = useState({
         wechat: false,
         alipay: false,
@@ -145,63 +150,48 @@ const SystemSettings: React.FC = () => {
         }
     };
 
-    const handleSave = async () => {
-        setSaving(true);
-        try {
-            const values = await form.validateFields();
-            const settings = { ...values };
-            if (typeof settings.enable_registration === 'boolean') {
-                settings.enable_registration = settings.enable_registration ? 'true' : 'false';
-            }
-            if (typeof settings.enable_sms_verify === 'boolean') {
-                settings.enable_sms_verify = settings.enable_sms_verify ? 'true' : 'false';
-            }
-            if (typeof settings.enable_email_verify === 'boolean') {
-                settings.enable_email_verify = settings.enable_email_verify ? 'true' : 'false';
-            }
-            if (typeof settings.im_tencent_enabled === 'boolean') {
-                settings.im_tencent_enabled = settings.im_tencent_enabled ? 'true' : 'false';
-            }
-            await adminSettingsApi.update(settings);
-            message.success('保存成功');
-        } catch (error) {
-            message.error('保存失败');
-        } finally {
-            setSaving(false);
+    const buildBaseSettingsPayload = async () => {
+        const values = await form.validateFields();
+        const settings = { ...values } as Record<string, string | boolean>;
+        if (typeof settings.enable_registration === 'boolean') {
+            settings.enable_registration = settings.enable_registration ? 'true' : 'false';
         }
+        if (typeof settings.enable_sms_verify === 'boolean') {
+            settings.enable_sms_verify = settings.enable_sms_verify ? 'true' : 'false';
+        }
+        if (typeof settings.enable_email_verify === 'boolean') {
+            settings.enable_email_verify = settings.enable_email_verify ? 'true' : 'false';
+        }
+        if (typeof settings.im_tencent_enabled === 'boolean') {
+            settings.im_tencent_enabled = settings.im_tencent_enabled ? 'true' : 'false';
+        }
+        return settings as Record<string, string>;
     };
 
-    const handleSavePaymentConfigs = async () => {
-        setSavingPayment(true);
-        try {
-            const values = await paymentForm.validateFields();
-            await adminSystemConfigApi.batchUpdate({
-                [PAYMENT_CHANNEL_KEYS.wechatEnabled]: values.wechatEnabled ? 'true' : 'false',
-                [PAYMENT_CHANNEL_KEYS.alipayEnabled]: values.alipayEnabled ? 'true' : 'false',
-            });
-            message.success('支付开关保存成功');
-            await loadSettings();
-        } catch (error) {
-            console.error(error);
-            message.error('支付开关保存失败');
-        } finally {
-            setSavingPayment(false);
-        }
+    const buildPaymentPayload = async () => {
+        const values = await paymentForm.validateFields();
+        return {
+            [PAYMENT_CHANNEL_KEYS.wechatEnabled]: values.wechatEnabled ? 'true' : 'false',
+            [PAYMENT_CHANNEL_KEYS.alipayEnabled]: values.alipayEnabled ? 'true' : 'false',
+        };
     };
 
-    const handleSaveBizConfigs = async () => {
-        setSavingBiz(true);
+    const buildBizPayload = async () => {
         try {
             const values = await bizForm.validateFields();
             const checkStages = (stages: { name: string; percentage: number }[] | undefined, label: string) => {
                 if (!stages || stages.length === 0) return true;
                 const total = stages.reduce((s, item) => s + (Number(item?.percentage) || 0), 0);
-                if (total !== 100) { message.error(`${label}各阶段比例之和为 ${total}%，须等于 100%`); return false; }
+                if (total !== 100) { throw new Error(`${label}各阶段比例之和为 ${total}%，须等于 100%`); }
                 return true;
             };
-            if (values.designFeePaymentMode === 'staged' && !checkStages(values.designFeeStages, '设计费')) { setSavingBiz(false); return; }
-            if (values.constructionPaymentMode === 'milestone' && !checkStages(values.constructionFeeStages, '施工费')) { setSavingBiz(false); return; }
-            await adminSystemConfigApi.batchUpdate({
+            if (values.designFeePaymentMode === 'staged') {
+                checkStages(values.designFeeStages, '设计费');
+            }
+            if (values.constructionPaymentMode === 'milestone') {
+                checkStages(values.constructionFeeStages, '施工费');
+            }
+            return {
                 'booking.survey_deposit_default': String(values.surveyDepositDefault || 500),
                 'booking.survey_refund_notice': String(values.surveyRefundNotice || ''),
                 'booking.survey_refund_user_percent': String(values.surveyDepositRefundRate || 60),
@@ -222,12 +212,66 @@ const SystemSettings: React.FC = () => {
                 'fee.platform.material_fee_rate': String((values.materialFeeRate ?? 5) / 100),
                 'withdraw.min_amount': String(values.withdrawMinAmount || 100),
                 'settlement.auto_days': String(values.settlementAutoDays || 7),
-            });
-            message.success('业务配置保存成功');
+            };
         } catch (error) {
-            console.error(error);
-            message.error('业务配置保存失败');
+            throw error;
+        }
+    };
+
+    const requestSave = async (action: 'base' | 'payment' | 'biz') => {
+        try {
+            let payload: Record<string, string>;
+            if (action === 'base') {
+                payload = await buildBaseSettingsPayload();
+            } else if (action === 'payment') {
+                payload = await buildPaymentPayload();
+            } else {
+                payload = await buildBizPayload();
+            }
+            setPendingAction(action);
+            setPendingPayload(payload);
+            setReauthOpen(true);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : '保存失败');
+        }
+    };
+
+    const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (!pendingAction || !pendingPayload) {
+            return;
+        }
+
+        const nextPayload = {
+            ...pendingPayload,
+            reason: payload.reason || '',
+            recentReauthProof: payload.recentReauthProof,
+        };
+
+        if (pendingAction === 'base') {
+            setSaving(true);
+        } else if (pendingAction === 'payment') {
+            setSavingPayment(true);
+        } else {
+            setSavingBiz(true);
+        }
+
+        try {
+            if (pendingAction === 'base') {
+                await adminSettingsApi.update(nextPayload);
+                message.success('基础设置保存成功');
+            } else if (pendingAction === 'payment') {
+                await adminSystemConfigApi.batchUpdate(nextPayload);
+                message.success('支付开关保存成功');
+            } else {
+                await adminSystemConfigApi.batchUpdate(nextPayload);
+                message.success('业务配置保存成功');
+            }
+            setPendingAction(null);
+            setPendingPayload(null);
+            await loadSettings();
         } finally {
+            setSaving(false);
+            setSavingPayment(false);
             setSavingBiz(false);
         }
     };
@@ -310,7 +354,7 @@ const SystemSettings: React.FC = () => {
                         <div style={{ textAlign: 'right', marginTop: 16 }}>
                             <Space>
                                 <Button onClick={loadSettings}>重置</Button>
-                                <Button type="primary" loading={savingPayment} onClick={handleSavePaymentConfigs}>
+                                <Button type="primary" loading={savingPayment} onClick={() => void requestSave('payment')}>
                                     保存支付设置
                                 </Button>
                             </Space>
@@ -532,7 +576,7 @@ const SystemSettings: React.FC = () => {
                         <div style={{ textAlign: 'right', marginTop: 16 }}>
                             <Space>
                                 <Button onClick={loadSettings}>重置</Button>
-                                <Button type="primary" loading={savingBiz} onClick={handleSaveBizConfigs}>
+                                <Button type="primary" loading={savingBiz} onClick={() => void requestSave('biz')}>
                                     保存业务配置
                                 </Button>
                             </Space>
@@ -543,12 +587,24 @@ const SystemSettings: React.FC = () => {
 
             <div style={{ textAlign: 'center', marginTop: 24 }}>
                 <Space>
-                    <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
+                    <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void requestSave('base')}>
                         保存设置
                     </Button>
                     <Button onClick={loadSettings}>重置</Button>
                 </Space>
             </div>
+
+            <AdminReauthModal
+                open={reauthOpen}
+                title="提交系统配置变更"
+                description="系统设置、支付开关和业务配置属于高危修改，提交前必须再次认证。"
+                onCancel={() => {
+                    setReauthOpen(false);
+                    setPendingAction(null);
+                    setPendingPayload(null);
+                }}
+                onConfirmed={handleReauthConfirmed}
+            />
         </Card>
     );
 };

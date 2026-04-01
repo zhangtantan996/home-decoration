@@ -12,6 +12,7 @@ import (
 	"home-decoration-server/pkg/timeutil"
 	"home-decoration-server/pkg/utils"
 	"log"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -722,6 +723,8 @@ func AdminListProviders(c *gin.Context) {
 
 	list := make([]adminProviderListRow, 0, len(providers))
 	for _, provider := range providers {
+		provider.PlatformDisplayEnabled = service.ProviderPlatformDisplayEnabled(&provider)
+		provider.MerchantDisplayEnabled = service.ProviderMerchantDisplayEnabled(&provider)
 		completionApp, _ := findLatestClaimedCompletionApplication(repository.DB, provider.ID, provider.UserID)
 		onboardingStatus := "-"
 		if provider.UserID > 0 {
@@ -735,37 +738,20 @@ func AdminListProviders(c *gin.Context) {
 			completionAppID = completionApp.ID
 		}
 
+		visibilityDecision := service.EvaluateProviderPublicVisibility(&provider)
+		visibilityDecision.CurrentLabel = "缺少入驻申请"
+		visibilityDecision.EntitySnapshot = service.VisibilityEntitySnapshot{
+			ProviderID:       &provider.ID,
+			ProviderVerified: &provider.Verified,
+			ProviderStatus:   &provider.Status,
+		}
 		visibilityResult := service.VisibilityResult{
-			Visibility: service.VisibilityData{
-				CurrentLabel:  "缺少入驻申请",
-				PublicVisible: service.IsProviderPublicVisible(&provider),
-				Blockers:      make([]service.VisibilityBlocker, 0),
-				EntitySnapshot: service.VisibilityEntitySnapshot{
-					ProviderID:       &provider.ID,
-					ProviderVerified: &provider.Verified,
-					ProviderStatus:   &provider.Status,
-				},
-			},
-			Actions: service.VisibilityActions{RejectResubmittable: false},
+			Visibility: visibilityDecision,
+			Actions:    service.VisibilityActions{RejectResubmittable: false},
 		}
 
 		if app, ok := findProviderVisibilitySource(provider); ok {
 			visibilityResult = adminVisibilityResolver.ResolveMerchantApplication(*app, &provider)
-		}
-
-		if !visibilityResult.Visibility.PublicVisible {
-			if !provider.Verified {
-				visibilityResult.Visibility.Blockers = append(visibilityResult.Visibility.Blockers, service.VisibilityBlocker{
-					Code:    "provider_unverified",
-					Message: "服务商未实名通过，公开列表不可见",
-				})
-			}
-			if provider.Status != 1 {
-				visibilityResult.Visibility.Blockers = append(visibilityResult.Visibility.Blockers, service.VisibilityBlocker{
-					Code:    "provider_frozen",
-					Message: "服务商状态异常（冻结/停用），公开列表不可见",
-				})
-			}
 		}
 
 		list = append(list, adminProviderListRow{
@@ -992,6 +978,27 @@ func AdminUpdateProviderStatus(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+func AdminUpdateProviderPlatformDisplay(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.Provider{}, "PlatformDisplayEnabled") {
+		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("服务商平台展示开关"))
+		return
+	}
+	if err := repository.DB.Model(&model.Provider{}).Where("id = ?", id).Update("platform_display_enabled", req.Enabled).Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+	response.Success(c, nil)
+}
+
 // AdminClaimProviderAccount 为未入驻服务商（装修公司）绑定账号并完成入驻
 func AdminClaimProviderAccount(c *gin.Context) {
 	providerID := parseUint64(c.Param("id"))
@@ -1001,6 +1008,7 @@ func AdminClaimProviderAccount(c *gin.Context) {
 		Phone       string `json:"phone" binding:"required"`
 		ContactName string `json:"contactName"`
 		Nickname    string `json:"nickname"`
+		Reason      string `json:"reason"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -1021,6 +1029,7 @@ func AdminClaimProviderAccount(c *gin.Context) {
 		response.NotFound(c, "服务商不存在")
 		return
 	}
+	beforeProvider := provider
 	if provider.UserID > 0 {
 		tx.Rollback()
 		response.BadRequest(c, "该服务商已绑定账号")
@@ -1098,6 +1107,42 @@ func AdminClaimProviderAccount(c *gin.Context) {
 	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeProvider, provider.ID, adminID, identityStatus); err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "补全服务商身份失败: "+err.Error())
+		return
+	}
+
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "claim_provider_account",
+		ResourceType:  "provider",
+		ResourceID:    provider.ID,
+		Reason:        readAdminReason(c, req.Reason, "认领装修公司账号"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"provider": map[string]interface{}{
+				"id":                        beforeProvider.ID,
+				"userId":                    beforeProvider.UserID,
+				"isSettled":                 beforeProvider.IsSettled,
+				"needsOnboardingCompletion": beforeProvider.NeedsOnboardingCompletion,
+			},
+		},
+		AfterState: map[string]interface{}{
+			"provider": map[string]interface{}{
+				"id":                        provider.ID,
+				"userId":                    provider.UserID,
+				"isSettled":                 provider.IsSettled,
+				"needsOnboardingCompletion": provider.NeedsOnboardingCompletion,
+			},
+		},
+		Metadata: map[string]interface{}{
+			"phone":              phone,
+			"userId":             user.ID,
+			"createdUser":        !userExists,
+			"completionRequired": true,
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "记录认领审计失败")
 		return
 	}
 
@@ -1384,27 +1429,20 @@ func AdminListMaterialShops(c *gin.Context) {
 
 	list := make([]adminMaterialShopListRow, 0, len(shops))
 	for _, shop := range shops {
+		shop.PlatformDisplayEnabled = service.MaterialShopPlatformDisplayEnabled(&shop)
+		shop.MerchantDisplayEnabled = service.MaterialShopMerchantDisplayEnabled(&shop)
 		var productCount int64
 		repository.DB.Model(&model.MaterialShopProduct{}).Where("shop_id = ? AND status = ?", shop.ID, 1).Count(&productCount)
 
-		visibilityResult := service.VisibilityResult{
-			Visibility: service.VisibilityData{
-				CurrentLabel:  "缺少入驻申请",
-				PublicVisible: service.IsMaterialShopPublicVisible(&shop, productCount),
-				Blockers:      make([]service.VisibilityBlocker, 0),
-				EntitySnapshot: service.VisibilityEntitySnapshot{
-					ShopID:       &shop.ID,
-					ShopVerified: &shop.IsVerified,
-				},
-			},
-			Actions: service.VisibilityActions{RejectResubmittable: false},
+		visibilityDecision := service.EvaluateMaterialShopPublicVisibility(&shop, productCount)
+		visibilityDecision.CurrentLabel = "缺少入驻申请"
+		visibilityDecision.EntitySnapshot = service.VisibilityEntitySnapshot{
+			ShopID:       &shop.ID,
+			ShopVerified: &shop.IsVerified,
 		}
-
-		if !shop.IsVerified {
-			visibilityResult.Visibility.Blockers = append(visibilityResult.Visibility.Blockers, service.VisibilityBlocker{
-				Code:    "shop_unverified",
-				Message: "主材商未完成认证，公开列表不可见",
-			})
+		visibilityResult := service.VisibilityResult{
+			Visibility: visibilityDecision,
+			Actions:    service.VisibilityActions{RejectResubmittable: false},
 		}
 
 		if app, ok := findMaterialShopVisibilitySource(shop); ok {
@@ -1507,6 +1545,7 @@ func AdminCompleteMaterialShopAccount(c *gin.Context) {
 		Phone       string `json:"phone" binding:"required"`
 		ContactName string `json:"contactName"`
 		Nickname    string `json:"nickname"`
+		Reason      string `json:"reason"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -1527,6 +1566,7 @@ func AdminCompleteMaterialShopAccount(c *gin.Context) {
 		response.NotFound(c, "门店不存在")
 		return
 	}
+	beforeShop := shop
 	if shop.UserID > 0 {
 		tx.Rollback()
 		response.BadRequest(c, "该主材门店已绑定账号")
@@ -1611,6 +1651,42 @@ func AdminCompleteMaterialShopAccount(c *gin.Context) {
 	if err := ensureMerchantIdentity(tx, user.ID, merchantIdentityTypeMaterial, shop.ID, adminID, identityStatus); err != nil {
 		tx.Rollback()
 		response.Error(c, 500, "补全主材商身份失败: "+err.Error())
+		return
+	}
+
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "claim_material_shop_account",
+		ResourceType:  "material_shop",
+		ResourceID:    shop.ID,
+		Reason:        readAdminReason(c, req.Reason, "认领主材商账号"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"materialShop": map[string]interface{}{
+				"id":                        beforeShop.ID,
+				"userId":                    beforeShop.UserID,
+				"isSettled":                 beforeShop.IsSettled,
+				"needsOnboardingCompletion": beforeShop.NeedsOnboardingCompletion,
+			},
+		},
+		AfterState: map[string]interface{}{
+			"materialShop": map[string]interface{}{
+				"id":                        shop.ID,
+				"userId":                    shop.UserID,
+				"isSettled":                 shop.IsSettled,
+				"needsOnboardingCompletion": shop.NeedsOnboardingCompletion,
+			},
+		},
+		Metadata: map[string]interface{}{
+			"phone":              phone,
+			"userId":             user.ID,
+			"createdUser":        !userExists,
+			"completionRequired": true,
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.Error(c, 500, "记录认领审计失败")
 		return
 	}
 
@@ -1755,6 +1831,27 @@ func AdminUpdateMaterialShopStatus(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+func AdminUpdateMaterialShopPlatformDisplay(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.MaterialShop{}, "PlatformDisplayEnabled") {
+		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商平台展示开关"))
+		return
+	}
+	if err := repository.DB.Model(&model.MaterialShop{}).Where("id = ?", id).Update("platform_display_enabled", req.Enabled).Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+	response.Success(c, nil)
+}
+
 // ==================== Admin 退款管理 ====================
 
 // AdminRefundIntentFee 管理员手动退款意向金
@@ -1838,6 +1935,7 @@ func AdminGetSystemConfigs(c *gin.Context) {
 // AdminUpdateSystemConfig 更新单个系统配置
 func AdminUpdateSystemConfig(c *gin.Context) {
 	key := c.Param("key")
+	adminID := c.GetUint64("admin_id")
 
 	var input struct {
 		Value       string `json:"value" binding:"required"`
@@ -1849,6 +1947,8 @@ func AdminUpdateSystemConfig(c *gin.Context) {
 	}
 
 	configSvc := &service.ConfigService{}
+	var beforeConfig model.SystemConfig
+	_ = repository.DB.Where("key = ?", key).First(&beforeConfig).Error
 	if err := configSvc.SetConfig(key, input.Value, input.Description); err != nil {
 		response.Error(c, 400, err.Error())
 		return
@@ -1856,6 +1956,28 @@ func AdminUpdateSystemConfig(c *gin.Context) {
 
 	// 清除配置缓存
 	configSvc.ClearCache()
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "update_system_config",
+		ResourceType:  "system_config",
+		ResourceID:    0,
+		Reason:        readAdminReason(c, "更新系统配置"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"key":         beforeConfig.Key,
+			"value":       beforeConfig.Value,
+			"description": beforeConfig.Description,
+		},
+		AfterState: map[string]interface{}{
+			"key":         key,
+			"value":       input.Value,
+			"description": input.Description,
+		},
+		Metadata: map[string]interface{}{
+			"key": key,
+		},
+	})
 
 	response.Success(c, gin.H{
 		"message": "配置更新成功",
@@ -1869,6 +1991,11 @@ func AdminBatchUpdateSystemConfigs(c *gin.Context) {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
 	}
+	delete(input, "reason")
+	delete(input, "remark")
+	delete(input, "note")
+	delete(input, "adminNotes")
+	delete(input, "recentReauthProof")
 
 	configSvc := &service.ConfigService{}
 	_ = configSvc.InitDefaultConfigs()
@@ -1889,6 +2016,20 @@ func AdminBatchUpdateSystemConfigs(c *gin.Context) {
 
 	// 清除配置缓存
 	configSvc.ClearCache()
+
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    c.GetUint64("admin_id"),
+		OperationType: "batch_update_system_configs",
+		ResourceType:  "system_config",
+		ResourceID:    0,
+		Reason:        readAdminReason(c, "批量更新系统配置"),
+		Result:        "success",
+		Metadata: map[string]interface{}{
+			"keys":    maps.Keys(input),
+			"updated": len(input),
+		},
+	})
 
 	response.Success(c, gin.H{
 		"message": "配置批量更新成功",

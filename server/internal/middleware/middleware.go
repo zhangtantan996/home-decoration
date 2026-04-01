@@ -8,6 +8,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -90,7 +91,7 @@ func Cors(allowedOrigins []string) gin.HandlerFunc {
 		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-CSRF-Token")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-CSRF-Token, X-Admin-Reauth")
 		c.Header("Access-Control-Max-Age", "86400")
 
 		if c.Request.Method == "OPTIONS" {
@@ -286,8 +287,25 @@ func AdminJWT(secret string) gin.HandlerFunc {
 			return
 		}
 
+		if !isSessionTokenActive(claims) {
+			response.Unauthorized(c, "会话已失效，请重新登录")
+			c.Abort()
+			return
+		}
+
 		// 存储管理员信息到上下文
 		if adminID, ok := claimToUint64(claims["admin_id"]); ok {
+			var admin model.SysAdmin
+			if err := repository.DB.Select("id", "status").First(&admin, adminID).Error; err != nil {
+				response.Unauthorized(c, "管理员不存在")
+				c.Abort()
+				return
+			}
+			if admin.Status != 1 {
+				response.Forbidden(c, "账号已被禁用")
+				c.Abort()
+				return
+			}
 			c.Set("admin_id", adminID)
 			c.Set("adminId", adminID)
 		}
@@ -296,6 +314,17 @@ func AdminJWT(secret string) gin.HandlerFunc {
 		}
 		if isSuper, ok := claims["is_super"]; ok {
 			c.Set("is_super", isSuper)
+		}
+		if sid, ok := claims["sid"].(string); ok {
+			c.Set("admin_sid", sid)
+			c.Set("sid", sid)
+		}
+		if loginStage, ok := claims["login_stage"].(string); ok {
+			c.Set("admin_login_stage", loginStage)
+		}
+		if adminID, ok := claimToUint64(claims["admin_id"]); ok {
+			sessionID, _ := claims["sid"].(string)
+			service.NewAdminSecurityService().TouchSession(adminID, sessionID, ExtractRealClientIP(c), c.Request.UserAgent())
 		}
 
 		c.Next()

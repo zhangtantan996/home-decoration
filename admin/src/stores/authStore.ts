@@ -1,130 +1,246 @@
 import { create } from 'zustand';
 
+const STORAGE_KEYS = {
+  accessToken: 'admin_token',
+  refreshToken: 'admin_refresh_token',
+  admin: 'admin_user',
+  permissions: 'admin_permissions',
+  menus: 'admin_menus',
+  security: 'admin_security',
+} as const;
+
+type BootstrapStatus = 'idle' | 'loading' | 'ready';
+export type AdminLoginStage = 'setup_required' | 'otp_required' | 'active';
+
 const readStorage = (key: string): string | null => {
-    try {
-        return localStorage.getItem(key);
-    } catch {
-        return null;
-    }
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 };
 
 const safeJsonParse = <T>(key: string, fallback: T): T => {
-    const raw = readStorage(key);
-    if (!raw) {
-        return fallback;
-    }
+  const raw = readStorage(key);
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
     try {
-        return JSON.parse(raw) as T;
+      localStorage.removeItem(key);
     } catch {
-        try {
-            localStorage.removeItem(key);
-        } catch {
-            return fallback;
-        }
-        return fallback;
+      return fallback;
     }
+    return fallback;
+  }
 };
 
 const clearAdminStorage = () => {
-    try {
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('admin_user');
-        localStorage.removeItem('admin_permissions');
-        localStorage.removeItem('admin_menus');
-    } catch {
-        // Ignore storage cleanup failures in restricted contexts.
-    }
+  try {
+    Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // ignore storage cleanup failures
+  }
 };
 
-// 菜单项类型
-interface MenuItem {
-    id: number;
-    parentId: number;
-    title: string;
-    type: number; // 1目录 2菜单 3按钮
-    permission: string;
-    path: string;
-    component: string;
-    icon: string;
-    sort: number;
-    children?: MenuItem[];
+export interface MenuItem {
+  id: number;
+  parentId: number;
+  title: string;
+  type: number;
+  permission: string;
+  path: string;
+  component: string;
+  icon: string;
+  sort: number;
+  visible?: boolean;
+  children?: MenuItem[];
 }
 
-// 管理员信息
-interface AdminUser {
-    id: number;
-    username: string;
-    nickname: string;
-    avatar?: string;
-    isSuperAdmin: boolean;
-    roles: string[];
-    activeRole?: string; // 当前激活的身份类型
+export interface AdminSecurityStatus {
+  loginStage: AdminLoginStage;
+  securitySetupRequired: boolean;
+  mustResetPassword: boolean;
+  twoFactorEnabled: boolean;
+  twoFactorRequired: boolean;
+  passwordExpired?: boolean;
+}
+
+export interface AdminSessionItem {
+  sessionId: string;
+  clientIp?: string;
+  userAgent?: string;
+  createdAt?: string;
+  lastSeenAt?: string;
+  current: boolean;
+  loginStage: AdminLoginStage;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  nickname: string;
+  avatar?: string;
+  isSuperAdmin: boolean;
+  roles: string[];
+  mustResetPassword?: boolean;
+  twoFactorEnabled?: boolean;
+  twoFactorBoundAt?: string;
+  lastLoginAt?: string;
+  lastLoginIp?: string;
+  activeRole?: string;
+}
+
+interface AdminSessionPayload {
+  accessToken?: string;
+  refreshToken?: string;
+  admin?: AdminUser | null;
+  permissions?: string[];
+  menus?: MenuItem[];
+  security?: AdminSecurityStatus | null;
 }
 
 interface AuthState {
-    token: string | null;
-    admin: AdminUser | null;
-    permissions: string[];
-    menus: MenuItem[];
-    isAuthenticated: boolean;
+  token: string | null;
+  refreshToken: string | null;
+  admin: AdminUser | null;
+  permissions: string[];
+  menus: MenuItem[];
+  security: AdminSecurityStatus | null;
+  isAuthenticated: boolean;
+  bootstrapStatus: BootstrapStatus;
 
-    // Actions
-    login: (token: string, admin: AdminUser) => void;
-    setPermissions: (permissions: string[], menus: MenuItem[]) => void;
-    logout: () => void;
-    checkAuth: () => boolean;
-    hasPermission: (permission: string) => boolean;
+  setSession: (payload: AdminSessionPayload) => void;
+  setBootstrapStatus: (status: BootstrapStatus) => void;
+  logout: () => void;
+  checkAuth: () => boolean;
+  hasPermission: (permission: string) => boolean;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-    token: readStorage('admin_token'),
-    admin: safeJsonParse<AdminUser | null>('admin_user', null),
-    permissions: safeJsonParse<string[]>('admin_permissions', []),
-    menus: safeJsonParse<MenuItem[]>('admin_menus', []),
-    isAuthenticated: !!readStorage('admin_token'),
+  token: readStorage(STORAGE_KEYS.accessToken),
+  refreshToken: readStorage(STORAGE_KEYS.refreshToken),
+  admin: safeJsonParse<AdminUser | null>(STORAGE_KEYS.admin, null),
+  permissions: safeJsonParse<string[]>(STORAGE_KEYS.permissions, []),
+  menus: safeJsonParse<MenuItem[]>(STORAGE_KEYS.menus, []),
+  security: safeJsonParse<AdminSecurityStatus | null>(STORAGE_KEYS.security, null),
+  isAuthenticated: !!readStorage(STORAGE_KEYS.accessToken),
+  bootstrapStatus: readStorage(STORAGE_KEYS.accessToken) ? 'idle' : 'ready',
 
-    login: (token, admin) => {
-        localStorage.setItem('admin_token', token);
-        localStorage.setItem('admin_user', JSON.stringify(admin));
-        set({ token, admin, isAuthenticated: true });
-    },
+  setSession: ({ accessToken, refreshToken, admin, permissions, menus, security }) => {
+    const current = get();
+    const nextState: Partial<AuthState> = {};
 
-    setPermissions: (permissions, menus) => {
-        localStorage.setItem('admin_permissions', JSON.stringify(permissions));
-        localStorage.setItem('admin_menus', JSON.stringify(menus));
-        set({ permissions, menus });
-    },
+    if (typeof accessToken === 'string') {
+      localStorage.setItem(STORAGE_KEYS.accessToken, accessToken);
+      nextState.token = accessToken;
+      nextState.isAuthenticated = accessToken.length > 0;
+    } else {
+      nextState.token = current.token;
+      nextState.isAuthenticated = current.isAuthenticated;
+    }
+    if (typeof refreshToken === 'string') {
+      localStorage.setItem(STORAGE_KEYS.refreshToken, refreshToken);
+      nextState.refreshToken = refreshToken;
+    } else {
+      nextState.refreshToken = current.refreshToken;
+    }
+    if (admin !== undefined) {
+      if (admin) {
+        localStorage.setItem(STORAGE_KEYS.admin, JSON.stringify(admin));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.admin);
+      }
+      nextState.admin = admin;
+    } else {
+      nextState.admin = current.admin;
+    }
 
-    logout: () => {
-        clearAdminStorage();
-        set({ token: null, admin: null, permissions: [], menus: [], isAuthenticated: false });
-    },
+    const safePermissions = permissions ?? current.permissions;
+    const safeMenus = menus ?? current.menus;
+    const safeSecurity = security === undefined ? current.security : security;
 
-    checkAuth: () => {
-        const token = readStorage('admin_token');
-        const admin = safeJsonParse<AdminUser | null>('admin_user', null);
+    if (permissions !== undefined) {
+      localStorage.setItem(STORAGE_KEYS.permissions, JSON.stringify(safePermissions));
+    }
+    if (menus !== undefined) {
+      localStorage.setItem(STORAGE_KEYS.menus, JSON.stringify(safeMenus));
+    }
+    if (security !== undefined) {
+      if (safeSecurity) {
+        localStorage.setItem(STORAGE_KEYS.security, JSON.stringify(safeSecurity));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.security);
+      }
+    }
 
-        if (!token || !admin) {
-            clearAdminStorage();
-            set({ token: null, admin: null, permissions: [], menus: [], isAuthenticated: false });
-            return false;
-        }
+    nextState.permissions = safePermissions;
+    nextState.menus = safeMenus;
+    nextState.security = safeSecurity;
+    nextState.bootstrapStatus = 'ready';
 
-        if (!get().isAuthenticated || get().token !== token) {
-            set({ token, admin, isAuthenticated: true });
-        }
+    set(nextState as AuthState);
+  },
 
-        return true;
-    },
+  setBootstrapStatus: (bootstrapStatus) => set({ bootstrapStatus }),
 
-    hasPermission: (permission) => {
-        const { admin, permissions } = get();
-        if (!admin) return false;
-        // 超级管理员拥有所有权限
-        if (admin.isSuperAdmin || permissions.includes('*:*:*')) return true;
-        return permissions.includes(permission);
-    },
+  logout: () => {
+    clearAdminStorage();
+    set({
+      token: null,
+      refreshToken: null,
+      admin: null,
+      permissions: [],
+      menus: [],
+      security: null,
+      isAuthenticated: false,
+      bootstrapStatus: 'ready',
+    });
+  },
+
+  checkAuth: () => {
+    const token = readStorage(STORAGE_KEYS.accessToken);
+    const refreshToken = readStorage(STORAGE_KEYS.refreshToken);
+    const admin = safeJsonParse<AdminUser | null>(STORAGE_KEYS.admin, null);
+    const security = safeJsonParse<AdminSecurityStatus | null>(STORAGE_KEYS.security, null);
+
+    if (!token || !admin) {
+      clearAdminStorage();
+      set({
+        token: null,
+        refreshToken: null,
+        admin: null,
+        permissions: [],
+        menus: [],
+        security: null,
+        isAuthenticated: false,
+        bootstrapStatus: 'ready',
+      });
+      return false;
+    }
+
+    if (!get().isAuthenticated || get().token !== token) {
+      set({
+        token,
+        refreshToken,
+        admin,
+        security,
+        permissions: safeJsonParse<string[]>(STORAGE_KEYS.permissions, []),
+        menus: safeJsonParse<MenuItem[]>(STORAGE_KEYS.menus, []),
+        isAuthenticated: true,
+        bootstrapStatus: 'idle',
+      });
+    }
+
+    return true;
+  },
+
+  hasPermission: (permission) => {
+    const { admin, permissions } = get();
+    if (!admin) return false;
+    if (admin.isSuperAdmin || permissions.includes('*:*:*')) return true;
+    return permissions.includes(permission);
+  },
 }));
-
-// 导出类型
-export type { MenuItem, AdminUser };

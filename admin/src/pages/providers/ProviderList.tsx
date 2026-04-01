@@ -31,6 +31,7 @@ import {
   regionApi,
   type ServiceCityRegion,
 } from "../../services/regionApi";
+import AdminReauthModal from "../../components/AdminReauthModal";
 import { PermissionWrapper } from "../../components/PermissionWrapper";
 import PageHeader from "../../components/PageHeader";
 import ToolbarCard from "../../components/ToolbarCard";
@@ -280,6 +281,9 @@ const ProviderList: React.FC = () => {
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const [claimTargetProvider, setClaimTargetProvider] =
     useState<Provider | null>(null);
+  const [claimReauthOpen, setClaimReauthOpen] = useState(false);
+  const [pendingClaimValues, setPendingClaimValues] =
+    useState<Record<string, unknown> | null>(null);
   const [claimForm] = Form.useForm();
   const [serviceCityOptions, setServiceCityOptions] = useState<
     ServiceCityGroupOption[]
@@ -379,6 +383,16 @@ const ProviderList: React.FC = () => {
     }
   };
 
+  const handleTogglePlatformDisplay = async (id: number, enabled: boolean) => {
+    try {
+      await adminProviderApi.updatePlatformDisplay(id, enabled);
+      message.success(enabled ? "已上线" : "已下线");
+      loadData();
+    } catch (error) {
+      message.error("操作失败");
+    }
+  };
+
   const showDetail = (record: Provider) => {
     setCurrentProvider(record);
     setDetailVisible(true);
@@ -462,23 +476,43 @@ const ProviderList: React.FC = () => {
     if (!claimTargetProvider) return;
     try {
       const values = await claimForm.validateFields();
+      setPendingClaimValues(values);
+      setClaimReauthOpen(true);
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error(error?.message || "认领失败");
+    }
+  };
+
+  const handleClaimConfirmed = async (payload: {
+    reason?: string;
+    recentReauthProof: string;
+  }) => {
+    if (!claimTargetProvider || !pendingClaimValues) return;
+    try {
       setClaimSubmitting(true);
       const res = (await adminProviderApi.claimAccount(
         claimTargetProvider.id,
-        values,
+        {
+          ...(pendingClaimValues as {
+            phone: string;
+            contactName?: string;
+            nickname?: string;
+          }),
+          reason: payload.reason,
+          recentReauthProof: payload.recentReauthProof,
+        },
       )) as any;
       if (res.code === 0) {
         message.success("账号已绑定，首次登录将补全正式入驻资料");
         setClaimModalVisible(false);
         setClaimTargetProvider(null);
+        setPendingClaimValues(null);
         claimForm.resetFields();
         loadData();
-      } else {
-        message.error(res.message || "认领失败");
+        return;
       }
-    } catch (error: any) {
-      if (error?.errorFields) return;
-      message.error(error?.message || "认领失败");
+      throw new Error(res.message || "认领失败");
     } finally {
       setClaimSubmitting(false);
     }
@@ -659,6 +693,28 @@ const ProviderList: React.FC = () => {
       key: "blockerSummary",
       ellipsis: true,
       render: (_: any, record: Provider) => renderBlockerSummary(record),
+    },
+    {
+      title: "平台上线",
+      key: "platformDisplayEnabled",
+      render: (_: any, record: Provider) => (
+        <PermissionWrapper
+          permission={[
+            "provider:designer:edit",
+            "provider:company:edit",
+            "provider:foreman:edit",
+          ]}
+        >
+          <Switch
+            checked={record.platformDisplayEnabled ?? true}
+            checkedChildren="上线"
+            unCheckedChildren="下线"
+            onChange={(checked) =>
+              handleTogglePlatformDisplay(record.id, checked)
+            }
+          />
+        </PermissionWrapper>
+      ),
     },
     {
       title: "操作",
@@ -1185,6 +1241,18 @@ const ProviderList: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <AdminReauthModal
+        open={claimReauthOpen}
+        title="认领装修公司账号"
+        description={`认领后将为「${claimTargetProvider ? getProviderDisplayName(claimTargetProvider) : '-'}」开通登录资格，并进入资料待补全状态。`}
+        confirmText="确认认领"
+        onCancel={() => {
+          setClaimReauthOpen(false);
+          setPendingClaimValues(null);
+        }}
+        onConfirmed={handleClaimConfirmed}
+      />
     </div>
   );
 };

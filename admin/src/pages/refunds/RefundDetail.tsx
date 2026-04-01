@@ -4,6 +4,7 @@ import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import PageHeader from '../../components/PageHeader';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import { adminRefundApi, type AdminRefundApplicationItem } from '../../services/api';
 import { usePermission } from '../../hooks/usePermission';
 import { useAuthStore } from '../../stores/authStore';
@@ -58,6 +59,9 @@ const RefundDetail: React.FC = () => {
     const [submitting, setSubmitting] = useState(false);
     const [approveVisible, setApproveVisible] = useState(false);
     const [rejectVisible, setRejectVisible] = useState(false);
+    const [reauthOpen, setReauthOpen] = useState(false);
+    const [reauthAction, setReauthAction] = useState<'approve' | 'reject' | null>(null);
+    const [pendingValues, setPendingValues] = useState<Record<string, unknown> | null>(null);
     const [item, setItem] = useState<AdminRefundApplicationItem | null>(null);
     const { hasPermission } = usePermission();
     const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
@@ -113,23 +117,11 @@ const RefundDetail: React.FC = () => {
         if (!item) return;
         try {
             const values = await approveForm.validateFields();
-            setSubmitting(true);
-            const res = await adminRefundApi.approve(item.id, {
-                adminNotes: values.adminNotes,
-                approvedAmount: values.approvedAmount,
-            });
-            if (res?.code !== 0) {
-                message.error(res?.message || '批准失败');
-                return;
-            }
-            message.success('退款申请已批准');
-            setApproveVisible(false);
-            approveForm.resetFields();
-            await loadData();
+            setPendingValues(values);
+            setReauthAction('approve');
+            setReauthOpen(true);
         } catch {
             // 表单校验失败
-        } finally {
-            setSubmitting(false);
         }
     };
 
@@ -137,20 +129,44 @@ const RefundDetail: React.FC = () => {
         if (!item) return;
         try {
             const values = await rejectForm.validateFields();
-            setSubmitting(true);
-            const res = await adminRefundApi.reject(item.id, {
-                adminNotes: values.adminNotes,
-            });
-            if (res?.code !== 0) {
-                message.error(res?.message || '拒绝失败');
-                return;
-            }
-            message.success('退款申请已拒绝');
-            setRejectVisible(false);
-            rejectForm.resetFields();
-            await loadData();
+            setPendingValues(values);
+            setReauthAction('reject');
+            setReauthOpen(true);
         } catch {
             // 表单校验失败
+        }
+    };
+
+    const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (!item || !pendingValues || !reauthAction) return;
+        try {
+            setSubmitting(true);
+            if (reauthAction === 'approve') {
+                const res = await adminRefundApi.approve(item.id, {
+                    approvedAmount: pendingValues.approvedAmount as number | undefined,
+                    adminNotes: String(pendingValues.adminNotes || payload.reason || ''),
+                    recentReauthProof: payload.recentReauthProof,
+                });
+                if (res?.code !== 0) {
+                    throw new Error(res?.message || '批准失败');
+                }
+                message.success('退款申请已批准');
+                setApproveVisible(false);
+                approveForm.resetFields();
+            } else {
+                const res = await adminRefundApi.reject(item.id, {
+                    adminNotes: String(pendingValues.adminNotes || payload.reason || ''),
+                    recentReauthProof: payload.recentReauthProof,
+                });
+                if (res?.code !== 0) {
+                    throw new Error(res?.message || '拒绝失败');
+                }
+                message.success('退款申请已拒绝');
+                setRejectVisible(false);
+                rejectForm.resetFields();
+            }
+            setPendingValues(null);
+            await loadData();
         } finally {
             setSubmitting(false);
         }
@@ -266,6 +282,19 @@ const RefundDetail: React.FC = () => {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            <AdminReauthModal
+                open={reauthOpen}
+                title={reauthAction === 'approve' ? '批准退款申请' : '拒绝退款申请'}
+                description={`即将处理退款申请 #${item?.id || '-'}`}
+                reasonRequired={false}
+                onCancel={() => {
+                    setReauthOpen(false);
+                    setPendingValues(null);
+                    setReauthAction(null);
+                }}
+                onConfirmed={handleReauthConfirmed}
+            />
         </div>
     );
 };

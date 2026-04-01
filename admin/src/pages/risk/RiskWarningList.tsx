@@ -8,6 +8,7 @@ import {
   type AdminRiskWarningItem,
   type AdminRiskWarningQuery,
 } from '../../services/api';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import { usePermission } from '../../hooks/usePermission';
 import { useAuthStore } from '../../stores/authStore';
 import {
@@ -44,6 +45,8 @@ const RiskWarningList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<number | undefined>();
   const [handleVisible, setHandleVisible] = useState(false);
   const [currentWarning, setCurrentWarning] = useState<AdminRiskWarningItem | null>(null);
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState<Record<string, unknown> | null>(null);
   const [form] = Form.useForm();
   const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
   const canHandle = !isSecurityAuditor && hasPermission('risk:warning:handle');
@@ -102,10 +105,8 @@ const RiskWarningList: React.FC = () => {
       if (!currentWarning) {
         return;
       }
-      await adminRiskApi.handleWarning(currentWarning.id, values);
-      message.success('处理成功');
-      closeHandleModal();
-      await loadData();
+      setPendingValues(values);
+      setReauthOpen(true);
     } catch (error) {
       if (isAdminConflictError(error)) {
         closeHandleModal();
@@ -115,6 +116,21 @@ const RiskWarningList: React.FC = () => {
       }
       message.error(error instanceof Error ? error.message : '操作失败');
     }
+  };
+
+  const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+    if (!currentWarning || !pendingValues) {
+      return;
+    }
+    await adminRiskApi.handleWarning(currentWarning.id, {
+      ...(pendingValues as { status: number; result: string }),
+      reason: payload.reason,
+      recentReauthProof: payload.recentReauthProof,
+    });
+    message.success('处理成功');
+    setPendingValues(null);
+    closeHandleModal();
+    await loadData();
   };
 
   const handleExport = () => {
@@ -297,6 +313,18 @@ const RiskWarningList: React.FC = () => {
           </>
         )}
       </Modal>
+
+      <AdminReauthModal
+        open={reauthOpen}
+        title="处理风险预警"
+        description={`即将处理风险预警 #${currentWarning?.id || '-'}`}
+        reasonRequired
+        onCancel={() => {
+          setReauthOpen(false);
+          setPendingValues(null);
+        }}
+        onConfirmed={handleReauthConfirmed}
+      />
     </Card>
   );
 };

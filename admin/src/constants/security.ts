@@ -1,0 +1,1 @@
+export const ADMIN_PASSWORD_MIN_LENGTH = 10;

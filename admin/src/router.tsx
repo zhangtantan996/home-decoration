@@ -10,6 +10,8 @@ import DisputedBookings from './pages/bookings/DisputedBookings';
 import ReviewList from './pages/reviews/ReviewList';
 import LogList from './pages/system/LogList';
 import Login from './pages/user/Login';
+import AdminSecuritySetup from './pages/security/AdminSecuritySetup';
+import AdminSecuritySettings from './pages/security/AdminSecuritySettings';
 import AdminList from './pages/admins/AdminList';
 import AuditCenter from './pages/audits/AuditCenter';
 import ProviderAudit from './pages/audits/ProviderAudit';
@@ -51,6 +53,14 @@ import { getRouterBasename } from './utils/env';
 
 const router = createBrowserRouter([
     { path: '/login', element: <Login /> },
+    {
+        path: '/security/setup',
+        element: (
+            <ProtectedRoute>
+                <AdminSecuritySetup />
+            </ProtectedRoute>
+        ),
+    },
 
     // ========== Admin 管理后台 ==========
     {
@@ -144,6 +154,7 @@ const router = createBrowserRouter([
             { path: 'settings', element: <Navigate to="/settings/config" replace /> },
             { path: 'settings/config', element: <ProtectedRoute permission="system:setting:list"><SystemSettings /></ProtectedRoute> },
             { path: 'settings/regions', element: <ProtectedRoute permission="system:setting:list"><RegionManagement /></ProtectedRoute> },
+            { path: 'security/settings', element: <ProtectedRoute><AdminSecuritySettings /></ProtectedRoute> },
 
             // System
             { path: 'system', element: <Navigate to="/system/dictionary" replace /> },
