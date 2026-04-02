@@ -24,9 +24,6 @@ const COVER_HEIGHTS = [280, 360, 320, 300];
 type GalleryKind = 'craft' | 'scene';
 type GalleryItem = ProviderCaseItem | ProviderSceneItem;
 
-type GalleryKind = 'craft' | 'scene';
-type GalleryItem = ProviderCaseItem | ProviderSceneItem;
-
 const normalizeProviderType = (value?: string): ProviderType => {
   if (value === 'company' || value === '2') return 'company';
   if (value === 'foreman' || value === '3') return 'foreman';

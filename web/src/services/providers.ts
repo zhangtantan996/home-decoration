@@ -95,35 +95,6 @@ interface ProviderSceneDetailDTO extends ProviderSceneDTO {
   providerId?: number;
 }
 
-interface ProviderSceneDTO {
-  id: number;
-  caseId?: number;
-  projectId?: number;
-  title?: string;
-  coverImage?: string;
-  description?: string;
-  images?: string | string[];
-  year?: string;
-  createdAt?: string;
-}
-
-interface ProviderShowcaseDetailDTO {
-  id: number;
-  providerId?: number;
-  title?: string;
-  coverImage?: string;
-  style?: string;
-  layout?: string;
-  area?: string;
-  description?: string;
-  images?: string | string[];
-  year?: string;
-}
-
-interface ProviderSceneDetailDTO extends ProviderSceneDTO {
-  providerId?: number;
-}
-
 interface ProviderReviewDTO {
   id: number;
   userName?: string;
@@ -227,22 +198,6 @@ function toCase(dto: ProviderCaseDTO): ProviderCaseVM {
     style: dto.style || '风格待补充',
     area: dto.area ? `${dto.area}` : '面积待补充',
     showInInspiration: dto.showInInspiration,
-  };
-}
-
-function toScene(dto: ProviderSceneDTO): ProviderSceneVM {
-  const galleryImages = parseTextArray(dto.images);
-  const coverImage = dto.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E5%AE%9E%E6%99%AF';
-
-  return {
-    id: dto.id,
-    caseId: Number(dto.caseId || 0),
-    projectId: Number(dto.projectId || 0),
-    title: dto.title || '真实项目案例',
-    coverImage,
-    description: dto.description || '项目案例说明待补充',
-    images: galleryImages.length > 0 ? galleryImages : [coverImage],
-    year: dto.year || '',
   };
 }
 

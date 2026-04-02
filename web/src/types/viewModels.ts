@@ -81,17 +81,6 @@ export interface ProviderSceneVM {
   year: string;
 }
 
-export interface ProviderSceneVM {
-  id: number;
-  caseId: number;
-  projectId: number;
-  title: string;
-  coverImage: string;
-  description: string;
-  images: string[];
-  year: string;
-}
-
 export interface ProviderReviewVM {
   id: number;
   userName: string;

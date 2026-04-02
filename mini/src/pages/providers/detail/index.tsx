@@ -284,14 +284,6 @@ const ProviderDetailPage: React.FC = () => {
     });
   };
 
-  const handleOpenSceneDetail = (sceneId: number) => {
-    if (!sceneId || !params.id) return;
-    const providerName = encodeURIComponent(displayName);
-    Taro.navigateTo({
-      url: `/pages/cases/scene-detail/index?sceneId=${sceneId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
-    });
-  };
-
   const handleOpenReviews = () => {
     if (!params.id) return;
     const providerName = encodeURIComponent(displayName);
