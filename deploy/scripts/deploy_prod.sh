@@ -263,11 +263,11 @@ update_services() {
   case "${SERVICE_SCOPE}" in
     api)
       echo "==> Updating service: api"
-      release_compose up -d --build api
+      release_update_service_isolated api
       ;;
     web)
       echo "==> Updating service: web"
-      release_compose up -d --build web
+      release_update_service_isolated web
       ;;
     all)
       echo "==> Updating services: api web"

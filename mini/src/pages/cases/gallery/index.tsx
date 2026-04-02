@@ -6,7 +6,13 @@ import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
 import MiniPageNav from '@/components/MiniPageNav';
 import { Skeleton } from '@/components/Skeleton';
-import { getProviderCases, type ProviderCaseItem, type ProviderType } from '@/services/providers';
+import {
+  getProviderCases,
+  getProviderSceneCases,
+  type ProviderCaseItem,
+  type ProviderSceneItem,
+  type ProviderType,
+} from '@/services/providers';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
 
@@ -14,6 +20,9 @@ import './index.scss';
 
 const PAGE_SIZE = 12;
 const COVER_HEIGHTS = [280, 360, 320, 300];
+
+type GalleryKind = 'craft' | 'scene';
+type GalleryItem = ProviderCaseItem | ProviderSceneItem;
 
 const normalizeProviderType = (value?: string): ProviderType => {
   if (value === 'company' || value === '2') return 'company';
@@ -95,7 +104,7 @@ const CaseGalleryPage: React.FC = () => {
   useEffect(() => {
     if (!providerId) return;
     void fetchList(true);
-  }, [providerId, providerType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [providerId, providerType, galleryKind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useReachBottom(() => {
     void fetchList();
@@ -110,7 +119,14 @@ const CaseGalleryPage: React.FC = () => {
     Taro.switchTab({ url: '/pages/home/index' });
   };
 
-  const openDetail = (item: ProviderCaseItem) => {
+  const subtitle = useMemo(() => {
+    if (galleryKind === 'scene') return '真实项目完工案例与施工实景';
+    if (providerType === 'company') return '装修公司项目案例';
+    if (providerType === 'foreman') return '工长工艺展示与施工案例';
+    return '设计方案与落地案例';
+  }, [galleryKind, providerType]);
+
+  const openDetail = (item: GalleryItem) => {
     const encodedName = encodeURIComponent(providerName);
     Taro.navigateTo({
       url: `/pages/cases/detail/index?caseId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}&source=${source}`,

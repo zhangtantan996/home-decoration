@@ -46,6 +46,28 @@ export class AdminApiError<T = unknown> extends Error {
   }
 }
 
+type AdminEnvelopeError = {
+  code?: number;
+  message?: string;
+  data?: Record<string, unknown>;
+};
+
+export class AdminApiError<T = unknown> extends Error {
+  status?: number;
+  code?: number;
+  errorCode?: string;
+  data?: T;
+
+  constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+    super(message);
+    this.name = 'AdminApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.errorCode = options.errorCode;
+    this.data = options.data;
+  }
+}
+
 const getApiErrorStatus = (error: unknown): number | undefined => {
   if (typeof error !== "object" || error === null || !("response" in error)) {
     return undefined;

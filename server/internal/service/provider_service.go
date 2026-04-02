@@ -663,22 +663,15 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		provider.ServiceArea = string(namesJSON)
 	}
 
-	// 获取案例（前5条）
-	var cases []model.ProviderCase
-	repository.DB.Where("provider_id = ?", id).
-		Order("sort_order ASC, created_at DESC").
-		Limit(5).
-		Find(&cases)
-	for i := range cases {
-		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
-		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
+	cases, caseCount, err := s.GetProviderCases(id, 1, 5)
+	if err != nil {
+		return nil, err
 	}
 
-	// 统计案例总数
-	var caseCount int64
-	repository.DB.Model(&model.ProviderCase{}).
-		Where("provider_id = ?", id).
-		Count(&caseCount)
+	sceneCases, sceneCount, err := s.GetProviderSceneCases(id, 1, 5)
+	if err != nil {
+		return nil, err
+	}
 
 	sceneCases, sceneCount, err := s.GetProviderSceneCases(id, 1, 5)
 	if err != nil {
@@ -753,22 +746,20 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 	var cases []model.ProviderCase
 	var total int64
 
-	var provider model.Provider
-	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).Select("id").First(&provider, providerID).Error; err != nil {
+	if err := ensureVisibleProvider(providerID); err != nil {
 		return nil, 0, err
 	}
 
-	db := repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", providerID)
-	db.Count(&total)
+	db := applyVisibleCaseFilter(craftProviderCaseScope(providerID))
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	offset := (page - 1) * pageSize
 	if err := db.Order("sort_order ASC, created_at DESC").Offset(offset).Limit(pageSize).Find(&cases).Error; err != nil {
 		return nil, 0, err
 	}
-	for i := range cases {
-		cases[i].CoverImage = imgutil.GetFullImageURL(cases[i].CoverImage)
-		cases[i].Images = imgutil.NormalizeImageURLsJSON(cases[i].Images)
-	}
+	normalizeProviderCasesForPublic(cases)
 
 	return cases, total, nil
 }

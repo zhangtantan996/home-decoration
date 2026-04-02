@@ -59,6 +59,12 @@ const compactCount = (value: number) => {
   return `${value}`;
 };
 
+const formatCaseArea = (value?: string | number) => {
+  if (value === undefined || value === null || value === '') return '';
+  const text = String(value);
+  return text.includes('㎡') ? text : `${text}㎡`;
+};
+
 interface ProviderDetailParams {
   id: string;
   type: ProviderType;
@@ -267,6 +273,14 @@ const ProviderDetailPage: React.FC = () => {
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
       url: `/pages/cases/detail/index?caseId=${caseId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}&source=provider_case`,
+    });
+  };
+
+  const handleOpenSceneDetail = (sceneId: number) => {
+    if (!sceneId || !params.id) return;
+    const providerName = encodeURIComponent(displayName);
+    Taro.navigateTo({
+      url: `/pages/cases/scene-detail/index?sceneId=${sceneId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
     });
   };
 

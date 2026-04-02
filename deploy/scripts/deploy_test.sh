@@ -235,16 +235,20 @@ fi
 
 update_services() {
   release_remove_conflicting_containers "${RELEASE_COMPOSE_PROJECT_NAME}" test_db test_redis test_api test_web test_tinode
-  ensure_test_schema
+  if release_scope_includes_api "${SERVICE_SCOPE}"; then
+    ensure_test_schema
+  else
+    echo "==> Service scope does not include api; skip test schema bootstrap"
+  fi
 
   case "${SERVICE_SCOPE}" in
     api)
       echo "==> Updating test service: api"
-      release_compose up -d --build api
+      release_update_service_isolated api
       ;;
     web)
       echo "==> Updating test service: web"
-      release_compose up -d --build web
+      release_update_service_isolated web
       ;;
     all)
       echo "==> Updating test services: api web"

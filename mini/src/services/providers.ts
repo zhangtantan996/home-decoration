@@ -27,6 +27,34 @@ export interface ProviderQuery {
 export type ProviderDetail = ProviderDetailDTO;
 
 export type ProviderCaseItem = ProviderCaseDTO;
+export type ProviderSceneItem = ProviderSceneDTO;
+
+export interface ProviderCaseDetail {
+  id: number;
+  providerId: number;
+  title: string;
+  coverImage: string;
+  style?: string;
+  layout?: string;
+  area?: string | number;
+  description?: string;
+  images?: string | string[];
+  year?: string | number;
+  price?: number;
+}
+
+export interface ProviderSceneDetail {
+  id: number;
+  caseId?: number;
+  projectId?: number;
+  providerId?: number;
+  title: string;
+  coverImage: string;
+  description?: string;
+  images?: string | string[];
+  year?: string | number;
+  createdAt?: string;
+}
 
 export interface ProviderReviewItem {
   id: number;

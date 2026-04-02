@@ -4930,6 +4930,12 @@ main {
   text-overflow: ellipsis;
 }
 
+.pcard-provider .pcard-price span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .pcard-foot {
   margin-top: 2px;
   padding-top: 14px;
