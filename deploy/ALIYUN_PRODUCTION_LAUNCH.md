@@ -138,7 +138,7 @@ Tinode（后端用于生成 Tinode token）：
 生产镜像已内置以下 Nginx 规则（`deploy/nginx/nginx.prod.conf`）：
 - `/admin/` 路径启用 IP 白名单（`/etc/nginx/admin_allowlist.conf`）
 - `/admin/` 路径启用 BasicAuth（`/etc/nginx/admin.htpasswd`）
-- 根路径 `/` 默认重定向到 `/merchant`
+- 根域名 `/` 返回官网静态页，商家端入口保留在 `/merchant`
 
 `docker-compose.prod.managed.yml` 已将这两个文件映射为宿主机可维护文件：
 - `deploy/nginx/admin_allowlist.conf`

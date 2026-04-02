@@ -28,7 +28,7 @@ func setupProviderServiceDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 
-	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.ProviderCase{}, &model.ProviderReview{}, &model.Project{}, &model.Region{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.ProviderCase{}, &model.ProviderReview{}, &model.Project{}, &model.Region{}, &model.CaseAudit{}); err != nil {
 		t.Fatalf("auto migrate provider tables: %v", err)
 	}
 
@@ -553,6 +553,120 @@ func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *tes
 	}
 	if total != 2 || len(cases) != 2 {
 		t.Fatalf("expected all provider cases in public provider list, total=%d cases=%+v", total, cases)
+	}
+}
+
+func TestProviderServiceGetProviderSceneCasesReturnsApprovedProjectScenes(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138128", Nickname: "场景案例商家", PublicID: "user_public_scene_cases"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 3,
+		CompanyName:  "工长场景案例",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	sceneCase := model.ProviderCase{ProviderID: provider.ID, Title: "项目实景案例", ShowInInspiration: true}
+	if err := db.Create(&sceneCase).Error; err != nil {
+		t.Fatalf("create scene case: %v", err)
+	}
+	if err := db.Create(&model.CaseAudit{
+		CaseID:          &sceneCase.ID,
+		ProviderID:      provider.ID,
+		ActionType:      "create",
+		SourceType:      "project_completion",
+		SourceProjectID: 2026,
+		Status:          1,
+		Title:           "项目实景案例",
+		CoverImage:      "/uploads/cases/scene-cover.jpg",
+		Description:     "来自真实完工项目",
+		Images:          `["/uploads/cases/scene-cover.jpg","/uploads/cases/scene-2.jpg"]`,
+		Year:            "2026",
+	}).Error; err != nil {
+		t.Fatalf("create scene audit: %v", err)
+	}
+
+	sceneCases, total, err := service.GetProviderSceneCases(provider.ID, 1, 10)
+	if err != nil {
+		t.Fatalf("get provider scene cases: %v", err)
+	}
+	if total != 1 || len(sceneCases) != 1 {
+		t.Fatalf("expected one scene case, total=%d cases=%+v", total, sceneCases)
+	}
+	if sceneCases[0].CaseID != sceneCase.ID || sceneCases[0].ProjectID != 2026 {
+		t.Fatalf("unexpected scene case payload: %+v", sceneCases[0])
+	}
+}
+
+func TestProviderSceneDetailUsesLatestApprovedAuditSnapshot(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138129", Nickname: "工长案例详情", PublicID: "user_public_scene_detail"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 3,
+		CompanyName:  "工长案例详情",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	sceneCase := model.ProviderCase{ProviderID: provider.ID, Title: "初始案例", ShowInInspiration: true}
+	if err := db.Create(&sceneCase).Error; err != nil {
+		t.Fatalf("create scene case: %v", err)
+	}
+
+	createAudit := model.CaseAudit{
+		CaseID:          &sceneCase.ID,
+		ProviderID:      provider.ID,
+		ActionType:      "create",
+		SourceType:      "project_completion",
+		SourceProjectID: 9001,
+		Status:          1,
+		Title:           "初始案例",
+		CoverImage:      "/uploads/cases/initial.jpg",
+		Description:     "初始说明",
+		Images:          `["/uploads/cases/initial.jpg"]`,
+		Year:            "2025",
+	}
+	if err := db.Create(&createAudit).Error; err != nil {
+		t.Fatalf("create audit: %v", err)
+	}
+	if err := db.Create(&model.CaseAudit{
+		CaseID:      &sceneCase.ID,
+		ProviderID:  provider.ID,
+		ActionType:  "update",
+		Status:      1,
+		Title:       "更新后的项目案例",
+		CoverImage:  "/uploads/cases/latest.jpg",
+		Description: "最新说明",
+		Images:      `["/uploads/cases/latest.jpg","/uploads/cases/latest-2.jpg"]`,
+		Year:        "2026",
+	}).Error; err != nil {
+		t.Fatalf("create latest audit: %v", err)
+	}
+
+	detail, err := service.GetProviderSceneDetail(createAudit.ID)
+	if err != nil {
+		t.Fatalf("get provider scene detail: %v", err)
+	}
+	if detail.Title != "更新后的项目案例" || !strings.Contains(detail.Images, "latest-2.jpg") {
+		t.Fatalf("expected latest approved audit snapshot, got %+v", detail)
 	}
 }
 
