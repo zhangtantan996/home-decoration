@@ -40,7 +40,8 @@
    - **不要**把 `docker compose down && docker compose up -d --build` 当作常规发布方式
 4. **数据库变更必须单独执行**
    - 迁移前先备份
-   - 必须有对应回滚 SQL
+   - 发布脚本只会自动执行 `deploy/scripts/lib/release_common.sh` allowlist 中的正式迁移
+   - allowlist 外的 schema 变更、数据修复、数据清洗仍需人工执行
    - 数据库回滚与代码回滚分开决策
 5. **每次发布后必须验证**
    - 容器状态
@@ -153,14 +154,14 @@ bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service all
 5. 执行最小健康验证
 6. 输出发布后建议检查命令
 
-> 说明：`deploy_prod.sh` 负责代码发布、服务更新和基础验证；**不会自动执行数据库迁移**。如本次发布涉及 schema 变更，仍需先按数据库迁移规范人工执行迁移与验证。
+> 说明：`deploy_prod.sh` 负责代码发布、服务更新和基础验证；会自动执行 `deploy/scripts/lib/release_common.sh` allowlist 中的正式迁移。allowlist 之外的 schema 变更、数据修复、数据清洗，仍需按 `docs/DATABASE_MIGRATIONS.md` 人工执行并记录。
 
 ### 3.3 数据库变更发布
 
 如果本次发布包含数据库结构变更，流程必须改为：
 
 1. 先执行发布前备份
-2. 按 `docs/数据库迁移规范.md` 执行对应 `*_up.sql`
+2. 按 `docs/DATABASE_MIGRATIONS.md` 执行对应迁移；若文件包含 `-- up / -- down`，只执行 `up` 段
 3. 运行验证 SQL
 4. 再执行 `deploy_prod.sh`
 5. 将本次迁移脚本、执行时间、验证结果记录到发布记录中
@@ -256,7 +257,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 
 数据库迁移规范请统一参考：
 
-- `docs/数据库迁移规范.md`
+- `docs/DATABASE_MIGRATIONS.md`
 
 当前仓库已有迁移目录：
 
@@ -275,7 +276,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 - 完整部署与运维说明：`docs/部署指南.md`
 - 发布与回滚策略：`docs/版本发布与回滚指南.md`
 - 上线检查清单：`docs/发布检查清单.md`
-- 数据库迁移规范：`docs/数据库迁移规范.md`
+- 数据库迁移规范：`docs/DATABASE_MIGRATIONS.md`
 - 阿里云落地方案：`deploy/阿里云生产上线指南.md`
 
 ---

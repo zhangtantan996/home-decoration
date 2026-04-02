@@ -176,20 +176,7 @@ ensure_test_schema() {
     echo "==> Test database baseline already exists"
   fi
 
-  local reconcile_files=(
-    "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
-    "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
-    "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
-    "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
-    "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
-    "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
-  )
-
-  local reconcile_file
-  for reconcile_file in "${reconcile_files[@]}"; do
-    echo "==> Applying test reconcile migration: ${reconcile_file}"
-    release_apply_postgres_sql_file "${REPO_ROOT}/${reconcile_file}" >/dev/null
-  done
+  release_apply_known_migrations
 }
 
 if [[ "${SKIP_GIT}" == "false" ]]; then

@@ -63,7 +63,8 @@ git tag --list | tail
 ### 2. 标准发布动作
 
 - [ ] 已执行对应环境的标准发布脚本
-- [ ] 已确认发布脚本不会自动执行数据库迁移
+- [ ] 已确认发布脚本只会自动执行 `release_common.sh` allowlist 中的正式迁移
+- [ ] 若本次存在 allowlist 外迁移 / 数据修复 / 数据清洗，已单独执行并记录
 - [ ] 未在 test 环境误用 `deploy_prod.sh`，未在 production 环境误用 `deploy_test.sh`
 
 Production 示例：
@@ -93,7 +94,7 @@ bash deploy/scripts/deploy_prod.sh --tag v1.2.3 --service all
 ### 3. 如涉及数据库迁移
 
 - [ ] 已先执行备份
-- [ ] 已执行对应 `*_up.sql`
+- [ ] 已执行对应迁移；若文件包含 `-- up / -- down`，只执行了 `up` 段
 - [ ] 已执行验证 SQL
 - [ ] 已确认数据库迁移结果后再更新服务
 - [ ] 已记录迁移脚本名、执行时间、执行结果
