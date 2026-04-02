@@ -52,24 +52,32 @@ ADMIN_AUTH_ALLOWED_CIDRS=113.132.74.62/32,113.132.74.153/32,127.0.0.1/32,::1/128
 ## 三、Schema 迁移策略
 
 ### 1. 自动迁移
-- `deploy/scripts/lib/release_common.sh` 会自动执行“已知迁移”
-- 当前自动列表覆盖到：
-  - `v1.13.3_add_supervision_workspace_menu.sql`
+- `deploy/scripts/lib/release_common.sh` 会自动执行 allowlist 中的“已知迁移”
+- 对于带 `-- up / -- down` 的单文件迁移，发布脚本只执行 `up` 段，不会整文件直喂 `psql`
+- 当前自动列表已覆盖本轮关键正式迁移，包括：
+  - `v1.9.12_normalize_provider_price_unit_to_sqm.sql`
+  - `v1.9.13_add_official_provider_review_project_link.sql`
+  - `v1.9.14_add_claimed_completion_onboarding_columns.sql`
+  - `v1.9.15_add_admin_security_columns.sql`
+  - `v1.9.16_add_provider_display_name.sql`
+  - `v1.12.11_hide_legacy_risk_arbitration_menu.sql`
+  - `v1.12.12_add_payment_central_runtime.sql`
+  - `v1.12.13_add_settlement_and_bond_domains.sql`
+  - `v1.13.4_add_public_visibility_switches.sql`
 
 ### 2. 仍需手工执行的新增迁移
 - 当新增迁移尚未进入自动列表时，测试和生产都必须手工执行
 
-本轮已验证必须手工执行的迁移：
-- `server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql`
-- `server/migrations/v1.9.15_add_admin_security_columns.sql`
-- `server/migrations/v1.13.4_add_public_visibility_switches.sql`
+判断原则：
+- 迁移文件已进入 `server/migrations/` 但尚未加入 `release_apply_known_migrations()` 时，必须手工执行
+- 手工执行时如果文件包含 `-- up / -- down`，只能执行 `up` 段
 
 如环境历史较老，先补：
 - `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`
 
 ### 3. 执行顺序
 1. 备份生产 DB
-2. 手工执行缺失迁移
+2. 手工执行缺失迁移（仅执行 `up` 段）
 3. 再执行 `deploy_prod.sh`
 4. 发布后做列级验证
 

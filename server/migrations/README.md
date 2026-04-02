@@ -30,6 +30,12 @@ vX.Y.Z_description.sql
 psql -U postgres -d home_decoration -f migrations/vX.Y.Z_description.sql
 ```
 
+如果迁移文件采用单文件 `-- up / -- down` 格式：
+
+- 不要直接整文件 `psql -f`
+- 只能执行 `up` 段
+- 仓库发布脚本中的 `release_apply_postgres_sql_file()` 已按这个规则处理
+
 ### 使用 golang-migrate 工具（推荐）
 
 安装工具：
@@ -46,16 +52,17 @@ migrate -database "postgres://postgres:123456@localhost:5432/home_decoration?ssl
 ## 迁移开发流程
 
 1. 创建新迁移文件（使用版本号命名）
-2. 编写SQL语句（包含 up 和 down 逻辑）
+2. 编写 SQL 语句
+   - 如果同文件包含 `-- up / -- down`，必须保证 `up` 段独立可执行
 3. 本地测试迁移
 4. 提交代码
-5. 部署时自动执行迁移
+5. 如需随发布自动执行，同步更新 `deploy/scripts/lib/release_common.sh` 的 allowlist
 
 ## 注意事项
 
 - ⚠️ 迁移文件一旦部署到生产环境，不应修改
 - ✅ 如需修正，创建新的迁移文件
-- ✅ 所有迁移应支持回滚（提供down语句）
+- ✅ 如需回滚，优先给出文档化回滚方案；使用 `-- up / -- down` 时，发布链路只会自动执行 `up`
 - ✅ 迁移前备份数据库
 - ✅ 认证 / 短信审计 / 商家入驻历史环境补洞统一执行 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`
 - ⚠️ `public.sql` / `local_backup.sql` 仅为历史快照，不是 schema source of truth

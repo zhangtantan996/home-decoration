@@ -110,28 +110,72 @@ release_postgres_table_exists() {
 
 release_apply_postgres_sql_file() {
   local sql_file="$1"
+  local prepared_sql_file
+  local status=0
 
   if [[ ! -f "${sql_file}" ]]; then
     echo "SQL file not found: ${sql_file}" >&2
     return 1
   fi
 
-  release_compose exec -T db \
-    psql -v ON_ERROR_STOP=1 -U "${DB_USER:-postgres}" -d "${DB_NAME:-home_decoration}" < "${sql_file}"
+  prepared_sql_file="$(mktemp)"
+
+  if grep -Eq '^[[:space:]]*--[[:space:]]+up[[:space:]]*$' "${sql_file}"; then
+    awk '
+      BEGIN { in_up = 0 }
+      /^[[:space:]]*--[[:space:]]+up[[:space:]]*$/ {
+        in_up = 1
+        next
+      }
+      /^[[:space:]]*--[[:space:]]+down[[:space:]]*$/ {
+        exit
+      }
+      in_up {
+        print
+      }
+    ' "${sql_file}" > "${prepared_sql_file}"
+  else
+    cat "${sql_file}" > "${prepared_sql_file}"
+  fi
+
+  if [[ ! -s "${prepared_sql_file}" ]]; then
+    rm -f "${prepared_sql_file}"
+    echo "SQL file has no executable content: ${sql_file}" >&2
+    return 1
+  fi
+
+  if release_compose exec -T db \
+    psql -v ON_ERROR_STOP=1 -U "${DB_USER:-postgres}" -d "${DB_NAME:-home_decoration}" < "${prepared_sql_file}"; then
+    status=0
+  else
+    status=$?
+  fi
+
+  rm -f "${prepared_sql_file}"
+  return "${status}"
 }
 
 release_apply_known_migrations() {
   local migration_files=(
     "server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
     "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
+    "server/migrations/v1.9.12_normalize_provider_price_unit_to_sqm.sql"
+    "server/migrations/v1.9.13_add_official_provider_review_project_link.sql"
+    "server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql"
+    "server/migrations/v1.9.15_add_admin_security_columns.sql"
+    "server/migrations/v1.9.16_add_provider_display_name.sql"
     "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
     "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
     "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
     "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
+    "server/migrations/v1.12.11_hide_legacy_risk_arbitration_menu.sql"
+    "server/migrations/v1.12.12_add_payment_central_runtime.sql"
+    "server/migrations/v1.12.13_add_settlement_and_bond_domains.sql"
     "server/migrations/v1.13.0_add_order_center_menu_and_indexes.sql"
     "server/migrations/v1.13.1_cleanup_duplicate_admin_menus.sql"
     "server/migrations/v1.13.2_add_unique_index_sys_menus_button_permission.sql"
     "server/migrations/v1.13.3_add_supervision_workspace_menu.sql"
+    "server/migrations/v1.13.4_add_public_visibility_switches.sql"
   )
   local migration_file
 

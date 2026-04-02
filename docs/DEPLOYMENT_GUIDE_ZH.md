@@ -43,7 +43,7 @@ Test 回滚命令：
 bash deploy/scripts/rollback_test.sh --tag v1.2.2 --service api
 ```
 
-> 说明：发布脚本负责备份、切 tag、按服务更新和基础验证；**数据库迁移不会由脚本自动执行**，如涉及 schema 变更，必须先按 `docs/DATABASE_MIGRATIONS.md` 受控执行。认证/短信审计/商家入驻统一补洞入口为 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`。
+> 说明：发布脚本负责备份、切 tag、按服务更新和基础验证，并会自动执行 `deploy/scripts/lib/release_common.sh` allowlist 中的正式迁移。allowlist 之外的 schema 变更、数据修复、数据清洗，仍需先按 `docs/DATABASE_MIGRATIONS.md` 受控执行。认证/短信审计/商家入驻统一补洞入口为 `server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql`。
 
 ---
 
