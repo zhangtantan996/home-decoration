@@ -70,7 +70,7 @@ func (s *ProposalService) SubmitProposal(designerID uint64, input *SubmitProposa
 		ConstructionFee:      input.ConstructionFee,
 		MaterialFee:          input.MaterialFee,
 		EstimatedDays:        input.EstimatedDays,
-		Attachments:          input.Attachments,
+		Attachments:          normalizeStoredAssetJSONArray(input.Attachments),
 		InternalDraftJSON:    marshalProposalJSON(buildInternalDraftPayload(input.InternalDraft)),
 		PreviewPackageJSON:   marshalProposalJSON(buildPreviewPackagePayload(input.PreviewPackage, input.DeliveryPackage)),
 		DeliveryPackageJSON:  marshalProposalJSON(buildDeliveryPackagePayload(input.DeliveryPackage, input.Attachments)),
@@ -190,7 +190,7 @@ func normalizeProposalStringSlice(values []string) []string {
 	result := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
+		trimmed := normalizeStoredAsset(value)
 		if trimmed == "" {
 			continue
 		}
@@ -253,12 +253,24 @@ func marshalProposalJSON(value interface{}) string {
 	return string(raw)
 }
 
+func hydrateProposalAssets(proposal *model.Proposal) {
+	if proposal == nil {
+		return
+	}
+
+	proposal.Attachments = hydrateAssetJSONArray(proposal.Attachments)
+	proposal.InternalDraftJSON = hydrateAssetJSONMap(proposal.InternalDraftJSON, "sketchImages", "cadSourceFiles")
+	proposal.PreviewPackageJSON = hydrateAssetJSONMap(proposal.PreviewPackageJSON, "floorPlanImages", "effectPreviewImages", "effectPreviewLinks")
+	proposal.DeliveryPackageJSON = hydrateAssetJSONMap(proposal.DeliveryPackageJSON, "floorPlanImages", "effectImages", "effectLinks", "cadFiles", "attachments")
+}
+
 // GetProposal 获取方案详情
 func (s *ProposalService) GetProposal(proposalID uint64) (*model.Proposal, error) {
 	var proposal model.Proposal
 	if err := repository.DB.First(&proposal, proposalID).Error; err != nil {
 		return nil, errors.New("方案不存在")
 	}
+	hydrateProposalAssets(&proposal)
 	return &proposal, nil
 }
 
@@ -268,6 +280,7 @@ func (s *ProposalService) GetProposalByBooking(bookingID uint64) (*model.Proposa
 	if err := repository.DB.Where("booking_id = ?", bookingID).First(&proposal).Error; err != nil {
 		return nil, errors.New("方案不存在")
 	}
+	hydrateProposalAssets(&proposal)
 	return &proposal, nil
 }
 
@@ -691,7 +704,7 @@ func (s *ProposalService) ResubmitProposal(designerID uint64, input *ResubmitPro
 		ConstructionFee:      input.ConstructionFee,
 		MaterialFee:          input.MaterialFee,
 		EstimatedDays:        input.EstimatedDays,
-		Attachments:          input.Attachments,
+		Attachments:          normalizeStoredAssetJSONArray(input.Attachments),
 		InternalDraftJSON:    marshalProposalJSON(buildInternalDraftPayload(input.InternalDraft)),
 		PreviewPackageJSON:   marshalProposalJSON(buildPreviewPackagePayload(input.PreviewPackage, input.DeliveryPackage)),
 		DeliveryPackageJSON:  marshalProposalJSON(buildDeliveryPackagePayload(input.DeliveryPackage, input.Attachments)),
@@ -749,6 +762,9 @@ func (s *ProposalService) GetProposalVersionHistory(bookingID uint64) ([]model.P
 		Order("version DESC").
 		Find(&proposals).Error; err != nil {
 		return nil, err
+	}
+	for index := range proposals {
+		hydrateProposalAssets(&proposals[index])
 	}
 	return proposals, nil
 }
@@ -1232,6 +1248,9 @@ func (s *ProposalService) ListProposalsByDesigner(designerID uint64) ([]model.Pr
 	if err := repository.DB.Where("designer_id = ?", designerID).Order("created_at DESC").Find(&proposals).Error; err != nil {
 		return nil, err
 	}
+	for index := range proposals {
+		hydrateProposalAssets(&proposals[index])
+	}
 	return proposals, nil
 }
 
@@ -1260,6 +1279,9 @@ func (s *ProposalService) ListProposalsByUser(userID uint64) ([]model.Proposal, 
 	}
 	if err := query.Order("created_at DESC").Find(&proposals).Error; err != nil {
 		return nil, err
+	}
+	for index := range proposals {
+		hydrateProposalAssets(&proposals[index])
 	}
 	return proposals, nil
 }

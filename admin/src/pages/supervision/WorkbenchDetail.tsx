@@ -33,6 +33,7 @@ import {
 } from '../../services/api';
 import { usePermission } from '../../hooks/usePermission';
 import { toAbsoluteAssetUrl } from '../../utils/env';
+import { type AdminUploadedAsset, buildUploadedAssetFile, getStoredPathFromUploadFile } from '../../utils/uploadAsset';
 import { formatServerDate, formatServerDateTime } from '../../utils/serverTime';
 
 const { Text, Title } = Typography;
@@ -80,9 +81,7 @@ const pickInitialPhase = (phases: AdminSupervisionPhase[]) =>
   || phases[0];
 
 const getUploadedLogPhoto = (file: UploadFile) => {
-  const response = file.response as { url?: string } | undefined;
-  if (response?.url) return response.url;
-  return file.url || '';
+  return getStoredPathFromUploadFile(file as UploadFile<AdminUploadedAsset>);
 };
 
 const supportedLogImageTypes = new Set([
@@ -260,36 +259,21 @@ const WorkbenchDetail: React.FC = () => {
     logForm.resetFields();
   };
 
-  const uploadLogImage = async (file: RcFile): Promise<string> => {
-    const result = await adminUploadApi.uploadImage(file as File) as unknown as {
-      code: number;
-      message?: string;
-      data?: {
-        url?: string;
-      };
-    };
-
-    if (result.code === 0 && result.data?.url) {
-      return result.data.url;
+  const uploadLogImage = async (file: RcFile): Promise<AdminUploadedAsset> => {
+    const result = await adminUploadApi.uploadImageData(file as File);
+    if (result.url) {
+      return result;
     }
-
-    throw new Error(result.message || '图片上传失败');
+    throw new Error('图片上传失败');
   };
 
   const handleLogImageUpload: UploadProps['customRequest'] = async ({ file, onSuccess, onError }) => {
     try {
       setUploadingLogImages(true);
-      const url = await uploadLogImage(file as RcFile);
-      const nextFile: UploadFile = {
-        uid: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        name: (file as RcFile).name || 'log-image',
-        status: 'done',
-        url: toAbsoluteAssetUrl(url),
-        thumbUrl: toAbsoluteAssetUrl(url),
-        response: { url },
-      };
+      const uploaded = await uploadLogImage(file as RcFile);
+      const nextFile: UploadFile = buildUploadedAssetFile(uploaded, (file as RcFile).name || 'log-image');
       setLogImageList((prev) => [...prev, nextFile]);
-      onSuccess?.({ url });
+      onSuccess?.(uploaded);
       message.success('图片上传成功');
     } catch (error) {
       message.error(error instanceof Error ? error.message : '图片上传失败');

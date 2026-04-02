@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"home-decoration-server/internal/model"
-	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
@@ -123,9 +121,9 @@ func GetDesignDeliverable(c *gin.Context) {
 		return
 	}
 
-	var deliverable model.DesignDeliverable
-	if err := repository.DB.Where("project_id = ?", projectID).Order("created_at DESC").First(&deliverable).Error; err != nil {
-		response.BadRequest(c, "未找到设计交付物")
+	deliverable, err := designPaymentService.GetDesignDeliverableByProject(projectID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 

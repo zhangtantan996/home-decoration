@@ -145,14 +145,16 @@ const BookingCreatePage: React.FC = () => {
     const provider = providerDetail?.provider;
     const user = providerDetail?.user;
     const displayName =
-      user?.nickname ||
+      provider?.displayName ||
+      providerDetail?.displayName ||
       providerDetail?.nickname ||
       provider?.companyName ||
       providerDetail?.companyName ||
+      user?.nickname ||
       providerName ||
       '服务商';
     const avatar =
-      normalizeMediaUrl(user?.avatar || provider?.avatar || providerDetail?.avatar || provider?.coverImage || providerDetail?.coverImage || '');
+      normalizeMediaUrl(provider?.avatar || providerDetail?.avatar || provider?.coverImage || providerDetail?.coverImage || user?.avatar || '');
     const rating = Number(provider?.rating ?? providerDetail?.rating ?? 0);
     const yearsExperience = Number(provider?.yearsExperience ?? 0);
     const specialty = String(provider?.specialty || providerDetail?.specialty || '')

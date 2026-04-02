@@ -283,9 +283,13 @@ func Load() (*Config, error) {
 	viper.SetDefault("admin_auth.login_lock_minutes", 30)
 	viper.SetDefault("admin_auth.password_min_length", 10)
 	viper.SetDefault("admin_auth.password_max_age_days", 90)
-	viper.SetDefault("admin_auth.totp_enabled", true)
+	viper.SetDefault("admin_auth.totp_enabled", !IsLocalLikeAppEnv())
 	viper.SetDefault("admin_auth.totp_issuer", "禾泽云管理后台")
-	viper.SetDefault("admin_auth.required_role_keys", "*")
+	if IsLocalLikeAppEnv() {
+		viper.SetDefault("admin_auth.required_role_keys", "")
+	} else {
+		viper.SetDefault("admin_auth.required_role_keys", "*")
+	}
 	viper.SetDefault("admin_auth.reauth_ttl_minutes", 10)
 	viper.SetDefault("admin_auth.max_active_sessions", 5)
 	viper.SetDefault("admin_auth.api_ip_enforced", false)

@@ -27,11 +27,12 @@ import {
     WalletOutlined,
 } from '@ant-design/icons';
 import ImgCrop from 'antd-img-crop';
-import type { UploadProps } from 'antd';
+import type { UploadFile, UploadProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {
     merchantAuthApi,
     merchantUploadApi,
+    type MerchantUploadResult,
     type MerchantProviderInfo,
     type MerchantServiceSetting,
 } from '../../services/merchantApi';
@@ -39,6 +40,13 @@ import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
+import {
+    buildStoredAssetFile,
+    getStoredPathFromUploadFile,
+    getUploadedAssetPreviewUrl,
+    getUploadedAssetStoredPath,
+    normalizeStoredAssetValues,
+} from '../../utils/uploadAsset';
 
 const FOREMAN_HIGHLIGHT_OPTIONS = [
     '工期可控',
@@ -90,13 +98,10 @@ const getErrorMessage = (error: unknown, fallback: string) => {
     return maybeAxiosError.response?.data?.message || fallback;
 };
 
-const toAlbumFileList = (urls: string[] = []) => urls.map((url, index) => ({
-    uid: `${index}-${url}`,
-    name: `company-album-${index + 1}`,
-    status: 'done' as const,
-    url,
-    response: { url },
-}));
+const toAlbumFileList = (urls: string[] = []) =>
+    urls
+        .map((value, index) => buildStoredAssetFile(value, `${index}-${value}`))
+        .filter(Boolean) as Array<UploadFile<MerchantUploadResult>>;
 
 const pickPositiveNumber = (value: unknown) => {
     const numeric = Number(value);
@@ -355,7 +360,7 @@ const MerchantSettings: React.FC = () => {
                 introduction: info.introduction,
                 teamSize: info.teamSize,
                 officeAddress: info.officeAddress,
-                companyAlbum: info.companyAlbum || [],
+                companyAlbum: normalizeStoredAssetValues(info.companyAlbum || []),
             });
             settingForm.setFieldValue('surveyDepositPrice', info.surveyDepositPrice || 0);
         } catch (error) {
@@ -442,7 +447,7 @@ const MerchantSettings: React.FC = () => {
         }
 
         if (isCompanyRole) {
-            payload.companyAlbum = values.companyAlbum || [];
+            payload.companyAlbum = normalizeStoredAssetValues(values.companyAlbum || []);
         }
 
         const providerPatch: Partial<MerchantProviderInfo> = {
@@ -465,7 +470,7 @@ const MerchantSettings: React.FC = () => {
         }
 
         if (isCompanyRole) {
-            providerPatch.companyAlbum = values.companyAlbum || [];
+            providerPatch.companyAlbum = normalizeStoredAssetValues(values.companyAlbum || []);
         }
 
         return {
@@ -612,7 +617,7 @@ const MerchantSettings: React.FC = () => {
         setAvatarUploading(true);
         try {
             const uploaded = await merchantUploadApi.uploadAvatarData(file as File);
-            const uploadedUrl = uploaded.url;
+            const uploadedUrl = getUploadedAssetPreviewUrl(uploaded);
 
             setProviderInfo((prev) => (prev ? { ...prev, avatar: uploadedUrl } : prev));
             updateSessionProvider({ avatar: uploadedUrl });
@@ -632,9 +637,10 @@ const MerchantSettings: React.FC = () => {
         const { file, onSuccess, onError } = options;
         try {
             const uploaded = await merchantUploadApi.uploadImageData(file as File);
-            const current = (infoForm.getFieldValue('companyAlbum') || []) as string[];
-            if (!current.includes(uploaded.url)) {
-                infoForm.setFieldValue('companyAlbum', [...current, uploaded.url].slice(0, 8));
+            const storedPath = getUploadedAssetStoredPath(uploaded);
+            const current = normalizeStoredAssetValues((infoForm.getFieldValue('companyAlbum') || []) as string[]);
+            if (storedPath && !current.includes(storedPath)) {
+                infoForm.setFieldValue('companyAlbum', [...current, storedPath].slice(0, 8));
             }
             onSuccess?.(uploaded);
         } catch (error) {
@@ -1086,14 +1092,14 @@ const MerchantSettings: React.FC = () => {
                                                                 beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.showcase)}
                                                                 customRequest={handleCompanyAlbumUpload}
                                                                 onChange={({ fileList }) => {
-                                                                    const next = fileList
-                                                                        .map((file) => (file.response as { url?: string } | undefined)?.url || file.url || '')
-                                                                        .filter(Boolean);
+                                                                    const next = normalizeStoredAssetValues(
+                                                                        fileList.map((file) => getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>)),
+                                                                    );
                                                                     infoForm.setFieldValue('companyAlbum', next);
                                                                 }}
                                                                 onRemove={(file) => {
                                                                     const current = (infoForm.getFieldValue('companyAlbum') || []) as string[];
-                                                                    const target = (file.response as { url?: string } | undefined)?.url || file.url || '';
+                                                                    const target = getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>);
                                                                     infoForm.setFieldValue('companyAlbum', current.filter((item) => item !== target));
                                                                     return true;
                                                                 }}

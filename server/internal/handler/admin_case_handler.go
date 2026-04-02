@@ -13,6 +13,42 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func normalizeAdminCasePayload(
+	coverImage *string,
+	style *string,
+	layout *string,
+	area *string,
+	quoteCurrency *string,
+	year *string,
+	description *string,
+	images *[]string,
+) {
+	if coverImage != nil {
+		*coverImage = normalizeStoredAsset(*coverImage)
+	}
+	if style != nil {
+		*style = strings.TrimSpace(*style)
+	}
+	if layout != nil {
+		*layout = strings.TrimSpace(*layout)
+	}
+	if area != nil {
+		*area = strings.TrimSpace(*area)
+	}
+	if quoteCurrency != nil {
+		*quoteCurrency = strings.TrimSpace(*quoteCurrency)
+	}
+	if year != nil {
+		*year = strings.TrimSpace(*year)
+	}
+	if description != nil {
+		*description = strings.TrimSpace(*description)
+	}
+	if images != nil {
+		*images = normalizeStoredAssetSlice(*images)
+	}
+}
+
 // ==================== 管理员作品管理 ====================
 
 func buildAdminCaseProviderName(providerID uint64) string {
@@ -173,6 +209,7 @@ func AdminCreateCase(c *gin.Context) {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
 	}
+	normalizeAdminCasePayload(&input.CoverImage, &input.Style, &input.Layout, &input.Area, &input.QuoteCurrency, &input.Year, &input.Description, &input.Images)
 
 	if strings.TrimSpace(input.Layout) == "" {
 		// Keep layout always present for downstream filtering & display.
@@ -274,6 +311,7 @@ func AdminUpdateCase(c *gin.Context) {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
 	}
+	normalizeAdminCasePayload(&input.CoverImage, &input.Style, &input.Layout, &input.Area, &input.QuoteCurrency, &input.Year, &input.Description, &input.Images)
 
 	if strings.TrimSpace(input.Layout) == "" {
 		input.Layout = "其他"

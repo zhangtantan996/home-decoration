@@ -36,6 +36,26 @@ class SimpleEventEmitter {
 }
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const LOCAL_ASSET_PREFIXES = ['/uploads/', '/static/'];
+
+const normalizeStoredAssetPath = (value?: string) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return '';
+    if (LOCAL_ASSET_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
+        return trimmed;
+    }
+    if (/^https?:\/\//i.test(trimmed)) {
+        try {
+            const parsed = new URL(trimmed);
+            if (LOCAL_ASSET_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix))) {
+                return parsed.pathname;
+            }
+        } catch {
+            return trimmed;
+        }
+    }
+    return trimmed;
+};
 
 const hasExplicitPort = (host: string): boolean => /:\d+$/.test(host) || /\]:\d+$/.test(host);
 
@@ -730,7 +750,7 @@ class TinodeService extends SimpleEventEmitter {
                         tp: 'IM',
                         data: {
                             mime: 'image/jpeg',
-                            val: uploadResult.url,
+                            val: uploadResult.path,
                             width: uploadResult.width,
                             height: uploadResult.height,
                         },
@@ -799,7 +819,7 @@ class TinodeService extends SimpleEventEmitter {
                         tp: 'EX',
                         data: {
                             mime: mimeType,
-                            val: uploadResult.url,
+                            val: uploadResult.path,
                             name: safeFileName,
                             size: typeof size === 'number' ? size : 0,
                         },
@@ -867,7 +887,7 @@ class TinodeService extends SimpleEventEmitter {
                     tp: 'EX',
                     data: {
                         mime: mimeType,
-                        val: uploadResult.url,
+                        val: uploadResult.path,
                         name: fileName,
                         size: fileSize,
                         duration: duration,
@@ -927,7 +947,8 @@ class TinodeService extends SimpleEventEmitter {
 
         const data = payload?.data ?? payload;
 
-        let imageUrl = data?.url || data?.path;
+        const storedPath = normalizeStoredAssetPath(data?.path || data?.url);
+        let imageUrl = data?.url || storedPath;
         if (imageUrl && typeof imageUrl === 'string' && !imageUrl.startsWith('http')) {
             const baseUrl = getApiBaseUrl();
             imageUrl = imageUrl.startsWith('/') ? `${baseUrl}${imageUrl}` : `${baseUrl}/${imageUrl}`;
@@ -935,6 +956,7 @@ class TinodeService extends SimpleEventEmitter {
 
         return {
             url: imageUrl,
+            path: storedPath || imageUrl,
             width: data?.width,
             height: data?.height,
         };

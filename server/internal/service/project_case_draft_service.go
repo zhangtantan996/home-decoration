@@ -108,6 +108,7 @@ func GenerateCaseDraftFromProjectTx(tx *gorm.DB, projectID, providerID uint64, r
 	if len(images) == 0 {
 		return nil, nil, fmt.Errorf("缺少可保存到灵感案例的图片")
 	}
+	images = normalizeStoredAssetSlice(images)
 
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
@@ -121,6 +122,7 @@ func GenerateCaseDraftFromProjectTx(tx *gorm.DB, projectID, providerID uint64, r
 	if coverImage == "" {
 		coverImage = images[0]
 	}
+	coverImage = normalizeStoredAsset(coverImage)
 
 	style := strings.TrimSpace(req.Style)
 	if style == "" {

@@ -218,12 +218,8 @@ func ensureRuntimeSchemaColumns() error {
 	}
 
 	for _, runtimeTable := range runtimeTables {
-		if DB.Migrator().HasTable(runtimeTable.model) {
-			continue
-		}
-		log.Printf("Runtime schema table missing, creating: %s", runtimeTable.name)
-		if err := DB.AutoMigrate(runtimeTable.model); err != nil {
-			return fmt.Errorf("create runtime schema table %s: %w", runtimeTable.name, err)
+		if err := ensureTableColumns(runtimeTable.name, runtimeTable.model); err != nil {
+			return err
 		}
 	}
 
@@ -255,6 +251,11 @@ func ensureRuntimeSchemaColumns() error {
 	}
 
 	if DB.Migrator().HasTable(&model.Provider{}) {
+		if !DB.Migrator().HasColumn(&model.Provider{}, "DisplayName") {
+			if err := DB.Migrator().AddColumn(&model.Provider{}, "DisplayName"); err != nil {
+				return fmt.Errorf("add providers.display_name: %w", err)
+			}
+		}
 		if DB.Migrator().HasColumn(&model.Provider{}, "PlatformDisplayEnabled") {
 			if err := DB.Exec(`UPDATE providers SET platform_display_enabled = true WHERE platform_display_enabled IS NULL`).Error; err != nil {
 				return err
@@ -263,6 +264,47 @@ func ensureRuntimeSchemaColumns() error {
 		if DB.Migrator().HasColumn(&model.Provider{}, "MerchantDisplayEnabled") {
 			if err := DB.Exec(`UPDATE providers SET merchant_display_enabled = true WHERE merchant_display_enabled IS NULL`).Error; err != nil {
 				return err
+			}
+		}
+		type providerDisplayNameBackfillRow struct {
+			ID           uint64
+			UserID       uint64
+			ProviderType int8
+			CompanyName  string
+		}
+		var providers []providerDisplayNameBackfillRow
+		if err := DB.Model(&model.Provider{}).
+			Select("id", "user_id", "provider_type", "company_name").
+			Where("COALESCE(display_name, '') = ''").
+			Find(&providers).Error; err != nil {
+			return fmt.Errorf("load providers for display_name backfill: %w", err)
+		}
+		for _, provider := range providers {
+			displayName := ""
+			if provider.UserID > 0 {
+				var user model.User
+				if err := DB.Select("id", "nickname").First(&user, provider.UserID).Error; err == nil {
+					if provider.ProviderType == 2 {
+						displayName = strings.TrimSpace(provider.CompanyName)
+						if displayName == "" {
+							displayName = strings.TrimSpace(user.Nickname)
+						}
+					} else {
+						displayName = strings.TrimSpace(user.Nickname)
+						if displayName == "" {
+							displayName = strings.TrimSpace(provider.CompanyName)
+						}
+					}
+				}
+			}
+			if displayName == "" {
+				displayName = strings.TrimSpace(provider.CompanyName)
+			}
+			if displayName == "" {
+				continue
+			}
+			if err := DB.Model(&model.Provider{}).Where("id = ?", provider.ID).UpdateColumn("display_name", displayName).Error; err != nil {
+				return fmt.Errorf("backfill providers.display_name for %d: %w", provider.ID, err)
 			}
 		}
 	}
@@ -353,20 +395,56 @@ func ensureRuntimeSchemaColumns() error {
 		}
 	}
 
-	onboardingModels := []interface{}{
-		&model.MerchantApplication{},
-		&model.Provider{},
-		&model.MaterialShopApplication{},
-		&model.MaterialShopApplicationProduct{},
-		&model.MaterialShop{},
-		&model.MaterialShopProduct{},
-		&model.MerchantServiceSetting{},
-		&model.MaterialShopServiceSetting{},
+	onboardingTables := []struct {
+		name  string
+		model interface{}
+	}{
+		{name: "merchant_applications", model: &model.MerchantApplication{}},
+		{name: "providers", model: &model.Provider{}},
+		{name: "material_shop_applications", model: &model.MaterialShopApplication{}},
+		{name: "material_shop_application_products", model: &model.MaterialShopApplicationProduct{}},
+		{name: "material_shops", model: &model.MaterialShop{}},
+		{name: "material_shop_products", model: &model.MaterialShopProduct{}},
+		{name: "merchant_service_settings", model: &model.MerchantServiceSetting{}},
+		{name: "material_shop_service_settings", model: &model.MaterialShopServiceSetting{}},
 	}
 
-	for _, onboardingModel := range onboardingModels {
-		if err := DB.AutoMigrate(onboardingModel); err != nil {
-			return fmt.Errorf("align onboarding runtime schema %T: %w", onboardingModel, err)
+	for _, onboardingTable := range onboardingTables {
+		if err := ensureTableColumns(onboardingTable.name, onboardingTable.model); err != nil {
+			return fmt.Errorf("align onboarding runtime schema %s: %w", onboardingTable.name, err)
+		}
+	}
+
+	return nil
+}
+
+func ensureTableColumns(tableName string, runtimeModel interface{}) error {
+	if DB == nil {
+		return nil
+	}
+
+	if !DB.Migrator().HasTable(runtimeModel) {
+		log.Printf("Runtime schema table missing, creating: %s", tableName)
+		if err := DB.AutoMigrate(runtimeModel); err != nil {
+			return fmt.Errorf("create runtime schema table %s: %w", tableName, err)
+		}
+		return nil
+	}
+
+	stmt := &gorm.Statement{DB: DB}
+	if err := stmt.Parse(runtimeModel); err != nil {
+		return fmt.Errorf("parse runtime schema %s: %w", tableName, err)
+	}
+
+	for _, field := range stmt.Schema.Fields {
+		if field == nil || field.DBName == "" || field.IgnoreMigration {
+			continue
+		}
+		if DB.Migrator().HasColumn(runtimeModel, field.Name) {
+			continue
+		}
+		if err := DB.Migrator().AddColumn(runtimeModel, field.Name); err != nil {
+			return fmt.Errorf("add %s.%s: %w", tableName, field.DBName, err)
 		}
 	}
 

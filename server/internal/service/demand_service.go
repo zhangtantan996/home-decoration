@@ -203,11 +203,12 @@ func toAttachmentsJSON(items []DemandAttachmentInput) string {
 	}
 	filtered := make([]DemandAttachmentInput, 0, len(items))
 	for _, item := range items {
-		if strings.TrimSpace(item.URL) == "" {
+		normalizedURL := normalizeStoredAsset(item.URL)
+		if normalizedURL == "" {
 			continue
 		}
 		filtered = append(filtered, DemandAttachmentInput{
-			URL:  strings.TrimSpace(item.URL),
+			URL:  normalizedURL,
 			Name: strings.TrimSpace(item.Name),
 			Size: item.Size,
 		})
@@ -228,6 +229,9 @@ func parseDemandAttachments(raw string) []DemandAttachmentInput {
 	}
 	var items []DemandAttachmentInput
 	if err := json.Unmarshal([]byte(raw), &items); err == nil {
+		for i := range items {
+			items[i].URL = imgutil.GetFullImageURL(items[i].URL)
+		}
 		return items
 	}
 	return []DemandAttachmentInput{}
@@ -276,18 +280,12 @@ func buildDemandSummary(demand *model.Demand) DemandSummary {
 }
 
 func buildProviderSummary(provider model.Provider, user model.User) DemandProviderSummary {
-	name := strings.TrimSpace(user.Nickname)
-	if name == "" {
-		name = strings.TrimSpace(provider.CompanyName)
-	}
-	if name == "" && len(user.Phone) >= 4 {
-		name = "用户" + user.Phone[len(user.Phone)-4:]
-	}
+	name := ResolveProviderDisplayName(provider, &user)
 	return DemandProviderSummary{
 		ID:              provider.ID,
 		UserID:          provider.UserID,
 		Name:            name,
-		Avatar:          imgutil.GetFullImageURL(user.Avatar),
+		Avatar:          imgutil.GetFullImageURL(ResolveProviderAvatarPathWithUser(provider, &user)),
 		Rating:          provider.Rating,
 		CompletedCnt:    provider.CompletedCnt,
 		Verified:        provider.Verified,

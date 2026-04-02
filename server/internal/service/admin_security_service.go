@@ -120,6 +120,10 @@ func NewAdminSecurityService() *AdminSecurityService {
 	return &AdminSecurityService{cfg: config.GetConfig()}
 }
 
+func (s *AdminSecurityService) IsSetupEnforced() bool {
+	return !config.IsLocalLikeAppEnv()
+}
+
 func (s *AdminSecurityService) AccessTokenTTL() time.Duration {
 	minutes := s.cfg.AdminAuth.AccessTokenMinutes
 	if minutes <= 0 {
@@ -210,6 +214,9 @@ func (s *AdminSecurityService) RequiredRoleKeys() map[string]struct{} {
 }
 
 func (s *AdminSecurityService) AdminRequiresTwoFactor(admin *model.SysAdmin) bool {
+	if !s.IsSetupEnforced() {
+		return false
+	}
 	if admin == nil || !s.cfg.AdminAuth.TOTPEnabled {
 		return false
 	}
@@ -232,6 +239,16 @@ func (s *AdminSecurityService) AdminRequiresTwoFactor(admin *model.SysAdmin) boo
 }
 
 func (s *AdminSecurityService) ResolveSecurityStatus(admin *model.SysAdmin) AdminSecurityStatus {
+	if !s.IsSetupEnforced() {
+		return AdminSecurityStatus{
+			LoginStage:            AdminLoginStageActive,
+			SecuritySetupRequired: false,
+			MustResetPassword:     false,
+			TwoFactorEnabled:      admin != nil && admin.TwoFactorEnabled,
+			TwoFactorRequired:     false,
+			PasswordExpired:       false,
+		}
+	}
 	requiresTwoFactor := s.AdminRequiresTwoFactor(admin)
 	passwordExpired := s.IsPasswordExpired(admin)
 	setupRequired := admin == nil || admin.MustResetPassword || passwordExpired || (requiresTwoFactor && !admin.TwoFactorEnabled)

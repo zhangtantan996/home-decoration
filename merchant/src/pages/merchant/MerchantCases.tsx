@@ -20,6 +20,7 @@ import {
 import { dictionaryApi } from '../../services/dictionaryApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
+import { getUploadedAssetStoredPath } from '../../utils/uploadAsset';
 import { formatServerDateTime, getServerTimeMs } from '../../utils/serverTime';
 
 interface CaseItem {
@@ -723,7 +724,7 @@ const MerchantCases: React.FC = () => {
         setCoverFileList(fileList);
         // Extract relative URL from response if upload is done
         if (fileList.length > 0 && fileList[0].status === 'done' && fileList[0].response) {
-            form.setFieldValue('coverImage', fileList[0].response.url);
+            form.setFieldValue('coverImage', getUploadedAssetStoredPath(fileList[0].response, fileList[0].url));
         } else if (fileList.length === 0) {
             form.setFieldValue('coverImage', '');
         }
@@ -734,7 +735,7 @@ const MerchantCases: React.FC = () => {
         // Extract all relative URLs
         const urls = fileList
             .filter(file => file.status === 'done' && file.response)
-            .map(file => file.response.url);
+            .map(file => getUploadedAssetStoredPath(file.response, file.url));
         form.setFieldValue('images', urls);
         if (isForeman) {
             form.setFieldValue('coverImage', urls[0] || '');

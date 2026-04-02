@@ -3,6 +3,7 @@ package handler
 import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"log"
@@ -29,19 +30,12 @@ func GetBooking(c *gin.Context) {
 		var user model.User
 		repository.DB.First(&user, provider.UserID)
 
-		// 获取显示名称：前端统一优先展示账号昵称
-		displayName := user.Nickname
-		if displayName == "" {
-			displayName = provider.CompanyName
-		}
-		if displayName == "" && len(user.Phone) >= 4 {
-			displayName = "用户" + user.Phone[len(user.Phone)-4:]
-		}
+		displayName := service.ResolveProviderDisplayName(provider, &user)
 
 		providerInfo = gin.H{
 			"id":              provider.ID,
 			"name":            displayName,
-			"avatar":          imgutil.GetFullImageURL(user.Avatar),
+			"avatar":          imgutil.GetFullImageURL(service.ResolveProviderAvatarPathWithUser(provider, &user)),
 			"rating":          provider.Rating,
 			"completedCnt":    provider.CompletedCnt,
 			"yearsExperience": provider.YearsExperience,

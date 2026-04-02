@@ -7,6 +7,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 )
 
 type ComplaintService struct{}
@@ -23,7 +24,7 @@ func marshalStringList(items []string) string {
 	if len(items) == 0 {
 		return "[]"
 	}
-	payload, err := json.Marshal(items)
+	payload, err := json.Marshal(normalizeStoredAssetSlice(items))
 	if err != nil {
 		return "[]"
 	}
@@ -143,7 +144,7 @@ func ParseStringList(raw string) []string {
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		return []string{}
 	}
-	return items
+	return imgutil.GetFullImageURLs(items)
 }
 
 func FormatTime(value time.Time) string {

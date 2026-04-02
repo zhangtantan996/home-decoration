@@ -12,6 +12,7 @@ import { isMerchantConflictError } from '../../services/api';
 import { merchantProjectApi, merchantUploadApi, type MerchantProjectExecutionDetail, type MerchantProjectMilestone, type MerchantProjectPhase } from '../../services/merchantApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { formatServerDate, formatServerDateTime } from '../../utils/serverTime';
+import { getStoredPathFromUploadFile } from '../../utils/uploadAsset';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -149,7 +150,7 @@ const MerchantProjectExecution: React.FC = () => {
   const uploadLogImage: UploadProps['customRequest'] = async (options) => {
     try {
       const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
-      options.onSuccess?.({ url: uploaded.url });
+      options.onSuccess?.(uploaded);
     } catch (error: any) {
       const errorMessage = error?.message || '上传失败';
       message.error(errorMessage);
@@ -162,10 +163,7 @@ const MerchantProjectExecution: React.FC = () => {
       const values = await logForm.validateFields();
       setLogSubmitting(true);
       const photos = logFileList
-        .map((file) => {
-          const response = file.response as { url?: string } | undefined;
-          return response?.url || file.url;
-        })
+        .map((file) => getStoredPathFromUploadFile(file as UploadFile<any>))
         .filter((url): url is string => Boolean(url));
       await merchantProjectApi.createLog(projectId, {
         phaseId: Number(values.phaseId),
@@ -204,10 +202,7 @@ const MerchantProjectExecution: React.FC = () => {
     try {
       const values = await completionForm.validateFields();
       const photos = completionFileList
-        .map((file) => {
-          const response = file.response as { url?: string } | undefined;
-          return response?.url || file.url;
-        })
+        .map((file) => getStoredPathFromUploadFile(file as UploadFile<any>))
         .filter((url): url is string => Boolean(url));
       setCompletionSubmitting(true);
       await merchantProjectApi.complete(projectId, {

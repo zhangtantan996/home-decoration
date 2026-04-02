@@ -30,6 +30,7 @@ import {
 } from '../../services/merchantApi';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
+import { getUploadedAssetPreviewUrl, getUploadedAssetStoredPath } from '../../utils/uploadAsset';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
 
 const { TextArea } = Input;
@@ -157,9 +158,11 @@ const MaterialShopSettings: React.FC = () => {
         setAvatarUploading(true);
         try {
             const uploaded = await merchantUploadApi.uploadImageData(file as File);
-            await materialShopCenterApi.updateMe({ avatar: uploaded.url });
-            setProfile((current) => (current ? { ...current, avatar: uploaded.url } : current));
-            updateSessionProvider({ avatar: uploaded.url });
+            const storedPath = getUploadedAssetStoredPath(uploaded);
+            const previewUrl = getUploadedAssetPreviewUrl(uploaded);
+            await materialShopCenterApi.updateMe({ avatar: storedPath });
+            setProfile((current) => (current ? { ...current, avatar: previewUrl || current.avatar } : current));
+            updateSessionProvider({ avatar: previewUrl || storedPath });
             message.success('店铺头像已更新');
             onSuccess?.(uploaded);
         } catch (error) {

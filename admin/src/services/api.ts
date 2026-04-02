@@ -1139,7 +1139,11 @@ export const adminUserApi = {
     keyword?: string;
     userType?: number;
     roleType?: string;
-  }) => api.get("/admin/users", { params }),
+  }) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminUserListItem>>,
+      AdminApiResponse<AdminListData<AdminUserListItem>>
+    >("/admin/users", { params }),
   detail: (id: number) => api.get(`/admin/users/${id}`),
   create: (data: any) => api.post("/admin/users", data),
   update: (id: number, data: any) => api.put(`/admin/users/${id}`, data),
@@ -1149,6 +1153,39 @@ export const adminUserApi = {
   batchDelete: (userIds: number[], verificationText: string) =>
     api.post("/admin/users/batch-delete", { userIds, verificationText }),
 };
+
+export type AdminAccountStatus = "unbound" | "active" | "disabled";
+export type AdminLoginStatus =
+  | "unbound"
+  | "enabled"
+  | "disabled_by_account"
+  | "disabled_by_entity";
+export type AdminOperatingStatus =
+  | "unopened"
+  | "restricted"
+  | "active"
+  | "frozen";
+export type AdminOnboardingStatus =
+  | "none"
+  | "required"
+  | "pending_review"
+  | "rejected"
+  | "approved";
+
+export interface AdminUserListItem {
+  id: number;
+  phone: string;
+  nickname: string;
+  avatar?: string;
+  userType: number;
+  roleType?: string;
+  roleLabel?: string;
+  status: number;
+  primaryEntityType?: "provider" | "material_shop";
+  primaryEntityId?: number;
+  primaryEntityName?: string;
+  createdAt: string;
+}
 
 export interface AdminProviderListItem {
   id: number;
@@ -1179,9 +1216,12 @@ export interface AdminProviderListItem {
   collectedSource?: string;
   sourceLabel?: string;
   accountBound?: boolean;
+  accountStatus?: AdminAccountStatus;
+  loginStatus?: AdminLoginStatus;
   loginEnabled?: boolean;
   completionRequired?: boolean;
-  onboardingStatus?: string;
+  onboardingStatus?: AdminOnboardingStatus;
+  operatingStatus?: AdminOperatingStatus;
   operatingEnabled?: boolean;
   platformDisplayEnabled?: boolean;
   merchantDisplayEnabled?: boolean;
@@ -1217,9 +1257,12 @@ export interface AdminMaterialShopListItem {
   userPhone?: string;
   userNickname?: string;
   accountBound?: boolean;
+  accountStatus?: AdminAccountStatus;
+  loginStatus?: AdminLoginStatus;
   loginEnabled?: boolean;
   completionRequired?: boolean;
-  onboardingStatus?: string;
+  onboardingStatus?: AdminOnboardingStatus;
+  operatingStatus?: AdminOperatingStatus;
   operatingEnabled?: boolean;
   platformDisplayEnabled?: boolean;
   merchantDisplayEnabled?: boolean;
@@ -1266,6 +1309,9 @@ export const adminProviderApi = {
     type?: number;
     verified?: boolean;
     isSettled?: boolean;
+    accountStatus?: AdminAccountStatus;
+    onboardingStatus?: AdminOnboardingStatus;
+    operatingStatus?: AdminOperatingStatus;
   }) =>
     api.get<
       AdminApiResponse<AdminListData<AdminProviderListItem>>,
@@ -1308,6 +1354,9 @@ export const adminMaterialShopApi = {
     pageSize?: number;
     type?: string;
     isSettled?: boolean;
+    accountStatus?: AdminAccountStatus;
+    onboardingStatus?: AdminOnboardingStatus;
+    operatingStatus?: AdminOperatingStatus;
   }) =>
     api.get<
       AdminApiResponse<AdminListData<AdminMaterialShopListItem>>,
@@ -1959,6 +2008,19 @@ export const adminUploadApi = {
         "Content-Type": "multipart/form-data",
       },
     });
+  },
+  uploadImageData: async (file: File) => {
+    const result = await adminUploadApi.uploadImage(file) as unknown as {
+      code: number;
+      message?: string;
+      data?: AdminUploadResult;
+    };
+
+    if (result.code === 0 && result.data) {
+      return result.data;
+    }
+
+    throw new AdminApiError(result.message || '上传失败');
   },
 };
 

@@ -18,5 +18,5 @@ export async function uploadFile(filePath: string, formData?: Record<string, str
   if (payload?.code !== 0) {
     throw new Error(payload?.message || '上传失败');
   }
-  return payload.data as { url: string; filename: string; size: number; type: string };
+  return payload.data as { url: string; path?: string; filename: string; size: number; type: string };
 }

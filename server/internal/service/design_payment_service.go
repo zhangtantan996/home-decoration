@@ -241,12 +241,13 @@ func (s *DesignPaymentService) UploadWorkingDoc(providerID, bookingID uint64, in
 		DocType:     input.DocType,
 		Title:       input.Title,
 		Description: input.Description,
-		Files:       input.Files,
+		Files:       normalizeStoredAssetJSONArray(input.Files),
 		SubmittedAt: &now,
 	}
 	if err := repository.DB.Create(doc).Error; err != nil {
 		return nil, errors.New("创建文档记录失败")
 	}
+	hydrateDesignWorkingDoc(doc)
 	return doc, nil
 }
 
@@ -259,6 +260,9 @@ func (s *DesignPaymentService) ListWorkingDocs(bookingID uint64) ([]model.Design
 	if err := repository.DB.Where("booking_id = ?", bookingID).
 		Order("created_at DESC").Find(&docs).Error; err != nil {
 		return nil, err
+	}
+	for index := range docs {
+		hydrateDesignWorkingDoc(&docs[index])
 	}
 	return docs, nil
 }
@@ -515,12 +519,12 @@ func (s *DesignPaymentService) SubmitDesignDeliverable(providerID uint64, input 
 			ProjectID:       input.ProjectID,
 			OrderID:         input.OrderID,
 			ProviderID:      providerID,
-			ColorFloorPlan:  input.ColorFloorPlan,
-			Renderings:      input.Renderings,
+			ColorFloorPlan:  normalizeStoredAssetJSONArray(input.ColorFloorPlan),
+			Renderings:      normalizeStoredAssetJSONArray(input.Renderings),
 			RenderingLink:   input.RenderingLink,
 			TextDescription: input.TextDescription,
-			CADDrawings:     input.CADDrawings,
-			Attachments:     input.Attachments,
+			CADDrawings:     normalizeStoredAssetJSONArray(input.CADDrawings),
+			Attachments:     normalizeStoredAssetJSONArray(input.Attachments),
 			Status:          model.DesignDeliverableStatusSubmitted,
 			SubmittedAt:     &now,
 		}
@@ -532,12 +536,12 @@ func (s *DesignPaymentService) SubmitDesignDeliverable(providerID uint64, input 
 	} else {
 		// 更新已有记录
 		updates := map[string]interface{}{
-			"color_floor_plan": input.ColorFloorPlan,
-			"renderings":       input.Renderings,
+			"color_floor_plan": normalizeStoredAssetJSONArray(input.ColorFloorPlan),
+			"renderings":       normalizeStoredAssetJSONArray(input.Renderings),
 			"rendering_link":   input.RenderingLink,
 			"text_description": input.TextDescription,
-			"cad_drawings":     input.CADDrawings,
-			"attachments":      input.Attachments,
+			"cad_drawings":     normalizeStoredAssetJSONArray(input.CADDrawings),
+			"attachments":      normalizeStoredAssetJSONArray(input.Attachments),
 			"status":           model.DesignDeliverableStatusSubmitted,
 			"submitted_at":     now,
 			"rejected_at":      nil,
@@ -560,7 +564,34 @@ func (s *DesignPaymentService) SubmitDesignDeliverable(providerID uint64, input 
 		"current_stage": model.BusinessFlowStageDesignAcceptancePending,
 	})
 
+	hydrateDesignDeliverable(&deliverable)
 	return &deliverable, nil
+}
+
+func (s *DesignPaymentService) GetDesignDeliverableByProject(projectID uint64) (*model.DesignDeliverable, error) {
+	var deliverable model.DesignDeliverable
+	if err := repository.DB.Where("project_id = ?", projectID).Order("created_at DESC").First(&deliverable).Error; err != nil {
+		return nil, errors.New("未找到设计交付物")
+	}
+	hydrateDesignDeliverable(&deliverable)
+	return &deliverable, nil
+}
+
+func hydrateDesignWorkingDoc(doc *model.DesignWorkingDoc) {
+	if doc == nil {
+		return
+	}
+	doc.Files = hydrateAssetJSONArray(doc.Files)
+}
+
+func hydrateDesignDeliverable(deliverable *model.DesignDeliverable) {
+	if deliverable == nil {
+		return
+	}
+	deliverable.ColorFloorPlan = hydrateAssetJSONArray(deliverable.ColorFloorPlan)
+	deliverable.Renderings = hydrateAssetJSONArray(deliverable.Renderings)
+	deliverable.CADDrawings = hydrateAssetJSONArray(deliverable.CADDrawings)
+	deliverable.Attachments = hydrateAssetJSONArray(deliverable.Attachments)
 }
 
 // ---------------------------------------------------------------------------

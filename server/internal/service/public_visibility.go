@@ -329,6 +329,14 @@ func ProviderMerchantDisplayEnabled(provider *model.Provider) bool {
 	return providerMerchantDisplayEnabled(provider)
 }
 
+func SupportsProviderPlatformDisplayEnabled() bool {
+	return supportsProviderPlatformDisplayEnabled()
+}
+
+func SupportsProviderMerchantDisplayEnabled() bool {
+	return supportsProviderMerchantDisplayEnabled()
+}
+
 func materialShopSettlementValue(shop *model.MaterialShop) bool {
 	if shop == nil {
 		return false
@@ -359,6 +367,14 @@ func MaterialShopPlatformDisplayEnabled(shop *model.MaterialShop) bool {
 
 func MaterialShopMerchantDisplayEnabled(shop *model.MaterialShop) bool {
 	return materialShopMerchantDisplayEnabled(shop)
+}
+
+func SupportsMaterialShopPlatformDisplayEnabled() bool {
+	return supportsMaterialShopPlatformDisplayEnabled()
+}
+
+func SupportsMaterialShopMerchantDisplayEnabled() bool {
+	return supportsMaterialShopMerchantDisplayEnabled()
 }
 
 func cachedHasColumn(cacheKey string, schema any, column string) bool {

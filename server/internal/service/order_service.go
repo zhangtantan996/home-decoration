@@ -799,11 +799,11 @@ func (s *OrderService) getProviderName(providerID uint64) (string, error) {
 	}
 
 	var user model.User
-	if err := repository.DB.First(&user, provider.UserID).Error; err == nil && user.Nickname != "" {
-		return user.Nickname, nil
+	if err := repository.DB.First(&user, provider.UserID).Error; err == nil {
+		return ResolveProviderDisplayName(provider, &user), nil
 	}
 
-	return provider.CompanyName, nil
+	return ResolveProviderDisplayName(provider, nil), nil
 }
 
 func (s *OrderService) buildPaymentListItem(payment *model.PaymentOrder) (UserOrderListItem, error) {

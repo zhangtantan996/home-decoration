@@ -349,10 +349,11 @@ func replaceProviderCasesFromApplication(tx *gorm.DB, providerID uint64, app *mo
 	}
 
 	for i, pc := range snapshot.PortfolioCases {
-		imagesJSON, _ := json.Marshal(pc.Images)
+		normalizedImages := normalizeStoredAssetSlice(pc.Images)
+		imagesJSON, _ := json.Marshal(normalizedImages)
 		coverImage := ""
-		if len(pc.Images) > 0 {
-			coverImage = pc.Images[0]
+		if len(normalizedImages) > 0 {
+			coverImage = normalizedImages[0]
 		}
 
 		style := strings.TrimSpace(pc.Style)
@@ -377,7 +378,7 @@ func replaceProviderCasesFromApplication(tx *gorm.DB, providerID uint64, app *mo
 			ProviderID:        providerID,
 			Title:             title,
 			Description:       pc.Description,
-			CoverImage:        coverImage,
+			CoverImage:        normalizeStoredAsset(coverImage),
 			Style:             style,
 			Layout:            layout,
 			Area:              area,

@@ -65,6 +65,7 @@ type Provider struct {
 	Base
 	UserID                 uint64  `json:"userId" gorm:"index"`
 	ProviderType           int8    `json:"providerType"` // 1设计师 2公司 3工长
+	DisplayName            string  `json:"displayName" gorm:"size:100"`
 	CompanyName            string  `json:"companyName" gorm:"size:100"`
 	SourceApplicationID    uint64  `json:"sourceApplicationId" gorm:"index"`
 	Avatar                 string  `json:"avatar" gorm:"size:500"`

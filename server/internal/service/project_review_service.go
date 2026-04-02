@@ -141,7 +141,7 @@ func (s *ProjectService) SubmitProjectReview(projectID, userID uint64, req *Proj
 			return errors.New("该项目已提交正式评价，请勿重复操作")
 		}
 
-		imagesJSON, err := json.Marshal(req.Images)
+		imagesJSON, err := json.Marshal(normalizeStoredAssetSlice(req.Images))
 		if err != nil {
 			return err
 		}

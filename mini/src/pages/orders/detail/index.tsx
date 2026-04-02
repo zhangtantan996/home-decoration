@@ -113,7 +113,7 @@ const OrderDetail: React.FC = () => {
         if (providerRes) {
           setProvider({
             id: providerRes.id,
-            name: providerRes.nickname || providerRes.companyName || '服务商',
+            name: providerRes.provider?.displayName || providerRes.displayName || providerRes.nickname || providerRes.companyName || '服务商',
             providerType
           });
         }

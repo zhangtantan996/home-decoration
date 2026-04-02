@@ -78,6 +78,9 @@ func TestEnsureRuntimeSchemaColumnsAlignsOnboardingTables(t *testing.T) {
 	if !DB.Migrator().HasColumn(&model.Provider{}, "NeedsOnboardingCompletion") {
 		t.Fatalf("expected providers.needs_onboarding_completion to exist")
 	}
+	if !DB.Migrator().HasColumn(&model.Provider{}, "DisplayName") {
+		t.Fatalf("expected providers.display_name to exist")
+	}
 	if !DB.Migrator().HasColumn(&model.Provider{}, "PlatformDisplayEnabled") {
 		t.Fatalf("expected providers.platform_display_enabled to exist")
 	}
@@ -92,5 +95,51 @@ func TestEnsureRuntimeSchemaColumnsAlignsOnboardingTables(t *testing.T) {
 	}
 	if !DB.Migrator().HasColumn(&model.MaterialShop{}, "MerchantDisplayEnabled") {
 		t.Fatalf("expected material_shops.merchant_display_enabled to exist")
+	}
+}
+
+func TestEnsureRuntimeSchemaColumnsBackfillsDisplayNameOnLegacyProviderTable(t *testing.T) {
+	setupSchemaHealthDB(t)
+
+	if err := DB.Exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY,
+			nickname TEXT
+		)
+	`).Error; err != nil {
+		t.Fatalf("create users table: %v", err)
+	}
+
+	if err := DB.Exec(`
+		CREATE TABLE providers (
+			id INTEGER PRIMARY KEY,
+			user_id INTEGER,
+			provider_type INTEGER,
+			company_name TEXT
+		)
+	`).Error; err != nil {
+		t.Fatalf("create providers table: %v", err)
+	}
+
+	if err := DB.Exec(`INSERT INTO users (id, nickname) VALUES (1, '设计师老张')`).Error; err != nil {
+		t.Fatalf("seed users: %v", err)
+	}
+	if err := DB.Exec(`INSERT INTO providers (id, user_id, provider_type, company_name) VALUES (1, 1, 1, '老张工作室')`).Error; err != nil {
+		t.Fatalf("seed providers: %v", err)
+	}
+
+	if err := ensureRuntimeSchemaColumns(); err != nil {
+		t.Fatalf("ensure runtime schema columns: %v", err)
+	}
+
+	type providerRow struct {
+		DisplayName string
+	}
+	var row providerRow
+	if err := DB.Raw(`SELECT display_name FROM providers WHERE id = 1`).Scan(&row).Error; err != nil {
+		t.Fatalf("load display_name: %v", err)
+	}
+	if row.DisplayName != "设计师老张" {
+		t.Fatalf("expected display_name backfilled from user nickname, got %q", row.DisplayName)
 	}
 }

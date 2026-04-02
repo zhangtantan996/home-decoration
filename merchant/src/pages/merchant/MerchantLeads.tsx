@@ -3,12 +3,13 @@ import type { UploadFile } from 'antd';
 import { Button, Card, Descriptions, Form, Input, InputNumber, Modal, Space, Table, Tag, Typography, Upload, message } from 'antd';
 import { CheckCircleOutlined, EyeOutlined, FileAddOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons';
 
-import { merchantLeadApi, merchantProposalApi, merchantUploadApi, type MerchantLeadItem } from '../../services/merchantApi';
+import { merchantLeadApi, merchantProposalApi, merchantUploadApi, type MerchantLeadItem, type MerchantUploadResult } from '../../services/merchantApi';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
+import { getStoredPathsFromUploadFiles } from '../../utils/uploadAsset';
 
 const { TextArea } = Input;
 
@@ -31,7 +32,7 @@ const MerchantLeads: React.FC = () => {
     const [declineVisible, setDeclineVisible] = useState(false);
     const [declineLead, setDeclineLead] = useState<MerchantLeadItem | null>(null);
     const [submitting, setSubmitting] = useState(false);
-    const [fileList, setFileList] = useState<UploadFile[]>([]);
+    const [fileList, setFileList] = useState<Array<UploadFile<MerchantUploadResult>>>([]);
     const [proposalForm] = Form.useForm();
     const [declineForm] = Form.useForm();
 
@@ -71,10 +72,7 @@ const MerchantLeads: React.FC = () => {
         try {
             const values = await proposalForm.validateFields();
             setSubmitting(true);
-            const attachments = fileList
-                .filter((file) => file.status === 'done' && (file.response as { url?: string } | undefined)?.url)
-                .map((file) => (file.response as { url?: string } | undefined)?.url)
-                .filter(Boolean);
+            const attachments = getStoredPathsFromUploadFiles(fileList);
 
             await merchantProposalApi.submit({
                 sourceType: 'demand',

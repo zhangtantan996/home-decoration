@@ -30,6 +30,7 @@ import MerchantStatGrid from '../../components/MerchantStatGrid';
 import sharedStyles from '../../components/MerchantPage.module.css';
 import { materialShopCenterApi, merchantUploadApi, type MaterialShopProduct } from '../../services/merchantApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
+import { buildStoredAssetFile, getStoredPathFromUploadFile, getUploadedAssetStoredPath } from '../../utils/uploadAsset';
 import { formatServerDateTime } from '../../utils/serverTime';
 
 const PRODUCT_PRICE_MAX = 999999;
@@ -38,13 +39,9 @@ const PAGE_SIZE = 10;
 const COMMON_UNIT_OPTIONS = ['个', '件', '套', '米', '平方米', '箱'].map((unit) => ({ value: unit }));
 
 const toProductUploadFileList = (images?: string[]): UploadFile[] =>
-    (Array.isArray(images) ? images : []).map((url, index) => ({
-        uid: `${index}-${url}`,
-        name: url.split('/').pop() || `product-${index + 1}`,
-        status: 'done',
-        url,
-        response: { url },
-    }));
+    (Array.isArray(images) ? images : [])
+        .map((value, index) => buildStoredAssetFile(value, `${index}-${value}`))
+        .filter(Boolean) as UploadFile[];
 
 const getErrorMessage = (error: unknown, fallback: string) => {
     if (error instanceof Error && error.message) {
@@ -205,8 +202,9 @@ const MaterialShopProducts: React.FC = () => {
         try {
             const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
             const currentImages = (form.getFieldValue('images') || []) as string[];
-            if (!currentImages.includes(uploaded.url)) {
-                form.setFieldValue('images', [...currentImages, uploaded.url].slice(0, 6));
+            const storedPath = getUploadedAssetStoredPath(uploaded);
+            if (storedPath && !currentImages.includes(storedPath)) {
+                form.setFieldValue('images', [...currentImages, storedPath].slice(0, 6));
             }
             options.onSuccess?.(uploaded);
         } catch (error) {
@@ -543,7 +541,7 @@ const MaterialShopProducts: React.FC = () => {
                             beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.product)}
                             customRequest={uploadImage}
                             onRemove={(file) => {
-                                const target = (file.response as { url?: string } | undefined)?.url || file.url || '';
+                                const target = getStoredPathFromUploadFile(file as UploadFile<any>);
                                 const current = (watchedImages || []) as string[];
                                 form.setFieldValue('images', current.filter((item) => item !== target));
                                 return true;

@@ -2296,15 +2296,11 @@ func loadPaymentProviderDetail(providerID uint64, bookingProviderType string) (*
 
 	name := strings.TrimSpace(user.Nickname)
 	if name == "" {
-		name = strings.TrimSpace(provider.CompanyName)
+		name = ResolveProviderDisplayName(provider, &user)
 	}
-	if name == "" {
-		name = fmt.Sprintf("服务商 #%d", provider.ID)
-	}
-
 	avatar := strings.TrimSpace(user.Avatar)
 	if avatar == "" {
-		avatar = strings.TrimSpace(provider.Avatar)
+		avatar = ResolveProviderAvatarPath(provider)
 	}
 
 	return &PaymentDetailProvider{

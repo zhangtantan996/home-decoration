@@ -20,6 +20,7 @@ export default function ProfileEdit() {
     realName: '',
     address: '',
   });
+  const [avatarPreview, setAvatarPreview] = useState('');
 
   useEffect(() => {
     fetchProfile();
@@ -35,6 +36,7 @@ export default function ProfileEdit() {
         realName: profile.realName || '',
         address: profile.address || '',
       });
+      setAvatarPreview(profile.avatar || '');
     } catch (err) {
       showErrorToast(err, '加载失败');
     }
@@ -57,7 +59,8 @@ export default function ProfileEdit() {
 
       // 上传头像
       const uploadRes = await uploadFile(filePath, { category: 'avatar' });
-      setFormData({ ...formData, avatar: uploadRes.url });
+      setFormData((current) => ({ ...current, avatar: uploadRes.path || uploadRes.url }));
+      setAvatarPreview(uploadRes.url || uploadRes.path || '');
       Taro.showToast({ title: '头像上传成功', icon: 'success' });
     } catch (err) {
       showErrorToast(err, '上传失败');
@@ -83,6 +86,7 @@ export default function ProfileEdit() {
       };
 
       const updatedProfile = await updateUserProfile(updateData);
+      setAvatarPreview(updatedProfile.avatar || formData.avatar);
 
       // 更新 auth store 中的用户信息
       if (auth.user) {
@@ -111,8 +115,8 @@ export default function ProfileEdit() {
           title="头像"
           extra={
             <View onClick={handleChooseAvatar} style={{ position: 'relative' }}>
-              {formData.avatar ? (
-                <Avatar size="large" src={formData.avatar} />
+              {avatarPreview ? (
+                <Avatar size="large" src={avatarPreview} />
               ) : (
                 <Avatar size="large" icon={<User />} />
               )}

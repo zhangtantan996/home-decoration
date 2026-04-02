@@ -59,12 +59,6 @@ const compactCount = (value: number) => {
   return `${value}`;
 };
 
-const formatCaseArea = (value?: string | number) => {
-  if (value === undefined || value === null || value === '') return '';
-  const text = String(value);
-  return text.includes('㎡') ? text : `${text}㎡`;
-};
-
 interface ProviderDetailParams {
   id: string;
   type: ProviderType;
@@ -164,18 +158,18 @@ const ProviderDetailPage: React.FC = () => {
   const isForeman = params.type === 'foreman';
 
   const displayName = useMemo(
-    () => userDetail?.nickname || providerDetail?.nickname || providerDetail?.companyName || '服务商',
-    [providerDetail?.companyName, providerDetail?.nickname, userDetail?.nickname],
+    () => providerDetail?.provider?.displayName || providerDetail?.displayName || providerDetail?.nickname || providerDetail?.companyName || userDetail?.nickname || '服务商',
+    [providerDetail?.companyName, providerDetail?.displayName, providerDetail?.nickname, providerDetail?.provider?.displayName, userDetail?.nickname],
   );
 
   const avatarUrl = useMemo(
-    () => normalizeProviderMediaUrl(userDetail?.avatar || providerDetail?.avatar || providerDetail?.coverImage || detail?.coverImage || ''),
-    [detail?.coverImage, providerDetail?.avatar, providerDetail?.coverImage, userDetail?.avatar],
+    () => normalizeProviderMediaUrl(providerDetail?.provider?.avatar || providerDetail?.avatar || providerDetail?.coverImage || detail?.coverImage || userDetail?.avatar || ''),
+    [detail?.coverImage, providerDetail?.avatar, providerDetail?.coverImage, providerDetail?.provider?.avatar, userDetail?.avatar],
   );
 
   const coverImage = useMemo(
-    () => normalizeProviderMediaUrl(providerDetail?.coverImage || detail?.coverImage || userDetail?.avatar || providerDetail?.avatar || ''),
-    [detail?.coverImage, providerDetail?.avatar, providerDetail?.coverImage, userDetail?.avatar],
+    () => normalizeProviderMediaUrl(providerDetail?.coverImage || detail?.coverImage || providerDetail?.provider?.avatar || providerDetail?.avatar || userDetail?.avatar || ''),
+    [detail?.coverImage, providerDetail?.avatar, providerDetail?.coverImage, providerDetail?.provider?.avatar, userDetail?.avatar],
   );
 
   const serviceAreaTags = useMemo(() => {

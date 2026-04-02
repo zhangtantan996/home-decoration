@@ -84,7 +84,7 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 	// 检查手机号是否已注册
 	var existUser model.User
 	if err := repository.DB.Where("phone = ?", req.Phone).First(&existUser).Error; err == nil {
-		return nil, nil, errors.New("手机号已注册")
+		return nil, nil, errors.New("该手机号已有账号，请直接登录")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil, err
 	}
@@ -533,6 +533,7 @@ func (s *UserService) RefreshTinodeToken(user *model.User) (string, error) {
 
 // UpdateUser 更新用户信息
 func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *time.Time, bio string) error {
+	avatar = image.NormalizeStoredImagePath(avatar)
 	err := repository.DB.Model(&model.User{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nickname": nickname,
 		"avatar":   avatar,

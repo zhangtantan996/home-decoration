@@ -67,20 +67,35 @@ type ProviderListItem struct {
 }
 
 func ResolveProviderDisplayName(provider model.Provider, user *model.User) string {
+	if name := strings.TrimSpace(provider.DisplayName); name != "" {
+		return name
+	}
+
+	userNickname := ""
+	userPhone := ""
 	if user != nil {
-		if name := strings.TrimSpace(user.Nickname); name != "" {
+		userNickname = strings.TrimSpace(user.Nickname)
+		userPhone = strings.TrimSpace(user.Phone)
+	}
+
+	if provider.ProviderType == 2 {
+		if name := strings.TrimSpace(provider.CompanyName); name != "" {
+			return name
+		}
+		if userNickname != "" {
+			return userNickname
+		}
+	} else {
+		if userNickname != "" {
+			return userNickname
+		}
+		if name := strings.TrimSpace(provider.CompanyName); name != "" {
 			return name
 		}
 	}
 
-	if name := strings.TrimSpace(provider.CompanyName); name != "" {
-		return name
-	}
-
-	if user != nil {
-		if phone := strings.TrimSpace(user.Phone); phone != "" {
-			return phone
-		}
+	if len(userPhone) >= 4 {
+		return "服务商" + userPhone[len(userPhone)-4:]
 	}
 
 	if provider.ID > 0 {
@@ -88,6 +103,54 @@ func ResolveProviderDisplayName(provider model.Provider, user *model.User) strin
 	}
 
 	return "服务商"
+}
+
+func ResolveProviderStoredDisplayName(providerType int8, companyName, realName string) string {
+	normalizedCompanyName := strings.TrimSpace(companyName)
+	normalizedRealName := strings.TrimSpace(realName)
+
+	if providerType == 2 {
+		if normalizedCompanyName != "" {
+			return normalizedCompanyName
+		}
+		if normalizedRealName != "" {
+			return normalizedRealName
+		}
+	} else {
+		if normalizedRealName != "" {
+			return normalizedRealName
+		}
+		if normalizedCompanyName != "" {
+			return normalizedCompanyName
+		}
+	}
+
+	return ""
+}
+
+func ResolveProviderAvatarPath(provider model.Provider) string {
+	if avatar := strings.TrimSpace(provider.Avatar); avatar != "" {
+		return avatar
+	}
+	if cover := strings.TrimSpace(provider.CoverImage); cover != "" {
+		return cover
+	}
+	return ""
+}
+
+func ResolveProviderAvatarPathWithUser(provider model.Provider, user *model.User) string {
+	if avatar := strings.TrimSpace(provider.Avatar); avatar != "" {
+		return avatar
+	}
+	if user != nil {
+		if avatar := strings.TrimSpace(user.Avatar); avatar != "" {
+			return avatar
+		}
+	}
+	if cover := strings.TrimSpace(provider.CoverImage); cover != "" {
+		return cover
+	}
+	return ""
 }
 
 // ListDesigners 获取设计师列表
@@ -167,7 +230,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 		for _, pattern := range patterns {
 			conditions = append(conditions,
 				"providers.company_name LIKE ?",
-				"users.nickname LIKE ?",
+				"providers.display_name LIKE ?",
 				"providers.specialty LIKE ?",
 				"providers.highlight_tags LIKE ?",
 				"providers.service_area LIKE ?",
@@ -191,8 +254,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			args = append(args, matchedProviderTypes)
 		}
 
-		db = db.Joins("LEFT JOIN users ON users.id = providers.user_id").
-			Where(strings.Join(conditions, " OR "), args...)
+		db = db.Where(strings.Join(conditions, " OR "), args...)
 	}
 
 	// 子类型筛选
@@ -246,10 +308,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 
 		// Some seeded providers may not have a corresponding user row yet.
 		// Fallback to provider's cover image so the client can render something.
-		avatarPath := user.Avatar
-		if avatarPath == "" {
-			avatarPath = p.CoverImage
-		}
+		avatarPath := ResolveProviderAvatarPathWithUser(p, &user)
 
 		var identity dto.UserIdentity
 		if p.UserID > 0 {
@@ -275,7 +334,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			UserPublicID:    identity.UserPublicID,
 			ProviderType:    p.ProviderType,
 			CompanyName:     p.CompanyName,
-			Nickname:        user.Nickname,
+			Nickname:        ResolveProviderDisplayName(p, &user),
 			Avatar:          imgutil.GetFullImageURL(avatarPath),
 			Rating:          p.Rating,
 			RestoreRate:     p.RestoreRate,
@@ -678,12 +737,9 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	provider.PriceUnit = model.ProviderPriceUnitPerSquareMeter
 
 	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
-	// Also fallback to provider cover image for legacy/seeded data.
-	provider.Avatar = imgutil.GetFullImageURL(provider.Avatar)
+	provider.DisplayName = ResolveProviderDisplayName(provider, &user)
+	provider.Avatar = imgutil.GetFullImageURL(ResolveProviderAvatarPathWithUser(provider, &user))
 	provider.CoverImage = imgutil.GetFullImageURL(provider.CoverImage)
-	if user.Avatar == "" {
-		user.Avatar = provider.CoverImage
-	}
 	user.Avatar = imgutil.GetFullImageURL(user.Avatar)
 
 	// 服务区域：数据库存储的是代码数组，这里转换为名称数组用于前端展示

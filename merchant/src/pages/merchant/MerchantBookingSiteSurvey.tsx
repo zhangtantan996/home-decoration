@@ -10,6 +10,7 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import { SITE_SURVEY_STATUS_META } from '../../constants/statuses';
 import { merchantBookingApi, merchantSiteSurveyApi, merchantUploadApi, type MerchantSiteSurveySummary } from '../../services/merchantApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
+import { getStoredPathFromUploadFile } from '../../utils/uploadAsset';
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -75,7 +76,7 @@ const MerchantBookingSiteSurvey: React.FC = () => {
   const uploadImage: UploadProps['customRequest'] = async (options) => {
     try {
       const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
-      options.onSuccess?.({ url: uploaded.url });
+      options.onSuccess?.(uploaded);
     } catch (error: any) {
       options.onError?.(new Error(error?.message || '上传失败'));
       message.error(error?.message || '上传失败');
@@ -99,7 +100,7 @@ const MerchantBookingSiteSurvey: React.FC = () => {
     try {
       const values = await form.validateFields();
       const photos = fileList
-        .map((file) => (file.response as { url?: string } | undefined)?.url || file.url)
+        .map((file) => getStoredPathFromUploadFile(file as UploadFile<any>))
         .filter((item): item is string => Boolean(item));
       const dimensions = (values.dimensions || []).reduce((acc: Record<string, unknown>, row: DimensionRow) => {
         if (!row?.area) return acc;
