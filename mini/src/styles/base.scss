@@ -405,7 +405,18 @@ view, text, image, navigator, scroll-view, swiper, button, input, textarea {
 }
 
 .safe-area-bottom {
+  padding-bottom: constant(safe-area-inset-bottom);
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.page-with-fixed-bottom-bar {
+  padding-bottom: calc(160rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
+}
+
+.page-with-tabbar {
+  padding-bottom: calc(180rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
 }
 
 .line-through {

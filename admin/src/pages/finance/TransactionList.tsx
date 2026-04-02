@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import StatusTag from '../../components/StatusTag';
@@ -60,6 +61,8 @@ const TransactionList: React.FC = () => {
     const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
     const [activeAction, setActiveAction] = useState<FinanceAction | null>(null);
     const [selectedTransaction, setSelectedTransaction] = useState<AdminFinanceTransactionItem | null>(null);
+    const [reauthOpen, setReauthOpen] = useState(false);
+    const [pendingValues, setPendingValues] = useState<Record<string, unknown> | null>(null);
 
     const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
     const canFreeze = !isSecurityAuditor && hasPermission('finance:escrow:freeze');
@@ -139,25 +142,40 @@ const TransactionList: React.FC = () => {
 
         try {
             const values = await form.validateFields();
-            setSubmitting(true);
-
-            if (activeAction === 'freeze') {
-                await adminFinanceApi.freeze(values as FreezeFundsInput);
-            } else if (activeAction === 'unfreeze') {
-                await adminFinanceApi.unfreeze(values as UnfreezeFundsInput);
-            } else {
-                await adminFinanceApi.manualRelease(values as ManualReleaseInput);
-            }
-
-            message.success(`${getActionLabel(activeAction)}已提交`);
-            closeActionModal();
-            void loadData();
+            setPendingValues(values);
+            setReauthOpen(true);
         } catch (error) {
             if (error instanceof Error && error.message.includes('validate')) {
                 return;
             }
             console.error(error);
             message.error(`${activeAction ? getActionLabel(activeAction) : '资金操作'}失败`);
+        } finally {
+        }
+    };
+
+    const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (!activeAction || !pendingValues) return;
+
+        try {
+            setSubmitting(true);
+            const nextPayload = {
+                ...(pendingValues as unknown as FreezeFundsInput & UnfreezeFundsInput & ManualReleaseInput),
+                recentReauthProof: payload.recentReauthProof,
+            };
+
+            if (activeAction === 'freeze') {
+                await adminFinanceApi.freeze(nextPayload);
+            } else if (activeAction === 'unfreeze') {
+                await adminFinanceApi.unfreeze(nextPayload);
+            } else {
+                await adminFinanceApi.manualRelease(nextPayload);
+            }
+
+            message.success(`${getActionLabel(activeAction)}已提交`);
+            setPendingValues(null);
+            closeActionModal();
+            void loadData();
         } finally {
             setSubmitting(false);
         }
@@ -376,6 +394,18 @@ const TransactionList: React.FC = () => {
                     ) : null}
                 </Form>
             </Modal>
+
+            <AdminReauthModal
+                open={reauthOpen}
+                title={activeAction ? getActionLabel(activeAction) : '资金操作'}
+                description="资金冻结、解冻和人工放款属于高危操作，提交前必须再次认证。"
+                reasonRequired={false}
+                onCancel={() => {
+                    setReauthOpen(false);
+                    setPendingValues(null);
+                }}
+                onConfirmed={handleReauthConfirmed}
+            />
         </div>
     );
 };

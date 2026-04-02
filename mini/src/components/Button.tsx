@@ -16,7 +16,7 @@ interface ButtonProps {
   onClick?: (...args: any[]) => void;
   className?: string;
   style?: React.CSSProperties;
-  openType?: string; // For WeChat capabilities
+  openType?: any; // For WeChat capabilities
   onGetPhoneNumber?: (e: any) => void;
 }
 

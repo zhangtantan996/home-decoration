@@ -1,21 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
-    SafeAreaView,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     Platform,
     ScrollView,
 } from 'react-native';
 import {
     ArrowLeft,
-    CreditCard,
     Clock,
     CheckCircle,
-    AlertCircle,
 } from 'lucide-react-native';
 import { orderApi } from '../services/api';
 import CancelOrderModal from '../components/CancelOrderModal';
@@ -45,7 +41,6 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
 
     const [order, setOrder] = useState<Order | null>(initialOrder || null);
     const [loading, setLoading] = useState(!initialOrder);
-    const [paying, setPaying] = useState(false);
     const [countdown, setCountdown] = useState('');
     const timerRef = useRef<any>(null);
 
@@ -70,7 +65,7 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
     };
 
     // 获取订单详情
-    const fetchOrder = async () => {
+    const fetchOrder = useCallback(async () => {
         if (!orderId && !initialOrder?.id) return;
         try {
             const id = orderId || initialOrder?.id;
@@ -82,16 +77,16 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
         } finally {
             setLoading(false);
         }
-    };
+    }, [initialOrder?.id, orderId]);
 
     useEffect(() => {
         if (!initialOrder && orderId) {
-            fetchOrder();
+            void fetchOrder();
         }
-    }, [orderId]);
+    }, [fetchOrder, initialOrder, orderId]);
 
     // 倒计时逻辑
-    const updateCountdown = () => {
+    const updateCountdown = useCallback(() => {
         if (!order || !order.expireAt) return;
 
         const expireTime = getServerTimeMs(order.expireAt);
@@ -111,7 +106,7 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
         const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
         setCountdown(`${hours}小时 ${minutes}分 ${seconds}秒`);
-    };
+    }, [order]);
 
     useEffect(() => {
         updateCountdown();
@@ -119,7 +114,7 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
-    }, [order]);
+    }, [updateCountdown]);
 
     // Debug: 监听模态框状态变化
     useEffect(() => {
@@ -131,7 +126,7 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
         return getServerTimeMs(order.expireAt) <= Date.now();
     };
 
-    const handlePay = async () => {
+    const handlePay = () => {
         if (!order) return;
 
         if (isExpired()) {
@@ -139,20 +134,7 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
             return;
         }
 
-        try {
-            setPaying(true);
-            // 模拟支付（调用后端支付接口）
-            await orderApi.pay(order.id);
-
-            showInfo('支付成功', '设计费已支付，您可以查看完整方案了', 'success', () => {
-                setInfoModal(prev => ({ ...prev, visible: false }));
-                navigation.replace('ProposalPaidDetail', { proposalId: order.proposalId });
-            });
-        } catch (error: any) {
-            showInfo('支付失败', error.message || '请稍后重试', 'error');
-        } finally {
-            setPaying(false);
-        }
+        showInfo('请前往 Web/H5 支付', '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。', 'info');
     };
 
     const formatMoney = (amount: number) => {
@@ -294,11 +276,11 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
                     </View>
                     <View style={styles.infoItem}>
                         <CheckCircle size={16} color="#10B981" />
-                        <Text style={styles.infoText}>支持创建装修项目，选择材料和施工队</Text>
+                        <Text style={styles.infoText}>设计费支付完成后，等待施工报价提交并确认后才会创建项目</Text>
                     </View>
                     <View style={styles.infoItem}>
                         <CheckCircle size={16} color="#10B981" />
-                        <Text style={styles.infoText}>设计费不可退款，请确认后再支付</Text>
+                        <Text style={styles.infoText}>当前 App 内不支持直接支付，请前往 Web/H5 完成支付</Text>
                     </View>
                 </View>
                 {/* 底部留白防止遮挡 */}
@@ -322,13 +304,9 @@ const DesignFeePaymentScreen: React.FC<DesignFeePaymentScreenProps> = ({ route, 
                     onPress={handlePay}
                     disabled={isExpired()}
                 >
-                    {paying ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                        <Text style={styles.payButtonText}>
-                            {isExpired() ? '订单已过期' : `立即支付 ${formatMoney(order.totalAmount)}`}
-                        </Text>
-                    )}
+                    <Text style={styles.payButtonText}>
+                        {isExpired() ? '订单已过期' : '前往 Web/H5 支付'}
+                    </Text>
                 </TouchableOpacity>
             </View>
 

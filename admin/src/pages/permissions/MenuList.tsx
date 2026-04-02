@@ -27,6 +27,7 @@ import {
     ReloadOutlined,
 } from '@ant-design/icons';
 import { adminMenuApi } from '../../services/api';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import PageHeader from '../../components/PageHeader';
 import StatusTag from '../../components/StatusTag';
 import ToolbarCard from '../../components/ToolbarCard';
@@ -120,7 +121,7 @@ const readErrorMessage = (error: unknown, fallback: string) => {
 };
 
 const MenuList: React.FC = () => {
-    const { modal, message } = App.useApp();
+    const { message } = App.useApp();
     const admin = useAuthStore((state) => state.admin);
     const { hasPermission } = usePermission();
     const [loading, setLoading] = useState(false);
@@ -129,6 +130,10 @@ const MenuList: React.FC = () => {
     const [modalVisible, setModalVisible] = useState(false);
     const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
     const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+    const [reauthOpen, setReauthOpen] = useState(false);
+    const [reauthAction, setReauthAction] = useState<'submit' | 'delete' | null>(null);
+    const [pendingFormValues, setPendingFormValues] = useState<Record<string, unknown> | null>(null);
+    const [pendingDeleteMenu, setPendingDeleteMenu] = useState<Menu | null>(null);
     const [form] = Form.useForm();
     const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
     const canCreateMenu = !isSecurityAuditor && hasPermission('system:menu:create');
@@ -196,41 +201,52 @@ const MenuList: React.FC = () => {
             return;
         }
 
-        modal.confirm({
-            title: '确认删除菜单',
-            content: `确定要删除“${record.title}”吗？删除后角色菜单树会同步失效。`,
-            okText: '确定删除',
-            cancelText: '取消',
-            okButtonProps: { danger: true },
-            onOk: async () => {
-                try {
-                    await adminMenuApi.delete(record.id);
-                    message.success('菜单已删除');
-                    await loadData();
-                } catch (error) {
-                    message.error(readErrorMessage(error, '删除失败'));
-                }
-            },
-        });
-    }, [canDeleteMenu, loadData, message, modal]);
+        setPendingDeleteMenu(record);
+        setReauthAction('delete');
+        setReauthOpen(true);
+    }, [canDeleteMenu, message]);
 
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
-            if (editingMenu) {
-                await adminMenuApi.update(editingMenu.id, values);
-                message.success('菜单已更新');
-            } else {
-                await adminMenuApi.create(values);
-                message.success('菜单已创建');
-            }
-            setModalVisible(false);
-            await loadData();
+            setPendingFormValues(values);
+            setReauthAction('submit');
+            setReauthOpen(true);
         } catch (error) {
             if (error && typeof error === 'object' && 'errorFields' in error) {
                 return;
             }
             message.error(readErrorMessage(error, '操作失败'));
+        }
+    };
+
+    const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (reauthAction === 'submit' && pendingFormValues) {
+            const submitPayload = {
+                ...pendingFormValues,
+                recentReauthProof: payload.recentReauthProof,
+            };
+            if (editingMenu) {
+                await adminMenuApi.update(editingMenu.id, submitPayload);
+                message.success('菜单已更新');
+            } else {
+                await adminMenuApi.create(submitPayload);
+                message.success('菜单已创建');
+            }
+            setModalVisible(false);
+            setPendingFormValues(null);
+            await loadData();
+            return;
+        }
+
+        if (reauthAction === 'delete' && pendingDeleteMenu) {
+            await adminMenuApi.delete(pendingDeleteMenu.id, {
+                reason: payload.reason,
+                recentReauthProof: payload.recentReauthProof,
+            });
+            message.success('菜单已删除');
+            setPendingDeleteMenu(null);
+            await loadData();
         }
     };
 
@@ -517,8 +533,36 @@ const MenuList: React.FC = () => {
                             ]}
                         />
                     </Form.Item>
+
+                    <Form.Item
+                        label="操作原因"
+                        name="reason"
+                        rules={[
+                            { required: true, message: '请填写操作原因' },
+                            { min: 2, message: '原因至少 2 个字符' },
+                        ]}
+                    >
+                        <Input.TextArea rows={3} maxLength={300} showCount placeholder="例如：新增订单控制台菜单、修正权限标识" />
+                    </Form.Item>
                 </Form>
             </Modal>
+
+            <AdminReauthModal
+                open={reauthOpen}
+                title={reauthAction === 'delete' ? '删除菜单' : editingMenu ? '更新菜单' : '创建菜单'}
+                description={
+                    reauthAction === 'delete'
+                        ? `删除后菜单「${pendingDeleteMenu?.title || '-'}」对应的角色菜单树会同步失效。`
+                        : '菜单与按钮权限变更属于高危操作，提交前必须再次认证。'
+                }
+                reasonRequired={reauthAction !== 'submit'}
+                onCancel={() => {
+                    setReauthOpen(false);
+                    setReauthAction(null);
+                    setPendingDeleteMenu(null);
+                }}
+                onConfirmed={handleReauthConfirmed}
+            />
         </div>
     );
 };

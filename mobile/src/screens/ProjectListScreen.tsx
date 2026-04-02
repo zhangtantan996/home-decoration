@@ -7,11 +7,12 @@ import {
     FlatList,
     TouchableOpacity,
     ActivityIndicator,
-    Image,
     Platform,
 } from 'react-native';
 import { ArrowLeft, MapPin, Calendar, ChevronRight } from 'lucide-react-native';
 import { projectApi } from '../services/api';
+import { useAuthStore } from '../store/authStore';
+import { getProjectStatusText } from '../types/businessFlow';
 import { formatServerDate } from '../utils/serverTime';
 
 interface Project {
@@ -20,6 +21,7 @@ interface Project {
     address: string;
     status: number;
     currentPhase: string;
+    businessStage?: string;
     startDate: string;
     expectedEnd: string;
     entryStartDate: string;
@@ -32,6 +34,7 @@ interface ProjectListScreenProps {
 }
 
 const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => {
+    const activeRole = useAuthStore((state) => state.user?.activeRole);
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -51,25 +54,18 @@ const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => 
         }
     };
 
-    const getStatusText = (status: number) => {
-        switch (status) {
-            case -1: return '待完善';
-            case 0: return '待准备';
-            case 1: return '施工中';
-            case 2: return '已完工';
-            default: return '未知状态';
-        }
-    };
-
     const getStatusColor = (status: number) => {
         switch (status) {
             case -1: return '#F97316'; // Orange
-            case 0: return '#F59E0B';
+            case 0: return '#2563EB';
             case 1: return '#10B981';
-            case 2: return '#3B82F6';
+            case 2: return '#F59E0B';
+            case 3: return '#71717A';
             default: return '#71717A';
         }
     };
+
+    const ownerScopeDisabled = activeRole ? !['owner', 'homeowner'].includes(activeRole) : false;
 
     const renderProjectItem = ({ item }: { item: Project }) => {
         const isPending = item.status === -1;
@@ -79,8 +75,7 @@ const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => 
                 style={[styles.projectCard, isPending && styles.pendingCard]}
                 onPress={() => {
                     if (isPending) {
-                        // 如果是待完善项目（ID即为方案ID），跳转到方案详情或直接创建
-                        navigation.navigate('ProposalDetail', { proposalId: item.id });
+                        navigation.navigate('Pending', { tab: 'confirm' });
                     } else {
                         navigation.navigate('ProjectDetail', { projectId: item.id });
                     }
@@ -93,7 +88,7 @@ const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => 
                         </Text>
                         <View style={[styles.statusTag, { backgroundColor: getStatusColor(item.status) + '15' }]}>
                             <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                                {getStatusText(item.status)}
+                                {getProjectStatusText(item.status)}
                             </Text>
                         </View>
                     </View>
@@ -120,7 +115,7 @@ const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => 
                         {item.providerName || '待分配服务商'}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        {isPending && <Text style={{ fontSize: 13, color: '#F97316', marginRight: 4 }}>去完善</Text>}
+                        {isPending && <Text style={{ fontSize: 13, color: '#F97316', marginRight: 4 }}>去确认</Text>}
                         <ChevronRight size={16} color={isPending ? '#F97316' : '#A1A1AA'} />
                     </View>
                 </View>
@@ -139,7 +134,12 @@ const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => 
                 <View style={styles.placeholder} />
             </View>
 
-            {loading ? (
+            {ownerScopeDisabled ? (
+                <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>当前身份无权查看业主项目页</Text>
+                    <Text style={styles.emptySubText}>请切换回业主身份后再查看项目与账单</Text>
+                </View>
+            ) : loading ? (
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#09090B" />
                 </View>
@@ -154,7 +154,7 @@ const ProjectListScreen: React.FC<ProjectListScreenProps> = ({ navigation }) => 
             ) : (
                 <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>暂无装修项目</Text>
-                    <Text style={styles.emptySubText}>确认设计方案后将自动创建项目</Text>
+                    <Text style={styles.emptySubText}>确认施工报价后才会创建项目</Text>
                 </View>
             )}
         </SafeAreaView>

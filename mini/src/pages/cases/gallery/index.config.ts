@@ -1,3 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: '案例作品',
+  navigationBarTitleText: '作品案例',
+  navigationStyle: 'custom',
 });

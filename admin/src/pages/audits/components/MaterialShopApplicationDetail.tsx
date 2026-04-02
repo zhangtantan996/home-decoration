@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, Descriptions, Image, Space, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { AdminMaterialShopApplicationDetail } from '../../../services/api';
-import { ENTITY_TYPE_LABELS, MERCHANT_KIND_LABELS } from '../../../constants/statuses';
+import { APPLICATION_SCENE_META, ENTITY_TYPE_LABELS, MERCHANT_KIND_LABELS } from '../../../constants/statuses';
 
 interface MaterialShopApplicationDetailProps {
     details: AdminMaterialShopApplicationDetail;
@@ -121,6 +121,11 @@ const MaterialShopApplicationDetail: React.FC<MaterialShopApplicationDetailProps
                 </Descriptions.Item>
                 <Descriptions.Item label="门店名称">{formatText(details.shopName)}</Descriptions.Item>
                 <Descriptions.Item label="公司名称">{formatText(details.companyName)}</Descriptions.Item>
+                <Descriptions.Item label="申请场景">
+                    <Tag color={APPLICATION_SCENE_META[details.applicationScene || '']?.color || 'default'}>
+                        {APPLICATION_SCENE_META[details.applicationScene || '']?.text || formatText(details.applicationScene)}
+                    </Tag>
+                </Descriptions.Item>
                 {showMerchantKind && (
                     <Descriptions.Item label="商家体系">
                         {MERCHANT_KIND_LABELS[details.merchantKind as string] || formatText(details.merchantKind)}

@@ -200,6 +200,19 @@ export const APPLICATION_AUDIT_STATUS_OPTIONS: Array<{ label: string; value: num
   { label: '全部', value: 'all' },
 ];
 
+export const MERCHANT_ONBOARDING_STATUS_META: Record<string, { text: string; color: string }> = {
+  required: { text: '待补全', color: 'gold' },
+  pending_review: { text: '待审核', color: 'blue' },
+  rejected: { text: '已驳回', color: 'red' },
+  approved: { text: '已完成', color: 'green' },
+  unknown: { text: '未识别', color: 'default' },
+};
+
+export const APPLICATION_SCENE_META: Record<string, { text: string; color: string }> = {
+  new_onboarding: { text: '新入驻', color: 'blue' },
+  claimed_completion: { text: '认领补全', color: 'gold' },
+};
+
 export const IDENTITY_APPLICATION_STATUS_META: Record<number, { text: string; color: string }> = {
   ...APPLICATION_AUDIT_STATUS_META,
   3: { text: '已停用', color: 'default' },

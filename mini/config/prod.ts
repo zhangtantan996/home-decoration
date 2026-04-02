@@ -25,7 +25,7 @@ export default {
       process.env.TARO_APP_TINODE_API_KEY || "",
     ),
     TARO_APP_ENABLE_NOTIFICATION_WS: JSON.stringify(
-      process.env.TARO_APP_ENABLE_NOTIFICATION_WS || "true",
+      process.env.TARO_APP_ENABLE_NOTIFICATION_WS || "",
     ),
   },
   mini: {

@@ -3,6 +3,44 @@
   background: linear-gradient(180deg, #ffffff 0%, #f5f5f5 100%);
   padding-bottom: 48rpx;
 
+  &__header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 22;
+    padding: 0 24rpx;
+    background: rgba(255, 255, 255, 0.98);
+    border-bottom: 1rpx solid rgba(17, 17, 17, 0.05);
+    backdrop-filter: blur(12rpx);
+  }
+
+  &__header-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24rpx;
+  }
+
+  &__header-title {
+    flex: 1;
+    min-width: 0;
+    color: #111111;
+    font-size: 36rpx;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  &__capsule-spacer {
+    flex-shrink: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &__header-placeholder {
+    width: 100%;
+  }
+
   &__hero {
     padding: 40rpx 24rpx 30rpx;
     background: #111111;

@@ -53,16 +53,17 @@ type ProviderListItem struct {
 	Longitude     float64 `json:"longitude"`
 	Distance      float64 `json:"distance,omitempty"` // 距离(km)
 	// 新增字段
-	SubType         string   `json:"subType"`
-	YearsExperience int      `json:"yearsExperience"`
-	Specialty       string   `json:"specialty"`
-	HighlightTags   string   `json:"highlightTags"`
-	ReviewCount     int      `json:"reviewCount"`
-	PriceMin        float64  `json:"priceMin"`
-	PriceMax        float64  `json:"priceMax"`
-	PriceUnit       string   `json:"priceUnit"`
-	ServiceArea     []string `json:"serviceArea"`
-	IsSettled       bool     `json:"isSettled"`
+	SubType         string               `json:"subType"`
+	YearsExperience int                  `json:"yearsExperience"`
+	Specialty       string               `json:"specialty"`
+	HighlightTags   string               `json:"highlightTags"`
+	ReviewCount     int                  `json:"reviewCount"`
+	PriceMin        float64              `json:"priceMin"`
+	PriceMax        float64              `json:"priceMax"`
+	PriceUnit       string               `json:"priceUnit"`
+	PriceDisplay    ProviderPriceDisplay `json:"priceDisplay"`
+	ServiceArea     []string             `json:"serviceArea"`
+	IsSettled       bool                 `json:"isSettled"`
 }
 
 func ResolveProviderDisplayName(provider model.Provider, user *model.User) string {
@@ -225,7 +226,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	case "price_high":
 		db = db.Order("price_min DESC")
 	default:
-		db = db.Order("rating DESC, review_count DESC, completed_cnt DESC")
+		db = applyProviderRecommendOrder(db)
 	}
 
 	// 分页
@@ -291,6 +292,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			PriceMin:        p.PriceMin,
 			PriceMax:        p.PriceMax,
 			PriceUnit:       model.ProviderPriceUnitPerSquareMeter,
+			PriceDisplay:    buildProviderPriceDisplay(p.ProviderType, p.PricingJSON, p.PriceMin, p.PriceMax, p.PriceUnit),
 			ServiceArea:     serviceArea,
 			IsSettled:       providerSettlementValue(&p),
 		}
@@ -438,14 +440,15 @@ func (s *ProviderService) GetProviderByID(id uint64) (*model.Provider, *model.Us
 
 // ProviderDetail 服务商详情（含案例、评价）
 type ProviderDetail struct {
-	Provider    *model.Provider      `json:"provider"`
-	User        *model.User          `json:"user"`
-	Cases       []model.ProviderCase `json:"cases"`
-	SceneCases  []ProviderSceneItem  `json:"sceneCases"`
-	Reviews     []ProviderReviewItem `json:"reviews"`
-	ReviewCount int64                `json:"reviewCount"`
-	CaseCount   int64                `json:"caseCount"`
-	SceneCount  int64                `json:"sceneCount"`
+	Provider     *model.Provider      `json:"provider"`
+	User         *model.User          `json:"user"`
+	Cases        []model.ProviderCase `json:"cases"`
+	SceneCases   []ProviderSceneItem  `json:"sceneCases"`
+	Reviews      []ProviderReviewItem `json:"reviews"`
+	PriceDisplay ProviderPriceDisplay `json:"priceDisplay"`
+	ReviewCount  int64                `json:"reviewCount"`
+	CaseCount    int64                `json:"caseCount"`
+	SceneCount   int64                `json:"sceneCount"`
 	// 服务区域（名称数组 + 代码数组，方便前端展示/编辑）
 	ServiceArea      []string `json:"serviceArea"`
 	ServiceAreaCodes []string `json:"serviceAreaCodes"`
@@ -759,6 +762,7 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		Cases:            cases,
 		SceneCases:       sceneCases,
 		Reviews:          reviewItems,
+		PriceDisplay:     buildProviderPriceDisplay(provider.ProviderType, provider.PricingJSON, provider.PriceMin, provider.PriceMax, provider.PriceUnit),
 		ReviewCount:      reviewCount,
 		CaseCount:        caseCount,
 		SceneCount:       sceneCount,
@@ -895,18 +899,21 @@ func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderSho
 		return nil, err
 	}
 
-	if _, err := loadVisibleForeman(providerCase.ProviderID); err != nil {
+	provider, err := loadVisibleProvider(providerCase.ProviderID)
+	if err != nil {
 		return nil, err
 	}
 
-	var linkedSceneCount int64
-	if err := approvedProjectSceneCreateAuditScope(providerCase.ProviderID).
-		Where("case_id = ?", providerCase.ID).
-		Count(&linkedSceneCount).Error; err != nil {
-		return nil, err
-	}
-	if linkedSceneCount > 0 {
-		return nil, gorm.ErrRecordNotFound
+	if provider.ProviderType == 3 {
+		var linkedSceneCount int64
+		if err := approvedProjectSceneCreateAuditScope(providerCase.ProviderID).
+			Where("case_id = ?", providerCase.ID).
+			Count(&linkedSceneCount).Error; err != nil {
+			return nil, err
+		}
+		if linkedSceneCount > 0 {
+			return nil, gorm.ErrRecordNotFound
+		}
 	}
 
 	providerCase.CoverImage = imgutil.GetFullImageURL(providerCase.CoverImage)
@@ -915,15 +922,33 @@ func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderSho
 	return &ProviderShowcaseDetail{
 		ID:          providerCase.ID,
 		ProviderID:  providerCase.ProviderID,
-		Title:       pickFirstNonEmptyProviderString(providerCase.Title, "工艺展示"),
+		Title:       pickFirstNonEmptyProviderString(providerCase.Title, "案例详情"),
 		CoverImage:  providerCase.CoverImage,
 		Style:       providerCase.Style,
 		Layout:      providerCase.Layout,
 		Area:        providerCase.Area,
-		Description: pickFirstNonEmptyProviderString(providerCase.Description, "工艺展示说明待补充"),
+		Description: pickFirstNonEmptyProviderString(providerCase.Description, "案例说明待补充"),
 		Images:      providerCase.Images,
 		Year:        providerCase.Year,
 	}, nil
+}
+
+func (s *ProviderService) GetProviderCaseDetail(providerID, caseID uint64) (*model.ProviderCase, error) {
+	var provider model.Provider
+	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).Select("id").First(&provider, providerID).Error; err != nil {
+		return nil, err
+	}
+
+	var providerCase model.ProviderCase
+	if err := repository.DB.
+		Where("provider_id = ? AND id = ?", providerID, caseID).
+		First(&providerCase).Error; err != nil {
+		return nil, err
+	}
+
+	providerCase.CoverImage = imgutil.GetFullImageURL(providerCase.CoverImage)
+	providerCase.Images = imgutil.NormalizeImageURLsJSON(providerCase.Images)
+	return &providerCase, nil
 }
 
 // GetProviderReviews 获取服务商评价列表（分页+筛选）

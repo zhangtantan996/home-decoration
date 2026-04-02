@@ -60,6 +60,9 @@ func TestEnsureRuntimeSchemaColumnsAlignsOnboardingTables(t *testing.T) {
 	if !DB.Migrator().HasColumn(&model.MerchantApplication{}, "OfficeAddress") {
 		t.Fatalf("expected merchant_applications.office_address to exist")
 	}
+	if !DB.Migrator().HasColumn(&model.MerchantApplication{}, "ApplicationScene") {
+		t.Fatalf("expected merchant_applications.application_scene to exist")
+	}
 	if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "LegalPersonName") {
 		t.Fatalf("expected material_shop_applications.legal_person_name to exist")
 	}
@@ -68,5 +71,26 @@ func TestEnsureRuntimeSchemaColumnsAlignsOnboardingTables(t *testing.T) {
 	}
 	if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "BrandLogo") {
 		t.Fatalf("expected material_shop_applications.brand_logo to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MaterialShopApplication{}, "ApplicationScene") {
+		t.Fatalf("expected material_shop_applications.application_scene to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.Provider{}, "NeedsOnboardingCompletion") {
+		t.Fatalf("expected providers.needs_onboarding_completion to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.Provider{}, "PlatformDisplayEnabled") {
+		t.Fatalf("expected providers.platform_display_enabled to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.Provider{}, "MerchantDisplayEnabled") {
+		t.Fatalf("expected providers.merchant_display_enabled to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MaterialShop{}, "NeedsOnboardingCompletion") {
+		t.Fatalf("expected material_shops.needs_onboarding_completion to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MaterialShop{}, "PlatformDisplayEnabled") {
+		t.Fatalf("expected material_shops.platform_display_enabled to exist")
+	}
+	if !DB.Migrator().HasColumn(&model.MaterialShop{}, "MerchantDisplayEnabled") {
+		t.Fatalf("expected material_shops.merchant_display_enabled to exist")
 	}
 }

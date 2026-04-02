@@ -2,7 +2,9 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import MerchantEntry from '../pages/merchant/MerchantEntry';
 import MerchantLogin from '../pages/merchant/MerchantLogin';
 import MerchantRegister from '../pages/merchant/MerchantRegister';
+import MerchantOnboardingCompletion from '../pages/merchant/MerchantOnboardingCompletion';
 import MaterialShopRegister from '../pages/merchant/MaterialShopRegister';
+import MaterialShopOnboardingCompletion from '../pages/merchant/MaterialShopOnboardingCompletion';
 import MerchantApplyStatus from '../pages/merchant/MerchantApplyStatus';
 import MerchantDashboard from '../pages/merchant/MerchantDashboard';
 import MerchantNotifications from '../pages/merchant/MerchantNotifications';
@@ -36,6 +38,7 @@ import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
 import MerchantLayout from '../layouts/MerchantLayout';
 import MerchantAuthGuard from '../components/MerchantAuthGuard';
+import MerchantCompletionGuard from '../components/MerchantCompletionGuard';
 import { getRouterBasename } from '../utils/env';
 
 const router = createBrowserRouter([
@@ -50,36 +53,43 @@ const router = createBrowserRouter([
   {
     element: <MerchantAuthGuard />,
     children: [
+      { path: '/onboarding/completion', element: <MerchantOnboardingCompletion /> },
+      { path: '/material-shop/onboarding/completion', element: <MaterialShopOnboardingCompletion /> },
       {
-        element: <MerchantLayout />,
+        element: <MerchantCompletionGuard />,
         children: [
-          { path: '/dashboard', element: <MerchantDashboard /> },
-          { path: '/notifications', element: <MerchantNotifications /> },
-          { path: '/leads', element: <MerchantLeads /> },
-          { path: '/bookings', element: <MerchantBookings /> },
-          { path: '/bookings/:id/site-survey', element: <MerchantBookingSiteSurvey /> },
-          { path: '/bookings/:id/budget-confirm', element: <MerchantBookingBudgetConfirm /> },
-          { path: '/bookings/:id/design-workflow', element: <MerchantDesignWorkflow /> },
-          { path: '/bookings/:id/flow', element: <MerchantProjectFlow /> },
-          { path: '/proposals', element: <MerchantProposals /> },
-          { path: '/price-book', element: <MerchantPriceBook /> },
-          { path: '/quote-lists', element: <MerchantQuoteLists /> },
-          { path: '/quote-lists/:id', element: <MerchantQuoteDetail /> },
-          { path: '/projects', element: <MerchantProjects /> },
-          { path: '/projects/:id', element: <MerchantProjectExecution /> },
-          { path: '/projects/:id/dispute', element: <MerchantProjectDispute /> },
-          { path: '/orders', element: <MerchantOrders /> },
-          { path: '/complaints', element: <MerchantComplaints /> },
-          { path: '/contracts/new', element: <MerchantContractCreate /> },
-          { path: '/income', element: <MerchantIncome /> },
-          { path: '/bond', element: <MerchantBond /> },
-          { path: '/payments/result', element: <MerchantPaymentResult /> },
-          { path: '/withdraw', element: <MerchantWithdraw /> },
-          { path: '/bank-accounts', element: <MerchantBankAccounts /> },
-          { path: '/cases', element: <MerchantCases /> },
-          { path: '/settings', element: <MerchantSettings /> },
-          { path: '/material-shop/settings', element: <MaterialShopSettings /> },
-          { path: '/material-shop/products', element: <MaterialShopProducts /> }
+          {
+            element: <MerchantLayout />,
+            children: [
+              { path: '/dashboard', element: <MerchantDashboard /> },
+              { path: '/notifications', element: <MerchantNotifications /> },
+              { path: '/leads', element: <MerchantLeads /> },
+              { path: '/bookings', element: <MerchantBookings /> },
+              { path: '/bookings/:id/site-survey', element: <MerchantBookingSiteSurvey /> },
+              { path: '/bookings/:id/budget-confirm', element: <MerchantBookingBudgetConfirm /> },
+              { path: '/bookings/:id/design-workflow', element: <MerchantDesignWorkflow /> },
+              { path: '/bookings/:id/flow', element: <MerchantProjectFlow /> },
+              { path: '/proposals', element: <MerchantProposals /> },
+              { path: '/price-book', element: <MerchantPriceBook /> },
+              { path: '/quote-lists', element: <MerchantQuoteLists /> },
+              { path: '/quote-lists/:id', element: <MerchantQuoteDetail /> },
+              { path: '/projects', element: <MerchantProjects /> },
+              { path: '/projects/:id', element: <MerchantProjectExecution /> },
+              { path: '/projects/:id/dispute', element: <MerchantProjectDispute /> },
+              { path: '/orders', element: <MerchantOrders /> },
+              { path: '/complaints', element: <MerchantComplaints /> },
+              { path: '/contracts/new', element: <MerchantContractCreate /> },
+              { path: '/income', element: <MerchantIncome /> },
+              { path: '/bond', element: <MerchantBond /> },
+              { path: '/payments/result', element: <MerchantPaymentResult /> },
+              { path: '/withdraw', element: <MerchantWithdraw /> },
+              { path: '/bank-accounts', element: <MerchantBankAccounts /> },
+              { path: '/cases', element: <MerchantCases /> },
+              { path: '/settings', element: <MerchantSettings /> },
+              { path: '/material-shop/settings', element: <MaterialShopSettings /> },
+              { path: '/material-shop/products', element: <MaterialShopProducts /> }
+            ],
+          },
         ],
       },
     ],

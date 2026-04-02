@@ -5,7 +5,7 @@ export type TagVariant = NonNullable<TagProps['variant']>;
 export const proposalStatusMap: Record<number, { label: string; variant: TagVariant }> = {
   0: { label: '待确认', variant: 'warning' },
   1: { label: '待确认', variant: 'warning' },
-  2: { label: '已接受', variant: 'success' },
+  2: { label: '已确认', variant: 'success' },
   3: { label: '已拒绝', variant: 'error' },
   4: { label: '已替代', variant: 'default' },
 };
@@ -18,16 +18,39 @@ export const orderStatusMap: Record<number, { label: string; variant: TagVariant
 };
 
 export const projectStatusMap: Record<number, { label: string; variant: TagVariant }> = {
-  0: { label: '待准备', variant: 'default' },
-  1: { label: '施工中', variant: 'brand' },
-  2: { label: '验收中', variant: 'warning' },
-  3: { label: '已完工', variant: 'success' },
-  4: { label: '已取消', variant: 'default' },
+  [-1]: { label: '待确认施工报价', variant: 'warning' },
+  0: { label: '进行中', variant: 'brand' },
+  1: { label: '已完工', variant: 'success' },
+  2: { label: '已暂停', variant: 'warning' },
+  3: { label: '已关闭', variant: 'default' },
 };
 
 export const projectPhaseStatusMap: Record<string, { label: string; variant: TagVariant }> = {
   pending: { label: '待开始', variant: 'default' },
   in_progress: { label: '进行中', variant: 'brand' },
+  completed: { label: '已完成', variant: 'success' },
+};
+
+export const businessStageMap: Record<string, { label: string; variant: TagVariant }> = {
+  lead_pending: { label: '线索待推进', variant: 'default' },
+  negotiating: { label: '沟通中', variant: 'default' },
+  design_pending_submission: { label: '待设计师提交方案', variant: 'warning' },
+  design_pending_confirmation: { label: '设计方案待确认', variant: 'warning' },
+  construction_party_pending: { label: '待确认施工方', variant: 'warning' },
+  construction_quote_pending: { label: '施工报价待确认', variant: 'warning' },
+  ready_to_start: { label: '待开工', variant: 'warning' },
+  in_construction: { label: '施工中', variant: 'brand' },
+  node_acceptance_in_progress: { label: '节点验收中', variant: 'warning' },
+  completed: { label: '已完工待验收', variant: 'success' },
+  archived: { label: '已归档', variant: 'default' },
+  disputed: { label: '争议中', variant: 'error' },
+  cancelled: { label: '已取消', variant: 'default' },
+};
+
+export const refundStatusMap: Record<string, { label: string; variant: TagVariant }> = {
+  pending: { label: '待审核', variant: 'warning' },
+  approved: { label: '已通过', variant: 'brand' },
+  rejected: { label: '已驳回', variant: 'error' },
   completed: { label: '已完成', variant: 'success' },
 };
 
@@ -58,8 +81,20 @@ export const getProjectStatus = (status?: number) => {
   return projectStatusMap[status] || { label: '未知状态', variant: 'default' as TagVariant };
 };
 
+export const getBusinessStageStatus = (stage?: string) => {
+  const normalized = String(stage || '').trim().toLowerCase();
+  return businessStageMap[normalized] || { label: stage || '处理中', variant: 'default' as TagVariant };
+};
+
 export const getProjectPhaseStatus = (status: string) => {
   return projectPhaseStatusMap[status] || { label: '待开始', variant: 'default' as TagVariant };
+};
+
+export const getRefundStatus = (status?: string) => {
+  if (!status) {
+    return { label: '未申请', variant: 'default' as TagVariant };
+  }
+  return refundStatusMap[status] || { label: status, variant: 'default' as TagVariant };
 };
 
 export const getOrderTypeLabel = (type?: string) => {

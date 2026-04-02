@@ -166,17 +166,42 @@ const MerchantLogin: React.FC = () => {
         }
 
         message.warning('该手机号尚未入驻，正在为你跳转入驻页', 1.2);
-        navigate(`/register?from=login_unregistered&phone=${encodeURIComponent(phone)}`);
+        if (guide?.kind === 'material_shop') {
+            const entityType = guide?.entityType || 'company';
+            navigate(`/material-shop/register?from=login_unregistered&phone=${encodeURIComponent(phone)}&entityType=${entityType}`);
+            return;
+        }
+
+        const role = guide?.role || 'designer';
+        const entityType = guide?.entityType || (
+            guide?.applicantType === 'studio' || guide?.applicantType === 'company'
+                ? 'company'
+                : 'personal'
+        );
+        navigate(`/register?from=login_unregistered&phone=${encodeURIComponent(phone)}&role=${role}&entityType=${entityType}`);
     };
 
     const onFinish = async (values: { phone: string; code: string }) => {
         setLoading(true);
         try {
             const data = await merchantAuthApi.login(values);
-            const { token, provider, tinodeToken, merchantKind } = data;
-            useMerchantAuthStore.getState().login({ token, provider, tinodeToken });
+            const { token, provider, tinodeToken, merchantKind, completionRequired, onboardingStatus, completionApplicationId, redirectToCompletion } = data;
+            useMerchantAuthStore.getState().login({
+                token,
+                provider,
+                tinodeToken,
+                completionRequired,
+                onboardingStatus,
+                completionApplicationId,
+            });
             message.success('登录成功');
-            if (merchantKind === 'material_shop' || provider?.merchantKind === 'material_shop') {
+            if (redirectToCompletion) {
+                navigate(
+                    merchantKind === 'material_shop' || provider?.merchantKind === 'material_shop'
+                        ? '/material-shop/onboarding/completion'
+                        : '/onboarding/completion'
+                );
+            } else if (merchantKind === 'material_shop' || provider?.merchantKind === 'material_shop') {
                 navigate('/material-shop/products');
             } else {
                 navigate('/dashboard');

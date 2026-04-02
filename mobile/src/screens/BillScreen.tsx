@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -7,7 +7,6 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    Dimensions,
     StatusBar,
     Platform,
 } from 'react-native';
@@ -21,19 +20,16 @@ import {
     Lock,
     Download,
 } from 'lucide-react-native';
-import { billApi, orderApi } from '../services/api';
+import { billApi, MobileApiError } from '../services/api';
+import { useAuthStore } from '../store/authStore';
 import {
-    Order,
-    PaymentPlan,
-    BillItem,
     OrderStatus,
     OrderType,
+    BillItem,
     getOrderStatusText,
     getOrderTypeText,
 } from '../types/businessFlow';
 import InfoModal from '../components/InfoModal';
-
-const { width } = Dimensions.get('window');
 
 interface BillScreenProps {
     route: any;
@@ -42,11 +38,10 @@ interface BillScreenProps {
 
 const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
     const { projectId } = route.params;
+    const activeRole = useAuthStore((state) => state.user?.activeRole);
 
     const [billItems, setBillItems] = useState<BillItem[]>([]);
     const [loading, setLoading] = useState(true);
-    const [payingOrderId, setPayingOrderId] = useState<number | null>(null);
-    const [payingPlanId, setPayingPlanId] = useState<number | null>(null);
 
     // Modal state
     const [modalVisible, setModalVisible] = useState(false);
@@ -61,11 +56,7 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
         setModalVisible(true);
     };
 
-    useEffect(() => {
-        loadBill();
-    }, [projectId]);
-
-    const loadBill = async () => {
+    const loadBill = useCallback(async () => {
         try {
             setLoading(true);
             const res = await billApi.get(projectId);
@@ -75,42 +66,32 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
         } finally {
             setLoading(false);
         }
+    }, [projectId]);
+
+    useEffect(() => {
+        void loadBill();
+    }, [loadBill]);
+
+    const ownerScopeDisabled = activeRole ? !['owner', 'homeowner'].includes(activeRole) : false;
+
+    const handlePayOrder = (_orderId: number) => {
+        showModal('请前往 Web/H5 支付', '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。', 'info');
     };
 
-    const handlePayOrder = async (orderId: number) => {
-        try {
-            setPayingOrderId(orderId);
-            await orderApi.pay(orderId);
-            showModal('支付成功', '订单支付成功', 'success');
-            loadBill();
-        } catch (error: any) {
-            showModal('支付失败', error.message || '请稍后重试', 'error');
-        } finally {
-            setPayingOrderId(null);
-        }
-    };
-
-    const handlePayPlan = async (planId: number) => {
-        try {
-            setPayingPlanId(planId);
-            await orderApi.payPlan(planId);
-            showModal('支付成功', '款项支付成功', 'success');
-            loadBill();
-        } catch (error: any) {
-            showModal('支付失败', error.message || '请稍后重试', 'error');
-        } finally {
-            setPayingPlanId(null);
-        }
+    const handlePayPlan = (_planId: number) => {
+        showModal('请前往 Web/H5 支付', '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。', 'info');
     };
 
     const handleViewFiles = async () => {
         try {
-            const res = await billApi.getFiles(projectId);
+            await billApi.getFiles(projectId);
             // 成功获取（哪怕为空），跳转到列表页
             navigation.navigate('DesignFiles', { projectId });
         } catch (error: any) {
-            if (error.response?.status === 403) {
+            if (error instanceof MobileApiError && error.status === 403) {
                 showModal('无权限', '请先支付设计费后查看图纸', 'error');
+            } else if (error instanceof MobileApiError && error.status === 409) {
+                showModal('状态已变化', '请刷新后重试', 'info');
             } else {
                 showModal('加载失败', error.message || '请稍后重试', 'error');
             }
@@ -140,6 +121,17 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
     const isDesignFeePaid = billItems.some(
         (item) => item.order.orderType === OrderType.DESIGN && item.order.status === OrderStatus.PAID
     );
+
+    if (ownerScopeDisabled) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>当前身份无权查看业主账单页</Text>
+                    <Text style={styles.emptySubText}>请切换回业主身份后再查看账单与图纸</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     if (loading) {
         return (
@@ -190,7 +182,7 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
                         </TouchableOpacity>
 
                         {/* 订单列表 */}
-                        {billItems.map((item, index) => (
+                        {billItems.map((item) => (
                             <View key={item.order.id} style={styles.orderCard}>
                                 {/* 订单头部 */}
                                 <View style={styles.orderHeader}>
@@ -259,13 +251,8 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
                                                         <TouchableOpacity
                                                             style={styles.payPlanBtn}
                                                             onPress={() => handlePayPlan(plan.id)}
-                                                            disabled={payingPlanId === plan.id}
                                                         >
-                                                            {payingPlanId === plan.id ? (
-                                                                <ActivityIndicator size="small" color="#FFFFFF" />
-                                                            ) : (
-                                                                <Text style={styles.payPlanBtnText}>支付</Text>
-                                                            )}
+                                                            <Text style={styles.payPlanBtnText}>前往 Web/H5 支付</Text>
                                                         </TouchableOpacity>
                                                     )}
                                                 </View>
@@ -279,15 +266,8 @@ const BillScreen: React.FC<BillScreenProps> = ({ route, navigation }) => {
                                     <TouchableOpacity
                                         style={styles.payBtn}
                                         onPress={() => handlePayOrder(item.order.id)}
-                                        disabled={payingOrderId === item.order.id}
                                     >
-                                        {payingOrderId === item.order.id ? (
-                                            <ActivityIndicator color="#FFFFFF" />
-                                        ) : (
-                                            <Text style={styles.payBtnText}>
-                                                立即支付 {formatMoney(item.order.totalAmount - item.order.discount)}
-                                            </Text>
-                                        )}
+                                        <Text style={styles.payBtnText}>前往 Web/H5 支付</Text>
                                     </TouchableOpacity>
                                 )}
                             </View>
@@ -361,6 +341,11 @@ const styles = StyleSheet.create({
         marginTop: 16,
         fontSize: 14,
         color: '#71717A',
+    },
+    emptySubText: {
+        marginTop: 8,
+        fontSize: 13,
+        color: '#A1A1AA',
     },
     filesCard: {
         flexDirection: 'row',

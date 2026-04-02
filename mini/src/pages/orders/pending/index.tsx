@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { usePullDownRefresh, useRouter } from '@tarojs/taro';
 
@@ -7,8 +7,7 @@ import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { Skeleton } from '@/components/Skeleton';
 import { getPendingPaymentTypeLabel } from '@/constants/status';
-import { payIntentFee } from '@/services/bookings';
-import { listPendingPayments, payOrder, type PendingPaymentItem } from '@/services/orders';
+import { listPendingPayments, type PendingPaymentItem } from '@/services/orders';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { formatServerDateTime } from '@/utils/serverTime';
@@ -18,7 +17,6 @@ const PendingOrders: React.FC = () => {
   const router = useRouter();
   const [list, setList] = useState<PendingPaymentItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [payingId, setPayingId] = useState<number | null>(null);
 
   const fetchList = async () => {
     if (!auth.token) {
@@ -59,29 +57,12 @@ const PendingOrders: React.FC = () => {
     Taro.navigateTo({ url: `/pages/orders/detail/index?id=${item.id}` });
   };
 
-  const handlePay = async (item: PendingPaymentItem) => {
-    if (payingId !== null) {
-      return;
-    }
-
-    setPayingId(item.id);
-    Taro.showLoading({ title: '支付中...' });
-
-    try {
-      if (item.type === 'intent_fee') {
-        await payIntentFee(item.id);
-      } else {
-        await payOrder(item.id);
-      }
-      Taro.hideLoading();
-      Taro.showToast({ title: '支付成功', icon: 'success' });
-      await fetchList();
-    } catch (error) {
-      Taro.hideLoading();
-      showErrorToast(error, '支付失败');
-    } finally {
-      setPayingId(null);
-    }
+  const handlePay = async (_item: PendingPaymentItem) => {
+    Taro.showModal({
+      title: '请前往 Web/H5 支付',
+      content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',
+      showCancel: false,
+    });
   };
 
   return (
@@ -135,10 +116,8 @@ const PendingOrders: React.FC = () => {
                     event.stopPropagation();
                     handlePay(item);
                   }}
-                  loading={payingId === item.id}
-                  disabled={payingId !== null}
                 >
-                  立即支付
+                  前往 Web/H5 支付
                 </Button>
               </View>
             </View>

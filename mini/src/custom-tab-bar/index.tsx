@@ -1,9 +1,15 @@
 import Taro from '@tarojs/taro';
 import { Text, View } from '@tarojs/components';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Icon, type IconName } from '@/components/Icon';
-import { CUSTOM_TAB_BAR_SELECT_EVENT, getCurrentTabRoute } from '@/utils/customTabBar';
+import { useAuthStore } from '@/store/auth';
+import { openAuthLoginPage } from '@/utils/authRedirect';
+import {
+  CUSTOM_TAB_BAR_SELECT_EVENT,
+  CUSTOM_TAB_BAR_VISIBILITY_EVENT,
+  getCurrentTabRoute,
+} from '@/utils/customTabBar';
 
 import './index.scss';
 
@@ -30,14 +36,25 @@ const TAB_ITEMS: TabItem[] = [
     icon: 'progress',
   },
   {
+    pagePath: '/pages/messages/index',
+    text: '通知',
+    icon: 'message',
+  },
+  {
     pagePath: '/pages/profile/index',
     text: '我的',
     icon: 'profile',
   },
 ];
 
+const PROTECTED_TAB_PATHS = new Set([
+  '/pages/progress/index',
+  '/pages/messages/index',
+]);
+
 export default function CustomTabBar() {
   const [selectedPath, setSelectedPath] = useState('');
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
     const syncSelected = (pagePath?: string) => {
@@ -52,13 +69,25 @@ export default function CustomTabBar() {
     };
   }, []);
 
+  useEffect(() => {
+    const syncHidden = (nextHidden?: boolean) => {
+      setHidden(Boolean(nextHidden));
+    };
+
+    Taro.eventCenter.on(CUSTOM_TAB_BAR_VISIBILITY_EVENT, syncHidden);
+
+    return () => {
+      Taro.eventCenter.off(CUSTOM_TAB_BAR_VISIBILITY_EVENT, syncHidden);
+    };
+  }, []);
+
   const currentIndex = useMemo(
     () => TAB_ITEMS.findIndex((item) => item.pagePath === selectedPath),
     [selectedPath],
   );
 
   return (
-    <View className="floating-tabbar">
+    <View className={`floating-tabbar ${hidden ? 'floating-tabbar--hidden' : ''}`}>
       <View className="floating-tabbar__shell">
         {TAB_ITEMS.map((item, index) => {
           const active = item.pagePath === selectedPath || (currentIndex === -1 && index === 0);
@@ -72,6 +101,11 @@ export default function CustomTabBar() {
                   return;
                 }
 
+                if (PROTECTED_TAB_PATHS.has(item.pagePath) && !useAuthStore.getState().token) {
+                  void openAuthLoginPage(item.pagePath);
+                  return;
+                }
+
                 setSelectedPath(item.pagePath);
                 void Taro.switchTab({ url: item.pagePath });
               }}
@@ -79,8 +113,8 @@ export default function CustomTabBar() {
               <View className={`floating-tabbar__icon-wrap ${active ? 'floating-tabbar__icon-wrap--active' : ''}`}>
                 <Icon
                   name={item.icon}
-                  size={30}
-                  color={active ? '#FFFFFF' : '#7A7A7A'}
+                  size={28}
+                  color={active ? '#111111' : '#A1A1AA'}
                 />
               </View>
               <Text className={`floating-tabbar__label ${active ? 'floating-tabbar__label--active' : ''}`}>

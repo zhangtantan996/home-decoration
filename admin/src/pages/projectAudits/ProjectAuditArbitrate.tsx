@@ -3,6 +3,7 @@ import { Button, Card, Form, Input, InputNumber, Select, Space, Spin, message } 
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import AdminReauthModal from '../../components/AdminReauthModal';
 import PageHeader from '../../components/PageHeader';
 import { adminProjectAuditApi, type AdminProjectAuditItem } from '../../services/api';
 
@@ -29,6 +30,8 @@ const ProjectAuditArbitrate: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [detail, setDetail] = useState<AdminProjectAuditItem | null>(null);
+    const [reauthOpen, setReauthOpen] = useState(false);
+    const [pendingValues, setPendingValues] = useState<Record<string, unknown> | null>(null);
 
     const loadDetail = async () => {
         if (!Number.isFinite(auditId) || auditId <= 0) {
@@ -84,20 +87,35 @@ const ProjectAuditArbitrate: React.FC = () => {
                 executionPlan.continueConstruction = Boolean(values.continueConstruction);
             }
 
-            setSubmitting(true);
-            const res = await adminProjectAuditApi.arbitrate(auditId, {
+            setPendingValues({
                 conclusion: values.conclusion,
                 conclusionReason: values.conclusionReason,
                 executionPlan,
             });
-            if (res?.code !== 0) {
-                message.error(res?.message || '提交仲裁失败');
-                return;
-            }
-            message.success('仲裁结论已提交');
-            navigate(`/project-audits/${auditId}`);
+            setReauthOpen(true);
         } catch {
             // 表单校验失败
+        }
+    };
+
+    const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (!pendingValues) return;
+        try {
+            setSubmitting(true);
+            const res = await adminProjectAuditApi.arbitrate(auditId, {
+                ...(pendingValues as {
+                    conclusion: 'continue' | 'refund' | 'partial_refund' | 'close';
+                    conclusionReason: string;
+                    executionPlan: Record<string, unknown>;
+                }),
+                recentReauthProof: payload.recentReauthProof,
+            });
+            if (res?.code !== 0) {
+                throw new Error(res?.message || '提交仲裁失败');
+            }
+            message.success('仲裁结论已提交');
+            setPendingValues(null);
+            navigate(`/project-audits/${auditId}`);
         } finally {
             setSubmitting(false);
         }
@@ -171,6 +189,18 @@ const ProjectAuditArbitrate: React.FC = () => {
                     </Form>
                 )}
             </Card>
+
+            <AdminReauthModal
+                open={reauthOpen}
+                title="提交仲裁结论"
+                description={`即将提交审计单 #${auditId || '-'} 的仲裁结论。`}
+                reasonRequired={false}
+                onCancel={() => {
+                    setReauthOpen(false);
+                    setPendingValues(null);
+                }}
+                onConfirmed={handleReauthConfirmed}
+            />
         </div>
     );
 };

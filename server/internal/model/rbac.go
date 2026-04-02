@@ -8,19 +8,25 @@ import (
 
 // SysAdmin 管理员账号
 type SysAdmin struct {
-	ID           uint64     `json:"id" gorm:"primaryKey"`
-	Username     string     `json:"username" gorm:"uniqueIndex;size:50;not null"`
-	Password     string     `json:"-" gorm:"size:255;not null"`
-	Nickname     string     `json:"nickname" gorm:"size:50"`
-	Avatar       string     `json:"avatar" gorm:"size:500"`
-	Phone        string     `json:"phone" gorm:"size:20"`
-	Email        string     `json:"email" gorm:"size:100"`
-	Status       int8       `json:"status" gorm:"default:1"`           // 1启用 0禁用
-	IsSuperAdmin bool       `json:"isSuperAdmin" gorm:"default:false"` // 超级管理员标记
-	LastLoginAt  *time.Time `json:"lastLoginAt"`
-	LastLoginIP  string     `json:"lastLoginIp" gorm:"size:50"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	ID                uint64     `json:"id" gorm:"primaryKey"`
+	Username          string     `json:"username" gorm:"uniqueIndex;size:50;not null"`
+	Password          string     `json:"-" gorm:"size:255;not null"`
+	Nickname          string     `json:"nickname" gorm:"size:50"`
+	Avatar            string     `json:"avatar" gorm:"size:500"`
+	Phone             string     `json:"phone" gorm:"size:20"`
+	Email             string     `json:"email" gorm:"size:100"`
+	Status            int8       `json:"status" gorm:"default:1"`           // 1启用 0禁用
+	IsSuperAdmin      bool       `json:"isSuperAdmin" gorm:"default:false"` // 超级管理员标记
+	MustResetPassword bool       `json:"mustResetPassword" gorm:"default:false"`
+	PasswordChangedAt *time.Time `json:"passwordChangedAt"`
+	TwoFactorEnabled  bool       `json:"twoFactorEnabled" gorm:"default:false"`
+	TwoFactorSecret   string     `json:"-" gorm:"type:text"`
+	TwoFactorBoundAt  *time.Time `json:"twoFactorBoundAt"`
+	DisabledReason    string     `json:"disabledReason" gorm:"type:text"`
+	LastLoginAt       *time.Time `json:"lastLoginAt"`
+	LastLoginIP       string     `json:"lastLoginIp" gorm:"size:50"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
 
 	// 关联
 	Roles []SysRole `json:"roles" gorm:"many2many:sys_admin_roles;foreignKey:ID;joinForeignKey:AdminID;References:ID;joinReferences:RoleID"`

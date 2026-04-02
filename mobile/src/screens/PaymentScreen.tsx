@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -7,20 +7,15 @@ import {
     ScrollView,
     TouchableOpacity,
     StatusBar,
-    ActivityIndicator,
-    Animated,
-    Dimensions,
     Platform,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ArrowLeft, CreditCard, Shield, CheckCircle } from 'lucide-react-native';
+import { ArrowLeft, CreditCard, Shield } from 'lucide-react-native';
 import { bookingApi } from '../services/api';
 import { useToast } from '../components/Toast';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import CancelOrderModal from '../components/CancelOrderModal';
-
-const { width } = Dimensions.get('window');
 
 type PaymentScreenRouteProp = RouteProp<RootStackParamList, 'Payment'>;
 type PaymentScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -35,41 +30,11 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
 
     const { bookingId, amount, providerName } = route.params;
 
-    const [isLoading, setIsLoading] = useState(false);
-    const [isPaying, setIsPaying] = useState(false);
-    const [paymentSuccess, setPaymentSuccess] = useState(false);
-    const [countdown, setCountdown] = useState(3);
-
     // Cancel Modal State
     const [cancelModalVisible, setCancelModalVisible] = useState(false);
 
-    // Animation values
-    const successScale = useRef(new Animated.Value(0)).current;
-    const successOpacity = useRef(new Animated.Value(0)).current;
-    const checkOpacity = useRef(new Animated.Value(0)).current;
-
-    // Handle payment
-    const handlePayment = async () => {
-        if (isPaying || !bookingId) return;
-
-        setIsPaying(true);
-        try {
-            // 模拟支付过程（延迟 1.5 秒）
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // 调用后端支付 API
-            await bookingApi.payIntent(bookingId);
-
-            // 支付成功
-            setPaymentSuccess(true);
-            playSuccessAnimation();
-
-        } catch (error: any) {
-            console.error('Payment Error:', error);
-            showAlert('支付失败', '请重试');
-        } finally {
-            setIsPaying(false);
-        }
+    const handlePayment = () => {
+        showAlert('请前往 Web/H5 支付', '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。');
     };
 
     // Show cancel modal
@@ -90,80 +55,6 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
             showAlert('错误', msg);
         }
     };
-
-    // Success animation
-    const playSuccessAnimation = () => {
-        Animated.parallel([
-            Animated.spring(successScale, {
-                toValue: 1,
-                friction: 5,
-                tension: 80,
-                useNativeDriver: true,
-            }),
-            Animated.timing(successOpacity, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-            }),
-        ]).start(() => {
-            // Show checkmark after circle
-            Animated.timing(checkOpacity, {
-                toValue: 1,
-                duration: 200,
-                useNativeDriver: true,
-            }).start();
-        });
-    };
-
-    // Countdown and auto-navigate
-    useEffect(() => {
-        if (paymentSuccess && countdown > 0) {
-            const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-            return () => clearTimeout(timer);
-        } else if (paymentSuccess && countdown === 0) {
-            navigation.reset({
-                index: 0,
-                routes: [{ name: 'Main' }],
-            });
-        }
-    }, [paymentSuccess, countdown, navigation]);
-
-    // Render success overlay
-    if (paymentSuccess) {
-        return (
-            <SafeAreaView style={styles.container}>
-                <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-                <View style={styles.successContainer}>
-                    <Animated.View
-                        style={[
-                            styles.successCircle,
-                            {
-                                transform: [{ scale: successScale }],
-                                opacity: successOpacity,
-                            },
-                        ]}
-                    >
-                        <Animated.View style={{ opacity: checkOpacity }}>
-                            <CheckCircle size={64} color="#FFFFFF" strokeWidth={2} />
-                        </Animated.View>
-                    </Animated.View>
-                    <Text style={styles.successTitle}>支付成功</Text>
-                    <Text style={styles.successSubtitle}>
-                        您的预约已提交，商家将尽快与您联系
-                    </Text>
-                    <Text style={styles.countdown}>
-                        {countdown}秒后自动返回首页
-                    </Text>
-                    <TouchableOpacity
-                        style={styles.returnButton}
-                        onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Main' }] })}
-                    >
-                        <Text style={styles.returnButtonText}>立即返回</Text>
-                    </TouchableOpacity>
-                </View>
-            </SafeAreaView>
-        );
-    }
 
     return (
         <SafeAreaView style={styles.container}>
@@ -218,8 +109,8 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
                             <CreditCard size={24} color="#09090B" />
                         </View>
                         <View style={styles.paymentMethodInfo}>
-                            <Text style={styles.paymentMethodName}>模拟支付</Text>
-                            <Text style={styles.paymentMethodDesc}>开发环境演示用</Text>
+                            <Text style={styles.paymentMethodName}>支付宝 Web/H5</Text>
+                            <Text style={styles.paymentMethodDesc}>App 内暂不支持直接支付</Text>
                         </View>
                         <View style={styles.radioSelected} />
                     </TouchableOpacity>
@@ -229,7 +120,7 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
                 <View style={styles.securityNote}>
                     <Shield size={16} color="#71717A" />
                     <Text style={styles.securityText}>
-                        资金由平台托管，服务完成后结算
+                        请在浏览器打开订单页面完成支付，App 内不再走模拟成功链路
                     </Text>
                 </View>
             </ScrollView>
@@ -239,24 +130,15 @@ const PaymentScreen: React.FC<PaymentScreenProps> = ({ route, navigation }) => {
                 <TouchableOpacity
                     style={styles.cancelBtn}
                     onPress={handleCancel}
-                    disabled={isPaying}
                 >
                     <Text style={styles.cancelBtnText}>取消订单</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={styles.payButton}
                     onPress={handlePayment}
-                    disabled={isPaying}
                     activeOpacity={0.8}
                 >
-                    {isPaying ? (
-                        <View style={styles.payingRow}>
-                            <ActivityIndicator size="small" color="#FFFFFF" />
-                            <Text style={styles.payButtonText}>支付中...</Text>
-                        </View>
-                    ) : (
-                        <Text style={styles.payButtonText}>立即支付 ¥{amount || 99}</Text>
-                    )}
+                    <Text style={styles.payButtonText}>前往 Web/H5 支付</Text>
                 </TouchableOpacity>
             </View>
 

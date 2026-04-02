@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { Cell, Empty } from '@nutui/nutui-react-taro';
@@ -40,8 +40,14 @@ const ProjectBillPage: React.FC = () => {
     fetch();
   }, [id, auth.token]);
 
+  const ownerScopeDisabled = Boolean(auth.user?.activeRole) && !['owner', 'homeowner'].includes(auth.user?.activeRole || '');
+
   if (!auth.token) {
     return <View className="p-md text-center text-gray-500">登录后查看账单</View>;
+  }
+
+  if (ownerScopeDisabled) {
+    return <View className="p-md text-center text-gray-500">当前身份无权查看业主账单，请切换回业主身份后重试</View>;
   }
 
   if (loading) return (
@@ -74,7 +80,7 @@ const ProjectBillPage: React.FC = () => {
             </View>
             <View className="flex justify-between items-center">
               <Text className="text-gray-500">待支付</Text>
-              <Text className="text-warning font-medium">¥{bill.unpaidAmount.toLocaleString()}</Text>
+              <Text className="text-warning font-medium">¥{bill.remainingAmount.toLocaleString()}</Text>
             </View>
           </View>
         </View>
@@ -90,7 +96,6 @@ const ProjectBillPage: React.FC = () => {
                 <Cell
                   key={index}
                   title={item.name}
-                  description={item.description}
                   extra={
                     <View className="text-right">
                       <View className="font-bold">¥{item.amount.toLocaleString()}</View>
@@ -110,13 +115,6 @@ const ProjectBillPage: React.FC = () => {
             <View className="p-md text-center text-gray-400">暂无账单明细</View>
           )}
         </View>
-
-        {bill.notes && (
-          <View className="bg-white mt-md p-md">
-            <View className="text-sm font-bold mb-xs">备注</View>
-            <Text className="text-sm text-gray-500">{bill.notes}</Text>
-          </View>
-        )}
       </ScrollView>
     </View>
   );

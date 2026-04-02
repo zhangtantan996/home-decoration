@@ -18,7 +18,8 @@ func TestSmokeWriteMerchantApplicationSuccess(t *testing.T) {
 			team_size INTEGER,
 			service_area TEXT,
 			user_id INTEGER,
-			provider_id INTEGER
+			provider_id INTEGER,
+			application_scene TEXT
 		)
 	`).Error; err != nil {
 		t.Fatalf("create merchant_applications table: %v", err)
@@ -144,7 +145,7 @@ func TestSmokeOperationUnknownOperation(t *testing.T) {
 }
 
 func TestSchemaGuardMigrationPath(t *testing.T) {
-	if SchemaGuardMigrationPath != "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql" {
+	if SchemaGuardMigrationPath != "server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql" {
 		t.Fatalf("unexpected migration path: %s", SchemaGuardMigrationPath)
 	}
 }

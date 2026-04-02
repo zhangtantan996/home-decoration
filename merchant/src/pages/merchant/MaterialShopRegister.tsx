@@ -30,12 +30,15 @@ import { getServerTimeMs } from '../../utils/serverTime';
 import {
     MerchantApiError,
     materialShopApplyApi,
+    materialShopCompletionApi,
     merchantAuthApi,
     merchantUploadApi,
     onboardingValidationApi,
     type BusinessHoursRange,
     type MaterialShopApplyDetailData,
     type MaterialShopApplyPayload,
+    type MaterialShopCompletionStatusResponse,
+    type MaterialShopCompletionSubmitPayload,
 } from '../../services/merchantApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
@@ -70,6 +73,12 @@ interface MaterialProductForm {
     description: string;
     price?: number;
     images: string[];
+}
+
+interface MaterialShopRegisterProps {
+    mode?: 'apply' | 'completion';
+    completionData?: MaterialShopCompletionStatusResponse | null;
+    onCompletionSubmitted?: () => void | Promise<void>;
 }
 
 const createEmptyProduct = (): MaterialProductForm => ({
@@ -150,15 +159,21 @@ const getErrorMessage = (error: unknown, fallback: string) => {
     return maybeAxiosError.response?.data?.message || maybeAxiosError.message || fallback;
 };
 
-const MaterialShopRegister: React.FC = () => {
+const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
+    mode = 'apply',
+    completionData = null,
+    onCompletionSubmitted,
+}) => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const [form] = Form.useForm();
+    const isCompletionMode = mode === 'completion';
+    const completionForm = completionData?.form;
     const [currentStep, setCurrentStep] = useState(0);
     const [loading, setLoading] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
-    const [showRedirectAlert, setShowRedirectAlert] = useState((searchParams.get('from') || '').startsWith('login_'));
+    const [showRedirectAlert, setShowRedirectAlert] = useState(!isCompletionMode && (searchParams.get('from') || '').startsWith('login_'));
     const [products, setProducts] = useState<MaterialProductForm[]>([createEmptyProduct()]);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
@@ -177,22 +192,36 @@ const MaterialShopRegister: React.FC = () => {
     const timerRef = useRef<number | null>(null);
 
     const phoneFromUrl = searchParams.get('phone') || '';
-    const resubmitId = searchParams.get('resubmit');
+    const resubmitId = isCompletionMode ? null : searchParams.get('resubmit');
 
     const entityType = useMemo(() => {
+        if (isCompletionMode && completionForm?.entityType) {
+            return completionForm.entityType === 'individual_business' ? 'individual_business' : 'company';
+        }
         const raw = (searchParams.get('entityType') || 'company').toLowerCase();
         return raw === 'individual_business' ? 'individual_business' : 'company';
-    }, [searchParams]);
+    }, [completionForm?.entityType, isCompletionMode, searchParams]);
 
-    const steps = useMemo(() => ([
-        { title: '手机号验证' },
-        { title: '基础信息' },
-        { title: '商品信息' },
-    ]), []);
+    const steps = useMemo(() => (
+        isCompletionMode
+            ? [
+                { title: '基础信息' },
+                { title: '商品信息' },
+            ]
+            : [
+                { title: '手机号验证' },
+                { title: '基础信息' },
+                { title: '商品信息' },
+            ]
+    ), [isCompletionMode]);
 
     const draftStorageKey = useMemo(() => (
-        resubmitId ? `${DRAFT_KEY}:resubmit:${resubmitId}` : DRAFT_KEY
-    ), [resubmitId]);
+        isCompletionMode
+            ? `${DRAFT_KEY}:completion:${completionData?.applicationId || 'required'}`
+            : resubmitId
+                ? `${DRAFT_KEY}:resubmit:${resubmitId}`
+                : DRAFT_KEY
+    ), [completionData?.applicationId, isCompletionMode, resubmitId]);
 
     const currentVerificationMode = resubmitId ? 'resubmit' as const : 'apply' as const;
     const currentVerificationApplicationId = resubmitId ? Number(resubmitId) : undefined;
@@ -229,10 +258,10 @@ const MaterialShopRegister: React.FC = () => {
 
     useEffect(() => {
         form.setFieldsValue({
-            phone: phoneFromUrl || undefined,
+            phone: completionForm?.phone || phoneFromUrl || undefined,
             entityType,
         });
-    }, [entityType, form, phoneFromUrl]);
+    }, [completionForm?.phone, entityType, form, phoneFromUrl]);
 
 
     useEffect(() => {
@@ -369,6 +398,19 @@ const MaterialShopRegister: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (isCompletionMode) {
+            sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
+            setPhoneVerified(true);
+            setVerifiedPhone(completionForm?.phone || '');
+            setVerificationToken('');
+            setVerificationExpiresAt(null);
+            setVerificationContext({
+                mode: 'apply',
+                merchantKind: currentVerificationMerchantKind,
+                applicationId: currentVerificationApplicationId,
+            });
+            return;
+        }
         if (resubmitId) {
             setPhoneVerified(false);
             setVerifiedPhone('');
@@ -415,7 +457,7 @@ const MaterialShopRegister: React.FC = () => {
         setVerificationExpiresAt(null);
         setVerificationContext({ mode: currentVerificationMode, merchantKind: currentVerificationMerchantKind, applicationId: currentVerificationApplicationId });
         sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
-    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, draftStorageKey, form, phoneFromUrl, resubmitId]);
+    }, [completionForm?.phone, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, draftStorageKey, form, isCompletionMode, phoneFromUrl, resubmitId]);
 
     const handleStepValidationError = useCallback((error: unknown, fallbackMessage = '请完善当前步骤必填信息') => {
         const errorFields = (
@@ -434,7 +476,7 @@ const MaterialShopRegister: React.FC = () => {
         message.error(firstField?.errors?.[0] || fallbackMessage);
     }, [form]);
 
-    const hydrateResubmitDetail = useCallback((detail: MaterialShopApplyDetailData) => {
+    const hydrateMaterialShopForm = useCallback((detail: MaterialShopApplyDetailData, legalAccepted = false) => {
         form.setFieldsValue({
             phone: detail.phone || phoneFromUrl || undefined,
             entityType: detail.entityType || entityType,
@@ -453,7 +495,7 @@ const MaterialShopRegister: React.FC = () => {
             contactPhone: detail.contactPhone,
             contactName: detail.contactName,
             address: detail.address,
-            legalAccepted: false,
+            legalAccepted,
         });
 
         if (Array.isArray(detail.products) && detail.products.length > 0) {
@@ -465,8 +507,27 @@ const MaterialShopRegister: React.FC = () => {
                 price: typeof product?.price === 'number' ? product.price : undefined,
                 images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
             })));
+            return;
         }
+
+        setProducts([createEmptyProduct()]);
     }, [entityType, form, phoneFromUrl]);
+
+    const hydrateResubmitDetail = useCallback((detail: MaterialShopApplyDetailData) => {
+        hydrateMaterialShopForm(detail, false);
+    }, [hydrateMaterialShopForm]);
+
+    useEffect(() => {
+        if (!isCompletionMode || !completionForm) {
+            return;
+        }
+
+        if (sessionStorage.getItem(draftStorageKey)) {
+            return;
+        }
+        hydrateMaterialShopForm(completionForm, false);
+        setCurrentStep(0);
+    }, [completionForm, draftStorageKey, hydrateMaterialShopForm, isCompletionMode]);
 
     const validateImageBeforeUpload = (file: File, spec: typeof IMAGE_UPLOAD_SPECS.product) =>
         validateImageUploadBeforeSend(file, spec);
@@ -572,8 +633,10 @@ const MaterialShopRegister: React.FC = () => {
     };
 
     const handleNext = async () => {
+        const phoneStep = 0;
+        const baseInfoStep = isCompletionMode ? 0 : 1;
         try {
-            if (currentStep === 0) {
+            if (!isCompletionMode && currentStep === phoneStep) {
                 const authValues = await form.validateFields(['phone', 'code']);
                 const phone = String(authValues.phone || '').trim();
                 const code = String(authValues.code || '').trim();
@@ -586,7 +649,7 @@ const MaterialShopRegister: React.FC = () => {
                 if (showRedirectAlert) {
                     setShowRedirectAlert(false);
                 }
-            } else if (currentStep === 1) {
+            } else if (currentStep === baseInfoStep) {
                 await form.validateFields([
                     'avatar',
                     'shopName',
@@ -676,6 +739,9 @@ const MaterialShopRegister: React.FC = () => {
     }, []);
 
     const hasValidVerification = useCallback((phone: string) => {
+        if (isCompletionMode) {
+            return true;
+        }
         const normalizedPhone = String(phone || '').trim();
         return phoneVerified
             && verificationToken !== ''
@@ -685,7 +751,7 @@ const MaterialShopRegister: React.FC = () => {
             && verificationContext.mode === currentVerificationMode
             && verificationContext.merchantKind === currentVerificationMerchantKind
             && (verificationContext.applicationId ?? 0) === (currentVerificationApplicationId ?? 0);
-    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, phoneVerified, verificationContext, verificationExpiresAt, verificationToken, verifiedPhone]);
+    }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, isCompletionMode, phoneVerified, verificationContext, verificationExpiresAt, verificationToken, verifiedPhone]);
 
     const confirmReapplyWarning = useCallback((phone: string) => new Promise<boolean>((resolve) => {
         Modal.confirm({
@@ -789,8 +855,12 @@ const MaterialShopRegister: React.FC = () => {
             okButtonProps: { danger: true },
             onOk: () => {
                 sessionStorage.removeItem(draftStorageKey);
-                form.resetFields();
-                setProducts([createEmptyProduct()]);
+                if (isCompletionMode && completionForm) {
+                    hydrateMaterialShopForm(completionForm, false);
+                } else {
+                    form.resetFields();
+                    setProducts([createEmptyProduct()]);
+                }
                 setCurrentStep(0);
                 message.success('草稿已清除');
             },
@@ -842,8 +912,23 @@ const MaterialShopRegister: React.FC = () => {
     };
 
     const handleSubmit = async () => {
-        try {
-            await form.validateFields([
+        const submitFields = isCompletionMode
+            ? [
+                'avatar',
+                'shopName',
+                'companyName',
+                'businessLicenseNo',
+                'businessLicense',
+                'legalPersonName',
+                'legalPersonIdCardNo',
+                'legalPersonIdCardFront',
+                'legalPersonIdCardBack',
+                'businessHoursRanges',
+                'contactPhone',
+                'address',
+                'legalAccepted',
+            ]
+            : [
                 'phone',
                 'avatar',
                 'shopName',
@@ -858,12 +943,14 @@ const MaterialShopRegister: React.FC = () => {
                 'contactPhone',
                 'address',
                 'legalAccepted',
-            ]);
+            ];
+        try {
+            await form.validateFields(submitFields);
         } catch {
             return;
         }
 
-        if (!hasValidVerification(String(form.getFieldValue('phone') || '').trim())) {
+        if (!isCompletionMode && !hasValidVerification(String(form.getFieldValue('phone') || '').trim())) {
             setCurrentStep(0);
             message.error('请先完成手机号验证码校验');
             return;
@@ -874,9 +961,9 @@ const MaterialShopRegister: React.FC = () => {
         }
 
         Modal.confirm({
-            title: '确认提交申请',
-            content: '请确认所有信息填写正确，提交后将进入审核流程。',
-            okText: '确定提交',
+            title: isCompletionMode ? '确认提交补全资料' : '确认提交申请',
+            content: isCompletionMode ? '请确认补全资料填写正确，提交后将进入审核流程。' : '请确认所有信息填写正确，提交后将进入审核流程。',
+            okText: isCompletionMode ? '提交补全' : '确定提交',
             cancelText: '再检查一下',
             onOk: async () => {
                 setLoading(true);
@@ -921,9 +1008,30 @@ const MaterialShopRegister: React.FC = () => {
                         },
                     };
 
-                    const result = resubmitId
-                        ? await materialShopApplyApi.resubmit(Number(resubmitId), payload)
-                        : await materialShopApplyApi.apply(payload);
+                    const result = isCompletionMode
+                        ? await materialShopCompletionApi.submit({
+                            entityType: payload.entityType,
+                            avatar: payload.avatar,
+                            shopName: payload.shopName,
+                            shopDescription: payload.shopDescription,
+                            companyName: payload.companyName,
+                            businessLicenseNo: payload.businessLicenseNo,
+                            businessLicense: payload.businessLicense,
+                            legalPersonName: payload.legalPersonName,
+                            legalPersonIdCardNo: payload.legalPersonIdCardNo,
+                            legalPersonIdCardFront: payload.legalPersonIdCardFront,
+                            legalPersonIdCardBack: payload.legalPersonIdCardBack,
+                            businessHours: payload.businessHours,
+                            businessHoursRanges: payload.businessHoursRanges,
+                            contactPhone: payload.contactPhone,
+                            contactName: payload.contactName,
+                            address: payload.address,
+                            products: payload.products,
+                            legalAcceptance: payload.legalAcceptance,
+                        } as MaterialShopCompletionSubmitPayload)
+                        : resubmitId
+                            ? await materialShopApplyApi.resubmit(Number(resubmitId), payload)
+                            : await materialShopApplyApi.apply(payload);
 
                     if (!result.applicationId) {
                         message.error('提交失败：申请编号缺失');
@@ -931,6 +1039,12 @@ const MaterialShopRegister: React.FC = () => {
                     }
 
                     sessionStorage.removeItem(draftStorageKey);
+                    if (isCompletionMode) {
+                        message.success('补全资料已提交，请等待审核');
+                        await onCompletionSubmitted?.();
+                        return;
+                    }
+
                     message.success(resubmitId ? '已重新提交，请等待审核' : '申请已提交，请等待审核');
                     navigate(`/apply-status?phone=${encodeURIComponent(values.phone as string)}`);
                 } catch (error) {
@@ -942,26 +1056,53 @@ const MaterialShopRegister: React.FC = () => {
         });
     };
 
+    const baseInfoStep = isCompletionMode ? 0 : 1;
+    const productStep = isCompletionMode ? 1 : 2;
+    const pageTitle = isCompletionMode ? '主材商正式入驻资料补全' : '主材商入驻申请';
+    const pageSubtitle = isCompletionMode
+        ? '认领账号后，需补齐完整店铺、资质与商品资料，审核通过后方可恢复经营。'
+        : '主材商独立通道：资料中心 + 商品管理。';
+    const heroTitle = isCompletionMode ? '主材商资料补全' : '主材商入驻';
+    const heroSubtitle = isCompletionMode
+        ? '后台认领后，门店可先登录查看状态，但需补齐完整资料并通过审核后才能正式经营。'
+        : '完善店铺、资质与商品资料，让门店信息与商品能力在同一条入驻链路中完成展示与审核。';
+
     return (
         <MerchantOnboardingShell
-            pageTitle="主材商入驻申请"
-            pageSubtitle="主材商独立通道：资料中心 + 商品管理。"
-            heroTitle="主材商入驻"
-            heroSubtitle="完善店铺、资质与商品资料，让门店信息与商品能力在同一条入驻链路中完成展示与审核。"
+            pageTitle={pageTitle}
+            pageSubtitle={pageSubtitle}
+            heroTitle={heroTitle}
+            heroSubtitle={heroSubtitle}
             currentStep={currentStep}
             steps={steps}
-            onBack={() => navigate('/')}
+            onBack={() => navigate(isCompletionMode ? '/login' : '/')}
             maxWidth={820}
-            alertNode={showRedirectAlert ? (
-                <Alert
-                    type="warning"
-                    showIcon
-                    closable
-                    onClose={() => setShowRedirectAlert(false)}
-                    message={(searchParams.get('from') || '') === 'login_resubmit' ? '系统已识别到原主材商申请记录，正在按原类型重新提交。手机号与商家类型已锁定，提交前需重新确认协议。' : '该手机号尚未入驻，请先完成入驻申请后再登录'}
-                    style={{ marginBottom: 24, borderRadius: 8 }}
-                />
-            ) : undefined}
+            alertNode={
+                isCompletionMode
+                    ? completionData?.onboardingStatus === 'rejected'
+                        ? (
+                            <Alert
+                                type="error"
+                                showIcon
+                                message="资料补全被驳回"
+                                description={completionData?.rejectReason || '请根据驳回原因补齐资料后重新提交。'}
+                                style={{ marginBottom: 24, borderRadius: 8 }}
+                            />
+                        )
+                        : undefined
+                    : showRedirectAlert
+                        ? (
+                            <Alert
+                                type="warning"
+                                showIcon
+                                closable
+                                onClose={() => setShowRedirectAlert(false)}
+                                message={(searchParams.get('from') || '') === 'login_resubmit' ? '系统已识别到原主材商申请记录，正在按原类型重新提交。手机号与商家类型已锁定，提交前需重新确认协议。' : '该手机号尚未入驻，请先完成入驻申请后再登录'}
+                                style={{ marginBottom: 24, borderRadius: 8 }}
+                            />
+                        )
+                        : undefined
+            }
         >
             <Form form={form} layout="vertical" className="glassmorphism-form premium-form" data-testid="material-register-form">
                 {resubmitLoading && (
@@ -982,7 +1123,7 @@ const MaterialShopRegister: React.FC = () => {
                         data-testid="material-register-resubmit-failed"
                     />
                 )}
-                {phoneVerified && hasValidVerification(String(form.getFieldValue('phone') || phoneFromUrl || '').trim()) && (
+                {!isCompletionMode && phoneVerified && hasValidVerification(String(form.getFieldValue('phone') || phoneFromUrl || '').trim()) && (
                     <Alert
                         type="success"
                         showIcon
@@ -991,7 +1132,7 @@ const MaterialShopRegister: React.FC = () => {
                         data-testid="material-register-phone-verified"
                     />
                 )}
-                        {currentStep === 0 && (
+                        {!isCompletionMode && currentStep === 0 && (
                             <div data-testid="material-register-step-0">
                                 <div style={{ marginBottom: 28 }}>
                                     <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>手机号验证</Title>
@@ -1050,11 +1191,13 @@ const MaterialShopRegister: React.FC = () => {
                             </div>
                         )}
 
-                        {currentStep === 1 && (
+                        {currentStep === baseInfoStep && (
                             <div data-testid="material-register-step-1">
                                 <div style={{ marginBottom: 28 }}>
                                     <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>基础信息</Title>
-                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>填写店铺、资质与联系人信息，确保审核通过后能完整展示在平台内。</Text>
+                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>
+                                        {isCompletionMode ? '请按正式入驻标准补齐店铺、资质与联系人信息，审核通过后才会恢复经营权限。' : '填写店铺、资质与联系人信息，确保审核通过后能完整展示在平台内。'}
+                                    </Text>
                                 </div>
                                 <div style={{ marginBottom: 24 }}>
                                     <div style={{ marginBottom: 8, color: 'rgba(0, 0, 0, 0.85)', fontSize: 14 }}>主体类型</div>
@@ -1345,11 +1488,13 @@ const MaterialShopRegister: React.FC = () => {
                             </div>
                         )}
 
-                        {currentStep === 2 && (
+                        {currentStep === productStep && (
                             <div data-testid="material-register-step-2">
                                 <div style={{ marginBottom: 24 }}>
                                     <Title level={4} style={{ marginBottom: 8, color: '#1e293b' }}>商品信息</Title>
-                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>按统一卡片方式维护商品名称、单位、价格与图片；至少准备 5 个商品，便于平台审核与展示。</Text>
+                                    <Text style={{ color: '#64748b', lineHeight: 1.75 }}>
+                                        {isCompletionMode ? '请按正式经营标准补齐商品信息；至少准备 5 个商品，审核通过后才会恢复商品经营能力。' : '按统一卡片方式维护商品名称、单位、价格与图片；至少准备 5 个商品，便于平台审核与展示。'}
+                                    </Text>
                                 </div>
                                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'stretch', justifyContent: 'space-between', marginBottom: 16 }}>
                                     <Alert
@@ -1485,7 +1630,7 @@ const MaterialShopRegister: React.FC = () => {
                             </div>
                         )}
 
-                        {currentStep === 2 && (
+                        {currentStep === productStep && (
                             <Form.Item
                                 name="legalAccepted"
                                 valuePropName="checked"
@@ -1533,7 +1678,7 @@ const MaterialShopRegister: React.FC = () => {
                                 </Button>
                             ) : (
                                 <Button type="primary" size="large" loading={loading} icon={<CheckOutlined />} onClick={handleSubmit} style={{ borderRadius: 8, padding: '0 32px' }} data-testid="material-register-submit">
-                                    提交申请
+                                    {isCompletionMode ? '提交补全资料' : '提交申请'}
                                 </Button>
                             )}
                         </div>

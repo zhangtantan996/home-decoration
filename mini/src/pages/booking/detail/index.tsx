@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { useLoad, usePullDownRefresh } from '@tarojs/taro';
 
@@ -8,7 +8,8 @@ import { Empty } from '@/components/Empty';
 import { ListItem } from '@/components/ListItem';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import { getBookingDetail, payIntentFee, type BookingDetailResponse } from '@/services/bookings';
+import { getRefundStatus } from '@/constants/status';
+import { getBookingDetail, type BookingDetailResponse } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 
@@ -32,7 +33,6 @@ const BookingDetailPage: React.FC = () => {
   const [id, setId] = useState<number>(0);
   const [detail, setDetail] = useState<BookingDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
 
   useLoad((options) => {
     if (options.id) {
@@ -72,19 +72,14 @@ const BookingDetailPage: React.FC = () => {
   });
 
   const handlePayIntent = async () => {
-    if (!detail?.booking || paying) {
+    if (!detail?.booking) {
       return;
     }
-    setPaying(true);
-    try {
-      await payIntentFee(detail.booking.id);
-      Taro.showToast({ title: '支付成功', icon: 'success' });
-      await fetchDetail();
-    } catch (error) {
-      showErrorToast(error, '支付失败');
-    } finally {
-      setPaying(false);
-    }
+    Taro.showModal({
+      title: '请前往 Web/H5 支付',
+      content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',
+      showCancel: false,
+    });
   };
 
   if (!auth.token) {
@@ -113,6 +108,9 @@ const BookingDetailPage: React.FC = () => {
 
   const booking = detail.booking;
   const status = getStatusMeta(booking.status);
+  const refundSummary = detail.refundSummary;
+  const refundStatus = getRefundStatus(refundSummary?.latestRefundStatus);
+  const stageText = detail.businessStage || detail.currentStage;
 
   return (
     <View className="page bg-gray-50 min-h-screen p-md">
@@ -140,6 +138,60 @@ const BookingDetailPage: React.FC = () => {
         </Card>
       ) : null}
 
+      {(stageText || detail.flowSummary) ? (
+        <Card title="预约进展" className="mb-md">
+          {stageText ? (
+            <ListItem
+              title="当前阶段"
+              description={stageText}
+              extra={<Tag variant="brand">{status.label}</Tag>}
+            />
+          ) : null}
+          {detail.flowSummary ? <View className="text-sm text-gray-500 mt-sm">{detail.flowSummary}</View> : null}
+        </Card>
+      ) : null}
+
+      {refundSummary ? (
+        <Card title="退款与售后" className="mb-md">
+          <View className="flex flex-col gap-sm">
+            <ListItem
+              title="申请状态"
+              description={refundSummary.latestRefundId ? `申请单 #${refundSummary.latestRefundId}` : '当前未发起退款'}
+              extra={<Tag variant={refundStatus.variant}>{refundStatus.label}</Tag>}
+            />
+            <ListItem
+              title="可退金额"
+              description={`¥${refundSummary.refundableAmount.toLocaleString()}`}
+            />
+            {refundSummary.canApplyRefund ? (
+              <View className="text-sm text-gray-500">当前可发起退款申请，提交后可在“退款记录”查看审核进度。</View>
+            ) : (
+              <View className="text-sm text-gray-500">当前已有退款处理记录，请先查看处理结果。</View>
+            )}
+            <View className="flex gap-sm mt-sm">
+              <View className="flex-1">
+                <Button
+                  variant="outline"
+                  block
+                  onClick={() => Taro.navigateTo({ url: `/pages/refunds/list/index?bookingId=${booking.id}` })}
+                >
+                  查看记录
+                </Button>
+              </View>
+              <View className="flex-1">
+                <Button
+                  block
+                  disabled={!refundSummary.canApplyRefund}
+                  onClick={() => Taro.navigateTo({ url: `/pages/bookings/refund/index?id=${booking.id}` })}
+                >
+                  申请退款
+                </Button>
+              </View>
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
       <Card title="下一步" className="mb-md">
         {!booking.intentFeePaid ? (
           <View className="flex items-center justify-between">
@@ -147,8 +199,8 @@ const BookingDetailPage: React.FC = () => {
               <Text className="text-sm text-gray-500">意向金</Text>
               <Text className="text-lg font-bold text-brand">¥{booking.intentFee?.toLocaleString() || '0'}</Text>
             </View>
-            <Button variant="primary" size="sm" onClick={handlePayIntent} loading={paying} disabled={paying}>
-              支付意向金
+            <Button variant="primary" size="sm" onClick={handlePayIntent}>
+              前往 Web/H5 支付
             </Button>
           </View>
         ) : detail.proposalId ? (

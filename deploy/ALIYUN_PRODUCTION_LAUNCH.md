@@ -153,23 +153,30 @@ allow 198.51.100.24;
 deny all;
 ```
 
-2) 生成 BasicAuth 密码文件（示例用户 `admin`）
+2) 同时在 `deploy/.env` 配置应用层白名单
+```bash
+ADMIN_AUTH_ALLOWED_CIDRS=203.0.113.10/32,198.51.100.24/32,10.10.0.0/16
+SERVER_TRUSTED_PROXIES=127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+3) 生成 BasicAuth 密码文件（示例用户 `admin`）
 ```bash
 cd /opt/home_decoration
 printf "admin:$(openssl passwd -apr1 'ReplaceWithStrongPassword')\n" > deploy/nginx/admin.htpasswd
 chmod 600 deploy/nginx/admin.htpasswd
 ```
 
-3) 热更新配置
+4) 热更新配置
 ```bash
 cd /opt/home_decoration/deploy
-docker compose -f docker-compose.prod.managed.yml up -d web
+docker compose -f docker-compose.prod.managed.yml up -d api web
 ```
 
-4) 验证
+5) 验证
 - 白名单 IP + 正确账号密码：可访问 `/admin/login`
 - 非白名单 IP：403
 - 白名单 IP + 错误密码：401
+- 白名单 IP 访问 `/api/v1/admin/*`：不应再被应用层误拦截
 
 ---
 

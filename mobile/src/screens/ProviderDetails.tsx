@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,8 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  Dimensions,
   StatusBar,
   Platform,
-  ActivityIndicator,
   ImageBackground,
   Animated,
 } from 'react-native';
@@ -19,30 +17,15 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import {
   ArrowLeft,
   Star,
-  MapPin,
-  Calendar,
   Award,
-  Briefcase,
-  Users,
-  Clock,
-  ChevronRight,
   Share2,
 } from 'lucide-react-native';
 import { useToast } from '../components/Toast';
 import { getWebUrl } from '../config';
 import { providerApi } from '../services/api';
-import UserProfileCache from '../services/UserProfileCache';
-import { colors, spacing, radii } from '../theme/tokens';
+import { colors } from '../theme/tokens';
 import { formatProviderPricing } from '../utils/providerPricing';
 import ProviderQuoteSection from '../components/provider/ProviderQuoteSection';
-
-const { width } = Dimensions.get('window');
-
-// 格式化粉丝数
-const formatFollowers = (count: number) => {
-  if (count >= 1000) return (count / 1000).toFixed(1) + 'k';
-  return count.toString();
-};
 
 const parseStringArray = (raw?: string): string[] => {
   const text = String(raw || '').trim();
@@ -165,63 +148,32 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
 
   // API 数据状态
   const [detail, setDetail] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [isFollowed, setIsFollowed] = useState(false);
-  const [followersCount, setFollowersCount] = useState(0);
+  const [_loading, setLoading] = useState(true);
   const [isIntroExpanded, setIsIntroExpanded] = useState(false);
 
-  useEffect(() => {
-    if (designerId) {
-      loadDetail();
-      loadUserStatus();
-    }
-  }, [designerId]);
-
-  const loadDetail = async () => {
+  const loadDetail = useCallback(async () => {
     try {
       const res = await providerApi.designerDetail(designerId);
       if (res.data) {
         setDetail(res.data);
-        setFollowersCount(res.data.provider?.followersCount || 0);
       }
     } catch (error) {
       console.log('加载详情失败:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [designerId]);
 
-  const loadUserStatus = async () => {
-    try {
-      const res = await providerApi.getUserStatus(designerId);
-      if (res.data) {
-        setIsFollowed(res.data.isFollowed);
-      }
-    } catch (error) {
-      // 未登录或其他错误，静默失败
-      console.log('加载用户状态失败:', error);
+  useEffect(() => {
+    if (designerId) {
+      loadDetail();
     }
-  };
+  }, [designerId, loadDetail]);
 
   const handleShare = () => {
     const shareUrl = `${getWebUrl()}/designer/${designerId}`;
     Clipboard.setString(shareUrl);
     showToast({ message: '链接已复制到剪贴板', type: 'success' });
-  };
-
-  const handleFollow = async () => {
-    try {
-      if (isFollowed) {
-        await providerApi.unfollow(designerId, 'designer');
-        setFollowersCount(prev => Math.max(0, prev - 1));
-      } else {
-        await providerApi.follow(designerId, 'designer');
-        setFollowersCount(prev => prev + 1);
-      }
-      setIsFollowed(!isFollowed);
-    } catch (error) {
-      showToast({ message: '操作失败，请重试', type: 'error' });
-    }
   };
 
   // 使用 API 数据或降级使用传入数据
@@ -241,11 +193,11 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
       user.publicId || provider.userPublicId || initialDesigner.publicId,
     coverImage:
       provider.coverImage || provider.avatar || initialDesigner.avatar,
-    rating: provider.rating || initialDesigner.rating || 5.0,
+    rating: Number(provider.rating ?? initialDesigner.rating ?? 0),
     reviewCount:
-      detail?.reviewCount ||
-      provider.reviewCount ||
-      initialDesigner.reviewCount ||
+      detail?.reviewCount ??
+      provider.reviewCount ??
+      initialDesigner.reviewCount ??
       0,
     yearsExperience:
       provider.yearsExperience || initialDesigner.yearsExperience || 0,
@@ -254,7 +206,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
     orgLabel: provider.companyName || initialDesigner.orgLabel || '',
     distance: initialDesigner.distance || '3km',
     completedCnt: provider.completedCnt || 0,
-    followersCount: provider.followersCount || 0,
     serviceIntro:
       provider.serviceIntro ||
       '专注现代简约、北欧风格设计，擅长空间规划与色彩搭配。提供从平面布局、效果图设计到软装搭配的全流程服务。',
@@ -427,25 +378,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
                   <Text style={styles.unsettledBadgeText}>未入驻</Text>
                 </View>
               )}
-              {isSettled && (
-                <TouchableOpacity
-                  style={[
-                    styles.designerDashFollowBtn,
-                    isFollowed && styles.designerDashFollowedBtn,
-                  ]}
-                  onPress={handleFollow}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.designerDashFollowText,
-                      isFollowed && styles.designerDashFollowedText,
-                    ]}
-                  >
-                    {isFollowed ? '已关注' : '+关注'}
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
             <Text style={styles.designerDashExperienceText}>
               {displayData.yearsExperience}年经验
@@ -464,17 +396,15 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
 
         <View style={styles.designerDashStatsRow}>
           <View style={styles.dashItem}>
-            <Text style={styles.dashValue}>{displayData.rating}</Text>
+            <Text style={styles.dashValue}>{displayData.rating > 0 ? displayData.rating.toFixed(1) : '暂无'}</Text>
             <View style={styles.dashLabelRow}>
               <Text style={styles.dashLabel}>综合评分</Text>
             </View>
           </View>
           <View style={styles.dashDivider} />
           <View style={styles.dashItem}>
-            <Text style={styles.dashValue}>
-              {formatFollowers(followersCount)}
-            </Text>
-            <Text style={styles.dashLabel}>粉丝关注</Text>
+            <Text style={styles.dashValue}>{displayData.reviewCount}</Text>
+            <Text style={styles.dashLabel}>业主评价</Text>
           </View>
           <View style={styles.dashDivider} />
           <View style={styles.dashItem}>
@@ -680,61 +610,31 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
 
   // API 数据状态
   const [detail, setDetail] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [isFollowed, setIsFollowed] = useState(false);
-  const [followersCount, setFollowersCount] = useState(0);
+  const [_loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (workerId) {
-      loadDetail();
-      loadUserStatus();
-    }
-  }, [workerId]);
-
-  const loadDetail = async () => {
+  const loadDetail = useCallback(async () => {
     try {
       const res = await providerApi.foremanDetail(workerId);
       if (res.data) {
         setDetail(res.data);
-        setFollowersCount(res.data.provider?.followersCount || 0);
       }
     } catch (error) {
       console.log('加载详情失败:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [workerId]);
 
-  const loadUserStatus = async () => {
-    try {
-      const res = await providerApi.getUserStatus(workerId);
-      if (res.data) {
-        setIsFollowed(res.data.isFollowed);
-      }
-    } catch (error) {
-      console.log('加载用户状态失败:', error);
+  useEffect(() => {
+    if (workerId) {
+      loadDetail();
     }
-  };
+  }, [workerId, loadDetail]);
 
   const handleShare = () => {
     const shareUrl = `${getWebUrl()}/worker/${workerId}`;
     Clipboard.setString(shareUrl);
     showToast({ message: '链接已复制到剪贴板', type: 'success' });
-  };
-
-  const handleFollow = async () => {
-    try {
-      if (isFollowed) {
-        await providerApi.unfollow(workerId, 'foreman');
-        setFollowersCount(prev => Math.max(0, prev - 1));
-      } else {
-        await providerApi.follow(workerId, 'foreman');
-        setFollowersCount(prev => prev + 1);
-      }
-      setIsFollowed(!isFollowed);
-    } catch (error) {
-      showToast({ message: '操作失败，请重试', type: 'error' });
-    }
   };
 
   // 使用 API 数据或降级使用传入数据
@@ -751,11 +651,11 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     userId: provider.userId || user.id || initialWorker.userId,
     userPublicId:
       user.publicId || provider.userPublicId || initialWorker.publicId,
-    rating: provider.rating || initialWorker.rating || 5.0,
+    rating: Number(provider.rating ?? initialWorker.rating ?? 0),
     reviewCount:
-      detail?.reviewCount ||
-      provider.reviewCount ||
-      initialWorker.reviewCount ||
+      detail?.reviewCount ??
+      provider.reviewCount ??
+      initialWorker.reviewCount ??
       0,
     yearsExperience:
       provider.yearsExperience || initialWorker.yearsExperience || 0,
@@ -788,16 +688,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
     const parsed = parseStringArray(provider.serviceArea);
     return parsed.length > 0 ? parsed : ['雁塔区', '曲江新区', '高新区'];
   })();
-
-  // 案例图片（优先使用API数据）
-  const caseImages =
-    cases.length > 0
-      ? cases.map((c: any) => c.coverImage)
-      : [
-          'https://images.unsplash.com/photo-1484154218962-a1c002085aac?w=400',
-          'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=400',
-          'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400',
-        ];
 
   // ========== Magazine Style UI for Worker ==========
   return (
@@ -948,25 +838,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
                   <Text style={styles.unsettledBadgeText}>未入驻</Text>
                 </View>
               )}
-              {isSettled && (
-                <TouchableOpacity
-                  style={[
-                    styles.designerDashFollowBtn,
-                    isFollowed && styles.designerDashFollowedBtn,
-                  ]}
-                  onPress={handleFollow}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.designerDashFollowText,
-                      isFollowed && styles.designerDashFollowedText,
-                    ]}
-                  >
-                    {isFollowed ? '已关注' : '+关注'}
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
             <Text style={styles.designerDashExperienceText}>
               {displayData.yearsExperience}年经验
@@ -985,17 +856,15 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
 
         <View style={styles.designerDashStatsRow}>
           <View style={styles.dashItem}>
-            <Text style={styles.dashValue}>{displayData.rating}</Text>
+            <Text style={styles.dashValue}>{displayData.rating > 0 ? displayData.rating.toFixed(1) : '暂无'}</Text>
             <View style={styles.dashLabelRow}>
               <Text style={styles.dashLabel}>综合评分</Text>
             </View>
           </View>
           <View style={styles.dashDivider} />
           <View style={styles.dashItem}>
-            <Text style={styles.dashValue}>
-              {formatFollowers(followersCount)}
-            </Text>
-            <Text style={styles.dashLabel}>粉丝关注</Text>
+            <Text style={styles.dashValue}>{displayData.reviewCount}</Text>
+            <Text style={styles.dashLabel}>业主评价</Text>
           </View>
           <View style={styles.dashDivider} />
           <View style={styles.dashItem}>
@@ -1177,61 +1046,31 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
 
   // API 数据状态
   const [detail, setDetail] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [isFollowed, setIsFollowed] = useState(false);
-  const [followersCount, setFollowersCount] = useState(0);
+  const [_loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (companyId) {
-      loadDetail();
-      loadUserStatus();
-    }
-  }, [companyId]);
-
-  const loadDetail = async () => {
+  const loadDetail = useCallback(async () => {
     try {
       const res = await providerApi.companyDetail(companyId);
       if (res.data) {
         setDetail(res.data);
-        setFollowersCount(res.data.provider?.followersCount || 0);
       }
     } catch (error) {
       console.log('加载详情失败:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [companyId]);
 
-  const loadUserStatus = async () => {
-    try {
-      const res = await providerApi.getUserStatus(companyId);
-      if (res.data) {
-        setIsFollowed(res.data.isFollowed);
-      }
-    } catch (error) {
-      console.log('加载用户状态失败:', error);
+  useEffect(() => {
+    if (companyId) {
+      loadDetail();
     }
-  };
+  }, [companyId, loadDetail]);
 
   const handleShare = () => {
     const shareUrl = `${getWebUrl()}/company/${companyId}`;
     Clipboard.setString(shareUrl);
     showToast({ message: '链接已复制到剪贴板', type: 'success' });
-  };
-
-  const handleFollow = async () => {
-    try {
-      if (isFollowed) {
-        await providerApi.unfollow(companyId, 'company');
-        setFollowersCount(prev => Math.max(0, prev - 1));
-      } else {
-        await providerApi.follow(companyId, 'company');
-        setFollowersCount(prev => prev + 1);
-      }
-      setIsFollowed(!isFollowed);
-    } catch (error) {
-      showToast({ message: '操作失败，请重试', type: 'error' });
-    }
   };
 
   // 使用 API 数据或降级使用传入数据
@@ -1252,11 +1091,11 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     userId: provider.userId || user.id || initialCompany.userId,
     userPublicId:
       user.publicId || provider.userPublicId || initialCompany.publicId,
-    rating: provider.rating || initialCompany.rating || 5.0,
+    rating: Number(provider.rating ?? initialCompany.rating ?? 0),
     reviewCount:
-      detail?.reviewCount ||
-      provider.reviewCount ||
-      initialCompany.reviewCount ||
+      detail?.reviewCount ??
+      provider.reviewCount ??
+      initialCompany.reviewCount ??
       0,
     completedOrders:
       provider.completedCnt || initialCompany.completedOrders || 0,
@@ -1290,16 +1129,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
     const parsed = parseStringArray(provider.serviceArea);
     return parsed.length > 0 ? parsed : ['雁塔区', '曲江新区', '高新区'];
   })();
-
-  // 案例图片（优先使用API数据）
-  const caseImages =
-    cases.length > 0
-      ? cases.map((c: any) => c.coverImage)
-      : [
-          'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=400',
-          'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400',
-          'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=400',
-        ];
 
   // ========== Magazine Style UI for Company ==========
   return (
@@ -1448,25 +1277,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
                   <Text style={styles.unsettledBadgeText}>未入驻</Text>
                 </View>
               )}
-              {isSettled && (
-                <TouchableOpacity
-                  style={[
-                    styles.designerDashFollowBtn,
-                    isFollowed && styles.designerDashFollowedBtn,
-                  ]}
-                  onPress={handleFollow}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.designerDashFollowText,
-                      isFollowed && styles.designerDashFollowedText,
-                    ]}
-                  >
-                    {isFollowed ? '已关注' : '+关注'}
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
             <Text style={styles.designerDashExperienceText}>
               {displayData.establishedYear}年成立
@@ -1483,7 +1293,7 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
 
         <View style={styles.designerDashStatsRow}>
           <View style={styles.dashItem}>
-            <Text style={styles.dashValue}>{displayData.rating}</Text>
+            <Text style={styles.dashValue}>{displayData.rating > 0 ? displayData.rating.toFixed(1) : '暂无'}</Text>
             <View style={styles.dashLabelRow}>
               <Text style={styles.dashLabel}>综合评分</Text>
             </View>

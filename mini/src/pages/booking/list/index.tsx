@@ -1,11 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { usePullDownRefresh } from '@tarojs/taro';
-import { Cell, Empty, Tag } from '@nutui/nutui-react-taro';
+import { Cell } from '@nutui/nutui-react-taro';
+import { Empty } from '@/components/Empty';
 import { Skeleton } from '@/components/Skeleton';
+import { Tag } from '@/components/Tag';
 import { listBookings, type BookingItem } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+
+type BookingTagVariant = 'default' | 'primary' | 'success' | 'warning' | 'error';
 
 const BookingListPage: React.FC = () => {
   const auth = useAuthStore();
@@ -50,7 +54,7 @@ const BookingListPage: React.FC = () => {
     }
   };
 
-  const getStatusVariant = (status: number): 'default' | 'primary' | 'success' | 'warning' | 'danger' => {
+  const getStatusVariant = (status: number): BookingTagVariant => {
     switch (status) {
       case 1: return 'warning';
       case 2: return 'primary';

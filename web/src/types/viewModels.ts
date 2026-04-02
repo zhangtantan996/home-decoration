@@ -1,5 +1,13 @@
 export type ProviderRole = 'designer' | 'company' | 'foreman';
 export type HomeServiceCategory = ProviderRole | 'material';
+export type ProviderPriceDisplayMode = 'single' | 'range' | 'structured' | 'negotiable';
+
+export interface ProviderPriceDisplayVM {
+  primary: string;
+  secondary: string;
+  details: string[];
+  mode: ProviderPriceDisplayMode;
+}
 
 export interface ProviderListItemVM {
   id: number;
@@ -14,7 +22,7 @@ export interface ProviderListItemVM {
   yearsExperience: number;
   verified: boolean;
   isSettled?: boolean;
-  priceText: string;
+  priceDisplay: ProviderPriceDisplayVM;
   tags: string[];
   serviceArea: string[];
   userPublicId?: string;
@@ -59,6 +67,18 @@ export interface ProviderCaseVM {
   coverImage: string;
   style: string;
   area: string;
+  showInInspiration?: boolean;
+}
+
+export interface ProviderSceneVM {
+  id: number;
+  caseId: number;
+  projectId: number;
+  title: string;
+  coverImage: string;
+  description: string;
+  images: string[];
+  year: string;
 }
 
 export interface ProviderSceneVM {
@@ -97,7 +117,6 @@ export interface ProviderDetailVM extends ProviderListItemVM {
   teamSize: number;
   establishedText: string;
   certifications: string[];
-  priceDetails: string[];
   cases: ProviderCaseVM[];
   scenes: ProviderSceneVM[];
   reviews: ProviderReviewVM[];

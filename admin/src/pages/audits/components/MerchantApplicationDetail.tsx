@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, Descriptions, Image, Space, Tag, Tabs, Tooltip } from 'antd';
 import type { AdminMerchantApplicationDetail, MerchantApplicationDetails } from '../../../services/api';
 import {
+    APPLICATION_SCENE_META,
     APPLICANT_TYPE_LABELS,
     ENTITY_TYPE_LABELS,
     MERCHANT_KIND_LABELS,
@@ -139,6 +140,11 @@ const MerchantApplicationDetail: React.FC<MerchantApplicationDetailProps> = ({ d
                         </Descriptions.Item>
                         <Descriptions.Item label="申请人类型">
                             {APPLICANT_TYPE_LABELS[details.applicantType] || formatText(details.applicantType)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="申请场景">
+                            <Tag color={APPLICATION_SCENE_META[details.applicationScene || '']?.color || 'default'}>
+                                {APPLICATION_SCENE_META[details.applicationScene || '']?.text || formatText(details.applicationScene)}
+                            </Tag>
                         </Descriptions.Item>
                         {showMerchantKind && (
                             <Descriptions.Item label="商家体系">

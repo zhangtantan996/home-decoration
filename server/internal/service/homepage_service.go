@@ -17,22 +17,24 @@ type HomepageStats struct {
 }
 
 type HomepageFeaturedProvider struct {
-	ID              uint64  `json:"id"`
-	ProviderType    int8    `json:"providerType"`
-	CompanyName     string  `json:"companyName"`
-	Nickname        string  `json:"nickname"`
-	Avatar          string  `json:"avatar"`
-	Rating          float32 `json:"rating"`
-	ReviewCount     int     `json:"reviewCount"`
-	CompletedCnt    int     `json:"completedCnt"`
-	YearsExperience int     `json:"yearsExperience"`
-	Verified        bool    `json:"verified"`
-	Specialty       string  `json:"specialty"`
-	SubType         string  `json:"subType"`
-	HighlightTags   string  `json:"highlightTags"`
-	PriceMin        float64 `json:"priceMin"`
-	PriceMax        float64 `json:"priceMax"`
-	PriceUnit       string  `json:"priceUnit"`
+	ID              uint64               `json:"id"`
+	ProviderType    int8                 `json:"providerType"`
+	CompanyName     string               `json:"companyName"`
+	Nickname        string               `json:"nickname"`
+	Avatar          string               `json:"avatar"`
+	Rating          float32              `json:"rating"`
+	ReviewCount     int                  `json:"reviewCount"`
+	CompletedCnt    int                  `json:"completedCnt"`
+	YearsExperience int                  `json:"yearsExperience"`
+	Verified        bool                 `json:"verified"`
+	Specialty       string               `json:"specialty"`
+	SubType         string               `json:"subType"`
+	HighlightTags   string               `json:"highlightTags"`
+	PriceMin        float64              `json:"priceMin"`
+	PriceMax        float64              `json:"priceMax"`
+	PriceUnit       string               `json:"priceUnit"`
+	PriceDisplay    ProviderPriceDisplay `json:"priceDisplay"`
+	IsSettled       bool                 `json:"isSettled"`
 }
 
 type HomepageMaterialShop struct {
@@ -200,7 +202,7 @@ func (s *HomepageService) featuredProviders(providerType int8, limit int) ([]Hom
 	var providers []model.Provider
 	db := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{}))
 	if err := db.Where("provider_type = ?", providerType).
-		Order("rating DESC, review_count DESC, completed_cnt DESC").
+		Scopes(applyProviderRecommendOrder).
 		Limit(limit).
 		Find(&providers).Error; err != nil {
 		return nil, err
@@ -254,6 +256,8 @@ func (s *HomepageService) featuredProviders(providerType int8, limit int) ([]Hom
 			PriceMin:        p.PriceMin,
 			PriceMax:        p.PriceMax,
 			PriceUnit:       model.ProviderPriceUnitPerSquareMeter,
+			PriceDisplay:    buildProviderPriceDisplay(p.ProviderType, p.PricingJSON, p.PriceMin, p.PriceMax, p.PriceUnit),
+			IsSettled:       providerSettlementValue(&p),
 		}
 	}
 	return items, nil

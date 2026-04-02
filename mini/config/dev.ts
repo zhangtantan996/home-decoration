@@ -9,6 +9,7 @@ export default {
     TARO_APP_H5_URL: JSON.stringify(process.env.TARO_APP_H5_URL || 'http://localhost:5176/'),
     // Tinode (IM) 配置：建议通过环境变量注入，代码内做兜底推导
     TARO_APP_TINODE_URL: JSON.stringify(process.env.TARO_APP_TINODE_URL || ''),
-    TARO_APP_TINODE_API_KEY: JSON.stringify(process.env.TARO_APP_TINODE_API_KEY || '')
+    TARO_APP_TINODE_API_KEY: JSON.stringify(process.env.TARO_APP_TINODE_API_KEY || ''),
+    TARO_APP_ENABLE_NOTIFICATION_WS: JSON.stringify(process.env.TARO_APP_ENABLE_NOTIFICATION_WS || ''),
   }
 } satisfies UserConfigExport;

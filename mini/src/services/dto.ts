@@ -1,6 +1,13 @@
 export type ProviderType = 'designer' | 'company' | 'foreman';
 type StringListValue = string | string[];
 
+export interface ProviderPriceDisplayDTO {
+  primary?: string;
+  secondary?: string;
+  details?: string[];
+  mode?: 'single' | 'range' | 'structured' | 'negotiable';
+}
+
 export interface ProviderDTO {
   id: number;
   userId: number;
@@ -30,7 +37,9 @@ export interface ProviderDTO {
   priceMin: number;
   priceMax: number;
   priceUnit: string;
+  priceDisplay?: ProviderPriceDisplayDTO;
   serviceArea?: StringListValue;
+  isSettled?: boolean;
 }
 
 export interface ProviderDetailDTO {
@@ -54,9 +63,13 @@ export interface ProviderDetailDTO {
     teamSize?: number;
     establishedYear?: number;
     followersCount?: number;
+    officeAddress?: string;
+    certifications?: StringListValue;
+    companyAlbumJson?: StringListValue;
     priceMin?: number;
     priceMax?: number;
     priceUnit?: string;
+    priceDisplay?: ProviderPriceDisplayDTO;
     coverImage?: string;
     isSettled?: boolean;
   };
@@ -82,6 +95,7 @@ export interface ProviderDetailDTO {
   certifications?: StringListValue;
   serviceArea?: StringListValue;
   officeAddress?: string;
+  companyAlbumJson?: StringListValue;
   specialty?: string;
   highlightTags?: StringListValue;
   pricingJson?: string;
@@ -90,15 +104,15 @@ export interface ProviderDetailDTO {
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;
+  priceDisplay?: ProviderPriceDisplayDTO;
   isSettled?: boolean;
-  caseCount?: number;
   cases?: ProviderCaseDTO[];
-  sceneCount?: number;
-  sceneCases?: ProviderSceneDTO[];
+  caseCount?: number;
 }
 
 export interface ProviderCaseDTO {
   id: number;
+  providerId?: number;
   title: string;
   coverImage: string;
   images?: StringListValue;
@@ -106,21 +120,14 @@ export interface ProviderCaseDTO {
   area?: string | number;
   layout?: string;
   year?: string | number;
-  description?: string;
   price?: number;
-}
-
-export interface ProviderSceneDTO {
-  id: number;
-  caseId?: number;
-  projectId?: number;
-  providerId?: number;
-  title: string;
-  coverImage: string;
   description?: string;
-  images?: StringListValue;
-  year?: string | number;
+  quoteTotalCent?: number;
+  quoteCurrency?: string;
+  sortOrder?: number;
+  showInInspiration?: boolean;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ProposalDTO {
@@ -177,7 +184,25 @@ export interface ProjectDTO {
   area?: number;
   budget?: number;
   status?: number;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
   createdAt?: string;
+}
+
+export interface ProjectRiskSummaryDTO {
+  pausedAt?: string;
+  resumedAt?: string;
+  pauseReason?: string;
+  pauseInitiator?: string;
+  disputedAt?: string;
+  disputeReason?: string;
+  disputeEvidence?: string[];
+  auditId?: number;
+  auditStatus?: string;
+  escrowFrozen?: boolean;
+  escrowStatus?: number;
+  frozenAmount?: number;
 }
 
 export interface ProjectPhaseTaskDTO {
@@ -196,9 +221,67 @@ export interface ProjectPhaseDTO {
 }
 
 export interface ProjectDetailDTO extends ProjectDTO {
+  selectedQuoteTaskId?: number;
   milestones?: Array<Record<string, unknown>>;
   logs?: Array<Record<string, unknown>>;
   escrow?: Record<string, unknown>;
+  riskSummary?: ProjectRiskSummaryDTO;
+}
+
+export interface RefundTypeEstimateDTO {
+  type: 'intent_fee' | 'design_fee' | 'construction_fee' | 'full';
+  label: string;
+  amount: number;
+  orderId?: number;
+}
+
+export interface RefundSummaryDTO {
+  canApplyRefund: boolean;
+  latestRefundId?: number;
+  latestRefundStatus?: string;
+  refundableAmount: number;
+  refundableTypes: RefundTypeEstimateDTO[];
+}
+
+export interface RefundApplicationDTO {
+  id: number;
+  bookingId: number;
+  projectId?: number;
+  orderId?: number;
+  userId: number;
+  refundType: 'intent_fee' | 'design_fee' | 'construction_fee' | 'full';
+  refundAmount: number;
+  requestedAmount: number;
+  approvedAmount: number;
+  reason: string;
+  evidence: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  adminId?: number;
+  adminNotes?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  booking?: {
+    id: number;
+    address?: string;
+    status?: number;
+    intentFee?: number;
+  };
+  project?: {
+    id: number;
+    name?: string;
+    status?: number;
+    currentPhase?: string;
+  };
+  order?: {
+    id: number;
+    orderNo?: string;
+    orderType?: string;
+    totalAmount?: number;
+    status?: number;
+  };
 }
 
 export interface NotificationDTO {

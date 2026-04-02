@@ -9,10 +9,10 @@ import (
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -23,6 +23,7 @@ import (
 type AdminLoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+	OTPCode  string `json:"otpCode"`
 }
 
 // AdminLogin 管理员登录
@@ -33,7 +34,7 @@ func AdminLogin(c *gin.Context) {
 		return
 	}
 
-	// ✅ 检查失败次数
+	securitySvc := service.NewAdminSecurityService()
 	failKey := fmt.Sprintf("admin_login_fail:%s", req.Username)
 	failCount := 0
 	rdb := repository.GetRedis()
@@ -47,104 +48,82 @@ func AdminLogin(c *gin.Context) {
 		}
 	}
 
-	if failCount >= 5 {
-		response.Forbidden(c, "登录失败次数过多，请30分钟后重试")
+	if failCount >= securitySvc.LoginFailLimit() {
+		response.Forbidden(c, fmt.Sprintf("登录失败次数过多，请%d分钟后重试", int(securitySvc.LoginLockDuration().Minutes())))
 		return
 	}
 
-	// 查询管理员
 	var admin model.SysAdmin
-	if err := repository.DB.Where("username = ?", req.Username).First(&admin).Error; err != nil {
-		// ✅ 记录失败
-		if rdb != nil {
-			ctx, cancel := repository.RedisContext()
-			defer cancel()
-
-			rdb.Incr(ctx, failKey)
-			rdb.Expire(ctx, failKey, 30*time.Minute)
-		}
-
+	if err := repository.DB.Preload("Roles").Where("username = ?", strings.TrimSpace(req.Username)).First(&admin).Error; err != nil {
+		increaseAdminLoginFail(failKey, securitySvc.LoginLockDuration())
+		auditAdminSecurityEvent(0, "login_failed", "sys_admin", 0, "invalid_username", getAdminClientIP(c), c.Request.UserAgent(), map[string]interface{}{
+			"username": strings.TrimSpace(req.Username),
+		})
 		response.Unauthorized(c, "用户名或密码错误")
 		return
 	}
 
-	// 验证状态
 	if admin.Status != 1 {
+		auditAdminSecurityEvent(admin.ID, "login_blocked", "sys_admin", admin.ID, "disabled", getAdminClientIP(c), c.Request.UserAgent(), nil)
 		response.Forbidden(c, "账号已被禁用")
 		return
 	}
 
-	// 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(admin.Password), []byte(req.Password)); err != nil {
-		// ✅ 记录失败
-		if rdb != nil {
-			ctx, cancel := repository.RedisContext()
-			defer cancel()
-
-			rdb.Incr(ctx, failKey)
-			rdb.Expire(ctx, failKey, 30*time.Minute)
-		}
-
+		increaseAdminLoginFail(failKey, securitySvc.LoginLockDuration())
+		auditAdminSecurityEvent(admin.ID, "login_failed", "sys_admin", admin.ID, "invalid_password", getAdminClientIP(c), c.Request.UserAgent(), nil)
 		response.Unauthorized(c, "用户名或密码错误")
 		return
 	}
 
-	// ✅ 登录成功，清除失败记录
 	if rdb != nil {
 		ctx, cancel := repository.RedisContext()
 		defer cancel()
-
 		rdb.Del(ctx, failKey)
 	}
 
-	// 更新登录信息
-	now := time.Now()
-	repository.DB.Model(&admin).Updates(map[string]interface{}{
-		"last_login_at": now,
-		"last_login_ip": c.ClientIP(),
-	})
-
-	// 加载管理员角色
-	repository.DB.Preload("Roles").First(&admin, admin.ID)
-
-	// 获取角色标识列表
-	roleKeys := getRoleKeys(admin.Roles)
-
-	// 获取权限列表
-	permissions := getAdminPermissions(&admin)
-
-	// 获取菜单树
-	menus := getAdminMenuTree(&admin)
-
-	// 生成 Token（管理员 Token 有效期 60 分钟）
-	cfg := config.GetConfig()
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"admin_id":   admin.ID,
-		"username":   admin.Username,
-		"is_super":   admin.IsSuperAdmin,
-		"exp":        time.Now().Add(60 * time.Minute).Unix(), // 管理员 60 分钟过期
-		"token_type": "admin",
-	})
-
-	tokenString, err := token.SignedString([]byte(cfg.JWT.Secret))
-	if err != nil {
-		response.ServerError(c, "生成Token失败")
+	securityStatus := securitySvc.ResolveSecurityStatus(&admin)
+	if securityStatus.SecuritySetupRequired {
+		pair, err := securitySvc.IssueTokenPair(&admin, service.AdminLoginStageSetupRequired, "", getAdminClientIP(c), c.Request.UserAgent())
+		if err != nil {
+			response.ServerError(c, "生成安全初始化会话失败")
+			return
+		}
+		updateAdminLastLogin(admin.ID, getAdminClientIP(c))
+		auditAdminSecurityEvent(admin.ID, "login_setup_required", "sys_admin", admin.ID, "success", getAdminClientIP(c), c.Request.UserAgent(), nil)
+		response.Success(c, buildAdminLoginPayload(&admin, pair, securityStatus))
 		return
 	}
 
-	response.Success(c, gin.H{
-		"token": tokenString,
-		"admin": gin.H{
-			"id":           admin.ID,
-			"username":     admin.Username,
-			"nickname":     admin.Nickname,
-			"avatar":       imgutil.GetFullImageURL(admin.Avatar),
-			"isSuperAdmin": admin.IsSuperAdmin,
-			"roles":        roleKeys,
-		},
-		"permissions": permissions,
-		"menus":       menus,
+	if securitySvc.AdminRequiresTwoFactor(&admin) {
+		if strings.TrimSpace(req.OTPCode) == "" {
+			response.Success(c, buildAdminLoginPayload(&admin, nil, service.AdminSecurityStatus{
+				LoginStage:            service.AdminLoginStageOTPRequired,
+				SecuritySetupRequired: false,
+				MustResetPassword:     false,
+				TwoFactorEnabled:      admin.TwoFactorEnabled,
+				TwoFactorRequired:     true,
+			}))
+			return
+		}
+		if err := securitySvc.VerifyTOTP(&admin, req.OTPCode); err != nil {
+			increaseAdminLoginFail(failKey, securitySvc.LoginLockDuration())
+			auditAdminSecurityEvent(admin.ID, "login_failed", "sys_admin", admin.ID, "invalid_otp", getAdminClientIP(c), c.Request.UserAgent(), nil)
+			response.Unauthorized(c, "动态验证码错误")
+			return
+		}
+	}
+
+	pair, err := securitySvc.IssueTokenPair(&admin, service.AdminLoginStageActive, "", getAdminClientIP(c), c.Request.UserAgent())
+	if err != nil {
+		response.ServerError(c, "生成登录会话失败")
+		return
+	}
+	updateAdminLastLogin(admin.ID, getAdminClientIP(c))
+	auditAdminSecurityEvent(admin.ID, "login_success", "sys_admin", admin.ID, "success", getAdminClientIP(c), c.Request.UserAgent(), map[string]interface{}{
+		"sessionId": pair.SessionID,
 	})
+	response.Success(c, buildAdminLoginPayload(&admin, pair, securityStatus))
 }
 
 // AdminGetInfo 获取当前管理员信息及权限
@@ -162,23 +141,407 @@ func AdminGetInfo(c *gin.Context) {
 		return
 	}
 
-	// 获取权限列表
-	permissions := getAdminPermissions(&admin)
+	response.Success(c, buildAdminLoginPayload(&admin, nil, service.NewAdminSecurityService().ResolveSecurityStatus(&admin)))
+}
 
-	// 获取菜单树
-	menuTree := getAdminMenuTree(&admin)
+func AdminLogout(c *gin.Context) {
+	sid := c.GetString("admin_sid")
+	if sid == "" {
+		response.Success(c, nil)
+		return
+	}
+	if err := service.NewAdminSecurityService().RevokeSession(sid); err != nil {
+		response.ServerError(c, "退出登录失败")
+		return
+	}
+	auditAdminSecurityEvent(c.GetUint64("admin_id"), "logout", "sys_admin", c.GetUint64("admin_id"), "success", getAdminClientIP(c), c.Request.UserAgent(), map[string]interface{}{
+		"sessionId": sid,
+	})
+	response.Success(c, nil)
+}
 
+func AdminRefreshToken(c *gin.Context) {
+	var req struct {
+		RefreshToken string `json:"refreshToken" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "缺少刷新令牌")
+		return
+	}
+	result, err := service.NewAdminSecurityService().RefreshTokens(req.RefreshToken, getAdminClientIP(c), c.Request.UserAgent())
+	if err != nil {
+		response.Unauthorized(c, err.Error())
+		return
+	}
+	response.Success(c, buildAdminLoginPayload(result.Admin, result.Pair, service.NewAdminSecurityService().ResolveSecurityStatus(result.Admin)))
+}
+
+func AdminGetSecurityStatus(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	securityStatus := service.NewAdminSecurityService().ResolveSecurityStatus(admin)
+	sessionItems, err := service.NewAdminSecurityService().ListSessions(admin.ID, c.GetString("admin_sid"))
+	if err != nil {
+		response.ServerError(c, "查询安全状态失败")
+		return
+	}
 	response.Success(c, gin.H{
-		"admin": gin.H{
-			"id":           admin.ID,
-			"username":     admin.Username,
-			"nickname":     admin.Nickname,
-			"avatar":       imgutil.GetFullImageURL(admin.Avatar),
-			"isSuperAdmin": admin.IsSuperAdmin,
-			"roles":        getRoleKeys(admin.Roles),
+		"admin":        buildAdminProfile(admin),
+		"security":     securityStatus,
+		"sessions":     sessionItems,
+		"sessionCount": len(sessionItems),
+	})
+}
+
+func AdminResetInitialPassword(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		NewPassword string `json:"newPassword" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请输入新密码")
+		return
+	}
+	securitySvc := service.NewAdminSecurityService()
+	if err := securitySvc.ResetInitialPassword(admin, req.NewPassword); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := repository.DB.Preload("Roles").First(admin, admin.ID).Error; err != nil {
+		response.ServerError(c, "加载管理员失败")
+		return
+	}
+	securityStatus := securitySvc.ResolveSecurityStatus(admin)
+	payload := gin.H{
+		"security": securityStatus,
+	}
+	if securityStatus.LoginStage == service.AdminLoginStageActive {
+		_ = securitySvc.RevokeSession(c.GetString("admin_sid"))
+		pair, err := securitySvc.IssueTokenPair(admin, service.AdminLoginStageActive, "", getAdminClientIP(c), c.Request.UserAgent())
+		if err != nil {
+			response.ServerError(c, "切换安全会话失败")
+			return
+		}
+		payload = buildAdminLoginPayload(admin, pair, securityStatus)
+	}
+	auditAdminSecurityEvent(admin.ID, "password_reset_initial", "sys_admin", admin.ID, "success", getAdminClientIP(c), c.Request.UserAgent(), nil)
+	response.Success(c, payload)
+}
+
+func AdminBeginBind2FA(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	securitySvc := service.NewAdminSecurityService()
+	secret, otpauthURL, err := securitySvc.GenerateOrReuseTOTP(admin)
+	if err != nil {
+		response.ServerError(c, "生成 TOTP 绑定信息失败")
+		return
+	}
+	response.Success(c, gin.H{
+		"secret":     secret,
+		"otpauthUrl": otpauthURL,
+		"issuer":     config.GetConfig().AdminAuth.TOTPIssuer,
+	})
+}
+
+func AdminVerify2FA(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		OTPCode string `json:"otpCode" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请输入动态验证码")
+		return
+	}
+	securitySvc := service.NewAdminSecurityService()
+	if err := securitySvc.EnableTwoFactor(admin, req.OTPCode); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := repository.DB.Preload("Roles").First(admin, admin.ID).Error; err != nil {
+		response.ServerError(c, "加载管理员失败")
+		return
+	}
+	securityStatus := securitySvc.ResolveSecurityStatus(admin)
+	payload := gin.H{"security": securityStatus}
+	if securityStatus.LoginStage == service.AdminLoginStageActive {
+		_ = securitySvc.RevokeSession(c.GetString("admin_sid"))
+		pair, err := securitySvc.IssueTokenPair(admin, service.AdminLoginStageActive, "", getAdminClientIP(c), c.Request.UserAgent())
+		if err != nil {
+			response.ServerError(c, "切换安全会话失败")
+			return
+		}
+		payload = buildAdminLoginPayload(admin, pair, securityStatus)
+	}
+	auditAdminSecurityEvent(admin.ID, "two_factor_bound", "sys_admin", admin.ID, "success", getAdminClientIP(c), c.Request.UserAgent(), nil)
+	response.Success(c, payload)
+}
+
+func AdminReset2FA(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	reason := readAdminReason(c, "重置管理员 2FA")
+	beforeState := map[string]interface{}{
+		"twoFactorEnabled": admin.TwoFactorEnabled,
+		"twoFactorBoundAt": admin.TwoFactorBoundAt,
+	}
+	if err := service.NewAdminSecurityService().ResetTwoFactor(admin.ID); err != nil {
+		response.ServerError(c, "重置 2FA 失败")
+		return
+	}
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    admin.ID,
+		OperationType: "two_factor_reset",
+		ResourceType:  "sys_admin",
+		ResourceID:    admin.ID,
+		Reason:        reason,
+		Result:        "success",
+		BeforeState:   beforeState,
+		AfterState: map[string]interface{}{
+			"twoFactorEnabled": false,
+			"twoFactorBoundAt": nil,
 		},
-		"permissions": permissions,
-		"menus":       menuTree,
+		ClientIP:  getAdminClientIP(c),
+		UserAgent: c.Request.UserAgent(),
+	})
+	response.SuccessWithMessage(c, "2FA 已重置，请重新登录并完成绑定", nil)
+}
+
+func AdminRequest2FARecovery(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	roleKeys := getRoleKeys(admin.Roles)
+	for _, roleKey := range roleKeys {
+		switch roleKey {
+		case service.ReservedRoleSystemAdmin, service.ReservedRoleSecurityAdmin, service.ReservedRoleSecurityAudit:
+			response.Forbidden(c, "高权限管理员不支持自助恢复，请联系安全管理员处理")
+			return
+		}
+	}
+	if err := service.NewAdminSecurityService().CreateRecoveryRequest(admin); err != nil {
+		response.ServerError(c, "提交恢复申请失败")
+		return
+	}
+	auditAdminSecurityEvent(admin.ID, "two_factor_recovery_request", "sys_admin", admin.ID, "success", getAdminClientIP(c), c.Request.UserAgent(), nil)
+	response.SuccessWithMessage(c, "恢复申请已提交，请联系安全管理员人工处理", nil)
+}
+
+func AdminListSecuritySessions(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	items, err := service.NewAdminSecurityService().ListSessions(admin.ID, c.GetString("admin_sid"))
+	if err != nil {
+		response.ServerError(c, "查询在线会话失败")
+		return
+	}
+	response.Success(c, gin.H{"list": items})
+}
+
+func AdminRevokeSecuritySession(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	sid := strings.TrimSpace(c.Param("sid"))
+	if sid == "" {
+		response.BadRequest(c, "会话ID无效")
+		return
+	}
+	items, err := service.NewAdminSecurityService().ListSessions(admin.ID, "")
+	if err != nil {
+		response.ServerError(c, "校验会话归属失败")
+		return
+	}
+	owned := false
+	for _, item := range items {
+		if item.SessionID == sid {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		response.Forbidden(c, "只能撤销当前管理员自己的在线会话")
+		return
+	}
+	if err := service.NewAdminSecurityService().RevokeSession(sid); err != nil {
+		response.ServerError(c, "撤销会话失败")
+		return
+	}
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "session_revoked",
+		ResourceType:  "sys_admin",
+		ResourceID:    adminID,
+		Reason:        readAdminReason(c, "撤销管理员会话"),
+		Result:        "success",
+		Metadata: map[string]interface{}{
+			"sessionId": sid,
+		},
+		ClientIP:  getAdminClientIP(c),
+		UserAgent: c.Request.UserAgent(),
+	})
+	response.Success(c, nil)
+}
+
+func AdminReauth(c *gin.Context) {
+	admin, ok := loadCurrentAdmin(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		OTPCode  string `json:"otpCode"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	proof, expiresAt, err := service.NewAdminSecurityService().CreateReauthProof(admin, c.GetString("admin_sid"), req.OTPCode, req.Password)
+	if err != nil {
+		auditAdminSecurityEvent(admin.ID, "reauth_failed", "sys_admin", admin.ID, "failed", getAdminClientIP(c), c.Request.UserAgent(), map[string]interface{}{
+			"message": err.Error(),
+		})
+		response.BadRequest(c, err.Error())
+		return
+	}
+	auditAdminSecurityEvent(admin.ID, "reauth_success", "sys_admin", admin.ID, "success", getAdminClientIP(c), c.Request.UserAgent(), map[string]interface{}{
+		"expiresAt": expiresAt.Format(time.RFC3339),
+	})
+	response.Success(c, gin.H{
+		"proof":     proof,
+		"expiresAt": expiresAt,
+	})
+}
+
+func buildAdminLoginPayload(admin *model.SysAdmin, pair *service.AdminTokenPair, security service.AdminSecurityStatus) gin.H {
+	payload := gin.H{
+		"token":                 "",
+		"accessToken":           "",
+		"refreshToken":          "",
+		"expiresIn":             int64(0),
+		"admin":                 buildAdminProfile(admin),
+		"permissions":           getAdminPermissions(admin),
+		"menus":                 getAdminMenuTree(admin),
+		"security":              security,
+		"securitySetupRequired": security.SecuritySetupRequired,
+		"loginStage":            security.LoginStage,
+	}
+	if pair != nil {
+		payload["token"] = pair.AccessToken
+		payload["accessToken"] = pair.AccessToken
+		payload["refreshToken"] = pair.RefreshToken
+		payload["expiresIn"] = pair.ExpiresIn
+	}
+	return payload
+}
+
+func buildAdminProfile(admin *model.SysAdmin) gin.H {
+	if admin == nil {
+		return gin.H{}
+	}
+	return gin.H{
+		"id":                admin.ID,
+		"username":          admin.Username,
+		"nickname":          admin.Nickname,
+		"avatar":            imgutil.GetFullImageURL(admin.Avatar),
+		"isSuperAdmin":      admin.IsSuperAdmin,
+		"roles":             getRoleKeys(admin.Roles),
+		"mustResetPassword": admin.MustResetPassword,
+		"twoFactorEnabled":  admin.TwoFactorEnabled,
+		"twoFactorBoundAt":  admin.TwoFactorBoundAt,
+		"lastLoginAt":       admin.LastLoginAt,
+		"lastLoginIp":       admin.LastLoginIP,
+	}
+}
+
+func loadCurrentAdmin(c *gin.Context) (*model.SysAdmin, bool) {
+	adminID := c.GetUint64("admin_id")
+	if adminID == 0 {
+		response.Unauthorized(c, "未登录")
+		return nil, false
+	}
+	admin, err := service.NewAdminSecurityService().GetAdminByID(adminID)
+	if err != nil {
+		response.NotFound(c, "管理员不存在")
+		return nil, false
+	}
+	return admin, true
+}
+
+func getAdminClientIP(c *gin.Context) string {
+	if ip, ok := c.Get("admin_client_ip"); ok {
+		if value, ok := ip.(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return strings.TrimSpace(c.ClientIP())
+}
+
+func readAdminReason(c *gin.Context, fallbacks ...string) string {
+	if c != nil {
+		if value, ok := c.Get("admin_reason"); ok {
+			if reason, ok := value.(string); ok && strings.TrimSpace(reason) != "" {
+				return strings.TrimSpace(reason)
+			}
+		}
+	}
+	for _, fallback := range fallbacks {
+		if strings.TrimSpace(fallback) != "" {
+			return strings.TrimSpace(fallback)
+		}
+	}
+	return ""
+}
+
+func increaseAdminLoginFail(key string, ttl time.Duration) {
+	rdb := repository.GetRedis()
+	if rdb == nil {
+		return
+	}
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+	rdb.Incr(ctx, key)
+	rdb.Expire(ctx, key, ttl)
+}
+
+func updateAdminLastLogin(adminID uint64, clientIP string) {
+	now := time.Now()
+	_ = repository.DB.Model(&model.SysAdmin{}).Where("id = ?", adminID).Updates(map[string]interface{}{
+		"last_login_at": now,
+		"last_login_ip": strings.TrimSpace(clientIP),
+	}).Error
+}
+
+func auditAdminSecurityEvent(operatorID uint64, operationType, resourceType string, resourceID uint64, result, clientIP, userAgent string, metadata map[string]interface{}) {
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    operatorID,
+		OperationType: strings.TrimSpace(operationType),
+		ResourceType:  strings.TrimSpace(resourceType),
+		ResourceID:    resourceID,
+		Result:        strings.TrimSpace(result),
+		ClientIP:      strings.TrimSpace(clientIP),
+		UserAgent:     strings.TrimSpace(userAgent),
+		Metadata:      metadata,
 	})
 }
 
@@ -312,7 +675,7 @@ func AdminCreateRole(c *gin.Context) {
 			OperationType: "create_role",
 			ResourceType:  "sys_role",
 			ResourceID:    role.ID,
-			Reason:        role.Remark,
+			Reason:        readAdminReason(c, role.Remark, "创建角色"),
 			Result:        "success",
 			AfterState: map[string]interface{}{
 				"role": snapshotSysRoleForAudit(role),
@@ -380,7 +743,7 @@ func AdminUpdateRole(c *gin.Context) {
 			OperationType: "update_role",
 			ResourceType:  "sys_role",
 			ResourceID:    role.ID,
-			Reason:        req.Remark,
+			Reason:        readAdminReason(c, req.Remark, "更新角色"),
 			Result:        "success",
 			BeforeState:   beforeState,
 			AfterState: map[string]interface{}{
@@ -391,6 +754,7 @@ func AdminUpdateRole(c *gin.Context) {
 		response.ServerError(c, "更新失败")
 		return
 	}
+	_ = revokeSessionsByRoleID(role.ID)
 
 	response.Success(c, role)
 }
@@ -438,7 +802,7 @@ func AdminDeleteRole(c *gin.Context) {
 		OperationType: "delete_role",
 		ResourceType:  "sys_role",
 		ResourceID:    role.ID,
-		Reason:        role.Remark,
+		Reason:        readAdminReason(c, role.Remark, "删除角色"),
 		Result:        "success",
 		BeforeState: map[string]interface{}{
 			"role":      snapshotSysRoleForAudit(role),
@@ -530,6 +894,7 @@ func AdminAssignRoleMenus(c *gin.Context) {
 		OperationType: "assign_role_menus",
 		ResourceType:  "sys_role",
 		ResourceID:    roleID,
+		Reason:        readAdminReason(c, "", "更新角色菜单权限"),
 		Result:        "success",
 		BeforeState: map[string]interface{}{
 			"menuScope": beforeState,
@@ -549,6 +914,7 @@ func AdminAssignRoleMenus(c *gin.Context) {
 		response.ServerError(c, "分配菜单失败")
 		return
 	}
+	_ = revokeSessionsByRoleID(roleID)
 	response.Success(c, nil)
 }
 
@@ -571,13 +937,30 @@ func AdminListMenus(c *gin.Context) {
 
 // AdminCreateMenu 创建菜单
 func AdminCreateMenu(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
 	var menu model.SysMenu
 	if err := c.ShouldBindJSON(&menu); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	if err := repository.DB.Create(&menu).Error; err != nil {
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&menu).Error; err != nil {
+			return err
+		}
+		return (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "create_menu",
+			ResourceType:  "sys_menu",
+			ResourceID:    menu.ID,
+			Reason:        readAdminReason(c, menu.Title, "创建菜单"),
+			Result:        "success",
+			AfterState: map[string]interface{}{
+				"menu": menu,
+			},
+		})
+	}); err != nil {
 		response.ServerError(c, "创建失败")
 		return
 	}
@@ -587,6 +970,7 @@ func AdminCreateMenu(c *gin.Context) {
 
 // AdminUpdateMenu 更新菜单
 func AdminUpdateMenu(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
 	id := c.Param("id")
 	var menu model.SysMenu
 	if err := repository.DB.First(&menu, id).Error; err != nil {
@@ -612,6 +996,10 @@ func AdminUpdateMenu(c *gin.Context) {
 		return
 	}
 
+	beforeState := map[string]interface{}{
+		"menu": menu,
+	}
+
 	// ✅ 显式更新字段
 	menu.ParentID = req.ParentID
 	menu.Title = req.Title
@@ -624,16 +1012,35 @@ func AdminUpdateMenu(c *gin.Context) {
 	menu.Status = req.Status
 	menu.Visible = req.Visible
 
-	if err := repository.DB.Save(&menu).Error; err != nil {
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&menu).Error; err != nil {
+			return err
+		}
+		return (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "update_menu",
+			ResourceType:  "sys_menu",
+			ResourceID:    menu.ID,
+			Reason:        readAdminReason(c, menu.Title, "更新菜单"),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"menu": menu,
+			},
+		})
+	}); err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
+	_ = revokeSessionsByMenuID(menu.ID)
 
 	response.Success(c, menu)
 }
 
 // AdminDeleteMenu 删除菜单
 func AdminDeleteMenu(c *gin.Context) {
+	adminID := c.GetUint64("admin_id")
 	id := c.Param("id")
 
 	// 检查是否有子菜单
@@ -644,11 +1051,40 @@ func AdminDeleteMenu(c *gin.Context) {
 		return
 	}
 
-	// 删除菜单及其角色关联
+	var menu model.SysMenu
+	_ = repository.DB.First(&menu, id).Error
+
 	tx := repository.DB.Begin()
 	tx.Where("menu_id = ?", id).Delete(&model.SysRoleMenu{})
-	tx.Delete(&model.SysMenu{}, id)
-	tx.Commit()
+	if err := tx.Delete(&model.SysMenu{}, id).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "删除失败")
+		return
+	}
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "delete_menu",
+		ResourceType:  "sys_menu",
+		ResourceID:    menu.ID,
+		Reason:        readAdminReason(c, menu.Title, "删除菜单"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"menu": menu,
+		},
+		AfterState: map[string]interface{}{
+			"deleted": true,
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "删除失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "删除失败")
+		return
+	}
+	_ = revokeSessionsByMenuID(menu.ID)
 
 	response.Success(c, nil)
 }
@@ -674,15 +1110,19 @@ func snapshotSysAdminForAudit(admin model.SysAdmin) map[string]interface{} {
 	sort.Strings(roleKeys)
 
 	return map[string]interface{}{
-		"id":           admin.ID,
-		"username":     admin.Username,
-		"nickname":     admin.Nickname,
-		"phone":        admin.Phone,
-		"email":        admin.Email,
-		"status":       admin.Status,
-		"isSuperAdmin": admin.IsSuperAdmin,
-		"roleIds":      roleIDs,
-		"roleKeys":     roleKeys,
+		"id":                admin.ID,
+		"username":          admin.Username,
+		"nickname":          admin.Nickname,
+		"phone":             admin.Phone,
+		"email":             admin.Email,
+		"status":            admin.Status,
+		"isSuperAdmin":      admin.IsSuperAdmin,
+		"mustResetPassword": admin.MustResetPassword,
+		"twoFactorEnabled":  admin.TwoFactorEnabled,
+		"twoFactorBoundAt":  admin.TwoFactorBoundAt,
+		"disabledReason":    admin.DisabledReason,
+		"roleIds":           roleIDs,
+		"roleKeys":          roleKeys,
 	}
 }
 
@@ -735,4 +1175,54 @@ func loadRoleMenuAuditSnapshotTx(tx *gorm.DB, roleID uint64) (map[string]interfa
 		"menuIds":     menuIDs,
 		"permissions": permissions,
 	}, nil
+}
+
+func revokeSessionsByRoleID(roleID uint64) error {
+	if roleID == 0 {
+		return nil
+	}
+	var adminIDs []uint64
+	if err := repository.DB.Model(&model.SysAdminRole{}).Where("role_id = ?", roleID).Pluck("admin_id", &adminIDs).Error; err != nil {
+		return err
+	}
+	return revokeAdminSessions(adminIDs)
+}
+
+func revokeSessionsByMenuID(menuID uint64) error {
+	if menuID == 0 {
+		return nil
+	}
+	var roleIDs []uint64
+	if err := repository.DB.Model(&model.SysRoleMenu{}).Where("menu_id = ?", menuID).Pluck("role_id", &roleIDs).Error; err != nil {
+		return err
+	}
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	var adminIDs []uint64
+	if err := repository.DB.Model(&model.SysAdminRole{}).Where("role_id IN ?", roleIDs).Pluck("admin_id", &adminIDs).Error; err != nil {
+		return err
+	}
+	return revokeAdminSessions(adminIDs)
+}
+
+func revokeAdminSessions(adminIDs []uint64) error {
+	if len(adminIDs) == 0 {
+		return nil
+	}
+	securitySvc := service.NewAdminSecurityService()
+	seen := make(map[uint64]struct{}, len(adminIDs))
+	for _, adminID := range adminIDs {
+		if adminID == 0 {
+			continue
+		}
+		if _, ok := seen[adminID]; ok {
+			continue
+		}
+		seen[adminID] = struct{}{}
+		if err := securitySvc.RevokeAllSessions(adminID); err != nil {
+			return err
+		}
+	}
+	return nil
 }

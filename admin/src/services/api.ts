@@ -1,7 +1,11 @@
 import axios from "axios";
 import { message } from "antd";
 import { getApiBaseUrl, getLoginPath } from "../utils/env";
-import { useAuthStore } from "../stores/authStore";
+import {
+  useAuthStore,
+  type AdminSecurityStatus,
+  type AdminSessionItem,
+} from "../stores/authStore";
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -18,6 +22,7 @@ type AdminHandledStatus = 401 | 403;
 const ADMIN_ERROR_STATUS_KEY = "__adminHandledStatus";
 const ACCESS_DENIED_MESSAGE_COOLDOWN_MS = 3000;
 let lastAccessDeniedAt = 0;
+let adminRefreshPromise: Promise<string | null> | null = null;
 
 type AdminEnvelopeError = {
   code?: number;
@@ -120,11 +125,50 @@ const redirectToAdminLogin = () => {
   }
 };
 
+const isAdminAuthRequest = (url?: string) => {
+  if (!url) {
+    return false;
+  }
+  return url.includes("/admin/login") || url.includes("/admin/token/refresh");
+};
+
+const refreshAdminSession = async (): Promise<string | null> => {
+  const refreshToken = localStorage.getItem("admin_refresh_token");
+  if (!refreshToken) {
+    return null;
+  }
+
+  if (!adminRefreshPromise) {
+    adminRefreshPromise = axios.post(`${API_BASE_URL}/admin/token/refresh`, { refreshToken }, {
+      headers: { "Content-Type": "application/json" },
+    }).then((response) => {
+      const payload = response.data?.data;
+      if (!payload?.accessToken) {
+        return null;
+      }
+      useAuthStore.getState().setSession({
+        accessToken: payload.accessToken,
+        refreshToken: payload.refreshToken,
+        admin: payload.admin,
+        permissions: payload.permissions || [],
+        menus: payload.menus || [],
+        security: payload.security || null,
+      });
+      return payload.accessToken as string;
+    }).catch(() => null).finally(() => {
+      adminRefreshPromise = null;
+    });
+  }
+
+  return adminRefreshPromise;
+};
+
 // 请求拦截器
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("admin_token");
-    if (token) {
+    const skipAdminAuth = Boolean(config.headers?.["X-Skip-Admin-Auth"]);
+    if (token && !skipAdminAuth && !isAdminAuthRequest(config.url)) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -135,8 +179,31 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
   <T>(response: { data: T }) => response.data,
-  (error) => {
+  async (error) => {
     const status = getApiErrorStatus(error);
+    const originalRequest = (error as { config?: Record<string, unknown> })?.config as (Record<string, unknown> & {
+      headers?: Record<string, string>;
+      _adminRetried?: boolean;
+      url?: string;
+    }) | undefined;
+
+    if (
+      status === 401 &&
+      originalRequest &&
+      !originalRequest._adminRetried &&
+      !isAdminAuthRequest(originalRequest.url)
+    ) {
+      originalRequest._adminRetried = true;
+      const nextToken = await refreshAdminSession();
+      if (nextToken) {
+        originalRequest.headers = {
+          ...(originalRequest.headers || {}),
+          Authorization: `Bearer ${nextToken}`,
+        };
+        return api(originalRequest);
+      }
+    }
+
     if (status === 401) {
       markAdminErrorHandled(error, 401);
       redirectToAdminLogin();
@@ -175,9 +242,44 @@ export const authApi = {
 
 // ==================== Admin 管理员认证 ====================
 export const adminAuthApi = {
-  login: (data: { username: string; password: string }) =>
+  login: (data: { username: string; password: string; otpCode?: string }) =>
     api.post("/admin/login", data),
   getInfo: () => api.get("/admin/info"),
+  logout: () => api.post("/admin/logout"),
+  refresh: (refreshToken: string) => api.post("/admin/token/refresh", { refreshToken }),
+};
+
+export interface AdminSecurityStatusResponse {
+  admin: {
+    id: number;
+    username: string;
+    nickname?: string;
+    avatar?: string;
+    isSuperAdmin: boolean;
+    roles: string[];
+    lastLoginAt?: string;
+    lastLoginIp?: string;
+  };
+  security: AdminSecurityStatus;
+  sessions: AdminSessionItem[];
+  sessionCount: number;
+}
+
+export interface AdminReauthPayload {
+  otpCode?: string;
+  password?: string;
+}
+
+export const adminSecurityApi = {
+  getStatus: () => api.get("/admin/security/status"),
+  resetInitialPassword: (data: { newPassword: string }) => api.post("/admin/security/password/reset-initial", data),
+  beginBind2FA: () => api.post("/admin/security/2fa/bind"),
+  verify2FA: (data: { otpCode: string }) => api.post("/admin/security/2fa/verify", data),
+  reset2FA: (data: { recentReauthProof?: string; reason?: string }) => api.post("/admin/security/2fa/reset", data),
+  requestRecovery: () => api.post("/admin/security/2fa/recovery/request"),
+  listSessions: () => api.get("/admin/security/sessions"),
+  revokeSession: (sid: string, data: { reason: string; recentReauthProof: string }) => api.post(`/admin/security/sessions/${sid}/revoke`, data),
+  reauth: (data: AdminReauthPayload) => api.post("/admin/security/reauth", data),
 };
 
 export const projectApi = {
@@ -540,6 +642,7 @@ export interface AdminProjectAuditArbitratePayload {
   conclusion: "continue" | "refund" | "partial_refund" | "close";
   conclusionReason: string;
   executionPlan?: Record<string, unknown>;
+  recentReauthProof?: string;
 }
 
 export interface AdminFinanceOverviewStatistics {
@@ -649,6 +752,8 @@ export interface AdminRiskWarningQuery {
 export interface AdminHandleRiskWarningInput {
   status: number;
   result: string;
+  reason?: string;
+  recentReauthProof?: string;
 }
 
 export interface AdminFinanceTransactionItem {
@@ -779,12 +884,14 @@ export interface FreezeFundsInput {
   projectId: number;
   amount: number;
   reason: string;
+  recentReauthProof?: string;
 }
 
 export interface UnfreezeFundsInput {
   projectId: number;
   amount: number;
   reason: string;
+  recentReauthProof?: string;
 }
 
 export interface ManualReleaseInput {
@@ -792,6 +899,7 @@ export interface ManualReleaseInput {
   milestoneId: number;
   amount?: number;
   reason: string;
+  recentReauthProof?: string;
 }
 
 export interface AdminAuditLogRecord {
@@ -894,13 +1002,13 @@ export const adminRefundApi = {
     >(`/admin/refunds/${id}`),
   approve: (
     id: number,
-    data: { adminNotes?: string; approvedAmount?: number },
+    data: { adminNotes?: string; approvedAmount?: number; recentReauthProof?: string },
   ) =>
     api.post<
       AdminApiResponse<AdminRefundApplicationItem>,
       AdminApiResponse<AdminRefundApplicationItem>
     >(`/admin/refunds/${id}/approve`, data),
-  reject: (id: number, data: { adminNotes: string }) =>
+  reject: (id: number, data: { adminNotes: string; recentReauthProof?: string }) =>
     api.post<
       AdminApiResponse<AdminRefundApplicationItem>,
       AdminApiResponse<AdminRefundApplicationItem>
@@ -1070,6 +1178,14 @@ export interface AdminProviderListItem {
   isSettled?: boolean;
   collectedSource?: string;
   sourceLabel?: string;
+  accountBound?: boolean;
+  loginEnabled?: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
+  operatingEnabled?: boolean;
+  platformDisplayEnabled?: boolean;
+  merchantDisplayEnabled?: boolean;
+  completionApplicationId?: number;
   visibility?: AdminAuditVisibility;
   actions?: AdminAuditActions;
   legacyInfo?: AdminAuditLegacyInfo;
@@ -1102,6 +1218,12 @@ export interface AdminMaterialShopListItem {
   userNickname?: string;
   accountBound?: boolean;
   loginEnabled?: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
+  operatingEnabled?: boolean;
+  platformDisplayEnabled?: boolean;
+  merchantDisplayEnabled?: boolean;
+  completionApplicationId?: number;
   sourceLabel?: string;
   sourceApplicationId?: number;
   createdAt: string;
@@ -1115,15 +1237,23 @@ export interface AdminMaterialShopAccountCompletionResult {
   userId: number;
   phone: string;
   createdUser: boolean;
+  accountBound?: boolean;
   sourceLabel: string;
   loginEnabled: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
+  operatingEnabled?: boolean;
+  completionApplicationId?: number;
 }
 
 export interface AdminProviderSettlementResult {
   providerId: number;
   userId: number;
   sourceLabel: string;
+  accountBound?: boolean;
   loginEnabled: boolean;
+  completionRequired?: boolean;
+  onboardingStatus?: string;
   phone?: string;
   createdUser?: boolean;
 }
@@ -1148,9 +1278,17 @@ export const adminProviderApi = {
     api.patch(`/admin/providers/${id}/verify`, { verified }),
   updateStatus: (id: number, status: number) =>
     api.patch(`/admin/providers/${id}/status`, { status }),
+  updatePlatformDisplay: (id: number, enabled: boolean) =>
+    api.patch(`/admin/providers/${id}/platform-display`, { enabled }),
   claimAccount: (
     id: number,
-    data: { phone: string; contactName?: string; nickname?: string },
+    data: {
+      phone: string;
+      contactName?: string;
+      nickname?: string;
+      reason?: string;
+      recentReauthProof?: string;
+    },
   ) =>
     api.post<
       AdminApiResponse<AdminProviderSettlementResult>,
@@ -1184,9 +1322,17 @@ export const adminMaterialShopApi = {
     api.patch(`/admin/material-shops/${id}/verify`, { verified }),
   updateStatus: (id: number, status: number) =>
     api.patch(`/admin/material-shops/${id}/status`, { status }),
+  updatePlatformDisplay: (id: number, enabled: boolean) =>
+    api.patch(`/admin/material-shops/${id}/platform-display`, { enabled }),
   completeAccount: (
     id: number,
-    data: { phone: string; contactName?: string; nickname?: string },
+    data: {
+      phone: string;
+      contactName?: string;
+      nickname?: string;
+      reason?: string;
+      recentReauthProof?: string;
+    },
   ) =>
     api.post<
       AdminApiResponse<AdminMaterialShopAccountCompletionResult>,
@@ -1239,9 +1385,9 @@ export const adminManageApi = {
     api.get("/admin/admins", { params }),
   create: (data: any) => api.post("/admin/admins", data),
   update: (id: number, data: any) => api.put(`/admin/admins/${id}`, data),
-  delete: (id: number) => api.delete(`/admin/admins/${id}`),
-  updateStatus: (id: number, status: number) =>
-    api.patch(`/admin/admins/${id}/status`, { status }),
+  delete: (id: number, data?: any) => api.delete(`/admin/admins/${id}`, { data }),
+  updateStatus: (id: number, data: { status: number; reason?: string; disabledReason?: string; recentReauthProof?: string }) =>
+    api.patch(`/admin/admins/${id}/status`, data),
 };
 
 // 角色管理
@@ -1249,10 +1395,10 @@ export const adminRoleApi = {
   list: () => api.get("/admin/roles"),
   create: (data: any) => api.post("/admin/roles", data),
   update: (id: number, data: any) => api.put(`/admin/roles/${id}`, data),
-  delete: (id: number) => api.delete(`/admin/roles/${id}`),
+  delete: (id: number, data?: any) => api.delete(`/admin/roles/${id}`, { data }),
   getMenus: (id: number) => api.get(`/admin/roles/${id}/menus`),
-  assignMenus: (id: number, menuIds: number[]) =>
-    api.post(`/admin/roles/${id}/menus`, { menuIds }),
+  assignMenus: (id: number, menuIds: number[], extra?: { reason?: string; recentReauthProof?: string }) =>
+    api.post(`/admin/roles/${id}/menus`, { menuIds, ...extra }),
 };
 
 // 菜单管理
@@ -1260,7 +1406,7 @@ export const adminMenuApi = {
   list: () => api.get("/admin/menus"),
   create: (data: any) => api.post("/admin/menus", data),
   update: (id: number, data: any) => api.put(`/admin/menus/${id}`, data),
-  delete: (id: number) => api.delete(`/admin/menus/${id}`),
+  delete: (id: number, data?: any) => api.delete(`/admin/menus/${id}`, { data }),
 };
 
 export interface IdentityApplicationItem {
@@ -1343,6 +1489,7 @@ export interface AdminMerchantApplicationListItem {
   phone: string;
   role: string;
   entityType: string;
+  applicationScene?: "new_onboarding" | "claimed_completion";
   realName: string;
   companyName?: string;
   status: number;
@@ -1378,6 +1525,7 @@ export interface AdminMaterialShopApplicationListItem {
   id: number;
   phone: string;
   entityType: string;
+  applicationScene?: "new_onboarding" | "claimed_completion";
   shopName: string;
   companyName?: string;
   contactName: string;

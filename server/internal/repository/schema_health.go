@@ -26,6 +26,13 @@ const (
 	CommerceRuntimeMigrationPath   = "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
 )
 
+var claimedCompletionSchemaFields = map[string]struct{}{
+	"merchant_applications.application_scene":      {},
+	"material_shop_applications.application_scene": {},
+	"providers.needs_onboarding_completion":        {},
+	"material_shops.needs_onboarding_completion":   {},
+}
+
 // SMSAuditLogHealthSnapshot describes runtime health for SMS audit persistence.
 type SMSAuditLogHealthSnapshot struct {
 	Status            string    `json:"status"`
@@ -96,7 +103,7 @@ var merchantOnboardingHealthStore = struct {
 		Status:            SMSAuditHealthStatusDegraded,
 		Component:         MerchantOnboardingComponent,
 		MigrationRequired: true,
-		RequiredMigration: CanonicalSchemaReconcileMigrationPath,
+		RequiredMigration: CanonicalSchemaReconcileMigrationPath + "," + SchemaGuardMigrationPath,
 	},
 }
 
@@ -157,10 +164,10 @@ var userAuthRequirements = map[string][]string{
 }
 
 var merchantOnboardingRequirements = map[string][]string{
-	"merchant_applications":                 {"role", "entity_type", "avatar", "legal_person_name", "legal_person_id_card_no", "legal_person_id_card_front", "legal_person_id_card_back", "years_experience", "work_types", "highlight_tags", "pricing_json", "graduate_school", "design_philosophy", "legal_acceptance_json", "legal_accepted_at", "legal_accept_source"},
-	"providers":                             {"entity_type", "work_types", "highlight_tags", "pricing_json", "graduate_school", "design_philosophy", "avatar", "source_application_id"},
-	"material_shops":                        {"user_id", "company_name", "description", "business_license_no", "business_license", "legal_person_name", "legal_person_id_card_no", "legal_person_id_card_front", "legal_person_id_card_back", "contact_phone", "contact_name", "source_application_id"},
-	"material_shop_applications":            {"user_id", "phone", "entity_type", "shop_name", "shop_description", "brand_logo", "company_name", "business_license_no", "business_license", "legal_person_name", "legal_person_id_card_no", "legal_person_id_card_front", "legal_person_id_card_back", "business_hours", "business_hours_json", "contact_phone", "contact_name", "address", "legal_acceptance_json", "legal_accepted_at", "legal_accept_source", "status", "reject_reason", "audited_by", "audited_at", "shop_id"},
+	"merchant_applications":                 {"role", "entity_type", "avatar", "legal_person_name", "legal_person_id_card_no", "legal_person_id_card_front", "legal_person_id_card_back", "years_experience", "work_types", "highlight_tags", "pricing_json", "graduate_school", "design_philosophy", "legal_acceptance_json", "legal_accepted_at", "legal_accept_source", "application_scene"},
+	"providers":                             {"entity_type", "work_types", "highlight_tags", "pricing_json", "graduate_school", "design_philosophy", "avatar", "source_application_id", "needs_onboarding_completion"},
+	"material_shops":                        {"user_id", "company_name", "description", "business_license_no", "business_license", "legal_person_name", "legal_person_id_card_no", "legal_person_id_card_front", "legal_person_id_card_back", "contact_phone", "contact_name", "source_application_id", "needs_onboarding_completion"},
+	"material_shop_applications":            {"user_id", "phone", "application_scene", "entity_type", "shop_name", "shop_description", "brand_logo", "company_name", "business_license_no", "business_license", "legal_person_name", "legal_person_id_card_no", "legal_person_id_card_front", "legal_person_id_card_back", "business_hours", "business_hours_json", "contact_phone", "contact_name", "address", "legal_acceptance_json", "legal_accepted_at", "legal_accept_source", "status", "reject_reason", "audited_by", "audited_at", "shop_id"},
 	"material_shop_application_products":    {"application_id", "name", "unit", "params_json", "price", "images_json", "sort_order"},
 	"material_shop_products":                {"shop_id", "name", "params_json", "price", "images_json", "cover_image", "status", "sort_order"},
 	"merchant_identity_change_applications": {"user_id", "phone", "current_role", "target_role", "target_entity", "application_data", "status", "reject_reason", "reviewed_by", "reviewed_at"},
@@ -339,8 +346,33 @@ func RefreshUserAuthSchemaHealth() CriticalSchemaHealthSnapshot {
 
 func RefreshMerchantOnboardingSchemaHealth() CriticalSchemaHealthSnapshot {
 	missing, err := checkSchemaRequirements(merchantOnboardingRequirements)
-	recordCriticalSchemaCheck(&merchantOnboardingHealthStore, MerchantOnboardingComponent, CanonicalSchemaReconcileMigrationPath, missing, err)
+	recordCriticalSchemaCheck(&merchantOnboardingHealthStore, MerchantOnboardingComponent, resolveMerchantOnboardingMigrationPath(missing), missing, err)
 	return snapshotCriticalSchemaHealth(&merchantOnboardingHealthStore)
+}
+
+func resolveMerchantOnboardingMigrationPath(missing []string) string {
+	if len(missing) == 0 {
+		return CanonicalSchemaReconcileMigrationPath
+	}
+
+	hasBaseSchemaGap := false
+	hasClaimedCompletionGap := false
+	for _, item := range missing {
+		if _, ok := claimedCompletionSchemaFields[item]; ok {
+			hasClaimedCompletionGap = true
+			continue
+		}
+		hasBaseSchemaGap = true
+	}
+
+	switch {
+	case hasBaseSchemaGap && hasClaimedCompletionGap:
+		return CanonicalSchemaReconcileMigrationPath + "," + SchemaGuardMigrationPath
+	case hasClaimedCompletionGap:
+		return SchemaGuardMigrationPath
+	default:
+		return CanonicalSchemaReconcileMigrationPath
+	}
 }
 
 func RefreshBookingP0SchemaHealth() CriticalSchemaHealthSnapshot {

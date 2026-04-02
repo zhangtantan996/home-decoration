@@ -28,6 +28,38 @@ export const OrderType = {
 
 export type OrderTypeValue = typeof OrderType[keyof typeof OrderType];
 
+export const ProjectStatus = {
+    PENDING_CONSTRUCTION_CONFIRM: -1,
+    ACTIVE: 0,
+    COMPLETED: 1,
+    PAUSED: 2,
+    CLOSED: 3,
+} as const;
+
+export const BUSINESS_STAGE_LABELS: Record<string, string> = {
+    lead_pending: '线索待推进',
+    negotiating: '沟通中',
+    design_pending_submission: '待设计师提交方案',
+    design_pending_confirmation: '设计方案待确认',
+    construction_party_pending: '待确认施工方',
+    construction_quote_pending: '施工报价待确认',
+    ready_to_start: '待开工',
+    in_construction: '施工中',
+    node_acceptance_in_progress: '节点验收中',
+    completed: '已完工待验收',
+    archived: '已归档',
+    disputed: '争议中',
+    cancelled: '已取消',
+};
+
+const PROJECT_STATUS_LABELS: Record<number, string> = {
+    [ProjectStatus.PENDING_CONSTRUCTION_CONFIRM]: '待确认施工报价',
+    [ProjectStatus.ACTIVE]: '进行中',
+    [ProjectStatus.COMPLETED]: '已完工',
+    [ProjectStatus.PAUSED]: '已暂停',
+    [ProjectStatus.CLOSED]: '已关闭',
+};
+
 // 设计方案
 export interface Proposal {
     id: number;
@@ -141,4 +173,16 @@ export const getOrderTypeText = (type: OrderTypeValue): string => {
         default:
             return '未知';
     }
+};
+
+export const getProjectStatusText = (status?: number): string => {
+    if (typeof status !== 'number') {
+        return '处理中';
+    }
+    return PROJECT_STATUS_LABELS[status] || '处理中';
+};
+
+export const getBusinessStageText = (stage?: string): string => {
+    const normalized = String(stage || '').trim().toLowerCase();
+    return BUSINESS_STAGE_LABELS[normalized] || stage || '-';
 };

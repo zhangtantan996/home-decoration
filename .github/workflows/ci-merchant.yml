@@ -1,0 +1,166 @@
+name: Merchant CI
+
+on:
+  push:
+    branches: ["dev"]
+    paths:
+      - 'merchant/**'
+      - 'server/**'
+      - 'tests/e2e/merchant-*.ts'
+      - 'tests/e2e/material-shop-*.ts'
+      - 'tests/e2e/helpers/merchant.ts'
+      - 'playwright*.ts'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/ci-merchant.yml'
+  pull_request:
+    branches: ["dev"]
+    paths:
+      - 'merchant/**'
+      - 'server/**'
+      - 'tests/e2e/merchant-*.ts'
+      - 'tests/e2e/material-shop-*.ts'
+      - 'tests/e2e/helpers/merchant.ts'
+      - 'playwright*.ts'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/ci-merchant.yml'
+
+jobs:
+  verify-merchant:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: home_decoration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d home_decoration"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:6.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            merchant/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: server/go.sum
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install merchant dependencies
+        working-directory: merchant
+        run: npm ci --legacy-peer-deps
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Restore base schema/data
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d home_decoration -f public.sql
+
+      - name: Start API
+        env:
+          APP_ENV: local
+          DATABASE_HOST: 127.0.0.1
+          DATABASE_PORT: 5432
+          DATABASE_USER: postgres
+          DATABASE_PASSWORD: postgres
+          DATABASE_DBNAME: home_decoration
+          DATABASE_NAME: home_decoration
+          DATABASE_SSLMODE: disable
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          REDIS_PASSWORD: ""
+          JWT_SECRET: merchant_ci_jwt_secret_2026
+          SMS_PROVIDER: mock
+          SMS_DEBUG_BYPASS: "true"
+          SMS_RISK_ENABLED: "false"
+        run: |
+          cd server
+          nohup go run ./cmd/api >/tmp/merchant-api.log 2>&1 &
+          echo $! >/tmp/merchant-api.pid
+
+      - name: Wait for API health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8080/api/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/merchant-api.log || true
+          exit 1
+
+      - name: Run verify:merchant
+        run: npm run verify:merchant
+
+      - name: Start merchant dev server
+        run: |
+          cd merchant
+          nohup npm run dev -- --host 127.0.0.1 --port 5174 >/tmp/merchant-ui.log 2>&1 &
+          echo $! >/tmp/merchant-ui.pid
+
+      - name: Wait for merchant UI
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:5174 >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/merchant-ui.log || true
+          exit 1
+
+      - name: Run merchant smoke subset
+        env:
+          MERCHANT_ORIGIN: http://127.0.0.1:5174
+          E2E_API_BASE_URL: http://127.0.0.1:8080/api/v1
+        run: npm run test:e2e:merchant:ci
+
+      - name: Print logs on failure
+        if: failure()
+        run: |
+          cat /tmp/merchant-api.log || true
+          cat /tmp/merchant-ui.log || true
+
+      - name: Stop background services
+        if: always()
+        run: |
+          if [ -f /tmp/merchant-ui.pid ]; then
+            kill "$(cat /tmp/merchant-ui.pid)" || true
+          fi
+          if [ -f /tmp/merchant-api.pid ]; then
+            kill "$(cat /tmp/merchant-api.pid)" || true
+          fi

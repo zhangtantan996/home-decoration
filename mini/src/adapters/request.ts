@@ -9,25 +9,25 @@ const requestAdapter: RequestAdapter = {
       url,
       method: 'GET',
       data,
-    } satisfies RequestOptions<unknown>) as Promise<any>,
+    } satisfies RequestOptions) as Promise<any>,
   post: (url, data) =>
     request({
       url,
       method: 'POST',
       data,
-    } satisfies RequestOptions<unknown>) as Promise<any>,
+    } satisfies RequestOptions) as Promise<any>,
   put: (url, data) =>
     request({
       url,
       method: 'PUT',
       data,
-    } satisfies RequestOptions<unknown>) as Promise<any>,
+    } satisfies RequestOptions) as Promise<any>,
   del: (url, data) =>
     request({
       url,
       method: 'DELETE',
       data,
-    } satisfies RequestOptions<unknown>) as Promise<any>,
+    } satisfies RequestOptions) as Promise<any>,
 };
 
 export const miniRequestAdapter = requestAdapter;

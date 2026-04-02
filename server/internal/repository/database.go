@@ -234,12 +234,35 @@ func ensureRuntimeSchemaColumns() error {
 	}
 
 	if DB.Migrator().HasTable(&model.MaterialShop{}) {
+		if DB.Migrator().HasColumn(&model.MaterialShop{}, "PlatformDisplayEnabled") {
+			if err := DB.Exec(`UPDATE material_shops SET platform_display_enabled = true WHERE platform_display_enabled IS NULL`).Error; err != nil {
+				return err
+			}
+		}
+		if DB.Migrator().HasColumn(&model.MaterialShop{}, "MerchantDisplayEnabled") {
+			if err := DB.Exec(`UPDATE material_shops SET merchant_display_enabled = true WHERE merchant_display_enabled IS NULL`).Error; err != nil {
+				return err
+			}
+		}
 		if err := DB.Exec(`UPDATE material_shops SET status = 1 WHERE status IS NULL`).Error; err != nil {
 			return err
 		}
 		if DB.Dialector.Name() == "postgres" {
 			if err := DB.Exec(`ALTER TABLE material_shops ALTER COLUMN open_time TYPE TEXT`).Error; err != nil {
 				return fmt.Errorf("expand material_shops.open_time: %w", err)
+			}
+		}
+	}
+
+	if DB.Migrator().HasTable(&model.Provider{}) {
+		if DB.Migrator().HasColumn(&model.Provider{}, "PlatformDisplayEnabled") {
+			if err := DB.Exec(`UPDATE providers SET platform_display_enabled = true WHERE platform_display_enabled IS NULL`).Error; err != nil {
+				return err
+			}
+		}
+		if DB.Migrator().HasColumn(&model.Provider{}, "MerchantDisplayEnabled") {
+			if err := DB.Exec(`UPDATE providers SET merchant_display_enabled = true WHERE merchant_display_enabled IS NULL`).Error; err != nil {
+				return err
 			}
 		}
 	}

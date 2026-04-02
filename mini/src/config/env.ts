@@ -57,10 +57,18 @@ const API_BASE_URL = trimTrailingSlash(
 const H5_URL = (process.env.TARO_APP_H5_URL || "").trim();
 const TINODE_URL = (process.env.TARO_APP_TINODE_URL || "").trim();
 const TINODE_API_KEY = (process.env.TARO_APP_TINODE_API_KEY || "").trim();
-const ENABLE_NOTIFICATION_WS =
-  process.env.TARO_APP_ENABLE_NOTIFICATION_WS !== "false";
 const IS_PLACEHOLDER_API_BASE = PLACEHOLDER_API_HOST_PATTERN.test(API_BASE_URL);
 const IS_LOCAL_API_BASE = LOCAL_API_HOST_PATTERN.test(API_BASE_URL);
+const ENABLE_NOTIFICATION_WS = (() => {
+  const raw = (process.env.TARO_APP_ENABLE_NOTIFICATION_WS || "").trim().toLowerCase();
+  if (raw === "true") {
+    return true;
+  }
+  if (raw === "false") {
+    return false;
+  }
+  return !IS_LOCAL_API_BASE;
+})();
 
 export const buildMiniApiUrl = (path: string) => createApiUrl(path).toString();
 

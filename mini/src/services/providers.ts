@@ -4,11 +4,11 @@ import type {
   ProviderCaseDTO,
   ProviderDTO,
   ProviderDetailDTO,
-  ProviderSceneDTO,
+  ProviderPriceDisplayDTO,
   ProviderType,
 } from './dto';
 
-export type { ProviderType } from './dto';
+export type { ProviderPriceDisplayDTO, ProviderType } from './dto';
 
 export type ProviderListItem = ProviderDTO;
 
@@ -77,11 +77,6 @@ export interface ReviewStats {
   totalCount: number;
 }
 
-export interface UserProviderStatus {
-  isFollowed: boolean;
-  isFavorited: boolean;
-}
-
 const providerBasePath = (type: ProviderType) => {
   switch (type) {
     case 'designer':
@@ -114,22 +109,9 @@ export async function getProviderCases(type: ProviderType, id: number, page = 1,
   });
 }
 
-export async function getProviderSceneCases(type: ProviderType, id: number, page = 1, pageSize = 10) {
-  return request<PageData<ProviderSceneItem>>({
-    url: `/${providerBasePath(type)}/${id}/scene-cases`,
-    data: { page, pageSize }
-  });
-}
-
-export async function getProviderCaseDetail(id: number) {
-  return request<ProviderCaseDetail>({
-    url: `/provider-cases/${id}`
-  });
-}
-
-export async function getProviderSceneDetail(id: number) {
-  return request<ProviderSceneDetail>({
-    url: `/provider-scenes/${id}`
+export async function getProviderCaseDetail(type: ProviderType, providerId: number, caseId: number) {
+  return request<ProviderCaseItem>({
+    url: `/${providerBasePath(type)}/${providerId}/cases/${caseId}`
   });
 }
 
@@ -149,41 +131,5 @@ export async function getProviderReviews(
 export async function getReviewStats(type: ProviderType, id: number) {
   return request<ReviewStats>({
     url: `/${providerBasePath(type)}/${id}/review-stats`
-  });
-}
-
-export async function getProviderUserStatus(id: number) {
-  return request<UserProviderStatus>({
-    url: `/providers/${id}/user-status`
-  });
-}
-
-export async function followProvider(id: number, type: ProviderType) {
-  return request<void>({
-    url: `/providers/${id}/follow`,
-    method: 'POST',
-    data: { type }
-  });
-}
-
-export async function unfollowProvider(id: number, type: ProviderType) {
-  return request<void>({
-    url: `/providers/${id}/follow`,
-    method: 'DELETE',
-    data: { type }
-  });
-}
-
-export async function favoriteProvider(id: number) {
-  return request<void>({
-    url: `/providers/${id}/favorite`,
-    method: 'POST'
-  });
-}
-
-export async function unfavoriteProvider(id: number) {
-  return request<void>({
-    url: `/providers/${id}/favorite`,
-    method: 'DELETE'
   });
 }

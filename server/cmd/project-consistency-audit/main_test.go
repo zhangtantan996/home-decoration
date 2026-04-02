@@ -45,8 +45,13 @@ func TestBuildSummaryQueryWithoutFilters(t *testing.T) {
 	t.Parallel()
 
 	query, args := buildSummaryQuery(0, "all")
-	if strings.Contains(query, " WHERE ") {
-		t.Fatalf("did not expect outer where clause when no filters: %s", query)
+	selectIndex := strings.LastIndex(query, "FROM findings")
+	if selectIndex == -1 {
+		t.Fatalf("expected summary query to contain FROM findings: %s", query)
+	}
+	outerQuery := query[selectIndex:]
+	if strings.Contains(outerQuery, " WHERE ") {
+		t.Fatalf("did not expect outer where clause when no filters: %s", outerQuery)
 	}
 	if len(args) != 0 {
 		t.Fatalf("expected no args, got %#v", args)

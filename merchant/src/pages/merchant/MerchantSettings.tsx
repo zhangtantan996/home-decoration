@@ -12,6 +12,7 @@ import {
     Row,
     Select,
     Switch,
+    Tag,
     Upload,
     message,
 } from 'antd';
@@ -34,6 +35,7 @@ import {
     type MerchantProviderInfo,
     type MerchantServiceSetting,
 } from '../../services/merchantApi';
+import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
@@ -55,6 +57,22 @@ const DEFAULT_SERVICE_SETTINGS: MerchantServiceSetting = {
     priceRangeMax: 0,
     serviceStyles: [],
     servicePackages: [],
+};
+
+const resolveProviderOnlineStatusMeta = (providerInfo?: MerchantProviderInfo | null) => {
+    if (!providerInfo) {
+        return { label: '待加载', color: 'default' };
+    }
+    if (providerInfo.platformDisplayEnabled === false) {
+        return { label: '平台已下线', color: 'default' };
+    }
+    if (providerInfo.merchantDisplayEnabled === false) {
+        return { label: '当前已下线', color: 'default' };
+    }
+    if (providerInfo.publicVisible) {
+        return { label: '接单中', color: 'success' };
+    }
+    return { label: '待满足上线条件', color: 'warning' };
 };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -168,9 +186,11 @@ const MerchantSettings: React.FC = () => {
     const [savingSettings, setSavingSettings] = useState(false);
     const [savingAll, setSavingAll] = useState(false);
     const [avatarUploading, setAvatarUploading] = useState(false);
+    const [displayUpdating, setDisplayUpdating] = useState(false);
     const [providerInfo, setProviderInfo] = useState<MerchantProviderInfo | null>(null);
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
     const [areaOptions, setAreaOptions] = useState<ServiceCityGroupOption[]>([]);
+    const updateSessionProvider = useMerchantAuthStore((state) => state.updateProvider);
     const sectionRefs = useRef<Record<SectionKey, HTMLDivElement | null>>({
         basic: null,
         settings: null,
@@ -307,6 +327,15 @@ const MerchantSettings: React.FC = () => {
         try {
             const info = await merchantAuthApi.getInfo();
             setProviderInfo(info);
+            updateSessionProvider({
+                name: info.name,
+                avatar: info.avatar,
+                role: info.role,
+                entityType: info.entityType,
+                applicantType: info.applicantType,
+                providerSubType: info.providerSubType,
+                merchantKind: info.merchantKind,
+            });
             infoForm.setFieldsValue({
                 name: info.name,
                 companyName: info.companyName,
@@ -457,10 +486,9 @@ const MerchantSettings: React.FC = () => {
                     ...providerPatch,
                 };
             });
-
-            const storedProvider = JSON.parse(localStorage.getItem('merchant_provider') || '{}');
-            storedProvider.name = values.name;
-            localStorage.setItem('merchant_provider', JSON.stringify(storedProvider));
+            updateSessionProvider({
+                name: providerPatch.name,
+            });
 
             if (!options.silent) {
                 message.success('基础资料保存成功');
@@ -587,10 +615,7 @@ const MerchantSettings: React.FC = () => {
             const uploadedUrl = uploaded.url;
 
             setProviderInfo((prev) => (prev ? { ...prev, avatar: uploadedUrl } : prev));
-
-            const storedProvider = JSON.parse(localStorage.getItem('merchant_provider') || '{}');
-            storedProvider.avatar = uploadedUrl;
-            localStorage.setItem('merchant_provider', JSON.stringify(storedProvider));
+            updateSessionProvider({ avatar: uploadedUrl });
 
             message.success('头像上传成功');
             onSuccess?.(uploaded);
@@ -619,19 +644,33 @@ const MerchantSettings: React.FC = () => {
         }
     };
 
+    const handleDisplayToggle = async (checked: boolean) => {
+        setDisplayUpdating(true);
+        try {
+            await merchantAuthApi.updateInfo({ merchantDisplayEnabled: checked });
+            setProviderInfo((prev) => prev ? {
+                ...prev,
+                merchantDisplayEnabled: checked,
+            } : prev);
+            message.success(checked ? '已切换为接单中' : '已下线');
+            await fetchProviderInfo();
+        } catch (error) {
+            message.error(getErrorMessage(error, '更新接单状态失败'));
+        } finally {
+            setDisplayUpdating(false);
+        }
+    };
+
     const getProviderTypeLabel = () => {
         if (!providerInfo) return '商家';
-        switch (providerInfo.applicantType) {
-            case 'studio':
-                return '设计工作室';
+        const providerSubType = String(providerInfo.providerSubType || '').toLowerCase();
+        switch (providerSubType) {
             case 'company':
                 return '装修公司';
             case 'foreman':
                 return '工长/项目经理';
             default:
-                if (providerInfo.providerType === 3) return '工长/项目经理';
-                if (providerInfo.providerType === 2) return '装修公司';
-                return '独立设计师';
+                return '设计师';
         }
     };
 
@@ -797,6 +836,43 @@ const MerchantSettings: React.FC = () => {
                                 <div style={{ color: '#475569', lineHeight: 1.7 }}>
                                     优先完善头像、名称、服务城市、理念介绍和报价信息，外部展示会更完整。
                                 </div>
+                            </div>
+
+                            <div style={{ ...softPanelStyle, marginTop: 16 }}>
+                                {(() => {
+                                    const onlineStatusMeta = resolveProviderOnlineStatusMeta(providerInfo);
+
+                                    return (
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                gap: 16,
+                                                flexWrap: 'wrap',
+                                            }}
+                                        >
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ color: '#0f172a', fontWeight: 600 }}>接单状态</div>
+                                                <div style={{ marginTop: 8 }}>
+                                                    <Tag
+                                                        color={onlineStatusMeta.color}
+                                                        style={{ margin: 0, borderRadius: 999, paddingInline: 10, lineHeight: '22px' }}
+                                                    >
+                                                        {onlineStatusMeta.label}
+                                                    </Tag>
+                                                </div>
+                                            </div>
+                                            <Switch
+                                                checked={providerInfo?.merchantDisplayEnabled ?? true}
+                                                loading={displayUpdating}
+                                                onChange={handleDisplayToggle}
+                                                checkedChildren="接单中"
+                                                unCheckedChildren="下线"
+                                            />
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
                             <Divider style={{ margin: '20px 0' }} />
@@ -1199,8 +1275,8 @@ const MerchantSettings: React.FC = () => {
                                     <Row gutter={[16, 16]}>
                                         <Col xs={24} lg={8}>
                                             <div style={softPanelStyle}>
-                                                <Form.Item name="acceptBooking" label="接单状态" valuePropName="checked" style={{ marginBottom: 0 }}>
-                                                    <Switch checkedChildren="接单中" unCheckedChildren="暂停接单" />
+                                                <Form.Item name="acceptBooking" label="预约接收" valuePropName="checked" style={{ marginBottom: 0 }}>
+                                                    <Switch checkedChildren="开启" unCheckedChildren="暂停" />
                                                 </Form.Item>
                                             </div>
                                         </Col>

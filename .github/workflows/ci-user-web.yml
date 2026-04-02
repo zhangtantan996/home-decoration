@@ -8,6 +8,7 @@ on:
       - 'shared/design-tokens/**'
       - 'tests/e2e/user-web*.ts'
       - 'tests/e2e/helpers/userWeb*.ts'
+      - 'scripts/**'
       - 'scripts/user-web-*.sh'
       - 'server/scripts/testdata/user_web_fixture.sql'
       - 'playwright.user-web*.ts'
@@ -20,6 +21,7 @@ on:
       - 'shared/design-tokens/**'
       - 'tests/e2e/user-web*.ts'
       - 'tests/e2e/helpers/userWeb*.ts'
+      - 'scripts/**'
       - 'scripts/user-web-*.sh'
       - 'server/scripts/testdata/user_web_fixture.sql'
       - 'playwright.user-web*.ts'
@@ -81,6 +83,9 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
@@ -123,20 +128,8 @@ jobs:
           cat /tmp/user-web-api.log || true
           exit 1
 
-      - name: Build web
-        run: npm run build:web
-
-      - name: Apply user-web fixture
-        run: npm run fixture:user-web
-
-      - name: Real API smoke
-        run: npm run smoke:user-web:api
-
-      - name: Mock UI smoke
-        run: npm run test:e2e:user-web
-
-      - name: Real UI smoke
-        run: npm run test:e2e:user-web:real
+      - name: Run verify:web
+        run: npm run verify:web
 
       - name: Print API log on failure
         if: failure()

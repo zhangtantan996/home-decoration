@@ -1,13 +1,10 @@
-import Taro, { useLoad, useShareAppMessage } from '@tarojs/taro';
-import { Button as TaroButton, Image, ScrollView, Text, View } from '@tarojs/components';
-import React, { useEffect, useMemo, useState } from 'react';
+import Taro, { useLoad, usePageScroll, useReachBottom, useShareAppMessage } from '@tarojs/taro';
+import { Image, Text, View } from '@tarojs/components';
+import { useEffect, useMemo, useState } from 'react';
 
-import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
-import { Icon } from '@/components/Icon';
+import MiniPageNav from '@/components/MiniPageNav';
 import { Skeleton } from '@/components/Skeleton';
-import { Tag } from '@/components/Tag';
 import type { InspirationCommentDTO, InspirationDetailDTO } from '@/services/dto';
 import { inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
@@ -20,6 +17,7 @@ import './index.scss';
 const INSPIRATION_CASE_SYNC_KEY = 'inspiration_case_sync';
 const COMMENT_DRAFT_KEY_PREFIX = 'inspiration_comment_draft_';
 const COMMENT_PAGE_SIZE = 20;
+const NAV_SCROLL_DISTANCE = 180;
 
 interface InspirationCaseSyncPayload {
   id: number;
@@ -41,6 +39,21 @@ const mergeSyncPayload = (payload: InspirationCaseSyncPayload) => {
   Taro.setStorageSync(INSPIRATION_CASE_SYNC_KEY, payload);
 };
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const formatAreaText = (value?: string) => {
+  if (!value) return '暂无';
+  return value.includes('㎡') ? value : `${value}㎡`;
+};
+
+const buildFooterActionClass = (base: string, active?: boolean, primary?: boolean) => {
+  return [
+    base,
+    active ? `${base}--active` : '',
+    primary ? `${base}--primary` : '',
+  ].filter(Boolean).join(' ');
+};
+
 export default function InspirationDetailPage() {
   const auth = useAuthStore();
   const [id, setId] = useState<number>(0);
@@ -52,6 +65,7 @@ export default function InspirationDetailPage() {
   const [commentsPage, setCommentsPage] = useState(1);
   const [commentsHasMore, setCommentsHasMore] = useState(true);
   const [loadingCommentsMore, setLoadingCommentsMore] = useState(false);
+  const [navProgress, setNavProgress] = useState(0);
 
   useLoad((options) => {
     if (options.id) {
@@ -59,26 +73,23 @@ export default function InspirationDetailPage() {
     }
   });
 
-  const previewImages = useMemo(() => {
-    if (!detail) {
-      return [];
-    }
+  usePageScroll(({ scrollTop }) => {
+    const next = clamp(scrollTop / NAV_SCROLL_DISTANCE, 0, 1);
+    setNavProgress((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
+  });
 
+  const previewImages = useMemo(() => {
+    if (!detail) return [];
     return getInspirationGalleryImages(detail);
   }, [detail]);
 
   const coverImage = useMemo(() => {
-    if (!detail) {
-      return '';
-    }
-
+    if (!detail) return '';
     return getInspirationCoverImage(detail);
   }, [detail]);
 
   const handlePreviewImage = (current: string) => {
-    if (!current || previewImages.length === 0) {
-      return;
-    }
+    if (!current || previewImages.length === 0) return;
 
     Taro.previewImage({
       current,
@@ -87,9 +98,7 @@ export default function InspirationDetailPage() {
   };
 
   const fetchDetail = async (): Promise<InspirationDetailDTO | null> => {
-    if (!id) {
-      return null;
-    }
+    if (!id) return null;
 
     setLoading(true);
     try {
@@ -115,9 +124,7 @@ export default function InspirationDetailPage() {
   };
 
   const loadMoreComments = async () => {
-    if (!id || !commentsHasMore || loadingCommentsMore || loading) {
-      return;
-    }
+    if (!id || !commentsHasMore || loadingCommentsMore || loading) return;
 
     const currentPage = commentsPage;
     setLoadingCommentsMore(true);
@@ -142,9 +149,7 @@ export default function InspirationDetailPage() {
   };
 
   useEffect(() => {
-    if (!id) {
-      return;
-    }
+    if (!id) return;
 
     const cachedDraft = Taro.getStorageSync(getCommentDraftKey(id));
     setCommentText(typeof cachedDraft === 'string' ? cachedDraft : '');
@@ -152,9 +157,7 @@ export default function InspirationDetailPage() {
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!id) {
-      return;
-    }
+    if (!id) return;
 
     const draftKey = getCommentDraftKey(id);
     if (!commentText.trim()) {
@@ -165,10 +168,12 @@ export default function InspirationDetailPage() {
     Taro.setStorageSync(draftKey, commentText);
   }, [id, commentText]);
 
+  useReachBottom(() => {
+    void loadMoreComments();
+  });
+
   const ensureAuth = () => {
-    if (auth.token) {
-      return true;
-    }
+    if (auth.token) return true;
     Taro.switchTab({ url: '/pages/profile/index' });
     return false;
   };
@@ -188,9 +193,7 @@ export default function InspirationDetailPage() {
   }));
 
   const handleLike = async () => {
-    if (!detail || !ensureAuth() || submitting) {
-      return;
-    }
+    if (!detail || !ensureAuth() || submitting) return;
 
     setSubmitting(true);
     const originLiked = detail.isLiked;
@@ -227,9 +230,7 @@ export default function InspirationDetailPage() {
   };
 
   const handleFavorite = async () => {
-    if (!detail || !ensureAuth() || submitting) {
-      return;
-    }
+    if (!detail || !ensureAuth() || submitting) return;
 
     setSubmitting(true);
     const originFavorited = detail.isFavorited;
@@ -259,9 +260,7 @@ export default function InspirationDetailPage() {
   };
 
   const handleSubmitComment = async (rawContent?: string) => {
-    if (!detail || !ensureAuth() || submitting) {
-      return;
-    }
+    if (!detail || !ensureAuth() || submitting) return;
 
     const content = (rawContent ?? commentText).trim();
     if (!content) {
@@ -293,12 +292,36 @@ export default function InspirationDetailPage() {
     }
   };
 
+  const openCommentComposer = () => {
+    Taro.showModal({
+      title: '发布评论',
+      editable: true,
+      placeholderText: commentText || '请输入评论内容',
+      success: (res: { confirm: boolean; content?: string }) => {
+        if (!res.confirm) return;
+
+        const nextContent = (res.content || '').trim();
+        if (!nextContent) {
+          Taro.showToast({ title: '请输入评论内容', icon: 'none' });
+          return;
+        }
+
+        setCommentText(nextContent);
+        void handleSubmitComment(nextContent);
+      },
+    } as any);
+  };
+
+  const solidNav = <MiniPageNav title="灵感详情" onBack={handleBack} placeholder />;
+
   if (loading) {
     return (
       <View className="inspiration-detail-page inspiration-detail-page--loading">
-        <Skeleton height={520} />
-        <Skeleton height={180} className="inspiration-detail-page__loading-card" />
-        <Skeleton height={260} className="inspiration-detail-page__loading-card" />
+        {solidNav}
+        <Skeleton height={560} />
+        <Skeleton height={240} className="inspiration-detail-page__loading-card inspiration-detail-page__loading-card--hero" />
+        <Skeleton height={140} className="inspiration-detail-page__loading-card" />
+        <Skeleton height={240} className="inspiration-detail-page__loading-card" />
       </View>
     );
   }
@@ -306,15 +329,23 @@ export default function InspirationDetailPage() {
   if (!detail) {
     return (
       <View className="inspiration-detail-page inspiration-detail-page--empty">
+        {solidNav}
         <Empty description="未找到灵感内容" action={{ text: '返回灵感页', onClick: handleBack }} />
       </View>
     );
   }
 
-  const detailTags = [detail.style, detail.layout, detail.area].filter(Boolean);
+  const fixedNav = <MiniPageNav title={detail.title || '灵感详情'} onBack={handleBack} variant="overlay" progress={navProgress} />;
+  const summaryItems = [
+    { label: '户型', value: detail.layout || '暂无' },
+    { label: '面积', value: formatAreaText(detail.area) },
+    { label: '风格', value: detail.style || '暂无' },
+  ];
 
   return (
     <View className="page-inspiration-detail inspiration-detail-page">
+      {fixedNav}
+
       <View className="inspiration-detail-page__hero">
         {coverImage ? (
           <Image
@@ -327,162 +358,149 @@ export default function InspirationDetailPage() {
           <View className="inspiration-detail-page__hero-placeholder" />
         )}
         <View className="inspiration-detail-page__hero-mask" />
-        <View className="inspiration-detail-page__nav" style={{ paddingTop: `${(Taro.getSystemInfoSync().statusBarHeight || 24) + 12}px` }}>
-          <View className="inspiration-detail-page__nav-button" onClick={handleBack}>
-            <Icon name="arrow-left" size={26} color="#ffffff" />
-          </View>
-          <TaroButton className="inspiration-detail-page__nav-button" openType="share">
-            <Icon name="share" size={24} color="#ffffff" />
-          </TaroButton>
-        </View>
       </View>
 
-      <ScrollView
-        scrollY
-        className="inspiration-detail-page__scroll"
-        lowerThreshold={80}
-        onScrollToLower={() => void loadMoreComments()}
-      >
-        <View className="inspiration-detail-page__content">
-          <Card className="inspiration-detail-page__card">
-            <View className="inspiration-detail-page__section">
-              <Text className="inspiration-detail-page__title">{detail.title}</Text>
-              <View className="inspiration-detail-page__tag-row">
-                {detailTags.map((item) => (
-                  <Tag key={item} variant="secondary">{item}</Tag>
-                ))}
+      <View className="inspiration-detail-page__content">
+        <View className="inspiration-detail-page__summary-card">
+          <Text className="inspiration-detail-page__summary-kicker">灵感案例</Text>
+          <Text className="inspiration-detail-page__title">{detail.title}</Text>
+
+          <View className="inspiration-detail-page__price-row">
+            <Text className="inspiration-detail-page__price-label">预算参考</Text>
+            <Text className="inspiration-detail-page__price-value">¥{Number(detail.price || 0).toLocaleString()}</Text>
+          </View>
+
+          <View className="inspiration-detail-page__summary-divider" />
+
+          <View className="inspiration-detail-page__summary-grid">
+            {summaryItems.map((item, index) => (
+              <View key={item.label} className="inspiration-detail-page__summary-grid-item">
+                {index > 0 ? <View className="inspiration-detail-page__summary-grid-divider" /> : null}
+                <Text className="inspiration-detail-page__summary-grid-label">{item.label}</Text>
+                <Text className="inspiration-detail-page__summary-grid-value" numberOfLines={1}>{item.value}</Text>
               </View>
-              <Text className="inspiration-detail-page__price">预算参考：¥{Number(detail.price || 0).toLocaleString()}</Text>
+            ))}
+          </View>
+        </View>
+
+        {detail.author?.name ? (
+          <View className="inspiration-detail-page__module-card inspiration-detail-page__author-card">
+            {detail.author.avatar ? (
+              <Image className="inspiration-detail-page__author-avatar" src={detail.author.avatar} mode="aspectFill" lazyLoad />
+            ) : (
+              <View className="inspiration-detail-page__author-avatar inspiration-detail-page__author-avatar--placeholder" />
+            )}
+            <View className="inspiration-detail-page__author-main">
+              <Text className="inspiration-detail-page__author-name">{detail.author.name}</Text>
+              <Text className="inspiration-detail-page__author-subtitle">案例作者 · 灵感分享</Text>
             </View>
-          </Card>
+            <View className="inspiration-detail-page__author-badge">
+              <Text className="inspiration-detail-page__author-badge-text">作者</Text>
+            </View>
+          </View>
+        ) : null}
 
-          {detail.author?.name ? (
-            <Card className="inspiration-detail-page__card">
-              <View className="inspiration-detail-page__section inspiration-detail-page__author">
-                {detail.author.avatar ? (
-                  <Image className="inspiration-detail-page__author-avatar" src={detail.author.avatar} mode="aspectFill" lazyLoad />
-                ) : (
-                  <View className="inspiration-detail-page__author-avatar inspiration-detail-page__author-avatar--placeholder" />
-                )}
-                <View className="inspiration-detail-page__author-main">
-                  <Text className="inspiration-detail-page__author-name">{detail.author.name}</Text>
-                  <Text className="inspiration-detail-page__author-subtitle">案例作者 · 灵感分享</Text>
+        {detail.description ? (
+          <View className="inspiration-detail-page__module-card">
+            <View className="inspiration-detail-page__section-head">
+              <Text className="inspiration-detail-page__section-title">设计说明</Text>
+              <Text className="inspiration-detail-page__section-caption">空间细节与思路</Text>
+            </View>
+            <Text className="inspiration-detail-page__description">{detail.description}</Text>
+          </View>
+        ) : null}
+
+        {detail.images.length > 0 ? (
+          <View className="inspiration-detail-page__module-card">
+            <View className="inspiration-detail-page__section-head">
+              <Text className="inspiration-detail-page__section-title">空间画廊</Text>
+              <Text className="inspiration-detail-page__section-caption">{detail.images.length} 张图片</Text>
+            </View>
+            <View className="inspiration-detail-page__gallery">
+              {detail.images.map((image, index) => (
+                <View key={`${image}-${index}`} className="inspiration-detail-page__gallery-item">
+                  <Text className="inspiration-detail-page__gallery-index">{String(index + 1).padStart(2, '0')}</Text>
+                  <Image
+                    src={image}
+                    mode="aspectFill"
+                    className="inspiration-detail-page__gallery-image"
+                    onClick={() => handlePreviewImage(image)}
+                  />
                 </View>
-              </View>
-            </Card>
-          ) : null}
+              ))}
+            </View>
+          </View>
+        ) : null}
 
-          {detail.description ? (
-            <Card className="inspiration-detail-page__card">
-              <View className="inspiration-detail-page__section">
-                <Text className="inspiration-detail-page__section-title">设计说明</Text>
-                <Text className="inspiration-detail-page__description">{detail.description}</Text>
-              </View>
-            </Card>
-          ) : null}
+        <View className="inspiration-detail-page__module-card inspiration-detail-page__comments-card">
+          <View className="inspiration-detail-page__section-head">
+            <Text className="inspiration-detail-page__section-title">评论区</Text>
+            <Text className="inspiration-detail-page__section-caption">{detail.commentCount || 0} 条</Text>
+          </View>
 
-          {detail.images.length > 0 ? (
-            <Card className="inspiration-detail-page__card">
-              <View className="inspiration-detail-page__section">
-                <Text className="inspiration-detail-page__section-title">空间画廊</Text>
-                <View className="inspiration-detail-page__gallery">
-                  {detail.images.map((image, index) => (
-                    <Image
-                      key={`${image}-${index}`}
-                      src={image}
-                      mode="aspectFill"
-                      className="inspiration-detail-page__gallery-image"
-                      onClick={() => handlePreviewImage(image)}
-                    />
-                  ))}
-                </View>
-              </View>
-            </Card>
-          ) : null}
+          <View className="inspiration-detail-page__comment-entry" onClick={openCommentComposer}>
+            <Text className="inspiration-detail-page__comment-entry-text">
+              {commentText || '说说你的看法，发布后会展示在评论区。'}
+            </Text>
+          </View>
 
-          <Card className="inspiration-detail-page__card">
-            <View className="inspiration-detail-page__section">
-              <View className="inspiration-detail-page__comment-head">
-                <Text className="inspiration-detail-page__section-title">评论区</Text>
-                <Text className="inspiration-detail-page__comment-count">{detail.commentCount || 0} 条</Text>
-              </View>
-
-              <View className="inspiration-detail-page__comment-entry">
-                <Text className="inspiration-detail-page__comment-entry-text">{commentText || '说说你的看法，发布后会展示在评论区。'}</Text>
-              </View>
-
-              {comments.length === 0 ? (
-                <Empty description="暂无评论，快来抢沙发" />
-              ) : (
-                comments.map((item) => (
-                  <View key={item.id} className="inspiration-detail-page__comment-card">
+          {comments.length === 0 ? (
+            <Empty description="暂无评论，快来抢沙发" />
+          ) : (
+            comments.map((item) => (
+              <View key={item.id} className="inspiration-detail-page__comment-card">
+                <View className="inspiration-detail-page__comment-head">
+                  {item.user?.avatar ? (
+                    <Image className="inspiration-detail-page__comment-avatar" src={item.user.avatar} mode="aspectFill" lazyLoad />
+                  ) : (
+                    <View className="inspiration-detail-page__comment-avatar inspiration-detail-page__comment-avatar--placeholder" />
+                  )}
+                  <View className="inspiration-detail-page__comment-user-meta">
                     <Text className="inspiration-detail-page__comment-user">{item.user?.name || '匿名用户'}</Text>
-                    <Text className="inspiration-detail-page__comment-content">{item.content}</Text>
                     <Text className="inspiration-detail-page__comment-time">
                       {formatServerDateTime(item.createdAt)}
                     </Text>
                   </View>
-                ))
-              )}
+                </View>
+                <Text className="inspiration-detail-page__comment-content">{item.content}</Text>
+              </View>
+            ))
+          )}
 
-              {loadingCommentsMore ? (
-                <View className="inspiration-detail-page__comment-tip">加载更多评论中...</View>
-              ) : null}
-              {!commentsHasMore && comments.length > 0 ? (
-                <View className="inspiration-detail-page__comment-tip">没有更多评论了</View>
-              ) : null}
-            </View>
-          </Card>
+          {loadingCommentsMore ? (
+            <View className="inspiration-detail-page__comment-tip">加载更多评论中...</View>
+          ) : null}
+          {!commentsHasMore && comments.length > 0 ? (
+            <View className="inspiration-detail-page__comment-tip">没有更多评论了</View>
+          ) : null}
         </View>
-      </ScrollView>
+      </View>
 
       <View className="inspiration-detail-page__footer">
-        <Button
-          size="sm"
-          variant={detail.isLiked ? 'primary' : 'secondary'}
-          className="inspiration-detail-page__footer-button"
+        <View
+          className={buildFooterActionClass('inspiration-detail-page__footer-action', detail.isLiked)}
           onClick={handleLike}
-          disabled={submitting}
         >
-          点赞 {detail.likeCount || 0}
-        </Button>
-        <Button
-          size="sm"
-          variant={detail.isFavorited ? 'primary' : 'secondary'}
-          className="inspiration-detail-page__footer-button"
+          <Text className={buildFooterActionClass('inspiration-detail-page__footer-action-text', detail.isLiked)}>
+            点赞 {detail.likeCount || 0}
+          </Text>
+        </View>
+        <View
+          className={buildFooterActionClass('inspiration-detail-page__footer-action', detail.isFavorited)}
           onClick={handleFavorite}
-          disabled={submitting}
         >
-          {detail.isFavorited ? '已收藏' : '收藏'}
-        </Button>
-        <Button
-          size="sm"
-          className="inspiration-detail-page__footer-button"
-          onClick={() => {
-            Taro.showModal({
-              title: '发布评论',
-              editable: true,
-              placeholderText: commentText || '请输入评论内容',
-              success: (res) => {
-                if (!res.confirm) {
-                  return;
-                }
-
-                const nextContent = (res.content || '').trim();
-                if (!nextContent) {
-                  Taro.showToast({ title: '请输入评论内容', icon: 'none' });
-                  return;
-                }
-
-                setCommentText(nextContent);
-                void handleSubmitComment(nextContent);
-              },
-            });
-          }}
-          disabled={submitting}
+          <Text className={buildFooterActionClass('inspiration-detail-page__footer-action-text', detail.isFavorited)}>
+            {detail.isFavorited ? '已收藏' : '收藏'}
+          </Text>
+        </View>
+        <View
+          className={buildFooterActionClass('inspiration-detail-page__footer-action', false, true)}
+          onClick={openCommentComposer}
         >
-          评论
-        </Button>
+          <Text className={buildFooterActionClass('inspiration-detail-page__footer-action-text', false, true)}>
+            评论
+          </Text>
+        </View>
       </View>
     </View>
   );

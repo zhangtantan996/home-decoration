@@ -1,6 +1,7 @@
 import Taro from '@tarojs/taro';
 
 export const CUSTOM_TAB_BAR_SELECT_EVENT = 'custom-tab-bar:select';
+export const CUSTOM_TAB_BAR_VISIBILITY_EVENT = 'custom-tab-bar:visibility';
 
 export const getCurrentTabRoute = () => {
   const pages = Taro.getCurrentPages();
@@ -23,4 +24,8 @@ export const emitTabBarSelect = (pagePath: string) => {
 
 export const syncCurrentTabBar = (pagePath?: string) => {
   emitTabBarSelect(pagePath || getCurrentTabRoute());
+};
+
+export const setCustomTabBarHidden = (hidden: boolean) => {
+  Taro.eventCenter.trigger(CUSTOM_TAB_BAR_VISIBILITY_EVENT, hidden);
 };

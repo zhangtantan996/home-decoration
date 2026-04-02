@@ -18,6 +18,17 @@ export interface MaterialShopItem {
   tags: string[];
   isVerified: boolean;
   isSettled?: boolean;
+  products: MaterialShopProductItem[];
+}
+
+export interface MaterialShopProductItem {
+  id: number;
+  name: string;
+  unit: string;
+  description: string;
+  price: number;
+  images: string[];
+  coverImage?: string;
 }
 
 export interface MaterialShopQuery {
@@ -43,11 +54,32 @@ interface MaterialShopDTO {
   tags?: string[];
   isVerified?: boolean;
   isSettled?: boolean;
+  products?: MaterialShopProductDTO[];
+}
+
+interface MaterialShopProductDTO {
+  id?: number;
+  name?: string;
+  unit?: string;
+  description?: string;
+  price?: number;
+  images?: string[];
+  coverImage?: string;
 }
 
 const normalizeStringArray = (value?: string[]) => {
   return Array.isArray(value) ? value.filter(Boolean) : [];
 };
+
+const toMaterialShopProductItem = (dto: MaterialShopProductDTO): MaterialShopProductItem => ({
+  id: Number(dto.id || 0),
+  name: dto.name || '门店商品',
+  unit: dto.unit || '',
+  description: dto.description || '',
+  price: Number(dto.price || 0),
+  images: normalizeStringArray(dto.images),
+  coverImage: dto.coverImage || normalizeStringArray(dto.images)[0] || undefined,
+});
 
 const toMaterialShopItem = (dto: MaterialShopDTO): MaterialShopItem => ({
   id: Number(dto.id || 0),
@@ -65,6 +97,7 @@ const toMaterialShopItem = (dto: MaterialShopDTO): MaterialShopItem => ({
   tags: normalizeStringArray(dto.tags),
   isVerified: Boolean(dto.isVerified),
   isSettled: dto.isSettled,
+  products: Array.isArray(dto.products) ? dto.products.map(toMaterialShopProductItem) : [],
 });
 
 export async function listMaterialShops(query: MaterialShopQuery = {}) {

@@ -7,6 +7,7 @@ server:
   port: "8080"
   mode: "debug"  # 生产环境设置为 "release"
   public_url: "http://localhost:8080" # API 公网地址/入口地址
+  trusted_proxies: "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16" # 可信代理/IP 段，生产请按真实 Nginx/VPN 链路覆盖
 
 database:
   host: "localhost"
@@ -26,9 +27,25 @@ jwt:
   secret: "${JWT_SECRET}"  # 从环境变量读取，不要硬编码！
   expire_hour: 8  # AccessToken 有效期（小时）
 
+admin_auth:
+  access_token_minutes: 30
+  refresh_token_days: 7
+  login_fail_limit: 5
+  login_lock_minutes: 30
+  password_min_length: 10
+  password_max_age_days: 90
+  totp_enabled: true
+  totp_issuer: "禾泽云管理后台"
+  required_role_keys: "*" # 生产建议至少 system_admin,security_admin,security_auditor
+  reauth_ttl_minutes: 10
+  max_active_sessions: 5
+  api_ip_enforced: false
+  allowed_cidrs: "" # 生产必须填写真实办公/VPN 出口网段
+
 log:
   level: "info"
   file: "logs/backend.log"
+  audit_retention_days: 180
 
 wechat_mini:
   app_id: "${WECHAT_MINI_APPID}"

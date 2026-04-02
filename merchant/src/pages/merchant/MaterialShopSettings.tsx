@@ -1,16 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+    Avatar,
     Button,
     Col,
     Form,
     Input,
     Row,
     Space,
+    Switch,
+    Tag,
     Upload,
     message,
 } from 'antd';
-import type { UploadFile, UploadProps } from 'antd';
+import { CameraOutlined, LoadingOutlined, ShopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import ImgCrop from 'antd-img-crop';
+import type { UploadProps } from 'antd';
 
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
@@ -23,6 +28,8 @@ import {
     type BusinessHoursRange,
     type MaterialShopProfile,
 } from '../../services/merchantApi';
+import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
+import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
 
 const { TextArea } = Input;
@@ -76,21 +83,42 @@ const normalizeRangesForApi = (ranges?: BusinessHoursRange[]) =>
         day: item.day === 0 ? 7 : item.day,
     }));
 
-const toSingleUploadFileList = (value?: string): UploadFile[] => {
-    if (!value) {
-        return [];
+const resolveOperatingStatusMeta = (
+    platformDisplayEnabled: boolean,
+    merchantDisplayEnabled: boolean,
+    publicVisible: boolean,
+) => {
+    if (!platformDisplayEnabled) {
+        return { label: '平台已下线', color: 'default' };
     }
-    return [{ uid: value, name: value.split('/').pop() || 'license', status: 'done', url: value, response: { url: value } }];
+    if (!merchantDisplayEnabled) {
+        return { label: '当前已下线', color: 'default' };
+    }
+    if (publicVisible) {
+        return { label: '营业中', color: 'success' };
+    }
+    return { label: '待满足上线条件', color: 'warning' };
 };
 
 const MaterialShopSettings: React.FC = () => {
     const navigate = useNavigate();
     const [profileForm] = Form.useForm<MaterialShopProfile>();
+    const [profile, setProfile] = useState<MaterialShopProfile | null>(null);
     const [loading, setLoading] = useState(false);
     const [savingProfile, setSavingProfile] = useState(false);
+    const [avatarUploading, setAvatarUploading] = useState(false);
+    const [displayUpdating, setDisplayUpdating] = useState(false);
+    const updateSessionProvider = useMerchantAuthStore((state) => state.updateProvider);
     const businessHoursRanges = Form.useWatch('businessHoursRanges', profileForm) || [];
 
     const normalizedRanges = useMemo(() => normalizeRangesForForm(businessHoursRanges), [businessHoursRanges]);
+    const merchantDisplayEnabled = profile?.merchantDisplayEnabled ?? true;
+    const platformDisplayEnabled = profile?.platformDisplayEnabled ?? true;
+    const publicVisible = profile?.publicVisible ?? false;
+    const operatingStatusMeta = useMemo(
+        () => resolveOperatingStatusMeta(platformDisplayEnabled, merchantDisplayEnabled, publicVisible),
+        [platformDisplayEnabled, merchantDisplayEnabled, publicVisible],
+    );
 
     useEffect(() => {
         void fetchProfile();
@@ -100,13 +128,17 @@ const MaterialShopSettings: React.FC = () => {
         setLoading(true);
         try {
             const profile = await materialShopCenterApi.getMe();
+            setProfile(profile);
+            updateSessionProvider({
+                name: profile.shopName,
+                avatar: profile.avatar,
+                merchantKind: 'material_shop',
+                role: 'material_shop',
+            });
             profileForm.setFieldsValue({
                 shopName: profile.shopName,
                 companyName: profile.companyName,
                 shopDescription: profile.shopDescription,
-                businessLicenseNo: profile.businessLicenseNo,
-                businessLicense: profile.businessLicense,
-                legalPersonName: profile.legalPersonName,
                 businessHours: profile.businessHours,
                 businessHoursRanges: normalizeRangesForForm(profile.businessHoursRanges, profile.businessHours),
                 contactPhone: profile.contactPhone,
@@ -120,27 +152,46 @@ const MaterialShopSettings: React.FC = () => {
         }
     };
 
-    const uploadBusinessLicense: UploadProps['customRequest'] = async (options) => {
+    const handleAvatarUpload: UploadProps['customRequest'] = async (options) => {
+        const { file, onSuccess, onError } = options;
+        setAvatarUploading(true);
         try {
-            const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
-            profileForm.setFieldsValue({ businessLicense: uploaded.url });
-            options.onSuccess?.(uploaded);
+            const uploaded = await merchantUploadApi.uploadImageData(file as File);
+            await materialShopCenterApi.updateMe({ avatar: uploaded.url });
+            setProfile((current) => (current ? { ...current, avatar: uploaded.url } : current));
+            updateSessionProvider({ avatar: uploaded.url });
+            message.success('店铺头像已更新');
+            onSuccess?.(uploaded);
         } catch (error) {
-            const errorMessage = getErrorMessage(error, '上传失败');
+            const errorMessage = getErrorMessage(error, '店铺头像上传失败');
             message.error(errorMessage);
-            options.onError?.(new Error(errorMessage));
+            onError?.(new Error(errorMessage));
+        } finally {
+            setAvatarUploading(false);
+        }
+    };
+
+    const handleDisplayToggle = async (checked: boolean) => {
+        setDisplayUpdating(true);
+        try {
+            await materialShopCenterApi.updateMe({ merchantDisplayEnabled: checked });
+            setProfile((current) => current ? { ...current, merchantDisplayEnabled: checked } : current);
+            message.success(checked ? '已切换为营业中' : '已下线');
+            await fetchProfile();
+        } catch (error) {
+            message.error(getErrorMessage(error, '更新营业状态失败'));
+        } finally {
+            setDisplayUpdating(false);
         }
     };
 
     const profileCompletion = useMemo(() => {
         const values = profileForm.getFieldsValue();
         const requiredFields = [
+            profile?.avatar,
             values.shopName,
             values.companyName,
             values.shopDescription,
-            values.businessLicenseNo,
-            values.businessLicense,
-            values.legalPersonName,
             values.contactPhone,
             values.contactName,
             values.address,
@@ -148,7 +199,7 @@ const MaterialShopSettings: React.FC = () => {
         ];
         const complete = requiredFields.filter((item) => String(item || '').trim()).length;
         return Math.round((complete / requiredFields.length) * 100);
-    }, [profileForm, businessHoursRanges]);
+    }, [profileForm, businessHoursRanges, profile?.avatar]);
 
     const handleSaveProfile = async (values: Partial<MaterialShopProfile>) => {
         const rangesForForm = normalizeRangesForForm(values.businessHoursRanges as BusinessHoursRange[], String(values.businessHours || ''));
@@ -170,12 +221,16 @@ const MaterialShopSettings: React.FC = () => {
 
         setSavingProfile(true);
         try {
+            const shopName = String(values.shopName || '').trim();
             await materialShopCenterApi.updateMe({
                 ...values,
                 contactName,
                 businessHoursRanges: normalizeRangesForApi(rangesForForm),
                 businessHours: summarizeBusinessHoursRanges(rangesForForm),
                 address,
+            });
+            updateSessionProvider({
+                name: shopName || profile?.shopName,
             });
             message.success('资料保存成功');
             await fetchProfile();
@@ -190,7 +245,7 @@ const MaterialShopSettings: React.FC = () => {
         <MerchantPageShell>
             <MerchantPageHeader
                 title="主材商资料中心"
-                description="当前版本只保留店铺基础资料与主体资质，先把最基础的信息维护完整。"
+                description="当前页仅维护店铺经营信息。主体资质沿用入驻审核结果，暂不支持在此页修改，如需变更请联系平台处理。"
                 extra={(
                     <Space>
                         <Button onClick={() => navigate('/dashboard')}>返回工作台</Button>
@@ -203,7 +258,7 @@ const MaterialShopSettings: React.FC = () => {
                     {
                         label: '资料完整度',
                         value: `${profileCompletion}%`,
-                        meta: profileCompletion >= 80 ? '基础资料已接近完整' : '建议优先补齐联系人、地址和营业时间',
+                        meta: profileCompletion >= 80 ? '店铺经营资料已接近完整' : '建议优先补齐联系人、地址和营业时间',
                         percent: profileCompletion,
                         tone: profileCompletion >= 80 ? 'green' : 'amber',
                     },
@@ -215,18 +270,113 @@ const MaterialShopSettings: React.FC = () => {
                         tone: normalizedRanges.length > 0 ? 'blue' : 'amber',
                     },
                     {
-                        label: '资质状态',
-                        value: profileForm.getFieldValue('businessLicense') ? '已上传' : '待上传',
-                        meta: profileForm.getFieldValue('businessLicense')
-                            ? '营业执照图片已上传'
-                            : '请补齐营业执照与主体信息',
-                        percent: profileForm.getFieldValue('businessLicense') ? 100 : 0,
-                        tone: profileForm.getFieldValue('businessLicense') ? 'green' : 'amber',
+                        label: '主体资质',
+                        value: '沿用入驻审核',
+                        meta: '当前页不开放营业执照号、执照图片、法人/经营者姓名修改',
+                        percent: 100,
+                        tone: 'blue',
                     },
                 ]}
             />
 
             <MerchantContentPanel>
+                <MerchantSectionCard title="店铺头像与状态">
+                    <Row gutter={[24, 24]} align="middle">
+                        <Col xs={24} md={10}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                                <ImgCrop rotationSlider cropShape="round" aspect={1} showReset showGrid>
+                                    <Upload
+                                        name="avatar"
+                                        showUploadList={false}
+                                        customRequest={handleAvatarUpload}
+                                        beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.avatar)}
+                                        accept=".jpg,.jpeg,.png"
+                                    >
+                                        <div style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}>
+                                            <Avatar
+                                                size={88}
+                                                src={profile?.avatar}
+                                                icon={avatarUploading ? <LoadingOutlined /> : <ShopOutlined />}
+                                                style={{
+                                                    border: '4px solid rgba(255,255,255,0.95)',
+                                                    boxShadow: '0 12px 24px rgba(15, 23, 42, 0.12)',
+                                                    background: '#eff6ff',
+                                                }}
+                                            />
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    bottom: 0,
+                                                    right: 0,
+                                                    width: 28,
+                                                    height: 28,
+                                                    borderRadius: '50%',
+                                                    background: '#1677ff',
+                                                    color: '#fff',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    border: '2px solid #fff',
+                                                }}
+                                            >
+                                                <CameraOutlined style={{ fontSize: 12 }} />
+                                            </div>
+                                        </div>
+                                    </Upload>
+                                </ImgCrop>
+                                <div>
+                                    <div style={{ fontSize: 18, fontWeight: 600, color: '#0f172a' }}>{profile?.shopName || '店铺头像'}</div>
+                                    <div style={{ marginTop: 4, color: '#64748b', fontSize: 13 }}>
+                                        用于店铺页展示和商家后台右上角头像
+                                    </div>
+                                    <div style={{ marginTop: 8, color: '#64748b', fontSize: 12 }}>
+                                        点击头像可替换店铺 Logo
+                                    </div>
+                                </div>
+                            </div>
+                        </Col>
+                        <Col xs={24} md={14}>
+                            <div
+                                style={{
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: 16,
+                                    padding: 16,
+                                    background: '#f8fafc',
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        gap: 16,
+                                        flexWrap: 'wrap',
+                                    }}
+                                >
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>营业状态</div>
+                                        <div style={{ marginTop: 8 }}>
+                                            <Tag
+                                                color={operatingStatusMeta.color}
+                                                style={{ margin: 0, borderRadius: 999, paddingInline: 10, lineHeight: '22px' }}
+                                            >
+                                                {operatingStatusMeta.label}
+                                            </Tag>
+                                        </div>
+                                    </div>
+                                    <Switch
+                                        checked={merchantDisplayEnabled}
+                                        loading={displayUpdating}
+                                        onChange={handleDisplayToggle}
+                                        checkedChildren="营业中"
+                                        unCheckedChildren="下线"
+                                    />
+                                </div>
+                            </div>
+                        </Col>
+                    </Row>
+                </MerchantSectionCard>
+
                 <MerchantSectionCard title="店铺基础资料">
                     <Form form={profileForm} layout="vertical" onFinish={handleSaveProfile} disabled={loading}>
                         <Row gutter={[16, 0]}>
@@ -293,48 +443,6 @@ const MaterialShopSettings: React.FC = () => {
 
                         <Button type="primary" htmlType="submit" loading={savingProfile}>
                             保存基础资料
-                        </Button>
-                    </Form>
-                </MerchantSectionCard>
-
-                <MerchantSectionCard title="主体资质资料">
-                    <Form form={profileForm} layout="vertical" onFinish={handleSaveProfile} disabled={loading}>
-                        <Row gutter={[16, 0]}>
-                            <Col xs={24} md={12}>
-                                <Form.Item name="businessLicenseNo" label="统一社会信用代码 / 营业执照号" rules={[{ required: true, message: '请输入营业执照号' }]}>
-                                    <Input maxLength={50} />
-                                </Form.Item>
-                            </Col>
-                            <Col xs={24} md={12}>
-                                <Form.Item name="legalPersonName" label="法人/经营者姓名" rules={[{ required: true, message: '请输入法人/经营者姓名' }]}>
-                                    <Input maxLength={50} />
-                                </Form.Item>
-                            </Col>
-                        </Row>
-
-                        <Form.Item
-                            name="businessLicense"
-                            label="营业执照图片"
-                            valuePropName="fileList"
-                            getValueProps={(value: unknown) => ({ fileList: typeof value === 'string' ? toSingleUploadFileList(value) : [] })}
-                            getValueFromEvent={() => profileForm.getFieldValue('businessLicense')}
-                            rules={[{ required: true, message: '请上传营业执照图片' }]}
-                        >
-                            <Upload
-                                listType="picture-card"
-                                maxCount={1}
-                                customRequest={uploadBusinessLicense}
-                                onRemove={() => {
-                                    profileForm.setFieldsValue({ businessLicense: undefined });
-                                    return true;
-                                }}
-                            >
-                                <div>上传执照</div>
-                            </Upload>
-                        </Form.Item>
-
-                        <Button type="primary" htmlType="submit" loading={savingProfile}>
-                            保存资质资料
                         </Button>
                     </Form>
                 </MerchantSectionCard>

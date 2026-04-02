@@ -143,7 +143,7 @@ const FavoritesScreen = ({ navigation }: any) => {
     const renderEmpty = () => (
         !loading ? (
             <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>暂无收藏内容</Text>
+                <Text style={styles.emptyText}>暂无已收藏内容</Text>
             </View>
         ) : null
     );
@@ -168,7 +168,7 @@ const FavoritesScreen = ({ navigation }: any) => {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
                     <ChevronLeft size={24} color="#09090B" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>我的收藏</Text>
+                <Text style={styles.headerTitle}>内容收藏</Text>
                 <View style={styles.placeholder} />
             </View>
 

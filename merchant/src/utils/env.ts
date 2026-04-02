@@ -75,7 +75,12 @@ export const getApiBaseUrl = (): string => {
     : '';
 
   if (configured) {
-    return configured.replace(/\/+$/, '');
+    const normalizedConfigured = configured.replace(/\/+$/, '');
+    const isRelativeApiPath = normalizedConfigured.startsWith('/');
+    if (isRelativeApiPath && getAppEnv() === 'local' && typeof window !== 'undefined') {
+      return `http://${window.location.hostname}:8080${normalizedConfigured}`;
+    }
+    return normalizedConfigured;
   }
 
   return getAppEnv() === 'local' ? 'http://localhost:8080/api/v1' : '/api/v1';

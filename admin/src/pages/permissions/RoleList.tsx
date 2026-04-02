@@ -28,6 +28,7 @@ import {
     SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { adminMenuApi, adminRoleApi } from '../../services/api';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import PageHeader from '../../components/PageHeader';
 import StatusTag from '../../components/StatusTag';
 import ToolbarCard from '../../components/ToolbarCard';
@@ -162,7 +163,7 @@ const canAssignNodeToAuditor = (node: MenuNode): boolean => {
 };
 
 const RoleList: React.FC = () => {
-    const { modal, message } = App.useApp();
+    const { message } = App.useApp();
     const admin = useAuthStore((state) => state.admin);
     const { hasPermission } = usePermission();
     const [loading, setLoading] = useState(false);
@@ -174,6 +175,10 @@ const RoleList: React.FC = () => {
     const [menuTree, setMenuTree] = useState<MenuNode[]>([]);
     const [checkedKeys, setCheckedKeys] = useState<number[]>([]);
     const [menuLoading, setMenuLoading] = useState(false);
+    const [reauthOpen, setReauthOpen] = useState(false);
+    const [reauthAction, setReauthAction] = useState<'submit' | 'delete' | 'assign' | null>(null);
+    const [pendingFormValues, setPendingFormValues] = useState<Record<string, unknown> | null>(null);
+    const [pendingDeleteRole, setPendingDeleteRole] = useState<Role | null>(null);
     const [form] = Form.useForm();
     const isSecurityAuditor = isSecurityAuditorRole(admin?.roles);
     const canCreateRole = !isSecurityAuditor && hasPermission('system:role:create');
@@ -228,36 +233,17 @@ const RoleList: React.FC = () => {
         if (!canDeleteRole) {
             return;
         }
-        modal.confirm({
-            title: '确认删除角色',
-            content: `确定要删除角色“${record.name}”吗？删除后该角色下的管理员将失去对应权限。`,
-            okText: '确定删除',
-            cancelText: '取消',
-            okButtonProps: { danger: true },
-            onOk: async () => {
-                try {
-                    await adminRoleApi.delete(record.id);
-                    message.success('角色已删除');
-                    await loadData();
-                } catch (error) {
-                    message.error(readErrorMessage(error, '删除失败'));
-                }
-            },
-        });
-    }, [canDeleteRole, loadData, message, modal]);
+        setPendingDeleteRole(record);
+        setReauthAction('delete');
+        setReauthOpen(true);
+    }, [canDeleteRole]);
 
     const handleSubmit = async () => {
         try {
             const values = await form.validateFields();
-            if (editingRole) {
-                await adminRoleApi.update(editingRole.id, values);
-                message.success('角色已更新');
-            } else {
-                await adminRoleApi.create(values);
-                message.success('角色已创建');
-            }
-            setModalVisible(false);
-            await loadData();
+            setPendingFormValues(values);
+            setReauthAction('submit');
+            setReauthOpen(true);
         } catch (error) {
             if (error && typeof error === 'object' && 'errorFields' in error) {
                 return;
@@ -375,13 +361,47 @@ const RoleList: React.FC = () => {
         if (!currentRole || !canAssignRole) {
             return;
         }
+        setReauthAction('assign');
+        setReauthOpen(true);
+    };
 
-        try {
-            await adminRoleApi.assignMenus(currentRole.id, checkedKeys);
+    const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (reauthAction === 'submit' && pendingFormValues) {
+            const submitPayload = {
+                ...pendingFormValues,
+                recentReauthProof: payload.recentReauthProof,
+            };
+            if (editingRole) {
+                await adminRoleApi.update(editingRole.id, submitPayload);
+                message.success('角色已更新');
+            } else {
+                await adminRoleApi.create(submitPayload);
+                message.success('角色已创建');
+            }
+            setModalVisible(false);
+            setPendingFormValues(null);
+            await loadData();
+            return;
+        }
+
+        if (reauthAction === 'delete' && pendingDeleteRole) {
+            await adminRoleApi.delete(pendingDeleteRole.id, {
+                reason: payload.reason,
+                recentReauthProof: payload.recentReauthProof,
+            });
+            message.success('角色已删除');
+            setPendingDeleteRole(null);
+            await loadData();
+            return;
+        }
+
+        if (reauthAction === 'assign' && currentRole) {
+            await adminRoleApi.assignMenus(currentRole.id, checkedKeys, {
+                reason: payload.reason,
+                recentReauthProof: payload.recentReauthProof,
+            });
             message.success('角色权限已保存');
             setPermissionModalVisible(false);
-        } catch (error) {
-            message.error(readErrorMessage(error, '保存失败'));
         }
     };
 
@@ -648,6 +668,16 @@ const RoleList: React.FC = () => {
                     >
                         <InputNumber min={0} style={{ width: '100%' }} />
                     </Form.Item>
+                    <Form.Item
+                        label="操作原因"
+                        name="reason"
+                        rules={[
+                            { required: true, message: '请填写操作原因' },
+                            { min: 2, message: '原因至少 2 个字符' },
+                        ]}
+                    >
+                        <Input.TextArea rows={3} maxLength={300} showCount placeholder="例如：新增角色、调整角色职责边界" />
+                    </Form.Item>
                 </Form>
             </Modal>
 
@@ -723,6 +753,33 @@ const RoleList: React.FC = () => {
                     </Space>
                 </Spin>
             </Modal>
+
+            <AdminReauthModal
+                open={reauthOpen}
+                title={
+                    reauthAction === 'delete'
+                        ? '删除角色'
+                        : reauthAction === 'assign'
+                            ? '保存角色权限'
+                            : editingRole
+                                ? '更新角色'
+                                : '创建角色'
+                }
+                description={
+                    reauthAction === 'delete'
+                        ? `删除后角色「${pendingDeleteRole?.name || '-'}」对应权限将立即失效。`
+                        : reauthAction === 'assign'
+                            ? `即将保存角色「${currentRole?.name || '-'}」的菜单权限。`
+                            : '角色与菜单授权变更属于高危操作，提交前必须再次认证。'
+                }
+                reasonRequired={reauthAction !== 'submit'}
+                onCancel={() => {
+                    setReauthOpen(false);
+                    setReauthAction(null);
+                    setPendingDeleteRole(null);
+                }}
+                onConfirmed={handleReauthConfirmed}
+            />
         </div>
     );
 };

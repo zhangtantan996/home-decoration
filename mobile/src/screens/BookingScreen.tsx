@@ -8,15 +8,12 @@ import {
     Image,
     TouchableOpacity,
     TextInput,
-    Dimensions,
     StatusBar,
     Platform,
     ActivityIndicator,
     Modal,
-    Pressable,
     Keyboard,
     Animated,
-    KeyboardAvoidingView,
 } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import {
@@ -29,7 +26,6 @@ import {
     ChevronDown,
     Check,
     X,
-    User,
     FileText,
     MapPin,
     Calendar,
@@ -37,9 +33,8 @@ import {
 } from 'lucide-react-native';
 import { bookingApi } from '../services/api';
 import { useToast } from '../components/Toast';
-import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import { RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { getApiBaseUrl } from '../config';
 import { getServerDateAfterDays, getServerDateParts } from '../utils/serverTime';
 
 import { RootStackParamList } from '../navigation/AppNavigator';
@@ -66,12 +61,6 @@ const BUDGET_RANGES = [
     { id: '3', label: '10-20万' },
     { id: '4', label: '20-50万' },
     { id: '5', label: '50万以上' },
-];
-
-const TIME_SLOTS = [
-    { id: 'morning', label: '上午 (09:00-12:00)' },
-    { id: 'afternoon', label: '下午 (14:00-18:00)' },
-    { id: 'evening', label: '晚上 (19:00-21:00)' },
 ];
 
 // 生成未来7天日期
@@ -125,7 +114,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         id: providerData.id || '',
         name: providerData.name || '优选服务商', // Fallback name
         avatar: providerData.avatar || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158', // Fallback image
-        rating: providerData.rating || 5.0,
+        rating: Number(providerData.rating ?? 0),
         // Field names match HomeScreen card data structure
         yearsExperience: providerData.yearsExperience || '', // e.g., 8 (number)
         specialty: providerData.specialty || '', // e.g., "现代简约" (string)
@@ -152,12 +141,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
     // Date Picker State
     const [showDatePicker, setShowDatePicker] = useState(false);
-    const [tempSelectedDate, setTempSelectedDate] = useState('');
-    const [tempSelectedTime, setTempSelectedTime] = useState('');
 
     const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
-    const [selectedDateIndex, setSelectedDateIndex] = useState(0);
 
     // Helper to close all dropdowns/menus
     const closeMenus = () => {
@@ -167,6 +152,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
     // Data
     const weekDays = useMemo(() => generateWeekDays(), []);
+    const ratingLabel = provider.rating > 0 ? `${provider.rating.toFixed(1)}分` : '暂无综合评分';
 
     // Time Slots
     const TIME_SLOTS = [
@@ -180,9 +166,8 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
     const [errorField, setErrorField] = useState<string | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
 
-    // ScrollView ref and Field Positions
+    // ScrollView ref
     const scrollViewRef = useRef<ScrollView>(null);
-    const fieldPositions = useRef<Record<string, number>>({});
 
     // Layout Options
     const ROOM_OPTIONS = Array.from({ length: 9 }, (_, i) => i + 1);
@@ -207,21 +192,15 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
         const dynamicSubtitle = buildSubtitle();
 
         if (providerType === 'designer') {
-            return { ...base, subtitle: dynamicSubtitle || `${provider.rating}分 · 资深设计师`, typeLabel: '设计师' };
+            return { ...base, subtitle: dynamicSubtitle || `${ratingLabel} · 资深设计师`, typeLabel: '设计师' };
         } else if (providerType === 'worker') {
-            return { ...base, subtitle: dynamicSubtitle || `${provider.rating}分 · 专业工长`, typeLabel: '施工师傅' };
+            return { ...base, subtitle: dynamicSubtitle || `${ratingLabel} · 专业工长`, typeLabel: '施工师傅' };
         } else {
             return { ...base, subtitle: dynamicSubtitle || `品质装修服务`, typeLabel: '装修公司' };
         }
     };
 
     const providerInfo = getProviderInfo();
-
-    // Confirm Date Selection
-    const handleConfirmDate = () => {
-        // Logic moved to direct selection in this simpler version, 
-        // but if we had a complex picker with time slots, we'd use this.
-    };
 
     // Validations (Keep existing logic)
     const handleAreaChange = (text: string) => {
@@ -378,7 +357,7 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
                             </View>
                             <View style={styles.ratingRow}>
                                 <Star size={14} color="#F59E0B" fill="#F59E0B" />
-                                <Text style={styles.ratingText}>{providerInfo.rating}</Text>
+                                <Text style={styles.ratingText}>{provider.rating > 0 ? provider.rating.toFixed(1) : '暂无'}</Text>
                             </View>
                             <Text style={styles.providerSubtitle} numberOfLines={1}>
                                 {providerInfo.subtitle}
@@ -699,40 +678,6 @@ const BookingScreen: React.FC<BookingScreenProps> = ({ route, navigation }) => {
 
 // --- Sub Components ---
 
-// Reusable Selection Modal
-interface SelectionModalProps {
-    visible: boolean;
-    title: string;
-    options: { id: string; label: string }[];
-    selectedId: string;
-    onSelect: (id: string) => void;
-    onClose: () => void;
-}
-
-const SelectionModal = ({ visible, title, options, selectedId, onSelect, onClose }: SelectionModalProps) => (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-            <View style={[styles.modalContent, { height: 'auto', paddingBottom: 30 }]}>
-                <Text style={styles.modalTitle}>{title}</Text>
-                <ScrollView style={{ maxHeight: 300 }}>
-                    {options.map((item) => (
-                        <TouchableOpacity
-                            key={item.id}
-                            style={styles.modalOption}
-                            onPress={() => onSelect(item.id)}
-                        >
-                            <Text style={[styles.modalOptionText, selectedId === item.id && styles.activeText]}>
-                                {item.label}
-                            </Text>
-                            {selectedId === item.id && <Check size={20} color="#09090B" />}
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-            </View>
-        </TouchableOpacity>
-    </Modal>
-);
-
 const LayoutPickerModal = ({ visible, onClose, room, setRoom, hall, setHall, toilet, setToilet, roomOptions, hallOptions, toiletOptions }: any) => (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
@@ -885,7 +830,7 @@ const SuccessModal = ({ visible, onClose }: any) => {
             scaleAnim.setValue(0);
             opacityAnim.setValue(0);
         }
-    }, [visible]);
+    }, [opacityAnim, scaleAnim, visible]);
 
     if (!visible) return null;
 

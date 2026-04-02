@@ -1,0 +1,39 @@
+name: Ops CI
+
+on:
+  push:
+    branches: ["dev"]
+    paths:
+      - 'tests/ops/**'
+      - 'ops/**'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/ci-ops.yml'
+  pull_request:
+    branches: ["dev"]
+    paths:
+      - 'tests/ops/**'
+      - 'ops/**'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/ci-ops.yml'
+
+jobs:
+  verify-ops:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Run verify:ops
+        run: npm run verify:ops

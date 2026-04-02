@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
-import { Tabs, Button, Dialog, Toast } from '@nutui/nutui-react-taro';
+import { Tabs, Button } from '@nutui/nutui-react-taro';
 import { Success } from '@nutui/icons-react-taro';
 import { Skeleton } from '@/components/Skeleton';
-import { getProjectDetail, getProjectPhases, getProjectMilestones, acceptMilestone, type ProjectDetail as ProjectDetailType, type ProjectPhase, type Milestone } from '@/services/projects';
+import { Tag } from '@/components/Tag';
+import { acceptMilestone, getProjectDetail, getProjectMilestones, getProjectPhases, resumeProject, type Milestone, type ProjectDetail as ProjectDetailType, type ProjectPhase } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
+import { showErrorToast } from '@/utils/error';
 import { formatServerDate } from '@/utils/serverTime';
 
 const ProjectDetailPage: React.FC = () => {
@@ -23,6 +25,26 @@ const ProjectDetailPage: React.FC = () => {
     }
   });
 
+  const fetchProjectData = useCallback(async () => {
+    if (!id) return;
+
+    setLoading(true);
+    try {
+      const [detailRes, phasesRes, milestonesRes] = await Promise.all([
+        getProjectDetail(id),
+        getProjectPhases(id),
+        getProjectMilestones(id),
+      ]);
+      setDetail(detailRes);
+      setPhases(phasesRes?.phases || []);
+      setMilestones(milestonesRes?.milestones || []);
+    } catch (error) {
+      showErrorToast(error, '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     if (!id) return;
     if (!auth.token) {
@@ -32,33 +54,18 @@ const ProjectDetailPage: React.FC = () => {
       setLoading(false);
       return;
     }
-    const fetch = async () => {
-      setLoading(true);
-      try {
-        const [detailRes, phasesRes, milestonesRes] = await Promise.all([
-          getProjectDetail(id),
-          getProjectPhases(id),
-          getProjectMilestones(id)
-        ]);
-        setDetail(detailRes);
-        if (phasesRes && phasesRes.phases) {
-          setPhases(phasesRes.phases);
-        }
-        if (milestonesRes && milestonesRes.milestones) {
-          setMilestones(milestonesRes.milestones);
-        }
-      } catch (error) {
-        console.error(error);
-        Taro.showToast({ title: '加载失败', icon: 'none' });
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, [id, auth.token]);
+
+    void fetchProjectData();
+  }, [auth.token, fetchProjectData, id]);
+
+  const ownerScopeDisabled = Boolean(auth.user?.activeRole) && !['owner', 'homeowner'].includes(auth.user?.activeRole || '');
 
   if (!auth.token) {
     return <View className="p-md text-center text-gray-500">登录后查看项目详情</View>;
+  }
+
+  if (ownerScopeDisabled) {
+    return <View className="p-md text-center text-gray-500">当前身份无权查看业主项目详情，请切换回业主身份后重试</View>;
   }
 
   if (loading) return (
@@ -78,14 +85,6 @@ const ProjectDetailPage: React.FC = () => {
     }
   };
 
-  const getPhaseColorClass = (status: string) => {
-    switch(status) {
-      case 'completed': return 'text-success border-success';
-      case 'in_progress': return 'text-brand border-brand';
-      default: return 'text-gray-400 border-gray-300';
-    }
-  };
-
   const getMilestoneStatusText = (status: string) => {
     switch(status) {
       case 'completed': return '已验收';
@@ -97,24 +96,52 @@ const ProjectDetailPage: React.FC = () => {
   };
 
   const handleAcceptMilestone = async (milestoneId: number) => {
-    Dialog.confirm({
+    Taro.showModal({
       title: '确认验收',
       content: '确认该节点已完成并验收通过？',
-      onConfirm: async () => {
+      success: async (result) => {
+        if (!result.confirm) {
+          return;
+        }
         try {
           await acceptMilestone(id, milestoneId);
-          Toast.show({ content: '验收成功', icon: 'success' });
-          // 重新加载milestones
+          Taro.showToast({ title: '验收成功', icon: 'success' });
           const milestonesRes = await getProjectMilestones(id);
           if (milestonesRes && milestonesRes.milestones) {
             setMilestones(milestonesRes.milestones);
           }
+          const detailRes = await getProjectDetail(id);
+          setDetail(detailRes);
         } catch (error) {
-          Toast.show({ content: '验收失败', icon: 'fail' });
+          showErrorToast(error, '验收失败');
         }
-      }
+      },
     });
   };
+
+  const handleResumeProject = async () => {
+    Taro.showModal({
+      title: '恢复项目',
+      content: '确认恢复当前项目推进吗？恢复后可继续节点验收与施工流转。',
+      success: async (result) => {
+        if (!result.confirm) {
+          return;
+        }
+        try {
+          await resumeProject(id);
+          Taro.showToast({ title: '项目已恢复', icon: 'success' });
+          await fetchProjectData();
+        } catch (error) {
+          showErrorToast(error, '恢复失败');
+        }
+      },
+    });
+  };
+
+  const riskSummary = detail.riskSummary;
+  const paused = Boolean(riskSummary?.pausedAt);
+  const disputed = Boolean(riskSummary?.disputedAt);
+  const actionBlocked = paused || disputed;
 
   return (
     <View className="page bg-gray-50 min-h-screen pb-md">
@@ -122,6 +149,14 @@ const ProjectDetailPage: React.FC = () => {
         <View className="bg-white p-md mb-md">
           <View className="text-xl font-bold mb-xs">{detail.name}</View>
           <View className="text-gray-500 text-sm mb-md">{detail.address}</View>
+          {detail.flowSummary ? <View className="text-sm text-gray-500 mb-md">{detail.flowSummary}</View> : null}
+
+          <View className="flex" style={{ gap: '12rpx', flexWrap: 'wrap', marginBottom: '24rpx' }}>
+            {detail.businessStage ? <Tag variant="brand">{detail.businessStage}</Tag> : null}
+            {paused ? <Tag variant="warning">项目已暂停</Tag> : null}
+            {disputed ? <Tag variant="error">争议处理中</Tag> : null}
+            {riskSummary?.escrowFrozen ? <Tag variant="brand">托管已冻结</Tag> : null}
+          </View>
 
           <View className="flex justify-between border-t border-gray-100 pt-md">
              <View>
@@ -139,8 +174,86 @@ const ProjectDetailPage: React.FC = () => {
           </View>
         </View>
 
+        {(paused || disputed || riskSummary?.escrowFrozen) ? (
+          <View className="bg-white p-md mb-md">
+            <View className="text-base font-bold mb-sm">异常闭环</View>
+            {paused ? (
+              <View className="mb-sm">
+                <Text className="text-sm text-gray-900">暂停原因：{riskSummary?.pauseReason || '未填写'}</Text>
+              </View>
+            ) : null}
+            {disputed ? (
+              <View className="mb-sm">
+                <Text className="text-sm text-gray-900">争议原因：{riskSummary?.disputeReason || '未填写'}</Text>
+              </View>
+            ) : null}
+            {riskSummary?.auditStatus ? (
+              <View className="mb-sm">
+                <Text className="text-sm text-gray-500">审计状态：{riskSummary.auditStatus}</Text>
+              </View>
+            ) : null}
+            {riskSummary?.escrowFrozen ? (
+              <View className="mb-md">
+                <Text className="text-sm text-gray-500">
+                  托管资金已冻结
+                  {riskSummary.frozenAmount ? `，冻结金额 ¥${riskSummary.frozenAmount.toLocaleString()}` : ''}
+                </Text>
+              </View>
+            ) : null}
+
+            <View className="flex" style={{ gap: '16rpx' }}>
+              {paused ? (
+                <View className="flex-1">
+                  <Button type="primary" block onClick={handleResumeProject}>
+                    恢复项目
+                  </Button>
+                </View>
+              ) : (
+                <View className="flex-1">
+                  <Button type="default" block onClick={() => Taro.navigateTo({ url: `/pages/projects/pause/index?id=${id}` })}>
+                    申请暂停
+                  </Button>
+                </View>
+              )}
+              <View className="flex-1">
+                <Button
+                  type={disputed ? 'default' : 'primary'}
+                  block
+                  onClick={() => Taro.navigateTo({ url: `/pages/projects/dispute/index?id=${id}` })}
+                >
+                  {disputed ? '查看争议' : '发起争议'}
+                </Button>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View className="bg-white p-md mb-md">
+            <View className="text-base font-bold mb-sm">项目操作</View>
+            <View className="text-sm text-gray-500 mb-md">当前项目推进正常，如遇现场停工或施工纠纷，可直接在此发起处理。</View>
+            <View className="flex" style={{ gap: '16rpx' }}>
+              {detail.selectedQuoteTaskId ? (
+                <View className="flex-1">
+                  <Button type="default" block onClick={() => Taro.navigateTo({ url: `/pages/quote-tasks/detail/index?id=${detail.selectedQuoteTaskId}` })}>
+                    查看施工报价
+                  </Button>
+                </View>
+              ) : null}
+              <View className="flex-1">
+                <Button type="default" block onClick={() => Taro.navigateTo({ url: `/pages/projects/pause/index?id=${id}` })}>
+                  申请暂停
+                </Button>
+              </View>
+              <View className="flex-1">
+                <Button type="primary" block onClick={() => Taro.navigateTo({ url: `/pages/projects/dispute/index?id=${id}` })}>
+                  发起争议
+                </Button>
+              </View>
+            </View>
+          </View>
+        )}
+
         <View className="bg-white">
-          <Tabs value={activeTab} onChange={(value) => setActiveTab(value)}>
+          <Tabs value={activeTab} onChange={(value) => setActiveTab(String(value))}>
             <Tabs.TabPane title="施工进度" value="0">
               <View className="px-md py-md">
                 <View className="pl-md relative">
@@ -202,6 +315,11 @@ const ProjectDetailPage: React.FC = () => {
 
             <Tabs.TabPane title="验收节点" value="1">
               <View className="px-md py-md">
+                {actionBlocked ? (
+                  <View className="mb-md text-sm text-warning">
+                    当前项目处于{paused ? '暂停' : '争议'}状态，暂不可提交节点验收。
+                  </View>
+                ) : null}
                 {milestones.length === 0 ? (
                   <View className="text-center text-gray-400 py-lg">暂无验收节点</View>
                 ) : (
@@ -243,6 +361,7 @@ const ProjectDetailPage: React.FC = () => {
                               <Button
                                 type="primary"
                                 size="small"
+                                disabled={actionBlocked}
                                 onClick={() => handleAcceptMilestone(milestone.id)}
                               >
                                 <View className="flex items-center">

@@ -50,6 +50,7 @@ export type MerchantKind = 'provider' | 'material_shop';
 export type MerchantRole = 'designer' | 'foreman' | 'company' | 'material_shop';
 export type MerchantEntityType = 'personal' | 'company' | 'individual_business';
 export type MerchantLoginNextAction = 'APPLY' | 'PENDING' | 'RESUBMIT' | 'CHANGE_ROLE' | 'REAPPLY';
+export type MerchantOnboardingStatus = 'required' | 'pending_review' | 'rejected' | 'approved';
 
 export interface MerchantLoginApplyStatus {
     kind?: MerchantKind;
@@ -78,6 +79,9 @@ export interface MerchantProviderSession {
     providerSubType?: MerchantProviderSubType;
     phone: string;
     verified: boolean;
+    completionRequired?: boolean;
+    onboardingStatus?: MerchantOnboardingStatus;
+    completionApplicationId?: number;
 }
 
 export interface MerchantLoginData {
@@ -87,6 +91,10 @@ export interface MerchantLoginData {
     entityType?: MerchantEntityType;
     provider: MerchantProviderSession;
     tinodeToken?: string;
+    completionRequired?: boolean;
+    onboardingStatus?: MerchantOnboardingStatus;
+    completionApplicationId?: number;
+    redirectToCompletion?: boolean;
 }
 
 export interface MerchantProviderInfo {
@@ -117,6 +125,9 @@ export interface MerchantProviderInfo {
     officeAddress: string;
     companyAlbum?: string[];
     surveyDepositPrice?: number;
+    merchantDisplayEnabled?: boolean;
+    platformDisplayEnabled?: boolean;
+    publicVisible?: boolean;
 }
 
 export interface MerchantServiceSetting {
@@ -239,6 +250,17 @@ export interface MerchantApplyStatusData {
     auditedAt?: string;
 }
 
+export interface MerchantCompletionStatusResponse {
+    onboardingStatus: MerchantOnboardingStatus;
+    completionRequired: boolean;
+    applicationId?: number;
+    rejectReason?: string;
+    form: MerchantApplyDetailData;
+    readonly: boolean;
+}
+
+export interface MerchantCompletionSubmitPayload extends Omit<MerchantApplyPayload, 'phone' | 'code' | 'verificationToken' | 'resubmitToken'> {}
+
 export interface OnboardingVerifyPhonePayload {
     phone: string;
     code: string;
@@ -319,6 +341,16 @@ export const merchantApplyApi = {
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/merchant/apply/${id}/resubmit`, data), '重新提交申请失败'),
 };
 
+export const merchantCompletionApi = {
+    status: async () =>
+        unwrapData<MerchantCompletionStatusResponse>(await merchantApi.get('/merchant/onboarding/completion'), '获取补全状态失败'),
+    submit: async (data: MerchantCompletionSubmitPayload) =>
+        unwrapData<{ applicationId: number; completionRequired: boolean; onboardingStatus: MerchantOnboardingStatus; message?: string }>(
+            await merchantApi.post('/merchant/onboarding/completion', data),
+            '提交补全资料失败'
+        ),
+};
+
 export interface MaterialShopApplyProductPayload {
     name: string;
     unit: string;
@@ -394,6 +426,17 @@ export interface MaterialShopApplyDetailForResubmitData {
     form: MaterialShopApplyDetailData;
 }
 
+export interface MaterialShopCompletionStatusResponse {
+    onboardingStatus: MerchantOnboardingStatus;
+    completionRequired: boolean;
+    applicationId?: number;
+    rejectReason?: string;
+    form: MaterialShopApplyDetailData;
+    readonly: boolean;
+}
+
+export interface MaterialShopCompletionSubmitPayload extends Omit<MaterialShopApplyPayload, 'phone' | 'code' | 'verificationToken' | 'resubmitToken'> {}
+
 export const onboardingValidationApi = {
     validateLicense: async (data: OnboardingValidateLicensePayload) =>
         unwrapData<OnboardingValidateResult>(await merchantApi.post('/merchant/onboarding/validate-license', data), '营业执照号校验失败'),
@@ -412,6 +455,16 @@ export const materialShopApplyApi = {
         unwrapData<MaterialShopApplyDetailForResubmitData>(await merchantApi.post(`/material-shop/apply/${id}/detail-for-resubmit`, data), '获取主材商申请详情失败'),
     resubmit: async (id: number, data: MaterialShopApplyPayload) =>
         unwrapData<{ applicationId: number; message?: string }>(await merchantApi.post(`/material-shop/apply/${id}/resubmit`, data), '重新提交主材商申请失败'),
+};
+
+export const materialShopCompletionApi = {
+    status: async () =>
+        unwrapData<MaterialShopCompletionStatusResponse>(await merchantApi.get('/material-shop/onboarding/completion'), '获取主材商补全状态失败'),
+    submit: async (data: MaterialShopCompletionSubmitPayload) =>
+        unwrapData<{ applicationId: number; completionRequired: boolean; onboardingStatus: MerchantOnboardingStatus; message?: string }>(
+            await merchantApi.post('/material-shop/onboarding/completion', data),
+            '提交主材商补全资料失败'
+        ),
 };
 
 export interface MaterialShopProfile {
@@ -439,6 +492,9 @@ export interface MaterialShopProfile {
     afterSalesPolicy?: string;
     invoiceCapability?: string;
     isVerified?: boolean;
+    merchantDisplayEnabled?: boolean;
+    platformDisplayEnabled?: boolean;
+    publicVisible?: boolean;
 }
 
 export interface MaterialShopProduct {

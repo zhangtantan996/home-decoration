@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Dropdown, Input, Space } from 'antd';
 import { ProLayout } from '@ant-design/pro-components';
+import { adminAuthApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import merchantAppIcon from '../assets/branding/company-logo.png';
 import NotificationDropdown from '../components/NotificationDropdown';
@@ -97,9 +98,19 @@ const BasicLayout: React.FC = () => {
     const location = useLocation();
     const { admin, logout, menus } = useAuthStore();
 
-    const handleLogout = () => {
-        logout();
-        navigate('/login');
+    const handleLogout = async () => {
+        try {
+            await adminAuthApi.logout();
+        } catch {
+            // ignore network failure, local state still needs cleanup
+        } finally {
+            logout();
+            navigate('/login');
+        }
+    };
+
+    const handleOpenSecuritySettings = () => {
+        navigate('/security/settings');
     };
 
     const menuData = React.useMemo(() => {
@@ -167,10 +178,16 @@ const BasicLayout: React.FC = () => {
                         menu={{
                             items: [
                                 {
+                                    key: 'security-settings',
+                                    icon: <SafetyOutlined />,
+                                    label: '安全设置',
+                                    onClick: handleOpenSecuritySettings,
+                                },
+                                {
                                     key: 'logout',
                                     icon: <LogoutOutlined />,
                                     label: '退出登录',
-                                    onClick: handleLogout,
+                                    onClick: () => void handleLogout(),
                                 },
                             ],
                         }}

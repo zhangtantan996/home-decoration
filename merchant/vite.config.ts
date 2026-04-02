@@ -20,6 +20,9 @@ export default defineConfig(({ mode }) => {
   return {
     base: routerBasename === '/' ? '/' : `${routerBasename}/`,
     plugins: [react()],
+    build: {
+      chunkSizeWarningLimit: 4000,
+    },
     server: {
       host: true,
       port: 5174,

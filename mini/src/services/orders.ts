@@ -36,11 +36,9 @@ export async function cancelOrder(id: number) {
   });
 }
 
-// 注意：后端暂无 GET /orders 端点，使用 /orders/pending-payments 代替
-// 如需完整订单列表，需后端新增 GET /orders 端点
 export async function listOrders(page = 1, pageSize = 20) {
   return request<PageData<OrderItem>>({
-    url: '/orders/pending-payments',
+    url: '/orders',
     data: { page, pageSize }
   });
 }
@@ -57,12 +55,12 @@ export interface InstallmentPlan {
 }
 
 export async function getInstallmentPlans(orderId: number) {
-  const data = await request<{ plans: Array<InstallmentPlan & { status: number | string; dueAt?: string }> }>({
+  const data = await request<{ plans: Array<Omit<InstallmentPlan, 'status' | 'dueDate'> & { status: number | string; dueDate?: string; dueAt?: string }> }>({
     url: `/orders/${orderId}/plans`
   });
 
   return {
-    plans: (data.plans || []).map((plan) => ({
+    plans: (data.plans || []).map((plan): InstallmentPlan => ({
       ...plan,
       dueDate: plan.dueDate || plan.dueAt,
       status: plan.status === 1 || plan.status === 'paid'

@@ -1,0 +1,64 @@
+.mini-legal {
+  min-height: 100vh;
+  background: #ffffff;
+
+  &__content {
+    padding: 32rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
+  }
+
+  &__hero {
+    padding: 24rpx 8rpx 28rpx;
+  }
+
+  &__eyebrow {
+    display: block;
+    color: #2563eb;
+    font-size: 24rpx;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 2rpx;
+  }
+
+  &__title {
+    display: block;
+    margin-top: 14rpx;
+    color: #0f172a;
+    font-size: 44rpx;
+    font-weight: 700;
+    line-height: 1.24;
+  }
+
+  &__description {
+    display: block;
+    margin-top: 16rpx;
+    color: #64748b;
+    font-size: 26rpx;
+    line-height: 1.72;
+  }
+
+  &__section {
+    padding: 28rpx 30rpx;
+    border-radius: 28rpx;
+    background: #f8fafc;
+
+    & + & {
+      margin-top: 22rpx;
+    }
+  }
+
+  &__section-title {
+    display: block;
+    color: #0f172a;
+    font-size: 30rpx;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  &__section-text {
+    display: block;
+    margin-top: 14rpx;
+    color: #475569;
+    font-size: 27rpx;
+    line-height: 1.82;
+  }
+}

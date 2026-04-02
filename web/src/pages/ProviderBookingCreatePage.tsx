@@ -364,7 +364,8 @@ export function ProviderBookingCreatePage() {
             </article>
             <article>
               <span>参考报价</span>
-              <strong>{detail.priceText}</strong>
+              <strong>{detail.priceDisplay.primary}</strong>
+              {detail.priceDisplay.secondary ? <p>{detail.priceDisplay.secondary}</p> : null}
             </article>
             <article>
               <span>从业经验</span>

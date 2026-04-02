@@ -3,11 +3,28 @@ import Taro from "@tarojs/taro";
 import { useAuthStore } from "@/store/auth";
 import { buildMiniApiUrl, MINI_ENV } from "@/config/env";
 import { AutoRetryGuard, type AutoRetryPolicy } from "@/utils/autoRetryGuard";
+import { getMiniDeviceLogContext } from "@/utils/deviceProfile";
 
 interface ApiResponse<T> {
   code: number;
   message: string;
   data: T;
+}
+
+export class MiniApiError<T = unknown> extends Error {
+  status?: number;
+  code?: number;
+  errorCode?: string;
+  data?: T;
+
+  constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+    super(message);
+    this.name = 'MiniApiError';
+    this.status = options.status;
+    this.code = options.code;
+    this.errorCode = options.errorCode;
+    this.data = options.data;
+  }
 }
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -59,11 +76,13 @@ if (API_BASE_CONFIG_ERROR) {
     apiBase: API_BASE,
     appEnv: MINI_ENV.APP_ENV,
     message: API_BASE_CONFIG_ERROR,
+    device: getMiniDeviceLogContext(),
   });
 } else {
   console.info("[mini][api-config]", {
     apiBase: API_BASE,
     appEnv: MINI_ENV.APP_ENV,
+    device: getMiniDeviceLogContext(),
   });
 }
 
@@ -91,6 +110,7 @@ async function refreshAuth(refreshToken: string) {
       attempt: state.autoAttempts,
       consecutiveFailures: state.consecutiveFailures,
       pausedReason: "max_auto_attempts_reached",
+      device: getMiniDeviceLogContext(),
     });
     return null;
   }
@@ -127,6 +147,7 @@ async function refreshAuth(refreshToken: string) {
     attempt: state.autoAttempts,
     consecutiveFailures: state.consecutiveFailures,
     paused: state.paused,
+    device: getMiniDeviceLogContext(),
   });
 
   return null;
@@ -185,6 +206,7 @@ export async function request<T>(options: RequestOptions): Promise<T> {
           attempt: state.autoAttempts,
           consecutiveFailures: state.consecutiveFailures,
           paused: state.paused,
+          device: getMiniDeviceLogContext(),
         });
       }
 
@@ -195,18 +217,24 @@ export async function request<T>(options: RequestOptions): Promise<T> {
     }
 
     if (res.statusCode !== 200) {
-      throw new Error(`请求失败(${res.statusCode})`);
+      throw new MiniApiError(`请求失败(${res.statusCode})`, { status: res.statusCode });
     }
 
     if (!res.data || typeof res.data !== "object") {
-      throw new Error("响应格式错误");
+      throw new MiniApiError("响应格式错误", { status: res.statusCode });
     }
 
     const apiResponse = res.data as ApiResponse<T>;
     if (apiResponse.code !== 0) {
-      throw new Error(
-        apiResponse.message || `请求失败(code=${apiResponse.code})`,
-      );
+      const errorCode = apiResponse.data && typeof apiResponse.data === 'object' && 'errorCode' in (apiResponse.data as Record<string, unknown>)
+        ? String((apiResponse.data as Record<string, unknown>).errorCode || '')
+        : undefined;
+      throw new MiniApiError(apiResponse.message || `请求失败(code=${apiResponse.code})`, {
+        status: [401, 403, 409].includes(apiResponse.code) ? apiResponse.code : res.statusCode,
+        code: apiResponse.code,
+        errorCode,
+        data: apiResponse.data,
+      });
     }
 
     return apiResponse.data;

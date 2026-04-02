@@ -1,0 +1,91 @@
+{
+  "project": "home-decoration",
+  "updated_at": "2026-03-17T12:00:00.000Z",
+  "active_session": {
+    "id": "ops-bootstrap-2026-03-17",
+    "role": "coordinator",
+    "started_at": "2026-03-17T12:00:00.000Z",
+    "summary": "Bootstrap OpenClaw-first control plane v1"
+  },
+  "tasks": [
+    {
+      "id": "ops-control-plane-bootstrap",
+      "goal": "Create the repo-scoped control plane files, schemas, and bootstrap state for OpenClaw-first project delivery.",
+      "status": "done",
+      "owner_role": "coordinator",
+      "owned_paths": [
+        "ops/project.yaml",
+        "ops/state.yaml",
+        "ops/agents.yaml",
+        "ops/events.ndjson",
+        "ops/decisions.md",
+        "ops/runbook.md",
+        "ops/validate.mjs"
+      ],
+      "deps": [],
+      "risk": "identity",
+      "verify_profile": "ops-validate",
+      "outputs": [
+        "ops/project.yaml",
+        "ops/state.yaml",
+        "ops/agents.yaml",
+        "ops/events.ndjson",
+        "ops/decisions.md",
+        "ops/runbook.md"
+      ]
+    },
+    {
+      "id": "ops-remote-surface-bootstrap",
+      "goal": "Provide a minimal WebUI and Telegram-safe remote surface that can inspect state, approve pending tasks, run named profiles, and hand off work.",
+      "status": "done",
+      "owner_role": "coordinator",
+      "owned_paths": [
+        "ops/server.mjs",
+        "ops/telegram-bot.mjs",
+        "ops/webui/index.html",
+        "ops/lib/telegram.mjs",
+        "ops/lib/state-store.mjs"
+      ],
+      "deps": [
+        "ops-control-plane-bootstrap"
+      ],
+      "risk": "public-web",
+      "verify_profile": "ops-control-plane-tests",
+      "outputs": [
+        "ops/server.mjs",
+        "ops/telegram-bot.mjs",
+        "ops/webui/index.html"
+      ]
+    },
+    {
+      "id": "ops-home-decoration-adapter-validation",
+      "goal": "Adapt the generic control plane to home-decoration modules, verify profile routing, and protect verifier isolation with automated tests.",
+      "status": "done",
+      "owner_role": "verifier",
+      "owned_paths": [
+        "tests/ops/schema.test.mjs",
+        "tests/ops/routing.test.mjs",
+        "tests/ops/state-store.test.mjs",
+        "tests/ops/remote.test.mjs"
+      ],
+      "deps": [
+        "ops-control-plane-bootstrap",
+        "ops-remote-surface-bootstrap"
+      ],
+      "risk": "deploy",
+      "verify_profile": "ops-control-plane-tests",
+      "outputs": [
+        "tests/ops/schema.test.mjs",
+        "tests/ops/routing.test.mjs",
+        "tests/ops/state-store.test.mjs",
+        "tests/ops/remote.test.mjs"
+      ]
+    }
+  ],
+  "blockers": [],
+  "next_actions": [
+    "Run node ops/server.mjs for the local WebUI control plane.",
+    "Set OPS_TELEGRAM_BOT_TOKEN and run node ops/telegram-bot.mjs to enable Telegram control.",
+    "Use 2-3 real delivery tasks before deleting legacy CCG/OpenSpec assets from the repo."
+  ]
+}

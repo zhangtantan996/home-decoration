@@ -31,8 +31,16 @@ func AdminListAdmins(c *gin.Context) {
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&admins)
 
+	securitySvc := service.NewAdminSecurityService()
+	items := make([]gin.H, 0, len(admins))
+	for i := range admins {
+		sessionItems, _ := securitySvc.ListSessions(admins[i].ID, "")
+		securityStatus := securitySvc.ResolveSecurityStatus(&admins[i])
+		items = append(items, buildAdminListItem(&admins[i], securityStatus, len(sessionItems)))
+	}
+
 	response.Success(c, gin.H{
-		"list":  admins,
+		"list":  items,
 		"total": total,
 	})
 }
@@ -44,12 +52,18 @@ func AdminCreateAdmin(c *gin.Context) {
 		Username string   `json:"username" binding:"required"`
 		Phone    string   `json:"phone"`
 		Email    string   `json:"email"`
-		Password string   `json:"password" binding:"required,min=6"`
+		Password string   `json:"password" binding:"required"`
 		Nickname string   `json:"nickname"`
 		RoleIDs  []uint64 `json:"roleIds" binding:"required"` // 角色ID列表
+		Reason   string   `json:"reason"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误: "+err.Error())
+		return
+	}
+	securitySvc := service.NewAdminSecurityService()
+	if err := securitySvc.ValidatePasswordPolicy(req.Password); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
 	if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
@@ -83,13 +97,14 @@ func AdminCreateAdmin(c *gin.Context) {
 
 	// 创建管理员
 	admin := model.SysAdmin{
-		Username:     req.Username,
-		Phone:        req.Phone,
-		Email:        req.Email,
-		Password:     string(hashedPassword),
-		Nickname:     req.Nickname,
-		Status:       1,
-		IsSuperAdmin: false,
+		Username:          req.Username,
+		Phone:             req.Phone,
+		Email:             req.Email,
+		Password:          string(hashedPassword),
+		Nickname:          req.Nickname,
+		Status:            1,
+		IsSuperAdmin:      false,
+		MustResetPassword: true,
 	}
 
 	// 使用事务创建管理员并分配角色
@@ -126,7 +141,7 @@ func AdminCreateAdmin(c *gin.Context) {
 		OperationType: "create_admin",
 		ResourceType:  "sys_admin",
 		ResourceID:    admin.ID,
-		Reason:        "创建管理员账号",
+		Reason:        readAdminReason(c, req.Reason, "创建管理员账号"),
 		Result:        "success",
 		AfterState: map[string]interface{}{
 			"admin": snapshotSysAdminForAudit(admin),
@@ -163,17 +178,20 @@ func AdminUpdateAdmin(c *gin.Context) {
 		Nickname string   `json:"nickname"`
 		Password string   `json:"password"` // 可选,如果提供则更新密码
 		RoleIDs  []uint64 `json:"roleIds"`  // 角色ID列表
+		Reason   string   `json:"reason"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
+	securitySvc := service.NewAdminSecurityService()
 	if len(req.RoleIDs) > 0 {
 		if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
 			respondAdminRBACMutationError(c, err, "角色分配不合法")
 			return
 		}
 	}
+	existingAdmin := admin
 
 	// 检查用户名是否被其他管理员占用
 	if req.Username != "" && req.Username != admin.Username {
@@ -207,8 +225,8 @@ func AdminUpdateAdmin(c *gin.Context) {
 
 	// 如果提供了密码,则更新密码
 	if req.Password != "" {
-		if len(req.Password) < 6 {
-			response.BadRequest(c, "密码长度不能少于6位")
+		if err := securitySvc.ValidatePasswordPolicy(req.Password); err != nil {
+			response.BadRequest(c, err.Error())
 			return
 		}
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -217,10 +235,12 @@ func AdminUpdateAdmin(c *gin.Context) {
 			return
 		}
 		admin.Password = string(hashedPassword)
+		admin.MustResetPassword = true
+		admin.PasswordChangedAt = nil
 	}
 
 	beforeState := map[string]interface{}{
-		"admin": snapshotSysAdminForAudit(admin),
+		"admin": snapshotSysAdminForAudit(existingAdmin),
 	}
 
 	// 使用事务更新管理员信息和角色
@@ -264,7 +284,7 @@ func AdminUpdateAdmin(c *gin.Context) {
 		OperationType: "update_admin",
 		ResourceType:  "sys_admin",
 		ResourceID:    admin.ID,
-		Reason:        "更新管理员账号",
+		Reason:        readAdminReason(c, req.Reason, "更新管理员账号"),
 		Result:        "success",
 		BeforeState:   beforeState,
 		AfterState: map[string]interface{}{
@@ -281,6 +301,9 @@ func AdminUpdateAdmin(c *gin.Context) {
 	if err := tx.Commit().Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
+	}
+	if req.Password != "" || len(req.RoleIDs) > 0 {
+		_ = securitySvc.RevokeAllSessions(admin.ID)
 	}
 
 	// 重新加载角色信息返回
@@ -305,6 +328,10 @@ func AdminDeleteAdmin(c *gin.Context) {
 		response.BadRequest(c, "不能删除超级管理员")
 		return
 	}
+	if operatorID == admin.ID {
+		response.BadRequest(c, "不能删除当前登录账号")
+		return
+	}
 
 	// 使用事务删除管理员及其角色关联
 	auditService := &service.AuditLogService{}
@@ -326,7 +353,7 @@ func AdminDeleteAdmin(c *gin.Context) {
 		OperationType: "delete_admin",
 		ResourceType:  "sys_admin",
 		ResourceID:    admin.ID,
-		Reason:        "删除管理员账号",
+		Reason:        readAdminReason(c, "", "删除管理员账号"),
 		Result:        "success",
 		BeforeState: map[string]interface{}{
 			"admin": snapshotSysAdminForAudit(admin),
@@ -343,6 +370,7 @@ func AdminDeleteAdmin(c *gin.Context) {
 		response.ServerError(c, "删除失败")
 		return
 	}
+	_ = service.NewAdminSecurityService().RevokeAllSessions(admin.ID)
 	response.Success(c, nil)
 }
 
@@ -351,7 +379,9 @@ func AdminUpdateAdminStatus(c *gin.Context) {
 	id := parseUint64(c.Param("id"))
 	operatorID := c.GetUint64("admin_id")
 	var req struct {
-		Status int8 `json:"status"`
+		Status         int8   `json:"status"`
+		Reason         string `json:"reason"`
+		DisabledReason string `json:"disabledReason"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -370,25 +400,38 @@ func AdminUpdateAdminStatus(c *gin.Context) {
 		response.BadRequest(c, "不能禁用超级管理员")
 		return
 	}
+	if operatorID == admin.ID && req.Status == 0 {
+		response.BadRequest(c, "不能禁用当前登录账号")
+		return
+	}
 
 	beforeState := map[string]interface{}{
 		"admin": snapshotSysAdminForAudit(admin),
 	}
 
 	tx := repository.DB.Begin()
-	if err := tx.Model(&model.SysAdmin{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+	updates := map[string]interface{}{
+		"status": req.Status,
+	}
+	if req.Status == 0 {
+		updates["disabled_reason"] = req.DisabledReason
+	} else {
+		updates["disabled_reason"] = ""
+	}
+	if err := tx.Model(&model.SysAdmin{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		tx.Rollback()
 		response.ServerError(c, "更新失败")
 		return
 	}
 	admin.Status = req.Status
+	admin.DisabledReason = req.DisabledReason
 	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
 		OperatorType:  "admin",
 		OperatorID:    operatorID,
 		OperationType: "update_admin_status",
 		ResourceType:  "sys_admin",
 		ResourceID:    admin.ID,
-		Reason:        "更新管理员状态",
+		Reason:        readAdminReason(c, req.Reason, "更新管理员状态"),
 		Result:        "success",
 		BeforeState:   beforeState,
 		AfterState: map[string]interface{}{
@@ -403,7 +446,35 @@ func AdminUpdateAdminStatus(c *gin.Context) {
 		response.ServerError(c, "更新失败")
 		return
 	}
+	_ = service.NewAdminSecurityService().RevokeAllSessions(admin.ID)
 	response.Success(c, nil)
+}
+
+func buildAdminListItem(admin *model.SysAdmin, securityStatus service.AdminSecurityStatus, sessionCount int) gin.H {
+	if admin == nil {
+		return gin.H{}
+	}
+	return gin.H{
+		"id":                admin.ID,
+		"username":          admin.Username,
+		"nickname":          admin.Nickname,
+		"phone":             admin.Phone,
+		"email":             admin.Email,
+		"isSuperAdmin":      admin.IsSuperAdmin,
+		"status":            admin.Status,
+		"roles":             admin.Roles,
+		"createdAt":         admin.CreatedAt,
+		"updatedAt":         admin.UpdatedAt,
+		"lastLoginAt":       admin.LastLoginAt,
+		"lastLoginIp":       admin.LastLoginIP,
+		"mustResetPassword": admin.MustResetPassword,
+		"twoFactorEnabled":  admin.TwoFactorEnabled,
+		"twoFactorBoundAt":  admin.TwoFactorBoundAt,
+		"securityStatus":    securityStatus.LoginStage,
+		"twoFactorRequired": securityStatus.TwoFactorRequired,
+		"sessionCount":      sessionCount,
+		"disabledReason":    admin.DisabledReason,
+	}
 }
 
 // ==================== 审核管理 API ====================
@@ -753,6 +824,13 @@ func AdminUpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
+	delete(req, "reason")
+	delete(req, "remark")
+	delete(req, "note")
+	delete(req, "adminNotes")
+	delete(req, "recentReauthProof")
+
+	updatedKeys := make([]string, 0, len(req))
 
 	for key, value := range req {
 		// ✅ 前端使用 im_tencent_* 格式，后端使用 im.tencent_* 格式，自动转换
@@ -790,7 +868,21 @@ func AdminUpdateSettings(c *gin.Context) {
 			}
 			repository.DB.Create(&newConfig)
 		}
+		updatedKeys = append(updatedKeys, dbKey)
 	}
+
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    c.GetUint64("admin_id"),
+		OperationType: "update_settings",
+		ResourceType:  "system_settings",
+		ResourceID:    0,
+		Reason:        readAdminReason(c, "更新系统设置"),
+		Result:        "success",
+		Metadata: map[string]interface{}{
+			"keys": updatedKeys,
+		},
+	})
 
 	response.Success(c, nil)
 }

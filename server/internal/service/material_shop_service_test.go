@@ -236,3 +236,59 @@ func TestMaterialShopServiceDetailReturnsPublicProductsAndUsesProductCoverFallba
 		t.Fatalf("expected product images to be returned, got=%v", detail.Products[0].Images)
 	}
 }
+
+func TestMaterialShopServiceHidesShopWhenPlatformDisplayDisabled(t *testing.T) {
+	db := setupMaterialShopServiceDB(t)
+	service := &MaterialShopService{}
+
+	shop := createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:                   "平台关闭门店",
+		Type:                   "showroom",
+		IsVerified:             true,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}, 2)
+	if err := db.Model(&model.MaterialShop{}).Where("id = ?", shop.ID).Update("platform_display_enabled", false).Error; err != nil {
+		t.Fatalf("disable platform display: %v", err)
+	}
+
+	list, total, err := service.ListMaterialShops(&MaterialShopQuery{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list material shops: %v", err)
+	}
+	if total != 0 || len(list) != 0 {
+		t.Fatalf("expected hidden shop to be excluded from list, total=%d list=%v", total, list)
+	}
+
+	if _, err := service.GetMaterialShopByID(shop.ID); err == nil {
+		t.Fatalf("expected hidden shop detail to be blocked")
+	}
+}
+
+func TestMaterialShopServiceHidesShopWhenMerchantDisplayDisabled(t *testing.T) {
+	db := setupMaterialShopServiceDB(t)
+	service := &MaterialShopService{}
+
+	shop := createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:                   "商家关闭门店",
+		Type:                   "showroom",
+		IsVerified:             true,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}, 2)
+	if err := db.Model(&model.MaterialShop{}).Where("id = ?", shop.ID).Update("merchant_display_enabled", false).Error; err != nil {
+		t.Fatalf("disable merchant display: %v", err)
+	}
+
+	list, total, err := service.ListMaterialShops(&MaterialShopQuery{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list material shops: %v", err)
+	}
+	if total != 0 || len(list) != 0 {
+		t.Fatalf("expected hidden shop to be excluded from list, total=%d list=%v", total, list)
+	}
+
+	if _, err := service.GetMaterialShopByID(shop.ID); err == nil {
+		t.Fatalf("expected hidden shop detail to be blocked")
+	}
+}

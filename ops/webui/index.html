@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>项目控制台</title>
+    <style>
+      :root {
+        --bg: #f4efe5;
+        --panel: #fffaf3;
+        --ink: #1c2024;
+        --muted: #6a6f76;
+        --accent: #245c4f;
+        --accent-2: #bb5f32;
+        --line: rgba(28, 32, 36, 0.1);
+        --danger: #9d2b0f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "PingFang SC", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(36, 92, 79, 0.12), transparent 28%),
+          radial-gradient(circle at top right, rgba(187, 95, 50, 0.16), transparent 24%),
+          linear-gradient(180deg, #f7f2e9 0%, var(--bg) 100%);
+      }
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      .hero {
+        display: grid;
+        gap: 18px;
+        margin-bottom: 28px;
+      }
+      .hero h1 {
+        font-family: "IBM Plex Serif", Georgia, serif;
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        line-height: 1;
+        margin: 0;
+      }
+      .hero p {
+        max-width: 780px;
+        color: var(--muted);
+        margin: 0;
+      }
+      .grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+      .panel {
+        background: color-mix(in srgb, var(--panel) 92%, white 8%);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 18px;
+        box-shadow: 0 18px 48px rgba(23, 28, 33, 0.08);
+      }
+      .panel h2 {
+        margin: 0 0 12px;
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .metrics {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .metric {
+        background: rgba(36, 92, 79, 0.08);
+        color: var(--accent);
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 0.88rem;
+      }
+      .list {
+        display: grid;
+        gap: 10px;
+      }
+      .item {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.6);
+      }
+      .item strong { display: block; margin-bottom: 4px; }
+      .muted { color: var(--muted); }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+      button, select, input {
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        background: var(--accent);
+        color: white;
+        border: none;
+      }
+      button.secondary { background: var(--accent-2); }
+      button.ghost {
+        background: rgba(36, 92, 79, 0.1);
+        color: var(--accent);
+      }
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+      .danger { color: var(--danger); }
+      @media (max-width: 640px) {
+        main { padding: 20px 14px 48px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <span class="metric">OpenClaw 优先</span>
+        <h1>项目控制台</h1>
+        <p>查看当前任务、阻塞项、决策记录和验证入口。高风险动作需要明确审批；远程层只暴露白名单动作，不暴露密钥和任意命令执行。</p>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>总览</h2>
+          <pre id="summary">正在加载...</pre>
+          <div class="metrics" id="summaryMetrics"></div>
+        </article>
+
+        <article class="panel">
+          <h2>创建任务</h2>
+          <div class="list">
+            <textarea id="taskDescription" rows="5" style="width: 100%; border-radius: 12px; border: 1px solid var(--line); padding: 12px; font: inherit; resize: vertical;" placeholder="例如：修复商家端入驻表单必填校验"></textarea>
+            <div class="actions">
+              <button id="createTaskBtn">创建任务</button>
+            </div>
+          </div>
+          <pre id="taskCreateOutput" class="muted">输入任务描述后，系统会自动按模块路由；跨模块或高风险任务会进入待审批。</pre>
+        </article>
+
+        <article class="panel">
+          <h2>运行验证</h2>
+          <div class="actions">
+            <select id="profileSelect"></select>
+            <button id="runProfileBtn">执行</button>
+          </div>
+          <pre id="profileOutput" class="muted">请选择一个允许远程触发的验证项。</pre>
+        </article>
+      </section>
+
+      <section class="grid" style="margin-top: 18px;">
+        <article class="panel">
+          <h2>任务</h2>
+          <div id="tasks" class="list"></div>
+        </article>
+        <article class="panel">
+          <h2>阻塞项</h2>
+          <div id="blockers" class="list"></div>
+        </article>
+      </section>
+
+      <section class="grid" style="margin-top: 18px;">
+        <article class="panel">
+          <h2>最近事件</h2>
+          <div id="events" class="list"></div>
+        </article>
+        <article class="panel">
+          <h2>决策记录</h2>
+          <pre id="decisions">正在加载...</pre>
+        </article>
+      </section>
+
+      <section class="grid" style="margin-top: 18px;">
+        <article class="panel">
+          <h2>怎么使用</h2>
+          <pre>推荐自动模式：
+1. 在仓库根目录运行：node ops/system.mjs
+2. 浏览器访问：http://127.0.0.1:7788
+3. 在“创建任务”里输入任务描述
+4. 低风险任务会自动开始执行
+5. 高风险任务先批准，再由引擎自动执行</pre>
+        </article>
+        <article class="panel">
+          <h2>Telegram 指令</h2>
+          <pre>/status
+/summary
+/blockers
+/task &lt;任务描述&gt;
+/approve &lt;task-id&gt;
+/run &lt;验证项&gt;
+/handoff &lt;task-id&gt; &lt;role&gt; [原因]</pre>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      async function api(path, options) {
+        const response = await fetch(path, {
+          headers: { 'content-type': 'application/json' },
+          ...options,
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || 'Request failed');
+        }
+        return payload;
+      }
+
+      function itemTemplate(title, content, extra = '') {
+        return `<div class="item"><strong>${title}</strong><div class="muted">${content}</div>${extra}</div>`;
+      }
+
+      function buildFetchHelp(error) {
+        const detail = error?.message || '未知错误';
+        return [
+          '无法连接控制平面 API。',
+          '',
+          '请确认：',
+          '1. 你是在仓库根目录执行 `node ops/system.mjs` 或 `node ops/server.mjs` 启动服务，而不是直接双击打开 HTML 文件。',
+          '2. 浏览器访问地址是 `http://127.0.0.1:7788`，不是 `file://.../ops/webui/index.html`。',
+          '3. 7788 端口没有被其它进程占用。',
+          '',
+          `错误详情：${detail}`,
+        ].join('\n');
+      }
+
+      async function refresh() {
+        const [status, tasks, blockers, events, decisions, profiles] = await Promise.all([
+          api('/api/status'),
+          api('/api/tasks'),
+          api('/api/blockers'),
+          api('/api/events?limit=8'),
+          api('/api/decisions'),
+          api('/api/profiles'),
+        ]);
+
+        document.getElementById('summary').textContent = status.summary;
+        document.getElementById('summaryMetrics').innerHTML = [
+          `<span class="metric">更新时间 ${status.updated_at}</span>`,
+          `<span class="metric">下一步 ${status.next_actions[0] || '无'}</span>`,
+        ].join('');
+
+        document.getElementById('tasks').innerHTML = tasks.tasks
+          .map((task) => {
+            const actions = [];
+            if (task.status === 'pending_approval') {
+              actions.push(`<button class="ghost" data-approve="${task.id}">批准</button>`);
+            }
+            actions.push(`<button class="secondary" data-handoff="${task.id}">转交</button>`);
+            return itemTemplate(
+              `${task.id} · ${task.status}`,
+              `${task.goal}<br/>负责人：${task.owner_role}<br/>验证项：${task.verify_profile}`,
+              `<div class="actions">${actions.join('')}</div>`,
+            );
+          })
+          .join('');
+
+        document.getElementById('blockers').innerHTML = blockers.blockers.length
+          ? blockers.blockers.map((blocker) => itemTemplate(blocker.id, `${blocker.task_id}<br/>${blocker.reason}`)).join('')
+          : itemTemplate('当前无阻塞', '系统没有未解决的 blocker。');
+
+        document.getElementById('events').innerHTML = events.events
+          .map((event) => itemTemplate(`${event.kind} · ${event.task_id}`, `${event.summary}<br/>${event.ts}`))
+          .join('');
+        document.getElementById('decisions').textContent = decisions.markdown;
+
+        const select = document.getElementById('profileSelect');
+        select.innerHTML = profiles.profiles
+          .filter((profile) => profile.remote_allowed)
+          .map((profile) => `<option value="${profile.id}">${profile.id} · ${profile.description}</option>`)
+          .join('');
+      }
+
+      document.addEventListener('click', async (event) => {
+        const approveId = event.target.getAttribute('data-approve');
+        const handoffId = event.target.getAttribute('data-handoff');
+        try {
+          if (approveId) {
+            await api(`/api/tasks/${encodeURIComponent(approveId)}/approve`, { method: 'POST' });
+            await refresh();
+          }
+          if (handoffId) {
+            const toRole = window.prompt(`请输入要转交到的角色 ID：\n例如 backend / admin / web / verifier`);
+            if (!toRole) return;
+            const reason = window.prompt('请输入转交原因：') || '';
+            await api(`/api/tasks/${encodeURIComponent(handoffId)}/handoff`, {
+              body: JSON.stringify({ reason, to_role: toRole }),
+              method: 'POST',
+            });
+            await refresh();
+          }
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+      document.getElementById('runProfileBtn').addEventListener('click', async () => {
+        const profileId = document.getElementById('profileSelect').value;
+        if (!profileId) return;
+        const output = document.getElementById('profileOutput');
+        output.textContent = '正在执行...';
+        try {
+          const result = await api(`/api/profiles/${encodeURIComponent(profileId)}/run`, { method: 'POST' });
+          output.textContent = [result.outcome, result.stdout, result.stderr].filter(Boolean).join('\n\n');
+          output.classList.toggle('danger', result.code !== 0);
+          await refresh();
+        } catch (error) {
+          output.textContent = error.message;
+          output.classList.add('danger');
+        }
+      });
+
+      document.getElementById('createTaskBtn').addEventListener('click', async () => {
+        const descriptionInput = document.getElementById('taskDescription');
+        const output = document.getElementById('taskCreateOutput');
+        const description = descriptionInput.value.trim();
+        if (!description) {
+          output.textContent = '请输入任务描述。';
+          output.classList.add('danger');
+          return;
+        }
+        output.textContent = '正在创建任务...';
+        output.classList.remove('danger');
+        try {
+          const result = await api('/api/tasks', {
+            body: JSON.stringify({ description }),
+            method: 'POST',
+          });
+          const task = result.task;
+          output.textContent = [
+            `已创建任务：${task.id}`,
+            `负责人：${task.owner_role}`,
+            `状态：${task.status}`,
+            `风险：${task.risk}`,
+            `验证项：${task.verify_profile}`,
+            task.intake?.routing_reason ? `路由说明：${task.intake.routing_reason}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n');
+          descriptionInput.value = '';
+          await refresh();
+        } catch (error) {
+          output.textContent = error.message;
+          output.classList.add('danger');
+        }
+      });
+
+      refresh().catch((error) => {
+        document.getElementById('summary').textContent = buildFetchHelp(error);
+      });
+    </script>
+  </body>
+</html>

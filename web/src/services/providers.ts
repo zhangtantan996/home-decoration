@@ -3,6 +3,7 @@ import type {
   ProviderCaseVM,
   ProviderDetailVM,
   ProviderListItemVM,
+  ProviderPriceDisplayVM,
   ProviderReviewVM,
   ProviderRole,
   ProviderSceneDetailVM,
@@ -11,7 +12,7 @@ import type {
   ReviewStatsVM,
 } from '../types/viewModels';
 import { compactPhone, formatDateTime } from '../utils/format';
-import { normalizeProviderRole, parseTextArray, resolveProviderDisplayName, roleToBasePath, summarizePricing } from '../utils/provider';
+import { normalizeProviderPriceDisplay, normalizeProviderRole, parseTextArray, resolveProviderDisplayName, roleToBasePath } from '../utils/provider';
 import { requestJson } from './http';
 import { readThroughCache } from './runtimeCache';
 
@@ -36,6 +37,7 @@ interface ProviderListDTO {
   priceMin?: number;
   priceMax?: number;
   priceUnit?: string;
+  priceDisplay?: PriceDisplayDTO;
 }
 
 interface ProviderDetailResponse {
@@ -45,6 +47,14 @@ interface ProviderDetailResponse {
   sceneCases?: ProviderSceneDTO[];
   reviews?: ProviderReviewDTO[];
   reviewCount?: number;
+  priceDisplay?: PriceDisplayDTO;
+}
+
+interface PriceDisplayDTO {
+  primary?: string;
+  secondary?: string;
+  details?: string[];
+  mode?: ProviderPriceDisplayVM['mode'];
 }
 
 interface ProviderCaseDTO {
@@ -53,6 +63,36 @@ interface ProviderCaseDTO {
   coverImage?: string;
   style?: string;
   area?: string | number;
+  showInInspiration?: boolean;
+}
+
+interface ProviderSceneDTO {
+  id: number;
+  caseId?: number;
+  projectId?: number;
+  title?: string;
+  coverImage?: string;
+  description?: string;
+  images?: string | string[];
+  year?: string;
+  createdAt?: string;
+}
+
+interface ProviderShowcaseDetailDTO {
+  id: number;
+  providerId?: number;
+  title?: string;
+  coverImage?: string;
+  style?: string;
+  layout?: string;
+  area?: string;
+  description?: string;
+  images?: string | string[];
+  year?: string;
+}
+
+interface ProviderSceneDetailDTO extends ProviderSceneDTO {
+  providerId?: number;
 }
 
 interface ProviderSceneDTO {
@@ -96,8 +136,8 @@ interface ProviderReviewDTO {
 
 function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
   const role = normalizeProviderRole(dto.providerType);
-  const pricing = summarizePricing(dto.highlightTags, dto.priceMin, dto.priceMax, dto.priceUnit, role);
   const displayName = resolveProviderDisplayName(role, dto.companyName, dto.nickname);
+  const priceDisplay = normalizeProviderPriceDisplay(dto.priceDisplay);
 
   return {
     id: dto.id,
@@ -112,7 +152,7 @@ function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
     yearsExperience: Number(dto.yearsExperience || 0),
     verified: Boolean(dto.verified),
     isSettled: dto.isSettled !== undefined ? Boolean(dto.isSettled) : undefined,
-    priceText: pricing.priceText,
+    priceDisplay,
     tags: parseTextArray(dto.highlightTags).slice(0, 3),
     serviceArea: parseTextArray(dto.serviceArea),
     userPublicId: dto.userPublicId,
@@ -139,19 +179,13 @@ function toProviderDetail(
 ): ProviderDetailVM {
   const provider = (response.provider || {}) as Record<string, unknown>;
   const user = (response.user || {}) as Record<string, unknown>;
-  const pricing = summarizePricing(
-    readStringRecord(provider, 'pricingJson'),
-    readNumericRecord(provider, 'priceMin'),
-    readNumericRecord(provider, 'priceMax'),
-    readStringRecord(provider, 'priceUnit'),
-    role,
-  );
   const displayName = resolveProviderDisplayName(
     role,
     readStringRecord(provider, 'companyName'),
     readStringRecord(user, 'nickname'),
     readStringRecord(provider, 'nickname'),
   );
+  const priceDisplay = normalizeProviderPriceDisplay(response.priceDisplay);
 
   return {
     id: Number(provider.id || 0),
@@ -166,7 +200,7 @@ function toProviderDetail(
     yearsExperience: readNumericRecord(provider, 'yearsExperience'),
     verified: Boolean(provider.verified),
     isSettled: provider.isSettled !== undefined ? Boolean(provider.isSettled) : undefined,
-    priceText: pricing.priceText,
+    priceDisplay,
     tags: parseTextArray(readStringRecord(provider, 'highlightTags')),
     serviceArea: parseTextArray(readStringRecord(provider, 'serviceArea')),
     userPublicId: readStringRecord(user, 'publicId') || undefined,
@@ -176,7 +210,6 @@ function toProviderDetail(
     teamSize: readNumericRecord(provider, 'teamSize'),
     establishedText: readNumericRecord(provider, 'establishedYear') ? `${readNumericRecord(provider, 'establishedYear')} 年成立` : `${readNumericRecord(provider, 'yearsExperience')} 年从业经验`,
     certifications: parseTextArray(readStringRecord(provider, 'certifications')),
-    priceDetails: pricing.details,
     cases,
     scenes,
     reviews,
@@ -193,6 +226,23 @@ function toCase(dto: ProviderCaseDTO): ProviderCaseVM {
     coverImage: dto.coverImage || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E6%A1%88%E4%BE%8B',
     style: dto.style || '风格待补充',
     area: dto.area ? `${dto.area}` : '面积待补充',
+    showInInspiration: dto.showInInspiration,
+  };
+}
+
+function toScene(dto: ProviderSceneDTO): ProviderSceneVM {
+  const galleryImages = parseTextArray(dto.images);
+  const coverImage = dto.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E5%AE%9E%E6%99%AF';
+
+  return {
+    id: dto.id,
+    caseId: Number(dto.caseId || 0),
+    projectId: Number(dto.projectId || 0),
+    title: dto.title || '真实项目案例',
+    coverImage,
+    description: dto.description || '项目案例说明待补充',
+    images: galleryImages.length > 0 ? galleryImages : [coverImage],
+    year: dto.year || '',
   };
 }
 
@@ -323,17 +373,17 @@ export async function getProviderDetail(role: ProviderRole, id: number) {
 export async function getProviderShowcaseDetail(id: number) {
   const data = await requestJson<ProviderShowcaseDetailDTO>(`/provider-cases/${id}`);
   const galleryImages = parseTextArray(data.images);
-  const coverImage = data.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E5%B7%A5%E8%89%BA';
+  const coverImage = data.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E6%A1%88%E4%BE%8B';
 
   const detail: ProviderShowcaseDetailVM = {
     id: data.id,
     providerId: Number(data.providerId || 0),
-    title: data.title || '工艺展示',
+    title: data.title || '案例详情',
     coverImage,
     style: data.style || '',
     layout: data.layout || '',
     area: data.area || '',
-    description: data.description || '工艺展示说明待补充。',
+    description: data.description || '案例说明待补充。',
     galleryImages: galleryImages.length > 0 ? galleryImages : [coverImage],
     year: data.year || '',
   };

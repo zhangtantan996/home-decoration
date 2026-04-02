@@ -1,4 +1,5 @@
 import { request } from '@/utils/request';
+import type { RefundSummaryDTO } from './dto';
 
 export type ProviderType = 'designer' | 'company' | 'foreman';
 
@@ -49,6 +50,11 @@ export interface BookingDetailResponse {
   booking: BookingItem;
   provider?: BookingProviderSummary;
   proposalId?: number;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  currentStage?: string;
+  refundSummary?: RefundSummaryDTO;
 }
 
 export async function createBooking(payload: CreateBookingPayload) {

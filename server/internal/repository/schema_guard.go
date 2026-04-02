@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	SchemaGuardMigrationPath = "server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
+	SchemaGuardMigrationPath = "server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql"
 )
 
 const (
@@ -21,10 +21,11 @@ const (
 )
 
 var HighRiskTables = map[string][]string{
-	"merchant_applications":              {"team_size", "office_address", "service_area", "styles", "introduction", "portfolio_cases", "user_id", "provider_id"},
-	"providers":                          {"service_area", "service_intro", "team_size", "office_address", "followers_count", "established_year", "certifications", "cover_image"},
-	"material_shop_applications":         {"business_hours_json", "brand_logo"},
-	"material_shops":                     {"business_hours_json"},
+	"merchant_applications":              {"team_size", "office_address", "service_area", "styles", "introduction", "portfolio_cases", "user_id", "provider_id", "application_scene"},
+	"providers":                          {"service_area", "service_intro", "team_size", "office_address", "followers_count", "established_year", "certifications", "cover_image", "needs_onboarding_completion"},
+	"sys_admins":                         {"must_reset_password", "password_changed_at", "two_factor_enabled", "two_factor_secret", "two_factor_bound_at", "disabled_reason"},
+	"material_shop_applications":         {"business_hours_json", "brand_logo", "application_scene"},
+	"material_shops":                     {"business_hours_json", "needs_onboarding_completion"},
 	"material_shop_application_products": {"unit"},
 	"material_shop_products":             {"unit", "description"},
 	"sms_audit_logs":                     {"risk_tier", "template_key", "template_code"},
@@ -127,15 +128,15 @@ func runSmokeOperation(tx *gorm.DB, op string) error {
 	switch op {
 	case SmokeOpMerchantApplicationWrite:
 		return tx.Exec(`
-			INSERT INTO merchant_applications (phone, role, entity_type, created_at, updated_at, team_size, service_area, user_id, provider_id)
-			VALUES ('13800138000', 'designer', 'personal', ?, ?, 1, '[]', 0, 0)
+			INSERT INTO merchant_applications (phone, role, entity_type, created_at, updated_at, team_size, service_area, user_id, provider_id, application_scene)
+			VALUES ('13800138000', 'designer', 'personal', ?, ?, 1, '[]', 0, 0, 'new_onboarding')
 			ON CONFLICT DO NOTHING
 		`, now, now).Error
 
 	case SmokeOpProviderWrite:
 		return tx.Exec(`
-			INSERT INTO providers (user_id, provider_type, company_name, created_at, updated_at, service_area, service_intro, team_size)
-			VALUES (0, 1, 'smoke_test_provider', ?, ?, '[]', 'smoke test', 1)
+			INSERT INTO providers (user_id, provider_type, company_name, created_at, updated_at, service_area, service_intro, team_size, needs_onboarding_completion)
+			VALUES (0, 1, 'smoke_test_provider', ?, ?, '[]', 'smoke test', 1, FALSE)
 			ON CONFLICT DO NOTHING
 		`, now, now).Error
 
