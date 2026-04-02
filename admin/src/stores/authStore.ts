@@ -133,7 +133,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const current = get();
     const nextState: Partial<AuthState> = {};
 
-    if (typeof accessToken === 'string') {
+    if (typeof accessToken === 'string' && accessToken.length > 0) {
       localStorage.setItem(STORAGE_KEYS.accessToken, accessToken);
       nextState.token = accessToken;
       nextState.isAuthenticated = accessToken.length > 0;
@@ -141,7 +141,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       nextState.token = current.token;
       nextState.isAuthenticated = current.isAuthenticated;
     }
-    if (typeof refreshToken === 'string') {
+    if (typeof refreshToken === 'string' && refreshToken.length > 0) {
       localStorage.setItem(STORAGE_KEYS.refreshToken, refreshToken);
       nextState.refreshToken = refreshToken;
     } else {
