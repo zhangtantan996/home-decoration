@@ -557,6 +557,19 @@ func approvedProjectSceneCreateAuditScope(providerID uint64) *gorm.DB {
 		)
 }
 
+func craftProviderCaseScope(providerID uint64) *gorm.DB {
+	return repository.DB.Model(&model.ProviderCase{}).
+		Where("provider_id = ?", providerID).
+		Where("id NOT IN (?)", approvedProjectSceneCreateAuditScope(providerID).Select("case_id"))
+}
+
+func normalizeProviderCasesForPublic(items []model.ProviderCase) {
+	for i := range items {
+		items[i].CoverImage = imgutil.GetFullImageURL(items[i].CoverImage)
+		items[i].Images = imgutil.NormalizeImageURLsJSON(items[i].Images)
+	}
+}
+
 func pickFirstNonEmptyProviderString(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -701,11 +714,6 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	sceneCases, sceneCount, err := s.GetProviderSceneCases(id, 1, 5)
-	if err != nil {
-		return nil, err
 	}
 
 	// 获取正式评价（前5条）
@@ -891,18 +899,21 @@ func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderSho
 		return nil, err
 	}
 
-	if _, err := loadVisibleForeman(providerCase.ProviderID); err != nil {
+	provider, err := loadVisibleProvider(providerCase.ProviderID)
+	if err != nil {
 		return nil, err
 	}
 
-	var linkedSceneCount int64
-	if err := approvedProjectSceneCreateAuditScope(providerCase.ProviderID).
-		Where("case_id = ?", providerCase.ID).
-		Count(&linkedSceneCount).Error; err != nil {
-		return nil, err
-	}
-	if linkedSceneCount > 0 {
-		return nil, gorm.ErrRecordNotFound
+	if provider.ProviderType == 3 {
+		var linkedSceneCount int64
+		if err := approvedProjectSceneCreateAuditScope(providerCase.ProviderID).
+			Where("case_id = ?", providerCase.ID).
+			Count(&linkedSceneCount).Error; err != nil {
+			return nil, err
+		}
+		if linkedSceneCount > 0 {
+			return nil, gorm.ErrRecordNotFound
+		}
 	}
 
 	providerCase.CoverImage = imgutil.GetFullImageURL(providerCase.CoverImage)
@@ -911,12 +922,12 @@ func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderSho
 	return &ProviderShowcaseDetail{
 		ID:          providerCase.ID,
 		ProviderID:  providerCase.ProviderID,
-		Title:       pickFirstNonEmptyProviderString(providerCase.Title, "工艺展示"),
+		Title:       pickFirstNonEmptyProviderString(providerCase.Title, "案例详情"),
 		CoverImage:  providerCase.CoverImage,
 		Style:       providerCase.Style,
 		Layout:      providerCase.Layout,
 		Area:        providerCase.Area,
-		Description: pickFirstNonEmptyProviderString(providerCase.Description, "工艺展示说明待补充"),
+		Description: pickFirstNonEmptyProviderString(providerCase.Description, "案例说明待补充"),
 		Images:      providerCase.Images,
 		Year:        providerCase.Year,
 	}, nil

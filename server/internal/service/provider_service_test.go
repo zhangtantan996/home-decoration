@@ -646,8 +646,12 @@ func TestProviderServiceKeepsDesignerCasesUnified(t *testing.T) {
 	if _, _, err := service.GetProviderSceneCases(provider.ID, 1, 10); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("expected designer scene cases to be unavailable, got %v", err)
 	}
-	if _, err := service.GetProviderShowcaseDetail(regularCase.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("expected non-foreman showcase detail to be unavailable, got %v", err)
+	showcaseDetail, err := service.GetProviderShowcaseDetail(regularCase.ID)
+	if err != nil {
+		t.Fatalf("expected non-foreman showcase detail to be available, got %v", err)
+	}
+	if showcaseDetail.ID != regularCase.ID || showcaseDetail.ProviderID != provider.ID {
+		t.Fatalf("unexpected non-foreman showcase detail payload: %+v", showcaseDetail)
 	}
 }
 
@@ -760,6 +764,46 @@ func TestProviderSceneDetailUsesLatestApprovedAuditSnapshot(t *testing.T) {
 	}
 	if detail.Title != "更新后的项目案例" || !strings.Contains(detail.Images, "latest-2.jpg") {
 		t.Fatalf("expected latest approved audit snapshot, got %+v", detail)
+	}
+}
+
+func TestProviderShowcaseDetailHidesForemanSceneCases(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138130", Nickname: "工长案例隔离", PublicID: "user_public_foreman_showcase_hide"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 3,
+		CompanyName:  "工长案例隔离",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	sceneCase := model.ProviderCase{ProviderID: provider.ID, Title: "被项目归档占用的案例"}
+	if err := db.Create(&sceneCase).Error; err != nil {
+		t.Fatalf("create scene case: %v", err)
+	}
+	if err := db.Create(&model.CaseAudit{
+		CaseID:          &sceneCase.ID,
+		ProviderID:      provider.ID,
+		ActionType:      "create",
+		SourceType:      "project_completion",
+		SourceProjectID: 7001,
+		Status:          1,
+		Title:           "被项目归档占用的案例",
+	}).Error; err != nil {
+		t.Fatalf("create scene audit: %v", err)
+	}
+
+	if _, err := service.GetProviderShowcaseDetail(sceneCase.ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected linked foreman scene case to be hidden from showcase detail, got %v", err)
 	}
 }
 

@@ -113,6 +113,13 @@ function takeWithFallback(values: string[], fallback: string[], limit: number) {
   return result.slice(0, limit);
 }
 
+function resolveCaseDetailPath(role: ProviderRole, caseId: number, showInInspiration?: boolean) {
+  if (role === 'foreman') {
+    return `/provider-cases/${caseId}`;
+  }
+  return showInInspiration === false ? `/provider-cases/${caseId}` : `/inspiration/${caseId}`;
+}
+
 function renderStars(value: number) {
   const score = Math.max(0, Math.min(5, Math.round(value)));
   return Array.from({ length: 5 }, (_, index) => (
@@ -456,7 +463,7 @@ export function ProviderDetailPage() {
             <Link
               className="provider-detail-case-card provider-detail-case-card--uniform"
               key={item.id}
-              to={isForeman ? `/provider-cases/${item.id}` : `/inspiration/${item.id}`}
+              to={resolveCaseDetailPath(role, item.id, item.showInInspiration)}
             >
               <div className="provider-detail-case-card-media">
                 <img alt={item.title} className="provider-detail-case-card-image" src={item.coverImage} />

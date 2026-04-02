@@ -77,7 +77,7 @@ function ProviderAssetDetailLayout({
 }
 
 function toShowcaseLayout(detail: ProviderShowcaseDetailVM): ProviderAssetDetailData {
-  const categoryText = [detail.style, detail.layout].filter(Boolean).join(' · ') || '施工工艺展示';
+  const categoryText = [detail.style, detail.layout].filter(Boolean).join(' · ') || '服务商案例';
   return {
     title: detail.title,
     description: detail.description,
@@ -89,7 +89,7 @@ function toShowcaseLayout(detail: ProviderShowcaseDetailVM): ProviderAssetDetail
       { label: '年份', value: detail.year || '待补充' },
     ],
     backLabel: '返回服务商详情',
-    kicker: '工艺展示详情',
+    kicker: '案例详情',
   };
 }
 
@@ -113,7 +113,7 @@ export function ProviderShowcaseDetailPage() {
   const params = useParams();
   const showcaseId = Number(params.id || 0);
   const { data, loading, error, reload } = useAsyncData(async () => {
-    if (!showcaseId) throw new Error('无效工艺展示 ID');
+    if (!showcaseId) throw new Error('无效案例 ID');
     return getProviderShowcaseDetail(showcaseId);
   }, [showcaseId]);
 
@@ -121,9 +121,9 @@ export function ProviderShowcaseDetailPage() {
     <ProviderAssetDetailLayout
       data={data ? toShowcaseLayout(data) : null}
       error={error}
-      invalidMessage="工艺展示详情加载失败"
+      invalidMessage="案例详情加载失败"
       loading={loading}
-      loadingTitle="加载工艺展示详情"
+      loadingTitle="加载案例详情"
       onRetry={() => void reload()}
     />
   );

@@ -63,6 +63,7 @@ interface ProviderCaseDTO {
   coverImage?: string;
   style?: string;
   area?: string | number;
+  showInInspiration?: boolean;
 }
 
 interface ProviderSceneDTO {
@@ -196,6 +197,7 @@ function toCase(dto: ProviderCaseDTO): ProviderCaseVM {
     coverImage: dto.coverImage || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E6%A1%88%E4%BE%8B',
     style: dto.style || '风格待补充',
     area: dto.area ? `${dto.area}` : '面积待补充',
+    showInInspiration: dto.showInInspiration,
   };
 }
 
@@ -326,17 +328,17 @@ export async function getProviderDetail(role: ProviderRole, id: number) {
 export async function getProviderShowcaseDetail(id: number) {
   const data = await requestJson<ProviderShowcaseDetailDTO>(`/provider-cases/${id}`);
   const galleryImages = parseTextArray(data.images);
-  const coverImage = data.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E5%B7%A5%E8%89%BA';
+  const coverImage = data.coverImage || galleryImages[0] || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E6%A1%88%E4%BE%8B';
 
   const detail: ProviderShowcaseDetailVM = {
     id: data.id,
     providerId: Number(data.providerId || 0),
-    title: data.title || '工艺展示',
+    title: data.title || '案例详情',
     coverImage,
     style: data.style || '',
     layout: data.layout || '',
     area: data.area || '',
-    description: data.description || '工艺展示说明待补充。',
+    description: data.description || '案例说明待补充。',
     galleryImages: galleryImages.length > 0 ? galleryImages : [coverImage],
     year: data.year || '',
   };
