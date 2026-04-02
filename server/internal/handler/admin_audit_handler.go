@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/internal/service"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"strings"
@@ -54,10 +55,7 @@ func AdminListCaseAudits(c *gin.Context) {
 		repository.DB.First(&provider, audit.ProviderID)
 		repository.DB.First(&user, provider.UserID)
 
-		providerName := user.Nickname
-		if providerName == "" {
-			providerName = provider.CompanyName
-		}
+		providerName := service.ResolveProviderDisplayName(provider, &user)
 
 		var originalCase *model.ProviderCase
 		if audit.CaseID != nil {
@@ -111,10 +109,7 @@ func AdminGetCaseAudit(c *gin.Context) {
 	var user model.User
 	repository.DB.First(&provider, audit.ProviderID)
 	repository.DB.First(&user, provider.UserID)
-	providerName := user.Nickname
-	if providerName == "" {
-		providerName = provider.CompanyName
-	}
+	providerName := service.ResolveProviderDisplayName(provider, &user)
 
 	// 解析图片
 	var images []string
@@ -215,6 +210,8 @@ func AdminApproveCaseAudit(c *gin.Context) {
 	if price < 0 {
 		price = 0
 	}
+	normalizedCoverImage := normalizeStoredAsset(audit.CoverImage)
+	normalizedImages := normalizeStoredAssetJSONArray(audit.Images)
 
 	// 执行 Action
 	switch audit.ActionType {
@@ -223,7 +220,7 @@ func AdminApproveCaseAudit(c *gin.Context) {
 		newCase := model.ProviderCase{
 			ProviderID:     audit.ProviderID,
 			Title:          audit.Title,
-			CoverImage:     audit.CoverImage,
+			CoverImage:     normalizedCoverImage,
 			Style:          style,
 			Layout:         layout,
 			Area:           audit.Area,
@@ -233,7 +230,7 @@ func AdminApproveCaseAudit(c *gin.Context) {
 			QuoteItems:     audit.QuoteItems,
 			Year:           audit.Year,
 			Description:    audit.Description,
-			Images:         audit.Images,
+			Images:         normalizedImages,
 			SortOrder:      0, // 默认
 			// 商家案例仅在商家详情页展示，不进入独立灵感图库。
 			ShowInInspiration: false,
@@ -255,7 +252,7 @@ func AdminApproveCaseAudit(c *gin.Context) {
 		// 更新 ProviderCase
 		updates := map[string]interface{}{
 			"title":            audit.Title,
-			"cover_image":      audit.CoverImage,
+			"cover_image":      normalizedCoverImage,
 			"style":            style,
 			"layout":           layout,
 			"area":             audit.Area,
@@ -265,7 +262,7 @@ func AdminApproveCaseAudit(c *gin.Context) {
 			"quote_items":      audit.QuoteItems,
 			"year":             audit.Year,
 			"description":      audit.Description,
-			"images":           audit.Images,
+			"images":           normalizedImages,
 			"updated_at":       time.Now(),
 		}
 		if err := tx.Model(&model.ProviderCase{}).Where("id = ?", *audit.CaseID).Updates(updates).Error; err != nil {

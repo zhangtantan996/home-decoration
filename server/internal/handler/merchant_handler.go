@@ -524,18 +524,7 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 
 			identity := resolveMerchantProviderIdentity(&provider)
 
-			// 当前登录账号展示名按角色展示，而不是按主体资质展示。
-			displayName := strings.TrimSpace(user.Nickname)
-			if identity.providerSubType == "company" && strings.TrimSpace(provider.CompanyName) != "" {
-				displayName = strings.TrimSpace(provider.CompanyName)
-			}
-			if displayName == "" {
-				displayName = strings.TrimSpace(provider.CompanyName)
-			}
-			// 兜底：如果昵称也为空，使用手机号后4位
-			if displayName == "" {
-				displayName = "用户" + input.Phone[len(input.Phone)-4:]
-			}
+			displayName := service.ResolveProviderDisplayName(provider, &user)
 
 			// 生成 Tinode token（失败不阻塞商家登录）
 			tinodeToken := ""
@@ -545,9 +534,8 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 				tinodeToken = tokenValue
 				// Ensure this merchant exists in Tinode DB with a usable public profile.
 				u := user
-				if u.Nickname == "" {
-					u.Nickname = displayName
-				}
+				u.Nickname = displayName
+				u.Avatar = service.ResolveProviderAvatarPathWithUser(provider, &user)
 				if err := tinode.SyncUserToTinode(&u); err != nil {
 					log.Printf("[Tinode] Sync merchant user failed: userID=%d, err=%v", user.ID, err)
 				}
@@ -557,10 +545,7 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			providerSubType := identity.providerSubType
 			role := identity.role
 			entityType := identity.entityType
-			avatar := strings.TrimSpace(provider.Avatar)
-			if avatar == "" {
-				avatar = user.Avatar
-			}
+			avatar := service.ResolveProviderAvatarPathWithUser(provider, &user)
 
 			response.Success(c, gin.H{
 				"token":                   tokenString,
@@ -660,9 +645,7 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			} else {
 				tinodeToken = tokenValue
 				u := user
-				if u.Nickname == "" {
-					u.Nickname = displayName
-				}
+				u.Nickname = displayName
 				if err := tinode.SyncUserToTinode(&u); err != nil {
 					log.Printf("[Tinode] Sync material merchant user failed: userID=%d, err=%v", user.ID, err)
 				}
@@ -746,13 +729,7 @@ func MerchantGetInfo(c *gin.Context) {
 	repository.DB.First(&user, provider.UserID)
 
 	identity := resolveMerchantProviderIdentity(&provider)
-	displayName := strings.TrimSpace(user.Nickname)
-	if identity.providerSubType == "company" && strings.TrimSpace(provider.CompanyName) != "" {
-		displayName = strings.TrimSpace(provider.CompanyName)
-	}
-	if displayName == "" {
-		displayName = strings.TrimSpace(provider.CompanyName)
-	}
+	displayName := service.ResolveProviderDisplayName(provider, &user)
 
 	// 解析 ServiceArea (JSON数组) - 存储的是区域代码
 	var serviceAreaCodes []string
@@ -780,10 +757,7 @@ func MerchantGetInfo(c *gin.Context) {
 	highlightTags := parseJSONOrDelimitedSlice(provider.HighlightTags)
 	companyAlbum := parseJSONStringSlice(provider.CompanyAlbumJSON)
 	pricing := parsePricingObject(provider.PricingJSON)
-	avatar := strings.TrimSpace(provider.Avatar)
-	if avatar == "" {
-		avatar = user.Avatar
-	}
+	avatar := service.ResolveProviderAvatarPathWithUser(provider, &user)
 
 	response.Success(c, gin.H{
 		"id":                     provider.ID,
@@ -821,7 +795,6 @@ func MerchantGetInfo(c *gin.Context) {
 // MerchantUpdateInfo 更新商家信息
 func MerchantUpdateInfo(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
-	userID := c.GetUint64("userId")
 
 	var input struct {
 		Name                   string             `json:"name"` // 显示名称
@@ -868,11 +841,14 @@ func MerchantUpdateInfo(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{}
+	if name := strings.TrimSpace(input.Name); name != "" {
+		updates["display_name"] = name
+	}
 	if input.CompanyName != "" {
 		updates["company_name"] = input.CompanyName
 	}
 	if input.MerchantDisplayEnabled != nil {
-		if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.Provider{}, "MerchantDisplayEnabled") {
+		if !service.SupportsProviderMerchantDisplayEnabled() {
 			response.Error(c, 503, repository.SchemaServiceUnavailableMessage("商家展示开关"))
 			return
 		}
@@ -959,16 +935,6 @@ func MerchantUpdateInfo(c *gin.Context) {
 		tx.Rollback()
 		response.Error(c, 500, "更新失败")
 		return
-	}
-
-	// 更新 User 昵称 (如果 Name 字段通过且是设计师类型，或者作为备用)
-	if input.Name != "" {
-		// 1. 更新 User 昵称
-		if err := tx.Model(&model.User{}).Where("id = ?", userID).Update("nickname", input.Name).Error; err != nil {
-			tx.Rollback()
-			response.Error(c, 500, "更新用户信息失败")
-			return
-		}
 	}
 
 	tx.Commit()
@@ -1464,11 +1430,6 @@ func MerchantUploadAvatar(c *gin.Context) {
 		return
 	}
 
-	// 更新用户头像
-	if err := repository.DB.Model(&model.User{}).Where("id = ?", userID).Update("avatar", avatarURL).Error; err != nil {
-		response.Error(c, 500, "更新头像失败")
-		return
-	}
 	if err := repository.DB.Model(&model.Provider{}).Where("user_id = ?", userID).Update("avatar", avatarURL).Error; err != nil {
 		response.Error(c, 500, "更新商家头像失败")
 		return
@@ -1576,8 +1537,8 @@ func MerchantGetProposal(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 	proposalID := parseUint64(c.Param("id"))
 
-	var proposal model.Proposal
-	if err := repository.DB.First(&proposal, proposalID).Error; err != nil {
+	proposal, err := proposalService.GetProposal(proposalID)
+	if err != nil {
 		response.Error(c, 404, "方案不存在")
 		return
 	}
@@ -1688,10 +1649,10 @@ func MerchantUpdateProposal(c *gin.Context) {
 		"construction_fee":      input.ConstructionFee,
 		"material_fee":          input.MaterialFee,
 		"estimated_days":        input.EstimatedDays,
-		"attachments":           input.Attachments,
-		"internal_draft_json":   input.InternalDraftJSON,
-		"preview_package_json":  input.PreviewPackageJSON,
-		"delivery_package_json": input.DeliveryPackageJSON,
+		"attachments":           normalizeStoredAssetJSONArray(input.Attachments),
+		"internal_draft_json":   normalizeStoredAssetJSONMap(input.InternalDraftJSON, "sketchImages", "cadSourceFiles"),
+		"preview_package_json":  normalizeStoredAssetJSONMap(input.PreviewPackageJSON, "floorPlanImages", "effectPreviewImages", "effectPreviewLinks"),
+		"delivery_package_json": normalizeStoredAssetJSONMap(input.DeliveryPackageJSON, "floorPlanImages", "effectImages", "effectLinks", "cadFiles", "attachments"),
 		"status":                model.ProposalStatusPending, // 重新提交后状态改为待确认
 	}
 

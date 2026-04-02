@@ -37,7 +37,7 @@ export function DemandCreatePage() {
     timeline: '3month',
     stylePref: '',
     description: '',
-    attachments: [] as Array<{ url: string; name: string; size: number }>,
+    attachments: [] as Array<{ url: string; path?: string; name: string; size: number }>,
   });
 
   const payload = {
@@ -167,6 +167,7 @@ export function DemandCreatePage() {
                       ...prev.attachments,
                       ...uploaded.map((item, index) => ({
                         url: item.url,
+                        path: item.path,
                         name: files[index]?.name || item.filename || '附件',
                         size: Number(files[index]?.size || item.size || 0),
                       })),

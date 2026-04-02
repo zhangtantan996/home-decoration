@@ -39,6 +39,7 @@ func setupMerchantRound4TestDB(t *testing.T) *gorm.DB {
 		&model.UserIdentity{},
 		&model.MerchantServiceSetting{},
 		&model.ProviderCase{},
+		&model.AuditLog{},
 		&model.DictionaryCategory{},
 		&model.SystemDictionary{},
 	); err != nil {

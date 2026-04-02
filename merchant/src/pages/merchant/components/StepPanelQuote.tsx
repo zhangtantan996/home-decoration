@@ -3,14 +3,16 @@ import {
   Alert, Button, Card, Col, Empty, Form, Input, InputNumber, List, message,
   Modal, Row, Select, Space, Tag, Upload,
 } from 'antd';
-import type { UploadProps } from 'antd';
+import type { UploadFile, UploadProps } from 'antd';
 import { FileAddOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
 import {
   merchantDesignApi,
   merchantUploadApi,
   type DesignWorkingDocItem,
   type DesignFeeQuoteItem,
+  type MerchantUploadResult,
 } from '../../../services/merchantApi';
+import { getStoredPathsFromUploadFiles } from '../../../utils/uploadAsset';
 
 const DOC_TYPES = [
   { value: 'sketch', label: '量房草图' },
@@ -81,11 +83,12 @@ const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({ bookingId, isActive, is
     setSubmitting(true);
     try {
       const values = await docForm.validateFields();
+      const files = getStoredPathsFromUploadFiles((values.fileUrls || []) as Array<UploadFile<MerchantUploadResult>>);
       await merchantDesignApi.uploadWorkingDoc(bookingId, {
         docType: values.docType,
         title: values.title,
         description: values.description || '',
-        files: JSON.stringify(values.fileUrls || []),
+        files: JSON.stringify(files),
       });
       message.success('文档上传成功');
       setDocModalOpen(false);

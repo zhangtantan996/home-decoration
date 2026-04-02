@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Table,
   Card,
@@ -18,25 +19,19 @@ import {
   ReloadOutlined,
   PlusOutlined,
   DeleteOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
-import { adminUserApi } from "../../services/api";
+import {
+  adminUserApi,
+  type AdminUserListItem,
+} from "../../services/api";
 import PageHeader from "../../components/PageHeader";
 import ToolbarCard from "../../components/ToolbarCard";
 import StatusTag from "../../components/StatusTag";
 import { useAuthStore } from "../../stores/authStore";
 import { formatServerDateTime } from "../../utils/serverTime";
 
-interface User {
-  id: number;
-  phone: string;
-  nickname: string;
-  avatar?: string;
-  userType: number;
-  roleType?: string;
-  roleLabel?: string;
-  status: number;
-  createdAt: string;
-}
+interface User extends AdminUserListItem {}
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error && typeof error === "object") {
@@ -67,6 +62,7 @@ const roleTypeHelpText: Record<string, string> = {
 };
 
 const UserList: React.FC = () => {
+  const navigate = useNavigate();
   const { admin } = useAuthStore();
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -114,12 +110,41 @@ const UserList: React.FC = () => {
   };
 
   const handleStatusChange = async (id: number, status: number) => {
-    try {
-      await adminUserApi.updateStatus(id, status);
-      message.success("状态更新成功");
-      loadData();
-    } catch (error) {
-      message.error("操作失败");
+    const target = users.find((item) => item.id === id);
+    Modal.confirm({
+      title: status === 1 ? "确认启用登录" : "确认禁用登录",
+      content:
+        status === 1
+          ? `将恢复「${target?.nickname || target?.phone || id}」的登录能力。该操作只影响登录，不直接改变主体经营状态。`
+          : `将禁止「${target?.nickname || target?.phone || id}」登录系统。该操作只影响登录，不直接改变主体经营状态。`,
+      okText: status === 1 ? "确认启用" : "确认禁用",
+      cancelText: "取消",
+      okButtonProps: status === 1 ? undefined : { danger: true },
+      onOk: async () => {
+        try {
+          await adminUserApi.updateStatus(id, status);
+          message.success(status === 1 ? "已启用登录" : "已禁用登录");
+          loadData();
+        } catch (error) {
+          message.error("操作失败");
+        }
+      },
+    });
+  };
+
+  const resolvePrimaryEntityPath = (record: User) => {
+    if (record.primaryEntityType === "material_shop") {
+      return "/materials/list";
+    }
+    switch (record.roleType) {
+      case "designer":
+        return "/providers/designers";
+      case "foreman":
+        return "/providers/foremen";
+      case "company":
+      case "provider":
+      default:
+        return "/providers/companies";
     }
   };
 
@@ -254,13 +279,35 @@ const UserList: React.FC = () => {
       },
     },
     {
-      title: "状态",
+      title: "关联主体",
+      key: "primaryEntity",
+      render: (_: unknown, record: User) => {
+        if (!record.primaryEntityType || !record.primaryEntityId) {
+          return <StatusTag status="info" text="未关联主体" />;
+        }
+        return (
+          <Space size={4}>
+            <span>{record.primaryEntityName || `#${record.primaryEntityId}`}</span>
+            <Button
+              type="link"
+              size="small"
+              icon={<LinkOutlined />}
+              onClick={() => navigate(resolvePrimaryEntityPath(record))}
+            >
+              查看主体
+            </Button>
+          </Space>
+        );
+      },
+    },
+    {
+      title: "账号状态",
       dataIndex: "status",
       render: (val: number, record: User) => (
         <Switch
           checked={val === 1}
-          checkedChildren="启用"
-          unCheckedChildren="禁用"
+          checkedChildren="启用登录"
+          unCheckedChildren="禁用登录"
           onChange={(checked) => handleStatusChange(record.id, checked ? 1 : 0)}
         />
       ),
@@ -300,7 +347,7 @@ const UserList: React.FC = () => {
     <div className="hz-page-stack">
       <PageHeader
         title="用户管理"
-        description="统一维护平台注册用户，查看身份类型、基础资料与启停状态。"
+        description="管理平台登录账号本身，查看身份类型、关联主体与登录启停状态，不直接改变主体经营状态。"
       />
 
       <ToolbarCard>
@@ -439,11 +486,11 @@ const UserList: React.FC = () => {
               ]}
             />
           </Form.Item>
-          <Form.Item name="status" label="状态">
+          <Form.Item name="status" label="账号状态">
             <Select
               options={[
-                { value: 1, label: "启用" },
-                { value: 0, label: "禁用" },
+                { value: 1, label: "启用登录" },
+                { value: 0, label: "禁用登录" },
               ]}
             />
           </Form.Item>

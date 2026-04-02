@@ -81,12 +81,8 @@ func MerchantGetIMUserSig(c *gin.Context) {
 	userIDStr := fmt.Sprintf("%d", provider.UserID)
 
 	// 自动导入商家到腾讯云 IM（使用关联的用户ID）
-	nickname := user.Nickname
-	if nickname == "" {
-		nickname = provider.CompanyName
-	}
-	// 使用完整的头像URL
-	fullAvatar := image.GetFullImageURL(user.Avatar)
+	nickname := service.ResolveProviderDisplayName(provider, &user)
+	fullAvatar := image.GetFullImageURL(service.ResolveProviderAvatarPathWithUser(provider, &user))
 	if err := tencentim.SyncUserToIM(provider.UserID, nickname, fullAvatar); err != nil {
 		log.Printf("[IM] 导入商家失败: userID=%d, err=%v", provider.UserID, err)
 		// 不阻止继续，只记录日志

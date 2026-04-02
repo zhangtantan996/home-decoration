@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Button, Result, Spin } from 'antd';
 import { adminAuthApi } from '../services/api';
@@ -38,9 +38,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     logout,
   } = useAuthStore();
   const { hasPermission, hasAllPermissions } = usePermission();
+  const bootstrapStatusRef = useRef(bootstrapStatus);
 
   useEffect(() => {
-    if (!token || !admin || bootstrapStatus !== 'idle') {
+    bootstrapStatusRef.current = bootstrapStatus;
+  }, [bootstrapStatus]);
+
+  useEffect(() => {
+    if (!token || !admin || bootstrapStatusRef.current !== 'idle') {
       return;
     }
 
@@ -84,7 +89,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [admin, bootstrapStatus, logout, setBootstrapStatus, setSession, token]);
+  }, [admin, logout, setBootstrapStatus, setSession, token]);
 
   if (!token || !admin) {
     return <Navigate to="/login" replace />;

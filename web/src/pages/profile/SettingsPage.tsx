@@ -17,6 +17,7 @@ import {
 } from '../../services/settings';
 import type { SettingsFormVM } from '../../types/viewModels';
 import { formatDateTime } from '../../utils/format';
+import { getUploadedAssetPath, normalizeStoredAssetPath, toAbsoluteAssetUrl } from '../../utils/asset';
 import styles from './SettingsPage.module.scss';
 
 interface RawProfile {
@@ -266,12 +267,12 @@ export function SettingsPage() {
       ]);
       setProfile(profileData);
       setNickname(profileData.nickname || '');
-      setAvatar(profileData.avatar || '');
+      setAvatar(normalizeStoredAssetPath(profileData.avatar || ''));
       setBirthday(profileData.birthday || '');
       setBirthdayDraft(createBirthdayDraft(profileData.birthday || ''));
       setBio(profileData.bio || '');
       setInitialNickname(profileData.nickname || '');
-      setInitialAvatar(profileData.avatar || '');
+      setInitialAvatar(normalizeStoredAssetPath(profileData.avatar || ''));
       setInitialBirthday(profileData.birthday || '');
       setInitialBio(profileData.bio || '');
       setSettings(settingsData);
@@ -506,7 +507,7 @@ export function SettingsPage() {
       setUploadingAvatar(true);
       setProfileFeedback(null);
       const uploaded = await uploadFile('/upload', file);
-      setAvatar(uploaded.path || uploaded.url || avatar);
+      setAvatar(getUploadedAssetPath(uploaded, avatar));
       setProfileFeedback({ tone: 'success', text: '头像已上传，记得保存。' });
     } catch (err) {
       setProfileFeedback({ tone: 'error', text: err instanceof Error ? err.message : '头像上传失败，请稍后重试。' });
@@ -533,7 +534,7 @@ export function SettingsPage() {
       const nextProfile: RawProfile = {
         ...profile,
         nickname: payload.nickname,
-        avatar: payload.avatar,
+        avatar: toAbsoluteAssetUrl(payload.avatar),
         birthday: payload.birthday,
         bio: payload.bio,
       };
@@ -711,7 +712,7 @@ export function SettingsPage() {
             <div className={styles.profileCard}>
               <div className={styles.avatarArea}>
                 <div className={styles.avatarShell}>
-                  {avatar ? <img alt={`${displayName}头像`} className={styles.avatarImage} src={avatar} /> : <div className={styles.avatarFallback}>{avatarFallback}</div>}
+                  {avatar ? <img alt={`${displayName}头像`} className={styles.avatarImage} src={toAbsoluteAssetUrl(avatar)} /> : <div className={styles.avatarFallback}>{avatarFallback}</div>}
                 </div>
                 <input accept="image/png,image/jpeg,image/webp,image/gif" className={styles.hiddenInput} onChange={handleAvatarChange} ref={fileInputRef} type="file" />
                 <button className={styles.secondaryButton} onClick={handleAvatarPick} type="button">

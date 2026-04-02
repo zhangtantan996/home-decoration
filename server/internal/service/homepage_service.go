@@ -229,16 +229,9 @@ func (s *HomepageService) featuredProviders(providerType int8, limit int) ([]Hom
 
 	items := make([]HomepageFeaturedProvider, len(providers))
 	for i, p := range providers {
-		avatar := imgutil.GetFullImageURL(p.CoverImage)
-		nickname := p.CompanyName
-		if u, ok := userMap[p.UserID]; ok {
-			if u.Avatar != "" {
-				avatar = imgutil.GetFullImageURL(u.Avatar)
-			}
-			if u.Nickname != "" {
-				nickname = u.Nickname
-			}
-		}
+		user := userMap[p.UserID]
+		avatar := imgutil.GetFullImageURL(ResolveProviderAvatarPathWithUser(p, &user))
+		nickname := ResolveProviderDisplayName(p, &user)
 		items[i] = HomepageFeaturedProvider{
 			ID:              p.ID,
 			ProviderType:    p.ProviderType,

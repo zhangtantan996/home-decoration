@@ -460,10 +460,51 @@ export const ACCOUNT_BOUND_STATUS_META: Record<string, { text: string; color: st
   false: { text: '未绑定账号', color: 'default' },
 };
 
+export const ACCOUNT_STATUS_META: Record<string, { text: string; color: string }> = {
+  unbound: { text: '未绑定', color: 'default' },
+  active: { text: '账号正常', color: 'green' },
+  disabled: { text: '账号已禁用', color: 'red' },
+};
+
+export const ACCOUNT_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'unbound', label: '未绑定' },
+  { value: 'active', label: '账号正常' },
+  { value: 'disabled', label: '账号已禁用' },
+];
+
 export const LOGIN_ENABLED_STATUS_META: Record<string, { text: string; color: string }> = {
   true: { text: '可登录', color: 'success' },
   false: { text: '不可登录', color: 'warning' },
 };
+
+export const LOGIN_STATUS_META: Record<string, { text: string; color: string }> = {
+  unbound: { text: '未绑定', color: 'default' },
+  enabled: { text: '可登录', color: 'green' },
+  disabled_by_account: { text: '账号已禁用', color: 'red' },
+  disabled_by_entity: { text: '主体已封禁', color: 'orange' },
+};
+
+export const OPERATING_STATUS_META: Record<string, { text: string; color: string }> = {
+  unopened: { text: '未开通', color: 'default' },
+  restricted: { text: '受限', color: 'orange' },
+  active: { text: '正常经营', color: 'green' },
+  frozen: { text: '已封禁', color: 'red' },
+};
+
+export const OPERATING_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'unopened', label: '未开通' },
+  { value: 'restricted', label: '受限' },
+  { value: 'active', label: '正常经营' },
+  { value: 'frozen', label: '已封禁' },
+];
+
+export const ONBOARDING_STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'none', label: '未绑定' },
+  { value: 'required', label: '待补全' },
+  { value: 'pending_review', label: '待审核' },
+  { value: 'rejected', label: '已驳回' },
+  { value: 'approved', label: '已完成' },
+];
 
 export const SETTLED_STATUS_META: Record<string, { text: string; color: string }> = {
   true: { text: '已入驻', color: 'green' },

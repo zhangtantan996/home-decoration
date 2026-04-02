@@ -139,6 +139,45 @@ func TestUpdateProfileReadsUint64UserID(t *testing.T) {
 	}
 }
 
+func TestUpdateProfileNormalizesAbsoluteAvatarURLToStoredPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupUserProfileHandlerDB(t)
+
+	user := model.User{
+		Phone:    "13800138011",
+		Nickname: "旧昵称",
+		UserType: 1,
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/user/profile",
+		bytes.NewReader([]byte(`{"nickname":"新昵称","avatar":"https://cdn.example.com/uploads/avatar.png?x=1"}`)),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("userId", user.ID)
+
+	UpdateProfile(c)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+
+	var updated model.User
+	if err := db.First(&updated, user.ID).Error; err != nil {
+		t.Fatalf("load updated user: %v", err)
+	}
+	if updated.Avatar != "/uploads/avatar.png" {
+		t.Fatalf("expected stored avatar path to be normalized, got %q", updated.Avatar)
+	}
+}
+
 func TestUpdateProfileRejectsInvalidBirthday(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupUserProfileHandlerDB(t)

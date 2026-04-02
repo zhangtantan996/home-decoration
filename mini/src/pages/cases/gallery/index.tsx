@@ -63,6 +63,7 @@ const CaseGalleryPage: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const galleryKind: GalleryKind = source === 'inspiration' ? 'scene' : 'craft';
 
   useLoad((options) => {
     setProviderId(Number(options.providerId || 0));
@@ -88,7 +89,9 @@ const CaseGalleryPage: React.FC = () => {
     }
 
     try {
-      const res = await getProviderCases(providerType, providerId, targetPage, PAGE_SIZE);
+      const res = galleryKind === 'scene'
+        ? await getProviderSceneCases(providerId, targetPage, PAGE_SIZE)
+        : await getProviderCases(providerType, providerId, targetPage, PAGE_SIZE);
       const nextList = res.list || [];
       setList((prev) => (reset ? nextList : [...prev, ...nextList]));
       setPage(targetPage + 1);

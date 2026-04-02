@@ -9,6 +9,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 
 	"gorm.io/gorm"
 )
@@ -99,7 +100,7 @@ func (s *BookingService) SubmitMerchantSiteSurvey(providerID, bookingID uint64, 
 		return nil, err
 	}
 
-	photosJSON, err := json.Marshal(req.Photos)
+	photosJSON, err := json.Marshal(normalizeStoredAssetSlice(req.Photos))
 	if err != nil {
 		return nil, fmt.Errorf("序列化量房照片失败: %w", err)
 	}
@@ -459,7 +460,7 @@ func toSiteSurveyDetail(survey *model.SiteSurvey) (*SiteSurveyDetail, error) {
 		ID:                    survey.ID,
 		BookingID:             survey.BookingID,
 		ProviderID:            survey.ProviderID,
-		Photos:                photos,
+		Photos:                imgutil.GetFullImageURLs(photos),
 		Dimensions:            dimensions,
 		Notes:                 survey.Notes,
 		Status:                survey.Status,

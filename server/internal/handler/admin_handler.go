@@ -29,6 +29,420 @@ func getAdminUserCleanupService() *service.AdminUserCleanupService {
 	return service.NewAdminUserCleanupService(repository.DB)
 }
 
+const (
+	adminAccountStatusUnbound  = "unbound"
+	adminAccountStatusActive   = "active"
+	adminAccountStatusDisabled = "disabled"
+
+	adminLoginStatusUnbound           = "unbound"
+	adminLoginStatusEnabled           = "enabled"
+	adminLoginStatusDisabledByAccount = "disabled_by_account"
+	adminLoginStatusDisabledByEntity  = "disabled_by_entity"
+
+	adminOperatingStatusUnopened   = "unopened"
+	adminOperatingStatusRestricted = "restricted"
+	adminOperatingStatusActive     = "active"
+	adminOperatingStatusFrozen     = "frozen"
+
+	adminOnboardingStatusNone = "none"
+)
+
+type adminLinkedUserBrief struct {
+	ID       uint64
+	Phone    string
+	Nickname string
+	Status   int8
+}
+
+func resolveAdminAccountStatus(hasBoundUser bool, userStatus int8) string {
+	if !hasBoundUser {
+		return adminAccountStatusUnbound
+	}
+	if userStatus == 1 {
+		return adminAccountStatusActive
+	}
+	return adminAccountStatusDisabled
+}
+
+func resolveAdminProviderLoginStatus(provider model.Provider, hasBoundUser bool, userStatus int8) string {
+	if !hasBoundUser {
+		return adminLoginStatusUnbound
+	}
+	if userStatus != 1 {
+		return adminLoginStatusDisabledByAccount
+	}
+	if provider.Status != merchantProviderStatusActive {
+		return adminLoginStatusDisabledByEntity
+	}
+	return adminLoginStatusEnabled
+}
+
+func resolveAdminMaterialShopLoginStatus(shop model.MaterialShop, hasBoundUser bool, userStatus int8) string {
+	if !hasBoundUser {
+		return adminLoginStatusUnbound
+	}
+	if userStatus != 1 {
+		return adminLoginStatusDisabledByAccount
+	}
+	if !service.IsMaterialShopLoginEnabled(&shop) {
+		return adminLoginStatusDisabledByEntity
+	}
+	return adminLoginStatusEnabled
+}
+
+func resolveAdminProviderOperatingStatus(provider model.Provider, hasBoundUser bool, onboardingStatus string) string {
+	if !hasBoundUser {
+		return adminOperatingStatusUnopened
+	}
+	if provider.Status != merchantProviderStatusActive {
+		return adminOperatingStatusFrozen
+	}
+	if onboardingStatus != merchantOnboardingStatusApproved {
+		return adminOperatingStatusRestricted
+	}
+	return adminOperatingStatusActive
+}
+
+func resolveAdminMaterialShopOperatingStatus(shop model.MaterialShop, hasBoundUser bool, onboardingStatus string) string {
+	if !hasBoundUser {
+		return adminOperatingStatusUnopened
+	}
+	if !service.IsMaterialShopActive(&shop) {
+		return adminOperatingStatusFrozen
+	}
+	if onboardingStatus != merchantOnboardingStatusApproved {
+		return adminOperatingStatusRestricted
+	}
+	return adminOperatingStatusActive
+}
+
+func resolveAdminProviderOnboardingStatus(provider model.Provider, hasBoundUser bool, app *model.MerchantApplication) string {
+	if !hasBoundUser {
+		return adminOnboardingStatusNone
+	}
+	return resolveProviderOnboardingStatus(provider, app)
+}
+
+func resolveAdminMaterialShopOnboardingStatus(shop model.MaterialShop, hasBoundUser bool, app *model.MaterialShopApplication) string {
+	if !hasBoundUser {
+		return adminOnboardingStatusNone
+	}
+	return resolveMaterialShopOnboardingStatus(shop, app)
+}
+
+func matchesAdminDerivedStatusFilter(actual, expected string) bool {
+	expected = strings.TrimSpace(expected)
+	return expected == "" || expected == actual
+}
+
+const (
+	adminProviderBoundUserAlias            = "admin_provider_bound_users"
+	adminProviderLatestCompletionAlias     = "admin_provider_latest_completion"
+	adminMaterialShopBoundUserAlias        = "admin_material_shop_bound_users"
+	adminMaterialShopLatestCompletionAlias = "admin_material_shop_latest_completion"
+)
+
+func adminProviderBoundCondition() string {
+	return fmt.Sprintf("providers.user_id > 0 AND %s.id IS NOT NULL", adminProviderBoundUserAlias)
+}
+
+func adminProviderUnboundCondition() string {
+	return fmt.Sprintf("(providers.user_id = 0 OR %s.id IS NULL)", adminProviderBoundUserAlias)
+}
+
+func adminProviderOnboardingApprovedCondition() string {
+	return fmt.Sprintf("(%s AND (providers.needs_onboarding_completion = false OR COALESCE(%s.status, -1) = 1))", adminProviderBoundCondition(), adminProviderLatestCompletionAlias)
+}
+
+func adminProviderOnboardingRequiredCondition() string {
+	return fmt.Sprintf("(%s AND providers.needs_onboarding_completion = true AND %s.provider_id IS NULL)", adminProviderBoundCondition(), adminProviderLatestCompletionAlias)
+}
+
+func adminProviderOnboardingPendingReviewCondition() string {
+	return fmt.Sprintf("(%s AND providers.needs_onboarding_completion = true AND %s.status = 0)", adminProviderBoundCondition(), adminProviderLatestCompletionAlias)
+}
+
+func adminProviderOnboardingRejectedCondition() string {
+	return fmt.Sprintf("(%s AND providers.needs_onboarding_completion = true AND %s.status = 2)", adminProviderBoundCondition(), adminProviderLatestCompletionAlias)
+}
+
+func adminMaterialShopBoundCondition() string {
+	return fmt.Sprintf("material_shops.user_id > 0 AND %s.id IS NOT NULL", adminMaterialShopBoundUserAlias)
+}
+
+func adminMaterialShopUnboundCondition() string {
+	return fmt.Sprintf("(material_shops.user_id = 0 OR %s.id IS NULL)", adminMaterialShopBoundUserAlias)
+}
+
+func adminMaterialShopOnboardingApprovedCondition() string {
+	return fmt.Sprintf("(%s AND (material_shops.needs_onboarding_completion = false OR COALESCE(%s.status, -1) = 1))", adminMaterialShopBoundCondition(), adminMaterialShopLatestCompletionAlias)
+}
+
+func adminMaterialShopOnboardingRequiredCondition() string {
+	return fmt.Sprintf("(%s AND material_shops.needs_onboarding_completion = true AND %s.shop_id IS NULL)", adminMaterialShopBoundCondition(), adminMaterialShopLatestCompletionAlias)
+}
+
+func adminMaterialShopOnboardingPendingReviewCondition() string {
+	return fmt.Sprintf("(%s AND material_shops.needs_onboarding_completion = true AND %s.status = 0)", adminMaterialShopBoundCondition(), adminMaterialShopLatestCompletionAlias)
+}
+
+func adminMaterialShopOnboardingRejectedCondition() string {
+	return fmt.Sprintf("(%s AND material_shops.needs_onboarding_completion = true AND %s.status = 2)", adminMaterialShopBoundCondition(), adminMaterialShopLatestCompletionAlias)
+}
+
+func adminProviderLatestCompletionJoin() string {
+	return fmt.Sprintf(`LEFT JOIN (
+		SELECT provider_id, status
+		FROM (
+			SELECT provider_id, status,
+				ROW_NUMBER() OVER (PARTITION BY provider_id ORDER BY updated_at DESC, id DESC) AS rn
+			FROM merchant_applications
+			WHERE application_scene = ?
+		) AS admin_provider_completion_ranked
+		WHERE admin_provider_completion_ranked.rn = 1
+	) AS %s ON %s.provider_id = providers.id`, adminProviderLatestCompletionAlias, adminProviderLatestCompletionAlias)
+}
+
+func adminMaterialShopLatestCompletionJoin() string {
+	return fmt.Sprintf(`LEFT JOIN (
+		SELECT shop_id, status
+		FROM (
+			SELECT shop_id, status,
+				ROW_NUMBER() OVER (PARTITION BY shop_id ORDER BY updated_at DESC, id DESC) AS rn
+			FROM material_shop_applications
+			WHERE application_scene = ?
+		) AS admin_material_shop_completion_ranked
+		WHERE admin_material_shop_completion_ranked.rn = 1
+	) AS %s ON %s.shop_id = material_shops.id`, adminMaterialShopLatestCompletionAlias, adminMaterialShopLatestCompletionAlias)
+}
+
+func applyAdminProviderDerivedStatusFilters(db *gorm.DB, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter string) *gorm.DB {
+	switch strings.TrimSpace(accountStatusFilter) {
+	case "":
+	case adminAccountStatusUnbound:
+		db = db.Where(adminProviderUnboundCondition())
+	case adminAccountStatusActive:
+		db = db.Where(fmt.Sprintf("%s AND %s.status = 1", adminProviderBoundCondition(), adminProviderBoundUserAlias))
+	case adminAccountStatusDisabled:
+		db = db.Where(fmt.Sprintf("%s AND %s.status <> 1", adminProviderBoundCondition(), adminProviderBoundUserAlias))
+	default:
+		db = db.Where("1 = 0")
+	}
+
+	switch strings.TrimSpace(onboardingStatusFilter) {
+	case "":
+	case adminOnboardingStatusNone:
+		db = db.Where(adminProviderUnboundCondition())
+	case merchantOnboardingStatusApproved:
+		db = db.Where(adminProviderOnboardingApprovedCondition())
+	case merchantOnboardingStatusRequired:
+		db = db.Where(adminProviderOnboardingRequiredCondition())
+	case merchantOnboardingStatusPendingReview:
+		db = db.Where(adminProviderOnboardingPendingReviewCondition())
+	case merchantOnboardingStatusRejected:
+		db = db.Where(adminProviderOnboardingRejectedCondition())
+	default:
+		db = db.Where("1 = 0")
+	}
+
+	switch strings.TrimSpace(operatingStatusFilter) {
+	case "":
+	case adminOperatingStatusUnopened:
+		db = db.Where(adminProviderUnboundCondition())
+	case adminOperatingStatusFrozen:
+		db = db.Where(fmt.Sprintf("%s AND providers.status <> %d", adminProviderBoundCondition(), merchantProviderStatusActive))
+	case adminOperatingStatusActive:
+		db = db.Where(fmt.Sprintf("%s AND providers.status = %d", adminProviderOnboardingApprovedCondition(), merchantProviderStatusActive))
+	case adminOperatingStatusRestricted:
+		db = db.Where(fmt.Sprintf("%s AND providers.status = %d AND providers.needs_onboarding_completion = true AND COALESCE(%s.status, -1) <> 1", adminProviderBoundCondition(), merchantProviderStatusActive, adminProviderLatestCompletionAlias))
+	default:
+		db = db.Where("1 = 0")
+	}
+
+	return db
+}
+
+func applyAdminMaterialShopDerivedStatusFilters(db *gorm.DB, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter string) *gorm.DB {
+	switch strings.TrimSpace(accountStatusFilter) {
+	case "":
+	case adminAccountStatusUnbound:
+		db = db.Where(adminMaterialShopUnboundCondition())
+	case adminAccountStatusActive:
+		db = db.Where(fmt.Sprintf("%s AND %s.status = 1", adminMaterialShopBoundCondition(), adminMaterialShopBoundUserAlias))
+	case adminAccountStatusDisabled:
+		db = db.Where(fmt.Sprintf("%s AND %s.status <> 1", adminMaterialShopBoundCondition(), adminMaterialShopBoundUserAlias))
+	default:
+		db = db.Where("1 = 0")
+	}
+
+	switch strings.TrimSpace(onboardingStatusFilter) {
+	case "":
+	case adminOnboardingStatusNone:
+		db = db.Where(adminMaterialShopUnboundCondition())
+	case merchantOnboardingStatusApproved:
+		db = db.Where(adminMaterialShopOnboardingApprovedCondition())
+	case merchantOnboardingStatusRequired:
+		db = db.Where(adminMaterialShopOnboardingRequiredCondition())
+	case merchantOnboardingStatusPendingReview:
+		db = db.Where(adminMaterialShopOnboardingPendingReviewCondition())
+	case merchantOnboardingStatusRejected:
+		db = db.Where(adminMaterialShopOnboardingRejectedCondition())
+	default:
+		db = db.Where("1 = 0")
+	}
+
+	switch strings.TrimSpace(operatingStatusFilter) {
+	case "":
+	case adminOperatingStatusUnopened:
+		db = db.Where(adminMaterialShopUnboundCondition())
+	case adminOperatingStatusFrozen:
+		db = db.Where(fmt.Sprintf("%s AND COALESCE(material_shops.status, 1) <> 1", adminMaterialShopBoundCondition()))
+	case adminOperatingStatusActive:
+		db = db.Where(fmt.Sprintf("%s AND COALESCE(material_shops.status, 1) = 1", adminMaterialShopOnboardingApprovedCondition()))
+	case adminOperatingStatusRestricted:
+		db = db.Where(fmt.Sprintf("%s AND COALESCE(material_shops.status, 1) = 1 AND material_shops.needs_onboarding_completion = true AND COALESCE(%s.status, -1) <> 1", adminMaterialShopBoundCondition(), adminMaterialShopLatestCompletionAlias))
+	default:
+		db = db.Where("1 = 0")
+	}
+
+	return db
+}
+
+func adminProviderPriorityOrderExpr() string {
+	bound := adminProviderBoundCondition()
+	return strings.Join([]string{
+		"CASE",
+		fmt.Sprintf("WHEN %s AND providers.needs_onboarding_completion = true AND COALESCE(%s.status, -1) = 2 THEN 0", bound, adminProviderLatestCompletionAlias),
+		fmt.Sprintf("WHEN %s AND providers.needs_onboarding_completion = true AND COALESCE(%s.status, -1) = 0 THEN 1", bound, adminProviderLatestCompletionAlias),
+		fmt.Sprintf("WHEN %s AND providers.needs_onboarding_completion = true AND COALESCE(%s.status, -1) NOT IN (0, 1, 2) THEN 2", bound, adminProviderLatestCompletionAlias),
+		fmt.Sprintf("WHEN %s AND providers.status <> %d THEN 3", bound, merchantProviderStatusActive),
+		fmt.Sprintf("WHEN %s AND %s.status <> 1 THEN 4", bound, adminProviderBoundUserAlias),
+		fmt.Sprintf("WHEN (%s OR providers.is_settled = false) THEN 5", adminProviderUnboundCondition()),
+		"WHEN providers.verified = false THEN 6",
+		"ELSE 7 END",
+	}, " ")
+}
+
+func adminMaterialShopPriorityOrderExpr() string {
+	bound := adminMaterialShopBoundCondition()
+	return strings.Join([]string{
+		"CASE",
+		fmt.Sprintf("WHEN %s AND material_shops.needs_onboarding_completion = true AND COALESCE(%s.status, -1) = 2 THEN 0", bound, adminMaterialShopLatestCompletionAlias),
+		fmt.Sprintf("WHEN %s AND material_shops.needs_onboarding_completion = true AND COALESCE(%s.status, -1) = 0 THEN 1", bound, adminMaterialShopLatestCompletionAlias),
+		fmt.Sprintf("WHEN %s AND material_shops.needs_onboarding_completion = true AND COALESCE(%s.status, -1) NOT IN (0, 1, 2) THEN 2", bound, adminMaterialShopLatestCompletionAlias),
+		fmt.Sprintf("WHEN %s AND (COALESCE(material_shops.status, 1) <> 1 OR (%s.status = 1 AND material_shops.is_verified = false AND material_shops.needs_onboarding_completion = false)) THEN 3", bound, adminMaterialShopBoundUserAlias),
+		fmt.Sprintf("WHEN %s AND %s.status <> 1 THEN 4", bound, adminMaterialShopBoundUserAlias),
+		fmt.Sprintf("WHEN (%s OR material_shops.is_settled = false) THEN 5", adminMaterialShopUnboundCondition()),
+		"WHEN material_shops.is_verified = false THEN 6",
+		"ELSE 7 END",
+	}, " ")
+}
+
+func buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter string, includeDerivedOrdering bool) *gorm.DB {
+	db := repository.DB.Model(&model.Provider{})
+	if providerType != "" {
+		db = db.Where("provider_type = ?", providerType)
+	}
+	if verified == "true" {
+		db = db.Where("verified = true")
+	} else if verified == "false" {
+		db = db.Where("verified = false")
+	}
+	if isSettled == "true" {
+		db = db.Where("is_settled = true")
+	} else if isSettled == "false" {
+		db = db.Where("is_settled = false")
+	}
+
+	needsUserJoin := includeDerivedOrdering || strings.TrimSpace(accountStatusFilter) != "" || strings.TrimSpace(onboardingStatusFilter) != "" || strings.TrimSpace(operatingStatusFilter) != ""
+	needsCompletionJoin := includeDerivedOrdering || strings.TrimSpace(onboardingStatusFilter) != "" || strings.TrimSpace(operatingStatusFilter) != ""
+	if needsUserJoin {
+		db = db.Joins(fmt.Sprintf("LEFT JOIN users AS %s ON %s.id = providers.user_id", adminProviderBoundUserAlias, adminProviderBoundUserAlias))
+	}
+	if needsCompletionJoin {
+		db = db.Joins(adminProviderLatestCompletionJoin(), model.MerchantApplicationSceneClaimedCompletion)
+	}
+	if needsUserJoin {
+		db = applyAdminProviderDerivedStatusFilters(db, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter)
+	}
+
+	return db
+}
+
+func buildAdminMaterialShopListQuery(shopType, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter string, includeDerivedOrdering bool) *gorm.DB {
+	db := repository.DB.Model(&model.MaterialShop{})
+	if shopType != "" {
+		db = db.Where("type = ?", shopType)
+	}
+	if isSettled == "true" {
+		db = db.Where("is_settled = true")
+	} else if isSettled == "false" {
+		db = db.Where("is_settled = false")
+	}
+
+	needsUserJoin := includeDerivedOrdering || strings.TrimSpace(accountStatusFilter) != "" || strings.TrimSpace(onboardingStatusFilter) != "" || strings.TrimSpace(operatingStatusFilter) != ""
+	needsCompletionJoin := includeDerivedOrdering || strings.TrimSpace(onboardingStatusFilter) != "" || strings.TrimSpace(operatingStatusFilter) != ""
+	if needsUserJoin {
+		db = db.Joins(fmt.Sprintf("LEFT JOIN users AS %s ON %s.id = material_shops.user_id", adminMaterialShopBoundUserAlias, adminMaterialShopBoundUserAlias))
+	}
+	if needsCompletionJoin {
+		db = db.Joins(adminMaterialShopLatestCompletionJoin(), model.MerchantApplicationSceneClaimedCompletion)
+	}
+	if needsUserJoin {
+		db = applyAdminMaterialShopDerivedStatusFilters(db, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter)
+	}
+
+	return db
+}
+
+func findLatestClaimedCompletionApplicationsByProviderIDs(tx *gorm.DB, providerIDs []uint64) (map[uint64]*model.MerchantApplication, error) {
+	result := make(map[uint64]*model.MerchantApplication, len(providerIDs))
+	if len(providerIDs) == 0 {
+		return result, nil
+	}
+
+	ranked := tx.Model(&model.MerchantApplication{}).
+		Select("merchant_applications.*, ROW_NUMBER() OVER (PARTITION BY provider_id ORDER BY updated_at DESC, id DESC) AS rn").
+		Where("application_scene = ? AND provider_id IN ?", model.MerchantApplicationSceneClaimedCompletion, providerIDs)
+
+	var apps []model.MerchantApplication
+	if err := tx.Table("(?) AS admin_provider_completion_ranked", ranked).
+		Where("admin_provider_completion_ranked.rn = 1").
+		Find(&apps).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range apps {
+		app := apps[i]
+		result[app.ProviderID] = &app
+	}
+	return result, nil
+}
+
+func findLatestClaimedMaterialShopCompletionApplicationsByShopIDs(tx *gorm.DB, shopIDs []uint64) (map[uint64]*model.MaterialShopApplication, error) {
+	result := make(map[uint64]*model.MaterialShopApplication, len(shopIDs))
+	if len(shopIDs) == 0 {
+		return result, nil
+	}
+
+	ranked := tx.Model(&model.MaterialShopApplication{}).
+		Select("material_shop_applications.*, ROW_NUMBER() OVER (PARTITION BY shop_id ORDER BY updated_at DESC, id DESC) AS rn").
+		Where("application_scene = ? AND shop_id IN ?", model.MerchantApplicationSceneClaimedCompletion, shopIDs)
+
+	var apps []model.MaterialShopApplication
+	if err := tx.Table("(?) AS admin_material_shop_completion_ranked", ranked).
+		Where("admin_material_shop_completion_ranked.rn = 1").
+		Find(&apps).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range apps {
+		app := apps[i]
+		result[app.ShopID] = &app
+	}
+	return result, nil
+}
+
 // AdminStatsOverview 概览统计
 func AdminStatsOverview(c *gin.Context) {
 	var stats struct {
@@ -207,8 +621,11 @@ func AdminListUsers(c *gin.Context) {
 
 	type adminUserListRow struct {
 		model.User
-		RoleType  string `json:"roleType"`
-		RoleLabel string `json:"roleLabel"`
+		RoleType          string `json:"roleType"`
+		RoleLabel         string `json:"roleLabel"`
+		PrimaryEntityType string `json:"primaryEntityType,omitempty"`
+		PrimaryEntityID   uint64 `json:"primaryEntityId,omitempty"`
+		PrimaryEntityName string `json:"primaryEntityName,omitempty"`
 	}
 
 	db := repository.DB.Model(&model.User{})
@@ -270,10 +687,31 @@ func AdminListUsers(c *gin.Context) {
 		if roleType != "" && roleType != derivedRoleType {
 			continue
 		}
+		primaryEntityType := ""
+		var primaryEntityID uint64
+		primaryEntityName := ""
+		if shop, ok := materialShopMap[user.ID]; ok && shop.ID > 0 {
+			primaryEntityType = "material_shop"
+			primaryEntityID = shop.ID
+			primaryEntityName = strings.TrimSpace(shop.Name)
+			if primaryEntityName == "" {
+				primaryEntityName = strings.TrimSpace(shop.CompanyName)
+			}
+		} else if provider, ok := providerMap[user.ID]; ok && provider.ID > 0 {
+			primaryEntityType = "provider"
+			primaryEntityID = provider.ID
+			primaryEntityName = strings.TrimSpace(provider.CompanyName)
+			if primaryEntityName == "" {
+				primaryEntityName = strings.TrimSpace(user.Nickname)
+			}
+		}
 		rows = append(rows, adminUserListRow{
-			User:      user,
-			RoleType:  derivedRoleType,
-			RoleLabel: derivedRoleLabel,
+			User:              user,
+			RoleType:          derivedRoleType,
+			RoleLabel:         derivedRoleLabel,
+			PrimaryEntityType: primaryEntityType,
+			PrimaryEntityID:   primaryEntityID,
+			PrimaryEntityName: primaryEntityName,
 		})
 	}
 
@@ -540,9 +978,12 @@ type adminProviderListRow struct {
 	RealName           string                        `json:"realName"`
 	SourceLabel        string                        `json:"sourceLabel"`
 	AccountBound       bool                          `json:"accountBound"`
+	AccountStatus      string                        `json:"accountStatus"`
+	LoginStatus        string                        `json:"loginStatus"`
 	LoginEnabled       bool                          `json:"loginEnabled"`
 	CompletionRequired bool                          `json:"completionRequired"`
 	OnboardingStatus   string                        `json:"onboardingStatus"`
+	OperatingStatus    string                        `json:"operatingStatus"`
 	OperatingEnabled   bool                          `json:"operatingEnabled"`
 	CompletionAppID    uint64                        `json:"completionApplicationId,omitempty"`
 	Visibility         service.VisibilityData        `json:"visibility"`
@@ -555,9 +996,12 @@ type adminMaterialShopListRow struct {
 	UserPhone          string                        `json:"userPhone"`
 	UserNickname       string                        `json:"userNickname"`
 	AccountBound       bool                          `json:"accountBound"`
+	AccountStatus      string                        `json:"accountStatus"`
+	LoginStatus        string                        `json:"loginStatus"`
 	LoginEnabled       bool                          `json:"loginEnabled"`
 	CompletionRequired bool                          `json:"completionRequired"`
 	OnboardingStatus   string                        `json:"onboardingStatus"`
+	OperatingStatus    string                        `json:"operatingStatus"`
 	OperatingEnabled   bool                          `json:"operatingEnabled"`
 	CompletionAppID    uint64                        `json:"completionApplicationId"`
 	SourceLabel        string                        `json:"sourceLabel"`
@@ -678,32 +1122,57 @@ func AdminListProviders(c *gin.Context) {
 	providerType := c.Query("type")
 	verified := c.Query("verified")
 	isSettled := c.Query("isSettled")
+	accountStatusFilter := c.Query("accountStatus")
+	onboardingStatusFilter := c.Query("onboardingStatus")
+	operatingStatusFilter := c.Query("operatingStatus")
 
-	var providers []model.Provider
+	query := buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, false)
+
 	var total int64
-
-	db := repository.DB.Model(&model.Provider{})
-	if providerType != "" {
-		db = db.Where("provider_type = ?", providerType)
-	}
-	if verified == "true" {
-		db = db.Where("verified = true")
-	} else if verified == "false" {
-		db = db.Where("verified = false")
-	}
-	if isSettled == "true" {
-		db = db.Where("is_settled = true")
-	} else if isSettled == "false" {
-		db = db.Where("is_settled = false")
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		response.ServerError(c, "加载失败")
+		return
 	}
 
-	db.Count(&total)
-	db.Order("is_settled DESC").
-		Order("verified DESC").
-		Order("id DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
-		Find(&providers)
+	var providerIDs []uint64
+	if total > 0 {
+		if err := buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, true).
+			Session(&gorm.Session{}).
+			Order(adminProviderPriorityOrderExpr()).
+			Order("providers.id DESC").
+			Offset((page-1)*pageSize).
+			Limit(pageSize).
+			Pluck("providers.id", &providerIDs).Error; err != nil {
+			response.ServerError(c, "加载失败")
+			return
+		}
+	}
+
+	if len(providerIDs) == 0 {
+		response.Success(c, gin.H{
+			"list":  make([]adminProviderListRow, 0),
+			"total": total,
+		})
+		return
+	}
+
+	var pageProviders []model.Provider
+	if err := repository.DB.Where("id IN ?", providerIDs).Find(&pageProviders).Error; err != nil {
+		response.ServerError(c, "加载失败")
+		return
+	}
+
+	providerByID := make(map[uint64]model.Provider, len(pageProviders))
+	for _, provider := range pageProviders {
+		providerByID[provider.ID] = provider
+	}
+
+	providers := make([]model.Provider, 0, len(providerIDs))
+	for _, id := range providerIDs {
+		if provider, ok := providerByID[id]; ok {
+			providers = append(providers, provider)
+		}
+	}
 
 	userIDs := make([]uint64, 0, len(providers))
 	for _, provider := range providers {
@@ -712,27 +1181,35 @@ func AdminListProviders(c *gin.Context) {
 		}
 	}
 
-	userNameMap := make(map[uint64]string, len(userIDs))
+	userMap := make(map[uint64]adminLinkedUserBrief, len(userIDs))
 	if len(userIDs) > 0 {
-		var users []model.User
-		repository.DB.Select("id", "nickname").Where("id IN ?", userIDs).Find(&users)
+		var users []adminLinkedUserBrief
+		repository.DB.Model(&model.User{}).Select("id", "phone", "nickname", "status").Where("id IN ?", userIDs).Find(&users)
 		for _, user := range users {
-			userNameMap[user.ID] = user.Nickname
+			userMap[user.ID] = user
 		}
+	}
+
+	completionAppMap, err := findLatestClaimedCompletionApplicationsByProviderIDs(repository.DB, providerIDs)
+	if err != nil {
+		response.ServerError(c, "加载失败")
+		return
 	}
 
 	list := make([]adminProviderListRow, 0, len(providers))
 	for _, provider := range providers {
 		provider.PlatformDisplayEnabled = service.ProviderPlatformDisplayEnabled(&provider)
 		provider.MerchantDisplayEnabled = service.ProviderMerchantDisplayEnabled(&provider)
-		completionApp, _ := findLatestClaimedCompletionApplication(repository.DB, provider.ID, provider.UserID)
-		onboardingStatus := "-"
-		if provider.UserID > 0 {
-			onboardingStatus = resolveProviderOnboardingStatus(provider, completionApp)
-		}
-		loginEnabled := provider.UserID > 0 && resolveProviderIdentityStatus(provider) == merchantIdentityStatusActive
-		completionRequired := provider.UserID > 0 && provider.NeedsOnboardingCompletion
-		operatingEnabled := provider.UserID > 0 && !provider.NeedsOnboardingCompletion && provider.Status == merchantProviderStatusActive
+		completionApp := completionAppMap[provider.ID]
+		userInfo, hasBoundUser := userMap[provider.UserID]
+		accountBound := provider.UserID > 0 && hasBoundUser
+		onboardingStatus := resolveAdminProviderOnboardingStatus(provider, accountBound, completionApp)
+		accountStatus := resolveAdminAccountStatus(accountBound, userInfo.Status)
+		loginStatus := resolveAdminProviderLoginStatus(provider, accountBound, userInfo.Status)
+		operatingStatus := resolveAdminProviderOperatingStatus(provider, accountBound, onboardingStatus)
+		loginEnabled := loginStatus == adminLoginStatusEnabled
+		completionRequired := accountBound && provider.NeedsOnboardingCompletion
+		operatingEnabled := operatingStatus == adminOperatingStatusActive
 		completionAppID := uint64(0)
 		if completionApp != nil {
 			completionAppID = completionApp.ID
@@ -756,12 +1233,15 @@ func AdminListProviders(c *gin.Context) {
 
 		list = append(list, adminProviderListRow{
 			Provider:           provider,
-			RealName:           userNameMap[provider.UserID],
+			RealName:           userInfo.Nickname,
 			SourceLabel:        resolveProviderSourceLabel(provider),
-			AccountBound:       provider.UserID > 0,
+			AccountBound:       accountBound,
+			AccountStatus:      accountStatus,
+			LoginStatus:        loginStatus,
 			LoginEnabled:       loginEnabled,
 			CompletionRequired: completionRequired,
 			OnboardingStatus:   onboardingStatus,
+			OperatingStatus:    operatingStatus,
 			OperatingEnabled:   operatingEnabled,
 			CompletionAppID:    completionAppID,
 			Visibility:         visibilityResult.Visibility,
@@ -822,6 +1302,7 @@ func AdminCreateProvider(c *gin.Context) {
 		UserID:          req.UserId,
 		ProviderType:    req.ProviderType,
 		CompanyName:     req.CompanyName,
+		DisplayName:     service.ResolveProviderStoredDisplayName(req.ProviderType, req.CompanyName, req.RealName),
 		SubType:         req.SubType,
 		Specialty:       req.Specialty,
 		YearsExperience: req.YearsExperience,
@@ -838,9 +1319,6 @@ func AdminCreateProvider(c *gin.Context) {
 	if err := repository.DB.Create(&provider).Error; err != nil {
 		response.ServerError(c, "创建失败")
 		return
-	}
-	if req.UserId > 0 && strings.TrimSpace(req.RealName) != "" {
-		_ = repository.DB.Model(&model.User{}).Where("id = ?", req.UserId).Update("nickname", strings.TrimSpace(req.RealName)).Error
 	}
 	response.Success(c, provider)
 }
@@ -895,6 +1373,13 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.CompanyName != "" {
 		updates["company_name"] = req.CompanyName
 	}
+	if req.RealName != "" || strings.TrimSpace(req.CompanyName) != "" {
+		effectiveCompanyName := provider.CompanyName
+		if strings.TrimSpace(req.CompanyName) != "" {
+			effectiveCompanyName = req.CompanyName
+		}
+		updates["display_name"] = service.ResolveProviderStoredDisplayName(provider.ProviderType, effectiveCompanyName, req.RealName)
+	}
 	if req.SubType != "" {
 		updates["sub_type"] = req.SubType
 	}
@@ -921,7 +1406,7 @@ func AdminUpdateProvider(c *gin.Context) {
 	}
 	updates["price_unit"] = model.ProviderPriceUnitPerSquareMeter
 	if req.CoverImage != "" {
-		updates["cover_image"] = req.CoverImage
+		updates["cover_image"] = normalizeStoredAsset(req.CoverImage)
 	}
 	if req.ServiceIntro != "" {
 		updates["service_intro"] = req.ServiceIntro
@@ -950,12 +1435,6 @@ func AdminUpdateProvider(c *gin.Context) {
 	if err := repository.DB.Model(&provider).Updates(updates).Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
-	}
-	if provider.UserID > 0 && strings.TrimSpace(req.RealName) != "" {
-		if err := repository.DB.Model(&model.User{}).Where("id = ?", provider.UserID).Update("nickname", strings.TrimSpace(req.RealName)).Error; err != nil {
-			response.ServerError(c, "更新负责人名称失败")
-			return
-		}
 	}
 	response.Success(c, provider)
 }
@@ -988,7 +1467,7 @@ func AdminUpdateProviderPlatformDisplay(c *gin.Context) {
 		return
 	}
 
-	if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.Provider{}, "PlatformDisplayEnabled") {
+	if !service.SupportsProviderPlatformDisplayEnabled() {
 		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("服务商平台展示开关"))
 		return
 	}
@@ -1384,27 +1863,57 @@ func AdminListMaterialShops(c *gin.Context) {
 	pageSize := parseInt(c.Query("pageSize"), 10)
 	shopType := c.Query("type")
 	isSettled := c.Query("isSettled")
+	accountStatusFilter := c.Query("accountStatus")
+	onboardingStatusFilter := c.Query("onboardingStatus")
+	operatingStatusFilter := c.Query("operatingStatus")
 
-	var shops []model.MaterialShop
+	query := buildAdminMaterialShopListQuery(shopType, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, false)
+
 	var total int64
-
-	db := repository.DB.Model(&model.MaterialShop{})
-	if shopType != "" {
-		db = db.Where("type = ?", shopType)
-	}
-	if isSettled == "true" {
-		db = db.Where("is_settled = true")
-	} else if isSettled == "false" {
-		db = db.Where("is_settled = false")
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		response.ServerError(c, "加载失败")
+		return
 	}
 
-	db.Count(&total)
-	db.Order("is_settled DESC").
-		Order("is_verified DESC").
-		Order("id DESC").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize).
-		Find(&shops)
+	var shopIDs []uint64
+	if total > 0 {
+		if err := buildAdminMaterialShopListQuery(shopType, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, true).
+			Session(&gorm.Session{}).
+			Order(adminMaterialShopPriorityOrderExpr()).
+			Order("material_shops.id DESC").
+			Offset((page-1)*pageSize).
+			Limit(pageSize).
+			Pluck("material_shops.id", &shopIDs).Error; err != nil {
+			response.ServerError(c, "加载失败")
+			return
+		}
+	}
+
+	if len(shopIDs) == 0 {
+		response.Success(c, gin.H{
+			"list":  make([]adminMaterialShopListRow, 0),
+			"total": total,
+		})
+		return
+	}
+
+	var pageShops []model.MaterialShop
+	if err := repository.DB.Where("id IN ?", shopIDs).Find(&pageShops).Error; err != nil {
+		response.ServerError(c, "加载失败")
+		return
+	}
+
+	shopByID := make(map[uint64]model.MaterialShop, len(pageShops))
+	for _, shop := range pageShops {
+		shopByID[shop.ID] = shop
+	}
+
+	shops := make([]model.MaterialShop, 0, len(shopIDs))
+	for _, id := range shopIDs {
+		if shop, ok := shopByID[id]; ok {
+			shops = append(shops, shop)
+		}
+	}
 
 	userIDs := make([]uint64, 0, len(shops))
 	for _, shop := range shops {
@@ -1413,18 +1922,19 @@ func AdminListMaterialShops(c *gin.Context) {
 		}
 	}
 
-	type userBrief struct {
-		ID       uint64
-		Phone    string
-		Nickname string
-	}
-	userMap := make(map[uint64]userBrief, len(userIDs))
+	userMap := make(map[uint64]adminLinkedUserBrief, len(userIDs))
 	if len(userIDs) > 0 {
-		var users []userBrief
-		repository.DB.Model(&model.User{}).Select("id", "phone", "nickname").Where("id IN ?", userIDs).Find(&users)
+		var users []adminLinkedUserBrief
+		repository.DB.Model(&model.User{}).Select("id", "phone", "nickname", "status").Where("id IN ?", userIDs).Find(&users)
 		for _, user := range users {
 			userMap[user.ID] = user
 		}
+	}
+
+	completionAppMap, err := findLatestClaimedMaterialShopCompletionApplicationsByShopIDs(repository.DB, shopIDs)
+	if err != nil {
+		response.ServerError(c, "加载失败")
+		return
 	}
 
 	list := make([]adminMaterialShopListRow, 0, len(shops))
@@ -1450,14 +1960,15 @@ func AdminListMaterialShops(c *gin.Context) {
 		}
 
 		userInfo, hasUser := userMap[shop.UserID]
+		accountBound := shop.UserID > 0 && hasUser
 		sourceLabel := resolveMaterialShopSourceLabel(shop)
-		completionApp, _ := findLatestClaimedMaterialShopCompletionApplication(repository.DB, shop.ID, shop.UserID)
-		onboardingStatus := "-"
-		if shop.UserID > 0 {
-			onboardingStatus = resolveMaterialShopOnboardingStatus(shop, completionApp)
-		}
-		completionRequired := shop.UserID > 0 && shop.NeedsOnboardingCompletion
-		operatingEnabled := shop.UserID > 0 && !shop.NeedsOnboardingCompletion && service.IsMaterialShopActive(&shop)
+		completionApp := completionAppMap[shop.ID]
+		onboardingStatus := resolveAdminMaterialShopOnboardingStatus(shop, accountBound, completionApp)
+		accountStatus := resolveAdminAccountStatus(accountBound, userInfo.Status)
+		loginStatus := resolveAdminMaterialShopLoginStatus(shop, accountBound, userInfo.Status)
+		completionRequired := accountBound && shop.NeedsOnboardingCompletion
+		operatingStatus := resolveAdminMaterialShopOperatingStatus(shop, accountBound, onboardingStatus)
+		operatingEnabled := operatingStatus == adminOperatingStatusActive
 		completionAppID := uint64(0)
 		if completionApp != nil {
 			completionAppID = completionApp.ID
@@ -1467,10 +1978,13 @@ func AdminListMaterialShops(c *gin.Context) {
 			MaterialShop:       shop,
 			UserPhone:          userInfo.Phone,
 			UserNickname:       userInfo.Nickname,
-			AccountBound:       shop.UserID > 0 && hasUser,
-			LoginEnabled:       shop.UserID > 0 && hasUser && service.IsMaterialShopLoginEnabled(&shop),
+			AccountBound:       accountBound,
+			AccountStatus:      accountStatus,
+			LoginStatus:        loginStatus,
+			LoginEnabled:       loginStatus == adminLoginStatusEnabled,
 			CompletionRequired: completionRequired,
 			OnboardingStatus:   onboardingStatus,
+			OperatingStatus:    operatingStatus,
 			OperatingEnabled:   operatingEnabled,
 			CompletionAppID:    completionAppID,
 			SourceLabel:        sourceLabel,
@@ -1841,7 +2355,7 @@ func AdminUpdateMaterialShopPlatformDisplay(c *gin.Context) {
 		return
 	}
 
-	if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.MaterialShop{}, "PlatformDisplayEnabled") {
+	if !service.SupportsMaterialShopPlatformDisplayEnabled() {
 		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商平台展示开关"))
 		return
 	}

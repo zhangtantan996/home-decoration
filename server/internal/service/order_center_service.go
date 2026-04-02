@@ -299,18 +299,11 @@ func (b baseOrderCenterSource) providerSummary(providerID uint64) (*OrderCenterP
 	}
 	var user model.User
 	_ = repository.DB.First(&user, provider.UserID).Error
-	name := strings.TrimSpace(user.Nickname)
-	if name == "" {
-		name = strings.TrimSpace(provider.CompanyName)
-	}
-	if name == "" {
-		name = fmt.Sprintf("服务商 #%d", provider.ID)
-	}
 	return &OrderCenterProviderSummary{
 		ID:           provider.ID,
-		Name:         name,
+		Name:         ResolveProviderDisplayName(provider, &user),
 		ProviderType: orderCenterProviderType(provider.ProviderType, provider.SubType),
-		Avatar:       imgutil.GetFullImageURL(firstNonEmpty(user.Avatar, provider.Avatar)),
+		Avatar:       imgutil.GetFullImageURL(ResolveProviderAvatarPathWithUser(provider, &user)),
 		Verified:     provider.Verified,
 	}, nil
 }

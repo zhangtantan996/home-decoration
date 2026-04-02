@@ -74,7 +74,7 @@ const BookingRefundPage: React.FC = () => {
       if (!res.tempFilePaths?.length) return;
       setUploading(true);
       const uploaded = await Promise.all(res.tempFilePaths.map((filePath) => uploadFile(filePath)));
-      setEvidence((prev) => [...prev, ...uploaded.map((item) => item.url)].slice(0, 6));
+      setEvidence((prev) => [...prev, ...uploaded.map((item) => item.path || item.url)].slice(0, 6));
       Taro.showToast({ title: '证据已上传', icon: 'success' });
     } catch (error) {
       showErrorToast(error, '上传失败');

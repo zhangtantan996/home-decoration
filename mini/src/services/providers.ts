@@ -5,6 +5,7 @@ import type {
   ProviderDTO,
   ProviderDetailDTO,
   ProviderPriceDisplayDTO,
+  ProviderSceneDTO,
   ProviderType,
 } from './dto';
 
@@ -109,9 +110,22 @@ export async function getProviderCases(type: ProviderType, id: number, page = 1,
   });
 }
 
+export async function getProviderSceneCases(id: number, page = 1, pageSize = 10) {
+  return request<PageData<ProviderSceneItem>>({
+    url: `/foremen/${id}/scene-cases`,
+    data: { page, pageSize }
+  });
+}
+
 export async function getProviderCaseDetail(type: ProviderType, providerId: number, caseId: number) {
   return request<ProviderCaseItem>({
     url: `/${providerBasePath(type)}/${providerId}/cases/${caseId}`
+  });
+}
+
+export async function getProviderSceneDetail(id: number) {
+  return request<ProviderSceneDetail>({
+    url: `/provider-scenes/${id}`
   });
 }
 

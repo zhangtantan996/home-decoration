@@ -97,6 +97,7 @@ func TestProviderServiceListSupportsKeywordAcrossNicknameAndType(t *testing.T) {
 	provider := model.Provider{
 		UserID:          user.ID,
 		ProviderType:    1,
+		DisplayName:     "思琪设计",
 		SubType:         "designer",
 		CompanyName:     "拾光设计工作室",
 		Verified:        true,
@@ -135,6 +136,97 @@ func TestProviderServiceListSupportsKeywordAcrossNicknameAndType(t *testing.T) {
 	}
 	if total != 1 || len(list) != 1 {
 		t.Fatalf("expected style alias keyword match, total=%d len=%d", total, len(list))
+	}
+}
+
+func TestProviderServiceListPrefersProviderDisplayNameOverUserNickname(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138191", Nickname: "用户昵称", PublicID: "user_public_provider_display_name"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		DisplayName:  "服务商品牌名",
+		CompanyName:  "服务商公司名",
+		Avatar:       "/uploads/provider-avatar.png",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+	if list[0].Nickname != "服务商品牌名" {
+		t.Fatalf("expected provider display name, got %q", list[0].Nickname)
+	}
+	if list[0].Avatar != "http://localhost:8080/uploads/provider-avatar.png" {
+		t.Fatalf("expected provider avatar, got %q", list[0].Avatar)
+	}
+}
+
+func TestProviderServiceListFallsBackToUserAvatarWhenProviderAvatarMissing(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{
+		Phone:    "13800138192",
+		Nickname: "用户昵称",
+		Avatar:   "/uploads/user-avatar.png",
+		PublicID: "user_public_provider_avatar_fallback",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		DisplayName:  "服务商品牌名",
+		CompanyName:  "服务商公司名",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+	if list[0].Avatar != "http://localhost:8080/uploads/user-avatar.png" {
+		t.Fatalf("expected user avatar fallback, got %q", list[0].Avatar)
+	}
+}
+
+func TestResolveProviderDisplayNameFallsBackToUserNicknameForDesigner(t *testing.T) {
+	provider := model.Provider{
+		Base:         model.Base{ID: 501},
+		ProviderType: 1,
+		CompanyName:  "工作室名称",
+	}
+	user := model.User{
+		Nickname: "设计师昵称",
+		Phone:    "13800138001",
+	}
+
+	if got := ResolveProviderDisplayName(provider, &user); got != "设计师昵称" {
+		t.Fatalf("expected user nickname fallback, got %q", got)
 	}
 }
 

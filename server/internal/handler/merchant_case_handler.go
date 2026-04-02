@@ -147,6 +147,85 @@ type merchantCasePayload struct {
 	Images         []string        `json:"images" binding:"required,min=1"`
 }
 
+type merchantCaseUpdatePayload struct {
+	Title          string          `json:"title"`
+	CoverImage     string          `json:"coverImage"`
+	Style          string          `json:"style" binding:"required"`
+	Layout         string          `json:"layout"`
+	Area           string          `json:"area"`
+	Price          float64         `json:"price"`
+	QuoteTotalCent *int64          `json:"quoteTotalCent"`
+	QuoteCurrency  string          `json:"quoteCurrency"`
+	QuoteItems     json.RawMessage `json:"quoteItems"`
+	Year           string          `json:"year"`
+	Description    string          `json:"description"`
+	Images         []string        `json:"images"`
+}
+
+func normalizeMerchantCaseFields(title, coverImage, style, layout, area, quoteCurrency, year, description *string, images *[]string) {
+	if title != nil {
+		*title = strings.TrimSpace(*title)
+	}
+	if coverImage != nil {
+		*coverImage = normalizeStoredAsset(*coverImage)
+	}
+	if style != nil {
+		*style = strings.TrimSpace(*style)
+	}
+	if layout != nil {
+		*layout = strings.TrimSpace(*layout)
+	}
+	if area != nil {
+		*area = strings.TrimSpace(*area)
+	}
+	if quoteCurrency != nil {
+		*quoteCurrency = strings.TrimSpace(*quoteCurrency)
+	}
+	if year != nil {
+		*year = strings.TrimSpace(*year)
+	}
+	if description != nil {
+		*description = strings.TrimSpace(*description)
+	}
+	if images != nil {
+		*images = normalizeStoredAssetSlice(*images)
+	}
+}
+
+func normalizeMerchantCasePayload(input *merchantCasePayload) {
+	if input == nil {
+		return
+	}
+	normalizeMerchantCaseFields(
+		&input.Title,
+		&input.CoverImage,
+		&input.Style,
+		&input.Layout,
+		&input.Area,
+		&input.QuoteCurrency,
+		&input.Year,
+		&input.Description,
+		&input.Images,
+	)
+}
+
+func normalizeMerchantCaseUpdatePayload(input *merchantCaseUpdatePayload) {
+	if input == nil {
+		return
+	}
+	normalizeMerchantCaseFields(
+		&input.Title,
+		&input.CoverImage,
+		&input.Style,
+		&input.Layout,
+		&input.Area,
+		&input.QuoteCurrency,
+		&input.Year,
+		&input.Description,
+		&input.Images,
+	)
+}
+
 // MerchantCaseCreate 创建作品 (提交审核)
 func MerchantCaseCreate(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
@@ -156,6 +235,7 @@ func MerchantCaseCreate(c *gin.Context) {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
 	}
+	normalizeMerchantCasePayload(&input)
 
 	if strings.TrimSpace(input.Layout) == "" {
 		// Keep layout always present for downstream filtering & display.
@@ -260,6 +340,7 @@ func MerchantCaseCreateFromProject(c *gin.Context) {
 
 	var req merchantCasePayload
 	_ = c.ShouldBindJSON(&req)
+	normalizeMerchantCasePayload(&req)
 
 	project, audit, err := createCaseDraftFromProject(projectID, providerID, req)
 	if err != nil {
@@ -322,24 +403,12 @@ func MerchantCaseUpdate(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 	caseID := parseUint64(c.Param("id"))
 
-	var input struct {
-		Title          string          `json:"title"`
-		CoverImage     string          `json:"coverImage"`
-		Style          string          `json:"style" binding:"required"`
-		Layout         string          `json:"layout"`
-		Area           string          `json:"area"`
-		Price          float64         `json:"price"`
-		QuoteTotalCent *int64          `json:"quoteTotalCent"`
-		QuoteCurrency  string          `json:"quoteCurrency"`
-		QuoteItems     json.RawMessage `json:"quoteItems"`
-		Year           string          `json:"year"`
-		Description    string          `json:"description"`
-		Images         []string        `json:"images"`
-	}
+	var input merchantCaseUpdatePayload
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
 		return
 	}
+	normalizeMerchantCaseUpdatePayload(&input)
 
 	if strings.TrimSpace(input.Layout) == "" {
 		input.Layout = "其他"

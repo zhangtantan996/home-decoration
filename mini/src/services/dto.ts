@@ -47,6 +47,7 @@ export interface ProviderDetailDTO {
     id?: number;
     userId?: number;
     providerType?: number;
+    displayName?: string;
     companyName?: string;
     avatar?: string;
     verified?: boolean;
@@ -82,6 +83,7 @@ export interface ProviderDetailDTO {
   id: number;
   userId: number;
   providerType: number;
+  displayName?: string;
   companyName?: string;
   nickname?: string;
   avatar?: string;
@@ -128,6 +130,19 @@ export interface ProviderCaseDTO {
   showInInspiration?: boolean;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ProviderSceneDTO {
+  id: number;
+  caseId?: number;
+  projectId?: number;
+  providerId?: number;
+  title: string;
+  coverImage: string;
+  description?: string;
+  images?: StringListValue;
+  year?: string | number;
+  createdAt?: string;
 }
 
 export interface ProposalDTO {

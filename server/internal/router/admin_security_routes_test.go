@@ -68,6 +68,7 @@ func signAdminToken(t *testing.T, secret string, claims jwt.MapClaims) string {
 
 func setupAdminSecurityRouter(t *testing.T) *gin.Engine {
 	t.Helper()
+	t.Setenv("APP_ENV", config.AppEnvProduction)
 
 	db := setupRouterSQLiteDB(t)
 	if err := db.AutoMigrate(

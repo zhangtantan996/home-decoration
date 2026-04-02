@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useSessionStore } from '../../modules/session/sessionStore';
 import { requestJson, uploadFile } from '../../services/http';
 import { updateProfile } from '../../services/profile';
+import { getUploadedAssetPath, normalizeStoredAssetPath, toAbsoluteAssetUrl } from '../../utils/asset';
 import styles from './ProfileEditPage.module.scss';
 
 interface RawProfile {
@@ -88,7 +89,7 @@ function maskPhone(phone: string) {
 function buildForm(profile: RawProfile): ProfileFormState {
   return {
     nickname: profile.nickname || '',
-    avatar: profile.avatar || '',
+    avatar: normalizeStoredAssetPath(profile.avatar || ''),
     phone: profile.phone || '',
     publicId: profile.publicId || '',
   };
@@ -237,7 +238,7 @@ export function ProfileEditPage() {
       setUploadingAvatar(true);
       setFeedback(null);
       const uploaded = await uploadFile('/upload', file);
-      setForm((current) => ({ ...current, avatar: uploaded.path || uploaded.url || current.avatar }));
+      setForm((current) => ({ ...current, avatar: getUploadedAssetPath(uploaded, current.avatar) }));
       setFeedback({ tone: 'success', text: '头像已上传，记得保存资料。' });
     } catch (err) {
       setFeedback({ tone: 'error', text: err instanceof Error ? err.message : '头像上传失败，请稍后重试。' });
@@ -274,7 +275,7 @@ export function ProfileEditPage() {
       const nextProfile: RawProfile = {
         ...profileMeta,
         nickname: payload.nickname,
-        avatar: payload.avatar,
+        avatar: toAbsoluteAssetUrl(payload.avatar),
       };
 
       const nextForm = buildForm(nextProfile);
@@ -331,7 +332,7 @@ export function ProfileEditPage() {
         <aside className={styles.sideColumn}>
           <section className={`${styles.card} ${styles.avatarCard}`}>
             <div className={styles.avatarShell}>
-              {form.avatar ? <img alt={`${displayName}头像`} className={styles.avatarImage} src={form.avatar} /> : <div className={styles.avatarFallback}>{avatarFallback}</div>}
+              {form.avatar ? <img alt={`${displayName}头像`} className={styles.avatarImage} src={toAbsoluteAssetUrl(form.avatar)} /> : <div className={styles.avatarFallback}>{avatarFallback}</div>}
             </div>
 
             <div className={styles.profileSummary}>

@@ -5,6 +5,7 @@ import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { SITE_SURVEY_STATUS_META } from '../../../constants/statuses';
 import { merchantSiteSurveyApi, merchantUploadApi, type MerchantSiteSurveySummary } from '../../../services/merchantApi';
 import { toAbsoluteAssetUrl } from '../../../utils/env';
+import { getStoredPathFromUploadFile } from '../../../utils/uploadAsset';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -68,7 +69,7 @@ const StepPanelSurvey: React.FC<StepPanelSurveyProps> = ({ bookingId, isActive, 
   const uploadImage: UploadProps['customRequest'] = async (options) => {
     try {
       const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
-      options.onSuccess?.({ url: uploaded.url });
+      options.onSuccess?.(uploaded);
     } catch (error: any) {
       options.onError?.(new Error(error?.message || '上传失败'));
       message.error(error?.message || '上传失败');
@@ -86,7 +87,7 @@ const StepPanelSurvey: React.FC<StepPanelSurveyProps> = ({ bookingId, isActive, 
     try {
       const values = await form.validateFields();
       const photos = fileList
-        .map((f) => (f.response as { url?: string } | undefined)?.url || f.url)
+        .map((f) => getStoredPathFromUploadFile(f as UploadFile<any>))
         .filter((item): item is string => Boolean(item));
       const dimensions = (values.dimensions || []).reduce((acc: Record<string, unknown>, row: DimensionRow) => {
         if (!row?.area) return acc;

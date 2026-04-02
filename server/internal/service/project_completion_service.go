@@ -97,7 +97,7 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 		}
 		ownerUserID = project.OwnerID
 
-		photosJSON, err := json.Marshal(req.Photos)
+		photosJSON, err := json.Marshal(normalizeStoredAssetSlice(req.Photos))
 		if err != nil {
 			return err
 		}

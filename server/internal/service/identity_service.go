@@ -155,7 +155,7 @@ func (s *IdentityService) ListIdentities(userID uint64) ([]IdentityDTO, error) {
 			dto.ProviderSubType = derivedSubType
 			if identity.Provider != nil {
 				dto.ProviderSubType = providerSubTypeFromProvider(identity.Provider)
-				dto.DisplayName = identity.Provider.CompanyName
+				dto.DisplayName = ResolveProviderDisplayName(*identity.Provider, nil)
 				if dto.DisplayName == "" {
 					switch dto.ProviderSubType {
 					case "designer":
@@ -534,6 +534,11 @@ func (s *IdentityService) ApproveIdentityApplication(applicationID, adminID uint
 			return errors.New("仅支持审核服务商身份申请")
 		}
 
+		var user model.User
+		if err := tx.Select("id", "nickname").First(&user, app.UserID).Error; err != nil {
+			return err
+		}
+
 		if err := tx.Model(&app).Updates(map[string]interface{}{
 			"status":      1,
 			"reviewed_at": now,
@@ -552,6 +557,7 @@ func (s *IdentityService) ApproveIdentityApplication(applicationID, adminID uint
 			provider = model.Provider{
 				UserID:       app.UserID,
 				ProviderType: providerType,
+				DisplayName:  ResolveProviderStoredDisplayName(providerType, "", user.Nickname),
 				SubType:      providerSubType,
 				Status:       1,
 				Verified:     true,
@@ -562,6 +568,7 @@ func (s *IdentityService) ApproveIdentityApplication(applicationID, adminID uint
 		} else {
 			if err := tx.Model(&provider).Updates(map[string]interface{}{
 				"provider_type": providerType,
+				"display_name":  ResolveProviderStoredDisplayName(providerType, provider.CompanyName, user.Nickname),
 				"sub_type":      providerSubType,
 				"status":        1,
 				"verified":      true,

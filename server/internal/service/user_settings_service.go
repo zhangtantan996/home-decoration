@@ -4,6 +4,7 @@ import (
 	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -58,6 +59,10 @@ func (s *UserSettingsService) GetVerification(userID uint64) (*model.UserVerific
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil // 未提交过认证
 	}
+	if err == nil {
+		v.IDFrontImage = imgutil.GetFullImageURL(v.IDFrontImage)
+		v.IDBackImage = imgutil.GetFullImageURL(v.IDBackImage)
+	}
 	return &v, err
 }
 
@@ -74,8 +79,8 @@ func (s *UserSettingsService) SubmitVerification(userID uint64, realName, idCard
 		UserID:       userID,
 		RealName:     realName,
 		IDCard:       idCard,
-		IDFrontImage: frontImage,
-		IDBackImage:  backImage,
+		IDFrontImage: normalizeStoredAsset(frontImage),
+		IDBackImage:  normalizeStoredAsset(backImage),
 		Status:       0,
 	}
 	return repository.DB.Create(&v).Error
@@ -135,7 +140,7 @@ func (s *UserSettingsService) SubmitFeedback(userID uint64, feedbackType, conten
 		Type:    feedbackType,
 		Content: content,
 		Contact: contact,
-		Images:  images,
+		Images:  normalizeStoredAssetJSONArray(images),
 		Status:  0,
 	}
 	return repository.DB.Create(&fb).Error

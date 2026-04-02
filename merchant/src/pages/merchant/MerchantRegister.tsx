@@ -46,6 +46,7 @@ import {
     merchantCompletionApi,
     merchantUploadApi,
     onboardingValidationApi,
+    type MerchantUploadResult,
     type MerchantApplicantType,
     type MerchantApplyDetailData,
     type MerchantApplyPayload,
@@ -55,6 +56,7 @@ import {
 import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
+import { buildStoredAssetFile, getAssetPreviewUrl, getStoredPathFromUploadFile, normalizeStoredAssetValue, normalizeStoredAssetValues } from '../../utils/uploadAsset';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
 const { Title, Text } = Typography;
@@ -198,7 +200,7 @@ const normalizePortfolioCasesForForm = (cases: unknown, isForeman: boolean): Por
             title: String((caseItem as { title?: unknown })?.title || ''),
             description: String((caseItem as { description?: unknown })?.description || ''),
             images: Array.isArray((caseItem as { images?: unknown[] })?.images)
-                ? ((caseItem as { images?: unknown[] }).images || []).map((image) => String(image)).filter(Boolean)
+                ? normalizeStoredAssetValues(((caseItem as { images?: unknown[] }).images || []).map((image) => String(image)).filter(Boolean))
                 : [],
             style: String((caseItem as { style?: unknown })?.style || ''),
             area: String((caseItem as { area?: unknown })?.area || ''),
@@ -217,7 +219,7 @@ const normalizePortfolioCasesForForm = (cases: unknown, isForeman: boolean): Por
             id: generatePortfolioCaseId(),
             title: section?.title || String(caseItem.title || ''),
             description: String(caseItem.description || ''),
-            images: Array.isArray(caseItem.images) ? caseItem.images.map((image) => String(image)).filter(Boolean) : [],
+            images: Array.isArray(caseItem.images) ? normalizeStoredAssetValues(caseItem.images.map((image) => String(image)).filter(Boolean)) : [],
             style: '',
             area: '',
             category: targetCategory,
@@ -953,7 +955,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     ): UploadProps['customRequest'] => async (options) => {
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
-            form.setFieldsValue({ [fieldName]: uploaded.url });
+            form.setFieldsValue({ [fieldName]: normalizeStoredAssetValue(uploaded) });
             options.onSuccess?.(uploaded);
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -963,24 +965,14 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     };
 
     const toSingleUploadFileList = (value?: string): UploadFile[] => {
-        if (!value) {
-            return [];
-        }
-        return [{
-            uid: value,
-            name: value.split('/').pop() || 'uploaded-image',
-            status: 'done',
-            url: value,
-        }];
+        const file = buildStoredAssetFile(value);
+        return file ? [file] : [];
     };
 
     const toCaseUploadFileList = (urls: string[]): UploadFile[] => (
-        urls.map((url, index) => ({
-            uid: `${url}-${index}`,
-            name: url.split('/').pop() || `case-image-${index + 1}`,
-            status: 'done',
-            url,
-        }))
+        urls
+            .map((value, index) => buildStoredAssetFile(value, `${value}-${index}`))
+            .filter(Boolean) as UploadFile[]
     );
 
     const adjustCaseUploadingCount = (caseIndex: number, delta: number) => {
@@ -1017,9 +1009,10 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     };
 
     const handleCasePreview = (file: UploadFile) => {
-        const previewUrl = typeof file.url === 'string'
-            ? file.url
-            : (file.response as { url?: string } | undefined)?.url;
+        const previewUrl = getAssetPreviewUrl(
+            (file.response as MerchantUploadResult | undefined) || file.url || '',
+            typeof file.url === 'string' ? file.url : '',
+        );
         if (!previewUrl) {
             message.error('该图片暂不可预览，请等待上传完成后重试');
             return;
@@ -1029,10 +1022,10 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     };
 
     const handleSinglePreview = (file: UploadFile, fieldName: 'avatar' | 'idCardFront' | 'idCardBack' | 'licenseImage') => {
-        const previewUrl = typeof file.url === 'string'
-            ? file.url
-            : (file.response as { url?: string } | undefined)?.url
-                || form.getFieldValue(fieldName);
+        const previewUrl = getAssetPreviewUrl(
+            (file.response as MerchantUploadResult | undefined) || form.getFieldValue(fieldName),
+            typeof file.url === 'string' ? file.url : String(form.getFieldValue(fieldName) || ''),
+        );
         if (!previewUrl) {
             message.error('该图片暂不可预览，请等待上传完成后重试');
             return;
@@ -1088,10 +1081,12 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                 if (!current) {
                     return prev;
                 }
-                if (current.images.includes(uploaded.url)) {
+                const storedPath = normalizeStoredAssetValue(uploaded);
+                const currentImages = normalizeStoredAssetValues(current.images);
+                if (!storedPath || currentImages.includes(storedPath)) {
                     return prev;
                 }
-                const nextImages = [...current.images, uploaded.url].slice(0, maxImageCount);
+                const nextImages = [...currentImages, storedPath].slice(0, maxImageCount);
                 reachedLimit = nextImages.length === maxImageCount && current.images.length < maxImageCount;
                 next[caseIndex] = {
                     ...current,
@@ -1112,7 +1107,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     };
 
     const handleCompanyAlbumUpload: UploadProps['customRequest'] = async (options) => {
-        const currentImages = (form.getFieldValue('companyAlbum') || []) as string[];
+        const currentImages = normalizeStoredAssetValues((form.getFieldValue('companyAlbum') || []) as string[]);
         if (currentImages.length >= 8) {
             message.warning('公司相册最多上传 8 张');
             options.onError?.(new Error('已超过图片数量上限'));
@@ -1121,9 +1116,10 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             options.onSuccess?.(uploaded);
-            const latestImages = ((form.getFieldValue('companyAlbum') || []) as string[]).filter(Boolean);
-            if (!latestImages.includes(uploaded.url)) {
-                form.setFieldValue('companyAlbum', [...latestImages, uploaded.url].slice(0, 8));
+            const latestImages = normalizeStoredAssetValues(((form.getFieldValue('companyAlbum') || []) as string[]).filter(Boolean));
+            const storedPath = normalizeStoredAssetValue(uploaded);
+            if (storedPath && !latestImages.includes(storedPath)) {
+                form.setFieldValue('companyAlbum', [...latestImages, storedPath].slice(0, 8));
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -1421,17 +1417,17 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                         entityType,
                         applicantType,
                         realName: String(values.realName || '').trim(),
-                        avatar: String(values.avatar || '').trim(),
+                        avatar: normalizeStoredAssetValue(String(values.avatar || '').trim()),
                         idCardNo: String(values.idCardNo || '').trim(),
-                        idCardFront: String(values.idCardFront || '').trim(),
-                        idCardBack: String(values.idCardBack || '').trim(),
+                        idCardFront: normalizeStoredAssetValue(String(values.idCardFront || '').trim()),
+                        idCardBack: normalizeStoredAssetValue(String(values.idCardBack || '').trim()),
                         companyName: values.companyName ? String(values.companyName).trim() : undefined,
                         licenseNo: values.licenseNo ? normalizeLicenseNo(String(values.licenseNo)) : undefined,
-                        licenseImage: values.licenseImage ? String(values.licenseImage).trim() : undefined,
+                        licenseImage: values.licenseImage ? normalizeStoredAssetValue(String(values.licenseImage).trim()) : undefined,
                         legalPersonName: isCompanyEntity ? String(values.realName || '').trim() : undefined,
                         legalPersonIdCardNo: isCompanyEntity ? String(values.idCardNo || '').trim().toUpperCase() : undefined,
-                        legalPersonIdCardFront: isCompanyEntity ? String(values.idCardFront || '').trim() : undefined,
-                        legalPersonIdCardBack: isCompanyEntity ? String(values.idCardBack || '').trim() : undefined,
+                        legalPersonIdCardFront: isCompanyEntity ? normalizeStoredAssetValue(String(values.idCardFront || '').trim()) : undefined,
+                        legalPersonIdCardBack: isCompanyEntity ? normalizeStoredAssetValue(String(values.idCardBack || '').trim()) : undefined,
                         teamSize: values.teamSize,
                         officeAddress: String(values.officeAddress || '').trim(),
                         yearsExperience: values.yearsExperience,
@@ -1442,14 +1438,14 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                         introduction: values.introduction,
                         graduateSchool: values.graduateSchool,
                         designPhilosophy: values.designPhilosophy,
-                        companyAlbum: role === 'company' ? (values.companyAlbum || []) : undefined,
+                        companyAlbum: role === 'company' ? normalizeStoredAssetValues(values.companyAlbum || []) : undefined,
                         portfolioCases: portfolioCases
                             .filter((caseItem) => caseItem.description.trim() && caseItem.images.length > 0)
                             .map((caseItem) => ({
                                 title: isForeman ? (FOREMAN_CASE_SECTIONS.find((section) => section.category === caseItem.category)?.title || caseItem.title.trim()) : caseItem.title.trim(),
                                 category: caseItem.category,
                                 description: caseItem.description.trim(),
-                                images: caseItem.images,
+                                images: normalizeStoredAssetValues(caseItem.images),
                                 style: isForeman ? undefined : caseItem.style,
                                 area: isForeman ? undefined : caseItem.area,
                             })),
@@ -1743,10 +1739,10 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                             customRequest={handleCompanyAlbumUpload}
                                             onPreview={handleCasePreview}
                                             onRemove={(file) => {
-                                                const url = file.url || (file.response as { url?: string } | undefined)?.url;
-                                                if (!url) return false;
                                                 const current = (form.getFieldValue('companyAlbum') || []) as string[];
-                                                form.setFieldValue('companyAlbum', current.filter((image) => image !== url));
+                                                const target = getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>);
+                                                if (!target) return false;
+                                                form.setFieldValue('companyAlbum', normalizeStoredAssetValues(current).filter((image) => image !== target));
                                                 return true;
                                             }}
                                         >
@@ -2080,8 +2076,8 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                             customRequest={createCaseUploadHandler(index)}
                                             onPreview={handleCasePreview}
                                             onRemove={(file) => {
-                                                const url = file.url || (file.response as { url?: string } | undefined)?.url;
-                                                if (!url) {
+                                                const target = getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>);
+                                                if (!target) {
                                                     return false;
                                                 }
                                                 setPortfolioCases((prev) => {
@@ -2092,7 +2088,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                                     }
                                                     next[index] = {
                                                         ...current,
-                                                        images: current.images.filter((image) => image !== url),
+                                                        images: normalizeStoredAssetValues(current.images).filter((image) => image !== target),
                                                     };
                                                     return next;
                                                 });

@@ -15,11 +15,15 @@ import { DictSelect } from '../../components/DictSelect';
 import { CASE_AUDIT_ACTION_META, CASE_AUDIT_SOURCE_META, CASE_AUDIT_STATUS_META } from '../../constants/statuses';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { type AdminUploadedAsset } from '../../utils/uploadAsset';
 import AuditStatusSummary from '../audits/components/AuditStatusSummary';
 import VisibilityStatusPanel from '../audits/components/VisibilityStatusPanel';
 import AuditDetailSection from '../audits/components/AuditDetailSection';
 
 const getFullUrl = toAbsoluteAssetUrl;
+
+const toStoredAsset = (asset?: AdminUploadedAsset | null) => String(asset?.path || asset?.url || '');
+const toPreviewAsset = (value: string): AdminUploadedAsset => ({ url: value, path: value });
 
 interface CaseItem {
     id: number;
@@ -177,8 +181,8 @@ const CaseManagement: React.FC = () => {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [uploading, setUploading] = useState(false);
     const [toggleLoadingId, setToggleLoadingId] = useState<number | null>(null);
-    const [coverImageUrl, setCoverImageUrl] = useState('');
-    const [detailImages, setDetailImages] = useState<string[]>([]);
+    const [coverImage, setCoverImage] = useState<AdminUploadedAsset | null>(null);
+    const [detailImages, setDetailImages] = useState<AdminUploadedAsset[]>([]);
     const [quoteTouched, setQuoteTouched] = useState(false);
 
     const quoteDesignFee = Form.useWatch('quoteDesignFee', form) as number | undefined;
@@ -272,7 +276,7 @@ const CaseManagement: React.FC = () => {
             quoteOtherFee: 0,
             showInInspiration: true,
         });
-        setCoverImageUrl('');
+        setCoverImage(null);
         setDetailImages([]);
         setFormVisible(true);
     };
@@ -297,8 +301,8 @@ const CaseManagement: React.FC = () => {
             quoteOtherFee: 0,
             showInInspiration: Boolean(record.showInInspiration),
         });
-        setCoverImageUrl(record.coverImage);
-        setDetailImages(record.images || []);
+        setCoverImage(record.coverImage ? toPreviewAsset(record.coverImage) : null);
+        setDetailImages((record.images || []).map((item) => toPreviewAsset(item)));
         setFormVisible(true);
 
         try {
@@ -353,7 +357,7 @@ const CaseManagement: React.FC = () => {
         try {
             const values = await form.validateFields();
 
-            if (!coverImageUrl) {
+            if (!toStoredAsset(coverImage)) {
                 message.warning('请上传封面图');
                 return;
             }
@@ -379,8 +383,8 @@ const CaseManagement: React.FC = () => {
             const baseData = {
                 ...restValues,
                 providerId: providerId || null,
-                coverImage: coverImageUrl,
-                images: detailImages,
+                coverImage: toStoredAsset(coverImage),
+                images: detailImages.map((item) => toStoredAsset(item)).filter(Boolean),
                 showInInspiration: Boolean(values.showInInspiration),
             };
 
@@ -409,21 +413,13 @@ const CaseManagement: React.FC = () => {
     };
 
     // 上传图片
-    const uploadImage = async (file: RcFile): Promise<string> => {
+    const uploadImage = async (file: RcFile): Promise<AdminUploadedAsset> => {
         try {
-            const result = await adminUploadApi.uploadImage(file as File) as unknown as {
-                code: number;
-                message?: string;
-                data?: {
-                    url?: string;
-                };
-            };
-
-            if (result.code === 0 && result.data?.url) {
-                return result.data.url;
+            const result = await adminUploadApi.uploadImageData(file as File);
+            if (result.url) {
+                return result;
             }
-
-            throw new Error(result.message || '上传失败');
+            throw new Error('上传失败');
         } catch (error) {
             message.error('图片上传失败');
             throw error;
@@ -433,8 +429,8 @@ const CaseManagement: React.FC = () => {
     const handleCoverUpload: UploadProps['customRequest'] = async ({ file, onSuccess, onError }) => {
         try {
             setUploading(true);
-            const url = await uploadImage(file as RcFile);
-            setCoverImageUrl(url);
+            const uploaded = await uploadImage(file as RcFile);
+            setCoverImage(uploaded);
             onSuccess?.('ok');
             message.success('封面上传成功');
         } catch (error) {
@@ -446,8 +442,8 @@ const CaseManagement: React.FC = () => {
 
     const handleDetailUpload: UploadProps['customRequest'] = async ({ file, onSuccess, onError }) => {
         try {
-            const url = await uploadImage(file as RcFile);
-            setDetailImages(prev => [...prev, url]);
+            const uploaded = await uploadImage(file as RcFile);
+            setDetailImages(prev => [...prev, uploaded]);
             onSuccess?.('ok');
             message.success('图片上传成功');
         } catch (error) {
@@ -757,11 +753,11 @@ const CaseManagement: React.FC = () => {
                         <Input.TextArea rows={4} placeholder="作品描述" />
                     </Form.Item>
                     <Form.Item label="封面图" required>
-                        {coverImageUrl ? (
+                        {coverImage?.url ? (
                             <div>
-                                <Image width={200} src={getFullUrl(coverImageUrl)} />
+                                <Image width={200} src={getFullUrl(coverImage.url)} />
                                 <br />
-                                <Button onClick={() => setCoverImageUrl('')}>重新上传</Button>
+                                <Button onClick={() => setCoverImage(null)}>重新上传</Button>
                             </div>
                         ) : (
                             <Upload customRequest={handleCoverUpload} showUploadList={false} accept="image/*">
@@ -773,9 +769,9 @@ const CaseManagement: React.FC = () => {
                     </Form.Item>
                     <Form.Item label="详情图片">
                         <Space direction="vertical" style={{ width: '100%' }}>
-                            {detailImages.map((url, index) => (
+                            {detailImages.map((item, index) => (
                                 <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <Image width={100} src={getFullUrl(url)} />
+                                    <Image width={100} src={getFullUrl(item.url || item.path || '')} />
                                     <Button danger size="small" onClick={() => handleRemoveDetailImage(index)}>
                                         删除
                                     </Button>

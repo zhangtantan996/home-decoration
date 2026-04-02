@@ -293,7 +293,7 @@ func AdminUpdateWorkLog(c *gin.Context) {
 		updates["description"] = req.Description
 	}
 	if req.Photos != "" {
-		updates["photos"] = req.Photos
+		updates["photos"] = normalizeStoredAssetJSONArray(req.Photos)
 	}
 	if req.LogDate != "" {
 		if t, err := time.Parse("2006-01-02", req.LogDate); err == nil {

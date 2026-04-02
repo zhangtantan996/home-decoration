@@ -2,13 +2,15 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert, Button, Divider, Form, Input, message, Modal, Space, Tag, Upload,
 } from 'antd';
-import type { UploadProps } from 'antd';
+import type { UploadFile, UploadProps } from 'antd';
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   merchantDesignApi,
   merchantUploadApi,
   type DesignDeliverableItem,
+  type MerchantUploadResult,
 } from '../../../services/merchantApi';
+import { getStoredPathsFromUploadFiles } from '../../../utils/uploadAsset';
 
 const DELIVERABLE_STATUS_MAP: Record<string, { color: string; label: string }> = {
   pending_review: { color: 'processing', label: '待用户验收' },
@@ -56,13 +58,17 @@ const StepPanelDesign: React.FC<StepPanelDesignProps> = ({ bookingId, isActive, 
     setSubmitting(true);
     try {
       const values = await form.validateFields();
+      const colorFloorPlan = getStoredPathsFromUploadFiles((values.colorFloorPlanUrls || []) as Array<UploadFile<MerchantUploadResult>>);
+      const renderings = getStoredPathsFromUploadFiles((values.renderingUrls || []) as Array<UploadFile<MerchantUploadResult>>);
+      const cadDrawings = getStoredPathsFromUploadFiles((values.cadUrls || []) as Array<UploadFile<MerchantUploadResult>>);
+      const attachments = getStoredPathsFromUploadFiles((values.attachmentUrls || []) as Array<UploadFile<MerchantUploadResult>>);
       await merchantDesignApi.submitDeliverable(bookingId, {
-        colorFloorPlan: JSON.stringify(values.colorFloorPlanUrls || []),
-        renderings: JSON.stringify(values.renderingUrls || []),
+        colorFloorPlan: JSON.stringify(colorFloorPlan),
+        renderings: JSON.stringify(renderings),
         renderingLink: values.renderingLink || '',
         textDescription: values.textDescription || '',
-        cadDrawings: JSON.stringify(values.cadUrls || []),
-        attachments: JSON.stringify(values.attachmentUrls || []),
+        cadDrawings: JSON.stringify(cadDrawings),
+        attachments: JSON.stringify(attachments),
       });
       message.success('交付件提交成功');
       setModalOpen(false);

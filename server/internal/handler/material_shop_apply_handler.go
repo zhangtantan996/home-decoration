@@ -119,7 +119,7 @@ func validateMaterialProducts(products []materialShopApplyProductInput) error {
 		products[idx].Name = strings.TrimSpace(products[idx].Name)
 		products[idx].Unit = strings.TrimSpace(products[idx].Unit)
 		products[idx].Description = strings.TrimSpace(products[idx].Description)
-		products[idx].Images = normalizeStringSlice(products[idx].Images)
+		products[idx].Images = normalizeStoredAssetSlice(normalizeStringSlice(products[idx].Images))
 
 		if products[idx].Name == "" {
 			return fmt.Errorf("第%d个商品名称不能为空", idx+1)
@@ -153,14 +153,14 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 
 	input.ShopName = strings.TrimSpace(input.ShopName)
 	input.ShopDescription = strings.TrimSpace(input.ShopDescription)
-	input.Avatar = strings.TrimSpace(input.Avatar)
+	input.Avatar = normalizeStoredAsset(input.Avatar)
 	input.CompanyName = strings.TrimSpace(input.CompanyName)
 	input.BusinessLicenseNo = utils.NormalizeLicenseNo(input.BusinessLicenseNo)
-	input.BusinessLicense = strings.TrimSpace(input.BusinessLicense)
+	input.BusinessLicense = normalizeStoredAsset(input.BusinessLicense)
 	input.LegalPersonName = strings.TrimSpace(input.LegalPersonName)
 	input.LegalPersonIDCardNo = strings.ToUpper(strings.TrimSpace(input.LegalPersonIDCardNo))
-	input.LegalPersonIDCardFront = strings.TrimSpace(input.LegalPersonIDCardFront)
-	input.LegalPersonIDCardBack = strings.TrimSpace(input.LegalPersonIDCardBack)
+	input.LegalPersonIDCardFront = normalizeStoredAsset(input.LegalPersonIDCardFront)
+	input.LegalPersonIDCardBack = normalizeStoredAsset(input.LegalPersonIDCardBack)
 	input.BusinessHours = strings.TrimSpace(input.BusinessHours)
 	input.BusinessHoursRanges = normalizeBusinessHoursRanges(input.BusinessHoursRanges)
 	input.ContactPhone = strings.TrimSpace(input.ContactPhone)
@@ -857,7 +857,7 @@ func MaterialShopUpdateMe(c *gin.Context) {
 
 	updates := map[string]interface{}{}
 	if strings.TrimSpace(input.Avatar) != "" {
-		avatar := strings.TrimSpace(input.Avatar)
+		avatar := normalizeStoredAsset(input.Avatar)
 		if len([]rune(avatar)) > 500 {
 			response.Error(c, 400, "店铺头像地址不能超过500个字符")
 			return
@@ -917,7 +917,7 @@ func MaterialShopUpdateMe(c *gin.Context) {
 		updates["contact_name"] = strings.TrimSpace(input.ContactName)
 	}
 	if input.MerchantDisplayEnabled != nil {
-		if repository.DB == nil || !repository.DB.Migrator().HasColumn(&model.MaterialShop{}, "MerchantDisplayEnabled") {
+		if !service.SupportsMaterialShopMerchantDisplayEnabled() {
 			response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商营业状态开关"))
 			return
 		}
@@ -987,7 +987,7 @@ func toMaterialShopProduct(input materialShopProductInput) (model.MaterialShopPr
 	input.Name = strings.TrimSpace(input.Name)
 	input.Unit = strings.TrimSpace(input.Unit)
 	input.Description = strings.TrimSpace(input.Description)
-	input.Images = normalizeStringSlice(input.Images)
+	input.Images = normalizeStoredAssetSlice(normalizeStringSlice(input.Images))
 
 	if input.Name == "" {
 		return model.MaterialShopProduct{}, fmt.Errorf("商品名称不能为空")

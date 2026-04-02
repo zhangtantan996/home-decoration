@@ -505,12 +505,7 @@ func loadProjectParticipantProfile(db *gorm.DB, providerID uint64) projectPartic
 		}
 	}
 
-	avatar := ""
-	if providerUser.Avatar != "" {
-		avatar = imgutil.GetFullImageURL(providerUser.Avatar)
-	} else if provider.Avatar != "" {
-		avatar = imgutil.GetFullImageURL(provider.Avatar)
-	}
+	avatar := imgutil.GetFullImageURL(ResolveProviderAvatarPathWithUser(provider, providerUserRef))
 
 	return projectParticipantProfile{
 		ProviderID:   provider.ID,
@@ -747,7 +742,7 @@ func (s *ProjectService) createWorkLog(projectID, workerID, adminID uint64, req 
 		Title:       strings.TrimSpace(req.Title),
 		LogDate:     logDate,
 		Description: strings.TrimSpace(req.Description),
-		Photos:      strings.TrimSpace(req.Photos),
+		Photos:      normalizeStoredAssetJSONArray(strings.TrimSpace(req.Photos)),
 		Issues:      "[]",
 	}
 	if log.Photos == "" {

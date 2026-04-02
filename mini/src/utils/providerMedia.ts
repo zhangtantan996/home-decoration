@@ -44,7 +44,6 @@ const parseCaseImages = (item?: ProviderCaseItem) => {
 
 export const collectCompanyAlbumImages = (detail?: ProviderDetail | null, extraCases: ProviderCaseItem[] = []) => {
   const provider = ((detail as unknown as { provider?: Record<string, unknown> })?.provider || {}) as Record<string, unknown>;
-  const user = ((detail as unknown as { user?: Record<string, unknown> })?.user || {}) as Record<string, unknown>;
   const detailCases = (((detail as unknown as { cases?: ProviderCaseItem[] })?.cases) || []) as ProviderCaseItem[];
   const sourceCases = extraCases.length > 0 ? extraCases : detailCases;
 
@@ -54,9 +53,8 @@ export const collectCompanyAlbumImages = (detail?: ProviderDetail | null, extraC
 
   const providerShots = [
     normalizeProviderMediaUrl(String(provider.coverImage || '')),
-    normalizeProviderMediaUrl(String((detail as unknown as { coverImage?: string })?.coverImage || '')),
-    normalizeProviderMediaUrl(String(user.avatar || '')),
     normalizeProviderMediaUrl(String(provider.avatar || '')),
+    normalizeProviderMediaUrl(String((detail as unknown as { coverImage?: string })?.coverImage || '')),
   ].filter(Boolean);
 
   if (explicitAlbum.length > 0) {

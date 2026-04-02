@@ -193,11 +193,18 @@ export async function createDemand(payload: {
   timeline: string;
   stylePref: string;
   description: string;
-  attachments: Array<{ url: string; name: string; size: number }>;
+  attachments: Array<{ url: string; name: string; size: number; path?: string }>;
 }) {
   return requestJson<DemandSummaryDTO>('/demands', {
     method: 'POST',
-    body: payload,
+    body: {
+      ...payload,
+      attachments: payload.attachments.map((item) => ({
+        url: item.path || item.url,
+        name: item.name,
+        size: item.size,
+      })),
+    },
   });
 }
 
@@ -213,11 +220,18 @@ export async function updateDemand(id: number, payload: {
   timeline: string;
   stylePref: string;
   description: string;
-  attachments: Array<{ url: string; name: string; size: number }>;
+  attachments: Array<{ url: string; name: string; size: number; path?: string }>;
 }) {
   return requestJson<DemandSummaryDTO>(`/demands/${id}`, {
     method: 'PUT',
-    body: payload,
+    body: {
+      ...payload,
+      attachments: payload.attachments.map((item) => ({
+        url: item.path || item.url,
+        name: item.name,
+        size: item.size,
+      })),
+    },
   });
 }
 

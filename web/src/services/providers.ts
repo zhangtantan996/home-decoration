@@ -153,8 +153,9 @@ function toProviderDetail(
   const displayName = resolveProviderDisplayName(
     role,
     readStringRecord(provider, 'companyName'),
-    readStringRecord(user, 'nickname'),
+    readStringRecord(provider, 'displayName'),
     readStringRecord(provider, 'nickname'),
+    readStringRecord(user, 'nickname'),
   );
   const priceDisplay = normalizeProviderPriceDisplay(response.priceDisplay);
 
@@ -163,7 +164,7 @@ function toProviderDetail(
     role,
     name: displayName,
     orgLabel: role === 'designer' ? '设计师' : role === 'company' ? '装修公司' : '工长',
-    avatar: readStringRecord(user, 'avatar') || readStringRecord(provider, 'avatar') || readStringRecord(provider, 'coverImage') || 'https://placehold.co/120x120/e7eaef/0f172a?text=HZ',
+    avatar: readStringRecord(provider, 'avatar') || readStringRecord(provider, 'coverImage') || readStringRecord(user, 'avatar') || 'https://placehold.co/120x120/e7eaef/0f172a?text=HZ',
     summary: readStringRecord(provider, 'specialty') || readStringRecord(provider, 'serviceIntro') || '支持前期沟通与上门勘测。',
     rating: reviewStats.displayRating || readNumericRecord(provider, 'rating'),
     reviewCount: reviewStats.totalCount,
@@ -175,7 +176,7 @@ function toProviderDetail(
     tags: parseTextArray(readStringRecord(provider, 'highlightTags')),
     serviceArea: parseTextArray(readStringRecord(provider, 'serviceArea')),
     userPublicId: readStringRecord(user, 'publicId') || undefined,
-    coverImage: readStringRecord(provider, 'coverImage') || readStringRecord(user, 'avatar') || 'https://placehold.co/1200x540/111827/f8fafc?text=%E5%AE%B6%E8%A3%85%E7%AE%A1%E5%AE%B6',
+    coverImage: readStringRecord(provider, 'coverImage') || readStringRecord(provider, 'avatar') || readStringRecord(user, 'avatar') || 'https://placehold.co/1200x540/111827/f8fafc?text=%E5%AE%B6%E8%A3%85%E7%AE%A1%E5%AE%B6',
     serviceIntro: readStringRecord(provider, 'serviceIntro') || readStringRecord(provider, 'introduction') || '可先沟通户型、预算和入住时间，再安排测量或远程方案建议。',
     officeAddress: readStringRecord(provider, 'officeAddress') || '线上沟通 + 同城到场',
     teamSize: readNumericRecord(provider, 'teamSize'),

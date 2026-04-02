@@ -233,11 +233,15 @@ func createOrLoadMerchantUserWithCompatibility(tx *gorm.DB, phone, nickname stri
 	return createdUser, nil
 }
 
-func createMerchantUserWithCompatibility(tx *gorm.DB, phone, realName string) (model.User, error) {
+func createMerchantUserWithCompatibility(tx *gorm.DB, phone, _ string) (model.User, error) {
+	nickname := "用户"
+	if len(phone) >= 4 {
+		nickname += phone[len(phone)-4:]
+	}
 	now := time.Now()
 	createData := map[string]interface{}{
 		"phone":      phone,
-		"nickname":   realName,
+		"nickname":   nickname,
 		"user_type":  1,
 		"status":     1,
 		"created_at": now,
@@ -526,14 +530,14 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 			if len([]rune(strings.TrimSpace(item.Description))) > 5000 {
 				return fmt.Errorf("%s工艺说明不能超过5000个字符", foremanCategoryDisplayNames[category])
 			}
-			images := normalizeStringSlice(item.Images)
+			images := normalizeStoredAssetSlice(normalizeStringSlice(item.Images))
 			if len(images) < 2 || len(images) > 8 {
 				return fmt.Errorf("%s需上传2-8张图片", foremanCategoryDisplayNames[category])
 			}
 		}
 		if item, ok := provided["other"]; ok {
 			desc := strings.TrimSpace(item.Description)
-			images := normalizeStringSlice(item.Images)
+			images := normalizeStoredAssetSlice(normalizeStringSlice(item.Images))
 			if desc == "" && len(images) == 0 {
 				return nil
 			}
@@ -553,7 +557,7 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 		cases[index].Description = strings.TrimSpace(cases[index].Description)
 		cases[index].Style = strings.TrimSpace(cases[index].Style)
 		cases[index].Area = strings.TrimSpace(cases[index].Area)
-		cases[index].Images = normalizeStringSlice(cases[index].Images)
+		cases[index].Images = normalizeStoredAssetSlice(normalizeStringSlice(cases[index].Images))
 
 		if cases[index].Title == "" {
 			return fmt.Errorf("第%d个案例缺少标题", index+1)
@@ -601,19 +605,19 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 
 	input.Styles = normalizeStringSlice(input.Styles)
 	input.HighlightTags = normalizeStringSlice(input.HighlightTags)
-	input.CompanyAlbum = normalizeStringSlice(input.CompanyAlbum)
-	input.Avatar = strings.TrimSpace(input.Avatar)
+	input.CompanyAlbum = normalizeStoredAssetSlice(normalizeStringSlice(input.CompanyAlbum))
+	input.Avatar = normalizeStoredAsset(input.Avatar)
 	input.RealName = strings.TrimSpace(input.RealName)
 	input.IDCardNo = strings.TrimSpace(input.IDCardNo)
-	input.IDCardFront = strings.TrimSpace(input.IDCardFront)
-	input.IDCardBack = strings.TrimSpace(input.IDCardBack)
+	input.IDCardFront = normalizeStoredAsset(input.IDCardFront)
+	input.IDCardBack = normalizeStoredAsset(input.IDCardBack)
 	input.CompanyName = strings.TrimSpace(input.CompanyName)
 	input.LicenseNo = utils.NormalizeLicenseNo(input.LicenseNo)
-	input.LicenseImage = strings.TrimSpace(input.LicenseImage)
+	input.LicenseImage = normalizeStoredAsset(input.LicenseImage)
 	input.LegalPersonName = strings.TrimSpace(input.LegalPersonName)
 	input.LegalPersonIDCardNo = strings.TrimSpace(input.LegalPersonIDCardNo)
-	input.LegalPersonIDCardFront = strings.TrimSpace(input.LegalPersonIDCardFront)
-	input.LegalPersonIDCardBack = strings.TrimSpace(input.LegalPersonIDCardBack)
+	input.LegalPersonIDCardFront = normalizeStoredAsset(input.LegalPersonIDCardFront)
+	input.LegalPersonIDCardBack = normalizeStoredAsset(input.LegalPersonIDCardBack)
 	input.GraduateSchool = strings.TrimSpace(input.GraduateSchool)
 	input.DesignPhilosophy = strings.TrimSpace(input.DesignPhilosophy)
 	input.Introduction = strings.TrimSpace(input.Introduction)
@@ -855,17 +859,6 @@ func MerchantApply(c *gin.Context) {
 			user = createdUser
 		}
 	}
-	if input.Avatar != "" && user.Avatar != input.Avatar {
-		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("avatar", input.Avatar).Error; err != nil {
-			tx.Rollback()
-			if respondMerchantSchemaMismatch(c, err) {
-				return
-			}
-			response.Error(c, 500, "提交失败: 更新用户头像失败")
-			return
-		}
-	}
-
 	// 7. 商家互斥：同一时刻仅允许一个已生效商家身份；用户账号可与商家共存
 	if ok, nextAction, checkErr := canSubmitProviderApplication(tx, user.ID); checkErr != nil {
 		tx.Rollback()
@@ -1634,15 +1627,6 @@ func AdminApproveApplication(c *gin.Context) {
 		response.Error(c, 400, "该账号已被禁用")
 		return
 	}
-	if app.Avatar != "" && user.Avatar != app.Avatar {
-		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Update("avatar", app.Avatar).Error; err != nil {
-			tx.Rollback()
-			response.Error(c, 500, "更新用户头像失败: "+err.Error())
-			return
-		}
-		user.Avatar = app.Avatar
-	}
-
 	snapshot, snapshotErr := buildProviderApprovalSnapshot(&app)
 	if snapshotErr != nil {
 		tx.Rollback()
@@ -1670,6 +1654,7 @@ func AdminApproveApplication(c *gin.Context) {
 			"provider_type":               snapshot.ProviderType,
 			"sub_type":                    snapshot.SubType,
 			"entity_type":                 snapshot.EntityType,
+			"display_name":                service.ResolveProviderStoredDisplayName(snapshot.ProviderType, app.CompanyName, app.RealName),
 			"company_name":                app.CompanyName,
 			"avatar":                      app.Avatar,
 			"license_no":                  app.LicenseNo,
@@ -1701,6 +1686,7 @@ func AdminApproveApplication(c *gin.Context) {
 		provider.ProviderType = snapshot.ProviderType
 		provider.SubType = snapshot.SubType
 		provider.EntityType = snapshot.EntityType
+		provider.DisplayName = service.ResolveProviderStoredDisplayName(snapshot.ProviderType, app.CompanyName, app.RealName)
 		provider.CompanyName = app.CompanyName
 		provider.Avatar = app.Avatar
 		provider.LicenseNo = app.LicenseNo
@@ -1735,6 +1721,7 @@ func AdminApproveApplication(c *gin.Context) {
 			ProviderType:        snapshot.ProviderType,
 			SubType:             snapshot.SubType,
 			EntityType:          snapshot.EntityType,
+			DisplayName:         service.ResolveProviderStoredDisplayName(snapshot.ProviderType, app.CompanyName, app.RealName),
 			CompanyName:         app.CompanyName,
 			SourceApplicationID: app.ID,
 			Avatar:              app.Avatar,
@@ -1814,10 +1801,7 @@ func AdminApproveApplication(c *gin.Context) {
 
 	// 同步商家到腾讯云 IM（异步）
 	go func() {
-		displayName := provider.CompanyName
-		if displayName == "" {
-			displayName = user.Nickname
-		}
+		displayName := service.ResolveProviderDisplayName(provider, &user)
 		if err := tencentim.SyncUserToIM(user.ID, displayName, ""); err != nil {
 			// 仅记录日志，不影响主流程
 			// log.Printf("[TencentIM] 商家同步失败: userID=%d, err=%v", user.ID, err)

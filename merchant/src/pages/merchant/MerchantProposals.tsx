@@ -3,10 +3,11 @@ import type { UploadFile } from 'antd';
 import { Card, Table, Tag, Button, Typography, message, Modal, Space, Descriptions, Form, Input, InputNumber, Upload } from 'antd';
 import { ArrowLeftOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { merchantProposalApi, merchantUploadApi } from '../../services/merchantApi';
+import { merchantProposalApi, merchantUploadApi, type MerchantUploadResult } from '../../services/merchantApi';
 import { useDictStore } from '../../stores/dictStore';
 import { PROPOSAL_STATUS_META } from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { buildStoredAssetFile, getStoredPathsFromUploadFiles } from '../../utils/uploadAsset';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -52,8 +53,8 @@ const MerchantProposals: React.FC = () => {
     const [currentProposal, setCurrentProposal] = useState<Proposal | null>(null);
     const [currentBooking, setCurrentBooking] = useState<Booking | null>(null);
     const [submitting, setSubmitting] = useState(false);
-    const [fileList, setFileList] = useState<UploadFile[]>([]);
-    const [previewFileList, setPreviewFileList] = useState<UploadFile[]>([]);
+    const [fileList, setFileList] = useState<Array<UploadFile<MerchantUploadResult>>>([]);
+    const [previewFileList, setPreviewFileList] = useState<Array<UploadFile<MerchantUploadResult>>>([]);
     const [rejectionInfo, setRejectionInfo] = useState<any>(null); // 拒绝信息
     const [form] = Form.useForm();
     const [resubmitForm] = Form.useForm(); // 重新提交表单
@@ -75,6 +76,22 @@ const MerchantProposals: React.FC = () => {
         .split(/\n|,|，/)
         .map((item) => item.trim())
         .filter(Boolean);
+
+    const buildStoredUploadFiles = (values: string[], prefix: string) =>
+        values
+            .map((value, index) => buildStoredAssetFile(value, `${prefix}-${index}-${value}`))
+            .filter(Boolean) as Array<UploadFile<MerchantUploadResult>>;
+
+    const handleAssetUpload: NonNullable<React.ComponentProps<typeof Upload>['customRequest']> = async (options) => {
+        const { file, onSuccess, onError } = options;
+        try {
+            const uploaded = await merchantUploadApi.uploadImageData(file as File);
+            onSuccess?.(uploaded);
+        } catch (error) {
+            onError?.(error as Error);
+            message.error(error instanceof Error ? error.message : '上传失败');
+        }
+    };
 
     useEffect(() => {
         loadProposals();
@@ -147,13 +164,7 @@ const MerchantProposals: React.FC = () => {
                 // Parse existing attachments
                 try {
                     const existingAttachments = JSON.parse(res.data.proposal.attachments || '[]');
-                    setFileList(existingAttachments.map((url: string, index: number) => ({
-                        uid: `-${index}`,
-                        name: url.split('/').pop() || 'file',
-                        status: 'done',
-                        url: url,
-                        response: { url },
-                    })));
+                    setFileList(buildStoredUploadFiles(existingAttachments, 'attachment'));
                 } catch {
                     setFileList([]);
                 }
@@ -162,13 +173,7 @@ const MerchantProposals: React.FC = () => {
                         ...(Array.isArray(previewPackage.floorPlanImages) ? previewPackage.floorPlanImages : []),
                         ...(Array.isArray(previewPackage.effectPreviewImages) ? previewPackage.effectPreviewImages : []),
                     ];
-                    setPreviewFileList(previewImages.map((url: string, index: number) => ({
-                        uid: `preview-${index}`,
-                        name: url.split('/').pop() || 'preview',
-                        status: 'done',
-                        url,
-                        response: { url },
-                    })));
+                    setPreviewFileList(buildStoredUploadFiles(previewImages, 'preview'));
                 } catch {
                     setPreviewFileList([]);
                 }
@@ -185,12 +190,8 @@ const MerchantProposals: React.FC = () => {
             const values = await form.validateFields();
             setSubmitting(true);
 
-            const attachments = fileList
-                .filter(file => file.status === 'done' && (file.response?.url || file.url))
-                .map(file => file.response?.url || file.url);
-            const previewImages = previewFileList
-                .filter(file => file.status === 'done' && (file.response?.url || file.url))
-                .map(file => file.response?.url || file.url);
+            const attachments = getStoredPathsFromUploadFiles(fileList);
+            const previewImages = getStoredPathsFromUploadFiles(previewFileList);
 
             const res = await merchantProposalApi.update(currentProposal.id, {
                 ...values,
@@ -287,13 +288,7 @@ const MerchantProposals: React.FC = () => {
                 // 解析现有附件
                 try {
                     const existingAttachments = JSON.parse(detailRes.data.proposal.attachments || '[]');
-                    setFileList(existingAttachments.map((url: string, index: number) => ({
-                        uid: `-${index}`,
-                        name: url.split('/').pop() || 'file',
-                        status: 'done',
-                        url: url,
-                        response: { url },
-                    })));
+                    setFileList(buildStoredUploadFiles(existingAttachments, 'attachment'));
                 } catch {
                     setFileList([]);
                 }
@@ -302,13 +297,7 @@ const MerchantProposals: React.FC = () => {
                         ...(Array.isArray(previewPackage.floorPlanImages) ? previewPackage.floorPlanImages : []),
                         ...(Array.isArray(previewPackage.effectPreviewImages) ? previewPackage.effectPreviewImages : []),
                     ];
-                    setPreviewFileList(previewImages.map((url: string, index: number) => ({
-                        uid: `preview-${index}`,
-                        name: url.split('/').pop() || 'preview',
-                        status: 'done',
-                        url,
-                        response: { url },
-                    })));
+                    setPreviewFileList(buildStoredUploadFiles(previewImages, 'preview'));
                 } catch {
                     setPreviewFileList([]);
                 }
@@ -328,12 +317,8 @@ const MerchantProposals: React.FC = () => {
             const values = await resubmitForm.validateFields();
             setSubmitting(true);
 
-            const attachments = fileList
-                .filter(file => file.status === 'done' && (file.response?.url || file.url))
-                .map(file => file.response?.url || file.url);
-            const previewImages = previewFileList
-                .filter(file => file.status === 'done' && (file.response?.url || file.url))
-                .map(file => file.response?.url || file.url);
+            const attachments = getStoredPathsFromUploadFiles(fileList);
+            const previewImages = getStoredPathsFromUploadFiles(previewFileList);
 
             const res = await merchantProposalApi.resubmit({
                 proposalId: currentProposal.id,
@@ -583,21 +568,7 @@ const MerchantProposals: React.FC = () => {
                         <Upload
                             fileList={previewFileList}
                             onChange={({ fileList }) => setPreviewFileList(fileList)}
-                            customRequest={async (options) => {
-                                const { file, onSuccess, onError } = options;
-                                try {
-                                    const res = await merchantUploadApi.uploadImage(file as File) as any;
-                                    if (res.code === 0) {
-                                        onSuccess?.(res.data);
-                                    } else {
-                                        onError?.(new Error(res.message));
-                                        message.error(res.message);
-                                    }
-                                } catch (err) {
-                                    onError?.(err as Error);
-                                    message.error('上传失败');
-                                }
-                            }}
+                            customRequest={handleAssetUpload}
                             maxCount={6}
                             beforeUpload={(file) => {
                                 const isLt20M = file.size / 1024 / 1024 < 20;
@@ -631,21 +602,7 @@ const MerchantProposals: React.FC = () => {
                         <Upload
                             fileList={fileList}
                             onChange={({ fileList }) => setFileList(fileList)}
-                            customRequest={async (options) => {
-                                const { file, onSuccess, onError } = options;
-                                try {
-                                    const res = await merchantUploadApi.uploadImage(file as File) as any;
-                                    if (res.code === 0) {
-                                        onSuccess?.(res.data);
-                                    } else {
-                                        onError?.(new Error(res.message));
-                                        message.error(res.message);
-                                    }
-                                } catch (err) {
-                                    onError?.(err as Error);
-                                    message.error('上传失败');
-                                }
-                            }}
+                            customRequest={handleAssetUpload}
                             maxCount={5}
                             beforeUpload={(file) => {
                                 const isLt20M = file.size / 1024 / 1024 < 20;
@@ -762,21 +719,7 @@ const MerchantProposals: React.FC = () => {
                         <Upload
                             fileList={previewFileList}
                             onChange={({ fileList }) => setPreviewFileList(fileList)}
-                            customRequest={async (options) => {
-                                const { file, onSuccess, onError } = options;
-                                try {
-                                    const res = await merchantUploadApi.uploadImage(file as File) as any;
-                                    if (res.code === 0) {
-                                        onSuccess?.(res.data);
-                                    } else {
-                                        onError?.(new Error(res.message));
-                                        message.error(res.message);
-                                    }
-                                } catch (err) {
-                                    onError?.(err as Error);
-                                    message.error('上传失败');
-                                }
-                            }}
+                            customRequest={handleAssetUpload}
                             maxCount={6}
                             beforeUpload={(file) => {
                                 const isLt20M = file.size / 1024 / 1024 < 20;
@@ -810,21 +753,7 @@ const MerchantProposals: React.FC = () => {
                         <Upload
                             fileList={fileList}
                             onChange={({ fileList }) => setFileList(fileList)}
-                            customRequest={async (options) => {
-                                const { file, onSuccess, onError } = options;
-                                try {
-                                    const res = await merchantUploadApi.uploadImage(file as File) as any;
-                                    if (res.code === 0) {
-                                        onSuccess?.(res.data);
-                                    } else {
-                                        onError?.(new Error(res.message));
-                                        message.error(res.message);
-                                    }
-                                } catch (err) {
-                                    onError?.(err as Error);
-                                    message.error('上传失败');
-                                }
-                            }}
+                            customRequest={handleAssetUpload}
                             maxCount={5}
                             beforeUpload={(file) => {
                                 const isLt20M = file.size / 1024 / 1024 < 20;

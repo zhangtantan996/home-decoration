@@ -25,12 +25,12 @@ import {
 } from "@ant-design/icons";
 import {
   adminProviderApi,
+  type AdminAccountStatus,
+  type AdminOnboardingStatus,
+  type AdminOperatingStatus,
   type AdminProviderListItem,
 } from "../../services/api";
-import {
-  regionApi,
-  type ServiceCityRegion,
-} from "../../services/regionApi";
+import { regionApi, type ServiceCityRegion } from "../../services/regionApi";
 import AdminReauthModal from "../../components/AdminReauthModal";
 import { PermissionWrapper } from "../../components/PermissionWrapper";
 import PageHeader from "../../components/PageHeader";
@@ -38,12 +38,18 @@ import ToolbarCard from "../../components/ToolbarCard";
 import AuditStatusSummary from "../audits/components/AuditStatusSummary";
 import VisibilityStatusPanel from "../audits/components/VisibilityStatusPanel";
 import {
+  ACCOUNT_STATUS_META,
+  ACCOUNT_STATUS_OPTIONS,
   ADMIN_PROVIDER_STATUS_META,
   ADMIN_PROVIDER_STATUS_OPTIONS,
   ADMIN_PROVIDER_TYPE_META,
   ADMIN_PROVIDER_TYPE_OPTIONS,
   LEGACY_PATH_BADGE,
+  LOGIN_STATUS_META,
   MERCHANT_ONBOARDING_STATUS_META,
+  ONBOARDING_STATUS_FILTER_OPTIONS,
+  OPERATING_STATUS_META,
+  OPERATING_STATUS_OPTIONS,
   PROVIDER_SUBTYPE_LABELS,
   PUBLIC_VISIBILITY_META,
   SETTLED_STATUS_META,
@@ -81,24 +87,24 @@ const resolveVisibilityTag = (provider: Provider) => {
 };
 
 const resolveAccountStatusTag = (provider: Provider) => {
-  const accountBound = provider.accountBound ?? Boolean(provider.userId);
-  if (!accountBound) {
-    return <Tag color="default">未绑定</Tag>;
-  }
-  if (provider.loginEnabled) {
-    return <Tag color="green">可登录</Tag>;
-  }
-  return <Tag color="orange">已绑定待启用</Tag>;
+  const meta =
+    ACCOUNT_STATUS_META[provider.accountStatus || "unbound"] ||
+    ACCOUNT_STATUS_META.unbound;
+  return <Tag color={meta.color}>{meta.text}</Tag>;
+};
+
+const resolveLoginStatusTag = (provider: Provider) => {
+  const meta =
+    LOGIN_STATUS_META[provider.loginStatus || "unbound"] ||
+    LOGIN_STATUS_META.unbound;
+  return <Tag color={meta.color}>{meta.text}</Tag>;
 };
 
 const resolveOnboardingStatusTag = (provider: Provider) => {
-  const accountBound = provider.accountBound ?? Boolean(provider.userId);
-  if (!accountBound) {
+  if ((provider.onboardingStatus || "none") === "none") {
     return <Text type="secondary">-</Text>;
   }
-  const onboardingStatus = provider.completionRequired
-    ? provider.onboardingStatus || "required"
-    : "approved";
+  const onboardingStatus = provider.onboardingStatus || "none";
   const meta =
     MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
     MERCHANT_ONBOARDING_STATUS_META.unknown;
@@ -106,14 +112,40 @@ const resolveOnboardingStatusTag = (provider: Provider) => {
 };
 
 const resolveOperatingStatusTag = (provider: Provider) => {
-  const accountBound = provider.accountBound ?? Boolean(provider.userId);
-  if (!accountBound) {
-    return <Tag color="default">未开通</Tag>;
-  }
-  return provider.operatingEnabled ? (
-    <Tag color="green">已开放</Tag>
-  ) : (
-    <Tag color="orange">受限</Tag>
+  const meta =
+    OPERATING_STATUS_META[provider.operatingStatus || "unopened"] ||
+    OPERATING_STATUS_META.unopened;
+  return <Tag color={meta.color}>{meta.text}</Tag>;
+};
+
+const renderProviderStatusOverview = (provider: Provider) => {
+  const onboardingStatus = provider.onboardingStatus || "none";
+  const showOnboardingTag =
+    onboardingStatus !== "none" && onboardingStatus !== "approved";
+  const showOperatingTag =
+    (provider.operatingStatus || "unopened") === "frozen";
+
+  return (
+    <Space size={[0, 4]} wrap>
+      <Tag
+        color={
+          provider.isSettled
+            ? SETTLED_STATUS_META.true.color
+            : SETTLED_STATUS_META.false.color
+        }
+      >
+        {provider.isSettled
+          ? SETTLED_STATUS_META.true.text
+          : SETTLED_STATUS_META.false.text}
+      </Tag>
+      {provider.accountBound ? (
+        resolveAccountStatusTag(provider)
+      ) : (
+        <Tag color="default">未绑定账号</Tag>
+      )}
+      {showOnboardingTag && resolveOnboardingStatusTag(provider)}
+      {showOperatingTag && resolveOperatingStatusTag(provider)}
+    </Space>
   );
 };
 
@@ -267,6 +299,15 @@ const ProviderList: React.FC = () => {
   const [providerType, setProviderType] = useState<number | undefined>();
   const [verifiedFilter, setVerifiedFilter] = useState<string | undefined>();
   const [settledFilter, setSettledFilter] = useState<string | undefined>();
+  const [accountStatusFilter, setAccountStatusFilter] = useState<
+    AdminAccountStatus | undefined
+  >();
+  const [onboardingStatusFilter, setOnboardingStatusFilter] = useState<
+    AdminOnboardingStatus | undefined
+  >();
+  const [operatingStatusFilter, setOperatingStatusFilter] = useState<
+    AdminOperatingStatus | undefined
+  >();
   const [detailVisible, setDetailVisible] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<Provider | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -282,8 +323,10 @@ const ProviderList: React.FC = () => {
   const [claimTargetProvider, setClaimTargetProvider] =
     useState<Provider | null>(null);
   const [claimReauthOpen, setClaimReauthOpen] = useState(false);
-  const [pendingClaimValues, setPendingClaimValues] =
-    useState<Record<string, unknown> | null>(null);
+  const [pendingClaimValues, setPendingClaimValues] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [claimForm] = Form.useForm();
   const [serviceCityOptions, setServiceCityOptions] = useState<
     ServiceCityGroupOption[]
@@ -310,7 +353,15 @@ const ProviderList: React.FC = () => {
     ) {
       loadData();
     }
-  }, [page, providerType, verifiedFilter, settledFilter]);
+  }, [
+    page,
+    providerType,
+    verifiedFilter,
+    settledFilter,
+    accountStatusFilter,
+    onboardingStatusFilter,
+    operatingStatusFilter,
+  ]);
 
   useEffect(() => {
     const loadServiceCities = async () => {
@@ -350,6 +401,9 @@ const ProviderList: React.FC = () => {
             : settledFilter === "false"
               ? false
               : undefined,
+        accountStatus: accountStatusFilter,
+        onboardingStatus: onboardingStatusFilter,
+        operatingStatus: operatingStatusFilter,
       })) as any;
       if (res.code === 0) {
         setProviders(res.data.list || []);
@@ -374,13 +428,26 @@ const ProviderList: React.FC = () => {
   };
 
   const handleStatusChange = async (id: number, status: number) => {
-    try {
-      await adminProviderApi.updateStatus(id, status);
-      message.success(status === 1 ? "已启用" : "已封禁");
-      loadData();
-    } catch (error) {
-      message.error("操作失败");
-    }
+    const target = providers.find((item) => item.id === id);
+    Modal.confirm({
+      title: status === 1 ? "确认恢复经营" : "确认封禁经营",
+      content:
+        status === 1
+          ? `将恢复「${getProviderDisplayName(target || ({} as Provider))}」的主体经营状态。该操作只影响主体经营与登录结果，不修改用户账号启用状态。`
+          : `将封禁「${getProviderDisplayName(target || ({} as Provider))}」的主体经营状态。该操作只影响主体经营与登录结果，不修改用户账号启用状态。`,
+      okText: status === 1 ? "确认恢复" : "确认封禁",
+      cancelText: "取消",
+      okButtonProps: status === 1 ? undefined : { danger: true },
+      onOk: async () => {
+        try {
+          await adminProviderApi.updateStatus(id, status);
+          message.success(status === 1 ? "已恢复经营" : "已封禁经营");
+          loadData();
+        } catch (error) {
+          message.error("操作失败");
+        }
+      },
+    });
   };
 
   const handleTogglePlatformDisplay = async (id: number, enabled: boolean) => {
@@ -491,18 +558,15 @@ const ProviderList: React.FC = () => {
     if (!claimTargetProvider || !pendingClaimValues) return;
     try {
       setClaimSubmitting(true);
-      const res = (await adminProviderApi.claimAccount(
-        claimTargetProvider.id,
-        {
-          ...(pendingClaimValues as {
-            phone: string;
-            contactName?: string;
-            nickname?: string;
-          }),
-          reason: payload.reason,
-          recentReauthProof: payload.recentReauthProof,
-        },
-      )) as any;
+      const res = (await adminProviderApi.claimAccount(claimTargetProvider.id, {
+        ...(pendingClaimValues as {
+          phone: string;
+          contactName?: string;
+          nickname?: string;
+        }),
+        reason: payload.reason,
+        recentReauthProof: payload.recentReauthProof,
+      })) as any;
       if (res.code === 0) {
         message.success("账号已绑定，首次登录将补全正式入驻资料");
         setClaimModalVisible(false);
@@ -574,33 +638,11 @@ const ProviderList: React.FC = () => {
       ),
     },
     {
-      title: "入驻状态",
-      dataIndex: "isSettled",
-      key: "isSettled",
-      width: 90,
-      render: (val: boolean) => {
-        const config =
-          SETTLED_STATUS_META[String(val)] || SETTLED_STATUS_META["true"];
-        return <Tag color={config.color}>{config.text}</Tag>;
-      },
-    },
-    {
-      title: "账号状态",
-      key: "accountStatus",
-      width: 100,
-      render: (_: unknown, record: Provider) => resolveAccountStatusTag(record),
-    },
-    {
-      title: "补全状态",
-      key: "onboardingStatus",
-      width: 100,
-      render: (_: unknown, record: Provider) => resolveOnboardingStatusTag(record),
-    },
-    {
-      title: "经营权限",
-      key: "operatingEnabled",
-      width: 100,
-      render: (_: unknown, record: Provider) => resolveOperatingStatusTag(record),
+      title: "状态总览",
+      key: "statusOverview",
+      width: 260,
+      render: (_: unknown, record: Provider) =>
+        renderProviderStatusOverview(record),
     },
     {
       title: "主体类型",
@@ -617,63 +659,6 @@ const ProviderList: React.FC = () => {
       title: "评分",
       dataIndex: "rating",
       render: (val: number) => val?.toFixed(1) || "-",
-    },
-    {
-      title: "还原度",
-      dataIndex: "restoreRate",
-      render: (val: number) => (val ? `${val}%` : "-"),
-    },
-    {
-      title: "预算",
-      dataIndex: "budgetControl",
-      render: (val: number) => (val ? `${val}%` : "-"),
-    },
-    {
-      title: "经验",
-      dataIndex: "yearsExperience",
-      render: (val: number) => (val ? `${val}年` : "-"),
-    },
-    {
-      title: "认证状态",
-      dataIndex: "verified",
-      render: (val: boolean, record: Provider) => (
-        <PermissionWrapper
-          permission={[
-            "provider:designer:verify",
-            "provider:company:verify",
-            "provider:foreman:verify",
-          ]}
-        >
-          <Switch
-            checked={val}
-            checkedChildren={<CheckCircleOutlined />}
-            unCheckedChildren={<CloseCircleOutlined />}
-            onChange={(checked) => handleVerify(record.id, checked)}
-          />
-        </PermissionWrapper>
-      ),
-    },
-    {
-      title: "封禁状态",
-      dataIndex: "status",
-      render: (val: number, record: Provider) => (
-        <PermissionWrapper
-          permission={[
-            "provider:designer:status",
-            "provider:company:status",
-            "provider:foreman:status",
-          ]}
-        >
-          <Switch
-            checked={val === 1}
-            checkedChildren="正常"
-            unCheckedChildren="封禁"
-            onChange={(checked) =>
-              handleStatusChange(record.id, checked ? 1 : 0)
-            }
-          />
-        </PermissionWrapper>
-      ),
     },
     {
       title: "公开状态",
@@ -693,6 +678,48 @@ const ProviderList: React.FC = () => {
       key: "blockerSummary",
       ellipsis: true,
       render: (_: any, record: Provider) => renderBlockerSummary(record),
+    },
+    {
+      title: "认证",
+      dataIndex: "verified",
+      render: (val: boolean, record: Provider) => (
+        <PermissionWrapper
+          permission={[
+            "provider:designer:verify",
+            "provider:company:verify",
+            "provider:foreman:verify",
+          ]}
+        >
+          <Switch
+            checked={val}
+            checkedChildren={<CheckCircleOutlined />}
+            unCheckedChildren={<CloseCircleOutlined />}
+            onChange={(checked) => handleVerify(record.id, checked)}
+          />
+        </PermissionWrapper>
+      ),
+    },
+    {
+      title: "经营",
+      dataIndex: "status",
+      render: (val: number, record: Provider) => (
+        <PermissionWrapper
+          permission={[
+            "provider:designer:status",
+            "provider:company:status",
+            "provider:foreman:status",
+          ]}
+        >
+          <Switch
+            checked={val === 1}
+            checkedChildren="正常经营"
+            unCheckedChildren="封禁经营"
+            onChange={(checked) =>
+              handleStatusChange(record.id, checked ? 1 : 0)
+            }
+          />
+        </PermissionWrapper>
+      ),
     },
     {
       title: "平台上线",
@@ -721,7 +748,7 @@ const ProviderList: React.FC = () => {
       key: "action",
       render: (_: any, record: Provider) => (
         <Space>
-          {record.isSettled === false && !record.userId && (
+          {record.isSettled === false && !record.accountBound && (
             <PermissionWrapper permission={["provider:company:edit"]}>
               <Button
                 type="link"
@@ -733,7 +760,7 @@ const ProviderList: React.FC = () => {
               </Button>
             </PermissionWrapper>
           )}
-          {record.isSettled === false && !!record.userId && (
+          {record.isSettled === false && !!record.accountBound && (
             <PermissionWrapper permission={["provider:company:edit"]}>
               <Button
                 type="link"
@@ -776,7 +803,7 @@ const ProviderList: React.FC = () => {
     <div className="hz-page-stack">
       <PageHeader
         title="服务商管理"
-        description="统一维护设计师、工长与装修公司资料，处理认证、封禁与详情查看。"
+        description="列表默认只展示关键状态与可操作开关；完整状态链路统一在详情里查看。"
       />
 
       <ToolbarCard>
@@ -809,6 +836,39 @@ const ProviderList: React.FC = () => {
               setPage(1);
             }}
             options={SETTLED_FILTER_OPTIONS}
+          />
+          <Select
+            allowClear
+            placeholder="账号状态"
+            style={{ width: 120 }}
+            value={accountStatusFilter}
+            onChange={(val) => {
+              setAccountStatusFilter(val);
+              setPage(1);
+            }}
+            options={ACCOUNT_STATUS_OPTIONS}
+          />
+          <Select
+            allowClear
+            placeholder="补全状态"
+            style={{ width: 120 }}
+            value={onboardingStatusFilter}
+            onChange={(val) => {
+              setOnboardingStatusFilter(val);
+              setPage(1);
+            }}
+            options={ONBOARDING_STATUS_FILTER_OPTIONS}
+          />
+          <Select
+            allowClear
+            placeholder="经营状态"
+            style={{ width: 120 }}
+            value={operatingStatusFilter}
+            onChange={(val) => {
+              setOperatingStatusFilter(val);
+              setPage(1);
+            }}
+            options={OPERATING_STATUS_OPTIONS}
           />
           <Button icon={<ReloadOutlined />} onClick={loadData}>
             刷新
@@ -862,158 +922,207 @@ const ProviderList: React.FC = () => {
               rejectResubmittable={currentProvider.actions?.rejectResubmittable}
               legacyInfo={currentProvider.legacyInfo}
             />
-            <Descriptions column={2} bordered size="small">
-              <Descriptions.Item label="ID">
-                {currentProvider.id}
-              </Descriptions.Item>
-              <Descriptions.Item label="展示名">
-                {getProviderDisplayName(currentProvider)}
-              </Descriptions.Item>
-              <Descriptions.Item label="主体名称">
-                {getProviderSubjectName(currentProvider)}
-              </Descriptions.Item>
-              <Descriptions.Item label="入驻状态">
-                <Tag
-                  color={
-                    SETTLED_STATUS_META[String(Boolean(currentProvider.isSettled))]
-                      ?.color || "default"
-                  }
-                >
-                  {
-                    SETTLED_STATUS_META[String(Boolean(currentProvider.isSettled))]
-                      ?.text || "-"
-                  }
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="账号状态">
-                {resolveAccountStatusTag(currentProvider)}
-              </Descriptions.Item>
-              <Descriptions.Item label="补全状态">
-                {resolveOnboardingStatusTag(currentProvider)}
-              </Descriptions.Item>
-              <Descriptions.Item label="经营权限">
-                {resolveOperatingStatusTag(currentProvider)}
-              </Descriptions.Item>
-              <Descriptions.Item label="补全申请单">
-                {currentProvider.completionApplicationId || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="类型">
-                {ADMIN_PROVIDER_TYPE_META[currentProvider.providerType]?.text ||
-                  "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="主体类型">
-                {PROVIDER_SUBTYPE_LABELS[currentProvider.subType] ||
-                  currentProvider.subType ||
-                  "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="负责人">
-                {getProviderPrincipalName(currentProvider)}
-              </Descriptions.Item>
-              <Descriptions.Item label="评分">
-                {currentProvider.rating?.toFixed(1)}
-              </Descriptions.Item>
-              <Descriptions.Item label="经验">
-                {currentProvider.yearsExperience}年
-              </Descriptions.Item>
-              <Descriptions.Item label="专长" span={2}>
-                <div
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    overflowWrap: "anywhere",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {currentProvider.specialty || "-"}
-                </div>
-              </Descriptions.Item>
+            <Card size="small" title="主体信息">
+              <Descriptions column={2} bordered size="small">
+                <Descriptions.Item label="ID">
+                  {currentProvider.id}
+                </Descriptions.Item>
+                <Descriptions.Item label="展示名">
+                  {getProviderDisplayName(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="主体名称">
+                  {getProviderSubjectName(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="类型">
+                  {ADMIN_PROVIDER_TYPE_META[currentProvider.providerType]
+                    ?.text || "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="主体类型">
+                  {PROVIDER_SUBTYPE_LABELS[currentProvider.subType] ||
+                    currentProvider.subType ||
+                    "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="负责人">
+                  {getProviderPrincipalName(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="评分">
+                  {currentProvider.rating?.toFixed(1) || "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="经验">
+                  {currentProvider.yearsExperience
+                    ? `${currentProvider.yearsExperience}年`
+                    : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="专长" span={2}>
+                  <div
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      overflowWrap: "anywhere",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {currentProvider.specialty || "-"}
+                  </div>
+                </Descriptions.Item>
+                <Descriptions.Item label="价格范围" span={2}>
+                  {currentProvider.priceMin && currentProvider.priceMax
+                    ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ""}`
+                    : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="服务介绍" span={2}>
+                  <div
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      overflowWrap: "anywhere",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {currentProvider.serviceIntro || "-"}
+                  </div>
+                </Descriptions.Item>
+                <Descriptions.Item label="服务城市" span={2}>
+                  <div
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      overflowWrap: "anywhere",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {currentProvider.serviceArea || "-"}
+                  </div>
+                </Descriptions.Item>
+                <Descriptions.Item label="团队规模">
+                  {currentProvider.teamSize || "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="成立年份">
+                  {currentProvider.establishedYear || "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="资质认证" span={2}>
+                  <div
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      overflowWrap: "anywhere",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {currentProvider.certifications || "-"}
+                  </div>
+                </Descriptions.Item>
+                <Descriptions.Item label="封面图" span={2}>
+                  {currentProvider.coverImage ? (
+                    <img
+                      src={currentProvider.coverImage}
+                      alt="封面"
+                      style={{ maxWidth: "100%", maxHeight: 200 }}
+                    />
+                  ) : (
+                    "-"
+                  )}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
 
-              <Descriptions.Item label="价格范围" span={2}>
-                {currentProvider.priceMin && currentProvider.priceMax
-                  ? `¥${currentProvider.priceMin}-${currentProvider.priceMax}${currentProvider.priceUnit || ""}`
-                  : "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="服务介绍" span={2}>
-                <div
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    overflowWrap: "anywhere",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {currentProvider.serviceIntro || "-"}
-                </div>
-              </Descriptions.Item>
-              <Descriptions.Item label="服务城市" span={2}>
-                <div
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    overflowWrap: "anywhere",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {currentProvider.serviceArea || "-"}
-                </div>
-              </Descriptions.Item>
-              <Descriptions.Item label="团队规模">
-                {currentProvider.teamSize || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="成立年份">
-                {currentProvider.establishedYear || "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="资质认证" span={2}>
-                <div
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    overflowWrap: "anywhere",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {currentProvider.certifications || "-"}
-                </div>
-              </Descriptions.Item>
-              <Descriptions.Item label="封面图" span={2}>
-                {currentProvider.coverImage ? (
-                  <img
-                    src={currentProvider.coverImage}
-                    alt="封面"
-                    style={{ maxWidth: "100%", maxHeight: 200 }}
-                  />
-                ) : (
-                  "-"
-                )}
-              </Descriptions.Item>
+            <Card size="small" title="账号信息">
+              <Descriptions column={2} bordered size="small">
+                <Descriptions.Item label="账号绑定">
+                  <Tag
+                    color={currentProvider.accountBound ? "green" : "default"}
+                  >
+                    {currentProvider.accountBound ? "已绑定" : "未绑定"}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="账号状态">
+                  {resolveAccountStatusTag(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="登录结果">
+                  {resolveLoginStatusTag(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="关联账号ID">
+                  {currentProvider.userId || "-"}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
 
-              <Descriptions.Item label="认证">
-                <Tag
-                  color={
-                    VERIFICATION_STATUS_META[
-                      String(Boolean(currentProvider.verified))
-                    ].color
-                  }
-                >
-                  {
-                    VERIFICATION_STATUS_META[
-                      String(Boolean(currentProvider.verified))
-                    ].text
-                  }
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="状态">
-                <Tag
-                  color={
-                    ADMIN_PROVIDER_STATUS_META[currentProvider.status]?.color ||
-                    "default"
-                  }
-                >
-                  {ADMIN_PROVIDER_STATUS_META[currentProvider.status]?.text ||
-                    currentProvider.status}
-                </Tag>
-              </Descriptions.Item>
-            </Descriptions>
-            <VisibilityStatusPanel
-              visibility={currentProvider.visibility}
-              legacyInfo={currentProvider.legacyInfo}
-            />
+            <Card size="small" title="补全信息">
+              <Descriptions column={2} bordered size="small">
+                <Descriptions.Item label="补全状态">
+                  {resolveOnboardingStatusTag(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="补全申请单">
+                  {currentProvider.completionApplicationId || "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="入驻状态">
+                  <Tag
+                    color={
+                      SETTLED_STATUS_META[
+                        String(Boolean(currentProvider.isSettled))
+                      ]?.color || "default"
+                    }
+                  >
+                    {SETTLED_STATUS_META[
+                      String(Boolean(currentProvider.isSettled))
+                    ]?.text || "-"}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="认证状态">
+                  <Tag
+                    color={
+                      VERIFICATION_STATUS_META[
+                        String(Boolean(currentProvider.verified))
+                      ].color
+                    }
+                  >
+                    {
+                      VERIFICATION_STATUS_META[
+                        String(Boolean(currentProvider.verified))
+                      ].text
+                    }
+                  </Tag>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card size="small" title="经营信息">
+              <Descriptions column={2} bordered size="small">
+                <Descriptions.Item label="经营状态">
+                  {resolveOperatingStatusTag(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="主体状态">
+                  <Tag
+                    color={
+                      ADMIN_PROVIDER_STATUS_META[currentProvider.status]
+                        ?.color || "default"
+                    }
+                  >
+                    {ADMIN_PROVIDER_STATUS_META[currentProvider.status]?.text ||
+                      currentProvider.status}
+                  </Tag>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card size="small" title="公开展示信息">
+              <Descriptions column={2} bordered size="small">
+                <Descriptions.Item label="公开状态">
+                  {resolveVisibilityTag(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="路径来源">
+                  {currentProvider.legacyInfo?.isLegacyPath ? (
+                    <Tag color={LEGACY_PATH_BADGE.color}>
+                      {LEGACY_PATH_BADGE.text}
+                    </Tag>
+                  ) : (
+                    "标准链路"
+                  )}
+                </Descriptions.Item>
+              </Descriptions>
+              <div style={{ marginTop: 12 }}>
+                <VisibilityStatusPanel
+                  visibility={currentProvider.visibility}
+                  legacyInfo={currentProvider.legacyInfo}
+                />
+              </div>
+            </Card>
           </Space>
         )}
       </Modal>
@@ -1245,7 +1354,7 @@ const ProviderList: React.FC = () => {
       <AdminReauthModal
         open={claimReauthOpen}
         title="认领装修公司账号"
-        description={`认领后将为「${claimTargetProvider ? getProviderDisplayName(claimTargetProvider) : '-'}」开通登录资格，并进入资料待补全状态。`}
+        description={`认领后将为「${claimTargetProvider ? getProviderDisplayName(claimTargetProvider) : "-"}」开通登录资格，并进入资料待补全状态。`}
         confirmText="确认认领"
         onCancel={() => {
           setClaimReauthOpen(false);

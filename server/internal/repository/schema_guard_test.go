@@ -154,6 +154,7 @@ func TestHighRiskTablesCount(t *testing.T) {
 	expectedTables := []string{
 		"merchant_applications",
 		"providers",
+		"sys_admins",
 		"material_shop_applications",
 		"material_shops",
 		"material_shop_application_products",

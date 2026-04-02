@@ -186,8 +186,8 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
 
   // 合并数据（API 优先，降级使用传入的 initialDesigner）
   const displayData = {
-    name: user.nickname || initialDesigner.name || '设计师',
-    avatar: user.avatar || initialDesigner.avatar,
+    name: provider.displayName || initialDesigner.name || '设计师',
+    avatar: provider.avatar || user.avatar || initialDesigner.avatar,
     userId: provider.userId || user.id || initialDesigner.userId,
     userPublicId:
       user.publicId || provider.userPublicId || initialDesigner.publicId,
@@ -646,8 +646,8 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
 
   // 合并数据（API 优先，降级使用传入的 initialWorker）
   const displayData = {
-    name: user.nickname || initialWorker.name || '工人',
-    avatar: user.avatar || initialWorker.avatar,
+    name: provider.displayName || initialWorker.name || '工人',
+    avatar: provider.avatar || user.avatar || initialWorker.avatar,
     userId: provider.userId || user.id || initialWorker.userId,
     userPublicId:
       user.publicId || provider.userPublicId || initialWorker.publicId,
@@ -1083,11 +1083,11 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
   // 合并数据（API 优先，降级使用传入的 initialCompany）
   const displayData = {
     name:
-      user.nickname ||
+      provider.displayName ||
       provider.companyName ||
       initialCompany.name ||
       '装修公司',
-    logo: user.avatar || initialCompany.logo,
+    logo: provider.avatar || user.avatar || initialCompany.logo,
     userId: provider.userId || user.id || initialCompany.userId,
     userPublicId:
       user.publicId || provider.userPublicId || initialCompany.publicId,

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Tinode } from 'tinode-sdk';
 import api from './api';
+import { toAbsoluteAssetUrl } from '../utils/env';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -40,6 +41,27 @@ const DEFAULT_CONFIG = {
   host: normalizeTinodeHost(import.meta.env.VITE_TINODE_HOST || 'localhost:6060'),
   apiKey: import.meta.env.VITE_TINODE_API_KEY || 'AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K',
   appName: 'HomeDecoration-Merchant',
+};
+
+const LOCAL_ASSET_PREFIXES = ['/uploads/', '/static/'];
+
+const normalizeStoredAssetPath = (value?: string) => {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  if (LOCAL_ASSET_PREFIXES.some((prefix) => trimmed.startsWith(prefix))) {
+    return trimmed;
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (LOCAL_ASSET_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix))) {
+        return parsed.pathname;
+      }
+    } catch {
+      return trimmed;
+    }
+  }
+  return trimmed;
 };
 
 class TinodeService extends SimpleEventEmitter {
@@ -291,7 +313,7 @@ class TinodeService extends SimpleEventEmitter {
   /**
    * Upload file to server using axios (Merchant endpoint)
    */
-  async uploadFile(file: File): Promise<{ url: string }> {
+  async uploadFile(file: File): Promise<{ url: string; path: string }> {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -308,11 +330,15 @@ class TinodeService extends SimpleEventEmitter {
       // 所以我们需要访问 response.data.url
       console.log('[TinodeService] Upload response:', response);
 
-      if (!response.data || !response.data.url) {
+      if (!response.data || (!response.data.url && !response.data.path)) {
         throw new Error('上传响应格式错误');
       }
 
-      return { url: response.data.url };
+      const path = normalizeStoredAssetPath(response.data.path || response.data.url);
+      return {
+        url: toAbsoluteAssetUrl(response.data.url || path),
+        path,
+      };
     } catch (error) {
       console.error('[TinodeService] File upload failed:', error);
       throw new Error('文件上传失败');
@@ -347,7 +373,7 @@ class TinodeService extends SimpleEventEmitter {
           tp: 'IM',
           data: {
             mime: 'image/jpeg',
-            val: uploadResult.url,
+            val: uploadResult.path,
             width: 800,
             height: 600
           }
@@ -393,7 +419,7 @@ class TinodeService extends SimpleEventEmitter {
             tp: 'EX',
             data: {
               mime: mimeType,
-              val: uploadResult.url,
+              val: uploadResult.path,
               name: safeFileName,
               size: typeof file?.size === 'number' && Number.isFinite(file.size) && file.size > 0 ? Math.floor(file.size) : 0,
             },

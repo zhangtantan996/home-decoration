@@ -35,6 +35,7 @@ import {
     merchantUploadApi,
     onboardingValidationApi,
     type BusinessHoursRange,
+    type MerchantUploadResult,
     type MaterialShopApplyDetailData,
     type MaterialShopApplyPayload,
     type MaterialShopCompletionStatusResponse,
@@ -42,6 +43,7 @@ import {
 } from '../../services/merchantApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
+import { buildStoredAssetFile, getAssetPreviewUrl, getStoredPathFromUploadFile, normalizeStoredAssetValue, normalizeStoredAssetValues } from '../../utils/uploadAsset';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
 
@@ -505,7 +507,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                 unit: resolveProductUnit(product as unknown as Record<string, unknown>),
                 description: String(product?.description || ''),
                 price: typeof product?.price === 'number' ? product.price : undefined,
-                images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
+                images: Array.isArray(product?.images) ? normalizeStoredAssetValues(product.images.map((image) => String(image)).filter(Boolean)) : [],
             })));
             return;
         }
@@ -535,7 +537,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
     const createSingleUploadHandler = (fieldName: 'avatar' | 'businessLicense' | 'legalPersonIdCardFront' | 'legalPersonIdCardBack'): UploadProps['customRequest'] => async (options) => {
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
-            form.setFieldsValue({ [fieldName]: uploaded.url });
+            form.setFieldsValue({ [fieldName]: normalizeStoredAssetValue(uploaded) });
             options.onSuccess?.(uploaded);
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -545,29 +547,20 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
     };
 
     const toSingleUploadFileList = (value?: string): UploadFile[] => {
-        if (!value) {
-            return [];
-        }
-        return [{
-            uid: value,
-            name: value.split('/').pop() || 'uploaded-image',
-            status: 'done',
-            url: value,
-        }];
+        const file = buildStoredAssetFile(value);
+        return file ? [file] : [];
     };
 
     const toProductUploadFileList = (product: MaterialProductForm): UploadFile[] =>
-        product.images.map((url, imageIndex) => ({
-            uid: `${product.id}_${imageIndex}`,
-            name: url.split('/').pop() || `product-image-${imageIndex + 1}`,
-            status: 'done',
-            url,
-        }));
+        product.images
+            .map((value, imageIndex) => buildStoredAssetFile(value, `${product.id}_${imageIndex}`))
+            .filter(Boolean) as UploadFile[];
 
     const handleUploadPreview = async (file: UploadFile) => {
-        const previewUrl = typeof file.url === 'string'
-            ? file.url
-            : (file.response as { url?: string } | undefined)?.url;
+        const previewUrl = getAssetPreviewUrl(
+            (file.response as MerchantUploadResult | undefined) || file.url || '',
+            typeof file.url === 'string' ? file.url : '',
+        );
         if (!previewUrl) {
             return;
         }
@@ -581,9 +574,10 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
             options.onSuccess?.(uploaded);
             setProducts((prev) => {
                 const next = [...prev];
-                const current = next[productIndex]?.images || [];
-                if (!current.includes(uploaded.url)) {
-                    next[productIndex] = { ...next[productIndex], images: [...current, uploaded.url].slice(0, 6) };
+                const current = normalizeStoredAssetValues(next[productIndex]?.images || []);
+                const storedPath = normalizeStoredAssetValue(uploaded);
+                if (storedPath && !current.includes(storedPath)) {
+                    next[productIndex] = { ...next[productIndex], images: [...current, storedPath].slice(0, 6) };
                 }
                 return next;
             });
@@ -796,7 +790,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                         unit: resolveProductUnit(product as unknown as Record<string, unknown>),
                         description: String(product?.description || ''),
                         price: typeof product?.price === 'number' ? product.price : undefined,
-                        images: Array.isArray(product?.images) ? product.images.map((image) => String(image)).filter(Boolean) : [],
+                        images: Array.isArray(product?.images) ? normalizeStoredAssetValues(product.images.map((image) => String(image)).filter(Boolean)) : [],
                     }))
                     : [];
                 persistDraftSnapshot({
@@ -975,7 +969,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                         unit: product.unit.trim(),
                         description: product.description.trim(),
                         price: Number(product.price),
-                        images: product.images,
+                        images: normalizeStoredAssetValues(product.images),
                     }));
 
                     const payload: MaterialShopApplyPayload = {
@@ -984,16 +978,16 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                         verificationToken,
                         resubmitToken: resubmitId ? (verificationToken || undefined) : undefined,
                         entityType,
-                        avatar: String(values.avatar || '').trim(),
+                        avatar: normalizeStoredAssetValue(String(values.avatar || '').trim()),
                         shopName: String(values.shopName || '').trim(),
                         shopDescription: values.shopDescription ? String(values.shopDescription).trim() : undefined,
                         companyName: String(values.companyName || '').trim(),
                         businessLicenseNo: normalizeLicenseNo(String(values.businessLicenseNo || '')),
-                        businessLicense: String(values.businessLicense || '').trim(),
+                        businessLicense: normalizeStoredAssetValue(String(values.businessLicense || '').trim()),
                         legalPersonName: String(values.legalPersonName || '').trim(),
                         legalPersonIdCardNo: String(values.legalPersonIdCardNo || '').trim().toUpperCase(),
-                        legalPersonIdCardFront: String(values.legalPersonIdCardFront || '').trim(),
-                        legalPersonIdCardBack: String(values.legalPersonIdCardBack || '').trim(),
+                        legalPersonIdCardFront: normalizeStoredAssetValue(String(values.legalPersonIdCardFront || '').trim()),
+                        legalPersonIdCardBack: normalizeStoredAssetValue(String(values.legalPersonIdCardBack || '').trim()),
                         businessHours: summarizeBusinessHoursRanges(normalizeBusinessHoursRangesForForm(values.businessHoursRanges)),
                         businessHoursRanges,
                         contactPhone: String(values.contactPhone || '').trim(),
@@ -1595,8 +1589,8 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                                 customRequest={createProductUploadHandler(index)}
                                                 onPreview={handleUploadPreview}
                                                 onRemove={(file) => {
-                                                    const url = file.url || (file.response as { url?: string } | undefined)?.url;
-                                                    if (!url) {
+                                                    const target = getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>);
+                                                    if (!target) {
                                                         return false;
                                                     }
                                                     setProducts((prev) => {
@@ -1607,7 +1601,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                                         }
                                                         next[index] = {
                                                             ...current,
-                                                            images: current.images.filter((image) => image !== url),
+                                                            images: normalizeStoredAssetValues(current.images).filter((image) => image !== target),
                                                         };
                                                         return next;
                                                     });

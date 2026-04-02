@@ -171,6 +171,7 @@ func TestUserService_Register(t *testing.T) {
 		req               RegisterRequest
 		setup             func(t *testing.T, db *gorm.DB)
 		wantErr           bool
+		wantErrContains   string
 		wantUserType      *int8
 		wantTinodeError   bool
 		wantTinodeToken   bool
@@ -205,7 +206,8 @@ func TestUserService_Register(t *testing.T) {
 					Status: 1,
 				})
 			},
-			wantErr: true,
+			wantErr:         true,
+			wantErrContains: "该手机号已有账号，请直接登录",
 		},
 		{
 			name: "weak_password",
@@ -267,6 +269,9 @@ func TestUserService_Register(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error")
+				}
+				if tc.wantErrContains != "" && !strings.Contains(err.Error(), tc.wantErrContains) {
+					t.Fatalf("unexpected error message: %v", err)
 				}
 				if token != nil || user != nil {
 					t.Fatalf("expected nil token/user on error")
@@ -593,6 +598,61 @@ func TestUserService_Login(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestUserServiceLogin_ReusesExistingUserWithProviderIdentity(t *testing.T) {
+	t.Setenv("APP_ENV", "local")
+	t.Setenv("SMS_DEBUG_BYPASS", "true")
+
+	svc := &UserService{}
+	cfg := &config.JWTConfig{ExpireHour: 1}
+	db := setupMainDB(t)
+	if err := db.AutoMigrate(&model.Provider{}); err != nil {
+		t.Fatalf("auto migrate provider: %v", err)
+	}
+
+	user := model.User{
+		Phone:    testPhone,
+		Nickname: "普通用户资料",
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		DisplayName:  "服务商展示名",
+		Status:       1,
+		Verified:     true,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	token, loggedInUser, err := svc.Login(&LoginRequest{
+		Phone: testPhone,
+		Code:  "123456",
+		Type:  "code",
+	}, cfg)
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if token == nil || loggedInUser == nil {
+		t.Fatalf("expected token and user")
+	}
+	if loggedInUser.ID != user.ID {
+		t.Fatalf("expected reused user id=%d got=%d", user.ID, loggedInUser.ID)
+	}
+
+	var count int64
+	if err := db.Model(&model.User{}).Where("phone = ?", testPhone).Count(&count).Error; err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected single user for phone, got %d", count)
 	}
 }
 
