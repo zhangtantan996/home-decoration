@@ -135,6 +135,7 @@
    - 若迁移已纳入 `deploy/scripts/lib/release_common.sh` 的 allowlist，可随发布脚本自动执行
    - 若迁移未纳入 allowlist，仍需人工执行并记录
    - 对于带 `-- up / -- down` 的单文件迁移，只执行 `up` 段
+   - 若仓库中出现高于 allowlist 最新版本的迁移文件，发布脚本会直接失败，避免静默漏跑
 3. 执行验证 SQL / 健康检查 / 关键接口 smoke
 4. 确认结果
 5. 再执行应用发布脚本

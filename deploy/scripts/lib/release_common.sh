@@ -179,10 +179,30 @@ release_apply_known_migrations() {
     "server/migrations/v1.13.4_add_public_visibility_switches.sql"
   )
   local migration_file
+  local latest_known_migration
+  local unlisted_newer_migrations
 
   if ! release_compose_has_service db; then
     echo "==> Compose database service not present; skip bundled SQL migrations"
     return 0
+  fi
+
+  latest_known_migration="$(basename "${migration_files[${#migration_files[@]}-1]}")"
+  unlisted_newer_migrations="$(
+    find "${REPO_ROOT}/server/migrations" -maxdepth 1 -type f -name 'v*.sql' -print \
+      | xargs -n1 basename \
+      | sort -V \
+      | awk -v latest="${latest_known_migration}" '
+          $0 == latest { seen = 1; next }
+          seen { print }
+        '
+  )"
+
+  if [[ -n "${unlisted_newer_migrations}" ]]; then
+    echo "New versioned migrations are not included in release_apply_known_migrations:" >&2
+    printf '  - %s\n' ${unlisted_newer_migrations} >&2
+    echo "Update deploy/scripts/lib/release_common.sh allowlist or review and execute these migrations manually before release." >&2
+    return 1
   fi
 
   for migration_file in "${migration_files[@]}"; do
