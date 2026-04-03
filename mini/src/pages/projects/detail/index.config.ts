@@ -1,4 +1,4 @@
 export default definePageConfig({
   navigationBarTitleText: '项目详情',
-  backgroundColor: '#FFFFFF'
+  backgroundColor: '#FFFFFF',
 });

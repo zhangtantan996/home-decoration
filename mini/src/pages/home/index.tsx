@@ -1,11 +1,13 @@
 import Taro, { useDidShow } from "@tarojs/taro";
 import { Image, Text, View } from "@tarojs/components";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Empty } from "@/components/Empty";
 import { Icon, type IconName } from "@/components/Icon";
+import { PullToRefreshNotice } from "@/components/PullToRefreshNotice";
 import { Skeleton } from "@/components/Skeleton";
 import { Tag } from "@/components/Tag";
+import { usePullToRefreshFeedback } from "@/hooks/usePullToRefreshFeedback";
 import {
   listMaterialShops,
   type MaterialShopItem,
@@ -18,6 +20,7 @@ import {
 import { showErrorToast } from "@/utils/error";
 import { syncCurrentTabBar } from "@/utils/customTabBar";
 import { getMiniNavMetrics } from "@/utils/navLayout";
+import { normalizeProviderMediaUrl } from "@/utils/providerMedia";
 import "./index.scss";
 
 type HomeProviderCategory = "designer" | "foreman" | "company";
@@ -250,7 +253,9 @@ const getCompanyInfoLine = (provider: ProviderListItem) => {
     provider.reviewCount ? `${provider.reviewCount}条评价` : "",
     provider.completedCnt ? `${provider.completedCnt}单交付` : "",
     provider.yearsExperience ? `${provider.yearsExperience}年经验` : "",
-  ].filter(Boolean).slice(0, 2);
+  ]
+    .filter(Boolean)
+    .slice(0, 2);
 };
 
 const getProviderServiceAreaText = (provider: ProviderListItem) => {
@@ -264,10 +269,7 @@ const getProviderDistanceText = (provider: ProviderListItem) => {
   return `${distance.toFixed(distance >= 10 ? 0 : 1)}km`;
 };
 
-const sortProviders = (
-  items: ProviderListItem[],
-  sortBy: string,
-) => {
+const sortProviders = (items: ProviderListItem[], sortBy: string) => {
   const list = [...items];
   if (sortBy === "recommend") {
     return list;
@@ -308,7 +310,9 @@ const getMaterialInfoLine = (shop: MaterialShopItem) => {
   return [
     shop.reviewCount ? `${shop.reviewCount}条评价` : "",
     isMeaningfulText(shop.openTime) ? shop.openTime : "",
-  ].filter(Boolean).slice(0, 2);
+  ]
+    .filter(Boolean)
+    .slice(0, 2);
 };
 
 const loadAllProviders = async ({
@@ -363,7 +367,12 @@ export default function Home() {
       paddingRight: `${navMetrics.menuRightInset}px`,
       paddingBottom: `${navMetrics.contentTop - navMetrics.menuBottom}px`,
     }),
-    [navMetrics.contentTop, navMetrics.menuBottom, navMetrics.menuRightInset, navMetrics.menuTop],
+    [
+      navMetrics.contentTop,
+      navMetrics.menuBottom,
+      navMetrics.menuRightInset,
+      navMetrics.menuTop,
+    ],
   );
   const headerMainStyle = useMemo(
     () => ({ height: `${navMetrics.menuHeight}px` }),
@@ -420,65 +429,64 @@ export default function Home() {
     );
   }, [currentSortOptions, currentSortValue]);
 
-  useEffect(() => {
-    const fetchData = async () => {
+  const loadPageData = useCallback(async (fromPullDown = false) => {
+    if (!fromPullDown) {
       setLoading(true);
+    }
 
-      try {
-        if (activeCategory === "designer") {
-          const list = await loadAllProviders({
-            type: "designer",
-            sortBy: designerSortBy === "rating" ? "rating" : undefined,
-            keyword: "",
-          });
+    try {
+      if (activeCategory === "designer") {
+        const list = await loadAllProviders({
+          type: "designer",
+          sortBy: designerSortBy === "rating" ? "rating" : undefined,
+          keyword: "",
+        });
 
-          const filtered = list.filter((provider) =>
-            providerOrgFilter === "all"
+        const filtered = list.filter((provider) =>
+          providerOrgFilter === "all"
+            ? true
+            : getProviderOrgType(provider) === providerOrgFilter,
+        );
+        setProviderItems(sortProviders(filtered, designerSortBy));
+        setMaterialItems([]);
+        return;
+      }
+
+      if (activeCategory === "foreman" || activeCategory === "company") {
+        const requestType = activeCategory === "foreman" ? "foreman" : "company";
+        const sortBy = activeCategory === "foreman" ? foremanSortBy : companySortBy;
+        const list = await loadAllProviders({
+          type: requestType,
+          sortBy: sortBy === "rating" ? "rating" : undefined,
+          keyword: "",
+        });
+
+        const filtered = list.filter((provider) =>
+          activeCategory === "company"
+            ? true
+            : providerOrgFilter === "all"
               ? true
               : getProviderOrgType(provider) === providerOrgFilter,
-          );
-          setProviderItems(sortProviders(filtered, designerSortBy));
-          setMaterialItems([]);
-          return;
-        }
-
-        if (activeCategory === "foreman" || activeCategory === "company") {
-          const requestType =
-            activeCategory === "foreman" ? "foreman" : "company";
-          const sortBy =
-            activeCategory === "foreman" ? foremanSortBy : companySortBy;
-          const list = await loadAllProviders({
-            type: requestType,
-            sortBy: sortBy === "rating" ? "rating" : undefined,
-            keyword: "",
-          });
-
-          const filtered = list.filter((provider) =>
-            activeCategory === "company"
-              ? true
-              : providerOrgFilter === "all"
-                ? true
-                : getProviderOrgType(provider) === providerOrgFilter,
-          );
-          setProviderItems(sortProviders(filtered, sortBy));
-          setMaterialItems([]);
-          return;
-        }
-
-        const list = await loadAllMaterialShops(
-          materialSortBy === "distance" ? "distance" : "recommend",
         );
-
-        setMaterialItems(list);
-        setProviderItems([]);
-      } catch (error) {
-        showErrorToast(error, "加载失败");
-      } finally {
-        setLoading(false);
+        setProviderItems(sortProviders(filtered, sortBy));
+        setMaterialItems([]);
+        return;
       }
-    };
 
-    fetchData();
+      const list = await loadAllMaterialShops(
+        materialSortBy === "distance" ? "distance" : "recommend",
+      );
+
+      setMaterialItems(list);
+      setProviderItems([]);
+    } catch (error) {
+      showErrorToast(error, "加载失败");
+    } finally {
+      setLoading(false);
+      if (fromPullDown) {
+        Taro.stopPullDownRefresh();
+      }
+    }
   }, [
     activeCategory,
     designerSortBy,
@@ -486,6 +494,20 @@ export default function Home() {
     companySortBy,
     materialSortBy,
     providerOrgFilter,
+  ]);
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(loadPageData);
+
+  useEffect(() => {
+    void runReload();
+  }, [
+    activeCategory,
+    companySortBy,
+    designerSortBy,
+    foremanSortBy,
+    materialSortBy,
+    providerOrgFilter,
+    runReload,
   ]);
 
   const handleLocationPress = () => {
@@ -581,7 +603,11 @@ export default function Home() {
                 width={112}
                 height={112}
                 circle={activeCategory !== "company"}
-                className={activeCategory === "company" ? "home-page__provider-skeleton-avatar--square" : ""}
+                className={
+                  activeCategory === "company"
+                    ? "home-page__provider-skeleton-avatar--square"
+                    : ""
+                }
               />
               <View className="home-page__provider-skeleton-content">
                 <Skeleton height={32} width="50%" />
@@ -595,17 +621,14 @@ export default function Home() {
     }
 
     if (providerItems.length === 0) {
-      return (
-        <Empty
-          description={`暂无${activeCategoryMeta.title}数据`}
-        />
-      );
+      return <Empty description={`暂无${activeCategoryMeta.title}数据`} />;
     }
 
     return (
       <View className="home-page__content-list">
         {providerItems.map((provider) => {
           const isCompanyCard = activeCategory === "company";
+          const avatarUrl = normalizeProviderMediaUrl(provider.avatar);
           const companyTags = getCompanyDisplayTags(provider);
           const companyInfoLine = getCompanyInfoLine(provider);
           const companyAreaText = getProviderServiceAreaText(provider);
@@ -632,10 +655,10 @@ export default function Home() {
               {isCompanyCard ? (
                 <View className="home-page__entity-layout">
                   <View className="home-page__entity-aside">
-                    {provider.avatar ? (
+                    {avatarUrl ? (
                       <Image
                         className="home-page__provider-avatar home-page__provider-avatar--square"
-                        src={provider.avatar}
+                        src={avatarUrl}
                         mode="aspectFill"
                         lazyLoad
                       />
@@ -644,7 +667,6 @@ export default function Home() {
                         {getAvatarFallback(provider)}
                       </View>
                     )}
-
                   </View>
 
                   <View className="home-page__entity-main">
@@ -653,7 +675,10 @@ export default function Home() {
                         {getProviderName(provider)}
                       </Text>
                       {provider.isSettled !== true ? (
-                        <Tag variant="warning" className="home-page__entity-status-tag">
+                        <Tag
+                          variant="warning"
+                          className="home-page__entity-status-tag"
+                        >
                           未入驻
                         </Tag>
                       ) : null}
@@ -667,7 +692,10 @@ export default function Home() {
                         </Text>
                       </View>
                       {companyInfoLine.map((item) => (
-                        <Text key={item} className="home-page__entity-meta-text">
+                        <Text
+                          key={item}
+                          className="home-page__entity-meta-text"
+                        >
                           {item}
                         </Text>
                       ))}
@@ -677,13 +705,16 @@ export default function Home() {
                       <View className="home-page__entity-tag-row">
                         {companyTags.map((tag) => (
                           <View key={tag} className="home-page__entity-tag">
-                            <Text className="home-page__entity-tag-text">{tag}</Text>
+                            <Text className="home-page__entity-tag-text">
+                              {tag}
+                            </Text>
                           </View>
                         ))}
                       </View>
                     ) : null}
 
-                    {isMeaningfulText(companyAreaText) || isMeaningfulText(companyDistanceText) ? (
+                    {isMeaningfulText(companyAreaText) ||
+                    isMeaningfulText(companyDistanceText) ? (
                       <View className="home-page__entity-info-row">
                         {isMeaningfulText(companyAreaText) ? (
                           <Text className="home-page__entity-info-text">
@@ -705,10 +736,10 @@ export default function Home() {
               ) : (
                 <>
                   <View className="home-page__provider-head">
-                    {provider.avatar ? (
+                    {avatarUrl ? (
                       <Image
                         className="home-page__provider-avatar"
-                        src={provider.avatar}
+                        src={avatarUrl}
                         mode="aspectFill"
                         lazyLoad
                       />
@@ -793,11 +824,7 @@ export default function Home() {
     }
 
     if (materialItems.length === 0) {
-      return (
-        <Empty
-          description="暂无主材门店数据"
-        />
-      );
+      return <Empty description="暂无主材门店数据" />;
     }
 
     return (
@@ -805,6 +832,7 @@ export default function Home() {
         {materialItems.map((shop) => {
           const materialTags = getMaterialDisplayTags(shop);
           const materialInfoLine = getMaterialInfoLine(shop);
+          const brandLogoUrl = normalizeProviderMediaUrl(shop.brandLogo);
 
           return (
             <View
@@ -814,10 +842,10 @@ export default function Home() {
             >
               <View className="home-page__entity-layout">
                 <View className="home-page__entity-aside">
-                  {shop.brandLogo || shop.cover ? (
+                  {brandLogoUrl ? (
                     <Image
                       className="home-page__material-cover"
-                      src={shop.brandLogo || shop.cover}
+                      src={brandLogoUrl}
                       mode="aspectFill"
                       lazyLoad
                     />
@@ -832,7 +860,10 @@ export default function Home() {
                   <View className="home-page__entity-title-row">
                     <Text className="home-page__entity-name">{shop.name}</Text>
                     {shop.isSettled !== true ? (
-                      <Tag variant="warning" className="home-page__entity-status-tag">
+                      <Tag
+                        variant="warning"
+                        className="home-page__entity-status-tag"
+                      >
                         未入驻
                       </Tag>
                     ) : null}
@@ -856,13 +887,16 @@ export default function Home() {
                     <View className="home-page__entity-tag-row">
                       {materialTags.map((tag) => (
                         <View key={tag} className="home-page__entity-tag">
-                          <Text className="home-page__entity-tag-text">{tag}</Text>
+                          <Text className="home-page__entity-tag-text">
+                            {tag}
+                          </Text>
                         </View>
                       ))}
                     </View>
                   ) : null}
 
-                  {isMeaningfulText(shop.address) || isMeaningfulText(shop.distance) ? (
+                  {isMeaningfulText(shop.address) ||
+                  isMeaningfulText(shop.distance) ? (
                     <View className="home-page__entity-info-row">
                       {isMeaningfulText(shop.address) ? (
                         <Text className="home-page__entity-info-text">
@@ -889,7 +923,7 @@ export default function Home() {
   };
 
   return (
-    <View className="home-page">
+    <View className="home-page" {...bindPullToRefresh}>
       <View className="home-page__header" style={headerInsetStyle}>
         <View className="home-page__header-main" style={headerMainStyle}>
           <View className="home-page__location" onClick={handleLocationPress}>
@@ -902,7 +936,15 @@ export default function Home() {
           />
         </View>
       </View>
-      <View className="home-page__header-placeholder" style={headerPlaceholderStyle} />
+      <View
+        className="home-page__header-placeholder"
+        style={headerPlaceholderStyle}
+      />
+      <PullToRefreshNotice
+        status={refreshStatus}
+        height={drawerHeight}
+        progress={drawerProgress}
+      />
 
       <View className="home-page__category-row">
         {HOME_CATEGORIES.map((item) => {

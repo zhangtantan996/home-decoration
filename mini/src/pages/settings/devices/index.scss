@@ -1,0 +1,95 @@
+.devices-page {
+  &__tip {
+    padding: 28rpx 24rpx;
+  }
+
+  &__tip-text {
+    display: block;
+    color: #6b7280;
+    font-size: 24rpx;
+    line-height: 1.75;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18rpx;
+    padding: 28rpx 24rpx;
+    border-bottom: 1rpx solid rgba(17, 17, 17, 0.06);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &--current {
+      padding-right: 24rpx;
+    }
+  }
+
+  &__item-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__title-row {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+    flex-wrap: wrap;
+  }
+
+  &__name {
+    display: block;
+    color: #111111;
+    font-size: 30rpx;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  &__meta {
+    display: block;
+    margin-top: 8rpx;
+    color: #6b7280;
+    font-size: 23rpx;
+    line-height: 1.6;
+  }
+
+  &__badge {
+    padding: 6rpx 16rpx;
+    border-radius: 999rpx;
+    background: #111111;
+  }
+
+  &__badge-text {
+    color: #ffffff;
+    font-size: 20rpx;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  &__action {
+    min-width: 132rpx;
+    color: #111111;
+    border-color: rgba(17, 17, 17, 0.1);
+    background: #ffffff;
+  }
+
+  &__batch {
+    margin-top: 4rpx;
+    color: #dc2626;
+    border-color: rgba(220, 38, 38, 0.18);
+    background: #ffffff;
+  }
+
+  &__empty {
+    padding: 34rpx 24rpx;
+  }
+
+  &__empty-text {
+    display: block;
+    color: #9ca3af;
+    font-size: 24rpx;
+    line-height: 1.6;
+  }
+}

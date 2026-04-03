@@ -1,0 +1,12 @@
+.general-settings {
+  &__loading {
+    padding: 34rpx 24rpx;
+  }
+
+  &__loading-text {
+    display: block;
+    color: #9ca3af;
+    font-size: 24rpx;
+    line-height: 1.6;
+  }
+}

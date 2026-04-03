@@ -22,6 +22,7 @@ export interface BookingItem {
   providerType: string | number;
   address: string;
   area: number;
+  houseLayout?: string;
   renovationType?: string;
   budgetRange?: string;
   preferredDate: string;
@@ -30,8 +31,40 @@ export interface BookingItem {
   status: number;
   intentFee: number;
   intentFeePaid: boolean;
+  surveyDeposit?: number;
+  surveyDepositPaid?: boolean;
+  surveyDepositPaidAt?: string;
+  surveyDepositRefunded?: boolean;
+  surveyDepositRefundAt?: string;
   proposalId?: number;
   createdAt?: string;
+}
+
+export type PaymentChannel = 'alipay' | 'wechat';
+export type PaymentLaunchMode = 'redirect' | 'qr_code' | 'wechat_jsapi';
+
+export interface SurveyDepositPaymentOption {
+  channel: PaymentChannel;
+  label: string;
+  launchMode: PaymentLaunchMode;
+}
+
+export interface BookingSiteSurveySummary {
+  status?: string;
+  submittedAt?: string;
+  confirmedAt?: string;
+  revisionRequestedAt?: string;
+  notes?: string;
+  revisionRequestReason?: string;
+}
+
+export interface BookingBudgetConfirmSummary {
+  status?: string;
+  budgetMin?: number;
+  budgetMax?: number;
+  designIntent?: string;
+  notes?: string;
+  rejectionReason?: string;
 }
 
 export interface BookingProviderSummary {
@@ -54,7 +87,10 @@ export interface BookingDetailResponse {
   flowSummary?: string;
   availableActions?: string[];
   currentStage?: string;
+  siteSurveySummary?: BookingSiteSurveySummary;
+  budgetConfirmSummary?: BookingBudgetConfirmSummary;
   refundSummary?: RefundSummaryDTO;
+  surveyDepositPaymentOptions?: SurveyDepositPaymentOption[];
 }
 
 export async function createBooking(payload: CreateBookingPayload) {

@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/weapp/",
   "projectname": "home-decoration-mini",
   "description": "Home Decoration mini program (Taro)",
-  "appid": "wxbda9b98cbf9ce54a",
+  "appid": "wxd89a401b87800a6a",
   "setting": {
     "urlCheck": false,
     "es6": true,

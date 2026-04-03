@@ -1,21 +1,22 @@
 import Taro, { useDidShow } from '@tarojs/taro';
-import { Text, View } from '@tarojs/components';
-import { useEffect, useMemo, useState } from 'react';
-import { Edit } from '@nutui/icons-react-taro';
+import { Image, Text, View } from '@tarojs/components';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Icon } from '@/components/Icon';
-import { IdentitySwitcher } from '@/components/IdentitySwitcher';
 import { ListItem } from '@/components/ListItem';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
+import { useMountedRef } from '@/hooks/useMountedRef';
 import { favoriteService } from '@/services/inspiration';
-import { listPendingPayments, type PendingPaymentItem } from '@/services/orders';
+import { listOrderCenterEntries } from '@/services/orderCenter';
+import { getUserProfile, type UserProfile } from '@/services/profile';
 import { useAuthStore } from '@/store/auth';
-import { useIdentityStore } from '@/store/identity';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
+import { resolveProfileAvatarDisplayUrl } from '@/utils/profileAvatar';
 
 import './index.scss';
 
@@ -48,17 +49,32 @@ const GUEST_SHORTCUTS = [
   },
 ];
 
-export default function Profile() {
-  useDidShow(() => {
-    syncCurrentTabBar('/pages/profile/index');
-  });
+const maskPhone = (phone?: string) => {
+  const value = String(phone || '').trim();
+  if (!/^1\d{10}$/.test(value)) {
+    return value;
+  }
+  return value.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+};
 
+const buildFallbackNickname = (phone?: string) => {
+  const value = String(phone || '').trim();
+  if (value.length >= 4) {
+    return `用户${value.slice(-4)}`;
+  }
+  return '用户';
+};
+
+export default function Profile() {
   const auth = useAuthStore();
-  const { currentIdentity, fetchIdentities } = useIdentityStore();
+  const mountedRef = useMountedRef();
+  const isLoggedIn = Boolean(auth.token);
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
-  const [pendingPayments, setPendingPayments] = useState<PendingPaymentItem[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [pendingPaymentCount, setPendingPaymentCount] = useState(0);
   const [favoriteCaseCount, setFavoriteCaseCount] = useState(0);
-  const [showIdentitySwitcher, setShowIdentitySwitcher] = useState(false);
+  const loadRequestIdRef = useRef(0);
+
   const headerInsetStyle = useMemo(
     () => ({
       paddingTop: `${navMetrics.menuTop}px`,
@@ -82,48 +98,113 @@ export default function Profile() {
     [navMetrics.menuHeight, navMetrics.menuWidth],
   );
 
-  useEffect(() => {
-    const fetchProfileData = async () => {
-      if (!auth.token) {
-        setPendingPayments([]);
+  const loadProfileData = useCallback(async (silent = false) => {
+    const requestId = ++loadRequestIdRef.current;
+
+    if (!useAuthStore.getState().token) {
+      if (mountedRef.current) {
+        setProfile(null);
+        setPendingPaymentCount(0);
         setFavoriteCaseCount(0);
+      }
+      return;
+    }
+
+    const [profileResult, pendingResult, favoriteResult] = await Promise.allSettled([
+      getUserProfile(),
+      listOrderCenterEntries({ statusGroup: 'pending_payment', page: 1, pageSize: 1 }),
+      favoriteService.listCases(1, 1),
+    ]);
+
+    if (profileResult.status === 'fulfilled') {
+      const nextProfile = profileResult.value;
+      if (requestId !== loadRequestIdRef.current || !mountedRef.current) {
         return;
       }
+      setProfile(nextProfile);
 
-      try {
-        const pending = await listPendingPayments();
-        setPendingPayments(pending.items || []);
-
-        const favoriteRes = await favoriteService.listCases(1, 1);
-        setFavoriteCaseCount(favoriteRes.total || 0);
-
-        fetchIdentities().catch(() => {});
-      } catch (err) {
-        showErrorToast(err, '加载失败');
+      const authState = useAuthStore.getState();
+      const nextNickname = nextProfile.nickname?.trim() || buildFallbackNickname(nextProfile.phone);
+      if (authState.user) {
+        authState.updateUser({
+          id: nextProfile.id,
+          phone: nextProfile.phone || authState.user.phone,
+          nickname: nextNickname,
+          avatar: resolveProfileAvatarDisplayUrl(nextProfile.avatar, authState.user.avatar),
+        });
       }
+    } else if (
+      requestId === loadRequestIdRef.current
+      && mountedRef.current
+      && !silent
+      && !useAuthStore.getState().user
+    ) {
+      showErrorToast(profileResult.reason, '资料加载失败');
+    }
+
+    if (pendingResult.status === 'fulfilled' && requestId === loadRequestIdRef.current && mountedRef.current) {
+      setPendingPaymentCount(Number(pendingResult.value.total || pendingResult.value.list?.length || 0));
+    } else if (
+      pendingResult.status === 'rejected'
+      && requestId === loadRequestIdRef.current
+      && mountedRef.current
+      && !silent
+    ) {
+      showErrorToast(pendingResult.reason, '待支付加载失败');
+    }
+
+    if (favoriteResult.status === 'fulfilled' && requestId === loadRequestIdRef.current && mountedRef.current) {
+      setFavoriteCaseCount(favoriteResult.value.total || 0);
+    } else if (
+      favoriteResult.status === 'rejected'
+      && requestId === loadRequestIdRef.current
+      && mountedRef.current
+      && !silent
+    ) {
+      showErrorToast(favoriteResult.reason, '收藏加载失败');
+    }
+  }, [mountedRef]);
+
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(() => loadProfileData(true));
+
+  useDidShow(() => {
+    syncCurrentTabBar('/pages/profile/index');
+    if (useAuthStore.getState().token) {
+      void runReload();
+    }
+  });
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      loadRequestIdRef.current += 1;
+      if (mountedRef.current) {
+        setProfile(null);
+        setPendingPaymentCount(0);
+        setFavoriteCaseCount(0);
+      }
+      return;
+    }
+
+    void loadProfileData();
+  }, [isLoggedIn, loadProfileData, mountedRef]);
+
+  const displayProfile = useMemo(() => {
+    const phone = profile?.phone || auth.user?.phone || '';
+    const nickname = profile?.nickname?.trim() || auth.user?.nickname?.trim() || buildFallbackNickname(phone);
+    return {
+      avatar: resolveProfileAvatarDisplayUrl(profile?.avatar, auth.user?.avatar),
+      nickname,
+      maskedPhone: maskPhone(phone),
     };
-
-    void fetchProfileData();
-  }, [auth.token, fetchIdentities]);
-
-  const handleLogout = () => {
-    auth.clear();
-    Taro.showToast({ title: '已退出', icon: 'none' });
-  };
+  }, [auth.user?.avatar, auth.user?.nickname, auth.user?.phone, profile]);
 
   const requireAuth = (action: () => void) => {
-    if (!auth.token) {
+    if (!isLoggedIn) {
       void openAuthLoginPage('/pages/profile/index');
       return;
     }
     action();
-  };
-
-  const handlePendingPayments = (type?: string) => {
-    requireAuth(() => {
-      const target = type ? `/pages/orders/pending/index?type=${type}` : '/pages/orders/pending/index';
-      Taro.navigateTo({ url: target });
-    });
   };
 
   const handleOrders = () => {
@@ -173,18 +254,6 @@ export default function Profile() {
     Taro.navigateTo({ url: '/pages/about/index' });
   };
 
-  const handleSwitchIdentity = () => {
-    requireAuth(() => {
-      setShowIdentitySwitcher(true);
-    });
-  };
-
-  const handleApplyIdentity = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/identity/apply/index' });
-    });
-  };
-
   const handleEditProfile = () => {
     requireAuth(() => {
       Taro.navigateTo({ url: '/pages/profile/edit/index' });
@@ -195,22 +264,8 @@ export default function Profile() {
     void openAuthLoginPage('/pages/profile/index');
   };
 
-  const getIdentityDisplay = () => {
-    if (!currentIdentity) return '业主';
-    const identityNames: Record<string, string> = {
-      owner: '业主',
-      homeowner: '业主',
-      provider: '服务商',
-      designer: '设计师',
-      company: '装修公司',
-      foreman: '工长',
-      worker: '工长',
-    };
-    return identityNames[currentIdentity.identityType] || currentIdentity.identityName;
-  };
-
   return (
-    <View className="profile-page page-with-tabbar">
+    <View className="profile-page page-with-tabbar" {...bindPullToRefresh}>
       <View className="profile-page__header" style={headerInsetStyle}>
         <View className="profile-page__header-main" style={headerMainStyle}>
           <Text className="profile-page__header-title">我的</Text>
@@ -218,39 +273,43 @@ export default function Profile() {
         </View>
       </View>
       <View className="profile-page__header-placeholder" style={headerPlaceholderStyle} />
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
-      {auth.user ? (
+      {isLoggedIn ? (
         <>
           <View className="profile-page__hero">
-            <View className="profile-page__hero-main">
-              <View className="profile-page__avatar">
-                <Text className="profile-page__avatar-text">
-                  {(auth.user.nickname || '家').slice(0, 1)}
-                </Text>
+            <View className="profile-page__hero-card">
+              <View className="profile-page__hero-main">
+                <View className="profile-page__avatar">
+                  {displayProfile.avatar ? (
+                    <Image className="profile-page__avatar-image" src={displayProfile.avatar} mode="aspectFill" />
+                  ) : (
+                    <View className="profile-page__avatar-fallback">
+                      <Icon name="profile" size={42} color="#FFFFFF" />
+                    </View>
+                  )}
+                </View>
+                <View className="profile-page__identity">
+                  <Text className="profile-page__title">{displayProfile.nickname}</Text>
+                  {displayProfile.maskedPhone ? (
+                    <Text className="profile-page__subtitle">{displayProfile.maskedPhone}</Text>
+                  ) : null}
+                </View>
+                <View className="profile-page__edit" onClick={handleEditProfile}>
+                  <Text className="profile-page__edit-text">编辑资料</Text>
+                </View>
               </View>
-              <View className="profile-page__identity">
-                <Text className="profile-page__title">{auth.user.nickname}</Text>
-                <Text className="profile-page__subtitle">
-                  {`手机号：${auth.user.phone}`}
-                </Text>
-              </View>
-              <View className="profile-page__edit" onClick={handleEditProfile}>
-                <Edit size="20" color="#71717A" />
-              </View>
-            </View>
 
-            <View className="profile-page__stats">
-              <View className="profile-page__stat">
-                <Text className="profile-page__stat-value">{favoriteCaseCount}</Text>
-                <Text className="profile-page__stat-label">灵感收藏</Text>
-              </View>
-              <View className="profile-page__stat">
-                <Text className="profile-page__stat-value">{pendingPayments.length}</Text>
-                <Text className="profile-page__stat-label">待支付</Text>
-              </View>
-              <View className="profile-page__stat">
-                <Text className="profile-page__stat-value">{getIdentityDisplay()}</Text>
-                <Text className="profile-page__stat-label">当前身份</Text>
+              <View className="profile-page__stats">
+                <View className="profile-page__stat">
+                  <Text className="profile-page__stat-value">{favoriteCaseCount}</Text>
+                  <Text className="profile-page__stat-label">灵感收藏</Text>
+                </View>
+                <View className="profile-page__stat-divider" />
+                <View className="profile-page__stat">
+                  <Text className="profile-page__stat-value">{pendingPaymentCount}</Text>
+                  <Text className="profile-page__stat-label">待支付</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -259,114 +318,62 @@ export default function Profile() {
             <Card className="profile-page__card" title="装修管理">
               <ListItem
                 title="我的订单"
-                description="查看预约、方案与订单状态"
                 arrow
                 icon={<Icon name="orders" size={28} color="#71717A" />}
+                extra={
+                  pendingPaymentCount > 0 ? (
+                    <View className="profile-page__payment-badge">{pendingPaymentCount}</View>
+                  ) : undefined
+                }
                 onClick={handleOrders}
               />
               <ListItem
                 title="我的预约"
-                description="查看量房预约、退款入口与方案进度"
                 arrow
                 icon={<Icon name="orders" size={28} color="#71717A" />}
                 onClick={handleBookings}
               />
               <ListItem
                 title="项目进度"
-                description="施工阶段、节点验收与当前待办"
                 arrow
                 icon={<Icon name="progress" size={28} color="#71717A" />}
                 onClick={handleProgress}
               />
               <ListItem
                 title="灵感收藏"
-                description="查看已收藏的灵感案例"
                 arrow
                 icon={<Icon name="favorites" size={28} color="#71717A" />}
-                extra={<View className="profile-page__list-extra">{favoriteCaseCount}</View>}
+                extra={<View className="profile-page__muted-value">{favoriteCaseCount}</View>}
                 onClick={handleFavorites}
               />
               <ListItem
                 title="退款记录"
-                description="查看退款申请进度与处理结果"
                 arrow
-                icon={<Icon name="orders" size={28} color="#71717A" />}
+                icon={<Icon name="history" size={28} color="#71717A" />}
                 onClick={handleRefundRecords}
               />
-            </Card>
-
-            <Card className="profile-page__card" title="身份与支付">
-              <ListItem
-                title="当前身份"
-                description={getIdentityDisplay()}
-                arrow
-                icon={<Icon name="identity" size={28} color="#71717A" />}
-                onClick={handleSwitchIdentity}
-              />
-              <ListItem
-                title="申请新身份"
-                description="成为设计师、工长或装修公司"
-                arrow
-                icon={<Icon name="identity-add" size={28} color="#71717A" />}
-                onClick={handleApplyIdentity}
-              />
-              <ListItem
-                title="待支付订单"
-                description={pendingPayments.length > 0 ? `当前有 ${pendingPayments.length} 笔待支付订单` : '当前暂无待支付费用'}
-                arrow
-                icon={<Icon name="pending" size={28} color="#71717A" />}
-                onClick={() => handlePendingPayments()}
-              />
-            </Card>
-
-            <Card className="profile-page__card" title="待支付明细">
-              {pendingPayments.length === 0 ? (
-                <ListItem
-                  title="暂无待支付订单"
-                  description="您的待支付费用会显示在这里"
-                  arrow
-                  onClick={() => handlePendingPayments()}
-                />
-              ) : (
-                pendingPayments.map((item) => (
-                  <ListItem
-                    key={`${item.type}-${item.id}`}
-                    title={item.providerName}
-                    description={`待支付金额 ¥${item.amount.toLocaleString()}`}
-                    arrow
-                    onClick={() => handlePendingPayments(item.type)}
-                  />
-                ))
-              )}
             </Card>
 
             <Card className="profile-page__card" title="平台服务">
               <ListItem
                 title="联系客服"
-                description="热线与常见问题入口"
                 arrow
                 icon={<Icon name="support" size={28} color="#71717A" />}
                 onClick={handleSupport}
               />
               <ListItem
                 title="关于我们"
-                description="了解平台介绍与使用说明"
                 arrow
                 icon={<Icon name="about" size={28} color="#71717A" />}
                 onClick={handleAbout}
               />
               <ListItem
                 title="设置"
-                description="账号与小程序基础设置"
                 arrow
                 icon={<Icon name="settings" size={28} color="#71717A" />}
                 onClick={handleSettings}
               />
             </Card>
-
-            <Button variant="outline" onClick={handleLogout} className="profile-page__logout">
-              退出登录
-            </Button>
           </View>
         </>
       ) : (
@@ -385,11 +392,7 @@ export default function Profile() {
 
           <View className="profile-page__guest-shortcuts">
             {GUEST_SHORTCUTS.map((item) => (
-              <View
-                key={item.key}
-                className="profile-page__guest-shortcut"
-                onClick={handleGuestLogin}
-              >
+              <View key={item.key} className="profile-page__guest-shortcut" onClick={handleGuestLogin}>
                 <View className="profile-page__guest-shortcut-icon">
                   <Icon name={item.icon} size={34} color="#111111" />
                 </View>
@@ -401,8 +404,13 @@ export default function Profile() {
 
           <Card className="profile-page__card profile-page__card--guest-services" title="平台服务">
             <ListItem
+              title="联系客服"
+              arrow
+              icon={<Icon name="support" size={28} color="#71717A" />}
+              onClick={handleSupport}
+            />
+            <ListItem
               title="关于我们"
-              description="了解平台介绍与使用说明"
               arrow
               icon={<Icon name="about" size={28} color="#71717A" />}
               onClick={handleAbout}
@@ -410,8 +418,6 @@ export default function Profile() {
           </Card>
         </View>
       )}
-
-      <IdentitySwitcher visible={showIdentitySwitcher} onClose={() => setShowIdentitySwitcher(false)} />
     </View>
   );
 }

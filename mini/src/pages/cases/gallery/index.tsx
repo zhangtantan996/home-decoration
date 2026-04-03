@@ -131,6 +131,13 @@ const CaseGalleryPage: React.FC = () => {
 
   const openDetail = (item: GalleryItem) => {
     const encodedName = encodeURIComponent(providerName);
+    if (galleryKind === 'scene') {
+      Taro.navigateTo({
+        url: `/pages/cases/scene-detail/index?sceneId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}`,
+      });
+      return;
+    }
+
     Taro.navigateTo({
       url: `/pages/cases/detail/index?caseId=${item.id}&providerId=${providerId}&providerType=${providerType}&providerName=${encodedName}&source=${source}`,
     });

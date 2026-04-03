@@ -1,6 +1,6 @@
 .profile-page {
   min-height: 100vh;
-  background: #ffffff;
+  background: #f4f7fb;
   padding-bottom: 48rpx;
 
   &__header {
@@ -11,8 +11,7 @@
     z-index: 22;
     padding: 0 24rpx 20rpx;
     background: rgba(255, 255, 255, 0.98);
-    border-bottom: 1rpx solid rgba(17, 17, 17, 0.05);
-    backdrop-filter: blur(12rpx);
+    border-bottom: 1rpx solid rgba(17, 17, 17, 0.04);
   }
 
   &__header-main {
@@ -42,33 +41,46 @@
   }
 
   &__hero {
-    padding: 40rpx 24rpx 28rpx;
-    background: #111111;
-    color: #ffffff;
-    box-shadow: 0 24rpx 44rpx rgba(17, 17, 17, 0.16);
+    padding: 16rpx 24rpx 0;
+  }
+
+  &__hero-card {
+    padding: 30rpx 28rpx 24rpx;
+    border-radius: 32rpx;
+    background: #ffffff;
+    border: 1rpx solid rgba(37, 99, 235, 0.08);
+    box-shadow: 0 12rpx 32rpx rgba(15, 23, 42, 0.05);
   }
 
   &__hero-main {
     display: flex;
     align-items: center;
-    gap: 20rpx;
+    gap: 22rpx;
   }
 
   &__avatar {
-    width: 112rpx;
-    height: 112rpx;
-    border-radius: 56rpx;
+    width: 124rpx;
+    height: 124rpx;
+    border-radius: 62rpx;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.14);
-    border: 1rpx solid rgba(255, 255, 255, 0.18);
+    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 55%, #60a5fa 100%);
+    border: 8rpx solid #eff6ff;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 
-  &__avatar-text {
-    color: #ffffff;
-    font-size: 42rpx;
-    font-weight: 700;
+  &__avatar-image,
+  &__avatar-fallback {
+    width: 100%;
+    height: 100%;
+  }
+
+  &__avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   &__identity {
@@ -78,67 +90,93 @@
 
   &__title {
     display: block;
-    font-size: 42rpx;
+    color: #111827;
+    font-size: 38rpx;
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.2;
   }
 
   &__subtitle {
     display: block;
     margin-top: 10rpx;
-    color: rgba(255, 255, 255, 0.72);
+    color: #64748b;
     font-size: 24rpx;
-    line-height: 1.6;
+    line-height: 1.4;
   }
 
   &__edit {
-    width: 72rpx;
-    height: 72rpx;
+    min-width: 132rpx;
+    height: 68rpx;
+    padding: 0 22rpx;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     border-radius: 999rpx;
-    background: rgba(255, 255, 255, 0.12);
+    background: #eff6ff;
+    border: 1rpx solid rgba(37, 99, 235, 0.14);
+    box-sizing: border-box;
+  }
+
+  &__edit-text {
+    color: #2563eb;
+    font-size: 22rpx;
+    font-weight: 600;
+    line-height: 1;
   }
 
   &__stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16rpx;
-    margin-top: 28rpx;
+    display: flex;
+    align-items: stretch;
+    margin-top: 24rpx;
+    padding: 12rpx 10rpx;
+    border-radius: 26rpx;
+    background: #f8fbff;
+    border: 1rpx solid rgba(37, 99, 235, 0.08);
   }
 
   &__stat {
-    padding: 18rpx 14rpx;
-    border-radius: 24rpx;
-    background: rgba(255, 255, 255, 0.08);
+    flex: 1;
+    min-width: 0;
+    padding: 14rpx 10rpx;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
+  }
+
+  &__stat-divider {
+    width: 1rpx;
+    margin: 6rpx 0;
+    background: rgba(148, 163, 184, 0.24);
   }
 
   &__stat-value {
     display: block;
-    color: #ffffff;
-    font-size: 30rpx;
+    color: #111827;
+    font-size: 32rpx;
     font-weight: 700;
-    line-height: 1.35;
+    line-height: 1.2;
   }
 
   &__stat-label {
     display: block;
     margin-top: 8rpx;
-    color: rgba(255, 255, 255, 0.66);
+    color: #64748b;
     font-size: 22rpx;
+    line-height: 1.3;
   }
 
   &__content {
-    padding: 36rpx 24rpx 112rpx;
+    padding: 24rpx 24rpx 112rpx;
   }
 
   &__card {
-    margin-bottom: 20rpx;
-    border-radius: 30rpx;
-    border: 1rpx solid rgba(17, 17, 17, 0.05);
-    box-shadow: 0 16rpx 34rpx rgba(17, 17, 17, 0.07);
+    margin-bottom: 24rpx;
+    border-radius: 28rpx;
+    border: 1rpx solid rgba(17, 24, 39, 0.05);
+    box-shadow: 0 10rpx 26rpx rgba(15, 23, 42, 0.04);
 
     &--guest-services {
       margin-top: 28rpx;
@@ -161,10 +199,75 @@
     font-size: 24rpx;
   }
 
-  &__logout {
-    margin-top: 8rpx;
+  &__muted-value {
+    color: #9ca3af;
+    font-size: 24rpx;
+    line-height: 1;
   }
 
+  &__amount {
+    color: #111827;
+    font-size: 24rpx;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  &__payment-badge {
+    min-width: 44rpx;
+    height: 44rpx;
+    padding: 0 12rpx;
+    border-radius: 999rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f4f4f5;
+    color: #111111;
+    font-size: 22rpx;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .card__header {
+    margin-bottom: 0;
+    padding: 0 4rpx 6rpx;
+  }
+
+  .card__title {
+    font-size: 24rpx;
+    font-weight: 700;
+    color: #475569;
+  }
+
+  .list-item {
+    padding: 26rpx 0;
+    margin: 0 20rpx;
+    background: transparent;
+  }
+
+  .list-item__icon {
+    width: 68rpx;
+    height: 68rpx;
+    margin-right: 18rpx;
+    border-radius: 20rpx;
+    background: #f8fafc;
+  }
+
+  .list-item__title {
+    margin-bottom: 0;
+    color: #111827;
+    font-size: 28rpx;
+    font-weight: 600;
+  }
+
+  .list-item__desc {
+    display: none;
+  }
+
+  .list-item__arrow {
+    margin-left: 4rpx;
+    color: #c4c7cf;
+    font-size: 30rpx;
+  }
   &__guest-hero {
     position: relative;
     overflow: hidden;
@@ -172,7 +275,7 @@
     border-radius: 32rpx;
     background: #ffffff;
     border: 1rpx solid rgba(17, 17, 17, 0.05);
-    box-shadow: 0 16rpx 32rpx rgba(17, 17, 17, 0.06);
+    box-shadow: 0 12rpx 28rpx rgba(15, 23, 42, 0.05);
   }
 
   &__guest-top {
@@ -188,8 +291,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #111111 0%, #27272a 100%);
-    box-shadow: 0 18rpx 34rpx rgba(17, 17, 17, 0.16);
+    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+    box-shadow: 0 18rpx 34rpx rgba(37, 99, 235, 0.18);
     flex-shrink: 0;
   }
 

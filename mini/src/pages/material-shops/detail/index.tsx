@@ -1,16 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, ScrollView, Text, View } from '@tarojs/components';
-import Taro, { usePageScroll, usePullDownRefresh, useRouter } from '@tarojs/taro';
+import Taro, { usePageScroll, useRouter } from '@tarojs/taro';
 
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
 import MiniPageNav from '@/components/MiniPageNav';
 import PageStateCard from '@/components/PageStateCard';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getMaterialShopDetail, type MaterialShopItem, type MaterialShopProductItem } from '@/services/materialShops';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import useSlowLoadingHint from '@/hooks/useSlowLoadingHint';
+import { resolveMaterialBrandLogoUrl, resolveMaterialCoverUrl } from '@/utils/providerMedia';
 import './index.scss';
 
 const NAV_SCROLL_DISTANCE = 200;
@@ -53,7 +56,6 @@ const MaterialShopDetailPage: React.FC = () => {
       setDetail(null);
       setLoading(false);
       setLoadError('缺少门店参数，请返回上一页后重试。');
-      Taro.stopPullDownRefresh();
       return;
     }
 
@@ -67,17 +69,14 @@ const MaterialShopDetailPage: React.FC = () => {
       setLoadError('门店详情加载失败，请检查网络后重试。');
     } finally {
       setLoading(false);
-      Taro.stopPullDownRefresh();
     }
   };
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(fetchDetail);
 
   useEffect(() => {
-    void fetchDetail();
-  }, [shopId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  usePullDownRefresh(() => {
-    void fetchDetail();
-  });
+    void runReload();
+  }, [runReload, shopId]);
 
   const handleBack = () => {
     if (Taro.getCurrentPages().length > 1) {
@@ -88,9 +87,28 @@ const MaterialShopDetailPage: React.FC = () => {
     Taro.switchTab({ url: '/pages/home/index' });
   };
 
+  const productFallbackImages = useMemo(
+    () => (detail
+      ? detail.products.flatMap((product) =>
+          [product.coverImage, ...product.images].filter((item): item is string => Boolean(item)),
+        )
+      : []),
+    [detail],
+  );
+
+  const brandLogoUrl = useMemo(
+    () => resolveMaterialBrandLogoUrl(detail?.brandLogo),
+    [detail?.brandLogo],
+  );
+
+  const heroImage = useMemo(
+    () => resolveMaterialCoverUrl({ cover: detail?.cover, productImages: productFallbackImages }),
+    [detail?.cover, productFallbackImages],
+  );
+
   const previewUrls = useMemo(
-    () => (detail ? [detail.cover, detail.brandLogo].filter(Boolean) as string[] : []),
-    [detail]
+    () => [heroImage, brandLogoUrl].filter(Boolean) as string[],
+    [brandLogoUrl, heroImage]
   );
 
   const handlePreviewImage = (current?: string) => {
@@ -120,8 +138,9 @@ const MaterialShopDetailPage: React.FC = () => {
 
   if (loading) {
     return (
-      <View className="material-detail-page material-detail-page--loading">
+      <View className="material-detail-page material-detail-page--loading" {...bindPullToRefresh}>
         {fixedNav}
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View className="material-detail-page__hero material-detail-page__hero--loading">
           <Skeleton height={560} className="material-detail-page__hero-skeleton" />
         </View>
@@ -143,8 +162,9 @@ const MaterialShopDetailPage: React.FC = () => {
 
   if (loadError) {
     return (
-      <View className="material-detail-page material-detail-page--empty">
+      <View className="material-detail-page material-detail-page--empty" {...bindPullToRefresh}>
         {solidNav}
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View className="material-detail-page__empty-content">
           <PageStateCard
             variant="error"
@@ -160,8 +180,9 @@ const MaterialShopDetailPage: React.FC = () => {
 
   if (!shopId || !detail) {
     return (
-      <View className="material-detail-page material-detail-page--empty">
+      <View className="material-detail-page material-detail-page--empty" {...bindPullToRefresh}>
         {solidNav}
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View className="material-detail-page__empty-content">
           <Empty
             description={shopId ? '主材详情加载失败' : '无效的主材门店编号'}
@@ -181,17 +202,21 @@ const MaterialShopDetailPage: React.FC = () => {
     .slice(0, 6);
 
   return (
-    <View className={`material-detail-page ${settled ? 'material-detail-page--no-fixed-footer' : ''}`}>
+    <View
+      className={`material-detail-page ${settled ? 'material-detail-page--no-fixed-footer' : ''}`}
+      {...bindPullToRefresh}
+    >
       {fixedNav}
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
       <View className="material-detail-page__hero">
-        {detail.cover ? (
+        {heroImage ? (
           <Image
             className="material-detail-page__hero-image"
-            src={detail.cover}
+            src={heroImage}
             mode="aspectFill"
             lazyLoad
-            onClick={() => handlePreviewImage(detail.cover)}
+            onClick={() => handlePreviewImage(heroImage)}
           />
         ) : (
           <View className="material-detail-page__hero-placeholder">
@@ -210,13 +235,13 @@ const MaterialShopDetailPage: React.FC = () => {
       <Card className="material-detail-page__summary-card">
         <View className="material-detail-page__summary">
           <View className="material-detail-page__summary-head">
-            {detail.brandLogo ? (
+            {brandLogoUrl ? (
               <Image
                 className="material-detail-page__brand-logo"
-                src={detail.brandLogo}
+                src={brandLogoUrl}
                 mode="aspectFill"
                 lazyLoad
-                onClick={() => handlePreviewImage(detail.brandLogo)}
+                onClick={() => handlePreviewImage(brandLogoUrl)}
               />
             ) : (
               <View className="material-detail-page__brand-logo-placeholder">
@@ -312,7 +337,11 @@ const MaterialShopDetailPage: React.FC = () => {
             <ScrollView scrollX className="material-detail-page__product-scroll" showScrollbar={false}>
               <View className="material-detail-page__product-list">
                 {detail.products.map((product) => {
-                  const coverImage = product.coverImage || product.images[0] || detail.cover || detail.brandLogo;
+                  const coverImage = resolveMaterialCoverUrl({
+                    cover: product.coverImage,
+                    productImages: product.images,
+                    fallback: '',
+                  });
                   return (
                     <View
                       key={product.id || product.name}

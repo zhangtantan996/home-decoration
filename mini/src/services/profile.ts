@@ -5,6 +5,8 @@ export interface UserProfile {
   phone: string;
   nickname: string;
   avatar?: string;
+  birthday?: string;
+  bio?: string;
   email?: string;
   realName?: string;
   idCard?: string;
@@ -16,6 +18,8 @@ export interface UserProfile {
 export interface UpdateProfileDTO {
   nickname?: string;
   avatar?: string;
+  birthday?: string;
+  bio?: string;
   email?: string;
   realName?: string;
   address?: string;

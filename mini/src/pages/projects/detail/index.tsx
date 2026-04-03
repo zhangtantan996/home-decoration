@@ -3,8 +3,11 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { Tabs, Button } from '@nutui/nutui-react-taro';
 import { Success } from '@nutui/icons-react-taro';
+import { Empty } from '@/components/Empty';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import { acceptMilestone, getProjectDetail, getProjectMilestones, getProjectPhases, resumeProject, type Milestone, type ProjectDetail as ProjectDetailType, type ProjectPhase } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
@@ -44,6 +47,8 @@ const ProjectDetailPage: React.FC = () => {
       setLoading(false);
     }
   }, [id]);
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(fetchProjectData);
 
   useEffect(() => {
     if (!id) return;
@@ -55,27 +60,52 @@ const ProjectDetailPage: React.FC = () => {
       return;
     }
 
-    void fetchProjectData();
-  }, [auth.token, fetchProjectData, id]);
+    void runReload();
+  }, [auth.token, id, runReload]);
 
   const ownerScopeDisabled = Boolean(auth.user?.activeRole) && !['owner', 'homeowner'].includes(auth.user?.activeRole || '');
 
   if (!auth.token) {
-    return <View className="p-md text-center text-gray-500">登录后查看项目详情</View>;
+    return (
+      <View className="project-detail-page project-detail-page--state" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
+        <Empty
+          description="登录后查看项目详情"
+          action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
+        />
+      </View>
+    );
   }
 
   if (ownerScopeDisabled) {
-    return <View className="p-md text-center text-gray-500">当前身份无权查看业主项目详情，请切换回业主身份后重试</View>;
+    return (
+      <View className="project-detail-page project-detail-page--state" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
+        <Empty description="当前身份无权查看业主项目详情，请切换回业主身份后重试" />
+      </View>
+    );
   }
 
-  if (loading) return (
-    <View className="p-md bg-gray-50 min-h-screen">
-      <Skeleton height={200} className="mb-md" />
-      <Skeleton height={400} />
-    </View>
-  );
+  if (loading) {
+    return (
+      <View className="project-detail-page" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
+        <View className="p-md bg-gray-50 min-h-screen">
+          <Skeleton height={200} className="mb-md" />
+          <Skeleton height={400} />
+        </View>
+      </View>
+    );
+  }
 
-  if (!detail) return <View className="p-md text-center text-gray-500">未找到项目</View>;
+  if (!detail) {
+    return (
+      <View className="project-detail-page project-detail-page--state" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
+        <Empty description="未找到项目" />
+      </View>
+    );
+  }
 
   const getPhaseStatusText = (status: string) => {
     switch(status) {
@@ -144,7 +174,8 @@ const ProjectDetailPage: React.FC = () => {
   const actionBlocked = paused || disputed;
 
   return (
-    <View className="page bg-gray-50 min-h-screen pb-md">
+    <View className="page bg-gray-50 min-h-screen pb-md" {...bindPullToRefresh}>
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       <ScrollView scrollY className="h-full">
         <View className="bg-white p-md mb-md">
           <View className="text-xl font-bold mb-xs">{detail.name}</View>

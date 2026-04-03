@@ -40,6 +40,65 @@ export TARO_APP_API_BASE=http://YOUR_IP:8080/api/v1
 npm run dev:weapp
 ```
 
+## 生产环境真机调试
+
+如果你要在微信开发者工具里做“真机调试”，并且让小程序直接请求生产环境，不要再走 `127.0.0.1`，直接用生产编译脚本：
+
+```bash
+cd /Volumes/tantan/AI_project/home-decoration/mini
+npm run dev:weapp:prod
+```
+
+该脚本默认会注入：
+
+- `APP_ENV=production`
+- `TARO_APP_API_BASE=https://api.hezeyunchuang.com/api/v1`
+- `TARO_APP_H5_URL=https://hezeyunchuang.com/app/`
+- `TARO_APP_ENABLE_NOTIFICATION_WS=true`
+
+如果临时要覆盖，也可以显式传值：
+
+```bash
+cd /Volumes/tantan/AI_project/home-decoration/mini
+TARO_APP_API_BASE=https://api.hezeyunchuang.com/api/v1 \
+TARO_APP_H5_URL=https://hezeyunchuang.com/app/ \
+npm run dev:weapp:prod
+```
+
+### 真机调试前必须确认
+
+1. 微信开发者工具项目 AppID 已设置为正式小程序：
+   - `wxd89a401b87800a6a`
+2. 小程序后台已配置：
+   - `https://api.hezeyunchuang.com` 到 `request / upload / download / socket` 合法域名
+3. 如果要测 `web-view`：
+   - `https://hezeyunchuang.com` 已配置为业务域名
+4. 当前生产 API 可用：
+   - `https://api.hezeyunchuang.com/api/v1/health`
+
+### 当前线上检查结论
+
+截至 `2026-04-03`，从本机实测：
+
+```bash
+curl https://api.hezeyunchuang.com/api/v1/health
+curl 'https://api.hezeyunchuang.com/api/v1/providers?type=designer&page=1&pageSize=3'
+```
+
+生产 API 的 `GET` 请求是可用的。
+
+注意：
+
+- `curl -I` / `HEAD` 对 `health` 会返回 `404`
+- 这不代表生产 API 不可用
+- 小程序真实请求走的是 `GET`，所以应以 `GET` 验证结果为准
+
+当前更需要关注的是：
+
+- 小程序是否真的编译成了生产环境
+- 微信开发者工具/真机是否还在缓存旧包
+- 小程序后台合法域名是否已经加上 `https://api.hezeyunchuang.com`
+
 ## Tinode（IM）配置说明
 
 小程序聊天基于 Tinode WebSocket 连接，默认端口为 `6060`。

@@ -1,32 +1,41 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Image, Input, Text, Textarea, View } from '@tarojs/components';
-import Taro, { useLoad } from '@tarojs/taro';
+import React, { useEffect, useMemo, useState } from "react";
+import { Image, Input, Text, Textarea, View } from "@tarojs/components";
+import Taro, { useLoad } from "@tarojs/taro";
 
-import { Button } from '@/components/Button';
-import { Icon } from '@/components/Icon';
-import MiniPageNav from '@/components/MiniPageNav';
-import { Skeleton } from '@/components/Skeleton';
-import { MINI_ENV } from '@/config/env';
-import { createBooking, type ProviderType as BookingProviderType } from '@/services/bookings';
-import { getProviderDetail, type ProviderDetail, type ProviderType } from '@/services/providers';
-import { useAuthStore } from '@/store/auth';
-import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
-import { getServerDateAfterDays, getServerDateParts } from '@/utils/serverTime';
+import { Button } from "@/components/Button";
+import { Icon } from "@/components/Icon";
+import MiniPageNav from "@/components/MiniPageNav";
+import { Skeleton } from "@/components/Skeleton";
+import { MINI_ENV } from "@/config/env";
+import {
+  createBooking,
+  type ProviderType as BookingProviderType,
+} from "@/services/bookings";
+import {
+  getProviderDetail,
+  type ProviderDetail,
+  type ProviderType,
+} from "@/services/providers";
+import { useAuthStore } from "@/store/auth";
+import { showErrorToast } from "@/utils/error";
+import {
+  getFixedBottomBarStyle,
+  getPageBottomSpacerStyle,
+} from "@/utils/fixedLayout";
+import { normalizeProviderMediaUrl } from "@/utils/providerMedia";
+import { getServerDateAfterDays, getServerDateParts } from "@/utils/serverTime";
 
-import './index.scss';
+import "./index.scss";
 
-const API_ORIGIN = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
-
-const RENOVATION_OPTIONS = ['新房装修', '老房翻新', '局部改造'];
-const BUDGET_OPTIONS = ['5万以下', '5-10万', '10-20万', '20-50万', '50万以上'];
+const RENOVATION_OPTIONS = ["新房装修", "老房翻新", "局部改造"];
+const BUDGET_OPTIONS = ["5万以下", "5-10万", "10-20万", "20-50万", "50万以上"];
 const TIME_SLOT_OPTIONS = [
-  { id: 'am', label: '09:00-12:00 上午' },
-  { id: 'pm', label: '14:00-18:00 下午' },
-  { id: 'night', label: '19:00-21:00 晚上' },
+  { id: "am", label: "09:00-12:00 上午" },
+  { id: "pm", label: "14:00-18:00 下午" },
+  { id: "night", label: "19:00-21:00 晚上" },
 ];
 
-type SheetType = 'budget' | 'layout' | 'schedule' | null;
+type SheetType = "budget" | "layout" | "schedule" | null;
 
 interface WeekDayOption {
   id: string;
@@ -35,16 +44,16 @@ interface WeekDayOption {
   displayLabel: string;
 }
 
-const weekMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const weekMap = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 const normalizeProviderType = (value?: string): ProviderType => {
-  if (value === 'company' || value === '2') return 'company';
-  if (value === 'foreman' || value === '3') return 'foreman';
-  return 'designer';
+  if (value === "company" || value === "2") return "company";
+  if (value === "foreman" || value === "3") return "foreman";
+  return "designer";
 };
 
 const decodeText = (value?: string) => {
-  if (!value) return '';
+  if (!value) return "";
   try {
     return decodeURIComponent(value);
   } catch {
@@ -52,23 +61,18 @@ const decodeText = (value?: string) => {
   }
 };
 
-const normalizeMediaUrl = (raw?: string) => {
-  if (!raw) return '';
-  return raw.replace(/^http:\/\/localhost:8080/i, API_ORIGIN);
-};
-
 const maskPhone = (phone: string) => {
   if (!phone || phone.length < 11) return phone;
-  return phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+  return phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2");
 };
 
 const buildAvailableDates = (): WeekDayOption[] => {
   return Array.from({ length: 7 }, (_, index) => {
     const date = getServerDateAfterDays(index + 1);
     const parts = getServerDateParts(date);
-    const month = String(parts?.month || '').padStart(2, '0');
-    const day = String(parts?.day || '').padStart(2, '0');
-    const weekLabel = weekMap[parts?.weekday || 0] || '周一';
+    const month = String(parts?.month || "").padStart(2, "0");
+    const day = String(parts?.day || "").padStart(2, "0");
+    const weekLabel = weekMap[parts?.weekday || 0] || "周一";
 
     return {
       id: date,
@@ -93,34 +97,40 @@ const BookingCreatePage: React.FC = () => {
   const dateOptions = useMemo(() => buildAvailableDates(), []);
 
   const [providerId, setProviderId] = useState(0);
-  const [providerType, setProviderType] = useState<ProviderType>('designer');
-  const [providerName, setProviderName] = useState('');
-  const [providerDetail, setProviderDetail] = useState<ProviderDetail | null>(null);
+  const [providerType, setProviderType] = useState<ProviderType>("designer");
+  const [providerName, setProviderName] = useState("");
+  const [providerDetail, setProviderDetail] = useState<ProviderDetail | null>(
+    null,
+  );
   const [providerLoading, setProviderLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const [address, setAddress] = useState('');
-  const [area, setArea] = useState('');
+  const [address, setAddress] = useState("");
+  const [area, setArea] = useState("");
   const [room, setRoom] = useState(2);
   const [hall, setHall] = useState(1);
   const [toilet, setToilet] = useState(1);
   const [renovationType, setRenovationType] = useState(RENOVATION_OPTIONS[0]);
-  const [budgetRange, setBudgetRange] = useState('');
-  const [preferredDate, setPreferredDate] = useState('');
-  const [phone, setPhone] = useState(auth.user?.phone || '');
-  const [notes, setNotes] = useState('');
+  const [budgetRange, setBudgetRange] = useState("");
+  const [preferredDate, setPreferredDate] = useState("");
+  const [phone, setPhone] = useState(auth.user?.phone || "");
+  const [notes, setNotes] = useState("");
   const [activeSheet, setActiveSheet] = useState<SheetType>(null);
-  const [selectedDayId, setSelectedDayId] = useState(dateOptions[0]?.id || '');
-  const [selectedSlotId, setSelectedSlotId] = useState(TIME_SLOT_OPTIONS[0]?.id || 'am');
+  const [selectedDayId, setSelectedDayId] = useState(dateOptions[0]?.id || "");
+  const [selectedSlotId, setSelectedSlotId] = useState(
+    TIME_SLOT_OPTIONS[0]?.id || "am",
+  );
 
   useLoad((options) => {
     setProviderId(Number(options.providerId || 0));
-    setProviderType(normalizeProviderType(options.type || options.providerType));
-    setProviderName(decodeText(options.providerName) || '服务商');
+    setProviderType(
+      normalizeProviderType(options.type || options.providerType),
+    );
+    setProviderName(decodeText(options.providerName) || "服务商");
   });
 
   useEffect(() => {
-    setPhone(auth.user?.phone || '');
+    setPhone(auth.user?.phone || "");
   }, [auth.user?.phone]);
 
   useEffect(() => {
@@ -152,15 +162,24 @@ const BookingCreatePage: React.FC = () => {
       providerDetail?.companyName ||
       user?.nickname ||
       providerName ||
-      '服务商';
-    const avatar =
-      normalizeMediaUrl(provider?.avatar || providerDetail?.avatar || provider?.coverImage || providerDetail?.coverImage || user?.avatar || '');
+      "服务商";
+    const avatar = normalizeProviderMediaUrl(
+      provider?.avatar ||
+        providerDetail?.avatar ||
+        provider?.coverImage ||
+        providerDetail?.coverImage ||
+        user?.avatar ||
+        "",
+    );
     const rating = Number(provider?.rating ?? providerDetail?.rating ?? 0);
     const yearsExperience = Number(provider?.yearsExperience ?? 0);
-    const specialty = String(provider?.specialty || providerDetail?.specialty || '')
-      .replace(/[,，]/g, ' · ')
+    const specialty = String(
+      provider?.specialty || providerDetail?.specialty || "",
+    )
+      .replace(/[,，]/g, " · ")
       .trim();
-    const isSettled = provider?.isSettled !== false && providerDetail?.isSettled !== false;
+    const isSettled =
+      provider?.isSettled !== false && providerDetail?.isSettled !== false;
 
     return {
       displayName,
@@ -173,12 +192,17 @@ const BookingCreatePage: React.FC = () => {
   }, [providerDetail, providerName]);
 
   const layoutLabel = `${room}室${hall}厅${toilet}卫`;
-  const selectedDate = dateOptions.find((item) => item.id === selectedDayId) || dateOptions[0];
-  const selectedTimeSlot = TIME_SLOT_OPTIONS.find((item) => item.id === selectedSlotId) || TIME_SLOT_OPTIONS[0];
+  const selectedDate =
+    dateOptions.find((item) => item.id === selectedDayId) || dateOptions[0];
+  const selectedTimeSlot =
+    TIME_SLOT_OPTIONS.find((item) => item.id === selectedSlotId) ||
+    TIME_SLOT_OPTIONS[0];
 
   const phoneEditable = !auth.user?.phone;
   const areaNum = Number(area);
-  const isPhoneValid = /^1\d{10}$/.test(phoneEditable ? phone : auth.user?.phone || '');
+  const isPhoneValid = /^1\d{10}$/.test(
+    phoneEditable ? phone : auth.user?.phone || "",
+  );
   const isFormValid =
     address.trim().length >= 5 &&
     Number.isFinite(areaNum) &&
@@ -196,16 +220,16 @@ const BookingCreatePage: React.FC = () => {
       Taro.navigateBack();
       return;
     }
-    Taro.switchTab({ url: '/pages/home/index' });
+    Taro.switchTab({ url: "/pages/home/index" });
   };
 
   const handleAreaInput = (event: { detail: { value: string } }) => {
-    const value = event.detail.value.replace(/[^\d.]/g, '').slice(0, 6);
+    const value = event.detail.value.replace(/[^\d.]/g, "").slice(0, 6);
     setArea(value);
   };
 
   const handlePhoneInput = (event: { detail: { value: string } }) => {
-    setPhone(event.detail.value.replace(/\D/g, '').slice(0, 11));
+    setPhone(event.detail.value.replace(/\D/g, "").slice(0, 11));
   };
 
   const handleNotesInput = (event: { detail: { value: string } }) => {
@@ -219,29 +243,30 @@ const BookingCreatePage: React.FC = () => {
   };
 
   const validateBeforeSubmit = () => {
-    if (!providerId) return '缺少服务商信息';
-    if (!address.trim()) return '请输入房屋地址';
-    if (address.trim().length < 5) return '地址至少输入 5 个字符';
-    if (!area.trim()) return '请输入房屋面积';
-    if (!Number.isFinite(areaNum) || areaNum < 10 || areaNum > 9999) return '房屋面积需在 10-9999㎡ 之间';
-    if (!budgetRange) return '请选择预算范围';
-    if (!preferredDate) return '请选择期望上门时间';
-    if (!isPhoneValid) return '请输入有效手机号';
-    return '';
+    if (!providerId) return "缺少服务商信息";
+    if (!address.trim()) return "请输入房屋地址";
+    if (address.trim().length < 5) return "地址至少输入 5 个字符";
+    if (!area.trim()) return "请输入房屋面积";
+    if (!Number.isFinite(areaNum) || areaNum < 10 || areaNum > 9999)
+      return "房屋面积需在 10-9999㎡ 之间";
+    if (!budgetRange) return "请选择预算范围";
+    if (!preferredDate) return "请选择期望上门时间";
+    if (!isPhoneValid) return "请输入有效手机号";
+    return "";
   };
 
   const handleSubmit = async () => {
     if (submitting) return;
 
     if (!auth.token) {
-      Taro.showToast({ title: '请先登录', icon: 'none' });
-      Taro.switchTab({ url: '/pages/profile/index' });
+      Taro.showToast({ title: "请先登录", icon: "none" });
+      Taro.switchTab({ url: "/pages/profile/index" });
       return;
     }
 
     const errorMessage = validateBeforeSubmit();
     if (errorMessage) {
-      Taro.showToast({ title: errorMessage, icon: 'none' });
+      Taro.showToast({ title: errorMessage, icon: "none" });
       return;
     }
 
@@ -260,12 +285,14 @@ const BookingCreatePage: React.FC = () => {
         houseLayout: layoutLabel,
       });
 
-      Taro.showToast({ title: '预约提交成功', icon: 'success' });
+      Taro.showToast({ title: "预约提交成功", icon: "success" });
       setTimeout(() => {
-        Taro.redirectTo({ url: `/pages/booking/detail/index?id=${booking.id}` });
+        Taro.redirectTo({
+          url: `/pages/booking/detail/index?id=${booking.id}`,
+        });
       }, 1200);
     } catch (error) {
-      showErrorToast(error, '预约失败，请稍后重试');
+      showErrorToast(error, "预约失败，请稍后重试");
     } finally {
       setSubmitting(false);
     }
@@ -279,7 +306,12 @@ const BookingCreatePage: React.FC = () => {
     return (
       <View className="booking-create-page__provider-card">
         {resolvedProvider.avatar ? (
-          <Image className="booking-create-page__provider-avatar" src={resolvedProvider.avatar} mode="aspectFill" lazyLoad />
+          <Image
+            className="booking-create-page__provider-avatar"
+            src={resolvedProvider.avatar}
+            mode="aspectFill"
+            lazyLoad
+          />
         ) : (
           <View className="booking-create-page__provider-avatar booking-create-page__provider-avatar--placeholder">
             <Text className="booking-create-page__provider-avatar-text">
@@ -289,25 +321,42 @@ const BookingCreatePage: React.FC = () => {
         )}
         <View className="booking-create-page__provider-copy">
           <View className="booking-create-page__provider-top">
-            <Text className="booking-create-page__provider-name" numberOfLines={1}>
+            <Text
+              className="booking-create-page__provider-name"
+              numberOfLines={1}
+            >
               {resolvedProvider.displayName}
             </Text>
-            <View className={`booking-create-page__provider-badge ${resolvedProvider.isSettled ? 'booking-create-page__provider-badge--settled' : 'booking-create-page__provider-badge--unsettled'}`}>
-              <Text className={`booking-create-page__provider-badge-text ${resolvedProvider.isSettled ? 'booking-create-page__provider-badge-text--settled' : 'booking-create-page__provider-badge-text--unsettled'}`}>
-                {resolvedProvider.isSettled ? '已认证' : '未入驻'}
+            <View
+              className={`booking-create-page__provider-badge ${resolvedProvider.isSettled ? "booking-create-page__provider-badge--settled" : "booking-create-page__provider-badge--unsettled"}`}
+            >
+              <Text
+                className={`booking-create-page__provider-badge-text ${resolvedProvider.isSettled ? "booking-create-page__provider-badge-text--settled" : "booking-create-page__provider-badge-text--unsettled"}`}
+              >
+                {resolvedProvider.isSettled ? "已认证" : "未入驻"}
               </Text>
             </View>
           </View>
           <View className="booking-create-page__provider-rating">
             <Icon name="star" size={18} color="#F59E0B" />
             <Text className="booking-create-page__provider-rating-text">
-              {resolvedProvider.rating > 0 ? resolvedProvider.rating.toFixed(1) : '暂无评分'}
+              {resolvedProvider.rating > 0
+                ? resolvedProvider.rating.toFixed(1)
+                : "暂无评分"}
             </Text>
           </View>
-          <Text className="booking-create-page__provider-subtitle" numberOfLines={2}>
-            {[resolvedProvider.yearsExperience ? `${resolvedProvider.yearsExperience}年经验` : '', resolvedProvider.specialty]
+          <Text
+            className="booking-create-page__provider-subtitle"
+            numberOfLines={2}
+          >
+            {[
+              resolvedProvider.yearsExperience
+                ? `${resolvedProvider.yearsExperience}年经验`
+                : "",
+              resolvedProvider.specialty,
+            ]
               .filter(Boolean)
-              .join(' · ') || '设计服务信息待补充'}
+              .join(" · ") || "设计服务信息待补充"}
           </Text>
         </View>
       </View>
@@ -325,7 +374,9 @@ const BookingCreatePage: React.FC = () => {
           <Text className="booking-create-page__section-title">预约信息</Text>
 
           <View className="booking-create-page__field">
-            <Text className="booking-create-page__label">房屋地址<Text className="booking-create-page__required">*</Text></Text>
+            <Text className="booking-create-page__label">
+              房屋地址<Text className="booking-create-page__required">*</Text>
+            </Text>
             <View className="booking-create-page__input-shell">
               <Input
                 className="booking-create-page__input"
@@ -339,7 +390,9 @@ const BookingCreatePage: React.FC = () => {
 
           <View className="booking-create-page__row">
             <View className="booking-create-page__field booking-create-page__field--half">
-              <Text className="booking-create-page__label">房屋面积<Text className="booking-create-page__required">*</Text></Text>
+              <Text className="booking-create-page__label">
+                房屋面积<Text className="booking-create-page__required">*</Text>
+              </Text>
               <View className="booking-create-page__input-shell booking-create-page__input-shell--with-unit">
                 <Input
                   className="booking-create-page__input"
@@ -353,26 +406,37 @@ const BookingCreatePage: React.FC = () => {
             </View>
 
             <View className="booking-create-page__field booking-create-page__field--half">
-              <Text className="booking-create-page__label">房屋户型<Text className="booking-create-page__required">*</Text></Text>
-              <View className="booking-create-page__select-shell" onClick={() => setActiveSheet('layout')}>
-                <Text className="booking-create-page__select-text">{layoutLabel}</Text>
+              <Text className="booking-create-page__label">
+                房屋户型<Text className="booking-create-page__required">*</Text>
+              </Text>
+              <View
+                className="booking-create-page__select-shell"
+                onClick={() => setActiveSheet("layout")}
+              >
+                <Text className="booking-create-page__select-text">
+                  {layoutLabel}
+                </Text>
                 <Icon name="arrow-down" size={18} color="#71717A" />
               </View>
             </View>
           </View>
 
           <View className="booking-create-page__field">
-            <Text className="booking-create-page__label">装修类型<Text className="booking-create-page__required">*</Text></Text>
+            <Text className="booking-create-page__label">
+              装修类型<Text className="booking-create-page__required">*</Text>
+            </Text>
             <View className="booking-create-page__pill-list">
               {RENOVATION_OPTIONS.map((item) => {
                 const active = item === renovationType;
                 return (
                   <View
                     key={item}
-                    className={`booking-create-page__pill ${active ? 'booking-create-page__pill--active' : ''}`}
+                    className={`booking-create-page__pill ${active ? "booking-create-page__pill--active" : ""}`}
                     onClick={() => setRenovationType(item)}
                   >
-                    <Text className={`booking-create-page__pill-text ${active ? 'booking-create-page__pill-text--active' : ''}`}>
+                    <Text
+                      className={`booking-create-page__pill-text ${active ? "booking-create-page__pill-text--active" : ""}`}
+                    >
                       {item}
                     </Text>
                   </View>
@@ -382,27 +446,44 @@ const BookingCreatePage: React.FC = () => {
           </View>
 
           <View className="booking-create-page__field">
-            <Text className="booking-create-page__label">预算范围<Text className="booking-create-page__required">*</Text></Text>
-            <View className="booking-create-page__select-shell" onClick={() => setActiveSheet('budget')}>
-              <Text className={`booking-create-page__select-text ${!budgetRange ? 'booking-create-page__select-text--placeholder' : ''}`}>
-                {budgetRange || '请选择您的装修预算'}
+            <Text className="booking-create-page__label">
+              预算范围<Text className="booking-create-page__required">*</Text>
+            </Text>
+            <View
+              className="booking-create-page__select-shell"
+              onClick={() => setActiveSheet("budget")}
+            >
+              <Text
+                className={`booking-create-page__select-text ${!budgetRange ? "booking-create-page__select-text--placeholder" : ""}`}
+              >
+                {budgetRange || "请选择您的装修预算"}
               </Text>
               <Icon name="arrow-down" size={18} color="#71717A" />
             </View>
           </View>
 
           <View className="booking-create-page__field">
-            <Text className="booking-create-page__label">期望上门时间<Text className="booking-create-page__required">*</Text></Text>
-            <View className="booking-create-page__select-shell" onClick={() => setActiveSheet('schedule')}>
-              <Text className={`booking-create-page__select-text ${!preferredDate ? 'booking-create-page__select-text--placeholder' : ''}`}>
-                {preferredDate || '请选择期望上门时间'}
+            <Text className="booking-create-page__label">
+              期望上门时间
+              <Text className="booking-create-page__required">*</Text>
+            </Text>
+            <View
+              className="booking-create-page__select-shell"
+              onClick={() => setActiveSheet("schedule")}
+            >
+              <Text
+                className={`booking-create-page__select-text ${!preferredDate ? "booking-create-page__select-text--placeholder" : ""}`}
+              >
+                {preferredDate || "请选择期望上门时间"}
               </Text>
               <Icon name="arrow-down" size={18} color="#71717A" />
             </View>
           </View>
 
           <View className="booking-create-page__field">
-            <Text className="booking-create-page__label">联系电话<Text className="booking-create-page__required">*</Text></Text>
+            <Text className="booking-create-page__label">
+              联系电话<Text className="booking-create-page__required">*</Text>
+            </Text>
             <View className="booking-create-page__input-shell">
               {phoneEditable ? (
                 <Input
@@ -413,7 +494,9 @@ const BookingCreatePage: React.FC = () => {
                   onInput={handlePhoneInput}
                 />
               ) : (
-                <Text className="booking-create-page__readonly-text">{maskPhone(auth.user?.phone || phone)}</Text>
+                <Text className="booking-create-page__readonly-text">
+                  {maskPhone(auth.user?.phone || phone)}
+                </Text>
               )}
             </View>
           </View>
@@ -428,7 +511,9 @@ const BookingCreatePage: React.FC = () => {
                 maxlength={500}
                 onInput={handleNotesInput}
               />
-              <Text className="booking-create-page__textarea-count">{notes.length}/500</Text>
+              <Text className="booking-create-page__textarea-count">
+                {notes.length}/500
+              </Text>
             </View>
           </View>
         </View>
@@ -454,13 +539,23 @@ const BookingCreatePage: React.FC = () => {
         </View>
       </View>
 
-      {activeSheet ? <View className="booking-create-page__sheet-mask" onClick={closeSheet} /> : null}
+      {activeSheet ? (
+        <View
+          className="booking-create-page__sheet-mask"
+          onClick={closeSheet}
+        />
+      ) : null}
 
-      {activeSheet === 'budget' ? (
+      {activeSheet === "budget" ? (
         <View className="booking-create-page__sheet" onClick={stopPropagation}>
           <View className="booking-create-page__sheet-header">
             <Text className="booking-create-page__sheet-title">预算范围</Text>
-            <Text className="booking-create-page__sheet-close" onClick={closeSheet}>×</Text>
+            <Text
+              className="booking-create-page__sheet-close"
+              onClick={closeSheet}
+            >
+              ×
+            </Text>
           </View>
           <View className="booking-create-page__sheet-list">
             {BUDGET_OPTIONS.map((item) => {
@@ -468,13 +563,15 @@ const BookingCreatePage: React.FC = () => {
               return (
                 <View
                   key={item}
-                  className={`booking-create-page__sheet-option ${active ? 'booking-create-page__sheet-option--active' : ''}`}
+                  className={`booking-create-page__sheet-option ${active ? "booking-create-page__sheet-option--active" : ""}`}
                   onClick={() => {
                     setBudgetRange(item);
                     closeSheet();
                   }}
                 >
-                  <Text className={`booking-create-page__sheet-option-text ${active ? 'booking-create-page__sheet-option-text--active' : ''}`}>
+                  <Text
+                    className={`booking-create-page__sheet-option-text ${active ? "booking-create-page__sheet-option-text--active" : ""}`}
+                  >
                     {item}
                   </Text>
                 </View>
@@ -484,40 +581,55 @@ const BookingCreatePage: React.FC = () => {
         </View>
       ) : null}
 
-      {activeSheet === 'layout' ? (
+      {activeSheet === "layout" ? (
         <View className="booking-create-page__sheet" onClick={stopPropagation}>
           <View className="booking-create-page__sheet-header">
             <Text className="booking-create-page__sheet-title">选择户型</Text>
-            <Text className="booking-create-page__sheet-close" onClick={closeSheet}>×</Text>
+            <Text
+              className="booking-create-page__sheet-close"
+              onClick={closeSheet}
+            >
+              ×
+            </Text>
           </View>
           <View className="booking-create-page__layout-columns">
             <View className="booking-create-page__layout-column">
-              <Text className="booking-create-page__layout-column-title">室</Text>
+              <Text className="booking-create-page__layout-column-title">
+                室
+              </Text>
               <View className="booking-create-page__layout-grid">
-                {Array.from({ length: 9 }, (_, index) => index + 1).map((item) => (
-                  <View
-                    key={`room-${item}`}
-                    className={`booking-create-page__layout-chip ${room === item ? 'booking-create-page__layout-chip--active' : ''}`}
-                    onClick={() => setRoom(item)}
-                  >
-                    <Text className={`booking-create-page__layout-chip-text ${room === item ? 'booking-create-page__layout-chip-text--active' : ''}`}>
-                      {item}
-                    </Text>
-                  </View>
-                ))}
+                {Array.from({ length: 9 }, (_, index) => index + 1).map(
+                  (item) => (
+                    <View
+                      key={`room-${item}`}
+                      className={`booking-create-page__layout-chip ${room === item ? "booking-create-page__layout-chip--active" : ""}`}
+                      onClick={() => setRoom(item)}
+                    >
+                      <Text
+                        className={`booking-create-page__layout-chip-text ${room === item ? "booking-create-page__layout-chip-text--active" : ""}`}
+                      >
+                        {item}
+                      </Text>
+                    </View>
+                  ),
+                )}
               </View>
             </View>
 
             <View className="booking-create-page__layout-column">
-              <Text className="booking-create-page__layout-column-title">厅</Text>
+              <Text className="booking-create-page__layout-column-title">
+                厅
+              </Text>
               <View className="booking-create-page__layout-grid">
                 {Array.from({ length: 6 }, (_, index) => index).map((item) => (
                   <View
                     key={`hall-${item}`}
-                    className={`booking-create-page__layout-chip ${hall === item ? 'booking-create-page__layout-chip--active' : ''}`}
+                    className={`booking-create-page__layout-chip ${hall === item ? "booking-create-page__layout-chip--active" : ""}`}
                     onClick={() => setHall(item)}
                   >
-                    <Text className={`booking-create-page__layout-chip-text ${hall === item ? 'booking-create-page__layout-chip-text--active' : ''}`}>
+                    <Text
+                      className={`booking-create-page__layout-chip-text ${hall === item ? "booking-create-page__layout-chip-text--active" : ""}`}
+                    >
                       {item}
                     </Text>
                   </View>
@@ -526,15 +638,19 @@ const BookingCreatePage: React.FC = () => {
             </View>
 
             <View className="booking-create-page__layout-column">
-              <Text className="booking-create-page__layout-column-title">卫</Text>
+              <Text className="booking-create-page__layout-column-title">
+                卫
+              </Text>
               <View className="booking-create-page__layout-grid">
                 {Array.from({ length: 6 }, (_, index) => index).map((item) => (
                   <View
                     key={`toilet-${item}`}
-                    className={`booking-create-page__layout-chip ${toilet === item ? 'booking-create-page__layout-chip--active' : ''}`}
+                    className={`booking-create-page__layout-chip ${toilet === item ? "booking-create-page__layout-chip--active" : ""}`}
                     onClick={() => setToilet(item)}
                   >
-                    <Text className={`booking-create-page__layout-chip-text ${toilet === item ? 'booking-create-page__layout-chip-text--active' : ''}`}>
+                    <Text
+                      className={`booking-create-page__layout-chip-text ${toilet === item ? "booking-create-page__layout-chip-text--active" : ""}`}
+                    >
                       {item}
                     </Text>
                   </View>
@@ -543,16 +659,25 @@ const BookingCreatePage: React.FC = () => {
             </View>
           </View>
           <View className="booking-create-page__sheet-footer">
-            <Button size="lg" block onClick={closeSheet}>确定</Button>
+            <Button size="lg" block onClick={closeSheet}>
+              确定
+            </Button>
           </View>
         </View>
       ) : null}
 
-      {activeSheet === 'schedule' ? (
+      {activeSheet === "schedule" ? (
         <View className="booking-create-page__sheet" onClick={stopPropagation}>
           <View className="booking-create-page__sheet-header">
-            <Text className="booking-create-page__sheet-title">选择上门时间</Text>
-            <Text className="booking-create-page__sheet-close" onClick={closeSheet}>×</Text>
+            <Text className="booking-create-page__sheet-title">
+              选择上门时间
+            </Text>
+            <Text
+              className="booking-create-page__sheet-close"
+              onClick={closeSheet}
+            >
+              ×
+            </Text>
           </View>
 
           <View className="booking-create-page__schedule-section">
@@ -563,13 +688,17 @@ const BookingCreatePage: React.FC = () => {
                 return (
                   <View
                     key={item.id}
-                    className={`booking-create-page__day-chip ${active ? 'booking-create-page__day-chip--active' : ''}`}
+                    className={`booking-create-page__day-chip ${active ? "booking-create-page__day-chip--active" : ""}`}
                     onClick={() => setSelectedDayId(item.id)}
                   >
-                    <Text className={`booking-create-page__day-chip-date ${active ? 'booking-create-page__day-chip-date--active' : ''}`}>
+                    <Text
+                      className={`booking-create-page__day-chip-date ${active ? "booking-create-page__day-chip-date--active" : ""}`}
+                    >
                       {item.shortLabel}
                     </Text>
-                    <Text className={`booking-create-page__day-chip-week ${active ? 'booking-create-page__day-chip-week--active' : ''}`}>
+                    <Text
+                      className={`booking-create-page__day-chip-week ${active ? "booking-create-page__day-chip-week--active" : ""}`}
+                    >
                       {item.weekLabel}
                     </Text>
                   </View>
@@ -586,10 +715,12 @@ const BookingCreatePage: React.FC = () => {
                 return (
                   <View
                     key={item.id}
-                    className={`booking-create-page__slot-item ${active ? 'booking-create-page__slot-item--active' : ''}`}
+                    className={`booking-create-page__slot-item ${active ? "booking-create-page__slot-item--active" : ""}`}
                     onClick={() => setSelectedSlotId(item.id)}
                   >
-                    <Text className={`booking-create-page__slot-text ${active ? 'booking-create-page__slot-text--active' : ''}`}>
+                    <Text
+                      className={`booking-create-page__slot-text ${active ? "booking-create-page__slot-text--active" : ""}`}
+                    >
                       {item.label}
                     </Text>
                   </View>
@@ -599,7 +730,9 @@ const BookingCreatePage: React.FC = () => {
           </View>
 
           <View className="booking-create-page__sheet-footer">
-            <Button size="lg" block onClick={confirmSchedule}>确定</Button>
+            <Button size="lg" block onClick={confirmSchedule}>
+              确定
+            </Button>
           </View>
         </View>
       ) : null}

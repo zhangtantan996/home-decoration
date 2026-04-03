@@ -1,4 +1,5 @@
 import { request } from '@/utils/request';
+import { normalizeProviderMediaUrl } from '@/utils/providerMedia';
 
 import type { PageData } from './types';
 
@@ -77,16 +78,16 @@ const toMaterialShopProductItem = (dto: MaterialShopProductDTO): MaterialShopPro
   unit: dto.unit || '',
   description: dto.description || '',
   price: Number(dto.price || 0),
-  images: normalizeStringArray(dto.images),
-  coverImage: dto.coverImage || normalizeStringArray(dto.images)[0] || undefined,
+  images: normalizeStringArray(dto.images).map((item) => normalizeProviderMediaUrl(item)).filter(Boolean),
+  coverImage: normalizeProviderMediaUrl(dto.coverImage || normalizeStringArray(dto.images)[0] || ''),
 });
 
 const toMaterialShopItem = (dto: MaterialShopDTO): MaterialShopItem => ({
   id: Number(dto.id || 0),
   type: dto.type || 'showroom',
   name: dto.name || '主材门店',
-  cover: dto.cover || '',
-  brandLogo: dto.brandLogo || undefined,
+  cover: normalizeProviderMediaUrl(dto.cover || ''),
+  brandLogo: normalizeProviderMediaUrl(dto.brandLogo || ''),
   rating: Number(dto.rating || 0),
   reviewCount: Number(dto.reviewCount || 0),
   mainProducts: normalizeStringArray(dto.mainProducts),

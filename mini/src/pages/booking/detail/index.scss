@@ -1,0 +1,34 @@
+.booking-detail-page {
+  &__copy {
+    color: #64748b;
+    font-size: 24rpx;
+    line-height: 1.7;
+  }
+
+  &__next-title {
+    display: block;
+    color: #111827;
+    font-size: 30rpx;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  &__amount {
+    display: flex;
+    align-items: flex-end;
+    gap: 12rpx;
+  }
+
+  &__amount-label {
+    color: #64748b;
+    font-size: 24rpx;
+    line-height: 1.4;
+  }
+
+  &__amount-value {
+    color: #d4af37;
+    font-size: 40rpx;
+    font-weight: 700;
+    line-height: 1;
+  }
+}

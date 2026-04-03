@@ -1,60 +1,27 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, View } from '@tarojs/components';
-import Taro, { usePullDownRefresh, useRouter } from '@tarojs/taro';
+import Taro, { useRouter } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { ListItem } from '@/components/ListItem';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import { getOrderStatus, getOrderTypeLabel, getRefundStatus } from '@/constants/status';
-import { getBookingDetail, type BookingDetailResponse } from '@/services/bookings';
-import { cancelOrder, getOrderDetail, getInstallmentPlans, type OrderItem, type InstallmentPlan } from '@/services/orders';
-import { getProjectDetail, type ProjectRiskSummary } from '@/services/projects';
-import { getProviderDetail, type ProviderType } from '@/services/providers';
-import type { RefundSummary } from '@/services/refunds';
+import { getRefundStatus } from '@/constants/status';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
+import {
+  getOrderCenterEntryDetail,
+  type OrderCenterEntryDetail,
+  type OrderCenterSourceKind,
+} from '@/services/orderCenter';
+import { cancelOrder, getOrderDetail } from '@/services/orders';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { showMiniUnsupportedPaymentNotice } from '@/utils/paymentNotice';
 import { formatServerDate, formatServerDateTime } from '@/utils/serverTime';
-
-type ProviderSummary = {
-  id: number;
-  name: string;
-  providerType: ProviderType;
-};
-
-type BookingDetail = BookingDetailResponse['booking'] & {
-  provider?: BookingDetailResponse['provider'];
-  refundSummary?: RefundSummary;
-};
-
-type ProjectSummary = {
-  id: number;
-  name: string;
-  address?: string;
-  riskSummary?: ProjectRiskSummary;
-};
-
-const normalizeProviderType = (value?: string | number): ProviderType => {
-  if (value === 'designer' || value === 'company' || value === 'foreman') {
-    return value;
-  }
-  if (value === 'worker') {
-    return 'foreman';
-  }
-  if (value === 1 || value === '1') {
-    return 'designer';
-  }
-  if (value === 2 || value === '2') {
-    return 'company';
-  }
-  if (value === 3 || value === '3') {
-    return 'foreman';
-  }
-  return 'designer';
-};
 
 const formatDate = (dateStr?: string) => {
   if (!dateStr) {
@@ -63,131 +30,123 @@ const formatDate = (dateStr?: string) => {
   return formatServerDateTime(dateStr);
 };
 
+const getStatusMeta = (detail: OrderCenterEntryDetail) => {
+  switch (detail.statusGroup) {
+    case 'pending_payment':
+      return { label: detail.statusText || '待支付', variant: 'warning' as const, desc: '请尽快完成支付' };
+    case 'paid':
+      return { label: detail.statusText || '已支付', variant: 'success' as const, desc: '订单已支付，等待履约' };
+    case 'refund':
+      return { label: detail.statusText || '退款中', variant: 'brand' as const, desc: '退款记录可在下方查看' };
+    case 'cancelled':
+      return { label: detail.statusText || '已取消', variant: 'default' as const, desc: '订单已取消' };
+    default:
+      return { label: detail.statusText || '处理中', variant: 'default' as const, desc: '-' };
+  }
+};
+
+const mapLegacyOrderTypeToSourceKind = (orderType?: string): OrderCenterSourceKind | '' => {
+  switch (orderType) {
+    case 'design':
+      return 'design_order';
+    case 'construction':
+      return 'construction_order';
+    case 'material':
+      return 'material_order';
+    default:
+      return '';
+  }
+};
+
+const getTimelineTagVariant = (status?: string) => {
+  switch (status) {
+    case 'completed':
+      return 'success' as const;
+    case 'pending':
+    case 'pending_payment':
+      return 'warning' as const;
+    case 'rejected':
+      return 'error' as const;
+    default:
+      return 'default' as const;
+  }
+};
+
 const OrderDetail: React.FC = () => {
   const auth = useAuthStore();
   const router = useRouter();
-  const { id } = router.params || {};
+  const entryKeyParam = router.params?.entryKey ? decodeURIComponent(router.params.entryKey) : '';
+  const legacyId = Number(router.params?.id || 0);
 
-  const [order, setOrder] = useState<OrderItem | null>(null);
-  const [booking, setBooking] = useState<BookingDetail | null>(null);
-  const [project, setProject] = useState<ProjectSummary | null>(null);
-  const [provider, setProvider] = useState<ProviderSummary | null>(null);
-  const [installmentPlans, setInstallmentPlans] = useState<InstallmentPlan[]>([]);
+  const [detail, setDetail] = useState<OrderCenterEntryDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [resolvedEntryKey, setResolvedEntryKey] = useState(entryKeyParam);
+
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
   const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
-  const fetchRelatedInfo = async (detail: OrderItem) => {
-    setBooking(null);
-    setProject(null);
-    setProvider(null);
-
-    const bookingPromise = detail.bookingId
-      ? getBookingDetail(detail.bookingId).catch(() => null)
-      : Promise.resolve(null);
-
-    const projectPromise = detail.projectId
-      ? getProjectDetail(detail.projectId).catch(() => null)
-      : Promise.resolve(null);
-
-    const [nextBooking, projectRes] = await Promise.all([bookingPromise, projectPromise]);
-
-    if (nextBooking) {
-      const bookingData = nextBooking.booking;
-      const providerType = normalizeProviderType(bookingData.providerType);
-      const providerInfo = nextBooking.provider?.name
-        ? { id: bookingData.providerId, name: nextBooking.provider.name, providerType }
-        : null;
-
-      setBooking({
-        ...bookingData,
-        provider: nextBooking.provider,
-        refundSummary: nextBooking.refundSummary,
-      });
-
-      if (providerInfo) {
-        setProvider(providerInfo);
-      } else if (bookingData.providerId) {
-        const providerRes = await getProviderDetail(providerType, bookingData.providerId).catch(() => null);
-        if (providerRes) {
-          setProvider({
-            id: providerRes.id,
-            name: providerRes.provider?.displayName || providerRes.displayName || providerRes.nickname || providerRes.companyName || '服务商',
-            providerType
-          });
-        }
-      }
+  const resolveEntryKey = useCallback(async () => {
+    if (entryKeyParam) {
+      return entryKeyParam;
     }
-
-    if (projectRes) {
-      setProject({
-        id: projectRes.id,
-        name: projectRes.name,
-        address: projectRes.address,
-        riskSummary: projectRes.riskSummary,
-      });
+    if (!legacyId) {
+      return '';
     }
-  };
-
-  const fetchDetail = async () => {
-    if (!id) {
-      return;
+    const legacyOrder = await getOrderDetail(legacyId);
+    const sourceKind = mapLegacyOrderTypeToSourceKind(legacyOrder.orderType);
+    if (!sourceKind) {
+      throw new Error('订单类型不支持订单中心详情');
     }
+    return `${sourceKind}:${legacyOrder.id}`;
+  }, [entryKeyParam, legacyId]);
 
+  const fetchDetail = useCallback(async () => {
     if (!auth.token) {
-      setOrder(null);
+      setDetail(null);
       setLoading(false);
-      Taro.stopPullDownRefresh();
       return;
     }
 
     setLoading(true);
     try {
-      const res = await getOrderDetail(Number(id));
-      setOrder(res);
-      await fetchRelatedInfo(res);
-
-      // 获取分期付款计划
-      try {
-        const plansRes = await getInstallmentPlans(Number(id));
-        if (plansRes && plansRes.plans) {
-          setInstallmentPlans(plansRes.plans);
-        }
-      } catch (error) {
-        // 如果没有分期计划，忽略错误
-        setInstallmentPlans([]);
+      const nextEntryKey = await resolveEntryKey();
+      if (!nextEntryKey) {
+        setDetail(null);
+        return;
       }
+      setResolvedEntryKey(nextEntryKey);
+      const res = await getOrderCenterEntryDetail(nextEntryKey);
+      setDetail(res);
     } catch (error) {
-      setOrder(null);
+      setDetail(null);
       showErrorToast(error, '获取详情失败');
     } finally {
       setLoading(false);
-      Taro.stopPullDownRefresh();
     }
-  };
+  }, [auth.token, resolveEntryKey]);
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(fetchDetail);
+
   useEffect(() => {
-    fetchDetail();
-  }, [id, auth.token]); // eslint-disable-line react-hooks/exhaustive-deps
+    void runReload();
+  }, [auth.token, resolveEntryKey, runReload]);
 
-  usePullDownRefresh(() => {
-    fetchDetail();
-  });
-
-  const handlePay = () => {
-    if (!order || submitting) {
+  const handlePay = async () => {
+    if (!detail || submitting) {
       return;
     }
 
-    Taro.showModal({
-      title: '请前往 Web/H5 支付',
-      content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',
-      showCancel: false,
-    });
+    if (detail.sourceKind === 'survey_deposit' && detail.booking?.id) {
+      await Taro.navigateTo({ url: `/pages/booking/detail/index?id=${detail.booking.id}` });
+      return;
+    }
+
+    await showMiniUnsupportedPaymentNotice('当前小程序仅开放量房费支付；设计费、施工费与分期支付暂未开放小程序支付。');
   };
 
   const handleCancel = async () => {
-    if (!order || submitting) {
+    if (!detail?.order?.id || submitting) {
       return;
     }
 
@@ -201,7 +160,7 @@ const OrderDetail: React.FC = () => {
 
         setSubmitting(true);
         try {
-          await cancelOrder(order.id);
+          await cancelOrder(detail.order!.id);
           Taro.showToast({ title: '已取消', icon: 'success' });
           await fetchDetail();
         } catch (error) {
@@ -220,21 +179,10 @@ const OrderDetail: React.FC = () => {
     });
   };
 
-  const handlePayInstallment = () => {
-    if (submitting) {
-      return;
-    }
-
-    Taro.showModal({
-      title: '请前往 Web/H5 支付',
-      content: '支付宝一期仅支持 Web/H5 支付，请前往浏览器打开订单页面完成支付。',
-      showCancel: false,
-    });
-  };
-
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
+      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看订单详情"
           action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
@@ -245,7 +193,8 @@ const OrderDetail: React.FC = () => {
 
   if (loading) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md">
+      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Skeleton height={200} className="mb-md" />
         <Skeleton height={150} className="mb-md" />
         <Skeleton height={300} className="mb-md" />
@@ -253,23 +202,35 @@ const OrderDetail: React.FC = () => {
     );
   }
 
-  if (!order) {
+  if (!detail) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
+      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty description="订单不存在" />
       </View>
     );
   }
 
-  const statusConfig = getOrderStatus(order.status);
-  const payableAmount = Math.max(0, order.totalAmount - order.discount);
-  const projectRisk = project?.riskSummary;
-  const bookingRefund = booking?.refundSummary;
+  const statusConfig = getStatusMeta(detail);
+  const totalAmount = Number(detail.order?.totalAmount || detail.amount || 0);
+  const discountAmount = Number(detail.order?.discount || 0);
+  const paidAmount = Number(
+    detail.order?.paidAmount || (detail.statusGroup === 'paid' || detail.statusGroup === 'refund' ? detail.amount : 0),
+  );
+  const payableAmount = Math.max(0, Number(detail.payableAmount || totalAmount - discountAmount - paidAmount || detail.amount || 0));
+  const projectRisk = detail.project?.riskSummary;
+  const bookingRefund = detail.refundSummary;
   const hasRisk = Boolean(projectRisk?.pausedAt || projectRisk?.disputedAt || projectRisk?.escrowFrozen);
   const refundStatus = getRefundStatus(bookingRefund?.latestRefundStatus);
+  const paymentPlans = detail.paymentPlans || [];
+  const orderNo = detail.referenceNo || detail.order?.orderNo || resolvedEntryKey;
+  const showPendingFooter = detail.statusGroup === 'pending_payment';
+  const showCancelButton = showPendingFooter && Boolean(detail.order?.id);
+  const showBookingLink = detail.booking?.id && detail.sourceKind === 'survey_deposit';
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle} {...bindPullToRefresh}>
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       <View className="bg-white p-md mb-md flex justify-between items-center">
         <View>
           <View className="text-xl font-bold mb-xs flex items-center gap-xs">
@@ -281,44 +242,58 @@ const OrderDetail: React.FC = () => {
       </View>
 
       <View className="px-md">
-        {(provider || booking || project) ? (
+        {(detail.provider || detail.booking || detail.project) ? (
           <Card className="mb-md" title="关联信息">
             <View className="flex flex-col">
-              {provider ? (
+              {detail.provider ? (
                 <ListItem
                   title="服务商"
-                  description={provider.name}
+                  description={detail.provider.name}
                   arrow
                   onClick={() =>
                     Taro.navigateTo({
-                      url: `/pages/providers/detail/index?id=${provider.id}&type=${provider.providerType}`
+                      url: `/pages/providers/detail/index?id=${detail.provider?.id}&type=${detail.provider?.providerType || 'designer'}`
                     })
                   }
                 />
               ) : null}
 
-              {project ? (
-                <>
-                  <ListItem
-                    title="项目"
-                    description={project.name}
-                    arrow
-                    onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${project.id}` })}
-                  />
-                  <ListItem
-                    title="项目进度"
-                    description="查看整体施工进度"
-                    arrow
-                    onClick={() => Taro.switchTab({ url: '/pages/progress/index' })}
-                  />
-                </>
+              {detail.project ? (
+                <ListItem
+                  title="项目详情"
+                  description={detail.project.name}
+                  arrow
+                  onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${detail.project?.id}` })}
+                />
               ) : null}
 
-              {!provider && booking?.providerId ? (
-                <ListItem title="服务商" description={`ID ${booking.providerId}`} />
+              {showBookingLink ? (
+                <ListItem
+                  title="预约详情"
+                  description={detail.booking?.address || `预约 #${detail.booking?.id}`}
+                  arrow
+                  onClick={() => Taro.navigateTo({ url: `/pages/booking/detail/index?id=${detail.booking?.id}` })}
+                />
               ) : null}
-              {!project && booking?.address ? (
-                <ListItem title="项目地址" description={booking.address} />
+
+              {!detail.provider && detail.booking?.providerId ? (
+                <ListItem title="服务商" description={`ID ${detail.booking.providerId}`} />
+              ) : null}
+              {!detail.project && detail.booking?.address && !showBookingLink ? (
+                <ListItem title="项目地址" description={detail.booking.address} />
+              ) : null}
+            </View>
+          </Card>
+        ) : null}
+
+        {(detail.businessStage || detail.flowSummary) ? (
+          <Card className="mb-md" title="服务进展">
+            <View className="flex flex-col gap-sm py-sm">
+              {detail.businessStage ? (
+                <ListItem title="当前阶段" description={detail.businessStage} />
+              ) : null}
+              {detail.flowSummary ? (
+                <View className="text-sm text-gray-500 px-lg">{detail.flowSummary}</View>
               ) : null}
             </View>
           </Card>
@@ -344,12 +319,12 @@ const OrderDetail: React.FC = () => {
               {projectRisk?.escrowFrozen ? (
                 <ListItem
                   title="托管状态"
-                  description={projectRisk.frozenAmount ? `当前冻结 ¥${projectRisk.frozenAmount.toLocaleString()}` : '托管资金已冻结'}
+                  description={projectRisk.frozenAmount ? `当前冻结 ¥${Number(projectRisk.frozenAmount).toLocaleString()}` : '托管资金已冻结'}
                   extra={<Tag variant="brand">已冻结</Tag>}
                 />
               ) : null}
-              {project ? (
-                <Button variant="outline" block onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${project.id}` })}>
+              {detail.project ? (
+                <Button variant="outline" block onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${detail.project?.id}` })}>
                   查看项目异常详情
                 </Button>
               ) : null}
@@ -374,7 +349,7 @@ const OrderDetail: React.FC = () => {
                   <Button
                     variant="outline"
                     block
-                    onClick={() => Taro.navigateTo({ url: `/pages/refunds/list/index?bookingId=${booking?.id}` })}
+                    onClick={() => Taro.navigateTo({ url: `/pages/refunds/list/index?bookingId=${detail.booking?.id}` })}
                   >
                     查看记录
                   </Button>
@@ -383,7 +358,7 @@ const OrderDetail: React.FC = () => {
                   <Button
                     block
                     disabled={!bookingRefund.canApplyRefund}
-                    onClick={() => Taro.navigateTo({ url: `/pages/bookings/refund/index?id=${booking?.id}` })}
+                    onClick={() => Taro.navigateTo({ url: `/pages/bookings/refund/index?id=${detail.booking?.id}` })}
                   >
                     申请退款
                   </Button>
@@ -397,12 +372,14 @@ const OrderDetail: React.FC = () => {
           <View className="flex flex-col gap-md py-sm">
             <View className="flex justify-between items-center">
               <Text className="text-gray-500">订单总额</Text>
-              <Text className="font-bold text-lg">¥{order.totalAmount.toLocaleString()}</Text>
+              <Text className="font-bold text-lg">¥{totalAmount.toLocaleString()}</Text>
             </View>
-            <View className="flex justify-between items-center text-sm">
-              <Text className="text-gray-500">优惠金额</Text>
-              <Text className="text-red-500">-¥{order.discount.toLocaleString()}</Text>
-            </View>
+            {discountAmount > 0 ? (
+              <View className="flex justify-between items-center text-sm">
+                <Text className="text-gray-500">优惠金额</Text>
+                <Text className="text-red-500">-¥{discountAmount.toLocaleString()}</Text>
+              </View>
+            ) : null}
             <View className="flex justify-between items-center">
               <Text className="text-gray-900 font-medium">应付金额</Text>
               <Text className="text-xl font-bold text-brand">¥{payableAmount.toLocaleString()}</Text>
@@ -410,18 +387,18 @@ const OrderDetail: React.FC = () => {
             <View className="h-px bg-gray-100 my-xs" />
             <View className="flex justify-between items-center text-sm">
               <Text className="text-gray-500">已支付金额</Text>
-              <Text>¥{order.paidAmount.toLocaleString()}</Text>
+              <Text>¥{paidAmount.toLocaleString()}</Text>
             </View>
           </View>
         </Card>
 
-        {installmentPlans.length > 0 && (
+        {paymentPlans.length > 0 ? (
           <Card className="mb-md" title="分期付款计划">
             <View className="flex flex-col gap-md py-sm">
-              {installmentPlans.map((plan) => {
+              {paymentPlans.map((plan) => {
                 const isPaid = plan.status === 'paid';
                 const isOverdue = plan.status === 'overdue';
-                const isPending = plan.status === 'pending';
+                const isPending = plan.status === 'pending_payment' || plan.status === 'pending';
 
                 return (
                   <View key={plan.id} className="border border-gray-100 rounded p-md">
@@ -429,7 +406,7 @@ const OrderDetail: React.FC = () => {
                       <View>
                         <Text className="font-medium">第 {plan.seq} 期</Text>
                         <Text className="text-sm text-gray-500 mt-xs">
-                          到期日: {formatServerDate(plan.dueDate)}
+                          到期日: {formatServerDate(plan.dueAt)}
                         </Text>
                       </View>
                       <Tag variant={isPaid ? 'success' : isOverdue ? 'error' : 'warning'}>
@@ -439,82 +416,98 @@ const OrderDetail: React.FC = () => {
 
                     <View className="flex justify-between items-center pt-sm border-t border-gray-100">
                       <Text className="text-lg font-bold">¥{plan.amount.toLocaleString()}</Text>
-                      {isPending && (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                                                            onClick={() => handlePayInstallment()}
-                          disabled={submitting}
-                        >
-                          立即支付
-                        </Button>
-                      )}
-                      {isPaid && plan.paidAt && (
+                      {isPending ? <Text className="text-xs text-gray-400">待支付</Text> : null}
+                      {isPaid && plan.paidAt ? (
                         <Text className="text-xs text-gray-400">
                           支付时间: {formatServerDate(plan.paidAt)}
                         </Text>
-                      )}
+                      ) : null}
                     </View>
                   </View>
                 );
               })}
             </View>
           </Card>
-        )}
+        ) : null}
+
+        {detail.timeline?.length ? (
+          <Card className="mb-md" title="订单时间线">
+            <View className="flex flex-col gap-md py-sm">
+              {detail.timeline.map((item, index) => (
+                <View key={`${item.title}-${index}`} className="flex justify-between items-start gap-md">
+                  <View className="flex-1 min-w-0">
+                    <Text className="font-medium text-gray-900">{item.title}</Text>
+                    {item.description ? (
+                      <View className="text-sm text-gray-500 mt-xs">{item.description}</View>
+                    ) : null}
+                    {item.at ? (
+                      <View className="text-xs text-gray-400 mt-xs">{formatDate(item.at)}</View>
+                    ) : null}
+                  </View>
+                  {item.status ? (
+                    <Tag variant={getTimelineTagVariant(item.status)}>{item.status}</Tag>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          </Card>
+        ) : null}
 
         <Card className="mb-md" title="订单信息">
           <View className="flex flex-col gap-sm py-sm text-sm">
             <View className="flex justify-between">
               <Text className="text-gray-500">订单编号</Text>
-              <View className="flex items-center" onClick={() => handleCopy(order.orderNo)}>
-                <Text>{order.orderNo}</Text>
+              <View className="flex items-center" onClick={() => handleCopy(orderNo)}>
+                <Text>{orderNo}</Text>
                 <Text className="text-brand text-xs ml-xs">复制</Text>
               </View>
             </View>
             <View className="flex justify-between">
               <Text className="text-gray-500">订单类型</Text>
-              <Text>{getOrderTypeLabel(order.orderType)}</Text>
+              <Text>{detail.title || '订单'}</Text>
             </View>
             <View className="flex justify-between">
               <Text className="text-gray-500">下单时间</Text>
-              <Text>{formatDate(order.createdAt)}</Text>
+              <Text>{formatDate(detail.createdAt)}</Text>
             </View>
-            {order.paidAt ? (
+            {detail.order?.paidAt ? (
               <View className="flex justify-between">
                 <Text className="text-gray-500">支付时间</Text>
-                <Text>{formatDate(order.paidAt)}</Text>
+                <Text>{formatDate(detail.order.paidAt)}</Text>
               </View>
             ) : null}
-            {order.expireAt && order.status === 0 ? (
+            {detail.expireAt && detail.statusGroup === 'pending_payment' ? (
               <View className="flex justify-between">
                 <Text className="text-gray-500">过期时间</Text>
-                <Text className="text-warning">{formatDate(order.expireAt)}</Text>
+                <Text className="text-warning">{formatDate(detail.expireAt)}</Text>
               </View>
             ) : null}
           </View>
         </Card>
       </View>
 
-      {order.status === 0 ? (
+      {showPendingFooter ? (
         <View className="flex gap-md" style={fixedBottomBarStyle}>
-          <Button
-            variant="outline"
-            size="lg"
-            onClick={handleCancel}
-            className="flex-1"
-            disabled={submitting}
-          >
-            取消订单
-          </Button>
+          {showCancelButton ? (
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={handleCancel}
+              className="flex-1"
+              disabled={submitting}
+            >
+              取消订单
+            </Button>
+          ) : null}
           <Button
             variant="primary"
             size="lg"
-            onClick={handlePay}
+            onClick={() => void handlePay()}
             className="flex-1"
             loading={submitting}
             disabled={submitting}
           >
-            立即支付
+            去支付
           </Button>
         </View>
       ) : null}

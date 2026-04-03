@@ -1,3 +1,4 @@
-export default {
-  navigationBarTitleText: '编辑资料',
-};
+export default definePageConfig({
+  navigationBarTitleText: '个人资料',
+  backgroundColor: '#F4F7FB',
+});

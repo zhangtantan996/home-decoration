@@ -10,6 +10,7 @@ type InspirationImageSource = {
 };
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
+const UNSTABLE_IMAGE_HOST_FRAGMENTS = ['images.unsplash.com', 'via.placeholder.com', 'placehold.co'];
 
 const toNonEmptyString = (value: unknown) => {
   if (typeof value !== 'string') {
@@ -45,6 +46,36 @@ const getFallbackUrl = (path: string) => {
   return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 };
 
+const normalizeFirstPartyAbsoluteUrl = (raw: string) => {
+  const value = raw.trim();
+  if (!/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  try {
+    const assetBaseUrl = new URL(getAssetBaseUrl());
+    const targetUrl = new URL(value);
+    if (targetUrl.hostname !== assetBaseUrl.hostname) {
+      return value;
+    }
+
+    targetUrl.protocol = assetBaseUrl.protocol;
+    targetUrl.host = assetBaseUrl.host;
+    return targetUrl.toString();
+  } catch {
+    return value;
+  }
+};
+
+const isKnownUnstableImageUrl = (raw: string) => {
+  const value = raw.trim().toLowerCase();
+  if (!value) {
+    return false;
+  }
+
+  return UNSTABLE_IMAGE_HOST_FRAGMENTS.some((fragment) => value.includes(fragment));
+};
+
 const normalizeOptionalInspirationImageUrl = (value: unknown): string | undefined => {
   const raw = toNonEmptyString(value);
   if (!raw) {
@@ -60,7 +91,10 @@ const normalizeOptionalInspirationImageUrl = (value: unknown): string | undefine
   }
 
   if (/^https?:\/\//i.test(raw)) {
-    return raw;
+    if (isKnownUnstableImageUrl(raw)) {
+      return undefined;
+    }
+    return normalizeFirstPartyAbsoluteUrl(raw);
   }
 
   return `${getAssetBaseUrl()}/${raw.replace(/^\/+/, '')}`;

@@ -117,9 +117,9 @@ export async function getProviderSceneCases(id: number, page = 1, pageSize = 10)
   });
 }
 
-export async function getProviderCaseDetail(type: ProviderType, providerId: number, caseId: number) {
+export async function getProviderCaseDetail(_type: ProviderType, _providerId: number, caseId: number) {
   return request<ProviderCaseItem>({
-    url: `/${providerBasePath(type)}/${providerId}/cases/${caseId}`
+    url: `/provider-cases/${caseId}`
   });
 }
 

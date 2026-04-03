@@ -1,10 +1,12 @@
-import Taro, { useDidShow, useLoad, usePullDownRefresh, useReachBottom } from '@tarojs/taro';
+import Taro, { useDidShow, useLoad, useReachBottom } from '@tarojs/taro';
 import { Image, Text, View } from '@tarojs/components';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import type { FavoriteItemDTO, InspirationItemDTO } from '@/services/dto';
 import { favoriteService, inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
@@ -425,6 +427,9 @@ export default function Inspiration() {
       }
     }
   };
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } = usePullToRefreshFeedback(
+    () => fetchCases(true),
+  );
 
   useDidShow(() => {
     syncCurrentTabBar('/pages/inspiration/index');
@@ -460,14 +465,8 @@ export default function Inspiration() {
   });
 
   useEffect(() => {
-    void fetchCases(true);
-  }, [activeLayout, activeStyle]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  usePullDownRefresh(() => {
-    fetchCases(true).finally(() => {
-      Taro.stopPullDownRefresh();
-    });
-  });
+    void runReload();
+  }, [activeLayout, activeStyle, runReload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useReachBottom(() => {
     void fetchCases();
@@ -767,7 +766,7 @@ export default function Inspiration() {
   };
 
   return (
-    <View className="inspiration-page">
+    <View className="inspiration-page" {...bindPullToRefresh}>
       <View className="inspiration-page__header" style={headerInsetStyle}>
         <View className="inspiration-page__header-main" style={headerMainStyle}>
           <Text className="inspiration-page__header-title">灵感图库</Text>
@@ -778,6 +777,7 @@ export default function Inspiration() {
         </View>
       </View>
       <View className="inspiration-page__header-placeholder" style={headerPlaceholderStyle} />
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
       <View className="inspiration-page__content">
         <View className="inspiration-page__toolbar" style={toolbarInsetStyle}>

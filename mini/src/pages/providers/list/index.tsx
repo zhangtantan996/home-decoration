@@ -1,5 +1,4 @@
 import Taro, {
-  usePullDownRefresh,
   useReachBottom,
   useRouter,
 } from "@tarojs/taro";
@@ -11,8 +10,10 @@ import { Empty } from "@/components/Empty";
 import { Icon } from "@/components/Icon";
 import { Input } from "@/components/Input";
 import { ListItem } from "@/components/ListItem";
+import { PullToRefreshNotice } from "@/components/PullToRefreshNotice";
 import { Skeleton } from "@/components/Skeleton";
 import { Tabs } from "@/components/Tabs";
+import { usePullToRefreshFeedback } from "@/hooks/usePullToRefreshFeedback";
 import {
   listProviders,
   type ProviderListItem,
@@ -120,9 +121,13 @@ export default function ProviderList() {
       }
     }
   };
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(() => fetchProviders(true));
+
   useEffect(() => {
-    fetchProviders(true);
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    void runReload();
+  }, [activeTab, runReload]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (skipSearchFirstRunRef.current) {
       skipSearchFirstRunRef.current = false;
@@ -130,16 +135,10 @@ export default function ProviderList() {
     }
 
     const timer = setTimeout(() => {
-      fetchProviders(true);
+      void runReload();
     }, 350);
     return () => clearTimeout(timer);
-  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  usePullDownRefresh(() => {
-    fetchProviders(true).finally(() => {
-      Taro.stopPullDownRefresh();
-    });
-  });
+  }, [runReload, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useReachBottom(() => {
     if (hasMore && !loading) {
@@ -183,7 +182,7 @@ export default function ProviderList() {
       : "去登录";
 
   return (
-    <View className="provider-list-page">
+    <View className="provider-list-page" {...bindPullToRefresh}>
       <View className="provider-list-page__header" style={headerInsetStyle}>
         <View className="provider-list-page__header-main" style={headerMainStyle}>
           <View className="provider-list-page__header-left">
@@ -196,6 +195,7 @@ export default function ProviderList() {
         </View>
       </View>
       <View className="provider-list-page__header-placeholder" style={headerPlaceholderStyle} />
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
       <View className="provider-list-page__toolbar" style={toolbarStyle}>
         <View className="provider-list-page__search">

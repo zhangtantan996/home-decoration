@@ -1,13 +1,11 @@
 import Taro, { useDidHide, useDidShow } from '@tarojs/taro';
 import { Text, View } from '@tarojs/components';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import { Card } from '@/components/Card';
-import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
-import { ListItem } from '@/components/ListItem';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
-import { formatServerDateTime } from '@/utils/serverTime';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import {
   deleteNotification,
   listNotifications,
@@ -20,10 +18,15 @@ import { openAuthLoginPage } from '@/utils/authRedirect';
 import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
+import { NotificationWebSocket, isNotificationRealtimeEnabled } from '@/utils/notificationWebSocket';
 import {
-  NotificationWebSocket,
-  isNotificationRealtimeEnabled,
-} from '@/utils/notificationWebSocket';
+  buildNotificationFilters,
+  buildNotificationSections,
+  type NotificationCardViewModel,
+  type NotificationFilterKey,
+  type NotificationFilterViewModel,
+  type NotificationSectionViewModel,
+} from './view-model';
 
 import './index.scss';
 
@@ -35,17 +38,15 @@ const TAB_PAGE_PATHS = [
   '/pages/profile/index',
 ];
 
+const stripQuery = (value: string) => value.split('?')[0] || value;
+
 const normalizePagePath = (actionUrl: string) => {
-  if (actionUrl.startsWith('/pages/chat/index')) {
+  if (actionUrl.startsWith('/pages/chat/index') || actionUrl.startsWith('pages/chat/index')) {
     return '/pages/messages/index';
   }
 
   if (actionUrl.startsWith('/pages/')) {
     return actionUrl;
-  }
-
-  if (actionUrl.startsWith('pages/chat/index')) {
-    return '/pages/messages/index';
   }
 
   if (actionUrl.startsWith('pages/')) {
@@ -55,28 +56,194 @@ const normalizePagePath = (actionUrl: string) => {
   return '';
 };
 
+const NotificationsHeader = ({
+  insetStyle,
+  mainStyle,
+  capsuleStyle,
+  placeholderStyle,
+}: {
+  insetStyle: CSSProperties;
+  mainStyle: CSSProperties;
+  capsuleStyle: CSSProperties;
+  placeholderStyle: CSSProperties;
+}) => (
+  <>
+    <View className="notifications-page__header" style={insetStyle}>
+      <View className="notifications-page__header-main" style={mainStyle}>
+        <Text className="notifications-page__header-title">通知</Text>
+        <View className="notifications-page__capsule-spacer" style={capsuleStyle} />
+      </View>
+    </View>
+    <View className="notifications-page__header-placeholder" style={placeholderStyle} />
+  </>
+);
+
+const NotificationsSkeleton = () => (
+  <View className="notifications-page__content">
+    <View className="notifications-page__filter-skeleton">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <View key={`filter-${index}`} className="notifications-page__filter-skeleton-pill">
+          <Skeleton width="100%" height={64} />
+        </View>
+      ))}
+    </View>
+
+    {Array.from({ length: 2 }).map((_, index) => (
+      <View key={`section-${index}`} className="notifications-page__section-card">
+        <View className="notifications-page__section-head">
+          <Skeleton width="20%" height={28} />
+          <Skeleton width="14%" height={22} />
+        </View>
+        {Array.from({ length: 2 }).map((__, cardIndex) => (
+          <View key={`card-${cardIndex}`} className="notifications-page__notification-card notifications-page__notification-card--skeleton">
+            <Skeleton circle width={72} height={72} />
+            <View className="notifications-page__notification-main">
+              <Skeleton width="58%" height={28} />
+              <Skeleton row={2} height={20} className="notifications-page__skeleton-gap" />
+            </View>
+            <View className="notifications-page__notification-side">
+              <Skeleton width={70} height={24} />
+              <Skeleton width={52} height={24} className="notifications-page__skeleton-gap" />
+            </View>
+          </View>
+        ))}
+      </View>
+    ))}
+  </View>
+);
+
+const SectionHeader = ({ title, count }: { title: string; count: number }) => (
+  <View className="notifications-page__section-head">
+    <View className="notifications-page__section-badge">
+      <Text className="notifications-page__section-title">{title}</Text>
+    </View>
+    <View className="notifications-page__section-line" />
+    <Text className="notifications-page__section-count">{count} 条</Text>
+  </View>
+);
+
+const SectionEmpty = ({ activeFilterLabel }: { activeFilterLabel: string }) => (
+  <View className="notifications-page__empty-state">
+    <View className="notifications-page__empty-icon">
+      <Icon name="notification" size={38} color="#64748b" />
+    </View>
+    <Text className="notifications-page__empty-title">{activeFilterLabel === '全部' ? '还没有新的通知' : `暂无${activeFilterLabel}通知`}</Text>
+    <Text className="notifications-page__empty-copy">
+      订单进度、退款结果和系统提醒会在这里按时间归档，重要提醒会优先显示未读状态。
+    </Text>
+  </View>
+);
+
+const FilterBar = ({
+  activeFilter,
+  filters,
+  unreadCount,
+  onReadAll,
+  onChange,
+}: {
+  activeFilter: NotificationFilterKey;
+  filters: NotificationFilterViewModel[];
+  unreadCount: number;
+  onReadAll: () => void;
+  onChange: (key: NotificationFilterKey) => void;
+}) => (
+  <View className="notifications-page__toolbar">
+    <View className="notifications-page__filter-bar">
+      {filters.map((item) => {
+        const isActive = item.key === activeFilter;
+        return (
+          <View
+            key={item.key}
+            className={`notifications-page__filter-pill ${isActive ? 'is-active' : ''}`}
+            onClick={() => onChange(item.key)}
+          >
+            <Text className={`notifications-page__filter-pill-text ${isActive ? 'is-active' : ''}`}>{item.label}</Text>
+            <Text className={`notifications-page__filter-pill-count ${isActive ? 'is-active' : ''}`}>{item.count}</Text>
+          </View>
+        );
+      })}
+    </View>
+
+    <View className="notifications-page__toolbar-actions">
+      <View className="notifications-page__toolbar-action" onClick={onReadAll}>
+        <Text className={`notifications-page__toolbar-action-text ${unreadCount > 0 ? 'is-active' : ''}`}>已读</Text>
+      </View>
+    </View>
+  </View>
+);
+
+const NotificationCard = ({
+  item,
+  onOpen,
+  onDelete,
+}: {
+  item: NotificationCardViewModel;
+  onOpen: (item: NotificationItem) => void;
+  onDelete: (id: number) => void;
+}) => (
+  <View className={`notifications-page__notification-card ${item.isRead ? '' : 'is-unread'}`} onClick={() => onOpen(item.raw)}>
+    <View className="notifications-page__notification-rail">
+      <View className={`notifications-page__notification-rail-dot notifications-page__notification-rail-dot--${item.typeTone}`} />
+      <View className="notifications-page__notification-rail-line" />
+    </View>
+
+    <View className={`notifications-page__notification-icon notifications-page__notification-icon--${item.typeTone}`}>
+      <Text className="notifications-page__notification-icon-text">{item.typeLabel}</Text>
+    </View>
+
+    <View className="notifications-page__notification-main">
+      <View className="notifications-page__notification-head">
+        <Text className="notifications-page__notification-title">{item.title}</Text>
+        {!item.isRead ? <View className="notifications-page__notification-dot" /> : null}
+      </View>
+      <Text className="notifications-page__notification-content line-clamp-2">{item.content}</Text>
+      <View className="notifications-page__notification-meta">
+        <Text className={`notifications-page__notification-type notifications-page__notification-type--${item.typeTone}`}>{item.typeLabel}</Text>
+        <Text className="notifications-page__notification-time">{item.relativeTime}</Text>
+        {item.canNavigate ? <Text className="notifications-page__notification-jump">{item.actionText}</Text> : null}
+      </View>
+    </View>
+
+    <View className="notifications-page__notification-side">
+      <Text className="notifications-page__notification-absolute">{item.absoluteTime}</Text>
+      <Text className={`notifications-page__notification-link ${item.canNavigate ? 'is-active' : ''}`}>{item.actionText}</Text>
+      <Text
+        className="notifications-page__notification-delete"
+        onClick={(event) => {
+          event.stopPropagation();
+          onDelete(item.id);
+        }}
+      >
+        删除
+      </Text>
+    </View>
+  </View>
+);
+
 export default function NotificationsPage() {
   const auth = useAuthStore();
   const redirectingRef = useRef(false);
-  const navMetrics = useMemo(() => getMiniNavMetrics(), []);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const redirectResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchRequestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+  const pageVisibleRef = useRef(false);
   const realtimeRef = useRef<NotificationWebSocket | null>(null);
+  const [pageVisible, setPageVisible] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilterKey>('all');
+  const [loading, setLoading] = useState(true);
+  const navMetrics = useMemo(() => getMiniNavMetrics(), []);
+
   const headerInsetStyle = useMemo(
     () => ({
       paddingTop: `${navMetrics.menuTop}px`,
       paddingRight: `${navMetrics.menuRightInset}px`,
+      paddingBottom: `${navMetrics.contentTop - navMetrics.menuBottom}px`,
     }),
-    [navMetrics.menuRightInset, navMetrics.menuTop],
+    [navMetrics.contentTop, navMetrics.menuBottom, navMetrics.menuRightInset, navMetrics.menuTop],
   );
-  const headerMainStyle = useMemo(
-    () => ({ height: `${navMetrics.menuHeight}px` }),
-    [navMetrics.menuHeight],
-  );
-  const headerPlaceholderStyle = useMemo(
-    () => ({ height: `${navMetrics.menuBottom}px` }),
-    [navMetrics.menuBottom],
-  );
+  const headerMainStyle = useMemo(() => ({ height: `${navMetrics.menuHeight}px` }), [navMetrics.menuHeight]);
+  const headerPlaceholderStyle = useMemo(() => ({ height: `${navMetrics.contentTop}px` }), [navMetrics.contentTop]);
   const capsuleSpacerStyle = useMemo(
     () => ({
       width: `${navMetrics.menuWidth}px`,
@@ -85,43 +252,108 @@ export default function NotificationsPage() {
     [navMetrics.menuHeight, navMetrics.menuWidth],
   );
 
-  const unreadCount = notifications.filter((item) => !item.isRead).length;
+  const unreadCount = useMemo(() => notifications.filter((item) => !item.isRead).length, [notifications]);
+  const filters = useMemo(() => buildNotificationFilters(notifications), [notifications]);
+  const sections = useMemo(
+    () => buildNotificationSections(notifications, activeFilter),
+    [activeFilter, notifications],
+  );
+  const activeFilterLabel = useMemo(
+    () => filters.find((item) => item.key === activeFilter)?.label || '全部',
+    [activeFilter, filters],
+  );
+
+  useEffect(() => {
+    if (activeFilter !== 'all' && !filters.some((item) => item.key === activeFilter)) {
+      setActiveFilter('all');
+    }
+  }, [activeFilter, filters]);
 
   const fetchNotifications = useCallback(async () => {
+    const requestId = ++fetchRequestIdRef.current;
     if (!auth.token) {
-      setNotifications([]);
-      setLoading(false);
+      if (requestId === fetchRequestIdRef.current && mountedRef.current) {
+        setNotifications([]);
+        setLoading(false);
+      }
       return;
     }
 
     try {
-      const data = await listNotifications(1, 20);
+      const data = await listNotifications(1, 30);
+      if (requestId !== fetchRequestIdRef.current || !mountedRef.current || !pageVisibleRef.current) {
+        return;
+      }
       setNotifications(data.list || []);
     } catch (error) {
-      showErrorToast(error, '加载失败');
+      if (requestId === fetchRequestIdRef.current && mountedRef.current) {
+        showErrorToast(error, '加载通知失败');
+      }
     } finally {
-      setLoading(false);
+      if (requestId === fetchRequestIdRef.current && mountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [auth.token]);
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } = usePullToRefreshFeedback(fetchNotifications);
 
   useEffect(() => {
-    void fetchNotifications();
-  }, [fetchNotifications]);
+    pageVisibleRef.current = pageVisible;
+  }, [pageVisible]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      fetchRequestIdRef.current += 1;
+      if (redirectResetTimerRef.current) {
+        clearTimeout(redirectResetTimerRef.current);
+        redirectResetTimerRef.current = null;
+      }
+      realtimeRef.current?.disconnect();
+      realtimeRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!pageVisible || !auth.token) {
+      return;
+    }
+    void runReload();
+  }, [auth.token, pageVisible, runReload]);
 
   useDidShow(() => {
     syncCurrentTabBar('/pages/messages/index');
+    setPageVisible(true);
 
     if (!useAuthStore.getState().token && !redirectingRef.current) {
       redirectingRef.current = true;
       void openAuthLoginPage('/pages/messages/index').finally(() => {
-        setTimeout(() => {
+        if (redirectResetTimerRef.current) {
+          clearTimeout(redirectResetTimerRef.current);
+        }
+        redirectResetTimerRef.current = setTimeout(() => {
           redirectingRef.current = false;
+          redirectResetTimerRef.current = null;
         }, 240);
       });
-      return;
     }
+  });
 
-    if (!auth.token || !isNotificationRealtimeEnabled()) {
+  useDidHide(() => {
+    setPageVisible(false);
+    fetchRequestIdRef.current += 1;
+    if (redirectResetTimerRef.current) {
+      clearTimeout(redirectResetTimerRef.current);
+      redirectResetTimerRef.current = null;
+    }
+  });
+
+  useEffect(() => {
+    if (!pageVisible || !auth.token || !isNotificationRealtimeEnabled()) {
+      realtimeRef.current?.disconnect();
+      realtimeRef.current = null;
       return;
     }
 
@@ -129,22 +361,29 @@ export default function NotificationsPage() {
     const websocket = new NotificationWebSocket({
       token: auth.token,
       onNewNotification: () => {
-        void fetchNotifications();
+        void runReload();
       },
       onUnreadCountUpdate: () => {
-        void fetchNotifications();
+        void runReload();
       },
     });
     realtimeRef.current = websocket;
     websocket.connect();
-  });
 
-  useDidHide(() => {
-    realtimeRef.current?.disconnect();
-    realtimeRef.current = null;
-  });
+    return () => {
+      websocket.disconnect();
+      if (realtimeRef.current === websocket) {
+        realtimeRef.current = null;
+      }
+    };
+  }, [auth.token, pageVisible, runReload]);
 
-  const handleReadAll = async () => {
+  const handleReadAll = useCallback(async () => {
+    if (unreadCount === 0) {
+      Taro.showToast({ title: '当前已全部已读', icon: 'none' });
+      return;
+    }
+
     try {
       await markAllNotificationsRead();
       setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
@@ -152,20 +391,14 @@ export default function NotificationsPage() {
     } catch (error) {
       showErrorToast(error, '操作失败');
     }
-  };
+  }, [unreadCount]);
 
-  const handleOpenSettings = () => {
-    Taro.navigateTo({ url: '/pages/settings/index' });
-  };
-
-  const handleOpenNotification = async (item: NotificationItem) => {
+  const handleOpenNotification = useCallback(async (item: NotificationItem) => {
     try {
       if (!item.isRead) {
         await markNotificationRead(item.id);
         setNotifications((prev) =>
-          prev.map((entry) =>
-            entry.id === item.id ? { ...entry, isRead: true } : entry,
-          ),
+          prev.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)),
         );
       }
 
@@ -178,17 +411,28 @@ export default function NotificationsPage() {
         return;
       }
 
-      if (TAB_PAGE_PATHS.includes(pagePath)) {
-        await Taro.switchTab({ url: pagePath });
+      const plainPath = stripQuery(pagePath);
+      if (TAB_PAGE_PATHS.includes(plainPath)) {
+        await Taro.switchTab({ url: plainPath });
       } else {
         await Taro.navigateTo({ url: pagePath });
       }
     } catch (error) {
       showErrorToast(error, '打开通知失败');
     }
-  };
+  }, []);
 
-  const handleClearNotifications = async () => {
+  const handleDeleteNotification = useCallback(async (id: number) => {
+    try {
+      await deleteNotification(id);
+      setNotifications((prev) => prev.filter((item) => item.id !== id));
+      Taro.showToast({ title: '已删除', icon: 'none' });
+    } catch (error) {
+      showErrorToast(error, '删除失败');
+    }
+  }, []);
+
+  const handleClearNotifications = useCallback(async () => {
     if (!auth.token) {
       Taro.showToast({ title: '请先登录', icon: 'none' });
       return;
@@ -209,132 +453,78 @@ export default function NotificationsPage() {
     }
 
     try {
-      const results = await Promise.allSettled(
-        notifications.map((item) => deleteNotification(item.id)),
-      );
-      const successCount = results.filter(
-        (result) => result.status === 'fulfilled',
-      ).length;
+      const results = await Promise.allSettled(notifications.map((item) => deleteNotification(item.id)));
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
       const failedCount = notifications.length - successCount;
 
       if (successCount > 0) {
-        setNotifications((prev) =>
-          prev.filter((_, index) => results[index].status !== 'fulfilled'),
-        );
+        setNotifications((prev) => prev.filter((_, index) => results[index].status !== 'fulfilled'));
       }
 
       Taro.showToast({
-        title:
-          failedCount > 0
-            ? `已清理${successCount}条，${failedCount}条失败`
-            : '通知已清空',
+        title: failedCount > 0 ? `已清理${successCount}条，${failedCount}条失败` : '通知已清空',
         icon: 'none',
       });
     } catch (error) {
       showErrorToast(error, '清理失败');
     }
-  };
-
-  const pageHeader = (
-    <>
-      <View className="notifications-page__header" style={headerInsetStyle}>
-        <View className="notifications-page__header-main" style={headerMainStyle}>
-          <Text className="notifications-page__header-title">通知</Text>
-          <View className="notifications-page__capsule-spacer" style={capsuleSpacerStyle} />
-        </View>
-      </View>
-      <View className="notifications-page__header-placeholder" style={headerPlaceholderStyle} />
-    </>
-  );
+  }, [auth.token, notifications]);
 
   if (!auth.token) {
     return <View className="notifications-page" />;
   }
 
   return (
-    <View className="notifications-page page-with-tabbar">
-      {pageHeader}
-      <View className="notifications-page__content">
-        <View className="notifications-page__summary">
-          <Text className="notifications-page__summary-title">通知中心</Text>
-          <Text className="notifications-page__summary-subtitle">系统流程和处理结果会在这里同步。</Text>
-          <View className="notifications-page__summary-count">
-            <Text className="notifications-page__summary-count-text">当前未读 {unreadCount} 条</Text>
-          </View>
-        </View>
+    <View className="notifications-page page-with-tabbar" {...bindPullToRefresh}>
+      <NotificationsHeader
+        insetStyle={headerInsetStyle}
+        mainStyle={headerMainStyle}
+        capsuleStyle={capsuleSpacerStyle}
+        placeholderStyle={headerPlaceholderStyle}
+      />
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
-        <Card
-          className="notifications-page__card"
-          title="通知列表"
-          extra={
-            <View className="notifications-page__card-link" onClick={handleReadAll}>
-              全部已读
-            </View>
-          }
-        >
-          {loading ? (
-            <View className="p-sm">
-              <View className="mb-sm">
-                <Skeleton width="80%" />
-              </View>
-              <View className="mb-sm">
-                <Skeleton width="60%" />
-              </View>
-              <View>
-                <Skeleton width="70%" />
-              </View>
-            </View>
-          ) : notifications.length > 0 ? (
-            notifications.map((item) => (
-              <ListItem
-                key={item.id}
-                title={item.title}
-                description={item.content}
-                icon={
-                  <Icon
-                    name="notification"
-                    size={36}
-                    color={item.isRead ? '#A1A1AA' : '#D4AF37'}
-                  />
-                }
-                extra={
-                  <View
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-end',
-                      gap: '8rpx',
-                    }}
-                  >
-                    <Text className="text-secondary" style={{ fontSize: '22rpx' }}>
-                      {item.createdAt ? formatServerDateTime(item.createdAt) : '--'}
-                    </Text>
-                    <Text className="text-secondary" style={{ fontSize: '24rpx' }}>
-                      {item.isRead ? '已读' : '未读'}
-                    </Text>
+      {loading ? <NotificationsSkeleton /> : null}
+
+      {!loading ? (
+        <View className="notifications-page__content">
+          <FilterBar
+            activeFilter={activeFilter}
+            filters={filters}
+            unreadCount={unreadCount}
+            onReadAll={handleReadAll}
+            onChange={setActiveFilter}
+          />
+
+          {sections.length > 0 ? (
+            <>
+              {sections.map((section: NotificationSectionViewModel) => (
+                <View key={section.key} className="notifications-page__section">
+                  <SectionHeader title={section.title} count={section.items.length} />
+                  <View className="notifications-page__section-list">
+                    {section.items.map((item) => (
+                      <NotificationCard
+                        key={item.id}
+                        item={item}
+                        onOpen={handleOpenNotification}
+                        onDelete={handleDeleteNotification}
+                      />
+                    ))}
                   </View>
-                }
-                arrow
-                onClick={() => handleOpenNotification(item)}
-              />
-            ))
-          ) : (
-            <Empty description="暂无通知" />
-          )}
-        </Card>
+                </View>
+              ))}
 
-        <Card className="notifications-page__card" title="更多操作">
-          <ListItem
-            title="通知设置"
-            arrow
-            onClick={handleOpenSettings}
-          />
-          <ListItem
-            title="清空通知"
-            onClick={handleClearNotifications}
-          />
-        </Card>
-      </View>
+              <View className="notifications-page__danger-zone" onClick={handleClearNotifications}>
+                <Text className="notifications-page__danger-text">清空当前通知列表</Text>
+              </View>
+            </>
+          ) : (
+            <View className="notifications-page__section-card">
+              <SectionEmpty activeFilterLabel={activeFilterLabel} />
+            </View>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }

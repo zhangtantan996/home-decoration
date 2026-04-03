@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Text, View } from '@tarojs/components';
-import Taro, { usePullDownRefresh, useReachBottom } from '@tarojs/taro';
+import Taro, { useReachBottom } from '@tarojs/taro';
 
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getProposalStatus } from '@/constants/status';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import { listProposals, type ProposalItem } from '@/services/proposals';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
@@ -23,7 +25,6 @@ const ProposalList: React.FC = () => {
       setList([]);
       setHasMore(false);
       setLoading(false);
-      Taro.stopPullDownRefresh();
       return;
     }
 
@@ -50,16 +51,13 @@ const ProposalList: React.FC = () => {
       showErrorToast(error, '加载失败');
     } finally {
       setLoading(false);
-      Taro.stopPullDownRefresh();
     }
   };
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(() => fetchList(true));
   useEffect(() => {
-    fetchList(true);
-  }, [auth.token]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  usePullDownRefresh(() => {
-    fetchList(true);
-  });
+    void runReload();
+  }, [auth.token, runReload]);
 
   useReachBottom(() => {
     if (hasMore && !loading) {
@@ -74,7 +72,8 @@ const ProposalList: React.FC = () => {
   };
 
   return (
-    <View className="page bg-gray-50 min-h-screen p-md">
+    <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       {!auth.token ? (
         <Empty
           description="登录后查看设计方案"

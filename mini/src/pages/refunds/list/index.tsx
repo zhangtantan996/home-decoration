@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Text, View } from '@tarojs/components';
-import Taro, { useDidShow, useReachBottom, useLoad } from '@tarojs/taro';
+import Taro, { useDidShow, useLoad, useReachBottom } from '@tarojs/taro';
 
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getRefundStatus } from '@/constants/status';
+import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import { listMyRefundApplications, type RefundApplicationItem } from '@/services/refunds';
 import { useAuthStore } from '@/store/auth';
 import { syncCurrentTabBar } from '@/utils/customTabBar';
@@ -64,10 +66,12 @@ const RefundListPage: React.FC = () => {
       setLoadingMore(false);
     }
   }, [auth.token, bookingId, status]);
+  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
+    usePullToRefreshFeedback(() => fetchList(1, true));
 
   useEffect(() => {
-    void fetchList(1, true);
-  }, [fetchList]);
+    void runReload();
+  }, [fetchList, runReload]);
 
   useReachBottom(() => {
     if (hasMore && !loadingMore && !loading) {
@@ -81,14 +85,16 @@ const RefundListPage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md">
+      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty description="登录后查看退款记录" action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }} />
       </View>
     );
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen p-md">
+    <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       <View className="flex" style={{ gap: '12rpx', flexWrap: 'wrap', marginBottom: '24rpx' }}>
         {FILTERS.map((item) => {
           const active = status === item.key;
