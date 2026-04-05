@@ -21,7 +21,9 @@ import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { showMiniUnsupportedPaymentNotice } from '@/utils/paymentNotice';
+import { buildSurveyDepositDetailUrl } from '@/utils/orderRoutes';
 import { formatServerDate, formatServerDateTime } from '@/utils/serverTime';
+import { navigateToSurveyDepositPaymentWithOptions } from '@/utils/surveyDepositPayment';
 
 const formatDate = (dateStr?: string) => {
   if (!dateStr) {
@@ -132,13 +134,35 @@ const OrderDetail: React.FC = () => {
     void runReload();
   }, [auth.token, resolveEntryKey, runReload]);
 
+  const surveyDepositRedirectUrl = useMemo(() => {
+    if (detail?.sourceKind !== 'survey_deposit' || !detail.booking?.id) {
+      return '';
+    }
+    return buildSurveyDepositDetailUrl(detail.booking.id, {
+      entryKey: detail.entryKey,
+      orderNo: detail.referenceNo,
+    });
+  }, [detail]);
+
+  useEffect(() => {
+    if (!surveyDepositRedirectUrl) {
+      return;
+    }
+    void Taro.redirectTo({ url: surveyDepositRedirectUrl });
+  }, [surveyDepositRedirectUrl]);
+
   const handlePay = async () => {
     if (!detail || submitting) {
       return;
     }
 
     if (detail.sourceKind === 'survey_deposit' && detail.booking?.id) {
-      await Taro.navigateTo({ url: `/pages/booking/detail/index?id=${detail.booking.id}` });
+      await navigateToSurveyDepositPaymentWithOptions(
+        detail.booking.id,
+        detail.availablePaymentOptions,
+        detail.referenceNo,
+        detail.entryKey,
+      );
       return;
     }
 
@@ -207,6 +231,16 @@ const OrderDetail: React.FC = () => {
       <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty description="订单不存在" />
+      </View>
+    );
+  }
+
+  if (surveyDepositRedirectUrl) {
+    return (
+      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+        <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
+        <Skeleton height={160} className="mb-md" />
+        <Skeleton height={220} className="mb-md" />
       </View>
     );
   }

@@ -1,4 +1,5 @@
 import { request } from '@/utils/request';
+import type { MiniPaymentLaunchResponse, PaymentChannel, PaymentLaunchMode } from './payments';
 import type { RefundSummaryDTO } from './dto';
 
 export type ProviderType = 'designer' | 'company' | 'foreman';
@@ -39,9 +40,6 @@ export interface BookingItem {
   proposalId?: number;
   createdAt?: string;
 }
-
-export type PaymentChannel = 'alipay' | 'wechat';
-export type PaymentLaunchMode = 'redirect' | 'qr_code' | 'wechat_jsapi';
 
 export interface SurveyDepositPaymentOption {
   channel: PaymentChannel;
@@ -114,6 +112,21 @@ export async function getBookingDetail(id: number) {
     url: `/bookings/${id}`
   });
 }
+
+export async function startSurveyDepositPayment(
+  id: number,
+  channel: PaymentChannel,
+  terminalType: string,
+) {
+  return request<MiniPaymentLaunchResponse>({
+    url: `/bookings/${id}/pay-survey-deposit`,
+    method: 'POST',
+    data: { channel, terminalType },
+    showLoading: true,
+  });
+}
+
+export const paySurveyDeposit = startSurveyDepositPayment;
 
 export async function payIntentFee(id: number) {
   return request<{ message: string }>({

@@ -19,6 +19,7 @@ import {
 } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { navigateToSurveyDepositPaymentWithOptions } from '@/utils/surveyDepositPayment';
 
 import './index.scss';
 
@@ -232,12 +233,10 @@ const BookingDetailPage: React.FC = () => {
     if (!detail?.booking) {
       return;
     }
-
-    Taro.showModal({
-      title: '暂未开放',
-      content: '量房费支付方式选择正在联调中，请先联系平台协助完成支付。',
-      showCancel: false,
-    });
+    await navigateToSurveyDepositPaymentWithOptions(
+      detail.booking.id,
+      detail.surveyDepositPaymentOptions,
+    );
   };
 
   if (!auth.token) {

@@ -33,6 +33,8 @@ export default {
     'pages/orders/pending/index',
     'pages/orders/list/index',
     'pages/orders/detail/index',
+    'pages/orders/survey-deposit/index',
+    'pages/payments/webview/index',
     'pages/projects/detail/index',
     'pages/projects/pause/index',
     'pages/projects/dispute/index',

@@ -17,7 +17,12 @@ import {
 } from '@/services/orderCenter';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { buildOrderCenterDetailUrl } from '@/utils/orderRoutes';
 import { formatServerDateTime } from '@/utils/serverTime';
+import {
+  navigateToSurveyDepositPaymentWithOptions,
+  openSurveyDepositDetail,
+} from '@/utils/surveyDepositPayment';
 
 import './OrdersListContent.scss';
 
@@ -170,14 +175,24 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
   });
 
   const openEntryDetail = (entry: OrderCenterEntrySummary) => {
-    Taro.navigateTo({ url: `/pages/orders/detail/index?entryKey=${encodeURIComponent(entry.entryKey)}` });
+    if (entry.sourceKind === 'survey_deposit' && entry.booking?.id) {
+      openSurveyDepositDetail(entry.booking.id, entry.referenceNo, entry.entryKey);
+      return;
+    }
+
+    Taro.navigateTo({ url: buildOrderCenterDetailUrl(entry.entryKey) });
   };
 
-  const handlePrimaryAction = (event: { stopPropagation: () => void }, entry: OrderCenterEntrySummary) => {
+  const handlePrimaryAction = async (event: { stopPropagation: () => void }, entry: OrderCenterEntrySummary) => {
     event.stopPropagation();
 
     if (entry.sourceKind === 'survey_deposit' && entry.booking?.id) {
-      Taro.navigateTo({ url: `/pages/booking/detail/index?id=${entry.booking.id}` });
+      await navigateToSurveyDepositPaymentWithOptions(
+        entry.booking.id,
+        entry.availablePaymentOptions,
+        entry.referenceNo,
+        entry.entryKey,
+      );
       return;
     }
 
@@ -292,7 +307,7 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
                     <Text className="orders-list-content__amount-value">¥{amount.toLocaleString()}</Text>
                   </View>
                   {entry.statusGroup === 'pending_payment' ? (
-                    <Button size="sm" variant="primary" onClick={(event) => handlePrimaryAction(event, entry)}>
+                    <Button size="sm" variant="primary" onClick={(event) => void handlePrimaryAction(event, entry)}>
                       去支付
                     </Button>
                   ) : null}

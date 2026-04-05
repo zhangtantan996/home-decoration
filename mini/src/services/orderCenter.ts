@@ -1,9 +1,7 @@
 import { request } from '@/utils/request';
+import type { MiniPaymentLaunchResponse, PaymentChannel, PaymentLaunchMode } from './payments';
 
 import type { PageData } from './types';
-
-export type PaymentChannel = 'alipay' | 'wechat';
-export type PaymentLaunchMode = 'redirect' | 'qr_code' | 'wechat_jsapi';
 export type OrderCenterEntryKind = 'payable' | 'refund';
 export type OrderCenterSourceKind =
   | 'survey_deposit'
@@ -175,17 +173,12 @@ export async function startOrderCenterEntryPayment(
   entryKey: string,
   payload: { channel: PaymentChannel; terminalType: string },
 ) {
-  return request<{
-    paymentId: number;
-    channel: PaymentChannel;
-    launchMode: PaymentLaunchMode;
-    launchUrl?: string;
-    qrCodeImageUrl?: string;
-    expiresAt?: string;
-  }>({
+  return request<MiniPaymentLaunchResponse>({
     url: `/order-center/entries/${encodeURIComponent(entryKey)}/payments`,
     method: 'POST',
     data: payload,
     showLoading: true,
   });
 }
+
+export const payOrderCenterEntry = startOrderCenterEntryPayment;
