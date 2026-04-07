@@ -99,13 +99,15 @@ type WechatH5Config struct {
 }
 
 type WechatPayConfig struct {
-	AppID          string `mapstructure:"app_id"`
-	MchID          string `mapstructure:"mch_id"`
-	SerialNo       string `mapstructure:"serial_no"`
-	PrivateKey     string `mapstructure:"private_key"`
-	APIv3Key       string `mapstructure:"api_v3_key"`
-	NotifyURL      string `mapstructure:"notify_url"`
-	TimeoutMinutes int    `mapstructure:"timeout_minutes"`
+	AppID               string `mapstructure:"app_id"`
+	MchID               string `mapstructure:"mch_id"`
+	SerialNo            string `mapstructure:"serial_no"`
+	PrivateKey          string `mapstructure:"private_key"`
+	APIv3Key            string `mapstructure:"api_v3_key"`
+	NotifyURL           string `mapstructure:"notify_url"`
+	PlatformPublicKeyID string `mapstructure:"platform_public_key_id"`
+	PlatformPublicKey   string `mapstructure:"platform_public_key"`
+	TimeoutMinutes      int    `mapstructure:"timeout_minutes"`
 }
 
 type AlipayConfig struct {
@@ -244,6 +246,9 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("sms.template_code_change_phone", "SMS_TEMPLATE_CODE_CHANGE_PHONE")
 	_ = viper.BindEnv("sms.template_code_delete_account", "SMS_TEMPLATE_CODE_DELETE_ACCOUNT")
 	_ = viper.BindEnv("sms.region_id", "SMS_REGION_ID")
+	_ = viper.BindEnv("wechat_mini.app_id", "WECHAT_MINI_APPID")
+	_ = viper.BindEnv("wechat_mini.app_secret", "WECHAT_MINI_SECRET")
+	_ = viper.BindEnv("wechat_mini.bind_token_expire_minutes", "WECHAT_MINI_BIND_TOKEN_EXPIRE_MINUTES")
 	_ = viper.BindEnv("wechat_h5.base_path", "WECHAT_H5_BASE_PATH")
 	_ = viper.BindEnv("wechat_pay.app_id", "WECHAT_PAY_APP_ID")
 	_ = viper.BindEnv("wechat_pay.mch_id", "WECHAT_PAY_MCH_ID")
@@ -251,6 +256,8 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("wechat_pay.private_key", "WECHAT_PAY_PRIVATE_KEY")
 	_ = viper.BindEnv("wechat_pay.api_v3_key", "WECHAT_PAY_API_V3_KEY")
 	_ = viper.BindEnv("wechat_pay.notify_url", "WECHAT_PAY_NOTIFY_URL")
+	_ = viper.BindEnv("wechat_pay.platform_public_key_id", "WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID")
+	_ = viper.BindEnv("wechat_pay.platform_public_key", "WECHAT_PAY_PLATFORM_PUBLIC_KEY")
 	_ = viper.BindEnv("wechat_pay.timeout_minutes", "WECHAT_PAY_TIMEOUT_MINUTES")
 	_ = viper.BindEnv("notification_realtime.enabled", "NOTIFICATION_REALTIME_ENABLED")
 	_ = viper.BindEnv("notification_realtime.max_connections_per_user", "NOTIFICATION_WS_MAX_CONN_PER_USER")

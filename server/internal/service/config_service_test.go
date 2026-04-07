@@ -47,3 +47,28 @@ func TestValidatePaymentChannelRuntimeConfig_AlipayRequiresNotifyURLWhenNoServer
 		t.Fatalf("expected notify url error, got %v", err)
 	}
 }
+
+func TestValidatePaymentChannelRuntimeConfig_WechatRejectsIncompletePlatformPublicKeyConfig(t *testing.T) {
+	cfg := appconfig.GetConfig()
+	previous := *cfg
+	cfg.WechatMini.AppID = "mini-app-id"
+	cfg.WechatPay.AppID = "mini-app-id"
+	cfg.WechatPay.MchID = "1900000109"
+	cfg.WechatPay.SerialNo = "SERIAL"
+	cfg.WechatPay.PrivateKey = "PRIVATE"
+	cfg.WechatPay.APIv3Key = "0123456789abcdef0123456789abcdef"
+	cfg.WechatPay.NotifyURL = "https://api.example.com/api/v1/payments/wechat/notify"
+	cfg.WechatPay.PlatformPublicKeyID = "PUB_KEY_ID"
+	cfg.WechatPay.PlatformPublicKey = ""
+	t.Cleanup(func() {
+		*cfg = previous
+	})
+
+	err := (&ConfigService{}).ValidatePaymentChannelRuntimeConfig(model.PaymentChannelWechat)
+	if err == nil {
+		t.Fatal("expected incomplete platform public key config to fail")
+	}
+	if !strings.Contains(err.Error(), "平台公钥配置不完整") {
+		t.Fatalf("expected platform public key error, got %v", err)
+	}
+}

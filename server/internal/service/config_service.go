@@ -163,11 +163,11 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		Value       string
 		Description string
 	}{
-		{model.ConfigKeyIntentFee, "99", "预约意向金金额（元）"},
-		{model.ConfigKeySurveyDepositDefault, "500", "量房定金默认金额（元）"},
-		{model.ConfigKeySurveyRefundNotice, "量房完成后若不继续设计，默认退回 60% 给用户，剩余 40% 冻结待平台判定；若后续确认设计方案，量房定金转为设计费的一部分。", "量房定金退款说明文案"},
+		{model.ConfigKeyIntentFee, "99", "预约量房费金额（兼容旧配置）"},
+		{model.ConfigKeySurveyDepositDefault, "500", "量房费默认金额（元）"},
+		{model.ConfigKeySurveyRefundNotice, "量房完成后若不继续设计，默认退回 60% 给用户，剩余 40% 冻结待平台判定；若后续确认设计方案，量房费转为设计费的一部分。", "量房费退款说明文案"},
 		{model.ConfigKeySurveyRefundUserPercent, "60", "量房后终止时退给用户的百分比"},
-		{model.ConfigKeyIntentFeeRefundable, "false", "意向金是否可退（用户放弃时）"},
+		{model.ConfigKeyIntentFeeRefundable, "false", "量房费是否可退（兼容旧配置）"},
 		{model.ConfigKeyDesignFeeUnlockDownload, "true", "支付设计费后解锁图纸下载"},
 		{model.ConfigKeyDesignFeePaymentMode, "onetime", "设计费支付模式：onetime / staged"},
 		{model.ConfigKeyDesignFeeStages, `[{"name":"签约款","percentage":50},{"name":"终稿款","percentage":50}]`, "设计费分阶段付款比例"},
@@ -178,10 +178,10 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		{model.ConfigKeyPublicIDRolloutDefaultPercent, "0", "publicId 其他端灰度百分比(0-100)"},
 		{model.ConfigKeyPublicIDRollbackDrillEnabled, "false", "是否启用 publicId 回滚演练观测"},
 		{model.ConfigKeyPublicIDRollbackForceLegacyLookup, "false", "紧急回滚: 强制仅按内部ID查询"},
-		// 量房定金与设计费支付配置
-		{model.ConfigKeySurveyDepositRefundRate, "0.6", "量房定金退款比例(不继续时退给用户,0-1)"},
-		{model.ConfigKeySurveyDepositMin, "100", "设计师可设量房定金最低金额"},
-		{model.ConfigKeySurveyDepositMax, "2000", "设计师可设量房定金最高金额"},
+		// 量房费与设计费支付配置
+		{model.ConfigKeySurveyDepositRefundRate, "0.6", "量房费退款比例(不继续时退给用户,0-1)"},
+		{model.ConfigKeySurveyDepositMin, "100", "设计师可设量房费最低金额"},
+		{model.ConfigKeySurveyDepositMax, "2000", "设计师可设量房费最高金额"},
 		{model.ConfigKeyDesignFeeQuoteExpireHours, "72", "设计费报价有效期(小时)"},
 		{model.ConfigKeyDeliverableDeadlineDays, "30", "设计交付件截止天数"},
 		{model.ConfigKeyConstructionReleaseDelay, "3", "验收确认后T+N天自动放款"},
@@ -234,7 +234,7 @@ func (s *ConfigService) GetSurveyDepositDefaultTx(tx *gorm.DB) (float64, error) 
 func (s *ConfigService) GetSurveyRefundNotice() string {
 	val, err := s.GetConfig(model.ConfigKeySurveyRefundNotice)
 	if err != nil || val == "" {
-		return "量房完成后若不继续设计，默认退回 60% 给用户，剩余 40% 冻结待平台判定；若后续确认设计方案，量房定金转为设计费的一部分。"
+		return "量房完成后若不继续设计，默认退回 60% 给用户，剩余 40% 冻结待平台判定；若后续确认设计方案，量房费转为设计费的一部分。"
 	}
 	return val
 }
@@ -340,6 +340,8 @@ func (s *ConfigService) ValidatePaymentChannelRuntimeConfig(channel string) erro
 	case model.PaymentChannelWechat:
 		cfg := appconfig.GetConfig()
 		appID := strings.TrimSpace(cfg.WechatPay.AppID)
+		publicKeyID := strings.TrimSpace(cfg.WechatPay.PlatformPublicKeyID)
+		publicKey := strings.TrimSpace(cfg.WechatPay.PlatformPublicKey)
 		if appID == "" {
 			appID = strings.TrimSpace(cfg.WechatMini.AppID)
 		}
@@ -356,6 +358,8 @@ func (s *ConfigService) ValidatePaymentChannelRuntimeConfig(channel string) erro
 			return errors.New("微信支付未配置 APIv3 密钥")
 		case strings.TrimSpace(cfg.WechatPay.NotifyURL) == "":
 			return errors.New("微信支付未配置支付回调地址")
+		case (publicKeyID == "") != (publicKey == ""):
+			return errors.New("微信支付平台公钥配置不完整")
 		default:
 			return nil
 		}

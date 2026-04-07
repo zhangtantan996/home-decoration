@@ -57,6 +57,17 @@ wechat_h5:
   state_signing_secret: "${WECHAT_H5_STATE_SIGNING_SECRET}"
   base_path: "/app"
 
+wechat_pay:
+  app_id: "${WECHAT_PAY_APP_ID}"
+  mch_id: "${WECHAT_PAY_MCH_ID}"
+  serial_no: "${WECHAT_PAY_SERIAL_NO}"
+  private_key: "${WECHAT_PAY_PRIVATE_KEY}"
+  api_v3_key: "${WECHAT_PAY_API_V3_KEY}"
+  notify_url: "${WECHAT_PAY_NOTIFY_URL}"
+  platform_public_key_id: "${WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID}"
+  platform_public_key: "${WECHAT_PAY_PLATFORM_PUBLIC_KEY}"
+  timeout_minutes: 15
+
 alipay:
   enabled: false
   gateway_url: "${ALIPAY_GATEWAY_URL}"

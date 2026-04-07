@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
+	"github.com/wechatpay-apiv3/wechatpay-go/core/auth"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth/verifiers"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/downloader"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/notify"
@@ -202,20 +203,20 @@ func (g *WechatPayGateway) ensureInitialized(ctx context.Context) error {
 		}
 		g.privateKey = privateKey
 
-		client, err := core.NewClient(ctx, option.WithWechatPayAutoAuthCipher(
-			strings.TrimSpace(cfg.WechatPay.MchID),
-			strings.TrimSpace(cfg.WechatPay.SerialNo),
-			privateKey,
-			strings.TrimSpace(cfg.WechatPay.APIv3Key),
-		))
+		clientOption, notifyVerifier, err := buildWechatPayClientOptions(cfg, privateKey)
+		if err != nil {
+			g.initErr = err
+			return
+		}
+
+		client, err := core.NewClient(ctx, clientOption)
 		if err != nil {
 			g.initErr = err
 			return
 		}
 		g.client = client
 
-		certificateVisitor := downloader.MgrInstance().GetCertificateVisitor(strings.TrimSpace(cfg.WechatPay.MchID))
-		handler, err := notify.NewRSANotifyHandler(strings.TrimSpace(cfg.WechatPay.APIv3Key), verifiers.NewSHA256WithRSAVerifier(certificateVisitor))
+		handler, err := notify.NewRSANotifyHandler(strings.TrimSpace(cfg.WechatPay.APIv3Key), notifyVerifier)
 		if err != nil {
 			g.initErr = err
 			return
@@ -234,16 +235,67 @@ func (g *WechatPayGateway) appID() string {
 }
 
 func loadWechatPayPrivateKey(raw string) (*rsa.PrivateKey, error) {
-	if raw == "" {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
 		return nil, errors.New("微信支付未配置商户私钥")
 	}
-	if strings.Contains(raw, "BEGIN") {
-		return wxutils.LoadPrivateKey(raw)
+	if _, err := os.Stat(trimmed); err == nil {
+		return wxutils.LoadPrivateKeyWithPath(trimmed)
 	}
-	if _, err := os.Stat(raw); err == nil {
-		return wxutils.LoadPrivateKeyWithPath(raw)
+	normalized := strings.ReplaceAll(trimmed, `\n`, "\n")
+	if strings.Contains(normalized, "BEGIN") {
+		return wxutils.LoadPrivateKey(normalized)
 	}
-	return wxutils.LoadPrivateKey(strings.ReplaceAll(raw, `\n`, "\n"))
+	return wxutils.LoadPrivateKey(normalized)
+}
+
+func loadWechatPayPublicKey(raw string) (*rsa.PublicKey, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, errors.New("微信支付未配置平台公钥")
+	}
+	if _, err := os.Stat(trimmed); err == nil {
+		return wxutils.LoadPublicKeyWithPath(trimmed)
+	}
+	normalized := strings.ReplaceAll(trimmed, `\n`, "\n")
+	if strings.Contains(normalized, "BEGIN") {
+		return wxutils.LoadPublicKey(normalized)
+	}
+	return wxutils.LoadPublicKey(normalized)
+}
+
+func buildWechatPayClientOptions(cfg *config.Config, privateKey *rsa.PrivateKey) (core.ClientOption, auth.Verifier, error) {
+	mchID := strings.TrimSpace(cfg.WechatPay.MchID)
+	serialNo := strings.TrimSpace(cfg.WechatPay.SerialNo)
+	apiV3Key := strings.TrimSpace(cfg.WechatPay.APIv3Key)
+	publicKeyID := strings.TrimSpace(cfg.WechatPay.PlatformPublicKeyID)
+	publicKeyRaw := strings.TrimSpace(cfg.WechatPay.PlatformPublicKey)
+
+	if publicKeyID != "" && publicKeyRaw != "" {
+		publicKey, err := loadWechatPayPublicKey(publicKeyRaw)
+		if err != nil {
+			return nil, nil, err
+		}
+		return option.WithWechatPayPublicKeyAuthCipher(
+				mchID,
+				serialNo,
+				privateKey,
+				publicKeyID,
+				publicKey,
+			),
+			verifiers.NewSHA256WithRSAPubkeyVerifier(publicKeyID, *publicKey),
+			nil
+	}
+
+	certificateVisitor := downloader.MgrInstance().GetCertificateVisitor(mchID)
+	return option.WithWechatPayAutoAuthCipher(
+			mchID,
+			serialNo,
+			privateKey,
+			apiV3Key,
+		),
+		verifiers.NewSHA256WithRSAVerifier(certificateVisitor),
+		nil
 }
 
 func optionalCoreString(value string) *string {

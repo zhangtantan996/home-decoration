@@ -217,7 +217,30 @@ export async function request<T>(options: RequestOptions): Promise<T> {
     }
 
     if (res.statusCode !== 200) {
-      throw new MiniApiError(`请求失败(${res.statusCode})`, { status: res.statusCode });
+      const responseData = res.data as unknown;
+      const responseObject = (
+        responseData && typeof responseData === 'object'
+      )
+        ? responseData as Record<string, unknown>
+        : null;
+      const responseMessage = (
+        responseObject
+        && 'message' in responseObject
+      )
+        ? String(responseObject.message || '')
+        : '';
+      const responseCode = (
+        responseObject
+        && 'code' in responseObject
+      )
+        ? Number(responseObject.code || 0)
+        : undefined;
+
+      throw new MiniApiError(responseMessage || `请求失败(${res.statusCode})`, {
+        status: res.statusCode,
+        code: responseCode,
+        data: responseData,
+      });
     }
 
     if (!res.data || typeof res.data !== "object") {
