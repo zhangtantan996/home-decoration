@@ -257,7 +257,7 @@ func PayOrder(c *gin.Context) {
 		return
 	}
 
-	result, err := paymentService.StartOrderPayment(userID, orderID, req.TerminalType)
+	result, err := paymentService.StartOrderPayment(userID, orderID, req.Channel, req.TerminalType)
 	if err != nil {
 		respondDomainMutationError(c, err, "发起订单支付失败")
 		return
@@ -293,7 +293,7 @@ func PayPaymentPlan(c *gin.Context) {
 		return
 	}
 
-	result, err := paymentService.StartPaymentPlanPayment(userID, planID, req.TerminalType)
+	result, err := paymentService.StartPaymentPlanPayment(userID, planID, req.Channel, req.TerminalType)
 	if err != nil {
 		respondDomainMutationError(c, err, "发起分期支付失败")
 		return

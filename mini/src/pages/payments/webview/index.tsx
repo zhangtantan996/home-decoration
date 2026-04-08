@@ -30,9 +30,11 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
   const [paymentId, setPaymentId] = useState(0);
   const [bookingId, setBookingId] = useState(0);
   const [entryKey, setEntryKey] = useState('');
+  const [returnUrl, setReturnUrl] = useState('');
   const [sourceType, setSourceType] = useState<SurveyDepositPaymentSourceType>('booking_detail');
   const [launchUrl, setLaunchUrl] = useState('');
   const [amount, setAmount] = useState(0);
+  const [amountLabel, setAmountLabel] = useState('待支付金额');
   const [statusText, setStatusText] = useState('已打开支付宝页面，请完成支付后返回');
   const [fallbackLoading, setFallbackLoading] = useState(false);
   const [qrPayment, setQrPayment] = useState<QrPaymentState | null>(null);
@@ -60,6 +62,21 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
       return;
     }
 
+    if (returnUrl) {
+      if (returnUrl.startsWith('/pages/')) {
+        if (returnUrl.includes('/pages/') && (returnUrl.includes('/pages/profile/index') || returnUrl.includes('/pages/orders/') || returnUrl.includes('/pages/booking/'))) {
+          void Taro.redirectTo({ url: returnUrl });
+          return;
+        }
+        void Taro.navigateTo({ url: returnUrl });
+        return;
+      }
+      if (returnUrl.startsWith('/')) {
+        void Taro.switchTab({ url: returnUrl });
+        return;
+      }
+    }
+
     if (sourceType === 'survey_deposit_order' && bookingId) {
       void Taro.redirectTo({
         url: `/pages/orders/survey-deposit/index?id=${bookingId}${entryKey ? `&entryKey=${encodeURIComponent(entryKey)}` : ''}`,
@@ -73,7 +90,7 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
     }
 
     void Taro.switchTab({ url: '/pages/profile/index' });
-  }, [bookingId, entryKey, sourceType]);
+  }, [bookingId, entryKey, returnUrl, sourceType]);
 
   const finishPayment = useCallback((targetPaymentId: number, status: 'paid' | 'closed' | 'failed' | 'expired') => {
     stopTracking();
@@ -225,9 +242,11 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
     setPaymentId(Number(options.paymentId || 0));
     setBookingId(Number(options.bookingId || 0));
     setEntryKey(options.entryKey ? decodeURIComponent(options.entryKey) : '');
+    setReturnUrl(options.returnUrl ? decodeURIComponent(options.returnUrl) : '');
     setSourceType(options.sourceType === 'survey_deposit_order' ? 'survey_deposit_order' : 'booking_detail');
     setLaunchUrl(normalizePaymentLaunchUrl(options.launchUrl ? decodeURIComponent(options.launchUrl) : ''));
     setAmount(Number(options.amount || 0));
+    setAmountLabel(options.amountLabel ? decodeURIComponent(options.amountLabel) : '待支付金额');
   });
 
   useEffect(() => {
@@ -267,7 +286,7 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
 
       <View className="payment-webview-page__body">
         <View className="payment-webview-page__summary">
-          <Text className="payment-webview-page__label">待支付量房费</Text>
+          <Text className="payment-webview-page__label">{amountLabel}</Text>
           <Text className="payment-webview-page__amount">{amountText}</Text>
           <Text className="payment-webview-page__status">{statusText}</Text>
         </View>

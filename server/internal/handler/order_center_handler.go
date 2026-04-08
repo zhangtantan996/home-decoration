@@ -65,3 +65,18 @@ func StartOrderCenterEntryPayment(c *gin.Context) {
 
 	response.Success(c, result)
 }
+
+func CancelOrderCenterEntry(c *gin.Context) {
+	entryKey := strings.TrimSpace(c.Param("entryKey"))
+	if entryKey == "" {
+		response.BadRequest(c, "无效订单中心条目")
+		return
+	}
+
+	if err := orderCenterService.CancelEntryForUser(getCurrentUserID(c), entryKey); err != nil {
+		respondDomainMutationError(c, err, "取消订单失败")
+		return
+	}
+
+	response.Success(c, gin.H{"message": "订单已取消"})
+}

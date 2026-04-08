@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Text, View } from '@tarojs/components';
-import Taro, { useLoad } from '@tarojs/taro';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Image, Text, View } from '@tarojs/components';
+import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
-import { ListItem } from '@/components/ListItem';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import { getBusinessStageStatus, getRefundStatus } from '@/constants/status';
+import { getBusinessStageStatus } from '@/constants/status';
 import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import {
+  cancelBooking,
   getBookingDetail,
   type BookingBudgetConfirmSummary,
   type BookingDetailResponse,
@@ -19,22 +18,68 @@ import {
 } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
+import { formatServerDateTime } from '@/utils/serverTime';
 import { navigateToSurveyDepositPaymentWithOptions } from '@/utils/surveyDepositPayment';
 
 import './index.scss';
 
-const getStatusMeta = (status: number) => {
-  switch (status) {
-    case 1:
-      return { label: '待确认', variant: 'warning' as const };
-    case 2:
-      return { label: '已确认', variant: 'primary' as const };
-    case 3:
-      return { label: '已完成', variant: 'success' as const };
-    case 4:
-      return { label: '已取消', variant: 'default' as const };
+const formatCurrency = (amount: number) => `¥${amount.toLocaleString()}`;
+
+const PanelTitle: React.FC<{ title: string }> = ({ title }) => (
+  <View className="booking-detail-page__panel-head">
+    <Text className="booking-detail-page__panel-title">{title}</Text>
+  </View>
+);
+
+const DetailTile: React.FC<{ label: string; value?: string; secondary?: string; full?: boolean }> = ({
+  label,
+  value = '-',
+  secondary,
+  full = false,
+}) => (
+  <View className={`booking-detail-page__tile ${full ? 'booking-detail-page__tile--full' : ''}`}>
+    <Text className="booking-detail-page__tile-label">{label}</Text>
+    <Text className="booking-detail-page__tile-value">{value || '-'}</Text>
+    {secondary ? <Text className="booking-detail-page__tile-secondary">{secondary}</Text> : null}
+  </View>
+);
+
+const ProgressItem: React.FC<{
+  title: string;
+  description: string;
+  tagLabel?: string;
+  tagVariant?: 'default' | 'primary' | 'secondary' | 'brand' | 'success' | 'warning' | 'error';
+}> = ({ title, description, tagLabel, tagVariant = 'default' }) => (
+  <View className="booking-detail-page__progress-item">
+    <View className="booking-detail-page__progress-rail">
+      <View className="booking-detail-page__progress-dot" />
+      <View className="booking-detail-page__progress-line" />
+    </View>
+    <View className="booking-detail-page__progress-main">
+      <View className="booking-detail-page__progress-top">
+        <Text className="booking-detail-page__progress-title">{title}</Text>
+        {tagLabel ? <Tag variant={tagVariant}>{tagLabel}</Tag> : null}
+      </View>
+      <Text className="booking-detail-page__progress-copy">{description}</Text>
+    </View>
+  </View>
+);
+
+const getStatusMeta = (detail: BookingDetailResponse) => {
+  switch (detail.statusGroup || detail.booking.statusGroup) {
+    case 'pending_confirmation':
+      return { label: detail.statusText || detail.booking.statusText || '待商家确认', variant: 'warning' as const };
+    case 'pending_payment':
+      return { label: detail.statusText || detail.booking.statusText || '待支付量房费', variant: 'primary' as const };
+    case 'in_service':
+      return { label: detail.statusText || detail.booking.statusText || '服务推进中', variant: 'primary' as const };
+    case 'completed':
+      return { label: detail.statusText || detail.booking.statusText || '已进入后续阶段', variant: 'success' as const };
+    case 'cancelled':
+      return { label: detail.statusText || detail.booking.statusText || '已取消', variant: 'default' as const };
     default:
-      return { label: '未知状态', variant: 'default' as const };
+      return { label: detail.statusText || detail.booking.statusText || '处理中', variant: 'default' as const };
   }
 };
 
@@ -64,38 +109,49 @@ const getBudgetStatusMeta = (status?: string) => {
   }
 };
 
-const formatCurrency = (amount: number) => `¥${amount.toLocaleString()}`;
+const getSurveyDepositAmount = (detail: BookingDetailResponse) => (
+  Number(detail.surveyDepositAmount || detail.booking.surveyDepositAmount || detail.booking.surveyDeposit || 0)
+);
 
-const getSurveyDepositAmount = (detail: BookingDetailResponse) => {
-  const surveyDeposit = Number(detail.booking.surveyDeposit || 0);
-  if (surveyDeposit > 0) {
-    return surveyDeposit;
+const canPromptSurveyDepositPayment = (detail: BookingDetailResponse) => (
+  !detail.booking.surveyDepositPaid
+  && (detail.booking.status === 2 || (detail.surveyDepositPaymentOptions?.length ?? 0) > 0)
+  && (detail.statusGroup || detail.booking.statusGroup) !== 'cancelled'
+);
+
+const getCurrentStageText = (detail: BookingDetailResponse) => {
+  if (canPromptSurveyDepositPayment(detail)) {
+    return '待支付量房费';
   }
-  const fallbackIntentFee = Number(detail.booking.intentFee || 0);
-  return fallbackIntentFee > 0 ? fallbackIntentFee : 0;
+  if (detail.currentStageText || detail.booking.currentStageText) {
+    return detail.currentStageText || detail.booking.currentStageText || '-';
+  }
+  const stageRaw = detail.businessStage || detail.currentStage || detail.booking.currentStage;
+  return stageRaw ? getBusinessStageStatus(stageRaw).label : '-';
 };
 
 const getSiteSurveyDescription = (siteSurveySummary?: BookingSiteSurveySummary) => {
   if (!siteSurveySummary) {
-    return '商家确认后将安排上门量房';
+    return '量房费支付后，商家会安排量房并提交量房记录。';
   }
   if (siteSurveySummary.status === 'revision_requested') {
-    return siteSurveySummary.revisionRequestReason || '已退回量房记录，等待商家重新提交';
+    return siteSurveySummary.revisionRequestReason || '量房记录已退回，等待商家重新量房。';
   }
   if (siteSurveySummary.notes) {
     return siteSurveySummary.notes;
   }
-  return '量房记录已生成';
+  return '量房记录已更新';
 };
 
 const getBudgetDescription = (budgetConfirmSummary?: BookingBudgetConfirmSummary) => {
   if (!budgetConfirmSummary) {
-    return '量房完成后商家会提交预算确认';
+    return '量房记录确认后，商家会继续提交预算确认。';
   }
+
   const hasBudgetRange =
-    typeof budgetConfirmSummary.budgetMin === 'number' &&
-    typeof budgetConfirmSummary.budgetMax === 'number' &&
-    budgetConfirmSummary.budgetMax > 0;
+    typeof budgetConfirmSummary.budgetMin === 'number'
+    && typeof budgetConfirmSummary.budgetMax === 'number'
+    && budgetConfirmSummary.budgetMax > 0;
 
   if (budgetConfirmSummary.status === 'rejected' && budgetConfirmSummary.rejectionReason) {
     return budgetConfirmSummary.rejectionReason;
@@ -109,101 +165,277 @@ const getBudgetDescription = (budgetConfirmSummary?: BookingBudgetConfirmSummary
 };
 
 const getNextStep = (detail: BookingDetailResponse) => {
-  const booking = detail.booking;
-  const depositAmount = getSurveyDepositAmount(detail);
-  const siteSurveySummary = detail.siteSurveySummary;
-  const budgetConfirmSummary = detail.budgetConfirmSummary;
+  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
+  const flowSummary = detail.flowSummary || detail.booking.flowSummary;
+  const amount = getSurveyDepositAmount(detail);
+  const availableActions = detail.availableActions || detail.booking.availableActions || [];
 
-  if (booking.status === 4) {
+  if (canPromptSurveyDepositPayment(detail)) {
     return {
-      title: '预约已取消',
-      description: '当前预约流程已结束，如需继续服务请重新发起预约。',
-    };
-  }
-
-  if (booking.status === 1) {
-    return {
-      title: '等待商家确认',
-      description: '预约已提交，商家确认后你再支付量房费，当前无需提前付款。',
-    };
-  }
-
-  if (booking.status === 2 && !booking.surveyDepositPaid) {
-    return {
-      title: '支付量房费',
-      description: '商家已确认预约，请先支付量房费，再安排上门量房。',
-      amount: depositAmount,
+      title: '去支付',
+      description: amount > 0
+        ? `请先支付 ${formatCurrency(amount)}，支付完成后商家才会继续量房与预算。`
+        : '请先支付量房费，支付完成后商家才会继续量房与预算。',
+      amount,
       amountLabel: '待支付量房费',
       actionKey: 'pay_survey_deposit' as const,
     };
   }
 
-  if (detail.proposalId) {
+  switch (statusGroup) {
+    case 'pending_confirmation':
+      return {
+        title: '等待商家确认',
+        description: flowSummary || '预约已提交，商家确认后才会进入量房费支付。',
+      };
+    case 'pending_payment':
+      return {
+        title: '支付量房费',
+        description: flowSummary || '商家已确认预约，请先支付量房费后继续推进量房与预算。',
+        amount,
+        amountLabel: '待支付量房费',
+        actionKey: 'pay_survey_deposit' as const,
+      };
+    case 'cancelled':
+      return {
+        title: '预约已取消',
+        description: flowSummary || '当前预约流程已结束，如需继续服务请重新发起预约。',
+      };
+    case 'completed':
+      if (detail.proposalId) {
+        return {
+          title: '查看设计方案',
+          description: flowSummary || '预约前置服务已完成，当前已进入方案阶段。',
+          actionText: '查看设计方案',
+          actionKey: 'view_proposal' as const,
+        };
+      }
+      return {
+        title: '查看详情',
+        description: flowSummary || '预约已进入后续订单或项目阶段。',
+      };
+    default:
+      if (availableActions.includes('submit_budget')) {
+        return {
+          title: '等待预算确认',
+          description: flowSummary || '量房记录已确认，等待商家继续提交预算确认。',
+        };
+      }
+      if (availableActions.includes('create_proposal')) {
+        return {
+          title: '等待商家提交方案',
+          description: flowSummary || '预算确认已完成，待商家继续提交方案。',
+        };
+      }
+      return {
+        title: '查看服务进展',
+        description: flowSummary || '量房费已支付，预约前置服务正在推进中。',
+      };
+  }
+};
+
+const getSummaryCopy = (detail: BookingDetailResponse, nextStep: ReturnType<typeof getNextStep>) => {
+  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
+  if (canPromptSurveyDepositPayment(detail)) {
+    return '';
+  }
+  switch (statusGroup) {
+    case 'pending_confirmation':
+      return '预约已提交，等待商家确认承接。';
+    case 'pending_payment':
+      return '商家已确认，请先完成量房费支付。';
+    case 'completed':
+      return '预约前置流程已完成，已进入后续阶段。';
+    case 'cancelled':
+      return '当前预约流程已结束，如需继续服务请重新发起预约。';
+    default:
+      if (detail.siteSurveySummary?.status === 'submitted') {
+        return '量房记录已提交，等待你确认。';
+      }
+      if (detail.budgetConfirmSummary?.status === 'submitted') {
+        return '预算确认已提交，等待你确认。';
+      }
+      return nextStep.description;
+  }
+};
+
+const getMerchantConfirmMeta = (detail: BookingDetailResponse) => {
+  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
+  switch (statusGroup) {
+    case 'pending_confirmation':
+      return {
+        label: '待确认',
+        variant: 'warning' as const,
+        description: '预约已提交，平台正在等待商家确认是否承接本次量房服务。',
+      };
+    case 'cancelled':
+      return {
+        label: '已结束',
+        variant: 'default' as const,
+        description: '当前预约已取消，商家确认流程不再继续。',
+      };
+    default:
+      return {
+        label: '已确认',
+        variant: 'success' as const,
+        description: '商家已确认承接，用户现在可以继续支付量房费或查看后续推进。',
+      };
+  }
+};
+
+const getDepositProgressMeta = (detail: BookingDetailResponse) => {
+  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
+  const amount = getSurveyDepositAmount(detail);
+  if (detail.booking.surveyDepositPaid) {
     return {
-      title: '查看设计方案',
-      description: '当前预约已进入方案阶段，可直接查看商家提交的设计方案。',
-      actionText: '查看设计方案',
-      actionKey: 'view_proposal' as const,
+      label: '已支付',
+      variant: 'success' as const,
+      description: detail.booking.surveyDepositPaidAt
+        ? `量房费已支付，时间 ${formatServerDateTime(detail.booking.surveyDepositPaidAt)}。`
+        : '量房费已完成支付，商家可继续推进量房记录与预算确认。',
     };
   }
 
-  if (budgetConfirmSummary?.status === 'rejected') {
+  if (statusGroup === 'pending_payment') {
     return {
-      title: '等待商家重新提交预算',
-      description: budgetConfirmSummary.rejectionReason || '你已退回预算确认，商家会重新整理后提交。',
+      label: '待支付',
+      variant: 'primary' as const,
+      description: amount > 0
+        ? `商家已确认预约，当前待支付量房费 ${formatCurrency(amount)}。`
+        : '商家已确认预约，等待支付量房费后继续推进。',
     };
   }
 
-  if (budgetConfirmSummary?.status === 'submitted' || budgetConfirmSummary?.status === 'accepted') {
+  if (statusGroup === 'pending_confirmation') {
     return {
-      title: '等待方案与报价',
-      description: '预算确认已推进，商家正在继续整理方案或报价信息。',
+      label: '未开启',
+      variant: 'default' as const,
+      description: '商家确认前不会展示量房费支付动作。',
     };
   }
 
-  if (siteSurveySummary?.status === 'revision_requested') {
+  if (statusGroup === 'cancelled') {
     return {
-      title: '等待重新量房',
-      description: siteSurveySummary.revisionRequestReason || '量房记录已退回，等待商家重新量房。',
-    };
-  }
-
-  if (siteSurveySummary) {
-    return {
-      title: '等待预算确认',
-      description: '量房记录已完成，商家接下来会整理预算确认信息。',
-    };
-  }
-
-  if (booking.surveyDepositPaid) {
-    return {
-      title: '等待上门量房',
-      description: booking.preferredDate
-        ? `量房费已支付，商家会按你选择的时间 ${booking.preferredDate} 安排上门量房。`
-        : '量房费已支付，商家会尽快安排上门量房。',
+      label: '已结束',
+      variant: 'default' as const,
+      description: '预约已取消，量房费支付流程同步结束。',
     };
   }
 
   return {
-    title: '预约处理中',
-    description: '当前预约正在推进中，请留意商家确认和后续量房安排。',
+    label: '处理中',
+    variant: 'default' as const,
+    description: amount > 0
+      ? `量房费 ${formatCurrency(amount)} 已进入后续服务流程。`
+      : '量房费流程已进入后续服务阶段。',
   };
+};
+
+const getDepositMetric = (detail: BookingDetailResponse) => {
+  const amount = getSurveyDepositAmount(detail);
+  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
+
+  if (amount > 0) {
+    if (canPromptSurveyDepositPayment(detail)) {
+      return {
+        label: '当前状态',
+        value: '商家已确认',
+        copy: '',
+      };
+    }
+    return {
+      label: '量房费',
+      value: formatCurrency(amount),
+      copy: detail.booking.surveyDepositPaid
+        ? (detail.booking.surveyDepositPaidAt ? `支付于 ${formatServerDateTime(detail.booking.surveyDepositPaidAt)}` : '量房费已支付')
+        : '商家确认后即可支付',
+    };
+  }
+
+  if (canPromptSurveyDepositPayment(detail)) {
+    return {
+      label: '当前状态',
+      value: '商家已确认',
+      copy: '',
+    };
+  }
+
+  if (detail.booking.surveyDepositPaid) {
+    return {
+      label: '量房费状态',
+      value: '已支付',
+      copy: '金额未回填，不影响当前服务推进。',
+    };
+  }
+
+  if (statusGroup === 'pending_confirmation') {
+    return {
+      label: '量房费状态',
+      value: '待确认',
+      copy: '商家确认承接后会展示支付金额。',
+    };
+  }
+
+  if (statusGroup === 'pending_payment') {
+    return {
+      label: '量房费状态',
+      value: '待支付',
+      copy: '支付金额待商家配置完成后展示。',
+    };
+  }
+
+  return {
+    label: '量房费状态',
+    value: '处理中',
+    copy: '当前流程正在推进，金额信息暂未同步。',
+  };
+};
+
+const getPreferredDateDisplay = (preferredDate?: string) => {
+  const normalized = (preferredDate || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return { primary: '-', secondary: undefined as string | undefined };
+  }
+
+  const parts = normalized.split(' ');
+  if (parts.length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(parts[0])) {
+    return {
+      primary: [parts[0], parts[1]].filter(Boolean).join(' '),
+      secondary: parts.slice(2).join(' '),
+    };
+  }
+
+  if (parts.length >= 2) {
+    return {
+      primary: parts.slice(0, 2).join(' '),
+      secondary: parts.slice(2).join(' ') || undefined,
+    };
+  }
+
+  return { primary: normalized, secondary: undefined as string | undefined };
 };
 
 const BookingDetailPage: React.FC = () => {
   const auth = useAuthStore();
   const [id, setId] = useState<number>(0);
+  const [routeReady, setRouteReady] = useState(false);
+  const [pageVisible, setPageVisible] = useState(false);
   const [detail, setDetail] = useState<BookingDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const didFirstShowRef = useRef(true);
+  const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useLoad((options) => {
-    if (options.id) {
-      setId(Number(options.id));
-    }
+    setId(Number(options.id || 0));
+    setRouteReady(true);
   });
 
   const fetchDetail = useCallback(async () => {
     if (!id) {
+      setDetail(null);
+      setLoading(false);
       return;
     }
     if (!auth.token) {
@@ -222,21 +454,112 @@ const BookingDetailPage: React.FC = () => {
       setLoading(false);
     }
   }, [auth.token, id]);
+
   const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
     usePullToRefreshFeedback(fetchDetail);
 
   useEffect(() => {
+    if (!routeReady) {
+      return;
+    }
+    if (!id) {
+      setDetail(null);
+      setLoading(false);
+      return;
+    }
     void runReload();
-  }, [auth.token, id, runReload]);
+  }, [auth.token, id, routeReady, runReload]);
+
+  useDidShow(() => {
+    setPageVisible(true);
+    if (didFirstShowRef.current) {
+      didFirstShowRef.current = false;
+      return;
+    }
+    if (!routeReady || !id || !auth.token) {
+      return;
+    }
+    consumePaymentRefreshNotice();
+    void runReload();
+  });
+
+  useDidHide(() => {
+    setPageVisible(false);
+  });
+
+  useEffect(() => {
+    if (pollingTimerRef.current) {
+      clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
+    }
+
+    const statusGroup = detail?.statusGroup || detail?.booking?.statusGroup;
+    if (!pageVisible || !routeReady || !id || !auth.token) {
+      return;
+    }
+    if (statusGroup !== 'pending_confirmation' && statusGroup !== 'pending_payment') {
+      return;
+    }
+
+    pollingTimerRef.current = setInterval(() => {
+      void runReload();
+    }, 10000);
+
+    return () => {
+      if (pollingTimerRef.current) {
+        clearInterval(pollingTimerRef.current);
+        pollingTimerRef.current = null;
+      }
+    };
+  }, [auth.token, detail?.booking?.statusGroup, detail?.statusGroup, id, pageVisible, routeReady, runReload]);
 
   const handlePaySurveyDeposit = async () => {
     if (!detail?.booking) {
       return;
     }
-    await navigateToSurveyDepositPaymentWithOptions(
-      detail.booking.id,
-      detail.surveyDepositPaymentOptions,
-    );
+    try {
+      setPaying(true);
+      await navigateToSurveyDepositPaymentWithOptions(
+        detail.booking.id,
+        detail.surveyDepositPaymentOptions,
+      );
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  const handleViewProposal = () => {
+    if (!detail?.proposalId) {
+      return;
+    }
+    Taro.navigateTo({ url: `/pages/proposals/detail/index?id=${detail.proposalId}` });
+  };
+
+  const handleCancelBooking = async () => {
+    if (!detail?.booking?.id || canceling) {
+      return;
+    }
+
+    Taro.showModal({
+      title: '取消预约',
+      content: '确定要取消当前预约吗？取消后流程会立即结束。',
+      success: async (res) => {
+        if (!res.confirm) {
+          return;
+        }
+
+        setCanceling(true);
+        try {
+          await cancelBooking(detail.booking.id);
+          Taro.showToast({ title: '已取消', icon: 'success' });
+          await fetchDetail();
+        } catch (error) {
+          showErrorToast(error, '取消失败');
+        } finally {
+          setCanceling(false);
+        }
+      },
+    });
   };
 
   if (!auth.token) {
@@ -256,7 +579,8 @@ const BookingDetailPage: React.FC = () => {
       <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Skeleton height={180} className="mb-md" />
-        <Skeleton height={200} className="mb-md" />
+        <Skeleton height={220} className="mb-md" />
+        <Skeleton height={220} className="mb-md" />
       </View>
     );
   }
@@ -271,160 +595,169 @@ const BookingDetailPage: React.FC = () => {
   }
 
   const booking = detail.booking;
-  const status = getStatusMeta(booking.status);
-  const refundSummary = detail.refundSummary;
-  const refundStatus = getRefundStatus(refundSummary?.latestRefundStatus);
-  const stageRaw = detail.businessStage || detail.currentStage;
-  const stageMeta = stageRaw ? getBusinessStageStatus(stageRaw) : null;
+  const status = getStatusMeta(detail);
+  const stageText = getCurrentStageText(detail);
   const nextStep = getNextStep(detail);
   const surveyStatus = getSurveyStatusMeta(detail.siteSurveySummary?.status);
   const budgetStatus = getBudgetStatusMeta(detail.budgetConfirmSummary?.status);
   const surveyDepositAmount = getSurveyDepositAmount(detail);
   const showSurveyDepositAction = nextStep.actionKey === 'pay_survey_deposit';
+  const showProgressSection = (detail.statusGroup || booking.statusGroup) === 'in_service'
+    || (detail.statusGroup || booking.statusGroup) === 'completed'
+    || Boolean(detail.siteSurveySummary || detail.budgetConfirmSummary);
+  const providerInitial = (detail.provider?.name || '服').slice(0, 1);
+  const summaryCopy = getSummaryCopy(detail, nextStep);
+  const depositMetric = getDepositMetric(detail);
+  const nextActionLabel = showSurveyDepositAction
+    ? '去支付'
+    : nextStep.actionKey === 'view_proposal'
+      ? (nextStep.actionText || '查看设计方案')
+      : '';
+  const merchantConfirmMeta = getMerchantConfirmMeta(detail);
+  const depositProgressMeta = getDepositProgressMeta(detail);
+  const preferredDateDisplay = getPreferredDateDisplay(booking.preferredDate);
+  const availableActions = detail.availableActions || booking.availableActions || [];
+  const canCancelBooking = availableActions.includes('cancel');
 
   return (
     <View className="page booking-detail-page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-      <Card
-        title={`预约 #${booking.id}`}
-        extra={<Tag variant={status.variant}>{status.label}</Tag>}
-        className="mb-md"
-      >
-        <View className="flex flex-col gap-sm mt-sm">
-          <ListItem title="项目地址" description={booking.address || '-'} />
-          <ListItem title="房屋面积" description={booking.area ? `${booking.area} ㎡` : '-'} />
-          <ListItem title="房屋户型" description={booking.houseLayout || '-'} />
-          <ListItem title="期望量房日期" description={booking.preferredDate || '-'} />
-          <ListItem title="联系电话" description={booking.phone || '-'} />
-          {booking.notes ? <ListItem title="备注需求" description={booking.notes} /> : null}
-        </View>
-      </Card>
-
-      {detail.provider ? (
-        <Card title="服务商信息" className="mb-md">
-          <ListItem
-            title={detail.provider.name || `服务商 #${detail.provider.id}`}
-            description={detail.provider.specialty || '暂无服务介绍'}
-            extra={detail.provider.rating ? <Text className="text-brand">{detail.provider.rating.toFixed(1)} 分</Text> : undefined}
-          />
-        </Card>
-      ) : null}
-
-      {(stageMeta || detail.flowSummary) ? (
-        <Card title="预约进展" className="mb-md">
-          {stageMeta ? (
-            <ListItem
-              title="当前阶段"
-              description={stageMeta.label}
-              extra={<Tag variant={stageMeta.variant}>{stageMeta.label}</Tag>}
-            />
-          ) : null}
-          {detail.flowSummary ? <View className="booking-detail-page__copy">{detail.flowSummary}</View> : null}
-        </Card>
-      ) : null}
-
-      {(detail.siteSurveySummary || detail.budgetConfirmSummary || booking.surveyDepositPaid) ? (
-        <Card title="量房与预算" className="mb-md">
-          <View className="flex flex-col gap-sm">
-            <ListItem
-              title="量房费"
-              description={booking.surveyDepositPaid ? '已支付，等待或正在推进量房' : '商家确认后需支付'}
-              extra={
-                <Text
-                  className={booking.surveyDepositPaid ? 'font-medium' : 'text-brand font-medium'}
-                  style={booking.surveyDepositPaid ? { color: '#16A34A' } : undefined}
-                >
-                  {surveyDepositAmount > 0 ? formatCurrency(surveyDepositAmount) : '-'}
-                </Text>
-              }
-            />
-            <ListItem
-              title="量房记录"
-              description={getSiteSurveyDescription(detail.siteSurveySummary)}
-              extra={<Tag variant={surveyStatus.variant}>{surveyStatus.label}</Tag>}
-            />
-            <ListItem
-              title="预算确认"
-              description={getBudgetDescription(detail.budgetConfirmSummary)}
-              extra={<Tag variant={budgetStatus.variant}>{budgetStatus.label}</Tag>}
-            />
+      <View className="booking-detail-page__stack">
+        <View className="booking-detail-page__hero">
+          <View className="booking-detail-page__hero-top">
+            <View className="booking-detail-page__hero-badge">预约流程</View>
+            <Tag variant={status.variant}>{status.label}</Tag>
           </View>
-        </Card>
-      ) : null}
+          <Text className="booking-detail-page__hero-title">{stageText}</Text>
+          {summaryCopy ? (
+            <Text className="booking-detail-page__hero-copy">{summaryCopy}</Text>
+          ) : null}
 
-      {refundSummary ? (
-        <Card title="退款与售后" className="mb-md">
-          <View className="flex flex-col gap-sm">
-            <ListItem
-              title="申请状态"
-              description={refundSummary.latestRefundId ? `申请单 #${refundSummary.latestRefundId}` : '当前未发起退款'}
-              extra={<Tag variant={refundStatus.variant}>{refundStatus.label}</Tag>}
-            />
-            <ListItem
-              title="可退金额"
-              description={`¥${refundSummary.refundableAmount.toLocaleString()}`}
-            />
-            {refundSummary.canApplyRefund ? (
-              <View className="booking-detail-page__copy">当前可发起退款申请，提交后可在“退款记录”查看审核进度。</View>
-            ) : (
-              <View className="booking-detail-page__copy">当前已有退款处理记录，请先查看处理结果。</View>
-            )}
-            <View className="flex gap-sm mt-sm">
-              <View className="flex-1">
+          <View className="booking-detail-page__hero-metrics">
+            <View className="booking-detail-page__metric booking-detail-page__metric--accent">
+              <Text className="booking-detail-page__metric-label">{depositMetric.label}</Text>
+              <Text className="booking-detail-page__metric-value">
+                {depositMetric.value}
+              </Text>
+              {depositMetric.copy ? (
+                <Text className="booking-detail-page__metric-copy">{depositMetric.copy}</Text>
+              ) : null}
+            </View>
+            <View className="booking-detail-page__metric">
+              <Text className="booking-detail-page__metric-label">下一步</Text>
+              <Text className="booking-detail-page__metric-value booking-detail-page__metric-value--dark">
+                {nextStep.title}
+              </Text>
+              {!showSurveyDepositAction && nextStep.description ? (
+                <Text className="booking-detail-page__metric-copy">{nextStep.description}</Text>
+              ) : null}
+            </View>
+          </View>
+
+          {(canCancelBooking || nextActionLabel) ? (
+            <View className={`booking-detail-page__hero-actions${canCancelBooking && nextActionLabel ? '' : ' booking-detail-page__hero-actions--single'}`}>
+              {canCancelBooking ? (
                 <Button
                   variant="outline"
-                  block
-                  onClick={() => Taro.navigateTo({ url: `/pages/refunds/list/index?bookingId=${booking.id}` })}
+                  className="booking-detail-page__hero-secondary-button"
+                  loading={canceling}
+                  disabled={canceling || paying}
+                  onClick={handleCancelBooking}
                 >
-                  查看记录
+                  取消预约
                 </Button>
-              </View>
-              <View className="flex-1">
-                <Button
-                  block
-                  disabled={!refundSummary.canApplyRefund}
-                  onClick={() => Taro.navigateTo({ url: `/pages/bookings/refund/index?id=${booking.id}` })}
-                >
-                  申请退款
+              ) : null}
+              {showSurveyDepositAction ? (
+                <Button variant="primary" className="w-full" loading={paying} disabled={paying || canceling} onClick={handlePaySurveyDeposit}>
+                  {nextActionLabel}
                 </Button>
-              </View>
+              ) : nextActionLabel ? (
+                <Button variant="primary" className="w-full" disabled={canceling} onClick={handleViewProposal}>
+                  {nextActionLabel}
+                </Button>
+              ) : null}
             </View>
-          </View>
-        </Card>
-      ) : null}
-
-      <Card title="下一步" className="mb-md">
-        <View className="flex flex-col gap-sm">
-          <View>
-            <Text className="booking-detail-page__next-title">{nextStep.title}</Text>
-            <View className="booking-detail-page__copy">{nextStep.description}</View>
-          </View>
-          {typeof nextStep.amount === 'number' && nextStep.amount > 0 ? (
-            <View className="booking-detail-page__amount">
-              <Text className="booking-detail-page__amount-label">{nextStep.amountLabel || '当前金额'}</Text>
-              <Text className="booking-detail-page__amount-value">{formatCurrency(nextStep.amount)}</Text>
-            </View>
-          ) : null}
-          {showSurveyDepositAction ? (
-            <Button variant="primary" className="w-full" onClick={handlePaySurveyDeposit}>
-              去支付
-            </Button>
-          ) : null}
-          {!showSurveyDepositAction && nextStep.actionText ? (
-            <Button
-              variant="primary"
-              className="w-full"
-              onClick={() => {
-                if (nextStep.actionKey === 'view_proposal' && detail.proposalId) {
-                  Taro.navigateTo({ url: `/pages/proposals/detail/index?id=${detail.proposalId}` });
-                }
-              }}
-            >
-              {nextStep.actionText}
-            </Button>
           ) : null}
         </View>
-      </Card>
+
+        {detail.provider ? (
+          <View className="booking-detail-page__panel">
+            <PanelTitle title="服务商信息" />
+            <View className="booking-detail-page__provider">
+              {detail.provider.avatar ? (
+                <Image
+                  className="booking-detail-page__provider-avatar"
+                  src={detail.provider.avatar}
+                  mode="aspectFill"
+                />
+              ) : (
+                <View className="booking-detail-page__provider-avatar booking-detail-page__provider-avatar--fallback">
+                  <Text className="booking-detail-page__provider-avatar-text">{providerInitial}</Text>
+                </View>
+              )}
+              <View className="booking-detail-page__provider-main">
+                <View className="booking-detail-page__provider-head">
+                  <Text className="booking-detail-page__provider-name">
+                    {detail.provider.name || `服务商 #${detail.provider.id}`}
+                  </Text>
+                  <View className="booking-detail-page__provider-tags">
+                    {detail.provider.verified ? <Tag variant="success">已认证</Tag> : null}
+                    {detail.provider.rating ? <Tag variant="brand">{detail.provider.rating.toFixed(1)} 分</Tag> : null}
+                  </View>
+                </View>
+                <Text className="booking-detail-page__provider-copy">
+                  {detail.provider.specialty || '平台已为你匹配对应服务商，后续会继续围绕量房与预算推进。'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        <View className="booking-detail-page__panel">
+          <PanelTitle title="预约信息" />
+          <View className="booking-detail-page__address-card">
+            <Text className="booking-detail-page__address-label">项目地址</Text>
+            <Text className="booking-detail-page__address-value">{booking.address || '-'}</Text>
+          </View>
+          <View className="booking-detail-page__tile-grid">
+            <DetailTile label="房屋面积" value={booking.area ? `${booking.area} ㎡` : '-'} />
+            <DetailTile label="房屋户型" value={booking.houseLayout || '-'} />
+            <DetailTile label="装修类型" value={booking.renovationType || '-'} />
+            <DetailTile label="预算范围" value={booking.budgetRange || '-'} />
+            <DetailTile label="量房时间" value={preferredDateDisplay.primary} secondary={preferredDateDisplay.secondary} />
+            <DetailTile label="联系电话" value={booking.phone || '-'} />
+            {booking.notes ? <DetailTile label="备注需求" value={booking.notes} full /> : null}
+          </View>
+        </View>
+
+        <View className="booking-detail-page__panel booking-detail-page__panel--progress">
+          <PanelTitle title="预约进展" />
+          <ProgressItem
+            title="商家确认"
+            description={merchantConfirmMeta.description}
+            tagLabel={merchantConfirmMeta.label}
+            tagVariant={merchantConfirmMeta.variant}
+          />
+          <ProgressItem
+            title="量房费支付"
+            description={depositProgressMeta.description}
+            tagLabel={depositProgressMeta.label}
+            tagVariant={depositProgressMeta.variant}
+          />
+          <ProgressItem
+            title="量房记录"
+            description={showProgressSection ? getSiteSurveyDescription(detail.siteSurveySummary) : '支付量房费后，商家会安排量房并提交量房记录。'}
+            tagLabel={showProgressSection ? surveyStatus.label : '待推进'}
+            tagVariant={showProgressSection ? surveyStatus.variant : 'default'}
+          />
+          <ProgressItem
+            title="预算确认"
+            description={showProgressSection ? getBudgetDescription(detail.budgetConfirmSummary) : '量房记录确认后，商家会继续提交预算确认。'}
+            tagLabel={showProgressSection ? budgetStatus.label : '未开始'}
+            tagVariant={showProgressSection ? budgetStatus.variant : 'default'}
+          />
+        </View>
+      </View>
     </View>
   );
 };

@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
-import Taro, { useReachBottom } from '@tarojs/taro';
+import Taro, { useDidShow, useReachBottom } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { Icon, type IconName } from '@/components/Icon';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
@@ -17,9 +17,13 @@ import {
 } from '@/services/orderCenter';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { deriveOrderEntryActions } from '@/utils/orderEntryActions';
+import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
 import { buildOrderCenterDetailUrl } from '@/utils/orderRoutes';
 import { formatServerDateTime } from '@/utils/serverTime';
 import {
+  chooseSurveyDepositPaymentAction,
+  getSurveyDepositChannelOptions,
   navigateToSurveyDepositPaymentWithOptions,
   openSurveyDepositDetail,
 } from '@/utils/surveyDepositPayment';
@@ -39,6 +43,15 @@ const STATUS_META: Record<OrderCenterStatusGroup, { label: string; variant: 'war
   paid: { label: '已支付', variant: 'success' },
   refund: { label: '退款中', variant: 'brand' },
   cancelled: { label: '已取消', variant: 'default' },
+};
+
+const SOURCE_ICON_MAP: Record<OrderCenterSourceKind, IconName> = {
+  design_order: 'designer-service',
+  construction_order: 'construction-service',
+  material_order: 'material-service',
+  survey_deposit: 'orders',
+  refund_record: 'history',
+  merchant_bond: 'company-service',
 };
 
 interface OrdersListContentProps {
@@ -95,6 +108,10 @@ const getEntryDisplayAmount = (entry: OrderCenterEntrySummary) => {
     return entry.payableAmount || entry.amount || 0;
   }
   return entry.amount || 0;
+};
+
+const getEntryHeaderNo = (entry: OrderCenterEntrySummary) => {
+  return entry.referenceNo || entry.subtitle || entry.entryKey;
 };
 
 export const OrdersListContent: React.FC<OrdersListContentProps> = ({
@@ -167,6 +184,12 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
     void runReload();
   }, [activeFilter, auth.token, runReload, sourceKindFilter]);
 
+  useDidShow(() => {
+    if (auth.token && consumePaymentRefreshNotice()) {
+      void runReload();
+    }
+  });
+
   useReachBottom(() => {
     if (disableLoadMore || !hasMore || loadingMore || loading) {
       return;
@@ -194,6 +217,23 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
         entry.entryKey,
       );
       return;
+    }
+
+    if (entry.statusGroup === 'pending_payment') {
+      const actions = getSurveyDepositChannelOptions(entry.availablePaymentOptions);
+      if (actions.length > 0) {
+        const selectedAction = await chooseSurveyDepositPaymentAction(actions);
+        if (!selectedAction) {
+          return;
+        }
+        Taro.navigateTo({
+          url: buildOrderCenterDetailUrl(entry.entryKey, undefined, {
+            autoPayChannel: selectedAction.channel,
+            autoPayLaunchMode: selectedAction.launchMode,
+          }),
+        });
+        return;
+      }
     }
 
     openEntryDetail(entry);
@@ -229,97 +269,131 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
   }, [activeFilter, fixedFilter, hideFilters]);
 
   return (
-    <View className="page orders-list-content bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+    <View className="page orders-list-content bg-gray-50 min-h-screen" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       {filterBar}
 
-      {!auth.token ? (
-        <Empty
-          description="登录后查看订单"
-          action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
-        />
-      ) : !initialized && loading ? (
-        <View>
-          <Skeleton height={188} className="mb-md" />
-          <Skeleton height={188} className="mb-md" />
-          <Skeleton height={188} className="mb-md" />
-        </View>
-      ) : list.length === 0 ? (
-        <Empty description={getEmptyDescription(activeFilter, emptyDescriptions)} />
-      ) : (
-        <View>
-          {list.map((entry) => {
-            const statusMeta = getOrderStatusMeta(entry);
-            const amount = getEntryDisplayAmount(entry);
+      <View className="p-md">
+        {!auth.token ? (
+          <Empty
+            description="登录后查看订单"
+            action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
+          />
+        ) : !initialized && loading ? (
+          <View>
+            <Skeleton height={320} className="mb-lg" />
+            <Skeleton height={320} className="mb-lg" />
+            <Skeleton height={320} className="mb-lg" />
+          </View>
+        ) : list.length === 0 ? (
+          <Empty description={getEmptyDescription(activeFilter, emptyDescriptions)} />
+        ) : (
+          <View>
+            {list.map((entry) => {
+              const statusMeta = getOrderStatusMeta(entry);
+              const amount = getEntryDisplayAmount(entry);
+              const headerNo = getEntryHeaderNo(entry);
+              const sourceIcon = SOURCE_ICON_MAP[entry.sourceKind] || 'orders';
+              const entryActions = deriveOrderEntryActions({
+                statusGroup: entry.statusGroup,
+                canPay: entry.statusGroup === 'pending_payment',
+              });
+              const primaryAction = entryActions.listPrimaryAction;
 
-            return (
-              <Card
-                key={entry.entryKey}
-                className="orders-list-content__card"
-                title={entry.title}
-                extra={<Tag variant={statusMeta.variant}>{entry.statusText || statusMeta.label}</Tag>}
-                onClick={() => openEntryDetail(entry)}
-              >
-                <View className="orders-list-content__body">
-                  {entry.subtitle ? <Text className="orders-list-content__subtitle">{entry.subtitle}</Text> : null}
-                  {entry.provider?.name ? (
-                    <View className="orders-list-content__row">
-                      <Text className="orders-list-content__label">服务方</Text>
-                      <Text className="orders-list-content__value">{entry.provider.name}</Text>
+              return (
+                <View
+                  key={entry.entryKey}
+                  className={`orders-list-content__card orders-list-content__card--${entry.statusGroup}`}
+                  onClick={() => openEntryDetail(entry)}
+                >
+                  <View className="orders-list-content__card-header">
+                    <View className="orders-list-content__card-title-group">
+                      <Text className="orders-list-content__card-title">{entry.title}</Text>
+                      {headerNo ? (
+                        <Text className="orders-list-content__card-no">{headerNo}</Text>
+                      ) : null}
                     </View>
-                  ) : null}
-                  {entry.project?.name ? (
-                    <View className="orders-list-content__row">
-                      <Text className="orders-list-content__label">关联项目</Text>
-                      <Text className="orders-list-content__value">{entry.project.name}</Text>
-                    </View>
-                  ) : entry.booking?.address ? (
-                    <View className="orders-list-content__row">
-                      <Text className="orders-list-content__label">项目地址</Text>
-                      <Text className="orders-list-content__value orders-list-content__value--multiline">{entry.booking.address}</Text>
-                    </View>
-                  ) : null}
-                  {entry.referenceNo ? (
-                    <View className="orders-list-content__row">
-                      <Text className="orders-list-content__label">订单编号</Text>
-                      <Text className="orders-list-content__value">{entry.referenceNo}</Text>
-                    </View>
-                  ) : null}
-                  {entry.createdAt ? (
-                    <View className="orders-list-content__row">
-                      <Text className="orders-list-content__label">下单时间</Text>
-                      <Text className="orders-list-content__value">{formatServerDateTime(entry.createdAt)}</Text>
-                    </View>
-                  ) : null}
-                  {entry.expireAt && entry.statusGroup === 'pending_payment' ? (
-                    <View className="orders-list-content__row">
-                      <Text className="orders-list-content__label">过期时间</Text>
-                      <Text className="orders-list-content__value orders-list-content__value--warning">
-                        {formatServerDateTime(entry.expireAt)}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                <View className="orders-list-content__footer">
-                  <View>
-                    <Text className="orders-list-content__amount-label">{getEntryAmountLabel(entry)}</Text>
-                    <Text className="orders-list-content__amount-value">¥{amount.toLocaleString()}</Text>
+                    <Tag variant={statusMeta.variant} outline>{entry.statusText || statusMeta.label}</Tag>
                   </View>
-                  {entry.statusGroup === 'pending_payment' ? (
-                    <Button size="sm" variant="primary" onClick={(event) => void handlePrimaryAction(event, entry)}>
-                      去支付
-                    </Button>
-                  ) : null}
-                </View>
-              </Card>
-            );
-          })}
 
-          {loadingMore ? <View className="orders-list-content__loading">加载中...</View> : null}
-          {!disableLoadMore && !hasMore ? <View className="orders-list-content__loading">没有更多了</View> : null}
-        </View>
-      )}
+                  <View className="orders-list-content__body">
+                    {entry.provider?.name ? (
+                      <View className="orders-list-content__row">
+                        <View className="orders-list-content__icon-box">
+                          <Icon name={sourceIcon} size={32} color="#71717A" />
+                        </View>
+                        <View className="orders-list-content__info-group">
+                          <Text className="orders-list-content__label">服务方</Text>
+                          <Text className="orders-list-content__value">{entry.provider.name}</Text>
+                        </View>
+                      </View>
+                    ) : null}
+                    
+                    {entry.project?.name || entry.booking?.address ? (
+                      <View className="orders-list-content__row">
+                        <View className="orders-list-content__icon-box">
+                          <Icon name="location-pin" size={32} color="#71717A" />
+                        </View>
+                        <View className="orders-list-content__info-group">
+                          <Text className="orders-list-content__label">项目信息</Text>
+                          <Text className="orders-list-content__value orders-list-content__value--multiline">
+                            {entry.project?.name || entry.booking?.address}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {entry.expireAt && entry.statusGroup === 'pending_payment' ? (
+                      <View className="orders-list-content__row">
+                        <View className="orders-list-content__icon-box">
+                          <Icon name="history" size={32} color="#F59E0B" />
+                        </View>
+                        <View className="orders-list-content__info-group">
+                          <Text className="orders-list-content__label">剩余支付时间</Text>
+                          <Text className="orders-list-content__value orders-list-content__value--warning">
+                            {formatServerDateTime(entry.expireAt)}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View className="orders-list-content__footer">
+                    <View className="orders-list-content__amount-group">
+                      <Text className="orders-list-content__amount-label">{getEntryAmountLabel(entry)}</Text>
+                      <View className="orders-list-content__amount-box">
+                        <Text className="orders-list-content__currency">¥</Text>
+                        <Text className="orders-list-content__amount-value">{amount.toLocaleString()}</Text>
+                      </View>
+                    </View>
+
+                    <View className="orders-list-content__action">
+                      <Button
+                        size="sm"
+                        variant={primaryAction.variant}
+                        className={`orders-list-content__button orders-list-content__button--${primaryAction.variant}`}
+                        onClick={(event) => {
+                          if (primaryAction.key === 'pay') {
+                            void handlePrimaryAction(event, entry);
+                            return;
+                          }
+                          event.stopPropagation();
+                          openEntryDetail(entry);
+                        }}
+                      >
+                        {primaryAction.label}
+                      </Button>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+
+            {loadingMore ? <View className="orders-list-content__loading">正在努力加载...</View> : null}
+            {!disableLoadMore && !hasMore ? <View className="orders-list-content__loading">已经到底啦</View> : null}
+          </View>
+        )}
+      </View>
     </View>
   );
 };

@@ -9,13 +9,12 @@ import {
   type MiniPaymentLaunchResponse,
 } from '@/services/payments';
 import { showErrorToast } from '@/utils/error';
-import { buildSurveyDepositPaymentWebviewUrl } from '@/utils/orderRoutes';
+import { buildPaymentWebviewUrl } from '@/utils/orderRoutes';
 import {
   chooseSurveyDepositPaymentAction,
   getSurveyDepositChannelOptions,
   resolveSurveyDepositTerminalType,
   type SurveyDepositPaymentAction,
-  type SurveyDepositPaymentSource,
 } from '@/utils/surveyDepositPayment';
 
 export type SurveyDepositQrPaymentState = MiniPaymentLaunchResponse & {
@@ -24,13 +23,20 @@ export type SurveyDepositQrPaymentState = MiniPaymentLaunchResponse & {
   expired: boolean;
 };
 
+export type EntryPaymentFlowSource = {
+  returnUrl: string;
+  bookingId?: number;
+  entryKey?: string;
+};
+
 interface UseSurveyDepositPaymentFlowOptions {
   bookingId?: number;
   amount?: number;
   paymentOptions?: SurveyDepositPaymentOption[];
   autoLaunchAction?: SurveyDepositPaymentAction | null;
   isPaid?: boolean;
-  source?: SurveyDepositPaymentSource;
+  source?: EntryPaymentFlowSource;
+  amountLabel?: string;
   onPaid?: () => Promise<void> | void;
   launchPayment?: (action: SurveyDepositPaymentAction) => Promise<MiniPaymentLaunchResponse>;
 }
@@ -63,6 +69,7 @@ export const useSurveyDepositPaymentFlow = ({
   autoLaunchAction,
   isPaid = false,
   source,
+  amountLabel,
   onPaid,
   launchPayment,
 }: UseSurveyDepositPaymentFlowOptions) => {
@@ -180,7 +187,7 @@ export const useSurveyDepositPaymentFlow = ({
   }, [markQrExpired, onPaid, stopPaymentTracking]);
 
   const openAlipayWebview = useCallback(async (launch: MiniPaymentLaunchResponse) => {
-    if (!bookingId || !source) {
+    if (!source?.returnUrl) {
       throw new Error('支付承接页参数缺失');
     }
 
@@ -190,18 +197,17 @@ export const useSurveyDepositPaymentFlow = ({
     }
 
     await Taro.navigateTo({
-      url: buildSurveyDepositPaymentWebviewUrl({
+      url: buildPaymentWebviewUrl({
         paymentId: launch.paymentId,
         launchUrl,
-        sourceType: source.sourceType,
-        bookingId,
+        returnUrl: source.returnUrl,
+        bookingId: source.bookingId || bookingId,
         amount,
-        entryKey: source.sourceType === 'survey_deposit_order'
-          ? source.entryKey
-          : undefined,
+        entryKey: source.entryKey,
+        amountLabel,
       }),
     });
-  }, [amount, bookingId, source]);
+  }, [amount, amountLabel, bookingId, source]);
 
   const launchPaymentByAction = useCallback(async (action: SurveyDepositPaymentAction) => {
     if ((!bookingId && !launchPayment) || launchingAction) {
@@ -277,7 +283,7 @@ export const useSurveyDepositPaymentFlow = ({
 
   const chooseAndLaunch = useCallback(async () => {
     if (channelOptions.length === 0) {
-      Taro.showToast({ title: '当前预约暂不可支付', icon: 'none' });
+      Taro.showToast({ title: '当前暂不可支付', icon: 'none' });
       return false;
     }
 

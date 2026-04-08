@@ -137,6 +137,7 @@ type OrderCenterEntrySummary struct {
 	Project                 *OrderCenterProjectSummary   `json:"project,omitempty"`
 	Booking                 *OrderCenterBookingSummary   `json:"booking,omitempty"`
 	AvailablePaymentOptions []SurveyDepositPaymentOption `json:"availablePaymentOptions,omitempty"`
+	CanCancel               bool                         `json:"canCancel"`
 }
 
 type OrderCenterEntryDetail struct {
@@ -158,6 +159,7 @@ type orderCenterSource interface {
 	ListEntriesForUser(userID uint64, statusGroup string) ([]OrderCenterEntrySummary, error)
 	GetEntryDetailForUser(userID, primaryID uint64) (*OrderCenterEntryDetail, error)
 	StartPaymentForUser(userID, primaryID uint64, channel, terminalType string) (*PaymentLaunchResponse, error)
+	CancelEntryForUser(userID, primaryID uint64) error
 }
 
 type OrderCenterService struct {
@@ -259,6 +261,14 @@ func (s *OrderCenterService) StartEntryPaymentForUser(userID uint64, entryKey, c
 		return nil, err
 	}
 	return source.StartPaymentForUser(userID, primaryID, channel, terminalType)
+}
+
+func (s *OrderCenterService) CancelEntryForUser(userID uint64, entryKey string) error {
+	source, primaryID, err := s.parseSource(entryKey)
+	if err != nil {
+		return err
+	}
+	return source.CancelEntryForUser(userID, primaryID)
 }
 
 func (s *OrderCenterService) parseSource(entryKey string) (orderCenterSource, uint64, error) {
@@ -487,7 +497,7 @@ func (s *surveyDepositOrderCenterSource) GetEntryDetailForUser(userID, primaryID
 			Key:   "service_info",
 			Title: "服务进展",
 			Items: []OrderCenterDescriptionSectionItem{
-				{Label: "当前阶段", Value: safeStringOrDash(businessStage)},
+				{Label: "当前阶段", Value: safeStringOrDash(resolveBusinessStageText(businessStage))},
 				{Label: "进度说明", Value: safeStringOrDash(flowSummary)},
 			},
 		},
@@ -498,6 +508,10 @@ func (s *surveyDepositOrderCenterSource) GetEntryDetailForUser(userID, primaryID
 
 func (s *surveyDepositOrderCenterSource) StartPaymentForUser(userID, primaryID uint64, channel, terminalType string) (*PaymentLaunchResponse, error) {
 	return s.svc.paymentService.StartSurveyDepositPayment(userID, primaryID, channel, terminalType)
+}
+
+func (s *surveyDepositOrderCenterSource) CancelEntryForUser(userID, primaryID uint64) error {
+	return (&BookingService{}).CancelBooking(userID, strconv.FormatUint(primaryID, 10))
 }
 
 func (s *surveyDepositOrderCenterSource) buildSummaryForBooking(userID uint64, booking *model.Booking, statusGroup string) (OrderCenterEntrySummary, bool, error) {
@@ -542,6 +556,7 @@ func (s *surveyDepositOrderCenterSource) buildSummaryForBooking(userID uint64, b
 		Project:                 s.projectSummary(project),
 		Booking:                 s.bookingSummary(booking, proposalID),
 		AvailablePaymentOptions: s.svc.paymentService.GetSurveyDepositPaymentOptions(booking),
+		CanCancel:               canCancelSurveyDepositBooking(booking),
 	}, true, nil
 }
 
@@ -648,15 +663,16 @@ func (s *businessOrderCenterSource) StartPaymentForUser(userID, primaryID uint64
 	if order.OrderType != s.orderType {
 		return nil, errors.New("订单不存在")
 	}
-	if strings.TrimSpace(channel) != "" && strings.TrimSpace(channel) != model.PaymentChannelAlipay {
-		return nil, errors.New("当前订单暂不支持该支付渠道")
-	}
 	if order.OrderType == model.OrderTypeConstruction {
 		if nextPlan, _, err := s.nextPayablePlan(order.ID); err == nil && nextPlan != nil {
-			return s.svc.paymentService.StartPaymentPlanPayment(userID, nextPlan.ID, terminalType)
+			return s.svc.paymentService.StartPaymentPlanPayment(userID, nextPlan.ID, channel, terminalType)
 		}
 	}
-	return s.svc.paymentService.StartOrderPayment(userID, primaryID, terminalType)
+	return s.svc.paymentService.StartOrderPayment(userID, primaryID, channel, terminalType)
+}
+
+func (s *businessOrderCenterSource) CancelEntryForUser(userID, primaryID uint64) error {
+	return s.svc.orderService.CancelOrder(userID, primaryID)
 }
 
 func (s *businessOrderCenterSource) listOrdersForUser(userID uint64) ([]model.Order, error) {
@@ -730,12 +746,21 @@ func (s *businessOrderCenterSource) buildSummaryForOrder(userID uint64, order *m
 	}
 	payableAmount := normalizeAmount(order.TotalAmount - order.Discount - order.PaidAmount)
 	var expireAt *time.Time = order.ExpireAt
+	availablePaymentOptions := []SurveyDepositPaymentOption(nil)
+	canCancel := false
 	if order.OrderType == model.OrderTypeConstruction {
-		nextPlan, _, nextErr := s.nextPayablePlan(order.ID)
+		nextPlan, plans, nextErr := s.nextPayablePlan(order.ID)
 		if nextErr == nil && nextPlan != nil {
 			payableAmount = nextPlan.Amount
 			expireAt = nextPlan.DueAt
+			availablePaymentOptions = s.svc.paymentService.GetOrderCenterPaymentOptions()
 		}
+		if nextErr == nil {
+			canCancel = canCancelConstructionOrder(order, plans)
+		}
+	} else if entryStatusGroup == OrderCenterStatusPendingPayment {
+		availablePaymentOptions = s.svc.paymentService.GetOrderCenterPaymentOptions()
+		canCancel = true
 	}
 	if payableAmount < 0 {
 		payableAmount = 0
@@ -766,6 +791,8 @@ func (s *businessOrderCenterSource) buildSummaryForOrder(userID uint64, order *m
 		Provider:      provider,
 		Project:       s.projectSummary(project),
 		Booking:       s.bookingSummary(booking, proposalID),
+		AvailablePaymentOptions: availablePaymentOptions,
+		CanCancel:              canCancel,
 	}, true, nil
 }
 
@@ -829,6 +856,10 @@ func (s *refundOrderCenterSource) GetEntryDetailForUser(userID, primaryID uint64
 
 func (s *refundOrderCenterSource) StartPaymentForUser(userID, primaryID uint64, channel, terminalType string) (*PaymentLaunchResponse, error) {
 	return nil, errors.New("退款记录不支持支付")
+}
+
+func (s *refundOrderCenterSource) CancelEntryForUser(userID, primaryID uint64) error {
+	return errors.New("当前条目不支持取消")
 }
 
 func (s *refundOrderCenterSource) buildSummary(item *model.RefundApplication) (OrderCenterEntrySummary, error) {
@@ -927,6 +958,22 @@ func resolveBusinessOrderStatus(status int8) (string, string) {
 	}
 }
 
+func canCancelSurveyDepositBooking(booking *model.Booking) bool {
+	return booking != nil && !booking.SurveyDepositPaid && !booking.IntentFeePaid && ensureBookingReadyForDepositPayment(booking) == nil
+}
+
+func canCancelConstructionOrder(order *model.Order, plans []OrderCenterPaymentPlanItem) bool {
+	if order == nil || order.Status != model.OrderStatusPending {
+		return false
+	}
+	for _, plan := range plans {
+		if plan.Status == OrderCenterStatusPaid {
+			return false
+		}
+	}
+	return true
+}
+
 func orderCenterSortTime(item OrderCenterEntrySummary) time.Time {
 	if item.CreatedAt != nil {
 		return *item.CreatedAt
@@ -938,10 +985,7 @@ func surveyDepositAmount(booking *model.Booking) float64 {
 	if booking == nil {
 		return 0
 	}
-	if booking.SurveyDeposit > 0 {
-		return booking.SurveyDeposit
-	}
-	return booking.IntentFee
+	return booking.SurveyDeposit
 }
 
 func formatSurveyDepositReferenceNo(bookingID uint64) string {

@@ -5,6 +5,7 @@ import { Button } from './Button';
 
 interface SurveyDepositQrDialogProps {
   amount: number;
+  amountLabel?: string;
   classNamePrefix: string;
   expired: boolean;
   onClose: () => void;
@@ -24,6 +25,7 @@ const formatCurrency = (amount: number) => `¥${Number(amount || 0).toLocaleStri
 
 export const SurveyDepositQrDialog: React.FC<SurveyDepositQrDialogProps> = ({
   amount,
+  amountLabel = '待支付金额',
   classNamePrefix,
   expired,
   onClose,
@@ -44,7 +46,7 @@ export const SurveyDepositQrDialog: React.FC<SurveyDepositQrDialogProps> = ({
         </View>
 
         <View className={className('qr-amount')}>
-          <Text className={className('qr-amount-label')}>待支付量房费</Text>
+          <Text className={className('qr-amount-label')}>{amountLabel}</Text>
           <Text className={className('qr-amount-value')}>{formatCurrency(amount)}</Text>
         </View>
 

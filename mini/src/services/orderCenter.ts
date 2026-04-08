@@ -135,6 +135,7 @@ export interface OrderCenterEntrySummary {
   project?: OrderCenterProjectSummary;
   booking?: OrderCenterBookingSummary;
   availablePaymentOptions?: SurveyDepositPaymentOption[];
+  canCancel?: boolean;
 }
 
 export interface OrderCenterEntryDetail extends OrderCenterEntrySummary {
@@ -182,3 +183,11 @@ export async function startOrderCenterEntryPayment(
 }
 
 export const payOrderCenterEntry = startOrderCenterEntryPayment;
+
+export async function cancelOrderCenterEntry(entryKey: string) {
+  return request<{ message: string }>({
+    url: `/order-center/entries/${encodeURIComponent(entryKey)}/cancel`,
+    method: 'POST',
+    showLoading: true,
+  });
+}

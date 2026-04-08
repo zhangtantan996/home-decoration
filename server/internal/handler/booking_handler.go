@@ -52,36 +52,49 @@ func GetBooking(c *gin.Context) {
 		proposalID = proposal.ID
 	}
 	p0Summary, _ := bookingService.GetBookingP0Summary(booking.ID)
+	bookingView := service.BookingLifecycleView{}
+	if booking != nil {
+		bookingView = service.BuildBookingLifecycleView(*booking, p0Summary, proposalID)
+	}
 	refundSummary, _ := refundApplicationService.BuildBookingRefundSummary(booking.ID)
 	var siteSurveySummary interface{}
 	var budgetConfirmSummary interface{}
 	var availableActions []string
 	var flowSummary string
 	var currentStage string
+	var currentStageText string
 	surveyDepositPaymentOptions := paymentService.GetSurveyDepositPaymentOptions(booking)
 	if p0Summary != nil {
 		siteSurveySummary = p0Summary.SiteSurvey
 		budgetConfirmSummary = p0Summary.BudgetConfirm
-		availableActions = p0Summary.AvailableActions
 		flowSummary = p0Summary.FlowSummary
 		currentStage = p0Summary.CurrentStage
 	}
+	availableActions = bookingView.AvailableActions
+	currentStageText = bookingView.CurrentStageText
 
 	response.Success(c, gin.H{
-		"booking":                     booking,
+		"booking":                     bookingView,
+		"statusGroup":                 bookingView.StatusGroup,
+		"statusText":                  bookingView.StatusText,
 		"provider":                    providerInfo,
 		"proposalId":                  proposalID,
+		"businessStage":               currentStage,
 		"siteSurveySummary":           siteSurveySummary,
 		"budgetConfirmSummary":        budgetConfirmSummary,
 		"availableActions":            availableActions,
 		"flowSummary":                 flowSummary,
 		"currentStage":                currentStage,
+		"currentStageText":            currentStageText,
+		"surveyDepositAmount":         bookingView.SurveyDepositAmount,
+		"surveyDepositPaid":           bookingView.SurveyDepositPaid,
+		"surveyDepositPaidAt":         bookingView.SurveyDepositPaidAt,
 		"refundSummary":               refundSummary,
 		"surveyDepositPaymentOptions": surveyDepositPaymentOptions,
 	})
 }
 
-// PayIntentFee 创建预约意向金支付单
+// PayIntentFee 兼容旧路由，内部统一走量房费支付
 func PayIntentFee(c *gin.Context) {
 	bookingID := parseUint64(c.Param("id"))
 	userID := c.GetUint64("userId")
@@ -107,15 +120,8 @@ func PayIntentFee(c *gin.Context) {
 // GetUserBookings 获取用户预约列表
 func GetUserBookings(c *gin.Context) {
 	userID := c.GetUint64("userId")
-
-	// 可选过滤：paid=true/false
-	var paid *bool
-	if paidStr := c.Query("paid"); paidStr != "" {
-		p := paidStr == "true"
-		paid = &p
-	}
-
-	bookings, err := bookingService.GetUserBookings(userID, paid)
+	statusGroup := c.Query("statusGroup")
+	bookings, err := bookingService.GetUserBookings(userID, statusGroup)
 	if err != nil {
 		response.ServerError(c, "获取预约列表失败")
 		return

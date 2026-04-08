@@ -26,8 +26,12 @@ func setupOrderCenterServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Proposal{},
 		&model.Order{},
 		&model.PaymentPlan{},
+		&model.SiteSurvey{},
+		&model.BudgetConfirmation{},
 		&model.RefundApplication{},
 		&model.Project{},
+		&model.BusinessFlow{},
+		&model.SystemConfig{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
@@ -100,14 +104,24 @@ func TestOrderCenterServiceListEntriesForUser(t *testing.T) {
 		Status:          model.RefundApplicationStatusPending,
 		Reason:          "计划变更",
 	}
+	constructionPlan := model.PaymentPlan{
+		Base:    model.Base{ID: 1104},
+		OrderID: constructionOrder.ID,
+		Seq:     1,
+		Name:    "首期款",
+		Amount:  18000,
+		Status:  0,
+	}
 
-	for _, item := range []any{&designOrder, &constructionOrder, &refundApplication} {
+	for _, item := range []any{&designOrder, &constructionOrder, &constructionPlan, &refundApplication} {
 		if err := db.Create(item).Error; err != nil {
 			t.Fatalf("seed order center entries: %v", err)
 		}
 	}
 
-	svc := NewOrderCenterService(NewPaymentService(nil))
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	svc := NewOrderCenterService(NewPaymentService(paymentServiceTestGateway{}))
 
 	allEntries, total, err := svc.ListEntriesForUser(user.ID, OrderCenterQuery{Page: 1, PageSize: 20})
 	if err != nil {
@@ -145,6 +159,14 @@ func TestOrderCenterServiceListEntriesForUser(t *testing.T) {
 	}
 	if total != 3 || len(pendingEntries) != 3 {
 		t.Fatalf("expected 3 pending payable entries, got total=%d len=%d", total, len(pendingEntries))
+	}
+	for _, entry := range pendingEntries {
+		if !entry.CanCancel {
+			t.Fatalf("expected pending entry %s to be cancellable", entry.EntryKey)
+		}
+		if len(entry.AvailablePaymentOptions) == 0 {
+			t.Fatalf("expected pending entry %s to expose payment options", entry.EntryKey)
+		}
 	}
 }
 
@@ -204,6 +226,9 @@ func TestOrderCenterServiceGetConstructionDetailIncludesPaymentPlans(t *testing.
 	}
 	if detail.Booking == nil || detail.Booking.ID != booking.ID {
 		t.Fatalf("expected booking summary, got %+v", detail.Booking)
+	}
+	if detail.CanCancel {
+		t.Fatalf("expected construction order with paid plan to be non-cancellable")
 	}
 }
 

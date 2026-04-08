@@ -23,6 +23,8 @@ type paymentServiceTestGateway struct {
 	queryRefundResult *AlipayRefundResult
 }
 
+type paymentServiceTestWechatGateway struct{}
+
 func (g paymentServiceTestGateway) Channel() string {
 	return model.PaymentChannelAlipay
 }
@@ -108,6 +110,48 @@ func (g paymentServiceTestGateway) QueryRefundOrder(ctx context.Context, order *
 	}, nil
 }
 
+func (paymentServiceTestWechatGateway) Channel() string {
+	return model.PaymentChannelWechat
+}
+
+func (paymentServiceTestWechatGateway) CreateCollectOrder(context.Context, *model.PaymentOrder) (string, error) {
+	return "", nil
+}
+
+func (paymentServiceTestWechatGateway) CreateCollectQRCode(context.Context, *model.PaymentOrder) ([]byte, error) {
+	return nil, nil
+}
+
+func (paymentServiceTestWechatGateway) CreateMiniProgramPayment(context.Context, *model.PaymentOrder, string) (*PaymentChannelMiniProgramResult, error) {
+	return &PaymentChannelMiniProgramResult{
+		TimeStamp: "1712476800",
+		NonceStr:  "nonce",
+		Package:   "prepay_id=test",
+		SignType:  "RSA",
+		PaySign:   "sign",
+	}, nil
+}
+
+func (paymentServiceTestWechatGateway) VerifyNotify(url.Values) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
+func (paymentServiceTestWechatGateway) ParseNotifyRequest(context.Context, *http.Request) (*PaymentChannelNotifyResult, error) {
+	return nil, nil
+}
+
+func (paymentServiceTestWechatGateway) QueryCollectOrder(context.Context, *model.PaymentOrder) (*PaymentChannelTradeResult, error) {
+	return &PaymentChannelTradeResult{}, nil
+}
+
+func (paymentServiceTestWechatGateway) RefundCollectOrder(context.Context, *model.PaymentOrder, *model.RefundOrder) (*PaymentChannelRefundResult, error) {
+	return &PaymentChannelRefundResult{}, nil
+}
+
+func (paymentServiceTestWechatGateway) QueryRefundOrder(context.Context, *model.PaymentOrder, *model.RefundOrder) (*PaymentChannelRefundResult, error) {
+	return &PaymentChannelRefundResult{}, nil
+}
+
 func setupPaymentServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -118,6 +162,7 @@ func setupPaymentServiceTestDB(t *testing.T) *gorm.DB {
 
 	if err := db.AutoMigrate(
 		&model.User{},
+		&model.UserWechatBinding{},
 		&model.Provider{},
 		&model.Booking{},
 		&model.Project{},
@@ -173,6 +218,23 @@ func enableAlipayForPaymentTests(t *testing.T) {
 	cfg.Server.PublicURL = "https://server.example.com"
 	cfg.Alipay.ReturnURLWeb = "https://web.example.com/payments/result"
 	cfg.Alipay.ReturnURLH5 = "https://m.example.com/payments/result"
+	t.Cleanup(func() {
+		*cfg = previous
+	})
+}
+
+func enableWechatForPaymentTests(t *testing.T) {
+	t.Helper()
+
+	cfg := config.GetConfig()
+	previous := *cfg
+	cfg.WechatPay.AppID = "wx-test-app-id"
+	cfg.WechatPay.MchID = "1900000109"
+	cfg.WechatPay.SerialNo = "serial-test"
+	cfg.WechatPay.PrivateKey = "private-key"
+	cfg.WechatPay.APIv3Key = "12345678901234567890123456789012"
+	cfg.WechatPay.NotifyURL = "https://server.example.com/api/v1/payments/wechat/notify"
+	cfg.WechatMini.AppID = "wx-test-app-id"
 	t.Cleanup(func() {
 		*cfg = previous
 	})
@@ -260,7 +322,7 @@ func seedSurveyDepositFixture(t *testing.T, db *gorm.DB) (userID, bookingID uint
 		Channel:         model.PaymentChannelAlipay,
 		Scene:           model.PaymentBizTypeBookingSurveyDeposit,
 		TerminalType:    model.PaymentTerminalMobileH5,
-		Subject:         "量房定金",
+		Subject:         "量房费",
 		Amount:          500,
 		OutTradeNo:      "survey-trade-001",
 		ProviderTradeNo: "provider-trade-001",
@@ -278,6 +340,45 @@ func seedSurveyDepositFixture(t *testing.T, db *gorm.DB) (userID, bookingID uint
 	}
 
 	return user.ID, booking.ID
+}
+
+func seedPendingOrderFixture(t *testing.T, db *gorm.DB) (userID, orderID uint64) {
+	t.Helper()
+
+	user := model.User{Base: model.Base{ID: 61}}
+	project := model.Project{Base: model.Base{ID: 62}, OwnerID: user.ID, Name: "测试项目"}
+	order := model.Order{
+		Base:        model.Base{ID: 63},
+		ProjectID:   project.ID,
+		OrderNo:     "ORD-WX-0063",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 1888,
+		Status:      model.OrderStatusPending,
+	}
+
+	for _, item := range []any{&user, &project, &order} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatalf("seed pending order fixture: %v", err)
+		}
+	}
+
+	return user.ID, order.ID
+}
+
+func seedWechatBinding(t *testing.T, db *gorm.DB, userID uint64, appID string) {
+	t.Helper()
+
+	boundAt := time.Now()
+	binding := model.UserWechatBinding{
+		Base:    model.Base{ID: 91},
+		UserID:  userID,
+		AppID:   appID,
+		OpenID:  "openid-test",
+		BoundAt: &boundAt,
+	}
+	if err := db.Create(&binding).Error; err != nil {
+		t.Fatalf("seed wechat binding: %v", err)
+	}
 }
 
 func seedMerchantBondFixture(t *testing.T, db *gorm.DB) (userID, providerID uint64) {
@@ -363,7 +464,7 @@ func TestPaymentServiceStartBookingIntentPaymentRejectsUnconfirmedBooking(t *tes
 	if err == nil {
 		t.Fatalf("expected unconfirmed booking payment to be rejected")
 	}
-	if err.Error() != "请等待服务商确认预约后再支付量房定金" {
+	if err.Error() != "请等待服务商确认预约后再支付量房费" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -386,7 +487,7 @@ func TestPaymentServiceStartSurveyDepositPaymentRejectsUnconfirmedBooking(t *tes
 	if err == nil {
 		t.Fatalf("expected unconfirmed survey deposit payment to be rejected")
 	}
-	if err.Error() != "请等待服务商确认预约后再支付量房定金" {
+	if err.Error() != "请等待服务商确认预约后再支付量房费" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -672,7 +773,7 @@ func TestPaymentServiceHandleAlipayNotifyIsIdempotent(t *testing.T) {
 		Channel:      model.PaymentChannelAlipay,
 		Scene:        model.PaymentBizTypeBookingIntent,
 		TerminalType: model.PaymentTerminalPCWeb,
-		Subject:      "预约意向金",
+		Subject:      "量房费",
 		Amount:       99,
 		OutTradeNo:   "intent-trade-001",
 		Status:       model.PaymentStatusPending,
@@ -754,7 +855,7 @@ func TestPaymentServiceGetPaymentDetailForUser(t *testing.T) {
 		Scene:           model.PaymentBizTypeBookingSurveyDeposit,
 		FundScene:       model.FundSceneSurveyDeposit,
 		TerminalType:    model.PaymentTerminalPCWeb,
-		Subject:         "量房定金 #804",
+		Subject:         "量房费 #804",
 		Amount:          500,
 		OutTradeNo:      "BOOKINGSURVEY-804-001",
 		ProviderTradeNo: "202603260001",
@@ -781,7 +882,7 @@ func TestPaymentServiceGetPaymentDetailForUser(t *testing.T) {
 	if detail.ChannelText != "支付宝" || detail.TerminalTypeText != "网页端" {
 		t.Fatalf("unexpected payment channel detail: %+v", detail)
 	}
-	if detail.PurposeText != "量房定金 #804" || detail.FundSceneText != "量房定金" {
+	if detail.PurposeText != "量房费 #804" || detail.FundSceneText != "量房费" {
 		t.Fatalf("unexpected purpose detail: %+v", detail)
 	}
 	if detail.ActionPath != "/bookings/804" {
@@ -826,7 +927,7 @@ func TestDesignPaymentServiceRefundSurveyDepositCreatesTrueRefund(t *testing.T) 
 	if err != nil {
 		t.Fatalf("RefundSurveyDeposit: %v", err)
 	}
-	if message != "量房定金退款成功" {
+	if message != "量房费退款成功" {
 		t.Fatalf("expected success message, got %q", message)
 	}
 
@@ -897,7 +998,7 @@ func TestPaymentServiceSyncPendingRefundOrdersFinalizesSurveyDeposit(t *testing.
 	if err != nil {
 		t.Fatalf("RefundSurveyDeposit pending: %v", err)
 	}
-	if message != "量房定金退款处理中，请稍后确认" {
+	if message != "量房费退款处理中，请稍后确认" {
 		t.Fatalf("expected pending message, got %q", message)
 	}
 
@@ -930,5 +1031,39 @@ func TestPaymentServiceSyncPendingRefundOrdersFinalizesSurveyDeposit(t *testing.
 	}
 	if refundTxnCount != 1 {
 		t.Fatalf("expected one refund transaction after sync, got %d", refundTxnCount)
+	}
+}
+
+func TestPaymentServiceStartOrderPaymentSupportsMiniWechatJSAPI(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableWechatForPaymentTests(t)
+	userID, orderID := seedPendingOrderFixture(t, db)
+	seedWechatBinding(t, db, userID, "wx-test-app-id")
+	for _, item := range []model.SystemConfig{
+		{Key: model.ConfigKeyPaymentChannelWechatEnabled, Value: "true", Type: "bool"},
+		{Key: model.ConfigKeyPaymentChannelAlipayEnabled, Value: "false", Type: "bool"},
+	} {
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("seed wechat payment config: %v", err)
+		}
+	}
+	(&ConfigService{}).ClearCache()
+
+	svc := NewPaymentServiceWithChannels(map[string]PaymentChannelService{
+		model.PaymentChannelWechat: paymentServiceTestWechatGateway{},
+	})
+
+	launch, err := svc.StartOrderPayment(userID, orderID, model.PaymentChannelWechat, model.PaymentTerminalMiniWechatJSAPI)
+	if err != nil {
+		t.Fatalf("StartOrderPayment wechat: %v", err)
+	}
+	if launch.Channel != model.PaymentChannelWechat {
+		t.Fatalf("expected wechat channel, got %+v", launch)
+	}
+	if launch.LaunchMode != "wechat_jsapi" {
+		t.Fatalf("expected wechat_jsapi launch, got %+v", launch)
+	}
+	if launch.WechatPayParams == nil || launch.WechatPayParams.Package == "" {
+		t.Fatalf("expected wechat pay params, got %+v", launch.WechatPayParams)
 	}
 }

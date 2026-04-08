@@ -344,12 +344,39 @@ func (s *OrderService) CancelOrder(userID, orderID uint64) error {
 		}
 	}
 
-	if order.Status != model.OrderStatusPending {
-		return errors.New("只能取消待支付订单")
+	canCancel, err := canCancelOrderTx(repository.DB, &order)
+	if err != nil {
+		return err
+	}
+	if !canCancel {
+		return errors.New("当前订单不可取消")
 	}
 
 	order.Status = model.OrderStatusCancelled
 	return repository.DB.Save(&order).Error
+}
+
+func canCancelOrderTx(tx *gorm.DB, order *model.Order) (bool, error) {
+	if tx == nil || order == nil || order.ID == 0 {
+		return false, nil
+	}
+	if order.Status != model.OrderStatusPending {
+		return false, nil
+	}
+	if order.OrderType != model.OrderTypeConstruction {
+		return true, nil
+	}
+
+	var paidCount int64
+	if err := tx.Model(&model.PaymentPlan{}).
+		Where("order_id = ? AND status = ?", order.ID, 1).
+		Count(&paidCount).Error; err != nil {
+		return false, err
+	}
+	if paidCount > 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 // PayPaymentPlan 支付分期款项

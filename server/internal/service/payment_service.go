@@ -158,48 +158,7 @@ func NewPaymentServiceWithChannels(channels map[string]PaymentChannelService) *P
 }
 
 func (s *PaymentService) StartBookingIntentPayment(userID, bookingID uint64, terminalType string) (*PaymentLaunchResponse, error) {
-	_, terminalType, err := normalizePaymentChannelAndTerminal(model.PaymentChannelAlipay, terminalType)
-	if err != nil {
-		return nil, err
-	}
-	var payment *model.PaymentOrder
-	err = repository.DB.Transaction(func(tx *gorm.DB) error {
-		var booking model.Booking
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&booking, bookingID).Error; err != nil {
-			return errors.New("预约不存在")
-		}
-		if booking.UserID != userID {
-			return errors.New("无权操作此预约")
-		}
-		if booking.IntentFeePaid {
-			return errors.New("量房定金已支付")
-		}
-		if err := ensureBookingReadyForDepositPayment(&booking); err != nil {
-			return err
-		}
-		payment, err = s.createOrReusePaymentOrderTx(tx, &paymentCreateSpec{
-			BizType:      model.PaymentBizTypeBookingIntent,
-			BizID:        booking.ID,
-			PayerUserID:  userID,
-			Channel:      model.PaymentChannelAlipay,
-			Scene:        model.PaymentBizTypeBookingIntent,
-			FundScene:    model.FundSceneSurveyDeposit,
-			TerminalType: terminalType,
-			Subject:      fmt.Sprintf("预约量房定金 #%d", booking.ID),
-			Amount:       normalizeAmount(booking.IntentFee),
-			ReturnCtx: map[string]any{
-				"successPath": fmt.Sprintf("/bookings/%d", booking.ID),
-				"cancelPath":  fmt.Sprintf("/bookings/%d", booking.ID),
-				"bizType":     model.PaymentBizTypeBookingIntent,
-				"bizId":       booking.ID,
-			},
-		})
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return s.buildLaunchResponse(payment, nil), nil
+	return s.StartSurveyDepositPayment(userID, bookingID, model.PaymentChannelAlipay, terminalType)
 }
 
 func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, channel, terminalType string) (*PaymentLaunchResponse, error) {
@@ -223,7 +182,7 @@ func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, cha
 			return errors.New("无权操作此预约")
 		}
 		if booking.SurveyDepositPaid {
-			return errors.New("量房定金已支付")
+			return errors.New("量房费已支付")
 		}
 		if err := ensureBookingReadyForDepositPayment(&booking); err != nil {
 			return err
@@ -240,7 +199,7 @@ func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, cha
 			Scene:        model.PaymentBizTypeBookingSurveyDeposit,
 			FundScene:    model.FundSceneSurveyDeposit,
 			TerminalType: terminalType,
-			Subject:      fmt.Sprintf("量房定金 #%d", booking.ID),
+			Subject:      fmt.Sprintf("量房费 #%d", booking.ID),
 			Amount:       depositAmount,
 			ReturnCtx: map[string]any{
 				"successPath": fmt.Sprintf("/bookings/%d/site-survey", booking.ID),
@@ -267,12 +226,18 @@ func (s *PaymentService) StartSurveyDepositPayment(userID, bookingID uint64, cha
 	return s.buildLaunchResponse(payment, miniProgramPay), nil
 }
 
-func (s *PaymentService) StartOrderPayment(userID, orderID uint64, terminalType string) (*PaymentLaunchResponse, error) {
-	_, terminalType, err := normalizePaymentChannelAndTerminal(model.PaymentChannelAlipay, terminalType)
+func (s *PaymentService) StartOrderPayment(userID, orderID uint64, channel, terminalType string) (*PaymentLaunchResponse, error) {
+	channel, terminalType, err := normalizePaymentChannelAndTerminal(channel, terminalType)
 	if err != nil {
 		return nil, err
 	}
+	if channel == model.PaymentChannelAlipay && terminalType == model.PaymentTerminalMobileH5 {
+		if err := validateMiniAlipayH5Runtime(); err != nil {
+			return nil, err
+		}
+	}
 	var payment *model.PaymentOrder
+	var miniProgramPay *PaymentChannelMiniProgramResult
 	err = repository.DB.Transaction(func(tx *gorm.DB) error {
 		order, err := lockOrderForUserTx(tx, userID, orderID)
 		if err != nil {
@@ -286,7 +251,7 @@ func (s *PaymentService) StartOrderPayment(userID, orderID uint64, terminalType 
 			BizType:      model.PaymentBizTypeOrder,
 			BizID:        order.ID,
 			PayerUserID:  userID,
-			Channel:      model.PaymentChannelAlipay,
+			Channel:      channel,
 			Scene:        model.PaymentBizTypeOrder,
 			FundScene:    resolveOrderFundScene(order),
 			TerminalType: terminalType,
@@ -299,20 +264,39 @@ func (s *PaymentService) StartOrderPayment(userID, orderID uint64, terminalType 
 				"bizId":       order.ID,
 			},
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		if channel == model.PaymentChannelWechat && terminalType == model.PaymentTerminalMiniWechatJSAPI {
+			openID, err := s.resolveMiniWechatOpenIDTx(tx, userID)
+			if err != nil {
+				return err
+			}
+			miniProgramPay, err = s.createMiniProgramLaunchTx(tx, payment, openID)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.buildLaunchResponse(payment, nil), nil
+	return s.buildLaunchResponse(payment, miniProgramPay), nil
 }
 
-func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminalType string) (*PaymentLaunchResponse, error) {
-	_, terminalType, err := normalizePaymentChannelAndTerminal(model.PaymentChannelAlipay, terminalType)
+func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, channel, terminalType string) (*PaymentLaunchResponse, error) {
+	channel, terminalType, err := normalizePaymentChannelAndTerminal(channel, terminalType)
 	if err != nil {
 		return nil, err
 	}
+	if channel == model.PaymentChannelAlipay && terminalType == model.PaymentTerminalMobileH5 {
+		if err := validateMiniAlipayH5Runtime(); err != nil {
+			return nil, err
+		}
+	}
 	var payment *model.PaymentOrder
+	var miniProgramPay *PaymentChannelMiniProgramResult
 	err = repository.DB.Transaction(func(tx *gorm.DB) error {
 		plan, order, _, err := lockPaymentPlanForUserTx(tx, userID, planID)
 		if err != nil {
@@ -325,7 +309,7 @@ func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminal
 			BizType:      model.PaymentBizTypePaymentPlan,
 			BizID:        plan.ID,
 			PayerUserID:  userID,
-			Channel:      model.PaymentChannelAlipay,
+			Channel:      channel,
 			Scene:        model.PaymentBizTypePaymentPlan,
 			FundScene:    resolveOrderFundScene(order),
 			TerminalType: terminalType,
@@ -338,12 +322,25 @@ func (s *PaymentService) StartPaymentPlanPayment(userID, planID uint64, terminal
 				"bizId":       plan.ID,
 			},
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		if channel == model.PaymentChannelWechat && terminalType == model.PaymentTerminalMiniWechatJSAPI {
+			openID, err := s.resolveMiniWechatOpenIDTx(tx, userID)
+			if err != nil {
+				return err
+			}
+			miniProgramPay, err = s.createMiniProgramLaunchTx(tx, payment, openID)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.buildLaunchResponse(payment, nil), nil
+	return s.buildLaunchResponse(payment, miniProgramPay), nil
 }
 
 func (s *PaymentService) StartMerchantBondPayment(userID, providerID uint64, terminalType, returnBaseURL string) (*PaymentLaunchResponse, error) {
@@ -1340,6 +1337,10 @@ func (s *PaymentService) ensurePaymentChannelAvailableTx(tx *gorm.DB, channel st
 }
 
 func (s *PaymentService) createMiniProgramLaunch(payment *model.PaymentOrder, openID string) (*PaymentChannelMiniProgramResult, error) {
+	return s.createMiniProgramLaunchTx(repository.DB, payment, openID)
+}
+
+func (s *PaymentService) createMiniProgramLaunchTx(tx *gorm.DB, payment *model.PaymentOrder, openID string) (*PaymentChannelMiniProgramResult, error) {
 	channel, err := s.getChannelService(model.PaymentChannelWechat)
 	if err != nil {
 		return nil, err
@@ -1348,7 +1349,7 @@ func (s *PaymentService) createMiniProgramLaunch(payment *model.PaymentOrder, op
 	if err != nil {
 		return nil, err
 	}
-	_ = repository.DB.Model(&model.PaymentOrder{}).
+	_ = tx.Model(&model.PaymentOrder{}).
 		Where("id = ? AND status IN ?", payment.ID, []string{model.PaymentStatusCreated, model.PaymentStatusLaunching}).
 		Updates(map[string]any{
 			"status":              model.PaymentStatusPending,
@@ -1360,6 +1361,10 @@ func (s *PaymentService) createMiniProgramLaunch(payment *model.PaymentOrder, op
 }
 
 func (s *PaymentService) resolveMiniWechatOpenID(userID uint64) (string, error) {
+	return s.resolveMiniWechatOpenIDTx(repository.DB, userID)
+}
+
+func (s *PaymentService) resolveMiniWechatOpenIDTx(tx *gorm.DB, userID uint64) (string, error) {
 	if userID == 0 {
 		return "", errors.New("用户未登录")
 	}
@@ -1371,7 +1376,7 @@ func (s *PaymentService) resolveMiniWechatOpenID(userID uint64) (string, error) 
 		return "", errors.New("微信支付未配置小程序 AppID")
 	}
 	var binding model.UserWechatBinding
-	if err := repository.DB.Where("user_id = ? AND app_id = ?", userID, appID).First(&binding).Error; err != nil {
+	if err := tx.Where("user_id = ? AND app_id = ?", userID, appID).First(&binding).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", errors.New("当前账号未绑定小程序微信，请先使用微信快捷登录")
 		}
@@ -1383,10 +1388,7 @@ func (s *PaymentService) resolveMiniWechatOpenID(userID uint64) (string, error) 
 	return strings.TrimSpace(binding.OpenID), nil
 }
 
-func (s *PaymentService) GetSurveyDepositPaymentOptions(booking *model.Booking) []SurveyDepositPaymentOption {
-	if booking == nil || booking.ID == 0 || booking.SurveyDepositPaid || ensureBookingReadyForDepositPayment(booking) != nil {
-		return nil
-	}
+func (s *PaymentService) GetOrderCenterPaymentOptions() []SurveyDepositPaymentOption {
 	options := make([]SurveyDepositPaymentOption, 0, 2)
 	if s.ensurePaymentChannelAvailable(model.PaymentChannelWechat) == nil {
 		options = append(options, SurveyDepositPaymentOption{
@@ -1411,6 +1413,13 @@ func (s *PaymentService) GetSurveyDepositPaymentOptions(booking *model.Booking) 
 		})
 	}
 	return options
+}
+
+func (s *PaymentService) GetSurveyDepositPaymentOptions(booking *model.Booking) []SurveyDepositPaymentOption {
+	if booking == nil || booking.ID == 0 || booking.SurveyDepositPaid || booking.IntentFeePaid || ensureBookingReadyForDepositPayment(booking) != nil {
+		return nil
+	}
+	return s.GetOrderCenterPaymentOptions()
 }
 
 func validateMiniAlipayH5Runtime() error {
@@ -1572,7 +1581,11 @@ func confirmBookingIntentPaidTx(tx *gorm.DB, bookingID uint64) (*paymentSideEffe
 	now := time.Now()
 	deadline := now.Add(48 * time.Hour)
 	if err := tx.Model(&booking).Updates(map[string]any{
+		"intent_fee":                 booking.IntentFee,
 		"intent_fee_paid":            true,
+		"survey_deposit":             booking.IntentFee,
+		"survey_deposit_paid":        true,
+		"survey_deposit_paid_at":     &now,
 		"merchant_response_deadline": &deadline,
 	}).Error; err != nil {
 		return nil, err
@@ -1599,9 +1612,12 @@ func confirmSurveyDepositPaidTx(tx *gorm.DB, payment *model.PaymentOrder) error 
 	}
 	now := time.Now()
 	if err := tx.Model(&booking).Updates(map[string]any{
-		"survey_deposit":         payment.Amount,
-		"survey_deposit_paid":    true,
-		"survey_deposit_paid_at": &now,
+		"intent_fee":                 payment.Amount,
+		"intent_fee_paid":            true,
+		"survey_deposit":             payment.Amount,
+		"survey_deposit_paid":        true,
+		"survey_deposit_paid_at":     &now,
+		"merchant_response_deadline": now.Add(48 * time.Hour),
 	}).Error; err != nil {
 		return err
 	}
@@ -1853,9 +1869,9 @@ func ensureBookingReadyForDepositPayment(booking *model.Booking) error {
 		return nil
 	}
 	if booking.Status == 4 {
-		return errors.New("预约已关闭，不能支付量房定金")
+		return errors.New("预约已关闭，不能支付量房费")
 	}
-	return errors.New("请等待服务商确认预约后再支付量房定金")
+	return errors.New("请等待服务商确认预约后再支付量房费")
 }
 
 func confirmMerchantBondPaidTx(tx *gorm.DB, providerID uint64) error {
@@ -2061,9 +2077,9 @@ func paymentTerminalText(terminalType string) string {
 func paymentBizTypeText(bizType string) string {
 	switch strings.TrimSpace(bizType) {
 	case model.PaymentBizTypeBookingIntent:
-		return "预约意向金"
+		return "量房费"
 	case model.PaymentBizTypeBookingSurveyDeposit:
-		return "量房定金"
+		return "量房费"
 	case model.PaymentBizTypeOrder:
 		return "订单支付"
 	case model.PaymentBizTypePaymentPlan:
@@ -2081,7 +2097,7 @@ func paymentBizTypeText(bizType string) string {
 func paymentFundSceneText(fundScene string) string {
 	switch strings.TrimSpace(fundScene) {
 	case model.FundSceneSurveyDeposit:
-		return "量房定金"
+		return "量房费"
 	case model.FundSceneDesignFee:
 		return "设计费"
 	case model.FundSceneConstructionStage:
@@ -2381,7 +2397,7 @@ func (s *PaymentService) buildRefundExecutionPlansTx(tx *gorm.DB, application *m
 	switch application.RefundType {
 	case model.RefundTypeIntentFee:
 		if remaining != normalizeAmount(breakdown.IntentFee) {
-			return nil, errors.New("意向金退款金额必须等于可退金额")
+			return nil, errors.New("量房费退款金额必须等于可退金额")
 		}
 		if err := appendSinglePlan(model.PaymentBizTypeBookingIntent, booking.ID, breakdown.IntentFee, false); err != nil {
 			return nil, err
@@ -2410,7 +2426,7 @@ func (s *PaymentService) buildRefundExecutionPlansTx(tx *gorm.DB, application *m
 		}
 		if breakdown.IntentFee > 0 && remaining > 0 {
 			if remaining < normalizeAmount(breakdown.IntentFee) {
-				return nil, errors.New("全额退款不能对意向金做部分退款")
+				return nil, errors.New("全额退款不能对量房费做部分退款")
 			}
 			if err := appendSinglePlan(model.PaymentBizTypeBookingIntent, booking.ID, breakdown.IntentFee, false); err != nil {
 				return nil, err

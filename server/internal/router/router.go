@@ -172,6 +172,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			designers.GET("", handler.ListDesigners)
 			designers.GET("/:id", handler.GetDesigner)
 			designers.GET("/:id/cases", handler.GetProviderCases)
+			designers.GET("/:id/cases/:caseId", handler.GetProviderCaseDetail)
 			designers.GET("/:id/reviews", handler.GetProviderReviews)
 			designers.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -182,6 +183,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			companies.GET("", handler.ListCompanies)
 			companies.GET("/:id", handler.GetCompany)
 			companies.GET("/:id/cases", handler.GetProviderCases)
+			companies.GET("/:id/cases/:caseId", handler.GetProviderCaseDetail)
 			companies.GET("/:id/reviews", handler.GetProviderReviews)
 			companies.GET("/:id/review-stats", handler.GetReviewStats)
 		}
@@ -192,6 +194,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			foremen.GET("", handler.ListForemen)
 			foremen.GET("/:id", handler.GetForeman)
 			foremen.GET("/:id/cases", handler.GetProviderCases)
+			foremen.GET("/:id/cases/:caseId", handler.GetProviderCaseDetail)
 			foremen.GET("/:id/scene-cases", handler.GetProviderSceneCases)
 			foremen.GET("/:id/reviews", handler.GetProviderReviews)
 			foremen.GET("/:id/review-stats", handler.GetReviewStats)
@@ -339,6 +342,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				orderCenter.GET("/entries", handler.ListOrderCenterEntries)
 				orderCenter.GET("/entries/:entryKey", handler.GetOrderCenterEntry)
 				orderCenter.POST("/entries/:entryKey/payments", handler.StartOrderCenterEntryPayment)
+				orderCenter.POST("/entries/:entryKey/cancel", handler.CancelOrderCenterEntry)
 			}
 
 			// 项目
