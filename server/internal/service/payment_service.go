@@ -2700,14 +2700,17 @@ func syncEscrowDepositProjectionTx(tx *gorm.DB, projectID uint64, payment *model
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	var escrow model.EscrowAccount
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
+	escrow, err := ensureProjectEscrowAccountTx(tx, projectID)
+	if err != nil {
 		return err
+	}
+	if escrow == nil {
+		return errors.New("托管账户不存在")
 	}
 	escrow.TotalAmount = normalizeAmount(escrow.TotalAmount + payment.Amount)
 	escrow.AvailableAmount = normalizeAmount(escrow.AvailableAmount + payment.Amount)
-	escrow.Status = reconcileEscrowStatus(&escrow)
-	if err := tx.Save(&escrow).Error; err != nil {
+	escrow.Status = reconcileEscrowStatus(escrow)
+	if err := tx.Save(escrow).Error; err != nil {
 		return err
 	}
 	completedAt := payment.PaidAt
@@ -2726,6 +2729,35 @@ func syncEscrowDepositProjectionTx(tx *gorm.DB, projectID uint64, payment *model
 		Remark:      payment.FundScene,
 		CompletedAt: completedAt,
 	}).Error
+}
+
+func ensureProjectEscrowAccountTx(tx *gorm.DB, projectID uint64) (*model.EscrowAccount, error) {
+	if projectID == 0 {
+		return nil, nil
+	}
+	escrow, err := loadProjectEscrowTx(tx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if escrow != nil {
+		return escrow, nil
+	}
+
+	var project model.Project
+	if err := tx.Select("id", "owner_id", "name").First(&project, projectID).Error; err != nil {
+		return nil, err
+	}
+
+	created := &model.EscrowAccount{
+		ProjectID:   project.ID,
+		UserID:      project.OwnerID,
+		ProjectName: strings.TrimSpace(project.Name),
+		Status:      escrowStatusActive,
+	}
+	if err := tx.Create(created).Error; err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 func (s *PaymentService) findPaidPaymentOrderTx(tx *gorm.DB, bizType string, bizID uint64) (*model.PaymentOrder, error) {
