@@ -231,14 +231,7 @@ export default function Profile() {
 
   const handleFavorites = () => {
     requireAuth(() => {
-      Taro.setStorageSync('inspiration_active_tab', 'favorites');
-      Taro.switchTab({ url: '/pages/inspiration/index' });
-    });
-  };
-
-  const handleRefundRecords = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/refunds/list/index' });
+      Taro.navigateTo({ url: '/pages/profile/favorites/index' });
     });
   };
 
@@ -300,22 +293,11 @@ export default function Profile() {
                 </View>
               </View>
 
-              <View className="profile-page__stats">
-                <View className="profile-page__stat">
-                  <Text className="profile-page__stat-value">{favoriteCaseCount}</Text>
-                  <Text className="profile-page__stat-label">灵感收藏</Text>
-                </View>
-                <View className="profile-page__stat-divider" />
-                <View className="profile-page__stat">
-                  <Text className="profile-page__stat-value">{pendingPaymentCount}</Text>
-                  <Text className="profile-page__stat-label">待支付</Text>
-                </View>
-              </View>
             </View>
           </View>
 
           <View className="profile-page__content">
-            <Card className="profile-page__card" title="装修管理">
+            <Card className="profile-page__card">
               <ListItem
                 title="我的订单"
                 arrow
@@ -345,27 +327,6 @@ export default function Profile() {
                 icon={<Icon name="favorites" size={28} color="#71717A" />}
                 extra={<View className="profile-page__muted-value">{favoriteCaseCount}</View>}
                 onClick={handleFavorites}
-              />
-              <ListItem
-                title="退款记录"
-                arrow
-                icon={<Icon name="history" size={28} color="#71717A" />}
-                onClick={handleRefundRecords}
-              />
-            </Card>
-
-            <Card className="profile-page__card" title="平台服务">
-              <ListItem
-                title="联系客服"
-                arrow
-                icon={<Icon name="support" size={28} color="#71717A" />}
-                onClick={handleSupport}
-              />
-              <ListItem
-                title="关于我们"
-                arrow
-                icon={<Icon name="about" size={28} color="#71717A" />}
-                onClick={handleAbout}
               />
               <ListItem
                 title="设置"

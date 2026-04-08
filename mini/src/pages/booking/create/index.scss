@@ -318,41 +318,11 @@
   }
 
   &__footer {
-    display: flex;
-    align-items: center;
-    gap: 16rpx;
+    display: block;
   }
 
   &__footer-action {
-    flex: 1;
-    min-width: 0;
-  }
-
-  &__fee-copy {
-    min-width: 0;
-    flex-shrink: 0;
-  }
-
-  &__fee-label {
-    display: block;
-    color: #71717a;
-    font-size: 22rpx;
-  }
-
-  &__fee-amount {
-    display: block;
-    margin-top: 4rpx;
-    color: #111111;
-    font-size: 34rpx;
-    font-weight: 700;
-    line-height: 1.15;
-  }
-
-  &__fee-note {
-    display: block;
-    margin-top: 2rpx;
-    color: #a1a1aa;
-    font-size: 20rpx;
+    width: 100%;
   }
 
   &__sheet-mask {

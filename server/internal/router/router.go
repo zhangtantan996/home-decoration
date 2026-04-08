@@ -151,6 +151,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		{
 			payments.GET("/:id/launch", handler.PaymentLaunch)
 			payments.GET("/:id/qr", handler.PaymentQRCode)
+			payments.HEAD("/:id/qr", handler.PaymentQRCode)
 			payments.POST("/alipay/notify", handler.PaymentAlipayNotify)
 			payments.POST("/wechat/notify", handler.PaymentWechatNotify)
 			payments.GET("/alipay/return", handler.PaymentAlipayReturn)

@@ -43,10 +43,10 @@ interface SettlementListData {
 }
 
 const TYPE_LABELS: Record<string, string> = {
-    intent_fee: '意向金',
+    intent_fee: '量房费',
     design_fee: '设计费',
     construction: '施工款',
-    survey_deposit: '量房定金',
+    survey_deposit: '量房费',
     material: '主材款',
 };
 

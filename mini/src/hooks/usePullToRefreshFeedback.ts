@@ -47,6 +47,7 @@ export function usePullToRefreshFeedback(
   const [drawerProgress, setDrawerProgress] = useState(0);
 
   const activeTaskRef = useRef<Promise<void> | null>(null);
+  const pendingReloadRef = useRef<PullToRefreshReloadOptions | null>(null);
   const reloadHandlerRef = useRef(reloadHandler);
   const drawerHeightRef = useRef(0);
   const scrollTopRef = useRef(0);
@@ -130,6 +131,9 @@ export function usePullToRefreshFeedback(
   const runReload = useCallback(
     async ({ withFeedback = false }: PullToRefreshReloadOptions = {}) => {
       if (activeTaskRef.current) {
+        pendingReloadRef.current = {
+          withFeedback: Boolean(pendingReloadRef.current?.withFeedback || withFeedback),
+        };
         return activeTaskRef.current;
       }
 
@@ -154,6 +158,13 @@ export function usePullToRefreshFeedback(
         } finally {
           Taro.stopPullDownRefresh();
           activeTaskRef.current = null;
+          const pendingReload = pendingReloadRef.current;
+          pendingReloadRef.current = null;
+          if (pendingReload) {
+            setTimeout(() => {
+              void runReload(pendingReload);
+            }, 0);
+          }
         }
       })();
 

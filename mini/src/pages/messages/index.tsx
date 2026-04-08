@@ -18,6 +18,7 @@ import { openAuthLoginPage } from '@/utils/authRedirect';
 import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
+import { resolveMiniNotificationRoute } from '@/utils/notificationActionRoute';
 import { NotificationWebSocket, isNotificationRealtimeEnabled } from '@/utils/notificationWebSocket';
 import {
   buildNotificationFilters,
@@ -39,22 +40,6 @@ const TAB_PAGE_PATHS = [
 ];
 
 const stripQuery = (value: string) => value.split('?')[0] || value;
-
-const normalizePagePath = (actionUrl: string) => {
-  if (actionUrl.startsWith('/pages/chat/index') || actionUrl.startsWith('pages/chat/index')) {
-    return '/pages/messages/index';
-  }
-
-  if (actionUrl.startsWith('/pages/')) {
-    return actionUrl;
-  }
-
-  if (actionUrl.startsWith('pages/')) {
-    return `/${actionUrl}`;
-  }
-
-  return '';
-};
 
 const NotificationsHeader = ({
   insetStyle,
@@ -406,8 +391,9 @@ export default function NotificationsPage() {
         return;
       }
 
-      const pagePath = normalizePagePath(item.actionUrl);
+      const pagePath = resolveMiniNotificationRoute(item.actionUrl);
       if (!pagePath) {
+        Taro.showToast({ title: '当前通知暂不支持小程序内查看', icon: 'none' });
         return;
       }
 

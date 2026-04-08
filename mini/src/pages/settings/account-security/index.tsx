@@ -1,5 +1,4 @@
 import Taro from '@tarojs/taro';
-import { Text, View } from '@tarojs/components';
 import React, { useMemo } from 'react';
 
 import SettingsLayout, { SettingsGroup, SettingsRow } from '@/components/settings/SettingsLayout';
@@ -25,7 +24,7 @@ export default function AccountSecurityPage() {
   };
 
   return (
-    <SettingsLayout title="账号安全" className="account-security-page">
+    <SettingsLayout title="账号安全">
       <SettingsGroup title="账号信息">
         <SettingsRow label="当前手机号" value={phoneLabel} arrow={false} />
         <SettingsRow
@@ -62,11 +61,6 @@ export default function AccountSecurityPage() {
         />
       </SettingsGroup>
 
-      <View className="account-security-page__tip">
-        <Text className="account-security-page__tip-text">
-          涉及手机号、密码和注销的操作都改为独立页面处理，避免在当前页展开打断浏览。
-        </Text>
-      </View>
     </SettingsLayout>
   );
 }

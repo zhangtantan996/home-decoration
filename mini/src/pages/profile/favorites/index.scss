@@ -1,0 +1,111 @@
+.profile-favorites-page {
+  min-height: 100vh;
+  background: #f6f7f8;
+  padding-bottom: 48rpx;
+
+  &__content {
+    padding: 18rpx 24rpx 0;
+  }
+
+  &__waterfall {
+    display: flex;
+    gap: 18rpx;
+    align-items: flex-start;
+    margin-top: 22rpx;
+  }
+
+  &__column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 18rpx;
+  }
+
+  &__card {
+    overflow: hidden;
+    border-radius: 28rpx;
+    background: #ffffff;
+    box-shadow: 0 16rpx 30rpx rgba(17, 17, 17, 0.08);
+  }
+
+  &__cover {
+    width: 100%;
+    display: block;
+    background: #ececec;
+
+    &--placeholder {
+      height: 320rpx;
+      background: linear-gradient(135deg, #ebeef1 0%, #dfe4ea 100%);
+    }
+  }
+
+  &__card-body {
+    padding: 20rpx 18rpx 18rpx;
+  }
+
+  &__card-title {
+    display: block;
+    color: #111111;
+    font-size: 26rpx;
+    font-weight: 800;
+    line-height: 1.5;
+  }
+
+  &__card-subtitle {
+    display: block;
+    margin-top: 10rpx;
+    color: #777777;
+    font-size: 22rpx;
+    line-height: 1.45;
+  }
+
+  &__card-footer {
+    margin-top: 16rpx;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12rpx;
+  }
+
+  &__saved-time {
+    color: #9ca3af;
+    font-size: 22rpx;
+    line-height: 1.3;
+  }
+
+  &__saved-badge {
+    padding: 10rpx 16rpx;
+    border-radius: 999rpx;
+    background: #f5f5f5;
+  }
+
+  &__saved-badge-text {
+    color: #111111;
+    font-size: 20rpx;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  &__loading {
+    padding: 34rpx 0 12rpx;
+    color: #94a3b8;
+    font-size: 24rpx;
+    text-align: center;
+  }
+
+  &__skeleton {
+    overflow: hidden;
+    border-radius: 28rpx;
+    background: #ffffff;
+    padding-bottom: 12rpx;
+  }
+
+  &__skeleton-body {
+    padding: 18rpx;
+  }
+
+  &__skeleton-line + &__skeleton-line {
+    margin-top: 10rpx;
+  }
+}

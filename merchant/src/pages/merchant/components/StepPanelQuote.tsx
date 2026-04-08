@@ -129,7 +129,7 @@ const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({ bookingId, isActive, is
     return (
       <Alert
         message="设计费报价已完成"
-        description={`总额 ¥${quote.totalFee?.toLocaleString()} · 定金抵扣 ¥${quote.depositDeduction?.toLocaleString()} · 实付 ¥${quote.netAmount?.toLocaleString()}`}
+        description={`总额 ¥${quote.totalFee?.toLocaleString()} · 量房费抵扣 ¥${quote.depositDeduction?.toLocaleString()} · 实付 ¥${quote.netAmount?.toLocaleString()}`}
         type="success"
         showIcon
       />
@@ -197,7 +197,7 @@ const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({ bookingId, isActive, is
             ) : (
               <>
                 <p>总额: ¥{quote.totalFee?.toLocaleString()}</p>
-                <p>定金抵扣: ¥{quote.depositDeduction?.toLocaleString()}</p>
+                <p>量房费抵扣: ¥{quote.depositDeduction?.toLocaleString()}</p>
                 <p>实付: ¥{quote.netAmount?.toLocaleString()}</p>
                 <p>状态: {quoteStatus && <Tag color={quoteStatus.color}>{quoteStatus.label}</Tag>}</p>
                 {quote.rejectionReason && <p style={{ color: '#ff4d4f' }}>拒绝原因: {quote.rejectionReason}</p>}
@@ -231,7 +231,7 @@ const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({ bookingId, isActive, is
           <Form.Item name="totalFee" label="设计费总额" rules={[{ required: true }]}>
             <InputNumber min={0} precision={2} style={{ width: '100%' }} prefix="¥" />
           </Form.Item>
-          <Form.Item name="depositDeduction" label="量房定金抵扣">
+          <Form.Item name="depositDeduction" label="量房费抵扣">
             <InputNumber min={0} precision={2} style={{ width: '100%' }} prefix="¥" />
           </Form.Item>
           <Form.Item name="paymentMode" label="支付方式" initialValue="onetime">

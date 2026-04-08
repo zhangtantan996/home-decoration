@@ -20,6 +20,7 @@ export default {
     'pages/messages/index',
     'pages/profile/index',
     'pages/profile/edit/index',
+    'pages/profile/favorites/index',
     'pages/providers/list/index',
     'pages/providers/company-album/index',
     'pages/providers/detail/index',

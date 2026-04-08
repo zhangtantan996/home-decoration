@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Taro, { useDidHide } from '@tarojs/taro';
 
+import type {
+  SurveyDepositQrDialogPhase,
+  SurveyDepositQrDialogStatusTone,
+} from '@/components/SurveyDepositQrDialog';
 import { miniPaymentAdapter } from '@/adapters/payment';
+import {
+  QR_EXPIRED_TEXT,
+  QR_MANUAL_CHECKING_TEXT,
+  QR_MANUAL_FEEDBACK_HOLD_MS,
+  QR_MANUAL_PENDING_TEXT,
+  QR_MANUAL_RETRY_TEXT,
+  QR_SUCCESS_TEXT,
+  QR_WAITING_TEXT,
+} from '@/constants/paymentQr';
 import { paySurveyDeposit, type SurveyDepositPaymentOption } from '@/services/bookings';
 import {
   getPaymentStatus,
@@ -19,8 +32,9 @@ import {
 
 export type SurveyDepositQrPaymentState = MiniPaymentLaunchResponse & {
   amount: number;
+  phase: SurveyDepositQrDialogPhase;
   statusText: string;
-  expired: boolean;
+  statusTone: SurveyDepositQrDialogStatusTone;
 };
 
 export type EntryPaymentFlowSource = {
@@ -75,11 +89,15 @@ export const useSurveyDepositPaymentFlow = ({
 }: UseSurveyDepositPaymentFlowOptions) => {
   const [launchingAction, setLaunchingAction] = useState<SurveyDepositPaymentAction | null>(null);
   const [qrPayment, setQrPayment] = useState<SurveyDepositQrPaymentState | null>(null);
+  const [qrConfirmLoading, setQrConfirmLoading] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
 
   const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoLaunchTriggeredRef = useRef(false);
+  const lastQrActionRef = useRef<SurveyDepositPaymentAction | null>(null);
+  const manualFeedbackUntilRef = useRef(0);
 
   const channelOptions = useMemo(
     () => getSurveyDepositChannelOptions(paymentOptions),
@@ -97,21 +115,71 @@ export const useSurveyDepositPaymentFlow = ({
     }
   }, []);
 
+  const clearSuccessTimer = useCallback(() => {
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
+    }
+  }, []);
+
+  const clearManualFeedbackLock = useCallback(() => {
+    manualFeedbackUntilRef.current = 0;
+  }, []);
+
+  const holdManualFeedbackLock = useCallback(() => {
+    manualFeedbackUntilRef.current = Number.MAX_SAFE_INTEGER;
+  }, []);
+
+  const keepManualFeedbackVisible = useCallback(() => {
+    manualFeedbackUntilRef.current = Date.now() + QR_MANUAL_FEEDBACK_HOLD_MS;
+  }, []);
+
+  const hasManualFeedbackLock = useCallback(() => {
+    const current = manualFeedbackUntilRef.current;
+    return current === Number.MAX_SAFE_INTEGER || current > Date.now();
+  }, []);
+
   const closeQrPayment = useCallback(() => {
     stopPaymentTracking();
+    clearSuccessTimer();
+    clearManualFeedbackLock();
+    setQrConfirmLoading(false);
     setRemainingSeconds(0);
     setQrPayment(null);
-  }, [stopPaymentTracking]);
+    void onPaid?.();
+  }, [clearManualFeedbackLock, clearSuccessTimer, onPaid, stopPaymentTracking]);
 
   const markQrExpired = useCallback(() => {
     stopPaymentTracking();
+    clearSuccessTimer();
+    clearManualFeedbackLock();
+    setQrConfirmLoading(false);
     setRemainingSeconds(0);
     setQrPayment((current) => (
       current
-        ? { ...current, expired: true, statusText: '二维码已失效，请重新发起支付' }
+        ? { ...current, phase: 'expired', statusText: QR_EXPIRED_TEXT, statusTone: 'error' }
         : current
     ));
-  }, [stopPaymentTracking]);
+  }, [clearManualFeedbackLock, clearSuccessTimer, stopPaymentTracking]);
+
+  const finishQrPayment = useCallback(async () => {
+    stopPaymentTracking();
+    clearSuccessTimer();
+    clearManualFeedbackLock();
+    setQrConfirmLoading(false);
+    setRemainingSeconds(0);
+    setQrPayment((current) => (
+      current
+        ? { ...current, phase: 'success', statusText: QR_SUCCESS_TEXT, statusTone: 'success' }
+        : current
+    ));
+
+    successTimerRef.current = setTimeout(() => {
+      setQrPayment(null);
+      Taro.showToast({ title: '支付成功', icon: 'success' });
+      void onPaid?.();
+    }, 1200);
+  }, [clearManualFeedbackLock, clearSuccessTimer, onPaid, stopPaymentTracking]);
 
   const startCountdown = useCallback((expiresAt?: string) => {
     if (!expiresAt) {
@@ -131,52 +199,143 @@ export const useSurveyDepositPaymentFlow = ({
     countdownTimerRef.current = setInterval(update, 1000);
   }, [markQrExpired]);
 
-  const startStatusPolling = useCallback((paymentId: number, forQrDialog: boolean, expiresAt?: string) => {
-    const poll = async () => {
-      try {
-        const status = await getPaymentStatus(paymentId);
-        if (status.status === 'paid') {
+  const pollPaymentStatus = useCallback(async (
+    paymentId: number,
+    options: { forQrDialog: boolean; expiresAt?: string; manual?: boolean },
+  ) => {
+    const { forQrDialog, expiresAt, manual = false } = options;
+    if (manual && forQrDialog) {
+      holdManualFeedbackLock();
+      setQrConfirmLoading(true);
+      setQrPayment((current) => (
+        current
+          ? {
+              ...current,
+              phase: 'checking',
+              statusText: QR_MANUAL_CHECKING_TEXT,
+              statusTone: 'default',
+            }
+          : current
+      ));
+    }
+
+    try {
+      const status = await getPaymentStatus(paymentId);
+      if (status.status === 'paid') {
+        if (forQrDialog) {
+          await finishQrPayment();
+        } else {
           stopPaymentTracking();
           setQrPayment(null);
           setRemainingSeconds(0);
           Taro.showToast({ title: '支付成功', icon: 'success' });
           await onPaid?.();
-          return;
         }
+        return;
+      }
 
-        if (status.status === 'closed' || status.status === 'failed') {
-          if (forQrDialog) {
-            markQrExpired();
-          } else {
-            stopPaymentTracking();
-          }
-          return;
-        }
-
-        if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
-          if (forQrDialog) {
-            markQrExpired();
-          } else {
-            stopPaymentTracking();
-          }
-          return;
-        }
-
+      if (status.status === 'closed' || status.status === 'failed') {
         if (forQrDialog) {
+          markQrExpired();
+        } else {
+          stopPaymentTracking();
+        }
+        return;
+      }
+
+      if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+        if (forQrDialog) {
+          markQrExpired();
+        } else {
+          stopPaymentTracking();
+        }
+        return;
+      }
+
+      if (forQrDialog) {
+        if (manual) {
+          keepManualFeedbackVisible();
           setQrPayment((current) => (
             current
-              ? { ...current, statusText: '请使用支付宝扫码完成支付' }
+              ? {
+                  ...current,
+                  phase: 'waiting',
+                  statusText: QR_MANUAL_PENDING_TEXT,
+                  statusTone: 'warning',
+                }
               : current
           ));
+          return;
         }
-      } catch (error) {
-        if (forQrDialog) {
+
+        if (hasManualFeedbackLock()) {
+          return;
+        }
+
+        setQrPayment((current) => (
+          current
+            ? {
+                ...current,
+                phase: 'waiting',
+                statusText: QR_WAITING_TEXT,
+                statusTone: 'default',
+              }
+            : current
+        ));
+      }
+    } catch (_error) {
+      if (forQrDialog) {
+        if (manual) {
+          keepManualFeedbackVisible();
           setQrPayment((current) => (
             current
-              ? { ...current, statusText: '支付结果确认中，请稍后刷新' }
+              ? {
+                  ...current,
+                  phase: 'waiting',
+                  statusText: QR_MANUAL_RETRY_TEXT,
+                  statusTone: 'warning',
+                }
               : current
           ));
+          return;
         }
+
+        if (hasManualFeedbackLock()) {
+          return;
+        }
+
+        setQrPayment((current) => (
+          current
+            ? {
+                ...current,
+                phase: current.phase,
+                statusText: current.statusText,
+                statusTone: current.statusTone,
+              }
+            : current
+        ));
+      }
+    } finally {
+      if (manual && forQrDialog) {
+        setQrConfirmLoading(false);
+      }
+    }
+  }, [
+    finishQrPayment,
+    hasManualFeedbackLock,
+    holdManualFeedbackLock,
+    keepManualFeedbackVisible,
+    markQrExpired,
+    onPaid,
+    stopPaymentTracking,
+  ]);
+
+  const startStatusPolling = useCallback((paymentId: number, forQrDialog: boolean, expiresAt?: string) => {
+    const poll = async () => {
+      try {
+        await pollPaymentStatus(paymentId, { forQrDialog, expiresAt });
+      } catch (_error) {
+        return;
       }
     };
 
@@ -184,7 +343,7 @@ export const useSurveyDepositPaymentFlow = ({
     pollingTimerRef.current = setInterval(() => {
       void poll();
     }, 2500);
-  }, [markQrExpired, onPaid, stopPaymentTracking]);
+  }, [pollPaymentStatus]);
 
   const openAlipayWebview = useCallback(async (launch: MiniPaymentLaunchResponse) => {
     if (!source?.returnUrl) {
@@ -249,13 +408,18 @@ export const useSurveyDepositPaymentFlow = ({
           if (!qrCodeImageUrl) {
             throw new Error('支付二维码生成失败');
           }
+          lastQrActionRef.current = action;
+          clearSuccessTimer();
+          clearManualFeedbackLock();
+          setQrConfirmLoading(false);
           stopPaymentTracking();
           setQrPayment({
             ...launch,
             qrCodeImageUrl,
             amount,
-            statusText: '请使用支付宝扫码完成支付',
-            expired: false,
+            phase: 'waiting',
+            statusText: QR_WAITING_TEXT,
+            statusTone: 'default',
           });
           startCountdown(launch.expiresAt);
           startStatusPolling(launch.paymentId, true, launch.expiresAt);
@@ -273,6 +437,8 @@ export const useSurveyDepositPaymentFlow = ({
   }, [
     amount,
     bookingId,
+    clearManualFeedbackLock,
+    clearSuccessTimer,
     launchPayment,
     launchingAction,
     openAlipayWebview,
@@ -299,12 +465,39 @@ export const useSurveyDepositPaymentFlow = ({
     }
   }, [channelOptions, launchPaymentByAction]);
 
+  const confirmQrPayment = useCallback(async () => {
+    if (!qrPayment || qrConfirmLoading) {
+      return false;
+    }
+    await pollPaymentStatus(qrPayment.paymentId, {
+      forQrDialog: true,
+      expiresAt: qrPayment.expiresAt,
+      manual: true,
+    });
+    return true;
+  }, [pollPaymentStatus, qrConfirmLoading, qrPayment]);
+
+  const retryQrPayment = useCallback(async () => {
+    const action = lastQrActionRef.current;
+    if (!action || launchingAction) {
+      return false;
+    }
+    return launchPaymentByAction(action);
+  }, [launchPaymentByAction, launchingAction]);
+
   useEffect(() => {
     autoLaunchTriggeredRef.current = false;
   }, [autoLaunchAction, bookingId]);
 
   useEffect(() => {
-    if (!autoLaunchAction || autoLaunchTriggeredRef.current || !bookingId || launchingAction || qrPayment || isPaid) {
+    if (
+      !autoLaunchAction
+      || autoLaunchTriggeredRef.current
+      || launchingAction
+      || qrPayment
+      || isPaid
+      || (!bookingId && !launchPayment)
+    ) {
       return;
     }
     const matched = findAutoLaunchAction(channelOptions, autoLaunchAction);
@@ -313,7 +506,7 @@ export const useSurveyDepositPaymentFlow = ({
     }
     autoLaunchTriggeredRef.current = true;
     void launchPaymentByAction(matched);
-  }, [autoLaunchAction, bookingId, channelOptions, isPaid, launchPaymentByAction, launchingAction, qrPayment]);
+  }, [autoLaunchAction, bookingId, channelOptions, isPaid, launchPayment, launchPaymentByAction, launchingAction, qrPayment]);
 
   useDidHide(() => {
     stopPaymentTracking();
@@ -321,14 +514,19 @@ export const useSurveyDepositPaymentFlow = ({
 
   useEffect(() => () => {
     stopPaymentTracking();
-  }, [stopPaymentTracking]);
+    clearSuccessTimer();
+    clearManualFeedbackLock();
+  }, [clearManualFeedbackLock, clearSuccessTimer, stopPaymentTracking]);
 
   return {
     launchingAction,
     launchingChannel: launchingAction?.channel || null,
     qrPayment,
+    qrConfirmLoading,
     remainingSeconds,
     closeQrPayment,
+    confirmQrPayment,
+    retryQrPayment,
     launchPaymentByAction,
     chooseAndLaunch,
     canPay: !isPaid && channelOptions.length > 0,

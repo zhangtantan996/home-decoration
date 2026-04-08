@@ -24,7 +24,7 @@ const (
 	RefundScenarioAdminManual       RefundScenario = "admin_manual"       // 管理员手动退款
 )
 
-// RefundIntentFee 退还意向金
+// RefundIntentFee 退还量房费（兼容旧命名）
 func (s *RefundService) RefundIntentFee(bookingID uint64, scenario RefundScenario, additionalReason string) error {
 	var booking model.Booking
 	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
@@ -79,8 +79,12 @@ func (s *RefundService) RefundIntentFee(bookingID uint64, scenario RefundScenari
 
 	refundApplicationService := &RefundApplicationService{}
 	if application.Status == model.RefundApplicationStatusPending {
+		approvedAmount := booking.SurveyDeposit
+		if approvedAmount <= 0 {
+			approvedAmount = booking.IntentFee
+		}
 		view, approveErr := refundApplicationService.ApproveApplication(application.ID, 0, &ReviewRefundApplicationInput{
-			ApprovedAmount: booking.IntentFee,
+			ApprovedAmount: approvedAmount,
 			AdminNotes:     refundReason,
 		})
 		if approveErr != nil {
@@ -104,19 +108,19 @@ func (s *RefundService) RefundIntentFee(bookingID uint64, scenario RefundScenari
 
 // CanRefundIntentFee 判断是否可以退款
 func (s *RefundService) CanRefundIntentFee(booking *model.Booking) (bool, string) {
-	// 未支付意向金
-	if !booking.IntentFeePaid {
-		return false, "意向金未支付"
+	// 未支付量房费
+	if !booking.SurveyDepositPaid && !booking.IntentFeePaid {
+		return false, "量房费未支付"
 	}
 
 	// 已退款
-	if booking.IntentFeeRefunded {
-		return false, "意向金已退款，不可重复退款"
+	if booking.SurveyDepositRefunded || booking.IntentFeeRefunded {
+		return false, "量房费已退款，不可重复退款"
 	}
 
 	// 已抵扣
 	if booking.IntentFeeDeducted {
-		return false, "意向金已抵扣至设计费，不可退款"
+		return false, "量房费已抵扣至设计费，不可退款"
 	}
 
 	// 预约已完成或已取消（正常流程），默认不退款
@@ -154,11 +158,11 @@ func (s *RefundService) buildRefundReason(scenario RefundScenario, additionalRea
 func (s *RefundService) GetRefundableBookings() ([]model.Booking, error) {
 	var bookings []model.Booking
 
-	// 查询条件：已支付意向金、未退款、未抵扣、状态为待确认、超过48小时截止时间
+	// 查询条件：已支付量房费、未退款、未抵扣、状态为待确认、超过48小时截止时间
 	now := time.Now()
 	if err := repository.DB.Where(
-		"intent_fee_paid = ? AND intent_fee_refunded = ? AND intent_fee_deducted = ? AND status = ? AND merchant_response_deadline < ?",
-		true, false, false, 1, now,
+		"(intent_fee_paid = ? OR survey_deposit_paid = ?) AND (intent_fee_refunded = ? AND survey_deposit_refunded = ?) AND intent_fee_deducted = ? AND status = ? AND merchant_response_deadline < ?",
+		true, true, false, false, false, 1, now,
 	).Find(&bookings).Error; err != nil {
 		return nil, err
 	}

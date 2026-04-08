@@ -6,6 +6,7 @@ import (
 	"home-decoration-server/internal/service"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -161,10 +162,19 @@ func AdminResolveDispute(c *gin.Context) {
 
 	switch req.Resolution {
 	case "refund_user":
-		// 全额退还意向金给用户
+		// 全额退还量房费给用户
+		now := time.Now()
+		refundAmount := booking.SurveyDeposit
+		if refundAmount <= 0 {
+			refundAmount = booking.IntentFee
+		}
 		booking.Status = 4 // Cancelled
 		booking.IntentFeeRefunded = true
 		booking.IntentFeeRefundReason = "平台裁定：全额退款 - " + req.Reason
+		booking.IntentFeeRefundedAt = &now
+		booking.SurveyDepositRefunded = true
+		booking.SurveyDepositRefundAmt = refundAmount
+		booking.SurveyDepositRefundAt = &now
 		repository.DB.Save(&booking)
 
 		// 发送通知
@@ -172,17 +182,26 @@ func AdminResolveDispute(c *gin.Context) {
 			UserID:  booking.UserID,
 			Type:    "dispute_resolved",
 			Title:   "争议处理结果",
-			Content: "您的预约争议已处理，意向金将全额退还。",
+			Content: "您的预约争议已处理，量房费将全额退还。",
 			IsRead:  false,
 		}
 		repository.DB.Create(notification)
 
 	case "refund_partial":
 		// 部分退款
+		now := time.Now()
 		booking.Status = 4 // Cancelled
 		booking.IntentFeeRefunded = true
-		refundAmount := booking.IntentFee * req.RefundRate
+		baseAmount := booking.SurveyDeposit
+		if baseAmount <= 0 {
+			baseAmount = booking.IntentFee
+		}
+		refundAmount := baseAmount * req.RefundRate
 		booking.IntentFeeRefundReason = "平台裁定：部分退款 " + strconv.FormatFloat(refundAmount, 'f', 2, 64) + "元 - " + req.Reason
+		booking.IntentFeeRefundedAt = &now
+		booking.SurveyDepositRefunded = true
+		booking.SurveyDepositRefundAmt = refundAmount
+		booking.SurveyDepositRefundAt = &now
 		repository.DB.Save(&booking)
 
 	case "cancel_no_refund":
@@ -197,7 +216,7 @@ func AdminResolveDispute(c *gin.Context) {
 			UserID:  booking.UserID,
 			Type:    "dispute_resolved",
 			Title:   "争议处理结果",
-			Content: "您的预约争议已处理，根据平台裁定意向金不予退还。原因：" + req.Reason,
+			Content: "您的预约争议已处理，根据平台裁定量房费不予退还。原因：" + req.Reason,
 			IsRead:  false,
 		}
 		repository.DB.Create(notification)

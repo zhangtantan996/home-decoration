@@ -123,7 +123,7 @@ func (s *DesignPaymentService) PaySurveyDeposit(userID, bookingID uint64) (*mode
 }
 
 // ---------------------------------------------------------------------------
-// 2. RefundSurveyDeposit 退还量房定金
+// 2. RefundSurveyDeposit 退还量房费
 // ---------------------------------------------------------------------------
 
 func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) (string, error) {
@@ -140,10 +140,10 @@ func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) (st
 			return errors.New("无权操作此预约")
 		}
 		if !booking.SurveyDepositPaid {
-			return errors.New("量房定金未支付，无法退款")
+			return errors.New("量房费未支付，无法退款")
 		}
 		if booking.SurveyDepositRefunded {
-			return errors.New("量房定金已退款，请勿重复操作")
+			return errors.New("量房费已退款，请勿重复操作")
 		}
 
 		paymentOrder, err := paymentService.findPaidPaymentOrderTx(tx, model.PaymentBizTypeBookingSurveyDeposit, booking.ID)
@@ -165,7 +165,7 @@ func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) (st
 
 		refundAmount := normalizeAmount(booking.SurveyDeposit * refundRate)
 		if refundAmount <= 0 || refundAmount > normalizeAmount(booking.SurveyDeposit) {
-			return errors.New("量房定金退款配置无效")
+			return errors.New("量房费退款配置无效")
 		}
 
 		created, err := paymentService.createRefundOrderTx(tx, 0, refundExecutionPlan{
@@ -173,7 +173,7 @@ func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) (st
 			BizType:        model.PaymentBizTypeBookingSurveyDeposit,
 			BizID:          booking.ID,
 			Amount:         refundAmount,
-			Reason:         "用户申请退还量房定金",
+			Reason:         "用户申请退还量房费",
 		})
 		if err != nil {
 			return err
@@ -205,7 +205,7 @@ func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) (st
 		if strings.TrimSpace(refundOrder.FailureReason) != "" {
 			return "", errors.New(refundOrder.FailureReason)
 		}
-		return "", errors.New("量房定金退款失败")
+		return "", errors.New("量房费退款失败")
 	}
 
 	if refundOrder.Status == model.RefundOrderStatusSucceeded {
@@ -214,11 +214,11 @@ func (s *DesignPaymentService) RefundSurveyDeposit(userID, bookingID uint64) (st
 			return "", finalizeErr
 		}
 		if completed {
-			return "量房定金退款成功", nil
+			return "量房费退款成功", nil
 		}
 	}
 
-	return "量房定金退款处理中，请稍后确认", nil
+	return "量房费退款处理中，请稍后确认", nil
 }
 
 // ---------------------------------------------------------------------------

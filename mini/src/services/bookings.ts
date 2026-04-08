@@ -32,9 +32,17 @@ export interface BookingItem {
   status: number;
   intentFee: number;
   intentFeePaid: boolean;
+  statusGroup?: 'pending_confirmation' | 'pending_payment' | 'in_service' | 'completed' | 'cancelled';
+  statusText?: string;
+  currentStage?: string;
+  currentStageText?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  surveyDepositAmount?: number;
   surveyDeposit?: number;
   surveyDepositPaid?: boolean;
   surveyDepositPaidAt?: string;
+  surveyRefundNotice?: string;
   surveyDepositRefunded?: boolean;
   surveyDepositRefundAt?: string;
   proposalId?: number;
@@ -81,10 +89,16 @@ export interface BookingDetailResponse {
   booking: BookingItem;
   provider?: BookingProviderSummary;
   proposalId?: number;
+  statusGroup?: BookingItem['statusGroup'];
+  statusText?: string;
   businessStage?: string;
   flowSummary?: string;
   availableActions?: string[];
   currentStage?: string;
+  currentStageText?: string;
+  surveyDepositAmount?: number;
+  surveyDepositPaid?: boolean;
+  surveyDepositPaidAt?: string;
   siteSurveySummary?: BookingSiteSurveySummary;
   budgetConfirmSummary?: BookingBudgetConfirmSummary;
   refundSummary?: RefundSummaryDTO;
@@ -100,10 +114,10 @@ export async function createBooking(payload: CreateBookingPayload) {
   });
 }
 
-export async function listBookings(paid?: boolean) {
+export async function listBookings(statusGroup?: BookingItem['statusGroup']) {
   return request<BookingItem[]>({
     url: '/bookings',
-    data: typeof paid === 'boolean' ? { paid } : undefined
+    data: statusGroup ? { statusGroup } : undefined
   });
 }
 
@@ -127,14 +141,6 @@ export async function startSurveyDepositPayment(
 }
 
 export const paySurveyDeposit = startSurveyDepositPayment;
-
-export async function payIntentFee(id: number) {
-  return request<{ message: string }>({
-    url: `/bookings/${id}/pay-intent`,
-    method: 'POST',
-    showLoading: true
-  });
-}
 
 export async function cancelBooking(id: number) {
   return request<{ message: string }>({

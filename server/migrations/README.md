@@ -57,6 +57,7 @@ migrate -database "postgres://postgres:123456@localhost:5432/home_decoration?ssl
 3. 本地测试迁移
 4. 提交代码
 5. 如需随发布自动执行，同步更新 `deploy/scripts/lib/release_common.sh` 的 allowlist
+   - 若是插入到旧版本号区间的兼容回填迁移，也必须手工补 allowlist，不能只依赖“高于最新版本自动告警”
 
 ## 注意事项
 

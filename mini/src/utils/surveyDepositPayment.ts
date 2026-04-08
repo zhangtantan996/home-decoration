@@ -34,13 +34,11 @@ export type SurveyDepositPaymentSource =
     };
 
 export const getSurveyDepositAmount = (detail: BookingDetailResponse) => {
-  const surveyDeposit = Number(detail.booking.surveyDeposit || 0);
+  const surveyDeposit = Number(detail.surveyDepositAmount || detail.booking.surveyDeposit || 0);
   if (surveyDeposit > 0) {
     return surveyDeposit;
   }
-
-  const fallbackIntentFee = Number(detail.booking.intentFee || 0);
-  return fallbackIntentFee > 0 ? fallbackIntentFee : 0;
+  return 0;
 };
 
 export const getSurveyDepositChannelOptions = (
@@ -68,7 +66,7 @@ export const chooseSurveyDepositPaymentAction = async (
   paymentActions: SurveyDepositPaymentAction[],
 ): Promise<SurveyDepositPaymentAction | null> => {
   if (paymentActions.length === 0) {
-    Taro.showToast({ title: '当前预约暂不可支付', icon: 'none' });
+    Taro.showToast({ title: '当前暂不可支付', icon: 'none' });
     return null;
   }
 
@@ -156,11 +154,20 @@ export const navigateToSurveyDepositPaymentWithOptions = async (
 ) => {
   try {
     const detail = paymentOptions
-      ? { surveyDepositPaymentOptions: paymentOptions }
+      ? { booking: { id: bookingId }, surveyDepositPaymentOptions: paymentOptions }
       : await getBookingDetail(bookingId);
-    const selectedAction = await chooseSurveyDepositPaymentAction(
-      getSurveyDepositChannelOptions(detail.surveyDepositPaymentOptions),
-    );
+    const paymentActions = getSurveyDepositChannelOptions(detail.surveyDepositPaymentOptions);
+    if (paymentActions.length === 0) {
+      Taro.navigateTo({
+        url: buildSurveyDepositDetailUrl(bookingId, {
+          orderNo,
+          entryKey,
+        }),
+      });
+      return true;
+    }
+
+    const selectedAction = await chooseSurveyDepositPaymentAction(paymentActions);
     if (!selectedAction) {
       return false;
     }

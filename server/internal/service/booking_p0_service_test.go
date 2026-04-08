@@ -30,7 +30,17 @@ func seedConfirmedBookingFlow(t *testing.T, db *gorm.DB) (*model.User, *model.Pr
 	t.Helper()
 	user := &model.User{Base: model.Base{ID: 1001}, Phone: "13800138001", Status: 1}
 	provider := &model.Provider{Base: model.Base{ID: 1002}, ProviderType: 1, CompanyName: "设计师A"}
-	booking := &model.Booking{Base: model.Base{ID: 1003}, UserID: user.ID, ProviderID: provider.ID, ProviderType: "designer", Address: "测试小区 1-1", Area: 98, Status: 2}
+	booking := &model.Booking{
+		Base:              model.Base{ID: 1003},
+		UserID:            user.ID,
+		ProviderID:        provider.ID,
+		ProviderType:      "designer",
+		Address:           "测试小区 1-1",
+		Area:              98,
+		Status:            2,
+		SurveyDeposit:     500,
+		SurveyDepositPaid: true,
+	}
 	flow := &model.BusinessFlow{Base: model.Base{ID: 1004}, SourceType: model.BusinessFlowSourceBooking, SourceID: booking.ID, CustomerUserID: user.ID, DesignerProviderID: provider.ID, CurrentStage: model.BusinessFlowStageNegotiating}
 	for _, record := range []interface{}{user, provider, booking, flow} {
 		if err := db.Create(record).Error; err != nil {
@@ -113,6 +123,45 @@ func TestBookingP0SurveyAndBudgetFlow(t *testing.T) {
 	}
 	if flow.CurrentStage != model.BusinessFlowStageDesignPendingSubmission {
 		t.Fatalf("expected flow stage design_pending_submission, got %s", flow.CurrentStage)
+	}
+}
+
+func TestBookingP0RequiresSurveyDepositPaidBeforeMerchantSubmission(t *testing.T) {
+	db := setupBookingP0TestDB(t)
+	user := &model.User{Base: model.Base{ID: 2001}, Phone: "13800138002", Status: 1}
+	provider := &model.Provider{Base: model.Base{ID: 2002}, ProviderType: 1, CompanyName: "设计师B"}
+	booking := &model.Booking{
+		Base:          model.Base{ID: 2003},
+		UserID:        user.ID,
+		ProviderID:    provider.ID,
+		ProviderType:  "designer",
+		Address:       "测试小区 2-1",
+		Area:          86,
+		Status:        2,
+		SurveyDeposit: 500,
+	}
+	flow := &model.BusinessFlow{Base: model.Base{ID: 2004}, SourceType: model.BusinessFlowSourceBooking, SourceID: booking.ID, CustomerUserID: user.ID, DesignerProviderID: provider.ID, CurrentStage: model.BusinessFlowStageSurveyDepositPending}
+	for _, record := range []interface{}{user, provider, booking, flow} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed booking p0 unpaid record: %v", err)
+		}
+	}
+
+	svc := &BookingService{}
+	if _, err := svc.SubmitMerchantSiteSurvey(provider.ID, booking.ID, &SiteSurveyPayload{
+		Photos:     []string{"/uploads/survey-1.jpg"},
+		Dimensions: map[string]SurveyDimension{"客厅": {Length: 5.2, Width: 4.6, Height: 2.8, Unit: "m"}},
+	}); err == nil || err.Error() != "请等待用户先支付量房费" {
+		t.Fatalf("expected survey submit to be blocked before payment, got %v", err)
+	}
+
+	if _, err := svc.SubmitMerchantBudgetConfirmation(provider.ID, booking.ID, &BudgetConfirmationPayload{
+		BudgetMin:    50000,
+		BudgetMax:    80000,
+		Includes:     BudgetIncludes{DesignFee: true, ConstructionFee: true},
+		DesignIntent: "现代简约",
+	}); err == nil || err.Error() != "请等待用户先支付量房费" {
+		t.Fatalf("expected budget submit to be blocked before payment, got %v", err)
 	}
 }
 

@@ -30,14 +30,14 @@ const MerchantBookingBudgetConfirm: React.FC = () => {
     }
     try {
       setLoading(true);
-      const detailRes = await (merchantBookingApi.detail(bookingId) as any);
+      const detailRes = await merchantBookingApi.detail(bookingId);
       let budgetRes: { budgetConfirmation: MerchantBudgetSummary | null } = { budgetConfirmation: null };
       try {
         budgetRes = await merchantBudgetApi.get(bookingId);
       } catch {
         budgetRes = { budgetConfirmation: null };
       }
-      setBookingMeta(detailRes?.data?.data || detailRes?.data || null);
+      setBookingMeta(detailRes || null);
       const current = budgetRes.budgetConfirmation || null;
       setSummary(current);
       if (current) {

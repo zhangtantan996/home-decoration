@@ -296,7 +296,9 @@ func (g *AlipayGateway) callJSONAPI(ctx context.Context, method string, bizConte
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Charset", "utf-8")
 	resp, err := g.httpClient.Do(req)
 	if err != nil {
 		return nil, err

@@ -96,6 +96,9 @@ func (s *BookingService) SubmitMerchantSiteSurvey(providerID, bookingID uint64, 
 	if booking.Status != 2 {
 		return nil, errors.New("预约状态不正确，需为已确认")
 	}
+	if !booking.SurveyDepositPaid {
+		return nil, errors.New("请等待用户先支付量房费")
+	}
 	if err := validateSiteSurveyPayload(req); err != nil {
 		return nil, err
 	}
@@ -230,6 +233,9 @@ func (s *BookingService) SubmitMerchantBudgetConfirmation(providerID, bookingID 
 	}
 	if booking.Status != 2 {
 		return nil, errors.New("预约状态不正确，需为已确认")
+	}
+	if !booking.SurveyDepositPaid {
+		return nil, errors.New("请等待用户先支付量房费")
 	}
 	if err := validateBudgetConfirmationPayload(req); err != nil {
 		return nil, err
@@ -374,6 +380,10 @@ func (s *BookingService) RejectBudgetConfirmation(userID, bookingID uint64, reas
 }
 
 func (s *BookingService) GetBookingP0Summary(bookingID uint64) (*BookingP0Summary, error) {
+	var booking model.Booking
+	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
+		return nil, err
+	}
 	flow, err := businessFlowSvc.GetBySource(model.BusinessFlowSourceBooking, bookingID)
 	if err != nil {
 		return nil, err
@@ -381,10 +391,57 @@ func (s *BookingService) GetBookingP0Summary(bookingID uint64) (*BookingP0Summar
 	summary := businessFlowSvc.BuildSummary(flow)
 	siteSurvey, _ := s.getSiteSurveyByBooking(bookingID)
 	budgetConfirm, _ := s.getBudgetConfirmationByBooking(bookingID)
+	availableActions := append([]string(nil), summary.AvailableActions...)
+	flowSummary := summary.FlowSummary
+	currentStage := summary.CurrentStage
+
+	switch {
+	case booking.Status == 4:
+		currentStage = model.BusinessFlowStageCancelled
+		flowSummary = "当前预约已取消。"
+		availableActions = nil
+	case booking.Status == 1:
+		currentStage = model.BusinessFlowStageLeadPending
+		flowSummary = "预约待商家确认，确认前不进入量房与预算阶段。"
+		availableActions = nil
+	case !booking.SurveyDepositPaid:
+		currentStage = model.BusinessFlowStageSurveyDepositPending
+		flowSummary = "商家已确认预约，等待用户支付量房费后继续推进。"
+		availableActions = nil
+	case siteSurvey == nil || siteSurvey.Status == model.SiteSurveyStatusRevisionRequested:
+		currentStage = model.BusinessFlowStageSurveyDepositPending
+		if siteSurvey != nil && strings.TrimSpace(siteSurvey.RevisionRequestReason) != "" {
+			flowSummary = "量房记录已被退回，待重新量房后再次提交。"
+		} else {
+			flowSummary = "量房费已支付，待商家安排量房并提交量房记录。"
+		}
+		availableActions = []string{"submit_site_survey"}
+	case siteSurvey.Status == model.SiteSurveyStatusSubmitted:
+		currentStage = model.BusinessFlowStageNegotiating
+		flowSummary = "量房记录已提交，等待用户确认。"
+		availableActions = nil
+	case siteSurvey.Status == model.SiteSurveyStatusConfirmed && (budgetConfirm == nil || budgetConfirm.Status == model.BudgetConfirmationStatusRejected):
+		currentStage = model.BusinessFlowStageNegotiating
+		if budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusRejected {
+			flowSummary = "预算确认已被退回，待重新整理后提交。"
+		} else {
+			flowSummary = "量房记录已确认，待商家提交预算确认。"
+		}
+		availableActions = []string{"submit_budget"}
+	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusSubmitted:
+		currentStage = model.BusinessFlowStageNegotiating
+		flowSummary = "预算确认已提交，等待用户确认。"
+		availableActions = nil
+	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusAccepted:
+		currentStage = model.BusinessFlowStageDesignPendingSubmission
+		flowSummary = "预算确认已完成，待继续提交方案与设计前链路内容。"
+		availableActions = []string{"create_proposal"}
+	}
+
 	return &BookingP0Summary{
-		CurrentStage:     summary.CurrentStage,
-		FlowSummary:      summary.FlowSummary,
-		AvailableActions: summary.AvailableActions,
+		CurrentStage:     currentStage,
+		FlowSummary:      flowSummary,
+		AvailableActions: availableActions,
 		SiteSurvey:       siteSurvey,
 		BudgetConfirm:    budgetConfirm,
 	}, nil

@@ -91,7 +91,7 @@ func handleUserConfirmTimeout() {
 				UserID:      booking.UserID,
 				UserType:    "user",
 				Title:       "方案确认超时",
-				Content:     "您的方案确认已超时（14天期限），预约已自动取消。意向金已扣除，不予退还。",
+				Content:     "您的方案确认已超时（14天期限），预约已自动取消。量房费已扣除，不予退还。",
 				Type:        "proposal.timeout",
 				RelatedID:   proposal.ID,
 				RelatedType: "proposal",

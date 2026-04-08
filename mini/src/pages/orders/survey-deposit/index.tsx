@@ -230,8 +230,11 @@ const SurveyDepositOrderPage: React.FC = () => {
   const {
     launchingChannel,
     qrPayment,
+    qrConfirmLoading,
     remainingSeconds,
     closeQrPayment,
+    confirmQrPayment,
+    retryQrPayment,
     chooseAndLaunch,
     canPay,
   } = useSurveyDepositPaymentFlow({
@@ -528,11 +531,19 @@ const SurveyDepositOrderPage: React.FC = () => {
           amount={qrPayment.amount}
           amountLabel="待支付量房费"
           classNamePrefix="survey-deposit-page"
-          expired={qrPayment.expired}
           onClose={closeQrPayment}
+          onConfirmPaid={() => {
+            void confirmQrPayment();
+          }}
+          onRetry={() => {
+            void retryQrPayment();
+          }}
+          phase={qrPayment.phase}
+          confirmLoading={qrConfirmLoading}
           qrCodeImageUrl={qrPayment.qrCodeImageUrl}
           remainingSeconds={remainingSeconds}
           statusText={qrPayment.statusText}
+          statusTone={qrPayment.statusTone}
         />
       ) : null}
     </View>

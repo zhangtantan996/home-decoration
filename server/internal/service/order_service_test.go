@@ -155,7 +155,7 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 		Scene:         model.PaymentBizTypeBookingSurveyDeposit,
 		FundScene:     model.FundSceneSurveyDeposit,
 		TerminalType:  model.PaymentTerminalPCWeb,
-		Subject:       "量房定金 #40",
+		Subject:       "量房费 #40",
 		Amount:        500,
 		OutTradeNo:    "PAY-72",
 		Status:        model.PaymentStatusPaid,
@@ -179,7 +179,7 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 	}
 
 	first := got[0]
-	if first.OrderNo != "量房定金 #40" {
+	if first.OrderNo != "量房费 #40" {
 		t.Fatalf("expected latest item to be payment record, got %+v", first)
 	}
 	if first.ProviderName != "拾光设计" {

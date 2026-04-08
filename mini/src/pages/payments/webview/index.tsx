@@ -4,7 +4,20 @@ import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
 import MiniPageNav from '@/components/MiniPageNav';
-import { SurveyDepositQrDialog } from '@/components/SurveyDepositQrDialog';
+import {
+  SurveyDepositQrDialog,
+  type SurveyDepositQrDialogPhase,
+  type SurveyDepositQrDialogStatusTone,
+} from '@/components/SurveyDepositQrDialog';
+import {
+  QR_EXPIRED_TEXT,
+  QR_MANUAL_CHECKING_TEXT,
+  QR_MANUAL_FEEDBACK_HOLD_MS,
+  QR_MANUAL_PENDING_TEXT,
+  QR_MANUAL_RETRY_TEXT,
+  QR_SUCCESS_TEXT,
+  QR_WAITING_TEXT,
+} from '@/constants/paymentQr';
 import { paySurveyDeposit } from '@/services/bookings';
 import { payOrderCenterEntry } from '@/services/orderCenter';
 import { getPaymentStatus, normalizePaymentLaunchUrl } from '@/services/payments';
@@ -18,10 +31,11 @@ type SurveyDepositPaymentSourceType = 'booking_detail' | 'survey_deposit_order';
 type QrPaymentState = {
   paymentId: number;
   amount: number;
+  phase: SurveyDepositQrDialogPhase;
   qrCodeImageUrl?: string;
   expiresAt?: string;
   statusText: string;
-  expired: boolean;
+  statusTone: SurveyDepositQrDialogStatusTone;
 };
 
 const formatAmount = (amount: number) => `¥${Number(amount || 0).toLocaleString()}`;
@@ -35,14 +49,17 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
   const [launchUrl, setLaunchUrl] = useState('');
   const [amount, setAmount] = useState(0);
   const [amountLabel, setAmountLabel] = useState('待支付金额');
-  const [statusText, setStatusText] = useState('已打开支付宝页面，请完成支付后返回');
+  const [statusText, setStatusText] = useState('已打开支付宝页面，请完成支付后返回当前页面');
   const [fallbackLoading, setFallbackLoading] = useState(false);
+  const [qrConfirmLoading, setQrConfirmLoading] = useState(false);
   const [qrPayment, setQrPayment] = useState<QrPaymentState | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
 
   const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const qrSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextShowRef = useRef(false);
+  const manualFeedbackUntilRef = useRef(0);
 
   const stopTracking = useCallback(() => {
     if (pollingTimerRef.current) {
@@ -53,6 +70,30 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
     }
+  }, []);
+
+  const clearQrSuccessTimer = useCallback(() => {
+    if (qrSuccessTimerRef.current) {
+      clearTimeout(qrSuccessTimerRef.current);
+      qrSuccessTimerRef.current = null;
+    }
+  }, []);
+
+  const clearManualFeedbackLock = useCallback(() => {
+    manualFeedbackUntilRef.current = 0;
+  }, []);
+
+  const holdManualFeedbackLock = useCallback(() => {
+    manualFeedbackUntilRef.current = Number.MAX_SAFE_INTEGER;
+  }, []);
+
+  const keepManualFeedbackVisible = useCallback(() => {
+    manualFeedbackUntilRef.current = Date.now() + QR_MANUAL_FEEDBACK_HOLD_MS;
+  }, []);
+
+  const hasManualFeedbackLock = useCallback(() => {
+    const current = manualFeedbackUntilRef.current;
+    return current === Number.MAX_SAFE_INTEGER || current > Date.now();
   }, []);
 
   const navigateBackToSource = useCallback(() => {
@@ -107,15 +148,35 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
     navigateBackToSource();
   }, [navigateBackToSource, stopTracking]);
 
-  const markQrExpired = useCallback(() => {
+  const finishQrPayment = useCallback((targetPaymentId: number) => {
     stopTracking();
+    clearQrSuccessTimer();
+    clearManualFeedbackLock();
+    setQrConfirmLoading(false);
     setRemainingSeconds(0);
     setQrPayment((current) => (
       current
-        ? { ...current, expired: true, statusText: '二维码已失效，请重新发起支付' }
+        ? { ...current, phase: 'success', statusText: QR_SUCCESS_TEXT, statusTone: 'success' }
         : current
     ));
-  }, [stopTracking]);
+
+    qrSuccessTimerRef.current = setTimeout(() => {
+      finishPayment(targetPaymentId, 'paid');
+    }, 1200);
+  }, [clearManualFeedbackLock, clearQrSuccessTimer, finishPayment, stopTracking]);
+
+  const markQrExpired = useCallback(() => {
+    stopTracking();
+    clearQrSuccessTimer();
+    clearManualFeedbackLock();
+    setQrConfirmLoading(false);
+    setRemainingSeconds(0);
+    setQrPayment((current) => (
+      current
+        ? { ...current, phase: 'expired', statusText: QR_EXPIRED_TEXT, statusTone: 'error' }
+        : current
+    ));
+  }, [clearManualFeedbackLock, clearQrSuccessTimer, stopTracking]);
 
   const startCountdown = useCallback((expiresAt?: string) => {
     if (!expiresAt) {
@@ -135,60 +196,151 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
     countdownTimerRef.current = setInterval(update, 1000);
   }, [markQrExpired]);
 
+  const pollPaymentStatus = useCallback(async (
+    targetPaymentId: number,
+    options: { forQrDialog: boolean; expiresAt?: string; manual?: boolean },
+  ) => {
+    const { forQrDialog, expiresAt, manual = false } = options;
+    if (manual && forQrDialog) {
+      holdManualFeedbackLock();
+      setQrConfirmLoading(true);
+      setQrPayment((current) => (
+        current
+          ? {
+              ...current,
+              phase: 'checking',
+              statusText: QR_MANUAL_CHECKING_TEXT,
+              statusTone: 'default',
+            }
+          : current
+      ));
+    }
+
+    try {
+      const status = await getPaymentStatus(targetPaymentId);
+      if (status.status === 'paid') {
+        if (forQrDialog) {
+          finishQrPayment(targetPaymentId);
+        } else {
+          finishPayment(targetPaymentId, 'paid');
+        }
+        return;
+      }
+      if (status.status === 'closed') {
+        if (forQrDialog) {
+          markQrExpired();
+        } else {
+          stopTracking();
+          setStatusText('支付已关闭，可重新发起支付');
+        }
+        return;
+      }
+      if (status.status === 'failed') {
+        if (forQrDialog) {
+          markQrExpired();
+        } else {
+          stopTracking();
+          setStatusText('支付失败，请稍后重试');
+        }
+        return;
+      }
+      if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+        if (forQrDialog) {
+          markQrExpired();
+        } else {
+          stopTracking();
+          setStatusText('支付已过期，请重新发起支付');
+        }
+        return;
+      }
+      if (forQrDialog) {
+        if (manual) {
+          keepManualFeedbackVisible();
+          setQrPayment((current) => (
+            current
+              ? {
+                  ...current,
+                  phase: 'waiting',
+                  statusText: QR_MANUAL_PENDING_TEXT,
+                  statusTone: 'warning',
+                }
+              : current
+          ));
+          return;
+        }
+
+        if (hasManualFeedbackLock()) {
+          return;
+        }
+
+        setQrPayment((current) => (
+          current
+            ? {
+                ...current,
+                phase: 'waiting',
+                statusText: QR_WAITING_TEXT,
+                statusTone: 'default',
+              }
+            : current
+        ));
+      } else {
+        setStatusText('已打开支付宝页面，请完成支付后返回当前页面');
+      }
+    } catch (_error) {
+      if (forQrDialog) {
+        if (manual) {
+          keepManualFeedbackVisible();
+          setQrPayment((current) => (
+            current
+              ? {
+                  ...current,
+                  phase: 'waiting',
+                  statusText: QR_MANUAL_RETRY_TEXT,
+                  statusTone: 'warning',
+                }
+              : current
+          ));
+          return;
+        }
+
+        if (hasManualFeedbackLock()) {
+          return;
+        }
+
+        setQrPayment((current) => (
+          current
+            ? {
+                ...current,
+                phase: current.phase,
+                statusText: current.statusText,
+                statusTone: current.statusTone,
+              }
+            : current
+        ));
+      } else {
+        setStatusText('支付结果确认中，请稍后返回查看');
+      }
+    } finally {
+      if (manual && forQrDialog) {
+        setQrConfirmLoading(false);
+      }
+    }
+  }, [
+    finishPayment,
+    finishQrPayment,
+    hasManualFeedbackLock,
+    holdManualFeedbackLock,
+    keepManualFeedbackVisible,
+    markQrExpired,
+    stopTracking,
+  ]);
+
   const startStatusPolling = useCallback((targetPaymentId: number, forQrDialog: boolean, expiresAt?: string) => {
     const poll = async () => {
       try {
-        const status = await getPaymentStatus(targetPaymentId);
-        if (status.status === 'paid') {
-          finishPayment(targetPaymentId, 'paid');
-          return;
-        }
-        if (status.status === 'closed') {
-          if (forQrDialog) {
-            markQrExpired();
-          } else {
-            stopTracking();
-            setStatusText('支付已关闭，可重新发起支付');
-          }
-          return;
-        }
-        if (status.status === 'failed') {
-          if (forQrDialog) {
-            markQrExpired();
-          } else {
-            stopTracking();
-            setStatusText('支付失败，请稍后重试');
-          }
-          return;
-        }
-        if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
-          if (forQrDialog) {
-            markQrExpired();
-          } else {
-            stopTracking();
-            setStatusText('支付已过期，请重新发起支付');
-          }
-          return;
-        }
-        if (forQrDialog) {
-          setQrPayment((current) => (
-            current
-              ? { ...current, statusText: '请使用支付宝扫码完成支付' }
-              : current
-          ));
-        } else {
-          setStatusText('已打开支付宝页面，请完成支付后返回');
-        }
-      } catch (error) {
-        if (forQrDialog) {
-          setQrPayment((current) => (
-            current
-              ? { ...current, statusText: '支付结果确认中，请稍后刷新' }
-              : current
-          ));
-        } else {
-          setStatusText('支付结果确认中，请稍后刷新');
-        }
+        await pollPaymentStatus(targetPaymentId, { forQrDialog, expiresAt });
+      } catch (_error) {
+        return;
       }
     };
 
@@ -196,7 +348,7 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
     pollingTimerRef.current = setInterval(() => {
       void poll();
     }, 2500);
-  }, [finishPayment, markQrExpired, stopTracking]);
+  }, [pollPaymentStatus]);
 
   const handleClose = useCallback(() => {
     stopTracking();
@@ -221,13 +373,15 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
 
       setPaymentId(launch.paymentId);
       stopTracking();
+      clearManualFeedbackLock();
       setQrPayment({
         paymentId: launch.paymentId,
         amount,
         qrCodeImageUrl,
         expiresAt: launch.expiresAt,
-        statusText: '请使用支付宝扫码完成支付',
-        expired: false,
+        phase: 'waiting',
+        statusText: QR_WAITING_TEXT,
+        statusTone: 'default',
       });
       startCountdown(launch.expiresAt);
       startStatusPolling(launch.paymentId, true, launch.expiresAt);
@@ -236,7 +390,15 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
     } finally {
       setFallbackLoading(false);
     }
-  }, [amount, bookingId, entryKey, startCountdown, startStatusPolling, stopTracking]);
+  }, [
+    amount,
+    bookingId,
+    clearManualFeedbackLock,
+    entryKey,
+    startCountdown,
+    startStatusPolling,
+    stopTracking,
+  ]);
 
   useLoad((options) => {
     setPaymentId(Number(options.paymentId || 0));
@@ -276,7 +438,20 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
 
   useEffect(() => () => {
     stopTracking();
-  }, [stopTracking]);
+    clearQrSuccessTimer();
+    clearManualFeedbackLock();
+  }, [clearManualFeedbackLock, clearQrSuccessTimer, stopTracking]);
+
+  const confirmQrPayment = useCallback(async () => {
+    if (!qrPayment || qrConfirmLoading) {
+      return;
+    }
+    await pollPaymentStatus(qrPayment.paymentId, {
+      forQrDialog: true,
+      expiresAt: qrPayment.expiresAt,
+      manual: true,
+    });
+  }, [pollPaymentStatus, qrConfirmLoading, qrPayment]);
 
   const amountText = useMemo(() => formatAmount(amount), [amount]);
 
@@ -324,18 +499,29 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
         <SurveyDepositQrDialog
           amount={qrPayment.amount}
           classNamePrefix="payment-webview-page"
-          expired={qrPayment.expired}
           onClose={() => {
             stopTracking();
+            clearQrSuccessTimer();
+            clearManualFeedbackLock();
+            setQrConfirmLoading(false);
             setQrPayment(null);
             setRemainingSeconds(0);
             if (paymentId) {
               startStatusPolling(paymentId, false);
             }
           }}
+          onConfirmPaid={() => {
+            void confirmQrPayment();
+          }}
+          onRetry={() => {
+            void handleFallbackQr();
+          }}
+          phase={qrPayment.phase}
+          confirmLoading={qrConfirmLoading}
           qrCodeImageUrl={qrPayment.qrCodeImageUrl}
           remainingSeconds={remainingSeconds}
           statusText={qrPayment.statusText}
+          statusTone={qrPayment.statusTone}
         />
       ) : null}
     </View>

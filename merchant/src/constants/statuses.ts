@@ -1,7 +1,7 @@
 export const BUSINESS_STAGE_META: Record<string, { text: string; color: string }> = {
   lead_pending: { text: '线索待推进', color: 'default' },
   negotiating: { text: '沟通中', color: 'processing' },
-  survey_deposit_pending: { text: '量房定金待支付', color: 'gold' },
+  survey_deposit_pending: { text: '量房费待支付', color: 'gold' },
   design_quote_pending: { text: '设计费报价待确认', color: 'processing' },
   design_fee_paying: { text: '设计费支付中', color: 'gold' },
   design_pending_submission: { text: '待设计师提交方案', color: 'gold' },

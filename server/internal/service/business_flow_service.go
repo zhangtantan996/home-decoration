@@ -185,9 +185,14 @@ func (s *BusinessFlowService) BuildSummary(flow *model.BusinessFlow) BusinessFlo
 	stage := model.NormalizeBusinessFlowStage(flow.CurrentStage)
 	flowSummary := map[string]string{
 		model.BusinessFlowStageLeadPending:               "线索已进入平台，待继续推进沟通",
+		model.BusinessFlowStageSurveyDepositPending:      "量房费已支付，待安排量房与前期沟通",
 		model.BusinessFlowStageNegotiating:               "沟通进行中，待形成正式方案",
 		model.BusinessFlowStageDesignPendingSubmission:   "待设计师提交方案",
 		model.BusinessFlowStageDesignPendingConfirmation: "设计方案已提交，待用户确认",
+		model.BusinessFlowStageDesignQuotePending:        "待商家提交设计报价",
+		model.BusinessFlowStageDesignFeePaying:           "设计费待支付",
+		model.BusinessFlowStageDesignDeliveryPending:     "待交付设计成果",
+		model.BusinessFlowStageDesignAcceptancePending:   "设计成果待验收",
 		model.BusinessFlowStageConstructionPartyPending:  "待确认施工方并锁定施工负责人",
 		model.BusinessFlowStageConstructionQuotePending:  "施工报价待用户确认",
 		model.BusinessFlowStageReadyToStart:              "施工条件已确认，项目待开工",
@@ -214,8 +219,14 @@ func (s *BusinessFlowService) BuildSummary(flow *model.BusinessFlow) BusinessFlo
 
 	availableActions := []string{}
 	switch stage {
-	case model.BusinessFlowStageLeadPending, model.BusinessFlowStageNegotiating, model.BusinessFlowStageDesignPendingSubmission:
+	case model.BusinessFlowStageLeadPending:
+		availableActions = []string{}
+	case model.BusinessFlowStageSurveyDepositPending:
+		availableActions = []string{}
+	case model.BusinessFlowStageNegotiating, model.BusinessFlowStageDesignPendingSubmission:
 		availableActions = []string{"create_proposal"}
+	case model.BusinessFlowStageDesignQuotePending, model.BusinessFlowStageDesignFeePaying, model.BusinessFlowStageDesignDeliveryPending, model.BusinessFlowStageDesignAcceptancePending:
+		availableActions = []string{}
 	case model.BusinessFlowStageDesignPendingConfirmation:
 		availableActions = []string{"confirm_proposal", "reject_proposal"}
 	case model.BusinessFlowStageConstructionPartyPending:
@@ -241,9 +252,14 @@ func (s *BusinessFlowService) BuildSummary(flow *model.BusinessFlow) BusinessFlo
 
 	summary := map[string]string{
 		model.BusinessFlowStageLeadPending:               flowSummary[model.BusinessFlowStageLeadPending],
+		model.BusinessFlowStageSurveyDepositPending:      flowSummary[model.BusinessFlowStageSurveyDepositPending],
 		model.BusinessFlowStageNegotiating:               flowSummary[model.BusinessFlowStageNegotiating],
 		model.BusinessFlowStageDesignPendingSubmission:   flowSummary[model.BusinessFlowStageDesignPendingSubmission],
 		model.BusinessFlowStageDesignPendingConfirmation: flowSummary[model.BusinessFlowStageDesignPendingConfirmation],
+		model.BusinessFlowStageDesignQuotePending:        flowSummary[model.BusinessFlowStageDesignQuotePending],
+		model.BusinessFlowStageDesignFeePaying:           flowSummary[model.BusinessFlowStageDesignFeePaying],
+		model.BusinessFlowStageDesignDeliveryPending:     flowSummary[model.BusinessFlowStageDesignDeliveryPending],
+		model.BusinessFlowStageDesignAcceptancePending:   flowSummary[model.BusinessFlowStageDesignAcceptancePending],
 		model.BusinessFlowStageConstructionPartyPending:  flowSummary[model.BusinessFlowStageConstructionPartyPending],
 		model.BusinessFlowStageConstructionQuotePending:  flowSummary[model.BusinessFlowStageConstructionQuotePending],
 		model.BusinessFlowStageReadyToStart:              flowSummary[model.BusinessFlowStageReadyToStart],

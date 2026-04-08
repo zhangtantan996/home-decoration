@@ -139,8 +139,10 @@
 }
 
 .payment-webview-page__qr-image-shell {
+  position: relative;
   border-radius: 24px;
   background: #f8fafc;
+  min-height: 360px;
   padding: 24px;
   display: flex;
   align-items: center;
@@ -152,18 +154,96 @@
   height: 360px;
 }
 
-.payment-webview-page__qr-status {
-  font-size: 24px;
-  color: #475569;
+.payment-webview-page__qr-tip {
+  display: block;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
   text-align: center;
 }
 
-.payment-webview-page__qr-status--expired {
+.payment-webview-page__qr-status {
+  display: block;
+  font-size: 13px;
+  color: #475569;
+  text-align: center;
+  margin-top: 8px;
+}
+
+.payment-webview-page__qr-status--notice {
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.payment-webview-page__qr-status--warning {
+  color: #c2410c;
+  background: #fff7ed;
+}
+
+.payment-webview-page__qr-status--error {
   color: #dc2626;
+  background: #fef2f2;
+}
+
+.payment-webview-page__qr-status--success {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.payment-webview-page__qr-diagnostic {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
 }
 
 .payment-webview-page__qr-countdown {
-  font-size: 22px;
+  font-size: 12px;
   color: #64748b;
   text-align: center;
+  display: block;
+  margin-top: 8px;
+}
+
+.payment-webview-page__qr-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.payment-webview-page__qr-action-button {
+  flex: 1;
+}
+
+.payment-webview-page__qr-loading,
+.payment-webview-page__qr-placeholder {
+  width: 360px;
+  height: 360px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.payment-webview-page__qr-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.payment-webview-page__qr-loading-text,
+.payment-webview-page__qr-placeholder-title {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #64748b;
+  text-align: center;
+}
+
+.payment-webview-page__qr-placeholder-title {
+  color: #334155;
+  font-weight: 600;
 }

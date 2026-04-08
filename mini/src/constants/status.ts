@@ -33,8 +33,13 @@ export const projectPhaseStatusMap: Record<string, { label: string; variant: Tag
 
 export const businessStageMap: Record<string, { label: string; variant: TagVariant }> = {
   lead_pending: { label: '线索待推进', variant: 'default' },
+  survey_deposit_pending: { label: '量房服务推进中', variant: 'warning' },
   negotiating: { label: '沟通中', variant: 'default' },
+  design_quote_pending: { label: '待确认设计报价', variant: 'warning' },
+  design_fee_paying: { label: '待支付设计费', variant: 'warning' },
   design_pending_submission: { label: '待设计师提交方案', variant: 'warning' },
+  design_delivery_pending: { label: '待交付设计成果', variant: 'warning' },
+  design_acceptance_pending: { label: '待验收设计成果', variant: 'warning' },
   design_pending_confirmation: { label: '设计方案待确认', variant: 'warning' },
   construction_party_pending: { label: '待确认施工方', variant: 'warning' },
   construction_quote_pending: { label: '施工报价待确认', variant: 'warning' },
@@ -61,7 +66,7 @@ export const orderTypeLabelMap: Record<string, string> = {
 };
 
 export const pendingPaymentTypeLabelMap: Record<string, string> = {
-  intent_fee: '意向金',
+  intent_fee: '量房费',
   design_fee: '设计费',
   construction_fee: '施工费',
 };

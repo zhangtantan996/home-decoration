@@ -844,7 +844,7 @@ func (s *AdminBusinessFlowService) buildSyntheticSummary(stage string) BusinessF
 		return summary
 	}
 	flowSummary := map[string]string{
-		model.BusinessFlowStageSurveyDepositPending:    "待支付量房定金",
+		model.BusinessFlowStageSurveyDepositPending:    "待支付量房费",
 		model.BusinessFlowStageDesignQuotePending:      "待商家提交设计报价",
 		model.BusinessFlowStageDesignFeePaying:         "设计费待支付，支付后进入下一阶段",
 		model.BusinessFlowStageDesignDeliveryPending:   "待交付设计成果",

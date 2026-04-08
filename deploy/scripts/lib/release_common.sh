@@ -164,6 +164,7 @@ release_apply_known_migrations() {
     "server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql"
     "server/migrations/v1.9.15_add_admin_security_columns.sql"
     "server/migrations/v1.9.16_add_provider_display_name.sql"
+    "server/migrations/v1.9.17_backfill_booking_survey_deposit_from_intent_fee.sql"
     "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
     "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
     "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"

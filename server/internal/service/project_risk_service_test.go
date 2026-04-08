@@ -132,7 +132,7 @@ func seedProjectRiskFixture(t *testing.T, db *gorm.DB) (model.User, model.Provid
 		Channel:         model.PaymentChannelAlipay,
 		Scene:           model.PaymentBizTypeBookingIntent,
 		TerminalType:    model.PaymentTerminalPCWeb,
-		Subject:         "预约量房定金",
+		Subject:         "预约量房费",
 		Amount:          booking.IntentFee,
 		OutTradeNo:      "OUT-BOOKING-21",
 		Status:          model.PaymentStatusPaid,

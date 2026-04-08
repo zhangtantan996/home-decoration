@@ -5,6 +5,7 @@ import {
   getServerDateParts,
   getServerTimeMs,
 } from '@/utils/serverTime';
+import { resolveMiniNotificationRoute } from '@/utils/notificationActionRoute';
 
 export type NotificationFilterKey = 'all' | 'project' | 'order' | 'refund' | 'system';
 export type NotificationTone = Exclude<NotificationFilterKey, 'all'>;
@@ -97,6 +98,7 @@ const buildSectionMeta = (value?: string) => {
 
 const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
   const typeTone = resolveNotificationTone(item);
+  const miniRoute = resolveMiniNotificationRoute(item.actionUrl);
   return {
     id: item.id,
     raw: item,
@@ -107,8 +109,8 @@ const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
     isRead: Boolean(item.isRead),
     relativeTime: formatServerRelativeTime(item.createdAt, '--'),
     absoluteTime: formatServerDateTime(item.createdAt, '--'),
-    canNavigate: Boolean(item.actionUrl),
-    actionText: item.actionUrl ? '查看详情' : '仅通知',
+    canNavigate: Boolean(miniRoute),
+    actionText: miniRoute ? '查看详情' : '仅通知',
   };
 };
 

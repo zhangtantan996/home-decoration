@@ -274,7 +274,7 @@ const MerchantDesignWorkflow: React.FC = () => {
                     <Form.Item name="totalFee" label="设计费总额" rules={[{ required: true }]}>
                         <InputNumber min={0} precision={2} style={{ width: '100%' }} prefix="¥" />
                     </Form.Item>
-                    <Form.Item name="depositDeduction" label="量房定金抵扣">
+                    <Form.Item name="depositDeduction" label="量房费抵扣">
                         <InputNumber min={0} precision={2} style={{ width: '100%' }} prefix="¥" />
                     </Form.Item>
                     <Form.Item name="paymentMode" label="支付方式" initialValue="onetime">

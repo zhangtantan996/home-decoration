@@ -107,31 +107,35 @@ func (s *NotificationService) NotifyBookingCreated(booking *model.Booking, provi
 	})
 }
 
-// NotifyBookingIntentPaid 通知商家量房定金已支付
+// NotifyBookingIntentPaid 通知商家量房费已支付
 func (s *NotificationService) NotifyBookingIntentPaid(booking *model.Booking, providerUserID uint64) error {
+	amount := booking.SurveyDeposit
+	if amount <= 0 {
+		amount = booking.IntentFee
+	}
 	err := s.Create(&CreateNotificationInput{
 		UserID:      providerUserID,
 		UserType:    "provider",
-		Title:       "量房定金已支付",
-		Content:     "业主已完成量房定金支付，请继续安排量房与后续沟通。",
+		Title:       "量房费已支付",
+		Content:     "业主已完成量房费支付，请继续安排量房与后续沟通。",
 		Type:        model.NotificationTypeBookingIntentPaid,
 		RelatedID:   booking.ID,
 		RelatedType: "booking",
 		ActionURL:   "/bookings",
 		Extra: map[string]interface{}{
-			"bookingId": booking.ID,
-			"address":   booking.Address,
-			"intentFee": booking.IntentFee,
+			"bookingId":     booking.ID,
+			"address":       booking.Address,
+			"surveyDeposit": amount,
 		},
 	})
 
 	_ = s.NotifyAdmins(&CreateNotificationInput{
 		Title:   "新支付通知",
-		Content: fmt.Sprintf("用户已支付意向金 %.2f 元，对应预约 ID: %d", booking.IntentFee, booking.ID),
+		Content: fmt.Sprintf("用户已支付量房费 %.2f 元，对应预约 ID: %d", amount, booking.ID),
 		Type:    model.NotificationTypeBookingIntentPaid,
 		Extra: map[string]interface{}{
 			"bookingId": booking.ID,
-			"amount":    booking.IntentFee,
+			"amount":    amount,
 		},
 	})
 
@@ -145,7 +149,7 @@ func (s *NotificationService) NotifyBookingConfirmed(booking *model.Booking) err
 		UserID:      booking.UserID,
 		UserType:    "user",
 		Title:       "预约已确认",
-		Content:     fmt.Sprintf("%s已确认本次预约，请及时支付量房定金以继续推进。", providerRoleText),
+		Content:     fmt.Sprintf("%s已确认本次预约，请及时支付量房费以继续推进。", providerRoleText),
 		Type:        model.NotificationTypeBookingConfirmed,
 		RelatedID:   booking.ID,
 		RelatedType: "booking",
@@ -374,7 +378,7 @@ func (s *NotificationService) NotifyWithdrawRejected(withdraw *model.MerchantWit
 	})
 }
 
-// NotifyIntentFeeRefunded 通知用户意向金已退款
+// NotifyIntentFeeRefunded 通知用户量房费已退款
 func (s *NotificationService) NotifyIntentFeeRefunded(refundData interface{}, userID uint64) error {
 	refundMap, ok := refundData.(map[string]interface{})
 	if !ok {
@@ -388,8 +392,8 @@ func (s *NotificationService) NotifyIntentFeeRefunded(refundData interface{}, us
 	return s.Create(&CreateNotificationInput{
 		UserID:      userID,
 		UserType:    "user",
-		Title:       "意向金已退款",
-		Content:     fmt.Sprintf("您的意向金已退款，金额：%.2f元\n退款原因：%s", amount, reason),
+		Title:       "量房费已退款",
+		Content:     fmt.Sprintf("您的量房费已退款，金额：%.2f元\n退款原因：%s", amount, reason),
 		Type:        "booking.intent_refunded",
 		RelatedID:   bookingID,
 		RelatedType: "booking",

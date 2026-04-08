@@ -231,7 +231,16 @@ const OrderDetail: React.FC = () => {
     })
   ), [resolvedEntryKey]);
 
-  const { launchingChannel, qrPayment, remainingSeconds, closeQrPayment, chooseAndLaunch } =
+  const {
+    launchingChannel,
+    qrPayment,
+    qrConfirmLoading,
+    remainingSeconds,
+    closeQrPayment,
+    confirmQrPayment,
+    retryQrPayment,
+    chooseAndLaunch,
+  } =
     useSurveyDepositPaymentFlow({
       bookingId: detail?.booking?.id,
       amount: Number(detail?.payableAmount || detail?.amount || 0),
@@ -597,11 +606,19 @@ const OrderDetail: React.FC = () => {
           amount={qrPayment.amount}
           amountLabel="待支付金额"
           classNamePrefix="order-detail-page"
-          expired={qrPayment.expired}
           onClose={closeQrPayment}
+          onConfirmPaid={() => {
+            void confirmQrPayment();
+          }}
+          onRetry={() => {
+            void retryQrPayment();
+          }}
+          phase={qrPayment.phase}
+          confirmLoading={qrConfirmLoading}
           qrCodeImageUrl={qrPayment.qrCodeImageUrl}
           remainingSeconds={remainingSeconds}
           statusText={qrPayment.statusText}
+          statusTone={qrPayment.statusTone}
         />
       ) : null}
     </View>

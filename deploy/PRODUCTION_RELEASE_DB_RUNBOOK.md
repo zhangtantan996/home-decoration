@@ -48,6 +48,7 @@ ADMIN_AUTH_ALLOWED_CIDRS=113.132.74.62/32,113.132.74.153/32,127.0.0.1/32,::1/128
 ### 数据库变更
 - `Schema 迁移` 进入标准发版链路
 - `数据迁移 / 数据清洗` 不默认混入代码发布，需单独评审、单独备份、单独记录
+  - 例外只允许“已评审、幂等、纳入正式 allowlist 的兼容回填迁移”
 
 ## 三、Schema 迁移策略
 
@@ -60,6 +61,7 @@ ADMIN_AUTH_ALLOWED_CIDRS=113.132.74.62/32,113.132.74.153/32,127.0.0.1/32,::1/128
   - `v1.9.14_add_claimed_completion_onboarding_columns.sql`
   - `v1.9.15_add_admin_security_columns.sql`
   - `v1.9.16_add_provider_display_name.sql`
+  - `v1.9.17_backfill_booking_survey_deposit_from_intent_fee.sql`
   - `v1.12.11_hide_legacy_risk_arbitration_menu.sql`
   - `v1.12.12_add_payment_central_runtime.sql`
   - `v1.12.13_add_settlement_and_bond_domains.sql`
@@ -68,6 +70,7 @@ ADMIN_AUTH_ALLOWED_CIDRS=113.132.74.62/32,113.132.74.153/32,127.0.0.1/32,::1/128
 ### 2. 仍需手工执行的新增迁移
 - 当新增迁移尚未进入自动列表时，测试和生产都必须手工执行
 - 如果仓库中存在高于 allowlist 最新版本的迁移文件，发布脚本会直接失败，先完成评审并补齐 allowlist 或明确采用手工执行
+- 如果本次是“插入到旧版本区间”的兼容回填迁移，也必须显式更新 allowlist；不要指望发布脚本自动发现
 
 判断原则：
 - 迁移文件已进入 `server/migrations/` 但尚未加入 `release_apply_known_migrations()` 时，必须手工执行
@@ -81,6 +84,71 @@ ADMIN_AUTH_ALLOWED_CIDRS=113.132.74.62/32,113.132.74.153/32,127.0.0.1/32,::1/128
 2. 手工执行缺失迁移（仅执行 `up` 段）
 3. 再执行 `deploy_prod.sh`
 4. 发布后做列级验证
+
+### 4. 本轮量房费历史回填执行单
+
+适用迁移：
+
+- `server/migrations/v1.9.17_backfill_booking_survey_deposit_from_intent_fee.sql`
+
+用途：
+
+- 把历史 `intent_fee*` 兼容字段回填到 `survey_deposit*`
+- 让预约详情、支付、退款、订单中心统一以“量房费”口径读取历史数据
+
+当前策略：
+
+- 已纳入 `release_common.sh` allowlist，可随标准发布自动执行
+- 若线上已提前手工补过，可重复执行；该 SQL 设计为幂等兼容回填
+
+手工补执行示例（只执行 `up` 段）：
+
+```bash
+awk '
+  BEGIN { in_up = 0 }
+  /^[[:space:]]*--[[:space:]]+up[[:space:]]*$/ { in_up = 1; next }
+  /^[[:space:]]*--[[:space:]]+down[[:space:]]*$/ { exit }
+  in_up { print }
+' server/migrations/v1.9.17_backfill_booking_survey_deposit_from_intent_fee.sql \
+| docker compose --env-file deploy/.env -f deploy/docker-compose.prod.yml exec -T db \
+    psql -v ON_ERROR_STOP=1 -U "${DB_USER:-postgres}" -d "${DB_NAME:-home_decoration}"
+```
+
+执行后至少验证：
+
+```sql
+SELECT COUNT(*) AS missing_survey_deposit
+FROM bookings
+WHERE COALESCE(intent_fee, 0) > 0
+  AND COALESCE(survey_deposit, 0) = 0;
+
+SELECT COUNT(*) AS missing_paid_mirror
+FROM bookings
+WHERE intent_fee_paid = TRUE
+  AND survey_deposit_paid IS DISTINCT FROM TRUE;
+
+SELECT COUNT(*) AS missing_refund_mirror
+FROM bookings
+WHERE intent_fee_refunded = TRUE
+  AND survey_deposit_refunded IS DISTINCT FROM TRUE;
+```
+
+结果要求：
+
+- 三条 SQL 都应返回 `0`
+- 抽查至少 1 条已支付预约和 1 条已退款预约，确认：
+  - `survey_deposit`
+  - `survey_deposit_paid`
+  - `survey_deposit_paid_at`
+  - `survey_deposit_refunded`
+  - `survey_deposit_refund_at`
+  - `survey_deposit_refund_amt`
+  已按历史账务正确镜像
+
+回滚口径：
+
+- 该迁移属于一次性兼容回填，不提供逻辑级 `down`
+- 如执行异常，按发布前数据库备份回滚
 
 ## 四、数据迁移策略
 

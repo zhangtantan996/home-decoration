@@ -58,11 +58,11 @@ const MerchantProjectFlow: React.FC = () => {
         setFlowData(res.data.data);
       } else {
         // Fallback: load booking directly
-        const bookingRes = await merchantBookingApi.detail(Number(id)) as any;
-        if (bookingRes.code === 0) {
+        const bookingRes = await merchantBookingApi.detail(Number(id));
+        if (bookingRes.booking) {
           setFlowData({
-            booking: bookingRes.data,
-            businessFlow: bookingRes.data?.businessFlow || { currentStage: 'lead_pending' },
+            booking: bookingRes.booking,
+            businessFlow: { currentStage: bookingRes.currentStage || bookingRes.booking.currentStage || 'lead_pending' },
             siteSurvey: null,
             budgetConfirmation: null,
             designQuote: null,
@@ -112,6 +112,8 @@ const MerchantProjectFlow: React.FC = () => {
   const renderBookingPanel = (isPast: boolean) => {
     const booking = flowData?.booking;
     if (!booking) return <Empty description="暂无预约数据" />;
+    const statusLabel = booking.statusText || BOOKING_STATUS_META[booking.status]?.text || '处理中';
+    const statusColor = BOOKING_STATUS_META[booking.status]?.color || 'default';
     return (
       <div>
         <Descriptions column={2} bordered size="small">
@@ -121,13 +123,13 @@ const MerchantProjectFlow: React.FC = () => {
           <Descriptions.Item label="装修类型">{booking.renovationType}</Descriptions.Item>
           <Descriptions.Item label="预算范围">{booking.budgetRange}</Descriptions.Item>
           <Descriptions.Item label="状态">
-            <Tag color={BOOKING_STATUS_META[booking.status]?.color}>
-              {BOOKING_STATUS_META[booking.status]?.text}
+            <Tag color={statusColor}>
+              {statusLabel}
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="预约时间">{booking.preferredDate}</Descriptions.Item>
         </Descriptions>
-        {!isPast && booking.status === 1 && (
+        {!isPast && booking.statusGroup === 'pending_confirmation' && (
           <div style={{ marginTop: 16, textAlign: 'right' }}>
             <Button type="primary" onClick={() => handleBookingAction('confirm')}>
               确认接单
@@ -136,6 +138,15 @@ const MerchantProjectFlow: React.FC = () => {
               拒绝
             </Button>
           </div>
+        )}
+        {!isPast && booking.statusGroup === 'pending_payment' && (
+          <Alert
+            message="等待用户支付量房费"
+            description="量房费支付完成后，才可继续提交量房记录和预算确认。"
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
         )}
         {isPast && (
           <Alert message="接单已完成" type="success" showIcon style={{ marginTop: 16 }} />
@@ -146,13 +157,9 @@ const MerchantProjectFlow: React.FC = () => {
 
   const handleBookingAction = async (action: 'confirm' | 'reject') => {
     try {
-      const res = await merchantBookingApi.handle(Number(id), action) as any;
-      if (res.code === 0) {
-        message.success(action === 'confirm' ? '已接单' : '已拒绝');
-        loadFlowData();
-      } else {
-        message.error(res.message || '操作失败');
-      }
+      const res = await merchantBookingApi.handle(Number(id), action);
+      message.success(res.message || (action === 'confirm' ? '已接单' : '已拒绝'));
+      loadFlowData();
     } catch {
       message.error('操作失败');
     }

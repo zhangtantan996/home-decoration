@@ -1,0 +1,9 @@
+export const QR_WAITING_TEXT = '请使用支付宝扫码完成支付，支付完成后会自动更新';
+export const QR_LOADING_TEXT = '二维码加载中，请稍候';
+export const QR_IMAGE_ERROR_TEXT = '二维码加载失败，请重新获取';
+export const QR_MANUAL_CHECKING_TEXT = '正在确认支付结果，请稍候';
+export const QR_MANUAL_PENDING_TEXT = '尚未查询到支付成功，请完成扫码后再点“我已支付”';
+export const QR_MANUAL_RETRY_TEXT = '暂未查询到支付结果，请稍后再试';
+export const QR_SUCCESS_TEXT = '支付成功，正在刷新订单';
+export const QR_EXPIRED_TEXT = '二维码已失效，请重新获取';
+export const QR_MANUAL_FEEDBACK_HOLD_MS = 4000;

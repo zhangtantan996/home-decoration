@@ -41,14 +41,14 @@ const MerchantBookingSiteSurvey: React.FC = () => {
     }
     try {
       setLoading(true);
-      const detailRes = await (merchantBookingApi.detail(bookingId) as any);
+      const detailRes = await merchantBookingApi.detail(bookingId);
       let surveyRes: { siteSurvey: MerchantSiteSurveySummary | null } = { siteSurvey: null };
       try {
         surveyRes = await merchantSiteSurveyApi.get(bookingId);
       } catch {
         surveyRes = { siteSurvey: null };
       }
-      setBookingMeta(detailRes?.data?.data || detailRes?.data || null);
+      setBookingMeta(detailRes || null);
       const currentSurvey = surveyRes.siteSurvey || null;
       setSurvey(currentSurvey);
       if (currentSurvey) {

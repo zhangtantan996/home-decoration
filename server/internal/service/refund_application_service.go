@@ -600,7 +600,10 @@ func calculateRefundBreakdownTx(tx *gorm.DB, booking *model.Booking, project *mo
 	}
 	refundSvc := &RefundService{}
 	if canRefund, _ := refundSvc.CanRefundIntentFee(booking); canRefund {
-		breakdown.IntentFee = booking.IntentFee
+		breakdown.IntentFee = booking.SurveyDeposit
+		if breakdown.IntentFee <= 0 {
+			breakdown.IntentFee = booking.IntentFee
+		}
 	}
 	order, err := findLatestPaidOrderTx(tx, booking.ID, breakdown.ProjectID, model.OrderTypeDesign)
 	if err != nil {
@@ -632,7 +635,7 @@ func requestedRefundAmountFromBreakdown(refundType string, breakdown *refundBrea
 	switch refundType {
 	case model.RefundTypeIntentFee:
 		if breakdown.IntentFee <= 0 {
-			return 0, 0, errors.New("当前预约没有可退意向金")
+			return 0, 0, errors.New("当前预约没有可退量房费")
 		}
 		return breakdown.IntentFee, 0, nil
 	case model.RefundTypeDesignFee:
@@ -684,7 +687,7 @@ func applyRefundApplicationTx(tx *gorm.DB, application *model.RefundApplication,
 
 	if application.RefundType == model.RefundTypeIntentFee {
 		if remaining != breakdown.IntentFee {
-			return errors.New("意向金退款金额必须等于可退金额")
+			return errors.New("量房费退款金额必须等于可退金额")
 		}
 		return applyIntentFeeRefundTx(tx, &booking, "退款申请审核通过")
 	}
@@ -715,7 +718,7 @@ func applyRefundApplicationTx(tx *gorm.DB, application *model.RefundApplication,
 		}
 		if breakdown.IntentFee > 0 && remaining > 0 {
 			if remaining < breakdown.IntentFee {
-				return errors.New("全额退款不能对意向金做部分退款")
+				return errors.New("全额退款不能对量房费做部分退款")
 			}
 			if err := applyIntentFeeRefundTx(tx, &booking, "全额退款申请审核通过"); err != nil {
 				return err
@@ -754,10 +757,17 @@ func applyIntentFeeRefundTx(tx *gorm.DB, booking *model.Booking, reason string) 
 		return errors.New(message)
 	}
 	now := time.Now()
+	refundAmount := booking.SurveyDeposit
+	if refundAmount <= 0 {
+		refundAmount = booking.IntentFee
+	}
 	return tx.Model(booking).Updates(map[string]interface{}{
 		"intent_fee_refunded":      true,
 		"intent_fee_refund_reason": strings.TrimSpace(reason),
 		"intent_fee_refunded_at":   now,
+		"survey_deposit_refunded":   true,
+		"survey_deposit_refund_amt": refundAmount,
+		"survey_deposit_refund_at":  now,
 	}).Error
 }
 
@@ -865,7 +875,7 @@ func (s *RefundApplicationService) BuildBookingRefundSummary(bookingID uint64) (
 				OrderID: orderID,
 			})
 		}
-		appendRefundType(model.RefundTypeIntentFee, "意向金", breakdown.IntentFee, 0)
+		appendRefundType(model.RefundTypeIntentFee, "量房费", breakdown.IntentFee, 0)
 		appendRefundType(model.RefundTypeDesignFee, "设计费", breakdown.DesignFee, breakdown.DesignOrderID)
 		appendRefundType(model.RefundTypeConstructionFee, "施工费", breakdown.ConstructionFee, breakdown.ConstructionOrderID)
 		total := normalizeAmount(breakdown.IntentFee + breakdown.DesignFee + breakdown.ConstructionFee)

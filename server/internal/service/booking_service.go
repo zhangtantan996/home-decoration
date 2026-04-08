@@ -45,16 +45,16 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 		return nil, errors.New("补充说明不能超过 500 字符")
 	}
 
-	// 获取量房定金金额：设计师个人价 > 后台默认价 > 旧意向金fallback
-	intentFee, err := configSvc.GetSurveyDepositDefault()
+	// 获取量房费金额：服务商自定义 > 平台默认
+	surveyDepositAmount, err := configSvc.GetSurveyDepositDefault()
 	if err != nil {
-		intentFee = 99
+		surveyDepositAmount = 99
 	}
 	surveyDepositSource := "system_default"
 	var provider model.Provider
 	if err := repository.DB.First(&provider, req.ProviderID).Error; err == nil {
 		if provider.SurveyDepositPrice > 0 {
-			intentFee = provider.SurveyDepositPrice
+			surveyDepositAmount = provider.SurveyDepositPrice
 			surveyDepositSource = "provider_override"
 		}
 	}
@@ -72,9 +72,11 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 		Phone:               req.Phone,
 		Notes:               req.Notes,
 		HouseLayout:         req.HouseLayout,
-		Status:              1,         // Pending
-		IntentFee:           intentFee, // 从配置读取的意向金金额
-		IntentFeePaid:       false,     // 默认未支付
+		Status:                1,
+		IntentFee:             surveyDepositAmount, // 兼容镜像字段
+		IntentFeePaid:         false,               // 兼容镜像字段
+		SurveyDeposit:         surveyDepositAmount,
+		SurveyDepositPaid:     false,
 		SurveyDepositSource: surveyDepositSource,
 		SurveyRefundNotice:  surveyRefundNotice,
 	}
@@ -142,18 +144,27 @@ func (s *BookingService) PayIntentFee(userID uint64, bookingID string) (*model.B
 	}
 
 	// 幂等性检查
-	if booking.IntentFeePaid {
+	if booking.SurveyDepositPaid || booking.IntentFeePaid {
 		return &booking, nil // 已支付，直接返回
 	}
 	if err := ensureBookingReadyForDepositPayment(&booking); err != nil {
 		return nil, err
 	}
 
-	// 模拟支付成功，更新状态
+	depositAmount, err := resolveBookingSurveyDepositAmountTx(repository.DB, &booking)
+	if err != nil {
+		return nil, err
+	}
+
+	// 兼容旧模拟支付逻辑，落到量房费字段并同步镜像
 	now := time.Now()
 	deadline := now.Add(48 * time.Hour) // 48小时商家响应期限
 
+	booking.IntentFee = depositAmount
 	booking.IntentFeePaid = true
+	booking.SurveyDeposit = depositAmount
+	booking.SurveyDepositPaid = true
+	booking.SurveyDepositPaidAt = &now
 	booking.MerchantResponseDeadline = &deadline
 
 	if err := repository.DB.Save(&booking).Error; err != nil {
@@ -171,19 +182,26 @@ func (s *BookingService) PayIntentFee(userID uint64, bookingID string) (*model.B
 }
 
 // GetUserBookings 获取用户的预约列表
-func (s *BookingService) GetUserBookings(userID uint64, paid *bool) ([]model.Booking, error) {
+func (s *BookingService) GetUserBookings(userID uint64, statusGroup string) ([]BookingLifecycleView, error) {
 	var bookings []model.Booking
 	query := repository.DB.Where("user_id = ?", userID)
-
-	if paid != nil {
-		query = query.Where("intent_fee_paid = ?", *paid)
-	}
 
 	if err := query.Order("created_at DESC").Find(&bookings).Error; err != nil {
 		return nil, err
 	}
 
-	return bookings, nil
+	result := make([]BookingLifecycleView, 0, len(bookings))
+	for i := range bookings {
+		p0Summary, _ := s.GetBookingP0Summary(bookings[i].ID)
+		proposalID := s.lookupBookingProposalID(bookings[i].ID)
+		view := buildBookingLifecycleView(&bookings[i], p0Summary, proposalID)
+		if !matchesBookingStatusGroup(view, statusGroup) {
+			continue
+		}
+		result = append(result, view)
+	}
+
+	return result, nil
 }
 
 // CancelBooking 取消预约（仅限待付款状态）
@@ -198,8 +216,8 @@ func (s *BookingService) CancelBooking(userID uint64, bookingID string) error {
 		return errors.New("预约不存在")
 	}
 
-	log.Printf("[CancelBooking] Found booking - ID: %d, UserID: %d, Status: %d, IntentFeePaid: %v",
-		booking.ID, booking.UserID, booking.Status, booking.IntentFeePaid)
+	log.Printf("[CancelBooking] Found booking - ID: %d, UserID: %d, Status: %d, SurveyDepositPaid: %v",
+		booking.ID, booking.UserID, booking.Status, booking.SurveyDepositPaid)
 	log.Printf("[CancelBooking] Request userID: %d", userID)
 
 	// 权限校验
@@ -208,7 +226,7 @@ func (s *BookingService) CancelBooking(userID uint64, bookingID string) error {
 	}
 
 	// 只有待付款状态才能取消
-	if booking.IntentFeePaid {
+	if booking.SurveyDepositPaid || booking.IntentFeePaid {
 		return errors.New("已付款订单不能直接取消，请联系客服")
 	}
 
@@ -257,4 +275,15 @@ func (s *BookingService) DeleteBooking(userID uint64, bookingID string) error {
 	log.Printf("[DeleteBooking] Deleted booking - ID: %d", id)
 
 	return nil
+}
+
+func (s *BookingService) lookupBookingProposalID(bookingID uint64) uint64 {
+	if bookingID == 0 {
+		return 0
+	}
+	var proposal model.Proposal
+	if err := repository.DB.Select("id").Where("booking_id = ?", bookingID).Order("id DESC").First(&proposal).Error; err != nil {
+		return 0
+	}
+	return proposal.ID
 }

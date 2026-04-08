@@ -22,9 +22,6 @@ import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
 import { buildOrderCenterDetailUrl } from '@/utils/orderRoutes';
 import { formatServerDateTime } from '@/utils/serverTime';
 import {
-  chooseSurveyDepositPaymentAction,
-  getSurveyDepositChannelOptions,
-  navigateToSurveyDepositPaymentWithOptions,
   openSurveyDepositDetail,
 } from '@/utils/surveyDepositPayment';
 
@@ -197,46 +194,30 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
     void fetchList(page);
   });
 
-  const openEntryDetail = (entry: OrderCenterEntrySummary) => {
+  const navigateToOrderPage = useCallback(async (url: string) => {
+    try {
+      await Taro.navigateTo({ url });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '');
+      if (message.includes('timeout')) {
+        return;
+      }
+      throw error;
+    }
+  }, []);
+
+  const openEntryDetail = async (entry: OrderCenterEntrySummary) => {
     if (entry.sourceKind === 'survey_deposit' && entry.booking?.id) {
       openSurveyDepositDetail(entry.booking.id, entry.referenceNo, entry.entryKey);
       return;
     }
 
-    Taro.navigateTo({ url: buildOrderCenterDetailUrl(entry.entryKey) });
+    await navigateToOrderPage(buildOrderCenterDetailUrl(entry.entryKey));
   };
 
   const handlePrimaryAction = async (event: { stopPropagation: () => void }, entry: OrderCenterEntrySummary) => {
     event.stopPropagation();
-
-    if (entry.sourceKind === 'survey_deposit' && entry.booking?.id) {
-      await navigateToSurveyDepositPaymentWithOptions(
-        entry.booking.id,
-        entry.availablePaymentOptions,
-        entry.referenceNo,
-        entry.entryKey,
-      );
-      return;
-    }
-
-    if (entry.statusGroup === 'pending_payment') {
-      const actions = getSurveyDepositChannelOptions(entry.availablePaymentOptions);
-      if (actions.length > 0) {
-        const selectedAction = await chooseSurveyDepositPaymentAction(actions);
-        if (!selectedAction) {
-          return;
-        }
-        Taro.navigateTo({
-          url: buildOrderCenterDetailUrl(entry.entryKey, undefined, {
-            autoPayChannel: selectedAction.channel,
-            autoPayLaunchMode: selectedAction.launchMode,
-          }),
-        });
-        return;
-      }
-    }
-
-    openEntryDetail(entry);
+    await openEntryDetail(entry);
   };
 
   const filterBar = useMemo(() => {
@@ -304,7 +285,11 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
                 <View
                   key={entry.entryKey}
                   className={`orders-list-content__card orders-list-content__card--${entry.statusGroup}`}
-                  onClick={() => openEntryDetail(entry)}
+                  onClick={() => {
+                    void openEntryDetail(entry).catch((error) => {
+                      showErrorToast(error, '跳转失败');
+                    });
+                  }}
                 >
                   <View className="orders-list-content__card-header">
                     <View className="orders-list-content__card-title-group">
@@ -378,7 +363,9 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
                             return;
                           }
                           event.stopPropagation();
-                          openEntryDetail(entry);
+                          void openEntryDetail(entry).catch((error) => {
+                            showErrorToast(error, '跳转失败');
+                          });
                         }}
                       >
                         {primaryAction.label}

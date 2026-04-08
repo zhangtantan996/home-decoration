@@ -89,7 +89,7 @@ const stopPropagation = (event: { stopPropagation?: () => void }) => {
 
 const BookingCreatePage: React.FC = () => {
   const auth = useAuthStore();
-  const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(164), []);
+  const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(120), []);
   const fixedBottomBarStyle = useMemo(
     () => getFixedBottomBarStyle({ paddingX: 16, paddingY: 14, zIndex: 40 }),
     [],
@@ -520,11 +520,6 @@ const BookingCreatePage: React.FC = () => {
       </View>
 
       <View className="booking-create-page__footer" style={fixedBottomBarStyle}>
-        <View className="booking-create-page__fee-copy">
-          <Text className="booking-create-page__fee-label">定金</Text>
-          <Text className="booking-create-page__fee-amount">¥99</Text>
-          <Text className="booking-create-page__fee-note">(可抵扣设计费)</Text>
-        </View>
         <View className="booking-create-page__footer-action">
           <Button
             size="lg"
@@ -534,7 +529,7 @@ const BookingCreatePage: React.FC = () => {
             loading={submitting}
             onClick={handleSubmit}
           >
-            确认预约
+            提交预约
           </Button>
         </View>
       </View>
