@@ -54,6 +54,7 @@ stitch/
 .playwright-cli/
 playwright-report/
 test-results/
+.workbuddy/
 
 # Project specific
 output/playwright/
@@ -83,3 +84,6 @@ recover_shops.sql
 shops_backup.txt
 users_backup.txt
 server/scripts/restore_avatars.sql
+mini/.swc/
+1109819297_20260407_cert.zip
+pub_key.pem
