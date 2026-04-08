@@ -16,6 +16,8 @@ import (
 // ProviderService 服务商服务
 type ProviderService struct{}
 
+var mirrorKnownUnstableProviderImage = imgutil.MirrorKnownUnstableImageURL
+
 // ProviderQuery 服务商查询参数
 type ProviderQuery struct {
 	Type      string  `form:"type"`      // 1设计师 2公司 3工长, 或字符串设计师、施工队等
@@ -129,28 +131,94 @@ func ResolveProviderStoredDisplayName(providerType int8, companyName, realName s
 }
 
 func ResolveProviderAvatarPath(provider model.Provider) string {
-	if avatar := strings.TrimSpace(provider.Avatar); avatar != "" {
-		return avatar
-	}
-	if cover := strings.TrimSpace(provider.CoverImage); cover != "" {
-		return cover
-	}
-	return ""
+	return resolveStableProviderImagePath(
+		strings.TrimSpace(provider.Avatar),
+	)
 }
 
 func ResolveProviderAvatarPathWithUser(provider model.Provider, user *model.User) string {
-	if avatar := strings.TrimSpace(provider.Avatar); avatar != "" {
-		return avatar
-	}
+	userAvatar := ""
 	if user != nil {
-		if avatar := strings.TrimSpace(user.Avatar); avatar != "" {
-			return avatar
+		userAvatar = strings.TrimSpace(user.Avatar)
+	}
+
+	return resolveStableProviderImagePath(
+		strings.TrimSpace(provider.Avatar),
+		userAvatar,
+	)
+}
+
+func resolveStableProviderImagePath(candidates ...string) string {
+	firstNonEmpty := ""
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed == "" {
+			continue
 		}
+		if firstNonEmpty == "" {
+			firstNonEmpty = trimmed
+		}
+		if imgutil.IsKnownUnstableImageURL(trimmed) {
+			if mirrored := strings.TrimSpace(mirrorKnownUnstableProviderImage(trimmed)); mirrored != "" {
+				return mirrored
+			}
+			continue
+		}
+		return trimmed
 	}
-	if cover := strings.TrimSpace(provider.CoverImage); cover != "" {
-		return cover
+
+	return firstNonEmpty
+}
+
+func resolveProviderStableAvatarPath(provider model.Provider, user *model.User, caseCover string) string {
+	userAvatar := ""
+	if user != nil {
+		userAvatar = strings.TrimSpace(user.Avatar)
 	}
-	return ""
+
+	return resolveStableProviderImagePath(
+		strings.TrimSpace(provider.Avatar),
+		userAvatar,
+	)
+}
+
+func resolveProviderStableCoverPath(provider model.Provider, user *model.User, caseCover string) string {
+	return resolveStableProviderImagePath(
+		strings.TrimSpace(provider.CoverImage),
+		strings.TrimSpace(caseCover),
+	)
+}
+
+func loadProviderPrimaryCaseCoverMap(providerIDs []uint64) (map[uint64]string, error) {
+	result := make(map[uint64]string, len(providerIDs))
+	if len(providerIDs) == 0 {
+		return result, nil
+	}
+
+	var cases []model.ProviderCase
+	if err := repository.DB.
+		Select("provider_id, cover_image, sort_order, created_at").
+		Where("provider_id IN ?", providerIDs).
+		Order("provider_id ASC, sort_order ASC, created_at DESC").
+		Find(&cases).Error; err != nil {
+		return nil, err
+	}
+
+	for _, item := range cases {
+		if _, exists := result[item.ProviderID]; exists {
+			continue
+		}
+		cover := strings.TrimSpace(item.CoverImage)
+		if cover == "" {
+			continue
+		}
+		if imgutil.IsKnownUnstableImageURL(cover) {
+			continue
+		}
+		result[item.ProviderID] = cover
+	}
+
+	return result, nil
 }
 
 // ListDesigners 获取设计师列表
@@ -298,6 +366,15 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	}
 
 	// 关联用户信息
+	providerIDs := make([]uint64, 0, len(providers))
+	for _, item := range providers {
+		providerIDs = append(providerIDs, item.ID)
+	}
+	caseCoverMap, err := loadProviderPrimaryCaseCoverMap(providerIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	result := make([]ProviderListItem, len(providers))
 	regionService := RegionService{}
 	for i, p := range providers {
@@ -306,9 +383,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			repository.DB.First(&user, p.UserID)
 		}
 
-		// Some seeded providers may not have a corresponding user row yet.
-		// Fallback to provider's cover image so the client can render something.
-		avatarPath := ResolveProviderAvatarPathWithUser(p, &user)
+		avatarPath := resolveProviderStableAvatarPath(p, &user, caseCoverMap[p.ID])
 
 		var identity dto.UserIdentity
 		if p.UserID > 0 {
@@ -737,10 +812,19 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 	provider.PriceUnit = model.ProviderPriceUnitPerSquareMeter
 
 	// Normalize relative upload paths (e.g. /uploads/...) into absolute URLs.
+	caseCoverMap, err := loadProviderPrimaryCaseCoverMap([]uint64{provider.ID})
+	if err != nil {
+		return nil, err
+	}
+	caseCover := caseCoverMap[provider.ID]
+
 	provider.DisplayName = ResolveProviderDisplayName(provider, &user)
-	provider.Avatar = imgutil.GetFullImageURL(ResolveProviderAvatarPathWithUser(provider, &user))
-	provider.CoverImage = imgutil.GetFullImageURL(provider.CoverImage)
-	user.Avatar = imgutil.GetFullImageURL(user.Avatar)
+	provider.Avatar = imgutil.GetFullImageURL(resolveProviderStableAvatarPath(provider, &user, caseCover))
+	provider.CoverImage = imgutil.GetFullImageURL(resolveProviderStableCoverPath(provider, &user, caseCover))
+	user.Avatar = imgutil.GetFullImageURL(resolveStableProviderImagePath(
+		strings.TrimSpace(user.Avatar),
+		strings.TrimSpace(provider.Avatar),
+	))
 
 	// 服务区域：数据库存储的是代码数组，这里转换为名称数组用于前端展示
 	regionService := RegionService{}

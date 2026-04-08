@@ -98,6 +98,19 @@ const resolveOperatingStatusTag = (shop: MaterialShop) => {
   return <Tag color={meta.color}>{meta.text}</Tag>;
 };
 
+const renderBooleanStatusTag = (
+  enabled: boolean,
+  enabledText: string,
+  disabledText: string,
+) => (
+  <Tag color={enabled ? "success" : "default"}>
+    {enabled ? enabledText : disabledText}
+  </Tag>
+);
+
+const isMaterialShopPlatformDisplayEditable = (shop: MaterialShop) =>
+  (shop.status ?? 1) === 1;
+
 const renderMaterialShopStatusOverview = (shop: MaterialShop) => {
   const onboardingStatus = shop.onboardingStatus || "none";
   const showOnboardingTag =
@@ -436,7 +449,7 @@ const MaterialShopList: React.FC = () => {
       },
     },
     {
-      title: "公开状态",
+      title: "公开结果",
       key: "publicVisible",
       width: 120,
       render: (_: any, record: MaterialShop) => (
@@ -481,19 +494,30 @@ const MaterialShopList: React.FC = () => {
       ),
     },
     {
-      title: "平台上线",
+      title: "平台展示",
       key: "platformDisplayEnabled",
       render: (_: any, record: MaterialShop) => (
-        <PermissionWrapper permission="material:shop:edit">
-          <Switch
-            checked={record.platformDisplayEnabled ?? true}
-            checkedChildren="上线"
-            unCheckedChildren="下线"
-            onChange={(checked) =>
-              handleTogglePlatformDisplay(record.id, checked)
-            }
-          />
-        </PermissionWrapper>
+        <Tooltip
+          title={
+            isMaterialShopPlatformDisplayEditable(record)
+              ? "控制平台是否继续公开分发该门店"
+              : "主体经营异常时，平台展示设置当前不生效"
+          }
+        >
+          <span>
+            <PermissionWrapper permission="material:shop:edit">
+              <Switch
+                checked={record.platformDisplayEnabled ?? true}
+                checkedChildren="展示"
+                unCheckedChildren="隐藏"
+                disabled={!isMaterialShopPlatformDisplayEditable(record)}
+                onChange={(checked) =>
+                  handleTogglePlatformDisplay(record.id, checked)
+                }
+              />
+            </PermissionWrapper>
+          </span>
+        </Tooltip>
       ),
     },
     {
@@ -833,8 +857,25 @@ const MaterialShopList: React.FC = () => {
 
             <Card size="small" title="公开展示信息">
               <Descriptions column={2} bordered size="small">
-                <Descriptions.Item label="公开状态">
+                <Descriptions.Item label="平台展示">
+                  {renderBooleanStatusTag(
+                    currentShop.platformDisplayEnabled ?? true,
+                    "平台展示中",
+                    "平台已隐藏",
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="商家自展示">
+                  {renderBooleanStatusTag(
+                    currentShop.merchantDisplayEnabled ?? true,
+                    "商家已开启",
+                    "商家已关闭",
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="公开结果">
                   {resolveVisibilityTag(currentShop)}
+                </Descriptions.Item>
+                <Descriptions.Item label="主阻断原因">
+                  {currentShop.visibility?.primaryBlockerMessage || "-"}
                 </Descriptions.Item>
                 <Descriptions.Item label="路径来源">
                   {currentShop.legacyInfo?.isLegacyPath ? (

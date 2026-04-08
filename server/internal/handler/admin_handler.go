@@ -116,6 +116,11 @@ func resolveAdminMaterialShopOperatingStatus(shop model.MaterialShop, hasBoundUs
 	return adminOperatingStatusActive
 }
 
+const (
+	adminPlatformDisplayRequiresActiveMessage = "主体经营异常，平台展示设置当前不生效"
+	merchantDisplayRequiresActiveMessage      = "主体经营异常，商家展示设置当前不生效"
+)
+
 func resolveAdminProviderOnboardingStatus(provider model.Provider, hasBoundUser bool, app *model.MerchantApplication) string {
 	if !hasBoundUser {
 		return adminOnboardingStatusNone
@@ -1471,6 +1476,16 @@ func AdminUpdateProviderPlatformDisplay(c *gin.Context) {
 		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("服务商平台展示开关"))
 		return
 	}
+
+	var provider model.Provider
+	if err := repository.DB.First(&provider, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "服务商不存在")
+		return
+	}
+	if !service.ProviderDisplayControlEnabled(&provider) {
+		response.Conflict(c, adminPlatformDisplayRequiresActiveMessage)
+		return
+	}
 	if err := repository.DB.Model(&model.Provider{}).Where("id = ?", id).Update("platform_display_enabled", req.Enabled).Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
@@ -2357,6 +2372,16 @@ func AdminUpdateMaterialShopPlatformDisplay(c *gin.Context) {
 
 	if !service.SupportsMaterialShopPlatformDisplayEnabled() {
 		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商平台展示开关"))
+		return
+	}
+
+	var shop model.MaterialShop
+	if err := repository.DB.First(&shop, "id = ?", id).Error; err != nil {
+		response.NotFound(c, "门店不存在")
+		return
+	}
+	if !service.MaterialShopDisplayControlEnabled(&shop) {
+		response.Conflict(c, adminPlatformDisplayRequiresActiveMessage)
 		return
 	}
 	if err := repository.DB.Model(&model.MaterialShop{}).Where("id = ?", id).Update("platform_display_enabled", req.Enabled).Error; err != nil {

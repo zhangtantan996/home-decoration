@@ -36,9 +36,17 @@ export class AdminApiError<T = unknown> extends Error {
   errorCode?: string;
   data?: T;
 
-  constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+  constructor(
+    message: string,
+    options: {
+      status?: number;
+      code?: number;
+      errorCode?: string;
+      data?: T;
+    } = {},
+  ) {
     super(message);
-    this.name = 'AdminApiError';
+    this.name = "AdminApiError";
     this.status = options.status;
     this.code = options.code;
     this.errorCode = options.errorCode;
@@ -97,19 +105,27 @@ const normalizeAdminError = (error: unknown) => {
   }
 
   const status = getApiErrorStatus(error);
-  const payload = typeof error === "object" && error !== null && "response" in error
-    ? ((error as { response?: { data?: AdminEnvelopeError } }).response?.data || undefined)
-    : undefined;
-  const errorCode = payload?.data && typeof payload.data === "object" && "errorCode" in payload.data
-    ? String(payload.data.errorCode || "")
-    : undefined;
+  const payload =
+    typeof error === "object" && error !== null && "response" in error
+      ? (error as { response?: { data?: AdminEnvelopeError } }).response
+          ?.data || undefined
+      : undefined;
+  const errorCode =
+    payload?.data &&
+    typeof payload.data === "object" &&
+    "errorCode" in payload.data
+      ? String(payload.data.errorCode || "")
+      : undefined;
 
-  return new AdminApiError(payload?.message || `请求失败${status ? `(${status})` : ""}`, {
-    status,
-    code: payload?.code,
-    errorCode,
-    data: payload?.data,
-  });
+  return new AdminApiError(
+    payload?.message || `请求失败${status ? `(${status})` : ""}`,
+    {
+      status,
+      code: payload?.code,
+      errorCode,
+      data: payload?.data,
+    },
+  );
 };
 
 const redirectToAdminLogin = () => {
@@ -139,25 +155,33 @@ const refreshAdminSession = async (): Promise<string | null> => {
   }
 
   if (!adminRefreshPromise) {
-    adminRefreshPromise = axios.post(`${API_BASE_URL}/admin/token/refresh`, { refreshToken }, {
-      headers: { "Content-Type": "application/json" },
-    }).then((response) => {
-      const payload = response.data?.data;
-      if (!payload?.accessToken) {
-        return null;
-      }
-      useAuthStore.getState().setSession({
-        accessToken: payload.accessToken,
-        refreshToken: payload.refreshToken,
-        admin: payload.admin,
-        permissions: payload.permissions || [],
-        menus: payload.menus || [],
-        security: payload.security || null,
+    adminRefreshPromise = axios
+      .post(
+        `${API_BASE_URL}/admin/token/refresh`,
+        { refreshToken },
+        {
+          headers: { "Content-Type": "application/json" },
+        },
+      )
+      .then((response) => {
+        const payload = response.data?.data;
+        if (!payload?.accessToken) {
+          return null;
+        }
+        useAuthStore.getState().setSession({
+          accessToken: payload.accessToken,
+          refreshToken: payload.refreshToken,
+          admin: payload.admin,
+          permissions: payload.permissions || [],
+          menus: payload.menus || [],
+          security: payload.security || null,
+        });
+        return payload.accessToken as string;
+      })
+      .catch(() => null)
+      .finally(() => {
+        adminRefreshPromise = null;
       });
-      return payload.accessToken as string;
-    }).catch(() => null).finally(() => {
-      adminRefreshPromise = null;
-    });
   }
 
   return adminRefreshPromise;
@@ -181,11 +205,14 @@ api.interceptors.response.use(
   <T>(response: { data: T }) => response.data,
   async (error) => {
     const status = getApiErrorStatus(error);
-    const originalRequest = (error as { config?: Record<string, unknown> })?.config as (Record<string, unknown> & {
-      headers?: Record<string, string>;
-      _adminRetried?: boolean;
-      url?: string;
-    }) | undefined;
+    const originalRequest = (error as { config?: Record<string, unknown> })
+      ?.config as
+      | (Record<string, unknown> & {
+          headers?: Record<string, string>;
+          _adminRetried?: boolean;
+          url?: string;
+        })
+      | undefined;
 
     if (
       status === 401 &&
@@ -246,7 +273,8 @@ export const adminAuthApi = {
     api.post("/admin/login", data),
   getInfo: () => api.get("/admin/info"),
   logout: () => api.post("/admin/logout"),
-  refresh: (refreshToken: string) => api.post("/admin/token/refresh", { refreshToken }),
+  refresh: (refreshToken: string) =>
+    api.post("/admin/token/refresh", { refreshToken }),
 };
 
 export interface AdminSecurityStatusResponse {
@@ -272,14 +300,21 @@ export interface AdminReauthPayload {
 
 export const adminSecurityApi = {
   getStatus: () => api.get("/admin/security/status"),
-  resetInitialPassword: (data: { newPassword: string }) => api.post("/admin/security/password/reset-initial", data),
+  resetInitialPassword: (data: { newPassword: string }) =>
+    api.post("/admin/security/password/reset-initial", data),
   beginBind2FA: () => api.post("/admin/security/2fa/bind"),
-  verify2FA: (data: { otpCode: string }) => api.post("/admin/security/2fa/verify", data),
-  reset2FA: (data: { recentReauthProof?: string; reason?: string }) => api.post("/admin/security/2fa/reset", data),
+  verify2FA: (data: { otpCode: string }) =>
+    api.post("/admin/security/2fa/verify", data),
+  reset2FA: (data: { recentReauthProof?: string; reason?: string }) =>
+    api.post("/admin/security/2fa/reset", data),
   requestRecovery: () => api.post("/admin/security/2fa/recovery/request"),
   listSessions: () => api.get("/admin/security/sessions"),
-  revokeSession: (sid: string, data: { reason: string; recentReauthProof: string }) => api.post(`/admin/security/sessions/${sid}/revoke`, data),
-  reauth: (data: AdminReauthPayload) => api.post("/admin/security/reauth", data),
+  revokeSession: (
+    sid: string,
+    data: { reason: string; recentReauthProof: string },
+  ) => api.post(`/admin/security/sessions/${sid}/revoke`, data),
+  reauth: (data: AdminReauthPayload) =>
+    api.post("/admin/security/reauth", data),
 };
 
 export const projectApi = {
@@ -305,7 +340,11 @@ export const adminProjectApi = {
   ) => api.put(`/admin/projects/${id}/status`, data),
   confirmConstruction: (
     id: string | number,
-    data: { constructionProviderId?: number; foremanId?: number; reason?: string },
+    data: {
+      constructionProviderId?: number;
+      foremanId?: number;
+      reason?: string;
+    },
   ) => api.post(`/admin/projects/${id}/construction/confirm`, data),
   confirmConstructionQuote: (
     id: string | number,
@@ -419,8 +458,8 @@ export interface AdminSupervisionProjectQuery {
 }
 
 export interface AdminCreateSupervisionRiskWarningInput {
-  type: 'delay' | 'quality' | 'payment' | 'dispute';
-  level: 'low' | 'medium' | 'high' | 'critical';
+  type: "delay" | "quality" | "payment" | "dispute";
+  level: "low" | "medium" | "high" | "critical";
   description: string;
   phaseId?: number;
 }
@@ -430,7 +469,7 @@ export const adminSupervisionApi = {
     api.get<
       AdminApiResponse<AdminListData<AdminSupervisionProjectItem>>,
       AdminApiResponse<AdminListData<AdminSupervisionProjectItem>>
-    >('/admin/supervision/projects', { params }),
+    >("/admin/supervision/projects", { params }),
   getProject: (id: number) =>
     api.get<
       AdminApiResponse<AdminSupervisionWorkspace>,
@@ -441,32 +480,67 @@ export const adminSupervisionApi = {
       AdminApiResponse<{ phases: AdminSupervisionPhase[] }>,
       AdminApiResponse<{ phases: AdminSupervisionPhase[] }>
     >(`/admin/supervision/projects/${id}/phases`),
-  getLogs: (id: number, params?: { page?: number; pageSize?: number; phaseId?: number }) =>
+  getLogs: (
+    id: number,
+    params?: { page?: number; pageSize?: number; phaseId?: number },
+  ) =>
     api.get<
-      AdminApiResponse<AdminListData<AdminSupervisionWorkLog> & { page?: number; pageSize?: number }>,
-      AdminApiResponse<AdminListData<AdminSupervisionWorkLog> & { page?: number; pageSize?: number }>
+      AdminApiResponse<
+        AdminListData<AdminSupervisionWorkLog> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >,
+      AdminApiResponse<
+        AdminListData<AdminSupervisionWorkLog> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >
     >(`/admin/supervision/projects/${id}/logs`, { params }),
-  updatePhase: (projectId: number, phaseId: number, data: {
-    status?: string;
-    responsiblePerson?: string;
-    startDate?: string;
-    endDate?: string;
-    estimatedDays?: number;
-  }) =>
-    api.put<AdminApiResponse, AdminApiResponse>(`/admin/supervision/projects/${projectId}/phases/${phaseId}`, data),
-  updatePhaseTask: (projectId: number, phaseId: number, taskId: number, data: { isCompleted: boolean }) =>
-    api.put<AdminApiResponse, AdminApiResponse>(`/admin/supervision/projects/${projectId}/phases/${phaseId}/tasks/${taskId}`, data),
-  createLog: (projectId: number, phaseId: number, data: {
-    title: string;
-    description?: string;
-    photos?: string;
-    logDate?: string;
-  }) =>
+  updatePhase: (
+    projectId: number,
+    phaseId: number,
+    data: {
+      status?: string;
+      responsiblePerson?: string;
+      startDate?: string;
+      endDate?: string;
+      estimatedDays?: number;
+    },
+  ) =>
+    api.put<AdminApiResponse, AdminApiResponse>(
+      `/admin/supervision/projects/${projectId}/phases/${phaseId}`,
+      data,
+    ),
+  updatePhaseTask: (
+    projectId: number,
+    phaseId: number,
+    taskId: number,
+    data: { isCompleted: boolean },
+  ) =>
+    api.put<AdminApiResponse, AdminApiResponse>(
+      `/admin/supervision/projects/${projectId}/phases/${phaseId}/tasks/${taskId}`,
+      data,
+    ),
+  createLog: (
+    projectId: number,
+    phaseId: number,
+    data: {
+      title: string;
+      description?: string;
+      photos?: string;
+      logDate?: string;
+    },
+  ) =>
     api.post<
       AdminApiResponse<{ log: AdminSupervisionWorkLog }>,
       AdminApiResponse<{ log: AdminSupervisionWorkLog }>
     >(`/admin/supervision/projects/${projectId}/phases/${phaseId}/logs`, data),
-  createRiskWarning: (projectId: number, data: AdminCreateSupervisionRiskWarningInput) =>
+  createRiskWarning: (
+    projectId: number,
+    data: AdminCreateSupervisionRiskWarningInput,
+  ) =>
     api.post<
       AdminApiResponse<{ warning: AdminRiskWarningItem }>,
       AdminApiResponse<{ warning: AdminRiskWarningItem }>
@@ -1002,13 +1076,20 @@ export const adminRefundApi = {
     >(`/admin/refunds/${id}`),
   approve: (
     id: number,
-    data: { adminNotes?: string; approvedAmount?: number; recentReauthProof?: string },
+    data: {
+      adminNotes?: string;
+      approvedAmount?: number;
+      recentReauthProof?: string;
+    },
   ) =>
     api.post<
       AdminApiResponse<AdminRefundApplicationItem>,
       AdminApiResponse<AdminRefundApplicationItem>
     >(`/admin/refunds/${id}/approve`, data),
-  reject: (id: number, data: { adminNotes: string; recentReauthProof?: string }) =>
+  reject: (
+    id: number,
+    data: { adminNotes: string; recentReauthProof?: string },
+  ) =>
     api.post<
       AdminApiResponse<AdminRefundApplicationItem>,
       AdminApiResponse<AdminRefundApplicationItem>
@@ -1434,9 +1515,17 @@ export const adminManageApi = {
     api.get("/admin/admins", { params }),
   create: (data: any) => api.post("/admin/admins", data),
   update: (id: number, data: any) => api.put(`/admin/admins/${id}`, data),
-  delete: (id: number, data?: any) => api.delete(`/admin/admins/${id}`, { data }),
-  updateStatus: (id: number, data: { status: number; reason?: string; disabledReason?: string; recentReauthProof?: string }) =>
-    api.patch(`/admin/admins/${id}/status`, data),
+  delete: (id: number, data?: any) =>
+    api.delete(`/admin/admins/${id}`, { data }),
+  updateStatus: (
+    id: number,
+    data: {
+      status: number;
+      reason?: string;
+      disabledReason?: string;
+      recentReauthProof?: string;
+    },
+  ) => api.patch(`/admin/admins/${id}/status`, data),
 };
 
 // 角色管理
@@ -1444,10 +1533,14 @@ export const adminRoleApi = {
   list: () => api.get("/admin/roles"),
   create: (data: any) => api.post("/admin/roles", data),
   update: (id: number, data: any) => api.put(`/admin/roles/${id}`, data),
-  delete: (id: number, data?: any) => api.delete(`/admin/roles/${id}`, { data }),
+  delete: (id: number, data?: any) =>
+    api.delete(`/admin/roles/${id}`, { data }),
   getMenus: (id: number) => api.get(`/admin/roles/${id}/menus`),
-  assignMenus: (id: number, menuIds: number[], extra?: { reason?: string; recentReauthProof?: string }) =>
-    api.post(`/admin/roles/${id}/menus`, { menuIds, ...extra }),
+  assignMenus: (
+    id: number,
+    menuIds: number[],
+    extra?: { reason?: string; recentReauthProof?: string },
+  ) => api.post(`/admin/roles/${id}/menus`, { menuIds, ...extra }),
 };
 
 // 菜单管理
@@ -1455,7 +1548,8 @@ export const adminMenuApi = {
   list: () => api.get("/admin/menus"),
   create: (data: any) => api.post("/admin/menus", data),
   update: (id: number, data: any) => api.put(`/admin/menus/${id}`, data),
-  delete: (id: number, data?: any) => api.delete(`/admin/menus/${id}`, { data }),
+  delete: (id: number, data?: any) =>
+    api.delete(`/admin/menus/${id}`, { data }),
 };
 
 export interface IdentityApplicationItem {
@@ -1638,6 +1732,16 @@ export interface AdminAuditVisibility {
   currentLabel: string;
   publicVisible: boolean;
   blockers: AdminAuditVisibilityBlocker[];
+  distributionStatus?:
+    | "active"
+    | "hidden_by_platform"
+    | "hidden_by_merchant"
+    | "blocked_by_operating"
+    | "blocked_by_qualification";
+  primaryBlockerCode?: string;
+  primaryBlockerMessage?: string;
+  platformDisplayEditable?: boolean;
+  merchantDisplayEditable?: boolean;
   previewAfterApprove?: AdminAuditVisibilityPreview;
   entitySnapshot?: AdminAuditVisibilityEntitySnapshot;
 }
@@ -1927,7 +2031,10 @@ export const adminRiskApi = {
       AdminApiResponse<AdminListData<AdminRiskWarningItem>>
     >("/admin/risk/warnings", { params }),
   handleWarning: (id: number, data: AdminHandleRiskWarningInput) =>
-    api.post<AdminApiResponse, AdminApiResponse>(`/admin/risk/warnings/${id}/handle`, data),
+    api.post<AdminApiResponse, AdminApiResponse>(
+      `/admin/risk/warnings/${id}/handle`,
+      data,
+    ),
 };
 
 export const adminLegacyRiskApi = {
@@ -2010,7 +2117,7 @@ export const adminUploadApi = {
     });
   },
   uploadImageData: async (file: File) => {
-    const result = await adminUploadApi.uploadImage(file) as unknown as {
+    const result = (await adminUploadApi.uploadImage(file)) as unknown as {
       code: number;
       message?: string;
       data?: AdminUploadResult;
@@ -2020,7 +2127,7 @@ export const adminUploadApi = {
       return result.data;
     }
 
-    throw new AdminApiError(result.message || '上传失败');
+    throw new AdminApiError(result.message || "上传失败");
   },
 };
 

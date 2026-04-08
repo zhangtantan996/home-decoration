@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -79,6 +81,11 @@ func TestAdminListProviders_DerivedStatusesAndFilters(t *testing.T) {
 			OnboardingStatus string `json:"onboardingStatus"`
 			LoginEnabled     bool   `json:"loginEnabled"`
 			OperatingEnabled bool   `json:"operatingEnabled"`
+			Visibility       struct {
+				DistributionStatus string `json:"distributionStatus"`
+				PrimaryBlockerCode string `json:"primaryBlockerCode"`
+				PrimaryBlockerMsg  string `json:"primaryBlockerMessage"`
+			} `json:"visibility"`
 		} `json:"list"`
 		Total int64 `json:"total"`
 	}
@@ -132,6 +139,9 @@ func TestAdminListProviders_DerivedStatusesAndFilters(t *testing.T) {
 	}
 	if got := rows[3003]; got.AccountStatus != adminAccountStatusActive || got.LoginStatus != adminLoginStatusDisabledByEntity || got.OperatingStatus != adminOperatingStatusFrozen || got.OnboardingStatus != merchantOnboardingStatusApproved || got.LoginEnabled || got.OperatingEnabled {
 		t.Fatalf("unexpected frozen entity row: %+v", got)
+	}
+	if data.List[1].Visibility.DistributionStatus != "blocked_by_operating" || data.List[1].Visibility.PrimaryBlockerCode != "provider_frozen" {
+		t.Fatalf("unexpected provider visibility priority: %+v", data.List[1].Visibility)
 	}
 	if got := rows[3004]; got.AccountStatus != adminAccountStatusActive || got.LoginStatus != adminLoginStatusEnabled || got.OperatingStatus != adminOperatingStatusRestricted || got.OnboardingStatus != merchantOnboardingStatusPendingReview || !got.LoginEnabled || got.OperatingEnabled {
 		t.Fatalf("unexpected restricted row: %+v", got)
@@ -247,6 +257,10 @@ func TestAdminListMaterialShops_DerivedStatusesAndFilters(t *testing.T) {
 			OnboardingStatus string `json:"onboardingStatus"`
 			LoginEnabled     bool   `json:"loginEnabled"`
 			OperatingEnabled bool   `json:"operatingEnabled"`
+			Visibility       struct {
+				DistributionStatus string `json:"distributionStatus"`
+				PrimaryBlockerCode string `json:"primaryBlockerCode"`
+			} `json:"visibility"`
 		} `json:"list"`
 		Total int64 `json:"total"`
 	}
@@ -304,6 +318,9 @@ func TestAdminListMaterialShops_DerivedStatusesAndFilters(t *testing.T) {
 	if got := rows[6004]; got.AccountStatus != adminAccountStatusActive || got.LoginStatus != adminLoginStatusDisabledByEntity || got.OperatingStatus != adminOperatingStatusFrozen || got.OnboardingStatus != merchantOnboardingStatusApproved || got.LoginEnabled || got.OperatingEnabled {
 		t.Fatalf("unexpected frozen shop row: %+v", got)
 	}
+	if data.List[1].Visibility.DistributionStatus != "blocked_by_operating" || data.List[1].Visibility.PrimaryBlockerCode != "shop_frozen" {
+		t.Fatalf("unexpected material shop visibility priority: %+v", data.List[1].Visibility)
+	}
 
 	filteredResp := requestAdminMaterialShopList(t, "/api/v1/admin/material-shops?page=1&pageSize=1&operatingStatus=frozen")
 	if filteredResp.Code != 0 {
@@ -357,5 +374,91 @@ func requestAdminMaterialShopList(t *testing.T, path string) responseEnvelope {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
 	AdminListMaterialShops(c)
+	return decodeResponse(t, w)
+}
+
+func TestAdminUpdatePlatformDisplayRequiresActiveEntity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Provider{}, &model.MaterialShop{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	provider := model.Provider{
+		Base:                   model.Base{ID: 8001},
+		CompanyName:            "封禁服务商",
+		Status:                 0,
+		PlatformDisplayEnabled: true,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+	if err := db.Model(&model.Provider{}).Where("id = ?", provider.ID).Update("status", 0).Error; err != nil {
+		t.Fatalf("freeze provider: %v", err)
+	}
+
+	active := int8(0)
+	shop := model.MaterialShop{
+		Base:                   model.Base{ID: 8002},
+		Name:                   "封禁主材门店",
+		Status:                 &active,
+		PlatformDisplayEnabled: true,
+	}
+	if err := db.Create(&shop).Error; err != nil {
+		t.Fatalf("seed material shop: %v", err)
+	}
+	if err := db.Exec("UPDATE material_shops SET status = ? WHERE id = ?", int8(0), shop.ID).Error; err != nil {
+		t.Fatalf("freeze material shop: %v", err)
+	}
+
+	providerResp := requestAdminDisplayToggle(t, http.MethodPatch, "/api/v1/admin/providers/8001/platform-display", map[string]bool{"enabled": false}, AdminUpdateProviderPlatformDisplay)
+	if providerResp.Code != 409 {
+		t.Fatalf("unexpected provider response: code=%d message=%s", providerResp.Code, providerResp.Message)
+	}
+
+	shopResp := requestAdminDisplayToggle(t, http.MethodPatch, "/api/v1/admin/material-shops/8002/platform-display", map[string]bool{"enabled": false}, AdminUpdateMaterialShopPlatformDisplay)
+	if shopResp.Code != 409 {
+		t.Fatalf("unexpected material shop response: code=%d message=%s", shopResp.Code, shopResp.Message)
+	}
+
+	var updatedProvider model.Provider
+	if err := db.First(&updatedProvider, provider.ID).Error; err != nil {
+		t.Fatalf("query provider: %v", err)
+	}
+	if !updatedProvider.PlatformDisplayEnabled {
+		t.Fatalf("expected provider platform display unchanged")
+	}
+
+	var updatedShop model.MaterialShop
+	if err := db.First(&updatedShop, shop.ID).Error; err != nil {
+		t.Fatalf("query material shop: %v", err)
+	}
+	if !updatedShop.PlatformDisplayEnabled {
+		t.Fatalf("expected material shop platform display unchanged")
+	}
+}
+
+func requestAdminDisplayToggle(t *testing.T, method, path string, payload any, handlerFunc gin.HandlerFunc) responseEnvelope {
+	t.Helper()
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, path, bytes.NewReader(bodyBytes))
+	c.Request.Header.Set("Content-Type", "application/json")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) >= 2 {
+		c.Params = gin.Params{{Key: "id", Value: parts[len(parts)-2]}}
+	}
+	handlerFunc(c)
 	return decodeResponse(t, w)
 }

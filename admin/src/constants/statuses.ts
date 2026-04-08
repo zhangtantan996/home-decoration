@@ -443,6 +443,14 @@ export const PUBLIC_VISIBILITY_META: Record<string, { text: string; color: strin
   unknown: { text: '未知', color: 'default' },
 };
 
+export const DISTRIBUTION_STATUS_META: Record<string, { text: string; color: string }> = {
+  active: { text: '公开中', color: 'success' },
+  hidden_by_platform: { text: '平台隐藏', color: 'default' },
+  hidden_by_merchant: { text: '商家下线', color: 'default' },
+  blocked_by_operating: { text: '经营受限', color: 'error' },
+  blocked_by_qualification: { text: '待满足上线条件', color: 'warning' },
+};
+
 export const LEGACY_PATH_BADGE = { text: 'legacy', color: 'gold' } as const;
 
 export const MATERIAL_SHOP_TYPE_META: Record<string, { text: string; color: string }> = {

@@ -758,12 +758,14 @@ func MerchantGetInfo(c *gin.Context) {
 	companyAlbum := parseJSONStringSlice(provider.CompanyAlbumJSON)
 	pricing := parsePricingObject(provider.PricingJSON)
 	avatar := service.ResolveProviderAvatarPathWithUser(provider, &user)
+	visibility := service.EvaluateProviderPublicVisibility(&provider)
 
 	response.Success(c, gin.H{
 		"id":                     provider.ID,
 		"sourceApplicationId":    provider.SourceApplicationID,
 		"name":                   displayName,
 		"avatar":                 imgutil.GetFullImageURL(avatar),
+		"coverImage":             imgutil.GetFullImageURL(strings.TrimSpace(provider.CoverImage)),
 		"providerType":           provider.ProviderType,
 		"applicantType":          applicantType,
 		"providerSubType":        providerSubType,
@@ -788,7 +790,11 @@ func MerchantGetInfo(c *gin.Context) {
 		"surveyDepositPrice":     provider.SurveyDepositPrice,
 		"merchantDisplayEnabled": service.ProviderMerchantDisplayEnabled(&provider),
 		"platformDisplayEnabled": service.ProviderPlatformDisplayEnabled(&provider),
-		"publicVisible":          service.IsProviderPublicVisible(&provider),
+		"publicVisible":          visibility.PublicVisible,
+		"distributionStatus":     visibility.DistributionStatus,
+		"primaryBlockerCode":     visibility.PrimaryBlockerCode,
+		"primaryBlockerMessage":  visibility.PrimaryBlockerMsg,
+		"visibility":             visibility,
 	})
 }
 
@@ -799,6 +805,7 @@ func MerchantUpdateInfo(c *gin.Context) {
 	var input struct {
 		Name                   string             `json:"name"` // 显示名称
 		CompanyName            string             `json:"companyName"`
+		CoverImage             *string            `json:"coverImage"`
 		CompanyAlbum           []string           `json:"companyAlbum"`
 		MerchantDisplayEnabled *bool              `json:"merchantDisplayEnabled"`
 		YearsExperience        int                `json:"yearsExperience"`
@@ -847,9 +854,23 @@ func MerchantUpdateInfo(c *gin.Context) {
 	if input.CompanyName != "" {
 		updates["company_name"] = input.CompanyName
 	}
+	if input.CoverImage != nil {
+		coverImage := normalizeStoredAsset(strings.TrimSpace(*input.CoverImage))
+		if len([]rune(coverImage)) > 500 {
+			tx.Rollback()
+			response.Error(c, 400, "封面背景图地址不能超过500个字符")
+			return
+		}
+		updates["cover_image"] = coverImage
+	}
 	if input.MerchantDisplayEnabled != nil {
 		if !service.SupportsProviderMerchantDisplayEnabled() {
 			response.Error(c, 503, repository.SchemaServiceUnavailableMessage("商家展示开关"))
+			return
+		}
+		if !service.ProviderDisplayControlEnabled(&provider) {
+			tx.Rollback()
+			response.Conflict(c, merchantDisplayRequiresActiveMessage)
 			return
 		}
 		updates["merchant_display_enabled"] = *input.MerchantDisplayEnabled
@@ -971,17 +992,17 @@ func MerchantListBookings(c *gin.Context) {
 
 	// 批量查询哪些预约已有方案
 	var proposals []model.Proposal
-	proposalMap := make(map[uint64]bool)
+	proposalMap := make(map[uint64]uint64)
 	if len(bookingIDs) > 0 {
 		repository.DB.Where("booking_id IN ?", bookingIDs).Find(&proposals)
 		for _, p := range proposals {
-			proposalMap[p.BookingID] = true
+			proposalMap[p.BookingID] = p.ID
 		}
 	}
 
 	// 构建返回结果，包含用户昵称和是否已有方案
 	type BookingWithUser struct {
-		model.Booking
+		service.BookingLifecycleView
 		UserNickname string `json:"userNickname"`
 		UserPhone    string `json:"userPhone"`
 		UserPublicID string `json:"userPublicId,omitempty"`
@@ -990,7 +1011,11 @@ func MerchantListBookings(c *gin.Context) {
 
 	result := make([]BookingWithUser, 0, len(bookings))
 	for _, b := range bookings {
-		item := BookingWithUser{Booking: b}
+		p0Summary, _ := bookingService.GetBookingP0Summary(b.ID)
+		proposalID := proposalMap[b.ID]
+		item := BookingWithUser{
+			BookingLifecycleView: service.BuildBookingLifecycleView(b, p0Summary, proposalID),
+		}
 		if u, ok := userMap[b.UserID]; ok {
 			identity := dto.NewUserIdentity(&u)
 			item.UserPublicID = identity.UserPublicID
@@ -1008,7 +1033,7 @@ func MerchantListBookings(c *gin.Context) {
 			}
 			item.UserPhone = u.Phone
 		}
-		item.HasProposal = proposalMap[b.ID]
+		item.HasProposal = proposalID > 0
 		result = append(result, item)
 	}
 
@@ -1045,11 +1070,13 @@ func MerchantGetBookingDetail(c *gin.Context) {
 		monitor.RecordPublicIDMissing("merchant_booking_detail", bookingIdentity.UserID, "merchant_booking_detail")
 	}
 	p0Summary, _ := bookingService.GetBookingP0Summary(booking.ID)
+	bookingView := service.BuildBookingLifecycleView(booking, p0Summary, proposal.ID)
 	var siteSurveySummary interface{}
 	var budgetConfirmSummary interface{}
 	var availableActions []string
 	var flowSummary string
 	var currentStage string
+	var currentStageText string
 	if p0Summary != nil {
 		siteSurveySummary = p0Summary.SiteSurvey
 		budgetConfirmSummary = p0Summary.BudgetConfirm
@@ -1057,24 +1084,31 @@ func MerchantGetBookingDetail(c *gin.Context) {
 		flowSummary = p0Summary.FlowSummary
 		currentStage = p0Summary.CurrentStage
 	}
+	currentStageText = bookingView.CurrentStageText
 
 	type BookingDetailWithIdentity struct {
-		model.Booking
+		service.BookingLifecycleView
 		UserPublicID string `json:"userPublicId,omitempty"`
 	}
 
 	response.Success(c, gin.H{
 		"booking": BookingDetailWithIdentity{
-			Booking:      booking,
+			BookingLifecycleView: bookingView,
 			UserPublicID: bookingIdentity.UserPublicID,
 		},
 		"hasProposal":          hasProposal,
 		"proposal":             proposal,
+		"statusGroup":          bookingView.StatusGroup,
+		"statusText":           bookingView.StatusText,
 		"siteSurveySummary":    siteSurveySummary,
 		"budgetConfirmSummary": budgetConfirmSummary,
 		"availableActions":     availableActions,
 		"flowSummary":          flowSummary,
 		"currentStage":         currentStage,
+		"currentStageText":     currentStageText,
+		"surveyDepositAmount":  bookingView.SurveyDepositAmount,
+		"surveyDepositPaid":    bookingView.SurveyDepositPaid,
+		"surveyDepositPaidAt":  bookingView.SurveyDepositPaidAt,
 	})
 }
 
@@ -1122,7 +1156,7 @@ func MerchantHandleBooking(c *gin.Context) {
 	booking.Status = int8(updates["status"].(int))
 	if input.Action == "confirm" {
 		_ = businessFlowService.AdvanceBySource(nil, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
-			"current_stage": model.BusinessFlowStageNegotiating,
+			"current_stage": model.BusinessFlowStageSurveyDepositPending,
 		})
 		_ = (&service.NotificationService{}).NotifyBookingConfirmed(&booking)
 	} else {

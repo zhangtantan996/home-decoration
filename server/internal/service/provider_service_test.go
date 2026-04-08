@@ -43,6 +43,16 @@ func setupProviderServiceDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func stubMirrorKnownUnstableProviderImage(t *testing.T, fn func(string) string) {
+	t.Helper()
+
+	previous := mirrorKnownUnstableProviderImage
+	mirrorKnownUnstableProviderImage = fn
+	t.Cleanup(func() {
+		mirrorKnownUnstableProviderImage = previous
+	})
+}
+
 func TestProviderServiceListOmitsWorkTypesAndKeepsForemanSpecialty(t *testing.T) {
 	db := setupProviderServiceDB(t)
 	service := &ProviderService{}
@@ -211,6 +221,181 @@ func TestProviderServiceListFallsBackToUserAvatarWhenProviderAvatarMissing(t *te
 	}
 	if list[0].Avatar != "http://localhost:8080/uploads/user-avatar.png" {
 		t.Fatalf("expected user avatar fallback, got %q", list[0].Avatar)
+	}
+}
+
+func TestProviderServiceListPrefersMirroredAvatarWhenAvatarHostsAreUnstable(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+	stubMirrorKnownUnstableProviderImage(t, func(raw string) string {
+		if strings.Contains(raw, "photo-provider") {
+			return "/uploads/remote-cache/provider-avatar.jpg"
+		}
+		return ""
+	})
+
+	user := model.User{
+		Phone:    "13800138193",
+		Nickname: "案例封面回退用户",
+		Avatar:   "https://images.unsplash.com/photo-user",
+		PublicID: "user_public_case_cover_avatar_fallback",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		DisplayName:  "案例封面回退服务商",
+		CompanyName:  "案例封面回退公司",
+		Avatar:       "https://images.unsplash.com/photo-provider",
+		CoverImage:   "https://images.unsplash.com/photo-cover",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	providerCase := model.ProviderCase{
+		ProviderID:  provider.ID,
+		Title:       "案例封面",
+		CoverImage:  "/static/inspiration/new_chinese_style_tea_room.png",
+		Description: "案例封面回退",
+	}
+	if err := db.Create(&providerCase).Error; err != nil {
+		t.Fatalf("create provider case: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+	if list[0].Avatar != "http://localhost:8080/uploads/remote-cache/provider-avatar.jpg" {
+		t.Fatalf("expected mirrored avatar, got %q", list[0].Avatar)
+	}
+}
+
+func TestProviderServiceListFallsBackToProviderCaseCoverWhenMirrorUnavailable(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+	stubMirrorKnownUnstableProviderImage(t, func(string) string { return "" })
+
+	user := model.User{
+		Phone:    "138001381931",
+		Nickname: "案例封面回退用户",
+		Avatar:   "https://images.unsplash.com/photo-user",
+		PublicID: "user_public_case_cover_avatar_fallback_when_mirror_unavailable",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		DisplayName:  "案例封面回退服务商",
+		CompanyName:  "案例封面回退公司",
+		Avatar:       "https://images.unsplash.com/photo-provider",
+		CoverImage:   "https://images.unsplash.com/photo-cover",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	providerCase := model.ProviderCase{
+		ProviderID:  provider.ID,
+		Title:       "案例封面",
+		CoverImage:  "/static/inspiration/new_chinese_style_tea_room.png",
+		Description: "案例封面回退",
+	}
+	if err := db.Create(&providerCase).Error; err != nil {
+		t.Fatalf("create provider case: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+	if list[0].Avatar != "http://localhost:8080/static/inspiration/new_chinese_style_tea_room.png" {
+		t.Fatalf("expected case cover avatar fallback, got %q", list[0].Avatar)
+	}
+}
+
+func TestProviderServiceDetailPrefersMirroredAvatarAndCoverWhenHostsAreUnstable(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+	stubMirrorKnownUnstableProviderImage(t, func(raw string) string {
+		switch {
+		case strings.Contains(raw, "photo-provider"):
+			return "/uploads/remote-cache/provider-avatar.jpg"
+		case strings.Contains(raw, "photo-cover"):
+			return "/uploads/remote-cache/provider-cover.jpg"
+		case strings.Contains(raw, "photo-user"):
+			return "/uploads/remote-cache/user-avatar.jpg"
+		default:
+			return ""
+		}
+	})
+
+	user := model.User{
+		Phone:    "13800138194",
+		Nickname: "详情封面回退用户",
+		Avatar:   "https://images.unsplash.com/photo-user",
+		PublicID: "user_public_detail_case_cover_avatar_fallback",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		DisplayName:  "详情封面回退服务商",
+		CompanyName:  "详情封面回退公司",
+		Avatar:       "https://images.unsplash.com/photo-provider",
+		CoverImage:   "https://images.unsplash.com/photo-cover",
+		Verified:     true,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	providerCase := model.ProviderCase{
+		ProviderID:  provider.ID,
+		Title:       "详情案例封面",
+		CoverImage:  "/static/inspiration/industrial_loft_office.png",
+		Description: "详情案例封面回退",
+	}
+	if err := db.Create(&providerCase).Error; err != nil {
+		t.Fatalf("create provider case: %v", err)
+	}
+
+	detail, err := service.GetProviderDetail(provider.ID)
+	if err != nil {
+		t.Fatalf("get provider detail: %v", err)
+	}
+	if detail.Provider == nil {
+		t.Fatalf("expected provider detail")
+	}
+	if detail.Provider.Avatar != "http://localhost:8080/uploads/remote-cache/provider-avatar.jpg" {
+		t.Fatalf("expected mirrored detail avatar, got %q", detail.Provider.Avatar)
+	}
+	if detail.Provider.CoverImage != "http://localhost:8080/uploads/remote-cache/provider-cover.jpg" {
+		t.Fatalf("expected mirrored detail cover, got %q", detail.Provider.CoverImage)
+	}
+	if detail.User.Avatar != "http://localhost:8080/uploads/remote-cache/user-avatar.jpg" {
+		t.Fatalf("expected mirrored detail user avatar, got %q", detail.User.Avatar)
 	}
 }
 

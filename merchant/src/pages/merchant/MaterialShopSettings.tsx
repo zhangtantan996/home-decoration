@@ -29,6 +29,7 @@ import {
     type MaterialShopProfile,
 } from '../../services/merchantApi';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
+import { resolveDisplayStatusMeta } from '../../utils/displayStatus';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { getUploadedAssetPreviewUrl, getUploadedAssetStoredPath } from '../../utils/uploadAsset';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
@@ -84,23 +85,6 @@ const normalizeRangesForApi = (ranges?: BusinessHoursRange[]) =>
         day: item.day === 0 ? 7 : item.day,
     }));
 
-const resolveOperatingStatusMeta = (
-    platformDisplayEnabled: boolean,
-    merchantDisplayEnabled: boolean,
-    publicVisible: boolean,
-) => {
-    if (!platformDisplayEnabled) {
-        return { label: '平台已下线', color: 'default' };
-    }
-    if (!merchantDisplayEnabled) {
-        return { label: '当前已下线', color: 'default' };
-    }
-    if (publicVisible) {
-        return { label: '营业中', color: 'success' };
-    }
-    return { label: '待满足上线条件', color: 'warning' };
-};
-
 const MaterialShopSettings: React.FC = () => {
     const navigate = useNavigate();
     const [profileForm] = Form.useForm<MaterialShopProfile>();
@@ -108,17 +92,16 @@ const MaterialShopSettings: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [savingProfile, setSavingProfile] = useState(false);
     const [avatarUploading, setAvatarUploading] = useState(false);
+    const [coverUploading, setCoverUploading] = useState(false);
     const [displayUpdating, setDisplayUpdating] = useState(false);
     const updateSessionProvider = useMerchantAuthStore((state) => state.updateProvider);
     const businessHoursRanges = Form.useWatch('businessHoursRanges', profileForm) || [];
 
     const normalizedRanges = useMemo(() => normalizeRangesForForm(businessHoursRanges), [businessHoursRanges]);
     const merchantDisplayEnabled = profile?.merchantDisplayEnabled ?? true;
-    const platformDisplayEnabled = profile?.platformDisplayEnabled ?? true;
-    const publicVisible = profile?.publicVisible ?? false;
-    const operatingStatusMeta = useMemo(
-        () => resolveOperatingStatusMeta(platformDisplayEnabled, merchantDisplayEnabled, publicVisible),
-        [platformDisplayEnabled, merchantDisplayEnabled, publicVisible],
+    const displayStatusMeta = useMemo(
+        () => resolveDisplayStatusMeta(profile, { activeLabel: '营业中' }),
+        [profile],
     );
 
     useEffect(() => {
@@ -174,12 +157,53 @@ const MaterialShopSettings: React.FC = () => {
         }
     };
 
+    const handleCoverUpload: UploadProps['customRequest'] = async (options) => {
+        const { file, onSuccess, onError } = options;
+        setCoverUploading(true);
+        try {
+            const uploaded = await merchantUploadApi.uploadImageData(file as File);
+            const storedPath = getUploadedAssetStoredPath(uploaded);
+            if (!storedPath) {
+                throw new Error('门店背景图上传结果缺少资源路径');
+            }
+
+            const previewUrl = getUploadedAssetPreviewUrl(uploaded) || storedPath;
+            await materialShopCenterApi.updateMe({ coverImage: storedPath });
+            setProfile((current) => (current ? { ...current, coverImage: previewUrl } : current));
+            message.success('门店背景图已更新');
+            onSuccess?.(uploaded);
+        } catch (error) {
+            const errorMessage = getErrorMessage(error, '门店背景图上传失败');
+            message.error(errorMessage);
+            onError?.(new Error(errorMessage));
+        } finally {
+            setCoverUploading(false);
+        }
+    };
+
+    const handleCoverClear = async () => {
+        if (!profile?.coverImage) {
+            return;
+        }
+
+        setCoverUploading(true);
+        try {
+            await materialShopCenterApi.updateMe({ coverImage: '' });
+            setProfile((current) => (current ? { ...current, coverImage: '' } : current));
+            message.success('门店背景图已清空');
+        } catch (error) {
+            message.error(getErrorMessage(error, '清空门店背景图失败'));
+        } finally {
+            setCoverUploading(false);
+        }
+    };
+
     const handleDisplayToggle = async (checked: boolean) => {
         setDisplayUpdating(true);
         try {
             await materialShopCenterApi.updateMe({ merchantDisplayEnabled: checked });
             setProfile((current) => current ? { ...current, merchantDisplayEnabled: checked } : current);
-            message.success(checked ? '已切换为营业中' : '已下线');
+            message.success(checked ? '展示设置已保存' : '已下线');
             await fetchProfile();
         } catch (error) {
             message.error(getErrorMessage(error, '更新营业状态失败'));
@@ -360,16 +384,22 @@ const MaterialShopSettings: React.FC = () => {
                                         <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>营业状态</div>
                                         <div style={{ marginTop: 8 }}>
                                             <Tag
-                                                color={operatingStatusMeta.color}
+                                                color={displayStatusMeta.color}
                                                 style={{ margin: 0, borderRadius: 999, paddingInline: 10, lineHeight: '22px' }}
                                             >
-                                                {operatingStatusMeta.label}
+                                                {displayStatusMeta.label}
                                             </Tag>
                                         </div>
+                                        {displayStatusMeta.helperText && (
+                                            <div style={{ marginTop: 8, color: '#64748b', fontSize: 12, lineHeight: 1.6 }}>
+                                                {displayStatusMeta.helperText}
+                                            </div>
+                                        )}
                                     </div>
                                     <Switch
                                         checked={merchantDisplayEnabled}
                                         loading={displayUpdating}
+                                        disabled={displayStatusMeta.switchDisabled}
                                         onChange={handleDisplayToggle}
                                         checkedChildren="营业中"
                                         unCheckedChildren="下线"
@@ -378,6 +408,71 @@ const MaterialShopSettings: React.FC = () => {
                             </div>
                         </Col>
                     </Row>
+
+                    <div
+                        style={{
+                            marginTop: 20,
+                            border: '1px solid #e2e8f0',
+                            borderRadius: 18,
+                            padding: 16,
+                            background: '#ffffff',
+                        }}
+                    >
+                        <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>门店背景图</div>
+                        <div style={{ marginTop: 6, color: '#64748b', fontSize: 13 }}>
+                            用于小程序主材详情页顶部头图，不再和品牌 Logo 混用。
+                        </div>
+                        <div
+                            style={{
+                                marginTop: 14,
+                                height: 140,
+                                borderRadius: 16,
+                                overflow: 'hidden',
+                                border: '1px solid #e2e8f0',
+                                background: 'linear-gradient(135deg, #fff7ed 0%, #fffbeb 100%)',
+                            }}
+                        >
+                            {profile?.coverImage ? (
+                                <img
+                                    src={profile.coverImage}
+                                    alt="门店背景图"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                />
+                            ) : (
+                                <div
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        textAlign: 'center',
+                                        padding: '0 16px',
+                                        color: '#78716c',
+                                        fontSize: 13,
+                                        lineHeight: 1.7,
+                                    }}
+                                >
+                                    未上传背景图时，前台会按商品首图或默认背景兜底，不再退回品牌 Logo。
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                            <Upload
+                                showUploadList={false}
+                                customRequest={handleCoverUpload}
+                                beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.showcase)}
+                                accept=".jpg,.jpeg,.png,.webp"
+                            >
+                                <Button icon={coverUploading ? <LoadingOutlined /> : <CameraOutlined />} loading={coverUploading}>
+                                    上传背景图
+                                </Button>
+                            </Upload>
+                            <Button onClick={() => void handleCoverClear()} disabled={!profile?.coverImage || coverUploading}>
+                                清空背景图
+                            </Button>
+                        </div>
+                    </div>
                 </MerchantSectionCard>
 
                 <MerchantSectionCard title="店铺基础资料">

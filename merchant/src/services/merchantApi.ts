@@ -51,6 +51,12 @@ export type MerchantRole = 'designer' | 'foreman' | 'company' | 'material_shop';
 export type MerchantEntityType = 'personal' | 'company' | 'individual_business';
 export type MerchantLoginNextAction = 'APPLY' | 'PENDING' | 'RESUBMIT' | 'CHANGE_ROLE' | 'REAPPLY';
 export type MerchantOnboardingStatus = 'required' | 'pending_review' | 'rejected' | 'approved';
+export type MerchantDistributionStatus =
+    | 'active'
+    | 'hidden_by_platform'
+    | 'hidden_by_merchant'
+    | 'blocked_by_operating'
+    | 'blocked_by_qualification';
 
 export interface MerchantLoginApplyStatus {
     kind?: MerchantKind;
@@ -102,6 +108,7 @@ export interface MerchantProviderInfo {
     sourceApplicationId?: number;
     name: string;
     avatar?: string;
+    coverImage?: string;
     providerType: number;
     merchantKind?: MerchantKind;
     role?: MerchantRole;
@@ -128,6 +135,9 @@ export interface MerchantProviderInfo {
     merchantDisplayEnabled?: boolean;
     platformDisplayEnabled?: boolean;
     publicVisible?: boolean;
+    distributionStatus?: MerchantDistributionStatus;
+    primaryBlockerCode?: string;
+    primaryBlockerMessage?: string;
 }
 
 export interface MerchantServiceSetting {
@@ -473,6 +483,7 @@ export interface MaterialShopProfile {
     merchantKind: 'material_shop';
     entityType: 'company' | 'individual_business';
     avatar?: string;
+    coverImage?: string;
     shopName: string;
     shopDescription?: string;
     companyName?: string;
@@ -495,6 +506,9 @@ export interface MaterialShopProfile {
     merchantDisplayEnabled?: boolean;
     platformDisplayEnabled?: boolean;
     publicVisible?: boolean;
+    distributionStatus?: MerchantDistributionStatus;
+    primaryBlockerCode?: string;
+    primaryBlockerMessage?: string;
 }
 
 export interface MaterialShopProduct {
@@ -584,11 +598,77 @@ export const merchantUploadApi = {
     },
 };
 
+export type MerchantBookingStatusGroup =
+    | 'pending_confirmation'
+    | 'pending_payment'
+    | 'in_service'
+    | 'completed'
+    | 'cancelled';
+
+export interface MerchantBookingEntry {
+    id: number;
+    userId: number;
+    providerId?: number;
+    providerType?: string | number;
+    address: string;
+    area: number;
+    houseLayout?: string;
+    renovationType?: string;
+    budgetRange?: string;
+    preferredDate?: string;
+    phone?: string;
+    notes?: string;
+    status: number;
+    statusGroup?: MerchantBookingStatusGroup;
+    statusText?: string;
+    currentStage?: string;
+    currentStageText?: string;
+    flowSummary?: string;
+    availableActions?: string[];
+    surveyDepositAmount?: number;
+    surveyDepositPaid?: boolean;
+    surveyDepositPaidAt?: string;
+    userNickname?: string;
+    userPhone?: string;
+    userPublicId?: string;
+    hasProposal?: boolean;
+    createdAt?: string;
+}
+
+export interface MerchantBookingDetailResponse {
+    booking: MerchantBookingEntry;
+    hasProposal?: boolean;
+    proposal?: Record<string, unknown>;
+    statusGroup?: MerchantBookingStatusGroup;
+    statusText?: string;
+    currentStage?: string;
+    currentStageText?: string;
+    flowSummary?: string;
+    availableActions?: string[];
+    surveyDepositAmount?: number;
+    surveyDepositPaid?: boolean;
+    surveyDepositPaidAt?: string;
+    siteSurveySummary?: MerchantSiteSurveySummary | null;
+    budgetConfirmSummary?: MerchantBudgetSummary | null;
+}
+
 // 预约管理
 export const merchantBookingApi = {
-    list: () => merchantApi.get('/merchant/bookings'),
-    detail: (id: number) => merchantApi.get(`/merchant/bookings/${id}`),
-    handle: (id: number, action: 'confirm' | 'reject') => merchantApi.put(`/merchant/bookings/${id}/handle`, { action }),
+    list: async () =>
+        unwrapData<{ list: MerchantBookingEntry[]; total: number }>(
+            await merchantApi.get('/merchant/bookings'),
+            '获取预约列表失败'
+        ),
+    detail: async (id: number) =>
+        unwrapData<MerchantBookingDetailResponse>(
+            await merchantApi.get(`/merchant/bookings/${id}`),
+            '获取预约详情失败'
+        ),
+    handle: async (id: number, action: 'confirm' | 'reject') =>
+        unwrapData<{ message?: string }>(
+            await merchantApi.put(`/merchant/bookings/${id}/handle`, { action }),
+            '处理预约失败'
+        ),
 };
 
 export interface MerchantSiteSurveyPayload {

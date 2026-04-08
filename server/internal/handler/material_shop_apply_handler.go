@@ -55,6 +55,7 @@ type materialShopApplyInput struct {
 
 type materialShopUpdateInput struct {
 	Avatar                 string                    `json:"avatar"`
+	CoverImage             *string                   `json:"coverImage"`
 	ShopName               string                    `json:"shopName"`
 	Name                   string                    `json:"name"`
 	ShopDescription        string                    `json:"shopDescription"`
@@ -804,13 +805,15 @@ func MaterialShopGetMe(c *gin.Context) {
 	entityType := resolveMaterialShopEntityType(shop.ID, shop.UserID)
 	businessHoursRanges := parseBusinessHoursRanges(shop.BusinessHoursJSON)
 	activeProductCount, _ := service.CountActiveMaterialShopProducts(shop.ID)
+	visibility := service.EvaluateMaterialShopPublicVisibility(&shop, activeProductCount)
 
 	response.Success(c, gin.H{
 		"id":                     shop.ID,
 		"sourceApplicationId":    shop.SourceApplicationID,
 		"merchantKind":           "material_shop",
 		"entityType":             entityType,
-		"avatar":                 imgutil.GetFullImageURL(firstNonEmpty(shop.BrandLogo, shop.Cover)),
+		"avatar":                 imgutil.GetFullImageURL(strings.TrimSpace(shop.BrandLogo)),
+		"coverImage":             imgutil.GetFullImageURL(strings.TrimSpace(shop.Cover)),
 		"shopName":               shop.Name,
 		"companyName":            shop.CompanyName,
 		"shopDescription":        shop.Description,
@@ -832,7 +835,11 @@ func MaterialShopGetMe(c *gin.Context) {
 		"isVerified":             shop.IsVerified,
 		"merchantDisplayEnabled": service.MaterialShopMerchantDisplayEnabled(&shop),
 		"platformDisplayEnabled": service.MaterialShopPlatformDisplayEnabled(&shop),
-		"publicVisible":          service.IsMaterialShopPublicVisible(&shop, activeProductCount),
+		"publicVisible":          visibility.PublicVisible,
+		"distributionStatus":     visibility.DistributionStatus,
+		"primaryBlockerCode":     visibility.PrimaryBlockerCode,
+		"primaryBlockerMessage":  visibility.PrimaryBlockerMsg,
+		"visibility":             visibility,
 	})
 }
 
@@ -856,6 +863,8 @@ func MaterialShopUpdateMe(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{}
+	var currentShop model.MaterialShop
+	currentShopLoaded := false
 	if strings.TrimSpace(input.Avatar) != "" {
 		avatar := normalizeStoredAsset(input.Avatar)
 		if len([]rune(avatar)) > 500 {
@@ -863,6 +872,14 @@ func MaterialShopUpdateMe(c *gin.Context) {
 			return
 		}
 		updates["brand_logo"] = avatar
+	}
+	if input.CoverImage != nil {
+		coverImage := normalizeStoredAsset(strings.TrimSpace(*input.CoverImage))
+		if len([]rune(coverImage)) > 500 {
+			response.Error(c, 400, "门店背景图地址不能超过500个字符")
+			return
+		}
+		updates["cover"] = coverImage
 	}
 	shopName := firstNonEmpty(strings.TrimSpace(input.ShopName), strings.TrimSpace(input.Name))
 	if shopName != "" {
@@ -919,6 +936,17 @@ func MaterialShopUpdateMe(c *gin.Context) {
 	if input.MerchantDisplayEnabled != nil {
 		if !service.SupportsMaterialShopMerchantDisplayEnabled() {
 			response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商营业状态开关"))
+			return
+		}
+		if !currentShopLoaded {
+			if err := repository.DB.First(&currentShop, shopID).Error; err != nil {
+				response.Error(c, 404, "门店不存在")
+				return
+			}
+			currentShopLoaded = true
+		}
+		if !service.MaterialShopDisplayControlEnabled(&currentShop) {
+			response.Conflict(c, merchantDisplayRequiresActiveMessage)
 			return
 		}
 		updates["merchant_display_enabled"] = *input.MerchantDisplayEnabled

@@ -31,6 +31,11 @@ type VisibilityData struct {
 	CurrentLabel        string                   `json:"currentLabel"`
 	PublicVisible       bool                     `json:"publicVisible"`
 	Blockers            []VisibilityBlocker      `json:"blockers"`
+	DistributionStatus  string                   `json:"distributionStatus,omitempty"`
+	PrimaryBlockerCode  string                   `json:"primaryBlockerCode,omitempty"`
+	PrimaryBlockerMsg   string                   `json:"primaryBlockerMessage,omitempty"`
+	PlatformDisplayEditable bool                 `json:"platformDisplayEditable"`
+	MerchantDisplayEditable bool                 `json:"merchantDisplayEditable"`
 	PreviewAfterApprove *VisibilityPreview       `json:"previewAfterApprove"`
 	EntitySnapshot      VisibilityEntitySnapshot `json:"entitySnapshot"`
 }
@@ -51,6 +56,14 @@ type VisibilityResult struct {
 }
 
 type AdminVisibilityResolver struct{}
+
+const (
+	visibilityDistributionActive           = "active"
+	visibilityDistributionHiddenByPlatform = "hidden_by_platform"
+	visibilityDistributionHiddenByMerchant = "hidden_by_merchant"
+	visibilityDistributionBlockedOperating = "blocked_by_operating"
+	visibilityDistributionBlockedQualify   = "blocked_by_qualification"
+)
 
 func NewAdminVisibilityResolver() *AdminVisibilityResolver {
 	return &AdminVisibilityResolver{}
@@ -108,6 +121,7 @@ func (r *AdminVisibilityResolver) ResolveMerchantApplication(app model.MerchantA
 		}
 	}
 
+	result.Visibility = finalizeProviderVisibilityData(provider, result.Visibility)
 	return result
 }
 
@@ -165,6 +179,7 @@ func (r *AdminVisibilityResolver) ResolveMaterialShopApplication(app model.Mater
 		}
 	}
 
+	result.Visibility = finalizeMaterialShopVisibilityData(shop, result.Visibility)
 	return result
 }
 
@@ -238,6 +253,7 @@ func (r *AdminVisibilityResolver) ResolveIdentityApplication(app model.IdentityA
 		result.Visibility.Blockers = addBlocker(result.Visibility.Blockers, "application_rejected", "身份申请已被拒绝")
 	}
 
+	result.Visibility = finalizeProviderVisibilityData(provider, result.Visibility)
 	return result
 }
 
@@ -283,7 +299,24 @@ func (r *AdminVisibilityResolver) ResolveCaseAudit(audit model.CaseAudit, origin
 		result.Visibility.Blockers = addBlocker(result.Visibility.Blockers, "application_rejected", "审核被拒绝，本次变更不会生效")
 	}
 
+	result.Visibility = finalizeVisibilityData(result.Visibility)
 	return result
+}
+
+func finalizeProviderVisibilityData(provider *model.Provider, data VisibilityData) VisibilityData {
+	data = finalizeVisibilityData(data)
+	editable := ProviderDisplayControlEnabled(provider)
+	data.PlatformDisplayEditable = editable
+	data.MerchantDisplayEditable = editable
+	return data
+}
+
+func finalizeMaterialShopVisibilityData(shop *model.MaterialShop, data VisibilityData) VisibilityData {
+	data = finalizeVisibilityData(data)
+	editable := MaterialShopDisplayControlEnabled(shop)
+	data.PlatformDisplayEditable = editable
+	data.MerchantDisplayEditable = editable
+	return data
 }
 
 func (r *AdminVisibilityResolver) buildCaseApprovePreview(audit model.CaseAudit, originalCase *model.ProviderCase) *VisibilityPreview {
@@ -380,6 +413,67 @@ func appendVisibilityBlockers(existing, added []VisibilityBlocker) []VisibilityB
 		existing = addBlocker(existing, blocker.Code, blocker.Message)
 	}
 	return existing
+}
+
+func finalizeVisibilityData(data VisibilityData) VisibilityData {
+	data.DistributionStatus = resolveVisibilityDistributionStatus(data)
+	if data.PublicVisible {
+		data.PrimaryBlockerCode = ""
+		data.PrimaryBlockerMsg = ""
+		return data
+	}
+
+	if blocker, ok := pickPrimaryVisibilityBlocker(data.Blockers); ok {
+		data.PrimaryBlockerCode = blocker.Code
+		data.PrimaryBlockerMsg = blocker.Message
+	}
+	return data
+}
+
+func resolveVisibilityDistributionStatus(data VisibilityData) string {
+	if data.PublicVisible {
+		return visibilityDistributionActive
+	}
+	if _, ok := findVisibilityBlocker(data.Blockers, "provider_frozen"); ok {
+		return visibilityDistributionBlockedOperating
+	}
+	if _, ok := findVisibilityBlocker(data.Blockers, "shop_frozen"); ok {
+		return visibilityDistributionBlockedOperating
+	}
+	if _, ok := findVisibilityBlocker(data.Blockers, "platform_hidden"); ok {
+		return visibilityDistributionHiddenByPlatform
+	}
+	if _, ok := findVisibilityBlocker(data.Blockers, "merchant_hidden"); ok {
+		return visibilityDistributionHiddenByMerchant
+	}
+	return visibilityDistributionBlockedQualify
+}
+
+func pickPrimaryVisibilityBlocker(blockers []VisibilityBlocker) (VisibilityBlocker, bool) {
+	priorities := []string{
+		"provider_frozen",
+		"shop_frozen",
+		"platform_hidden",
+		"merchant_hidden",
+	}
+	for _, code := range priorities {
+		if blocker, ok := findVisibilityBlocker(blockers, code); ok {
+			return blocker, true
+		}
+	}
+	if len(blockers) == 0 {
+		return VisibilityBlocker{}, false
+	}
+	return blockers[0], true
+}
+
+func findVisibilityBlocker(blockers []VisibilityBlocker, code string) (VisibilityBlocker, bool) {
+	for _, blocker := range blockers {
+		if blocker.Code == code {
+			return blocker, true
+		}
+	}
+	return VisibilityBlocker{}, false
 }
 
 func isRejectResubmittable(status int8) bool {

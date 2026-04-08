@@ -52,10 +52,10 @@ func EvaluateProviderPublicVisibility(provider *model.Provider) VisibilityData {
 		Blockers:      make([]VisibilityBlocker, 0),
 	}
 	if result.PublicVisible {
-		return result
+		return finalizeProviderVisibilityData(provider, result)
 	}
 	if provider == nil {
-		return addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成服务商实体")
+		return finalizeProviderVisibilityData(provider, addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成服务商实体"))
 	}
 	if !providerPlatformDisplayEnabled(provider) {
 		result = addPublicVisibilityBlocker(result, "platform_hidden", "平台已下线该服务商")
@@ -70,14 +70,14 @@ func EvaluateProviderPublicVisibility(provider *model.Provider) VisibilityData {
 		if provider.Status != 1 {
 			result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商状态异常（冻结/停用），公开列表不可见")
 		}
-		return result
+		return finalizeProviderVisibilityData(provider, result)
 	}
 	if !providerSettlementValue(provider) {
 		// 未入驻商家仅检查 status
 		if provider.Status != 1 {
 			result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商状态异常（冻结/停用），公开列表不可见")
 		}
-		return result
+		return finalizeProviderVisibilityData(provider, result)
 	}
 	if !provider.Verified {
 		result = addPublicVisibilityBlocker(result, "provider_unverified", "服务商未实名通过，公开列表不可见")
@@ -85,7 +85,7 @@ func EvaluateProviderPublicVisibility(provider *model.Provider) VisibilityData {
 	if provider.Status != 1 {
 		result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商状态异常（冻结/停用），公开列表不可见")
 	}
-	return result
+	return finalizeProviderVisibilityData(provider, result)
 }
 
 func CountActiveMaterialShopProducts(shopID uint64) (int64, error) {
@@ -166,10 +166,10 @@ func EvaluateMaterialShopPublicVisibility(shop *model.MaterialShop, activeProduc
 		Blockers:      make([]VisibilityBlocker, 0),
 	}
 	if result.PublicVisible {
-		return result
+		return finalizeMaterialShopVisibilityData(shop, result)
 	}
 	if shop == nil {
-		return addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成主材商实体")
+		return finalizeMaterialShopVisibilityData(shop, addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成主材商实体"))
 	}
 	if !materialShopPlatformDisplayEnabled(shop) {
 		result = addPublicVisibilityBlocker(result, "platform_hidden", "平台已下线该主材商")
@@ -186,7 +186,7 @@ func EvaluateMaterialShopPublicVisibility(shop *model.MaterialShop, activeProduc
 	if !supportsMaterialShopSettlementVisibility() && !shop.IsVerified {
 		result = addPublicVisibilityBlocker(result, "shop_unverified", "主材商未完成认证，公开列表不可见")
 	}
-	return result
+	return finalizeMaterialShopVisibilityData(shop, result)
 }
 
 func IsCasePublicVisible(providerCase *model.ProviderCase) bool {
@@ -255,9 +255,9 @@ func EvaluateCasePublicVisibility(providerCase *model.ProviderCase) VisibilityDa
 		Blockers:      make([]VisibilityBlocker, 0),
 	}
 	if result.PublicVisible {
-		return result
+		return finalizeVisibilityData(result)
 	}
-	return addPublicVisibilityBlocker(result, "case_hidden_from_inspiration", "原作品当前未在灵感库公开")
+	return finalizeVisibilityData(addPublicVisibilityBlocker(result, "case_hidden_from_inspiration", "原作品当前未在灵感库公开"))
 }
 
 func addPublicVisibilityBlocker(result VisibilityData, code, message string) VisibilityData {
@@ -329,6 +329,10 @@ func ProviderMerchantDisplayEnabled(provider *model.Provider) bool {
 	return providerMerchantDisplayEnabled(provider)
 }
 
+func ProviderDisplayControlEnabled(provider *model.Provider) bool {
+	return provider != nil && provider.Status == 1
+}
+
 func SupportsProviderPlatformDisplayEnabled() bool {
 	return supportsProviderPlatformDisplayEnabled()
 }
@@ -367,6 +371,10 @@ func MaterialShopPlatformDisplayEnabled(shop *model.MaterialShop) bool {
 
 func MaterialShopMerchantDisplayEnabled(shop *model.MaterialShop) bool {
 	return materialShopMerchantDisplayEnabled(shop)
+}
+
+func MaterialShopDisplayControlEnabled(shop *model.MaterialShop) bool {
+	return shop != nil && IsMaterialShopActive(shop)
 }
 
 func SupportsMaterialShopPlatformDisplayEnabled() bool {

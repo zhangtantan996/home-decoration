@@ -118,6 +118,19 @@ const resolveOperatingStatusTag = (provider: Provider) => {
   return <Tag color={meta.color}>{meta.text}</Tag>;
 };
 
+const renderBooleanStatusTag = (
+  enabled: boolean,
+  enabledText: string,
+  disabledText: string,
+) => (
+  <Tag color={enabled ? "success" : "default"}>
+    {enabled ? enabledText : disabledText}
+  </Tag>
+);
+
+const isProviderPlatformDisplayEditable = (provider: Provider) =>
+  provider.status === 1;
+
 const renderProviderStatusOverview = (provider: Provider) => {
   const onboardingStatus = provider.onboardingStatus || "none";
   const showOnboardingTag =
@@ -661,7 +674,7 @@ const ProviderList: React.FC = () => {
       render: (val: number) => val?.toFixed(1) || "-",
     },
     {
-      title: "公开状态",
+      title: "公开结果",
       key: "publicVisible",
       width: 120,
       render: (_: any, record: Provider) => (
@@ -722,25 +735,36 @@ const ProviderList: React.FC = () => {
       ),
     },
     {
-      title: "平台上线",
+      title: "平台展示",
       key: "platformDisplayEnabled",
       render: (_: any, record: Provider) => (
-        <PermissionWrapper
-          permission={[
-            "provider:designer:edit",
-            "provider:company:edit",
-            "provider:foreman:edit",
-          ]}
+        <Tooltip
+          title={
+            isProviderPlatformDisplayEditable(record)
+              ? "控制平台是否继续公开分发该主体"
+              : "主体经营异常时，平台展示设置当前不生效"
+          }
         >
-          <Switch
-            checked={record.platformDisplayEnabled ?? true}
-            checkedChildren="上线"
-            unCheckedChildren="下线"
-            onChange={(checked) =>
-              handleTogglePlatformDisplay(record.id, checked)
-            }
-          />
-        </PermissionWrapper>
+          <span>
+            <PermissionWrapper
+              permission={[
+                "provider:designer:edit",
+                "provider:company:edit",
+                "provider:foreman:edit",
+              ]}
+            >
+              <Switch
+                checked={record.platformDisplayEnabled ?? true}
+                checkedChildren="展示"
+                unCheckedChildren="隐藏"
+                disabled={!isProviderPlatformDisplayEditable(record)}
+                onChange={(checked) =>
+                  handleTogglePlatformDisplay(record.id, checked)
+                }
+              />
+            </PermissionWrapper>
+          </span>
+        </Tooltip>
       ),
     },
     {
@@ -1103,8 +1127,25 @@ const ProviderList: React.FC = () => {
 
             <Card size="small" title="公开展示信息">
               <Descriptions column={2} bordered size="small">
-                <Descriptions.Item label="公开状态">
+                <Descriptions.Item label="平台展示">
+                  {renderBooleanStatusTag(
+                    currentProvider.platformDisplayEnabled ?? true,
+                    "平台展示中",
+                    "平台已隐藏",
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="商家自展示">
+                  {renderBooleanStatusTag(
+                    currentProvider.merchantDisplayEnabled ?? true,
+                    "商家已开启",
+                    "商家已关闭",
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="公开结果">
                   {resolveVisibilityTag(currentProvider)}
+                </Descriptions.Item>
+                <Descriptions.Item label="主阻断原因">
+                  {currentProvider.visibility?.primaryBlockerMessage || "-"}
                 </Descriptions.Item>
                 <Descriptions.Item label="路径来源">
                   {currentProvider.legacyInfo?.isLegacyPath ? (

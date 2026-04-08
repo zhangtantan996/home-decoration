@@ -39,6 +39,7 @@ import {
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import { dictionaryApi } from '../../services/dictionaryApi';
 import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
+import { resolveDisplayStatusMeta } from '../../utils/displayStatus';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import {
     buildStoredAssetFile,
@@ -65,22 +66,6 @@ const DEFAULT_SERVICE_SETTINGS: MerchantServiceSetting = {
     priceRangeMax: 0,
     serviceStyles: [],
     servicePackages: [],
-};
-
-const resolveProviderOnlineStatusMeta = (providerInfo?: MerchantProviderInfo | null) => {
-    if (!providerInfo) {
-        return { label: '待加载', color: 'default' };
-    }
-    if (providerInfo.platformDisplayEnabled === false) {
-        return { label: '平台已下线', color: 'default' };
-    }
-    if (providerInfo.merchantDisplayEnabled === false) {
-        return { label: '当前已下线', color: 'default' };
-    }
-    if (providerInfo.publicVisible) {
-        return { label: '接单中', color: 'success' };
-    }
-    return { label: '待满足上线条件', color: 'warning' };
 };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -191,6 +176,7 @@ const MerchantSettings: React.FC = () => {
     const [savingSettings, setSavingSettings] = useState(false);
     const [savingAll, setSavingAll] = useState(false);
     const [avatarUploading, setAvatarUploading] = useState(false);
+    const [coverUploading, setCoverUploading] = useState(false);
     const [displayUpdating, setDisplayUpdating] = useState(false);
     const [providerInfo, setProviderInfo] = useState<MerchantProviderInfo | null>(null);
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
@@ -220,6 +206,10 @@ const MerchantSettings: React.FC = () => {
         const role = String(providerInfo?.role || '').toLowerCase();
         return role === 'company' || providerInfo?.providerType === 2;
     }, [providerInfo]);
+    const displayStatusMeta = useMemo(
+        () => resolveDisplayStatusMeta(providerInfo, { activeLabel: '接单中' }),
+        [providerInfo],
+    );
     const isDesignerRole = !isForeman && !isCompanyRole;
 
     const basicInfoTitle = isDesignerRole
@@ -272,7 +262,7 @@ const MerchantSettings: React.FC = () => {
         settings: {
             title: serviceSettingTitle,
             description: isDesignerRole
-                ? '统一维护量房定金等设计服务参数。'
+                ? '统一维护量房费等设计服务参数。'
                 : '统一维护接单策略、服务范围与对外报价摘要。',
         },
     };
@@ -633,6 +623,47 @@ const MerchantSettings: React.FC = () => {
         }
     };
 
+    const handleCoverUpload: UploadProps['customRequest'] = async (options) => {
+        const { file, onSuccess, onError } = options;
+        setCoverUploading(true);
+        try {
+            const uploaded = await merchantUploadApi.uploadImageData(file as File);
+            const storedPath = getUploadedAssetStoredPath(uploaded);
+            if (!storedPath) {
+                throw new Error('背景图上传结果缺少资源路径');
+            }
+
+            const previewUrl = getUploadedAssetPreviewUrl(uploaded) || storedPath;
+            await merchantAuthApi.updateInfo({ coverImage: storedPath });
+            setProviderInfo((prev) => (prev ? { ...prev, coverImage: previewUrl } : prev));
+            message.success('背景图已更新');
+            onSuccess?.(uploaded);
+        } catch (error) {
+            const errorMessage = getErrorMessage(error, '背景图上传失败');
+            message.error(errorMessage);
+            onError?.(new Error(errorMessage));
+        } finally {
+            setCoverUploading(false);
+        }
+    };
+
+    const handleCoverClear = async () => {
+        if (!providerInfo?.coverImage) {
+            return;
+        }
+
+        setCoverUploading(true);
+        try {
+            await merchantAuthApi.updateInfo({ coverImage: '' });
+            setProviderInfo((prev) => (prev ? { ...prev, coverImage: '' } : prev));
+            message.success('背景图已清空');
+        } catch (error) {
+            message.error(getErrorMessage(error, '清空背景图失败'));
+        } finally {
+            setCoverUploading(false);
+        }
+    };
+
     const handleCompanyAlbumUpload: UploadProps['customRequest'] = async (options) => {
         const { file, onSuccess, onError } = options;
         try {
@@ -658,7 +689,7 @@ const MerchantSettings: React.FC = () => {
                 ...prev,
                 merchantDisplayEnabled: checked,
             } : prev);
-            message.success(checked ? '已切换为接单中' : '已下线');
+            message.success(checked ? '展示设置已保存' : '已下线');
             await fetchProviderInfo();
         } catch (error) {
             message.error(getErrorMessage(error, '更新接单状态失败'));
@@ -808,6 +839,63 @@ const MerchantSettings: React.FC = () => {
                                 </div>
                             </div>
 
+                            <div style={{ ...softPanelStyle, marginBottom: 20 }}>
+                                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>详情页背景图</div>
+                                <div
+                                    style={{
+                                        position: 'relative',
+                                        height: 128,
+                                        borderRadius: 18,
+                                        overflow: 'hidden',
+                                        border: '1px solid #e2e8f0',
+                                        background: 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)',
+                                    }}
+                                >
+                                    {providerInfo?.coverImage ? (
+                                        <img
+                                            src={providerInfo.coverImage}
+                                            alt="服务商背景图"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                        />
+                                    ) : (
+                                        <div
+                                            style={{
+                                                width: '100%',
+                                                height: '100%',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: '#475569',
+                                                fontSize: 13,
+                                                textAlign: 'center',
+                                                padding: '0 16px',
+                                                lineHeight: 1.7,
+                                            }}
+                                        >
+                                            未上传背景图时，前台会按公司相册 / 案例图 / 默认背景兜底
+                                        </div>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                                    <Upload
+                                        showUploadList={false}
+                                        customRequest={handleCoverUpload}
+                                        beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.showcase)}
+                                        accept=".jpg,.jpeg,.png,.webp"
+                                    >
+                                        <Button icon={coverUploading ? <LoadingOutlined /> : <CameraOutlined />} loading={coverUploading}>
+                                            上传背景图
+                                        </Button>
+                                    </Upload>
+                                    <Button onClick={() => void handleCoverClear()} disabled={!providerInfo?.coverImage || coverUploading}>
+                                        清空背景图
+                                    </Button>
+                                </div>
+                                <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.7, marginTop: 10 }}>
+                                    背景图只用于服务商详情页顶部头图，不再和头像共用。
+                                </div>
+                            </div>
+
                             <div
                                 style={{
                                     display: 'grid',
@@ -845,40 +933,40 @@ const MerchantSettings: React.FC = () => {
                             </div>
 
                             <div style={{ ...softPanelStyle, marginTop: 16 }}>
-                                {(() => {
-                                    const onlineStatusMeta = resolveProviderOnlineStatusMeta(providerInfo);
-
-                                    return (
-                                        <div
-                                            style={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                alignItems: 'center',
-                                                gap: 16,
-                                                flexWrap: 'wrap',
-                                            }}
-                                        >
-                                            <div style={{ minWidth: 0 }}>
-                                                <div style={{ color: '#0f172a', fontWeight: 600 }}>接单状态</div>
-                                                <div style={{ marginTop: 8 }}>
-                                                    <Tag
-                                                        color={onlineStatusMeta.color}
-                                                        style={{ margin: 0, borderRadius: 999, paddingInline: 10, lineHeight: '22px' }}
-                                                    >
-                                                        {onlineStatusMeta.label}
-                                                    </Tag>
-                                                </div>
-                                            </div>
-                                            <Switch
-                                                checked={providerInfo?.merchantDisplayEnabled ?? true}
-                                                loading={displayUpdating}
-                                                onChange={handleDisplayToggle}
-                                                checkedChildren="接单中"
-                                                unCheckedChildren="下线"
-                                            />
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        gap: 16,
+                                        flexWrap: 'wrap',
+                                    }}
+                                >
+                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                        <div style={{ color: '#0f172a', fontWeight: 600 }}>接单状态</div>
+                                        <div style={{ marginTop: 8 }}>
+                                            <Tag
+                                                color={displayStatusMeta.color}
+                                                style={{ margin: 0, borderRadius: 999, paddingInline: 10, lineHeight: '22px' }}
+                                            >
+                                                {displayStatusMeta.label}
+                                            </Tag>
                                         </div>
-                                    );
-                                })()}
+                                        {displayStatusMeta.helperText && (
+                                            <div style={{ marginTop: 8, color: '#64748b', fontSize: 12, lineHeight: 1.6 }}>
+                                                {displayStatusMeta.helperText}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <Switch
+                                        checked={providerInfo?.merchantDisplayEnabled ?? true}
+                                        loading={displayUpdating}
+                                        disabled={displayStatusMeta.switchDisabled}
+                                        onChange={handleDisplayToggle}
+                                        checkedChildren="接单中"
+                                        unCheckedChildren="下线"
+                                    />
+                                </div>
                             </div>
 
                             <Divider style={{ margin: '20px 0' }} />
@@ -1159,7 +1247,7 @@ const MerchantSettings: React.FC = () => {
                                                     </Col>
                                                     <Col xs={24} md={12} xl={6}>
                                                         <div style={softPanelStyle}>
-                                                            <Form.Item name="surveyDepositPrice" label="量房定金（元）" style={{ marginBottom: 0 }}>
+                                                            <Form.Item name="surveyDepositPrice" label="量房费（元）" style={{ marginBottom: 0 }}>
                                                                 <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="如：500" />
                                                             </Form.Item>
                                                         </div>
@@ -1195,7 +1283,7 @@ const MerchantSettings: React.FC = () => {
                                                     </Col>
                                                     <Col xs={24} md={8}>
                                                         <div style={softPanelStyle}>
-                                                            <Form.Item name="surveyDepositPrice" label="量房定金（元）" style={{ marginBottom: 0 }}>
+                                                            <Form.Item name="surveyDepositPrice" label="量房费（元）" style={{ marginBottom: 0 }}>
                                                                 <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="未填写则使用平台默认价" />
                                                             </Form.Item>
                                                         </div>

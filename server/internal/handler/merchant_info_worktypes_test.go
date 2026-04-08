@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -169,6 +170,86 @@ func TestMerchantInfo_ForCompany_ReturnsCompanyAlbum(t *testing.T) {
 	}
 }
 
+func TestMerchantInfo_ReadsAndUpdatesCoverImage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	providerID := uint64(207)
+	userID := uint64(2007)
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000027", Nickname: "封面设计师"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{
+		Base:          model.Base{ID: providerID},
+		UserID:        userID,
+		ProviderType:  1,
+		SubType:       "designer",
+		DisplayName:   "封面设计师",
+		CompanyName:   "封面工作室",
+		CoverImage:    "/provider-cover-old.jpg",
+		OfficeAddress: "西安市高新区锦业路 1 号",
+		Status:        1,
+	}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	getResp := requestMerchantJSON(t, http.MethodGet, "/api/v1/merchant/info", nil, providerID, userID, MerchantGetInfo)
+	if getResp.Code != 0 {
+		t.Fatalf("unexpected get info code: %d message=%s", getResp.Code, getResp.Message)
+	}
+
+	var getData struct {
+		CoverImage string `json:"coverImage"`
+	}
+	if err := json.Unmarshal(getResp.Data, &getData); err != nil {
+		t.Fatalf("decode get info data: %v", err)
+	}
+	if !strings.HasSuffix(getData.CoverImage, "/provider-cover-old.jpg") {
+		t.Fatalf("unexpected cover image: %s", getData.CoverImage)
+	}
+
+	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", map[string]any{
+		"name":          "封面设计师",
+		"officeAddress": "西安市高新区锦业路 1 号",
+		"coverImage":    "/provider-cover-new.jpg",
+	}, providerID, userID, MerchantUpdateInfo)
+	if updateResp.Code != 0 {
+		t.Fatalf("unexpected update code: %d message=%s", updateResp.Code, updateResp.Message)
+	}
+
+	var updated model.Provider
+	if err := db.First(&updated, providerID).Error; err != nil {
+		t.Fatalf("query provider after update: %v", err)
+	}
+	if updated.CoverImage != "/provider-cover-new.jpg" {
+		t.Fatalf("unexpected cover image after update: %s", updated.CoverImage)
+	}
+
+	clearResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", map[string]any{
+		"name":          "封面设计师",
+		"officeAddress": "西安市高新区锦业路 1 号",
+		"coverImage":    "",
+	}, providerID, userID, MerchantUpdateInfo)
+	if clearResp.Code != 0 {
+		t.Fatalf("unexpected clear code: %d message=%s", clearResp.Code, clearResp.Message)
+	}
+
+	if err := db.First(&updated, providerID).Error; err != nil {
+		t.Fatalf("query provider after clear: %v", err)
+	}
+	if updated.CoverImage != "" {
+		t.Fatalf("expected cover image cleared, got=%q", updated.CoverImage)
+	}
+}
+
 func TestMerchantInfo_ReadsAndUpdatesDisplayFlags(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -210,9 +291,12 @@ func TestMerchantInfo_ReadsAndUpdatesDisplayFlags(t *testing.T) {
 	}
 
 	var getData struct {
-		MerchantDisplayEnabled bool `json:"merchantDisplayEnabled"`
-		PlatformDisplayEnabled bool `json:"platformDisplayEnabled"`
-		PublicVisible          bool `json:"publicVisible"`
+		MerchantDisplayEnabled bool   `json:"merchantDisplayEnabled"`
+		PlatformDisplayEnabled bool   `json:"platformDisplayEnabled"`
+		PublicVisible          bool   `json:"publicVisible"`
+		DistributionStatus     string `json:"distributionStatus"`
+		PrimaryBlockerCode     string `json:"primaryBlockerCode"`
+		PrimaryBlockerMessage  string `json:"primaryBlockerMessage"`
 	}
 	if err := json.Unmarshal(getResp.Data, &getData); err != nil {
 		t.Fatalf("decode get info data: %v", err)
@@ -225,6 +309,15 @@ func TestMerchantInfo_ReadsAndUpdatesDisplayFlags(t *testing.T) {
 	}
 	if getData.PublicVisible {
 		t.Fatalf("expected provider to stay hidden while merchant display disabled")
+	}
+	if getData.DistributionStatus != "hidden_by_merchant" {
+		t.Fatalf("unexpected distribution status: %s", getData.DistributionStatus)
+	}
+	if getData.PrimaryBlockerCode != "merchant_hidden" {
+		t.Fatalf("unexpected blocker code: %s", getData.PrimaryBlockerCode)
+	}
+	if getData.PrimaryBlockerMessage == "" {
+		t.Fatalf("expected blocker message")
 	}
 
 	updatePayload := map[string]any{
@@ -243,6 +336,63 @@ func TestMerchantInfo_ReadsAndUpdatesDisplayFlags(t *testing.T) {
 	}
 	if !updated.MerchantDisplayEnabled {
 		t.Fatalf("expected merchant display flag updated")
+	}
+}
+
+func TestMerchantUpdateInfo_RejectsDisplayToggleWhenProviderFrozen(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	providerID := uint64(206)
+	userID := uint64(2006)
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000026", Nickname: "冻结设计师"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{
+		Base:                   model.Base{ID: providerID},
+		UserID:                 userID,
+		ProviderType:           1,
+		SubType:                "designer",
+		CompanyName:            "冻结工作室",
+		Status:                 0,
+		Verified:               true,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+		OfficeAddress:          "西安市雁塔区",
+	}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+	if err := db.Model(&model.Provider{}).Where("id = ?", providerID).Update("status", 0).Error; err != nil {
+		t.Fatalf("freeze provider: %v", err)
+	}
+
+	updatePayload := map[string]any{
+		"name":                   "冻结设计师",
+		"officeAddress":          "西安市雁塔区",
+		"merchantDisplayEnabled": false,
+	}
+	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", updatePayload, providerID, userID, MerchantUpdateInfo)
+	if updateResp.Code != 409 {
+		t.Fatalf("unexpected update code: %d message=%s", updateResp.Code, updateResp.Message)
+	}
+	if updateResp.Message != merchantDisplayRequiresActiveMessage {
+		t.Fatalf("unexpected message: %s", updateResp.Message)
+	}
+
+	var provider model.Provider
+	if err := db.First(&provider, providerID).Error; err != nil {
+		t.Fatalf("query provider: %v", err)
+	}
+	if !provider.MerchantDisplayEnabled {
+		t.Fatalf("merchant display flag should stay unchanged")
 	}
 }
 

@@ -101,6 +101,33 @@ func TestEvaluateProviderPublicVisibilityAddsDisplayBlockers(t *testing.T) {
 	if !hasBlockerCode(merchantHidden.Blockers, "merchant_hidden") {
 		t.Fatalf("expected merchant_hidden blocker, got %+v", merchantHidden.Blockers)
 	}
+	if merchantHidden.DistributionStatus != visibilityDistributionHiddenByMerchant {
+		t.Fatalf("expected hidden_by_merchant distribution, got %+v", merchantHidden)
+	}
+	if merchantHidden.PrimaryBlockerCode != "merchant_hidden" {
+		t.Fatalf("expected primary blocker merchant_hidden, got %+v", merchantHidden)
+	}
+}
+
+func TestEvaluateProviderPublicVisibilityOperatingOverridesPlatformHide(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+
+	hidden := EvaluateProviderPublicVisibility(&model.Provider{
+		Verified:               true,
+		Status:                 0,
+		IsSettled:              true,
+		PlatformDisplayEnabled: false,
+		MerchantDisplayEnabled: true,
+	})
+	if hidden.PublicVisible {
+		t.Fatalf("expected hidden provider")
+	}
+	if hidden.DistributionStatus != visibilityDistributionBlockedOperating {
+		t.Fatalf("expected blocked_by_operating distribution, got %+v", hidden)
+	}
+	if hidden.PrimaryBlockerCode != "provider_frozen" {
+		t.Fatalf("expected provider_frozen as primary blocker, got %+v", hidden)
+	}
 }
 
 func TestEvaluateMaterialShopPublicVisibility(t *testing.T) {
@@ -145,6 +172,12 @@ func TestEvaluateMaterialShopPublicVisibilityAddsDisplayBlockers(t *testing.T) {
 	if !hasBlockerCode(platformHidden.Blockers, "platform_hidden") {
 		t.Fatalf("expected platform_hidden blocker, got %+v", platformHidden.Blockers)
 	}
+	if platformHidden.DistributionStatus != visibilityDistributionHiddenByPlatform {
+		t.Fatalf("expected hidden_by_platform distribution, got %+v", platformHidden)
+	}
+	if platformHidden.PrimaryBlockerCode != "platform_hidden" {
+		t.Fatalf("expected primary blocker platform_hidden, got %+v", platformHidden)
+	}
 
 	merchantHidden := EvaluateMaterialShopPublicVisibility(&model.MaterialShop{
 		IsVerified:             true,
@@ -175,6 +208,12 @@ func TestEvaluateMaterialShopPublicVisibilityFrozen(t *testing.T) {
 	}
 	if !hasBlockerCode(hidden.Blockers, "shop_frozen") {
 		t.Fatalf("expected shop_frozen blocker, got %+v", hidden.Blockers)
+	}
+	if hidden.DistributionStatus != visibilityDistributionBlockedOperating {
+		t.Fatalf("expected blocked_by_operating distribution, got %+v", hidden)
+	}
+	if hidden.PrimaryBlockerCode != "shop_frozen" {
+		t.Fatalf("expected shop_frozen as primary blocker, got %+v", hidden)
 	}
 }
 
