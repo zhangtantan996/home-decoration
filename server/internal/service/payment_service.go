@@ -1424,6 +1424,9 @@ func (s *PaymentService) GetSurveyDepositPaymentOptions(booking *model.Booking) 
 
 func validateMiniAlipayH5Runtime() error {
 	cfg := config.GetConfig()
+	if isMiniAlipayH5SandboxRuntime(cfg.Alipay) {
+		return errors.New("支付宝 H5 沙箱环境不支持小程序真机拉起，请改用二维码支付")
+	}
 	publicURL := strings.TrimSpace(cfg.Server.PublicURL)
 	if err := validateMiniAlipayH5URL(publicURL, "SERVER_PUBLIC_URL"); err != nil {
 		return err
@@ -1444,6 +1447,14 @@ func validateMiniAlipayH5Runtime() error {
 		return errors.New("支付宝 H5 返回页域名与服务端公网域名不一致")
 	}
 	return nil
+}
+
+func isMiniAlipayH5SandboxRuntime(cfg config.AlipayConfig) bool {
+	if cfg.Sandbox {
+		return true
+	}
+	gatewayURL := strings.ToLower(strings.TrimSpace(cfg.GatewayURL))
+	return strings.Contains(gatewayURL, "openapi-sandbox.") || strings.Contains(gatewayURL, "alipaydev.com")
 }
 
 func validateMiniAlipayH5URL(rawURL, envName string) error {

@@ -212,7 +212,7 @@ func enableAlipayForPaymentTests(t *testing.T) {
 	cfg.Alipay.AppID = "test-app-id"
 	cfg.Alipay.AppPrivateKey = "test-private-key"
 	cfg.Alipay.PublicKey = "test-public-key"
-	cfg.Alipay.GatewayURL = "https://openapi-sandbox.dl.alipaydev.com/gateway.do"
+	cfg.Alipay.GatewayURL = "https://openapi.alipay.com/gateway.do"
 	cfg.Alipay.NotifyURL = "https://server.example.com/api/v1/payments/alipay/notify"
 	cfg.Alipay.TimeoutMinutes = 15
 	cfg.Server.PublicURL = "https://server.example.com"
@@ -545,6 +545,31 @@ func TestPaymentServiceGetSurveyDepositPaymentOptionsFallsBackToQRCodeWhenMiniH5
 	}
 }
 
+func TestPaymentServiceGetSurveyDepositPaymentOptionsFallsBackToQRCodeWhenMiniH5SandboxEnabled(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	_, bookingID := seedPaymentIntentFixture(t, db)
+
+	cfg := config.GetConfig()
+	cfg.Alipay.Sandbox = true
+	cfg.Alipay.GatewayURL = "https://openapi-sandbox.dl.alipaydev.com/gateway.do"
+
+	var booking model.Booking
+	if err := db.First(&booking, bookingID).Error; err != nil {
+		t.Fatalf("load booking: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	options := svc.GetSurveyDepositPaymentOptions(&booking)
+	if len(options) != 1 {
+		t.Fatalf("expected single payment option, got %+v", options)
+	}
+	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "qr_code" {
+		t.Fatalf("expected alipay qr fallback option in sandbox, got %+v", options[0])
+	}
+}
+
 func TestPaymentServiceStartSurveyDepositPaymentRejectsMiniH5WithoutRuntime(t *testing.T) {
 	db := setupPaymentServiceTestDB(t)
 	enableAlipayForPaymentTests(t)
@@ -561,6 +586,26 @@ func TestPaymentServiceStartSurveyDepositPaymentRejectsMiniH5WithoutRuntime(t *t
 	}
 	if err.Error() == "" {
 		t.Fatal("expected explicit runtime config error")
+	}
+}
+
+func TestPaymentServiceStartSurveyDepositPaymentRejectsMiniH5InSandbox(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	cfg := config.GetConfig()
+	cfg.Alipay.Sandbox = true
+	cfg.Alipay.GatewayURL = "https://openapi-sandbox.dl.alipaydev.com/gateway.do"
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	_, err := svc.StartSurveyDepositPayment(userID, bookingID, model.PaymentChannelAlipay, model.PaymentTerminalMobileH5)
+	if err == nil {
+		t.Fatal("expected mobile h5 launch to be rejected in sandbox")
+	}
+	if err.Error() != "支付宝 H5 沙箱环境不支持小程序真机拉起，请改用二维码支付" {
+		t.Fatalf("unexpected sandbox runtime error: %v", err)
 	}
 }
 
