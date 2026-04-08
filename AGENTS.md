@@ -26,6 +26,44 @@ This file is the repo-wide instruction set for Codex and other coding agents.
 
 Rules from `docs/Claude开发参考手册.md` have the highest policy priority. Treat `GEMINI.md` as potentially stale.
 
+## Business / Product / Ops Baseline
+- For business judgment, product prioritization, growth planning, operations design, merchant governance, analytics, or roadmap questions, use the following doc chain as the default baseline:
+  1. `docs/产品需求文档(PRD).md`
+  2. `docs/BUSINESS_FLOW.md`
+  3. `docs/商业运营文档索引_2026-04.md`
+  4. `docs/平台阶段判断与主商业模型_2026-04.md`
+  5. `docs/小程序优先增长与成交操作系统_2026-04.md`
+  6. `docs/供给运营与商家分层治理体系_2026-04.md`
+  7. `docs/经营指标与运营驾驶舱定义_2026-04.md`
+- Do not treat older MVP, Web-first, or merchant-analysis docs as the primary strategy baseline when they conflict with the documents above.
+- Default operating strategy is fixed as:
+  - `mini` = primary transaction surface
+  - `merchant` web = primary fulfillment surface
+  - `admin` web = primary governance surface
+  - `web/H5` = landing, payment-result, and auxiliary browsing surfaces
+- Do not violate these current business baselines unless the user explicitly decides to change strategy:
+  - design confirmation and foreman confirmation remain two separate transaction points
+  - project creation is triggered only after foreman confirmation
+  - material shops remain a side capability and are not part of the current main transaction loop
+
+## Demand Decision Gate
+- Before recommending, planning, or implementing a new requirement, first evaluate and state:
+  1. whether it is a hard requirement for the current stage
+  2. whether it materially improves platform growth, transaction, fulfillment, or governance
+  3. whether there is a shorter, cleaner, or more stage-appropriate implementation path
+- If a requirement does not serve the current main business loop, do not default to implementation. First challenge the scope based on the business baseline above.
+- Avoid feature-count thinking. Prioritize requirements that deepen one of these loops:
+  - acquisition and booking
+  - design transaction
+  - construction bridge
+  - fulfillment quality
+  - after-sales governance
+- When suggesting priorities, default to this framing:
+  1. stage judgment
+  2. whether it serves the main business model
+  3. whether it improves growth, supply, or governance
+  4. implementation path and verification
+
 ## Default Working Style
 - Think from first principles. Start from the original requirement, constraints, and desired outcome instead of assuming the user already knows the exact implementation path.
 - If the business goal, acceptance target, or key constraint is unclear and that ambiguity affects correctness, stop and clarify before implementing or recommending a structural change.

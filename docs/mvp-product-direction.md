@@ -43,6 +43,29 @@ This means **Web-first**, not **admin-first**.
 
 User Web, Merchant Web, and Admin Web must remain role-separated even if they temporarily share the same repository or some shared code.
 
+## Stage Update (2026-04)
+
+This document records the earlier **Three-Web / Web-first** exploration path.
+
+As of 2026-04, the current operating strategy has been updated to:
+
+- **Mini Program** as the primary transaction surface
+- **Merchant Web** as the primary fulfillment surface
+- **Admin Web** as the primary governance surface
+- **Web/H5** as landing, payment-result, and auxiliary browsing surfaces
+
+This is a **stage strategy update**, not a denial of the historical value of the original document.
+
+The original Three-Web judgment still explains why heavy review, heavy editing, and heavy governance workflows should stay on web surfaces. The updated strategy only changes the current main transaction entry point.
+
+When strategy or prioritization documents conflict, use:
+
+1. `docs/产品需求文档(PRD).md`
+2. `docs/BUSINESS_FLOW.md`
+3. `docs/商业运营文档索引_2026-04.md`
+
+as the current baseline.
+
 ## Why Web first
 
 At the current stage, the project needs to validate:
