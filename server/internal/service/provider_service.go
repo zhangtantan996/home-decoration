@@ -179,6 +179,7 @@ func resolveProviderStableAvatarPath(provider model.Provider, user *model.User, 
 	return resolveStableProviderImagePath(
 		strings.TrimSpace(provider.Avatar),
 		userAvatar,
+		strings.TrimSpace(caseCover),
 	)
 }
 
