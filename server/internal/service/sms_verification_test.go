@@ -135,6 +135,26 @@ func TestNormalizeSMSPurpose_RejectsResetPassword(t *testing.T) {
 	}
 }
 
+func TestSMSProviderUserFacingError_BusinessLimit(t *testing.T) {
+	message := smsProviderUserFacingError(&SMSProviderError{
+		Code:    "isv.BUSINESS_LIMIT_CONTROL",
+		Message: "触发号码天级流控",
+	})
+	if message != "该手机号今日验证码发送次数已达上限，请明日再试" {
+		t.Fatalf("unexpected business limit message: %q", message)
+	}
+}
+
+func TestSMSProviderUserFacingError_Unknown(t *testing.T) {
+	message := smsProviderUserFacingError(&SMSProviderError{
+		Code:    "isv.UNKNOWN",
+		Message: "unknown",
+	})
+	if message != "" {
+		t.Fatalf("expected empty message for unknown provider error, got %q", message)
+	}
+}
+
 func TestSMSCodePurposeIsolation_UsesDistinctKeysAndHashes(t *testing.T) {
 	phone := "13800138000"
 	code := "123456"

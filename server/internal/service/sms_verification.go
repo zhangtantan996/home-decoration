@@ -223,6 +223,15 @@ func validateSMSPurpose(purpose SMSPurpose) error {
 	return nil
 }
 
+func smsProviderUserFacingError(err error) string {
+	switch strings.ToUpper(strings.TrimSpace(ExtractSMSProviderErrorCode(err))) {
+	case "ISV.BUSINESS_LIMIT_CONTROL":
+		return "该手机号今日验证码发送次数已达上限，请明日再试"
+	default:
+		return ""
+	}
+}
+
 func logSMSAudit(requestID string, purpose SMSPurpose, phone, clientIP string, templateCtx SMSTemplateContext, providerResult SMSProviderResult, status, errCode, errMsg string) {
 	log.Printf(
 		"[SMS-AUDIT] requestId=%s purpose=%s riskTier=%s templateKey=%s templateCode=%s phoneHash=%s ip=%s provider=%s messageId=%s providerRequestId=%s status=%s errorCode=%s error=%s",
@@ -420,6 +429,9 @@ func SendSMSCode(phone string, purpose SMSPurpose, clientIP, captchaToken string
 	if err != nil {
 		errCode := ExtractSMSProviderErrorCode(err)
 		logSMSAudit(requestID, purpose, phone, clientIP, templateCtx, providerResult, "send_failed", errCode, err.Error())
+		if friendly := smsProviderUserFacingError(err); friendly != "" {
+			return nil, errors.New(friendly)
+		}
 		if isStrictProductionMode() {
 			return nil, errors.New("短信发送失败，请稍后重试")
 		}
