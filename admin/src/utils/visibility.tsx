@@ -1,4 +1,3 @@
-import React from "react";
 import { Space, Tag, Tooltip, Typography } from "antd";
 import type {
   AdminAuditLegacyInfo,
