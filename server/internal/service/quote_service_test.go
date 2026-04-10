@@ -1531,6 +1531,114 @@ func TestCreateQuoteListBindsActiveQuantityBaseFromProposal(t *testing.T) {
 	}
 }
 
+func TestCreateQuoteListDoesNotRegressConstructionBridgeStage(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	owner := model.User{Base: model.Base{ID: 9801}, Phone: "13800139801", Nickname: "桥接业主B", Status: 1}
+	designer := model.Provider{Base: model.Base{ID: 9802}, ProviderType: 1, CompanyName: "桥接设计师B", Status: 1}
+	booking := model.Booking{Base: model.Base{ID: 9803}, UserID: owner.ID, ProviderID: designer.ID, Address: "桥接回归测试地址", Status: 2}
+	proposal := model.Proposal{
+		Base:             model.Base{ID: 9804},
+		BookingID:        booking.ID,
+		DesignerID:       designer.ID,
+		Summary:          "桥接正式方案B",
+		Status:           model.ProposalStatusConfirmed,
+		Version:          3,
+		InternalDraftJSON: `{"rooms":[{"name":"主卧","items":[{"name":"乳胶漆","unit":"㎡","quantity":28,"note":"两遍面漆"}]}]}`,
+	}
+	flow := model.BusinessFlow{
+		Base:               model.Base{ID: 9805},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     owner.ID,
+		DesignerProviderID: designer.ID,
+		CurrentStage:       model.BusinessFlowStageConstructionPartyPending,
+	}
+	for _, record := range []interface{}{&owner, &designer, &booking, &proposal, &flow} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed bridge regression fixture: %v", err)
+		}
+	}
+
+	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
+		ProposalID:         proposal.ID,
+		ProposalVersion:    proposal.Version,
+		DesignerProviderID: designer.ID,
+		OwnerUserID:        owner.ID,
+		Title:              "施工报价任务-桥接回归",
+		Currency:           "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreateQuoteList: %v", err)
+	}
+
+	var updatedFlow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, booking.ID).First(&updatedFlow).Error; err != nil {
+		t.Fatalf("reload flow: %v", err)
+	}
+	if updatedFlow.CurrentStage != model.BusinessFlowStageConstructionPartyPending {
+		t.Fatalf("expected stage remain construction_party_pending, got %s", updatedFlow.CurrentStage)
+	}
+	if updatedFlow.SelectedQuoteTaskID != task.ID {
+		t.Fatalf("expected selected quote task id=%d, got %d", task.ID, updatedFlow.SelectedQuoteTaskID)
+	}
+}
+
+func TestCreateQuoteListPromotesEarlierStagesOnlyToConstructionBridge(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	owner := model.User{Base: model.Base{ID: 9811}, Phone: "13800139811", Nickname: "设计交付业主", Status: 1}
+	designer := model.Provider{Base: model.Base{ID: 9812}, ProviderType: 1, CompanyName: "设计交付商家", Status: 1}
+	booking := model.Booking{Base: model.Base{ID: 9813}, UserID: owner.ID, ProviderID: designer.ID, Address: "前置阶段推进地址", Status: 2}
+	proposal := model.Proposal{
+		Base:             model.Base{ID: 9814},
+		BookingID:        booking.ID,
+		DesignerID:       designer.ID,
+		Summary:          "前置阶段方案",
+		Status:           model.ProposalStatusConfirmed,
+		Version:          1,
+		InternalDraftJSON: `{"rooms":[{"name":"客餐厅","items":[{"name":"木地板铺设","unit":"㎡","quantity":20,"note":"浅色"}]}]}`,
+	}
+	flow := model.BusinessFlow{
+		Base:               model.Base{ID: 9815},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     owner.ID,
+		DesignerProviderID: designer.ID,
+		CurrentStage:       model.BusinessFlowStageDesignDeliveryPending,
+	}
+	for _, record := range []interface{}{&owner, &designer, &booking, &proposal, &flow} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed promotion fixture: %v", err)
+		}
+	}
+
+	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
+		ProposalID:         proposal.ID,
+		ProposalVersion:    proposal.Version,
+		DesignerProviderID: designer.ID,
+		OwnerUserID:        owner.ID,
+		Title:              "施工报价任务-前置阶段",
+		Currency:           "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreateQuoteList: %v", err)
+	}
+
+	var updatedFlow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, booking.ID).First(&updatedFlow).Error; err != nil {
+		t.Fatalf("reload flow: %v", err)
+	}
+	if updatedFlow.CurrentStage != model.BusinessFlowStageConstructionPartyPending {
+		t.Fatalf("expected earlier stage promoted to construction_party_pending, got %s", updatedFlow.CurrentStage)
+	}
+	if updatedFlow.SelectedQuoteTaskID != task.ID {
+		t.Fatalf("expected selected quote task id=%d, got %d", task.ID, updatedFlow.SelectedQuoteTaskID)
+	}
+}
+
 func TestGetMerchantQuoteListDetailIncludesQuantityBase(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 

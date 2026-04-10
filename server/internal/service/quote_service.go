@@ -820,10 +820,24 @@ func (s *QuoteService) CreateQuoteList(input *QuoteListCreateInput) (*model.Quot
 		return nil, fmt.Errorf("创建报价清单失败: %w", err)
 	}
 	if sourceType, sourceID, err := businessFlowSvc.ResolveSourceFromProposal(nil, quoteList.ProposalID); err == nil && sourceID > 0 {
-		_ = businessFlowSvc.AdvanceBySource(nil, sourceType, sourceID, map[string]interface{}{
-			"current_stage":          model.BusinessFlowStageConstructorPending,
+		updates := map[string]interface{}{
 			"selected_quote_task_id": quoteList.ID,
-		})
+		}
+		if flow, flowErr := businessFlowSvc.GetBySource(sourceType, sourceID); flowErr == nil && flow != nil {
+			switch model.NormalizeBusinessFlowStage(flow.CurrentStage) {
+			case model.BusinessFlowStageLeadPending,
+				model.BusinessFlowStageNegotiating,
+				model.BusinessFlowStageDesignPendingSubmission,
+				model.BusinessFlowStageDesignPendingConfirmation,
+				model.BusinessFlowStageSurveyDepositPending,
+				model.BusinessFlowStageDesignQuotePending,
+				model.BusinessFlowStageDesignFeePaying,
+				model.BusinessFlowStageDesignDeliveryPending,
+				model.BusinessFlowStageDesignAcceptancePending:
+				updates["current_stage"] = model.BusinessFlowStageConstructionPartyPending
+			}
+		}
+		_ = businessFlowSvc.AdvanceBySource(nil, sourceType, sourceID, updates)
 	}
 	return quoteList, nil
 }
