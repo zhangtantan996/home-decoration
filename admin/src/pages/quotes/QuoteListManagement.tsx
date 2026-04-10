@@ -351,6 +351,7 @@ const QuoteListManagement: React.FC = () => {
       setRecommendedForemen(result.list || []);
       message.success(`已生成 ${result.list?.length || 0} 位推荐工长`);
     } catch (error) {
+      setRecommendedForemen([]);
       message.error(readErrorMessage(error, "推荐工长失败"));
     } finally {
       setSubmitting(false);
@@ -768,6 +769,7 @@ const QuoteListManagement: React.FC = () => {
                 type="primary"
                 onClick={() => void handleGenerateDrafts()}
                 loading={submitting}
+                disabled={detail.quoteList.prerequisiteStatus !== "complete"}
               >
                 按工长价格库生成草稿
               </Button>
@@ -1128,6 +1130,7 @@ const QuoteListManagement: React.FC = () => {
                     icon={<RobotOutlined />}
                     onClick={() => void handleRecommendForemen()}
                     loading={submitting}
+                    disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                   >
                     推荐工长
                   </Button>
@@ -1135,6 +1138,7 @@ const QuoteListManagement: React.FC = () => {
                     type="primary"
                     onClick={() => void handleSelectForemen()}
                     loading={submitting}
+                    disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                   >
                     确认参与工长
                   </Button>
@@ -1151,6 +1155,7 @@ const QuoteListManagement: React.FC = () => {
                   )}
                   value={selectedForemanIds}
                   onChange={(values) => setSelectedForemanIds(values)}
+                  disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                 />
 
                 {recommendedForemen.length > 0 ? (

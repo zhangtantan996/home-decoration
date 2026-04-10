@@ -1091,6 +1091,200 @@ func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
 	}
 }
 
+func TestQuoteTaskPrerequisiteValidation_ReturnsMessageAndBlocksActions(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	task := model.QuoteList{
+		Title:              "前置校验任务",
+		Status:             model.QuoteListStatusDraft,
+		Currency:           "CNY",
+		PrerequisiteStatus: model.QuoteTaskPrerequisiteDraft,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create quote list: %v", err)
+	}
+	if err := db.Create(&model.QuoteListItem{
+		QuoteListID: task.ID,
+		Name:        "墙地面防水",
+		Unit:        "㎡",
+		Quantity:    8,
+		CategoryL1:  "防水",
+	}).Error; err != nil {
+		t.Fatalf("create quote item: %v", err)
+	}
+
+	validation, err := svc.ValidateTaskPrerequisites(task.ID)
+	if err != nil {
+		t.Fatalf("validate prerequisites: %v", err)
+	}
+	if validation.OK {
+		t.Fatalf("expected validation to fail")
+	}
+	if !strings.Contains(validation.Message, "房屋面积") || !strings.Contains(validation.Message, "房型") {
+		t.Fatalf("expected localized missing-fields message, got %q", validation.Message)
+	}
+
+	if _, err := svc.RecommendForemen(task.ID); err == nil || !strings.Contains(err.Error(), "报价前置资料未补齐") {
+		t.Fatalf("expected recommend foremen to be blocked with missing-fields message, got %v", err)
+	}
+	if _, err := svc.GenerateDrafts(task.ID); err == nil || !strings.Contains(err.Error(), "报价前置资料未补齐") {
+		t.Fatalf("expected generate drafts to be blocked with missing-fields message, got %v", err)
+	}
+}
+
+func TestListUserQuoteTasks_HidesTasksBeforeSubmitToUser(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	hidden := model.QuoteList{
+		Title:                  "未提交用户任务",
+		OwnerUserID:            9001,
+		Status:                 model.QuoteListStatusPricingInProgress,
+		UserConfirmationStatus: model.QuoteUserConfirmationPending,
+		ActiveSubmissionID:     501,
+		Currency:               "CNY",
+	}
+	visible := model.QuoteList{
+		Title:                  "已提交用户任务",
+		OwnerUserID:            9001,
+		Status:                 model.QuoteListStatusSubmittedToUser,
+		UserConfirmationStatus: model.QuoteUserConfirmationPending,
+		ActiveSubmissionID:     502,
+		Currency:               "CNY",
+	}
+	if err := db.Create(&hidden).Error; err != nil {
+		t.Fatalf("create hidden task: %v", err)
+	}
+	if err := db.Create(&visible).Error; err != nil {
+		t.Fatalf("create visible task: %v", err)
+	}
+
+	list, err := svc.ListUserQuoteTasks(9001)
+	if err != nil {
+		t.Fatalf("list user quote tasks: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected exactly one visible task, got %+v", list)
+	}
+	if list[0].ID != visible.ID {
+		t.Fatalf("expected submitted_to_user task to remain visible, got %+v", list[0])
+	}
+}
+
+func TestGetUserQuoteTask_BlocksAccessBeforeSubmitToUser(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	task := model.QuoteList{
+		Title:                  "用户不可见任务",
+		OwnerUserID:            9001,
+		Status:                 model.QuoteListStatusPricingInProgress,
+		UserConfirmationStatus: model.QuoteUserConfirmationPending,
+		ActiveSubmissionID:     888,
+		Currency:               "CNY",
+	}
+	submission := model.QuoteSubmission{
+		Base:       model.Base{ID: 888},
+		QuoteListID: 1,
+		ProviderID:  666,
+		Status:      model.QuoteSubmissionStatusSubmitted,
+		Currency:    "CNY",
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	submission.QuoteListID = task.ID
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("create submission: %v", err)
+	}
+
+	if _, err := svc.GetUserQuoteTask(task.ID, 9001); err == nil || !strings.Contains(err.Error(), "尚未开放用户确认入口") {
+		t.Fatalf("expected user-view access to be blocked before submit-to-user, got %v", err)
+	}
+}
+
+func TestSubmitTaskToUser_RequiresSubmittedVersionAndLocksUniqueActiveSubmission(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	task := model.QuoteList{
+		Title:              "提交用户确认任务",
+		Status:             model.QuoteListStatusPricingInProgress,
+		Currency:           "CNY",
+		OwnerUserID:        9001,
+		DesignerProviderID: 8001,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	submissionDraft := model.QuoteSubmission{
+		QuoteListID: task.ID,
+		ProviderID:  3001,
+		Status:      model.QuoteSubmissionStatusGenerated,
+		TaskStatus:  model.QuoteListStatusPricingInProgress,
+		Currency:    "CNY",
+	}
+	submissionSubmittedA := model.QuoteSubmission{
+		QuoteListID: task.ID,
+		ProviderID:  3002,
+		Status:      model.QuoteSubmissionStatusSubmitted,
+		TaskStatus:  model.QuoteListStatusPricingInProgress,
+		Currency:    "CNY",
+	}
+	submissionSubmittedB := model.QuoteSubmission{
+		QuoteListID: task.ID,
+		ProviderID:  3003,
+		Status:      model.QuoteSubmissionStatusSubmitted,
+		TaskStatus:  model.QuoteListStatusPricingInProgress,
+		Currency:    "CNY",
+	}
+	if err := db.Create(&submissionDraft).Error; err != nil {
+		t.Fatalf("create draft submission: %v", err)
+	}
+	if err := db.Create(&submissionSubmittedA).Error; err != nil {
+		t.Fatalf("create submitted submission A: %v", err)
+	}
+	if err := db.Create(&submissionSubmittedB).Error; err != nil {
+		t.Fatalf("create submitted submission B: %v", err)
+	}
+
+	if _, err := svc.SubmitTaskToUser(task.ID, submissionDraft.ID); err == nil || !strings.Contains(err.Error(), "只能提交已由工长正式提交的报价版本") {
+		t.Fatalf("expected non-submitted version to be blocked, got %v", err)
+	}
+
+	if _, err := svc.SubmitTaskToUser(task.ID, submissionSubmittedA.ID); err != nil {
+		t.Fatalf("submit first submitted version to user: %v", err)
+	}
+	var refreshedTask model.QuoteList
+	if err := db.First(&refreshedTask, task.ID).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if refreshedTask.Status != model.QuoteListStatusSubmittedToUser {
+		t.Fatalf("expected task status submitted_to_user, got %s", refreshedTask.Status)
+	}
+	if refreshedTask.ActiveSubmissionID != submissionSubmittedA.ID {
+		t.Fatalf("expected active submission %d, got %d", submissionSubmittedA.ID, refreshedTask.ActiveSubmissionID)
+	}
+
+	var rows []model.QuoteSubmission
+	if err := db.Where("quote_list_id = ?", task.ID).Order("id ASC").Find(&rows).Error; err != nil {
+		t.Fatalf("reload submissions: %v", err)
+	}
+	submittedToUserCount := 0
+	for _, row := range rows {
+		if row.SubmittedToUser {
+			submittedToUserCount++
+			if row.ID != submissionSubmittedA.ID {
+				t.Fatalf("unexpected active submitted_to_user row: %+v", row)
+			}
+		}
+	}
+	if submittedToUserCount != 1 {
+		t.Fatalf("expected exactly one submitted_to_user submission, got %d", submittedToUserCount)
+	}
+}
+
 func TestQuoteListResponses_IncludeBusinessFlowSummary(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 	svc := &QuoteService{}

@@ -103,6 +103,7 @@ type QuoteTaskValidationResult struct {
 	OK            bool     `json:"ok"`
 	Status        string   `json:"status"`
 	MissingFields []string `json:"missingFields"`
+	Message       string   `json:"message,omitempty"`
 }
 
 type RecommendedForeman struct {
@@ -763,7 +764,30 @@ func validateQuoteTaskPrerequisites(snapshot QuoteTaskPrerequisiteSnapshot) *Quo
 		OK:            len(missing) == 0,
 		Status:        status,
 		MissingFields: missing,
+		Message:       buildQuoteTaskPrerequisiteMessage(missing),
 	}
+}
+
+func buildQuoteTaskPrerequisiteMessage(missing []string) string {
+	if len(missing) == 0 {
+		return ""
+	}
+	labels := make([]string, 0, len(missing))
+	for _, field := range missing {
+		switch field {
+		case "area":
+			labels = append(labels, "房屋面积")
+		case "layout":
+			labels = append(labels, "房型")
+		case "renovationType":
+			labels = append(labels, "装修类型")
+		case "constructionScope":
+			labels = append(labels, "施工范围")
+		default:
+			labels = append(labels, field)
+		}
+	}
+	return fmt.Sprintf("报价前置资料未补齐，缺少：%s", strings.Join(labels, "、"))
 }
 
 func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForeman, error) {
@@ -777,7 +801,7 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 	}
 	validation := validateQuoteTaskPrerequisites(snapshot)
 	if !validation.OK {
-		return nil, errors.New("报价前置数据未完成，不能推荐工长")
+		return nil, errors.New(validation.Message)
 	}
 	var taskItems []model.QuoteListItem
 	if err := repository.DB.Where("quote_list_id = ?", quoteListID).Find(&taskItems).Error; err != nil {
@@ -905,7 +929,12 @@ func (s *QuoteService) GenerateDrafts(quoteListID uint64) (*QuoteComparisonRespo
 		return nil, errors.New("报价任务不存在")
 	}
 	if quoteList.PrerequisiteStatus != model.QuoteTaskPrerequisiteComplete {
-		return nil, errors.New("报价前置数据未完成，不能生成报价草稿")
+		snapshot, snapshotErr := s.getPrerequisiteSnapshot(&quoteList)
+		if snapshotErr != nil {
+			return nil, snapshotErr
+		}
+		validation := validateQuoteTaskPrerequisites(snapshot)
+		return nil, errors.New(validation.Message)
 	}
 
 	var taskItems []model.QuoteListItem
@@ -1181,6 +1210,9 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 	if quoteList.OwnerUserID != userID {
 		return nil, errors.New("无权查看该报价任务")
 	}
+	if quoteList.Status != model.QuoteListStatusSubmittedToUser && quoteList.Status != model.QuoteListStatusUserConfirmed {
+		return nil, errors.New("当前报价任务尚未开放用户确认入口")
+	}
 	if quoteList.ActiveSubmissionID == 0 {
 		return nil, errors.New("当前报价任务尚未提交给用户")
 	}
@@ -1227,6 +1259,12 @@ func (s *QuoteService) ListUserQuoteTasks(userID uint64) ([]UserQuoteTaskSummary
 	}
 	result := make([]UserQuoteTaskSummary, 0, len(tasks))
 	for _, task := range tasks {
+		if task.Status != model.QuoteListStatusSubmittedToUser && task.Status != model.QuoteListStatusUserConfirmed {
+			continue
+		}
+		if task.ActiveSubmissionID == 0 {
+			continue
+		}
 		stageSummary := s.resolveQuoteListBusinessSummary(&task)
 		row := UserQuoteTaskSummary{
 			ID:                     task.ID,
