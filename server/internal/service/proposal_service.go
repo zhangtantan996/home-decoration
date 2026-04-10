@@ -284,8 +284,120 @@ func (s *ProposalService) GetProposalByBooking(bookingID uint64) (*model.Proposa
 	return &proposal, nil
 }
 
-// ConfirmProposal 用户确认方案 -> 创建设计费订单（48小时过期）
-func (s *ProposalService) ConfirmProposal(userID, proposalID uint64) (*model.Order, error) {
+func (s *ProposalService) loadPaidDesignOrderForBooking(bookingID uint64) (*model.Order, error) {
+	var order model.Order
+	if err := repository.DB.
+		Where("booking_id = ? AND order_type = ? AND status = ?", bookingID, model.OrderTypeDesign, model.OrderStatusPaid).
+		Order("paid_at DESC, created_at DESC, id DESC").
+		First(&order).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("请先完成设计费支付")
+		}
+		return nil, err
+	}
+	return &order, nil
+}
+
+func (s *ProposalService) confirmProposalForBooking(
+	proposal *model.Proposal,
+	booking *model.Booking,
+	actorType string,
+	actorID uint64,
+	reason string,
+) (*model.Proposal, error) {
+	if proposal == nil || booking == nil {
+		return nil, errors.New("方案数据不存在")
+	}
+	paidOrder, err := s.loadPaidDesignOrderForBooking(booking.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	tx := repository.DB.Begin()
+	auditService := &AuditLogService{}
+	beforeState := map[string]interface{}{
+		"proposal": map[string]interface{}{
+			"id":        proposal.ID,
+			"status":    proposal.Status,
+			"bookingId": proposal.BookingID,
+			"designFee": proposal.DesignFee,
+		},
+		"booking": map[string]interface{}{
+			"id":         booking.ID,
+			"status":     booking.Status,
+			"providerId": booking.ProviderID,
+		},
+	}
+
+	now := time.Now()
+	proposal.Status = model.ProposalStatusConfirmed
+	proposal.ConfirmedAt = &now
+	if err := tx.Save(proposal).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	quantityBase, err := (&QuoteService{}).ensureQuantityBaseFromProposalTx(tx, proposal.ID)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	if _, err := businessFlowSvc.EnsureLeadFlow(tx, model.BusinessFlowSourceBooking, booking.ID, booking.UserID, booking.ProviderID); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
+		"current_stage":         model.BusinessFlowStageConstructionPartyPending,
+		"confirmed_proposal_id": proposal.ID,
+		"designer_provider_id":  booking.ProviderID,
+		"project_id":            0,
+	}); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+		OperatorType:  actorType,
+		OperatorID:    actorID,
+		OperationType: "confirm_proposal",
+		ResourceType:  "proposal",
+		ResourceID:    proposal.ID,
+		Reason:        strings.TrimSpace(reason),
+		Result:        "success",
+		BeforeState:   beforeState,
+		AfterState: map[string]interface{}{
+			"proposal": map[string]interface{}{
+				"id":          proposal.ID,
+				"status":      proposal.Status,
+				"confirmedAt": proposal.ConfirmedAt,
+			},
+		},
+		Metadata: map[string]interface{}{
+			"bookingId":     booking.ID,
+			"providerId":    booking.ProviderID,
+			"designOrderId": paidOrder.ID,
+			"projectId":     0,
+			"quantityBaseId": quantityBase.ID,
+		},
+	}); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+
+	notifService := &NotificationService{}
+	proposalData := map[string]interface{}{"id": proposal.ID}
+	var provider model.Provider
+	if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
+		_ = notifService.NotifyProposalConfirmed(proposalData, provider.UserID)
+	}
+	return proposal, nil
+}
+
+// ConfirmProposal 用户确认正式方案 -> 进入施工桥接
+func (s *ProposalService) ConfirmProposal(userID, proposalID uint64) (*model.Proposal, error) {
 	var proposal model.Proposal
 	if err := repository.DB.First(&proposal, proposalID).Error; err != nil {
 		return nil, errors.New("方案不存在")
@@ -306,172 +418,10 @@ func (s *ProposalService) ConfirmProposal(userID, proposalID uint64) (*model.Ord
 	if proposal.Status != model.ProposalStatusPending {
 		return nil, errors.New("方案状态不正确")
 	}
-
-	// 检查是否已有未支付的设计费订单
-	var existingOrder model.Order
-	if err := repository.DB.Where("proposal_id = ? AND order_type = ? AND status = ?",
-		proposalID, model.OrderTypeDesign, model.OrderStatusPending).First(&existingOrder).Error; err == nil {
-		// 已存在未支付订单，检查是否过期
-		if existingOrder.ExpireAt != nil && existingOrder.ExpireAt.After(time.Now()) {
-			return &existingOrder, nil // 返回现有订单
-		}
-		// 已过期，取消旧订单
-		repository.DB.Model(&existingOrder).Update("status", model.OrderStatusCancelled)
-	}
-
-	// 开启事务
-	tx := repository.DB.Begin()
-	auditService := &AuditLogService{}
-	beforeState := map[string]interface{}{
-		"proposal": map[string]interface{}{
-			"id":        proposal.ID,
-			"status":    proposal.Status,
-			"bookingId": proposal.BookingID,
-			"designFee": proposal.DesignFee,
-		},
-		"booking": map[string]interface{}{
-			"id":            booking.ID,
-			"status":        booking.Status,
-			"intentFeePaid": booking.IntentFeePaid,
-			"providerId":    booking.ProviderID,
-		},
-	}
-
-	// 1. 更新方案状态为已确认
-	now := time.Now()
-	expireAt := now.Add(48 * time.Hour) // 48小时过期
-	proposal.Status = model.ProposalStatusConfirmed
-	proposal.ConfirmedAt = &now
-	if err := tx.Save(&proposal).Error; err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	// 2. 创建设计费订单
-	discount := 0.0
-	// 如果已支付意向金，且未被抵扣过（这里假设每次生成订单都尝试抵扣，支付成功后才标记抵扣）
-	// 简化逻辑：只要支付了意向金，设计费就减免
-	if booking.IntentFeePaid {
-		discount = booking.IntentFee
-	}
-
-	// 确保不出现负数
-	totalAmount := proposal.DesignFee - discount
-	if totalAmount < 0 {
-		totalAmount = 0
-	}
-
-	order := &model.Order{
-		ProposalID:  proposalID,
-		BookingID:   proposal.BookingID,
-		OrderNo:     generateOrderNo("DF"), // DF = Design Fee
-		OrderType:   model.OrderTypeDesign,
-		TotalAmount: totalAmount,
-		Discount:    discount, // 记录抵扣额
-		Status:      model.OrderStatusPending,
-		ExpireAt:    &expireAt,
-	}
-	if err := tx.Create(order).Error; err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	designPaymentMode := configSvc.GetDesignFeePaymentMode()
-	if designPaymentMode == "staged" {
-		stages, _ := configSvc.GetDesignFeeStages()
-		for index, stage := range stages {
-			plan := model.PaymentPlan{
-				OrderID:    order.ID,
-				Type:       "design_stage",
-				Seq:        index + 1,
-				Name:       stage.Name,
-				Percentage: stage.Percentage,
-				Amount:     order.TotalAmount * float64(stage.Percentage) / 100,
-				Status:     0,
-			}
-			if err := tx.Create(&plan).Error; err != nil {
-				tx.Rollback()
-				return nil, err
-			}
-		}
-	} else {
-		plan := model.PaymentPlan{
-			OrderID:    order.ID,
-			Type:       "onetime",
-			Seq:        1,
-			Name:       "设计费全款",
-			Percentage: 100,
-			Amount:     order.TotalAmount,
-			Status:     0,
-		}
-		if err := tx.Create(&plan).Error; err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-	}
-
-	if _, err := businessFlowSvc.EnsureLeadFlow(tx, model.BusinessFlowSourceBooking, booking.ID, userID, booking.ProviderID); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	if err := businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
-		"current_stage":         model.BusinessFlowStageConstructionPartyPending,
-		"confirmed_proposal_id": proposal.ID,
-		"designer_provider_id":  booking.ProviderID,
-		"project_id":            0,
-	}); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
-		OperatorType:  "user",
-		OperatorID:    userID,
-		OperationType: "confirm_proposal",
-		ResourceType:  "proposal",
-		ResourceID:    proposal.ID,
-		Result:        "success",
-		BeforeState:   beforeState,
-		AfterState: map[string]interface{}{
-			"proposal": map[string]interface{}{
-				"id":          proposal.ID,
-				"status":      proposal.Status,
-				"confirmedAt": proposal.ConfirmedAt,
-			},
-			"order": map[string]interface{}{
-				"id":          order.ID,
-				"orderType":   order.OrderType,
-				"totalAmount": order.TotalAmount,
-				"projectId":   order.ProjectID,
-				"expireAt":    order.ExpireAt,
-			},
-		},
-		Metadata: map[string]interface{}{
-			"bookingId":  booking.ID,
-			"providerId": booking.ProviderID,
-			"projectId":  0,
-		},
-	}); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	tx.Commit()
-
-	// 发送通知给商家
-	notifService := &NotificationService{}
-	proposalData := map[string]interface{}{
-		"id": proposal.ID,
-	}
-	// Get provider's user ID
-	var provider model.Provider
-	if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
-		_ = notifService.NotifyProposalConfirmed(proposalData, provider.UserID)
-	}
-
-	return order, nil
+	return s.confirmProposalForBooking(&proposal, &booking, "user", userID, "")
 }
 
-func (s *ProposalService) AdminConfirmProposal(adminID, proposalID uint64, reason string) (*model.Order, error) {
+func (s *ProposalService) AdminConfirmProposal(adminID, proposalID uint64, reason string) (*model.Proposal, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		return nil, errors.New("请填写操作原因")
@@ -492,156 +442,7 @@ func (s *ProposalService) AdminConfirmProposal(adminID, proposalID uint64, reaso
 	if proposal.Status != model.ProposalStatusPending {
 		return nil, errors.New("方案状态不正确")
 	}
-
-	var existingOrder model.Order
-	if err := repository.DB.Where("proposal_id = ? AND order_type = ? AND status = ?",
-		proposalID, model.OrderTypeDesign, model.OrderStatusPending).First(&existingOrder).Error; err == nil {
-		if existingOrder.ExpireAt != nil && existingOrder.ExpireAt.After(time.Now()) {
-			return &existingOrder, nil
-		}
-		repository.DB.Model(&existingOrder).Update("status", model.OrderStatusCancelled)
-	}
-
-	tx := repository.DB.Begin()
-	auditService := &AuditLogService{}
-	beforeState := map[string]interface{}{
-		"proposal": map[string]interface{}{
-			"id":        proposal.ID,
-			"status":    proposal.Status,
-			"bookingId": proposal.BookingID,
-			"designFee": proposal.DesignFee,
-		},
-		"booking": map[string]interface{}{
-			"id":            booking.ID,
-			"status":        booking.Status,
-			"intentFeePaid": booking.IntentFeePaid,
-			"providerId":    booking.ProviderID,
-		},
-	}
-
-	now := time.Now()
-	expireAt := now.Add(48 * time.Hour)
-	proposal.Status = model.ProposalStatusConfirmed
-	proposal.ConfirmedAt = &now
-	if err := tx.Save(&proposal).Error; err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	discount := 0.0
-	if booking.IntentFeePaid {
-		discount = booking.IntentFee
-	}
-	totalAmount := proposal.DesignFee - discount
-	if totalAmount < 0 {
-		totalAmount = 0
-	}
-
-	order := &model.Order{
-		ProposalID:  proposalID,
-		BookingID:   proposal.BookingID,
-		OrderNo:     generateOrderNo("DF"),
-		OrderType:   model.OrderTypeDesign,
-		TotalAmount: totalAmount,
-		Discount:    discount,
-		Status:      model.OrderStatusPending,
-		ExpireAt:    &expireAt,
-	}
-	if err := tx.Create(order).Error; err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	designPaymentMode := configSvc.GetDesignFeePaymentMode()
-	if designPaymentMode == "staged" {
-		stages, _ := configSvc.GetDesignFeeStages()
-		for index, stage := range stages {
-			plan := model.PaymentPlan{
-				OrderID:    order.ID,
-				Type:       "design_stage",
-				Seq:        index + 1,
-				Name:       stage.Name,
-				Percentage: stage.Percentage,
-				Amount:     order.TotalAmount * float64(stage.Percentage) / 100,
-				Status:     0,
-			}
-			if err := tx.Create(&plan).Error; err != nil {
-				tx.Rollback()
-				return nil, err
-			}
-		}
-	} else {
-		plan := model.PaymentPlan{
-			OrderID:    order.ID,
-			Type:       "onetime",
-			Seq:        1,
-			Name:       "设计费全款",
-			Percentage: 100,
-			Amount:     order.TotalAmount,
-			Status:     0,
-		}
-		if err := tx.Create(&plan).Error; err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-	}
-
-	if _, err := businessFlowSvc.EnsureLeadFlow(tx, model.BusinessFlowSourceBooking, booking.ID, booking.UserID, booking.ProviderID); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	if err := businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
-		"current_stage":         model.BusinessFlowStageConstructionPartyPending,
-		"confirmed_proposal_id": proposal.ID,
-		"designer_provider_id":  booking.ProviderID,
-		"project_id":            0,
-	}); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-	if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
-		OperatorType:  "admin",
-		OperatorID:    adminID,
-		OperationType: "confirm_proposal",
-		ResourceType:  "proposal",
-		ResourceID:    proposal.ID,
-		Reason:        reason,
-		Result:        "success",
-		BeforeState:   beforeState,
-		AfterState: map[string]interface{}{
-			"proposal": map[string]interface{}{
-				"id":          proposal.ID,
-				"status":      proposal.Status,
-				"confirmedAt": proposal.ConfirmedAt,
-			},
-			"order": map[string]interface{}{
-				"id":          order.ID,
-				"orderType":   order.OrderType,
-				"totalAmount": order.TotalAmount,
-				"projectId":   order.ProjectID,
-				"expireAt":    order.ExpireAt,
-			},
-		},
-		Metadata: map[string]interface{}{
-			"bookingId":  booking.ID,
-			"providerId": booking.ProviderID,
-			"projectId":  0,
-		},
-	}); err != nil {
-		tx.Rollback()
-		return nil, err
-	}
-
-	tx.Commit()
-
-	notifService := &NotificationService{}
-	proposalData := map[string]interface{}{"id": proposal.ID}
-	var provider model.Provider
-	if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
-		_ = notifService.NotifyProposalConfirmed(proposalData, provider.UserID)
-	}
-
-	return order, nil
+	return s.confirmProposalForBooking(&proposal, &booking, "admin", adminID, reason)
 }
 
 // ResubmitProposalInput 重新提交方案入参

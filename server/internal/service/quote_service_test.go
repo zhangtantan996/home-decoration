@@ -46,6 +46,8 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 		&model.MerchantServiceSetting{},
 		&model.QuoteCategory{},
 		&model.QuoteLibraryItem{},
+		&model.QuantityBase{},
+		&model.QuantityBaseItem{},
 		&model.QuoteList{},
 		&model.QuoteListItem{},
 		&model.QuoteInvitation{},
@@ -1272,6 +1274,66 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	}
 	if persistedSubmission.Status != model.QuoteSubmissionStatusUserConfirmed {
 		t.Fatalf("expected submission user confirmed, got %s", persistedSubmission.Status)
+	}
+}
+
+func TestCreateQuoteListBindsActiveQuantityBaseFromProposal(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	owner := model.User{Base: model.Base{ID: 9501}, Phone: "13800139501", Nickname: "桥接业主", Status: 1}
+	designer := model.Provider{Base: model.Base{ID: 9502}, ProviderType: 1, CompanyName: "桥接设计师", Status: 1}
+	booking := model.Booking{Base: model.Base{ID: 9503}, UserID: owner.ID, ProviderID: designer.ID, Address: "桥接测试地址", Status: 2}
+	proposal := model.Proposal{
+		Base:             model.Base{ID: 9504},
+		BookingID:        booking.ID,
+		DesignerID:       designer.ID,
+		Summary:          "桥接正式方案",
+		Status:           model.ProposalStatusConfirmed,
+		Version:          2,
+		InternalDraftJSON: `{"rooms":[{"name":"客厅","items":[{"name":"地砖铺贴","unit":"㎡","quantity":32,"note":"800x800"}]}]}`,
+	}
+	for _, record := range []interface{}{&owner, &designer, &booking, &proposal} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed create quote list fixture: %v", err)
+		}
+	}
+
+	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
+		ProposalID:         proposal.ID,
+		ProposalVersion:    proposal.Version,
+		DesignerProviderID: designer.ID,
+		OwnerUserID:        owner.ID,
+		Title:              "施工报价任务",
+		Currency:           "CNY",
+	})
+	if err != nil {
+		t.Fatalf("CreateQuoteList: %v", err)
+	}
+	if task.QuantityBaseID == 0 {
+		t.Fatalf("expected quantity base id on quote list")
+	}
+	if task.QuantityBaseVersion != proposal.Version {
+		t.Fatalf("expected quantity base version=%d, got %d", proposal.Version, task.QuantityBaseVersion)
+	}
+	if task.SourceType != model.QuantitySourceTypeProposal || task.SourceID != proposal.ID {
+		t.Fatalf("unexpected quote list source: %+v", task)
+	}
+
+	var base model.QuantityBase
+	if err := db.First(&base, task.QuantityBaseID).Error; err != nil {
+		t.Fatalf("load quantity base: %v", err)
+	}
+	if base.ProposalID != proposal.ID || base.Version != proposal.Version {
+		t.Fatalf("unexpected quantity base binding: %+v", base)
+	}
+
+	var item model.QuantityBaseItem
+	if err := db.Where("quantity_base_id = ?", base.ID).First(&item).Error; err != nil {
+		t.Fatalf("load quantity base item: %v", err)
+	}
+	if item.SourceItemName != "地砖铺贴" || item.Quantity != 32 {
+		t.Fatalf("unexpected quantity base item: %+v", item)
 	}
 }
 

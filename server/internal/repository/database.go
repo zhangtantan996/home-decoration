@@ -183,6 +183,8 @@ func autoMigrate() error {
 		&model.UserFeedback{},
 		&model.QuoteLibraryItem{},
 		&model.QuoteCategory{},
+		&model.QuantityBase{},
+		&model.QuantityBaseItem{},
 		&model.QuoteList{},
 		&model.QuoteListItem{},
 		&model.QuoteInvitation{},

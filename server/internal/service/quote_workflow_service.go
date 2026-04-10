@@ -124,6 +124,8 @@ type QuoteTaskUserView struct {
 	Submission       model.QuoteSubmission         `json:"submission"`
 	Items            []model.QuoteSubmissionItem   `json:"items"`
 	TaskSummary      QuoteTaskPrerequisiteSnapshot `json:"taskSummary"`
+	QuantityBase     *model.QuantityBase           `json:"quantityBase,omitempty"`
+	QuantityItems    []model.QuantityBaseItem      `json:"quantityItems,omitempty"`
 	BusinessStage    string                        `json:"businessStage,omitempty"`
 	FlowSummary      string                        `json:"flowSummary,omitempty"`
 	AvailableActions []string                      `json:"availableActions,omitempty"`
@@ -1191,6 +1193,15 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 	if err := repository.DB.Where("quote_submission_id = ?", submission.ID).Order("quote_list_item_id ASC").Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("查询报价明细失败: %w", err)
 	}
+	var quantityBase *model.QuantityBase
+	var quantityItems []model.QuantityBaseItem
+	if quoteList.QuantityBaseID > 0 {
+		var base model.QuantityBase
+		if err := repository.DB.First(&base, quoteList.QuantityBaseID).Error; err == nil {
+			quantityBase = &base
+			_ = repository.DB.Where("quantity_base_id = ?", base.ID).Order("sort_order ASC, id ASC").Find(&quantityItems).Error
+		}
+	}
 	snapshot, err := s.getPrerequisiteSnapshot(&quoteList)
 	if err != nil {
 		return nil, err
@@ -1201,6 +1212,8 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 		Submission:       submission,
 		Items:            items,
 		TaskSummary:      snapshot,
+		QuantityBase:     quantityBase,
+		QuantityItems:    quantityItems,
 		BusinessStage:    stageSummary.CurrentStage,
 		FlowSummary:      stageSummary.FlowSummary,
 		AvailableActions: stageSummary.AvailableActions,

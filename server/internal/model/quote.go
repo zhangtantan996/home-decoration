@@ -68,6 +68,19 @@ const (
 	QuoteListItemSourceTypeGenerated = "generated"
 )
 
+const (
+	QuantitySourceTypeProposal              = "proposal"
+	QuantitySourceTypeProposalInternalDraft = "proposal_internal_draft"
+	QuantitySourceTypeAdminImported         = "admin_imported"
+)
+
+const (
+	QuantityBaseStatusDraft      = "draft"
+	QuantityBaseStatusActive     = "active"
+	QuantityBaseStatusSuperseded = "superseded"
+	QuantityBaseStatusArchived   = "archived"
+)
+
 type QuoteCategory struct {
 	Base
 	Code      string `json:"code" gorm:"size:64;uniqueIndex"`
@@ -113,6 +126,10 @@ type QuoteList struct {
 	ProjectID                uint64     `json:"projectId" gorm:"index"`
 	ProposalID               uint64     `json:"proposalId" gorm:"index"`
 	ProposalVersion          int        `json:"proposalVersion" gorm:"default:1"`
+	QuantityBaseID           uint64     `json:"quantityBaseId" gorm:"index"`
+	QuantityBaseVersion      int        `json:"quantityBaseVersion" gorm:"default:0"`
+	SourceType               string     `json:"sourceType" gorm:"size:40;default:'proposal';index"`
+	SourceID                 uint64     `json:"sourceId" gorm:"index"`
 	DesignerProviderID       uint64     `json:"designerProviderId" gorm:"index"`
 	CustomerID               uint64     `json:"customerId" gorm:"index"`
 	HouseID                  uint64     `json:"houseId" gorm:"index"`
@@ -136,6 +153,45 @@ type QuoteList struct {
 
 func (QuoteList) TableName() string {
 	return "quote_lists"
+}
+
+type QuantityBase struct {
+	Base
+	ProposalID         uint64     `json:"proposalId" gorm:"index"`
+	ProposalVersion    int        `json:"proposalVersion" gorm:"default:1"`
+	OwnerUserID        uint64     `json:"ownerUserId" gorm:"index"`
+	DesignerProviderID uint64     `json:"designerProviderId" gorm:"index"`
+	SourceType         string     `json:"sourceType" gorm:"size:40;default:'proposal';index"`
+	SourceID           uint64     `json:"sourceId" gorm:"index"`
+	Status             string     `json:"status" gorm:"size:20;default:'draft';index"`
+	Version            int        `json:"version" gorm:"default:1"`
+	Title              string     `json:"title" gorm:"size:200"`
+	SnapshotJSON       string     `json:"snapshotJson" gorm:"type:text"`
+	ActivatedAt        *time.Time `json:"activatedAt"`
+}
+
+func (QuantityBase) TableName() string {
+	return "quantity_bases"
+}
+
+type QuantityBaseItem struct {
+	Base
+	QuantityBaseID    uint64  `json:"quantityBaseId" gorm:"index"`
+	StandardItemID    uint64  `json:"standardItemId" gorm:"index"`
+	SourceLineNo      int     `json:"sourceLineNo" gorm:"default:0"`
+	SourceItemCode    string  `json:"sourceItemCode" gorm:"size:100;index"`
+	SourceItemName    string  `json:"sourceItemName" gorm:"size:255"`
+	Unit              string  `json:"unit" gorm:"size:20"`
+	Quantity          float64 `json:"quantity" gorm:"default:0"`
+	BaselineNote      string  `json:"baselineNote" gorm:"type:text"`
+	CategoryL1        string  `json:"categoryL1" gorm:"size:50;index"`
+	CategoryL2        string  `json:"categoryL2" gorm:"size:50;index"`
+	SortOrder         int     `json:"sortOrder" gorm:"default:0"`
+	ExtensionsJSON    string  `json:"extensionsJson" gorm:"type:text"`
+}
+
+func (QuantityBaseItem) TableName() string {
+	return "quantity_base_items"
 }
 
 type QuoteListItem struct {

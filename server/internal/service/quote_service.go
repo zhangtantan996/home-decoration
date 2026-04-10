@@ -54,6 +54,9 @@ type QuoteListCreateInput struct {
 	ProjectID          uint64     `json:"projectId"`
 	ProposalID         uint64     `json:"proposalId"`
 	ProposalVersion    int        `json:"proposalVersion"`
+	QuantityBaseID     uint64     `json:"quantityBaseId"`
+	SourceType         string     `json:"sourceType"`
+	SourceID           uint64     `json:"sourceId"`
 	DesignerProviderID uint64     `json:"designerProviderId"`
 	CustomerID         uint64     `json:"customerId"`
 	HouseID            uint64     `json:"houseId"`
@@ -754,10 +757,39 @@ func (s *QuoteService) CreateQuoteList(input *QuoteListCreateInput) (*model.Quot
 	if currency == "" {
 		currency = "CNY"
 	}
+	quantityBaseID := input.QuantityBaseID
+	quantityBaseVersion := 0
+	if quantityBaseID == 0 && input.ProposalID > 0 {
+		base, err := s.EnsureQuantityBaseFromProposal(input.ProposalID)
+		if err != nil {
+			return nil, err
+		}
+		quantityBaseID = base.ID
+		quantityBaseVersion = base.Version
+	}
+	if quantityBaseID > 0 && quantityBaseVersion == 0 {
+		var quantityBase model.QuantityBase
+		if err := repository.DB.Select("id", "version").First(&quantityBase, quantityBaseID).Error; err != nil {
+			return nil, fmt.Errorf("查询工程量基础表失败: %w", err)
+		}
+		quantityBaseVersion = quantityBase.Version
+	}
+	sourceType := strings.TrimSpace(input.SourceType)
+	if sourceType == "" {
+		sourceType = model.QuantitySourceTypeProposal
+	}
+	sourceID := input.SourceID
+	if sourceID == 0 {
+		sourceID = input.ProposalID
+	}
 	quoteList := &model.QuoteList{
 		ProjectID:              input.ProjectID,
 		ProposalID:             input.ProposalID,
 		ProposalVersion:        input.ProposalVersion,
+		QuantityBaseID:         quantityBaseID,
+		QuantityBaseVersion:    quantityBaseVersion,
+		SourceType:             sourceType,
+		SourceID:               sourceID,
 		DesignerProviderID:     input.DesignerProviderID,
 		CustomerID:             input.CustomerID,
 		HouseID:                input.HouseID,
@@ -2543,4 +2575,177 @@ func normalizeStringSlice(values []string) []string {
 		result = append(result, trimmed)
 	}
 	return result
+}
+
+func (s *QuoteService) EnsureQuantityBaseFromProposal(proposalID uint64) (*model.QuantityBase, error) {
+	return s.ensureQuantityBaseFromProposalTx(repository.DB, proposalID)
+}
+
+func (s *QuoteService) ensureQuantityBaseFromProposalTx(tx *gorm.DB, proposalID uint64) (*model.QuantityBase, error) {
+	if proposalID == 0 {
+		return nil, errors.New("方案不存在")
+	}
+
+	var proposal model.Proposal
+	if err := tx.First(&proposal, proposalID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("方案不存在")
+		}
+		return nil, fmt.Errorf("查询方案失败: %w", err)
+	}
+
+	var existing model.QuantityBase
+	if err := tx.Where("proposal_id = ? AND version = ? AND status = ?", proposal.ID, proposal.Version, model.QuantityBaseStatusActive).
+		Order("id DESC").
+		First(&existing).Error; err == nil {
+		return &existing, nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("查询工程量基础表失败: %w", err)
+	}
+
+	title := titleOrDefault(proposal.Summary, fmt.Sprintf("方案 #%d 工程量基础表", proposal.ID))
+	now := time.Now()
+	quantityBase := &model.QuantityBase{
+		ProposalID:         proposal.ID,
+		ProposalVersion:    proposal.Version,
+		OwnerUserID:        0,
+		DesignerProviderID: proposal.DesignerID,
+		SourceType:         model.QuantitySourceTypeProposal,
+		SourceID:           proposal.ID,
+		Status:             model.QuantityBaseStatusActive,
+		Version:            proposal.Version,
+		Title:              title,
+		SnapshotJSON:       proposal.InternalDraftJSON,
+		ActivatedAt:        &now,
+	}
+	if proposal.BookingID > 0 {
+		var booking model.Booking
+		if err := tx.Select("id", "user_id").First(&booking, proposal.BookingID).Error; err == nil {
+			quantityBase.OwnerUserID = booking.UserID
+		}
+	}
+
+	if err := tx.Model(&model.QuantityBase{}).
+		Where("proposal_id = ? AND status = ?", proposal.ID, model.QuantityBaseStatusActive).
+		Update("status", model.QuantityBaseStatusSuperseded).Error; err != nil {
+		return nil, fmt.Errorf("归档旧工程量基础表失败: %w", err)
+	}
+	if err := tx.Create(quantityBase).Error; err != nil {
+		return nil, fmt.Errorf("创建工程量基础表失败: %w", err)
+	}
+	items := buildQuantityBaseItemsFromProposal(proposal)
+	for _, item := range items {
+		row := item
+		row.QuantityBaseID = quantityBase.ID
+		if err := tx.Create(&row).Error; err != nil {
+			return nil, fmt.Errorf("写入工程量基础表明细失败: %w", err)
+		}
+	}
+
+	return quantityBase, nil
+}
+
+func buildQuantityBaseItemsFromProposal(proposal model.Proposal) []model.QuantityBaseItem {
+	type rawLine struct {
+		Name       string  `json:"name"`
+		Title      string  `json:"title"`
+		Code       string  `json:"code"`
+		ItemCode   string  `json:"itemCode"`
+		Unit       string  `json:"unit"`
+		Quantity   float64 `json:"quantity"`
+		Count      float64 `json:"count"`
+		Note       string  `json:"note"`
+		Remark     string  `json:"remark"`
+		Category   string  `json:"category"`
+		CategoryL1 string  `json:"categoryL1"`
+		CategoryL2 string  `json:"categoryL2"`
+	}
+	type rawDraft struct {
+		Rooms []struct {
+			Name  string    `json:"name"`
+			Items []rawLine `json:"items"`
+		} `json:"rooms"`
+		Items []rawLine `json:"items"`
+	}
+
+	items := make([]model.QuantityBaseItem, 0)
+	pushItem := func(idx int, line rawLine, roomName string) {
+		name := firstNonEmptyQuantityBaseValue(line.Name, line.Title)
+		if name == "" {
+			name = fmt.Sprintf("方案项 %d", idx+1)
+		}
+		unit := firstNonEmptyQuantityBaseValue(line.Unit, "项")
+		quantity := line.Quantity
+		if quantity == 0 {
+			quantity = line.Count
+		}
+		noteParts := []string{}
+		if trimmedRoom := strings.TrimSpace(roomName); trimmedRoom != "" {
+			noteParts = append(noteParts, "room="+trimmedRoom)
+		}
+		if trimmedNote := strings.TrimSpace(line.Note); trimmedNote != "" {
+			noteParts = append(noteParts, trimmedNote)
+		}
+		if trimmedRemark := strings.TrimSpace(line.Remark); trimmedRemark != "" {
+			noteParts = append(noteParts, trimmedRemark)
+		}
+		categoryL1 := firstNonEmpty(line.CategoryL1, line.Category)
+		items = append(items, model.QuantityBaseItem{
+			SourceLineNo:   idx + 1,
+			SourceItemCode: firstNonEmptyQuantityBaseValue(line.Code, line.ItemCode),
+			SourceItemName: name,
+			Unit:           unit,
+			Quantity:       quantity,
+			BaselineNote:   strings.Join(noteParts, "；"),
+			CategoryL1:     categoryL1,
+			CategoryL2:     strings.TrimSpace(line.CategoryL2),
+			SortOrder:      idx + 1,
+		})
+	}
+
+	raw := strings.TrimSpace(proposal.InternalDraftJSON)
+	if raw != "" && raw != "{}" {
+		var draft rawDraft
+		if err := json.Unmarshal([]byte(raw), &draft); err == nil {
+			idx := 0
+			for _, room := range draft.Rooms {
+				for _, line := range room.Items {
+					pushItem(idx, line, room.Name)
+					idx++
+				}
+			}
+			for _, line := range draft.Items {
+				pushItem(idx, line, "")
+				idx++
+			}
+		}
+	}
+
+	if len(items) == 0 {
+		items = append(items, model.QuantityBaseItem{
+			SourceLineNo:   1,
+			SourceItemName: titleOrDefault(proposal.Summary, "设计方案基础项"),
+			Unit:           "项",
+			Quantity:       1,
+			BaselineNote:   "由已确认设计方案自动生成的桥接基础项",
+			SortOrder:      1,
+		})
+	}
+	return items
+}
+
+func firstNonEmptyQuantityBaseValue(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func titleOrDefault(value, fallback string) string {
+	if trimmed := strings.TrimSpace(value); trimmed != "" {
+		return trimmed
+	}
+	return fallback
 }
