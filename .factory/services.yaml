@@ -1,0 +1,58 @@
+commands:
+  install: npm install && (cd admin && npm install) && (cd merchant && npm install) && (cd web && npm install) && (cd mini && npm install) && (cd server && go mod download)
+  test: npm run verify:backend
+  lint: cd admin && npm run lint && cd ../mini && npm run lint
+  build: npm run verify:admin && npm run verify:merchant && npm run build:web
+  e2e_quote: npx playwright test tests/e2e/quote-system-v1.smoke.test.ts tests/e2e/admin-project-construction-acceptance.test.ts --workers=2
+  e2e_quote_focused: npm run test:e2e:quote:focused
+  smoke_quote_api: ./scripts/quote-workflow-v1-api-smoke.sh
+
+services:
+  db:
+    start: docker compose -f docker-compose.local.yml up -d db
+    stop: docker compose -f docker-compose.local.yml stop db
+    healthcheck: docker exec home_decor_db_local pg_isready -U postgres -h 127.0.0.1 -p 5432
+    port: 5432
+    depends_on: []
+
+  redis:
+    start: docker compose -f docker-compose.local.yml up -d redis
+    stop: docker compose -f docker-compose.local.yml stop redis
+    healthcheck: docker exec home_decor_redis_local redis-cli -p 6379 ping | grep PONG
+    port: 6380
+    depends_on: []
+
+  api:
+    start: docker compose -f docker-compose.local.yml up -d api
+    stop: docker compose -f docker-compose.local.yml stop api
+    healthcheck: curl -sf http://127.0.0.1:8080/api/v1/health >/dev/null
+    port: 8080
+    depends_on: [db, redis]
+
+  admin:
+    start: docker compose -f docker-compose.local.yml up -d admin
+    stop: docker compose -f docker-compose.local.yml stop admin
+    healthcheck: curl -sfI http://127.0.0.1:5173/admin/ >/dev/null
+    port: 5173
+    depends_on: [api]
+
+  merchant:
+    start: docker compose -f docker-compose.local.yml up -d merchant
+    stop: docker compose -f docker-compose.local.yml stop merchant
+    healthcheck: curl -sfI http://127.0.0.1:5174/merchant/ >/dev/null
+    port: 5174
+    depends_on: [api]
+
+  gateway:
+    start: docker compose -f docker-compose.local.yml up -d local-gateway
+    stop: docker compose -f docker-compose.local.yml stop local-gateway
+    healthcheck: curl -sf http://127.0.0.1:5175/ >/dev/null
+    port: 5175
+    depends_on: [api, admin, merchant]
+
+  user_web:
+    start: docker compose -f docker-compose.local.yml up -d user-web
+    stop: docker compose -f docker-compose.local.yml stop user-web
+    healthcheck: curl -sf http://127.0.0.1:5176/ >/dev/null
+    port: 5176
+    depends_on: [api]

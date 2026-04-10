@@ -51,6 +51,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+reset_rate_limit() {
+  if [[ -x "${ROOT_DIR}/scripts/user-web-clear-rate-limit.sh" ]]; then
+    "${ROOT_DIR}/scripts/user-web-clear-rate-limit.sh" >/dev/null 2>&1 || true
+  fi
+}
+
 request_json() {
   local method="$1"
   local url="$2"
@@ -62,21 +68,37 @@ request_json() {
     if [[ "${method}" == "GET" ]]; then
       if [[ -n "${auth}" ]]; then
         if curl -sS -H "Authorization: Bearer ${auth}" "${url}" > "${outfile}" 2>/dev/null; then
-          return 0
+          if grep -Eq '"code"[[:space:]]*:[[:space:]]*429' "${outfile}"; then
+            reset_rate_limit
+          else
+            return 0
+          fi
         fi
       else
         if curl -sS "${url}" > "${outfile}" 2>/dev/null; then
-          return 0
+          if grep -Eq '"code"[[:space:]]*:[[:space:]]*429' "${outfile}"; then
+            reset_rate_limit
+          else
+            return 0
+          fi
         fi
       fi
     else
       if [[ -n "${auth}" ]]; then
         if curl -sS -X "${method}" -H "Authorization: Bearer ${auth}" -H 'Content-Type: application/json' -d "${body}" "${url}" > "${outfile}" 2>/dev/null; then
-          return 0
+          if grep -Eq '"code"[[:space:]]*:[[:space:]]*429' "${outfile}"; then
+            reset_rate_limit
+          else
+            return 0
+          fi
         fi
       else
         if curl -sS -X "${method}" -H 'Content-Type: application/json' -d "${body}" "${url}" > "${outfile}" 2>/dev/null; then
-          return 0
+          if grep -Eq '"code"[[:space:]]*:[[:space:]]*429' "${outfile}"; then
+            reset_rate_limit
+          else
+            return 0
+          fi
         fi
       fi
     fi
@@ -85,6 +107,8 @@ request_json() {
   echo "request failed: ${method} ${url}" >&2
   return 1
 }
+
+reset_rate_limit
 
 if [[ -f "erp报价.xls" && -n "${DOCKER_BIN}" ]] && "${DOCKER_BIN}" ps --format '{{.Names}}' | grep -qx "${API_CONTAINER}"; then
   "${DOCKER_BIN}" cp "erp报价.xls" "${API_CONTAINER}:/app/erp报价.xls"
@@ -228,22 +252,40 @@ fi
 
 request_json GET "${API_BASE_URL}/quote-submissions/${submission_id}/print" "${print_html}" '' "${print_token}"
 
-python3 - <<'PY' "${task_validate_json}" "${task_recommend_json}" "${task_generate_json}" "${merchant_task_json}" "${submit_to_user_json}" "${user_confirm_json}" "${print_html}"
+python3 - <<'PY' "${task_validate_json}" "${task_recommend_json}" "${task_generate_json}" "${merchant_task_json}" "${merchant_submit_json}" "${submit_to_user_json}" "${user_confirm_json}" "${print_html}"
 import json,sys,os
 validate_payload=json.load(open(sys.argv[1]))
 recommend_payload=json.load(open(sys.argv[2]))
 generate_payload=json.load(open(sys.argv[3]))
 merchant_task_payload=json.load(open(sys.argv[4]))
-submit_to_user_payload=json.load(open(sys.argv[5]))
-user_confirm_payload = json.load(open(sys.argv[6])) if os.path.exists(sys.argv[6]) and os.path.getsize(sys.argv[6]) else None
-print_html = open(sys.argv[7], encoding='utf-8').read()
+merchant_submit_payload=json.load(open(sys.argv[5]))
+submit_to_user_payload=json.load(open(sys.argv[6]))
+user_confirm_payload = json.load(open(sys.argv[7])) if os.path.exists(sys.argv[7]) and os.path.getsize(sys.argv[7]) else None
+print_html = open(sys.argv[8], encoding='utf-8').read()
+
+def payload_data(payload):
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
+    return {}
+
+merchant_task_data = payload_data(merchant_task_payload)
+merchant_submit_data = payload_data(merchant_submit_payload)
+submit_to_user_data = payload_data(submit_to_user_payload)
+user_confirm_data = payload_data(user_confirm_payload) if user_confirm_payload else {}
+
 print(json.dumps({
-  "validate_ok": validate_payload["data"]["ok"],
-  "recommend_count": len(recommend_payload["data"]["list"]),
-  "generated_submission_count": len(generate_payload["data"]["submissions"]),
-  "merchant_task_status": merchant_task_payload["data"]["quoteList"]["status"],
-  "submit_to_user_status": submit_to_user_payload["data"]["status"],
-  "user_confirm_status": user_confirm_payload["data"]["status"] if user_confirm_payload else "not-executed",
+  "validate_ok": payload_data(validate_payload).get("ok"),
+  "recommend_count": len(payload_data(recommend_payload).get("list") or []),
+  "generated_submission_count": len(payload_data(generate_payload).get("submissions") or []),
+  "merchant_task_status": merchant_task_data.get("quoteList", {}).get("status") if isinstance(merchant_task_data.get("quoteList"), dict) else merchant_task_data.get("status"),
+  "merchant_submit_code": merchant_submit_payload.get("code"),
+  "merchant_submit_status": merchant_submit_data.get("submission", {}).get("status") if isinstance(merchant_submit_data.get("submission"), dict) else merchant_submit_data.get("status"),
+  "submit_to_user_code": submit_to_user_payload.get("code"),
+  "submit_to_user_status": submit_to_user_data.get("status"),
+  "user_confirm_code": user_confirm_payload.get("code") if user_confirm_payload else None,
+  "user_confirm_message": user_confirm_payload.get("message") if user_confirm_payload else "not-executed",
+  "user_confirm_status": user_confirm_data.get("status") if user_confirm_payload else "not-executed",
   "print_contains_title": "报价工作流联调任务" in print_html,
 }, ensure_ascii=False, indent=2))
 PY

@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { buildMerchantAppUrl } from './helpers/merchant';
 
-// NOTE: Merchant portal runs on its own Vite dev server (default http://localhost:5174).
+// NOTE: Merchant portal is normally validated through the local gateway (default http://127.0.0.1:5175/merchant).
 // It uses SMS-code login (test code is hardcoded as 123456).
 
 test.describe('Merchant Chat Attachments', () => {
@@ -14,7 +14,7 @@ test.describe('Merchant Chat Attachments', () => {
     // Ensure output dir exists for runtime-generated fixtures.
     await fs.mkdir(testInfo.outputDir, { recursive: true });
 
-    const origin = process.env.MERCHANT_ORIGIN || 'http://localhost:5174';
+    const origin = process.env.MERCHANT_ORIGIN || 'http://127.0.0.1:5175/merchant';
     const phone = process.env.MERCHANT_PHONE || '13800000001';
     const code = process.env.MERCHANT_CODE || '123456';
 
