@@ -102,6 +102,10 @@ type QuoteListSummary struct {
 	ProjectID                uint64     `json:"projectId"`
 	ProposalID               uint64     `json:"proposalId"`
 	ProposalVersion          int        `json:"proposalVersion"`
+	QuantityBaseID           uint64     `json:"quantityBaseId"`
+	QuantityBaseVersion      int        `json:"quantityBaseVersion"`
+	SourceType               string     `json:"sourceType"`
+	SourceID                 uint64     `json:"sourceId"`
 	DesignerProviderID       uint64     `json:"designerProviderId"`
 	CustomerID               uint64     `json:"customerId"`
 	HouseID                  uint64     `json:"houseId"`
@@ -137,6 +141,8 @@ type AdminQuoteListDetail struct {
 	Items            []model.QuoteListItem   `json:"items"`
 	Invitations      []model.QuoteInvitation `json:"invitations"`
 	SubmissionCount  int64                   `json:"submissionCount"`
+	QuantityBase     *model.QuantityBase     `json:"quantityBase,omitempty"`
+	QuantityItems    []model.QuantityBaseItem `json:"quantityItems,omitempty"`
 	BusinessStage    string                  `json:"businessStage"`
 	FlowSummary      string                  `json:"flowSummary"`
 	AvailableActions []string                `json:"availableActions"`
@@ -146,6 +152,12 @@ type QuoteMerchantListItem struct {
 	ID                     uint64   `json:"id"`
 	Title                  string   `json:"title"`
 	Status                 string   `json:"status"`
+	ProposalID             uint64   `json:"proposalId,omitempty"`
+	ProposalVersion        int      `json:"proposalVersion,omitempty"`
+	QuantityBaseID         uint64   `json:"quantityBaseId,omitempty"`
+	QuantityBaseVersion    int      `json:"quantityBaseVersion,omitempty"`
+	SourceType             string   `json:"sourceType,omitempty"`
+	SourceID               uint64   `json:"sourceId,omitempty"`
 	DeadlineAt             string   `json:"deadlineAt,omitempty"`
 	Currency               string   `json:"currency,omitempty"`
 	UpdatedAt              string   `json:"updatedAt,omitempty"`
@@ -247,6 +259,8 @@ type MerchantQuoteListDetail struct {
 	Items            []model.QuoteListItem `json:"items"`
 	Invitation       model.QuoteInvitation `json:"invitation"`
 	Submission       *MerchantSubmission   `json:"submission,omitempty"`
+	QuantityBase     *model.QuantityBase   `json:"quantityBase,omitempty"`
+	QuantityItems    []model.QuantityBaseItem `json:"quantityItems,omitempty"`
 	BusinessStage    string                `json:"businessStage"`
 	FlowSummary      string                `json:"flowSummary"`
 	AvailableActions []string              `json:"availableActions"`
@@ -855,6 +869,10 @@ func (s *QuoteService) ListQuoteLists(page, pageSize int, status, keyword string
 			ProjectID:                quoteList.ProjectID,
 			ProposalID:               quoteList.ProposalID,
 			ProposalVersion:          quoteList.ProposalVersion,
+			QuantityBaseID:           quoteList.QuantityBaseID,
+			QuantityBaseVersion:      quoteList.QuantityBaseVersion,
+			SourceType:               quoteList.SourceType,
+			SourceID:                 quoteList.SourceID,
 			DesignerProviderID:       quoteList.DesignerProviderID,
 			CustomerID:               quoteList.CustomerID,
 			HouseID:                  quoteList.HouseID,
@@ -907,6 +925,15 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 	if err := repository.DB.Model(&model.QuoteSubmission{}).Where("quote_list_id = ?", quoteListID).Count(&submissionCount).Error; err != nil {
 		return nil, fmt.Errorf("统计报价单失败: %w", err)
 	}
+	var quantityBase *model.QuantityBase
+	var quantityItems []model.QuantityBaseItem
+	if quoteList.QuantityBaseID > 0 {
+		var base model.QuantityBase
+		if err := repository.DB.First(&base, quoteList.QuantityBaseID).Error; err == nil {
+			quantityBase = &base
+			_ = repository.DB.Where("quantity_base_id = ?", base.ID).Order("sort_order ASC, id ASC").Find(&quantityItems).Error
+		}
+	}
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
 
 	return &AdminQuoteListDetail{
@@ -914,6 +941,8 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 		Items:            items,
 		Invitations:      invitations,
 		SubmissionCount:  submissionCount,
+		QuantityBase:     quantityBase,
+		QuantityItems:    quantityItems,
 		BusinessStage:    stageSummary.CurrentStage,
 		FlowSummary:      stageSummary.FlowSummary,
 		AvailableActions: stageSummary.AvailableActions,
@@ -1274,6 +1303,12 @@ func (s *QuoteService) ListMerchantQuoteLists(providerID uint64) ([]QuoteMerchan
 			ID:                     quoteList.ID,
 			Title:                  quoteList.Title,
 			Status:                 quoteList.Status,
+			ProposalID:             quoteList.ProposalID,
+			ProposalVersion:        quoteList.ProposalVersion,
+			QuantityBaseID:         quoteList.QuantityBaseID,
+			QuantityBaseVersion:    quoteList.QuantityBaseVersion,
+			SourceType:             quoteList.SourceType,
+			SourceID:               quoteList.SourceID,
 			Currency:               quoteList.Currency,
 			UpdatedAt:              quoteList.UpdatedAt.Format(time.RFC3339),
 			UserConfirmationStatus: quoteList.UserConfirmationStatus,
@@ -1313,6 +1348,13 @@ func (s *QuoteService) GetMerchantQuoteListDetail(quoteListID, providerID uint64
 		QuoteList:  *quoteList,
 		Items:      items,
 		Invitation: *invitation,
+	}
+	if quoteList.QuantityBaseID > 0 {
+		var base model.QuantityBase
+		if err := repository.DB.First(&base, quoteList.QuantityBaseID).Error; err == nil {
+			resp.QuantityBase = &base
+			_ = repository.DB.Where("quantity_base_id = ?", base.ID).Order("sort_order ASC, id ASC").Find(&resp.QuantityItems).Error
+		}
 	}
 	if err == nil {
 		var submissionItems []model.QuoteSubmissionItem

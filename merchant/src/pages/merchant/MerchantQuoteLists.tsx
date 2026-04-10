@@ -26,6 +26,19 @@ const formatCentToYuan = (cent?: number): string => {
     return `¥${(cent / 100).toFixed(2)}`;
 };
 
+const sourceTypeLabel = (value?: string): string => {
+    switch (String(value || '').toLowerCase()) {
+        case 'proposal':
+            return '正式方案';
+        case 'proposal_internal_draft':
+            return '方案内部草稿';
+        case 'admin_imported':
+            return 'Admin 导入';
+        default:
+            return value || '未标记';
+    }
+};
+
 const MerchantQuoteLists: React.FC = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
@@ -57,6 +70,10 @@ const MerchantQuoteLists: React.FC = () => {
                     <Text strong>{value || `清单 #${record.id}`}</Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                         ID: {record.id}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                        来源：{sourceTypeLabel(record.sourceType)}
+                        {record.sourceId ? ` #${record.sourceId}` : ''} · 方案 v{record.proposalVersion || '-'} · 基线 v{record.quantityBaseVersion || '-'}
                     </Text>
                     {record.flowSummary ? (
                         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -120,7 +137,7 @@ const MerchantQuoteLists: React.FC = () => {
         <MerchantPageShell>
             <MerchantPageHeader
                 title="报价清单"
-                description="只展示已邀请你的清单，进入后可逐行填写单价并提交。"
+                description="只展示已邀请你的清单，正式施工报价任务由 Admin 编排分配；你只能处理自己被分配的任务。"
                 extra={(
                     <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
                         刷新

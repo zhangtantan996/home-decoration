@@ -66,6 +66,19 @@ const formatCentToYuanText = (cent?: number): string => {
     return `¥${(cent / 100).toFixed(2)}`;
 };
 
+const sourceTypeLabel = (value?: string): string => {
+    switch (String(value || '').toLowerCase()) {
+        case 'proposal':
+            return '正式方案';
+        case 'proposal_internal_draft':
+            return '方案内部草稿';
+        case 'admin_imported':
+            return 'Admin 导入';
+        default:
+            return value || '未标记';
+    }
+};
+
 const isRequiredItem = (item: QuoteListItem): boolean => {
     if (typeof item.required === 'boolean') {
         return item.required;
@@ -374,6 +387,12 @@ const MerchantQuoteDetail: React.FC = () => {
                     <Descriptions.Item label="清单状态">{quoteStatusTag.text}</Descriptions.Item>
                     <Descriptions.Item label="闭环阶段">{businessStageTag.text}</Descriptions.Item>
                     <Descriptions.Item label="我的报价状态">{submissionStatus}</Descriptions.Item>
+                    <Descriptions.Item label="正式来源">
+                        {sourceTypeLabel(detail?.quoteList?.sourceType)}
+                        {detail?.quoteList?.sourceId ? ` / #${detail.quoteList.sourceId}` : ''}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="方案版本">v{detail?.quoteList?.proposalVersion || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="基线版本">v{detail?.quoteList?.quantityBaseVersion || '-'}</Descriptions.Item>
                     <Descriptions.Item label="草稿生成状态">{generationStatus}</Descriptions.Item>
                     <Descriptions.Item label="邀请状态">{invitationStatus}</Descriptions.Item>
                     <Descriptions.Item label="截止时间">
@@ -402,6 +421,13 @@ const MerchantQuoteDetail: React.FC = () => {
                         description="在平台将报价发送给用户前，你仍可继续修改并重新提交。系统会保留每次改价的版本留痕。"
                     />
                 )}
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginTop: 16 }}
+                    message="访问与权限说明"
+                    description="该正式施工报价任务由 Admin 分配后才会出现在你的商家端。你不能在 Merchant 端新建脱离 Admin 编排的正式报价任务；未被分配的商家也无法查看或提交。"
+                />
                 {rows.some((row) => row.missingMappingFlag || row.missingPriceFlag) && (
                     <Alert
                         type="warning"
@@ -418,6 +444,59 @@ const MerchantQuoteDetail: React.FC = () => {
                         style={{ marginTop: 16 }}
                         message="存在必填报价项"
                         description="标记为“必填”的施工项必须填写单价后才能提交报价。"
+                    />
+                )}
+            </Card>
+
+            <Card style={{ marginBottom: 16 }} loading={loading} title="来源与工程量基线">
+                <Descriptions column={3} size="small" style={{ marginBottom: 16 }}>
+                    <Descriptions.Item label="来源类型">{sourceTypeLabel(detail?.quoteList?.sourceType)}</Descriptions.Item>
+                    <Descriptions.Item label="来源记录 ID">{detail?.quoteList?.sourceId ? `#${detail.quoteList.sourceId}` : '-'}</Descriptions.Item>
+                    <Descriptions.Item label="方案 ID">{detail?.quoteList?.proposalId ? `#${detail.quoteList.proposalId}` : '-'}</Descriptions.Item>
+                    <Descriptions.Item label="方案版本">{detail?.quoteList?.proposalVersion || '-'}</Descriptions.Item>
+                    <Descriptions.Item label="基线 ID">{detail?.quantityBase?.id ? `#${detail.quantityBase.id}` : (detail?.quoteList?.quantityBaseId ? `#${detail.quoteList.quantityBaseId}` : '-')}</Descriptions.Item>
+                    <Descriptions.Item label="基线版本">{detail?.quantityBase?.version || detail?.quoteList?.quantityBaseVersion || '-'}</Descriptions.Item>
+                </Descriptions>
+                {detail?.quantityItems?.length ? (
+                    <Table
+                        rowKey="id"
+                        size="small"
+                        pagination={{ pageSize: 8, showSizeChanger: false }}
+                        dataSource={detail.quantityItems}
+                        columns={[
+                            {
+                                title: '基线项',
+                                dataIndex: 'sourceItemName',
+                                key: 'sourceItemName',
+                                render: (value: string, record) => (
+                                    <Space direction="vertical" size={2}>
+                                        <Text strong>{value || `基线项 #${record.id}`}</Text>
+                                        <Text type="secondary" style={{ fontSize: 12 }}>
+                                            {record.categoryL1 || '未分类'}{record.categoryL2 ? ` / ${record.categoryL2}` : ''}
+                                        </Text>
+                                    </Space>
+                                ),
+                            },
+                            {
+                                title: '基准数量',
+                                key: 'baselineQuantity',
+                                width: 120,
+                                render: (_: unknown, record) => `${record.quantity}${record.unit || '项'}`,
+                            },
+                            {
+                                title: '说明 / 偏差解释入口',
+                                dataIndex: 'baselineNote',
+                                key: 'baselineNote',
+                                render: (value?: string) => value || '若与现场情况不符，请在对应报价项备注中说明偏差原因',
+                            },
+                        ]}
+                    />
+                ) : (
+                    <Alert
+                        type="warning"
+                        showIcon
+                        message="当前未返回工程量基线明细"
+                        description="若缺少基线明细，当前任务不应被视为可脱离来源单独报价，请联系 Admin 核对桥接数据。"
                     />
                 )}
             </Card>

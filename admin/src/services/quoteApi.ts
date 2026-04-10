@@ -83,6 +83,10 @@ export interface QuoteListSummary {
     projectId: number;
     proposalId?: number;
     proposalVersion?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    sourceType?: string;
+    sourceId?: number;
     designerProviderId?: number;
     customerId: number;
     houseId: number;
@@ -131,6 +135,35 @@ export interface QuoteInvitation {
     status: string;
     invitedAt?: string;
     respondedAt?: string;
+}
+
+export interface QuantityBaseSnapshot {
+    id: number;
+    proposalId?: number;
+    proposalVersion?: number;
+    ownerUserId?: number;
+    designerProviderId?: number;
+    sourceType?: string;
+    sourceId?: number;
+    status?: string;
+    version: number;
+    title?: string;
+    activatedAt?: string;
+}
+
+export interface QuantityBaseItemSnapshot {
+    id: number;
+    quantityBaseId: number;
+    standardItemId?: number;
+    sourceLineNo?: number;
+    sourceItemCode?: string;
+    sourceItemName: string;
+    unit: string;
+    quantity: number;
+    baselineNote?: string;
+    categoryL1?: string;
+    categoryL2?: string;
+    sortOrder?: number;
 }
 
 export interface QuotePriceBookItem {
@@ -237,6 +270,8 @@ export interface AdminQuoteListDetail {
     items: QuoteListItem[];
     invitations: QuoteInvitation[];
     submissionCount: number;
+    quantityBase?: QuantityBaseSnapshot;
+    quantityItems: QuantityBaseItemSnapshot[];
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];

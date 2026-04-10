@@ -48,6 +48,12 @@ export interface QuoteListSummary {
     id: number;
     title: string;
     status: string;
+    proposalId?: number;
+    proposalVersion?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    sourceType?: string;
+    sourceId?: number;
     deadlineAt?: string;
     currency?: string;
     updatedAt?: string;
@@ -100,10 +106,43 @@ export interface QuoteSubmission {
     remark?: string;
 }
 
+export interface QuantityBaseSnapshot {
+    id: number;
+    proposalId?: number;
+    proposalVersion?: number;
+    sourceType?: string;
+    sourceId?: number;
+    status?: string;
+    version: number;
+    title?: string;
+    activatedAt?: string;
+}
+
+export interface QuantityBaseItemSnapshot {
+    id: number;
+    quantityBaseId: number;
+    standardItemId?: number;
+    sourceLineNo?: number;
+    sourceItemCode?: string;
+    sourceItemName: string;
+    unit: string;
+    quantity: number;
+    baselineNote?: string;
+    categoryL1?: string;
+    categoryL2?: string;
+    sortOrder?: number;
+}
+
 export interface MerchantQuoteListDetail {
   quoteList: {
     id: number;
     projectId?: number;
+    proposalId?: number;
+    proposalVersion?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    sourceType?: string;
+    sourceId?: number;
     title: string;
     status: string;
         deadlineAt?: string;
@@ -113,6 +152,8 @@ export interface MerchantQuoteListDetail {
     items: QuoteListItem[];
     invitation?: { status?: string; invitedAt?: string };
     submission?: QuoteSubmission;
+    quantityBase?: QuantityBaseSnapshot;
+    quantityItems: QuantityBaseItemSnapshot[];
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];

@@ -158,6 +158,19 @@ const readErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const quoteSourceTypeLabel = (value?: string) => {
+  switch (String(value || "").toLowerCase()) {
+    case "proposal":
+      return "正式方案";
+    case "proposal_internal_draft":
+      return "方案内部草稿";
+    case "admin_imported":
+      return "Admin 导入";
+    default:
+      return value || "未标记";
+  }
+};
+
 const QuoteListManagement: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -862,6 +875,20 @@ const QuoteListManagement: React.FC = () => {
                 <Descriptions.Item label="方案版本">
                   {detail.quoteList.proposalVersion || "-"}
                 </Descriptions.Item>
+                <Descriptions.Item label="正式来源">
+                  {quoteSourceTypeLabel(detail.quoteList.sourceType)}
+                  {detail.quoteList.sourceId
+                    ? ` / #${detail.quoteList.sourceId}`
+                    : ""}
+                </Descriptions.Item>
+                <Descriptions.Item label="工程量基线">
+                  {detail.quoteList.quantityBaseId
+                    ? `#${detail.quoteList.quantityBaseId}`
+                    : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="基线版本">
+                  {detail.quoteList.quantityBaseVersion || "-"}
+                </Descriptions.Item>
                 <Descriptions.Item label="场景标识">
                   {detail.quoteList.scenarioType || "-"}
                 </Descriptions.Item>
@@ -884,6 +911,79 @@ const QuoteListManagement: React.FC = () => {
                   {formatDateTime(detail.quoteList.deadlineAt)}
                 </Descriptions.Item>
               </Descriptions>
+            </Card>
+
+            <Card
+              className="hz-panel-card"
+              title="方案来源与工程量基线"
+            >
+              <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="该施工报价任务必须挂接正式来源与工程量基线"
+                  description="Admin 与 Merchant 应看到同一份方案/源清单来源及版本语义，避免任务表现为孤立报价单。"
+                />
+                <Descriptions bordered column={3} size="small">
+                  <Descriptions.Item label="来源类型">
+                    {quoteSourceTypeLabel(detail.quoteList.sourceType)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="来源记录 ID">
+                    {detail.quoteList.sourceId
+                      ? `#${detail.quoteList.sourceId}`
+                      : "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="方案 ID">
+                    {detail.quoteList.proposalId
+                      ? `#${detail.quoteList.proposalId}`
+                      : "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="方案版本">
+                    {detail.quoteList.proposalVersion || "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线 ID">
+                    {detail.quantityBase?.id
+                      ? `#${detail.quantityBase.id}`
+                      : detail.quoteList.quantityBaseId
+                        ? `#${detail.quoteList.quantityBaseId}`
+                        : "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线版本">
+                    {detail.quantityBase?.version ||
+                      detail.quoteList.quantityBaseVersion ||
+                      "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线状态">
+                    {detail.quantityBase?.status || "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线标题" span={2}>
+                    {detail.quantityBase?.title || "未返回标题"}
+                  </Descriptions.Item>
+                </Descriptions>
+                {detail.quantityItems.length ? (
+                  <div className="hz-quote-list">
+                    {detail.quantityItems.slice(0, 6).map((item) => (
+                      <div key={item.id} className="hz-quote-list__item">
+                        <div className="hz-quote-list__title">
+                          {item.sourceItemName || `基线项 #${item.id}`}
+                        </div>
+                        <div className="hz-quote-list__meta">
+                          {item.categoryL1 || "未分类"}
+                          {item.categoryL2 ? ` / ${item.categoryL2}` : ""}
+                          {" · "}
+                          基准 {item.quantity}
+                          {item.unit || "项"}
+                          {item.baselineNote
+                            ? ` · ${item.baselineNote}`
+                            : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty description="当前任务尚未返回工程量基线明细" />
+                )}
+              </Space>
             </Card>
 
             <Card

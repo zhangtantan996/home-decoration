@@ -1337,6 +1337,86 @@ func TestCreateQuoteListBindsActiveQuantityBaseFromProposal(t *testing.T) {
 	}
 }
 
+func TestGetMerchantQuoteListDetailIncludesQuantityBase(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+
+	user := model.User{Phone: "13800138010", Nickname: "业主A"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{UserID: user.ID, ProviderType: 3, SubType: "foreman", CompanyName: "工长A"}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	quoteList := model.QuoteList{
+		Title:               "施工报价任务",
+		Status:              model.QuoteListStatusPricingInProgress,
+		Currency:            "CNY",
+		OwnerUserID:         user.ID,
+		ProposalID:          66,
+		ProposalVersion:     3,
+		QuantityBaseID:      88,
+		QuantityBaseVersion: 3,
+		SourceType:          model.QuantitySourceTypeProposal,
+		SourceID:            66,
+	}
+	if err := db.Create(&quoteList).Error; err != nil {
+		t.Fatalf("create quote list: %v", err)
+	}
+	quantityBase := model.QuantityBase{
+		Base:            model.Base{ID: 88},
+		ProposalID:      66,
+		ProposalVersion: 3,
+		OwnerUserID:     user.ID,
+		SourceType:      model.QuantitySourceTypeProposal,
+		SourceID:        66,
+		Status:          model.QuantityBaseStatusActive,
+		Version:         3,
+		Title:           "方案 66 工程量基础表",
+	}
+	if err := db.Create(&quantityBase).Error; err != nil {
+		t.Fatalf("create quantity base: %v", err)
+	}
+	quantityItem := model.QuantityBaseItem{
+		QuantityBaseID: 88,
+		SourceItemName: "地面找平",
+		Unit:           "㎡",
+		Quantity:       18,
+		BaselineNote:   "按设计方案基准量计算",
+		CategoryL1:     "泥瓦",
+		CategoryL2:     "地面",
+		SortOrder:      1,
+	}
+	if err := db.Create(&quantityItem).Error; err != nil {
+		t.Fatalf("create quantity item: %v", err)
+	}
+	invitation := model.QuoteInvitation{
+		QuoteListID: quoteList.ID,
+		ProviderID:  provider.ID,
+		Status:      model.QuoteInvitationStatusInvited,
+	}
+	if err := db.Create(&invitation).Error; err != nil {
+		t.Fatalf("create invitation: %v", err)
+	}
+
+	detail, err := (&QuoteService{}).GetMerchantQuoteListDetail(quoteList.ID, provider.ID)
+	if err != nil {
+		t.Fatalf("GetMerchantQuoteListDetail: %v", err)
+	}
+	if detail.QuantityBase == nil {
+		t.Fatalf("expected quantity base in merchant detail")
+	}
+	if detail.QuantityBase.ID != quantityBase.ID {
+		t.Fatalf("expected quantity base id=%d, got %d", quantityBase.ID, detail.QuantityBase.ID)
+	}
+	if len(detail.QuantityItems) != 1 {
+		t.Fatalf("expected 1 quantity item, got %d", len(detail.QuantityItems))
+	}
+	if detail.QuantityItems[0].BaselineNote != "按设计方案基准量计算" {
+		t.Fatalf("expected baseline note to be returned")
+	}
+}
+
 func TestUserConfirmQuoteSubmissionDoesNotCreateSecondProjectOnRepeatOrInvalidStatus(t *testing.T) {
 	t.Run("repeat confirm reuses existing project without creating second one", func(t *testing.T) {
 		db := setupQuoteServiceDB(t)
