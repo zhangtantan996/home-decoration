@@ -219,8 +219,10 @@ const WorkbenchDetail: React.FC = () => {
       message.success('阶段已更新');
       setPhaseModalOpen(false);
       await loadWorkspace();
-    } catch (error: any) {
-      if (error?.errorFields) return;
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
       message.error(error instanceof Error ? error.message : '更新阶段失败');
     } finally {
       setSubmitting(false);
@@ -334,8 +336,10 @@ const WorkbenchDetail: React.FC = () => {
       resetLogModal();
       await loadLogs(selectedPhaseId);
       await loadWorkspace();
-    } catch (error: any) {
-      if (error?.errorFields) return;
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
       message.error(error instanceof Error ? error.message : '新增日志失败');
     } finally {
       setSubmitting(false);
@@ -360,8 +364,10 @@ const WorkbenchDetail: React.FC = () => {
       setRiskModalOpen(false);
       riskForm.resetFields();
       await loadWorkspace();
-    } catch (error: any) {
-      if (error?.errorFields) return;
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
       message.error(error instanceof Error ? error.message : '上报风险失败');
     } finally {
       setSubmitting(false);
