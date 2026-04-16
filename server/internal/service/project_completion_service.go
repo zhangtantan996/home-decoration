@@ -20,16 +20,17 @@ type ProjectCompletionPayload struct {
 }
 
 type ProjectCompletionDetail struct {
-	ProjectID                 uint64     `json:"projectId"`
-	BusinessStage             string     `json:"businessStage"`
-	FlowSummary               string     `json:"flowSummary"`
-	AvailableActions          []string   `json:"availableActions"`
-	CompletedPhotos           []string   `json:"completedPhotos"`
-	CompletionNotes           string     `json:"completionNotes"`
-	CompletionSubmittedAt     *time.Time `json:"completionSubmittedAt,omitempty"`
-	CompletionRejectionReason string     `json:"completionRejectionReason,omitempty"`
-	CompletionRejectedAt      *time.Time `json:"completionRejectedAt,omitempty"`
-	InspirationCaseDraftID    uint64     `json:"inspirationCaseDraftId,omitempty"`
+	ProjectID                 uint64                 `json:"projectId"`
+	BusinessStage             string                 `json:"businessStage"`
+	FlowSummary               string                 `json:"flowSummary"`
+	AvailableActions          []string               `json:"availableActions"`
+	CompletedPhotos           []string               `json:"completedPhotos"`
+	CompletionNotes           string                 `json:"completionNotes"`
+	CompletionSubmittedAt     *time.Time             `json:"completionSubmittedAt,omitempty"`
+	CompletionRejectionReason string                 `json:"completionRejectionReason,omitempty"`
+	CompletionRejectedAt      *time.Time             `json:"completionRejectedAt,omitempty"`
+	InspirationCaseDraftID    uint64                 `json:"inspirationCaseDraftId,omitempty"`
+	ClosureSummary            *ProjectClosureSummary `json:"closureSummary,omitempty"`
 }
 
 type ProjectCompletionApprovalResult struct {
@@ -508,6 +509,7 @@ func (s *ProjectService) getProjectCompletionDetailTx(db *gorm.DB, projectID uin
 		CompletionRejectionReason: project.CompletionRejectionReason,
 		CompletionRejectedAt:      project.CompletionRejectedAt,
 		InspirationCaseDraftID:    project.InspirationCaseDraftID,
+		ClosureSummary:            BuildProjectClosureSummary(&project),
 	}, nil
 }
 

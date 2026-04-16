@@ -154,6 +154,7 @@ type AdminQuoteListDetail struct {
 	KickoffStatus                  string                   `json:"kickoffStatus"`
 	PlannedStartDate               *time.Time               `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
 }
 
 type QuoteMerchantListItem struct {
@@ -261,6 +262,7 @@ type QuoteComparisonResponse struct {
 	KickoffStatus                  string                      `json:"kickoffStatus,omitempty"`
 	PlannedStartDate               *time.Time                  `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary    `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary    `json:"bridgeConversionSummary,omitempty"`
 }
 
 type QuoteSubmissionRevisionItem struct {
@@ -316,6 +318,7 @@ type MerchantQuoteListDetail struct {
 	KickoffStatus                  string                    `json:"kickoffStatus"`
 	PlannedStartDate               *time.Time                `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary  `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary  `json:"bridgeConversionSummary,omitempty"`
 }
 
 type MerchantSubmission struct {
@@ -1154,6 +1157,7 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 	}
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
 	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
+	conversionSummary := BuildBridgeConversionSummaryByQuoteList(&quoteList)
 
 	return &AdminQuoteListDetail{
 		QuoteList:                      quoteList,
@@ -1173,6 +1177,7 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 		KickoffStatus:                  bridgeSummary.KickoffStatus,
 		PlannedStartDate:               bridgeSummary.PlannedStartDate,
 		SupervisorSummary:              bridgeSummary.SupervisorSummary,
+		BridgeConversionSummary:        conversionSummary,
 	}, nil
 }
 
@@ -1435,6 +1440,7 @@ func (s *QuoteService) GetQuoteComparison(quoteListID uint64) (*QuoteComparisonR
 	}
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
 	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
+	conversionSummary := BuildBridgeConversionSummaryByQuoteList(&quoteList)
 	resp.BusinessStage = stageSummary.CurrentStage
 	resp.FlowSummary = stageSummary.FlowSummary
 	resp.AvailableActions = stageSummary.AvailableActions
@@ -1446,6 +1452,7 @@ func (s *QuoteService) GetQuoteComparison(quoteListID uint64) (*QuoteComparisonR
 	resp.KickoffStatus = bridgeSummary.KickoffStatus
 	resp.PlannedStartDate = bridgeSummary.PlannedStartDate
 	resp.SupervisorSummary = bridgeSummary.SupervisorSummary
+	resp.BridgeConversionSummary = conversionSummary
 	for _, submission := range submissions {
 		itemMap := itemsBySubmission[submission.ID]
 		missing := make([]uint64, 0)
@@ -1626,6 +1633,7 @@ func (s *QuoteService) GetMerchantQuoteListDetail(quoteListID, providerID uint64
 	}
 	stageSummary := s.resolveQuoteListBusinessSummary(quoteList)
 	bridgeSummary := BuildBridgeReadModelByQuoteList(quoteList)
+	conversionSummary := BuildBridgeConversionSummaryByQuoteList(quoteList)
 	resp.BusinessStage = stageSummary.CurrentStage
 	resp.FlowSummary = stageSummary.FlowSummary
 	resp.AvailableActions = stageSummary.AvailableActions
@@ -1637,6 +1645,7 @@ func (s *QuoteService) GetMerchantQuoteListDetail(quoteListID, providerID uint64
 	resp.KickoffStatus = bridgeSummary.KickoffStatus
 	resp.PlannedStartDate = bridgeSummary.PlannedStartDate
 	resp.SupervisorSummary = bridgeSummary.SupervisorSummary
+	resp.BridgeConversionSummary = conversionSummary
 	return resp, nil
 }
 

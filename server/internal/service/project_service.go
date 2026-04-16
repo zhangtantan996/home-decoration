@@ -64,6 +64,8 @@ type ProjectDetail struct {
 	KickoffStatus                  string                   `json:"kickoffStatus"`
 	PlannedStartDate               *time.Time               `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
+	ClosureSummary                 *ProjectClosureSummary   `json:"closureSummary,omitempty"`
 	SelectedQuoteTaskID            uint64                   `json:"selectedQuoteTaskId"`
 	SelectedForemanProviderID      uint64                   `json:"selectedForemanProviderId"`
 	SelectedQuoteSubmissionID      uint64                   `json:"selectedQuoteSubmissionId"`
@@ -480,6 +482,8 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 	completedPhotos = imgutil.GetFullImageURLs(completedPhotos)
 	riskSummary := s.buildProjectRiskSummary(project)
 	bridgeSummary := BuildBridgeReadModelByProject(project)
+	conversionSummary := BuildBridgeConversionSummaryByProject(project)
+	closureSummary := BuildProjectClosureSummary(project)
 
 	return &ProjectDetail{
 		Project:                        *project,
@@ -507,6 +511,8 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 		KickoffStatus:                  bridgeSummary.KickoffStatus,
 		PlannedStartDate:               bridgeSummary.PlannedStartDate,
 		SupervisorSummary:              bridgeSummary.SupervisorSummary,
+		BridgeConversionSummary:        conversionSummary,
+		ClosureSummary:                 closureSummary,
 		SelectedQuoteTaskID:            flowSummary.SelectedQuoteTaskID,
 		SelectedForemanProviderID:      flowSummary.SelectedForemanProviderID,
 		SelectedQuoteSubmissionID:      flowSummary.SelectedQuoteSubmissionID,

@@ -111,6 +111,7 @@ func GetBooking(c *gin.Context) {
 	currentStage = bookingView.CurrentStage
 	currentStageText = bookingView.CurrentStageText
 	bridgeSummary := service.BuildBridgeReadModelByBookingID(booking.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByBookingID(booking.ID)
 
 	response.Success(c, gin.H{
 		"booking":                        bookingView,
@@ -141,6 +142,7 @@ func GetBooking(c *gin.Context) {
 		"kickoffStatus":                  bridgeSummary.KickoffStatus,
 		"plannedStartDate":               bridgeSummary.PlannedStartDate,
 		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 

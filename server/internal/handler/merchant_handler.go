@@ -1084,6 +1084,7 @@ func MerchantGetBookingDetail(c *gin.Context) {
 	}
 	currentStageText = bookingView.CurrentStageText
 	bridgeSummary := service.BuildBridgeReadModelByBookingID(booking.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByBookingID(booking.ID)
 
 	type BookingDetailWithIdentity struct {
 		service.BookingLifecycleView
@@ -1116,6 +1117,7 @@ func MerchantGetBookingDetail(c *gin.Context) {
 		"kickoffStatus":                  bridgeSummary.KickoffStatus,
 		"plannedStartDate":               bridgeSummary.PlannedStartDate,
 		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 
@@ -1348,6 +1350,7 @@ func MerchantStartProject(c *gin.Context) {
 // MerchantDashboardStats 商家首页统计
 func MerchantDashboardStats(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
+	governanceSummary := (&service.ProviderGovernanceService{}).BuildSummary(providerID)
 
 	// 预约统计
 	var pendingBookings, confirmedBookings int64
@@ -1412,6 +1415,37 @@ func MerchantDashboardStats(c *gin.Context) {
 			"pending": pendingOrders,
 			"paid":    paidOrders,
 		},
+		"governanceSummary": governanceSummary,
+		"governanceTier": func() string {
+			if governanceSummary == nil {
+				return ""
+			}
+			return governanceSummary.GovernanceTier
+		}(),
+		"riskFlags": func() []string {
+			if governanceSummary == nil {
+				return nil
+			}
+			return governanceSummary.RiskFlags
+		}(),
+		"recommendedAction": func() string {
+			if governanceSummary == nil {
+				return ""
+			}
+			return governanceSummary.RecommendedAction
+		}(),
+		"scoreSummary": func() service.ProviderGovernanceScoreSummary {
+			if governanceSummary == nil {
+				return service.ProviderGovernanceScoreSummary{}
+			}
+			return governanceSummary.ScoreSummary
+		}(),
+		"funnelMetrics": func() service.ProviderGovernanceFunnelMetrics {
+			if governanceSummary == nil {
+				return service.ProviderGovernanceFunnelMetrics{}
+			}
+			return governanceSummary.FunnelMetrics
+		}(),
 	})
 }
 
@@ -1607,6 +1641,7 @@ func MerchantGetProposal(c *gin.Context) {
 	}
 
 	bridgeSummary := service.BuildBridgeReadModelByProposalID(proposal.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByProposalID(proposal.ID)
 	response.Success(c, gin.H{
 		"proposal":                       proposal,
 		"booking":                        bookingWithUser,
@@ -1618,6 +1653,7 @@ func MerchantGetProposal(c *gin.Context) {
 		"kickoffStatus":                  bridgeSummary.KickoffStatus,
 		"plannedStartDate":               bridgeSummary.PlannedStartDate,
 		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 

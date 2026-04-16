@@ -328,8 +328,31 @@ func GetOrder(c *gin.Context) {
 			_ = repository.DB.First(order, order.ID).Error
 		}
 	}
+	result := gin.H{
+		"id":          order.ID,
+		"orderNo":     order.OrderNo,
+		"orderType":   order.OrderType,
+		"totalAmount": order.TotalAmount,
+		"paidAmount":  order.PaidAmount,
+		"discount":    order.Discount,
+		"status":      order.Status,
+		"expireAt":    order.ExpireAt,
+		"paidAt":      order.PaidAt,
+		"bookingId":   order.BookingID,
+		"projectId":   order.ProjectID,
+		"proposalId":  order.ProposalID,
+		"createdAt":   order.CreatedAt,
+	}
+	if order.ProjectID > 0 {
+		if projectDetail, projectErr := (&service.ProjectService{}).GetProjectDetail(order.ProjectID); projectErr == nil && projectDetail != nil {
+			result["closureSummary"] = projectDetail.ClosureSummary
+			result["bridgeConversionSummary"] = projectDetail.BridgeConversionSummary
+			result["businessStage"] = projectDetail.BusinessStage
+			result["flowSummary"] = projectDetail.FlowSummary
+		}
+	}
 
-	response.Success(c, order)
+	response.Success(c, result)
 }
 
 // GetOrderPaymentPlans 获取订单分期计划

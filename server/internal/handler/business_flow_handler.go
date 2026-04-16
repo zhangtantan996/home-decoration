@@ -74,6 +74,7 @@ func GetProposal(c *gin.Context) {
 	responseProposal.InternalDraftJSON = "{}"
 	responseProposal.Attachments = "[]"
 	bridgeSummary := service.BuildBridgeReadModelByProposalID(proposal.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByProposalID(proposal.ID)
 
 	response.Success(c, gin.H{
 		"proposal":                       responseProposal,
@@ -88,6 +89,7 @@ func GetProposal(c *gin.Context) {
 		"kickoffStatus":                  bridgeSummary.KickoffStatus,
 		"plannedStartDate":               bridgeSummary.PlannedStartDate,
 		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 

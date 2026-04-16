@@ -503,8 +503,33 @@ func AdminStatsOverview(c *gin.Context) {
 	stats.PublicIDHealth = monitor.SnapshotPublicIDHealth()
 	stats.PublicIDRollout = monitor.SnapshotPublicIDRollout()
 	stats.PublicIDRollback = monitor.SnapshotPublicIDRollback()
+	payload := gin.H{
+		"userCount":         stats.UserCount,
+		"todayNewUsers":     stats.TodayNewUsers,
+		"providerCount":     stats.ProviderCount,
+		"designerCount":     stats.DesignerCount,
+		"companyCount":      stats.CompanyCount,
+		"foremanCount":      stats.ForemanCount,
+		"projectCount":      stats.ProjectCount,
+		"activeProjects":    stats.ActiveProjects,
+		"completedProjects": stats.CompletedProjects,
+		"bookingCount":      stats.BookingCount,
+		"pendingBookings":   stats.PendingBookings,
+		"materialShopCount": stats.MaterialShopCount,
+		"monthlyGMV":        stats.MonthlyGMV,
+		"publicIdHealth":    stats.PublicIDHealth,
+		"publicIdRollout":   stats.PublicIDRollout,
+		"publicIdRollback":  stats.PublicIDRollback,
+	}
+	if dashboard, err := (&service.AdminDashboardService{}).GetOverview(); err == nil && dashboard != nil {
+		payload["northStar"] = dashboard.NorthStar
+		payload["coreMetrics"] = dashboard.CoreMetrics
+		payload["dashboardSections"] = dashboard.DashboardSections
+		payload["userFunnel"] = dashboard.UserFunnel
+		payload["merchantFunnel"] = dashboard.MerchantFunnel
+	}
 
-	response.Success(c, stats)
+	response.Success(c, payload)
 }
 
 // AdminStatsTrends 趋势统计
@@ -512,6 +537,10 @@ func AdminStatsTrends(c *gin.Context) {
 	days := 7
 	if d := c.Query("days"); d == "30" {
 		days = 30
+	}
+	if trends, err := (&service.AdminDashboardService{}).GetTrends(days); err == nil {
+		response.Success(c, trends)
+		return
 	}
 
 	type DailyStats struct {
@@ -558,6 +587,11 @@ func AdminStatsTrends(c *gin.Context) {
 
 // AdminStatsDistribution 分布统计
 func AdminStatsDistribution(c *gin.Context) {
+	if result, err := (&service.AdminDashboardService{}).GetDistribution(); err == nil && result != nil {
+		response.Success(c, result)
+		return
+	}
+
 	type DistributionItem struct {
 		Name  string `json:"name"`
 		Value int64  `json:"value"`
@@ -980,20 +1014,25 @@ func parseUserIDsFromPayload(value any) []uint64 {
 
 type adminProviderListRow struct {
 	model.Provider
-	RealName           string                        `json:"realName"`
-	SourceLabel        string                        `json:"sourceLabel"`
-	AccountBound       bool                          `json:"accountBound"`
-	AccountStatus      string                        `json:"accountStatus"`
-	LoginStatus        string                        `json:"loginStatus"`
-	LoginEnabled       bool                          `json:"loginEnabled"`
-	CompletionRequired bool                          `json:"completionRequired"`
-	OnboardingStatus   string                        `json:"onboardingStatus"`
-	OperatingStatus    string                        `json:"operatingStatus"`
-	OperatingEnabled   bool                          `json:"operatingEnabled"`
-	CompletionAppID    uint64                        `json:"completionApplicationId,omitempty"`
-	Visibility         service.VisibilityData        `json:"visibility"`
-	Actions            service.VisibilityActions     `json:"actions"`
-	LegacyInfo         *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+	RealName           string                                  `json:"realName"`
+	SourceLabel        string                                  `json:"sourceLabel"`
+	AccountBound       bool                                    `json:"accountBound"`
+	AccountStatus      string                                  `json:"accountStatus"`
+	LoginStatus        string                                  `json:"loginStatus"`
+	LoginEnabled       bool                                    `json:"loginEnabled"`
+	CompletionRequired bool                                    `json:"completionRequired"`
+	OnboardingStatus   string                                  `json:"onboardingStatus"`
+	OperatingStatus    string                                  `json:"operatingStatus"`
+	OperatingEnabled   bool                                    `json:"operatingEnabled"`
+	CompletionAppID    uint64                                  `json:"completionApplicationId,omitempty"`
+	Visibility         service.VisibilityData                  `json:"visibility"`
+	Actions            service.VisibilityActions               `json:"actions"`
+	LegacyInfo         *service.VisibilityLegacyInfo           `json:"legacyInfo,omitempty"`
+	GovernanceTier     string                                  `json:"governanceTier,omitempty"`
+	ScoreSummary       service.ProviderGovernanceScoreSummary  `json:"scoreSummary"`
+	RiskFlags          []string                                `json:"riskFlags,omitempty"`
+	RecommendedAction  string                                  `json:"recommendedAction,omitempty"`
+	FunnelMetrics      service.ProviderGovernanceFunnelMetrics `json:"funnelMetrics"`
 }
 
 type adminMaterialShopListRow struct {
@@ -1202,6 +1241,7 @@ func AdminListProviders(c *gin.Context) {
 	}
 
 	list := make([]adminProviderListRow, 0, len(providers))
+	governanceService := &service.ProviderGovernanceService{}
 	for _, provider := range providers {
 		provider.PlatformDisplayEnabled = service.ProviderPlatformDisplayEnabled(&provider)
 		provider.MerchantDisplayEnabled = service.ProviderMerchantDisplayEnabled(&provider)
@@ -1235,6 +1275,19 @@ func AdminListProviders(c *gin.Context) {
 		if app, ok := findProviderVisibilitySource(provider); ok {
 			visibilityResult = adminVisibilityResolver.ResolveMerchantApplication(*app, &provider)
 		}
+		governanceSummary := governanceService.BuildSummary(provider.ID)
+		governanceTier := ""
+		recommendedAction := ""
+		scoreSummary := service.ProviderGovernanceScoreSummary{}
+		funnelMetrics := service.ProviderGovernanceFunnelMetrics{}
+		var riskFlags []string
+		if governanceSummary != nil {
+			governanceTier = governanceSummary.GovernanceTier
+			recommendedAction = governanceSummary.RecommendedAction
+			scoreSummary = governanceSummary.ScoreSummary
+			funnelMetrics = governanceSummary.FunnelMetrics
+			riskFlags = governanceSummary.RiskFlags
+		}
 
 		list = append(list, adminProviderListRow{
 			Provider:           provider,
@@ -1252,6 +1305,11 @@ func AdminListProviders(c *gin.Context) {
 			Visibility:         visibilityResult.Visibility,
 			Actions:            visibilityResult.Actions,
 			LegacyInfo:         visibilityResult.LegacyInfo,
+			GovernanceTier:     governanceTier,
+			ScoreSummary:       scoreSummary,
+			RiskFlags:          riskFlags,
+			RecommendedAction:  recommendedAction,
+			FunnelMetrics:      funnelMetrics,
 		})
 	}
 

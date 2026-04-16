@@ -143,6 +143,7 @@ type QuoteTaskUserView struct {
 	KickoffStatus                  string                        `json:"kickoffStatus,omitempty"`
 	PlannedStartDate               *time.Time                    `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary      `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary      `json:"bridgeConversionSummary,omitempty"`
 }
 
 type UserQuoteTaskSummary struct {
@@ -1657,6 +1658,7 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 	}
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
 	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
+	conversionSummary := BuildBridgeConversionSummaryByQuoteList(&quoteList)
 	return &QuoteTaskUserView{
 		QuoteList:                      quoteList,
 		Submission:                     submission,
@@ -1676,6 +1678,7 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 		KickoffStatus:                  bridgeSummary.KickoffStatus,
 		PlannedStartDate:               bridgeSummary.PlannedStartDate,
 		SupervisorSummary:              bridgeSummary.SupervisorSummary,
+		BridgeConversionSummary:        conversionSummary,
 	}, nil
 }
 

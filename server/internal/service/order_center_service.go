@@ -64,6 +64,8 @@ type OrderCenterProjectSummary struct {
 	KickoffStatus                  string                   `json:"kickoffStatus,omitempty"`
 	PlannedStartDate               *time.Time               `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
+	ClosureSummary                 *ProjectClosureSummary   `json:"closureSummary,omitempty"`
 	RiskSummary                    *ProjectRiskSummary      `json:"riskSummary,omitempty"`
 }
 
@@ -165,6 +167,8 @@ type OrderCenterEntryDetail struct {
 	KickoffStatus                  string                          `json:"kickoffStatus,omitempty"`
 	PlannedStartDate               *time.Time                      `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary        `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary        `json:"bridgeConversionSummary,omitempty"`
+	ClosureSummary                 *ProjectClosureSummary          `json:"closureSummary,omitempty"`
 	DescriptionSections            []OrderCenterDescriptionSection `json:"descriptionSections,omitempty"`
 	PaymentPlans                   []OrderCenterPaymentPlanItem    `json:"paymentPlans,omitempty"`
 	NextPayablePlan                *OrderCenterPaymentPlanItem     `json:"nextPayablePlan,omitempty"`
@@ -379,6 +383,8 @@ func (b baseOrderCenterSource) projectSummary(project *ProjectDetail) *OrderCent
 		KickoffStatus:                  project.KickoffStatus,
 		PlannedStartDate:               project.PlannedStartDate,
 		SupervisorSummary:              project.SupervisorSummary,
+		BridgeConversionSummary:        project.BridgeConversionSummary,
+		ClosureSummary:                 project.ClosureSummary,
 		RiskSummary:                    project.RiskSummary,
 	}
 }
@@ -695,6 +701,8 @@ func (s *businessOrderCenterSource) GetEntryDetailForUser(userID, primaryID uint
 		detail.KickoffStatus = projectDetail.KickoffStatus
 		detail.PlannedStartDate = projectDetail.PlannedStartDate
 		detail.SupervisorSummary = projectDetail.SupervisorSummary
+		detail.BridgeConversionSummary = projectDetail.BridgeConversionSummary
+		detail.ClosureSummary = projectDetail.ClosureSummary
 	}
 	detail.DescriptionSections = buildBusinessOrderSections(order, detail, nextPlan)
 	detail.Timeline = buildBusinessOrderTimeline(order, nextPlan)

@@ -43,6 +43,7 @@ type MerchantFlowConstructionHandoff struct {
 	KickoffStatus              string                   `json:"kickoffStatus,omitempty"`
 	PlannedStartDate           *time.Time               `json:"plannedStartDate,omitempty"`
 	SupervisorSummary          *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary    *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
 }
 
 type MerchantFlowConstructionPreparation struct {
@@ -213,10 +214,12 @@ func resolveConstructionHandoff(flow *model.BusinessFlow, proposalID uint64) *Me
 			return nil
 		}
 		bridgeSummary := BridgeReadModel{}
+		var conversionSummary *BridgeConversionSummary
 		if flow.ProjectID > 0 {
 			var project model.Project
 			if projectErr := repository.DB.First(&project, flow.ProjectID).Error; projectErr == nil {
 				bridgeSummary = BuildBridgeReadModelByProject(&project)
+				conversionSummary = BuildBridgeConversionSummaryByProject(&project)
 			}
 		}
 		return &MerchantFlowConstructionHandoff{
@@ -230,6 +233,7 @@ func resolveConstructionHandoff(flow *model.BusinessFlow, proposalID uint64) *Me
 			KickoffStatus:              bridgeSummary.KickoffStatus,
 			PlannedStartDate:           bridgeSummary.PlannedStartDate,
 			SupervisorSummary:          bridgeSummary.SupervisorSummary,
+			BridgeConversionSummary:    conversionSummary,
 		}
 	}
 
@@ -241,6 +245,7 @@ func resolveConstructionHandoff(flow *model.BusinessFlow, proposalID uint64) *Me
 		projectID = flow.ProjectID
 	}
 	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
+	conversionSummary := BuildBridgeConversionSummaryByQuoteList(&quoteList)
 
 	return &MerchantFlowConstructionHandoff{
 		QuoteListID:                quoteList.ID,
@@ -257,6 +262,7 @@ func resolveConstructionHandoff(flow *model.BusinessFlow, proposalID uint64) *Me
 		KickoffStatus:              bridgeSummary.KickoffStatus,
 		PlannedStartDate:           bridgeSummary.PlannedStartDate,
 		SupervisorSummary:          bridgeSummary.SupervisorSummary,
+		BridgeConversionSummary:    conversionSummary,
 	}
 }
 
