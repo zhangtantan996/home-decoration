@@ -336,6 +336,14 @@
     line-height: 1.6;
   }
 
+  &__quote-actions {
+    margin-top: 18rpx;
+  }
+
+  &__quote-action-button {
+    width: 100%;
+  }
+
   &__album-hint {
     display: block;
     margin-top: 12rpx;

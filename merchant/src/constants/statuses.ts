@@ -8,9 +8,9 @@ export const BUSINESS_STAGE_META: Record<string, { text: string; color: string }
   design_delivery_pending: { text: '设计交付件待上传', color: 'gold' },
   design_acceptance_pending: { text: '设计成果待验收', color: 'processing' },
   design_pending_confirmation: { text: '设计方案待确认', color: 'processing' },
-  construction_party_pending: { text: '待确认施工方', color: 'gold' },
+  construction_party_pending: { text: '施工桥接中', color: 'gold' },
   construction_quote_pending: { text: '施工报价待确认', color: 'processing' },
-  ready_to_start: { text: '待开工', color: 'gold' },
+  ready_to_start: { text: '待监理协调开工', color: 'gold' },
   in_construction: { text: '施工中', color: 'blue' },
   node_acceptance_in_progress: { text: '节点验收中', color: 'orange' },
   completed: { text: '已完工待验收', color: 'success' },
@@ -25,12 +25,12 @@ export const BUSINESS_ACTION_LABELS: Record<string, string> = {
   create_proposal: '提交方案',
   confirm_proposal: '确认设计方案',
   reject_proposal: '驳回设计方案',
-  submit_site_survey: '提交量房记录',
-  confirm_site_survey: '确认量房记录',
-  request_site_survey_revision: '要求重新量房',
-  submit_budget: '提交预算方案',
-  accept_budget: '接受预算方案',
-  reject_budget: '驳回预算方案',
+  submit_site_survey: '提交量房资料',
+  confirm_site_survey: '查看量房资料',
+  request_site_survey_revision: '重新上传量房资料',
+  submit_budget: '提交沟通确认',
+  accept_budget: '确认沟通结果',
+  reject_budget: '退回沟通结果',
   submit_design_quote: '发送设计费报价',
   confirm_design_quote: '确认设计费报价',
   reject_design_quote: '驳回设计费报价',
@@ -38,7 +38,7 @@ export const BUSINESS_ACTION_LABELS: Record<string, string> = {
   approve_design_delivery: '通过设计验收',
   reject_design_delivery: '驳回设计验收',
   create_quote_task: '创建施工报价任务',
-  select_constructor: '选择施工方',
+  select_constructor: '选择施工主体',
   submit_construction_quote: '提交施工报价',
   confirm_construction_quote: '确认施工报价',
   reject_construction_quote: '驳回施工报价',
@@ -60,15 +60,15 @@ export const BOOKING_STATUS_META: Record<number, { text: string; color: string }
 };
 
 export const SITE_SURVEY_STATUS_META: Record<string, { text: string; color: string }> = {
-  submitted: { text: '已提交', color: 'processing' },
-  confirmed: { text: '已确认', color: 'success' },
-  revision_requested: { text: '待重新量房', color: 'warning' },
+  submitted: { text: '已上传', color: 'processing' },
+  confirmed: { text: '已完成', color: 'success' },
+  revision_requested: { text: '已退回', color: 'warning' },
 };
 
 export const BUDGET_CONFIRM_STATUS_META: Record<string, { text: string; color: string }> = {
   submitted: { text: '待用户确认', color: 'processing' },
-  accepted: { text: '用户已接受', color: 'success' },
-  rejected: { text: '用户已拒绝', color: 'error' },
+  accepted: { text: '已完成', color: 'success' },
+  rejected: { text: '已退回', color: 'error' },
 };
 
 export const PROPOSAL_STATUS_META: Record<number, { text: string; color: string }> = {
@@ -124,13 +124,26 @@ export const QUOTE_LIST_STATUS_META: Record<string, { text: string; color: strin
 };
 
 export const MERCHANT_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+  'merchant.application.approved': '入驻提醒',
+  'merchant.application.rejected': '入驻提醒',
+  'case_audit.approved': '案例审核',
+  'case_audit.rejected': '案例审核',
+  'booking.created': '预约提醒',
+  'booking.confirmed': '预约提醒',
+  'booking.cancelled': '预约提醒',
   'booking.intent_paid': '预约提醒',
   'proposal.submitted': '方案提醒',
   'proposal.confirmed': '方案提醒',
   'proposal.rejected': '方案提醒',
   'proposal.timeout': '方案提醒',
+  'order.paid': '支付提醒',
+  'order.expiring': '支付提醒',
+  'order.expired': '支付提醒',
   'quote.confirmed': '报价提醒',
+  'quote.submitted': '报价提醒',
   'quote.rejected': '报价提醒',
+  'quote.awarded': '报价提醒',
+  'project.milestone.submitted': '节点提醒',
   'project.milestone.approved': '节点提醒',
   'project.milestone.rejected': '节点提醒',
   'project.completion.submitted': '完工提醒',
@@ -146,6 +159,41 @@ export const MERCHANT_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   'refund.application.created': '退款提醒',
   'refund.application.approved': '退款提醒',
   'refund.application.rejected': '退款提醒',
+  'refund.succeeded': '退款提醒',
+  'payment.construction.pending': '施工付款',
+  'payment.construction.stage_pending': '施工付款',
+  'payment.construction.final_pending': '施工付款',
+  'payment.construction.expiring': '施工付款',
+  'payment.construction.expired': '施工付款',
+  'change_order.created': '项目变更',
+  'change_order.confirmed': '项目变更',
+  'change_order.rejected': '项目变更',
+  'change_order.payment_pending': '项目变更',
+  'change_order.settlement_required': '项目变更',
+  'change_order.settled': '项目变更',
+  'complaint.created': '投诉提醒',
+  'complaint.resolved': '投诉提醒',
+  'withdraw.created': '财务提醒',
   'withdraw.approved': '财务提醒',
   'withdraw.rejected': '财务提醒',
+  'withdraw.completed': '财务提醒',
+};
+
+export const getMerchantNotificationTagColor = (type: string): string => {
+  if (type.startsWith('payment.') || type.startsWith('order.') || type.startsWith('refund.') || type.startsWith('withdraw.')) {
+    return 'gold';
+  }
+  if (type.startsWith('change_order.') || type.startsWith('project.') || type.startsWith('complaint.')) {
+    return 'blue';
+  }
+  if (type.startsWith('quote.') || type.startsWith('proposal.')) {
+    return 'cyan';
+  }
+  if (type.startsWith('booking.')) {
+    return 'purple';
+  }
+  if (type.startsWith('merchant.application.') || type.startsWith('case_audit.')) {
+    return 'geekblue';
+  }
+  return 'default';
 };

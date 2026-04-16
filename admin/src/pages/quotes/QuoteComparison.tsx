@@ -46,6 +46,20 @@ const actionText = (action?: string) => {
 
 const businessStageText = (stage?: string) => ADMIN_BUSINESS_STAGE_META[stage || '']?.text || stage || '-';
 const actionLabel = (action?: string) => ADMIN_BUSINESS_ACTION_LABELS[action || ''] || action || '-';
+const reviewStatusText = (status?: string) => {
+    switch (status) {
+        case 'approved':
+            return '已通过';
+        case 'rejected':
+            return '已驳回';
+        case 'pending':
+            return '待复核';
+        case 'not_required':
+            return '无需复核';
+        default:
+            return status || '-';
+    }
+};
 
 type RevisionDiffRow = {
     key: number;
@@ -231,6 +245,7 @@ const QuoteComparison: React.FC = () => {
         { title: '服务商', dataIndex: 'providerName', key: 'providerName' },
         { title: '类型', dataIndex: 'providerSubType', key: 'providerSubType', width: 120 },
         { title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (value: string) => <StatusTag status="info" text={value} /> },
+        { title: '复核', dataIndex: 'reviewStatus', key: 'reviewStatus', width: 120, render: (value?: string) => <StatusTag status="info" text={reviewStatusText(value)} /> },
         { title: '总价', dataIndex: 'totalCent', key: 'totalCent', width: 140, render: (value: number) => formatCent(value) },
         {
             title: '缺项',
@@ -256,10 +271,52 @@ const QuoteComparison: React.FC = () => {
                     >
                         历史记录
                     </Button>
+                    {!readonlyMode && record.reviewStatus === 'pending' ? (
+                        <Button
+                            onClick={async () => {
+                                try {
+                                    await adminQuoteApi.reviewSubmission(record.submissionId, { approved: true });
+                                    message.success('已通过平台复核');
+                                    await load();
+                                } catch (error: any) {
+                                    message.error(error?.message || '更新复核失败');
+                                }
+                            }}
+                        >
+                            复核通过
+                        </Button>
+                    ) : null}
+                    {!readonlyMode && record.reviewStatus === 'pending' ? (
+                        <Button
+                            danger
+                            onClick={() => {
+                                Modal.confirm({
+                                    title: '退回商家重报',
+                                    content: `确定退回 ${record.providerName} 的报价版本吗？`,
+                                    okText: '退回重报',
+                                    cancelText: '取消',
+                                    onOk: async () => {
+                                        try {
+                                            await adminQuoteApi.reviewSubmission(record.submissionId, {
+                                                approved: false,
+                                                reason: '平台复核退回，请补充偏差说明后重新提交',
+                                            });
+                                            message.success('已退回重报');
+                                            await load();
+                                        } catch (error: any) {
+                                            message.error(error?.message || '退回重报失败');
+                                        }
+                                    },
+                                });
+                            }}
+                        >
+                            退回重报
+                        </Button>
+                    ) : null}
                     {!readonlyMode ? <Button
                         type="primary"
                         icon={<SendOutlined />}
-                        disabled={data?.quoteList.status === 'user_confirmed'}
+                        disabled={data?.quoteList.status === 'user_confirmed' || (record.reviewStatus === 'pending' || record.reviewStatus === 'rejected')}
                         onClick={() => {
                             Modal.confirm({
                                 title: '提交给用户确认',
@@ -338,6 +395,18 @@ const QuoteComparison: React.FC = () => {
             <Card className="hz-table-card" title="报价对比">
                 <Table rowKey="submissionId" loading={loading} columns={columns} dataSource={data?.submissions || []} pagination={false} />
             </Card>
+
+            {data?.paymentPlanSummary?.length ? (
+                <Card className="hz-panel-card" title="施工支付计划摘要">
+                    <Space size={[8, 8]} wrap>
+                        {data.paymentPlanSummary.map((plan) => (
+                            <Tag key={plan.id}>
+                                {plan.seq}. {plan.name}: {formatCent(Math.round((plan.amount || 0) * 100))}
+                            </Tag>
+                        ))}
+                    </Space>
+                </Card>
+            ) : null}
 
             <Card className="hz-panel-card" title="分类小计">
                 <List

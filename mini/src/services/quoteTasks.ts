@@ -33,9 +33,24 @@ export interface QuoteTaskDetail {
   items: Array<{
     id: number;
     quoteListItemId: number;
+    itemName?: string;
+    unit?: string;
+    baselineQuantity?: number;
+    quotedQuantity?: number;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
     unitPrice: number;
     amount: number;
     remark?: string;
+  }>;
+  paymentPlanSummary: Array<{
+    id: number;
+    orderId: number;
+    seq: number;
+    name: string;
+    amount: number;
+    status: number;
+    dueAt?: string;
   }>;
 }
 
@@ -64,9 +79,24 @@ interface QuoteTaskUserViewDTO {
   items?: Array<{
     id: number;
     quoteListItemId: number;
+    itemName?: string;
+    unit?: string;
+    baselineQuantity?: number;
+    quotedQuantity?: number;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
     unitPriceCent?: number;
     amountCent?: number;
     remark?: string;
+  }>;
+  paymentPlanSummary?: Array<{
+    id: number;
+    orderId: number;
+    seq: number;
+    name: string;
+    amount?: number;
+    status: number;
+    dueAt?: string;
   }>;
   taskSummary?: {
     area?: number;
@@ -126,9 +156,24 @@ export async function getQuoteTaskDetail(id: number) {
     items: (data.items || []).map((item) => ({
       id: item.id,
       quoteListItemId: item.quoteListItemId,
+      itemName: item.itemName || undefined,
+      unit: item.unit || undefined,
+      baselineQuantity: item.baselineQuantity || undefined,
+      quotedQuantity: item.quotedQuantity || undefined,
+      quantityChangeReason: item.quantityChangeReason || undefined,
+      deviationFlag: item.deviationFlag || false,
       unitPrice: Math.round(Number(item.unitPriceCent || 0) / 100),
       amount: Math.round(Number(item.amountCent || 0) / 100),
       remark: item.remark || undefined,
+    })),
+    paymentPlanSummary: (data.paymentPlanSummary || []).map((plan) => ({
+      id: plan.id,
+      orderId: plan.orderId,
+      seq: plan.seq,
+      name: plan.name,
+      amount: Number(plan.amount || 0),
+      status: plan.status,
+      dueAt: plan.dueAt || undefined,
     })),
   } satisfies QuoteTaskDetail;
 }

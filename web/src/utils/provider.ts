@@ -155,3 +155,15 @@ export function getProviderRatingMeta(
     sampleState: "stable",
   };
 }
+
+export function buildProviderAvatarPlaceholder(name: string | null | undefined) {
+  const text = String(name || "").trim().slice(0, 2) || "HZ";
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+      <rect width="160" height="160" rx="28" fill="#E4E4E7" />
+      <text x="80" y="92" text-anchor="middle" font-family="Arial, sans-serif" font-size="56" font-weight="700" fill="#27272A">${text}</text>
+    </svg>
+  `.trim();
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}

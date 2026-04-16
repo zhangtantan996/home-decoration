@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, Descriptions, Empty, Form, Image, Input, List, Modal, Select, Space, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, DatePicker, Descriptions, Empty, Form, Image, Input, InputNumber, List, Modal, Select, Space, Tag, Typography, Upload, message } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { ArrowLeftOutlined, CheckCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -9,7 +9,16 @@ import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import { BUSINESS_STAGE_META, MILESTONE_STATUS_META } from '../../constants/statuses';
 import { isMerchantConflictError } from '../../services/api';
-import { merchantProjectApi, merchantUploadApi, type MerchantProjectExecutionDetail, type MerchantProjectMilestone, type MerchantProjectPhase } from '../../services/merchantApi';
+import {
+  merchantProjectApi,
+  merchantUploadApi,
+  type MerchantCreateChangeOrderPayload,
+  type MerchantProjectChangeOrder,
+  type MerchantProjectExecutionDetail,
+  type MerchantProjectMilestone,
+  type MerchantProjectPaymentPlan,
+  type MerchantProjectPhase,
+} from '../../services/merchantApi';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { formatServerDate, formatServerDateTime } from '../../utils/serverTime';
 import { getStoredPathFromUploadFile } from '../../utils/uploadAsset';
@@ -22,6 +31,33 @@ const businessStageLabel = (stage?: string): { text: string; color: string } =>
 
 const milestoneStatusLabel = (status: number): { text: string; color: string } =>
   MILESTONE_STATUS_META[status] || { text: `状态${status}`, color: 'default' };
+
+const changeOrderStatusLabel = (status?: string): { text: string; color: string } => {
+  switch (status) {
+    case 'pending_user_confirm':
+      return { text: '待业主确认', color: 'gold' };
+    case 'user_confirmed':
+      return { text: '已确认', color: 'green' };
+    case 'user_rejected':
+      return { text: '已拒绝', color: 'red' };
+    case 'admin_settlement_required':
+      return { text: '待平台结算', color: 'processing' };
+    case 'settled':
+      return { text: '已结算', color: 'green' };
+    case 'cancelled':
+      return { text: '已取消', color: 'default' };
+    default:
+      return { text: status || '待处理', color: 'default' };
+  }
+};
+
+const paymentPlanStatusLabel = (plan: MerchantProjectPaymentPlan): { text: string; color: string } => {
+  if (plan.payable) return { text: '可支付', color: 'processing' };
+  if (plan.status === 1) return { text: '已支付', color: 'green' };
+  if (plan.status === 2) return { text: '已失效', color: 'red' };
+  if (plan.activatedAt) return { text: '待支付', color: 'gold' };
+  return { text: '待激活', color: 'default' };
+};
 
 const formatCurrency = (value?: number) => {
   if (!value || value <= 0) return '-';
@@ -70,9 +106,13 @@ const MerchantProjectExecution: React.FC = () => {
   const [logFileList, setLogFileList] = useState<UploadFile[]>([]);
   const [completionFileList, setCompletionFileList] = useState<UploadFile[]>([]);
   const [completionSubmitting, setCompletionSubmitting] = useState(false);
+  const [changeOrderModalVisible, setChangeOrderModalVisible] = useState(false);
+  const [changeOrderSubmitting, setChangeOrderSubmitting] = useState(false);
+  const [changeOrderFileList, setChangeOrderFileList] = useState<UploadFile[]>([]);
   const [detail, setDetail] = useState<MerchantProjectExecutionDetail | null>(null);
   const [logForm] = Form.useForm();
   const [completionForm] = Form.useForm();
+  const [changeOrderForm] = Form.useForm();
 
   const load = async () => {
     if (!Number.isFinite(projectId) || projectId <= 0) {
@@ -132,6 +172,7 @@ const MerchantProjectExecution: React.FC = () => {
   const canSubmitCompletion = detail?.availableActions?.includes('submit_completion');
   const canStartProject = detail?.businessStage === 'ready_to_start'
     && (detail?.availableActions?.includes('start_project') ?? false);
+  const canCreateChangeOrder = ['ready_to_start', 'in_construction', 'node_acceptance_in_progress', 'completed'].includes(detail?.businessStage || '');
 
   const beforeUpload = (file: File) => {
     const isImage = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
@@ -219,6 +260,57 @@ const MerchantProjectExecution: React.FC = () => {
     }
   };
 
+  const handleCreateChangeOrder = async () => {
+    try {
+      const values = await changeOrderForm.validateFields();
+      setChangeOrderSubmitting(true);
+      const evidenceUrls = changeOrderFileList
+        .map((file) => getStoredPathFromUploadFile(file as UploadFile<any>))
+        .filter((url): url is string => Boolean(url));
+      const payload: MerchantCreateChangeOrderPayload = {
+        changeType: values.changeType,
+        title: values.title,
+        reason: values.reason,
+        description: values.description,
+        amountImpact: Number(values.amountImpact || 0),
+        timelineImpact: Number(values.timelineImpact || 0),
+        evidenceUrls,
+        items: [{
+          title: values.title,
+          description: values.description,
+          amountImpact: Number(values.amountImpact || 0),
+        }],
+      };
+      await merchantProjectApi.createChangeOrder(projectId, payload);
+      message.success('项目变更单已创建');
+      setChangeOrderModalVisible(false);
+      changeOrderForm.resetFields();
+      setChangeOrderFileList([]);
+      await load();
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error(await resolveActionError(error, load, '创建项目变更单失败'));
+    } finally {
+      setChangeOrderSubmitting(false);
+    }
+  };
+
+  const handleCancelChangeOrder = async (item: MerchantProjectChangeOrder) => {
+    Modal.confirm({
+      title: '取消变更单',
+      content: `确认取消“${item.title || `变更单 #${item.id}`}”吗？`,
+      onOk: async () => {
+        try {
+          await merchantProjectApi.cancelChangeOrder(item.id, '商家主动取消');
+          message.success('变更单已取消');
+          await load();
+        } catch (error: any) {
+          message.error(await resolveActionError(error, load, '取消变更单失败'));
+        }
+      },
+    });
+  };
+
   return (
     <MerchantPageShell>
       <MerchantPageHeader
@@ -255,7 +347,7 @@ const MerchantProjectExecution: React.FC = () => {
               message={detail.flowSummary}
               description={
                 detail.businessStage === 'ready_to_start'
-                  ? '施工报价已确认，当前由施工执行侧发起开工。'
+                  ? '施工报价已确认，当前由监理协同计划进场时间并推进开工。'
                   : detail.businessStage === 'node_acceptance_in_progress'
                     ? '节点已提交，等待业主验收结果。'
                     : detail.businessStage === 'in_construction'
@@ -328,6 +420,106 @@ const MerchantProjectExecution: React.FC = () => {
               }}
             />
           )}
+        </MerchantSectionCard>
+
+        <MerchantSectionCard
+          title="支付与变更治理"
+          extra={canCreateChangeOrder ? (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setChangeOrderModalVisible(true)}>
+              发起变更单
+            </Button>
+          ) : undefined}
+        >
+          {detail?.nextPayablePlan ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={`当前待支付：${detail.nextPayablePlan.name || `第 ${detail.nextPayablePlan.seq || '-'} 期`} · ${formatCurrency(detail.nextPayablePlan.amount)}`}
+              description={detail.nextPayablePlan.dueAt ? `到期时间：${formatServerDateTime(detail.nextPayablePlan.dueAt)}` : '已生成支付计划，等待业主处理。'}
+            />
+          ) : null}
+
+          <Descriptions column={3} size="small" style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="首笔支付">
+              {detail?.paymentPlans?.[0] ? `${detail.paymentPlans[0].name || '首付款'} / ${formatCurrency(detail.paymentPlans[0].amount)}` : '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="当前待办">
+              {detail?.nextPayablePlan ? (detail.nextPayablePlan.name || `第 ${detail.nextPayablePlan.seq || '-'} 期`) : '无'}
+            </Descriptions.Item>
+            <Descriptions.Item label="变更单数量">{detail?.changeOrders?.length || 0}</Descriptions.Item>
+          </Descriptions>
+
+          <List
+            header="支付计划"
+            dataSource={detail?.paymentPlans || []}
+            locale={{ emptyText: '暂无支付计划' }}
+            renderItem={(plan) => {
+              const status = paymentPlanStatusLabel(plan);
+              return (
+                <List.Item>
+                  <List.Item.Meta
+                    title={(
+                      <Space wrap>
+                        <span>{plan.name || `${plan.planType || '分期'} #${plan.seq || '-'}`}</span>
+                        <Tag color={status.color}>{status.text}</Tag>
+                        <Tag>{formatCurrency(plan.amount)}</Tag>
+                      </Space>
+                    )}
+                    description={(
+                      <Space direction="vertical" size={4}>
+                        <Text type="secondary">激活时间：{plan.activatedAt ? formatServerDateTime(plan.activatedAt) : '待激活'}</Text>
+                        <Text type="secondary">到期时间：{plan.dueAt ? formatServerDateTime(plan.dueAt) : '待生成'}</Text>
+                        {plan.payableReason ? <Text type="secondary">说明：{plan.payableReason}</Text> : null}
+                      </Space>
+                    )}
+                  />
+                </List.Item>
+              );
+            }}
+          />
+
+          <List
+            style={{ marginTop: 16 }}
+            header="项目变更单"
+            dataSource={detail?.changeOrders || []}
+            locale={{ emptyText: '当前还没有正式变更单' }}
+            renderItem={(item) => {
+              const status = changeOrderStatusLabel(item.status);
+              const cancelable = item.status === 'pending_user_confirm';
+              return (
+                <List.Item
+                  actions={[
+                    cancelable ? (
+                      <Button key="cancel" danger type="link" onClick={() => handleCancelChangeOrder(item)}>
+                        取消
+                      </Button>
+                    ) : null,
+                  ].filter(Boolean)}
+                >
+                  <List.Item.Meta
+                    title={(
+                      <Space wrap>
+                        <span>{item.title || `变更单 #${item.id}`}</span>
+                        <Tag color={status.color}>{status.text}</Tag>
+                        {item.amountImpact ? <Tag>{formatCurrency(item.amountImpact)}</Tag> : null}
+                        {item.timelineImpact ? <Tag>{`${item.timelineImpact} 天`}</Tag> : null}
+                      </Space>
+                    )}
+                    description={(
+                      <Space direction="vertical" size={4}>
+                        <Text type="secondary">原因：{item.reason || '未填写'}</Text>
+                        {item.description ? <Text type="secondary">说明：{item.description}</Text> : null}
+                        {item.userRejectReason ? <Text type="danger">业主拒绝原因：{item.userRejectReason}</Text> : null}
+                        {item.settlementReason ? <Text type="secondary">结算说明：{item.settlementReason}</Text> : null}
+                        <Text type="secondary">创建时间：{formatServerDateTime(item.createdAt)}</Text>
+                      </Space>
+                    )}
+                  />
+                </List.Item>
+              );
+            }}
+          />
         </MerchantSectionCard>
 
         <MerchantSectionCard
@@ -495,6 +687,70 @@ const MerchantProjectExecution: React.FC = () => {
               {logFileList.length < 6 ? <div>上传图片</div> : null}
             </Upload>
             <div style={{ color: '#64748b', fontSize: 12 }}>最多 6 张，支持 JPG/PNG/WEBP，单张不超过 5MB</div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="发起项目变更单"
+        open={changeOrderModalVisible}
+        onOk={() => void handleCreateChangeOrder()}
+        confirmLoading={changeOrderSubmitting}
+        onCancel={() => {
+          setChangeOrderModalVisible(false);
+          changeOrderForm.resetFields();
+          setChangeOrderFileList([]);
+        }}
+        okText="提交变更单"
+        cancelText="取消"
+      >
+        <Form
+          form={changeOrderForm}
+          layout="vertical"
+          initialValues={{ changeType: 'scope', amountImpact: 0, timelineImpact: 0 }}
+        >
+          <Form.Item name="changeType" label="变更类型" rules={[{ required: true, message: '请选择变更类型' }]}>
+            <Select
+              options={[
+                { label: '增减项', value: 'scope' },
+                { label: '工期调整', value: 'timeline' },
+                { label: '说明留痕', value: 'note' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="title" label="变更标题" rules={[{ required: true, message: '请输入变更标题' }]}>
+            <Input maxLength={60} placeholder="例如：卫生间防水增项" />
+          </Form.Item>
+          <Form.Item name="reason" label="变更原因" rules={[{ required: true, message: '请输入变更原因' }]}>
+            <TextArea rows={3} maxLength={300} showCount placeholder="说明为什么需要变更" />
+          </Form.Item>
+          <Form.Item name="description" label="补充说明">
+            <TextArea rows={4} maxLength={1000} showCount placeholder="写清责任边界、工期或材料变化" />
+          </Form.Item>
+          <Space style={{ display: 'flex' }} align="start">
+            <Form.Item name="amountImpact" label="金额影响">
+              <InputNumber style={{ width: 220 }} min={-999999} precision={2} placeholder="减项填负数" />
+            </Form.Item>
+            <Form.Item name="timelineImpact" label="工期影响（天）">
+              <InputNumber style={{ width: 220 }} min={-365} max={365} precision={0} />
+            </Form.Item>
+          </Space>
+          <Form.Item label="附件说明">
+            <Upload
+              listType="picture-card"
+              fileList={changeOrderFileList}
+              customRequest={uploadLogImage}
+              beforeUpload={(file) => beforeUpload(file as File)}
+              onChange={({ fileList }) => setChangeOrderFileList(fileList.slice(0, 6))}
+              onPreview={(file) => {
+                const response = file.response as { url?: string } | undefined;
+                const url = file.url || response?.url;
+                if (url) window.open(toAbsoluteAssetUrl(url), '_blank');
+              }}
+            >
+              {changeOrderFileList.length < 6 ? <div>上传图片</div> : null}
+            </Upload>
+            <div style={{ color: '#64748b', fontSize: 12 }}>最多 6 张，建议上传现场照片或补充说明截图。</div>
           </Form.Item>
         </Form>
       </Modal>

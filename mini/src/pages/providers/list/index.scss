@@ -81,6 +81,32 @@
     padding: 20rpx 24rpx 24rpx;
   }
 
+  &__quote-banner {
+    margin-bottom: 18rpx;
+    padding: 24rpx;
+    border-radius: 28rpx;
+    background:
+      radial-gradient(circle at top right, rgba(255, 236, 231, 0.92), rgba(255, 255, 255, 0) 42%),
+      linear-gradient(180deg, #ffffff 0%, #fff8f6 100%);
+    border: 1rpx solid rgba(17, 17, 17, 0.05);
+    box-shadow: 0 14rpx 28rpx rgba(17, 17, 17, 0.06);
+  }
+
+  &__quote-banner-title {
+    display: block;
+    color: #111111;
+    font-size: 30rpx;
+    font-weight: 700;
+  }
+
+  &__quote-banner-copy {
+    display: block;
+    margin-top: 10rpx;
+    color: #6b7280;
+    font-size: 24rpx;
+    line-height: 1.65;
+  }
+
   &__loading-block {
     margin-bottom: 12rpx;
   }

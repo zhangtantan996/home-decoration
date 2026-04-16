@@ -355,6 +355,31 @@
     line-height: 1.75;
   }
 
+  &__budget-actions {
+    margin-top: 8rpx;
+    padding: 20rpx;
+    border-radius: 24rpx;
+    background: rgba(59, 130, 246, 0.05);
+    border: 1rpx solid rgba(191, 219, 254, 0.9);
+  }
+
+  &__budget-actions-copy {
+    display: block;
+    color: #475569;
+    font-size: 22rpx;
+    line-height: 1.7;
+  }
+
+  &__budget-actions-row {
+    display: flex;
+    gap: 14rpx;
+    margin-top: 16rpx;
+  }
+
+  &__budget-actions-button {
+    flex: 1;
+  }
+
   &__copy {
     color: #64748b;
     font-size: 24rpx;

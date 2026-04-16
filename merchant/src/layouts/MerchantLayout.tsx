@@ -10,7 +10,6 @@ import {
     FileTextOutlined,
     DollarOutlined,
     ProjectOutlined,
-    NotificationOutlined,
     PictureOutlined,
     SettingOutlined,
     ShopOutlined,
@@ -58,15 +57,13 @@ const MerchantLayout: React.FC = () => {
         if (isMaterialShop) {
             return '主材商';
         }
-        switch (normalizedApplicantType) {
-            case 'studio':
-                return '设计工作室';
+        switch (normalizedProviderSubType) {
             case 'company':
                 return '装修公司';
             case 'foreman':
                 return '工长';
             default:
-                return normalizedProviderSubType === 'designer' ? '设计师' : '商家';
+                return '设计师';
         }
     })();
 
@@ -81,9 +78,6 @@ const MerchantLayout: React.FC = () => {
         }
     })();
 
-    const isForeman = !isMaterialShop && normalizedProviderSubType === 'foreman';
-    const isCompanyProvider = !isMaterialShop && normalizedProviderSubType === 'company';
-
     const serviceMenuItems: MenuProps['items'] = [
         {
             key: '/dashboard',
@@ -91,49 +85,19 @@ const MerchantLayout: React.FC = () => {
             label: '工作台',
         },
         {
-            key: '/leads',
-            icon: <NotificationOutlined />,
-            label: isCompanyProvider ? '待分配线索' : '线索管理',
-        },
-        {
             key: '/bookings',
             icon: <CalendarOutlined />,
-            label: '预约管理',
+            label: '线索预约',
         },
         {
             key: '/proposals',
             icon: <FileTextOutlined />,
-            label: isForeman ? '报价/施工方案' : '方案管理',
-        },
-        {
-            key: '/quote-lists',
-            icon: <FileTextOutlined />,
-            label: '报价清单',
+            label: '方案报价',
         },
         {
             key: '/projects',
             icon: <ProjectOutlined />,
-            label: '项目执行',
-        },
-        ...(isForeman ? [{
-            key: '/price-book',
-            icon: <DollarOutlined />,
-            label: '工长价格库',
-        }] : []),
-        {
-            key: '/orders',
-            icon: <DollarOutlined />,
-            label: isCompanyProvider ? '订单协同' : '订单管理',
-        },
-        {
-            key: '/complaints',
-            icon: <NotificationOutlined />,
-            label: '投诉响应',
-        },
-        {
-            key: '/notifications',
-            icon: <NotificationOutlined />,
-            label: '通知中心',
+            label: '项目履约',
         },
         {
             type: 'divider',
@@ -144,19 +108,18 @@ const MerchantLayout: React.FC = () => {
             label: '财务中心',
             children: [
                 { key: '/income', label: '结算中心' },
-                { key: '/bond', label: '保证金账户' },
                 { key: '/bank-accounts', label: '银行卡' },
             ],
         },
         {
             key: '/cases',
             icon: <PictureOutlined />,
-            label: isForeman ? '施工案例' : (isCompanyProvider ? '公司案例' : '作品集'),
+            label: '内容资产',
         },
         {
             key: '/settings',
             icon: <SettingOutlined />,
-            label: isCompanyProvider ? '企业设置' : '账户设置',
+            label: '资料设置',
         },
     ];
 
@@ -181,49 +144,70 @@ const MerchantLayout: React.FC = () => {
         : serviceMenuItems;
 
     const availableKeys = new Set<string>(
-        (menuItems || []).flatMap((item) => {
-            if (!item || typeof item !== 'object') {
-                return [];
-            }
-            if ('children' in item && Array.isArray(item.children)) {
-                return item.children
-                    .flatMap((child) => (
-                        child && typeof child === 'object' && 'key' in child && typeof child.key === 'string'
-                            ? [child.key]
-                            : []
-                    ));
-            }
-            if ('key' in item && typeof item.key === 'string') {
-                return [item.key];
-            }
-            return [];
-        }),
+        isMaterialShop
+            ? ['/dashboard', '/material-shop/products', '/material-shop/settings']
+            : ['/dashboard', '/bookings', '/proposals', '/projects', '/income', '/bond', '/bank-accounts', '/cases', '/settings'],
     );
 
-    const filteredMenuItems = menuItems
-        .map((item) => {
-            if (!item || typeof item !== 'object' || !('key' in item)) {
-                return item;
-            }
-            if (item.key === 'finance' && 'children' in item) {
-                const children = (item.children || []).filter((child) => 
-                    child && typeof child === 'object' && 'key' in child && typeof child.key === 'string' && availableKeys.has(child.key)
-                ) as Array<{ key: string; label: string }>;
-                if (!children.length) {
-                    return null;
-                }
-                return { ...item, children };
-            }
-            return typeof item.key === 'string' && availableKeys.has(item.key) ? item : null;
-        })
-        .filter(Boolean) as MenuProps['items'];
+    const resolveSelectedMenuKey = (pathname: string) => {
+        if (isMaterialShop) {
+            return pathname;
+        }
+        if (pathname.startsWith('/proposals/flow/')) {
+            return '/proposals';
+        }
+        if (pathname.startsWith('/bookings/') && pathname.endsWith('/flow')) {
+            return '/proposals';
+        }
+        if (pathname === '/leads' || pathname.startsWith('/bookings/')) {
+            return '/bookings';
+        }
+        if (pathname.startsWith('/quote-lists') || pathname === '/price-book') {
+            return '/proposals';
+        }
+        if (
+            pathname === '/orders'
+            || pathname === '/complaints'
+            || pathname.startsWith('/contracts/')
+            || pathname.startsWith('/projects/')
+        ) {
+            return '/projects';
+        }
+        if (pathname === '/withdraw' || pathname === '/payments/result' || pathname === '/bond') {
+            return '/income';
+        }
+        if (pathname === '/notifications') {
+            return '/dashboard';
+        }
+        return pathname;
+    };
+
+    const isPathAllowed = (() => {
+        const pathname = location.pathname;
+        if (availableKeys.has(pathname)) {
+            return true;
+        }
+        if (isMaterialShop) {
+            return false;
+        }
+        return (
+            pathname === '/leads'
+            || pathname === '/notifications'
+            || pathname === '/price-book'
+            || pathname === '/orders'
+            || pathname === '/complaints'
+            || pathname === '/withdraw'
+            || pathname === '/payments/result'
+            || pathname.startsWith('/bookings/')
+            || pathname.startsWith('/proposals/flow/')
+            || pathname.startsWith('/quote-lists')
+            || pathname.startsWith('/projects/')
+            || pathname.startsWith('/contracts/')
+        );
+    })();
 
     const fallbackPath = isMaterialShop ? '/dashboard' : '/dashboard';
-    const isPathAllowed = availableKeys.has(location.pathname)
-        || (!isMaterialShop && location.pathname === '/withdraw')
-        || (!isMaterialShop && location.pathname.startsWith('/projects/'))
-        || Array.from(availableKeys).some((key) => key !== '/' && location.pathname.startsWith(`${key}/`));
-    const selectedMenuKey = location.pathname === '/withdraw' ? '/income' : location.pathname;
+    const selectedMenuKey = resolveSelectedMenuKey(location.pathname);
 
     useEffect(() => {
         if (!isPathAllowed) {
@@ -318,7 +302,7 @@ const MerchantLayout: React.FC = () => {
                     mode="inline"
                     selectedKeys={[selectedMenuKey]}
                     defaultOpenKeys={[]}
-                    items={filteredMenuItems}
+                    items={menuItems}
                     onClick={({ key }) => {
                         if (availableKeys.has(key)) {
                             navigate(key);

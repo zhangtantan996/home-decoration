@@ -652,6 +652,165 @@ export interface MerchantBookingDetailResponse {
     budgetConfirmSummary?: MerchantBudgetSummary | null;
 }
 
+export interface MerchantFlowPrimaryAction {
+    kind: 'modal' | 'link' | 'none';
+    label?: string;
+    modalType?:
+        | 'survey_upload'
+        | 'budget_confirm'
+        | 'design_fee_quote'
+        | 'design_deliverable'
+        | 'proposal_confirm'
+        | 'construction_prep'
+        | 'construction_handoff';
+    path?: string;
+}
+
+export interface MerchantFlowStep {
+    key: 'booking' | 'survey' | 'budget' | 'quote' | 'design' | 'confirm' | 'construction_prep' | 'construction';
+    title: string;
+    status: 'not_started' | 'pending_submit' | 'pending_user' | 'pending_other' | 'completed' | 'returned';
+    merchantTodo: string;
+    userState: string;
+    summary: string;
+    blockedReason?: string;
+    primaryAction?: MerchantFlowPrimaryAction;
+}
+
+export interface MerchantFlowEvent {
+    date: string;
+    label: string;
+    type: 'success' | 'info' | 'warning';
+}
+
+export interface MerchantConstructionHandoffSummary {
+    quoteListId?: number;
+    quoteListStatus?: string;
+    invitedForemanCount?: number;
+    awardedProviderId?: number;
+    projectId?: number;
+    summary?: string;
+    baselineStatus?: string;
+    baselineSubmittedAt?: string;
+    constructionSubjectType?: string;
+    constructionSubjectId?: number;
+    constructionSubjectDisplayName?: string;
+    kickoffStatus?: string;
+    plannedStartDate?: string;
+    supervisorSummary?: {
+        plannedStartDate?: string;
+        latestLogAt?: string;
+        latestLogTitle?: string;
+        unhandledRiskCount?: number;
+    };
+}
+
+export interface MerchantConstructionPreparationSnapshot {
+    area?: number;
+    layout?: string;
+    renovationType?: string;
+    constructionScope?: string;
+    serviceAreas?: string[];
+    workTypes?: string[];
+    houseUsage?: string;
+    notes?: string;
+}
+
+export interface MerchantConstructionPreparationItem {
+    id?: number;
+    standardItemId?: number;
+    sourceItemCode?: string;
+    sourceItemName: string;
+    unit: string;
+    quantity: number;
+    baselineNote?: string;
+    categoryL1?: string;
+    categoryL2?: string;
+    sortOrder?: number;
+}
+
+export interface MerchantConstructionTemplateRow {
+    standardItemId: number;
+    standardCode?: string;
+    name: string;
+    unit: string;
+    categoryL1?: string;
+    categoryL2?: string;
+    required: boolean;
+    applicable: boolean;
+    suggestedQuantity?: number;
+    inputQuantity?: number;
+    baselineNote?: string;
+}
+
+export interface MerchantConstructionTemplateSection {
+    key: string;
+    title: string;
+    rows: MerchantConstructionTemplateRow[];
+}
+
+export interface MerchantConstructionPreparationInputItem {
+    standardItemId: number;
+    quantity?: number;
+    baselineNote?: string;
+}
+
+export interface MerchantRecommendedForeman {
+    providerId: number;
+    providerName: string;
+    providerType?: number;
+    providerSubType?: string;
+    regionMatched?: boolean;
+    workTypeMatched?: boolean;
+    acceptBooking?: boolean;
+    priceCoverageRate?: number;
+    matchedItemCount?: number;
+    missingItemCount?: number;
+    reasons?: string[];
+}
+
+export interface MerchantConstructionPreparationSummary {
+    quoteList?: {
+        id?: number;
+        title?: string;
+        status?: string;
+        projectId?: number;
+        awardedProviderId?: number;
+    };
+    quoteListId?: number;
+    prerequisiteStatus?: string;
+    prerequisiteSnapshot: MerchantConstructionPreparationSnapshot;
+    quantityBase?: {
+        id?: number;
+        version?: number;
+        title?: string;
+        status?: string;
+    } | null;
+    templateId?: number;
+    templateError?: string;
+    templateSections?: MerchantConstructionTemplateSection[];
+    quantityItems: MerchantConstructionPreparationItem[];
+    missingFields?: string[];
+    selectedForemanId?: number;
+    recommendedForemen?: MerchantRecommendedForeman[];
+}
+
+export interface MerchantDesignerFlowWorkspace {
+    booking: MerchantBookingEntry;
+    currentStage?: string;
+    currentStepKey?: MerchantFlowStep['key'];
+    flowSummary?: string;
+    steps: MerchantFlowStep[];
+    siteSurveySummary?: MerchantSiteSurveySummary | null;
+    budgetConfirmSummary?: MerchantBudgetSummary | null;
+    designFeeQuote?: DesignFeeQuoteItem | null;
+    designDeliverable?: DesignDeliverableItem | null;
+    proposal?: MerchantProposalItem | null;
+    constructionPreparation?: MerchantConstructionPreparationSummary | null;
+    constructionHandoff?: MerchantConstructionHandoffSummary | null;
+    events?: MerchantFlowEvent[];
+}
+
 // 预约管理
 export const merchantBookingApi = {
     list: async () =>
@@ -671,9 +830,55 @@ export const merchantBookingApi = {
         ),
 };
 
+export const merchantFlowApi = {
+    summary: async (bookingId: number) =>
+        unwrapData<MerchantDesignerFlowWorkspace>(
+            await merchantApi.get(`/merchant/bookings/${bookingId}/flow-summary`),
+            '获取设计流程失败',
+        ),
+    startConstructionPrep: async (bookingId: number) =>
+        unwrapData<MerchantConstructionPreparationSummary>(
+            await merchantApi.post(`/merchant/bookings/${bookingId}/construction-prep/start`),
+            '启动施工报价准备失败',
+        ),
+    getConstructionPrep: async (quoteTaskId: number) =>
+        unwrapData<MerchantConstructionPreparationSummary>(
+            await merchantApi.get(`/merchant/quote-tasks/${quoteTaskId}/preparation`),
+            '获取施工报价准备失败',
+        ),
+    updateConstructionPrerequisites: async (
+        quoteTaskId: number,
+        payload: MerchantConstructionPreparationSnapshot,
+    ) =>
+        unwrapData<MerchantConstructionPreparationSummary>(
+            await merchantApi.put(`/merchant/quote-tasks/${quoteTaskId}/prerequisites`, payload),
+            '更新施工前置资料失败',
+        ),
+    updateConstructionItems: async (
+        quoteTaskId: number,
+        items: MerchantConstructionPreparationInputItem[],
+    ) =>
+        unwrapData<MerchantConstructionPreparationSummary>(
+            await merchantApi.put(`/merchant/quote-tasks/${quoteTaskId}/quantity-items`, { items }),
+            '更新施工基线失败',
+        ),
+    recommendForemen: async (quoteTaskId: number) =>
+        unwrapData<{ list: MerchantRecommendedForeman[] }>(
+            await merchantApi.post(`/merchant/quote-tasks/${quoteTaskId}/recommend-foremen`),
+            '获取推荐施工主体失败',
+        ),
+    selectForeman: async (quoteTaskId: number, providerId: number) =>
+        unwrapData<MerchantConstructionPreparationSummary>(
+            await merchantApi.post(`/merchant/quote-tasks/${quoteTaskId}/select-foremen`, {
+                providerIds: [providerId],
+            }),
+            '选择施工主体失败',
+        ),
+};
+
 export interface MerchantSiteSurveyPayload {
     photos: string[];
-    dimensions: Record<string, { length?: number; width?: number; height?: number; unit?: string }>;
+    dimensions?: Record<string, { length?: number; width?: number; height?: number; unit?: string }>;
     notes: string;
 }
 export interface MerchantSiteSurveySummary extends MerchantSiteSurveyPayload {
@@ -687,12 +892,12 @@ export interface MerchantSiteSurveySummary extends MerchantSiteSurveyPayload {
 export const merchantSiteSurveyApi = {
     get: (bookingId: number) => unwrapData<{ siteSurvey: MerchantSiteSurveySummary | null }>(
         merchantApi.get(`/merchant/bookings/${bookingId}/site-survey`),
-        '获取量房记录失败'
+        '获取量房资料失败'
     ),
     submit: async (bookingId: number, payload: MerchantSiteSurveyPayload) =>
         unwrapData<{ siteSurvey: MerchantSiteSurveySummary }>(
             await merchantApi.post(`/merchant/bookings/${bookingId}/site-survey`, payload),
-            '提交量房记录失败'
+            '提交量房资料失败'
         ),
 };
 
@@ -702,26 +907,59 @@ export interface MerchantBudgetConfirmPayload {
     includes: Record<'design_fee' | 'construction_fee' | 'material_fee' | 'furniture_fee', boolean>;
     notes: string;
     designIntent: string;
+    styleDirection: string;
+    spaceRequirements: string;
+    expectedDurationDays: number;
+    specialRequirements: string;
 }
 export interface MerchantBudgetSummary extends MerchantBudgetConfirmPayload {
     status: 'submitted' | 'accepted' | 'rejected';
     submittedAt?: string;
     acceptedAt?: string;
     rejectedAt?: string;
+    lastRejectedAt?: string;
     rejectionReason?: string;
+    rejectCount?: number;
+    rejectLimit?: number;
+    canResubmit?: boolean;
 }
 
 export const merchantBudgetApi = {
     get: (bookingId: number) => unwrapData<{ budgetConfirmation: MerchantBudgetSummary | null }>(
         merchantApi.get(`/merchant/bookings/${bookingId}/budget-confirm`),
-        '获取预算确认失败'
+        '获取沟通确认失败'
     ),
     submit: async (bookingId: number, payload: MerchantBudgetConfirmPayload) =>
         unwrapData<{ budgetConfirmation: MerchantBudgetSummary }>(
             await merchantApi.post(`/merchant/bookings/${bookingId}/budget-confirm`, payload),
-            '提交预算确认失败'
+            '提交沟通确认失败'
         ),
 };
+
+export interface MerchantProposalItem {
+    id: number;
+    sourceType?: 'booking' | 'demand' | string;
+    bookingId: number;
+    designerId?: number;
+    summary: string;
+    designFee: number;
+    constructionFee: number;
+    materialFee: number;
+    estimatedDays: number;
+    attachments: string;
+    internalDraftJson?: string;
+    previewPackageJson?: string;
+    deliveryPackageJson?: string;
+    status: number;
+    confirmedAt?: string;
+    version?: number;
+    parentProposalId?: number;
+    rejectionCount?: number;
+    rejectionReason?: string;
+    rejectedAt?: string;
+    submittedAt?: string;
+    createdAt?: string;
+}
 
 // 方案管理
 export const merchantProposalApi = {
@@ -737,6 +975,28 @@ export const merchantProposalApi = {
         materialFee: number;
         estimatedDays: number;
         attachments?: string;
+        internalDraft?: {
+            communicationNotes?: string;
+            sketchImages?: string[];
+            initialBudgetNotes?: string;
+            cadSourceFiles?: string[];
+        };
+        previewPackage?: {
+            summary?: string;
+            floorPlanImages?: string[];
+            effectPreviewImages?: string[];
+            effectPreviewLinks?: string[];
+            hasCad?: boolean;
+            hasAttachments?: boolean;
+        };
+        deliveryPackage?: {
+            description?: string;
+            floorPlanImages?: string[];
+            effectImages?: string[];
+            effectLinks?: string[];
+            cadFiles?: string[];
+            attachments?: string[];
+        };
     }) => merchantApi.post('/merchant/proposals', data),
     update: (id: number, data: {
         sourceType?: 'booking' | 'demand';
@@ -760,6 +1020,28 @@ export const merchantProposalApi = {
         materialFee: number;
         estimatedDays: number;
         attachments?: string;
+        internalDraft?: {
+            communicationNotes?: string;
+            sketchImages?: string[];
+            initialBudgetNotes?: string;
+            cadSourceFiles?: string[];
+        };
+        previewPackage?: {
+            summary?: string;
+            floorPlanImages?: string[];
+            effectPreviewImages?: string[];
+            effectPreviewLinks?: string[];
+            hasCad?: boolean;
+            hasAttachments?: boolean;
+        };
+        deliveryPackage?: {
+            description?: string;
+            floorPlanImages?: string[];
+            effectImages?: string[];
+            effectLinks?: string[];
+            cadFiles?: string[];
+            attachments?: string[];
+        };
     }) => merchantApi.post('/merchant/proposals/resubmit', data),
     // 获取拒绝信息
     getRejectionInfo: (id: number) => merchantApi.get(`/merchant/proposals/${id}/rejection-info`),
@@ -905,6 +1187,57 @@ export interface MerchantStartProjectPayload {
     startDate?: string;
 }
 
+export interface MerchantProjectPaymentPlan {
+    id: number;
+    orderId?: number;
+    seq?: number;
+    name?: string;
+    amount?: number;
+    status?: number;
+    activatedAt?: string | null;
+    dueAt?: string | null;
+    expiresAt?: string | null;
+    payable?: boolean;
+    payableReason?: string;
+    planType?: string;
+}
+
+export interface MerchantProjectChangeOrderItem {
+    title: string;
+    description?: string;
+    amountImpact?: number;
+}
+
+export interface MerchantProjectChangeOrder {
+    id: number;
+    projectId: number;
+    title?: string;
+    changeType?: string;
+    reason?: string;
+    description?: string;
+    amountImpact?: number;
+    timelineImpact?: number;
+    status?: string;
+    evidenceUrls?: string[];
+    createdAt?: string;
+    updatedAt?: string;
+    userRejectReason?: string;
+    settlementReason?: string;
+    payablePlanId?: number;
+    items?: MerchantProjectChangeOrderItem[];
+}
+
+export interface MerchantCreateChangeOrderPayload {
+    changeType: string;
+    title: string;
+    reason: string;
+    description?: string;
+    amountImpact?: number;
+    timelineImpact?: number;
+    evidenceUrls?: string[];
+    items?: MerchantProjectChangeOrderItem[];
+}
+
 export interface MerchantProjectExecutionDetail {
     id: number;
     name: string;
@@ -925,6 +1258,9 @@ export interface MerchantProjectExecutionDetail {
     completionSubmittedAt?: string | null;
     completionRejectedAt?: string | null;
     completionRejectionReason?: string;
+    paymentPlans?: MerchantProjectPaymentPlan[];
+    nextPayablePlan?: MerchantProjectPaymentPlan | null;
+    changeOrders?: MerchantProjectChangeOrder[];
 }
 
 export interface MerchantProjectDisputeDetail {
@@ -972,6 +1308,21 @@ export const merchantProjectApi = {
         unwrapData<{ message?: string; completion?: MerchantProjectExecutionDetail }>(
             await merchantApi.post(`/merchant/projects/${projectId}/complete`, payload),
             '提交完工材料失败'
+        ),
+    listChangeOrders: async (projectId: number) =>
+        unwrapData<MerchantProjectChangeOrder[]>(
+            await merchantApi.get(`/merchant/projects/${projectId}/change-orders`),
+            '获取项目变更单失败'
+        ),
+    createChangeOrder: async (projectId: number, payload: MerchantCreateChangeOrderPayload) =>
+        unwrapData<MerchantProjectChangeOrder>(
+            await merchantApi.post(`/merchant/projects/${projectId}/change-orders`, payload),
+            '创建项目变更单失败'
+        ),
+    cancelChangeOrder: async (changeOrderId: number, reason?: string) =>
+        unwrapData<MerchantProjectChangeOrder>(
+            await merchantApi.post(`/merchant/change-orders/${changeOrderId}/cancel`, { reason }),
+            '取消项目变更单失败'
         ),
     disputeDetail: async (projectId: number) =>
         unwrapData<MerchantProjectDisputeDetail>(
@@ -1296,6 +1647,7 @@ export const merchantDesignApi = {
             '获取设计交付件失败'
         ),
     submitDeliverable: async (bookingId: number, data: {
+        bookingId?: number;
         colorFloorPlan?: string;
         renderings?: string;
         renderingLink?: string;

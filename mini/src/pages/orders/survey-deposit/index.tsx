@@ -235,8 +235,11 @@ const SurveyDepositOrderPage: React.FC = () => {
     closeQrPayment,
     confirmQrPayment,
     retryQrPayment,
+    launchPreferredChannel,
     chooseAndLaunch,
     canPay,
+    canPayWithWechat,
+    canPayWithAlipay,
   } = useSurveyDepositPaymentFlow({
     bookingId: detail?.booking?.id,
     amount: detail?.amount || 0,
@@ -518,11 +521,24 @@ const SurveyDepositOrderPage: React.FC = () => {
             loading={!!launchingChannel}
             disabled={submitting || !!launchingChannel}
             onClick={() => {
-              void chooseAndLaunch();
+              void (canPayWithWechat ? launchPreferredChannel('wechat') : chooseAndLaunch());
             }}
           >
-            去支付
+            {canPayWithWechat ? '微信支付' : '去支付'}
           </Button>
+          {canPayWithAlipay ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="order-detail-page__bottom-secondary-button"
+              disabled={submitting || !!launchingChannel}
+              onClick={() => {
+                void launchPreferredChannel('alipay');
+              }}
+            >
+              支付宝扫码
+            </Button>
+          ) : null}
         </View>
       ) : null}
 

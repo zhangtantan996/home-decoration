@@ -188,9 +188,6 @@ export const DesignerDetailScreen = ({ route, navigation }: any) => {
   const displayData = {
     name: provider.displayName || initialDesigner.name || '设计师',
     avatar: provider.avatar || user.avatar || initialDesigner.avatar,
-    userId: provider.userId || user.id || initialDesigner.userId,
-    userPublicId:
-      user.publicId || provider.userPublicId || initialDesigner.publicId,
     coverImage:
       provider.coverImage || provider.avatar || initialDesigner.avatar,
     rating: Number(provider.rating ?? initialDesigner.rating ?? 0),
@@ -648,9 +645,6 @@ export const WorkerDetailScreen = ({ route, navigation }: any) => {
   const displayData = {
     name: provider.displayName || initialWorker.name || '工人',
     avatar: provider.avatar || user.avatar || initialWorker.avatar,
-    userId: provider.userId || user.id || initialWorker.userId,
-    userPublicId:
-      user.publicId || provider.userPublicId || initialWorker.publicId,
     rating: Number(provider.rating ?? initialWorker.rating ?? 0),
     reviewCount:
       detail?.reviewCount ??
@@ -1088,9 +1082,6 @@ export const CompanyDetailScreen = ({ route, navigation }: any) => {
       initialCompany.name ||
       '装修公司',
     logo: provider.avatar || user.avatar || initialCompany.logo,
-    userId: provider.userId || user.id || initialCompany.userId,
-    userPublicId:
-      user.publicId || provider.userPublicId || initialCompany.publicId,
     rating: Number(provider.rating ?? initialCompany.rating ?? 0),
     reviewCount:
       detail?.reviewCount ??

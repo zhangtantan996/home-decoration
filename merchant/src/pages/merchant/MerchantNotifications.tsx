@@ -11,7 +11,10 @@ import {
     merchantNotificationDataApi,
     type MerchantNotificationItem,
 } from '../../services/merchantApi';
-import { MERCHANT_NOTIFICATION_TYPE_LABELS } from '../../constants/statuses';
+import {
+    getMerchantNotificationTagColor,
+    MERCHANT_NOTIFICATION_TYPE_LABELS,
+} from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
 
 const PAGE_SIZE = 10;
@@ -223,7 +226,9 @@ const MerchantNotifications: React.FC = () => {
                                             <Space wrap>
                                                 <span>{item.title}</span>
                                                 {!item.isRead ? <Tag color="gold">未读</Tag> : <Tag>已读</Tag>}
-                                                <Tag>{MERCHANT_NOTIFICATION_TYPE_LABELS[item.type] || '系统通知'}</Tag>
+                                                <Tag color={getMerchantNotificationTagColor(item.type)}>
+                                                    {MERCHANT_NOTIFICATION_TYPE_LABELS[item.type] || '系统通知'}
+                                                </Tag>
                                             </Space>
                                         )}
                                         description={formatRelativeTime(item.createdAt)}

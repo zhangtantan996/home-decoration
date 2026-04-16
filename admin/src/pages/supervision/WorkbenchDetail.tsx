@@ -394,6 +394,10 @@ const WorkbenchDetail: React.FC = () => {
                 <Tag color={workspace?.unhandledRiskCount ? 'error' : 'default'}>
                   {workspace?.unhandledRiskCount ? `${workspace.unhandledRiskCount} 条未处理风险` : '无未处理风险'}
                 </Tag>
+                {workspace?.businessStage ? <Tag color="blue">主链阶段：{workspace.businessStage}</Tag> : null}
+                <Tag color={workspace?.kickoffStatus === 'scheduled' ? 'success' : 'default'}>
+                  {workspace?.kickoffStatus === 'scheduled' ? '进场已排期' : '待进场协调'}
+                </Tag>
               </Space>
             </div>
           </div>
@@ -414,6 +418,20 @@ const WorkbenchDetail: React.FC = () => {
           <Descriptions.Item label="施工方">{workspace?.providerName || '-'}</Descriptions.Item>
           <Descriptions.Item label="地址">{workspace?.address || '-'}</Descriptions.Item>
           <Descriptions.Item label="最近巡检">{workspace?.lastInspectionAt ? formatServerDateTime(workspace.lastInspectionAt) : '暂无'}</Descriptions.Item>
+          <Descriptions.Item label="计划进场">
+            {workspace?.plannedStartDate
+              ? formatServerDateTime(workspace.plannedStartDate)
+              : workspace?.supervisorSummary?.plannedStartDate
+                ? formatServerDateTime(workspace.supervisorSummary.plannedStartDate)
+                : '待登记'}
+          </Descriptions.Item>
+          <Descriptions.Item label="当前责任人">{workspace?.currentResponsible || '待分配'}</Descriptions.Item>
+          <Descriptions.Item label="最近监理同步">
+            {workspace?.latestLogTitle || workspace?.supervisorSummary?.latestLogTitle || '暂无'}
+          </Descriptions.Item>
+          <Descriptions.Item label="未处理风险">
+            {workspace?.supervisorSummary?.unhandledRiskCount ?? workspace?.unhandledRiskCount ?? 0} 条
+          </Descriptions.Item>
         </Descriptions>
       </Card>
 

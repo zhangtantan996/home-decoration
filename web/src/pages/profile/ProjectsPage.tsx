@@ -32,7 +32,7 @@ function calcProgress(currentPhase: string, statusText?: string) {
   if (currentPhase.includes('泥木')) return 56;
   if (currentPhase.includes('水电')) return 42;
   if (currentPhase.includes('拆改')) return 24;
-  if (currentPhase.includes('准备') || currentPhase.includes('待开工')) return 8;
+  if (currentPhase.includes('准备') || currentPhase.includes('待监理协调开工') || currentPhase.includes('协调开工')) return 8;
   return 12;
 }
 
@@ -45,7 +45,7 @@ function calcCompletedDays(startDateText?: string) {
   const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
   const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const diff = Math.floor((todayDay - startDay) / (1000 * 60 * 60 * 24));
-  if (diff < 0) return '待开工';
+  if (diff < 0) return '待监理协调开工';
   return `${diff + 1} 天`;
 }
 
@@ -56,6 +56,14 @@ function resolveResponsiblePerson(detail: Awaited<ReturnType<typeof getProjectDe
 }
 
 function resolveSummaryText(detail: Awaited<ReturnType<typeof getProjectDetail>>) {
+  if (
+    detail.businessStage === 'ready_to_start'
+    && (!detail.flowSummary || detail.flowSummary.trim() === '')
+  ) {
+    return detail.plannedStartDate
+      ? `待监理协调开工，计划进场：${detail.plannedStartDate}`
+      : '待监理协调开工，计划进场时间待同步';
+  }
   return detail.flowSummary || '施工状态待同步';
 }
 
@@ -109,7 +117,7 @@ export function ProjectsPage() {
           expectedEndText: detail.expectedEndText || '待排期',
           summaryText: resolveSummaryText(detail),
           responsiblePerson: resolveResponsiblePerson(detail),
-          completedDaysText: calcCompletedDays(detail.startDateText),
+          completedDaysText: calcCompletedDays(detail.startDateText || detail.plannedStartDate),
           progress: calcProgress(detail.currentPhase || item.currentPhase, detail.statusText),
           imageUrl: resolveProjectImage(detail),
           badgeTone: resolveBadgeTone(detail.statusText),
@@ -129,7 +137,7 @@ export function ProjectsPage() {
       active: list.filter((item) => !item.statusText.includes('完工') && !item.currentPhase.includes('验收') && !item.statusText.includes('暂停')).length,
       acceptance: list.filter((item) => item.currentPhase.includes('验收')).length,
       done: list.filter((item) => item.statusText.includes('完工')).length,
-      pending: list.filter((item) => item.completedDaysText === '待排期' || item.completedDaysText === '待开工').length,
+      pending: list.filter((item) => item.completedDaysText === '待排期' || item.completedDaysText === '待监理协调开工').length,
     };
   }, [data?.list]);
 

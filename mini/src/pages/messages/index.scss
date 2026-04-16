@@ -264,12 +264,8 @@
       background: #3b82f6;
     }
 
-    &--order {
+    &--payment {
       background: #475569;
-    }
-
-    &--refund {
-      background: #ef4444;
     }
 
     &--system {
@@ -301,12 +297,8 @@
       background: rgba(59, 130, 246, 0.1);
     }
 
-    &--order {
+    &--payment {
       background: rgba(71, 85, 105, 0.1);
-    }
-
-    &--refund {
-      background: rgba(239, 68, 68, 0.1);
     }
 
     &--system {
@@ -385,14 +377,9 @@
       color: #2563eb;
     }
 
-    &--order {
+    &--payment {
       background: rgba(71, 85, 105, 0.1);
       color: #334155;
-    }
-
-    &--refund {
-      background: rgba(239, 68, 68, 0.1);
-      color: #dc2626;
     }
   }
 

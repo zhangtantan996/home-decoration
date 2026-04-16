@@ -37,6 +37,12 @@ const STATUS_META: Record<string, { label: string; title: string; description: s
     description: '支付没有成功，请返回业务页面重新发起或稍后再试。',
     tone: 'danger',
   },
+  scan_pending: {
+    label: '已扫码待支付',
+    title: '等待付款完成',
+    description: '二维码已被扫描，请在支付宝内完成支付确认。',
+    tone: 'warning',
+  },
   pending: {
     label: '等待确认',
     title: '支付结果确认中',
@@ -66,6 +72,7 @@ const CHANNEL_LABELS: Record<string, string> = {
 const TERMINAL_LABELS: Record<string, string> = {
   pc_web: '网页端',
   mobile_h5: '手机网页',
+  mini_qr: '支付宝扫码',
 };
 
 const BIZ_TYPE_LABELS: Record<string, string> = {
@@ -96,7 +103,7 @@ function formatBusinessLabel(subject: string | undefined, returnContext: Record<
 
 function resolveNextLabel(path: string, paid: boolean) {
   if (/^\/bookings\/\d+\/site-survey$/.test(path)) {
-    return paid ? '查看量房安排' : '返回预约详情';
+    return '返回预约详情';
   }
   if (/^\/bookings\/\d+$/.test(path)) {
     return '返回预约详情';
@@ -122,6 +129,9 @@ function resolveRefreshHint(status: string) {
   }
   if (status === 'closed' || status === 'failed') {
     return '若仍需继续，可返回原页面重新发起支付。';
+  }
+  if (status === 'scan_pending') {
+    return '已扫码但尚未完成付款，完成后页面会自动同步。';
   }
   return '页面会自动轮询最新状态，你也可以手动刷新。';
 }

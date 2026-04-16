@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { useAsyncData } from '../hooks/useAsyncData';
 import {
+  getBookingDesignDeliverable,
   getDesignDeliverable,
   acceptDesignDeliverable,
   rejectDesignDeliverable,
@@ -45,18 +46,20 @@ function FileGallery({ title, files }: { title: string; files: string[] }) {
 export function DesignDeliverableReviewPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const projectId = Number(params.id || 0);
+  const bookingId = Number(params.bookingId || 0);
+  const projectId = Number(params.projectId || 0);
+  const scopeLabel = bookingId > 0 ? `预约单 #${bookingId}` : `项目 #${projectId}`;
 
   const { data, loading, error, reload } = useAsyncData(
-    () => getDesignDeliverable(projectId),
-    [projectId],
+    () => (bookingId > 0 ? getBookingDesignDeliverable(bookingId) : getDesignDeliverable(projectId)),
+    [bookingId, projectId],
   );
 
   const [acting, setActing] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
 
-  const deliverable = data?.deliverable as DesignDeliverableVM | undefined;
+  const deliverable = data as DesignDeliverableVM | undefined;
 
   const handleAccept = useCallback(async () => {
     if (!deliverable) return;
@@ -110,7 +113,7 @@ export function DesignDeliverableReviewPage() {
       <section className="detail-header">
         <div className="detail-header-row">
           <div>
-            <p className="detail-kicker">项目 #{projectId}</p>
+            <p className="detail-kicker">{scopeLabel}</p>
             <h1>设计交付件审查</h1>
           </div>
           <span className="status-chip" data-tone={status.tone}>{status.label}</span>
@@ -150,24 +153,25 @@ export function DesignDeliverableReviewPage() {
             <section className="card section-card">
               <div className="section-head"><h2>验收操作</h2></div>
               <div className="inline-actions" style={{ gap: 12 }}>
-                <button className="btn btn-primary" disabled={acting} onClick={() => void handleAccept()}>
+                <button className="button-secondary" disabled={acting} onClick={() => void handleAccept()} type="button">
                   {acting ? '处理中…' : '验收通过'}
                 </button>
-                <button className="btn btn-outline" disabled={acting} onClick={() => setShowRejectInput(true)}>
+                <button className="button-outline" disabled={acting} onClick={() => setShowRejectInput(true)} type="button">
                   驳回
                 </button>
               </div>
               {showRejectInput && (
-                <div style={{ marginTop: 12 }}>
+                <div className="field" style={{ marginTop: 12 }}>
+                  <label htmlFor="deliverable-reject-reason">驳回原因</label>
                   <textarea
-                    className="form-input"
+                    id="deliverable-reject-reason"
                     placeholder="请说明驳回原因"
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                     rows={3}
-                    style={{ width: '100%' }}
                   />
-                  <button className="btn btn-danger" disabled={acting || !rejectReason.trim()} onClick={() => void handleReject()} style={{ marginTop: 8 }}>
+                  <p className="field-help">说明需要调整的内容，设计师会按这条反馈重新提交。</p>
+                  <button className="button-danger" disabled={acting || !rejectReason.trim()} onClick={() => void handleReject()} style={{ marginTop: 8 }} type="button">
                     提交驳回
                   </button>
                 </div>
@@ -178,7 +182,19 @@ export function DesignDeliverableReviewPage() {
       </section>
 
       <div style={{ marginTop: 24 }}>
-        <button className="btn btn-outline" onClick={() => navigate(-1)}>返回</button>
+        <button
+          className="button-outline"
+          onClick={() => {
+            if (bookingId > 0) {
+              navigate(`/bookings/${bookingId}`);
+              return;
+            }
+            navigate(-1);
+          }}
+          type="button"
+        >
+          返回
+        </button>
       </div>
     </div>
   );

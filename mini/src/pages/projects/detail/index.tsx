@@ -7,8 +7,9 @@ import { Empty } from '@/components/Empty';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
+import { getBusinessStageStatus } from '@/constants/status';
 import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
-import { acceptMilestone, getProjectDetail, getProjectMilestones, getProjectPhases, resumeProject, type Milestone, type ProjectDetail as ProjectDetailType, type ProjectPhase } from '@/services/projects';
+import { acceptMilestone, getProjectDetail, getProjectMilestones, getProjectPhases, rejectMilestone, resumeProject, type Milestone, type ProjectDetail as ProjectDetailType, type ProjectPhase } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { formatServerDate } from '@/utils/serverTime';
@@ -125,6 +126,33 @@ const ProjectDetailPage: React.FC = () => {
     }
   };
 
+  const getPaymentPlanStatusText = (plan: NonNullable<ProjectDetailType['paymentPlans']>[number]) => {
+    if (plan.payable) return '可支付';
+    if (plan.status === 1) return '已支付';
+    if (plan.status === 2) return '已失效';
+    if (plan.activatedAt) return '待支付';
+    return '待激活';
+  };
+
+  const getChangeOrderStatusText = (status?: string) => {
+    switch (status) {
+      case 'pending_user_confirm':
+        return '待确认';
+      case 'user_confirmed':
+        return '已确认';
+      case 'user_rejected':
+        return '已拒绝';
+      case 'admin_settlement_required':
+        return '待平台结算';
+      case 'settled':
+        return '已结算';
+      case 'cancelled':
+        return '已取消';
+      default:
+        return status || '待处理';
+    }
+  };
+
   const handleAcceptMilestone = async (milestoneId: number) => {
     Taro.showModal({
       title: '确认验收',
@@ -147,6 +175,37 @@ const ProjectDetailPage: React.FC = () => {
         }
       },
     });
+  };
+
+  const handleRejectMilestone = async (milestoneId: number) => {
+    Taro.showModal({
+      title: '驳回验收',
+      content: '请补充驳回原因',
+      editable: true,
+      placeholderText: '请输入驳回原因',
+      success: async (result: { confirm: boolean; content?: string }) => {
+        if (!result.confirm) {
+          return;
+        }
+        const reason = String(result.content || '').trim();
+        if (!reason) {
+          Taro.showToast({ title: '请填写驳回原因', icon: 'none' });
+          return;
+        }
+        try {
+          await rejectMilestone(id, milestoneId, reason);
+          Taro.showToast({ title: '已驳回', icon: 'success' });
+          const milestonesRes = await getProjectMilestones(id);
+          if (milestonesRes && milestonesRes.milestones) {
+            setMilestones(milestonesRes.milestones);
+          }
+          const detailRes = await getProjectDetail(id);
+          setDetail(detailRes);
+        } catch (error) {
+          showErrorToast(error, '驳回失败');
+        }
+      },
+    } as any);
   };
 
   const handleResumeProject = async () => {
@@ -172,6 +231,14 @@ const ProjectDetailPage: React.FC = () => {
   const paused = Boolean(riskSummary?.pausedAt);
   const disputed = Boolean(riskSummary?.disputedAt);
   const actionBlocked = paused || disputed;
+  const businessStageStatus = getBusinessStageStatus(detail.businessStage);
+  const paymentPlans = detail.paymentPlans || [];
+  const changeOrders = detail.changeOrders || [];
+  const completionPending = Boolean(
+    detail.availableActions?.includes('approve_completion')
+    || detail.availableActions?.includes('reject_completion')
+    || detail.businessStage === 'completed',
+  );
 
   return (
     <View className="page bg-gray-50 min-h-screen pb-md" {...bindPullToRefresh}>
@@ -183,7 +250,7 @@ const ProjectDetailPage: React.FC = () => {
           {detail.flowSummary ? <View className="text-sm text-gray-500 mb-md">{detail.flowSummary}</View> : null}
 
           <View className="flex" style={{ gap: '12rpx', flexWrap: 'wrap', marginBottom: '24rpx' }}>
-            {detail.businessStage ? <Tag variant="brand">{detail.businessStage}</Tag> : null}
+            {detail.businessStage ? <Tag variant={businessStageStatus.variant}>{businessStageStatus.label}</Tag> : null}
             {paused ? <Tag variant="warning">项目已暂停</Tag> : null}
             {disputed ? <Tag variant="error">争议处理中</Tag> : null}
             {riskSummary?.escrowFrozen ? <Tag variant="brand">托管已冻结</Tag> : null}
@@ -282,6 +349,86 @@ const ProjectDetailPage: React.FC = () => {
             </View>
           </View>
         )}
+
+        <View className="bg-white p-md mb-md">
+          <View className="text-base font-bold mb-sm">支付与变更</View>
+          {detail.nextPayablePlan ? (
+            <View className="bg-blue-50 rounded-xl p-md mb-md">
+              <View className="text-sm font-medium text-brand mb-xs">当前待支付</View>
+              <View className="text-base font-bold mb-xs">
+                {detail.nextPayablePlan.name || `第 ${detail.nextPayablePlan.seq || '-'} 期`}
+              </View>
+              <View className="text-sm text-gray-600 mb-xs">金额：¥{Number(detail.nextPayablePlan.amount || 0).toLocaleString()}</View>
+              <View className="text-xs text-gray-500">
+                {detail.nextPayablePlan.dueAt ? `到期：${formatServerDate(detail.nextPayablePlan.dueAt)}` : '已生成待支付计划'}
+              </View>
+              <View style={{ marginTop: '16rpx' }}>
+                <Button type="primary" size="small" onClick={() => Taro.navigateTo({ url: `/pages/orders/detail/index?id=${detail.nextPayablePlan?.orderId}` })}>
+                  去查看支付
+                </Button>
+              </View>
+            </View>
+          ) : null}
+
+          <View className="text-sm font-medium mb-sm">支付计划</View>
+          {!paymentPlans.length ? (
+            <View className="text-sm text-gray-400 mb-md">暂无支付计划</View>
+          ) : (
+            <View className="space-y-sm mb-md">
+              {paymentPlans.map((plan) => (
+                <View key={plan.id} className="border border-gray-100 rounded-xl p-sm">
+                  <View className="flex justify-between items-center mb-xs">
+                    <Text className="font-medium">{plan.name || `${plan.planType || '分期'} #${plan.seq || '-'}`}</Text>
+                    <Tag variant={plan.payable ? 'brand' : plan.status === 2 ? 'error' : plan.status === 1 ? 'brand' : 'default'}>
+                      {getPaymentPlanStatusText(plan)}
+                    </Tag>
+                  </View>
+                  <View className="text-sm text-gray-600 mb-xs">{`金额：¥${Number(plan.amount || 0).toLocaleString()}`}</View>
+                  <View className="text-xs text-gray-500">
+                    {plan.dueAt ? `到期：${formatServerDate(plan.dueAt)}` : plan.payableReason || '待后续激活'}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View className="flex justify-between items-center mb-sm">
+            <View className="text-sm font-medium">项目变更单</View>
+            <Button size="small" type="default" onClick={() => Taro.navigateTo({ url: `/pages/projects/change-request/index?id=${id}` })}>
+              查看变更单
+            </Button>
+          </View>
+          {!changeOrders.length ? (
+            <View className="text-sm text-gray-400">当前还没有正式变更单</View>
+          ) : (
+            <View className="space-y-sm">
+              {changeOrders.slice(0, 2).map((item) => (
+                <View key={item.id} className="border border-gray-100 rounded-xl p-sm">
+                  <View className="flex justify-between items-center mb-xs">
+                    <Text className="font-medium">{item.title || `变更单 #${item.id}`}</Text>
+                    <Tag variant={item.status === 'pending_user_confirm' ? 'warning' : item.status === 'user_rejected' ? 'error' : 'default'}>
+                      {getChangeOrderStatusText(item.status)}
+                    </Tag>
+                  </View>
+                  <View className="text-sm text-gray-600 mb-xs">{item.reason || '未填写变更原因'}</View>
+                  {item.amountImpact ? <View className="text-xs text-gray-500">{`金额影响：¥${Number(item.amountImpact).toLocaleString()}`}</View> : null}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {completionPending ? (
+          <View className="bg-white p-md mb-md">
+            <View className="text-base font-bold mb-sm">完工审批</View>
+            <View className="text-sm text-gray-500 mb-md">
+              商家提交完工材料后，你需要在整体验收页执行通过或驳回。
+            </View>
+            <Button type="primary" block onClick={() => Taro.navigateTo({ url: `/pages/projects/completion/index?id=${id}` })}>
+              处理完工审批
+            </Button>
+          </View>
+        ) : null}
 
         <View className="bg-white">
           <Tabs value={activeTab} onChange={(value) => setActiveTab(String(value))}>
@@ -389,17 +536,33 @@ const ProjectDetailPage: React.FC = () => {
                             </View>
 
                             {isPending && (
-                              <Button
-                                type="primary"
-                                size="small"
-                                disabled={actionBlocked}
-                                onClick={() => handleAcceptMilestone(milestone.id)}
-                              >
-                                <View className="flex items-center">
-                                  <Success size={14} className="mr-xs" />
-                                  <Text>确认验收</Text>
-                                </View>
-                              </Button>
+                              <View className="flex" style={{ gap: '12rpx' }}>
+                                <Button
+                                  type="default"
+                                  size="small"
+                                  disabled={actionBlocked}
+                                  onClick={() => handleRejectMilestone(milestone.id)}
+                                >
+                                  <Text>驳回</Text>
+                                </Button>
+                                <Button
+                                  type="primary"
+                                  size="small"
+                                  disabled={actionBlocked}
+                                  onClick={() => handleAcceptMilestone(milestone.id)}
+                                >
+                                  <View className="flex items-center">
+                                    <Success size={14} className="mr-xs" />
+                                    <Text>确认验收</Text>
+                                  </View>
+                                </Button>
+                              </View>
+                            )}
+
+                            {isRejected && milestone.acceptedAt && (
+                              <Text className="text-xs text-gray-400">
+                                处理时间: {formatServerDate(milestone.acceptedAt)}
+                              </Text>
                             )}
 
                             {isCompleted && milestone.acceptedAt && (

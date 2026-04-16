@@ -213,9 +213,6 @@ const MerchantIncome: React.FC = () => {
                             <Button type="primary" onClick={() => navigate('/withdraw')}>
                                 查看出款状态
                             </Button>
-                            <Button onClick={() => navigate('/bond')}>
-                                保证金账户
-                            </Button>
                             <Button onClick={() => navigate('/bank-accounts')}>
                                 银行账户管理
                             </Button>

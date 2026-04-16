@@ -26,9 +26,11 @@ import { usePermission } from '../../hooks/usePermission';
 import {
   adminOrderCenterApi,
   type AdminBusinessFlowAction,
+  type AdminBusinessFlowChangeOrder,
   type AdminBusinessFlowDetail,
   type AdminBusinessFlowListItem,
   type AdminBusinessFlowMilestoneSnapshot,
+  type AdminBusinessFlowPaymentPlan,
 } from '../../services/orderApi';
 import { formatServerDateTime } from '../../utils/serverTime';
 
@@ -39,9 +41,9 @@ const STAGE_OPTIONS = [
   { label: '线索待推进', value: 'lead_pending' },
   { label: '沟通中', value: 'negotiating' },
   { label: '方案待确认', value: 'design_pending_confirmation' },
-  { label: '待确认施工方', value: 'construction_party_pending' },
+  { label: '施工桥接中', value: 'construction_party_pending' },
   { label: '施工报价待确认', value: 'construction_quote_pending' },
-  { label: '待开工', value: 'ready_to_start' },
+  { label: '待监理协调开工', value: 'ready_to_start' },
   { label: '施工中', value: 'in_construction' },
   { label: '节点验收中', value: 'node_acceptance_in_progress' },
   { label: '完工待验收', value: 'completed' },
@@ -93,9 +95,9 @@ const STAGE_LABELS: Record<string, { text: string; color: string }> = {
   negotiating: { text: '沟通中', color: 'processing' },
   design_pending_submission: { text: '待提交方案', color: 'warning' },
   design_pending_confirmation: { text: '方案待确认', color: 'warning' },
-  construction_party_pending: { text: '待确认施工方', color: 'processing' },
+  construction_party_pending: { text: '施工桥接中', color: 'processing' },
   construction_quote_pending: { text: '施工报价待确认', color: 'processing' },
-  ready_to_start: { text: '待开工', color: 'warning' },
+  ready_to_start: { text: '待监理协调开工', color: 'warning' },
   in_construction: { text: '施工中', color: 'processing' },
   node_acceptance_in_progress: { text: '节点验收中', color: 'warning' },
   completed: { text: '完工待验收', color: 'warning' },
@@ -132,6 +134,22 @@ const PROJECT_STATUS_LABELS: Record<string, string> = {
   completed: '已完工',
 };
 
+const REVIEW_STATUS_META: Record<string, { text: string; color: string }> = {
+  pending: { text: '待复核', color: 'warning' },
+  approved: { text: '已通过', color: 'success' },
+  rejected: { text: '已驳回', color: 'error' },
+  not_required: { text: '无需复核', color: 'default' },
+};
+
+const CHANGE_ORDER_STATUS_META: Record<string, { text: string; color: string }> = {
+  pending_user_confirm: { text: '待业主确认', color: 'warning' },
+  user_confirmed: { text: '已确认', color: 'success' },
+  user_rejected: { text: '已拒绝', color: 'error' },
+  admin_settlement_required: { text: '待人工结算', color: 'processing' },
+  settled: { text: '已结算', color: 'success' },
+  cancelled: { text: '已取消', color: 'default' },
+};
+
 const readErrorMessage = (error: unknown, fallback: string) => {
   if (error && typeof error === 'object') {
     const candidate = error as {
@@ -153,6 +171,9 @@ const statusTag = (status?: string | number, labels: Record<string, { text: stri
 };
 
 const extractName = (name?: string) => name || '-';
+
+const flattenPaymentPlans = (detail?: AdminBusinessFlowDetail | null): AdminBusinessFlowPaymentPlan[] =>
+  (detail?.orders || []).flatMap((order) => order.paymentPlans || []);
 
 const OrderList: React.FC = () => {
   const navigate = useNavigate();
@@ -192,6 +213,24 @@ const OrderList: React.FC = () => {
     }),
     [currentStage, keyword, orderStatus, page, pageSize, paymentPaused, paymentPlanStatus, refundStatus, riskStatus],
   );
+
+  const governanceStats = useMemo(() => {
+    return rows.reduce(
+      (acc, row) => {
+        const actionKeys = new Set((row.availableAdminActions || []).map((item) => item.key));
+        if (actionKeys.has('review_construction_quote')) acc.quoteReview += 1;
+        if (actionKeys.has('settle_change_order')) acc.changeSettlement += 1;
+        if (row.paymentPlanStatus === 'pending' || row.paymentPlanStatus === 'overdue' || row.paymentPlanStatus === 'partial') {
+          acc.paymentWatch += 1;
+        }
+        if ((row.refundStatus && row.refundStatus !== 'none') || row.riskStatus === 'disputed' || row.riskStatus === 'audit_open') {
+          acc.afterSales += 1;
+        }
+        return acc;
+      },
+      { quoteReview: 0, changeSettlement: 0, paymentWatch: 0, afterSales: 0 },
+    );
+  }, [rows]);
 
   const loadList = useCallback(async () => {
     try {
@@ -377,6 +416,12 @@ const OrderList: React.FC = () => {
           if (!projectId) throw new Error('缺少项目ID');
           await adminOrderCenterApi.rejectCompletion(projectId, values.reason);
           break;
+        case 'settle_change_order': {
+          const changeOrderId = Number(activeAction.payload?.changeOrderId || 0);
+          if (!changeOrderId) throw new Error('缺少变更单ID');
+          await adminOrderCenterApi.settleChangeOrder(changeOrderId, values.reason);
+          break;
+        }
         case 'freeze_funds':
           if (!projectId) throw new Error('缺少项目ID');
           await adminOrderCenterApi.freezeFunds({ projectId, amount: Number(values.amount), reason: values.reason });
@@ -434,7 +479,7 @@ const OrderList: React.FC = () => {
             <Button
               key={`${action.key}-${action.apiPath || action.route || 'navigate'}`}
               onClick={() => {
-                if (action.key === 'confirm_construction_quote') {
+                if (action.key === 'confirm_construction_quote' || action.key === 'review_construction_quote') {
                   if (detail?.quoteTask?.id) {
                     navigate(`/projects/quotes/compare/${detail.quoteTask.id}`);
                     return;
@@ -503,7 +548,7 @@ const OrderList: React.FC = () => {
                 ]}
               />
             </Form.Item>
-            <Form.Item name="plannedStartDate" label="计划开工日期">
+            <Form.Item name="plannedStartDate" label="计划进场日期">
               <Input placeholder="YYYY-MM-DD" />
             </Form.Item>
             <Form.Item name="expectedEnd" label="预计完工日期">
@@ -623,20 +668,26 @@ const OrderList: React.FC = () => {
       ),
     },
     {
-      title: '待处理动作',
+      title: '治理待办',
       dataIndex: 'availableAdminActions',
-      render: (actions: AdminBusinessFlowAction[]) => {
+      render: (actions: AdminBusinessFlowAction[], record) => {
         const allowed = getAllowedActions(actions || []);
-        if (!allowed.length) {
-          return <Text type="secondary">只读</Text>;
-        }
+        const actionKeys = new Set((actions || []).map((item) => item.key));
         return (
-          <Space wrap>
-            {allowed.map((action) => (
-              <Tag key={`${action.key}-${action.label}`} color={action.danger ? 'error' : 'processing'}>
-                {action.label}
-              </Tag>
-            ))}
+          <Space direction="vertical" size={4}>
+            <Space wrap>
+              {actionKeys.has('review_construction_quote') ? <Tag color="warning">待复核报价</Tag> : null}
+              {actionKeys.has('settle_change_order') ? <Tag color="processing">待人工结算</Tag> : null}
+              {actionKeys.has('view_change_orders') ? <Tag color="gold">变更待确认</Tag> : null}
+              {record.paymentPlanStatus === 'overdue' ? <Tag color="error">支付已失效</Tag> : null}
+              {record.paymentPlanStatus === 'pending' || record.paymentPlanStatus === 'partial' ? <Tag color="blue">支付待办</Tag> : null}
+              {record.refundStatus && record.refundStatus !== 'none' ? <Tag color="purple">退款处理中</Tag> : null}
+              {record.riskStatus === 'disputed' || record.riskStatus === 'audit_open' ? <Tag color="red">争议治理</Tag> : null}
+              {!actionKeys.size && !allowed.length ? <Text type="secondary">只读</Text> : null}
+            </Space>
+            {allowed.length ? (
+              <Text type="secondary">{allowed.map((action) => action.label).join('、')}</Text>
+            ) : null}
           </Space>
         );
       },
@@ -710,6 +761,25 @@ const OrderList: React.FC = () => {
         </Space>
       </ToolbarCard>
 
+      <Space size={16} style={{ width: '100%', marginBottom: 16 }} wrap>
+        <Card size="small" style={{ minWidth: 180 }}>
+          <div>当前页待复核报价</div>
+          <Typography.Title level={4} style={{ margin: 0 }}>{governanceStats.quoteReview}</Typography.Title>
+        </Card>
+        <Card size="small" style={{ minWidth: 180 }}>
+          <div>当前页待人工结算</div>
+          <Typography.Title level={4} style={{ margin: 0 }}>{governanceStats.changeSettlement}</Typography.Title>
+        </Card>
+        <Card size="small" style={{ minWidth: 180 }}>
+          <div>当前页支付待办</div>
+          <Typography.Title level={4} style={{ margin: 0 }}>{governanceStats.paymentWatch}</Typography.Title>
+        </Card>
+        <Card size="small" style={{ minWidth: 180 }}>
+          <div>当前页售后治理</div>
+          <Typography.Title level={4} style={{ margin: 0 }}>{governanceStats.afterSales}</Typography.Title>
+        </Card>
+      </Space>
+
       <Card className="hz-table-card">
         <Table
           rowKey="flowId"
@@ -761,6 +831,8 @@ const OrderList: React.FC = () => {
                 <Descriptions.Item label="报价状态">{detail.quoteTask?.status || '-'}</Descriptions.Item>
                 <Descriptions.Item label="选中施工报价">{detail.selectedQuoteSubmission?.id ? `#${detail.selectedQuoteSubmission.id}` : '-'}</Descriptions.Item>
                 <Descriptions.Item label="报价金额">{detail.selectedQuoteSubmission?.totalCent ? formatMoney((detail.selectedQuoteSubmission.totalCent || 0) / 100) : '-'}</Descriptions.Item>
+                <Descriptions.Item label="报价复核">{statusTag(detail.selectedQuoteSubmission?.reviewStatus, REVIEW_STATUS_META)}</Descriptions.Item>
+                <Descriptions.Item label="报价备注">{detail.selectedQuoteSubmission?.remark || '-'}</Descriptions.Item>
                 <Descriptions.Item label="项目名称">{detail.project?.name || '-'}</Descriptions.Item>
                 <Descriptions.Item label="项目阶段">{detail.project?.currentPhase || '-'}</Descriptions.Item>
                 <Descriptions.Item label="业务状态">{PROJECT_STATUS_LABELS[detail.project?.businessStatus || ''] || detail.project?.businessStatus || '-'}</Descriptions.Item>
@@ -810,7 +882,49 @@ const OrderList: React.FC = () => {
                   { title: '状态', dataIndex: 'status', width: 100, render: (value) => statusTag(value) },
                   { title: '总金额', dataIndex: 'totalAmount', width: 120, render: (value) => formatMoney(value) },
                   { title: '已付金额', dataIndex: 'paidAmount', width: 120, render: (value) => formatMoney(value) },
+                  {
+                    title: '当前待办',
+                    key: 'nextPlan',
+                    render: (_, record) => {
+                      const nextPlan = (record.paymentPlans || []).find((plan) => plan.payable) || (record.paymentPlans || []).find((plan) => plan.status === 0);
+                      if (!nextPlan) return '-';
+                      return (
+                        <Space direction="vertical" size={2}>
+                          <Text>{nextPlan.name || `第 ${nextPlan.seq || '-'} 期`}</Text>
+                          <Text type="secondary">{formatMoney(nextPlan.amount)} · {formatDateTime(nextPlan.dueAt || nextPlan.expiresAt)}</Text>
+                        </Space>
+                      );
+                    },
+                  },
                   { title: '支付时间', dataIndex: 'paidAt', width: 180, render: (value) => formatDateTime(value) },
+                ]}
+              />
+              <Table
+                style={{ marginTop: 16 }}
+                rowKey="id"
+                size="small"
+                pagination={false}
+                dataSource={flattenPaymentPlans(detail)}
+                locale={{ emptyText: <Empty description="暂无支付计划" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+                columns={[
+                  { title: '计划ID', dataIndex: 'id', width: 90 },
+                  { title: '名称', dataIndex: 'name', render: (value, record) => value || record.planType || `第 ${record.seq || '-'} 期` },
+                  { title: '类型', dataIndex: 'planType', width: 120, render: (value, record) => value || record.type || '-' },
+                  { title: '金额', dataIndex: 'amount', width: 120, render: (value) => formatMoney(value) },
+                  {
+                    title: '状态',
+                    dataIndex: 'status',
+                    width: 120,
+                    render: (value, record) => {
+                      if (record.payable) return <Tag color="processing">可支付</Tag>;
+                      if (String(value) === '1') return <Tag color="success">已支付</Tag>;
+                      if (String(value) === '2') return <Tag color="error">已失效</Tag>;
+                      return <Tag>{record.payableReason ? '待激活' : '待支付'}</Tag>;
+                    },
+                  },
+                  { title: '激活时间', dataIndex: 'activatedAt', width: 180, render: (value) => formatDateTime(value) },
+                  { title: '到期时间', dataIndex: 'dueAt', width: 180, render: (value, record) => formatDateTime(value || record.expiresAt) },
+                  { title: '不可付原因', dataIndex: 'payableReason', ellipsis: true, render: (value) => value || '-' },
                 ]}
               />
               <Table
@@ -827,6 +941,52 @@ const OrderList: React.FC = () => {
                   { title: '状态', dataIndex: 'status', width: 100, render: (value) => statusTag(String(value), { '0': { text: '处理中', color: 'processing' }, '1': { text: '成功', color: 'success' }, '2': { text: '失败', color: 'error' } }) },
                   { title: '备注', dataIndex: 'remark', ellipsis: true },
                   { title: '时间', dataIndex: 'createdAt', width: 180, render: (value) => formatDateTime(value) },
+                ]}
+              />
+            </Card>
+
+            <Card size="small" title="变更治理">
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                dataSource={detail.changeOrders || []}
+                locale={{ emptyText: <Empty description="暂无项目变更单" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+                columns={[
+                  { title: '变更单', dataIndex: 'title', render: (value, record: AdminBusinessFlowChangeOrder) => value || `变更单 #${record.id}` },
+                  { title: '类型', dataIndex: 'changeType', width: 120, render: (value) => value || '-' },
+                  { title: '金额影响', dataIndex: 'amountImpact', width: 120, render: (value) => formatMoney(value) },
+                  { title: '工期影响', dataIndex: 'timelineImpact', width: 120, render: (value) => value ? `${value} 天` : '-' },
+                  { title: '状态', dataIndex: 'status', width: 140, render: (value) => statusTag(value, CHANGE_ORDER_STATUS_META) },
+                  { title: '创建时间', dataIndex: 'createdAt', width: 180, render: (value) => formatDateTime(value) },
+                  { title: '拒绝/结算说明', key: 'reason', ellipsis: true, render: (_, record: AdminBusinessFlowChangeOrder) => record.userRejectReason || record.settlementReason || record.reason || '-' },
+                  {
+                    title: '操作',
+                    key: 'action',
+                    width: 140,
+                    render: (_, record: AdminBusinessFlowChangeOrder) => {
+                      if (record.status !== 'admin_settlement_required' || !hasPermission('project:edit')) {
+                        return <Text type="secondary">-</Text>;
+                      }
+                      return (
+                        <Button
+                          type="link"
+                          onClick={() => openActionModal({
+                            key: 'settle_change_order',
+                            label: '处理减项结算',
+                            kind: 'mutation',
+                            permission: 'project:edit',
+                            method: 'POST',
+                            apiPath: `/admin/change-orders/${record.id}/settle`,
+                            payload: { changeOrderId: record.id, projectId: detail.project?.id },
+                            requiresReason: true,
+                          })}
+                        >
+                          去结算
+                        </Button>
+                      );
+                    },
+                  },
                 ]}
               />
             </Card>

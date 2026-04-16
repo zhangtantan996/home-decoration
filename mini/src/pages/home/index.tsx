@@ -2,6 +2,7 @@ import Taro, { useDidShow } from "@tarojs/taro";
 import { Image, Text, View } from "@tarojs/components";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Button } from "@/components/Button";
 import { Empty } from "@/components/Empty";
 import { Icon, type IconName } from "@/components/Icon";
 import { PullToRefreshNotice } from "@/components/PullToRefreshNotice";
@@ -18,9 +19,13 @@ import {
   type ProviderType,
 } from "@/services/providers";
 import { showErrorToast } from "@/utils/error";
-import { syncCurrentTabBar } from "@/utils/customTabBar";
+import {
+  setCustomTabBarInteractionDisabled,
+  syncCurrentTabBar,
+} from "@/utils/customTabBar";
 import { getMiniNavMetrics } from "@/utils/navLayout";
 import { normalizeProviderMediaUrl } from "@/utils/providerMedia";
+import { storage } from "@/utils/storage";
 import "./index.scss";
 
 type HomeProviderCategory = "designer" | "foreman" | "company";
@@ -68,6 +73,36 @@ const PROVIDER_FILTER_OPTIONS = [
 
 const HOME_FETCH_PAGE_SIZE = 50;
 const HIDDEN_DISPLAY_TAGS = new Set(["沟通中"]);
+const HOME_QUOTE_POPUP_STORAGE_KEY = "home-quote-popup-state-v1";
+const HOME_QUOTE_POPUP_UI_VERSION = "2026-04-14-home-popup-v1";
+
+interface HomeQuotePopupState {
+  handledDate?: string;
+  version?: string;
+}
+
+const getTodayStorageDate = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const isHomeQuotePopupHandledToday = () => {
+  const payload = storage.get<HomeQuotePopupState>(HOME_QUOTE_POPUP_STORAGE_KEY);
+  return (
+    payload?.version === HOME_QUOTE_POPUP_UI_VERSION &&
+    payload?.handledDate === getTodayStorageDate()
+  );
+};
+
+const markHomeQuotePopupHandledToday = () => {
+  storage.set<HomeQuotePopupState>(HOME_QUOTE_POPUP_STORAGE_KEY, {
+    handledDate: getTodayStorageDate(),
+    version: HOME_QUOTE_POPUP_UI_VERSION,
+  });
+};
 
 const getProviderType = (providerType: number): ProviderType => {
   if (providerType === 2) return "company";
@@ -344,10 +379,6 @@ const loadAllMaterialShops = async (sortBy: "recommend" | "distance") => {
 };
 
 export default function Home() {
-  useDidShow(() => {
-    syncCurrentTabBar("/pages/home/index");
-  });
-
   const [activeCategory, setActiveCategory] =
     useState<HomeCategory>("designer");
   const [designerSortBy, setDesignerSortBy] = useState("recommend");
@@ -360,6 +391,7 @@ export default function Home() {
   const [materialItems, setMaterialItems] = useState<MaterialShopItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
+  const [showQuotePopup, setShowQuotePopup] = useState(false);
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const headerInsetStyle = useMemo(
     () => ({
@@ -393,6 +425,28 @@ export default function Home() {
     () => ({ top: `${navMetrics.contentTop}px` }),
     [navMetrics.contentTop],
   );
+  const quotePopupOverlayStyle = useMemo(
+    () => ({
+      paddingTop: `${Math.max(navMetrics.contentTop, 16)}px`,
+      paddingBottom: "120px",
+      paddingLeft: "16px",
+      paddingRight: "16px",
+    }),
+    [navMetrics.contentTop],
+  );
+
+  useDidShow(() => {
+    syncCurrentTabBar("/pages/home/index");
+    setShowQuotePopup(!isHomeQuotePopupHandledToday());
+  });
+
+  useEffect(() => {
+    setCustomTabBarInteractionDisabled(showQuotePopup);
+
+    return () => {
+      setCustomTabBarInteractionDisabled(false);
+    };
+  }, [showQuotePopup]);
 
   const currentSortOptions =
     activeCategory === "designer"
@@ -556,6 +610,27 @@ export default function Home() {
   const handleMaterialShopClick = (shop: MaterialShopItem) => {
     Taro.navigateTo({
       url: `/pages/material-shops/detail/index?id=${shop.id}`,
+    });
+  };
+
+  const handleOpenQuoteGenerator = () => {
+    markHomeQuotePopupHandledToday();
+    setShowQuotePopup(false);
+    Taro.navigateTo({
+      url: "/pages/quote-generator/index",
+    });
+  };
+
+  const handleCloseQuotePopup = () => {
+    markHomeQuotePopupHandledToday();
+    setShowQuotePopup(false);
+  };
+
+  const handleViewProviders = () => {
+    markHomeQuotePopupHandledToday();
+    setShowQuotePopup(false);
+    Taro.navigateTo({
+      url: "/pages/providers/list/index?type=designer",
     });
   };
 
@@ -1029,6 +1104,78 @@ export default function Home() {
       {activeCategory === "material"
         ? renderMaterialList()
         : renderProviderList()}
+
+      {showQuotePopup ? (
+        <View
+          className="home-page__quote-popup-overlay"
+          style={quotePopupOverlayStyle}
+        >
+          <View className="home-page__quote-popup-card">
+            <View className="home-page__quote-popup-header">
+              <Text className="home-page__quote-popup-kicker">免费预估</Text>
+              <View
+                className="home-page__quote-popup-close"
+                onClick={handleCloseQuotePopup}
+              >
+                <Text className="home-page__quote-popup-close-text">×</Text>
+              </View>
+            </View>
+
+            <View className="home-page__quote-popup-body">
+              <Text className="home-page__quote-popup-title">
+                30 秒生成装修报价 
+              </Text>
+
+              <View className="home-page__quote-popup-hero">
+                <View className="home-page__quote-popup-hero-scene">
+                  <View className="home-page__quote-popup-hero-mesh" />
+                  <View className="home-page__quote-popup-hero-glow home-page__quote-popup-hero-glow--1" />
+                  <View className="home-page__quote-popup-hero-glow home-page__quote-popup-hero-glow--2" />
+                  <View className="home-page__quote-popup-hero-glass-card">
+                    <View className="home-page__quote-popup-hero-glass-skeleton-row" />
+                    <View className="home-page__quote-popup-hero-glass-skeleton-row home-page__quote-popup-hero-glass-skeleton-row--short" />
+                    <View className="home-page__quote-popup-hero-glass-skeleton-chart" />
+                  </View>
+                </View>
+              </View>
+
+              <View className="home-page__quote-popup-meta">
+                <View className="home-page__quote-popup-meta-item">
+                  <View className="home-page__quote-popup-meta-dot" />
+                  <Text className="home-page__quote-popup-meta-text">
+                    免费预估价
+                  </Text>
+                </View>
+                <View className="home-page__quote-popup-meta-item">
+                  <View className="home-page__quote-popup-meta-dot" />
+                  <Text className="home-page__quote-popup-meta-text">
+                    热选方案参考
+                  </Text>
+                </View>
+              </View>
+
+              <Button
+                block
+                size="lg"
+                variant="primary"
+                className="home-page__quote-popup-primary"
+                onClick={handleOpenQuoteGenerator}
+              >
+                立即生成
+              </Button>
+
+              <View className="home-page__quote-popup-footer">
+                <Text
+                  className="home-page__quote-popup-footer-link"
+                  onClick={handleViewProviders}
+                >
+                  先看看服务商
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }

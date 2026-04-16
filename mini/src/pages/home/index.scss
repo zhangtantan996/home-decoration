@@ -607,4 +607,261 @@
   &__entity-info-row &__provider-nearby-text {
     font-size: 22rpx;
   }
+
+  &__quote-popup-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1202;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(17, 17, 17, 0.4);
+    backdrop-filter: blur(8rpx);
+    animation: popupFadeIn 0.3s ease-out;
+  }
+
+  &__quote-popup-card {
+    width: 100%;
+    max-width: 640rpx;
+    padding: 32rpx;
+    border-radius: 40rpx;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 40rpx 80rpx rgba(17, 17, 17, 0.12), 
+                inset 0 2rpx 0 rgba(255, 255, 255, 1);
+    backdrop-filter: blur(24rpx);
+    animation: popupScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  &__quote-popup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20rpx;
+  }
+
+  &__quote-popup-body {
+    margin-top: 10rpx;
+  }
+
+  &__quote-popup-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 10rpx 20rpx;
+    border-radius: 999rpx;
+    background: linear-gradient(135deg, rgba(255, 94, 0, 0.1) 0%, rgba(255, 50, 0, 0.05) 100%);
+    color: #ff5000;
+    font-size: 24rpx;
+    font-weight: 700;
+  }
+
+  &__quote-popup-title {
+    display: block;
+    text-align: center;
+    margin-top: 16rpx;
+    color: #111111;
+    font-size: 46rpx;
+    font-weight: 800;
+    line-height: 1.28;
+    letter-spacing: -0.5rpx;
+  }
+
+  &__quote-popup-subtitle {
+    display: block;
+    margin-top: 12rpx;
+    text-align: center;
+    color: #6b7280;
+    font-size: 24rpx;
+    line-height: 1.6;
+  }
+
+  &__quote-popup-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 60rpx;
+    height: 60rpx;
+    border-radius: 50%;
+    background: transparent;
+    transition: background 0.2s;
+  }
+
+  &__quote-popup-close-text {
+    color: #9ca3af;
+    font-size: 36rpx;
+    line-height: 1;
+    font-weight: 400;
+  }
+
+  &__quote-popup-hero {
+    margin-top: 32rpx;
+    border-radius: 32rpx;
+    overflow: hidden;
+    position: relative;
+    background: #ffffff;
+    box-shadow: 
+      inset 0 1rpx 0 rgba(255, 255, 255, 0.8),
+      0 16rpx 40rpx rgba(17, 17, 17, 0.06);
+  }
+
+  &__quote-popup-hero-scene {
+    position: relative;
+    height: 280rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: linear-gradient(135deg, #fffafa 0%, #fef5f0 100%);
+  }
+
+  &__quote-popup-hero-mesh {
+    position: absolute;
+    inset: -50%;
+    background: 
+      radial-gradient(circle at 50% 50%, rgba(255, 115, 0, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(255, 60, 0, 0.06) 0%, transparent 40%);
+    animation: meshRotate 15s linear infinite;
+  }
+
+  &__quote-popup-hero-glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40rpx);
+    
+    &--1 {
+      width: 200rpx;
+      height: 200rpx;
+      top: -20rpx;
+      left: 10%;
+      background: rgba(255, 94, 0, 0.15);
+      animation: floatGlow 6s ease-in-out infinite;
+    }
+    
+    &--2 {
+      width: 240rpx;
+      height: 240rpx;
+      bottom: -40rpx;
+      right: 5%;
+      background: rgba(255, 150, 0, 0.12);
+      animation: floatGlow 8s ease-in-out infinite reverse;
+    }
+  }
+
+  &__quote-popup-hero-glass-card {
+    position: relative;
+    width: 320rpx;
+    padding: 32rpx;
+    border-radius: 24rpx;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(12rpx);
+    border: 1rpx solid #ffffff;
+    box-shadow: 0 16rpx 32rpx rgba(255, 90, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 16rpx;
+    transform: translateY(0);
+    animation: floatingCard 4s ease-in-out infinite;
+  }
+
+  &__quote-popup-hero-glass-skeleton-row {
+    height: 12rpx;
+    border-radius: 6rpx;
+    background: linear-gradient(90deg, rgba(243, 244, 246, 0.8) 0%, rgba(229, 231, 235, 0.4) 100%);
+    
+    &--short {
+      width: 60%;
+    }
+  }
+
+  &__quote-popup-hero-glass-skeleton-chart {
+    height: 60rpx;
+    margin-top: 12rpx;
+    border-radius: 12rpx;
+    background: linear-gradient(135deg, rgba(255, 115, 0, 0.1) 0%, rgba(255, 60, 0, 0.05) 100%);
+  }
+
+  &__quote-popup-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32rpx;
+    margin-top: 24rpx;
+  }
+
+  &__quote-popup-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 12rpx;
+  }
+
+  &__quote-popup-meta-dot {
+    width: 12rpx;
+    height: 12rpx;
+    border-radius: 6rpx;
+    background: #ff5000;
+    box-shadow: 0 0 8rpx rgba(255, 80, 0, 0.4);
+  }
+
+  &__quote-popup-meta-text {
+    color: #6b7280;
+    font-size: 24rpx;
+    font-weight: 500;
+  }
+
+  &__quote-popup-primary {
+    width: 100%;
+    font-size: 32rpx;
+    font-weight: 600;
+    margin-top: 36rpx;
+    background: #111111;
+    color: #ffffff;
+    border-radius: 20rpx;
+    border: none;
+    box-shadow: 0 16rpx 32rpx rgba(17, 17, 17, 0.15);
+  }
+
+  &__quote-popup-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 24rpx;
+  }
+
+  &__quote-popup-footer-link {
+    color: #9ca3af;
+    font-size: 24rpx;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+}
+
+@keyframes popupFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popupScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes meshRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes floatGlow {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20rpx) scale(1.05); }
+}
+
+@keyframes floatingCard {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10rpx); }
 }

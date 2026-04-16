@@ -60,7 +60,8 @@
   }
 
   &__provider-card,
-  &__form-card {
+  &__form-card,
+  &__quote-banner {
     border-radius: 32rpx;
     background: #ffffff;
     box-shadow: 0 16rpx 34rpx rgba(17, 17, 17, 0.08);
@@ -75,6 +76,29 @@
   &__provider-skeleton {
     height: 220rpx;
     border-radius: 32rpx;
+  }
+
+  &__quote-banner {
+    margin-top: 24rpx;
+    padding: 26rpx 28rpx;
+    background:
+      radial-gradient(circle at top right, rgba(255, 236, 231, 0.9), rgba(255, 255, 255, 0) 42%),
+      linear-gradient(180deg, #ffffff 0%, #fff8f6 100%);
+  }
+
+  &__quote-banner-title {
+    display: block;
+    color: #111111;
+    font-size: 30rpx;
+    font-weight: 700;
+  }
+
+  &__quote-banner-copy {
+    display: block;
+    margin-top: 10rpx;
+    color: #6b7280;
+    font-size: 24rpx;
+    line-height: 1.65;
   }
 
   &__provider-avatar {

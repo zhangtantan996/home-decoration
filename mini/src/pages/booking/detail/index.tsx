@@ -10,8 +10,10 @@ import { Tag } from '@/components/Tag';
 import { getBusinessStageStatus } from '@/constants/status';
 import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import {
+  acceptBookingBudgetConfirm,
   cancelBooking,
   getBookingDetail,
+  rejectBookingBudgetConfirm,
   type BookingBudgetConfirmSummary,
   type BookingDetailResponse,
   type BookingSiteSurveySummary,
@@ -86,9 +88,9 @@ const getStatusMeta = (detail: BookingDetailResponse) => {
 const getSurveyStatusMeta = (status?: string) => {
   switch (status) {
     case 'submitted':
-      return { label: '待确认', variant: 'warning' as const };
+      return { label: '已上传', variant: 'primary' as const };
     case 'confirmed':
-      return { label: '已确认', variant: 'success' as const };
+      return { label: '已完成', variant: 'success' as const };
     case 'revision_requested':
       return { label: '待重提', variant: 'default' as const };
     default:
@@ -107,6 +109,42 @@ const getBudgetStatusMeta = (status?: string) => {
     default:
       return { label: '待提交', variant: 'default' as const };
   }
+};
+
+const getDeliverableStatusMeta = (status?: string) => {
+  switch (status) {
+    case 'submitted':
+      return { label: '待确认', variant: 'warning' as const };
+    case 'accepted':
+      return { label: '已确认', variant: 'success' as const };
+    case 'rejected':
+      return { label: '已退回', variant: 'default' as const };
+    default:
+      return { label: '待提交', variant: 'default' as const };
+  }
+};
+
+const getProposalStatusMeta = (detail: BookingDetailResponse) => {
+  const currentStage = detail.currentStage || detail.booking.currentStage || detail.businessStage;
+  const bridgeStarted = [
+    'construction_party_pending',
+    'construction_quote_pending',
+    'ready_to_start',
+    'in_construction',
+    'node_acceptance_in_progress',
+    'completed',
+    'archived',
+    'disputed',
+    'payment_paused',
+  ].includes(String(currentStage || '').trim());
+
+  if (bridgeStarted) {
+    return { label: '已完成', variant: 'success' as const };
+  }
+  if (detail.proposalId) {
+    return { label: '待确认', variant: 'warning' as const };
+  }
+  return { label: '待生成', variant: 'default' as const };
 };
 
 const getSurveyDepositAmount = (detail: BookingDetailResponse) => (
@@ -145,7 +183,7 @@ const getSiteSurveyDescription = (siteSurveySummary?: BookingSiteSurveySummary) 
 
 const getBudgetDescription = (budgetConfirmSummary?: BookingBudgetConfirmSummary) => {
   if (!budgetConfirmSummary) {
-    return '量房记录确认后，商家会继续提交预算确认。';
+    return '量房资料上传后，商家会继续提交沟通确认。';
   }
 
   const hasBudgetRange =
@@ -164,11 +202,123 @@ const getBudgetDescription = (budgetConfirmSummary?: BookingBudgetConfirmSummary
   return budgetConfirmSummary.notes || budgetConfirmSummary.designIntent || '预算确认信息已更新';
 };
 
+const getBudgetRejectProgress = (budgetConfirmSummary?: BookingBudgetConfirmSummary) => {
+  if (!budgetConfirmSummary) return '';
+  const rejectCount = Number(budgetConfirmSummary.rejectCount || 0);
+  const rejectLimit = Number(budgetConfirmSummary.rejectLimit || 0);
+  if (rejectCount <= 0 && rejectLimit <= 0) return '';
+  return rejectLimit > 0 ? `${rejectCount}/${rejectLimit}` : `${rejectCount}`;
+};
+
+const getBridgeBaselineText = (status?: string) => {
+  switch (String(status || '').trim()) {
+    case 'submitted':
+      return '报价基线已提交';
+    case 'ready_for_selection':
+      return '报价基线已就绪，可进入施工主体选择';
+    case 'pending_submission':
+      return '待提交报价基线';
+    default:
+      return '报价基线状态待同步';
+  }
+};
+
+const getConstructionSubjectText = (type?: string, name?: string) => {
+  if (type === 'company') {
+    return name ? `装修公司主体 · ${name}` : '装修公司主体';
+  }
+  if (type === 'foreman') {
+    return name ? `独立工长主体 · ${name}` : '独立工长主体';
+  }
+  return '待确认施工主体';
+};
+
+const getBridgeGuide = (detail: BookingDetailResponse) => {
+  const currentStage = detail.currentStage || detail.booking.currentStage || detail.businessStage;
+  const kickoffStatus = String(detail.kickoffStatus || '').trim();
+  if (kickoffStatus === 'scheduled') {
+    return `施工主体已确认（${getConstructionSubjectText(
+      detail.constructionSubjectType,
+      detail.constructionSubjectDisplayName,
+    )}），监理已登记计划进场时间。`;
+  }
+  switch (String(currentStage || '').trim()) {
+    case 'construction_party_pending':
+      return '报价基线已提交，当前在对比装修公司主体或独立工长。';
+    case 'construction_quote_pending':
+      return `施工主体已确认（${getConstructionSubjectText(
+        detail.constructionSubjectType,
+        detail.constructionSubjectDisplayName,
+      )}），当前等待施工报价确认。`;
+    case 'ready_to_start':
+      return '施工报价已确认，下一步由监理协调计划进场时间。';
+    default:
+      return '正式方案确认后，会依次进入报价基线数据、施工主体选择、施工报价确认，再进入待监理协调开工。';
+  }
+};
+
+const getDesignDeliverableDescription = (detail: BookingDetailResponse) => {
+  const summary = detail.designDeliverableSummary;
+  if (!summary) {
+    return '设计费支付完成后，设计师会先提交设计交付供你确认。';
+  }
+  if (summary.status === 'rejected') {
+    return summary.rejectionReason || '设计交付已退回，等待设计师重新提交。';
+  }
+  if (summary.status === 'accepted') {
+    return '设计交付已确认，设计师会继续整理正式方案。';
+  }
+  return '设计交付已提交，确认通过后才会继续进入正式方案确认。';
+};
+
+const getProposalDescription = (detail: BookingDetailResponse) => {
+  const currentStage = detail.currentStage || detail.booking.currentStage || detail.businessStage;
+  const bridgeStarted = [
+    'construction_party_pending',
+    'construction_quote_pending',
+    'ready_to_start',
+    'in_construction',
+    'node_acceptance_in_progress',
+    'completed',
+    'archived',
+    'disputed',
+    'payment_paused',
+  ].includes(String(currentStage || '').trim());
+
+  if (bridgeStarted) {
+    return detail.flowSummary || detail.booking.flowSummary || '施工桥接推进中，等待下一责任人处理。';
+  }
+  if (detail.proposalId) {
+    return '正式方案已提交，当前由你确认方案后进入报价基线整理与施工主体选择。';
+  }
+  if (detail.designDeliverableSummary?.status === 'accepted') {
+    return '设计交付已确认，等待设计师生成正式方案。';
+  }
+  return '设计交付确认通过后，才会进入正式方案确认。';
+};
+
 const getNextStep = (detail: BookingDetailResponse) => {
   const statusGroup = detail.statusGroup || detail.booking.statusGroup;
   const flowSummary = detail.flowSummary || detail.booking.flowSummary;
   const amount = getSurveyDepositAmount(detail);
   const availableActions = detail.availableActions || detail.booking.availableActions || [];
+  const designFeeQuoteStatus = String(detail.designFeeQuoteSummary?.status || '').trim();
+  const designFeeOrderStatus = typeof detail.designFeeQuoteSummary?.orderStatus === 'number'
+    ? Number(detail.designFeeQuoteSummary.orderStatus)
+    : null;
+  const designDeliverableStatus = String(detail.designDeliverableSummary?.status || '').trim();
+  const currentStage = detail.currentStage || detail.booking.currentStage || detail.businessStage;
+  const bridgeStarted = [
+    'construction_party_pending',
+    'construction_quote_pending',
+    'ready_to_start',
+    'in_construction',
+    'node_acceptance_in_progress',
+    'completed',
+    'archived',
+    'disputed',
+    'payment_paused',
+  ].includes(String(currentStage || '').trim());
 
   if (canPromptSurveyDepositPayment(detail)) {
     return {
@@ -180,6 +330,55 @@ const getNextStep = (detail: BookingDetailResponse) => {
       amountLabel: '待支付量房费',
       actionKey: 'pay_survey_deposit' as const,
     };
+  }
+
+  if (designFeeQuoteStatus === 'pending') {
+    return {
+      title: '待确认并支付设计费',
+      description: '设计师已提交设计费报价，确认后再继续推进设计交付。',
+      actionText: '查看报价',
+      actionKey: 'view_design_quote' as const,
+    };
+  }
+
+  if (designFeeQuoteStatus === 'confirmed' && designFeeOrderStatus === 0) {
+    return {
+      title: '待支付设计费',
+      description: '设计费订单已生成，完成支付后设计师才会继续提交设计交付。',
+      actionText: '去支付设计费',
+      actionKey: 'view_design_quote' as const,
+    };
+  }
+
+  if (designFeeQuoteStatus === 'confirmed' && designFeeOrderStatus === 1) {
+    if (bridgeStarted) {
+      return {
+        title: currentStage === 'construction_quote_pending'
+          ? '待确认施工报价'
+          : currentStage === 'ready_to_start'
+            ? '待监理协调开工'
+            : '施工桥接中',
+        description: getProposalDescription(detail),
+      };
+    }
+
+    if (designDeliverableStatus === 'submitted' || designDeliverableStatus === 'rejected') {
+      return {
+        title: '查看设计交付',
+        description: getDesignDeliverableDescription(detail),
+        actionText: '查看交付',
+        actionKey: 'view_deliverable' as const,
+      };
+    }
+
+    if (detail.proposalId) {
+      return {
+        title: '查看正式方案',
+        description: getProposalDescription(detail),
+        actionText: '查看方案',
+        actionKey: 'view_proposal' as const,
+      };
+    }
   }
 
   switch (statusGroup) {
@@ -212,13 +411,13 @@ const getNextStep = (detail: BookingDetailResponse) => {
       }
       return {
         title: '查看详情',
-        description: flowSummary || '预约已进入后续订单或项目阶段。',
+        description: flowSummary || '预约已进入后续阶段。',
       };
     default:
       if (availableActions.includes('submit_budget')) {
         return {
           title: '等待预算确认',
-          description: flowSummary || '量房记录已确认，等待商家继续提交预算确认。',
+          description: flowSummary || '量房资料已上传，等待商家继续提交沟通确认。',
         };
       }
       if (availableActions.includes('create_proposal')) {
@@ -245,15 +444,15 @@ const getSummaryCopy = (detail: BookingDetailResponse, nextStep: ReturnType<type
     case 'pending_payment':
       return '商家已确认，请先完成量房费支付。';
     case 'completed':
-      return '预约前置流程已完成，已进入后续阶段。';
+      return detail.flowSummary || detail.booking.flowSummary || '预约前置流程已完成，已进入后续阶段。';
     case 'cancelled':
       return '当前预约流程已结束，如需继续服务请重新发起预约。';
     default:
       if (detail.siteSurveySummary?.status === 'submitted') {
-        return '量房记录已提交，等待你确认。';
+        return '量房资料已上传，设计师正在整理沟通确认。';
       }
       if (detail.budgetConfirmSummary?.status === 'submitted') {
-        return '预算确认已提交，等待你确认。';
+        return '沟通确认已提交，等待你确认。';
       }
       return nextStep.description;
   }
@@ -424,6 +623,7 @@ const BookingDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [budgetSubmitting, setBudgetSubmitting] = useState(false);
   const didFirstShowRef = useRef(true);
   const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -535,6 +735,27 @@ const BookingDetailPage: React.FC = () => {
     Taro.navigateTo({ url: `/pages/proposals/detail/index?id=${detail.proposalId}` });
   };
 
+  const handleViewDesignDeliverable = () => {
+    if (!detail?.booking?.id) {
+      return;
+    }
+    Taro.navigateTo({ url: `/pages/booking/design-deliverable/index?id=${detail.booking.id}` });
+  };
+
+  const handleViewDesignQuote = () => {
+    if (!detail?.booking?.id) {
+      return;
+    }
+    Taro.navigateTo({ url: `/pages/booking/design-quote/index?id=${detail.booking.id}` });
+  };
+
+  const handleViewSiteSurvey = () => {
+    if (!detail?.booking?.id) {
+      return;
+    }
+    Taro.navigateTo({ url: `/pages/booking/site-survey/index?id=${detail.booking.id}` });
+  };
+
   const handleCancelBooking = async () => {
     if (!detail?.booking?.id || canceling) {
       return;
@@ -560,6 +781,49 @@ const BookingDetailPage: React.FC = () => {
         }
       },
     });
+  };
+
+  const handleAcceptBudgetConfirm = async () => {
+    if (!detail?.booking?.id || budgetSubmitting) {
+      return;
+    }
+    try {
+      setBudgetSubmitting(true);
+      await acceptBookingBudgetConfirm(detail.booking.id);
+      Taro.showToast({ title: '已确认', icon: 'success' });
+      await fetchDetail();
+    } catch (error) {
+      showErrorToast(error, '确认失败');
+    } finally {
+      setBudgetSubmitting(false);
+    }
+  };
+
+  const handleRejectBudgetConfirm = async () => {
+    if (!detail?.booking?.id || budgetSubmitting) {
+      return;
+    }
+    Taro.showModal({
+      title: '驳回沟通确认',
+      content: '请补充驳回原因',
+      editable: true,
+      placeholderText: '请输入驳回原因',
+      success: async (res: { confirm: boolean; content?: string }) => {
+        if (!res.confirm) {
+          return;
+        }
+        try {
+          setBudgetSubmitting(true);
+          await rejectBookingBudgetConfirm(detail.booking.id, res.content || '用户要求调整沟通确认');
+          Taro.showToast({ title: '已退回', icon: 'success' });
+          await fetchDetail();
+        } catch (error) {
+          showErrorToast(error, '退回失败');
+        } finally {
+          setBudgetSubmitting(false);
+        }
+      },
+    } as any);
   };
 
   if (!auth.token) {
@@ -600,6 +864,8 @@ const BookingDetailPage: React.FC = () => {
   const nextStep = getNextStep(detail);
   const surveyStatus = getSurveyStatusMeta(detail.siteSurveySummary?.status);
   const budgetStatus = getBudgetStatusMeta(detail.budgetConfirmSummary?.status);
+  const deliverableStatus = getDeliverableStatusMeta(detail.designDeliverableSummary?.status);
+  const proposalStatus = getProposalStatusMeta(detail);
   const surveyDepositAmount = getSurveyDepositAmount(detail);
   const showSurveyDepositAction = nextStep.actionKey === 'pay_survey_deposit';
   const showProgressSection = (detail.statusGroup || booking.statusGroup) === 'in_service'
@@ -610,6 +876,10 @@ const BookingDetailPage: React.FC = () => {
   const depositMetric = getDepositMetric(detail);
   const nextActionLabel = showSurveyDepositAction
     ? '去支付'
+    : nextStep.actionKey === 'view_design_quote'
+      ? (nextStep.actionText || '查看报价')
+    : nextStep.actionKey === 'view_deliverable'
+      ? (nextStep.actionText || '查看交付')
     : nextStep.actionKey === 'view_proposal'
       ? (nextStep.actionText || '查看设计方案')
       : '';
@@ -618,6 +888,10 @@ const BookingDetailPage: React.FC = () => {
   const preferredDateDisplay = getPreferredDateDisplay(booking.preferredDate);
   const availableActions = detail.availableActions || booking.availableActions || [];
   const canCancelBooking = availableActions.includes('cancel');
+  const showBudgetConfirmActions = detail.budgetConfirmSummary?.status === 'submitted';
+  const bridgeStarted = proposalStatus.label === '已完成';
+  const budgetRejectProgress = getBudgetRejectProgress(detail.budgetConfirmSummary);
+  const showBridgeGuide = Boolean(detail.proposalId || bridgeStarted);
 
   return (
     <View className="page booking-detail-page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
@@ -672,7 +946,18 @@ const BookingDetailPage: React.FC = () => {
                   {nextActionLabel}
                 </Button>
               ) : nextActionLabel ? (
-                <Button variant="primary" className="w-full" disabled={canceling} onClick={handleViewProposal}>
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  disabled={canceling}
+                  onClick={
+                    nextStep.actionKey === 'view_design_quote'
+                      ? handleViewDesignQuote
+                      : nextStep.actionKey === 'view_deliverable'
+                        ? handleViewDesignDeliverable
+                        : handleViewProposal
+                  }
+                >
                   {nextActionLabel}
                 </Button>
               ) : null}
@@ -750,12 +1035,137 @@ const BookingDetailPage: React.FC = () => {
             tagLabel={showProgressSection ? surveyStatus.label : '待推进'}
             tagVariant={showProgressSection ? surveyStatus.variant : 'default'}
           />
+          {detail.siteSurveySummary ? (
+            <View className="booking-detail-page__budget-actions">
+              <View className="booking-detail-page__budget-actions-row">
+                <Button
+                  variant="primary"
+                  className="booking-detail-page__budget-actions-button"
+                  onClick={handleViewSiteSurvey}
+                >
+                  查看量房资料
+                </Button>
+              </View>
+            </View>
+          ) : null}
           <ProgressItem
             title="预算确认"
-            description={showProgressSection ? getBudgetDescription(detail.budgetConfirmSummary) : '量房记录确认后，商家会继续提交预算确认。'}
+            description={showProgressSection ? getBudgetDescription(detail.budgetConfirmSummary) : '量房资料上传后，商家会继续提交沟通确认。'}
             tagLabel={showProgressSection ? budgetStatus.label : '未开始'}
             tagVariant={showProgressSection ? budgetStatus.variant : 'default'}
           />
+          {detail.budgetConfirmSummary ? (
+            <View className="booking-detail-page__budget-actions">
+              <Text className="booking-detail-page__budget-actions-copy">
+                风格方向：{detail.budgetConfirmSummary.styleDirection || '暂未填写'}
+              </Text>
+              <Text className="booking-detail-page__budget-actions-copy">
+                空间需求：{detail.budgetConfirmSummary.spaceRequirements || '暂未填写'}
+              </Text>
+              <Text className="booking-detail-page__budget-actions-copy">
+                可接受工期：{detail.budgetConfirmSummary.expectedDurationDays ? `${detail.budgetConfirmSummary.expectedDurationDays} 天` : '暂未填写'}
+              </Text>
+              <Text className="booking-detail-page__budget-actions-copy">
+                特殊要求：{detail.budgetConfirmSummary.specialRequirements || '暂无特殊要求'}
+              </Text>
+            </View>
+          ) : null}
+          {budgetRejectProgress ? (
+            <View className="booking-detail-page__budget-actions">
+              <Text className="booking-detail-page__budget-actions-copy">
+                沟通确认驳回次数：{budgetRejectProgress}
+                {detail.budgetConfirmSummary?.status === 'rejected'
+                  ? detail.budgetConfirmSummary?.canResubmit
+                    ? '，当前仍可重提。'
+                    : '，已达到关闭/退款阈值。'
+                  : ''}
+              </Text>
+            </View>
+          ) : null}
+          {showBudgetConfirmActions ? (
+            <View className="booking-detail-page__budget-actions">
+              <Text className="booking-detail-page__budget-actions-copy">沟通确认已提交，请确认预算区间、设计方向与空间需求是否一致。</Text>
+              <View className="booking-detail-page__budget-actions-row">
+                <Button
+                  variant="secondary"
+                  className="booking-detail-page__budget-actions-button"
+                  disabled={budgetSubmitting}
+                  onClick={handleRejectBudgetConfirm}
+                >
+                  驳回
+                </Button>
+                <Button
+                  variant="primary"
+                  className="booking-detail-page__budget-actions-button"
+                  disabled={budgetSubmitting}
+                  loading={budgetSubmitting}
+                  onClick={handleAcceptBudgetConfirm}
+                >
+                  确认沟通确认
+                </Button>
+              </View>
+            </View>
+          ) : null}
+          <ProgressItem
+            title="设计交付确认"
+            description={getDesignDeliverableDescription(detail)}
+            tagLabel={deliverableStatus.label}
+            tagVariant={deliverableStatus.variant}
+          />
+          {(detail.designDeliverableSummary?.status === 'submitted' || detail.designDeliverableSummary?.status === 'rejected') ? (
+            <View className="booking-detail-page__budget-actions">
+              <View className="booking-detail-page__budget-actions-row">
+                <Button
+                  variant="primary"
+                  className="booking-detail-page__budget-actions-button"
+                  onClick={handleViewDesignDeliverable}
+                >
+                  查看交付
+                </Button>
+              </View>
+            </View>
+          ) : null}
+          <ProgressItem
+            title="正式方案确认"
+            description={getProposalDescription(detail)}
+            tagLabel={proposalStatus.label}
+            tagVariant={proposalStatus.variant}
+          />
+          {detail.proposalId && !bridgeStarted ? (
+            <View className="booking-detail-page__budget-actions">
+              <View className="booking-detail-page__budget-actions-row">
+                <Button
+                  variant="primary"
+                  className="booking-detail-page__budget-actions-button"
+                  onClick={handleViewProposal}
+                >
+                  查看方案
+                </Button>
+              </View>
+            </View>
+          ) : null}
+          {showBridgeGuide ? (
+            <View className="booking-detail-page__budget-actions">
+              <Text className="booking-detail-page__budget-actions-copy">
+                施工桥接顺序：报价基线数据 → 施工主体选择 → 施工报价确认 → 待监理协调开工。
+              </Text>
+              <Text className="booking-detail-page__budget-actions-copy">
+                {getBridgeGuide(detail)}
+              </Text>
+              <Text className="booking-detail-page__budget-actions-copy">
+                {getBridgeBaselineText(detail.baselineStatus)}；施工主体：{getConstructionSubjectText(
+                  detail.constructionSubjectType,
+                  detail.constructionSubjectDisplayName,
+                )}。
+              </Text>
+              <Text className="booking-detail-page__budget-actions-copy">
+                {detail.plannedStartDate
+                  ? `计划进场：${formatServerDateTime(detail.plannedStartDate)}`
+                  : '计划进场时间待监理登记'}
+                {detail.supervisorSummary?.latestLogTitle ? `；最近监理同步：${detail.supervisorSummary.latestLogTitle}` : ''}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </View>

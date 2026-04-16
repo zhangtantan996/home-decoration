@@ -48,6 +48,7 @@ export function QuoteTaskDetailPage() {
             <div className="data-grid detail-grid-two">
               <article><span>预计工期</span><strong>{data.estimatedDays > 0 ? `${data.estimatedDays} 天` : '待补充'}</strong></article>
               <article><span>施工总价</span><strong>{data.totalFeeText}</strong></article>
+              <article><span>首笔支付</span><strong>{data.paymentPlanSummary[0] ? `${data.paymentPlanSummary[0].name} · ${data.paymentPlanSummary[0].amountText}` : '确认后生成'}</strong></article>
               <article><span>面积</span><strong>{data.taskSummary.area > 0 ? `${data.taskSummary.area}㎡` : '待补充'}</strong></article>
               <article><span>户型</span><strong>{data.taskSummary.layout || '待补充'}</strong></article>
             </div>
@@ -67,8 +68,14 @@ export function QuoteTaskDetailPage() {
                 {data.items.map((item) => (
                   <div className="list-card" key={item.id}>
                     <div>
-                      <h3>清单项 #{item.quoteListItemId}</h3>
-                      <p>{item.remark || '无备注'}</p>
+                      <h3>{item.itemName}</h3>
+                      <p>
+                        基准量 {item.baselineQuantity ?? '-'}{item.unit}
+                        {' · '}
+                        报价量 {item.quotedQuantity ?? item.baselineQuantity ?? '-'}{item.unit}
+                      </p>
+                      {item.quantityChangeReason ? <p>偏差说明：{item.quantityChangeReason}</p> : null}
+                      {item.remark ? <p>备注：{item.remark}</p> : null}
                     </div>
                     <div className="list-meta">
                       <strong>{item.amountText}</strong>
@@ -85,7 +92,7 @@ export function QuoteTaskDetailPage() {
           <div className="panel-head">
             <div>
               <p className="kicker eyebrow-accent">确认动作</p>
-              <h2 className="section-title">确认后项目进入待开工状态</h2>
+                <h2 className="section-title">确认后进入待支付与待监理协调开工</h2>
             </div>
           </div>
           {message ? <div className="status-note">{message}</div> : null}
@@ -102,7 +109,7 @@ export function QuoteTaskDetailPage() {
                 setMessage('');
                 try {
                   await confirmQuoteTaskSubmission(data.submissionId);
-                  setMessage('施工报价已确认，项目已进入待开工阶段。');
+                  setMessage('施工报价已确认，项目已进入待监理协调开工阶段。');
                   navigate('/progress');
                 } catch (submitError) {
                   if (isWebApiConflict(submitError)) {

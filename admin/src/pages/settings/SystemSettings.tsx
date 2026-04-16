@@ -141,6 +141,7 @@ const SystemSettings: React.FC = () => {
                 materialFeeRate: Math.round(Number(bizConfigMap['fee.platform.material_fee_rate'] || 0.05) * 100),
                 withdrawMinAmount: Number(bizConfigMap['withdraw.min_amount'] || 100),
                 settlementAutoDays: Number(bizConfigMap['settlement.auto_days'] || 7),
+                budgetConfirmRejectLimit: Number(bizConfigMap['booking.budget_confirm_reject_limit'] || 3),
             });
         } catch (error) {
             console.error(error);
@@ -177,45 +178,42 @@ const SystemSettings: React.FC = () => {
     };
 
     const buildBizPayload = async () => {
-        try {
-            const values = await bizForm.validateFields();
-            const checkStages = (stages: { name: string; percentage: number }[] | undefined, label: string) => {
-                if (!stages || stages.length === 0) return true;
-                const total = stages.reduce((s, item) => s + (Number(item?.percentage) || 0), 0);
-                if (total !== 100) { throw new Error(`${label}各阶段比例之和为 ${total}%，须等于 100%`); }
-                return true;
-            };
-            if (values.designFeePaymentMode === 'staged') {
-                checkStages(values.designFeeStages, '设计费');
-            }
-            if (values.constructionPaymentMode === 'milestone') {
-                checkStages(values.constructionFeeStages, '施工费');
-            }
-            return {
-                'booking.survey_deposit_default': String(values.surveyDepositDefault || 500),
-                'booking.survey_refund_notice': String(values.surveyRefundNotice || ''),
-                'booking.survey_refund_user_percent': String(values.surveyDepositRefundRate || 60),
-                'order.design_fee_payment_mode': String(values.designFeePaymentMode || 'onetime'),
-                'order.design_fee_stages': JSON.stringify(values.designFeeStages || []),
-                'order.construction_payment_mode': String(values.constructionPaymentMode || 'milestone'),
-                'order.construction_fee_stages': JSON.stringify(values.constructionFeeStages || []),
-                'order.design_fee_unlock_download': String(values.designFeeUnlockDownload || 'true'),
-                'booking.survey_deposit_min': String(values.surveyDepositMin || 100),
-                'booking.survey_deposit_max': String(values.surveyDepositMax || 2000),
-                'design.fee_quote_expire_hours': String(values.designFeeQuoteExpireHours || 72),
-                'design.deliverable_deadline_days': String(values.deliverableDeadlineDays || 30),
-                'construction.release_delay_days': String(values.constructionReleaseDelayDays || 3),
-                'booking.survey_deposit_refund_rate': String((values.surveyDepositRefundRate || 60) / 100),
-                'fee.platform.intent_fee_rate': String((values.intentFeeRate ?? 0) / 100),
-                'fee.platform.design_fee_rate': String((values.designFeeRate ?? 10) / 100),
-                'fee.platform.construction_fee_rate': String((values.constructionFeeRate ?? 10) / 100),
-                'fee.platform.material_fee_rate': String((values.materialFeeRate ?? 5) / 100),
-                'withdraw.min_amount': String(values.withdrawMinAmount || 100),
-                'settlement.auto_days': String(values.settlementAutoDays || 7),
-            };
-        } catch (error) {
-            throw error;
+        const values = await bizForm.validateFields();
+        const checkStages = (stages: { name: string; percentage: number }[] | undefined, label: string) => {
+            if (!stages || stages.length === 0) return true;
+            const total = stages.reduce((s, item) => s + (Number(item?.percentage) || 0), 0);
+            if (total !== 100) { throw new Error(`${label}各阶段比例之和为 ${total}%，须等于 100%`); }
+            return true;
+        };
+        if (values.designFeePaymentMode === 'staged') {
+            checkStages(values.designFeeStages, '设计费');
         }
+        if (values.constructionPaymentMode === 'milestone') {
+            checkStages(values.constructionFeeStages, '施工费');
+        }
+        return {
+            'booking.survey_deposit_default': String(values.surveyDepositDefault || 500),
+            'booking.survey_refund_notice': String(values.surveyRefundNotice || ''),
+            'booking.survey_refund_user_percent': String(values.surveyDepositRefundRate || 60),
+            'order.design_fee_payment_mode': String(values.designFeePaymentMode || 'onetime'),
+            'order.design_fee_stages': JSON.stringify(values.designFeeStages || []),
+            'order.construction_payment_mode': String(values.constructionPaymentMode || 'milestone'),
+            'order.construction_fee_stages': JSON.stringify(values.constructionFeeStages || []),
+            'order.design_fee_unlock_download': String(values.designFeeUnlockDownload || 'true'),
+            'booking.survey_deposit_min': String(values.surveyDepositMin || 100),
+            'booking.survey_deposit_max': String(values.surveyDepositMax || 2000),
+            'design.fee_quote_expire_hours': String(values.designFeeQuoteExpireHours || 72),
+            'design.deliverable_deadline_days': String(values.deliverableDeadlineDays || 30),
+            'construction.release_delay_days': String(values.constructionReleaseDelayDays || 3),
+            'booking.survey_deposit_refund_rate': String((values.surveyDepositRefundRate || 60) / 100),
+            'fee.platform.intent_fee_rate': String((values.intentFeeRate ?? 0) / 100),
+            'fee.platform.design_fee_rate': String((values.designFeeRate ?? 10) / 100),
+            'fee.platform.construction_fee_rate': String((values.constructionFeeRate ?? 10) / 100),
+            'fee.platform.material_fee_rate': String((values.materialFeeRate ?? 5) / 100),
+            'withdraw.min_amount': String(values.withdrawMinAmount || 100),
+            'settlement.auto_days': String(values.settlementAutoDays || 7),
+            'booking.budget_confirm_reject_limit': String(values.budgetConfirmRejectLimit || 3),
+        };
     };
 
     const requestSave = async (action: 'base' | 'payment' | 'biz') => {
@@ -434,7 +432,14 @@ const SystemSettings: React.FC = () => {
                                         <InputNumber min={0} max={100} step={5} precision={0} style={{ width: '100%' }} addonAfter="%" />
                                     </Form.Item>
                                 </Col>
-                                <Col span={16}>
+                                <Col span={8}>
+                                    <Form.Item label="沟通确认驳回阈值" name="budgetConfirmRejectLimit" tooltip="用户驳回沟通确认达到阈值后，预约进入关闭/退款链">
+                                        <InputNumber min={1} max={10} precision={0} style={{ width: '100%' }} addonAfter="次" />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                            <Row gutter={16}>
+                                <Col span={24}>
                                     <Form.Item label="退款说明（展示给用户）" name="surveyRefundNotice">
                                         <Input.TextArea rows={2} placeholder="如：量房定金支付后，取消预约将退还60%定金" />
                                     </Form.Item>

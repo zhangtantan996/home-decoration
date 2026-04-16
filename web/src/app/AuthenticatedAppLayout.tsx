@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import companyLogo from '../assets/company-logo.png';
+import { PaymentQRCodeDialog } from '../components/PaymentQRCodeDialog';
 import { RouteScrollReset } from '../components/RouteScrollReset';
 import { useSessionStore } from '../modules/session/sessionStore';
 import { getNotificationUnreadCount, syncNotificationUnreadCountCache } from '../services/notifications';
@@ -74,6 +75,7 @@ export function AuthenticatedAppLayout() {
   return (
     <div className={styles.shell}>
       <RouteScrollReset />
+      <PaymentQRCodeDialog />
       <a className="skip-link" href="#app-main">跳到正文</a>
       <header className={styles.header}>
         <div className={styles.headerInner}>

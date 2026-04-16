@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Dropdown, Badge, Button, Empty, Spin, message } from 'antd';
+import { Dropdown, Badge, Button, Empty, Spin, Tag, message } from 'antd';
 import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
 import { merchantNotificationApi } from '../services/merchantApi';
+import { getMerchantNotificationTagColor, MERCHANT_NOTIFICATION_TYPE_LABELS } from '../constants/statuses';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 import { withRouterBasename } from '../utils/env';
 import {
@@ -34,6 +35,8 @@ const POLL_POLICY: AutoRetryPolicy = {
     baseDelayMs: 1000,
     maxDelayMs: 30000,
 };
+
+const resolveNotificationLabel = (type: string) => MERCHANT_NOTIFICATION_TYPE_LABELS[type] || '系统通知';
 
 const getErrorStatus = (error: unknown): number | undefined => {
     if (typeof error !== 'object' || error === null || !('response' in error)) {
@@ -386,6 +389,17 @@ const MerchantNotificationDropdown: React.FC = () => {
                             全部已读
                         </Button>
                     )}
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                            setOpen(false);
+                            window.location.href = withRouterBasename('/notifications');
+                        }}
+                        style={{ fontSize: 12 }}
+                    >
+                        查看全部
+                    </Button>
                 </div>
             </div>
 
@@ -426,6 +440,12 @@ const MerchantNotificationDropdown: React.FC = () => {
                                         }}>
                                             {item.title}
                                         </span>
+                                        <Tag
+                                            color={getMerchantNotificationTagColor(item.type)}
+                                            style={{ marginInlineStart: 8, marginInlineEnd: 0 }}
+                                        >
+                                            {resolveNotificationLabel(item.type)}
+                                        </Tag>
                                         {!item.isRead && (
                                             <span style={{
                                                 display: 'inline-block',

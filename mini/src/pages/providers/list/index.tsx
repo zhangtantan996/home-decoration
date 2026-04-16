@@ -22,6 +22,7 @@ import {
 import { useAuthStore } from "@/store/auth";
 import { showErrorToast } from "@/utils/error";
 import { getMiniNavMetrics } from "@/utils/navLayout";
+import { hasQuoteLeadDraft } from "@/utils/quoteLeadDraft";
 
 import "./index.scss";
 
@@ -81,6 +82,7 @@ export default function ProviderList() {
     { label: "装修公司", value: "company" },
     { label: "工长", value: "foreman" },
   ];
+  const fromQuote = router.params.fromQuote === "1" && hasQuoteLeadDraft();
 
   const fetchProviders = async (reset = false) => {
     if (loading && !reset) {
@@ -148,7 +150,7 @@ export default function ProviderList() {
 
   const handleCardClick = (id: number) => {
     Taro.navigateTo({
-      url: `/pages/providers/detail/index?id=${id}&type=${activeTab}`,
+      url: `/pages/providers/detail/index?id=${id}&type=${activeTab}${fromQuote ? "&fromQuote=1" : ""}`,
     });
   };
 
@@ -214,6 +216,16 @@ export default function ProviderList() {
       </View>
 
       <View className="provider-list-page__content">
+        {fromQuote ? (
+          <View className="provider-list-page__quote-banner">
+            <Text className="provider-list-page__quote-banner-title">
+              已为你生成预估结果
+            </Text>
+            <Text className="provider-list-page__quote-banner-copy">
+              选择更匹配的服务商后，可以直接带着这份需求继续预约沟通。
+            </Text>
+          </View>
+        ) : null}
         {loading && page === 1 ? (
           <View>
             <View className="provider-list-page__loading-block">

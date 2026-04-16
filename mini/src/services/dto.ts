@@ -10,7 +10,6 @@ export interface ProviderPriceDisplayDTO {
 
 export interface ProviderDTO {
   id: number;
-  userId: number;
   providerType: number;
   companyName: string;
   nickname: string;
@@ -20,8 +19,6 @@ export interface ProviderDTO {
   budgetControl: number;
   completedCnt: number;
   verified: boolean;
-  latitude: number;
-  longitude: number;
   distance?: number;
   subType: string;
   entityType?: 'personal' | 'company';
@@ -45,7 +42,6 @@ export interface ProviderDTO {
 export interface ProviderDetailDTO {
   provider?: {
     id?: number;
-    userId?: number;
     providerType?: number;
     displayName?: string;
     companyName?: string;
@@ -64,7 +60,6 @@ export interface ProviderDetailDTO {
     teamSize?: number;
     establishedYear?: number;
     followersCount?: number;
-    officeAddress?: string;
     certifications?: StringListValue;
     companyAlbumJson?: StringListValue;
     priceMin?: number;
@@ -75,13 +70,10 @@ export interface ProviderDetailDTO {
     isSettled?: boolean;
   };
   user?: {
-    id?: number;
-    publicId?: string;
     nickname?: string;
     avatar?: string;
   };
   id: number;
-  userId: number;
   providerType: number;
   displayName?: string;
   companyName?: string;
@@ -96,7 +88,6 @@ export interface ProviderDetailDTO {
   establishedYear?: number;
   certifications?: StringListValue;
   serviceArea?: StringListValue;
-  officeAddress?: string;
   companyAlbumJson?: StringListValue;
   specialty?: string;
   highlightTags?: StringListValue;
@@ -241,6 +232,51 @@ export interface ProjectDetailDTO extends ProjectDTO {
   logs?: Array<Record<string, unknown>>;
   escrow?: Record<string, unknown>;
   riskSummary?: ProjectRiskSummaryDTO;
+  paymentPlans?: Array<{
+    id: number;
+    orderId?: number;
+    seq?: number;
+    name?: string;
+    amount?: number;
+    status?: number;
+    activatedAt?: string;
+    dueAt?: string;
+    expiresAt?: string;
+    payable?: boolean;
+    payableReason?: string;
+    planType?: string;
+  }>;
+  nextPayablePlan?: {
+    id: number;
+    orderId?: number;
+    seq?: number;
+    name?: string;
+    amount?: number;
+    status?: number;
+    activatedAt?: string;
+    dueAt?: string;
+    expiresAt?: string;
+    payable?: boolean;
+    payableReason?: string;
+    planType?: string;
+  } | null;
+  changeOrders?: Array<{
+    id: number;
+    projectId: number;
+    title?: string;
+    changeType?: string;
+    reason?: string;
+    description?: string;
+    amountImpact?: number;
+    timelineImpact?: number;
+    status?: string;
+    evidenceUrls?: string[];
+    createdAt?: string;
+    updatedAt?: string;
+    userRejectReason?: string;
+    settlementReason?: string;
+    payablePlanId?: number;
+  }>;
 }
 
 export interface RefundTypeEstimateDTO {
@@ -307,6 +343,14 @@ export interface NotificationDTO {
   isRead: boolean;
   createdAt?: string;
   actionUrl?: string;
+  category?: 'system' | 'project' | 'payment';
+  kind?: 'info' | 'todo' | 'risk' | 'result' | 'governance';
+  priority?: 'normal' | 'high' | 'urgent';
+  actionRequired?: boolean;
+  actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+  actionLabel?: string;
+  supportsWeb?: boolean;
+  supportsMini?: boolean;
 }
 
 export interface InspirationAuthorDTO {

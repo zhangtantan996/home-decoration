@@ -55,7 +55,7 @@ const InlinePill: React.FC<{
 
 const TASK_STATUS_META: Record<string, { text: string; tone: PillTone }> = {
   draft: { text: "草稿", tone: "muted" },
-  ready_for_selection: { text: "待选工长", tone: "warning" },
+  ready_for_selection: { text: "待选施工主体", tone: "warning" },
   pricing_in_progress: { text: "报价处理中", tone: "accent" },
   submitted_to_user: { text: "已提交用户", tone: "accent" },
   user_confirmed: { text: "用户已确认", tone: "success" },
@@ -90,7 +90,7 @@ const BUSINESS_STAGE_META: Record<string, { text: string; tone: PillTone }> = {
   proposal_confirmed: { text: "设计已确认", tone: "success" },
   constructor_pending: { text: "待选施工方", tone: "warning" },
   construction_quote_pending: { text: "施工报价待确认", tone: "accent" },
-  ready_to_start: { text: "待开工", tone: "warning" },
+  ready_to_start: { text: "待监理协调开工", tone: "warning" },
   in_progress: { text: "施工中", tone: "accent" },
   milestone_review: { text: "节点验收中", tone: "warning" },
   completed: { text: "已完工", tone: "success" },
@@ -171,6 +171,36 @@ const quoteSourceTypeLabel = (value?: string) => {
   }
 };
 
+const bridgeBaselineStatusLabel = (value?: string) => {
+  switch (String(value || '').trim()) {
+    case 'submitted':
+      return '已提交';
+    case 'ready_for_selection':
+      return '可进入施工主体选择';
+    case 'pending_submission':
+      return '待提交';
+    default:
+      return value || '待同步';
+  }
+};
+
+const constructionSubjectLabel = (subjectType?: string, displayName?: string) => {
+  if (subjectType === 'company') {
+    return displayName ? `装修公司主体 · ${displayName}` : '装修公司主体';
+  }
+  if (subjectType === 'foreman') {
+    return displayName ? `独立工长主体 · ${displayName}` : '独立工长主体';
+  }
+  return '待确认施工主体';
+};
+
+const kickoffStatusLabel = (kickoffStatus?: string, plannedStartDate?: string) => {
+  if (kickoffStatus === 'scheduled') {
+    return plannedStartDate ? `已排期（${formatDateTime(plannedStartDate)}）` : '已排期';
+  }
+  return '待监理协调登记进场时间';
+};
+
 const QuoteListManagement: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -234,7 +264,7 @@ const QuoteListManagement: React.FC = () => {
     setProviderOptions(
       providers.map((provider) => ({
         value: provider.id,
-        label: `${provider.realName || provider.companyName || `服务商#${provider.id}`} · ${provider.providerType === 3 ? "工长" : "装修公司"}`,
+        label: `${provider.realName || provider.companyName || `服务商#${provider.id}`} · ${provider.providerType === 3 ? "独立工长" : "装修公司"}`,
       })),
     );
   };
@@ -330,7 +360,7 @@ const QuoteListManagement: React.FC = () => {
         detail.quoteList.id,
       );
       if (result.ok) {
-        message.success("前置数据完整，可以进入选工长阶段");
+        message.success("前置数据完整，可以进入选施工主体阶段");
       } else {
         message.warning(`前置数据仍缺少：${result.missingFields.join("、")}`);
       }
@@ -349,10 +379,10 @@ const QuoteListManagement: React.FC = () => {
       setSubmitting(true);
       const result = await adminQuoteApi.recommendForemen(detail.quoteList.id);
       setRecommendedForemen(result.list || []);
-      message.success(`已生成 ${result.list?.length || 0} 位推荐工长`);
+      message.success(`已生成 ${result.list?.length || 0} 位推荐施工主体`);
     } catch (error) {
       setRecommendedForemen([]);
-      message.error(readErrorMessage(error, "推荐工长失败"));
+      message.error(readErrorMessage(error, "推荐施工主体失败"));
     } finally {
       setSubmitting(false);
     }
@@ -408,7 +438,7 @@ const QuoteListManagement: React.FC = () => {
   const handleSelectForemen = async () => {
     if (!detail) return;
     if (!selectedForemanIds.length) {
-      message.warning("请先选择工长");
+      message.warning("请先选择施工主体");
       return;
     }
     try {
@@ -417,11 +447,11 @@ const QuoteListManagement: React.FC = () => {
         detail.quoteList.id,
         selectedForemanIds,
       );
-      message.success("参与工长已更新");
+      message.success("参与施工主体已更新");
       await openDetail(detail.quoteList.id);
       await loadQuoteTasks();
     } catch (error) {
-      message.error(readErrorMessage(error, "选择工长失败"));
+      message.error(readErrorMessage(error, "选择施工主体失败"));
     } finally {
       setSubmitting(false);
     }
@@ -518,7 +548,7 @@ const QuoteListManagement: React.FC = () => {
         renderStatusPill(USER_CONFIRM_META[value || "pending"]),
     },
     {
-      title: "参与工长",
+      title: "参与施工主体",
       dataIndex: "invitationCount",
       key: "invitationCount",
       width: 100,
@@ -564,7 +594,12 @@ const QuoteListManagement: React.FC = () => {
     <div className="hz-page-stack">
       <PageHeader
         title="报价任务批次管理"
-        description="按任务批次维护报价前置数据、工长筛选、标准项注入与报价草稿生成流程。"
+        description="按任务批次维护报价前置数据、施工主体筛选、标准项注入与报价草稿生成流程。"
+        extra={(
+          <Button onClick={() => navigate('/projects/quotes/templates')}>
+            施工报价模板
+          </Button>
+        )}
       />
 
       <div className="hz-stat-grid">
@@ -576,11 +611,11 @@ const QuoteListManagement: React.FC = () => {
           footer="当前列表范围内任务数"
         />
         <StatCard
-          title="待选工长"
+          title="待选施工主体"
           value={stats.readyCount}
           icon={<ClockCircleOutlined />}
           tone="warning"
-          footer="前置数据完整，待进入工长筛选"
+          footer="前置数据完整，待进入施工主体筛选"
         />
         <StatCard
           title="已完成确认"
@@ -771,7 +806,7 @@ const QuoteListManagement: React.FC = () => {
                 loading={submitting}
                 disabled={detail.quoteList.prerequisiteStatus !== "complete"}
               >
-                按工长价格库生成草稿
+                按施工主体价格库生成草稿
               </Button>
             </Space>
           ) : null
@@ -788,7 +823,7 @@ const QuoteListManagement: React.FC = () => {
                   ]?.text || "待补齐"}
                 </div>
                 <div className="hz-summary-card__meta">
-                  决定是否可进入选工长阶段
+                  决定是否可进入选施工主体阶段
                 </div>
               </div>
               <div className="hz-summary-card">
@@ -811,12 +846,12 @@ const QuoteListManagement: React.FC = () => {
                 </div>
               </div>
               <div className="hz-summary-card">
-                <div className="hz-summary-card__label">参与工长</div>
+                <div className="hz-summary-card__label">参与施工主体</div>
                 <div className="hz-summary-card__value">
                   {detail.invitations.length}
                 </div>
                 <div className="hz-summary-card__meta">
-                  已选入任务的工长数量
+                  已选入任务的施工主体数量
                 </div>
               </div>
               <div className="hz-summary-card">
@@ -912,6 +947,24 @@ const QuoteListManagement: React.FC = () => {
                 <Descriptions.Item label="截止时间">
                   {formatDateTime(detail.quoteList.deadlineAt)}
                 </Descriptions.Item>
+                <Descriptions.Item label="报价基线状态">
+                  {bridgeBaselineStatusLabel(detail.baselineStatus)}
+                </Descriptions.Item>
+                <Descriptions.Item label="施工主体">
+                  {constructionSubjectLabel(
+                    detail.constructionSubjectType,
+                    detail.constructionSubjectDisplayName,
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="待开工协同">
+                  {kickoffStatusLabel(detail.kickoffStatus, detail.plannedStartDate)}
+                </Descriptions.Item>
+                <Descriptions.Item label="监理摘要" span={2}>
+                  {detail.supervisorSummary?.latestLogTitle || '暂无监理同步'}
+                </Descriptions.Item>
+                <Descriptions.Item label="未处理风险">
+                  {detail.supervisorSummary?.unhandledRiskCount ?? 0}
+                </Descriptions.Item>
               </Descriptions>
             </Card>
 
@@ -1004,7 +1057,7 @@ const QuoteListManagement: React.FC = () => {
                     onClick={() => void handleValidatePrerequisites()}
                     loading={submitting}
                   >
-                    校验并进入选工长
+                    校验并进入选施工主体
                   </Button>
                 </Space>
               }
@@ -1020,9 +1073,9 @@ const QuoteListManagement: React.FC = () => {
                   message={
                     detail.quoteList.prerequisiteStatus === "complete"
                       ? "前置数据已完整"
-                      : "请先补齐前置数据后再进入工长筛选"
+                      : "请先补齐前置数据后再进入施工主体筛选"
                   }
-                  description="报价任务的面积、房型、施工范围、服务城市和目标工种会直接影响推荐工长和后续价格库匹配结果。"
+                  description="报价任务的面积、房型、施工范围、服务城市和目标工种会直接影响推荐施工主体和后续价格库匹配结果。"
                 />
                 <Form form={prerequisiteForm} layout="vertical">
                   <Space style={{ width: "100%" }} size={16} align="start">
@@ -1081,7 +1134,7 @@ const QuoteListManagement: React.FC = () => {
                   <Form.Item name="notes" label="补充说明">
                     <Input.TextArea
                       rows={4}
-                      placeholder="补充任何影响报价与工长筛选的约束条件。"
+                      placeholder="补充任何影响报价与施工主体筛选的约束条件。"
                     />
                   </Form.Item>
                 </Form>
@@ -1123,7 +1176,7 @@ const QuoteListManagement: React.FC = () => {
 
             <Card
               className="hz-panel-card"
-              title="工长选择与推荐"
+              title="施工主体选择与推荐"
               extra={
                 <Space>
                   <Button
@@ -1132,7 +1185,7 @@ const QuoteListManagement: React.FC = () => {
                     loading={submitting}
                     disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                   >
-                    推荐工长
+                    推荐施工主体
                   </Button>
                   <Button
                     type="primary"
@@ -1140,7 +1193,7 @@ const QuoteListManagement: React.FC = () => {
                     loading={submitting}
                     disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                   >
-                    确认参与工长
+                    确认参与施工主体
                   </Button>
                 </Space>
               }
@@ -1149,10 +1202,8 @@ const QuoteListManagement: React.FC = () => {
                 <Select
                   mode="multiple"
                   style={{ width: "100%" }}
-                  placeholder="手动选择工长"
-                  options={providerOptions.filter((option) =>
-                    option.label.includes("工长"),
-                  )}
+                  placeholder="手动选择施工主体"
+                  options={providerOptions}
                   value={selectedForemanIds}
                   onChange={(values) => setSelectedForemanIds(values)}
                   disabled={detail.quoteList.prerequisiteStatus !== "complete"}
@@ -1162,7 +1213,7 @@ const QuoteListManagement: React.FC = () => {
                   <Alert
                     type="info"
                     showIcon
-                    message="规则推荐工长"
+                    message="规则推荐施工主体"
                     description={
                       <div className="hz-quote-list" style={{ marginTop: 12 }}>
                         {recommendedForemen.map((item) => (
@@ -1213,7 +1264,7 @@ const QuoteListManagement: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <Empty description="暂无已选工长，请通过规则推荐或手动添加。" />
+                  <Empty description="暂无已选施工主体，请通过规则推荐或手动添加。" />
                 )}
               </Space>
             </Card>
@@ -1224,7 +1275,7 @@ const QuoteListManagement: React.FC = () => {
                   type="info"
                   showIcon
                   message="草稿生成规则"
-                  description="系统会根据前置数据、标准施工项和工长价格库生成报价草稿；缺失映射或缺失价格的条目会明确标记，不会静默吞掉。"
+                  description="系统会根据前置数据、标准施工项和施工主体价格库生成报价草稿；缺失映射或缺失价格的条目会明确标记，不会静默吞掉。"
                 />
                 <div className="hz-panel-muted">
                   <div
@@ -1243,7 +1294,7 @@ const QuoteListManagement: React.FC = () => {
                       lineHeight: 1.75,
                     }}
                   >
-                    建议先完成前置数据校验与工长确认，再生成草稿并进入“报价对比
+                    建议先完成前置数据校验与施工主体确认，再生成草稿并进入“报价对比
                     / 提交用户确认”页面处理最终比价结果。
                   </div>
                 </div>

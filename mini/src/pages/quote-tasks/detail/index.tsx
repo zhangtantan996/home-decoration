@@ -134,6 +134,10 @@ const QuoteTaskDetailPage: React.FC = () => {
               <Text>¥{detail.totalAmount.toLocaleString()}</Text>
             </View>
             <View className="flex justify-between text-sm py-xs border-b border-gray-100">
+              <Text className="text-gray-500">首笔支付</Text>
+              <Text>{detail.paymentPlanSummary[0] ? `${detail.paymentPlanSummary[0].name} ¥${detail.paymentPlanSummary[0].amount.toLocaleString()}` : '确认后生成'}</Text>
+            </View>
+            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
               <Text className="text-gray-500">预计工期</Text>
               <Text>{detail.estimatedDays > 0 ? `${detail.estimatedDays} 天` : '待补充'}</Text>
             </View>
@@ -154,13 +158,17 @@ const QuoteTaskDetailPage: React.FC = () => {
             <View className="text-sm text-gray-500">暂无施工清单</View>
           ) : (
             <View className="space-y-sm">
-              {detail.items.map((item) => (
-                <View key={item.id} className="border border-gray-100 rounded-lg p-sm">
+                {detail.items.map((item) => (
+                  <View key={item.id} className="border border-gray-100 rounded-lg p-sm">
                   <View className="flex justify-between items-start mb-xs">
-                    <Text className="font-medium">清单项 #{item.quoteListItemId}</Text>
+                    <Text className="font-medium">{item.itemName || `清单项 #${item.quoteListItemId}`}</Text>
                     <Text className="text-brand font-bold">¥{item.amount.toLocaleString()}</Text>
                   </View>
+                  <View className="text-sm text-gray-500">基准量：{item.baselineQuantity ?? '-'}{item.unit || ''}</View>
+                  <View className="text-sm text-gray-500">报价量：{item.quotedQuantity ?? item.baselineQuantity ?? '-'}{item.unit || ''}</View>
                   <View className="text-sm text-gray-500">单价：¥{item.unitPrice.toLocaleString()}</View>
+                  {item.quantityChangeReason ? <View className="text-sm text-amber-700 mt-xs">偏差说明：{item.quantityChangeReason}</View> : null}
+                  {item.deviationFlag ? <View className="text-sm text-amber-700 mt-xs">该项与设计基准量存在偏差，请结合说明确认。</View> : null}
                   {item.remark ? <View className="text-sm text-gray-500 mt-xs">{item.remark}</View> : null}
                 </View>
               ))}

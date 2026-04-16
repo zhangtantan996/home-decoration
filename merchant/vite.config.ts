@@ -16,6 +16,9 @@ export default defineConfig(({ mode }) => {
   const appEnv = (env.VITE_APP_ENV ?? '').trim().toLowerCase();
   const configuredBasename = normalizeRouterBasename(env.VITE_ROUTER_BASENAME);
   const routerBasename = configuredBasename !== '/' ? configuredBasename : (appEnv === 'production' ? '/merchant' : '/');
+  const enablePolling = ['1', 'true', 'yes'].includes(
+    String(env.VITE_DEV_WATCH_POLLING || process.env.VITE_DEV_WATCH_POLLING || '').trim().toLowerCase(),
+  );
 
   return {
     base: routerBasename === '/' ? '/' : `${routerBasename}/`,
@@ -26,6 +29,14 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 5174,
+      watch: enablePolling ? {
+        usePolling: true,
+        interval: 250,
+        awaitWriteFinish: {
+          stabilityThreshold: 350,
+          pollInterval: 100,
+        },
+      } : undefined,
     },
   };
 });

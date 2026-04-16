@@ -24,9 +24,9 @@ export const ADMIN_BUSINESS_STAGE_META: Record<string, { text: string; color: st
   negotiating: { text: '沟通中', color: 'processing' },
   design_pending_submission: { text: '待设计师提交方案', color: 'gold' },
   design_pending_confirmation: { text: '设计方案待确认', color: 'processing' },
-  construction_party_pending: { text: '待确定施工方（可干预）', color: 'gold' },
+  construction_party_pending: { text: '施工桥接中（可干预）', color: 'gold' },
   construction_quote_pending: { text: '施工报价待确认（可干预）', color: 'processing' },
-  ready_to_start: { text: '待开工', color: 'gold' },
+  ready_to_start: { text: '待监理协调开工', color: 'gold' },
   in_construction: { text: '施工中', color: 'blue' },
   node_acceptance_in_progress: { text: '节点验收中', color: 'orange' },
   completed: { text: '已完工待验收', color: 'success' },
@@ -52,9 +52,9 @@ export const ADMIN_BUSINESS_ACTION_LABELS: Record<string, string> = {
 };
 
 export const ADMIN_PROJECT_STAGE_FILTERS: Array<{ value: string; label: string }> = [
-  { value: 'construction_party_pending', label: '待确定施工方（可干预）' },
+  { value: 'construction_party_pending', label: '施工桥接中（可干预）' },
   { value: 'construction_quote_pending', label: '施工报价待确认（可干预）' },
-  { value: 'ready_to_start', label: '待开工' },
+  { value: 'ready_to_start', label: '待监理协调开工' },
   { value: 'in_construction', label: '施工中' },
   { value: 'node_acceptance_in_progress', label: '节点验收中' },
   { value: 'completed', label: '已完工待验收' },

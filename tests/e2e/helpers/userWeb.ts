@@ -403,13 +403,11 @@ export async function mockUserWebApi(page: Page, options: UserWebMockOptions = {
     if (state.budgetConfirmation.status === 'accepted') return '预算与设计意向已确认，待商家提交设计方案。';
     if (state.budgetConfirmation.status === 'rejected') return '预算已拒绝，预约已关闭。';
     if (state.siteSurvey.status === 'revision_requested') return '已要求重新量房，等待商家补测后重提。';
-    if (state.siteSurvey.status === 'confirmed') return '量房已确认，待商家提交预算与设计意向。';
-    return '沟通进行中，待确认量房与预算。';
+    return '沟通进行中，商家将先上传量房资料，再提交预算与设计意向。';
   };
 
   const getBookingAvailableActions = () => {
     if (state.budgetConfirmation.status === 'submitted') return ['accept_budget_confirm', 'reject_budget_confirm'];
-    if (state.siteSurvey.status === 'submitted') return ['confirm_site_survey', 'reject_site_survey'];
     return [];
   };
 
@@ -755,22 +753,17 @@ export async function mockUserWebApi(page: Page, options: UserWebMockOptions = {
       return;
     }
 
-    if (path === `/bookings/${userWebFixtureIds.bookingId}/site-survey/confirm` && method === 'POST') {
-      state.siteSurvey.status = 'confirmed';
-      state.siteSurvey.confirmedAt = '2026-03-20T11:00:00Z';
-      state.siteSurvey.revisionRequestedAt = '';
-      state.siteSurvey.revisionRequestReason = '';
-      await ok(route, { siteSurvey: state.siteSurvey });
-      return;
-    }
-
-    if (path === `/bookings/${userWebFixtureIds.bookingId}/site-survey/reject` && method === 'POST') {
-      const body = parseBody(route);
-      state.siteSurvey.status = 'revision_requested';
-      state.siteSurvey.confirmedAt = '';
-      state.siteSurvey.revisionRequestedAt = '2026-03-20T11:05:00Z';
-      state.siteSurvey.revisionRequestReason = String(body.reason || '请重新量房');
-      await ok(route, { siteSurvey: state.siteSurvey });
+    if (
+      (path === `/bookings/${userWebFixtureIds.bookingId}/site-survey/confirm`
+        || path === `/bookings/${userWebFixtureIds.bookingId}/site-survey/reject`)
+      && method === 'POST'
+    ) {
+      await route.fulfill({
+        status: 410,
+        contentType: 'application/json; charset=utf-8',
+        headers: corsHeaders,
+        body: JSON.stringify({ code: 410, message: '量房资料仅供查看，无需确认或退回', data: null }),
+      });
       return;
     }
 

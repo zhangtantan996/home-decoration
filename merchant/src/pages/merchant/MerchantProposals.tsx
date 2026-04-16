@@ -1,775 +1,486 @@
-import React, { useEffect, useState } from 'react';
-import type { UploadFile } from 'antd';
-import { Card, Table, Tag, Button, Typography, message, Modal, Space, Descriptions, Form, Input, InputNumber, Upload } from 'antd';
-import { ArrowLeftOutlined, EyeOutlined, EditOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+    ArrowLeftOutlined,
+    ReloadOutlined,
+} from '@ant-design/icons';
+import {
+    Button,
+    Empty,
+    Input,
+    Space,
+    Table,
+    Tag,
+    Typography,
+    message,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { useNavigate } from 'react-router-dom';
-import { merchantProposalApi, merchantUploadApi, type MerchantUploadResult } from '../../services/merchantApi';
-import { useDictStore } from '../../stores/dictStore';
-import { PROPOSAL_STATUS_META } from '../../constants/statuses';
-import { formatServerDateTime } from '../../utils/serverTime';
-import { buildStoredAssetFile, getStoredPathsFromUploadFiles } from '../../utils/uploadAsset';
 
-const { Title, Text } = Typography;
-const { TextArea } = Input;
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+import {
+    merchantBookingApi,
+    merchantProposalApi,
+    type MerchantBookingEntry,
+} from '../../services/merchantApi';
+import { formatServerDateTime } from '../../utils/serverTime';
+import styles from './MerchantProposals.module.css';
+
+const { Search } = Input;
+const { Text } = Typography;
 
 interface Proposal {
     id: number;
     bookingId: number;
-    summary: string;
-    designFee: number;
-    constructionFee: number;
-    materialFee: number;
-    estimatedDays: number;
-    attachments: string;
+    summary?: string;
+    designFee?: number;
+    estimatedDays?: number;
     status: number;
-    createdAt: string;
-    version?: number; // 版本号
-    parentProposalId?: number; // 上一版本ID
-    rejectionCount?: number; // 拒绝次数
-    rejectionReason?: string; // 拒绝原因
-    rejectedAt?: string; // 拒绝时间
-    internalDraftJson?: string;
-    previewPackageJson?: string;
-    deliveryPackageJson?: string;
+    createdAt?: string;
 }
 
-interface Booking {
-    id: number;
-    address: string;
-    area: number;
-    houseLayout: string;
-    renovationType: string;
-    budgetRange: string;
-    userNickname?: string;
-    userPhone?: string;
-}
+type WorkspaceFilterKey =
+    | 'all'
+    | 'survey'
+    | 'budget'
+    | 'quote'
+    | 'delivery'
+    | 'confirm'
+    | 'construction_prep'
+    | 'construction_quote';
+
+type WorkspaceStageKey = Exclude<WorkspaceFilterKey, 'all'>;
+
+type ProposalWorkspaceRow = {
+    key: string;
+    bookingId: number;
+    title: string;
+    meta: string;
+    supplementary?: string;
+    stageKey: WorkspaceStageKey;
+    stageLabel: string;
+    statusLabel: string;
+    statusColor: string;
+    nextActionText: string;
+    updatedAt?: string;
+    flowPath: string;
+};
+
+const FILTERS: Array<{ key: WorkspaceFilterKey; label: string }> = [
+    { key: 'all', label: '全部' },
+    { key: 'survey', label: '量房资料' },
+    { key: 'budget', label: '沟通确认' },
+    { key: 'quote', label: '设计费报价' },
+    { key: 'delivery', label: '设计交付' },
+    { key: 'confirm', label: '用户确认' },
+    { key: 'construction_prep', label: '施工报价准备' },
+    { key: 'construction_quote', label: '施工主体选择 / 施工移交' },
+];
+
+const PROJECT_DOMAIN_STAGES = new Set([
+    'ready_to_start',
+    'in_construction',
+    'node_acceptance_in_progress',
+    'completed',
+    'case_pending_generation',
+    'archived',
+    'disputed',
+    'payment_paused',
+]);
+
+const STAGE_LABELS: Record<WorkspaceStageKey, string> = {
+    survey: '量房资料',
+    budget: '沟通确认',
+    quote: '设计费报价',
+    delivery: '设计交付',
+    confirm: '用户确认',
+    construction_prep: '施工报价准备',
+    construction_quote: '施工主体选择 / 施工移交',
+};
+
+const STAGE_ORDER: Record<WorkspaceStageKey, number> = {
+    survey: 10,
+    budget: 20,
+    quote: 30,
+    delivery: 40,
+    confirm: 50,
+    construction_prep: 60,
+    construction_quote: 70,
+};
+
+const normalizeStage = (value?: string) => String(value || '').trim().toLowerCase();
+
+const hasAnyAction = (booking: MerchantBookingEntry | undefined, actions: string[]) =>
+    actions.some((action) => (booking?.availableActions || []).includes(action));
+
+const isProposalWorkspaceBooking = (booking: MerchantBookingEntry) => {
+    const stage = normalizeStage(booking.currentStage);
+    if (booking.statusGroup === 'pending_confirmation' || booking.statusGroup === 'cancelled' || booking.status === 4) {
+        return false;
+    }
+    if (stage === 'lead_pending' || stage === 'cancelled' || PROJECT_DOMAIN_STAGES.has(stage)) {
+        return false;
+    }
+    if (stage) {
+        return true;
+    }
+    if (booking.statusGroup === 'pending_payment' || booking.statusGroup === 'in_service') {
+        return true;
+    }
+    return booking.hasProposal || (booking.availableActions || []).length > 0;
+};
+
+const buildFlowPath = (booking: MerchantBookingEntry) => {
+    return `/proposals/flow/${booking.id}`;
+};
+
+const buildWorkspaceStageKey = (
+    booking?: MerchantBookingEntry,
+    proposal?: Proposal,
+): WorkspaceStageKey => {
+    const stage = normalizeStage(booking?.currentStage);
+
+    if (hasAnyAction(booking, ['submit_site_survey']) || stage === 'survey_deposit_pending') {
+        return 'survey';
+    }
+    if (hasAnyAction(booking, ['submit_budget']) || stage === 'negotiating') {
+        return 'budget';
+    }
+    if (hasAnyAction(booking, ['create_design_fee_quote', 'submit_design_quote']) || stage === 'design_quote_pending' || stage === 'design_fee_paying') {
+        return 'quote';
+    }
+    if (
+        hasAnyAction(booking, ['create_proposal', 'submit_design_delivery'])
+        || stage === 'design_pending_submission'
+        || stage === 'design_delivery_pending'
+    ) {
+        return 'delivery';
+    }
+    if (proposal?.status === 3 || proposal?.status === 1 || stage === 'design_pending_confirmation') {
+        return 'confirm';
+    }
+    if (stage === 'design_acceptance_pending') {
+        return 'delivery';
+    }
+    if (hasAnyAction(booking, ['submit_quote_baseline', 'create_quote_task', 'select_constructor']) || stage === 'construction_party_pending') {
+        return 'construction_prep';
+    }
+    if (hasAnyAction(booking, ['submit_construction_quote']) || stage === 'construction_quote_pending') {
+        return 'construction_quote';
+    }
+    return 'confirm';
+};
+
+const buildStatusMeta = (
+    booking: MerchantBookingEntry,
+    proposal: Proposal | undefined,
+    stageKey: WorkspaceStageKey,
+) => {
+    if (proposal?.status === 3) {
+        return { label: '已退回', color: 'error' };
+    }
+    if (proposal?.status === 1 && stageKey === 'confirm') {
+        return { label: '待用户确认', color: 'processing' };
+    }
+
+    if (hasAnyAction(booking, ['submit_site_survey'])) {
+        return { label: '待提交', color: 'gold' };
+    }
+    if (hasAnyAction(booking, ['submit_budget'])) {
+        return { label: '待提交', color: 'gold' };
+    }
+    if (hasAnyAction(booking, ['create_design_fee_quote', 'submit_design_quote'])) {
+        return { label: '待报价', color: 'gold' };
+    }
+    if (hasAnyAction(booking, ['create_proposal', 'submit_design_delivery'])) {
+        return { label: '待提交', color: 'gold' };
+    }
+    if (hasAnyAction(booking, ['submit_quote_baseline', 'create_quote_task', 'select_constructor'])) {
+        return { label: '待整理', color: 'processing' };
+    }
+    if (hasAnyAction(booking, ['submit_construction_quote'])) {
+        return { label: '推进中', color: 'processing' };
+    }
+
+    switch (stageKey) {
+        case 'survey':
+            return booking.statusGroup === 'pending_payment'
+                ? { label: '待支付量房费', color: 'gold' }
+                : { label: '待上传量房资料', color: 'processing' };
+        case 'budget':
+            return { label: '待用户确认', color: 'processing' };
+        case 'quote':
+            return normalizeStage(booking.currentStage) === 'design_fee_paying'
+                ? { label: '待支付设计费', color: 'gold' }
+                : { label: '待发起报价', color: 'processing' };
+        case 'delivery':
+            return { label: '待提交设计交付', color: 'processing' };
+        case 'confirm':
+            return { label: '待用户确认', color: 'processing' };
+        case 'construction_prep':
+            return { label: '待整理', color: 'processing' };
+        case 'construction_quote':
+            return { label: '推进中', color: 'processing' };
+        default:
+            return { label: booking.currentStageText || booking.statusText || '处理中', color: 'default' };
+    }
+};
+
+const buildNextActionText = (
+    booking: MerchantBookingEntry,
+    proposal: Proposal | undefined,
+    stageKey: WorkspaceStageKey,
+) => {
+    if (hasAnyAction(booking, ['submit_site_survey'])) return '上传量房资料';
+    if (hasAnyAction(booking, ['submit_budget'])) return '提交沟通确认';
+    if (hasAnyAction(booking, ['create_design_fee_quote', 'submit_design_quote'])) return '发起设计费报价';
+    if (hasAnyAction(booking, ['create_proposal', 'submit_design_delivery'])) return '提交设计交付';
+    if (proposal?.status === 3) return '重新提交正式方案';
+    if (stageKey === 'survey' && booking.statusGroup === 'pending_payment') return '等待用户支付量房费';
+    if (stageKey === 'budget') return '等待用户确认沟通结果';
+    if (stageKey === 'quote' && normalizeStage(booking.currentStage) === 'design_fee_paying') return '等待用户支付设计费';
+    if (stageKey === 'confirm') return '等待用户确认正式方案';
+    if (stageKey === 'construction_prep') return '整理施工报价准备';
+    if (stageKey === 'construction_quote') return '查看工长报价进度';
+    return '进入流程继续推进';
+};
+
+const buildSupplementary = (proposal?: Proposal) => {
+    if (!proposal) return '';
+    const parts: string[] = [];
+    if (typeof proposal.designFee === 'number') {
+        parts.push(`设计费 ¥${proposal.designFee.toLocaleString()}`);
+    }
+    if (typeof proposal.estimatedDays === 'number' && proposal.estimatedDays > 0) {
+        parts.push(`工期 ${proposal.estimatedDays} 天`);
+    }
+    return parts.join(' · ');
+};
+
+const buildProposalWorkspaceRows = (
+    bookings: MerchantBookingEntry[],
+    proposals: Proposal[],
+): ProposalWorkspaceRow[] => {
+    const latestProposalByBooking = new Map<number, Proposal>();
+
+    [...proposals]
+        .sort((left, right) => {
+            const leftTime = new Date(left.createdAt || 0).getTime();
+            const rightTime = new Date(right.createdAt || 0).getTime();
+            return rightTime - leftTime || right.id - left.id;
+        })
+        .forEach((proposal) => {
+            if (proposal.bookingId > 0 && !latestProposalByBooking.has(proposal.bookingId)) {
+                latestProposalByBooking.set(proposal.bookingId, proposal);
+            }
+        });
+
+    return bookings
+        .filter(isProposalWorkspaceBooking)
+        .map((booking) => {
+            const linkedProposal = latestProposalByBooking.get(booking.id);
+            const stageKey = buildWorkspaceStageKey(booking, linkedProposal);
+            const statusMeta = buildStatusMeta(booking, linkedProposal, stageKey);
+
+            return {
+                key: `booking-${booking.id}`,
+                bookingId: booking.id,
+                title: booking.address || `预约 #${booking.id}`,
+                meta: [
+                    booking.userNickname || `用户${booking.userId}`,
+                    booking.area ? `${booking.area}㎡` : '',
+                    booking.houseLayout || '',
+                ].filter(Boolean).join(' · '),
+                supplementary: buildSupplementary(linkedProposal),
+                stageKey,
+                stageLabel: STAGE_LABELS[stageKey],
+                statusLabel: statusMeta.label,
+                statusColor: statusMeta.color,
+                nextActionText: buildNextActionText(booking, linkedProposal, stageKey),
+                updatedAt: linkedProposal?.createdAt || booking.createdAt,
+                flowPath: buildFlowPath(booking),
+            };
+        })
+        .sort((left, right) => {
+            const orderDiff = STAGE_ORDER[left.stageKey] - STAGE_ORDER[right.stageKey];
+            if (orderDiff !== 0) {
+                return orderDiff;
+            }
+            const leftTime = new Date(left.updatedAt || 0).getTime();
+            const rightTime = new Date(right.updatedAt || 0).getTime();
+            return rightTime - leftTime;
+        });
+};
 
 const MerchantProposals: React.FC = () => {
     const [loading, setLoading] = useState(true);
+    const [bookings, setBookings] = useState<MerchantBookingEntry[]>([]);
     const [proposals, setProposals] = useState<Proposal[]>([]);
-    const [detailVisible, setDetailVisible] = useState(false);
-    const [editVisible, setEditVisible] = useState(false);
-    const [resubmitVisible, setResubmitVisible] = useState(false); // 重新提交弹窗
-    const [currentProposal, setCurrentProposal] = useState<Proposal | null>(null);
-    const [currentBooking, setCurrentBooking] = useState<Booking | null>(null);
-    const [submitting, setSubmitting] = useState(false);
-    const [fileList, setFileList] = useState<Array<UploadFile<MerchantUploadResult>>>([]);
-    const [previewFileList, setPreviewFileList] = useState<Array<UploadFile<MerchantUploadResult>>>([]);
-    const [rejectionInfo, setRejectionInfo] = useState<any>(null); // 拒绝信息
-    const [form] = Form.useForm();
-    const [resubmitForm] = Form.useForm(); // 重新提交表单
+    const [activeFilter, setActiveFilter] = useState<WorkspaceFilterKey>('all');
+    const [keyword, setKeyword] = useState('');
     const navigate = useNavigate();
 
-    const { loadDict, getDictOptions } = useDictStore();
-
-    const parseJsonObject = (raw?: string) => {
-        if (!raw) return {};
+    const loadWorkspace = async () => {
         try {
-            const parsed = JSON.parse(raw);
-            return typeof parsed === 'object' && parsed !== null ? parsed : {};
-        } catch {
-            return {};
-        }
-    };
-
-    const parseStringArray = (raw: string) => raw
-        .split(/\n|,|，/)
-        .map((item) => item.trim())
-        .filter(Boolean);
-
-    const buildStoredUploadFiles = (values: string[], prefix: string) =>
-        values
-            .map((value, index) => buildStoredAssetFile(value, `${prefix}-${index}-${value}`))
-            .filter(Boolean) as Array<UploadFile<MerchantUploadResult>>;
-
-    const handleAssetUpload: NonNullable<React.ComponentProps<typeof Upload>['customRequest']> = async (options) => {
-        const { file, onSuccess, onError } = options;
-        try {
-            const uploaded = await merchantUploadApi.uploadImageData(file as File);
-            onSuccess?.(uploaded);
+            setLoading(true);
+            const [proposalRes, bookingRes] = await Promise.all([
+                merchantProposalApi.list() as Promise<any>,
+                merchantBookingApi.list(),
+            ]);
+            setProposals(proposalRes?.code === 0 ? (proposalRes.data?.list || []) : []);
+            setBookings(bookingRes.list || []);
         } catch (error) {
-            onError?.(error as Error);
-            message.error(error instanceof Error ? error.message : '上传失败');
-        }
-    };
-
-    useEffect(() => {
-        loadProposals();
-        loadDict('renovation_type');
-        loadDict('budget_range');
-    }, [loadDict]);
-
-    // 获取字典映射
-    const getRenovationTypeLabel = (value: string) => {
-        const options = getDictOptions('renovation_type');
-        const option = options.find(opt => opt.value === value);
-        return option?.label || value;
-    };
-
-    const getBudgetRangeLabel = (value: string) => {
-        const options = getDictOptions('budget_range');
-        const option = options.find(opt => opt.value === value);
-        return option?.label || value;
-    };
-
-    const loadProposals = async () => {
-        try {
-            const res = await merchantProposalApi.list() as any;
-            if (res.code === 0) {
-                setProposals(res.data.list || []);
-            }
-        } catch (error) {
-            message.error('加载失败');
+            message.error(error instanceof Error ? error.message : '加载方案报价失败');
         } finally {
             setLoading(false);
         }
     };
 
-    const showDetail = async (record: Proposal) => {
-        try {
-            const res = await merchantProposalApi.detail(record.id) as any;
-            if (res.code === 0) {
-                setCurrentProposal(res.data.proposal);
-                setCurrentBooking(res.data.booking);
-                setDetailVisible(true);
+    useEffect(() => {
+        void loadWorkspace();
+    }, []);
+
+    const workspaceRows = useMemo(
+        () => buildProposalWorkspaceRows(bookings, proposals),
+        [bookings, proposals],
+    );
+
+    const filteredRows = useMemo(() => {
+        const searchValue = keyword.trim().toLowerCase();
+        return workspaceRows.filter((row) => {
+            if (activeFilter !== 'all' && row.stageKey !== activeFilter) {
+                return false;
             }
-        } catch (error) {
-            message.error('获取详情失败');
-        }
-    };
-
-    const openEditModal = async (record: Proposal) => {
-        try {
-            const res = await merchantProposalApi.detail(record.id) as any;
-            if (res.code === 0) {
-                setCurrentProposal(res.data.proposal);
-                setCurrentBooking(res.data.booking);
-                form.setFieldsValue({
-                    summary: res.data.proposal.summary,
-                    designFee: res.data.proposal.designFee,
-                    constructionFee: res.data.proposal.constructionFee,
-                    materialFee: res.data.proposal.materialFee,
-                    estimatedDays: res.data.proposal.estimatedDays,
-                });
-                const internalDraft = parseJsonObject(res.data.proposal.internalDraftJson);
-                const previewPackage = parseJsonObject(res.data.proposal.previewPackageJson);
-                const deliveryPackage = parseJsonObject(res.data.proposal.deliveryPackageJson);
-                form.setFieldsValue({
-                    internalNotes: internalDraft.communicationNotes || '',
-                    previewSummary: previewPackage.summary || '',
-                    deliveryDescription: deliveryPackage.description || '',
-                    deliveryEffectLinksText: Array.isArray(deliveryPackage.effectLinks) ? deliveryPackage.effectLinks.join('\n') : '',
-                    deliveryCadFilesText: Array.isArray(deliveryPackage.cadFiles) ? deliveryPackage.cadFiles.join('\n') : '',
-                });
-                // Parse existing attachments
-                try {
-                    const existingAttachments = JSON.parse(res.data.proposal.attachments || '[]');
-                    setFileList(buildStoredUploadFiles(existingAttachments, 'attachment'));
-                } catch {
-                    setFileList([]);
-                }
-                try {
-                    const previewImages = [
-                        ...(Array.isArray(previewPackage.floorPlanImages) ? previewPackage.floorPlanImages : []),
-                        ...(Array.isArray(previewPackage.effectPreviewImages) ? previewPackage.effectPreviewImages : []),
-                    ];
-                    setPreviewFileList(buildStoredUploadFiles(previewImages, 'preview'));
-                } catch {
-                    setPreviewFileList([]);
-                }
-                setEditVisible(true);
+            if (!searchValue) {
+                return true;
             }
-        } catch (error) {
-            message.error('获取详情失败');
-        }
-    };
-
-    const handleUpdate = async () => {
-        if (!currentProposal) return;
-        try {
-            const values = await form.validateFields();
-            setSubmitting(true);
-
-            const attachments = getStoredPathsFromUploadFiles(fileList);
-            const previewImages = getStoredPathsFromUploadFiles(previewFileList);
-
-            const res = await merchantProposalApi.update(currentProposal.id, {
-                ...values,
-                attachments: JSON.stringify(attachments),
-                internalDraftJson: JSON.stringify({
-                    communicationNotes: values.internalNotes || '',
-                }),
-                previewPackageJson: JSON.stringify({
-                    summary: values.previewSummary || '',
-                    floorPlanImages: previewImages,
-                    effectPreviewImages: previewImages,
-                    hasCad: parseStringArray(values.deliveryCadFilesText || '').length > 0,
-                    hasAttachments: attachments.length > 0,
-                }),
-                deliveryPackageJson: JSON.stringify({
-                    description: values.deliveryDescription || '',
-                    effectLinks: parseStringArray(values.deliveryEffectLinksText || ''),
-                    cadFiles: parseStringArray(values.deliveryCadFilesText || ''),
-                    attachments,
-                }),
-            }) as any;
-
-            if (res.code === 0) {
-                message.success('更新成功');
-                setEditVisible(false);
-                setPreviewFileList([]);
-                loadProposals();
-            } else {
-                message.error(res.message || '更新失败');
-            }
-        } catch (error: any) {
-            message.error(error.response?.data?.message || '更新失败');
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    const handleCancel = (record: Proposal) => {
-        Modal.confirm({
-            title: '确认取消方案',
-            content: '确定要取消此方案吗？此操作不可撤销。',
-            okText: '确定',
-            cancelText: '取消',
-            okButtonProps: { danger: true },
-            onOk: async () => {
-                try {
-                    const res = await merchantProposalApi.cancel(record.id) as any;
-                    if (res.code === 0) {
-                        message.success('取消成功');
-                        loadProposals();
-                    } else {
-                        message.error(res.message || '取消失败');
-                    }
-                } catch (error) {
-                    message.error('取消失败');
-                }
-            },
+            return [
+                row.title,
+                row.meta,
+                row.supplementary,
+                row.stageLabel,
+                row.statusLabel,
+                row.nextActionText,
+            ]
+                .join(' ')
+                .toLowerCase()
+                .includes(searchValue);
         });
-    };
+    }, [activeFilter, keyword, workspaceRows]);
 
-    // 打开重新提交弹窗
-    const openResubmitModal = async (record: Proposal) => {
-        try {
-            // 获取方案详情和拒绝信息
-            const [detailRes, rejectionRes] = await Promise.all([
-                merchantProposalApi.detail(record.id) as any,
-                merchantProposalApi.getRejectionInfo(record.id) as any,
-            ]);
-
-            if (detailRes.code === 0) {
-                setCurrentProposal(detailRes.data.proposal);
-                setCurrentBooking(detailRes.data.booking);
-                setRejectionInfo(rejectionRes.data);
-
-                // 填充表单（使用原方案数据作为默认值）
-                resubmitForm.setFieldsValue({
-                    summary: detailRes.data.proposal.summary,
-                    designFee: detailRes.data.proposal.designFee,
-                    constructionFee: detailRes.data.proposal.constructionFee,
-                    materialFee: detailRes.data.proposal.materialFee,
-                    estimatedDays: detailRes.data.proposal.estimatedDays,
-                });
-                const internalDraft = parseJsonObject(detailRes.data.proposal.internalDraftJson);
-                const previewPackage = parseJsonObject(detailRes.data.proposal.previewPackageJson);
-                const deliveryPackage = parseJsonObject(detailRes.data.proposal.deliveryPackageJson);
-                resubmitForm.setFieldsValue({
-                    internalNotes: internalDraft.communicationNotes || '',
-                    previewSummary: previewPackage.summary || '',
-                    deliveryDescription: deliveryPackage.description || '',
-                    deliveryEffectLinksText: Array.isArray(deliveryPackage.effectLinks) ? deliveryPackage.effectLinks.join('\n') : '',
-                    deliveryCadFilesText: Array.isArray(deliveryPackage.cadFiles) ? deliveryPackage.cadFiles.join('\n') : '',
-                });
-
-                // 解析现有附件
-                try {
-                    const existingAttachments = JSON.parse(detailRes.data.proposal.attachments || '[]');
-                    setFileList(buildStoredUploadFiles(existingAttachments, 'attachment'));
-                } catch {
-                    setFileList([]);
-                }
-                try {
-                    const previewImages = [
-                        ...(Array.isArray(previewPackage.floorPlanImages) ? previewPackage.floorPlanImages : []),
-                        ...(Array.isArray(previewPackage.effectPreviewImages) ? previewPackage.effectPreviewImages : []),
-                    ];
-                    setPreviewFileList(buildStoredUploadFiles(previewImages, 'preview'));
-                } catch {
-                    setPreviewFileList([]);
-                }
-
-                setResubmitVisible(true);
-            }
-        } catch (error) {
-            message.error('获取方案信息失败');
-        }
-    };
-
-    // 处理重新提交
-    const handleResubmit = async () => {
-        if (!currentProposal) return;
-
-        try {
-            const values = await resubmitForm.validateFields();
-            setSubmitting(true);
-
-            const attachments = getStoredPathsFromUploadFiles(fileList);
-            const previewImages = getStoredPathsFromUploadFiles(previewFileList);
-
-            const res = await merchantProposalApi.resubmit({
-                proposalId: currentProposal.id,
-                ...values,
-                attachments: JSON.stringify(attachments),
-                internalDraft: {
-                    communicationNotes: values.internalNotes || '',
-                },
-                previewPackage: {
-                    summary: values.previewSummary || '',
-                    floorPlanImages: previewImages,
-                    effectPreviewImages: previewImages,
-                    hasCad: parseStringArray(values.deliveryCadFilesText || '').length > 0,
-                    hasAttachments: attachments.length > 0,
-                },
-                deliveryPackage: {
-                    description: values.deliveryDescription || '',
-                    effectLinks: parseStringArray(values.deliveryEffectLinksText || ''),
-                    cadFiles: parseStringArray(values.deliveryCadFilesText || ''),
-                    attachments,
-                },
-            }) as any;
-
-            if (res.code === 0) {
-                const version = res.data?.proposal?.version || (currentProposal.version || 1) + 1;
-                message.success(`方案 v${version} 已提交，等待用户确认`);
-                setResubmitVisible(false);
-                resubmitForm.resetFields();
-                setFileList([]);
-                setPreviewFileList([]);
-                loadProposals();
-            } else {
-                message.error(res.message || '提交失败');
-            }
-        } catch (error: any) {
-            message.error(error.response?.data?.message || '提交失败');
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    const columns = [
-        { title: 'ID', dataIndex: 'id', width: 60 },
-        { title: '预约ID', dataIndex: 'bookingId', width: 80 },
-        { title: '方案概述', dataIndex: 'summary', ellipsis: true },
+    const columns: ColumnsType<ProposalWorkspaceRow> = [
         {
-            title: '设计费',
-            dataIndex: 'designFee',
-            render: (v: number) => `¥${v?.toLocaleString() || 0}`,
+            title: '预约信息',
+            dataIndex: 'title',
+            render: (_value, record) => (
+                <div className={styles.infoCell}>
+                    <span className={styles.infoTitle}>{record.title}</span>
+                    {record.meta ? <span className={styles.infoMeta}>{record.meta}</span> : null}
+                    {record.supplementary ? <span className={styles.infoSupplementary}>{record.supplementary}</span> : null}
+                </div>
+            ),
         },
         {
-            title: '施工费',
-            dataIndex: 'constructionFee',
-            render: (v: number) => `¥${v?.toLocaleString() || 0}`,
+            title: '当前阶段',
+            dataIndex: 'stageLabel',
+            width: 180,
+            render: (value: string) => <span className={styles.stageText}>{value}</span>,
         },
         {
-            title: '主材费',
-            dataIndex: 'materialFee',
-            render: (v: number) => `¥${v?.toLocaleString() || 0}`,
-        },
-        { title: '工期', dataIndex: 'estimatedDays', render: (v: number) => `${v}天` },
-        {
-            title: '状态',
-            dataIndex: 'status',
-            render: (status: number) => {
-                const s = PROPOSAL_STATUS_META[status] || { text: '未知', color: 'default' };
-                return <Tag color={s.color}>{s.text}</Tag>;
-            },
+            title: '当前状态',
+            dataIndex: 'statusLabel',
+            width: 170,
+            render: (_value, record) => <Tag color={record.statusColor}>{record.statusLabel}</Tag>,
         },
         {
-            title: '创建时间',
-            dataIndex: 'createdAt',
-            width: 160,
-            render: (v: string) => formatServerDateTime(v),
+            title: '下一步',
+            dataIndex: 'nextActionText',
+            width: 220,
+            render: (value: string) => <span className={styles.nextAction}>{value}</span>,
+        },
+        {
+            title: '更新时间',
+            dataIndex: 'updatedAt',
+            width: 180,
+            render: (value?: string) => value ? formatServerDateTime(value) : '-',
         },
         {
             title: '操作',
-            width: 180,
-            render: (_: any, record: Proposal) => (
-                <Space>
-                    <Button
-                        type="link"
-                        size="small"
-                        icon={<EyeOutlined />}
-                        onClick={() => showDetail(record)}
-                    >
-                        详情
-                    </Button>
-                    {(record.status === 1 || record.status === 3) && (
-                        <Button
-                            type="link"
-                            size="small"
-                            icon={<EditOutlined />}
-                            onClick={() => record.status === 3 ? openResubmitModal(record) : openEditModal(record)}
-                        >
-                            {record.status === 3 ? '重新提交' : '编辑'}
-                        </Button>
-                    )}
-                    {record.status === 1 && (
-                        <Button
-                            type="link"
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={() => handleCancel(record)}
-                        >
-                            取消
-                        </Button>
-                    )}
-                </Space>
+            width: 150,
+            render: (_value, record) => (
+                <Button type="primary" onClick={() => navigate(record.flowPath)}>
+                    进入流程
+                </Button>
             ),
         },
     ];
 
     return (
-        <div style={{ padding: 24 }}>
-            <div style={{ marginBottom: 16 }}>
-                <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
-                    返回首页
-                </Button>
-            </div>
-
-            <Card title={<Title level={4} style={{ margin: 0 }}>我的方案</Title>}>
-                <Table
-                    loading={loading}
-                    dataSource={proposals}
-                    columns={columns}
-                    rowKey="id"
-                    pagination={{ pageSize: 10 }}
-                />
-            </Card>
-
-            {/* 方案详情弹窗 */}
-            <Modal
-                title="方案详情"
-                open={detailVisible}
-                onCancel={() => setDetailVisible(false)}
-                footer={<Button onClick={() => setDetailVisible(false)}>关闭</Button>}
-                width={700}
-            >
-                {currentProposal && currentBooking && (
-                    <>
-                        <div style={{ marginBottom: 16, background: '#f5f5f5', padding: 12, borderRadius: 8 }}>
-                            <Text strong>关联预约信息：</Text>
-                            <br />
-                            <Text>用户：{currentBooking.userNickname || '-'} | 电话：{currentBooking.userPhone || '-'}</Text>
-                            <br />
-                            <Text>地址：{currentBooking.address}</Text>
-                            <br />
-                            <Text>面积：{currentBooking.area}㎡ | 户型：{currentBooking.houseLayout}</Text>
-                            <br />
-                            <Text>装修类型：{getRenovationTypeLabel(currentBooking.renovationType)} | 预算：{getBudgetRangeLabel(currentBooking.budgetRange)}</Text>
-                        </div>
-                        <Descriptions column={2} bordered size="small">
-                            <Descriptions.Item label="方案ID">{currentProposal.id}</Descriptions.Item>
-                            <Descriptions.Item label="状态">
-                                <Tag color={PROPOSAL_STATUS_META[currentProposal.status]?.color}>
-                                    {PROPOSAL_STATUS_META[currentProposal.status]?.text}
-                                </Tag>
-                            </Descriptions.Item>
-                            <Descriptions.Item label="方案概述" span={2}>{currentProposal.summary}</Descriptions.Item>
-                            <Descriptions.Item label="设计费">¥{currentProposal.designFee?.toLocaleString()}</Descriptions.Item>
-                            <Descriptions.Item label="施工费">¥{currentProposal.constructionFee?.toLocaleString()}</Descriptions.Item>
-                            <Descriptions.Item label="主材费">¥{currentProposal.materialFee?.toLocaleString()}</Descriptions.Item>
-                            <Descriptions.Item label="预计工期">{currentProposal.estimatedDays}天</Descriptions.Item>
-                            <Descriptions.Item label="支付前预览摘要" span={2}>
-                                {(parseJsonObject(currentProposal.previewPackageJson).summary as string) || '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="交付说明" span={2}>
-                                {(parseJsonObject(currentProposal.deliveryPackageJson).description as string) || '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="创建时间" span={2}>{formatServerDateTime(currentProposal.createdAt)}</Descriptions.Item>
-                        </Descriptions>
-                    </>
+        <MerchantPageShell className={styles.page}>
+            <MerchantPageHeader
+                title="方案报价"
+                extra={(
+                    <Space>
+                        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboard')}>
+                            返回工作台
+                        </Button>
+                        <Button icon={<ReloadOutlined />} onClick={() => void loadWorkspace()} loading={loading}>
+                            刷新
+                        </Button>
+                    </Space>
                 )}
-            </Modal>
+            />
 
-            {/* 编辑方案弹窗 */}
-            <Modal
-                title="编辑设计方案"
-                open={editVisible}
-                onCancel={() => setEditVisible(false)}
-                onOk={handleUpdate}
-                confirmLoading={submitting}
-                width={600}
-            >
-                {currentBooking && (
-                    <div style={{ marginBottom: 16, background: '#f5f5f5', padding: 12, borderRadius: 8 }}>
-                        <Text strong>预约信息：</Text>
-                        <br />
-                        <Text>地址：{currentBooking.address}</Text>
-                        <br />
-                        <Text>面积：{currentBooking.area}㎡ | 户型：{currentBooking.houseLayout}</Text>
-                    </div>
-                )}
-
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        name="summary"
-                        label="方案概述"
-                        rules={[{ required: true, message: '请输入方案概述' }]}
-                    >
-                        <TextArea rows={4} placeholder="描述设计理念、整体风格等" />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="designFee"
-                        label="设计费 (元)"
-                        rules={[{ required: true, message: '请输入设计费' }]}
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="constructionFee"
-                        label="施工费预估 (元)"
-                        rules={[{ required: true, message: '请输入施工费' }]}
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="materialFee"
-                        label="主材费预估 (元)"
-                        rules={[{ required: true, message: '请输入主材费' }]}
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="estimatedDays"
-                        label="预计工期 (天)"
-                        rules={[{ required: true, message: '请输入工期' }]}
-                    >
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item name="internalNotes" label="内部留档备注">
-                        <TextArea rows={3} placeholder="记录客户沟通纪要、内部草图说明、初步预算判断，仅平台留存。" />
-                    </Form.Item>
-
-                    <Form.Item name="previewSummary" label="支付前预览摘要">
-                        <TextArea rows={3} placeholder="给用户看的方案摘要、彩平说明和效果图预览说明。" />
-                    </Form.Item>
-
-                    <Form.Item label="支付前预览图" extra="上传缩略彩平图/效果图，支付设计费前仅展示预览。">
-                        <Upload
-                            fileList={previewFileList}
-                            onChange={({ fileList }) => setPreviewFileList(fileList)}
-                            customRequest={handleAssetUpload}
-                            maxCount={6}
-                            beforeUpload={(file) => {
-                                const isLt20M = file.size / 1024 / 1024 < 20;
-                                if (!isLt20M) {
-                                    message.error('文件必须小于 20MB!');
-                                    return Upload.LIST_IGNORE;
-                                }
-                                return true;
-                            }}
-                        >
-                            <Button icon={<UploadOutlined />}>上传预览图</Button>
-                        </Upload>
-                    </Form.Item>
-
-                    <Form.Item name="deliveryDescription" label="正式交付说明">
-                        <TextArea rows={3} placeholder="支付后解锁的正式设计说明、交付范围和使用说明。" />
-                    </Form.Item>
-
-                    <Form.Item name="deliveryEffectLinksText" label="效果图外链（每行一个）">
-                        <TextArea rows={3} placeholder="https://example.com/render-1&#10;https://example.com/render-2" />
-                    </Form.Item>
-
-                    <Form.Item name="deliveryCadFilesText" label="CAD / 附件链接（每行一个）">
-                        <TextArea rows={3} placeholder="https://example.com/file.dwg&#10;https://example.com/file.pdf" />
-                    </Form.Item>
-
-                    <Form.Item
-                        label="附件上传"
-                        extra="支付后交付包附件，支持图片/PDF/Word/Excel/CAD/Zip，最大20MB，最多5个文件"
-                    >
-                        <Upload
-                            fileList={fileList}
-                            onChange={({ fileList }) => setFileList(fileList)}
-                            customRequest={handleAssetUpload}
-                            maxCount={5}
-                            beforeUpload={(file) => {
-                                const isLt20M = file.size / 1024 / 1024 < 20;
-                                if (!isLt20M) {
-                                    message.error('文件必须小于 20MB!');
-                                    return Upload.LIST_IGNORE;
-                                }
-                                return true;
-                            }}
-                        >
-                            <Button icon={<UploadOutlined />}>选择文件</Button>
-                        </Upload>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* 重新提交方案弹窗 */}
-            <Modal
-                title={
-                    <div>
-                        <span>重新提交方案</span>
-                        {currentProposal && currentProposal.version && (
-                            <Tag color="blue" style={{ marginLeft: 8 }}>
-                                v{currentProposal.version + 1}
-                            </Tag>
-                        )}
-                    </div>
-                }
-                open={resubmitVisible}
-                onOk={handleResubmit}
-                onCancel={() => {
-                    setResubmitVisible(false);
-                    resubmitForm.resetFields();
-                    setFileList([]);
-                }}
-                width={800}
-                confirmLoading={submitting}
-                okText="提交新版本"
-                cancelText="取消"
-            >
-                {/* 拒绝信息提示 */}
-                {rejectionInfo && (
-                    <div style={{
-                        marginBottom: 20,
-                        padding: 12,
-                        background: '#FFF7E6',
-                        border: '1px solid #FFD591',
-                        borderRadius: 4
-                    }}>
-                        <div style={{ marginBottom: 8 }}>
-                            <Text strong>用户拒绝原因：</Text>
-                            <Text type="secondary" style={{ marginLeft: 8 }}>
-                                {rejectionInfo.rejectionReason || '无'}
-                            </Text>
+            <MerchantContentPanel className={styles.contentPanel}>
+                <MerchantSectionCard className={styles.filterCard}>
+                    <div className={styles.filterBar}>
+                        <div className={styles.filterGroup}>
+                            {FILTERS.map((filter) => (
+                                <Button
+                                    key={filter.key}
+                                    type={activeFilter === filter.key ? 'primary' : 'default'}
+                                    className={styles.filterButton}
+                                    onClick={() => setActiveFilter(filter.key)}
+                                >
+                                    {filter.label}
+                                </Button>
+                            ))}
                         </div>
-                        <div>
-                            <Text type="warning">
-                                已拒绝 {rejectionInfo.rejectionCount}/3 次
-                                {rejectionInfo.rejectionCount >= 2 && '（最后一次机会）'}
-                            </Text>
+                        <div className={styles.filterActions}>
+                            <Search
+                                allowClear
+                                placeholder="搜索地址、用户或阶段"
+                                className={styles.search}
+                                value={keyword}
+                                onChange={(event) => setKeyword(event.target.value)}
+                            />
+                            <Text className={styles.countText}>共 {filteredRows.length} 条</Text>
                         </div>
                     </div>
-                )}
+                </MerchantSectionCard>
 
-                <Form form={resubmitForm} layout="vertical">
-                    <Form.Item
-                        name="summary"
-                        label="方案概述"
-                        rules={[{ required: true, message: '请输入方案概述' }]}
-                        extra="请根据用户反馈调整方案，说明改进之处"
-                    >
-                        <TextArea rows={4} placeholder="请描述此版本的调整内容..." />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="designFee"
-                        label="设计费 (元)"
-                        rules={[{ required: true, message: '请输入设计费' }]}
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="constructionFee"
-                        label="施工费 (元)"
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="materialFee"
-                        label="主材费 (元)"
-                    >
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item
-                        name="estimatedDays"
-                        label="预计工期 (天)"
-                        rules={[{ required: true, message: '请输入工期' }]}
-                    >
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-
-                    <Form.Item name="internalNotes" label="内部留档备注">
-                        <TextArea rows={3} placeholder="记录客户沟通纪要、内部草图说明、初步预算判断，仅平台留存。" />
-                    </Form.Item>
-
-                    <Form.Item name="previewSummary" label="支付前预览摘要" extra="请根据用户反馈调整此处摘要与预览内容。">
-                        <TextArea rows={3} placeholder="给用户看的方案摘要、彩平说明和效果图预览说明。" />
-                    </Form.Item>
-
-                    <Form.Item label="支付前预览图" extra="上传缩略彩平图/效果图，支付设计费前仅展示预览。">
-                        <Upload
-                            fileList={previewFileList}
-                            onChange={({ fileList }) => setPreviewFileList(fileList)}
-                            customRequest={handleAssetUpload}
-                            maxCount={6}
-                            beforeUpload={(file) => {
-                                const isLt20M = file.size / 1024 / 1024 < 20;
-                                if (!isLt20M) {
-                                    message.error('文件必须小于 20MB!');
-                                    return Upload.LIST_IGNORE;
-                                }
-                                return true;
-                            }}
-                        >
-                            <Button icon={<UploadOutlined />}>上传预览图</Button>
-                        </Upload>
-                    </Form.Item>
-
-                    <Form.Item name="deliveryDescription" label="正式交付说明">
-                        <TextArea rows={3} placeholder="支付后解锁的正式设计说明、交付范围和使用说明。" />
-                    </Form.Item>
-
-                    <Form.Item name="deliveryEffectLinksText" label="效果图外链（每行一个）">
-                        <TextArea rows={3} placeholder="https://example.com/render-1&#10;https://example.com/render-2" />
-                    </Form.Item>
-
-                    <Form.Item name="deliveryCadFilesText" label="CAD / 附件链接（每行一个）">
-                        <TextArea rows={3} placeholder="https://example.com/file.dwg&#10;https://example.com/file.pdf" />
-                    </Form.Item>
-
-                    <Form.Item
-                        label="附件上传"
-                        extra="支付后交付包附件，支持图片/PDF/Word/Excel/CAD/Zip，最大20MB，最多5个文件"
-                    >
-                        <Upload
-                            fileList={fileList}
-                            onChange={({ fileList }) => setFileList(fileList)}
-                            customRequest={handleAssetUpload}
-                            maxCount={5}
-                            beforeUpload={(file) => {
-                                const isLt20M = file.size / 1024 / 1024 < 20;
-                                if (!isLt20M) {
-                                    message.error('文件必须小于 20MB!');
-                                    return Upload.LIST_IGNORE;
-                                }
-                                return true;
-                            }}
-                        >
-                            <Button icon={<UploadOutlined />}>选择文件</Button>
-                        </Upload>
-                    </Form.Item>
-                </Form>
-            </Modal>
-        </div>
+                <MerchantSectionCard className={styles.tableSection}>
+                    <Table
+                        loading={loading}
+                        columns={columns}
+                        dataSource={filteredRows}
+                        rowKey="key"
+                        pagination={{ pageSize: 10, showSizeChanger: false }}
+                        className={styles.table}
+                        locale={{
+                            emptyText: (
+                                <Empty
+                                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                                    description="当前没有可推进的方案报价流程"
+                                />
+                            ),
+                        }}
+                    />
+                </MerchantSectionCard>
+            </MerchantContentPanel>
+        </MerchantPageShell>
     );
 };
 

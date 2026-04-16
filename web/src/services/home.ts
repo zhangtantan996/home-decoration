@@ -51,10 +51,10 @@ export async function getHomePageData(): Promise<HomePageDataVM> {
         href: '/demands/new',
       },
       {
-        title: '待确认报价',
+        title: '设计阶段待办',
         count: `${proposals.filter((item) => item.statusText.includes('待')).length}`,
-        description: '新的方案正在等你确认。',
-        href: '/me/proposals',
+        description: '设计费支付与正式方案确认都回到预约主链处理。',
+        href: '/me/bookings',
       },
       {
         title: '最近预约',

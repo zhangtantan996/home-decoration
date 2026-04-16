@@ -16,6 +16,14 @@ interface NotificationDTO {
   createdAt?: string;
   isRead?: boolean;
   type?: string;
+  category?: 'system' | 'project' | 'payment';
+  kind?: 'info' | 'todo' | 'risk' | 'result' | 'governance';
+  priority?: 'normal' | 'high' | 'urgent';
+  actionRequired?: boolean;
+  actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+  actionLabel?: string;
+  supportsWeb?: boolean;
+  supportsMini?: boolean;
 }
 
 export interface NotificationListResult {
@@ -34,6 +42,14 @@ function toNotification(dto: NotificationDTO): MessageListItemVM {
     createdAt: formatDateTime(dto.createdAt),
     isRead: Boolean(dto.isRead),
     type: dto.type || 'system',
+    category: dto.category || 'system',
+    kind: dto.kind || 'info',
+    priority: dto.priority || 'normal',
+    actionRequired: Boolean(dto.actionRequired),
+    actionStatus: dto.actionStatus || 'none',
+    actionLabel: dto.actionLabel || '',
+    supportsWeb: dto.supportsWeb !== false,
+    supportsMini: Boolean(dto.supportsMini),
   };
 }
 

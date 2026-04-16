@@ -100,7 +100,11 @@ const MaterialShopSettings: React.FC = () => {
     const normalizedRanges = useMemo(() => normalizeRangesForForm(businessHoursRanges), [businessHoursRanges]);
     const merchantDisplayEnabled = profile?.merchantDisplayEnabled ?? true;
     const displayStatusMeta = useMemo(
-        () => resolveDisplayStatusMeta(profile, { activeLabel: '营业中' }),
+        () => resolveDisplayStatusMeta(profile, {
+            activeLabel: '营业中',
+            settingsPath: '/material-shop/settings',
+            workflowPath: '/material-shop/products',
+        }),
         [profile],
     );
 
@@ -395,6 +399,13 @@ const MaterialShopSettings: React.FC = () => {
                                                 {displayStatusMeta.helperText}
                                             </div>
                                         )}
+                                        {displayStatusMeta.actionLabel && displayStatusMeta.actionPath && displayStatusMeta.actionPath !== '/material-shop/settings' ? (
+                                            <div style={{ marginTop: 12 }}>
+                                                <Button type="link" style={{ paddingInline: 0 }} onClick={() => navigate(displayStatusMeta.actionPath!)}>
+                                                    {displayStatusMeta.actionLabel}
+                                                </Button>
+                                            </div>
+                                        ) : null}
                                     </div>
                                     <Switch
                                         checked={merchantDisplayEnabled}

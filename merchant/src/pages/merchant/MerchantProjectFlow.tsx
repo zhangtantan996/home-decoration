@@ -1,233 +1,417 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Spin, Tag, Button, Typography, message, Timeline, Alert, Empty, Descriptions } from 'antd';
-import { ArrowLeftOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  Button,
+  Empty,
+  Modal,
+  Progress,
+  Space,
+  Spin,
+  Tag,
+  message,
+} from 'antd';
+import {
+  ArrowLeftOutlined,
+  CheckCircleFilled,
+  EditOutlined,
+  EyeOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
-import FlowStepper, { FLOW_STEPS, resolveStepIndex } from './components/FlowStepper';
 import StepPanelSurvey from './components/StepPanelSurvey';
 import StepPanelBudget from './components/StepPanelBudget';
 import StepPanelQuote from './components/StepPanelQuote';
 import StepPanelDesign from './components/StepPanelDesign';
-import { BUSINESS_STAGE_META, BOOKING_STATUS_META } from '../../constants/statuses';
-import { merchantBookingApi } from '../../services/merchantApi';
-import api from '../../services/api';
+import StepPanelProposalConfirm from './components/StepPanelProposalConfirm';
+import StepPanelConstructionPrep from './components/StepPanelConstructionPrep';
+import StepPanelConstructionHandoff from './components/StepPanelConstructionHandoff';
+import {
+  merchantBookingApi,
+  merchantFlowApi,
+  type MerchantDesignerFlowWorkspace,
+  type MerchantFlowStep,
+} from '../../services/merchantApi';
+import styles from './MerchantProjectFlow.module.css';
 
-const { Text } = Typography;
+const STEP_STATUS_META: Record<
+  MerchantFlowStep['status'],
+  { label: string; color: string; tone: 'neutral' | 'blue' | 'gold' | 'green' | 'red' }
+> = {
+  not_started: { label: '未开始', color: 'default', tone: 'neutral' },
+  pending_submit: { label: '待商家提交', color: 'processing', tone: 'blue' },
+  pending_user: { label: '待用户确认', color: 'gold', tone: 'gold' },
+  pending_other: { label: '待他方处理', color: 'cyan', tone: 'blue' },
+  completed: { label: '已完成', color: 'success', tone: 'green' },
+  returned: { label: '已退回', color: 'error', tone: 'red' },
+};
 
-interface FlowData {
-  booking: any;
-  businessFlow: any;
-  siteSurvey: any;
-  budgetConfirmation: any;
-  designQuote: any;
-  designDelivery: any;
-  proposal: any;
-  project: any;
-  events: Array<{ date: string; label: string; type: 'success' | 'info' | 'warning' }>;
-}
+const STEP_ORDER: MerchantFlowStep['key'][] = [
+  'booking',
+  'survey',
+  'budget',
+  'quote',
+  'design',
+  'confirm',
+  'construction_prep',
+  'construction',
+];
+
+const getStepSortIndex = (key: MerchantFlowStep['key']) => STEP_ORDER.indexOf(key);
+
+const getStepActionLabel = (step: MerchantFlowStep) => {
+  if (step.status === 'returned') {
+    return '处理退回内容';
+  }
+  if (step.status === 'pending_submit') {
+    return step.primaryAction?.label || '提交本步骤';
+  }
+  if (step.status === 'pending_other') {
+    return step.primaryAction?.label || '查看进度';
+  }
+  if (step.status === 'pending_user' || step.status === 'completed') {
+    return '查看详情';
+  }
+  return step.primaryAction?.label || '查看详情';
+};
+
+const getSummaryLabel = (step: MerchantFlowStep) => {
+  if (step.status === 'returned') return '退回说明';
+  if (step.status === 'not_started') return '前置条件';
+  if (step.status === 'completed') return '当前结果';
+  if (step.status === 'pending_user') return '等待事项';
+  return '当前进度';
+};
 
 const MerchantProjectFlow: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const bookingId = Number(id || 0);
   const [loading, setLoading] = useState(true);
-  const [flowData, setFlowData] = useState<FlowData | null>(null);
+  const [flowData, setFlowData] = useState<MerchantDesignerFlowWorkspace | null>(null);
+  const [activeModal, setActiveModal] = useState<
+    'survey_upload'
+    | 'budget_confirm'
+    | 'design_fee_quote'
+    | 'design_deliverable'
+    | 'proposal_confirm'
+    | 'construction_prep'
+    | 'construction_handoff'
+    | null
+  >(null);
+  const [activeModalStepKey, setActiveModalStepKey] = useState<MerchantFlowStep['key'] | null>(null);
+  const [activeModalMode, setActiveModalMode] = useState<'view' | 'edit'>('edit');
 
-  const currentStage = flowData?.businessFlow?.currentStage || 'lead_pending';
-  const activeStepIndex = resolveStepIndex(currentStage);
+  const sortedSteps = useMemo(() => {
+    const steps = flowData?.steps || [];
+    return [...steps].sort((left, right) => getStepSortIndex(left.key) - getStepSortIndex(right.key));
+  }, [flowData?.steps]);
 
-  const stepParam = searchParams.get('step');
-  const currentStep = stepParam
-    ? FLOW_STEPS.findIndex(s => s.key === stepParam)
-    : activeStepIndex;
-  const safeCurrentStep = currentStep >= 0 ? currentStep : activeStepIndex;
+  const currentStepKey = flowData?.currentStepKey || sortedSteps[0]?.key || 'booking';
+  const currentStep = sortedSteps.find((item) => item.key === currentStepKey) || null;
+  const currentStepIndex = currentStep ? STEP_ORDER.indexOf(currentStep.key) : -1;
+  const completedCount = sortedSteps.filter((step) => step.status === 'completed').length;
+  const progressPercent = sortedSteps.length ? Math.round((completedCount / sortedSteps.length) * 100) : 0;
+  const activeModalStep = activeModalStepKey
+    ? sortedSteps.find((item) => item.key === activeModalStepKey) || null
+    : null;
 
   useEffect(() => {
-    loadFlowData();
-  }, [id]);
+    void loadFlowData();
+  }, [bookingId]);
+
+  useEffect(() => {
+    if (!flowData) return;
+    const step = searchParams.get('step') as MerchantFlowStep['key'] | null;
+    const mode = searchParams.get('mode');
+    if (mode !== 'edit' || !step) return;
+    const target = sortedSteps.find((item) => item.key === step);
+    if (target?.primaryAction?.kind === 'modal' && target.primaryAction.modalType) {
+      setActiveModal(target.primaryAction.modalType);
+      setActiveModalStepKey(target.key);
+      setActiveModalMode('edit');
+    }
+  }, [flowData, searchParams, sortedSteps]);
 
   const loadFlowData = async () => {
-    if (!id) return;
-    setLoading(true);
+    if (!Number.isFinite(bookingId) || bookingId <= 0) {
+      setLoading(false);
+      message.error('流程记录 ID 无效');
+      return;
+    }
     try {
-      const res = await api.get(`/merchant/bookings/${id}/flow-summary`) as any;
-      if (res.data?.code === 0) {
-        setFlowData(res.data.data);
-      } else {
-        // Fallback: load booking directly
-        const bookingRes = await merchantBookingApi.detail(Number(id));
-        if (bookingRes.booking) {
-          setFlowData({
-            booking: bookingRes.booking,
-            businessFlow: { currentStage: bookingRes.currentStage || bookingRes.booking.currentStage || 'lead_pending' },
-            siteSurvey: null,
-            budgetConfirmation: null,
-            designQuote: null,
-            designDelivery: null,
-            proposal: null,
-            project: null,
-            events: [],
-          });
-        }
-      }
-    } catch {
-      message.error('加载流程数据失败');
+      setLoading(true);
+      const result = await merchantFlowApi.summary(bookingId);
+      setFlowData(result);
+    } catch (error: any) {
+      message.error(error?.message || '加载设计流程失败');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStepClick = (stepIndex: number) => {
-    setSearchParams({ step: FLOW_STEPS[stepIndex].key });
-  };
-
-  const stageMeta = BUSINESS_STAGE_META[currentStage] || { text: currentStage, color: 'default' };
-
-  const renderStepPanel = () => {
-    const step = FLOW_STEPS[safeCurrentStep];
-    const isActive = safeCurrentStep === activeStepIndex;
-    const isPast = safeCurrentStep < activeStepIndex;
-
-    switch (step.key) {
-      case 'booking':
-        return renderBookingPanel(isPast);
-      case 'survey':
-        return renderSurveyPanel(isActive, isPast);
-      case 'budget':
-        return renderBudgetPanel(isActive, isPast);
-      case 'quote':
-        return renderQuotePanel(isActive, isPast);
-      case 'design':
-        return renderDesignPanel(isActive, isPast);
-      case 'construction':
-        return renderConstructionPanel(isActive, isPast);
-      default:
-        return <Empty description="未知步骤" />;
-    }
-  };
-
-  const renderBookingPanel = (isPast: boolean) => {
-    const booking = flowData?.booking;
-    if (!booking) return <Empty description="暂无预约数据" />;
-    const statusLabel = booking.statusText || BOOKING_STATUS_META[booking.status]?.text || '处理中';
-    const statusColor = BOOKING_STATUS_META[booking.status]?.color || 'default';
-    return (
-      <div>
-        <Descriptions column={2} bordered size="small">
-          <Descriptions.Item label="地址" span={2}>{booking.address}</Descriptions.Item>
-          <Descriptions.Item label="面积">{booking.area}㎡</Descriptions.Item>
-          <Descriptions.Item label="户型">{booking.houseLayout}</Descriptions.Item>
-          <Descriptions.Item label="装修类型">{booking.renovationType}</Descriptions.Item>
-          <Descriptions.Item label="预算范围">{booking.budgetRange}</Descriptions.Item>
-          <Descriptions.Item label="状态">
-            <Tag color={statusColor}>
-              {statusLabel}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="预约时间">{booking.preferredDate}</Descriptions.Item>
-        </Descriptions>
-        {!isPast && booking.statusGroup === 'pending_confirmation' && (
-          <div style={{ marginTop: 16, textAlign: 'right' }}>
-            <Button type="primary" onClick={() => handleBookingAction('confirm')}>
-              确认接单
-            </Button>
-            <Button danger style={{ marginLeft: 8 }} onClick={() => handleBookingAction('reject')}>
-              拒绝
-            </Button>
-          </div>
-        )}
-        {!isPast && booking.statusGroup === 'pending_payment' && (
-          <Alert
-            message="等待用户支付量房费"
-            description="量房费支付完成后，才可继续提交量房记录和预算确认。"
-            type="info"
-            showIcon
-            style={{ marginTop: 16 }}
-          />
-        )}
-        {isPast && (
-          <Alert message="接单已完成" type="success" showIcon style={{ marginTop: 16 }} />
-        )}
-      </div>
-    );
-  };
-
   const handleBookingAction = async (action: 'confirm' | 'reject') => {
     try {
-      const res = await merchantBookingApi.handle(Number(id), action);
+      const res = await merchantBookingApi.handle(bookingId, action);
       message.success(res.message || (action === 'confirm' ? '已接单' : '已拒绝'));
-      loadFlowData();
-    } catch {
-      message.error('操作失败');
+      await loadFlowData();
+    } catch (error: any) {
+      message.error(error?.message || '操作失败');
     }
   };
 
-  const renderSurveyPanel = (isActive: boolean, isPast: boolean) => (
-    <StepPanelSurvey bookingId={Number(id)} isActive={isActive} isPast={isPast} onComplete={loadFlowData} />
-  );
+  const isStepViewable = (step: MerchantFlowStep) =>
+    step.status === 'completed' || step.status === 'pending_user' || step.status === 'pending_other' || step.status === 'returned';
 
-  const renderBudgetPanel = (isActive: boolean, isPast: boolean) => (
-    <StepPanelBudget bookingId={Number(id)} isActive={isActive} isPast={isPast} onComplete={loadFlowData} />
-  );
+  const openModalForStep = (step: MerchantFlowStep, mode: 'view' | 'edit') => {
+    if (step.primaryAction?.kind !== 'modal' || !step.primaryAction.modalType) return;
+    setActiveModal(step.primaryAction.modalType);
+    setActiveModalStepKey(step.key);
+    setActiveModalMode(mode);
+  };
 
-  const renderQuotePanel = (isActive: boolean, isPast: boolean) => (
-    <StepPanelQuote bookingId={Number(id)} isActive={isActive} isPast={isPast} onComplete={loadFlowData} />
-  );
+  const scrollToStep = (stepKey: MerchantFlowStep['key']) => {
+    const target = document.getElementById(`merchant-flow-step-${stepKey}`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
-  const renderDesignPanel = (isActive: boolean, isPast: boolean) => (
-    <StepPanelDesign bookingId={Number(id)} isActive={isActive} isPast={isPast} onComplete={loadFlowData} />
-  );
+  const closeModal = () => {
+    setActiveModal(null);
+    setActiveModalStepKey(null);
+    setActiveModalMode('edit');
+    if (searchParams.get('mode') === 'edit') {
+      setSearchParams({});
+    }
+  };
 
-  const renderConstructionPanel = (_isActive: boolean, _isPast: boolean) => {
-    const project = flowData?.project;
-    if (!project) {
+  const handleModalComplete = async () => {
+    await loadFlowData();
+    closeModal();
+  };
+
+  const renderStepAction = (step: MerchantFlowStep, isCurrent: boolean, compact = false) => {
+    if (step.key === 'booking' && step.status === 'pending_submit') {
       return (
-        <div>
-          <Alert
-            message="施工阶段尚未开始"
-            description="设计方案确认后，系统将创建项目并进入施工流程。"
-            type="info"
-            showIcon
-          />
-        </div>
+        <Space wrap size={compact ? 8 : 12}>
+          <Button type="primary" onClick={() => void handleBookingAction('confirm')}>
+            确认接单
+          </Button>
+          <Button danger onClick={() => void handleBookingAction('reject')}>
+            拒绝本单
+          </Button>
+        </Space>
       );
     }
-    return (
-      <div>
-        <Text>项目执行与施工管理</Text>
-        <div style={{ marginTop: 16 }}>
-          <Button type="primary" onClick={() => navigate(`/projects/${project.id}`)}>
-            前往项目执行
+
+    if (step.primaryAction?.kind === 'modal' && step.primaryAction.modalType) {
+      if (step.status === 'returned') {
+        return (
+          <Space size={8} wrap>
+            {isStepViewable(step) ? (
+              <Button icon={<EyeOutlined />} onClick={() => openModalForStep(step, 'view')}>
+                查看上次内容
+              </Button>
+            ) : null}
+            <Button type="primary" icon={<EditOutlined />} onClick={() => openModalForStep(step, 'edit')}>
+              处理退回内容
+            </Button>
+          </Space>
+        );
+      }
+
+      if (step.status === 'pending_submit') {
+        return (
+          <Button type="primary" icon={<EditOutlined />} onClick={() => openModalForStep(step, 'edit')}>
+            {getStepActionLabel(step)}
           </Button>
+        );
+      }
+
+      if (step.status === 'pending_user' || step.status === 'pending_other' || step.status === 'completed') {
+        return (
+          <Button icon={<EyeOutlined />} onClick={() => openModalForStep(step, 'view')}>
+            查看详情
+          </Button>
+        );
+      }
+    }
+
+    const linkAction = step.primaryAction;
+    const linkPath = linkAction?.path;
+    if (linkAction?.kind === 'link' && linkPath && step.status !== 'not_started') {
+      return (
+        <Button type={isCurrent ? 'primary' : 'default'} onClick={() => navigate(linkPath)}>
+          {linkAction.label || '查看详情'}
+        </Button>
+      );
+    }
+
+    return null;
+  };
+
+  const renderStatusSummary = (step: MerchantFlowStep) => {
+    const content = step.summary || step.blockedReason;
+    if (!content) return null;
+    return (
+      <div className={styles.summaryBox}>
+        <span className={styles.summaryLabel}>{getSummaryLabel(step)}</span>
+        <div className={styles.summaryText}>{content}</div>
+      </div>
+    );
+  };
+
+  const renderStepCard = (step: MerchantFlowStep, index: number) => {
+    const statusMeta = STEP_STATUS_META[step.status];
+    const isCurrent = step.key === currentStepKey;
+
+    return (
+      <div key={step.key} id={`merchant-flow-step-${step.key}`} className={styles.stepItem}>
+        <div className={styles.stepConnector} />
+        <button
+          type="button"
+          className={[
+            styles.stepIndex,
+            styles[`tone${statusMeta.tone.charAt(0).toUpperCase()}${statusMeta.tone.slice(1)}`],
+            isCurrent ? styles.stepIndexCurrent : '',
+          ].filter(Boolean).join(' ')}
+          onClick={() => scrollToStep(step.key)}
+          aria-label={`定位到${step.title}`}
+        >
+          {step.status === 'completed' ? <CheckCircleFilled /> : index + 1}
+        </button>
+
+        <div
+          className={[
+            styles.stepCard,
+            isCurrent ? styles.stepCardCurrent : '',
+            step.status === 'returned' ? styles.stepCardReturned : '',
+          ].filter(Boolean).join(' ')}
+        >
+          <div className={styles.stepHeader}>
+            <div className={styles.stepHeaderMain}>
+              <div className={styles.stepHeaderTop}>
+                <span className={styles.stepTitle}>{step.title}</span>
+                <Tag color={statusMeta.color} style={{ margin: 0 }}>
+                  {statusMeta.label}
+                </Tag>
+                {isCurrent ? (
+                  <Tag color="blue" style={{ margin: 0 }}>
+                    当前步骤
+                  </Tag>
+                ) : null}
+              </div>
+              {step.merchantTodo ? <div className={styles.stepHint}>{step.merchantTodo}</div> : null}
+            </div>
+            <div className={styles.stepHeaderActions}>
+              {renderStepAction(step, isCurrent)}
+            </div>
+          </div>
+
+          <div className={styles.stepBody}>
+            {renderStatusSummary(step)}
+          </div>
         </div>
       </div>
     );
   };
 
-  const renderTimeline = () => {
-    const events = flowData?.events;
-    if (!events || events.length === 0) return null;
+  const renderModalContent = () => {
+    if (!flowData) return null;
+    const editable = activeModalStep
+      ? activeModalStep.key === currentStepKey &&
+        (activeModalStep.status === 'pending_submit' || activeModalStep.status === 'returned')
+      : false;
+    const isPast = activeModalStep?.status === 'completed';
+    const viewOnly = activeModalMode === 'view' || !editable;
 
-    return (
-      <MerchantSectionCard title="历史记录">
-        <Timeline
-          items={events.map(e => ({
-            color: e.type === 'success' ? 'green' : e.type === 'warning' ? 'orange' : 'blue',
-            dot: <ClockCircleOutlined />,
-            children: (
-              <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>{e.date}</Text>
-                <br />
-                <Text>{e.label}</Text>
-              </div>
-            ),
-          }))}
-        />
-      </MerchantSectionCard>
-    );
+    switch (activeModal) {
+      case 'survey_upload':
+        return (
+          <StepPanelSurvey
+            bookingId={bookingId}
+            isActive={editable}
+            onComplete={handleModalComplete}
+            isPast={isPast}
+            viewOnly={viewOnly}
+            initialSurvey={flowData.siteSurveySummary || null}
+          />
+        );
+      case 'budget_confirm':
+        return (
+          <StepPanelBudget
+            bookingId={bookingId}
+            isActive={editable}
+            onComplete={handleModalComplete}
+            isPast={isPast}
+            viewOnly={viewOnly}
+            initialSummary={flowData.budgetConfirmSummary || null}
+          />
+        );
+      case 'design_fee_quote':
+        return (
+          <StepPanelQuote
+            bookingId={bookingId}
+            isActive={editable}
+            onComplete={handleModalComplete}
+            isPast={isPast}
+            viewOnly={viewOnly}
+            initialQuote={flowData.designFeeQuote || null}
+          />
+        );
+      case 'design_deliverable':
+        return (
+          <StepPanelDesign
+            bookingId={bookingId}
+            isActive={editable}
+            onComplete={handleModalComplete}
+            isPast={isPast}
+            viewOnly={viewOnly}
+            initialDeliverable={flowData.designDeliverable || null}
+          />
+        );
+      case 'proposal_confirm':
+        return (
+          <StepPanelProposalConfirm
+            bookingId={bookingId}
+            isActive={editable}
+            onComplete={handleModalComplete}
+            isPast={isPast}
+            viewOnly={viewOnly}
+            initialProposal={flowData.proposal || null}
+            initialDeliverable={flowData.designDeliverable || null}
+            initialQuote={flowData.designFeeQuote || null}
+          />
+        );
+      case 'construction_prep':
+        return (
+          <StepPanelConstructionPrep
+            bookingId={bookingId}
+            bookingAddress={flowData.booking.address}
+            isActive={editable}
+            onComplete={handleModalComplete}
+            isPast={isPast}
+            viewOnly={viewOnly}
+            initialSummary={flowData.constructionPreparation || null}
+          />
+        );
+      case 'construction_handoff':
+        return (
+          <StepPanelConstructionHandoff
+            bookingId={bookingId}
+            isActive={editable}
+            onComplete={handleModalComplete}
+            isPast={isPast}
+            viewOnly={viewOnly}
+            initialPreparation={flowData.constructionPreparation || null}
+            initialHandoff={flowData.constructionHandoff || null}
+          />
+        );
+      default:
+        return null;
+    }
   };
 
   if (loading) {
@@ -240,41 +424,119 @@ const MerchantProjectFlow: React.FC = () => {
     );
   }
 
-  const booking = flowData?.booking;
-  const headerDesc = booking
-    ? `${booking.address || ''} · ${booking.area || ''}㎡ · ${booking.houseLayout || ''}`
-    : '加载中...';
+  if (!flowData) {
+    return (
+      <MerchantPageShell>
+        <MerchantContentPanel>
+          <MerchantSectionCard>
+            <Empty description="方案流程不存在" />
+          </MerchantSectionCard>
+        </MerchantContentPanel>
+      </MerchantPageShell>
+    );
+  }
+
+  const booking = flowData.booking;
+  const headerDesc = `${booking.address || ''}${booking.area ? ` · ${booking.area}㎡` : ''}${booking.houseLayout ? ` · ${booking.houseLayout}` : ''}`;
+  const currentStatusMeta = currentStep ? STEP_STATUS_META[currentStep.status] : null;
+  const stageLabel = booking.currentStageText || flowData.currentStage || '';
 
   return (
     <MerchantPageShell>
       <MerchantPageHeader
-        title={`项目流程 #${id}`}
-        description={headerDesc}
-        extra={
+        title={`方案 #${bookingId} 推进流程`}
+        description={headerDesc || undefined}
+        meta={(
+          <Space wrap size={8}>
+            {currentStep ? <Tag color={currentStatusMeta?.color}>{currentStep.title}</Tag> : null}
+            <Tag color="blue">已完成 {completedCount}/{sortedSteps.length}</Tag>
+            {stageLabel ? <Tag>{stageLabel}</Tag> : null}
+          </Space>
+        )}
+        extra={(
           <>
-            <Tag color={stageMeta.color}>{stageMeta.text}</Tag>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/bookings')}>
-              返回预约列表
+            <Button icon={<ReloadOutlined />} onClick={() => void loadFlowData()}>
+              刷新状态
+            </Button>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/proposals')}>
+              返回方案报价
             </Button>
           </>
-        }
+        )}
       />
 
       <MerchantContentPanel>
-        <MerchantSectionCard>
-          <FlowStepper
-            currentStage={currentStage}
-            currentStep={safeCurrentStep}
-            onStepClick={handleStepClick}
-          />
+        <MerchantSectionCard className={styles.overviewCard}>
+          <div className={styles.overviewBar}>
+            <div className={styles.currentStepRow}>
+              <div className={styles.currentStepIndex}>
+                {currentStepIndex >= 0 ? String(currentStepIndex + 1).padStart(2, '0') : '--'}
+              </div>
+              <div className={styles.currentStepContent}>
+                <div className={styles.currentStepTitle}>{currentStep?.title || '流程已完成'}</div>
+                {flowData.flowSummary ? <div className={styles.currentStepMeta}>{flowData.flowSummary}</div> : null}
+              </div>
+            </div>
+            <div className={styles.overviewActions}>
+              {currentStatusMeta ? (
+                <Tag color={currentStatusMeta.color} style={{ margin: 0 }}>
+                  {currentStatusMeta.label}
+                </Tag>
+              ) : null}
+              {currentStep ? renderStepAction(currentStep, true, true) : null}
+            </div>
+          </div>
+
+          <div className={styles.progressSummary}>
+            <span className={styles.metricLabel}>整体进度</span>
+            <div className={styles.progressSummaryRow}>
+              <span className={styles.progressSummaryValue}>{progressPercent}%</span>
+              <Progress percent={progressPercent} showInfo={false} strokeColor="#2563eb" trailColor="#dbeafe" />
+            </div>
+          </div>
+
+          <div className={styles.progressRail}>
+            {sortedSteps.map((step, index) => {
+              const statusMeta = STEP_STATUS_META[step.status];
+              const isCurrent = step.key === currentStepKey;
+              return (
+                <button
+                  key={step.key}
+                  type="button"
+                  className={[
+                    styles.progressChip,
+                    styles[`tone${statusMeta.tone.charAt(0).toUpperCase()}${statusMeta.tone.slice(1)}`],
+                    isCurrent ? styles.progressChipCurrent : '',
+                  ].filter(Boolean).join(' ')}
+                  onClick={() => scrollToStep(step.key)}
+                >
+                  <span className={styles.progressChipIndex}>{index + 1}</span>
+                  <span className={styles.progressChipTitle}>{step.title}</span>
+                  <span className={styles.progressChipState}>{statusMeta.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </MerchantSectionCard>
 
-        <MerchantSectionCard title={`当前步骤：${FLOW_STEPS[safeCurrentStep]?.title}`}>
-          {renderStepPanel()}
+        <MerchantSectionCard title="步骤推进">
+          <div className={styles.stepList}>
+            {sortedSteps.map((step, index) => renderStepCard(step, index))}
+          </div>
         </MerchantSectionCard>
-
-        {renderTimeline()}
       </MerchantContentPanel>
+
+      <Modal
+        open={Boolean(activeModal)}
+        title={activeModalStep ? `${activeModalStep.title}${activeModalMode === 'view' ? '详情' : '处理'}` : '流程操作'}
+        onCancel={closeModal}
+        footer={null}
+        width={activeModal === 'construction_prep' ? 1120 : 960}
+        centered
+        destroyOnClose={false}
+      >
+        {renderModalContent()}
+      </Modal>
     </MerchantPageShell>
   );
 };

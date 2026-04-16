@@ -31,12 +31,25 @@ const { Title, Text } = Typography;
 type EditableRow = QuoteListItem & {
     generatedUnitPriceCent?: number;
     unitPriceCent?: number;
+    quotedQuantity?: number;
     amountCent?: number;
     adjustedFlag?: boolean;
     missingPriceFlag?: boolean;
     minChargeAppliedFlag?: boolean;
     missingMappingFlag?: boolean;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
+    requiresUserConfirmation?: boolean;
+    platformReviewFlag?: boolean;
     remark?: string;
+};
+
+type QuoteReviewGroup = {
+    key: 'auto' | 'missing' | 'deviation';
+    title: string;
+    tone: 'success' | 'warning' | 'info';
+    description: string;
+    rows: EditableRow[];
 };
 
 const statusLabel = (status: string): { text: string; color: string } => {
@@ -59,6 +72,28 @@ const computeAmountCent = (quantity: number, unitPriceCent?: number): number => 
     const up = Number(unitPriceCent || 0);
     if (!Number.isFinite(q) || !Number.isFinite(up) || q <= 0 || up <= 0) return 0;
     return Math.round(q * up);
+};
+
+const getBaselineQuantity = (row: EditableRow): number => (
+    Number(row.baselineQuantity ?? row.quantity ?? 0)
+);
+
+const getQuotedQuantity = (row: EditableRow): number => (
+    Number(row.quotedQuantity ?? getBaselineQuantity(row))
+);
+
+const hasQuantityChanged = (row: EditableRow): boolean => (
+    Math.abs(getQuotedQuantity(row) - getBaselineQuantity(row)) > 0.000001
+);
+
+const requiresDeviationReason = (row: EditableRow): boolean => {
+    const generatedUnitPriceCent = row.generatedUnitPriceCent || 0;
+    const currentUnitPriceCent = row.unitPriceCent || 0;
+    const unitPriceAdjusted = generatedUnitPriceCent > 0
+        && currentUnitPriceCent > 0
+        && generatedUnitPriceCent !== currentUnitPriceCent;
+    const filledMissingPrice = Boolean(row.missingPriceFlag) && currentUnitPriceCent > 0;
+    return hasQuantityChanged(row) || unitPriceAdjusted || filledMissingPrice;
 };
 
 const formatCentToYuanText = (cent?: number): string => {
@@ -92,6 +127,51 @@ const isRequiredItem = (item: QuoteListItem): boolean => {
     } catch {
         return false;
     }
+};
+
+const groupQuoteReviewRows = (rows: EditableRow[]): QuoteReviewGroup[] => {
+    const missing = rows.filter((row) =>
+        row.missingMappingFlag
+        || row.missingPriceFlag
+        || (row.unitPriceCent || 0) <= 0,
+    );
+    const deviation = rows.filter((row) =>
+        !missing.some((missingRow) => missingRow.id === row.id)
+        && (
+            row.deviationFlag
+            || row.adjustedFlag
+            || row.requiresUserConfirmation
+            || row.platformReviewFlag
+        ),
+    );
+    const auto = rows.filter((row) =>
+        !missing.some((missingRow) => missingRow.id === row.id)
+        && !deviation.some((deviationRow) => deviationRow.id === row.id),
+    );
+
+    return [
+        {
+            key: 'missing',
+            title: '缺价待补项',
+            tone: 'warning',
+            description: '这些条目还不能形成正式报价，需要先补单价或补标准映射。',
+            rows: missing,
+        },
+        {
+            key: 'deviation',
+            title: '偏差复核项',
+            tone: 'info',
+            description: '这些条目与基线有差异，提交前需要写清原因。',
+            rows: deviation,
+        },
+        {
+            key: 'auto',
+            title: '自动命中项',
+            tone: 'success',
+            description: '系统已按价格库生成草稿，确认无误后可直接提交。',
+            rows: auto,
+        },
+    ];
 };
 
 const MerchantQuoteDetail: React.FC = () => {
@@ -129,17 +209,25 @@ const MerchantQuoteDetail: React.FC = () => {
 
             const nextRows: EditableRow[] = (data.items || []).map((item) => {
                 const matched = submissionItems.get(item.id);
+                const baselineQuantity = item.baselineQuantity ?? item.quantity;
+                const quotedQuantity = matched?.quotedQuantity ?? baselineQuantity;
                 const unitPriceCent = matched?.unitPriceCent;
-                const amountCent = matched?.amountCent ?? computeAmountCent(item.quantity, unitPriceCent);
+                const amountCent = matched?.amountCent ?? computeAmountCent(quotedQuantity, unitPriceCent);
                 return {
                     ...item,
-                    generatedUnitPriceCent: matched?.generatedUnitPriceCent,
+                    baselineQuantity,
+                    quotedQuantity,
+                    generatedUnitPriceCent: matched?.generatedUnitPriceCent ?? matched?.unitPriceCent,
                     unitPriceCent,
                     amountCent,
                     adjustedFlag: matched?.adjustedFlag,
                     missingPriceFlag: matched?.missingPriceFlag,
                     minChargeAppliedFlag: matched?.minChargeAppliedFlag,
                     missingMappingFlag: matched?.missingMappingFlag ?? item.missingMappingFlag,
+                    quantityChangeReason: matched?.quantityChangeReason || '',
+                    deviationFlag: matched?.deviationFlag,
+                    requiresUserConfirmation: matched?.requiresUserConfirmation,
+                    platformReviewFlag: matched?.platformReviewFlag,
                     remark: matched?.remark || '',
                 };
             });
@@ -156,17 +244,36 @@ const MerchantQuoteDetail: React.FC = () => {
     }, [quoteListId]);
 
     const totalCent = useMemo(() => rows.reduce((sum, row) => sum + (row.amountCent || 0), 0), [rows]);
+    const reviewGroups = useMemo(() => groupQuoteReviewRows(rows), [rows]);
 
     const buildPayloadItems = (): QuoteSubmissionItem[] => rows
         .map((row) => ({
             quoteListItemId: row.id,
             unitPriceCent: row.unitPriceCent,
+            quotedQuantity: getQuotedQuantity(row),
+            quantityChangeReason: row.quantityChangeReason?.trim() || undefined,
             remark: row.remark?.trim() || undefined,
         }))
-        .filter((item) => (item.unitPriceCent || 0) > 0 || !!item.remark);
+        .filter((item, index) => {
+            const row = rows[index];
+            return (item.unitPriceCent || 0) > 0
+                || !!item.remark
+                || !!item.quantityChangeReason
+                || hasQuantityChanged(row);
+        });
+
+    const validateSubmissionRows = (): boolean => {
+        const invalidRows = rows.filter((row) => requiresDeviationReason(row) && !row.quantityChangeReason?.trim());
+        if (invalidRows.length === 0) {
+            return true;
+        }
+        message.error(`以下条目存在偏差调整但未填写偏差原因：${invalidRows.map((row) => row.name).join('、')}`);
+        return false;
+    };
 
     const saveDraft = async () => {
         if (!detail) return;
+        if (!validateSubmissionRows()) return;
         try {
             setSaving(true);
             const items = buildPayloadItems();
@@ -187,6 +294,7 @@ const MerchantQuoteDetail: React.FC = () => {
 
     const submit = async () => {
         if (!detail) return;
+        if (!validateSubmissionRows()) return;
         Modal.confirm({
             title: '确认提交报价',
             icon: <ExclamationCircleOutlined />,
@@ -247,11 +355,37 @@ const MerchantQuoteDetail: React.FC = () => {
             render: (value: string) => value || '-',
         },
         {
-            title: '数量',
-            dataIndex: 'quantity',
-            key: 'quantity',
+            title: '基准量',
+            dataIndex: 'baselineQuantity',
+            key: 'baselineQuantity',
             width: 90,
-            render: (value: number) => Number.isFinite(value) ? value : '-',
+            render: (value: number, record) => Number.isFinite(value) ? `${value}${record.unit || ''}` : '-',
+        },
+        {
+            title: '报价量',
+            dataIndex: 'quotedQuantity',
+            key: 'quotedQuantity',
+            width: 120,
+            render: (_: unknown, record) => (
+                <InputNumber
+                    min={0}
+                    precision={2}
+                    style={{ width: '100%' }}
+                    disabled={!canEdit}
+                    value={record.quotedQuantity ?? record.baselineQuantity ?? record.quantity}
+                    onChange={(value) => {
+                        const nextQuantity = Number(value ?? record.baselineQuantity ?? record.quantity);
+                        setRows((prev) => prev.map((row) => {
+                            if (row.id !== record.id) return row;
+                            return {
+                                ...row,
+                                quotedQuantity: nextQuantity,
+                                amountCent: computeAmountCent(nextQuantity, row.unitPriceCent),
+                            };
+                        }));
+                    }}
+                />
+            ),
         },
         {
             title: '单价(元)',
@@ -269,7 +403,7 @@ const MerchantQuoteDetail: React.FC = () => {
                         setRows((prev) => prev.map((row) => {
                             if (row.id !== record.id) return row;
                             const unitPriceCent = nextCent;
-                            const amountCent = computeAmountCent(row.quantity, unitPriceCent);
+                            const amountCent = computeAmountCent(row.quotedQuantity ?? row.baselineQuantity ?? row.quantity, unitPriceCent);
                             return { ...row, unitPriceCent, amountCent };
                         }));
                     }}
@@ -279,7 +413,7 @@ const MerchantQuoteDetail: React.FC = () => {
                         setRows((prev) => prev.map((row) => {
                             if (row.id !== record.id) return row;
                             const unitPriceCent = nextCent;
-                            const amountCent = computeAmountCent(row.quantity, unitPriceCent);
+                            const amountCent = computeAmountCent(row.quotedQuantity ?? row.baselineQuantity ?? row.quantity, unitPriceCent);
                             return { ...row, unitPriceCent, amountCent };
                         }));
                     }}
@@ -292,6 +426,23 @@ const MerchantQuoteDetail: React.FC = () => {
             key: 'amountCent',
             width: 120,
             render: (value?: number) => formatCentToYuanText(value),
+        },
+        {
+            title: '偏差原因',
+            dataIndex: 'quantityChangeReason',
+            key: 'quantityChangeReason',
+            width: 220,
+            render: (_: unknown, record) => (
+                <Input
+                    placeholder={canEdit ? '如有改量、改单价或补价，请写原因' : '-'}
+                    disabled={!canEdit}
+                    value={record.quantityChangeReason}
+                    onChange={(e) => {
+                        const next = e.target.value;
+                        setRows((prev) => prev.map((row) => row.id === record.id ? { ...row, quantityChangeReason: next } : row));
+                    }}
+                />
+            ),
         },
         {
             title: '备注',
@@ -320,6 +471,9 @@ const MerchantQuoteDetail: React.FC = () => {
                     {record.missingPriceFlag && <Tag color="orange">缺工长价格</Tag>}
                     {record.minChargeAppliedFlag && <Tag color="blue">启用起步价</Tag>}
                     {record.adjustedFlag && <Tag color="green">已人工调整</Tag>}
+                    {record.deviationFlag && <Tag color="gold">数量偏差</Tag>}
+                    {record.platformReviewFlag && <Tag color="purple">平台复核</Tag>}
+                    {record.requiresUserConfirmation && <Tag color="cyan">需用户确认</Tag>}
                 </Space>
             ),
         },
@@ -330,6 +484,7 @@ const MerchantQuoteDetail: React.FC = () => {
     const businessStageTag = businessStageLabel(detail?.businessStage);
     const submissionStatus = statusLabel(detail?.submission?.status || '-').text;
     const generationStatus = detail?.submission?.generationStatus || '-';
+    const reviewStatus = detail?.submission?.reviewStatus || '-';
     const invitationStatus = detail?.invitation?.status || '-';
     const showResubmitHint = canEdit && String(detail?.submission?.status || '').toLowerCase() === 'submitted';
 
@@ -394,6 +549,7 @@ const MerchantQuoteDetail: React.FC = () => {
                     <Descriptions.Item label="方案版本">v{detail?.quoteList?.proposalVersion || '-'}</Descriptions.Item>
                     <Descriptions.Item label="基线版本">v{detail?.quoteList?.quantityBaseVersion || '-'}</Descriptions.Item>
                     <Descriptions.Item label="草稿生成状态">{generationStatus}</Descriptions.Item>
+                    <Descriptions.Item label="平台复核状态">{reviewStatus}</Descriptions.Item>
                     <Descriptions.Item label="邀请状态">{invitationStatus}</Descriptions.Item>
                     <Descriptions.Item label="截止时间">
                         {detail?.quoteList?.deadlineAt ? detail.quoteList.deadlineAt.replace('T', ' ').replace('Z', '') : '-'}
@@ -421,13 +577,6 @@ const MerchantQuoteDetail: React.FC = () => {
                         description="在平台将报价发送给用户前，你仍可继续修改并重新提交。系统会保留每次改价的版本留痕。"
                     />
                 )}
-                <Alert
-                    type="info"
-                    showIcon
-                    style={{ marginTop: 16 }}
-                    message="访问与权限说明"
-                    description="该正式施工报价任务由 Admin 分配后才会出现在你的商家端。你不能在 Merchant 端新建脱离 Admin 编排的正式报价任务；未被分配的商家也无法查看或提交。"
-                />
                 {rows.some((row) => row.missingMappingFlag || row.missingPriceFlag) && (
                     <Alert
                         type="warning"
@@ -446,6 +595,15 @@ const MerchantQuoteDetail: React.FC = () => {
                         description="标记为“必填”的施工项必须填写单价后才能提交报价。"
                     />
                 )}
+                {detail?.paymentPlanSummary?.length ? (
+                    <Alert
+                        type="success"
+                        showIcon
+                        style={{ marginTop: 16 }}
+                        message="当前报价已绑定施工支付计划模板"
+                        description={`确认后将生成 ${detail.paymentPlanSummary.length} 笔支付计划，首笔为 ${detail.paymentPlanSummary[0]?.name || '首付款'}。`}
+                    />
+                ) : null}
             </Card>
 
             <Card style={{ marginBottom: 16 }} loading={loading} title="来源与工程量基线">
@@ -501,20 +659,41 @@ const MerchantQuoteDetail: React.FC = () => {
                 )}
             </Card>
 
-            <Card>
-                <Table
-                    rowKey="id"
-                    loading={loading}
-                    columns={columns}
-                    dataSource={rows}
-                    pagination={{ pageSize: 20, showSizeChanger: false }}
-                    rowClassName={(record) => {
-                        if (record.missingMappingFlag || record.missingPriceFlag) return 'quote-row-warning';
-                        if (record.adjustedFlag) return 'quote-row-adjusted';
-                        return '';
-                    }}
-                />
-            </Card>
+            <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+                {reviewGroups
+                    .filter((group) => group.rows.length > 0)
+                    .map((group) => (
+                        <Card
+                            key={group.key}
+                            title={`${group.title}（${group.rows.length}）`}
+                            extra={<Tag color={group.tone === 'warning' ? 'orange' : group.tone === 'info' ? 'blue' : 'green'}>{group.rows.length} 项</Tag>}
+                        >
+                            <Alert
+                                type={group.tone}
+                                showIcon
+                                style={{ marginBottom: 16 }}
+                                message={group.description}
+                            />
+                            <Table
+                                rowKey="id"
+                                loading={loading}
+                                columns={columns}
+                                dataSource={group.rows}
+                                pagination={false}
+                                rowClassName={(record) => {
+                                    if (record.missingMappingFlag || record.missingPriceFlag) return 'quote-row-warning';
+                                    if (record.adjustedFlag) return 'quote-row-adjusted';
+                                    return '';
+                                }}
+                            />
+                        </Card>
+                    ))}
+                {reviewGroups.every((group) => group.rows.length === 0) ? (
+                    <Card>
+                        <Alert type="info" showIcon message="当前暂无可复核条目" />
+                    </Card>
+                ) : null}
+            </Space>
         </div>
     );
 };

@@ -18,6 +18,7 @@ import {
 } from 'antd';
 import { CloudUploadOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { useNavigate } from 'react-router-dom';
 import { adminQuoteApi, type QuoteCategory, type QuoteLibraryItem } from '../../services/quoteApi';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
@@ -71,6 +72,7 @@ const abbreviateCategoryCode = (code?: string) => {
 };
 
 const QuoteLibraryManagement: React.FC = () => {
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [importing, setImporting] = useState(false);
     const [savingCategory, setSavingCategory] = useState(false);
@@ -344,6 +346,11 @@ const QuoteLibraryManagement: React.FC = () => {
             <PageHeader
                 title="平台标准施工项库"
                 description="维护标准编码、类目和关键词，统一报价基础数据。"
+                extra={(
+                    <Button onClick={() => navigate('/projects/quotes/templates')}>
+                        施工报价模板
+                    </Button>
+                )}
             />
 
             <ToolbarCard>

@@ -16,9 +16,23 @@ interface QuoteTaskUserViewResponse {
   items: Array<{
     id: number;
     quoteListItemId: number;
+    itemName?: string;
+    unit?: string;
+    baselineQuantity?: number;
+    quotedQuantity?: number;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
     unitPriceCent?: number;
     amountCent?: number;
     remark?: string;
+  }>;
+  paymentPlanSummary?: Array<{
+    id: number;
+    orderId: number;
+    seq: number;
+    name: string;
+    amount?: number;
+    dueAt?: string;
   }>;
   taskSummary: {
     area?: number;
@@ -93,9 +107,23 @@ export async function getQuoteTaskDetail(id: number): Promise<QuoteTaskDetailVM>
     items: (data.items || []).map((item) => ({
       id: item.id,
       quoteListItemId: item.quoteListItemId,
+      itemName: item.itemName || `清单项 #${item.quoteListItemId}`,
+      unit: item.unit || '',
+      baselineQuantity: item.baselineQuantity || undefined,
+      quotedQuantity: item.quotedQuantity || undefined,
+      quantityChangeReason: item.quantityChangeReason || undefined,
+      deviationFlag: item.deviationFlag || false,
       unitPriceText: formatCurrency((Number(item.unitPriceCent || 0)) / 100),
       amountText: formatCurrency((Number(item.amountCent || 0)) / 100),
       remark: item.remark || '',
+    })),
+    paymentPlanSummary: (data.paymentPlanSummary || []).map((plan) => ({
+      id: plan.id,
+      orderId: plan.orderId,
+      seq: plan.seq,
+      name: plan.name,
+      amountText: formatCurrency(Number(plan.amount || 0)),
+      dueAt: plan.dueAt || undefined,
     })),
     submissionId: data.submission.id,
   };

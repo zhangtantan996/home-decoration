@@ -23,6 +23,7 @@ import DemandList from './pages/demands/DemandList';
 import ComplaintManagement from './pages/complaints/ComplaintManagement';
 import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
+import QuoteTemplateManagement from './pages/quotes/QuoteTemplateManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
 import WorkbenchDetail from './pages/supervision/WorkbenchDetail';
 import WorkbenchList from './pages/supervision/WorkbenchList';
@@ -47,6 +48,7 @@ import RefundDetail from './pages/refunds/RefundDetail';
 import WithdrawList from './pages/withdraws/WithdrawList';
 import WithdrawDetail from './pages/withdraws/WithdrawDetail';
 import OrderList from './pages/orders/OrderList';
+import NotificationListPage from './pages/notifications/NotificationList';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { getRouterBasename } from './utils/env';
 
@@ -73,6 +75,7 @@ const router = createBrowserRouter([
         children: [
             { index: true, element: <Navigate to="/dashboard" replace /> },
             { path: 'dashboard', element: <ProtectedRoute permission="dashboard:view"><Dashboard /></ProtectedRoute> },
+            { path: 'notifications', element: <ProtectedRoute><NotificationListPage /></ProtectedRoute> },
 
             // Users
             { path: 'users', element: <Navigate to="/users/list" replace /> },
@@ -104,6 +107,7 @@ const router = createBrowserRouter([
             { path: 'projects/detail/:id', element: <ProtectedRoute permission="project:view"><ProjectDetail /></ProtectedRoute> },
             { path: 'projects/map', element: <ProtectedRoute permission="project:map"><ProjectMap /></ProtectedRoute> },
             { path: 'projects/quotes/library', element: <ProtectedRoute permission="project:list"><QuoteLibraryManagement /></ProtectedRoute> },
+            { path: 'projects/quotes/templates', element: <ProtectedRoute permission="project:list"><QuoteTemplateManagement /></ProtectedRoute> },
             { path: 'projects/quotes/lists', element: <ProtectedRoute permission="project:edit"><QuoteListManagement /></ProtectedRoute> },
             { path: 'projects/quotes/compare/:id', element: <ProtectedRoute permission="project:view"><QuoteComparison /></ProtectedRoute> },
 

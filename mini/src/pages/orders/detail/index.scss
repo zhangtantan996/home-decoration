@@ -319,6 +319,15 @@
     font-weight: 700;
   }
 
+  &__bottom-secondary-button {
+    flex: 0 0 188rpx;
+    height: 72rpx;
+    margin-left: -8rpx;
+    border-radius: $radius-full;
+    font-size: 24rpx;
+    font-weight: 600;
+  }
+
   &__qr-mask {
     position: fixed;
     inset: 0;

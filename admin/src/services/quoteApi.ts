@@ -50,6 +50,7 @@ export interface QuoteTemplate {
     renovationType: string;
     description?: string;
     status: number;
+    itemCount?: number;
 }
 
 export interface QuoteTemplateItem {
@@ -59,6 +60,13 @@ export interface QuoteTemplateItem {
     defaultQuantity: number;
     sortOrder: number;
     required: boolean;
+}
+
+export interface QuoteTemplateEnsureResult {
+    template: QuoteTemplate;
+    items: QuoteTemplateItem[];
+    created: boolean;
+    repaired: boolean;
 }
 
 export interface QuantitySuggestion {
@@ -95,6 +103,9 @@ export interface QuoteListSummary {
     title: string;
     status: string;
     currency: string;
+    pricingMode?: string;
+    materialIncluded?: boolean;
+    paymentPlanGeneratedFlag?: boolean;
     deadlineAt?: string;
     awardedProviderId?: number;
     prerequisiteStatus?: string;
@@ -108,20 +119,37 @@ export interface QuoteListSummary {
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
+    baselineStatus?: string;
+    baselineSubmittedAt?: string;
+    constructionSubjectType?: string;
+    constructionSubjectId?: number;
+    constructionSubjectDisplayName?: string;
+    kickoffStatus?: string;
+    plannedStartDate?: string;
+    supervisorSummary?: {
+        plannedStartDate?: string;
+        latestLogAt?: string;
+        latestLogTitle?: string;
+        unhandledRiskCount?: number;
+    };
 }
 
 export interface QuoteListItem {
     id: number;
     standardItemId: number;
+    quantityBaseItemId?: number;
     lineNo: number;
     name: string;
     unit: string;
     quantity: number;
+    baselineQuantity?: number;
     pricingNote?: string;
     categoryL1?: string;
     categoryL2?: string;
     sortOrder?: number;
     sourceType?: string;
+    sourceStage?: string;
+    quantityAdjustableFlag?: boolean;
     matchedStandardItemId?: number;
     missingMappingFlag?: boolean;
     extensionsJson?: string;
@@ -221,30 +249,63 @@ export interface QuoteComparisonSubmission {
     providerType: number;
     providerSubType: string;
     status: string;
+    reviewStatus?: string;
     totalCent: number;
     missingItemIds: number[];
     abnormalItemIds: number[];
     categoryTotals: Array<{ category: string; totalCent: number }>;
 }
 
+export interface QuotePaymentPlanSummary {
+    id: number;
+    orderId: number;
+    milestoneId?: number;
+    type: string;
+    seq: number;
+    name: string;
+    amount: number;
+    status: number;
+    dueAt?: string;
+    paidAt?: string;
+}
+
 export interface QuoteComparisonResponse {
     quoteList: QuoteListSummary;
     items: QuoteListItem[];
     submissions: QuoteComparisonSubmission[];
+    paymentPlanSummary?: QuotePaymentPlanSummary[];
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
+    baselineStatus?: string;
+    baselineSubmittedAt?: string;
+    constructionSubjectType?: string;
+    constructionSubjectId?: number;
+    constructionSubjectDisplayName?: string;
+    kickoffStatus?: string;
+    plannedStartDate?: string;
+    supervisorSummary?: {
+        plannedStartDate?: string;
+        latestLogAt?: string;
+        latestLogTitle?: string;
+        unhandledRiskCount?: number;
+    };
 }
 
 export interface QuoteSubmissionRevisionItem {
     quoteListItemId: number;
     generatedUnitPriceCent?: number;
     unitPriceCent?: number;
+    quotedQuantity?: number;
     amountCent?: number;
     adjustedFlag?: boolean;
     missingPriceFlag?: boolean;
     missingMappingFlag?: boolean;
     minChargeAppliedFlag?: boolean;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
+    requiresUserConfirmation?: boolean;
+    platformReviewFlag?: boolean;
     remark?: string;
 }
 
@@ -275,6 +336,19 @@ export interface AdminQuoteListDetail {
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
+    baselineStatus?: string;
+    baselineSubmittedAt?: string;
+    constructionSubjectType?: string;
+    constructionSubjectId?: number;
+    constructionSubjectDisplayName?: string;
+    kickoffStatus?: string;
+    plannedStartDate?: string;
+    supervisorSummary?: {
+        plannedStartDate?: string;
+        latestLogAt?: string;
+        latestLogTitle?: string;
+        unhandledRiskCount?: number;
+    };
 }
 
 const unwrapEnvelope = <T,>(payload: unknown, fallbackMessage: string): T => {
@@ -363,7 +437,7 @@ export const adminQuoteApi = {
     getProviderPriceBook: async (providerId: number) =>
         unwrapEnvelope<QuotePriceBookDetail>(
             await api.get(`/admin/providers/${providerId}/price-book`),
-            '获取工长价格库失败'
+            '获取施工主体价格库失败'
         ),
     listQuoteLists: async (params?: { page?: number; pageSize?: number; keyword?: string; status?: string }) =>
         unwrapEnvelope<{ list: QuoteListSummary[]; total: number; page: number; pageSize: number }>(
@@ -444,12 +518,12 @@ export const adminQuoteApi = {
     recommendForemen: async (quoteTaskId: number) =>
         unwrapEnvelope<{ list: RecommendedForeman[] }>(
             await api.post(`/admin/quote-tasks/${quoteTaskId}/recommend-foremen`),
-            '推荐工长失败'
+            '推荐施工主体失败'
         ),
     selectForemen: async (quoteTaskId: number, providerIds: number[]) =>
         unwrapEnvelope<{ invitations: QuoteInvitation[] }>(
             await api.post(`/admin/quote-tasks/${quoteTaskId}/select-foremen`, { providerIds }),
-            '选择工长失败'
+            '选择施工主体失败'
         ),
     generateDrafts: async (quoteTaskId: number) =>
         unwrapEnvelope<QuoteComparisonResponse>(
@@ -475,6 +549,11 @@ export const adminQuoteApi = {
         unwrapEnvelope<{ list: QuoteSubmissionRevisionRecord[] }>(
             await api.get(`/admin/quote-submissions/${submissionId}/revisions`),
             '获取报价改动历史失败'
+        ),
+    reviewSubmission: async (submissionId: number, payload: { approved: boolean; reason?: string }) =>
+        unwrapEnvelope<{ reviewStatus: string }>(
+            await api.post(`/admin/quote-submissions/${submissionId}/review`, payload),
+            '更新报价复核失败'
         ),
     submitTaskToUser: async (quoteTaskId: number, submissionId: number) =>
         unwrapEnvelope<QuoteListSummary>(
@@ -539,6 +618,11 @@ export const adminQuoteApi = {
         unwrapEnvelope<{ templateId: number }>(
             await api.post(`/admin/quote-templates/${templateId}/items`, { items }),
             '保存模板项目失败'
+        ),
+    ensureTemplate: async (payload: { roomType?: string; renovationType?: string; repair?: boolean }) =>
+        unwrapEnvelope<QuoteTemplateEnsureResult>(
+            await api.post('/admin/quote-templates/ensure', payload),
+            '生成施工报价模板失败'
         ),
 
     // 模板导入 & 智能计算

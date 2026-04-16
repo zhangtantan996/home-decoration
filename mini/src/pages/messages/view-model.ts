@@ -7,7 +7,7 @@ import {
 } from '@/utils/serverTime';
 import { resolveMiniNotificationRoute } from '@/utils/notificationActionRoute';
 
-export type NotificationFilterKey = 'all' | 'project' | 'order' | 'refund' | 'system';
+export type NotificationFilterKey = 'all' | 'project' | 'payment' | 'system';
 export type NotificationTone = Exclude<NotificationFilterKey, 'all'>;
 
 export interface NotificationFilterViewModel {
@@ -28,6 +28,8 @@ export interface NotificationCardViewModel {
   absoluteTime: string;
   canNavigate: boolean;
   actionText: string;
+  actionStatus: 'none' | 'pending' | 'processed' | 'expired';
+  priority: 'normal' | 'high' | 'urgent';
 }
 
 export interface NotificationSectionViewModel {
@@ -39,29 +41,50 @@ export interface NotificationSectionViewModel {
 const FILTER_LABELS: Record<NotificationFilterKey, string> = {
   all: '全部',
   project: '项目',
-  order: '订单',
-  refund: '退款',
+  payment: '支付',
   system: '系统',
 };
 
 const resolveNotificationTone = (item: NotificationItem): NotificationTone => {
+  if (item.category === 'project') {
+    return 'project';
+  }
+  if (item.category === 'payment') {
+    return 'payment';
+  }
+  if (item.category === 'system') {
+    return 'system';
+  }
+
   const haystack = [item.type, item.title, item.content, item.actionUrl]
     .map((value) => String(value || '').toLowerCase())
     .join(' ');
 
-  if (/(refund|退款|售后|退费)/.test(haystack)) {
-    return 'refund';
-  }
-
-  if (/(project|项目|阶段|施工|验收|进度|milestone|phase|quote)/.test(haystack)) {
+  if (/(project|项目|阶段|施工|验收|进度|milestone|phase|quote|audit|仲裁|争议|complaint|投诉|change[_ -]?order|变更)/.test(haystack)) {
     return 'project';
   }
 
-  if (/(order|订单|booking|预约|payment|支付|deposit|plan|账单)/.test(haystack)) {
-    return 'order';
+  if (/(order|订单|booking|预约|payment|支付|deposit|plan|账单|expire|失效)/.test(haystack)) {
+    return 'payment';
   }
 
   return 'system';
+};
+
+const readActionText = (item: NotificationItem, canNavigate: boolean) => {
+  if (item.actionStatus === 'processed') {
+    return '已处理';
+  }
+  if (item.actionStatus === 'expired') {
+    return '已过期';
+  }
+  if (item.actionRequired && item.actionLabel) {
+    return item.priority === 'urgent' ? `${item.actionLabel} · 紧急` : item.actionLabel;
+  }
+  if (item.actionLabel) {
+    return item.actionLabel;
+  }
+  return canNavigate ? '查看详情' : '仅通知';
 };
 
 const buildSectionKey = (value?: string) => {
@@ -110,7 +133,9 @@ const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
     relativeTime: formatServerRelativeTime(item.createdAt, '--'),
     absoluteTime: formatServerDateTime(item.createdAt, '--'),
     canNavigate: Boolean(miniRoute),
-    actionText: miniRoute ? '查看详情' : '仅通知',
+    actionText: readActionText(item, Boolean(miniRoute)),
+    actionStatus: item.actionStatus || 'none',
+    priority: item.priority || 'normal',
   };
 };
 
@@ -129,8 +154,7 @@ export const buildNotificationFilters = (
 ): NotificationFilterViewModel[] => {
   const counters: Record<NotificationTone, number> = {
     project: 0,
-    order: 0,
-    refund: 0,
+    payment: 0,
     system: 0,
   };
 
@@ -141,8 +165,7 @@ export const buildNotificationFilters = (
   return [
     { key: 'all', label: FILTER_LABELS.all, count: notifications.length },
     { key: 'project', label: FILTER_LABELS.project, count: counters.project },
-    { key: 'order', label: FILTER_LABELS.order, count: counters.order },
-    { key: 'refund', label: FILTER_LABELS.refund, count: counters.refund },
+    { key: 'payment', label: FILTER_LABELS.payment, count: counters.payment },
     { key: 'system', label: FILTER_LABELS.system, count: counters.system },
   ];
 };

@@ -84,14 +84,27 @@ const MerchantPriceBook: React.FC = () => {
         });
     }, [keyword, onlyRequired, onlyUnpriced, rows]);
 
-    const pricedCount = useMemo(() => rows.filter((row) => (row.unitPriceCent || 0) > 0).length, [rows]);
-    const requiredCount = useMemo(() => rows.filter((row) => row.required).length, [rows]);
-    const requiredMissingRows = useMemo(
-        () => rows.filter((row) => row.required && (row.unitPriceCent || 0) <= 0),
+    const applicableRows = useMemo(
+        () => rows.filter((row) => row.applicable !== false),
         [rows],
     );
-    const unpricedCount = useMemo(() => rows.filter((row) => (row.unitPriceCent || 0) <= 0).length, [rows]);
-    const completionRate = rows.length ? Math.round((pricedCount / rows.length) * 100) : 0;
+    const pricedCount = useMemo(
+        () => applicableRows.filter((row) => (row.unitPriceCent || 0) > 0).length,
+        [applicableRows],
+    );
+    const requiredCount = useMemo(
+        () => applicableRows.filter((row) => row.required).length,
+        [applicableRows],
+    );
+    const requiredMissingRows = useMemo(
+        () => applicableRows.filter((row) => row.required && (row.unitPriceCent || 0) <= 0),
+        [applicableRows],
+    );
+    const unpricedCount = useMemo(
+        () => applicableRows.filter((row) => (row.unitPriceCent || 0) <= 0).length,
+        [applicableRows],
+    );
+    const completionRate = applicableRows.length ? Math.round((pricedCount / applicableRows.length) * 100) : 0;
 
     const groupedRows = useMemo(() => {
         const groups = new Map<string, EditablePriceItem[]>();
@@ -123,34 +136,34 @@ const MerchantPriceBook: React.FC = () => {
             percent: 100,
         },
         {
-            label: '标准项总数',
-            value: `${rows.length || 0}`,
-            meta: '平台统一标准施工项',
+            label: '能力范围项',
+            value: `${applicableRows.length || 0}`,
+            meta: '当前工种需维护的标准项',
             tone: 'blue',
             percent: 100,
         },
         {
             label: '已填写项',
             value: `${pricedCount}`,
-            meta: `/ ${rows.length || 0} 项已录价`,
+            meta: `/ ${applicableRows.length || 0} 项已录价`,
             tone: 'green',
             percent: completionRate,
         },
         {
             label: '未填写项',
             value: `${unpricedCount}`,
-            meta: '需尽快补充',
+            meta: '当前能力范围内待补充',
             tone: 'amber',
-            percent: rows.length ? Math.round((unpricedCount / rows.length) * 100) : 0,
+            percent: applicableRows.length ? Math.round((unpricedCount / applicableRows.length) * 100) : 0,
         },
         {
             label: '必填项数量',
             value: `${requiredCount}`,
             meta: '关键报价项',
             tone: 'red',
-            percent: rows.length ? Math.round((requiredCount / rows.length) * 100) : 0,
+            percent: applicableRows.length ? Math.round((requiredCount / applicableRows.length) * 100) : 0,
         },
-    ], [completionRate, detail?.book.status, detail?.book.version, pricedCount, requiredCount, rows.length, unpricedCount]);
+    ], [applicableRows.length, completionRate, detail?.book.status, detail?.book.version, pricedCount, requiredCount, unpricedCount]);
 
     const columns: ColumnsType<EditablePriceItem> = useMemo(() => [
         {
@@ -168,6 +181,7 @@ const MerchantPriceBook: React.FC = () => {
                     <Space size={8} wrap>
                         <Text strong>{record.standardItemName || `标准项 #${record.standardItemId}`}</Text>
                         {record.required ? <Tag color="red">必填</Tag> : <Tag>可选</Tag>}
+                        {record.applicable === false ? <Tag>非当前能力范围</Tag> : null}
                     </Space>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                         {record.standardCode || '-'}
@@ -243,12 +257,12 @@ const MerchantPriceBook: React.FC = () => {
 
     const handlePublish = async () => {
         if (requiredMissingRows.length > 0) {
-            message.warning(`仍有 ${requiredMissingRows.length} 个必填标准项未填写价格，补齐后才能发布`);
+            message.warning(`当前能力范围内仍有 ${requiredMissingRows.length} 个必填项未填写价格`);
             return;
         }
         Modal.confirm({
             title: '发布价格库',
-            content: '发布后，后续报价草稿将直接使用你当前填写的价格。是否继续？',
+            content: '发布后，系统会优先用你当前能力范围内的价格库生成施工报价草稿。是否继续？',
             okText: '发布',
             cancelText: '取消',
             onOk: async () => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Dropdown, Badge, Button, Empty, Spin, message } from 'antd';
+import { Dropdown, Badge, Button, Empty, Spin, Tag, message } from 'antd';
 import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { getHandledAdminStatus, notificationApi } from '../services/api';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 import {
@@ -34,7 +35,71 @@ const POLL_POLICY: AutoRetryPolicy = {
     maxDelayMs: 30000,
 };
 
+const ADMIN_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+    'merchant.application.submitted': '入驻审核',
+    'merchant.application.approved': '入驻审核',
+    'merchant.application.rejected': '入驻审核',
+    'case_audit.approved': '案例审核',
+    'case_audit.rejected': '案例审核',
+    'refund.application.created': '退款审核',
+    'refund.application.approved': '退款处理',
+    'refund.application.rejected': '退款处理',
+    'refund.succeeded': '退款结果',
+    'withdraw.created': '提现审核',
+    'complaint.created': '投诉处理',
+    'complaint.resolved': '投诉处理',
+    'booking.created': '预约提醒',
+    'booking.confirmed': '预约提醒',
+    'booking.cancelled': '预约提醒',
+    'proposal.submitted': '方案提醒',
+    'proposal.confirmed': '方案提醒',
+    'proposal.rejected': '方案提醒',
+    'quote.submitted': '施工报价',
+    'quote.confirmed': '施工报价',
+    'quote.rejected': '施工报价',
+    'quote.awarded': '施工报价',
+    'project.milestone.submitted': '阶段验收',
+    'project.milestone.approved': '阶段验收',
+    'project.milestone.rejected': '阶段验收',
+    'project.completion.submitted': '完工验收',
+    'project.completion.approved': '完工验收',
+    'project.completion.rejected': '完工验收',
+    'payment.construction.pending': '施工付款',
+    'payment.construction.stage_pending': '施工付款',
+    'payment.construction.final_pending': '施工付款',
+    'payment.construction.expiring': '施工付款',
+    'payment.construction.expired': '施工付款',
+    'change_order.created': '项目变更',
+    'change_order.confirmed': '项目变更',
+    'change_order.rejected': '项目变更',
+    'change_order.payment_pending': '项目变更',
+    'change_order.settlement_required': '项目变更',
+    'change_order.settled': '项目变更',
+};
+
+const resolveAdminNotificationLabel = (type: string) => ADMIN_NOTIFICATION_TYPE_LABELS[type] || '系统通知';
+
+const resolveAdminNotificationTagColor = (type: string) => {
+    if (type.startsWith('payment.') || type.startsWith('refund.') || type.startsWith('withdraw.')) {
+        return 'gold';
+    }
+    if (type.startsWith('change_order.') || type.startsWith('project.') || type.startsWith('complaint.')) {
+        return 'blue';
+    }
+    if (type.startsWith('quote.') || type.startsWith('proposal.')) {
+        return 'cyan';
+    }
+    if (type.startsWith('booking.')) {
+        return 'purple';
+    }
+    if (type.startsWith('merchant.application.') || type.startsWith('case_audit.')) {
+        return 'geekblue';
+    }
+    return 'default';
+};
+
 const NotificationDropdown: React.FC = () => {
+    const navigate = useNavigate();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -370,6 +435,17 @@ const NotificationDropdown: React.FC = () => {
                             全部已读
                         </Button>
                     )}
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                            setOpen(false);
+                            navigate('/notifications');
+                        }}
+                        style={{ fontSize: 12 }}
+                    >
+                        查看全部
+                    </Button>
                 </div>
             </div>
 
@@ -410,6 +486,12 @@ const NotificationDropdown: React.FC = () => {
                                         }}>
                                             {item.title}
                                         </span>
+                                        <Tag
+                                            color={resolveAdminNotificationTagColor(item.type)}
+                                            style={{ marginInlineStart: 8, marginInlineEnd: 0 }}
+                                        >
+                                            {resolveAdminNotificationLabel(item.type)}
+                                        </Tag>
                                         {!item.isRead && (
                                             <span style={{
                                                 display: 'inline-block',

@@ -47,9 +47,14 @@ export interface AdminBusinessFlowPaymentPlan {
   amount?: number;
   percentage?: number;
   status?: number | string;
+  activatedAt?: string;
   dueAt?: string;
+  expiresAt?: string;
   paidAt?: string;
   milestoneId?: number;
+  payable?: boolean;
+  payableReason?: string;
+  planType?: string;
 }
 
 export interface AdminBusinessFlowRiskSnapshot {
@@ -143,6 +148,28 @@ export interface AdminBusinessFlowQuoteSubmissionSnapshot {
   estimatedDays?: number;
   remark?: string;
   userConfirmedAt?: string;
+  reviewStatus?: string;
+  reviewReason?: string;
+}
+
+export interface AdminBusinessFlowChangeOrder {
+  id: number;
+  projectId: number;
+  initiatorType?: string;
+  initiatorId?: number;
+  changeType?: string;
+  title?: string;
+  reason?: string;
+  description?: string;
+  amountImpact?: number;
+  timelineImpact?: number;
+  status?: string;
+  evidenceUrls?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  userRejectReason?: string;
+  settlementReason?: string;
+  payablePlanId?: number;
 }
 
 export interface AdminBusinessFlowProjectSnapshot {
@@ -275,6 +302,7 @@ export interface AdminBusinessFlowDetail {
   project?: AdminBusinessFlowProjectSnapshot;
   milestones?: AdminBusinessFlowMilestoneSnapshot[];
   orders?: AdminBusinessFlowOrderSnapshot[];
+  changeOrders?: AdminBusinessFlowChangeOrder[];
   escrowAccount?: AdminBusinessFlowEscrowSnapshot;
   transactions?: AdminBusinessFlowTransactionSnapshot[];
   refundApplications?: AdminBusinessFlowRefundSnapshot[];
@@ -360,6 +388,8 @@ export const adminOrderCenterApi = {
     api.post(`/admin/projects/${projectId}/completion/approve`, { reason }),
   rejectCompletion: (projectId: number, reason: string) =>
     api.post(`/admin/projects/${projectId}/completion/reject`, { reason }),
+  settleChangeOrder: (changeOrderId: number, reason: string) =>
+    api.post(`/admin/change-orders/${changeOrderId}/settle`, { reason }),
   freezeFunds: adminFinanceApi.freeze,
   unfreezeFunds: adminFinanceApi.unfreeze,
   manualReleaseFunds: adminFinanceApi.manualRelease,

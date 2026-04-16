@@ -430,10 +430,22 @@ export interface AdminSupervisionProjectItem {
   address?: string;
   ownerName?: string;
   providerName?: string;
+  businessStage?: string;
+  kickoffStatus?: string;
+  plannedStartDate?: string;
+  currentResponsible?: string;
   currentPhase?: string;
   currentPhaseStatus?: string;
   lastLogAt?: string;
+  latestLogTitle?: string;
   unhandledRiskCount: number;
+}
+
+export interface AdminBridgeSupervisorSummary {
+  plannedStartDate?: string;
+  latestLogAt?: string;
+  latestLogTitle?: string;
+  unhandledRiskCount?: number;
 }
 
 export interface AdminSupervisionWorkspace {
@@ -442,10 +454,16 @@ export interface AdminSupervisionWorkspace {
   address?: string;
   ownerName?: string;
   providerName?: string;
+  businessStage?: string;
+  kickoffStatus?: string;
+  plannedStartDate?: string;
+  currentResponsible?: string;
   currentPhase?: string;
   currentPhaseStatus?: string;
   lastInspectionAt?: string;
+  latestLogTitle?: string;
   unhandledRiskCount: number;
+  supervisorSummary?: AdminBridgeSupervisorSummary;
   riskWarnings: AdminRiskWarningItem[];
 }
 
@@ -454,6 +472,7 @@ export interface AdminSupervisionProjectQuery {
   pageSize?: number;
   keyword?: string;
   phaseStatus?: string;
+  businessStage?: string;
   hasPendingRisk?: boolean;
 }
 

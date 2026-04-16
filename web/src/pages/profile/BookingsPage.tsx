@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom';
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/AsyncState';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { listBookings } from '../../services/bookings';
-import styles from './WorkspacePage.module.scss';
+import type { BookingListItemVM } from '../../types/viewModels';
+import styles from './BookingsPage.module.scss';
 
 const filters = [
   { key: 'all', label: '全部' },
@@ -14,16 +15,70 @@ const filters = [
   { key: '已完成', label: '已转报价' },
 ] as const;
 
-function calcProgress(statusText: string) {
-  if (statusText === '已完成') return 100;
-  if (statusText === '已确认') return 72;
-  if (statusText === '待沟通') return 36;
-  return 12;
+function buildFilterCountMap(list: BookingListItemVM[]) {
+  return list.reduce<Record<string, number>>((acc, item) => {
+    const key = item.statusText;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function readStatusTone(statusText: string) {
+  switch (statusText) {
+    case '已确认':
+      return 'confirmed';
+    case '已完成':
+      return 'completed';
+    case '已取消':
+      return 'cancelled';
+    default:
+      return 'pending';
+  }
+}
+
+function readProgress(statusText: string) {
+  switch (statusText) {
+    case '已完成':
+      return 100;
+    case '已确认':
+      return 72;
+    case '待沟通':
+      return 36;
+    default:
+      return 12;
+  }
+}
+
+function readStageHint(item: BookingListItemVM) {
+  switch (item.statusText) {
+    case '已完成':
+      return '预约阶段已完成，当前可继续查看后续报价或施工衔接。';
+    case '已确认':
+      return `${item.providerTypeText}已经确认预约，接下来会进入沟通确认与量房安排。`;
+    case '已取消':
+      return '这笔预约已经取消，当前仅保留历史记录查看入口。';
+    default:
+      return `正在等待${item.providerTypeText}确认预约与档期安排，确认前无需继续支付。`;
+  }
+}
+
+function readProgressLabel(statusText: string) {
+  switch (statusText) {
+    case '已完成':
+      return '已进入后续阶段';
+    case '已确认':
+      return '等待沟通与量房';
+    case '已取消':
+      return '预约已关闭';
+    default:
+      return '等待服务商确认';
+  }
 }
 
 export function BookingsPage() {
   const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]['key']>('all');
   const { data, loading, error, reload } = useAsyncData(listBookings, []);
+  const filterCounts = useMemo(() => buildFilterCountMap(data || []), [data]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -36,45 +91,100 @@ export function BookingsPage() {
 
   return (
     <div className={styles.pageContainer}>
-      <header className={styles.sectionHead}>
-        <h2>我的预约</h2>
+      <header className={styles.pageHead}>
+        <p className={styles.kicker}>个人中心</p>
+        <div className={styles.headlineRow}>
+          <div className={styles.headlineCopy}>
+            <h2>我的预约</h2>
+            <p>这里集中查看预约确认、量房安排以及是否已经进入后续报价阶段。</p>
+          </div>
+          <span className={styles.summaryBadge}>{data.length} 条预约记录</span>
+        </div>
       </header>
 
-      <div className={styles.filterTabs}>
-        {filters.map((item) => (
-          <button
-            className={`${styles.filterTab} ${activeFilter === item.key ? styles.active : ''}`}
-            key={item.key}
-            onClick={() => setActiveFilter(item.key)}
-            type="button"
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className={styles.filterTabs} role="tablist" aria-label="预约筛选">
+        {filters.map((item) => {
+          const count = item.key === 'all' ? data.length : filterCounts[item.key] || 0;
+          const active = activeFilter === item.key;
+          return (
+            <button
+              aria-selected={active}
+              className={`${styles.filterTab} ${active ? styles.filterTabActive : ''}`.trim()}
+              key={item.key}
+              onClick={() => setActiveFilter(item.key)}
+              role="tab"
+              type="button"
+            >
+              <span>{item.label}</span>
+              <em>{count}</em>
+            </button>
+          );
+        })}
       </div>
 
       {filtered.length === 0 ? (
         <EmptyBlock title="暂无预约" description="" />
       ) : (
-        <div className={styles.list}>
+        <div className={styles.bookingList}>
           {filtered.map((item) => {
-            const progress = calcProgress(item.statusText);
+            const progress = readProgress(item.statusText);
+            const statusTone = readStatusTone(item.statusText);
             return (
-              <Link className={styles.card} key={item.id} to={item.href}>
-                <div className={styles.cardBody}>
-                  <div className={styles.cardTitle}>
-                    <h3>{item.title}</h3>
-                    <p>{item.providerTypeText} · {item.address}</p>
+              <article className={`${styles.bookingCard} ${styles[`card${statusTone[0].toUpperCase()}${statusTone.slice(1)}`]}`.trim()} key={item.id}>
+                <div className={styles.cardMain}>
+                  <div className={styles.cardTop}>
+                    <div className={styles.identityBlock}>
+                      <div className={styles.badgeRow}>
+                        <span className={styles.kindBadge}>{item.providerTypeText}预约</span>
+                        <span className={`${styles.statusChip} ${styles[`status${statusTone[0].toUpperCase()}${statusTone.slice(1)}`]}`.trim()}>{item.statusText}</span>
+                      </div>
+                      <h3 title={item.title}>{item.title}</h3>
+                      <p>{readStageHint(item)}</p>
+                    </div>
+
+                    <div className={styles.progressBlock}>
+                      <span>推进进度</span>
+                      <strong>{progress}%</strong>
+                    </div>
                   </div>
-                  <div className={styles.statusBar}>
-                    <div className={styles.statusFill} style={{ width: `${progress}%` }} />
+
+                  <div className={styles.metaGrid}>
+                    <div className={styles.metaItem}>
+                      <span>服务地址</span>
+                      <strong title={item.address}>{item.address}</strong>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <span>期望时间</span>
+                      <strong>{item.preferredDate || '待确认'}</strong>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <span>预算范围</span>
+                      <strong>{item.budgetRange || '待确认'}</strong>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <span>最近更新</span>
+                      <strong>{item.updatedAt || '待补充'}</strong>
+                    </div>
+                  </div>
+
+                  <div className={styles.progressRow}>
+                    <div className={styles.progressTrack}>
+                      <div className={styles.progressFill} style={{ width: `${progress}%` }} />
+                    </div>
+                    <p>{readProgressLabel(item.statusText)}</p>
                   </div>
                 </div>
-                <div className={styles.metaBlock}>
-                  <span>{item.statusText}</span>
-                  <strong>{progress}%</strong>
+
+                <div className={styles.actionColumn}>
+                  <div className={styles.referenceBlock}>
+                    <span>预约编号</span>
+                    <strong>{`#${item.id}`}</strong>
+                  </div>
+                  <Link className={styles.primaryAction} to={item.href}>
+                    查看预约
+                  </Link>
                 </div>
-              </Link>
+              </article>
             );
           })}
         </div>

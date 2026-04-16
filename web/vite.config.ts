@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
   const apiBase = (env.VITE_API_URL || '/api/v1').trim();
   const proxyTarget = (env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8080').trim().replace(/\/+$/, '');
   const useRelativeApiProxy = apiBase.startsWith('/');
+  const enablePolling = ['1', 'true', 'yes'].includes(
+    String(env.VITE_DEV_WATCH_POLLING || process.env.VITE_DEV_WATCH_POLLING || '').trim().toLowerCase(),
+  );
 
   return {
     base: normalizedBase,
@@ -21,6 +24,14 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 5176,
+      watch: enablePolling ? {
+        usePolling: true,
+        interval: 250,
+        awaitWriteFinish: {
+          stabilityThreshold: 350,
+          pollInterval: 100,
+        },
+      } : undefined,
       proxy: useRelativeApiProxy ? {
         '/api': {
           target: proxyTarget,

@@ -6,7 +6,6 @@ import { Button } from "@/components/Button";
 import { Icon } from "@/components/Icon";
 import MiniPageNav from "@/components/MiniPageNav";
 import { Skeleton } from "@/components/Skeleton";
-import { MINI_ENV } from "@/config/env";
 import {
   createBooking,
   type ProviderType as BookingProviderType,
@@ -22,6 +21,11 @@ import {
   getFixedBottomBarStyle,
   getPageBottomSpacerStyle,
 } from "@/utils/fixedLayout";
+import {
+  clearQuoteLeadDraft,
+  getQuoteLeadDraft,
+  type QuoteLeadDraft,
+} from "@/utils/quoteLeadDraft";
 import { normalizeProviderMediaUrl } from "@/utils/providerMedia";
 import { getServerDateAfterDays, getServerDateParts } from "@/utils/serverTime";
 
@@ -120,6 +124,7 @@ const BookingCreatePage: React.FC = () => {
   const [selectedSlotId, setSelectedSlotId] = useState(
     TIME_SLOT_OPTIONS[0]?.id || "am",
   );
+  const [quoteDraftSummary, setQuoteDraftSummary] = useState<QuoteLeadDraft | null>(null);
 
   useLoad((options) => {
     setProviderId(Number(options.providerId || 0));
@@ -127,10 +132,27 @@ const BookingCreatePage: React.FC = () => {
       normalizeProviderType(options.type || options.providerType),
     );
     setProviderName(decodeText(options.providerName) || "服务商");
+    if (options.quoteDraft === "1") {
+      const draft = getQuoteLeadDraft();
+      if (draft) {
+        setArea(draft.area);
+        setRoom(draft.room);
+        setHall(draft.hall);
+        setToilet(draft.toilet);
+        setRenovationType(draft.renovationType || RENOVATION_OPTIONS[0]);
+        setBudgetRange(draft.budgetRange);
+        setPreferredDate(draft.preferredDate);
+        setPhone(draft.phone || "");
+        setNotes(draft.notes || "");
+        setQuoteDraftSummary(draft);
+      }
+    }
   });
 
   useEffect(() => {
-    setPhone(auth.user?.phone || "");
+    if (auth.user?.phone) {
+      setPhone(auth.user.phone);
+    }
   }, [auth.user?.phone]);
 
   useEffect(() => {
@@ -286,6 +308,9 @@ const BookingCreatePage: React.FC = () => {
       });
 
       Taro.showToast({ title: "预约提交成功", icon: "success" });
+      if (quoteDraftSummary) {
+        clearQuoteLeadDraft();
+      }
       setTimeout(() => {
         Taro.redirectTo({
           url: `/pages/booking/detail/index?id=${booking.id}`,
@@ -369,6 +394,17 @@ const BookingCreatePage: React.FC = () => {
 
       <View className="booking-create-page__content">
         {renderProviderCard()}
+
+        {quoteDraftSummary ? (
+          <View className="booking-create-page__quote-banner">
+            <Text className="booking-create-page__quote-banner-title">
+              已带入方案报价预估需求
+            </Text>
+            <Text className="booking-create-page__quote-banner-copy">
+              {`${quoteDraftSummary.area}㎡ · ${quoteDraftSummary.houseLayout} · ${quoteDraftSummary.budgetRange}，你只需要补充地址即可继续提交预约。`}
+            </Text>
+          </View>
+        ) : null}
 
         <View className="booking-create-page__form-card">
           <Text className="booking-create-page__section-title">预约信息</Text>

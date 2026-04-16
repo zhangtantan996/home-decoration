@@ -48,12 +48,16 @@ export interface QuoteListSummary {
     id: number;
     title: string;
     status: string;
+    projectId?: number;
     proposalId?: number;
     proposalVersion?: number;
     quantityBaseId?: number;
     quantityBaseVersion?: number;
     sourceType?: string;
     sourceId?: number;
+    pricingMode?: string;
+    materialIncluded?: boolean;
+    paymentPlanGeneratedFlag?: boolean;
     deadlineAt?: string;
     currency?: string;
     updatedAt?: string;
@@ -68,14 +72,18 @@ export interface QuoteListSummary {
 
 export interface QuoteListItem {
     id: number;
+    quantityBaseItemId?: number;
     lineNo?: number;
     categoryL1?: string;
     categoryL2?: string;
     name: string;
     unit: string;
     quantity: number;
+    baselineQuantity?: number;
     pricingNote?: string;
     sortOrder?: number;
+    sourceStage?: string;
+    quantityAdjustableFlag?: boolean;
     missingMappingFlag?: boolean;
     extensionsJson?: string;
     required?: boolean;
@@ -86,11 +94,19 @@ export interface QuoteSubmissionItem {
     quoteListItemId: number;
     generatedUnitPriceCent?: number;
     unitPriceCent?: number;
+    quotedQuantity?: number;
     amountCent?: number;
     adjustedFlag?: boolean;
     missingPriceFlag?: boolean;
     missingMappingFlag?: boolean;
     minChargeAppliedFlag?: boolean;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
+    requiresUserConfirmation?: boolean;
+    platformReviewFlag?: boolean;
+    baselineQuantity?: number;
+    itemName?: string;
+    unit?: string;
     remark?: string;
 }
 
@@ -98,6 +114,7 @@ export interface QuoteSubmission {
     status: string;
     taskStatus?: string;
     generationStatus?: string;
+    reviewStatus?: string;
     totalCent?: number;
     currency?: string;
     generatedFromPriceBookId?: number;
@@ -145,15 +162,30 @@ export interface MerchantQuoteListDetail {
     sourceId?: number;
     title: string;
     status: string;
-        deadlineAt?: string;
-        currency?: string;
-        updatedAt?: string;
+    pricingMode?: string;
+    materialIncluded?: boolean;
+    paymentPlanGeneratedFlag?: boolean;
+    deadlineAt?: string;
+    currency?: string;
+    updatedAt?: string;
     };
     items: QuoteListItem[];
     invitation?: { status?: string; invitedAt?: string };
     submission?: QuoteSubmission;
     quantityBase?: QuantityBaseSnapshot;
     quantityItems: QuantityBaseItemSnapshot[];
+    paymentPlanSummary?: Array<{
+        id: number;
+        orderId: number;
+        milestoneId?: number;
+        type: string;
+        seq: number;
+        name: string;
+        amount: number;
+        status: number;
+        dueAt?: string;
+        paidAt?: string;
+    }>;
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
@@ -173,6 +205,7 @@ export interface QuotePriceBookItem {
     remark?: string;
     status?: number;
     required?: boolean;
+    applicable?: boolean;
 }
 
 export interface QuotePriceBookDetail {

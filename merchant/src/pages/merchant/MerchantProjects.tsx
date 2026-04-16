@@ -125,8 +125,8 @@ const MerchantProjects: React.FC = () => {
   return (
     <MerchantPageShell>
       <MerchantPageHeader
-        title="项目执行"
-        description="集中查看已关联项目的闭环阶段，并从这里进入节点提交与执行视图。"
+        title="项目履约"
+        description="这里只展示已经完成确认并真正转成项目的履约任务；成交确认前的商机不会提前进入这里。"
         extra={(
           <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
             刷新
@@ -138,7 +138,7 @@ const MerchantProjects: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 14, marginBottom: 12 }}>
           {[
             { label: '项目总数', value: stats.total, tone: '#2563eb' },
-            { label: '待开工', value: stats.readyToStart, tone: '#d97706' },
+            { label: '待监理协调开工', value: stats.readyToStart, tone: '#d97706' },
             { label: '施工中', value: stats.inConstruction, tone: '#2563eb' },
             { label: '待验收', value: stats.pendingAcceptance, tone: '#ea580c' },
             { label: '已完工/归档', value: stats.completed, tone: '#16a34a' },
@@ -175,7 +175,7 @@ const MerchantProjects: React.FC = () => {
                 void load({ businessStage: value });
               }}
               options={[
-                { value: 'ready_to_start', label: '待开工' },
+                { value: 'ready_to_start', label: '待监理协调开工' },
                 { value: 'in_construction', label: '施工中' },
                 { value: 'node_acceptance_in_progress', label: '节点验收中' },
                 { value: 'completed', label: '已完工' },
@@ -216,7 +216,7 @@ const MerchantProjects: React.FC = () => {
                 setPage(nextPage);
               },
             }}
-            locale={{ emptyText: <Empty description="当前还没有可执行的项目" /> }}
+            locale={{ emptyText: <Empty description="当前还没有进入履约域的项目" /> }}
           />
         </MerchantSectionCard>
       </MerchantContentPanel>

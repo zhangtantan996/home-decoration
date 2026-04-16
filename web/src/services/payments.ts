@@ -1,16 +1,23 @@
 import { requestJson } from './http';
 
+export interface PaymentLaunchRequest {
+  channel: 'alipay';
+  terminalType: 'mini_qr' | 'mobile_h5';
+}
+
 export interface PaymentLaunchPayload {
   paymentId: number;
   channel: string;
-  launchMode: 'redirect';
-  launchUrl: string;
+  launchMode: 'redirect' | 'qr_code' | string;
+  launchUrl?: string;
+  qrCodeImageUrl?: string;
   expiresAt?: string;
 }
 
 export interface PaymentStatusPayload {
   paymentId: number;
-  status: 'created' | 'launching' | 'pending' | 'paid' | 'closed' | 'failed' | string;
+  status: 'created' | 'launching' | 'pending' | 'scan_pending' | 'paid' | 'closed' | 'failed' | string;
+  statusText: string;
   channel: string;
   amount: number;
   subject: string;
@@ -35,7 +42,7 @@ export interface PaymentDetailBookingPayload {
 
 export interface PaymentDetailPayload {
   paymentId: number;
-  status: 'created' | 'launching' | 'pending' | 'paid' | 'closed' | 'failed' | string;
+  status: 'created' | 'launching' | 'pending' | 'scan_pending' | 'paid' | 'closed' | 'failed' | string;
   statusText: string;
   channel: string;
   channelText: string;
@@ -48,6 +55,8 @@ export interface PaymentDetailPayload {
   fundSceneText: string;
   terminalType: string;
   terminalTypeText: string;
+  referenceNo?: string;
+  referenceLabel?: string;
   outTradeNo: string;
   providerTradeNo?: string;
   createdAt: string;

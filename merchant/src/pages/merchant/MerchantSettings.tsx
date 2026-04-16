@@ -1,14 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     Avatar,
     Button,
     Card,
     Col,
-    Divider,
+    ConfigProvider,
     Form,
     Input,
     InputNumber,
-    Progress,
+    Modal,
     Row,
     Select,
     Switch,
@@ -18,11 +18,9 @@ import {
 } from 'antd';
 import {
     ArrowLeftOutlined,
-    BookOutlined,
     CameraOutlined,
     LoadingOutlined,
     SaveOutlined,
-    TeamOutlined,
     UserOutlined,
     WalletOutlined,
 } from '@ant-design/icons';
@@ -48,6 +46,7 @@ import {
     getUploadedAssetStoredPath,
     normalizeStoredAssetValues,
 } from '../../utils/uploadAsset';
+import styles from './MerchantSettings.module.css';
 
 const FOREMAN_HIGHLIGHT_OPTIONS = [
     '工期可控',
@@ -167,25 +166,19 @@ interface SaveOptions {
     latestInfoValues?: MerchantInfoFormValues;
 }
 
-type SectionKey = 'basic' | 'settings';
-
 const MerchantSettings: React.FC = () => {
     const navigate = useNavigate();
-    const [loading, setLoading] = useState(false);
+    const [, setLoading] = useState(false);
     const [savingInfo, setSavingInfo] = useState(false);
     const [savingSettings, setSavingSettings] = useState(false);
-    const [savingAll, setSavingAll] = useState(false);
     const [avatarUploading, setAvatarUploading] = useState(false);
-    const [coverUploading, setCoverUploading] = useState(false);
     const [displayUpdating, setDisplayUpdating] = useState(false);
     const [providerInfo, setProviderInfo] = useState<MerchantProviderInfo | null>(null);
+    const [serviceSettingsData, setServiceSettingsData] = useState<MerchantServiceSetting>(DEFAULT_SERVICE_SETTINGS);
+    const [activeEditor, setActiveEditor] = useState<'info' | 'pricing' | 'settings' | null>(null);
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
     const [areaOptions, setAreaOptions] = useState<ServiceCityGroupOption[]>([]);
     const updateSessionProvider = useMerchantAuthStore((state) => state.updateProvider);
-    const sectionRefs = useRef<Record<SectionKey, HTMLDivElement | null>>({
-        basic: null,
-        settings: null,
-    });
     const [infoForm] = Form.useForm();
     const [settingForm] = Form.useForm();
 
@@ -207,18 +200,20 @@ const MerchantSettings: React.FC = () => {
         return role === 'company' || providerInfo?.providerType === 2;
     }, [providerInfo]);
     const displayStatusMeta = useMemo(
-        () => resolveDisplayStatusMeta(providerInfo, { activeLabel: '接单中' }),
+        () => resolveDisplayStatusMeta(providerInfo, {
+            activeLabel: '接单中',
+            settingsPath: '/settings',
+            workflowPath: '/bookings',
+            reviewPath: '/apply-status',
+        }),
         [providerInfo],
     );
     const isDesignerRole = !isForeman && !isCompanyRole;
+    const serviceAreaLabelMap = useMemo(() => {
+        const entries = areaOptions.flatMap((group) => group.options || []);
+        return new Map(entries.map((item) => [String(item.value), item.label]));
+    }, [areaOptions]);
 
-    const basicInfoTitle = isDesignerRole
-        ? '品牌与能力设定'
-        : isForeman
-        ? '基础资料与施工能力'
-        : isCompanyRole
-            ? '企业资料与服务能力'
-            : '个人品牌与服务能力';
     const nameLabel = isForeman ? '工长显示名称' : isCompanyRole ? '企业展示名称' : '设计师显示名称';
     const namePlaceholder = isForeman ? '请输入工长/项目经理名称' : isCompanyRole ? '请输入企业展示名称' : '请输入设计师名称';
     const companyNameLabel = isCompanyRole ? '企业名称' : '公司/工作室名称';
@@ -237,36 +232,7 @@ const MerchantSettings: React.FC = () => {
         : isCompanyRole
             ? '请填写企业服务承诺（选填）'
             : '请填写设计理念（选填）';
-    const serviceSettingTitle = isForeman ? '施工接单设置' : isCompanyRole ? '企业服务设置' : '设计服务设置';
-    const teamSectionTitle = isDesignerRole
-        ? '团队与办公地点'
-        : isCompanyRole
-            ? '团队与办公地点'
-            : isForeman
-                ? '班组与常驻信息'
-                : '团队与办公信息';
-    const philosophySectionTitle = isDesignerRole
-        ? '设计理念与教育背景'
-        : isCompanyRole
-            ? '品牌介绍与服务承诺'
-            : '施工理念与服务说明';
-    const sectionLabels: Record<SectionKey, { title: string; description: string }> = {
-        basic: {
-            title: basicInfoTitle,
-            description: isForeman
-                ? '维护工长形象、施工能力与可承接区域。'
-                : isCompanyRole
-                    ? '维护企业对外展示资料、团队能力与服务范围。'
-                    : '维护个人品牌、设计能力与对外展示信息。',
-        },
-        settings: {
-            title: serviceSettingTitle,
-            description: isDesignerRole
-                ? '统一维护量房费等设计服务参数。'
-                : '统一维护接单策略、服务范围与对外报价摘要。',
-        },
-    };
-    const isSaving = savingInfo || savingSettings || savingAll;
+    const serviceSettingTitle = isForeman ? '施工接单设置' : isCompanyRole ? '企业接单设置' : '设计服务设置';
     const profileCompletion = useMemo(() => {
         if (!providerInfo) return 0;
         const checks = [
@@ -363,25 +329,23 @@ const MerchantSettings: React.FC = () => {
     const fetchServiceSettings = async () => {
         try {
             const settings = await merchantAuthApi.getServiceSettings();
-            settingForm.setFieldsValue({
+            const nextSettings = {
                 ...DEFAULT_SERVICE_SETTINGS,
                 ...settings,
-                servicePackagesRaw: JSON.stringify(settings.servicePackages || [], null, 2),
+            };
+            setServiceSettingsData(nextSettings);
+            settingForm.setFieldsValue({
+                ...nextSettings,
+                servicePackagesRaw: JSON.stringify(nextSettings.servicePackages || [], null, 2),
             });
         } catch (error) {
             console.error('加载服务设置失败:', error);
+            setServiceSettingsData(DEFAULT_SERVICE_SETTINGS);
             settingForm.setFieldsValue({
                 ...DEFAULT_SERVICE_SETTINGS,
                 servicePackagesRaw: '[]',
             });
         }
-    };
-
-    const scrollToSection = (section: SectionKey) => {
-        sectionRefs.current[section]?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start',
-        });
     };
 
     const buildInfoPayload = (values: MerchantInfoFormValues, surveyDepositPrice?: number) => {
@@ -556,6 +520,7 @@ const MerchantSettings: React.FC = () => {
             };
 
             await merchantAuthApi.updateServiceSettings(payload);
+            setServiceSettingsData(payload);
             if (!options.silent) {
                 message.success('服务设置保存成功');
             }
@@ -571,34 +536,51 @@ const MerchantSettings: React.FC = () => {
         }
     };
 
-    const handleSaveAll = async () => {
-        setSavingAll(true);
+    const saveInfoEditor = async () => {
         try {
-            const infoValues = await infoForm.validateFields().catch((error) => {
-                scrollToSection('basic');
-                throw error;
-            }) as MerchantInfoFormValues;
-
-            await persistInfo(infoValues, { silent: true, rethrow: true });
-            if (!isDesignerRole) {
-                const settingsValues = await settingForm.validateFields().catch((error) => {
-                    scrollToSection('settings');
-                    throw error;
-                }) as MerchantServiceSettingsFormValues;
-                await persistServiceSettings(settingsValues, {
-                    silent: true,
-                    rethrow: true,
-                    latestInfoValues: infoValues,
-                });
-            }
-            message.success('账户设置已保存');
+            const values = await infoForm.validateFields();
+            await persistInfo(values as MerchantInfoFormValues, { silent: false, rethrow: true });
+            setActiveEditor(null);
         } catch (error) {
             if ((error as { errorFields?: unknown[] } | undefined)?.errorFields) {
                 return;
             }
-            message.error(getErrorMessage(error, '账户设置保存失败'));
-        } finally {
-            setSavingAll(false);
+            message.error(getErrorMessage(error, '资料保存失败'));
+        }
+    };
+
+    const savePricingEditor = async () => {
+        try {
+            const fields = isDesignerRole
+                ? ['priceFlat', 'priceDuplex', 'priceOther', 'surveyDepositPrice']
+                : isForeman
+                    ? ['pricePerSqm', 'surveyDepositPrice']
+                    : ['priceFullPackage', 'priceHalfPackage', 'surveyDepositPrice'];
+            await infoForm.validateFields(fields);
+            await persistInfo(infoForm.getFieldsValue() as MerchantInfoFormValues, { silent: false, rethrow: true });
+            setActiveEditor(null);
+        } catch (error) {
+            if ((error as { errorFields?: unknown[] } | undefined)?.errorFields) {
+                return;
+            }
+            message.error(getErrorMessage(error, '报价保存失败'));
+        }
+    };
+
+    const saveSettingsEditor = async () => {
+        try {
+            const values = await settingForm.validateFields();
+            await persistServiceSettings(values as MerchantServiceSettingsFormValues, {
+                silent: false,
+                rethrow: true,
+                latestInfoValues: infoForm.getFieldsValue() as MerchantInfoFormValues,
+            });
+            setActiveEditor(null);
+        } catch (error) {
+            if ((error as { errorFields?: unknown[] } | undefined)?.errorFields) {
+                return;
+            }
+            message.error(getErrorMessage(error, '接单设置保存失败'));
         }
     };
 
@@ -620,47 +602,6 @@ const MerchantSettings: React.FC = () => {
             onError?.(new Error(errorMessage));
         } finally {
             setAvatarUploading(false);
-        }
-    };
-
-    const handleCoverUpload: UploadProps['customRequest'] = async (options) => {
-        const { file, onSuccess, onError } = options;
-        setCoverUploading(true);
-        try {
-            const uploaded = await merchantUploadApi.uploadImageData(file as File);
-            const storedPath = getUploadedAssetStoredPath(uploaded);
-            if (!storedPath) {
-                throw new Error('背景图上传结果缺少资源路径');
-            }
-
-            const previewUrl = getUploadedAssetPreviewUrl(uploaded) || storedPath;
-            await merchantAuthApi.updateInfo({ coverImage: storedPath });
-            setProviderInfo((prev) => (prev ? { ...prev, coverImage: previewUrl } : prev));
-            message.success('背景图已更新');
-            onSuccess?.(uploaded);
-        } catch (error) {
-            const errorMessage = getErrorMessage(error, '背景图上传失败');
-            message.error(errorMessage);
-            onError?.(new Error(errorMessage));
-        } finally {
-            setCoverUploading(false);
-        }
-    };
-
-    const handleCoverClear = async () => {
-        if (!providerInfo?.coverImage) {
-            return;
-        }
-
-        setCoverUploading(true);
-        try {
-            await merchantAuthApi.updateInfo({ coverImage: '' });
-            setProviderInfo((prev) => (prev ? { ...prev, coverImage: '' } : prev));
-            message.success('背景图已清空');
-        } catch (error) {
-            message.error(getErrorMessage(error, '清空背景图失败'));
-        } finally {
-            setCoverUploading(false);
         }
     };
 
@@ -705,749 +646,691 @@ const MerchantSettings: React.FC = () => {
             case 'company':
                 return '装修公司';
             case 'foreman':
-                return '工长/项目经理';
+                return '工长';
             default:
                 return '设计师';
         }
     };
 
-    const sectionCardStyle: React.CSSProperties = {
-        borderRadius: 24,
-        boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)',
+    const displayText = (value: unknown) => {
+        const text = String(value ?? '').trim();
+        return text || '未填写';
     };
 
-    const sectionBodyStyle: React.CSSProperties = {
-        padding: 24,
+    const hasDisplayText = (value: unknown) => String(value ?? '').trim() !== '';
+    const hasPositiveNumber = (value: unknown) => {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) && numeric > 0;
+    };
+    const hasDisplayList = (values?: string[]) => (values || []).map((item) => String(item || '').trim()).filter(Boolean).length > 0;
+
+    const displayList = (values?: string[]) => {
+        const list = (values || []).map((item) => String(item || '').trim()).filter(Boolean);
+        return list.length > 0 ? list.join('、') : '未填写';
     };
 
-    const softPanelStyle: React.CSSProperties = {
-        borderRadius: 20,
-        background: '#f8fafc',
-        border: '1px solid #e2e8f0',
-        padding: 18,
-        height: '100%',
+    const displayServiceAreas = (values?: string[]) => {
+        const resolved = (values || [])
+            .map((item) => {
+                const normalized = String(item || '').trim();
+                if (!normalized) {
+                    return '';
+                }
+                return serviceAreaLabelMap.get(normalized) || normalized;
+            })
+            .filter(Boolean);
+        return resolved.length > 0 ? Array.from(new Set(resolved)).join('、') : '未填写';
     };
+
+    const pricingDisplayItems = (isDesignerRole
+        ? [
+            { label: '普通住宅', value: providerInfo?.pricing?.flat ? `${providerInfo.pricing.flat} 元/㎡` : '', note: '基础住宅设计报价' },
+            { label: '复式 / 别墅', value: providerInfo?.pricing?.duplex ? `${providerInfo.pricing.duplex} 元/㎡` : '', note: '高复杂度空间' },
+            { label: '其他户型', value: providerInfo?.pricing?.other ? `${providerInfo.pricing.other} 元/㎡` : '', note: '特殊户型报价' },
+            { label: '量房费', value: providerInfo?.surveyDepositPrice ? `${providerInfo.surveyDepositPrice} 元` : '', note: '预约确认前展示' },
+        ]
+        : isForeman
+            ? [
+                { label: '施工参考价', value: providerInfo?.pricing?.perSqm ? `${providerInfo.pricing.perSqm} 元/㎡` : '', note: '施工报价基准' },
+                { label: '量房费', value: providerInfo?.surveyDepositPrice ? `${providerInfo.surveyDepositPrice} 元` : '', note: '前期上门沟通' },
+            ]
+            : [
+                { label: '整装', value: providerInfo?.pricing?.fullPackage ? `${providerInfo.pricing.fullPackage} 元/㎡` : '', note: '整装报价基准' },
+                { label: '半包', value: providerInfo?.pricing?.halfPackage ? `${providerInfo.pricing.halfPackage} 元/㎡` : '', note: '半包报价基准' },
+                { label: '量房费', value: providerInfo?.surveyDepositPrice ? `${providerInfo.surveyDepositPrice} 元` : '', note: '前期上门沟通' },
+            ])
+        .filter((item) => hasDisplayText(item.value));
+
+    const providerTypeLabel = getProviderTypeLabel();
+    const statusNote = (() => {
+        if (providerInfo?.platformDisplayEnabled === false) {
+            return '平台已下线';
+        }
+        if (providerInfo?.merchantDisplayEnabled === false) {
+            return '当前已下线';
+        }
+        switch (displayStatusMeta.status) {
+            case 'pending_review':
+                return '审核完成后可上线';
+            case 'profile_incomplete':
+                return '先补齐资料';
+            case 'observing':
+                return '等待首单转化';
+            case 'restricted':
+                return '当前存在限制';
+            case 'active':
+                return '当前可正常接单';
+            case 'offline':
+            default:
+                return displayStatusMeta.label;
+        }
+    })();
+    const showExplicitStatus = displayStatusMeta.status !== 'active';
+    const showStatusHint = showExplicitStatus && statusNote !== displayStatusMeta.label;
+
+    const summaryStats = [
+        { label: '资料完整度', value: `${profileCompletion}%` },
+        { label: '服务城市', value: `${providerInfo?.serviceArea?.length || 0} 个` },
+        { label: '已完成订单', value: `${providerInfo?.completedCnt || 0} 单` },
+        {
+            label: isCompanyRole ? '团队规模' : yearsLabel,
+            value: isCompanyRole ? `${providerInfo?.teamSize || 0} 人` : `${providerInfo?.yearsExperience || 0} 年`,
+        },
+    ];
+
+    const baseInfoItems = [
+        { label: nameLabel, value: displayText(providerInfo?.name), show: hasDisplayText(providerInfo?.name), singleLine: false },
+        { label: companyNameLabel, value: displayText(providerInfo?.companyName), show: isCompanyOrStudio && hasDisplayText(providerInfo?.companyName), singleLine: false },
+        { label: yearsLabel, value: `${providerInfo?.yearsExperience} 年`, show: hasPositiveNumber(providerInfo?.yearsExperience), singleLine: false },
+        { label: serviceAreaLabel, value: displayServiceAreas(providerInfo?.serviceArea || []), show: hasDisplayList(providerInfo?.serviceArea || []), singleLine: false },
+        { label: isForeman ? '常驻地址 / 办公地址' : '办公地址', value: displayText(providerInfo?.officeAddress), show: hasDisplayText(providerInfo?.officeAddress), singleLine: true },
+        { label: '团队规模', value: `${providerInfo?.teamSize} 人`, show: isCompanyRole && hasPositiveNumber(providerInfo?.teamSize), singleLine: false },
+    ].filter((item) => item.show);
+
+    const serviceFeatureItems = [
+        {
+            label: isForeman ? '业务擅长领域' : '设计风格 / 项目偏好',
+            value: isForeman ? displayList(providerInfo?.highlightTags || []) : displayList(providerInfo?.specialty || []),
+            show: isForeman ? hasDisplayList(providerInfo?.highlightTags || []) : hasDisplayList(providerInfo?.specialty || []),
+        },
+        { label: '毕业院校 / 教育背景', value: displayText(providerInfo?.graduateSchool), show: !isForeman && hasDisplayText(providerInfo?.graduateSchool) },
+        { label: philosophyLabel, value: displayText(providerInfo?.designPhilosophy), show: hasDisplayText(providerInfo?.designPhilosophy) },
+    ].filter((item) => item.show);
+
+    const introductionValue = hasDisplayText(providerInfo?.introduction) ? displayText(providerInfo?.introduction) : '';
+    const companyAlbum = providerInfo?.companyAlbum || [];
+    const serviceSettingItems = !isDesignerRole
+        ? [
+            { label: '预约接收', value: serviceSettingsData.acceptBooking ? '开启' : '暂停', show: true },
+            { label: '自动确认时间', value: `${serviceSettingsData.autoConfirmHours || 24} 小时`, show: true },
+            { label: '响应时间描述', value: displayText(serviceSettingsData.responseTimeDesc), show: hasDisplayText(serviceSettingsData.responseTimeDesc) },
+            {
+                label: '价格区间',
+                value: `${serviceSettingsData.priceRangeMin || 0} - ${serviceSettingsData.priceRangeMax || 0} 元`,
+                show: Boolean(serviceSettingsData.priceRangeMin || serviceSettingsData.priceRangeMax),
+            },
+            {
+                label: isForeman ? '可承接项目风格' : '主营服务风格',
+                value: displayList(serviceSettingsData.serviceStyles),
+                show: hasDisplayList(serviceSettingsData.serviceStyles),
+            },
+        ].filter((item) => item.show)
+        : [];
 
     return (
-        <div style={{ padding: 24, background: '#f6f8fb', minHeight: '100vh' }}>
-            <div
-                style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    gap: 16,
-                    alignItems: 'flex-start',
-                    flexWrap: 'wrap',
-                    marginBottom: 24,
-                }}
-            >
-                <div>
-                    <Button
-                        type="link"
-                        icon={<ArrowLeftOutlined />}
-                        onClick={() => navigate('/dashboard')}
-                        style={{ padding: 0, marginBottom: 8 }}
-                    >
-                        返回工作台
-                    </Button>
-                    <h2 style={{ margin: 0, fontSize: 28, color: '#0f172a' }}>账户设置</h2>
-                    <div style={{ marginTop: 8, color: '#64748b' }}>
-                        借鉴参考页的信息组织方式，但不照搬视觉，保留当前业务所需字段与保存逻辑。
-                    </div>
-                </div>
+        <ConfigProvider
+            theme={{
+                components: {
+                    Input: { borderRadiusLG: 14, controlHeightLG: 48 },
+                    Select: { borderRadiusLG: 14, controlHeightLG: 48 },
+                    InputNumber: { borderRadiusLG: 14, controlHeightLG: 48 },
+                },
+            }}
+        >
+        <div className={`${styles.shell} ${styles.page}`}>
+            <div className={styles.pageHeader}>
                 <Button
-                    type="primary"
-                    icon={<SaveOutlined />}
-                    size="large"
-                    loading={isSaving}
-                    onClick={() => void handleSaveAll()}
-                    style={{
-                        minWidth: 144,
-                        borderRadius: 12,
-                        boxShadow: '0 10px 20px rgba(22, 119, 255, 0.18)',
-                    }}
+                    type="link"
+                    icon={<ArrowLeftOutlined />}
+                    onClick={() => navigate('/dashboard')}
+                    className={styles.backButton}
                 >
-                    保存更新
+                    返回工作台
                 </Button>
+                <h2 className={styles.pageTitle}>资料设置</h2>
             </div>
 
-            <Row gutter={24} align="top">
-                <Col xs={24} xl={6}>
-                    <div style={{ position: 'sticky', top: 24 }}>
-                        <Card
-                            loading={loading}
-                            bordered={false}
-                            style={{
-                                ...sectionCardStyle,
-                                overflow: 'hidden',
-                            }}
-                            bodyStyle={sectionBodyStyle}
-                        >
-                            <div
-                                style={{
-                                    margin: '-24px -24px 24px',
-                                    padding: '28px 24px 22px',
-                                    background: 'linear-gradient(135deg, #e0f2fe 0%, #eff6ff 100%)',
-                                    textAlign: 'center',
-                                }}
-                            >
-                                <div style={{ textAlign: 'center', marginBottom: 8 }}>
-                                    <ImgCrop rotationSlider cropShape="round" aspect={1} showReset showGrid>
-                                        <Upload
-                                            name="avatar"
-                                            showUploadList={false}
-                                            customRequest={handleAvatarUpload}
-                                            beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.avatar)}
-                                            accept=".jpg,.jpeg,.png"
-                                        >
-                                            <div style={{ position: 'relative', display: 'inline-block', cursor: 'pointer' }}>
-                                                <Avatar
-                                                    size={88}
-                                                    src={providerInfo?.avatar}
-                                                    icon={avatarUploading ? <LoadingOutlined /> : <UserOutlined />}
-                                                    style={{
-                                                        marginBottom: 8,
-                                                        border: '4px solid rgba(255,255,255,0.9)',
-                                                        boxShadow: '0 12px 24px rgba(14, 116, 144, 0.16)',
-                                                    }}
-                                                />
-                                                <div
-                                                    style={{
-                                                        position: 'absolute',
-                                                        bottom: 8,
-                                                        right: 0,
-                                                        background: '#1677ff',
-                                                        borderRadius: '50%',
-                                                        width: 26,
-                                                        height: 26,
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        border: '2px solid #fff',
-                                                    }}
-                                                >
-                                                    <CameraOutlined style={{ color: '#fff', fontSize: 12 }} />
-                                                </div>
-                                            </div>
-                                            <div style={{ color: '#64748b', fontSize: 12, marginTop: 4 }}>点击更换头像</div>
-                                        </Upload>
-                                    </ImgCrop>
-                                    <h3 style={{ margin: '12px 0 6px', color: '#0f172a' }}>{providerInfo?.name || '商家'}</h3>
-                                    <div style={{ color: '#64748b' }}>
-                                        {getProviderTypeLabel()}
-                                        {providerInfo?.verified && <span style={{ color: '#16a34a', marginLeft: 8 }}>已认证</span>}
-                                    </div>
-                                </div>
-                            </div>
+            <Card bordered={false} className={styles.overviewCard}>
+                <div className={styles.overviewBody}>
+                    <div className={styles.identityBlock}>
+                        <Avatar
+                            size={80}
+                            src={providerInfo?.avatar}
+                            icon={avatarUploading ? <LoadingOutlined /> : <UserOutlined />}
+                            className={styles.avatar}
+                        />
 
-                            <div style={{ ...softPanelStyle, marginBottom: 20 }}>
-                                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>详情页背景图</div>
-                                <div
-                                    style={{
-                                        position: 'relative',
-                                        height: 128,
-                                        borderRadius: 18,
-                                        overflow: 'hidden',
-                                        border: '1px solid #e2e8f0',
-                                        background: 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)',
-                                    }}
-                                >
-                                    {providerInfo?.coverImage ? (
-                                        <img
-                                            src={providerInfo.coverImage}
-                                            alt="服务商背景图"
-                                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                                        />
-                                    ) : (
-                                        <div
-                                            style={{
-                                                width: '100%',
-                                                height: '100%',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                color: '#475569',
-                                                fontSize: 13,
-                                                textAlign: 'center',
-                                                padding: '0 16px',
-                                                lineHeight: 1.7,
-                                            }}
-                                        >
-                                            未上传背景图时，前台会按公司相册 / 案例图 / 默认背景兜底
-                                        </div>
-                                    )}
-                                </div>
-                                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                                    <Upload
-                                        showUploadList={false}
-                                        customRequest={handleCoverUpload}
-                                        beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.showcase)}
-                                        accept=".jpg,.jpeg,.png,.webp"
-                                    >
-                                        <Button icon={coverUploading ? <LoadingOutlined /> : <CameraOutlined />} loading={coverUploading}>
-                                            上传背景图
-                                        </Button>
-                                    </Upload>
-                                    <Button onClick={() => void handleCoverClear()} disabled={!providerInfo?.coverImage || coverUploading}>
-                                        清空背景图
-                                    </Button>
-                                </div>
-                                <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.7, marginTop: 10 }}>
-                                    背景图只用于服务商详情页顶部头图，不再和头像共用。
-                                </div>
+                        <div className={styles.identityMeta}>
+                            <h3 className={styles.identityName}>{providerInfo?.name || '商家'}</h3>
+                            <div className={styles.tagRow}>
+                                <Tag color="blue" style={{ margin: 0 }}>{providerTypeLabel}</Tag>
+                                {providerInfo?.verified ? <Tag color="success" style={{ margin: 0 }}>已认证</Tag> : null}
                             </div>
-
-                            <div
-                                style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                                    gap: 12,
-                                    marginBottom: 20,
-                                }}
-                            >
-                                {[
-                                    { label: '评分', value: providerInfo?.rating || 0 },
-                                    { label: '订单', value: `${providerInfo?.completedCnt || 0} 单` },
-                                    { label: '年限', value: `${providerInfo?.yearsExperience || 0} 年` },
-                                ].map((item) => (
-                                    <div
-                                        key={item.label}
-                                        style={{
-                                            padding: '14px 12px',
-                                            borderRadius: 16,
-                                            background: '#f8fafc',
-                                            border: '1px solid #e2e8f0',
-                                            textAlign: 'center',
-                                        }}
-                                    >
-                                        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>{item.label}</div>
-                                        <div style={{ color: '#0f172a', fontWeight: 600 }}>{item.value}</div>
+                            <div className={styles.summaryRow}>
+                                {summaryStats.map((item) => (
+                                    <div key={item.label} className={styles.summaryChip}>
+                                        <div className={styles.summaryChipLabel}>{item.label}</div>
+                                        <div className={styles.summaryChipValue}>{item.value}</div>
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    </div>
 
-                            <div style={softPanelStyle}>
-                                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>资料维护建议</div>
-                                <div style={{ color: '#475569', lineHeight: 1.7 }}>
-                                    优先完善头像、名称、服务城市、理念介绍和报价信息，外部展示会更完整。
-                                </div>
-                            </div>
+                    <div className={styles.statusBlock}>
+                        <div className={styles.statusLabel}>接单状态</div>
+                        <div className={styles.statusRow}>
+                            {showExplicitStatus ? (
+                                <Tag color={displayStatusMeta.color} style={{ margin: 0 }}>
+                                    {displayStatusMeta.label}
+                                </Tag>
+                            ) : null}
+                            <Switch
+                                checked={providerInfo?.merchantDisplayEnabled ?? true}
+                                loading={displayUpdating}
+                                disabled={displayStatusMeta.switchDisabled}
+                                onChange={handleDisplayToggle}
+                            />
+                        </div>
+                        {showStatusHint ? <div className={styles.statusHint}>{statusNote}</div> : null}
+                    </div>
+                </div>
+            </Card>
 
-                            <div style={{ ...softPanelStyle, marginTop: 16 }}>
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        gap: 16,
-                                        flexWrap: 'wrap',
-                                    }}
-                                >
-                                    <div style={{ minWidth: 0, flex: 1 }}>
-                                        <div style={{ color: '#0f172a', fontWeight: 600 }}>接单状态</div>
-                                        <div style={{ marginTop: 8 }}>
-                                            <Tag
-                                                color={displayStatusMeta.color}
-                                                style={{ margin: 0, borderRadius: 999, paddingInline: 10, lineHeight: '22px' }}
+            <div className={styles.contentGrid}>
+                <div className={styles.mainColumn}>
+                    <Card
+                        title={(
+                            <span className={styles.sectionTitle}>
+                                <UserOutlined className={styles.sectionTitleIcon} />
+                                <span>资料信息</span>
+                            </span>
+                        )}
+                        extra={<Button className={styles.sectionButton} onClick={() => setActiveEditor('info')}>编辑资料</Button>}
+                        bordered={false}
+                        className={styles.sectionCard}
+                    >
+                        <div className={styles.infoBody}>
+                            {baseInfoItems.length > 0 ? (
+                                <div className={styles.infoGrid}>
+                                    {baseInfoItems.map((item) => (
+                                        <div key={item.label} className={styles.infoItem}>
+                                            <div className={styles.infoLabel}>{item.label}</div>
+                                            <div
+                                                className={`${styles.infoValue} ${item.singleLine ? styles.singleLineValue : ''}`}
+                                                title={item.singleLine ? item.value : undefined}
                                             >
-                                                {displayStatusMeta.label}
-                                            </Tag>
-                                        </div>
-                                        {displayStatusMeta.helperText && (
-                                            <div style={{ marginTop: 8, color: '#64748b', fontSize: 12, lineHeight: 1.6 }}>
-                                                {displayStatusMeta.helperText}
+                                                {item.value}
                                             </div>
-                                        )}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {serviceFeatureItems.length > 0 ? (
+                                <>
+                                    <div className={styles.infoDivider} />
+                                    <div className={styles.infoGrid}>
+                                        {serviceFeatureItems.map((item) => (
+                                            <div key={item.label} className={styles.infoItem}>
+                                                <div className={styles.infoLabel}>{item.label}</div>
+                                                <div className={styles.infoValue}>{item.value}</div>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <Switch
-                                        checked={providerInfo?.merchantDisplayEnabled ?? true}
-                                        loading={displayUpdating}
-                                        disabled={displayStatusMeta.switchDisabled}
-                                        onChange={handleDisplayToggle}
-                                        checkedChildren="接单中"
-                                        unCheckedChildren="下线"
-                                    />
-                                </div>
+                                </>
+                            ) : null}
+
+                            {introductionValue ? (
+                                <>
+                                    <div className={styles.infoDivider} />
+                                    <div className={styles.infoItem}>
+                                        <div className={styles.infoLabel}>{introLabel}</div>
+                                        <div className={styles.infoValue}>{introductionValue}</div>
+                                    </div>
+                                </>
+                            ) : null}
+
+                            {isCompanyRole && companyAlbum.length > 0 ? (
+                                <>
+                                    <div className={styles.infoDivider} />
+                                    <div className={styles.albumBlock}>
+                                        <div className={styles.infoLabel}>企业相册</div>
+                                        <div className={styles.albumGrid}>
+                                            {companyAlbum.map((image, index) => (
+                                                <div key={`${image}-${index}`} className={styles.albumItem}>
+                                                    <img src={image} alt={`企业相册 ${index + 1}`} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            ) : null}
+                        </div>
+                    </Card>
+                </div>
+
+                <div className={styles.sideColumn}>
+                    <Card
+                        title={(
+                            <span className={styles.sectionTitle}>
+                                <WalletOutlined className={styles.sectionTitleIcon} />
+                                <span>服务报价</span>
+                            </span>
+                        )}
+                        extra={<Button className={styles.sectionButton} onClick={() => setActiveEditor('pricing')}>编辑报价</Button>}
+                        bordered={false}
+                        className={styles.sectionCard}
+                    >
+                        {pricingDisplayItems.length > 0 ? (
+                            <div className={styles.priceList}>
+                                {pricingDisplayItems.map((item) => (
+                                    <div key={item.label} className={styles.priceItem}>
+                                        <div className={styles.priceLabel}>{item.label}</div>
+                                        <div className={styles.priceValue}>{item.value}</div>
+                                    </div>
+                                ))}
                             </div>
+                        ) : (
+                            <div className={styles.emptyState}>
+                                <div className={styles.emptyTitle}>暂未填写报价</div>
+                                <div className={styles.emptyText}>点击编辑报价补充。</div>
+                            </div>
+                        )}
+                    </Card>
 
-                            <Divider style={{ margin: '20px 0' }} />
-
-                            <div style={softPanelStyle}>
-                                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>资料完善度</div>
-                                <div style={{ color: '#0f172a', fontWeight: 700, fontSize: 24, marginBottom: 8 }}>
-                                    {profileCompletion}%
-                                </div>
-                                <Progress percent={profileCompletion} showInfo={false} strokeColor="#2563eb" trailColor="#dbeafe" />
-                                <div style={{ color: '#64748b', marginTop: 10, lineHeight: 1.7 }}>
-                                    完善头像、理念介绍和报价信息，可提升资料完整度与展示质量。
-                                </div>
+                    {!isDesignerRole ? (
+                        <Card
+                            title={(
+                                <span className={styles.sectionTitle}>
+                                    <SaveOutlined className={styles.sectionTitleIcon} />
+                                    <span>{serviceSettingTitle}</span>
+                                </span>
+                            )}
+                            extra={<Button className={styles.sectionButton} onClick={() => setActiveEditor('settings')}>编辑设置</Button>}
+                            bordered={false}
+                            className={styles.sectionCard}
+                        >
+                            <div className={styles.settingList}>
+                                {serviceSettingItems.map((item) => (
+                                    <div key={item.label} className={styles.settingItem}>
+                                        <div className={styles.settingLabel}>{item.label}</div>
+                                        <div className={styles.settingValue}>{item.value}</div>
+                                    </div>
+                                ))}
                             </div>
                         </Card>
-                    </div>
-                </Col>
+                    ) : null}
+                </div>
+            </div>
 
-                <Col xs={24} xl={18}>
+            <Modal
+                open={activeEditor === 'info'}
+                title="编辑资料信息"
+                onCancel={() => setActiveEditor(null)}
+                onOk={() => void saveInfoEditor()}
+                confirmLoading={savingInfo}
+                width={980}
+                destroyOnClose={false}
+            >
+                <div className={styles.editorScroll}>
                     <Form form={infoForm} layout="vertical">
-                        <div
-                            ref={(node) => {
-                                sectionRefs.current.basic = node;
-                            }}
-                        >
-                            <Row gutter={[16, 16]}>
-                                <Col xs={24} lg={14}>
-                                    <Card
-                                        title={(
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                                <UserOutlined style={{ color: '#2563eb' }} />
-                                                <span>{basicInfoTitle}</span>
-                                            </span>
-                                        )}
-                                        loading={loading}
-                                        bordered={false}
-                                        style={sectionCardStyle}
-                                        bodyStyle={sectionBodyStyle}
-                                        extra={<span style={{ color: '#94a3b8', fontSize: 12 }}>{sectionLabels.basic.description}</span>}
-                                    >
-                                        <Row gutter={16}>
-                                            <Col xs={24} md={12}>
-                                                <Form.Item
-                                                    name="name"
-                                                    label={nameLabel}
-                                                    rules={[{ required: true, message: '请输入名称' }, { max: 50, message: '名称最多50个字符' }]}
-                                                >
-                                                    <Input placeholder={namePlaceholder} maxLength={50} />
-                                                </Form.Item>
-                                            </Col>
-                                            <Col xs={24} md={12}>
-                                                {isCompanyOrStudio ? (
-                                                    <Form.Item name="companyName" label={companyNameLabel}>
-                                                        <Input placeholder="公司全称" maxLength={100} />
-                                                    </Form.Item>
-                                                ) : (
-                                                    <Form.Item name="yearsExperience" label={yearsLabel}>
-                                                        <Select placeholder={yearsPlaceholder}>
-                                                            {[1, 2, 3, 5, 8, 10, 15, 20].map((year) => (
-                                                                <Select.Option key={year} value={year}>
-                                                                    {year}年以上
-                                                                </Select.Option>
-                                                            ))}
-                                                        </Select>
-                                                    </Form.Item>
-                                                )}
-                                            </Col>
-                                        </Row>
-
-                                        <Row gutter={16}>
-                                            <Col xs={24} md={12}>
-                                                {!isForeman && (
-                                                    <Form.Item
-                                                        name="specialty"
-                                                        label={isCompanyRole ? '主营风格 / 项目偏好' : '专注设计风格'}
-                                                        rules={[{ type: 'array', max: 5, message: '最多选择5个擅长风格' }]}
-                                                    >
-                                                        <Select mode="multiple" placeholder={isCompanyRole ? '选择主营风格/项目偏好' : '选择擅长风格'} maxTagCount={4}>
-                                                            {styleOptions.map((style) => (
-                                                                <Select.Option key={style} value={style}>
-                                                                    {style}
-                                                                </Select.Option>
-                                                            ))}
-                                                        </Select>
-                                                    </Form.Item>
-                                                )}
-                                            </Col>
-                                            <Col xs={24} md={12}>
-                                                {isForeman && (
-                                                    <Form.Item
-                                                        name="highlightTags"
-                                                        label="业务擅长领域"
-                                                        rules={[{ type: 'array', min: 1, max: 3, message: '请选择1-3个施工亮点' }]}
-                                                    >
-                                                        <Select
-                                                            mode="multiple"
-                                                            placeholder="选择工种/班组亮点"
-                                                            options={FOREMAN_HIGHLIGHT_OPTIONS.map((item) => ({ value: item, label: item }))}
-                                                        />
-                                                    </Form.Item>
-                                                )}
-                                            </Col>
-                                        </Row>
-
-                                        <Form.Item name="serviceArea" label={serviceAreaLabel}>
-                                            <Select
-                                                mode="multiple"
-                                                placeholder={`选择${serviceAreaLabel}`}
-                                                options={areaOptions}
-                                                optionFilterProp="label"
-                                            />
+                        <div className={styles.editorStack}>
+                            <div className={styles.editorGroup}>
+                                <div className={styles.editorGroupTitle}>头像与基本信息</div>
+                                <div className={styles.avatarEditorRow}>
+                                    <Avatar
+                                        size={72}
+                                        src={providerInfo?.avatar}
+                                        icon={avatarUploading ? <LoadingOutlined /> : <UserOutlined />}
+                                        className={styles.avatar}
+                                    />
+                                    <div className={styles.avatarEditorMeta}>
+                                        <ImgCrop rotationSlider cropShape="round" aspect={1} showReset showGrid>
+                                            <Upload
+                                                name="avatar"
+                                                showUploadList={false}
+                                                customRequest={handleAvatarUpload}
+                                                beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.avatar)}
+                                                accept=".jpg,.jpeg,.png"
+                                            >
+                                                <Button icon={<CameraOutlined />} loading={avatarUploading}>
+                                                    更换头像
+                                                </Button>
+                                            </Upload>
+                                        </ImgCrop>
+                                        <div className={styles.avatarEditorHint}>支持 JPG、PNG，建议上传清晰正方形头像。</div>
+                                    </div>
+                                </div>
+                                <Row gutter={[16, 0]}>
+                                    <Col xs={24} md={8}>
+                                        <Form.Item
+                                            name="name"
+                                            label={nameLabel}
+                                            rules={[{ required: true, message: '请输入名称' }, { max: 50, message: '名称最多50个字符' }]}
+                                        >
+                                            <Input placeholder={namePlaceholder} maxLength={50} />
                                         </Form.Item>
-                                    </Card>
-                                </Col>
-
-                                <Col xs={24} lg={10}>
-                                    <Card bordered={false} style={sectionCardStyle} bodyStyle={sectionBodyStyle}>
-                                        <div style={{ color: '#0f172a', fontWeight: 700, fontSize: 18, marginBottom: 16 }}>
-                                            资料摘要
-                                        </div>
-                                        <div style={{ display: 'grid', gap: 12 }}>
-                                            <div style={softPanelStyle}>
-                                                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>当前角色</div>
-                                                <div style={{ color: '#0f172a', fontWeight: 600 }}>{getProviderTypeLabel()}</div>
-                                            </div>
-                                            <div style={softPanelStyle}>
-                                                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>必要资料</div>
-                                                <div style={{ color: '#475569', lineHeight: 1.7 }}>
-                                                    必要功能仍全部保留，只是把字段重新分组，减少“长表单一路往下滚”的割裂感。
-                                                </div>
-                                            </div>
-                                            <div style={softPanelStyle}>
-                                                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>保存策略</div>
-                                                <div style={{ color: '#475569', lineHeight: 1.7 }}>
-                                                    顶部单按钮统一提交，避免基础资料与服务设置各自保存造成状态不同步。
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </Card>
-                                </Col>
-
-                                <Col xs={24}>
-                                    <Card
-                                        title={(
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                                <TeamOutlined style={{ color: '#2563eb' }} />
-                                                <span>{teamSectionTitle}</span>
-                                            </span>
+                                    </Col>
+                                    {isCompanyOrStudio ? (
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name="companyName" label={companyNameLabel}>
+                                                <Input placeholder="公司全称" maxLength={100} />
+                                            </Form.Item>
+                                        </Col>
+                                    ) : null}
+                                    <Col xs={24} md={8}>
+                                        <Form.Item name="yearsExperience" label={yearsLabel}>
+                                            <Select placeholder={yearsPlaceholder}>
+                                                {[1, 2, 3, 5, 8, 10, 15, 20].map((year) => (
+                                                    <Select.Option key={year} value={year}>
+                                                        {year}年以上
+                                                    </Select.Option>
+                                                ))}
+                                            </Select>
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24}>
+                                        {!isForeman ? (
+                                            <Form.Item
+                                                name="specialty"
+                                                label={isCompanyRole ? '主营风格 / 项目偏好' : '专注设计风格'}
+                                                rules={[{ type: 'array', max: 5, message: '最多选择5个擅长风格' }]}
+                                            >
+                                                <Select mode="multiple" placeholder={isCompanyRole ? '选择主营风格/项目偏好' : '选择擅长风格'} maxTagCount={4}>
+                                                    {styleOptions.map((style) => (
+                                                        <Select.Option key={style} value={style}>
+                                                            {style}
+                                                        </Select.Option>
+                                                    ))}
+                                                </Select>
+                                            </Form.Item>
+                                        ) : (
+                                            <Form.Item
+                                                name="highlightTags"
+                                                label="业务擅长领域"
+                                                rules={[{ type: 'array', min: 1, max: 3, message: '请选择1-3个施工亮点' }]}
+                                            >
+                                                <Select
+                                                    mode="multiple"
+                                                    placeholder="选择工种/班组亮点"
+                                                    options={FOREMAN_HIGHLIGHT_OPTIONS.map((item) => ({ value: item, label: item }))}
+                                                />
+                                            </Form.Item>
                                         )}
-                                        bordered={false}
-                                        style={sectionCardStyle}
-                                        bodyStyle={sectionBodyStyle}
+                                    </Col>
+                                </Row>
+                            </div>
+
+                            <div className={styles.editorGroup}>
+                                <div className={styles.editorGroupTitle}>服务范围</div>
+                                <Form.Item name="serviceArea" label={serviceAreaLabel} style={{ marginBottom: 0 }}>
+                                    <Select
+                                        mode="multiple"
+                                        placeholder={`选择${serviceAreaLabel}`}
+                                        options={areaOptions}
+                                        optionFilterProp="label"
+                                    />
+                                </Form.Item>
+                            </div>
+
+                            <div className={styles.editorGroup}>
+                                <div className={styles.editorGroupTitle}>专业信息</div>
+                                <Row gutter={[16, 0]}>
+                                    {!isForeman ? (
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name="graduateSchool" label="毕业院校 / 教育背景">
+                                                <Input placeholder="请输入毕业院校（选填）" maxLength={100} />
+                                            </Form.Item>
+                                        </Col>
+                                    ) : null}
+                                    <Col xs={24} md={isForeman ? 24 : 16}>
+                                        <Form.Item name="designPhilosophy" label={philosophyLabel}>
+                                            <Input.TextArea rows={4} placeholder={philosophyPlaceholder} maxLength={5000} showCount />
+                                        </Form.Item>
+                                    </Col>
+                                    <Col xs={24}>
+                                        <Form.Item name="introduction" label={introLabel} style={{ marginBottom: 0 }}>
+                                            <Input.TextArea rows={4} placeholder={introPlaceholder} maxLength={5000} showCount />
+                                        </Form.Item>
+                                    </Col>
+                                </Row>
+                            </div>
+
+                            <div className={styles.editorGroup}>
+                                <div className={styles.editorGroupTitle}>办公与企业补充</div>
+                                <Row gutter={[16, 0]}>
+                                    {isCompanyRole ? (
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name="teamSize" label="团队规模">
+                                                <InputNumber min={1} max={500} style={{ width: '100%' }} placeholder="团队人数" />
+                                            </Form.Item>
+                                        </Col>
+                                    ) : null}
+                                    <Col xs={24} md={isCompanyRole ? 16 : 24}>
+                                        <Form.Item
+                                            name="officeAddress"
+                                            label={isForeman ? '常驻地址 / 办公地址' : '办公地址'}
+                                            rules={[{ required: true, message: isForeman ? '请输入常驻地址' : '请输入办公地址' }]}
+                                            style={{ marginBottom: 0 }}
+                                        >
+                                            <Input placeholder={isForeman ? '请输入常驻地址或办公地址' : '请输入办公地址'} maxLength={200} />
+                                        </Form.Item>
+                                    </Col>
+                                </Row>
+                            </div>
+
+                            {isCompanyRole ? (
+                                <div className={styles.editorGroup}>
+                                    <div className={styles.editorGroupTitle}>企业展示相册</div>
+                                    <Form.Item
+                                        name="companyAlbum"
+                                        label="企业形象相册"
+                                        rules={[
+                                            {
+                                                validator: (_, value) => {
+                                                    const images = Array.isArray(value) ? value : [];
+                                                    if (images.length < 3 || images.length > 8) {
+                                                        return Promise.reject(new Error('公司相册需上传 3-8 张图片'));
+                                                    }
+                                                    return Promise.resolve();
+                                                },
+                                            },
+                                        ]}
+                                        style={{ marginBottom: 0 }}
                                     >
-                                        <Row gutter={16}>
-                                            <Col xs={24} lg={10}>
-                                                <div style={{ display: 'grid', gap: 16 }}>
-                                                    <div style={softPanelStyle}>
-                                                        <Form.Item name="yearsExperience" label={yearsLabel} style={{ marginBottom: 16 }}>
-                                                            <Select placeholder={yearsPlaceholder}>
-                                                                {[1, 2, 3, 5, 8, 10, 15, 20].map((year) => (
-                                                                    <Select.Option key={year} value={year}>
-                                                                        {year}年以上
-                                                                    </Select.Option>
-                                                                ))}
-                                                            </Select>
-                                                        </Form.Item>
-                                                        <Form.Item name="teamSize" label={isForeman ? '班组规模' : '团队规模'} style={{ marginBottom: 0 }}>
-                                                            <InputNumber min={1} max={500} style={{ width: '100%' }} placeholder="团队人数" />
-                                                        </Form.Item>
-                                                    </div>
-                                                    <div style={softPanelStyle}>
-                                                        <Form.Item
-                                                            name="officeAddress"
-                                                            label={isForeman ? '常驻地址 / 办公地址' : '办公地址'}
-                                                            rules={[{ required: true, message: isForeman ? '请输入常驻地址' : '请输入办公地址' }]}
-                                                            style={{ marginBottom: 0 }}
-                                                        >
-                                                            <Input.TextArea
-                                                                rows={4}
-                                                                placeholder={isForeman ? '请输入常驻地址或办公地址' : '请输入办公地址'}
-                                                                maxLength={200}
-                                                            />
-                                                        </Form.Item>
-                                                    </div>
-                                                </div>
-                                            </Col>
-                                            <Col xs={24} lg={14}>
-                                                {isCompanyRole ? (
-                                                    <div style={softPanelStyle}>
-                                                        <Form.Item
-                                                            name="companyAlbum"
-                                                            label="企业形象相册"
-                                                            rules={[
-                                                                {
-                                                                    validator: (_, value) => {
-                                                                        const images = Array.isArray(value) ? value : [];
-                                                                        if (images.length < 3 || images.length > 8) {
-                                                                            return Promise.reject(new Error('公司相册需上传 3-8 张图片'));
-                                                                        }
-                                                                        return Promise.resolve();
-                                                                    },
-                                                                },
-                                                            ]}
-                                                            extra="建议上传办公环境、团队空间等真实照片。"
-                                                            style={{ marginBottom: 0 }}
-                                                        >
-                                                            <Upload
-                                                                listType="picture-card"
-                                                                multiple
-                                                                fileList={toAlbumFileList(infoForm.getFieldValue('companyAlbum') || [])}
-                                                                beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.showcase)}
-                                                                customRequest={handleCompanyAlbumUpload}
-                                                                onChange={({ fileList }) => {
-                                                                    const next = normalizeStoredAssetValues(
-                                                                        fileList.map((file) => getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>)),
-                                                                    );
-                                                                    infoForm.setFieldValue('companyAlbum', next);
-                                                                }}
-                                                                onRemove={(file) => {
-                                                                    const current = (infoForm.getFieldValue('companyAlbum') || []) as string[];
-                                                                    const target = getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>);
-                                                                    infoForm.setFieldValue('companyAlbum', current.filter((item) => item !== target));
-                                                                    return true;
-                                                                }}
-                                                            >
-                                                                {((infoForm.getFieldValue('companyAlbum') || []) as string[]).length < 8 ? <div>上传图片</div> : null}
-                                                            </Upload>
-                                                        </Form.Item>
-                                                    </div>
-                                                ) : (
-                                                    <div style={softPanelStyle}>
-                                                        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>展示说明</div>
-                                                        <div style={{ color: '#475569', lineHeight: 1.8 }}>
-                                                            这里保留团队规模与地址等基础信息，品牌介绍、理念与对外说明放在下方统一维护。
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </Col>
-                                        </Row>
-                                    </Card>
-                                </Col>
-
-                                <Col xs={24}>
-                                    <Card
-                                        title={(
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                                <WalletOutlined style={{ color: '#2563eb' }} />
-                                                <span>服务报价与资费标准</span>
-                                            </span>
-                                        )}
-                                        bordered={false}
-                                        style={sectionCardStyle}
-                                        bodyStyle={sectionBodyStyle}
-                                    >
-                                        <Row gutter={[16, 16]}>
-                                            {isDesignerRole && (
-                                                <>
-                                                    <Col xs={24} md={12} xl={6}>
-                                                        <div style={softPanelStyle}>
-                                                            <Form.Item name="priceFlat" label="大平层 / 普通住宅参考报价（元/㎡）" style={{ marginBottom: 0 }}>
-                                                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="如：120" />
-                                                            </Form.Item>
-                                                        </div>
-                                                    </Col>
-                                                    <Col xs={24} md={12} xl={6}>
-                                                        <div style={softPanelStyle}>
-                                                            <Form.Item name="priceDuplex" label="复式 / 别墅参考报价（元/㎡）" style={{ marginBottom: 0 }}>
-                                                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="如：160" />
-                                                            </Form.Item>
-                                                        </div>
-                                                    </Col>
-                                                    <Col xs={24} md={12} xl={6}>
-                                                        <div style={softPanelStyle}>
-                                                            <Form.Item name="priceOther" label="其他户型参考报价（元/㎡）" style={{ marginBottom: 0 }}>
-                                                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="如：100" />
-                                                            </Form.Item>
-                                                        </div>
-                                                    </Col>
-                                                    <Col xs={24} md={12} xl={6}>
-                                                        <div style={softPanelStyle}>
-                                                            <Form.Item name="surveyDepositPrice" label="量房费（元）" style={{ marginBottom: 0 }}>
-                                                                <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="如：500" />
-                                                            </Form.Item>
-                                                        </div>
-                                                    </Col>
-                                                </>
-                                            )}
-
-                                            {isForeman && (
-                                                <Col xs={24} md={12}>
-                                                    <div style={softPanelStyle}>
-                                                        <Form.Item name="pricePerSqm" label="施工参考报价（元/㎡）" style={{ marginBottom: 0 }}>
-                                                            <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="如：900" />
-                                                        </Form.Item>
-                                                    </div>
-                                                </Col>
-                                            )}
-
-                                            {isCompanyRole && (
-                                                <>
-                                                    <Col xs={24} md={8}>
-                                                        <div style={softPanelStyle}>
-                                                            <Form.Item name="priceFullPackage" label="整装参考报价（元/㎡）" style={{ marginBottom: 0 }}>
-                                                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="如：1299" />
-                                                            </Form.Item>
-                                                        </div>
-                                                    </Col>
-                                                    <Col xs={24} md={8}>
-                                                        <div style={softPanelStyle}>
-                                                            <Form.Item name="priceHalfPackage" label="半包参考报价（元/㎡）" style={{ marginBottom: 0 }}>
-                                                                <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="如：899" />
-                                                            </Form.Item>
-                                                        </div>
-                                                    </Col>
-                                                    <Col xs={24} md={8}>
-                                                        <div style={softPanelStyle}>
-                                                            <Form.Item name="surveyDepositPrice" label="量房费（元）" style={{ marginBottom: 0 }}>
-                                                                <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="未填写则使用平台默认价" />
-                                                            </Form.Item>
-                                                        </div>
-                                                    </Col>
-                                                </>
-                                            )}
-                                        </Row>
-                                    </Card>
-                                </Col>
-
-                                <Col xs={24}>
-                                    <Card
-                                        title={(
-                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                                <BookOutlined style={{ color: '#2563eb' }} />
-                                                <span>{philosophySectionTitle}</span>
-                                            </span>
-                                        )}
-                                        bordered={false}
-                                        style={sectionCardStyle}
-                                        bodyStyle={sectionBodyStyle}
-                                    >
-                                        <Row gutter={16}>
-                                            {!isForeman && (
-                                                <Col xs={24} lg={10}>
-                                                    <div style={softPanelStyle}>
-                                                        <Form.Item name="graduateSchool" label="毕业院校 / 教育背景" style={{ marginBottom: 0 }}>
-                                                            <Input placeholder="请输入毕业院校（选填）" maxLength={100} />
-                                                        </Form.Item>
-                                                    </div>
-                                                </Col>
-                                            )}
-                                            <Col xs={24} lg={isForeman ? 24 : 14}>
-                                                <div style={softPanelStyle}>
-                                                    <Form.Item name="designPhilosophy" label={philosophyLabel} style={{ marginBottom: 0 }}>
-                                                        <Input.TextArea
-                                                            rows={6}
-                                                            placeholder={philosophyPlaceholder}
-                                                            maxLength={5000}
-                                                            showCount
-                                                        />
-                                                    </Form.Item>
-                                                </div>
-                                            </Col>
-                                            <Col xs={24}>
-                                                <div style={softPanelStyle}>
-                                                    <Form.Item name="introduction" label={introLabel} style={{ marginBottom: 0 }}>
-                                                        <Input.TextArea
-                                                            rows={5}
-                                                            placeholder={introPlaceholder}
-                                                            maxLength={5000}
-                                                            showCount
-                                                        />
-                                                    </Form.Item>
-                                                </div>
-                                            </Col>
-                                        </Row>
-                                    </Card>
-                                </Col>
-                            </Row>
+                                        <Upload
+                                            listType="picture-card"
+                                            multiple
+                                            fileList={toAlbumFileList(infoForm.getFieldValue('companyAlbum') || [])}
+                                            beforeUpload={(file) => validateImageUploadBeforeSend(file as File, IMAGE_UPLOAD_SPECS.showcase)}
+                                            customRequest={handleCompanyAlbumUpload}
+                                            onChange={({ fileList }) => {
+                                                const next = normalizeStoredAssetValues(
+                                                    fileList.map((file) => getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>)),
+                                                );
+                                                infoForm.setFieldValue('companyAlbum', next);
+                                            }}
+                                            onRemove={(file) => {
+                                                const current = (infoForm.getFieldValue('companyAlbum') || []) as string[];
+                                                const target = getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>);
+                                                infoForm.setFieldValue('companyAlbum', current.filter((item) => item !== target));
+                                                return true;
+                                            }}
+                                        >
+                                            {((infoForm.getFieldValue('companyAlbum') || []) as string[]).length < 8 ? <div>上传图片</div> : null}
+                                        </Upload>
+                                    </Form.Item>
+                                </div>
+                            ) : null}
                         </div>
                     </Form>
+                </div>
+            </Modal>
 
-                    {!isDesignerRole && (
-                        <div
-                            ref={(node) => {
-                                sectionRefs.current.settings = node;
-                            }}
-                        >
-                            <Form form={settingForm} layout="vertical">
-                                <Card
-                                    title={(
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                            <SaveOutlined style={{ color: '#2563eb' }} />
-                                            <span>{serviceSettingTitle}</span>
-                                        </span>
-                                    )}
-                                    bordered={false}
-                                    style={sectionCardStyle}
-                                    bodyStyle={sectionBodyStyle}
-                                    extra={<span style={{ color: '#94a3b8', fontSize: 12 }}>{sectionLabels.settings.description}</span>}
-                                >
+            <Modal
+                open={activeEditor === 'pricing'}
+                title="编辑服务报价"
+                onCancel={() => setActiveEditor(null)}
+                onOk={() => void savePricingEditor()}
+                confirmLoading={savingInfo}
+                width={900}
+                destroyOnClose={false}
+            >
+                <div className={styles.editorScroll}>
+                    <Form form={infoForm} layout="vertical">
+                        <div className={styles.editorStack}>
+                            <div className={styles.editorGroup}>
+                                <div className={styles.editorGroupTitle}>服务报价</div>
+                                <Row gutter={[16, 16]}>
+                                    {isDesignerRole ? (
+                                        <>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name="priceFlat" label="普通住宅">
+                                                    <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元/㎡" placeholder="120" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name="priceDuplex" label="复式 / 别墅">
+                                                    <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元/㎡" placeholder="160" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name="priceOther" label="其他户型">
+                                                    <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元/㎡" placeholder="100" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name="surveyDepositPrice" label="量房费">
+                                                    <InputNumber min={0} precision={2} style={{ width: '100%' }} addonAfter="元" placeholder="500" />
+                                                </Form.Item>
+                                            </Col>
+                                        </>
+                                    ) : null}
+                                    {isForeman ? (
+                                        <>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name="pricePerSqm" label="施工参考价">
+                                                    <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元/㎡" placeholder="900" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={12}>
+                                                <Form.Item name="surveyDepositPrice" label="量房费">
+                                                    <InputNumber min={0} precision={2} style={{ width: '100%' }} addonAfter="元" placeholder="500" />
+                                                </Form.Item>
+                                            </Col>
+                                        </>
+                                    ) : null}
+                                    {isCompanyRole ? (
+                                        <>
+                                            <Col xs={24} md={8}>
+                                                <Form.Item name="priceFullPackage" label="整装">
+                                                    <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元/㎡" placeholder="1299" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={8}>
+                                                <Form.Item name="priceHalfPackage" label="半包">
+                                                    <InputNumber min={0} precision={0} style={{ width: '100%' }} addonAfter="元/㎡" placeholder="899" />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col xs={24} md={8}>
+                                                <Form.Item name="surveyDepositPrice" label="量房费">
+                                                    <InputNumber min={0} precision={2} style={{ width: '100%' }} addonAfter="元" placeholder="500" />
+                                                </Form.Item>
+                                            </Col>
+                                        </>
+                                    ) : null}
+                                </Row>
+                            </div>
+                        </div>
+                    </Form>
+                </div>
+            </Modal>
+
+            {!isDesignerRole ? (
+                <Modal
+                    open={activeEditor === 'settings'}
+                    title={serviceSettingTitle}
+                    onCancel={() => setActiveEditor(null)}
+                    onOk={() => void saveSettingsEditor()}
+                    confirmLoading={savingSettings}
+                    width={900}
+                    destroyOnClose={false}
+                >
+                    <div className={styles.editorScroll}>
+                        <Form form={settingForm} layout="vertical">
+                            <div className={styles.editorStack}>
+                                <div className={styles.editorGroup}>
+                                    <div className={styles.editorGroupTitle}>接单设置</div>
                                     <Row gutter={[16, 16]}>
-                                        <Col xs={24} lg={8}>
-                                            <div style={softPanelStyle}>
-                                                <Form.Item name="acceptBooking" label="预约接收" valuePropName="checked" style={{ marginBottom: 0 }}>
-                                                    <Switch checkedChildren="开启" unCheckedChildren="暂停" />
-                                                </Form.Item>
-                                            </div>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name="acceptBooking" label="预约接收" valuePropName="checked">
+                                                <Switch checkedChildren="开启" unCheckedChildren="暂停" />
+                                            </Form.Item>
                                         </Col>
-                                        <Col xs={24} lg={8}>
-                                            <div style={softPanelStyle}>
-                                                <Form.Item
-                                                    name="autoConfirmHours"
-                                                    label="自动确认时间（小时）"
-                                                    rules={[{ required: true, message: '请填写自动确认时间' }]}
-                                                    style={{ marginBottom: 0 }}
-                                                >
-                                                    <InputNumber min={1} max={168} style={{ width: '100%' }} />
-                                                </Form.Item>
-                                            </div>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item
+                                                name="autoConfirmHours"
+                                                label="自动确认时间（小时）"
+                                                rules={[{ required: true, message: '请填写自动确认时间' }]}
+                                            >
+                                                <InputNumber min={1} max={168} style={{ width: '100%' }} />
+                                            </Form.Item>
                                         </Col>
-                                        <Col xs={24} lg={8}>
-                                            <div style={softPanelStyle}>
-                                                <Form.Item
-                                                    name="responseTimeDesc"
-                                                    label="响应时间描述"
-                                                    rules={[{ max: 50, message: '最多50个字符' }]}
-                                                    style={{ marginBottom: 0 }}
-                                                >
-                                                    <Input placeholder="例如：2小时内回复" maxLength={50} />
-                                                </Form.Item>
-                                            </div>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item
+                                                name="responseTimeDesc"
+                                                label="响应时间描述"
+                                                rules={[{ max: 50, message: '最多50个字符' }]}
+                                            >
+                                                <Input placeholder="例如：2小时内回复" maxLength={50} />
+                                            </Form.Item>
                                         </Col>
-
-                                        <Col xs={24} lg={12}>
-                                            <div style={softPanelStyle}>
-                                                <Form.Item name="priceRangeMin" label="价格区间下限（元）" style={{ marginBottom: 0 }}>
-                                                    <InputNumber min={0} style={{ width: '100%' }} />
-                                                </Form.Item>
-                                            </div>
+                                        <Col xs={24} md={12}>
+                                            <Form.Item name="priceRangeMin" label="价格区间下限（元）">
+                                                <InputNumber min={0} style={{ width: '100%' }} />
+                                            </Form.Item>
                                         </Col>
-                                        <Col xs={24} lg={12}>
-                                            <div style={softPanelStyle}>
-                                                <Form.Item name="priceRangeMax" label="价格区间上限（元）" style={{ marginBottom: 0 }}>
-                                                    <InputNumber min={0} style={{ width: '100%' }} />
-                                                </Form.Item>
-                                            </div>
+                                        <Col xs={24} md={12}>
+                                            <Form.Item name="priceRangeMax" label="价格区间上限（元）">
+                                                <InputNumber min={0} style={{ width: '100%' }} />
+                                            </Form.Item>
                                         </Col>
-
                                         <Col xs={24}>
-                                            <div style={softPanelStyle}>
-                                                <Form.Item name="serviceStyles" label={isForeman ? '可承接项目风格' : '主营服务风格'} style={{ marginBottom: 0 }}>
-                                                    <Select mode="multiple" placeholder={isForeman ? '选择可承接项目风格' : '选择企业主营服务风格'}>
-                                                        {styleOptions.map((style) => (
-                                                            <Select.Option key={style} value={style}>
-                                                                {style}
-                                                            </Select.Option>
-                                                        ))}
-                                                    </Select>
-                                                </Form.Item>
-                                            </div>
+                                            <Form.Item name="serviceStyles" label={isForeman ? '可承接项目风格' : '主营服务风格'}>
+                                                <Select mode="multiple" placeholder={isForeman ? '选择可承接项目风格' : '选择企业主营服务风格'}>
+                                                    {styleOptions.map((style) => (
+                                                        <Select.Option key={style} value={style}>
+                                                            {style}
+                                                        </Select.Option>
+                                                    ))}
+                                                </Select>
+                                            </Form.Item>
                                         </Col>
-
                                         <Col xs={24}>
-                                            <div style={softPanelStyle}>
-                                                <Form.Item
-                                                    name="servicePackagesRaw"
-                                                    label="服务套餐配置"
-                                                    extra="先保留现有结构化保存能力，避免影响已存在数据；后续再收敛成表单化编辑。"
-                                                    style={{ marginBottom: 0 }}
-                                                >
-                                                    <Input.TextArea rows={5} placeholder="[]" />
-                                                </Form.Item>
-                                            </div>
+                                            <Form.Item name="servicePackagesRaw" label="服务套餐配置" style={{ marginBottom: 0 }}>
+                                                <Input.TextArea rows={5} placeholder="[]" />
+                                            </Form.Item>
                                         </Col>
                                     </Row>
-                                </Card>
-                            </Form>
-                        </div>
-                    )}
-                </Col>
-            </Row>
+                                </div>
+                            </div>
+                        </Form>
+                    </div>
+                </Modal>
+            ) : null}
         </div>
+        </ConfigProvider>
     );
 };
 

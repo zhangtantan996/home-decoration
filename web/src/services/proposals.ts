@@ -5,6 +5,7 @@ import { requestJson } from './http';
 
 interface ProposalDTO {
   id: number;
+  bookingId?: number;
   sourceType?: string;
   demandId?: number;
   demandMatchId?: number;
@@ -114,21 +115,13 @@ export async function getProposalDetail(id: number) {
   const proposalStatus = Number(data.proposal.status || 0);
   const orderStatus = typeof data.order?.status === 'number' ? data.order.status : null;
 
-  let blockingReason = '';
-  let canConfirm = proposalStatus === 1;
-  if (data.hasOrder && orderStatus === 0) {
-    canConfirm = false;
-    blockingReason = '设计费订单已生成，需先完成支付或处理现有订单。';
-  } else if (data.hasOrder && orderStatus === 1) {
-    canConfirm = false;
-    blockingReason = '该报价已确认并已支付。';
-  } else if (proposalStatus !== 1) {
-    canConfirm = false;
-    blockingReason = '当前报价状态不允许再次确认。';
-  }
+  const canConfirm = proposalStatus === 1;
+  const canReject = proposalStatus === 1;
+  const blockingReason = proposalStatus === 1 ? '' : '当前方案状态不允许再次确认。';
 
   const result: ProposalDetailVM = {
     id: data.proposal.id,
+    bookingId: data.proposal.bookingId || undefined,
     status: proposalStatus,
     statusText: PROPOSAL_STATUS_LABELS[proposalStatus] || '处理中',
     version: Number(data.proposal.version || 1),
@@ -149,9 +142,10 @@ export async function getProposalDetail(id: number) {
     projectId: data.order?.projectId,
     planItems: adaptPlans(planData),
     canConfirm,
+    canReject,
     blockingReason,
     deliveryUnlocked: Boolean(data.deliveryUnlocked),
-    };
+  };
 
   const previewPackage = parsePackage(data.proposal.previewPackageJson);
   const deliveryPackage = parsePackage(data.proposal.deliveryPackageJson);
@@ -174,5 +168,12 @@ export async function getProposalDetail(id: number) {
 export async function confirmProposal(id: number) {
   await requestJson(`/proposals/${id}/confirm`, {
     method: 'POST',
+  });
+}
+
+export async function rejectProposal(id: number, reason: string) {
+  await requestJson(`/proposals/${id}/reject`, {
+    method: 'POST',
+    body: { reason },
   });
 }

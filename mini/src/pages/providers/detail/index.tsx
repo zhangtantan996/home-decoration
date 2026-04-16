@@ -72,6 +72,7 @@ const compactCount = (value: number) => {
 interface ProviderDetailParams {
   id: string;
   type: ProviderType;
+  fromQuote?: boolean;
 }
 
 const ProviderDetailPage: React.FC = () => {
@@ -95,6 +96,7 @@ const ProviderDetailPage: React.FC = () => {
       setParams({
         id: options.id,
         type: normalizeProviderType(options.type),
+        fromQuote: options.fromQuote === "1",
       });
       return;
     }
@@ -127,8 +129,6 @@ const ProviderDetailPage: React.FC = () => {
   }, [detail]);
 
   const userDetail = useMemo<{
-    id?: number;
-    publicId?: string;
     nickname?: string;
     avatar?: string;
   } | null>(() => {
@@ -136,8 +136,6 @@ const ProviderDetailPage: React.FC = () => {
       (
         detail as {
           user?: {
-            id?: number;
-            publicId?: string;
             nickname?: string;
             avatar?: string;
           };
@@ -243,9 +241,10 @@ const ProviderDetailPage: React.FC = () => {
   );
 
   const primaryActionText = useMemo(() => {
+    if (params.fromQuote) return "带着需求预约";
     if (params.type === "designer") return "立即预约设计";
     return "立即预约";
-  }, [params.type]);
+  }, [params.fromQuote, params.type]);
 
   const experienceText = useMemo(() => {
     if (params.type === "company" && providerDetail?.establishedYear) {
@@ -341,7 +340,14 @@ const ProviderDetailPage: React.FC = () => {
 
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
-      url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}`,
+      url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}${params.fromQuote ? "&quoteDraft=1" : ""}`,
+    });
+  };
+
+  const handleOpenQuoteGenerator = () => {
+    const providerName = encodeURIComponent(displayName);
+    Taro.navigateTo({
+      url: `/pages/quote-generator/index?providerId=${params.id}&providerName=${providerName}&providerType=${params.type}`,
     });
   };
 
@@ -497,6 +503,16 @@ const ProviderDetailPage: React.FC = () => {
             {quoteDisplay.secondary}
           </Text>
         ) : null}
+      </View>
+      <View className="provider-detail-page__quote-actions">
+        <Button
+          variant="outline"
+          size="md"
+          className="provider-detail-page__quote-action-button"
+          onClick={handleOpenQuoteGenerator}
+        >
+          先测一测方案报价
+        </Button>
       </View>
     </View>
   ) : null;
