@@ -4,6 +4,55 @@ import type { OrderDTO, ProposalDTO } from './dto';
 import type { PageData } from './types';
 
 export type ProposalItem = ProposalDTO;
+export interface ProposalDetailItem extends ProposalDTO {
+  hasOrder?: boolean;
+  order?: OrderDTO;
+  deliveryUnlocked?: boolean;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  bridgeConversionSummary?: {
+    constructionSubjectComparison?: Array<{
+      providerId?: number;
+      subjectType?: string;
+      displayName?: string;
+      rating?: number;
+      reviewCount?: number;
+      completedCnt?: number;
+      caseCount?: number;
+      highlightTags?: string[];
+      priceHint?: string;
+      deliveryHint?: string;
+      trustSummary?: string;
+      selected?: boolean;
+    }>;
+    quoteBaselineSummary?: {
+      title?: string;
+      sourceStage?: string;
+      submittedAt?: string;
+      itemCount?: number;
+      highlights?: string[];
+      readyForUser?: boolean;
+    };
+    responsibilityBoundarySummary?: { title?: string; items?: string[] };
+    scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
+    platformGuaranteeSummary?: { title?: string; items?: string[] };
+    trustSignals?: {
+      rating?: number;
+      reviewCount?: number;
+      completedCnt?: number;
+      caseCount?: number;
+      highlightTags?: string[];
+      officialReviewHint?: string;
+    };
+    bridgeNextStep?: {
+      title?: string;
+      owner?: string;
+      reason?: string;
+      actionHint?: string;
+    };
+  };
+}
 
 export interface ConfirmProposalResponse {
   order?: OrderDTO;
@@ -14,6 +63,11 @@ interface ProposalDetailEnvelope {
   proposal: ProposalItem;
   order?: OrderDTO;
   hasOrder?: boolean;
+  deliveryUnlocked?: boolean;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  bridgeConversionSummary?: ProposalDetailItem['bridgeConversionSummary'];
 }
 
 export async function listProposals(page = 1, pageSize = 20) {
@@ -33,7 +87,16 @@ export async function getProposalDetail(id: number) {
   const data = await request<ProposalDetailEnvelope>({
     url: `/proposals/${id}`
   });
-  return data.proposal;
+  return {
+    ...data.proposal,
+    hasOrder: data.hasOrder,
+    order: data.order,
+    deliveryUnlocked: data.deliveryUnlocked,
+    businessStage: data.businessStage,
+    flowSummary: data.flowSummary,
+    availableActions: data.availableActions,
+    bridgeConversionSummary: data.bridgeConversionSummary,
+  } satisfies ProposalDetailItem;
 }
 
 export async function confirmProposal(id: number) {

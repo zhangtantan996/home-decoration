@@ -8,6 +8,12 @@ import { getBusinessStageLabel } from '../constants/statuses';
 import { getWebApiErrorMessage, isWebApiConflict } from '../services/http';
 import { confirmQuoteTaskSubmission, getQuoteTaskDetail, rejectQuoteTaskSubmission } from '../services/quoteTasks';
 
+function readConstructionSubjectLabel(type?: string) {
+  if (type === 'company') return '公司施工主体';
+  if (type === 'foreman') return '独立工长主体';
+  return '施工主体';
+}
+
 export function QuoteTaskDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -70,11 +76,59 @@ export function QuoteTaskDetailPage() {
                 <article><span>平台保障</span><strong>{bridgeSummary.trustSignals?.officialReviewHint || '平台留痕、争议处理与评价沉淀'}</strong></article>
                 <article><span>可对比主体</span><strong>{bridgeSummary.constructionSubjectComparison?.length || 0} 个</strong></article>
               </div>
+              {bridgeSummary.bridgeNextStep?.actionHint ? (
+                <div className="status-note" style={{ marginTop: 16 }}>{bridgeSummary.bridgeNextStep.actionHint}</div>
+              ) : null}
+              {bridgeSummary.quoteBaselineSummary?.highlights?.length ? (
+                <div className="surface-card" style={{ marginTop: 16 }}>
+                  <strong>报价基线说明</strong>
+                  <p>{bridgeSummary.quoteBaselineSummary.highlights.join('；')}</p>
+                </div>
+              ) : null}
+              {bridgeSummary.constructionSubjectComparison?.length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.constructionSubjectComparison.slice(0, 3).map((item) => (
+                    <div className="list-card" key={`${item.providerId}-${item.displayName}`}>
+                      <div>
+                        <h3>{item.displayName}</h3>
+                        <p>{readConstructionSubjectLabel(item.subjectType)} · {item.deliveryHint || item.trustSummary || '待补充施工主体说明'}</p>
+                        {item.highlightTags?.length ? <p>{item.highlightTags.slice(0, 3).join(' · ')}</p> : null}
+                      </div>
+                      <div className="list-meta">
+                        <strong>{item.priceHint || '待补充报价特点'}</strong>
+                        <span>{`${item.completedCnt || 0} 完工 · ${item.reviewCount || 0} 评价`}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {(bridgeSummary.responsibilityBoundarySummary?.items || []).length ? (
                 <div className="list-stack" style={{ marginTop: 16 }}>
                   {bridgeSummary.responsibilityBoundarySummary?.items?.map((item) => (
                     <div className="surface-card" key={item}><p>{item}</p></div>
                   ))}
+                </div>
+              ) : null}
+              {(bridgeSummary.scheduleAndAcceptanceSummary?.items || []).length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.scheduleAndAcceptanceSummary?.items?.map((item) => (
+                    <div className="surface-card" key={item}><p>{item}</p></div>
+                  ))}
+                </div>
+              ) : null}
+              {(bridgeSummary.platformGuaranteeSummary?.items || []).length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.platformGuaranteeSummary?.items?.map((item) => (
+                    <div className="surface-card" key={item}><p>{item}</p></div>
+                  ))}
+                </div>
+              ) : null}
+              {bridgeSummary.trustSignals ? (
+                <div className="data-grid detail-grid-two" style={{ marginTop: 16 }}>
+                  <article><span>案例沉淀</span><strong>{bridgeSummary.trustSignals.caseCount || 0} 个</strong></article>
+                  <article><span>完工项目</span><strong>{bridgeSummary.trustSignals.completedCnt || 0} 个</strong></article>
+                  <article><span>真实评价</span><strong>{bridgeSummary.trustSignals.reviewCount || 0} 条</strong></article>
+                  <article><span>口碑评分</span><strong>{bridgeSummary.trustSignals.rating || 0}</strong></article>
                 </div>
               ) : null}
             </section>

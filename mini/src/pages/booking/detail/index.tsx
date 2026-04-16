@@ -1174,9 +1174,32 @@ const BookingDetailPage: React.FC = () => {
                   {detail.bridgeConversionSummary.responsibilityBoundarySummary.items.join('；')}
                 </Text>
               ) : null}
+              {detail.bridgeConversionSummary?.scheduleAndAcceptanceSummary?.items?.length ? (
+                <Text className="booking-detail-page__budget-actions-copy">
+                  验收与工期：{detail.bridgeConversionSummary.scheduleAndAcceptanceSummary.items.join('；')}
+                </Text>
+              ) : null}
               {detail.bridgeConversionSummary?.platformGuaranteeSummary?.items?.length ? (
                 <Text className="booking-detail-page__budget-actions-copy">
                   平台保障：{detail.bridgeConversionSummary.platformGuaranteeSummary.items.join('；')}
+                </Text>
+              ) : null}
+              {detail.bridgeConversionSummary?.quoteBaselineSummary?.highlights?.length ? (
+                <Text className="booking-detail-page__budget-actions-copy">
+                  基线说明：{detail.bridgeConversionSummary.quoteBaselineSummary.highlights.join('；')}
+                </Text>
+              ) : null}
+              {detail.bridgeConversionSummary?.trustSignals ? (
+                <Text className="booking-detail-page__budget-actions-copy">
+                  履约背书：案例 {detail.bridgeConversionSummary.trustSignals.caseCount || 0} 个，完工 {detail.bridgeConversionSummary.trustSignals.completedCnt || 0} 个，评价 {detail.bridgeConversionSummary.trustSignals.reviewCount || 0} 条。
+                </Text>
+              ) : null}
+              {detail.bridgeConversionSummary?.constructionSubjectComparison?.length ? (
+                <Text className="booking-detail-page__budget-actions-copy">
+                  可对比施工主体：{detail.bridgeConversionSummary.constructionSubjectComparison
+                    .slice(0, 3)
+                    .map((item) => `${getConstructionSubjectText(item.subjectType, item.displayName)}${item.priceHint ? `（${item.priceHint}）` : ''}`)
+                    .join('；')}
                 </Text>
               ) : null}
             </View>
