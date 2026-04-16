@@ -6,7 +6,7 @@ USER_PHONE=${PHASE2_USER_PHONE:-19999100001}
 MERCHANT_PHONE=${PHASE2_MERCHANT_PHONE:-19999100002}
 PROJECT_ID=${PHASE2_PROJECT_ID:-99140}
 REDIS_CONTAINER=${PHASE2_REDIS_CONTAINER:-home_decor_redis_local}
-REDIS_PASSWORD=${PHASE2_REDIS_PASSWORD:-kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf}
+REDIS_PASSWORD=${PHASE2_REDIS_PASSWORD:-local_dev_redis_password_change_me}
 
 json_field() {
   node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s); const path=process.argv[1].split('.'); let cur=j; for (const k of path){cur=cur?.[k]} process.stdout.write(String(cur ?? ''))})" "$1"

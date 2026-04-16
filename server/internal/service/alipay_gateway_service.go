@@ -36,6 +36,8 @@ const (
 	alipayTradeSuccess      = "TRADE_SUCCESS"
 	alipayTradeFinished     = "TRADE_FINISHED"
 	alipayTradeClosed       = "TRADE_CLOSED"
+	alipayTradeWaitBuyerPay = "WAIT_BUYER_PAY"
+	alipayTradeNotExist     = "ACQ.TRADE_NOT_EXIST"
 )
 
 type paymentGateway interface {
@@ -51,8 +53,22 @@ type AlipayTradeQueryResult struct {
 	TradeNo     string
 	OutTradeNo  string
 	TradeStatus string
+	BuyerLogonID string
 	BuyerAmount float64
 	RawJSON     string
+}
+
+type alipayAPIError struct {
+	Code    string
+	SubCode string
+	Message string
+}
+
+func (e *alipayAPIError) Error() string {
+	if e == nil {
+		return "支付宝接口调用失败"
+	}
+	return firstNonEmpty(e.Message, "支付宝接口调用失败")
 }
 
 type AlipayRefundResult struct {
@@ -176,14 +192,21 @@ func (g *AlipayGateway) QueryTrade(ctx context.Context, order *model.PaymentOrde
 	}
 	resp, err := extractAlipayResponse(payload, "alipay_trade_query_response")
 	if err != nil {
+		var apiErr *alipayAPIError
+		if errors.As(err, &apiErr) && strings.EqualFold(strings.TrimSpace(apiErr.SubCode), alipayTradeNotExist) {
+			return &AlipayTradeQueryResult{
+				RawJSON: mustMarshalJSON(payload),
+			}, nil
+		}
 		return nil, err
 	}
 	return &AlipayTradeQueryResult{
-		TradeNo:     stringField(resp, "trade_no"),
-		OutTradeNo:  stringField(resp, "out_trade_no"),
-		TradeStatus: stringField(resp, "trade_status"),
-		BuyerAmount: floatField(resp, "buyer_pay_amount"),
-		RawJSON:     mustMarshalJSON(resp),
+		TradeNo:      stringField(resp, "trade_no"),
+		OutTradeNo:   stringField(resp, "out_trade_no"),
+		TradeStatus:  stringField(resp, "trade_status"),
+		BuyerLogonID: stringField(resp, "buyer_logon_id"),
+		BuyerAmount:  floatField(resp, "buyer_pay_amount"),
+		RawJSON:      mustMarshalJSON(resp),
 	}, nil
 }
 
@@ -428,7 +451,11 @@ func extractAlipayResponse(payload map[string]json.RawMessage, key string) (map[
 	}
 	if code := stringField(body, "code"); code != "10000" {
 		msg := firstNonEmpty(stringField(body, "sub_msg"), stringField(body, "msg"), "支付宝接口调用失败")
-		return nil, errors.New(msg)
+		return nil, &alipayAPIError{
+			Code:    code,
+			SubCode: stringField(body, "sub_code"),
+			Message: msg,
+		}
 	}
 	return body, nil
 }

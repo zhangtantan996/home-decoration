@@ -122,6 +122,7 @@ type AdminBusinessFlowDetail struct {
 	Project                 *model.Project                   `json:"project,omitempty"`
 	Milestones              []model.Milestone                `json:"milestones,omitempty"`
 	Orders                  []AdminBusinessFlowOrderSnapshot `json:"orders,omitempty"`
+	ChangeOrders            []ChangeOrderView                `json:"changeOrders,omitempty"`
 	EscrowAccount           *model.EscrowAccount             `json:"escrowAccount,omitempty"`
 	Transactions            []model.Transaction              `json:"transactions,omitempty"`
 	RefundApplications      []RefundApplicationView          `json:"refundApplications,omitempty"`
@@ -147,6 +148,7 @@ type adminBusinessFlowContext struct {
 	milestones            []model.Milestone
 	orders                []model.Order
 	paymentPlans          []model.PaymentPlan
+	changeOrders          []ChangeOrderView
 	escrow                *model.EscrowAccount
 	transactions          []model.Transaction
 	refundApplications    []RefundApplicationView
@@ -434,6 +436,11 @@ func (s *AdminBusinessFlowService) loadRelatedObjects(ctx *adminBusinessFlowCont
 	}
 
 	if ctx.project != nil {
+		changeOrders, err := (&ChangeOrderService{}).listByProject(ctx.project.ID)
+		if err != nil {
+			return err
+		}
+		ctx.changeOrders = changeOrders
 		if err := repository.DB.Where("project_id = ?", ctx.project.ID).Order("seq ASC, id ASC").Find(&ctx.milestones).Error; err != nil {
 			return err
 		}
@@ -941,7 +948,7 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 				appendAction(AdminBusinessFlowAction{Key: key, Label: "施工报价处理", Kind: "navigate", Permission: "project:edit", Route: fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID), Payload: map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID}, Danger: true, RequiresReason: false})
 			}
 		case "start_project":
-			if ctx.project != nil {
+			if ctx.project != nil && ctx.project.EntryStartDate != nil {
 				appendAction(AdminBusinessFlowAction{Key: key, Label: "项目开始", Kind: "mutation", Permission: "project:edit", Method: "POST", APIPath: fmt.Sprintf("/admin/projects/%d/start", ctx.project.ID), Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: true})
 			}
 		case "approve_milestone":
@@ -971,7 +978,17 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 		if !hasConfirmedConstructionParty(ctx.project) {
 			appendAction(AdminBusinessFlowAction{Key: "confirm_construction", Label: "施工方确认", Kind: "mutation", Permission: "project:edit", Method: "POST", APIPath: fmt.Sprintf("/admin/projects/%d/construction/confirm", ctx.project.ID), Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: true})
 		}
-		if ctx.project.BusinessStatus == model.ProjectBusinessStatusConstructionQuoteConfirmed {
+		if ctx.quoteTask != nil && ctx.quoteSubmission != nil && strings.TrimSpace(ctx.quoteSubmission.ReviewStatus) == model.QuoteSubmissionReviewStatusPending {
+			appendAction(AdminBusinessFlowAction{
+				Key:        "review_construction_quote",
+				Label:      "报价复核",
+				Kind:       "navigate",
+				Permission: "project:view",
+				Route:      fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID),
+				Payload:    map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID, "submissionId": ctx.quoteSubmission.ID},
+			})
+		}
+		if ctx.project.BusinessStatus == model.ProjectBusinessStatusConstructionQuoteConfirmed && ctx.project.EntryStartDate != nil {
 			appendAction(AdminBusinessFlowAction{Key: "start_project", Label: "项目开始", Kind: "mutation", Permission: "project:edit", Method: "POST", APIPath: fmt.Sprintf("/admin/projects/%d/start", ctx.project.ID), Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: true})
 		}
 		if ctx.project.BusinessStatus == model.ProjectBusinessStatusInProgress && !isProjectPaused(ctx.project) {
@@ -979,6 +996,28 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 		}
 		if isProjectPaused(ctx.project) {
 			appendAction(AdminBusinessFlowAction{Key: "resume_project", Label: "项目恢复", Kind: "mutation", Permission: "project:edit", Method: "POST", APIPath: fmt.Sprintf("/admin/projects/%d/resume", ctx.project.ID), Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: true})
+		}
+		if pendingSettlement := firstChangeOrderByStatus(ctx.changeOrders, model.ChangeOrderStatusAdminSettlementRequired); pendingSettlement != nil {
+			appendAction(AdminBusinessFlowAction{
+				Key:            "settle_change_order",
+				Label:          "处理减项结算",
+				Kind:           "mutation",
+				Permission:     "project:edit",
+				Method:         "POST",
+				APIPath:        fmt.Sprintf("/admin/change-orders/%d/settle", pendingSettlement.ID),
+				Payload:        map[string]interface{}{"projectId": ctx.project.ID, "changeOrderId": pendingSettlement.ID},
+				RequiresReason: true,
+			})
+		}
+		if pendingChange := firstChangeOrderByStatus(ctx.changeOrders, model.ChangeOrderStatusPendingUserConfirm); pendingChange != nil {
+			appendAction(AdminBusinessFlowAction{
+				Key:        "view_change_orders",
+				Label:      "查看变更单",
+				Kind:       "navigate",
+				Permission: "project:view",
+				Route:      fmt.Sprintf("/orders?projectId=%d", ctx.project.ID),
+				Payload:    map[string]interface{}{"projectId": ctx.project.ID, "changeOrderId": pendingChange.ID},
+			})
 		}
 	}
 
@@ -1047,6 +1086,7 @@ func (ctx *adminBusinessFlowContext) toDetail() *AdminBusinessFlowDetail {
 		Project:                 ctx.project,
 		Milestones:              ctx.milestones,
 		Orders:                  orderSnapshots,
+		ChangeOrders:            ctx.changeOrders,
 		EscrowAccount:           ctx.escrow,
 		Transactions:            ctx.transactions,
 		RefundApplications:      ctx.refundApplications,
@@ -1202,6 +1242,15 @@ func summarizePaymentPlanStatus(paymentPlans []model.PaymentPlan) string {
 	default:
 		return "none"
 	}
+}
+
+func firstChangeOrderByStatus(items []ChangeOrderView, status string) *ChangeOrderView {
+	for idx := range items {
+		if strings.TrimSpace(items[idx].Status) == strings.TrimSpace(status) {
+			return &items[idx]
+		}
+	}
+	return nil
 }
 
 func summarizeRefundStatus(refunds []RefundApplicationView) string {

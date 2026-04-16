@@ -26,6 +26,7 @@ func setupContractServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Demand{},
 		&model.DemandMatch{},
 		&model.Contract{},
+		&model.Notification{},
 	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
@@ -69,6 +70,13 @@ func TestContractServiceCreateContractChecksOwnership(t *testing.T) {
 	}
 	if contract.UserID != owner.ID {
 		t.Fatalf("expected contract user derived from project owner, got %+v", contract)
+	}
+	var notification model.Notification
+	if err := db.Where("user_id = ? AND type = ?", owner.ID, NotificationTypeContractPendingConfirm).Order("id DESC").First(&notification).Error; err != nil {
+		t.Fatalf("expected contract pending notification: %v", err)
+	}
+	if notification.ActionURL != "/projects/3004/contract" {
+		t.Fatalf("unexpected contract action url: %+v", notification)
 	}
 
 	if _, err := svc.CreateContract(provider.ID, &CreateContractInput{

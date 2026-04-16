@@ -194,7 +194,7 @@ func (s *BookingService) GetUserBookings(userID uint64, statusGroup string) ([]B
 	for i := range bookings {
 		p0Summary, _ := s.GetBookingP0Summary(bookings[i].ID)
 		proposalID := s.lookupBookingProposalID(bookings[i].ID)
-		view := buildBookingLifecycleView(&bookings[i], p0Summary, proposalID)
+		view := buildBookingLifecycleView(&bookings[i], p0Summary, proposalID, nil)
 		if !matchesBookingStatusGroup(view, statusGroup) {
 			continue
 		}

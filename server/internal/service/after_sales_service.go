@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
@@ -41,10 +42,15 @@ func (s *AfterSalesService) Create(userID uint64, input *CreateAfterSalesInput) 
 		return nil, errors.New("该订单已有进行中的售后申请")
 	}
 
+	orderNo, err := generateAfterSalesOrderNo()
+	if err != nil {
+		return nil, fmt.Errorf("生成售后单号失败: %w", err)
+	}
+
 	afterSales := &model.AfterSales{
 		UserID:      userID,
 		BookingID:   input.BookingID,
-		OrderNo:     generateOrderNo("AS"),
+		OrderNo:     orderNo,
 		Type:        input.Type,
 		Reason:      input.Reason,
 		Description: input.Description,
@@ -114,9 +120,4 @@ func (s *AfterSalesService) Cancel(userID uint64, id uint64) error {
 	afterSales.ResolvedAt = &now
 
 	return repository.DB.Save(&afterSales).Error
-}
-
-// generateOrderNo 生成售后单号
-func generateOrderNo(prefix string) string {
-	return prefix + time.Now().Format("20060102150405")
 }

@@ -14,7 +14,6 @@ import (
 	"home-decoration-server/internal/repository"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -22,24 +21,10 @@ func setupMerchantRound4TestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	t.Setenv("SMS_FIXED_CODE_MODE", "true")
 	t.Setenv("SMS_FIXED_CODE", "123456")
-	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open db failed: %v", err)
-	}
+	db := setupSQLiteDB(t)
 	if err := db.AutoMigrate(
-		&model.User{},
-		&model.Provider{},
-		&model.MaterialShop{},
-		&model.MerchantApplication{},
-		&model.MaterialShopApplication{},
-		&model.MaterialShopApplicationProduct{},
-		&model.MaterialShopProduct{},
 		&model.Region{},
-		&model.UserIdentity{},
-		&model.MerchantServiceSetting{},
 		&model.ProviderCase{},
-		&model.AuditLog{},
 		&model.DictionaryCategory{},
 		&model.SystemDictionary{},
 	); err != nil {

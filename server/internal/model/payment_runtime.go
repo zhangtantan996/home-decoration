@@ -36,6 +36,7 @@ const (
 	PaymentStatusCreated   = "created"
 	PaymentStatusLaunching = "launching"
 	PaymentStatusPending   = "pending"
+	PaymentStatusScanPending = "scan_pending"
 	PaymentStatusPaid      = "paid"
 	PaymentStatusClosed    = "closed"
 	PaymentStatusFailed    = "failed"

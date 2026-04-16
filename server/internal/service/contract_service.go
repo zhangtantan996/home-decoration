@@ -104,6 +104,7 @@ func (s *ContractService) CreateContract(providerID uint64, input *CreateContrac
 	if err := repository.DB.Create(contract).Error; err != nil {
 		return nil, err
 	}
+	NewNotificationDispatcher().NotifyContractPendingConfirm(contract.UserID, contract.ID, contract.ProjectID)
 	return contract, nil
 }
 

@@ -498,27 +498,7 @@ func (s *ProjectDisputeService) SubmitProjectDispute(projectID, userID uint64, i
 		return nil, err
 	}
 
-	notificationService := &NotificationService{}
-	_ = notificationService.NotifyAdmins(&CreateNotificationInput{
-		Title:       "新的项目争议待处理",
-		Content:     fmt.Sprintf("项目 #%d 已提交争议，等待平台处理", projectID),
-		Type:        "project.dispute.created",
-		RelatedID:   result.AuditID,
-		RelatedType: "project_audit",
-		ActionURL:   buildAdminProjectAuditActionURL(result.AuditID),
-	})
-	if providerUserID > 0 {
-		_ = notificationService.Create(&CreateNotificationInput{
-			UserID:      providerUserID,
-			UserType:    "provider",
-			Title:       "项目进入争议处理",
-			Content:     fmt.Sprintf("项目 #%d 已被业主发起争议，请尽快补充说明", projectID),
-			Type:        "project.dispute.created",
-			RelatedID:   projectID,
-			RelatedType: "project",
-			ActionURL:   buildProjectDisputeActionURL(projectID),
-		})
-	}
+	NewNotificationDispatcher().NotifyProjectDisputeCreated(providerUserID, result.AuditID, projectID)
 
 	return result, nil
 }

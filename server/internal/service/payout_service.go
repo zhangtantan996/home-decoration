@@ -72,6 +72,10 @@ func (s *PayoutService) CreateSettlementPayoutTx(tx *gorm.DB, settlement *model.
 	if amount <= 0 {
 		return nil, errors.New("结算单金额无效")
 	}
+	outPayoutNo, err := generateOutPayoutNo(settlement.FundScene)
+	if err != nil {
+		return nil, err
+	}
 	scheduledAt := time.Now()
 	if settlement.DueAt != nil {
 		scheduledAt = *settlement.DueAt
@@ -83,7 +87,7 @@ func (s *PayoutService) CreateSettlementPayoutTx(tx *gorm.DB, settlement *model.
 		Amount:      amount,
 		Channel:     model.PayoutChannelCustody,
 		FundScene:   settlement.FundScene,
-		OutPayoutNo: generateOutPayoutNo(model.PayoutBizTypeSettlementOrder, settlement.ID),
+		OutPayoutNo: outPayoutNo,
 		Status:      model.PayoutStatusCreated,
 		ScheduledAt: &scheduledAt,
 	})
@@ -105,6 +109,10 @@ func (s *PayoutService) CreateMilestonePayoutScheduleTx(tx *gorm.DB, project *mo
 		return nil, nil, errors.New("项目未绑定施工服务方")
 	}
 
+	outPayoutNo, err := generateOutPayoutNo(model.FundSceneSettlementPayout)
+	if err != nil {
+		return nil, nil, err
+	}
 	payout, created, err := s.createOrReusePayoutOrderTx(tx, &model.PayoutOrder{
 		BizType:     model.PayoutBizTypeMilestoneRelease,
 		BizID:       milestone.ID,
@@ -112,7 +120,7 @@ func (s *PayoutService) CreateMilestonePayoutScheduleTx(tx *gorm.DB, project *mo
 		Amount:      normalizeAmount(milestone.Amount),
 		Channel:     model.PayoutChannelCustody,
 		FundScene:   model.FundSceneSettlementPayout,
-		OutPayoutNo: generateOutPayoutNo(model.PayoutBizTypeMilestoneRelease, milestone.ID),
+		OutPayoutNo: outPayoutNo,
 		Status:      model.PayoutStatusCreated,
 		ScheduledAt: &scheduledAt,
 	})
@@ -142,6 +150,10 @@ func (s *PayoutService) CreateDesignDeliverablePayoutScheduleTx(tx *gorm.DB, del
 	if amount <= 0 {
 		amount = normalizeAmount(order.TotalAmount - order.Discount)
 	}
+	outPayoutNo, err := generateOutPayoutNo(model.FundSceneSettlementPayout)
+	if err != nil {
+		return nil, nil, err
+	}
 	payout, created, err := s.createOrReusePayoutOrderTx(tx, &model.PayoutOrder{
 		BizType:     model.PayoutBizTypeDesignDeliverable,
 		BizID:       deliverable.ID,
@@ -149,7 +161,7 @@ func (s *PayoutService) CreateDesignDeliverablePayoutScheduleTx(tx *gorm.DB, del
 		Amount:      amount,
 		Channel:     model.PayoutChannelCustody,
 		FundScene:   model.FundSceneSettlementPayout,
-		OutPayoutNo: generateOutPayoutNo(model.PayoutBizTypeDesignDeliverable, deliverable.ID),
+		OutPayoutNo: outPayoutNo,
 		Status:      model.PayoutStatusCreated,
 		ScheduledAt: &scheduledAt,
 	})
@@ -770,8 +782,4 @@ func calculateProjectedIncomeByTypeTx(tx *gorm.DB, incomeType string, amount flo
 		platformFee = normalizeAmount(amount)
 	}
 	return platformFee, netAmount
-}
-
-func generateOutPayoutNo(bizType string, bizID uint64) string {
-	return fmt.Sprintf("PO-%s-%d-%d", strings.ToUpper(bizType), bizID, time.Now().UnixNano())
 }

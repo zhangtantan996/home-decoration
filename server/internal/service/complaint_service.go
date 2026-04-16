@@ -65,6 +65,7 @@ func (s *ComplaintService) CreateComplaint(userID uint64, input *CreateComplaint
 	if err := repository.DB.Create(complaint).Error; err != nil {
 		return nil, err
 	}
+	NewNotificationDispatcher().NotifyComplaintCreated(providerUserIDFromProvider(project.ProviderID), complaint.ID, complaint.ProjectID, complaint.Title)
 	return complaint, nil
 }
 
@@ -107,6 +108,7 @@ func (s *ComplaintService) ResolveComplaint(adminID, complaintID uint64, resolut
 	if err := repository.DB.Save(&item).Error; err != nil {
 		return nil, err
 	}
+	NewNotificationDispatcher().NotifyComplaintResolved(item.UserID, providerUserIDFromProvider(item.ProviderID), item.ID, item.ProjectID, resolution)
 	return &item, nil
 }
 

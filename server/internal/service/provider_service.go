@@ -3,9 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"home-decoration-server/internal/dto"
 	"home-decoration-server/internal/model"
-	"home-decoration-server/internal/monitor"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
 	"strings"
@@ -40,8 +38,6 @@ type ProviderQuery struct {
 // ProviderListItem 服务商列表项
 type ProviderListItem struct {
 	ID            uint64  `json:"id"`
-	UserID        uint64  `json:"userId"`
-	UserPublicID  string  `json:"userPublicId,omitempty"`
 	ProviderType  int8    `json:"providerType"`
 	CompanyName   string  `json:"companyName"`
 	Nickname      string  `json:"nickname"`
@@ -51,8 +47,6 @@ type ProviderListItem struct {
 	BudgetControl float32 `json:"budgetControl"`
 	CompletedCnt  int     `json:"completedCnt"`
 	Verified      bool    `json:"verified"`
-	Latitude      float64 `json:"latitude"`
-	Longitude     float64 `json:"longitude"`
 	Distance      float64 `json:"distance,omitempty"` // 距离(km)
 	// 新增字段
 	SubType         string               `json:"subType"`
@@ -66,6 +60,48 @@ type ProviderListItem struct {
 	PriceDisplay    ProviderPriceDisplay `json:"priceDisplay"`
 	ServiceArea     []string             `json:"serviceArea"`
 	IsSettled       bool                 `json:"isSettled"`
+}
+
+// PublicProviderProfile 公开服务商详情白名单字段。
+type PublicProviderProfile struct {
+	ID                 uint64  `json:"id"`
+	ProviderType       int8    `json:"providerType"`
+	DisplayName        string  `json:"displayName"`
+	CompanyName        string  `json:"companyName"`
+	Avatar             string  `json:"avatar"`
+	CoverImage         string  `json:"coverImage,omitempty"`
+	Rating             float32 `json:"rating"`
+	RestoreRate        float32 `json:"restoreRate"`
+	BudgetControl      float32 `json:"budgetControl"`
+	CompletedCnt       int     `json:"completedCnt"`
+	Verified           bool    `json:"verified"`
+	SubType            string  `json:"subType,omitempty"`
+	EntityType         string  `json:"entityType,omitempty"`
+	YearsExperience    int     `json:"yearsExperience"`
+	Specialty          string  `json:"specialty,omitempty"`
+	HighlightTags      string  `json:"highlightTags,omitempty"`
+	ReviewCount        int     `json:"reviewCount"`
+	PriceMin           float64 `json:"priceMin"`
+	PriceMax           float64 `json:"priceMax"`
+	PriceUnit          string  `json:"priceUnit,omitempty"`
+	PricingJSON        string  `json:"pricingJson,omitempty"`
+	WorkTypes          string  `json:"workTypes,omitempty"`
+	GraduateSchool     string  `json:"graduateSchool,omitempty"`
+	DesignPhilosophy   string  `json:"designPhilosophy,omitempty"`
+	ServiceIntro       string  `json:"serviceIntro,omitempty"`
+	TeamSize           int     `json:"teamSize"`
+	EstablishedYear    int     `json:"establishedYear"`
+	Certifications     string  `json:"certifications,omitempty"`
+	ServiceArea        string  `json:"serviceArea,omitempty"`
+	CompanyAlbumJSON   string  `json:"companyAlbumJson,omitempty"`
+	SurveyDepositPrice float64 `json:"surveyDepositPrice"`
+	IsSettled          bool    `json:"isSettled"`
+}
+
+// PublicProviderUser 公开服务商详情中的可展示用户信息。
+type PublicProviderUser struct {
+	Nickname string `json:"nickname,omitempty"`
+	Avatar   string `json:"avatar,omitempty"`
 }
 
 func ResolveProviderDisplayName(provider model.Provider, user *model.User) string {
@@ -168,6 +204,43 @@ func resolveStableProviderImagePath(candidates ...string) string {
 	}
 
 	return firstNonEmpty
+}
+
+func buildPublicProviderProfile(provider model.Provider) *PublicProviderProfile {
+	return &PublicProviderProfile{
+		ID:                 provider.ID,
+		ProviderType:       provider.ProviderType,
+		DisplayName:        strings.TrimSpace(provider.DisplayName),
+		CompanyName:        strings.TrimSpace(provider.CompanyName),
+		Avatar:             strings.TrimSpace(provider.Avatar),
+		CoverImage:         strings.TrimSpace(provider.CoverImage),
+		Rating:             provider.Rating,
+		RestoreRate:        provider.RestoreRate,
+		BudgetControl:      provider.BudgetControl,
+		CompletedCnt:       provider.CompletedCnt,
+		Verified:           provider.Verified,
+		SubType:            strings.TrimSpace(provider.SubType),
+		EntityType:         strings.TrimSpace(provider.EntityType),
+		YearsExperience:    provider.YearsExperience,
+		Specialty:          strings.TrimSpace(provider.Specialty),
+		HighlightTags:      strings.TrimSpace(provider.HighlightTags),
+		ReviewCount:        provider.ReviewCount,
+		PriceMin:           provider.PriceMin,
+		PriceMax:           provider.PriceMax,
+		PriceUnit:          strings.TrimSpace(provider.PriceUnit),
+		PricingJSON:        strings.TrimSpace(provider.PricingJSON),
+		WorkTypes:          strings.TrimSpace(provider.WorkTypes),
+		GraduateSchool:     strings.TrimSpace(provider.GraduateSchool),
+		DesignPhilosophy:   strings.TrimSpace(provider.DesignPhilosophy),
+		ServiceIntro:       strings.TrimSpace(provider.ServiceIntro),
+		TeamSize:           provider.TeamSize,
+		EstablishedYear:    provider.EstablishedYear,
+		Certifications:     strings.TrimSpace(provider.Certifications),
+		ServiceArea:        strings.TrimSpace(provider.ServiceArea),
+		CompanyAlbumJSON:   strings.TrimSpace(provider.CompanyAlbumJSON),
+		SurveyDepositPrice: provider.SurveyDepositPrice,
+		IsSettled:          providerSettlementValue(&provider),
+	}
 }
 
 func resolveProviderStableAvatarPath(provider model.Provider, user *model.User, caseCover string) string {
@@ -386,14 +459,6 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 
 		avatarPath := resolveProviderStableAvatarPath(p, &user, caseCoverMap[p.ID])
 
-		var identity dto.UserIdentity
-		if p.UserID > 0 {
-			identity = dto.NewUserIdentity(&user)
-			if identity.UserPublicID == "" {
-				monitor.RecordPublicIDMissing("provider_list", identity.UserID, "provider_service_list")
-			}
-		}
-
 		specialty := p.Specialty
 		if p.ProviderType == 3 && strings.TrimSpace(specialty) == "" {
 			specialty = "全工种施工"
@@ -406,8 +471,6 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 
 		result[i] = ProviderListItem{
 			ID:              p.ID,
-			UserID:          identity.UserID,
-			UserPublicID:    identity.UserPublicID,
 			ProviderType:    p.ProviderType,
 			CompanyName:     p.CompanyName,
 			Nickname:        ResolveProviderDisplayName(p, &user),
@@ -417,8 +480,6 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			BudgetControl:   p.BudgetControl,
 			CompletedCnt:    p.CompletedCnt,
 			Verified:        p.Verified,
-			Latitude:        p.Latitude,
-			Longitude:       p.Longitude,
 			SubType:         p.SubType,
 			YearsExperience: p.YearsExperience,
 			Specialty:       specialty,
@@ -575,19 +636,18 @@ func (s *ProviderService) GetProviderByID(id uint64) (*model.Provider, *model.Us
 
 // ProviderDetail 服务商详情（含案例、评价）
 type ProviderDetail struct {
-	Provider     *model.Provider      `json:"provider"`
-	User         *model.User          `json:"user"`
-	Cases        []model.ProviderCase `json:"cases"`
-	SceneCases   []ProviderSceneItem  `json:"sceneCases"`
-	Reviews      []ProviderReviewItem `json:"reviews"`
-	PriceDisplay ProviderPriceDisplay `json:"priceDisplay"`
-	ReviewCount  int64                `json:"reviewCount"`
-	CaseCount    int64                `json:"caseCount"`
-	SceneCount   int64                `json:"sceneCount"`
+	Provider     *PublicProviderProfile `json:"provider"`
+	User         *PublicProviderUser    `json:"user,omitempty"`
+	Cases        []model.ProviderCase   `json:"cases"`
+	SceneCases   []ProviderSceneItem    `json:"sceneCases"`
+	Reviews      []ProviderReviewItem   `json:"reviews"`
+	PriceDisplay ProviderPriceDisplay   `json:"priceDisplay"`
+	ReviewCount  int64                  `json:"reviewCount"`
+	CaseCount    int64                  `json:"caseCount"`
+	SceneCount   int64                  `json:"sceneCount"`
 	// 服务区域（名称数组 + 代码数组，方便前端展示/编辑）
 	ServiceArea      []string `json:"serviceArea"`
 	ServiceAreaCodes []string `json:"serviceAreaCodes"`
-	UserPublicID     string   `json:"userPublicId,omitempty"`
 }
 
 type ProviderSceneItem struct {
@@ -800,9 +860,6 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		if err := repository.DB.First(&user, provider.UserID).Error; err != nil {
 			return nil, err
 		}
-		if user.PublicID == "" {
-			monitor.RecordPublicIDMissing("provider_detail", user.ID, "provider_service_detail")
-		}
 	}
 	if provider.ProviderType == 3 {
 		provider.WorkTypes = ""
@@ -897,9 +954,18 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		}
 	}
 
+	publicProvider := buildPublicProviderProfile(provider)
+	var publicUser *PublicProviderUser
+	if strings.TrimSpace(user.Nickname) != "" || strings.TrimSpace(user.Avatar) != "" {
+		publicUser = &PublicProviderUser{
+			Nickname: strings.TrimSpace(user.Nickname),
+			Avatar:   strings.TrimSpace(user.Avatar),
+		}
+	}
+
 	return &ProviderDetail{
-		Provider:         &provider,
-		User:             &user,
+		Provider:         publicProvider,
+		User:             publicUser,
 		Cases:            cases,
 		SceneCases:       sceneCases,
 		Reviews:          reviewItems,
@@ -909,7 +975,6 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 		SceneCount:       sceneCount,
 		ServiceArea:      serviceAreaNames,
 		ServiceAreaCodes: serviceAreaCodes,
-		UserPublicID:     user.PublicID,
 	}, nil
 }
 

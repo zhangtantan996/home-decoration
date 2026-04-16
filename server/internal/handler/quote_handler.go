@@ -411,6 +411,24 @@ func AdminBatchUpsertTemplateItems(c *gin.Context) {
 	response.Success(c, gin.H{"templateId": templateID})
 }
 
+func AdminEnsureQuoteTemplate(c *gin.Context) {
+	var input struct {
+		RoomType       string `json:"roomType"`
+		RenovationType string `json:"renovationType"`
+		Repair         bool   `json:"repair"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "模板参数错误")
+		return
+	}
+	result, err := quoteService.EnsurePreparationTemplate(input.RoomType, input.RenovationType, input.Repair)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
 func AdminApplyTemplateToQuoteList(c *gin.Context) {
 	quoteListID := parseUint(c.Param("id"))
 	var input struct {

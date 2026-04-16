@@ -87,6 +87,64 @@ func TestOrderServiceGetPaymentPlansForUser(t *testing.T) {
 	}
 }
 
+func TestOrderServiceGetPaymentPlansForUserRepairsPaidOrderPlans(t *testing.T) {
+	db := setupOrderServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 109}, Phone: "13800138009", Status: 1}
+	booking := model.Booking{Base: model.Base{ID: 131}, UserID: user.ID, ProviderID: 188, Address: "修复测试地址", Status: 1}
+	paidAt := time.Now().Add(-5 * time.Minute).Round(time.Second)
+	order := model.Order{
+		Base:        model.Base{ID: 151},
+		BookingID:   booking.ID,
+		OrderNo:     "ORD-151",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 5000,
+		PaidAmount:  5000,
+		Status:      model.OrderStatusPaid,
+		PaidAt:      &paidAt,
+	}
+	plan := model.PaymentPlan{
+		Base:    model.Base{ID: 161},
+		OrderID: order.ID,
+		Type:    "onetime",
+		Seq:     1,
+		Name:    "设计费",
+		Amount:  5000,
+		Status:  model.PaymentPlanStatusPending,
+	}
+
+	for _, record := range []any{&user, &booking, &order, &plan} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed repair fixture: %v", err)
+		}
+	}
+
+	got, err := (&OrderService{}).GetPaymentPlansForUser(user.ID, order.ID)
+	if err != nil {
+		t.Fatalf("GetPaymentPlansForUser: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 plan, got %+v", got)
+	}
+	if got[0].Status != model.PaymentPlanStatusPaid {
+		t.Fatalf("expected repaired plan status=paid, got %+v", got[0])
+	}
+	if got[0].PaidAt == nil || !got[0].PaidAt.Equal(paidAt) {
+		t.Fatalf("expected repaired paidAt=%v, got %+v", paidAt, got[0].PaidAt)
+	}
+
+	var refreshed model.PaymentPlan
+	if err := db.First(&refreshed, plan.ID).Error; err != nil {
+		t.Fatalf("reload repaired plan: %v", err)
+	}
+	if refreshed.Status != model.PaymentPlanStatusPaid {
+		t.Fatalf("expected stored plan status=paid, got %+v", refreshed)
+	}
+	if refreshed.PaidAt == nil || !refreshed.PaidAt.Equal(paidAt) {
+		t.Fatalf("expected stored paidAt=%v, got %+v", paidAt, refreshed.PaidAt)
+	}
+}
+
 func TestOrderServiceListOrdersForUser(t *testing.T) {
 	db := setupOrderServiceTestDB(t)
 
@@ -160,7 +218,7 @@ func TestOrderServiceListOrdersForUser(t *testing.T) {
 		OutTradeNo:    "PAY-72",
 		Status:        model.PaymentStatusPaid,
 		PaidAt:        &paidAt,
-		ReturnContext: `{"successPath":"/bookings/40/site-survey","cancelPath":"/bookings/40","bizType":"booking_survey_deposit","bizId":40}`,
+		ReturnContext: `{"successPath":"/bookings/40","cancelPath":"/bookings/40","bizType":"booking_survey_deposit","bizId":40}`,
 	}
 	if err := db.Create(&payment).Error; err != nil {
 		t.Fatalf("create payment: %v", err)

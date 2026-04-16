@@ -17,7 +17,21 @@ func setupNotificationServiceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Notification{}, &model.SysAdmin{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.Notification{},
+		&model.SysAdmin{},
+		&model.UserSettings{},
+		&model.BudgetConfirmation{},
+		&model.DesignFeeQuote{},
+		&model.DesignDeliverable{},
+		&model.Proposal{},
+		&model.Contract{},
+		&model.Order{},
+		&model.QuoteList{},
+		&model.Milestone{},
+		&model.Project{},
+		&model.ChangeOrder{},
+	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
 
@@ -107,6 +121,7 @@ func TestNotificationDispatcherRefundAndCompletionActionURLsUseRealRoutes(t *tes
 		t.Fatalf("create admin: %v", err)
 	}
 
+	dispatcher.NotifySiteSurveySubmitted(2006, 5006, 6006)
 	dispatcher.NotifyProjectCompletionSubmitted(2001, 3001)
 	dispatcher.NotifyProjectCompletionDecision(2002, 3001, false, "资料不完整")
 	dispatcher.NotifyAdminRefundApplicationCreated(4001, 5001, 3001)
@@ -118,14 +133,15 @@ func TestNotificationDispatcherRefundAndCompletionActionURLsUseRealRoutes(t *tes
 	if err := db.Order("id ASC").Find(&notifications).Error; err != nil {
 		t.Fatalf("load notifications: %v", err)
 	}
-	if len(notifications) != 6 {
-		t.Fatalf("expected 6 notifications, got %d", len(notifications))
+	if len(notifications) != 7 {
+		t.Fatalf("expected 7 notifications, got %d", len(notifications))
 	}
 
 	expected := []struct {
 		notificationType string
 		actionURL        string
 	}{
+		{NotificationTypeSiteSurveySubmitted, "/bookings/5006/site-survey"},
 		{"project.completion.submitted", "/projects/3001/completion"},
 		{"project.completion.rejected", "/projects/3001"},
 		{"refund.application.created", "/refunds/4001"},
@@ -150,5 +166,154 @@ func TestAdminActionURLHelpersUseFrontendRoutes(t *testing.T) {
 	}
 	if got := buildAdminProjectAuditActionURL(19); got != "/project-audits/19" {
 		t.Fatalf("expected admin project audit route /project-audits/19, got %s", got)
+	}
+	if got := buildAdminWithdrawActionURL(20); got != "/withdraws/20" {
+		t.Fatalf("expected admin withdraw route /withdraws/20, got %s", got)
+	}
+}
+
+func TestNotificationServiceRespectsUserPaymentPreference(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+	if err := db.Model(&model.UserSettings{}).Create(map[string]any{
+		"user_id":        9001,
+		"notify_system":  true,
+		"notify_project": true,
+		"notify_payment": false,
+	}).Error; err != nil {
+		t.Fatalf("create user settings: %v", err)
+	}
+
+	svc := &NotificationService{}
+	if err := svc.Create(&CreateNotificationInput{
+		UserID:      9001,
+		UserType:    "user",
+		Title:       "订单待支付",
+		Content:     "请尽快支付",
+		Type:        model.NotificationTypeOrderCreated,
+		RelatedID:   1001,
+		RelatedType: "order",
+		ActionURL:   "/orders/1001",
+	}); err != nil {
+		t.Fatalf("create payment notification: %v", err)
+	}
+	if err := svc.Create(&CreateNotificationInput{
+		UserID:      9001,
+		UserType:    "user",
+		Title:       "方案已提交",
+		Content:     "请确认方案",
+		Type:        model.NotificationTypeProposalSubmitted,
+		RelatedID:   1002,
+		RelatedType: "proposal",
+		ActionURL:   "/proposals/1002",
+	}); err != nil {
+		t.Fatalf("create project notification: %v", err)
+	}
+
+	var notifications []model.Notification
+	if err := db.Order("id ASC").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("expected 1 notification after filtering, got %d", len(notifications))
+	}
+	if notifications[0].Type != model.NotificationTypeProposalSubmitted {
+		t.Fatalf("expected project notification to remain, got %+v", notifications[0])
+	}
+}
+
+func TestNotificationServiceGetUserNotificationsBuildsActionMetadata(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+	if err := db.Create(&model.BudgetConfirmation{
+		Base:       model.Base{ID: 101},
+		BookingID:  88,
+		ProviderID: 77,
+		Status:     model.BudgetConfirmationStatusSubmitted,
+	}).Error; err != nil {
+		t.Fatalf("create budget confirmation: %v", err)
+	}
+	if err := db.Create(&model.Order{
+		Base:        model.Base{ID: 202},
+		OrderNo:     "20260414112233000001",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 1888,
+		Status:      model.OrderStatusPaid,
+	}).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+	for _, notification := range []model.Notification{
+		{
+			Base:        model.Base{ID: 301},
+			UserID:      9001,
+			UserType:    "user",
+			Title:       "沟通确认待处理",
+			Content:     "请确认",
+			Type:        NotificationTypeBudgetConfirmationSubmitted,
+			RelatedID:   101,
+			RelatedType: "budget_confirmation",
+			ActionURL:   "/bookings/88/budget-confirm",
+		},
+		{
+			Base:        model.Base{ID: 302},
+			UserID:      9001,
+			UserType:    "user",
+			Title:       "支付成功",
+			Content:     "设计费已支付",
+			Type:        NotificationTypePaymentOrderPaid,
+			RelatedID:   202,
+			RelatedType: "order",
+			ActionURL:   "/orders/202",
+		},
+	} {
+		if err := db.Create(&notification).Error; err != nil {
+			t.Fatalf("create notification: %v", err)
+		}
+	}
+
+	svc := &NotificationService{}
+	items, total, err := svc.GetUserNotifications(9001, "user", 1, 10)
+	if err != nil {
+		t.Fatalf("GetUserNotifications: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("expected 2 notifications, got total=%d len=%d", total, len(items))
+	}
+
+	byType := make(map[string]NotificationListItem, len(items))
+	for _, item := range items {
+		byType[item.Type] = item
+	}
+
+	budgetItem := byType[NotificationTypeBudgetConfirmationSubmitted]
+	if budgetItem.Kind != NotificationKindTodo || !budgetItem.ActionRequired || budgetItem.ActionStatus != NotificationActionStatusPending {
+		t.Fatalf("unexpected budget notification metadata: %+v", budgetItem)
+	}
+	if budgetItem.ActionLabel != "去确认" || !budgetItem.SupportsMini {
+		t.Fatalf("unexpected budget notification action info: %+v", budgetItem)
+	}
+
+	paidItem := byType[NotificationTypePaymentOrderPaid]
+	if paidItem.Kind != NotificationKindResult || paidItem.ActionStatus != NotificationActionStatusNone || paidItem.Category != NotificationCategoryPayment {
+		t.Fatalf("unexpected paid notification metadata: %+v", paidItem)
+	}
+}
+
+func TestNotificationRouteSupportedInMiniCoversMainFlowRoutes(t *testing.T) {
+	cases := []struct {
+		route    string
+		expected bool
+	}{
+		{"/bookings/1001/site-survey", true},
+		{"/bookings/1001/design-quote", true},
+		{"/projects/2002/completion", true},
+		{"/orders/3003", true},
+		{"/refunds/10", false},
+		{"/admin/quotes/88", false},
+	}
+
+	for _, item := range cases {
+		got := notificationRouteSupportedInMini(item.route)
+		if got != item.expected {
+			t.Fatalf("route %s expected mini support=%v, got %v", item.route, item.expected, got)
+		}
 	}
 }

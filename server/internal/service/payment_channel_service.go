@@ -13,6 +13,7 @@ import (
 type PaymentChannelTradeResult struct {
 	ProviderTradeNo string
 	TradeStatus     string
+	BuyerLogonID    string
 	BuyerAmount     float64
 	RawJSON         string
 }
@@ -126,6 +127,7 @@ func (s *AlipayPaymentChannelService) QueryCollectOrder(ctx context.Context, ord
 	return &PaymentChannelTradeResult{
 		ProviderTradeNo: result.TradeNo,
 		TradeStatus:     result.TradeStatus,
+		BuyerLogonID:    result.BuyerLogonID,
 		BuyerAmount:     result.BuyerAmount,
 		RawJSON:         result.RawJSON,
 	}, nil

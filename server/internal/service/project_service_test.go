@@ -1,10 +1,12 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -13,7 +15,8 @@ import (
 func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
+	dsn := fmt.Sprintf("file:project-service-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(gormsqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
@@ -40,7 +43,20 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 	)...); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
-	bindRepositorySQLiteTestDB(t, db)
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(4)
+	sqlDB.SetMaxIdleConns(4)
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+		_ = sqlDB.Close()
+	})
 
 	return db
 }
@@ -80,9 +96,14 @@ func TestProjectServiceCreateWorkLog(t *testing.T) {
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 91}, ProjectID: project.ID, PhaseType: "preparation", Seq: 1, Status: "in_progress"}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
 
 	svc := &ProjectService{}
 	if err := svc.CreateWorkLog(project.ID, 2, &CreateWorkLogRequest{
+		PhaseID:     phase.ID,
 		Title:       "施工日志",
 		Description: "日志描述",
 	}); err != nil {
@@ -495,7 +516,7 @@ func TestProjectServiceGetProjectDetailIncludesDesignerProfile(t *testing.T) {
 		Name:                   "团队展示项目",
 		Address:                "测试地址 707",
 		Status:                 model.ProjectStatusActive,
-		CurrentPhase:           "待开工",
+		CurrentPhase:           "待监理协调开工",
 		BusinessStatus:         model.ProjectBusinessStatusConstructionQuoteConfirmed,
 	}
 	if err := db.Create(&project).Error; err != nil {
@@ -506,8 +527,8 @@ func TestProjectServiceGetProjectDetailIncludesDesignerProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectDetail: %v", err)
 	}
-	if detail.ProviderName != "施工经理" {
-		t.Fatalf("expected current provider name from construction provider, got %q", detail.ProviderName)
+	if detail.ProviderName != "施工公司C" {
+		t.Fatalf("expected construction provider display name, got %q", detail.ProviderName)
 	}
 	if detail.DesignerName != "设计师李" {
 		t.Fatalf("expected designer name, got %q", detail.DesignerName)
@@ -536,7 +557,7 @@ func TestProjectServiceListMerchantProjects(t *testing.T) {
 		Name:           "项目执行列表测试",
 		Address:        "测试地址",
 		Status:         model.ProjectStatusActive,
-		CurrentPhase:   "待开工",
+		CurrentPhase:   "待监理协调开工",
 		BusinessStatus: model.ProjectBusinessStatusConstructionQuoteConfirmed,
 	}
 	if err := db.Create(&project).Error; err != nil {

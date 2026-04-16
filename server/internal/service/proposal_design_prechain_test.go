@@ -311,6 +311,48 @@ func TestConfirmProposalRequiresPaidDesignOrder(t *testing.T) {
 	}
 }
 
+func TestConfirmProposalReturnsFriendlyErrorWhenQuantityBaseSchemaMissing(t *testing.T) {
+	db := setupProposalDesignPrechainTestDB(t)
+	configSvc.ClearCache()
+
+	user := model.User{Base: model.Base{ID: 141}, Phone: "13800138141", Nickname: "业主E", Status: 1}
+	providerUser := model.User{Base: model.Base{ID: 142}, Phone: "13800138142", Nickname: "设计师E", Status: 1}
+	provider := model.Provider{Base: model.Base{ID: 241}, UserID: providerUser.ID, ProviderType: 1, Status: 1}
+	booking := model.Booking{Base: model.Base{ID: 341}, UserID: user.ID, ProviderID: provider.ID, Address: "施工桥接测试地址", IntentFee: 500, IntentFeePaid: true, Status: 2}
+	proposal := model.Proposal{Base: model.Base{ID: 541}, BookingID: booking.ID, DesignerID: provider.ID, Summary: "正式方案", DesignFee: 10000, Status: model.ProposalStatusPending, Version: 1}
+	order := model.Order{
+		Base:        model.Base{ID: 641},
+		BookingID:   booking.ID,
+		OrderNo:     "DESIGN-PAID-341",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 9500,
+		PaidAmount:  9500,
+		Status:      model.OrderStatusPaid,
+		PaidAt:      ptrProposalTestTime(time.Now()),
+	}
+	flow := model.BusinessFlow{
+		Base:               model.Base{ID: 741},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     user.ID,
+		DesignerProviderID: provider.ID,
+		CurrentStage:       model.BusinessFlowStageDesignDeliveryPending,
+	}
+	for _, value := range []interface{}{&user, &providerUser, &provider, &booking, &proposal, &order, &flow} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("seed fixture: %v", err)
+		}
+	}
+
+	if err := db.Migrator().DropTable(&model.QuantityBaseItem{}, &model.QuantityBase{}); err != nil {
+		t.Fatalf("drop quantity base tables: %v", err)
+	}
+
+	if _, err := (&ProposalService{}).ConfirmProposal(user.ID, proposal.ID); err == nil || err.Error() != "施工桥接资料暂未就绪，请稍后重试" {
+		t.Fatalf("expected friendly schema error, got %v", err)
+	}
+}
+
 func ptrProposalTestTime(v time.Time) *time.Time {
 	return &v
 }

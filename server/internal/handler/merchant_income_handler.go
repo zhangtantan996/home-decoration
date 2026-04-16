@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ==================== 商家收入中心 Handler ====================
@@ -76,7 +78,7 @@ func MerchantIncomeSummary(c *gin.Context) {
 
 	// 5. 待出款 = status=1
 	repository.DB.Model(&model.MerchantIncome{}).
-		Where("provider_id = ? AND status = 1", providerID).
+		Where("provider_id = ? AND status = 1 AND COALESCE(withdraw_order_no, '') = ''", providerID).
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&summary.AvailableAmount)
 	if summary.AvailableAmount < 0 {
@@ -115,10 +117,10 @@ func MerchantIncomeList(c *gin.Context) {
 
 	// 收入类型文案
 	typeLabels := map[string]string{
-		"intent_fee":   "量房费",
+		"intent_fee":     "量房费",
 		"survey_deposit": "量房费",
-		"design_fee":   "设计费",
-		"construction": "施工款",
+		"design_fee":     "设计费",
+		"construction":   "施工款",
 	}
 
 	// 组装返回数据
@@ -350,7 +352,86 @@ func maskBankAccount(account string) string {
 
 // MerchantWithdrawCreate 申请提现（需要二次验证）
 func MerchantWithdrawCreate(c *gin.Context) {
-	response.Error(c, 400, "提现申请入口已下线，请查看结算记录与出款状态")
+	providerID := c.GetUint64("providerId")
+
+	var input struct {
+		Amount           float64 `json:"amount" binding:"required"`
+		BankAccountID    uint64  `json:"bankAccountId" binding:"required"`
+		VerificationCode string  `json:"verificationCode" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "参数错误")
+		return
+	}
+
+	withdrawAmount := roundMoney(input.Amount)
+	if withdrawAmount <= 0 {
+		response.Error(c, 400, "提现金额必须大于0")
+		return
+	}
+
+	phone, err := resolveProviderPhone(providerID)
+	if err != nil {
+		response.Error(c, 400, "当前账号缺少绑定手机号")
+		return
+	}
+	if err := service.VerifySMSCode(phone, service.SMSPurposeMerchantWithdraw, input.VerificationCode); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	orderNo, err := generateWithdrawOrderNo()
+	if err != nil {
+		response.Error(c, 500, "生成提现单号失败")
+		return
+	}
+
+	var withdraw model.MerchantWithdraw
+	err = repository.DB.Transaction(func(tx *gorm.DB) error {
+		var account model.MerchantBankAccount
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND provider_id = ? AND status = 1", input.BankAccountID, providerID).
+			First(&account).Error; err != nil {
+			return errors.New("银行卡不存在")
+		}
+
+		var availableAmount float64
+		if err := tx.Model(&model.MerchantIncome{}).
+			Where("provider_id = ? AND status = 1 AND COALESCE(withdraw_order_no, '') = ''", providerID).
+			Select("COALESCE(SUM(net_amount), 0)").
+			Scan(&availableAmount).Error; err != nil {
+			return err
+		}
+		if roundMoney(availableAmount) < withdrawAmount {
+			return errors.New("可提现金额不足")
+		}
+
+		if err := reserveWithdrawIncomesTx(tx, providerID, orderNo, withdrawAmount); err != nil {
+			return err
+		}
+
+		withdraw = model.MerchantWithdraw{
+			ProviderID:  providerID,
+			OrderNo:     orderNo,
+			Amount:      withdrawAmount,
+			BankAccount: maskBankAccount(account.AccountNo),
+			BankName:    account.BankName,
+			Status:      model.MerchantWithdrawStatusPendingReview,
+		}
+		return tx.Create(&withdraw).Error
+	})
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"withdrawId": withdraw.ID,
+		"orderNo":    withdraw.OrderNo,
+		"message":    "提现申请已提交，等待平台审核",
+	})
+
+	service.NewNotificationDispatcher().NotifyWithdrawAppliedToAdmins(withdraw.ID, providerID, withdraw.Amount, withdraw.OrderNo)
 }
 
 func generateWithdrawOrderNo() (string, error) {

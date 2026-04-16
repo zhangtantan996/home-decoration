@@ -75,12 +75,12 @@ func AdminConfirmProposal(c *gin.Context) {
 		return
 	}
 
-	order, err := proposalService.AdminConfirmProposal(adminID, proposalID, req.Reason)
+	proposal, err := proposalService.AdminConfirmProposal(adminID, proposalID, req.Reason)
 	if err != nil {
 		respondDomainMutationError(c, err, "方案确认失败")
 		return
 	}
-	response.SuccessWithMessage(c, "平台已确认方案", gin.H{"order": order})
+	response.SuccessWithMessage(c, "平台已确认方案", gin.H{"proposal": proposal})
 }
 
 func AdminRejectProposal(c *gin.Context) {

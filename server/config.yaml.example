@@ -1,9 +1,12 @@
-# 装修设计一体化平台 - 服务端配置
+# 装修设计一体化平台 - 服务端配置示例
+# 本地开发建议继续使用 local storage + mock 短信，生产再切真实外部能力
 
 server:
   host: "0.0.0.0"
   port: "8080"
   mode: "debug"  # debug | release
+  public_url: "http://localhost:8080"
+  trusted_proxies: "127.0.0.1,::1"
 
 database:
   host: "localhost"
@@ -12,31 +15,104 @@ database:
   password: "your_password"
   dbname: "home_decoration"
   sslmode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 10
+  conn_max_lifetime_minutes: 30
+  conn_max_idle_time_minutes: 5
 
 redis:
   host: "localhost"
   port: "6379"
   password: ""
   db: 0
+  operation_timeout_ms: 3000
 
 jwt:
   secret: "your-jwt-secret-key-change-in-production"
   expire_hour: 72
 
-# 阿里云OSS配置 (可选)
-oss:
-  endpoint: ""
-  access_key_id: ""
-  access_key_secret: ""
-  bucket: ""
+admin_auth:
+  access_token_minutes: 30
+  refresh_token_days: 7
+  login_fail_limit: 5
+  login_lock_minutes: 30
+  password_min_length: 10
+  password_max_age_days: 90
+  totp_enabled: false
+  totp_issuer: "禾泽云管理后台"
+  required_role_keys: ""
+  reauth_ttl_minutes: 10
+  max_active_sessions: 5
+  api_ip_enforced: false
+  allowed_cidrs: ""
 
-# 短信服务配置 (可选)
+log:
+  level: "info"
+  file: "logs/backend.log"
+  audit_retention_days: 180
+
+storage:
+  driver: "local" # local | oss
+  oss_endpoint: ""
+  oss_access_key_id: ""
+  oss_access_key_secret: ""
+  oss_bucket: ""
+  public_base_url: ""
+
+wechat_mini:
+  app_id: ""
+  app_secret: ""
+  bind_token_expire_minutes: 5
+
+wechat_h5:
+  app_id: ""
+  app_secret: ""
+  bind_token_expire_minutes: 5
+  oauth_scope: "snsapi_base"
+  state_signing_secret: ""
+  base_path: "/app"
+
+wechat_pay:
+  app_id: ""
+  mch_id: ""
+  serial_no: ""
+  private_key: ""
+  api_v3_key: ""
+  notify_url: ""
+  platform_public_key_id: ""
+  platform_public_key: ""
+  timeout_minutes: 15
+
+alipay:
+  enabled: false
+  gateway_url: "https://openapi.alipay.com/gateway.do"
+  app_id: ""
+  app_private_key: ""
+  public_key: ""
+  notify_url: ""
+  return_url_web: ""
+  return_url_h5: ""
+  timeout_minutes: 15
+  sandbox: false
+
 sms:
-  provider: "aliyun"  # mock | aliyun
+  provider: "mock" # local 默认 mock，生产切 aliyun
   access_key_id: ""
   access_key_secret: ""
   sign_name: ""
   template_code: ""
+  template_code_low: ""
+  template_code_medium: ""
+  template_code_high: ""
+  template_code_login: ""
+  template_code_register: ""
+  template_code_identity_apply: ""
+  template_code_merchant_withdraw: ""
+  template_code_merchant_bank_bind: ""
+  template_code_merchant_apply_approved: ""
+  template_code_merchant_apply_rejected: ""
+  template_code_change_phone: ""
+  template_code_delete_account: ""
   region_id: "cn-hangzhou"
   debug_bypass: false
   risk_enabled: true
@@ -44,13 +120,16 @@ sms:
   phone_daily_limit: 10
   ip_daily_limit: 20
   captcha_enabled: false
-  captcha_provider: "turnstile" # turnstile | hcaptcha | recaptcha
-  captcha_verify_url: "" # 可留空，按 provider 使用默认验证地址
+  captcha_provider: "turnstile"
+  captcha_verify_url: ""
   captcha_secret_key: ""
   captcha_timeout_ms: 3000
   captcha_min_score: 0.0
 
-# 地图服务配置
-map:
-  provider: "amap"  # amap | baidu
-  api_key: ""
+notification_realtime:
+  enabled: true
+  max_connections_per_user: 5
+  max_connections_per_ip: 50
+  ping_interval_seconds: 30
+  idle_timeout_seconds: 90
+  send_buffer_size: 32

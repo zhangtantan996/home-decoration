@@ -71,7 +71,26 @@ func (p *AliyunSMSProvider) SendVerificationCode(req SMSProviderRequest) (SMSPro
 			}
 	}
 
-	templateParamBytes, err := json.Marshal(map[string]string{"code": req.Code})
+	return p.sendTemplateMessage(req.Phone, strings.TrimSpace(req.Template.TemplateKey), templateCode, map[string]string{"code": req.Code})
+}
+
+func (p *AliyunSMSProvider) SendTemplateMessage(req SMSTemplateMessageRequest) (SMSProviderResult, error) {
+	templateCode := strings.TrimSpace(firstNonEmptyString(req.TemplateCode, p.templateCode))
+	if templateCode == "" {
+		return SMSProviderResult{
+				Provider:     "aliyun",
+				TemplateKey:  strings.TrimSpace(req.TemplateKey),
+				TemplateCode: "",
+			}, &SMSProviderError{
+				Code:    "SMS_TEMPLATE_CODE_MISSING",
+				Message: "短信模板未配置",
+			}
+	}
+	return p.sendTemplateMessage(req.Phone, strings.TrimSpace(req.TemplateKey), templateCode, req.Params)
+}
+
+func (p *AliyunSMSProvider) sendTemplateMessage(phone string, templateKey string, templateCode string, templateParams map[string]string) (SMSProviderResult, error) {
+	templateParamBytes, err := json.Marshal(templateParams)
 	if err != nil {
 		return SMSProviderResult{Provider: "aliyun"}, fmt.Errorf("encode sms template param: %w", err)
 	}
@@ -80,7 +99,7 @@ func (p *AliyunSMSProvider) SendVerificationCode(req SMSProviderRequest) (SMSPro
 		"AccessKeyId":      p.accessKeyID,
 		"Action":           "SendSms",
 		"Format":           "JSON",
-		"PhoneNumbers":     req.Phone,
+		"PhoneNumbers":     phone,
 		"RegionId":         p.regionID,
 		"SignName":         p.signName,
 		"SignatureMethod":  "HMAC-SHA1",
@@ -92,7 +111,6 @@ func (p *AliyunSMSProvider) SendVerificationCode(req SMSProviderRequest) (SMSPro
 		"Version":          "2017-05-25",
 	}
 
-	// Signature is calculated without Signature itself.
 	canonical := canonicalizeRPCQuery(params)
 	stringToSign := "GET&" + percentEncode("/") + "&" + percentEncode(canonical)
 	signature := signHmacSha1(p.accessKeySecret+"&", stringToSign)
@@ -115,7 +133,6 @@ func (p *AliyunSMSProvider) SendVerificationCode(req SMSProviderRequest) (SMSPro
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// Do not leak secrets; include only status + minimal body prefix.
 		msg := strings.TrimSpace(string(body))
 		if len(msg) > 256 {
 			msg = msg[:256]
@@ -142,7 +159,7 @@ func (p *AliyunSMSProvider) SendVerificationCode(req SMSProviderRequest) (SMSPro
 		Provider:     "aliyun",
 		MessageID:    strings.TrimSpace(parsed.BizID),
 		RequestID:    strings.TrimSpace(parsed.RequestID),
-		TemplateKey:  strings.TrimSpace(req.Template.TemplateKey),
+		TemplateKey:  templateKey,
 		TemplateCode: templateCode,
 	}, nil
 }

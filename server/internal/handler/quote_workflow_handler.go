@@ -128,7 +128,7 @@ func AdminSelectForemen(c *gin.Context) {
 	adminID := c.GetUint64("adminId")
 	invitations, err := quoteService.SelectForemen(parseUint(c.Param("id")), adminID, input.ProviderIDs)
 	if err != nil {
-		respondDomainMutationError(c, err, "选择工长失败")
+		respondDomainMutationError(c, err, "选择施工主体失败")
 		return
 	}
 	response.Success(c, gin.H{"invitations": invitations})
@@ -150,6 +150,21 @@ func AdminListQuoteSubmissionRevisions(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"list": revisions})
+}
+
+func AdminReviewQuoteSubmission(c *gin.Context) {
+	var input service.QuoteSubmissionReviewInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "报价复核参数错误")
+		return
+	}
+	adminID := c.GetUint64("adminId")
+	submission, err := quoteService.ReviewQuoteSubmission(parseUint(c.Param("id")), adminID, &input)
+	if err != nil {
+		respondDomainMutationError(c, err, "更新报价复核失败")
+		return
+	}
+	response.Success(c, submission)
 }
 
 func AdminSubmitQuoteTaskToUser(c *gin.Context) {
@@ -221,6 +236,86 @@ func MerchantPublishPriceBook(c *gin.Context) {
 		return
 	}
 	response.Success(c, detail)
+}
+
+func MerchantStartConstructionPreparation(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	preparation, err := quoteService.StartMerchantConstructionPreparation(providerID, parseUint(c.Param("id")))
+	if err != nil {
+		respondDomainMutationError(c, err, "启动施工报价准备失败")
+		return
+	}
+	response.Success(c, preparation)
+}
+
+func MerchantGetQuoteTaskPreparation(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	preparation, err := quoteService.GetMerchantConstructionPreparation(providerID, parseUint(c.Param("id")))
+	if err != nil {
+		respondScopedAccessError(c, err, "获取施工报价准备失败")
+		return
+	}
+	response.Success(c, preparation)
+}
+
+func MerchantUpdateQuoteTaskPrerequisites(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	var input service.QuoteTaskPrerequisiteUpdateInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "施工前置资料参数错误")
+		return
+	}
+	preparation, err := quoteService.UpdateMerchantConstructionPreparationPrerequisites(providerID, parseUint(c.Param("id")), &input)
+	if err != nil {
+		respondDomainMutationError(c, err, "更新施工前置资料失败")
+		return
+	}
+	response.Success(c, preparation)
+}
+
+func MerchantUpdateQuoteTaskQuantityItems(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	var input struct {
+		Items []service.MerchantQuantityItemInput `json:"items"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "施工基线参数错误")
+		return
+	}
+	preparation, err := quoteService.ReplaceMerchantConstructionPreparationItems(providerID, parseUint(c.Param("id")), input.Items)
+	if err != nil {
+		respondDomainMutationError(c, err, "更新施工基线失败")
+		return
+	}
+	response.Success(c, preparation)
+}
+
+func MerchantRecommendForemen(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	list, err := quoteService.RecommendMerchantConstructionForemen(providerID, parseUint(c.Param("id")))
+	if err != nil {
+		respondScopedAccessError(c, err, "获取工长推荐失败")
+		return
+	}
+	response.Success(c, gin.H{"list": list})
+}
+
+func MerchantSelectForemen(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	operatorUserID := c.GetUint64("userId")
+	var input struct {
+		ProviderIDs []uint64 `json:"providerIds"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "工长选择参数错误")
+		return
+	}
+	preparation, err := quoteService.SelectMerchantConstructionForemen(providerID, operatorUserID, parseUint(c.Param("id")), input.ProviderIDs)
+	if err != nil {
+		respondDomainMutationError(c, err, "推荐施工主体失败")
+		return
+	}
+	response.Success(c, preparation)
 }
 
 func MerchantListQuoteTasks(c *gin.Context) {

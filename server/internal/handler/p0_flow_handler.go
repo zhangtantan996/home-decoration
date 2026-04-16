@@ -24,6 +24,21 @@ func MerchantGetSiteSurvey(c *gin.Context) {
 	response.Success(c, gin.H{"siteSurvey": result})
 }
 
+func MerchantGetBookingFlowSummary(c *gin.Context) {
+	providerID := c.GetUint64("providerId")
+	bookingID := parseUint64(c.Param("id"))
+	if bookingID == 0 {
+		response.BadRequest(c, "无效预约ID")
+		return
+	}
+	result, err := bookingService.GetMerchantDesignerFlowWorkspace(providerID, bookingID)
+	if err != nil {
+		respondScopedAccessError(c, err, "获取设计流程失败")
+		return
+	}
+	response.Success(c, result)
+}
+
 func MerchantSubmitSiteSurvey(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 	bookingID := parseUint64(c.Param("id"))
@@ -57,43 +72,6 @@ func GetSiteSurvey(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"siteSurvey": result})
-}
-
-func ConfirmSiteSurvey(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	bookingID := parseUint64(c.Param("id"))
-	if bookingID == 0 {
-		response.BadRequest(c, "无效预约ID")
-		return
-	}
-	result, err := bookingService.ConfirmSiteSurvey(userID, bookingID)
-	if err != nil {
-		respondDomainMutationError(c, err, "确认量房记录失败")
-		return
-	}
-	response.SuccessWithMessage(c, "量房确认成功", gin.H{"siteSurvey": result})
-}
-
-func RejectSiteSurvey(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	bookingID := parseUint64(c.Param("id"))
-	if bookingID == 0 {
-		response.BadRequest(c, "无效预约ID")
-		return
-	}
-	var req struct {
-		Reason string `json:"reason"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-	result, err := bookingService.RejectSiteSurvey(userID, bookingID, req.Reason)
-	if err != nil {
-		respondDomainMutationError(c, err, "退回量房记录失败")
-		return
-	}
-	response.SuccessWithMessage(c, "已要求重新量房", gin.H{"siteSurvey": result})
 }
 
 func MerchantGetBudgetConfirmation(c *gin.Context) {
@@ -180,7 +158,11 @@ func RejectBudgetConfirmation(c *gin.Context) {
 		respondDomainMutationError(c, err, "拒绝预算失败")
 		return
 	}
-	response.SuccessWithMessage(c, "已拒绝预算，预约已关闭", gin.H{"budgetConfirmation": result})
+	message := "已退回沟通结果，等待商家重新整理后提交"
+	if result != nil && result.RejectCount >= result.RejectLimit {
+		message = "沟通确认已达到驳回上限，预约已关闭"
+	}
+	response.SuccessWithMessage(c, message, gin.H{"budgetConfirmation": result})
 }
 
 func MerchantCompleteProject(c *gin.Context) {

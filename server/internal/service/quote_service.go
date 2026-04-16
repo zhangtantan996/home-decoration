@@ -137,15 +137,23 @@ type QuoteListListResult struct {
 }
 
 type AdminQuoteListDetail struct {
-	QuoteList        model.QuoteList         `json:"quoteList"`
-	Items            []model.QuoteListItem   `json:"items"`
-	Invitations      []model.QuoteInvitation `json:"invitations"`
-	SubmissionCount  int64                   `json:"submissionCount"`
-	QuantityBase     *model.QuantityBase     `json:"quantityBase,omitempty"`
-	QuantityItems    []model.QuantityBaseItem `json:"quantityItems,omitempty"`
-	BusinessStage    string                  `json:"businessStage"`
-	FlowSummary      string                  `json:"flowSummary"`
-	AvailableActions []string                `json:"availableActions"`
+	QuoteList                      model.QuoteList          `json:"quoteList"`
+	Items                          []model.QuoteListItem    `json:"items"`
+	Invitations                    []model.QuoteInvitation  `json:"invitations"`
+	SubmissionCount                int64                    `json:"submissionCount"`
+	QuantityBase                   *model.QuantityBase      `json:"quantityBase,omitempty"`
+	QuantityItems                  []model.QuantityBaseItem `json:"quantityItems,omitempty"`
+	BusinessStage                  string                   `json:"businessStage"`
+	FlowSummary                    string                   `json:"flowSummary"`
+	AvailableActions               []string                 `json:"availableActions"`
+	BaselineStatus                 string                   `json:"baselineStatus"`
+	BaselineSubmittedAt            *time.Time               `json:"baselineSubmittedAt,omitempty"`
+	ConstructionSubjectType        string                   `json:"constructionSubjectType"`
+	ConstructionSubjectID          uint64                   `json:"constructionSubjectId,omitempty"`
+	ConstructionSubjectDisplayName string                   `json:"constructionSubjectDisplayName,omitempty"`
+	KickoffStatus                  string                   `json:"kickoffStatus"`
+	PlannedStartDate               *time.Time               `json:"plannedStartDate,omitempty"`
+	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
 }
 
 type QuoteMerchantListItem struct {
@@ -171,9 +179,11 @@ type QuoteMerchantListItem struct {
 }
 
 type QuoteSubmissionItemInput struct {
-	QuoteListItemID uint64 `json:"quoteListItemId"`
-	UnitPriceCent   int64  `json:"unitPriceCent"`
-	Remark          string `json:"remark"`
+	QuoteListItemID      uint64  `json:"quoteListItemId"`
+	UnitPriceCent        int64   `json:"unitPriceCent"`
+	QuotedQuantity       float64 `json:"quotedQuantity"`
+	QuantityChangeReason string  `json:"quantityChangeReason"`
+	Remark               string  `json:"remark"`
 }
 
 type QuoteSubmissionSaveInput struct {
@@ -187,15 +197,33 @@ type QuoteSubmissionSaveInput struct {
 }
 
 type quoteSubmissionRevisionItemSnapshot struct {
-	QuoteListItemID        uint64 `json:"quoteListItemId"`
-	GeneratedUnitPriceCent int64  `json:"generatedUnitPriceCent,omitempty"`
-	UnitPriceCent          int64  `json:"unitPriceCent,omitempty"`
-	AmountCent             int64  `json:"amountCent,omitempty"`
-	AdjustedFlag           bool   `json:"adjustedFlag,omitempty"`
-	MissingPriceFlag       bool   `json:"missingPriceFlag,omitempty"`
-	MissingMappingFlag     bool   `json:"missingMappingFlag,omitempty"`
-	MinChargeAppliedFlag   bool   `json:"minChargeAppliedFlag,omitempty"`
-	Remark                 string `json:"remark,omitempty"`
+	QuoteListItemID          uint64  `json:"quoteListItemId"`
+	GeneratedUnitPriceCent   int64   `json:"generatedUnitPriceCent,omitempty"`
+	UnitPriceCent            int64   `json:"unitPriceCent,omitempty"`
+	QuotedQuantity           float64 `json:"quotedQuantity,omitempty"`
+	AmountCent               int64   `json:"amountCent,omitempty"`
+	AdjustedFlag             bool    `json:"adjustedFlag,omitempty"`
+	MissingPriceFlag         bool    `json:"missingPriceFlag,omitempty"`
+	MissingMappingFlag       bool    `json:"missingMappingFlag,omitempty"`
+	MinChargeAppliedFlag     bool    `json:"minChargeAppliedFlag,omitempty"`
+	QuantityChangeReason     string  `json:"quantityChangeReason,omitempty"`
+	DeviationFlag            bool    `json:"deviationFlag,omitempty"`
+	RequiresUserConfirmation bool    `json:"requiresUserConfirmation,omitempty"`
+	PlatformReviewFlag       bool    `json:"platformReviewFlag,omitempty"`
+	Remark                   string  `json:"remark,omitempty"`
+}
+
+type QuotePaymentPlanSummary struct {
+	ID          uint64     `json:"id"`
+	OrderID     uint64     `json:"orderId"`
+	MilestoneID uint64     `json:"milestoneId,omitempty"`
+	Type        string     `json:"type"`
+	Seq         int        `json:"seq"`
+	Name        string     `json:"name"`
+	Amount      float64    `json:"amount"`
+	Status      int8       `json:"status"`
+	DueAt       *time.Time `json:"dueAt,omitempty"`
+	PaidAt      *time.Time `json:"paidAt,omitempty"`
 }
 
 type QuoteCategoryTotal struct {
@@ -210,6 +238,7 @@ type QuoteComparisonSubmission struct {
 	ProviderType    int8                 `json:"providerType"`
 	ProviderSubType string               `json:"providerSubType"`
 	Status          string               `json:"status"`
+	ReviewStatus    string               `json:"reviewStatus"`
 	TotalCent       int64                `json:"totalCent"`
 	MissingItemIDs  []uint64             `json:"missingItemIds"`
 	AbnormalItemIDs []uint64             `json:"abnormalItemIds"`
@@ -217,24 +246,38 @@ type QuoteComparisonSubmission struct {
 }
 
 type QuoteComparisonResponse struct {
-	QuoteList        model.QuoteList             `json:"quoteList"`
-	Items            []model.QuoteListItem       `json:"items"`
-	Submissions      []QuoteComparisonSubmission `json:"submissions"`
-	BusinessStage    string                      `json:"businessStage,omitempty"`
-	FlowSummary      string                      `json:"flowSummary,omitempty"`
-	AvailableActions []string                    `json:"availableActions,omitempty"`
+	QuoteList                      model.QuoteList             `json:"quoteList"`
+	Items                          []model.QuoteListItem       `json:"items"`
+	Submissions                    []QuoteComparisonSubmission `json:"submissions"`
+	PaymentPlanSummary             []QuotePaymentPlanSummary   `json:"paymentPlanSummary,omitempty"`
+	BusinessStage                  string                      `json:"businessStage,omitempty"`
+	FlowSummary                    string                      `json:"flowSummary,omitempty"`
+	AvailableActions               []string                    `json:"availableActions,omitempty"`
+	BaselineStatus                 string                      `json:"baselineStatus,omitempty"`
+	BaselineSubmittedAt            *time.Time                  `json:"baselineSubmittedAt,omitempty"`
+	ConstructionSubjectType        string                      `json:"constructionSubjectType,omitempty"`
+	ConstructionSubjectID          uint64                      `json:"constructionSubjectId,omitempty"`
+	ConstructionSubjectDisplayName string                      `json:"constructionSubjectDisplayName,omitempty"`
+	KickoffStatus                  string                      `json:"kickoffStatus,omitempty"`
+	PlannedStartDate               *time.Time                  `json:"plannedStartDate,omitempty"`
+	SupervisorSummary              *BridgeSupervisorSummary    `json:"supervisorSummary,omitempty"`
 }
 
 type QuoteSubmissionRevisionItem struct {
-	QuoteListItemID        uint64 `json:"quoteListItemId"`
-	GeneratedUnitPriceCent int64  `json:"generatedUnitPriceCent,omitempty"`
-	UnitPriceCent          int64  `json:"unitPriceCent,omitempty"`
-	AmountCent             int64  `json:"amountCent,omitempty"`
-	AdjustedFlag           bool   `json:"adjustedFlag,omitempty"`
-	MissingPriceFlag       bool   `json:"missingPriceFlag,omitempty"`
-	MissingMappingFlag     bool   `json:"missingMappingFlag,omitempty"`
-	MinChargeAppliedFlag   bool   `json:"minChargeAppliedFlag,omitempty"`
-	Remark                 string `json:"remark,omitempty"`
+	QuoteListItemID          uint64  `json:"quoteListItemId"`
+	GeneratedUnitPriceCent   int64   `json:"generatedUnitPriceCent,omitempty"`
+	UnitPriceCent            int64   `json:"unitPriceCent,omitempty"`
+	QuotedQuantity           float64 `json:"quotedQuantity,omitempty"`
+	AmountCent               int64   `json:"amountCent,omitempty"`
+	AdjustedFlag             bool    `json:"adjustedFlag,omitempty"`
+	MissingPriceFlag         bool    `json:"missingPriceFlag,omitempty"`
+	MissingMappingFlag       bool    `json:"missingMappingFlag,omitempty"`
+	MinChargeAppliedFlag     bool    `json:"minChargeAppliedFlag,omitempty"`
+	QuantityChangeReason     string  `json:"quantityChangeReason,omitempty"`
+	DeviationFlag            bool    `json:"deviationFlag,omitempty"`
+	RequiresUserConfirmation bool    `json:"requiresUserConfirmation,omitempty"`
+	PlatformReviewFlag       bool    `json:"platformReviewFlag,omitempty"`
+	Remark                   string  `json:"remark,omitempty"`
 }
 
 type QuoteSubmissionRevisionRecord struct {
@@ -255,26 +298,135 @@ type QuoteSubmissionRevisionRecord struct {
 }
 
 type MerchantQuoteListDetail struct {
-	QuoteList        model.QuoteList       `json:"quoteList"`
-	Items            []model.QuoteListItem `json:"items"`
-	Invitation       model.QuoteInvitation `json:"invitation"`
-	Submission       *MerchantSubmission   `json:"submission,omitempty"`
-	QuantityBase     *model.QuantityBase   `json:"quantityBase,omitempty"`
-	QuantityItems    []model.QuantityBaseItem `json:"quantityItems,omitempty"`
-	BusinessStage    string                `json:"businessStage"`
-	FlowSummary      string                `json:"flowSummary"`
-	AvailableActions []string              `json:"availableActions"`
+	QuoteList                      model.QuoteList           `json:"quoteList"`
+	Items                          []model.QuoteListItem     `json:"items"`
+	Invitation                     model.QuoteInvitation     `json:"invitation"`
+	Submission                     *MerchantSubmission       `json:"submission,omitempty"`
+	QuantityBase                   *model.QuantityBase       `json:"quantityBase,omitempty"`
+	QuantityItems                  []model.QuantityBaseItem  `json:"quantityItems,omitempty"`
+	PaymentPlanSummary             []QuotePaymentPlanSummary `json:"paymentPlanSummary,omitempty"`
+	BusinessStage                  string                    `json:"businessStage"`
+	FlowSummary                    string                    `json:"flowSummary"`
+	AvailableActions               []string                  `json:"availableActions"`
+	BaselineStatus                 string                    `json:"baselineStatus"`
+	BaselineSubmittedAt            *time.Time                `json:"baselineSubmittedAt,omitempty"`
+	ConstructionSubjectType        string                    `json:"constructionSubjectType"`
+	ConstructionSubjectID          uint64                    `json:"constructionSubjectId,omitempty"`
+	ConstructionSubjectDisplayName string                    `json:"constructionSubjectDisplayName,omitempty"`
+	KickoffStatus                  string                    `json:"kickoffStatus"`
+	PlannedStartDate               *time.Time                `json:"plannedStartDate,omitempty"`
+	SupervisorSummary              *BridgeSupervisorSummary  `json:"supervisorSummary,omitempty"`
 }
 
 type MerchantSubmission struct {
 	Status           string                      `json:"status"`
 	TaskStatus       string                      `json:"taskStatus"`
 	GenerationStatus string                      `json:"generationStatus"`
+	ReviewStatus     string                      `json:"reviewStatus"`
 	TotalCent        int64                       `json:"totalCent"`
 	Currency         string                      `json:"currency"`
 	Items            []model.QuoteSubmissionItem `json:"items"`
 	EstimatedDays    int                         `json:"estimatedDays"`
 	Remark           string                      `json:"remark"`
+}
+
+const (
+	quoteQuantityDeviationThreshold = 0.10
+	quotePriceReviewThreshold       = 0.15
+	quoteQuantityEpsilon            = 0.000001
+)
+
+type quoteSubmissionDerivedFlags struct {
+	quotedQuantity           float64
+	quantityChanged          bool
+	deviationFlag            bool
+	platformReviewFlag       bool
+	requiresUserConfirmation bool
+	reviewRequired           bool
+	quantityChangeReason     string
+}
+
+func normalizeQuotedQuantity(quotedQuantity, baselineQuantity float64) float64 {
+	if quotedQuantity == 0 && baselineQuantity != 0 {
+		return baselineQuantity
+	}
+	return quotedQuantity
+}
+
+func quoteQuantityChanged(baselineQuantity, quotedQuantity float64) bool {
+	return math.Abs(baselineQuantity-quotedQuantity) > quoteQuantityEpsilon
+}
+
+func quoteQuantityDeviationRatio(baselineQuantity, quotedQuantity float64) float64 {
+	if baselineQuantity == 0 {
+		if quotedQuantity == 0 {
+			return 0
+		}
+		return 1
+	}
+	return math.Abs(quotedQuantity-baselineQuantity) / math.Abs(baselineQuantity)
+}
+
+func quoteUnitPriceDeviationRatio(generatedUnitPriceCent, unitPriceCent int64) float64 {
+	if generatedUnitPriceCent <= 0 {
+		return 0
+	}
+	return math.Abs(float64(unitPriceCent-generatedUnitPriceCent)) / float64(generatedUnitPriceCent)
+}
+
+func deriveQuoteSubmissionFlags(listItem model.QuoteListItem, existingItem model.QuoteSubmissionItem, input QuoteSubmissionItemInput) (quoteSubmissionDerivedFlags, error) {
+	quotedQuantity := normalizeQuotedQuantity(input.QuotedQuantity, listItem.Quantity)
+	quantityChanged := quoteQuantityChanged(listItem.Quantity, quotedQuantity)
+	quantityChangeReason := strings.TrimSpace(input.QuantityChangeReason)
+	generatedUnitPriceCent := existingItem.GeneratedUnitPriceCent
+	if generatedUnitPriceCent == 0 {
+		generatedUnitPriceCent = existingItem.UnitPriceCent
+	}
+	unitPriceAdjusted := generatedUnitPriceCent > 0 && input.UnitPriceCent > 0 && generatedUnitPriceCent != input.UnitPriceCent
+	filledMissingPrice := existingItem.MissingPriceFlag && input.UnitPriceCent > 0
+	if (quantityChanged || unitPriceAdjusted || filledMissingPrice) && quantityChangeReason == "" {
+		return quoteSubmissionDerivedFlags{}, errors.New("存在偏差调整时必须填写偏差原因")
+	}
+
+	deviationFlag := quoteQuantityDeviationRatio(listItem.Quantity, quotedQuantity) > quoteQuantityDeviationThreshold
+	platformReviewFlag := quoteUnitPriceDeviationRatio(generatedUnitPriceCent, input.UnitPriceCent) > quotePriceReviewThreshold
+	requiresUserConfirmation := quantityChanged || deviationFlag || platformReviewFlag
+	reviewRequired := platformReviewFlag
+	if quantityChanged && !listItem.QuantityAdjustableFlag {
+		reviewRequired = true
+	}
+
+	return quoteSubmissionDerivedFlags{
+		quotedQuantity:           quotedQuantity,
+		quantityChanged:          quantityChanged,
+		deviationFlag:            deviationFlag,
+		platformReviewFlag:       platformReviewFlag,
+		requiresUserConfirmation: requiresUserConfirmation,
+		reviewRequired:           reviewRequired,
+		quantityChangeReason:     quantityChangeReason,
+	}, nil
+}
+
+func buildQuotePaymentPlanSummaries(plans []model.PaymentPlan) []QuotePaymentPlanSummary {
+	if len(plans) == 0 {
+		return []QuotePaymentPlanSummary{}
+	}
+	result := make([]QuotePaymentPlanSummary, 0, len(plans))
+	for _, plan := range plans {
+		result = append(result, QuotePaymentPlanSummary{
+			ID:          plan.ID,
+			OrderID:     plan.OrderID,
+			MilestoneID: plan.MilestoneID,
+			Type:        plan.Type,
+			Seq:         plan.Seq,
+			Name:        plan.Name,
+			Amount:      plan.Amount,
+			Status:      plan.Status,
+			DueAt:       plan.DueAt,
+			PaidAt:      plan.PaidAt,
+		})
+	}
+	return result
 }
 
 func (s *QuoteService) ImportQuoteLibraryFromERP(filePath string) (*QuoteLibraryImportResult, error) {
@@ -527,16 +679,31 @@ type QuoteTemplateDetail struct {
 	Items    []model.QuoteTemplateItem `json:"items"`
 }
 
-func (s *QuoteService) ListQuoteTemplates(roomType, renovationType string) ([]model.QuoteTemplate, error) {
-	db := repository.DB.Model(&model.QuoteTemplate{}).Where("status = 1")
+type QuoteTemplateSummary struct {
+	model.QuoteTemplate
+	ItemCount int64 `json:"itemCount" gorm:"column:item_count"`
+}
+
+type QuoteTemplateEnsureResult struct {
+	Template model.QuoteTemplate       `json:"template"`
+	Items    []model.QuoteTemplateItem `json:"items"`
+	Created  bool                      `json:"created"`
+	Repaired bool                      `json:"repaired"`
+}
+
+func (s *QuoteService) ListQuoteTemplates(roomType, renovationType string) ([]QuoteTemplateSummary, error) {
+	db := repository.DB.Model(&model.QuoteTemplate{}).
+		Select("quote_templates.*, COUNT(quote_template_items.id) AS item_count").
+		Joins("LEFT JOIN quote_template_items ON quote_template_items.template_id = quote_templates.id").
+		Where("quote_templates.status = 1")
 	if roomType != "" {
-		db = db.Where("room_type = ?", roomType)
+		db = db.Where("quote_templates.room_type = ?", roomType)
 	}
 	if renovationType != "" {
-		db = db.Where("renovation_type = ?", renovationType)
+		db = db.Where("quote_templates.renovation_type = ?", renovationType)
 	}
-	var templates []model.QuoteTemplate
-	if err := db.Order("id DESC").Find(&templates).Error; err != nil {
+	var templates []QuoteTemplateSummary
+	if err := db.Group("quote_templates.id").Order("quote_templates.id DESC").Find(&templates).Error; err != nil {
 		return nil, fmt.Errorf("查询报价模板失败: %w", err)
 	}
 	return templates, nil
@@ -561,6 +728,31 @@ func (s *QuoteService) CreateQuoteTemplate(tmpl *model.QuoteTemplate) error {
 
 func (s *QuoteService) UpdateQuoteTemplate(id uint64, updates map[string]interface{}) error {
 	return repository.DB.Model(&model.QuoteTemplate{}).Where("id = ?", id).Updates(updates).Error
+}
+
+func (s *QuoteService) EnsurePreparationTemplate(roomType, renovationType string, repair bool) (*QuoteTemplateEnsureResult, error) {
+	template, created, repaired, err := s.ensurePreparationTemplateModelWithDB(
+		repository.DB,
+		strings.TrimSpace(roomType),
+		strings.TrimSpace(renovationType),
+		repair,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if template == nil {
+		return nil, nil
+	}
+	detail, err := s.GetQuoteTemplateDetail(template.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &QuoteTemplateEnsureResult{
+		Template: detail.Template,
+		Items:    detail.Items,
+		Created:  created,
+		Repaired: repaired,
+	}, nil
 }
 
 type QuoteTemplateItemInput struct {
@@ -819,7 +1011,12 @@ func (s *QuoteService) CreateQuoteList(input *QuoteListCreateInput) (*model.Quot
 	if err := repository.DB.Create(quoteList).Error; err != nil {
 		return nil, fmt.Errorf("创建报价清单失败: %w", err)
 	}
+	bridgePendingNotified := false
+	bridgeBookingID := uint64(0)
 	if sourceType, sourceID, err := businessFlowSvc.ResolveSourceFromProposal(nil, quoteList.ProposalID); err == nil && sourceID > 0 {
+		if sourceType == model.BusinessFlowSourceBooking {
+			bridgeBookingID = sourceID
+		}
 		updates := map[string]interface{}{
 			"selected_quote_task_id": quoteList.ID,
 		}
@@ -835,9 +1032,13 @@ func (s *QuoteService) CreateQuoteList(input *QuoteListCreateInput) (*model.Quot
 				model.BusinessFlowStageDesignDeliveryPending,
 				model.BusinessFlowStageDesignAcceptancePending:
 				updates["current_stage"] = model.BusinessFlowStageConstructionPartyPending
+				bridgePendingNotified = true
 			}
 		}
 		_ = businessFlowSvc.AdvanceBySource(nil, sourceType, sourceID, updates)
+	}
+	if bridgePendingNotified && quoteList.OwnerUserID > 0 {
+		NewNotificationDispatcher().NotifyConstructionBridgePending(quoteList.OwnerUserID, bridgeBookingID, quoteList.ProjectID, quoteList.ID)
 	}
 	return quoteList, nil
 }
@@ -929,6 +1130,9 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 	if err := repository.DB.Where("quote_list_id = ?", quoteListID).Order("sort_order ASC, id ASC").Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("查询清单项目失败: %w", err)
 	}
+	for idx := range items {
+		items[idx].BaselineQuantity = items[idx].Quantity
+	}
 
 	var invitations []model.QuoteInvitation
 	if err := repository.DB.Where("quote_list_id = ?", quoteListID).Order("created_at ASC").Find(&invitations).Error; err != nil {
@@ -949,17 +1153,26 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 		}
 	}
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
+	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
 
 	return &AdminQuoteListDetail{
-		QuoteList:        quoteList,
-		Items:            items,
-		Invitations:      invitations,
-		SubmissionCount:  submissionCount,
-		QuantityBase:     quantityBase,
-		QuantityItems:    quantityItems,
-		BusinessStage:    stageSummary.CurrentStage,
-		FlowSummary:      stageSummary.FlowSummary,
-		AvailableActions: stageSummary.AvailableActions,
+		QuoteList:                      quoteList,
+		Items:                          items,
+		Invitations:                    invitations,
+		SubmissionCount:                submissionCount,
+		QuantityBase:                   quantityBase,
+		QuantityItems:                  quantityItems,
+		BusinessStage:                  stageSummary.CurrentStage,
+		FlowSummary:                    stageSummary.FlowSummary,
+		AvailableActions:               stageSummary.AvailableActions,
+		BaselineStatus:                 bridgeSummary.BaselineStatus,
+		BaselineSubmittedAt:            bridgeSummary.BaselineSubmittedAt,
+		ConstructionSubjectType:        bridgeSummary.ConstructionSubjectType,
+		ConstructionSubjectID:          bridgeSummary.ConstructionSubjectID,
+		ConstructionSubjectDisplayName: bridgeSummary.ConstructionSubjectDisplayName,
+		KickoffStatus:                  bridgeSummary.KickoffStatus,
+		PlannedStartDate:               bridgeSummary.PlannedStartDate,
+		SupervisorSummary:              bridgeSummary.SupervisorSummary,
 	}, nil
 }
 
@@ -1215,10 +1428,24 @@ func (s *QuoteService) GetQuoteComparison(quoteListID uint64) (*QuoteComparisonR
 		QuoteList: quoteList,
 		Items:     items,
 	}
+	if paymentPlans, err := s.loadQuotePaymentPlanSummaries(quoteList.ProjectID); err == nil {
+		resp.PaymentPlanSummary = paymentPlans
+	} else {
+		return nil, fmt.Errorf("查询支付计划摘要失败: %w", err)
+	}
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
+	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
 	resp.BusinessStage = stageSummary.CurrentStage
 	resp.FlowSummary = stageSummary.FlowSummary
 	resp.AvailableActions = stageSummary.AvailableActions
+	resp.BaselineStatus = bridgeSummary.BaselineStatus
+	resp.BaselineSubmittedAt = bridgeSummary.BaselineSubmittedAt
+	resp.ConstructionSubjectType = bridgeSummary.ConstructionSubjectType
+	resp.ConstructionSubjectID = bridgeSummary.ConstructionSubjectID
+	resp.ConstructionSubjectDisplayName = bridgeSummary.ConstructionSubjectDisplayName
+	resp.KickoffStatus = bridgeSummary.KickoffStatus
+	resp.PlannedStartDate = bridgeSummary.PlannedStartDate
+	resp.SupervisorSummary = bridgeSummary.SupervisorSummary
 	for _, submission := range submissions {
 		itemMap := itemsBySubmission[submission.ID]
 		missing := make([]uint64, 0)
@@ -1251,6 +1478,7 @@ func (s *QuoteService) GetQuoteComparison(quoteListID uint64) (*QuoteComparisonR
 			ProviderType:    submission.ProviderType,
 			ProviderSubType: submission.ProviderSubType,
 			Status:          submission.Status,
+			ReviewStatus:    submission.ReviewStatus,
 			TotalCent:       submission.TotalCent,
 			MissingItemIDs:  missing,
 			AbnormalItemIDs: abnormal,
@@ -1353,6 +1581,10 @@ func (s *QuoteService) GetMerchantQuoteListDetail(quoteListID, providerID uint64
 	if err := repository.DB.Where("quote_list_id = ?", quoteListID).Order("sort_order ASC, id ASC").Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("查询清单项目失败: %w", err)
 	}
+	itemByID := buildQuoteListItemMap(items)
+	for idx := range items {
+		items[idx].BaselineQuantity = items[idx].Quantity
+	}
 	var submission model.QuoteSubmission
 	err = repository.DB.Where("quote_list_id = ? AND provider_id = ?", quoteListID, providerID).First(&submission).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1379,17 +1611,32 @@ func (s *QuoteService) GetMerchantQuoteListDetail(quoteListID, providerID uint64
 			Status:           submission.Status,
 			TaskStatus:       submission.TaskStatus,
 			GenerationStatus: submission.GenerationStatus,
+			ReviewStatus:     submission.ReviewStatus,
 			TotalCent:        submission.TotalCent,
 			Currency:         submission.Currency,
-			Items:            submissionItems,
+			Items:            enrichQuoteSubmissionItems(submissionItems, itemByID),
 			EstimatedDays:    submission.EstimatedDays,
 			Remark:           submission.Remark,
 		}
 	}
+	if paymentPlans, err := s.loadQuotePaymentPlanSummaries(quoteList.ProjectID); err == nil {
+		resp.PaymentPlanSummary = paymentPlans
+	} else {
+		return nil, fmt.Errorf("查询支付计划摘要失败: %w", err)
+	}
 	stageSummary := s.resolveQuoteListBusinessSummary(quoteList)
+	bridgeSummary := BuildBridgeReadModelByQuoteList(quoteList)
 	resp.BusinessStage = stageSummary.CurrentStage
 	resp.FlowSummary = stageSummary.FlowSummary
 	resp.AvailableActions = stageSummary.AvailableActions
+	resp.BaselineStatus = bridgeSummary.BaselineStatus
+	resp.BaselineSubmittedAt = bridgeSummary.BaselineSubmittedAt
+	resp.ConstructionSubjectType = bridgeSummary.ConstructionSubjectType
+	resp.ConstructionSubjectID = bridgeSummary.ConstructionSubjectID
+	resp.ConstructionSubjectDisplayName = bridgeSummary.ConstructionSubjectDisplayName
+	resp.KickoffStatus = bridgeSummary.KickoffStatus
+	resp.PlannedStartDate = bridgeSummary.PlannedStartDate
+	resp.SupervisorSummary = bridgeSummary.SupervisorSummary
 	return resp, nil
 }
 
@@ -1399,13 +1646,19 @@ func (s *QuoteService) resolveQuoteListBusinessSummary(quoteList *model.QuoteLis
 	}
 	if quoteList.ProjectID > 0 {
 		if flow, err := businessFlowSvc.GetByProjectID(quoteList.ProjectID); err == nil && flow != nil {
-			return businessFlowSvc.BuildSummary(flow)
+			summary := businessFlowSvc.BuildSummary(flow)
+			var project model.Project
+			if err := repository.DB.Select("id", "entry_start_date").First(&project, quoteList.ProjectID).Error; err == nil {
+				summary.AvailableActions = filterProjectStartAction(&project, summary.AvailableActions)
+			}
+			return summary
 		}
 		var project model.Project
 		if err := repository.DB.First(&project, quoteList.ProjectID).Error; err == nil {
 			var milestones []model.Milestone
 			_ = repository.DB.Where("project_id = ?", project.ID).Find(&milestones).Error
 			summary := businessFlowSvc.BuildProjectFallbackSummary(&project, milestones)
+			summary.AvailableActions = filterProjectStartAction(&project, summary.AvailableActions)
 			if summary.CurrentStage != model.BusinessFlowStageLeadPending {
 				if summary.SelectedQuoteTaskID == 0 {
 					summary.SelectedQuoteTaskID = quoteList.ID
@@ -1422,6 +1675,55 @@ func (s *QuoteService) resolveQuoteListBusinessSummary(quoteList *model.QuoteLis
 		}
 	}
 	return businessFlowSvc.BuildQuoteFallbackSummary(quoteList)
+}
+
+func (s *QuoteService) loadQuotePaymentPlanSummaries(projectID uint64) ([]QuotePaymentPlanSummary, error) {
+	if projectID == 0 {
+		return []QuotePaymentPlanSummary{}, nil
+	}
+	var order model.Order
+	if err := repository.DB.
+		Where("project_id = ? AND order_type = ?", projectID, model.OrderTypeConstruction).
+		Order("id DESC").
+		First(&order).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []QuotePaymentPlanSummary{}, nil
+		}
+		return nil, err
+	}
+	plans, err := (&OrderService{}).GetPaymentPlansByOrder(order.ID)
+	if err != nil {
+		return nil, err
+	}
+	return buildQuotePaymentPlanSummaries(plans), nil
+}
+
+func buildQuoteListItemMap(items []model.QuoteListItem) map[uint64]model.QuoteListItem {
+	result := make(map[uint64]model.QuoteListItem, len(items))
+	for _, item := range items {
+		item.BaselineQuantity = item.Quantity
+		result[item.ID] = item
+	}
+	return result
+}
+
+func enrichQuoteSubmissionItems(items []model.QuoteSubmissionItem, itemByID map[uint64]model.QuoteListItem) []model.QuoteSubmissionItem {
+	if len(items) == 0 {
+		return []model.QuoteSubmissionItem{}
+	}
+	result := make([]model.QuoteSubmissionItem, 0, len(items))
+	for _, item := range items {
+		if listItem, ok := itemByID[item.QuoteListItemID]; ok {
+			item.BaselineQuantity = listItem.Quantity
+			item.ItemName = listItem.Name
+			item.Unit = listItem.Unit
+			item.CategoryL1 = listItem.CategoryL1
+			item.CategoryL2 = listItem.CategoryL2
+			item.PricingNote = listItem.PricingNote
+		}
+		result = append(result, item)
+	}
+	return result
 }
 
 func (s *QuoteService) SaveMerchantSubmission(quoteListID, providerID uint64, input *QuoteSubmissionSaveInput, submit bool) (*model.QuoteSubmission, error) {
@@ -1513,6 +1815,7 @@ func (s *QuoteService) SaveMerchantSubmission(quoteListID, providerID uint64, in
 	}
 
 	var totalCent int64
+	reviewRequired := false
 	requiredMissing := make([]string, 0)
 	nextRevisionItems := make([]quoteSubmissionRevisionItemSnapshot, 0, len(input.Items))
 	submittedItems := make(map[uint64]QuoteSubmissionItemInput, len(input.Items))
@@ -1547,39 +1850,57 @@ func (s *QuoteService) SaveMerchantSubmission(quoteListID, providerID uint64, in
 			tx.Rollback()
 			return nil, errors.New("报价单价不能为负数")
 		}
-		amountCent := quoteAmountCent(listItem.Quantity, unitPriceCent)
 		existingItem := existingByItemID[listItem.ID]
+		derivedFlags, err := deriveQuoteSubmissionFlags(listItem, existingItem, itemInput)
+		if err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("%s: %w", listItem.Name, err)
+		}
+		amountCent := quoteAmountCent(derivedFlags.quotedQuantity, unitPriceCent)
 		generatedUnitPriceCent := existingItem.GeneratedUnitPriceCent
 		if generatedUnitPriceCent == 0 {
 			generatedUnitPriceCent = existingItem.UnitPriceCent
 		}
 		submissionItem := model.QuoteSubmissionItem{
-			QuoteSubmissionID:      submission.ID,
-			QuoteListItemID:        listItem.ID,
-			GeneratedUnitPriceCent: generatedUnitPriceCent,
-			UnitPriceCent:          unitPriceCent,
-			AmountCent:             amountCent,
-			AdjustedFlag:           generatedUnitPriceCent > 0 && generatedUnitPriceCent != unitPriceCent,
-			MissingPriceFlag:       existingItem.MissingPriceFlag,
-			MissingMappingFlag:     existingItem.MissingMappingFlag || listItem.MissingMappingFlag,
-			MinChargeAppliedFlag:   existingItem.MinChargeAppliedFlag,
-			Remark:                 strings.TrimSpace(itemInput.Remark),
+			QuoteSubmissionID:        submission.ID,
+			QuoteListItemID:          listItem.ID,
+			GeneratedUnitPriceCent:   generatedUnitPriceCent,
+			UnitPriceCent:            unitPriceCent,
+			QuotedQuantity:           derivedFlags.quotedQuantity,
+			AmountCent:               amountCent,
+			AdjustedFlag:             generatedUnitPriceCent > 0 && generatedUnitPriceCent != unitPriceCent,
+			MissingPriceFlag:         existingItem.MissingPriceFlag,
+			MissingMappingFlag:       existingItem.MissingMappingFlag || listItem.MissingMappingFlag,
+			MinChargeAppliedFlag:     existingItem.MinChargeAppliedFlag,
+			QuantityChangeReason:     derivedFlags.quantityChangeReason,
+			DeviationFlag:            derivedFlags.deviationFlag,
+			RequiresUserConfirmation: derivedFlags.requiresUserConfirmation,
+			PlatformReviewFlag:       derivedFlags.platformReviewFlag,
+			Remark:                   strings.TrimSpace(itemInput.Remark),
 		}
 		if err := tx.Create(&submissionItem).Error; err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("保存报价明细失败: %w", err)
 		}
 		nextRevisionItems = append(nextRevisionItems, quoteSubmissionRevisionItemSnapshot{
-			QuoteListItemID:        submissionItem.QuoteListItemID,
-			GeneratedUnitPriceCent: submissionItem.GeneratedUnitPriceCent,
-			UnitPriceCent:          submissionItem.UnitPriceCent,
-			AmountCent:             submissionItem.AmountCent,
-			AdjustedFlag:           submissionItem.AdjustedFlag,
-			MissingPriceFlag:       submissionItem.MissingPriceFlag,
-			MissingMappingFlag:     submissionItem.MissingMappingFlag,
-			MinChargeAppliedFlag:   submissionItem.MinChargeAppliedFlag,
-			Remark:                 submissionItem.Remark,
+			QuoteListItemID:          submissionItem.QuoteListItemID,
+			GeneratedUnitPriceCent:   submissionItem.GeneratedUnitPriceCent,
+			UnitPriceCent:            submissionItem.UnitPriceCent,
+			QuotedQuantity:           submissionItem.QuotedQuantity,
+			AmountCent:               submissionItem.AmountCent,
+			AdjustedFlag:             submissionItem.AdjustedFlag,
+			MissingPriceFlag:         submissionItem.MissingPriceFlag,
+			MissingMappingFlag:       submissionItem.MissingMappingFlag,
+			MinChargeAppliedFlag:     submissionItem.MinChargeAppliedFlag,
+			QuantityChangeReason:     submissionItem.QuantityChangeReason,
+			DeviationFlag:            submissionItem.DeviationFlag,
+			RequiresUserConfirmation: submissionItem.RequiresUserConfirmation,
+			PlatformReviewFlag:       submissionItem.PlatformReviewFlag,
+			Remark:                   submissionItem.Remark,
 		})
+		if derivedFlags.reviewRequired {
+			reviewRequired = true
+		}
 		totalCent += amountCent
 	}
 
@@ -1592,10 +1913,18 @@ func (s *QuoteService) SaveMerchantSubmission(quoteListID, providerID uint64, in
 		submissionStatus = model.QuoteSubmissionStatusSubmitted
 		invitationStatus = model.QuoteInvitationStatusQuoted
 	}
+	reviewStatus := model.QuoteSubmissionReviewStatusNotRequired
+	if reviewRequired {
+		reviewStatus = model.QuoteSubmissionReviewStatusPending
+	}
 	if err := tx.Model(&submission).Updates(map[string]interface{}{
-		"status":      submissionStatus,
-		"task_status": quoteList.Status,
-		"total_cent":  totalCent,
+		"status":        submissionStatus,
+		"task_status":   quoteList.Status,
+		"total_cent":    totalCent,
+		"review_status": reviewStatus,
+		"reviewed_by":   0,
+		"reviewed_at":   nil,
+		"review_reason": "",
 	}).Error; err != nil {
 		tx.Rollback()
 		return nil, fmt.Errorf("更新报价单汇总失败: %w", err)
@@ -1635,6 +1964,7 @@ func (s *QuoteService) SaveMerchantSubmission(quoteListID, providerID uint64, in
 	}
 	submission.TotalCent = totalCent
 	submission.Status = submissionStatus
+	submission.ReviewStatus = reviewStatus
 	return &submission, nil
 }
 
@@ -1658,15 +1988,20 @@ func buildQuoteSubmissionRevisionSnapshots(items []model.QuoteSubmissionItem) []
 	snapshots := make([]quoteSubmissionRevisionItemSnapshot, 0, len(items))
 	for _, item := range items {
 		snapshots = append(snapshots, quoteSubmissionRevisionItemSnapshot{
-			QuoteListItemID:        item.QuoteListItemID,
-			GeneratedUnitPriceCent: item.GeneratedUnitPriceCent,
-			UnitPriceCent:          item.UnitPriceCent,
-			AmountCent:             item.AmountCent,
-			AdjustedFlag:           item.AdjustedFlag,
-			MissingPriceFlag:       item.MissingPriceFlag,
-			MissingMappingFlag:     item.MissingMappingFlag,
-			MinChargeAppliedFlag:   item.MinChargeAppliedFlag,
-			Remark:                 item.Remark,
+			QuoteListItemID:          item.QuoteListItemID,
+			GeneratedUnitPriceCent:   item.GeneratedUnitPriceCent,
+			UnitPriceCent:            item.UnitPriceCent,
+			QuotedQuantity:           item.QuotedQuantity,
+			AmountCent:               item.AmountCent,
+			AdjustedFlag:             item.AdjustedFlag,
+			MissingPriceFlag:         item.MissingPriceFlag,
+			MissingMappingFlag:       item.MissingMappingFlag,
+			MinChargeAppliedFlag:     item.MinChargeAppliedFlag,
+			QuantityChangeReason:     item.QuantityChangeReason,
+			DeviationFlag:            item.DeviationFlag,
+			RequiresUserConfirmation: item.RequiresUserConfirmation,
+			PlatformReviewFlag:       item.PlatformReviewFlag,
+			Remark:                   item.Remark,
 		})
 	}
 	sort.Slice(snapshots, func(i, j int) bool {

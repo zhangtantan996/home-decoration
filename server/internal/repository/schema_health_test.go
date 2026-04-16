@@ -89,13 +89,25 @@ func TestRefreshCommerceRuntimeSchemaHealthReportsMissingTables(t *testing.T) {
 	if snapshot.Status != SMSAuditHealthStatusDegraded {
 		t.Fatalf("expected degraded status, got %s", snapshot.Status)
 	}
-	for _, required := range []string{"providers", "bookings", "design_working_docs"} {
+	for _, required := range []string{"providers", "bookings", "design_working_docs", "quantity_bases", "quantity_base_items"} {
 		if !containsString(snapshot.Missing, required) {
 			t.Fatalf("expected missing to contain %s, got %+v", required, snapshot.Missing)
 		}
 	}
 	if snapshot.RequiredMigration != CommerceRuntimeMigrationPath {
 		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
+	}
+}
+
+func TestResolveCommerceRuntimeMigrationPath(t *testing.T) {
+	if got := resolveCommerceRuntimeMigrationPath([]string{"providers.is_settled"}); got != CommerceRuntimeBaseMigrationPath {
+		t.Fatalf("expected base runtime migration path, got %s", got)
+	}
+	if got := resolveCommerceRuntimeMigrationPath([]string{"quote_lists.quantity_base_id"}); got != QuoteRuntimeMigrationPath {
+		t.Fatalf("expected quote runtime migration path, got %s", got)
+	}
+	if got := resolveCommerceRuntimeMigrationPath([]string{"providers.is_settled", "quote_lists.quantity_base_id"}); got != CommerceRuntimeMigrationPath {
+		t.Fatalf("expected combined runtime migration path, got %s", got)
 	}
 }
 

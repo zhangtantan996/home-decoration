@@ -300,6 +300,9 @@ func AdminWithdrawReject(c *gin.Context) {
 		beforeState := map[string]interface{}{
 			"withdraw": snapshotWithdrawForAudit(withdraw),
 		}
+		if err := releaseWithdrawIncomesTx(tx, withdraw.OrderNo); err != nil {
+			return err
+		}
 		if err := tx.Model(&withdraw).Updates(map[string]any{
 			"status":       model.MerchantWithdrawStatusRejected,
 			"fail_reason":  strings.TrimSpace(input.Reason),
@@ -391,10 +394,19 @@ func markWithdrawIncomesPaidTx(tx *gorm.DB, withdraw *model.MerchantWithdraw) er
 
 	var incomes []model.MerchantIncome
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("provider_id = ? AND status = ?", withdraw.ProviderID, 1).
+		Where("provider_id = ? AND status = ? AND withdraw_order_no = ?", withdraw.ProviderID, 1, withdraw.OrderNo).
 		Order("created_at ASC, id ASC").
 		Find(&incomes).Error; err != nil {
 		return err
+	}
+	useReserved := len(incomes) > 0
+	if !useReserved {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("provider_id = ? AND status = ?", withdraw.ProviderID, 1).
+			Order("created_at ASC, id ASC").
+			Find(&incomes).Error; err != nil {
+			return err
+		}
 	}
 
 	for _, income := range incomes {
@@ -406,7 +418,7 @@ func markWithdrawIncomesPaidTx(tx *gorm.DB, withdraw *model.MerchantWithdraw) er
 			continue
 		}
 
-		if available <= remaining {
+		if useReserved || available <= remaining {
 			if err := tx.Model(&income).Updates(map[string]any{
 				"status":            2,
 				"withdraw_order_no": withdraw.OrderNo,

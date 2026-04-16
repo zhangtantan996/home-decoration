@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -37,6 +38,8 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 		&model.Booking{},
 		&model.Proposal{},
 		&model.Project{},
+		&model.Order{},
+		&model.PaymentPlan{},
 		&model.EscrowAccount{},
 		&model.ProjectPhase{},
 		&model.PhaseTask{},
@@ -46,6 +49,8 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 		&model.MerchantServiceSetting{},
 		&model.QuoteCategory{},
 		&model.QuoteLibraryItem{},
+		&model.QuoteTemplate{},
+		&model.QuoteTemplateItem{},
 		&model.QuantityBase{},
 		&model.QuantityBaseItem{},
 		&model.QuoteList{},
@@ -75,6 +80,42 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 	})
 
 	return db
+}
+
+func seedQuotePreparationTemplate(
+	t *testing.T,
+	db *gorm.DB,
+	roomType string,
+	renovationType string,
+	libraryItem model.QuoteLibraryItem,
+	required bool,
+) (model.QuoteTemplate, model.QuoteLibraryItem) {
+	t.Helper()
+
+	libraryItem.Status = model.QuoteLibraryItemStatusEnabled
+	if err := db.Create(&libraryItem).Error; err != nil {
+		t.Fatalf("create quote library item: %v", err)
+	}
+
+	tmpl := model.QuoteTemplate{
+		Name:           strings.TrimSpace(firstNonBlank(roomType, "默认")) + "-" + strings.TrimSpace(firstNonBlank(renovationType, "默认")) + "-模板",
+		RoomType:       roomType,
+		RenovationType: renovationType,
+		Status:         1,
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create quote template: %v", err)
+	}
+	if err := db.Create(&model.QuoteTemplateItem{
+		TemplateID:    tmpl.ID,
+		LibraryItemID: libraryItem.ID,
+		Required:      required,
+		SortOrder:     1,
+	}).Error; err != nil {
+		t.Fatalf("create quote template item: %v", err)
+	}
+
+	return tmpl, libraryItem
 }
 
 func setupQuoteServiceDBWithoutAuditLog(t *testing.T) *gorm.DB {
@@ -417,6 +458,163 @@ func TestSaveMerchantSubmission_ComputesTotalCent(t *testing.T) {
 	}
 }
 
+func TestSaveMerchantSubmission_TracksQuantityDeviationAndReviewStatus(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	provider := model.Provider{ProviderType: 3, SubType: "foreman", CompanyName: "工长偏差测试"}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	quoteList := model.QuoteList{Title: "偏差报价任务", Status: model.QuoteListStatusPricingInProgress, Currency: "CNY"}
+	if err := db.Create(&quoteList).Error; err != nil {
+		t.Fatalf("create quote list: %v", err)
+	}
+	item := model.QuoteListItem{
+		QuoteListID:            quoteList.ID,
+		Name:                   "地砖铺贴",
+		Unit:                   "㎡",
+		Quantity:               20,
+		QuantityAdjustableFlag: false,
+		CategoryL1:             "泥瓦",
+		ExtensionsJSON:         `{"required":true}`,
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create quote list item: %v", err)
+	}
+	if err := db.Model(&model.QuoteListItem{}).Where("id = ?", item.ID).Update("quantity_adjustable_flag", false).Error; err != nil {
+		t.Fatalf("persist quantity adjustable flag: %v", err)
+	}
+	if err := db.Create(&model.QuoteInvitation{
+		QuoteListID: quoteList.ID,
+		ProviderID:  provider.ID,
+		Status:      model.QuoteInvitationStatusInvited,
+	}).Error; err != nil {
+		t.Fatalf("create invitation: %v", err)
+	}
+
+	submission, err := svc.SaveMerchantSubmission(quoteList.ID, provider.ID, &QuoteSubmissionSaveInput{
+		Items: []QuoteSubmissionItemInput{{
+			QuoteListItemID:      item.ID,
+			UnitPriceCent:        1600,
+			QuotedQuantity:       24,
+			QuantityChangeReason: "现场复尺后墙面找平面积增加",
+		}},
+	}, true)
+	if err != nil {
+		t.Fatalf("save merchant submission: %v", err)
+	}
+	if submission.ReviewStatus != model.QuoteSubmissionReviewStatusPending {
+		t.Fatalf("expected review status pending, got %s", submission.ReviewStatus)
+	}
+
+	var storedItem model.QuoteSubmissionItem
+	if err := db.Where("quote_submission_id = ?", submission.ID).First(&storedItem).Error; err != nil {
+		t.Fatalf("load stored submission item: %v", err)
+	}
+	if storedItem.QuotedQuantity != 24 {
+		t.Fatalf("expected quoted quantity=24, got %.2f", storedItem.QuotedQuantity)
+	}
+	if !storedItem.DeviationFlag {
+		t.Fatalf("expected deviation flag true")
+	}
+	if !storedItem.RequiresUserConfirmation {
+		t.Fatalf("expected requires user confirmation true")
+	}
+}
+
+func TestSaveMerchantSubmission_RejectsQuantityChangeWithoutReason(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	provider := model.Provider{ProviderType: 3, SubType: "foreman", CompanyName: "工长必填原因测试"}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	quoteList := model.QuoteList{Title: "数量调整任务", Status: model.QuoteListStatusPricingInProgress, Currency: "CNY"}
+	if err := db.Create(&quoteList).Error; err != nil {
+		t.Fatalf("create quote list: %v", err)
+	}
+	item := model.QuoteListItem{QuoteListID: quoteList.ID, Name: "墙面修补", Unit: "㎡", Quantity: 10, CategoryL1: "油工"}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create quote list item: %v", err)
+	}
+	if err := db.Create(&model.QuoteInvitation{
+		QuoteListID: quoteList.ID,
+		ProviderID:  provider.ID,
+		Status:      model.QuoteInvitationStatusInvited,
+	}).Error; err != nil {
+		t.Fatalf("create invitation: %v", err)
+	}
+
+	_, err := svc.SaveMerchantSubmission(quoteList.ID, provider.ID, &QuoteSubmissionSaveInput{
+		Items: []QuoteSubmissionItemInput{{
+			QuoteListItemID: item.ID,
+			UnitPriceCent:   800,
+			QuotedQuantity:  12,
+		}},
+	}, false)
+	if err == nil || !strings.Contains(err.Error(), "必须填写偏差原因") {
+		t.Fatalf("expected quantity change reason validation error, got %v", err)
+	}
+}
+
+func TestSaveMerchantSubmission_RejectsPriceChangeWithoutReason(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	provider := model.Provider{ProviderType: 3, SubType: "foreman", CompanyName: "工长改价原因测试"}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	quoteList := model.QuoteList{Title: "改单价任务", Status: model.QuoteListStatusPricingInProgress, Currency: "CNY"}
+	if err := db.Create(&quoteList).Error; err != nil {
+		t.Fatalf("create quote list: %v", err)
+	}
+	item := model.QuoteListItem{QuoteListID: quoteList.ID, Name: "乳胶漆", Unit: "㎡", Quantity: 18, CategoryL1: "油工"}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatalf("create quote list item: %v", err)
+	}
+	if err := db.Create(&model.QuoteInvitation{
+		QuoteListID: quoteList.ID,
+		ProviderID:  provider.ID,
+		Status:      model.QuoteInvitationStatusQuoted,
+	}).Error; err != nil {
+		t.Fatalf("create invitation: %v", err)
+	}
+	submission := model.QuoteSubmission{
+		QuoteListID:     quoteList.ID,
+		ProviderID:      provider.ID,
+		ProviderType:    provider.ProviderType,
+		ProviderSubType: provider.SubType,
+		Status:          model.QuoteSubmissionStatusSubmitted,
+		Currency:        "CNY",
+		TotalCent:       18000,
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("create submission: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmissionItem{
+		QuoteSubmissionID: submission.ID,
+		QuoteListItemID:   item.ID,
+		UnitPriceCent:     1000,
+		QuotedQuantity:    18,
+		AmountCent:        18000,
+	}).Error; err != nil {
+		t.Fatalf("create submission item: %v", err)
+	}
+
+	_, err := svc.SaveMerchantSubmission(quoteList.ID, provider.ID, &QuoteSubmissionSaveInput{
+		Items: []QuoteSubmissionItemInput{{
+			QuoteListItemID: item.ID,
+			UnitPriceCent:   1200,
+		}},
+	}, false)
+	if err == nil || !strings.Contains(err.Error(), "必须填写偏差原因") {
+		t.Fatalf("expected price change reason validation error, got %v", err)
+	}
+}
+
 func TestSaveMerchantSubmission_AllowsEditDuringPricingInProgressAndCreatesRevision(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 	svc := &QuoteService{}
@@ -467,9 +665,10 @@ func TestSaveMerchantSubmission_AllowsEditDuringPricingInProgressAndCreatesRevis
 
 	saved, err := svc.SaveMerchantSubmission(quoteList.ID, provider.ID, &QuoteSubmissionSaveInput{
 		Items: []QuoteSubmissionItemInput{{
-			QuoteListItemID: item.ID,
-			UnitPriceCent:   900,
-			Remark:          "现场调整后重算",
+			QuoteListItemID:      item.ID,
+			UnitPriceCent:        900,
+			QuantityChangeReason: "单价按最新现场条件复核后上调",
+			Remark:               "现场调整后重算",
 		}},
 		Remark: "重新测量后修正",
 	}, false)
@@ -854,6 +1053,70 @@ func TestQuotePriceBookPublish_RequiresAllRequiredItemsPriced(t *testing.T) {
 	}
 }
 
+func TestQuotePriceBookPublish_OnlyChecksApplicableRequiredItems(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+
+	foreman := model.Provider{
+		Base:         model.Base{ID: 2201},
+		ProviderType: 3,
+		SubType:      "foreman",
+		CompanyName:  "泥瓦工长",
+		Status:       1,
+		WorkTypes:    "mason",
+	}
+	if err := db.Create(&foreman).Error; err != nil {
+		t.Fatalf("create foreman: %v", err)
+	}
+
+	applicableRequired := model.QuoteLibraryItem{
+		Base:           model.Base{ID: 2202},
+		ERPItemCode:    "ERP-MS-REQ-001",
+		Name:           "墙地面防水",
+		StandardCode:   "MS-REQ-001",
+		CategoryL1:     "泥瓦",
+		CategoryL2:     "防水",
+		Unit:           "㎡",
+		Status:         model.QuoteLibraryItemStatusEnabled,
+		ExtensionsJSON: `{"required":true}`,
+	}
+	notApplicableRequired := model.QuoteLibraryItem{
+		Base:           model.Base{ID: 2203},
+		ERPItemCode:    "ERP-WE-REQ-001",
+		Name:           "强弱电改造",
+		StandardCode:   "WE-REQ-001",
+		CategoryL1:     "水电",
+		CategoryL2:     "电路",
+		Unit:           "项",
+		Status:         model.QuoteLibraryItemStatusEnabled,
+		ExtensionsJSON: `{"required":true}`,
+	}
+	if err := db.Create(&[]model.QuoteLibraryItem{applicableRequired, notApplicableRequired}).Error; err != nil {
+		t.Fatalf("create library items: %v", err)
+	}
+
+	svc := &QuoteService{}
+	if _, err := svc.UpsertProviderPriceBook(foreman.ID, &QuotePriceBookUpdateInput{
+		Items: []QuotePriceBookItemInput{
+			{
+				StandardItemID: applicableRequired.ID,
+				Unit:           applicableRequired.Unit,
+				UnitPriceCent:  18800,
+				Status:         model.QuoteLibraryItemStatusEnabled,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("UpsertProviderPriceBook: %v", err)
+	}
+
+	detail, err := svc.PublishProviderPriceBook(foreman.ID)
+	if err != nil {
+		t.Fatalf("expected publish success for applicable required items only, got %v", err)
+	}
+	if detail.Book.Status != model.QuotePriceBookStatusActive {
+		t.Fatalf("unexpected price book status: %s", detail.Book.Status)
+	}
+}
+
 func TestGetProviderPriceBook_IncludesAllEnabledStandardItems(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 	svc := &QuoteService{}
@@ -953,12 +1216,12 @@ func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
 		Version:         1,
 	}
 	flow := model.BusinessFlow{
-		Base:                      model.Base{ID: 1004},
-		SourceType:                model.BusinessFlowSourceBooking,
-		SourceID:                  booking.ID,
-		CustomerUserID:            owner.ID,
-		DesignerProviderID:        designer.ID,
-		CurrentStage:              model.BusinessFlowStageConstructionQuotePending,
+		Base:               model.Base{ID: 1004},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     owner.ID,
+		DesignerProviderID: designer.ID,
+		CurrentStage:       model.BusinessFlowStageConstructionQuotePending,
 	}
 	for _, record := range []interface{}{&owner, &designerUser, &designer, &booking, &proposal, &flow} {
 		if err := db.Create(record).Error; err != nil {
@@ -1056,9 +1319,10 @@ func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
 
 	if _, err := svc.SaveMerchantSubmission(task.ID, foreman.ID, &QuoteSubmissionSaveInput{
 		Items: []QuoteSubmissionItemInput{{
-			QuoteListItemID: items[0].ID,
-			UnitPriceCent:   2000,
-			Remark:          "工长微调",
+			QuoteListItemID:      items[0].ID,
+			UnitPriceCent:        2000,
+			QuantityChangeReason: "结合现场条件与价格库做工长复核",
+			Remark:               "工长微调",
 		}},
 		EstimatedDays: 30,
 		Remark:        "提交正式报价",
@@ -1133,6 +1397,310 @@ func TestQuoteTaskPrerequisiteValidation_ReturnsMessageAndBlocksActions(t *testi
 	}
 }
 
+func TestUpdateTaskPrerequisites_DerivesWorkTypesFromQuantityBaseItems(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	seedQuotePreparationTemplate(t, db, "三居", "旧房翻新", model.QuoteLibraryItem{
+		Base:         model.Base{ID: 3320},
+		StandardCode: "STD-WP-001",
+		ERPItemCode:  "ERP-WP-001",
+		Name:         "墙地面防水",
+		Unit:         "㎡",
+		CategoryL1:   "泥瓦",
+		CategoryL2:   "防水",
+	}, true)
+
+	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
+		ProjectID:          3301,
+		OwnerUserID:        9301,
+		DesignerProviderID: 8301,
+		Title:              "施工准备派生工种",
+	})
+	if err != nil {
+		t.Fatalf("create quote task: %v", err)
+	}
+
+	quantityBase := model.QuantityBase{
+		Base:               model.Base{ID: 3302},
+		ProposalID:         1,
+		ProposalVersion:    1,
+		OwnerUserID:        9301,
+		DesignerProviderID: 8301,
+		Status:             model.QuantityBaseStatusActive,
+		Version:            1,
+		Title:              "防水基线",
+	}
+	if err := db.Create(&quantityBase).Error; err != nil {
+		t.Fatalf("create quantity base: %v", err)
+	}
+	if err := db.Create(&model.QuantityBaseItem{
+		Base:           model.Base{ID: 3303},
+		QuantityBaseID: quantityBase.ID,
+		SourceItemName: "墙地面防水",
+		Unit:           "㎡",
+		Quantity:       18,
+		CategoryL1:     "泥瓦",
+		CategoryL2:     "防水",
+		SortOrder:      1,
+	}).Error; err != nil {
+		t.Fatalf("create quantity base item: %v", err)
+	}
+
+	if err := db.Model(&model.QuoteList{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
+		"quantity_base_id":      quantityBase.ID,
+		"quantity_base_version": quantityBase.Version,
+	}).Error; err != nil {
+		t.Fatalf("bind quantity base: %v", err)
+	}
+	task.QuantityBaseID = quantityBase.ID
+	task.QuantityBaseVersion = quantityBase.Version
+
+	if err := svc.syncQuoteListItemsFromQuantityBase(task); err != nil {
+		t.Fatalf("sync quote list items: %v", err)
+	}
+
+	updated, err := svc.UpdateTaskPrerequisites(task.ID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              98,
+		Layout:            "3室2厅2卫",
+		RenovationType:    "旧房翻新",
+		ConstructionScope: "防水",
+		ServiceAreas:      []string{"浦东新区"},
+	})
+	if err != nil {
+		t.Fatalf("update task prerequisites: %v", err)
+	}
+	if updated.PrerequisiteStatus != model.QuoteTaskPrerequisiteComplete {
+		t.Fatalf("expected prerequisite complete, got %s", updated.PrerequisiteStatus)
+	}
+	if updated.Status != model.QuoteListStatusReadyForSelection {
+		t.Fatalf("expected quote list ready_for_selection, got %s", updated.Status)
+	}
+
+	reloaded, err := svc.getPrerequisiteSnapshot(updated)
+	if err != nil {
+		t.Fatalf("get prerequisite snapshot: %v", err)
+	}
+	if !slices.Contains(reloaded.WorkTypes, "waterproof") {
+		t.Fatalf("expected derived waterproof work type, got %v", reloaded.WorkTypes)
+	}
+	if !slices.Contains(reloaded.WorkTypes, "mason") {
+		t.Fatalf("expected derived mason work type, got %v", reloaded.WorkTypes)
+	}
+}
+
+func TestFindPreparationTemplate_FallbackOrder(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	if err := db.Create(&model.QuoteTemplate{
+		Base:           model.Base{ID: 3401},
+		Name:           "默认模板",
+		RoomType:       "",
+		RenovationType: "",
+		Status:         1,
+	}).Error; err != nil {
+		t.Fatalf("create default template: %v", err)
+	}
+	if err := db.Create(&model.QuoteTemplate{
+		Base:           model.Base{ID: 3402},
+		Name:           "旧房翻新模板",
+		RoomType:       "",
+		RenovationType: "旧房翻新",
+		Status:         1,
+	}).Error; err != nil {
+		t.Fatalf("create renovation template: %v", err)
+	}
+	if err := db.Create(&model.QuoteTemplate{
+		Base:           model.Base{ID: 3403},
+		Name:           "三居旧房翻新模板",
+		RoomType:       "三居",
+		RenovationType: "旧房翻新",
+		Status:         1,
+	}).Error; err != nil {
+		t.Fatalf("create exact template: %v", err)
+	}
+
+	exact, err := svc.findPreparationTemplateWithDB(db, QuoteTaskPrerequisiteSnapshot{
+		Layout:         "3室2厅2卫",
+		RenovationType: "旧房翻新",
+	})
+	if err != nil {
+		t.Fatalf("find exact template: %v", err)
+	}
+	if exact == nil || exact.ID != 3403 {
+		t.Fatalf("expected exact template 3403, got %+v", exact)
+	}
+
+	fallback, err := svc.findPreparationTemplateWithDB(db, QuoteTaskPrerequisiteSnapshot{
+		Layout:         "2室1厅1卫",
+		RenovationType: "旧房翻新",
+	})
+	if err != nil {
+		t.Fatalf("find fallback template: %v", err)
+	}
+	if fallback == nil || fallback.ID != 3402 {
+		t.Fatalf("expected renovation fallback template 3402, got %+v", fallback)
+	}
+
+	global, err := svc.findPreparationTemplateWithDB(db, QuoteTaskPrerequisiteSnapshot{
+		Layout:         "2室1厅1卫",
+		RenovationType: "毛坯装修",
+	})
+	if err != nil {
+		t.Fatalf("find global template: %v", err)
+	}
+	if global == nil || global.ID != 3401 {
+		t.Fatalf("expected global fallback template 3401, got %+v", global)
+	}
+}
+
+func TestEnsurePreparationTemplate_AutoCreatesExactBucket(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	items := []model.QuoteLibraryItem{
+		{
+			Base:           model.Base{ID: 3411},
+			ERPItemCode:    "ERP-WP-3411",
+			StandardCode:   "STD-WP-3411",
+			Name:           "墙地面防水",
+			Unit:           "㎡",
+			CategoryL1:     "泥瓦",
+			CategoryL2:     "防水",
+			Status:         model.QuoteLibraryItemStatusEnabled,
+			ExtensionsJSON: `{"required":true}`,
+		},
+		{
+			Base:           model.Base{ID: 3412},
+			ERPItemCode:    "ERP-CA-3412",
+			StandardCode:   "STD-CA-3412",
+			Name:           "成品保护",
+			Unit:           "项",
+			CategoryL1:     "保护",
+			CategoryL2:     "成保",
+			Status:         model.QuoteLibraryItemStatusEnabled,
+			ExtensionsJSON: `{"required":false}`,
+		},
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatalf("create library items: %v", err)
+	}
+	if err := db.Create(&model.QuoteTemplate{
+		Base:           model.Base{ID: 3413},
+		Name:           "旧房翻新通用模板",
+		RoomType:       "",
+		RenovationType: "旧房翻新",
+		Status:         1,
+	}).Error; err != nil {
+		t.Fatalf("create fallback template: %v", err)
+	}
+
+	result, err := svc.EnsurePreparationTemplate("三居", "旧房翻新", false)
+	if err != nil {
+		t.Fatalf("ensure preparation template: %v", err)
+	}
+	if result == nil || result.Template.ID == 0 {
+		t.Fatalf("expected ensure result with template")
+	}
+	if !result.Created {
+		t.Fatalf("expected exact bucket auto created")
+	}
+	if result.Template.RoomType != "三居" || result.Template.RenovationType != "旧房翻新" {
+		t.Fatalf("unexpected ensured template bucket: %+v", result.Template)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 template items, got %d", len(result.Items))
+	}
+	if !result.Items[0].Required {
+		t.Fatalf("expected first item required")
+	}
+
+	again, err := svc.EnsurePreparationTemplate("三居", "旧房翻新", false)
+	if err != nil {
+		t.Fatalf("ensure preparation template again: %v", err)
+	}
+	if again.Created || again.Repaired {
+		t.Fatalf("expected valid template not rewritten, got created=%v repaired=%v", again.Created, again.Repaired)
+	}
+
+	var count int64
+	if err := db.Model(&model.QuoteTemplate{}).Where("room_type = ? AND renovation_type = ?", "三居", "旧房翻新").Count(&count).Error; err != nil {
+		t.Fatalf("count exact templates: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 exact template, got %d", count)
+	}
+}
+
+func TestEnsurePreparationTemplate_RepairsEmptyTemplateItems(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	items := []model.QuoteLibraryItem{
+		{
+			Base:           model.Base{ID: 3421},
+			ERPItemCode:    "ERP-WD-3421",
+			StandardCode:   "STD-WD-3421",
+			Name:           "水电改造",
+			Unit:           "项",
+			CategoryL1:     "水电",
+			CategoryL2:     "改造",
+			Status:         model.QuoteLibraryItemStatusEnabled,
+			ExtensionsJSON: `{"required":true}`,
+		},
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatalf("create library items: %v", err)
+	}
+	if err := db.Create(&model.QuoteTemplate{
+		Base:           model.Base{ID: 3422},
+		Name:           "空模板",
+		RoomType:       "三居",
+		RenovationType: "全屋翻新",
+		Status:         1,
+	}).Error; err != nil {
+		t.Fatalf("create empty template: %v", err)
+	}
+
+	result, err := svc.EnsurePreparationTemplate("三居", "全屋翻新", false)
+	if err != nil {
+		t.Fatalf("ensure preparation template: %v", err)
+	}
+	if result == nil || !result.Repaired {
+		t.Fatalf("expected empty template to be repaired")
+	}
+	if len(result.Items) != 1 || result.Items[0].LibraryItemID != 3421 {
+		t.Fatalf("unexpected repaired items: %+v", result.Items)
+	}
+}
+
+func TestBuildPreparationTemplateState_ReturnsBlockStateWhenLibraryEmpty(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	task, err := svc.CreateQuoteList(&QuoteListCreateInput{
+		ProjectID:          3491,
+		OwnerUserID:        9491,
+		DesignerProviderID: 8491,
+		Title:              "无标准项阻断测试",
+	})
+	if err != nil {
+		t.Fatalf("create quote list: %v", err)
+	}
+
+	state, err := svc.buildPreparationTemplateStateWithDB(db, task, QuoteTaskPrerequisiteSnapshot{
+		Layout:         "3室2厅1卫",
+		RenovationType: "旧房翻新",
+	}, nil, true)
+	if err != nil {
+		t.Fatalf("build preparation template state: %v", err)
+	}
+	if state.TemplateError != errNoAvailablePreparationLibraryItems.Error() {
+		t.Fatalf("unexpected template error: %s", state.TemplateError)
+	}
+}
+
 func TestListUserQuoteTasks_HidesTasksBeforeSubmitToUser(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 	svc := &QuoteService{}
@@ -1185,7 +1753,7 @@ func TestGetUserQuoteTask_BlocksAccessBeforeSubmitToUser(t *testing.T) {
 		Currency:               "CNY",
 	}
 	submission := model.QuoteSubmission{
-		Base:       model.Base{ID: 888},
+		Base:        model.Base{ID: 888},
 		QuoteListID: 1,
 		ProviderID:  666,
 		Status:      model.QuoteSubmissionStatusSubmitted,
@@ -1285,6 +1853,43 @@ func TestSubmitTaskToUser_RequiresSubmittedVersionAndLocksUniqueActiveSubmission
 	}
 }
 
+func TestSubmitTaskToUser_RequiresReviewApprovedOrNotRequired(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	task := model.QuoteList{
+		Title:       "待复核报价任务",
+		Status:      model.QuoteListStatusPricingInProgress,
+		Currency:    "CNY",
+		OwnerUserID: 9001,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	submission := model.QuoteSubmission{
+		QuoteListID:  task.ID,
+		ProviderID:   3002,
+		Status:       model.QuoteSubmissionStatusSubmitted,
+		TaskStatus:   model.QuoteListStatusPricingInProgress,
+		Currency:     "CNY",
+		ReviewStatus: model.QuoteSubmissionReviewStatusPending,
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("create submission: %v", err)
+	}
+
+	if _, err := svc.SubmitTaskToUser(task.ID, submission.ID); err == nil || !strings.Contains(err.Error(), "待平台复核") {
+		t.Fatalf("expected review gate error, got %v", err)
+	}
+
+	if _, err := svc.ReviewQuoteSubmission(submission.ID, 1001, &QuoteSubmissionReviewInput{Approved: true}); err != nil {
+		t.Fatalf("approve review: %v", err)
+	}
+	if _, err := svc.SubmitTaskToUser(task.ID, submission.ID); err != nil {
+		t.Fatalf("submit after review approved: %v", err)
+	}
+}
+
 func TestQuoteListResponses_IncludeBusinessFlowSummary(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 	svc := &QuoteService{}
@@ -1351,10 +1956,10 @@ func TestQuoteListResponses_IncludeBusinessFlowSummary(t *testing.T) {
 	if adminList.List[0].BusinessStage != model.BusinessFlowStageReadyToStart {
 		t.Fatalf("unexpected admin business stage: %s", adminList.List[0].BusinessStage)
 	}
-	if !strings.Contains(adminList.List[0].FlowSummary, "待开工") {
+	if !strings.Contains(adminList.List[0].FlowSummary, "待监理协调") {
 		t.Fatalf("unexpected admin flow summary: %s", adminList.List[0].FlowSummary)
 	}
-	if len(adminList.List[0].AvailableActions) != 1 || adminList.List[0].AvailableActions[0] != "start_project" {
+	if len(adminList.List[0].AvailableActions) != 0 {
 		t.Fatalf("unexpected admin available actions: %+v", adminList.List[0].AvailableActions)
 	}
 
@@ -1376,7 +1981,7 @@ func TestQuoteListResponses_IncludeBusinessFlowSummary(t *testing.T) {
 	if comparison.BusinessStage != model.BusinessFlowStageReadyToStart {
 		t.Fatalf("unexpected comparison business stage: %s", comparison.BusinessStage)
 	}
-	if !strings.Contains(comparison.FlowSummary, "待开工") {
+	if !strings.Contains(comparison.FlowSummary, "待监理协调") {
 		t.Fatalf("unexpected comparison flow summary: %s", comparison.FlowSummary)
 	}
 }
@@ -1415,11 +2020,33 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	if project.BusinessStatus != model.ProjectBusinessStatusConstructionQuoteConfirmed {
 		t.Fatalf("unexpected project business status: %s", project.BusinessStatus)
 	}
-	if project.CurrentPhase != "待开工" {
+	if project.CurrentPhase != "待监理协调开工" {
 		t.Fatalf("unexpected project current phase: %s", project.CurrentPhase)
+	}
+	if !project.PaymentPaused {
+		t.Fatalf("expected project payment paused before first construction payment")
 	}
 	if project.ConstructionProviderID != fixture.foreman.ID || project.ForemanID != fixture.foreman.ID {
 		t.Fatalf("expected foreman bound to project, got construction_provider_id=%d foreman_id=%d", project.ConstructionProviderID, project.ForemanID)
+	}
+
+	var order model.Order
+	if err := db.Where("project_id = ? AND order_type = ?", project.ID, model.OrderTypeConstruction).First(&order).Error; err != nil {
+		t.Fatalf("load construction order: %v", err)
+	}
+	if order.TotalAmount != float64(fixture.submission.TotalCent)/100 {
+		t.Fatalf("unexpected construction order amount: %.2f", order.TotalAmount)
+	}
+
+	var plans []model.PaymentPlan
+	if err := db.Where("order_id = ?", order.ID).Order("seq ASC").Find(&plans).Error; err != nil {
+		t.Fatalf("load payment plans: %v", err)
+	}
+	if len(plans) == 0 {
+		t.Fatalf("expected payment plans generated")
+	}
+	if plans[0].DueAt == nil {
+		t.Fatalf("expected first payment plan due date")
 	}
 
 	var escrow model.EscrowAccount
@@ -1461,6 +2088,9 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	if persistedQuoteList.ProjectID != project.ID {
 		t.Fatalf("expected quote list bound to project %d, got %d", project.ID, persistedQuoteList.ProjectID)
 	}
+	if !persistedQuoteList.PaymentPlanGeneratedFlag {
+		t.Fatalf("expected payment plan generated flag true")
+	}
 
 	var persistedSubmission model.QuoteSubmission
 	if err := db.First(&persistedSubmission, fixture.submission.ID).Error; err != nil {
@@ -1479,12 +2109,12 @@ func TestCreateQuoteListBindsActiveQuantityBaseFromProposal(t *testing.T) {
 	designer := model.Provider{Base: model.Base{ID: 9502}, ProviderType: 1, CompanyName: "桥接设计师", Status: 1}
 	booking := model.Booking{Base: model.Base{ID: 9503}, UserID: owner.ID, ProviderID: designer.ID, Address: "桥接测试地址", Status: 2}
 	proposal := model.Proposal{
-		Base:             model.Base{ID: 9504},
-		BookingID:        booking.ID,
-		DesignerID:       designer.ID,
-		Summary:          "桥接正式方案",
-		Status:           model.ProposalStatusConfirmed,
-		Version:          2,
+		Base:              model.Base{ID: 9504},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "桥接正式方案",
+		Status:            model.ProposalStatusConfirmed,
+		Version:           2,
 		InternalDraftJSON: `{"rooms":[{"name":"客厅","items":[{"name":"地砖铺贴","unit":"㎡","quantity":32,"note":"800x800"}]}]}`,
 	}
 	for _, record := range []interface{}{&owner, &designer, &booking, &proposal} {
@@ -1539,12 +2169,12 @@ func TestCreateQuoteListDoesNotRegressConstructionBridgeStage(t *testing.T) {
 	designer := model.Provider{Base: model.Base{ID: 9802}, ProviderType: 1, CompanyName: "桥接设计师B", Status: 1}
 	booking := model.Booking{Base: model.Base{ID: 9803}, UserID: owner.ID, ProviderID: designer.ID, Address: "桥接回归测试地址", Status: 2}
 	proposal := model.Proposal{
-		Base:             model.Base{ID: 9804},
-		BookingID:        booking.ID,
-		DesignerID:       designer.ID,
-		Summary:          "桥接正式方案B",
-		Status:           model.ProposalStatusConfirmed,
-		Version:          3,
+		Base:              model.Base{ID: 9804},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "桥接正式方案B",
+		Status:            model.ProposalStatusConfirmed,
+		Version:           3,
 		InternalDraftJSON: `{"rooms":[{"name":"主卧","items":[{"name":"乳胶漆","unit":"㎡","quantity":28,"note":"两遍面漆"}]}]}`,
 	}
 	flow := model.BusinessFlow{
@@ -1593,12 +2223,12 @@ func TestCreateQuoteListPromotesEarlierStagesOnlyToConstructionBridge(t *testing
 	designer := model.Provider{Base: model.Base{ID: 9812}, ProviderType: 1, CompanyName: "设计交付商家", Status: 1}
 	booking := model.Booking{Base: model.Base{ID: 9813}, UserID: owner.ID, ProviderID: designer.ID, Address: "前置阶段推进地址", Status: 2}
 	proposal := model.Proposal{
-		Base:             model.Base{ID: 9814},
-		BookingID:        booking.ID,
-		DesignerID:       designer.ID,
-		Summary:          "前置阶段方案",
-		Status:           model.ProposalStatusConfirmed,
-		Version:          1,
+		Base:              model.Base{ID: 9814},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "前置阶段方案",
+		Status:            model.ProposalStatusConfirmed,
+		Version:           1,
 		InternalDraftJSON: `{"rooms":[{"name":"客餐厅","items":[{"name":"木地板铺设","unit":"㎡","quantity":20,"note":"浅色"}]}]}`,
 	}
 	flow := model.BusinessFlow{
@@ -1636,6 +2266,164 @@ func TestCreateQuoteListPromotesEarlierStagesOnlyToConstructionBridge(t *testing
 	}
 	if updatedFlow.SelectedQuoteTaskID != task.ID {
 		t.Fatalf("expected selected quote task id=%d, got %d", task.ID, updatedFlow.SelectedQuoteTaskID)
+	}
+
+	var notification model.Notification
+	if err := db.Where("user_id = ? AND type = ?", owner.ID, NotificationTypeConstructionBridgePending).Order("id DESC").First(&notification).Error; err != nil {
+		t.Fatalf("expected construction bridge notification: %v", err)
+	}
+	if notification.ActionURL != "/quote-tasks/1" {
+		t.Fatalf("unexpected construction bridge action url: %+v", notification)
+	}
+	if notification.RelatedID != task.ID || notification.RelatedType != "quote_list" {
+		t.Fatalf("unexpected construction bridge relation: %+v", notification)
+	}
+}
+
+func TestMerchantConstructionPreparation_SelectSingleForemanStartsPricing(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	owner := model.User{Base: model.Base{ID: 9821}, Phone: "13800139821", Nickname: "桥接业主C", Status: 1}
+	designerUser := model.User{Base: model.Base{ID: 9822}, Phone: "13800139822", Nickname: "桥接设计师C", Status: 1}
+	designer := model.Provider{Base: model.Base{ID: 9823}, UserID: designerUser.ID, ProviderType: 1, CompanyName: "桥接设计师C", Status: 1}
+	booking := model.Booking{
+		Base:           model.Base{ID: 9824},
+		UserID:         owner.ID,
+		ProviderID:     designer.ID,
+		Address:        "上海市浦东新区桥接路 88 号",
+		Area:           108,
+		HouseLayout:    "3室2厅2卫",
+		RenovationType: "全屋翻新",
+		Notes:          "按确认方案推进施工报价",
+		Status:         2,
+	}
+	proposal := model.Proposal{
+		Base:              model.Base{ID: 9825},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "施工桥接正式方案",
+		Status:            model.ProposalStatusConfirmed,
+		SourceType:        model.ProposalSourceBooking,
+		Version:           1,
+		InternalDraftJSON: `{"rooms":[{"name":"卫生间","items":[{"name":"墙地面防水","unit":"㎡","quantity":24,"note":"两遍施工"}]}]}`,
+	}
+	flow := model.BusinessFlow{
+		Base:               model.Base{ID: 9826},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     owner.ID,
+		DesignerProviderID: designer.ID,
+		CurrentStage:       model.BusinessFlowStageConstructionPartyPending,
+	}
+	for _, record := range []interface{}{&owner, &designerUser, &designer, &booking, &proposal, &flow} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed merchant construction preparation fixture: %v", err)
+		}
+	}
+
+	_, libraryItem := seedQuotePreparationTemplate(t, db, "三居", "全屋翻新", model.QuoteLibraryItem{
+		Base:         model.Base{ID: 9827},
+		StandardCode: "STD-WP-003",
+		ERPItemCode:  "ERP-WP-003",
+		Name:         "墙地面防水",
+		Unit:         "㎡",
+		CategoryL1:   "防水",
+	}, true)
+	foreman := model.Provider{
+		Base:         model.Base{ID: 9828},
+		ProviderType: 3,
+		SubType:      "foreman",
+		CompanyName:  "桥接工长C",
+		Status:       1,
+		WorkTypes:    "waterproof",
+		ServiceArea:  `["浦东新区"]`,
+	}
+	if err := db.Create(&foreman).Error; err != nil {
+		t.Fatalf("create foreman: %v", err)
+	}
+	if err := db.Create(&model.MerchantServiceSetting{ProviderID: foreman.ID, AcceptBooking: true}).Error; err != nil {
+		t.Fatalf("create foreman merchant setting: %v", err)
+	}
+	if _, err := svc.UpsertProviderPriceBook(foreman.ID, &QuotePriceBookUpdateInput{
+		Items: []QuotePriceBookItemInput{{
+			StandardItemID: libraryItem.ID,
+			Unit:           "㎡",
+			UnitPriceCent:  1800,
+			MinChargeCent:  0,
+			Status:         1,
+		}},
+	}); err != nil {
+		t.Fatalf("upsert foreman price book: %v", err)
+	}
+	if _, err := svc.PublishProviderPriceBook(foreman.ID); err != nil {
+		t.Fatalf("publish foreman price book: %v", err)
+	}
+
+	preparation, err := svc.StartMerchantConstructionPreparation(designer.ID, booking.ID)
+	if err != nil {
+		t.Fatalf("StartMerchantConstructionPreparation: %v", err)
+	}
+	if preparation.QuoteListID == 0 {
+		t.Fatalf("expected quote list id after preparation start")
+	}
+	if len(preparation.QuantityItems) == 0 {
+		t.Fatalf("expected quantity items generated from proposal")
+	}
+
+	preparation, err = svc.UpdateMerchantConstructionPreparationPrerequisites(designer.ID, preparation.QuoteListID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              booking.Area,
+		Layout:            booking.HouseLayout,
+		RenovationType:    booking.RenovationType,
+		ConstructionScope: "防水",
+		ServiceAreas:      []string{"浦东新区"},
+		WorkTypes:         []string{"waterproof"},
+		HouseUsage:        "自住",
+		Notes:             "施工报价准备完成",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMerchantConstructionPreparationPrerequisites: %v", err)
+	}
+	if preparation.PrerequisiteStatus != model.QuoteTaskPrerequisiteComplete {
+		t.Fatalf("expected prerequisite complete, got %s", preparation.PrerequisiteStatus)
+	}
+
+	preparation, err = svc.SelectMerchantConstructionForemen(designer.ID, owner.ID, preparation.QuoteListID, []uint64{foreman.ID})
+	if err != nil {
+		t.Fatalf("SelectMerchantConstructionForemen: %v", err)
+	}
+	if preparation.SelectedForemanID != foreman.ID {
+		t.Fatalf("expected selected foreman id=%d, got %d", foreman.ID, preparation.SelectedForemanID)
+	}
+
+	var quoteList model.QuoteList
+	if err := db.First(&quoteList, preparation.QuoteListID).Error; err != nil {
+		t.Fatalf("reload quote list: %v", err)
+	}
+	if quoteList.Status != model.QuoteListStatusPricingInProgress {
+		t.Fatalf("expected quote list status pricing_in_progress, got %s", quoteList.Status)
+	}
+
+	var updatedFlow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, booking.ID).First(&updatedFlow).Error; err != nil {
+		t.Fatalf("reload business flow: %v", err)
+	}
+	if updatedFlow.SelectedQuoteTaskID != quoteList.ID {
+		t.Fatalf("expected selected quote task id=%d, got %d", quoteList.ID, updatedFlow.SelectedQuoteTaskID)
+	}
+	if updatedFlow.SelectedForemanProviderID != foreman.ID {
+		t.Fatalf("expected selected foreman provider id=%d, got %d", foreman.ID, updatedFlow.SelectedForemanProviderID)
+	}
+	if updatedFlow.CurrentStage != model.BusinessFlowStageConstructionPartyPending {
+		t.Fatalf("expected current stage remain construction_party_pending, got %s", updatedFlow.CurrentStage)
+	}
+
+	var submissionCount int64
+	if err := db.Model(&model.QuoteSubmission{}).Where("quote_list_id = ?", quoteList.ID).Count(&submissionCount).Error; err != nil {
+		t.Fatalf("count quote submissions: %v", err)
+	}
+	if submissionCount != 1 {
+		t.Fatalf("expected one generated quote submission, got %d", submissionCount)
 	}
 }
 

@@ -217,6 +217,22 @@ func ensureRuntimeSchemaColumns() error {
 		{name: "user_verifications", model: &model.UserVerification{}},
 		{name: "user_login_devices", model: &model.UserLoginDevice{}},
 		{name: "user_feedbacks", model: &model.UserFeedback{}},
+		{name: "quantity_bases", model: &model.QuantityBase{}},
+		{name: "quantity_base_items", model: &model.QuantityBaseItem{}},
+		{name: "quote_categories", model: &model.QuoteCategory{}},
+		{name: "quote_library_items", model: &model.QuoteLibraryItem{}},
+		{name: "quote_price_books", model: &model.QuotePriceBook{}},
+		{name: "quote_price_book_items", model: &model.QuotePriceBookItem{}},
+		{name: "quote_price_tiers", model: &model.QuotePriceTier{}},
+		{name: "quote_category_rules", model: &model.QuoteCategoryRule{}},
+		{name: "quote_templates", model: &model.QuoteTemplate{}},
+		{name: "quote_template_items", model: &model.QuoteTemplateItem{}},
+		{name: "quote_lists", model: &model.QuoteList{}},
+		{name: "quote_list_items", model: &model.QuoteListItem{}},
+		{name: "quote_invitations", model: &model.QuoteInvitation{}},
+		{name: "quote_submissions", model: &model.QuoteSubmission{}},
+		{name: "quote_submission_items", model: &model.QuoteSubmissionItem{}},
+		{name: "quote_submission_revisions", model: &model.QuoteSubmissionRevision{}},
 	}
 
 	for _, runtimeTable := range runtimeTables {
@@ -381,6 +397,18 @@ func ensureRuntimeSchemaColumns() error {
 	for _, alignment := range []runtimeColumnAlignment{
 		{model: &model.PaymentOrder{}, field: "FundScene", label: "payment_orders.fund_scene", index: "CREATE INDEX IF NOT EXISTS idx_payment_orders_fund_scene ON payment_orders(fund_scene)"},
 		{model: &model.RefundOrder{}, field: "FundScene", label: "refund_orders.fund_scene", index: "CREATE INDEX IF NOT EXISTS idx_refund_orders_fund_scene ON refund_orders(fund_scene)"},
+		{model: &model.QuoteList{}, field: "QuantityBaseID", label: "quote_lists.quantity_base_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_lists_quantity_base_id ON quote_lists(quantity_base_id)"},
+		{model: &model.QuoteLibraryItem{}, field: "CategoryID", label: "quote_library_items.category_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_library_items_category_id ON quote_library_items(category_id)"},
+		{model: &model.QuoteLibraryItem{}, field: "StandardCode", label: "quote_library_items.standard_code", index: "CREATE INDEX IF NOT EXISTS idx_quote_library_items_standard_code ON quote_library_items(standard_code)"},
+		{model: &model.QuoteLibraryItem{}, field: "CategoryL3", label: "quote_library_items.category_l3", index: "CREATE INDEX IF NOT EXISTS idx_quote_library_items_category_l3 ON quote_library_items(category_l3)"},
+		{model: &model.QuotePriceBookItem{}, field: "PriceTierID", label: "quote_price_book_items.price_tier_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_price_book_items_tier ON quote_price_book_items(price_tier_id)"},
+		{model: &model.QuoteListItem{}, field: "MatchedStandardItemID", label: "quote_list_items.matched_standard_item_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_list_items_matched_standard_item_id ON quote_list_items(matched_standard_item_id)"},
+		{model: &model.QuoteListItem{}, field: "SelectedTierID", label: "quote_list_items.selected_tier_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_list_items_tier ON quote_list_items(selected_tier_id)"},
+		{model: &model.QuoteSubmission{}, field: "TaskStatus", label: "quote_submissions.task_status", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_task_status ON quote_submissions(task_status)"},
+		{model: &model.QuoteSubmission{}, field: "GenerationStatus", label: "quote_submissions.generation_status", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_generation_status ON quote_submissions(generation_status)"},
+		{model: &model.QuoteSubmission{}, field: "GeneratedFromPriceBookID", label: "quote_submissions.generated_from_price_book_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_generated_from_price_book_id ON quote_submissions(generated_from_price_book_id)"},
+		{model: &model.QuoteSubmission{}, field: "SupersededBy", label: "quote_submissions.superseded_by", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_superseded_by ON quote_submissions(superseded_by)"},
+		{model: &model.QuoteSubmissionItem{}, field: "PriceTierID", label: "quote_submission_items.price_tier_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_submission_items_tier ON quote_submission_items(price_tier_id)"},
 	} {
 		if !DB.Migrator().HasTable(alignment.model) {
 			continue

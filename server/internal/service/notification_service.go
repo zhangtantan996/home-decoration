@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"strings"
 	"time"
+
+	"github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 type NotificationService struct{}
@@ -21,7 +25,14 @@ type CreateNotificationInput struct {
 	RelatedType string
 	ActionURL   string
 	Extra       map[string]interface{}
+	Category    string
 }
+
+const (
+	NotificationCategorySystem  = "system"
+	NotificationCategoryProject = "project"
+	NotificationCategoryPayment = "payment"
+)
 
 func readBookingProviderRoleText(providerType string) string {
 	switch providerType {
@@ -42,25 +53,15 @@ func (s *NotificationService) Create(input *CreateNotificationInput) error {
 	if input.Title == "" || input.Content == "" {
 		return errors.New("标题和内容不能为空")
 	}
-
-	extraJSON := ""
-	if input.Extra != nil {
-		bytes, _ := json.Marshal(input.Extra)
-		extraJSON = string(bytes)
+	shouldCreate, err := shouldCreateNotificationTx(repository.DB, input)
+	if err != nil {
+		return err
+	}
+	if !shouldCreate {
+		return nil
 	}
 
-	notification := &model.Notification{
-		UserID:      input.UserID,
-		UserType:    input.UserType,
-		Title:       input.Title,
-		Content:     input.Content,
-		Type:        input.Type,
-		RelatedID:   input.RelatedID,
-		RelatedType: input.RelatedType,
-		ActionURL:   input.ActionURL,
-		Extra:       extraJSON,
-		IsRead:      false,
-	}
+	notification := buildNotificationRecord(input)
 
 	if err := repository.DB.Create(notification).Error; err != nil {
 		return err
@@ -85,6 +86,123 @@ func (s *NotificationService) NotifyAdmins(input *CreateNotificationInput) error
 		_ = s.Create(&adminInput)
 	}
 	return nil
+}
+
+func buildNotificationRecord(input *CreateNotificationInput) *model.Notification {
+	return &model.Notification{
+		UserID:      input.UserID,
+		UserType:    input.UserType,
+		Title:       input.Title,
+		Content:     input.Content,
+		Type:        input.Type,
+		RelatedID:   input.RelatedID,
+		RelatedType: input.RelatedType,
+		ActionURL:   input.ActionURL,
+		Extra:       marshalNotificationExtra(input.Extra),
+		IsRead:      false,
+	}
+}
+
+func marshalNotificationExtra(extra map[string]interface{}) string {
+	if extra == nil {
+		return ""
+	}
+	bytes, _ := json.Marshal(extra)
+	return string(bytes)
+}
+
+func shouldCreateNotificationTx(tx *gorm.DB, input *CreateNotificationInput) (bool, error) {
+	if tx == nil || input == nil {
+		return false, nil
+	}
+	if input.UserType != "user" || input.UserID == 0 {
+		return true, nil
+	}
+
+	category := resolveNotificationCategory(input)
+	if category == "" {
+		return true, nil
+	}
+
+	var settings model.UserSettings
+	if err := tx.Where("user_id = ?", input.UserID).First(&settings).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return true, nil
+		}
+		if isUserSettingsTableMissingError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	switch category {
+	case NotificationCategorySystem:
+		return settings.NotifySystem, nil
+	case NotificationCategoryProject:
+		return settings.NotifyProject, nil
+	case NotificationCategoryPayment:
+		return settings.NotifyPayment, nil
+	default:
+		return true, nil
+	}
+}
+
+func resolveNotificationCategory(input *CreateNotificationInput) string {
+	if input == nil {
+		return ""
+	}
+	if normalized := strings.TrimSpace(input.Category); normalized != "" {
+		return normalized
+	}
+
+	typeKey := strings.ToLower(strings.TrimSpace(input.Type))
+	relatedType := strings.ToLower(strings.TrimSpace(input.RelatedType))
+	actionURL := strings.ToLower(strings.TrimSpace(input.ActionURL))
+
+	if strings.HasPrefix(typeKey, "order.") || strings.HasPrefix(typeKey, "refund.") || strings.HasPrefix(typeKey, "payment.") {
+		return NotificationCategoryPayment
+	}
+	if strings.HasPrefix(typeKey, "booking.") || strings.HasPrefix(typeKey, "proposal.") || strings.HasPrefix(typeKey, "quote.") || strings.HasPrefix(typeKey, "project.") || strings.HasPrefix(typeKey, "complaint.") {
+		return NotificationCategoryProject
+	}
+	if strings.HasPrefix(typeKey, "merchant.application.") || strings.HasPrefix(typeKey, "case_audit.") || strings.HasPrefix(typeKey, "audit.") {
+		return NotificationCategorySystem
+	}
+	switch relatedType {
+	case "order", "payment", "refund_application", "refund":
+		return NotificationCategoryPayment
+	case "booking", "proposal", "project", "milestone", "quote_list", "quote_task", "complaint", "project_audit":
+		return NotificationCategoryProject
+	case "merchant_application", "case_audit":
+		return NotificationCategorySystem
+	}
+	if strings.Contains(actionURL, "/orders") || strings.Contains(actionURL, "/refund") || strings.Contains(actionURL, "/payments") {
+		return NotificationCategoryPayment
+	}
+	if strings.Contains(actionURL, "/bookings") || strings.Contains(actionURL, "/projects") || strings.Contains(actionURL, "/quote") || strings.Contains(actionURL, "/proposal") {
+		return NotificationCategoryProject
+	}
+	return NotificationCategorySystem
+}
+
+type notificationSQLStateError interface {
+	SQLState() string
+}
+
+func isUserSettingsTableMissingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return string(pqErr.Code) == "42P01"
+	}
+	var stateErr notificationSQLStateError
+	if errors.As(err, &stateErr) {
+		return strings.TrimSpace(stateErr.SQLState()) == "42P01"
+	}
+	errText := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(errText, "user_settings") && (strings.Contains(errText, "does not exist") || strings.Contains(errText, "no such table"))
 }
 
 // NotifyBookingIntentPaid 通知商家收到新预约
@@ -142,6 +260,31 @@ func (s *NotificationService) NotifyBookingIntentPaid(booking *model.Booking, pr
 	return err
 }
 
+func (s *NotificationService) NotifySurveyDepositPaidReceipt(bookingID, userID uint64, amount float64) error {
+	if bookingID == 0 || userID == 0 {
+		return nil
+	}
+	content := "量房定金已支付成功，预约流程将继续推进。"
+	if amount > 0 {
+		content = fmt.Sprintf("量房定金支付成功，金额 %.2f 元，预约流程将继续推进。", amount)
+	}
+	return s.Create(&CreateNotificationInput{
+		UserID:      userID,
+		UserType:    "user",
+		Title:       "量房定金支付成功",
+		Content:     content,
+		Type:        NotificationTypePaymentBookingSurveyPaid,
+		RelatedID:   bookingID,
+		RelatedType: "booking",
+		ActionURL:   fmt.Sprintf("/bookings/%d", bookingID),
+		Category:    NotificationCategoryPayment,
+		Extra: map[string]interface{}{
+			"bookingId": bookingID,
+			"amount":    amount,
+		},
+	})
+}
+
 // NotifyBookingConfirmed 通知用户商家已接单
 func (s *NotificationService) NotifyBookingConfirmed(booking *model.Booking) error {
 	providerRoleText := readBookingProviderRoleText(booking.ProviderType)
@@ -179,6 +322,53 @@ func (s *NotificationService) NotifyBookingRejected(booking *model.Booking) erro
 			"providerId":       booking.ProviderID,
 			"providerRoleText": providerRoleText,
 			"reason":           "merchant_rejected_booking",
+		},
+	})
+}
+
+// NotifyDesignFeeQuoteCreated 通知用户设计费报价已发起
+func (s *NotificationService) NotifyDesignFeeQuoteCreated(bookingID, quoteID, userID uint64, providerRoleText string) error {
+	if userID == 0 || bookingID == 0 || quoteID == 0 {
+		return nil
+	}
+	roleText := strings.TrimSpace(providerRoleText)
+	if roleText == "" {
+		roleText = "设计师"
+	}
+	return s.Create(&CreateNotificationInput{
+		UserID:      userID,
+		UserType:    "user",
+		Title:       "设计费报价待确认",
+		Content:     fmt.Sprintf("%s已发送设计费报价，请尽快查看并确认。", roleText),
+		Type:        "proposal.design_fee_quote_created",
+		RelatedID:   quoteID,
+		RelatedType: "design_fee_quote",
+		ActionURL:   fmt.Sprintf("/bookings/%d/design-quote", bookingID),
+		Extra: map[string]interface{}{
+			"bookingId": bookingID,
+			"quoteId":   quoteID,
+		},
+	})
+}
+
+// NotifyDesignFeeOrderCreated 通知用户设计费订单已生成
+func (s *NotificationService) NotifyDesignFeeOrderCreated(bookingID, orderID, userID uint64, amount float64) error {
+	if userID == 0 || bookingID == 0 || orderID == 0 {
+		return nil
+	}
+	return s.Create(&CreateNotificationInput{
+		UserID:      userID,
+		UserType:    "user",
+		Title:       "设计费订单待支付",
+		Content:     fmt.Sprintf("设计费订单已生成，待支付金额 %.2f 元，请尽快完成支付。", amount),
+		Type:        model.NotificationTypeOrderCreated,
+		RelatedID:   orderID,
+		RelatedType: "order",
+		ActionURL:   fmt.Sprintf("/bookings/%d/design-quote", bookingID),
+		Extra: map[string]interface{}{
+			"bookingId": bookingID,
+			"orderId":   orderID,
+			"amount":    amount,
 		},
 	})
 }
@@ -321,6 +511,37 @@ func (s *NotificationService) NotifyOrderPaid(order interface{}, providerUserID 
 	})
 }
 
+func (s *NotificationService) NotifyUserOrderPaidReceipt(orderID, userID uint64, amount float64, title, content string, extra map[string]interface{}) error {
+	if orderID == 0 || userID == 0 {
+		return nil
+	}
+	normalizedTitle := strings.TrimSpace(title)
+	if normalizedTitle == "" {
+		normalizedTitle = "支付成功"
+	}
+	normalizedContent := strings.TrimSpace(content)
+	if normalizedContent == "" {
+		normalizedContent = fmt.Sprintf("订单支付成功，金额 %.2f 元。", amount)
+	}
+	if extra == nil {
+		extra = map[string]interface{}{}
+	}
+	extra["orderId"] = orderID
+	extra["amount"] = amount
+	return s.Create(&CreateNotificationInput{
+		UserID:      userID,
+		UserType:    "user",
+		Title:       normalizedTitle,
+		Content:     normalizedContent,
+		Type:        NotificationTypePaymentOrderPaid,
+		RelatedID:   orderID,
+		RelatedType: "order",
+		ActionURL:   fmt.Sprintf("/orders/%d", orderID),
+		Category:    NotificationCategoryPayment,
+		Extra:       extra,
+	})
+}
+
 // NotifyWithdrawApproved 通知商家提现审核通过
 func (s *NotificationService) NotifyWithdrawApproved(withdraw *model.MerchantWithdraw, providerUserID uint64) error {
 	return s.Create(&CreateNotificationInput{
@@ -407,7 +628,7 @@ func (s *NotificationService) NotifyIntentFeeRefunded(refundData interface{}, us
 }
 
 // GetUserNotifications 获取用户通知列表
-func (s *NotificationService) GetUserNotifications(userID uint64, userType string, page, pageSize int) ([]model.Notification, int64, error) {
+func (s *NotificationService) GetUserNotifications(userID uint64, userType string, page, pageSize int) ([]NotificationListItem, int64, error) {
 	var notifications []model.Notification
 	var total int64
 
@@ -419,7 +640,16 @@ func (s *NotificationService) GetUserNotifications(userID uint64, userType strin
 	offset := (page - 1) * pageSize
 	err := query.Offset(offset).Limit(pageSize).Find(&notifications).Error
 
-	return notifications, total, err
+	if err != nil {
+		return nil, total, err
+	}
+
+	items := make([]NotificationListItem, 0, len(notifications))
+	for _, notification := range notifications {
+		items = append(items, s.buildNotificationListItem(notification))
+	}
+
+	return items, total, nil
 }
 
 // GetUnreadCount 获取未读数量

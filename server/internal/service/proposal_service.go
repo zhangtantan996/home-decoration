@@ -340,6 +340,9 @@ func (s *ProposalService) confirmProposalForBooking(
 	quantityBase, err := (&QuoteService{}).ensureQuantityBaseFromProposalTx(tx, proposal.ID)
 	if err != nil {
 		tx.Rollback()
+		if repository.IsSchemaMismatchError(err) {
+			return nil, errors.New("施工桥接资料暂未就绪，请稍后重试")
+		}
 		return nil, err
 	}
 
@@ -373,10 +376,10 @@ func (s *ProposalService) confirmProposalForBooking(
 			},
 		},
 		Metadata: map[string]interface{}{
-			"bookingId":     booking.ID,
-			"providerId":    booking.ProviderID,
-			"designOrderId": paidOrder.ID,
-			"projectId":     0,
+			"bookingId":      booking.ID,
+			"providerId":     booking.ProviderID,
+			"designOrderId":  paidOrder.ID,
+			"projectId":      0,
 			"quantityBaseId": quantityBase.ID,
 		},
 	}); err != nil {
@@ -387,6 +390,7 @@ func (s *ProposalService) confirmProposalForBooking(
 		return nil, err
 	}
 
+	NewNotificationDispatcher().NotifyConstructionBridgePending(booking.UserID, booking.ID, 0, 0)
 	notifService := &NotificationService{}
 	proposalData := map[string]interface{}{"id": proposal.ID}
 	var provider model.Provider

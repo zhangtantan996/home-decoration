@@ -193,9 +193,9 @@ func (s *BusinessFlowService) BuildSummary(flow *model.BusinessFlow) BusinessFlo
 		model.BusinessFlowStageDesignFeePaying:           "设计费待支付",
 		model.BusinessFlowStageDesignDeliveryPending:     "待交付设计成果",
 		model.BusinessFlowStageDesignAcceptancePending:   "设计成果待验收",
-		model.BusinessFlowStageConstructionPartyPending:  "待确认施工方并锁定施工负责人",
+		model.BusinessFlowStageConstructionPartyPending:  "施工桥接中，待提交报价基线、确认施工主体并进入施工报价",
 		model.BusinessFlowStageConstructionQuotePending:  "施工报价待用户确认",
-		model.BusinessFlowStageReadyToStart:              "施工条件已确认，项目待开工",
+		model.BusinessFlowStageReadyToStart:              "施工报价已确认，待监理协调进场时间后开工",
 		model.BusinessFlowStageInConstruction:            "项目施工中，按节点推进与验收",
 		model.BusinessFlowStageNodeAcceptanceInProgress:  "节点已提交，待用户验收",
 		model.BusinessFlowStageCompleted:                 "施工方已提交完工材料，待业主整体验收",
@@ -207,10 +207,10 @@ func (s *BusinessFlowService) BuildSummary(flow *model.BusinessFlow) BusinessFlo
 
 	if stage == model.BusinessFlowStageConstructionPartyPending {
 		switch {
-		case flow.SelectedQuoteTaskID > 0:
-			flowSummary[stage] = "施工报价任务已创建，待施工方提交正式报价"
 		case flow.SelectedForemanProviderID > 0:
-			flowSummary[stage] = "施工负责人已锁定，待确认施工报价"
+			flowSummary[stage] = "施工主体已锁定，待提交或确认施工报价"
+		case flow.SelectedQuoteTaskID > 0:
+			flowSummary[stage] = "报价基线已准备完成，待施工主体提交正式报价"
 		}
 	}
 	if stage == model.BusinessFlowStageCasePendingGeneration && flow.InspirationCaseDraftID > 0 {
@@ -230,14 +230,16 @@ func (s *BusinessFlowService) BuildSummary(flow *model.BusinessFlow) BusinessFlo
 	case model.BusinessFlowStageDesignPendingConfirmation:
 		availableActions = []string{"confirm_proposal", "reject_proposal"}
 	case model.BusinessFlowStageConstructionPartyPending:
-		availableActions = []string{"create_quote_task", "select_constructor"}
+		availableActions = []string{"submit_quote_baseline", "create_quote_task", "select_constructor"}
 		if flow.SelectedQuoteTaskID > 0 || flow.SelectedForemanProviderID > 0 {
 			availableActions = []string{"submit_construction_quote"}
 		}
 	case model.BusinessFlowStageConstructionQuotePending:
 		availableActions = []string{"confirm_construction_quote", "reject_construction_quote"}
 	case model.BusinessFlowStageReadyToStart:
-		availableActions = []string{"start_project"}
+		if s.isProjectKickoffScheduled(flow.ProjectID) {
+			availableActions = []string{"start_project"}
+		}
 	case model.BusinessFlowStageInConstruction:
 		availableActions = []string{"submit_milestone"}
 	case model.BusinessFlowStageNodeAcceptanceInProgress:
@@ -322,7 +324,7 @@ func (s *BusinessFlowService) BuildProjectFallbackSummary(project *model.Project
 		stage = model.BusinessFlowStageNodeAcceptanceInProgress
 	case project.BusinessStatus == model.ProjectBusinessStatusInProgress || hasInProgress || strings.Contains(currentPhase, "施工中") || strings.Contains(currentPhase, "待整改") || strings.Contains(currentPhase, "工程"):
 		stage = model.BusinessFlowStageInConstruction
-	case project.BusinessStatus == model.ProjectBusinessStatusConstructionQuoteConfirmed || strings.Contains(currentPhase, "待开工"):
+	case project.BusinessStatus == model.ProjectBusinessStatusConstructionQuoteConfirmed || strings.Contains(currentPhase, "监理协调开工") || strings.Contains(currentPhase, "协调开工"):
 		stage = model.BusinessFlowStageReadyToStart
 	case project.BusinessStatus == model.ProjectBusinessStatusConstructionConfirmed || project.BusinessStatus == model.ProjectBusinessStatusProposalConfirmed:
 		stage = model.BusinessFlowStageConstructionPartyPending
@@ -330,6 +332,7 @@ func (s *BusinessFlowService) BuildProjectFallbackSummary(project *model.Project
 
 	summary := s.BuildSummary(&model.BusinessFlow{
 		CurrentStage:              stage,
+		ProjectID:                 project.ID,
 		SelectedForemanProviderID: coalesceUint64(project.ForemanID, project.ConstructionProviderID),
 		SelectedQuoteSubmissionID: project.SelectedQuoteSubmissionID,
 		InspirationCaseDraftID:    project.InspirationCaseDraftID,
@@ -366,10 +369,24 @@ func (s *BusinessFlowService) BuildQuoteFallbackSummary(quoteList *model.QuoteLi
 
 	return s.BuildSummary(&model.BusinessFlow{
 		CurrentStage:              stage,
+		ProjectID:                 quoteList.ProjectID,
 		SelectedQuoteTaskID:       quoteList.ID,
 		SelectedForemanProviderID: quoteList.AwardedProviderID,
 		SelectedQuoteSubmissionID: quoteList.ActiveSubmissionID,
 	})
+}
+
+func (s *BusinessFlowService) isProjectKickoffScheduled(projectID uint64) bool {
+	if projectID == 0 {
+		return false
+	}
+
+	var project model.Project
+	if err := repository.DB.Select("id", "entry_start_date").First(&project, projectID).Error; err != nil {
+		return false
+	}
+
+	return project.EntryStartDate != nil
 }
 
 func coalesceUint64(values ...uint64) uint64 {

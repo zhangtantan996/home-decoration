@@ -61,6 +61,7 @@ func (g paymentServiceTestGateway) QueryCollectOrder(ctx context.Context, order 
 		return &PaymentChannelTradeResult{
 			ProviderTradeNo: g.queryTradeResult.TradeNo,
 			TradeStatus:     g.queryTradeResult.TradeStatus,
+			BuyerLogonID:    g.queryTradeResult.BuyerLogonID,
 			BuyerAmount:     g.queryTradeResult.BuyerAmount,
 			RawJSON:         g.queryTradeResult.RawJSON,
 		}, nil
@@ -365,6 +366,45 @@ func seedPendingOrderFixture(t *testing.T, db *gorm.DB) (userID, orderID uint64)
 	return user.ID, order.ID
 }
 
+func seedPendingBookingDesignOrderFixture(t *testing.T, db *gorm.DB) (userID, bookingID, orderID uint64) {
+	t.Helper()
+
+	user := model.User{Base: model.Base{ID: 71}}
+	provider := model.Provider{Base: model.Base{ID: 72}}
+	booking := model.Booking{
+		Base:              model.Base{ID: 73},
+		UserID:            user.ID,
+		ProviderID:        provider.ID,
+		Status:            2,
+		SurveyDepositPaid: true,
+		SurveyDeposit:     500,
+	}
+	order := model.Order{
+		Base:        model.Base{ID: 74},
+		BookingID:   booking.ID,
+		OrderNo:     "ORD-BOOKING-0074",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 2888,
+		Status:      model.OrderStatusPending,
+	}
+	flow := model.BusinessFlow{
+		Base:               model.Base{ID: 75},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     user.ID,
+		DesignerProviderID: provider.ID,
+		CurrentStage:       model.BusinessFlowStageDesignFeePaying,
+	}
+
+	for _, item := range []any{&user, &provider, &booking, &order, &flow} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatalf("seed booking design order fixture: %v", err)
+		}
+	}
+
+	return user.ID, booking.ID, order.ID
+}
+
 func seedWechatBinding(t *testing.T, db *gorm.DB, userID uint64, appID string) {
 	t.Helper()
 
@@ -454,6 +494,34 @@ func TestPaymentServiceStartBookingIntentPaymentReusesActiveOrder(t *testing.T) 
 	}
 }
 
+func TestNormalizePaymentChannelAndTerminalDefaultsByTerminal(t *testing.T) {
+	testCases := []struct {
+		name         string
+		channel      string
+		terminalType string
+		wantChannel  string
+		wantTerminal string
+	}{
+		{name: "mini wechat uses wechat", terminalType: model.PaymentTerminalMiniWechatJSAPI, wantChannel: model.PaymentChannelWechat, wantTerminal: model.PaymentTerminalMiniWechatJSAPI},
+		{name: "mini qr uses alipay", terminalType: model.PaymentTerminalMiniQR, wantChannel: model.PaymentChannelAlipay, wantTerminal: model.PaymentTerminalMiniQR},
+		{name: "mobile h5 uses alipay", terminalType: model.PaymentTerminalMobileH5, wantChannel: model.PaymentChannelAlipay, wantTerminal: model.PaymentTerminalMobileH5},
+		{name: "pc web uses alipay", terminalType: model.PaymentTerminalPCWeb, wantChannel: model.PaymentChannelAlipay, wantTerminal: model.PaymentTerminalPCWeb},
+		{name: "empty terminal falls back pc web alipay", terminalType: "", wantChannel: model.PaymentChannelAlipay, wantTerminal: model.PaymentTerminalPCWeb},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			channel, terminal, err := normalizePaymentChannelAndTerminal(tc.channel, tc.terminalType)
+			if err != nil {
+				t.Fatalf("normalizePaymentChannelAndTerminal: %v", err)
+			}
+			if channel != tc.wantChannel || terminal != tc.wantTerminal {
+				t.Fatalf("expected %s/%s, got %s/%s", tc.wantChannel, tc.wantTerminal, channel, terminal)
+			}
+		})
+	}
+}
+
 func TestPaymentServiceStartBookingIntentPaymentRejectsUnconfirmedBooking(t *testing.T) {
 	db := setupPaymentServiceTestDB(t)
 	enableAlipayForPaymentTests(t)
@@ -500,7 +568,7 @@ func TestPaymentServiceStartSurveyDepositPaymentRejectsUnconfirmedBooking(t *tes
 	}
 }
 
-func TestPaymentServiceGetSurveyDepositPaymentOptionsPrefersRedirectWhenMiniH5Ready(t *testing.T) {
+func TestPaymentServiceGetSurveyDepositPaymentOptionsReturnsQRCodeForAlipay(t *testing.T) {
 	db := setupPaymentServiceTestDB(t)
 	enableAlipayForPaymentTests(t)
 	seedPaymentChannelConfigs(t, db, true)
@@ -516,8 +584,61 @@ func TestPaymentServiceGetSurveyDepositPaymentOptionsPrefersRedirectWhenMiniH5Re
 	if len(options) != 1 {
 		t.Fatalf("expected single payment option, got %+v", options)
 	}
-	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "redirect" {
-		t.Fatalf("expected alipay redirect option, got %+v", options[0])
+	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "qr_code" {
+		t.Fatalf("expected alipay qr option, got %+v", options[0])
+	}
+}
+
+func TestPaymentServiceGetLatestSurveyDepositPaymentIDReturnsLatestPaidRecord(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	userID, bookingID := seedSurveyDepositFixture(t, db)
+
+	olderPaidAt := time.Now().Add(-4 * time.Hour)
+	older := model.PaymentOrder{
+		Base:            model.Base{ID: 302},
+		BizType:         model.PaymentBizTypeBookingIntent,
+		BizID:           bookingID,
+		PayerUserID:     userID,
+		Channel:         model.PaymentChannelAlipay,
+		Scene:           model.PaymentBizTypeBookingIntent,
+		FundScene:       model.FundSceneSurveyDeposit,
+		TerminalType:    model.PaymentTerminalPCWeb,
+		Subject:         "旧量房费",
+		Amount:          500,
+		OutTradeNo:      "survey-trade-002",
+		ProviderTradeNo: "provider-trade-002",
+		Status:          model.PaymentStatusPaid,
+		PaidAt:          &olderPaidAt,
+	}
+	if err := db.Create(&older).Error; err != nil {
+		t.Fatalf("create older paid payment: %v", err)
+	}
+
+	pending := model.PaymentOrder{
+		Base:         model.Base{ID: 303},
+		BizType:      model.PaymentBizTypeBookingSurveyDeposit,
+		BizID:        bookingID,
+		PayerUserID:  userID,
+		Channel:      model.PaymentChannelAlipay,
+		Scene:        model.PaymentBizTypeBookingSurveyDeposit,
+		FundScene:    model.FundSceneSurveyDeposit,
+		TerminalType: model.PaymentTerminalMiniQR,
+		Subject:      "待支付量房费",
+		Amount:       500,
+		OutTradeNo:   "survey-trade-003",
+		Status:       model.PaymentStatusPending,
+	}
+	if err := db.Create(&pending).Error; err != nil {
+		t.Fatalf("create pending payment: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	paymentID, err := svc.GetLatestSurveyDepositPaymentID(bookingID)
+	if err != nil {
+		t.Fatalf("GetLatestSurveyDepositPaymentID: %v", err)
+	}
+	if paymentID != 301 {
+		t.Fatalf("expected latest paid payment id 301, got %d", paymentID)
 	}
 }
 
@@ -695,7 +816,55 @@ func TestPaymentServiceStartSurveyDepositPaymentReturnsRedirectLaunchForMobileH5
 	}
 }
 
-func TestPaymentServiceGetSurveyDepositPaymentOptionsPrefersAlipayRedirect(t *testing.T) {
+func TestPaymentServiceResolveReturnURLUsesConfiguredWebAndH5Targets(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	launch, err := svc.StartSurveyDepositPayment(userID, bookingID, model.PaymentChannelAlipay, model.PaymentTerminalMobileH5)
+	if err != nil {
+		t.Fatalf("StartSurveyDepositPayment: %v", err)
+	}
+
+	h5URL, err := svc.ResolveReturnURL(launch.PaymentID, model.PaymentTerminalMobileH5)
+	if err != nil {
+		t.Fatalf("ResolveReturnURL mobile_h5: %v", err)
+	}
+	parsedH5URL, err := url.Parse(h5URL)
+	if err != nil {
+		t.Fatalf("parse h5 return url: %v", err)
+	}
+	if parsedH5URL.Scheme != "https" || parsedH5URL.Host != "m.example.com" || parsedH5URL.Path != "/payments/result" {
+		t.Fatalf("unexpected h5 return target: %s", h5URL)
+	}
+	if parsedH5URL.Query().Get("paymentId") != strconv.FormatUint(launch.PaymentID, 10) {
+		t.Fatalf("unexpected h5 paymentId: %s", h5URL)
+	}
+	if parsedH5URL.Query().Get("next") != "/bookings/"+strconv.FormatUint(bookingID, 10) {
+		t.Fatalf("unexpected h5 next path: %s", h5URL)
+	}
+
+	webURL, err := svc.ResolveReturnURL(launch.PaymentID, model.PaymentTerminalPCWeb)
+	if err != nil {
+		t.Fatalf("ResolveReturnURL pc_web: %v", err)
+	}
+	parsedWebURL, err := url.Parse(webURL)
+	if err != nil {
+		t.Fatalf("parse web return url: %v", err)
+	}
+	if parsedWebURL.Scheme != "https" || parsedWebURL.Host != "web.example.com" || parsedWebURL.Path != "/payments/result" {
+		t.Fatalf("unexpected web return target: %s", webURL)
+	}
+	if parsedWebURL.Query().Get("paymentId") != strconv.FormatUint(launch.PaymentID, 10) {
+		t.Fatalf("unexpected web paymentId: %s", webURL)
+	}
+	if parsedWebURL.Query().Get("next") != "/bookings/"+strconv.FormatUint(bookingID, 10) {
+		t.Fatalf("unexpected web next path: %s", webURL)
+	}
+}
+
+func TestPaymentServiceGetSurveyDepositPaymentOptionsPrefersAlipayQRCode(t *testing.T) {
 	db := setupPaymentServiceTestDB(t)
 	enableAlipayForPaymentTests(t)
 	_, bookingID := seedPaymentIntentFixture(t, db)
@@ -710,8 +879,8 @@ func TestPaymentServiceGetSurveyDepositPaymentOptionsPrefersAlipayRedirect(t *te
 	if len(options) != 1 {
 		t.Fatalf("expected one payment option, got %+v", options)
 	}
-	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "redirect" {
-		t.Fatalf("expected alipay redirect option, got %+v", options[0])
+	if options[0].Channel != model.PaymentChannelAlipay || options[0].LaunchMode != "qr_code" {
+		t.Fatalf("expected alipay qr option, got %+v", options[0])
 	}
 }
 
@@ -868,6 +1037,56 @@ func TestPaymentServiceHandleAlipayNotifyIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPaymentServiceHandleAlipayNotifyCreatesUserPaidReceipt(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	userID, _, orderID := seedPendingBookingDesignOrderFixture(t, db)
+
+	payment := model.PaymentOrder{
+		Base:         model.Base{ID: 402},
+		BizType:      model.PaymentBizTypeOrder,
+		BizID:        orderID,
+		PayerUserID:  userID,
+		Channel:      model.PaymentChannelAlipay,
+		Scene:        model.PaymentBizTypeOrder,
+		TerminalType: model.PaymentTerminalPCWeb,
+		Subject:      "设计费订单",
+		Amount:       2888,
+		OutTradeNo:   "design-order-trade-001",
+		Status:       model.PaymentStatusPending,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment order: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{
+		notifyPayload: map[string]string{
+			"out_trade_no": "design-order-trade-001",
+			"trade_status": alipayTradeSuccess,
+			"notify_id":    "notify-order-001",
+			"trade_no":     "trade-order-001",
+		},
+	})
+
+	if err := svc.HandleAlipayNotify(url.Values{}); err != nil {
+		t.Fatalf("HandleAlipayNotify: %v", err)
+	}
+
+	var notification model.Notification
+	if err := db.Where("user_id = ? AND type = ?", userID, NotificationTypePaymentOrderPaid).Order("id DESC").First(&notification).Error; err != nil {
+		t.Fatalf("expected user paid receipt notification: %v", err)
+	}
+	if notification.RelatedID != orderID || notification.RelatedType != "order" {
+		t.Fatalf("unexpected paid receipt relation: %+v", notification)
+	}
+	if notification.ActionURL != "/orders/"+strconv.FormatUint(orderID, 10) {
+		t.Fatalf("unexpected paid receipt action url: %+v", notification)
+	}
+	if notification.Title != "支付成功" || notification.Content == "" {
+		t.Fatalf("unexpected paid receipt copy: %+v", notification)
+	}
+}
+
 func TestPaymentServiceGetPaymentDetailForUser(t *testing.T) {
 	db := setupPaymentServiceTestDB(t)
 
@@ -906,7 +1125,7 @@ func TestPaymentServiceGetPaymentDetailForUser(t *testing.T) {
 		ProviderTradeNo: "202603260001",
 		Status:          model.PaymentStatusPaid,
 		PaidAt:          &paidAt,
-		ReturnContext:   `{"successPath":"/bookings/804/site-survey","cancelPath":"/bookings/804","bizType":"booking_survey_deposit","bizId":804}`,
+		ReturnContext:   `{"successPath":"/bookings/804","cancelPath":"/bookings/804","bizType":"booking_survey_deposit","bizId":804}`,
 	}
 
 	for _, item := range []any{&user, &providerUser, &provider, &booking, &payment} {
@@ -933,6 +1152,9 @@ func TestPaymentServiceGetPaymentDetailForUser(t *testing.T) {
 	if detail.ActionPath != "/bookings/804" {
 		t.Fatalf("expected booking action path, got %+v", detail)
 	}
+	if detail.ReferenceLabel != "预约编号" || detail.ReferenceNo != "BK00000804" {
+		t.Fatalf("unexpected reference detail: %+v", detail)
+	}
 	if detail.Booking == nil || detail.Booking.Address != "西安市新城区幸福南路 88 号" {
 		t.Fatalf("unexpected booking detail: %+v", detail.Booking)
 	}
@@ -950,6 +1172,192 @@ func TestPaymentServiceGetPaymentDetailForUser(t *testing.T) {
 	}
 	if detail.UsageDescription == "" {
 		t.Fatalf("expected usage description, got %+v", detail)
+	}
+}
+
+func TestPaymentServiceGetPaymentStatusForUserReturnsScanPendingAfterAlipayScan(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 901}, Phone: "13800138901", Status: 1}
+	payment := model.PaymentOrder{
+		Base:         model.Base{ID: 902},
+		BizType:      model.PaymentBizTypeOrder,
+		BizID:        903,
+		PayerUserID:  user.ID,
+		Channel:      model.PaymentChannelAlipay,
+		FundScene:    model.FundSceneDesignFee,
+		TerminalType: model.PaymentTerminalPCWeb,
+		Subject:      "订单支付 #DF202604120001",
+		Amount:       4500,
+		OutTradeNo:   "ORDER-902",
+		Status:       model.PaymentStatusPending,
+	}
+
+	for _, item := range []any{&user, &payment} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatalf("seed scan pending fixture: %v", err)
+		}
+	}
+
+	previousFactory := paymentChannelServiceFactory
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: paymentServiceTestGateway{
+				queryTradeResult: &AlipayTradeQueryResult{
+					TradeNo:      "2026041200000001",
+					TradeStatus:  alipayTradeWaitBuyerPay,
+					BuyerLogonID: "buyer@example.com",
+					RawJSON:      `{"trade_status":"WAIT_BUYER_PAY","trade_no":"2026041200000001","buyer_logon_id":"buyer@example.com"}`,
+				},
+			},
+		}
+	}
+	t.Cleanup(func() {
+		paymentChannelServiceFactory = previousFactory
+	})
+
+	svc := NewPaymentService(nil)
+	status, err := svc.GetPaymentStatusForUser(payment.ID, user.ID)
+	if err != nil {
+		t.Fatalf("GetPaymentStatusForUser: %v", err)
+	}
+
+	if status.Status != model.PaymentStatusScanPending || status.StatusText != "已扫码待支付" {
+		t.Fatalf("expected scan pending status, got %+v", status)
+	}
+
+	var stored model.PaymentOrder
+	if err := db.First(&stored, payment.ID).Error; err != nil {
+		t.Fatalf("load stored payment: %v", err)
+	}
+	if stored.Status != model.PaymentStatusScanPending || stored.ProviderTradeNo != "2026041200000001" {
+		t.Fatalf("expected stored payment updated to scan pending, got %+v", stored)
+	}
+}
+
+func TestPaymentServiceGetPaymentStatusForUserSyncsPaidFromScanPending(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 911}, Phone: "13800138911", Status: 1}
+	order := model.Order{
+		Base:        model.Base{ID: 913},
+		OrderNo:     "ORD-913",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 4500,
+		Status:      model.OrderStatusPending,
+	}
+	payment := model.PaymentOrder{
+		Base:            model.Base{ID: 912},
+		BizType:         model.PaymentBizTypeOrder,
+		BizID:           order.ID,
+		PayerUserID:     user.ID,
+		Channel:         model.PaymentChannelAlipay,
+		FundScene:       model.FundSceneDesignFee,
+		TerminalType:    model.PaymentTerminalMiniQR,
+		Subject:         "订单支付 #DF202604120009",
+		Amount:          4500,
+		OutTradeNo:      "ORDER-912",
+		ProviderTradeNo: "2026041200000001",
+		Status:          model.PaymentStatusScanPending,
+	}
+
+	for _, item := range []any{&user, &order, &payment} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatalf("seed paid-from-scan fixture: %v", err)
+		}
+	}
+
+	previousFactory := paymentChannelServiceFactory
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: paymentServiceTestGateway{
+				queryTradeResult: &AlipayTradeQueryResult{
+					TradeNo:     "2026041200000001",
+					TradeStatus: alipayTradeSuccess,
+					BuyerAmount: 4500,
+					RawJSON:     `{"trade_status":"TRADE_SUCCESS","trade_no":"2026041200000001"}`,
+				},
+			},
+		}
+	}
+	t.Cleanup(func() {
+		paymentChannelServiceFactory = previousFactory
+	})
+
+	svc := NewPaymentService(nil)
+	status, err := svc.GetPaymentStatusForUser(payment.ID, user.ID)
+	if err != nil {
+		t.Fatalf("GetPaymentStatusForUser: %v", err)
+	}
+	if status.Status != model.PaymentStatusPaid || status.StatusText != "已支付" {
+		t.Fatalf("expected paid status, got %+v", status)
+	}
+
+	var stored model.PaymentOrder
+	if err := db.First(&stored, payment.ID).Error; err != nil {
+		t.Fatalf("load stored payment: %v", err)
+	}
+	if stored.Status != model.PaymentStatusPaid {
+		t.Fatalf("expected stored payment updated to paid, got %+v", stored)
+	}
+}
+
+func TestPaymentServiceGetPaymentDetailForUserSyncsPaidFromScanPending(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 921}, Phone: "13800138921", Status: 1}
+	order := model.Order{
+		Base:        model.Base{ID: 923},
+		OrderNo:     "ORD-923",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 5200,
+		Status:      model.OrderStatusPending,
+	}
+	payment := model.PaymentOrder{
+		Base:            model.Base{ID: 922},
+		BizType:         model.PaymentBizTypeOrder,
+		BizID:           order.ID,
+		PayerUserID:     user.ID,
+		Channel:         model.PaymentChannelAlipay,
+		FundScene:       model.FundSceneDesignFee,
+		TerminalType:    model.PaymentTerminalMiniQR,
+		Subject:         "订单支付 #DF202604120010",
+		Amount:          5200,
+		OutTradeNo:      "ORDER-922",
+		ProviderTradeNo: "2026041200000002",
+		Status:          model.PaymentStatusScanPending,
+	}
+
+	for _, item := range []any{&user, &order, &payment} {
+		if err := db.Create(item).Error; err != nil {
+			t.Fatalf("seed detail-from-scan fixture: %v", err)
+		}
+	}
+
+	previousFactory := paymentChannelServiceFactory
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: paymentServiceTestGateway{
+				queryTradeResult: &AlipayTradeQueryResult{
+					TradeNo:     "2026041200000002",
+					TradeStatus: alipayTradeSuccess,
+					BuyerAmount: 5200,
+					RawJSON:     `{"trade_status":"TRADE_SUCCESS","trade_no":"2026041200000002"}`,
+				},
+			},
+		}
+	}
+	t.Cleanup(func() {
+		paymentChannelServiceFactory = previousFactory
+	})
+
+	svc := NewPaymentService(nil)
+	detail, err := svc.GetPaymentDetailForUser(payment.ID, user.ID)
+	if err != nil {
+		t.Fatalf("GetPaymentDetailForUser: %v", err)
+	}
+	if detail.Status != model.PaymentStatusPaid || detail.StatusText != "已支付" {
+		t.Fatalf("expected paid detail, got %+v", detail)
 	}
 }
 
@@ -1110,5 +1518,95 @@ func TestPaymentServiceStartOrderPaymentSupportsMiniWechatJSAPI(t *testing.T) {
 	}
 	if launch.WechatPayParams == nil || launch.WechatPayParams.Package == "" {
 		t.Fatalf("expected wechat pay params, got %+v", launch.WechatPayParams)
+	}
+}
+
+func TestPaymentServiceStartOrderPaymentSupportsBookingLinkedDesignOrder(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	userID, _, orderID := seedPendingBookingDesignOrderFixture(t, db)
+
+	svc := NewPaymentService(paymentServiceTestGateway{})
+	launch, err := svc.StartOrderPayment(userID, orderID, model.PaymentChannelAlipay, model.PaymentTerminalMiniQR)
+	if err != nil {
+		t.Fatalf("StartOrderPayment booking-linked design order: %v", err)
+	}
+	if launch.PaymentID == 0 {
+		t.Fatalf("expected payment launch response with payment id, got %+v", launch)
+	}
+	if launch.LaunchMode != "qr_code" {
+		t.Fatalf("expected qr_code launch for web qr payment, got %+v", launch)
+	}
+}
+
+func TestConfirmOrderPaidTxAdvancesBookingDesignFlowToDeliveryPending(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	_, bookingID, orderID := seedPendingBookingDesignOrderFixture(t, db)
+
+	tx := db.Begin()
+	effect, err := confirmOrderPaidTx(tx, orderID)
+	if err != nil {
+		tx.Rollback()
+		t.Fatalf("confirmOrderPaidTx: %v", err)
+	}
+	if err := tx.Commit().Error; err != nil {
+		t.Fatalf("commit confirmOrderPaidTx: %v", err)
+	}
+
+	if effect == nil || effect.BookingID != bookingID {
+		t.Fatalf("expected payment side effect to bind booking %d, got %+v", bookingID, effect)
+	}
+
+	var order model.Order
+	if err := db.First(&order, orderID).Error; err != nil {
+		t.Fatalf("reload order: %v", err)
+	}
+	if order.Status != model.OrderStatusPaid {
+		t.Fatalf("expected order paid, got status=%d", order.Status)
+	}
+
+	var flow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, bookingID).First(&flow).Error; err != nil {
+		t.Fatalf("reload business flow: %v", err)
+	}
+	if flow.CurrentStage != model.BusinessFlowStageDesignDeliveryPending {
+		t.Fatalf("expected booking flow advanced to %s, got %s", model.BusinessFlowStageDesignDeliveryPending, flow.CurrentStage)
+	}
+}
+
+func TestConfirmOrderPaidTxSyncsPendingPaymentPlans(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	_, _, orderID := seedPendingBookingDesignOrderFixture(t, db)
+
+	plan := model.PaymentPlan{
+		Base:    model.Base{ID: 176},
+		OrderID: orderID,
+		Type:    "onetime",
+		Seq:     1,
+		Name:    "设计费",
+		Amount:  2888,
+		Status:  model.PaymentPlanStatusPending,
+	}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatalf("seed payment plan: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, err := confirmOrderPaidTx(tx, orderID)
+		return err
+	}); err != nil {
+		t.Fatalf("confirmOrderPaidTx: %v", err)
+	}
+
+	var refreshed model.PaymentPlan
+	if err := db.First(&refreshed, plan.ID).Error; err != nil {
+		t.Fatalf("reload payment plan: %v", err)
+	}
+	if refreshed.Status != model.PaymentPlanStatusPaid {
+		t.Fatalf("expected payment plan status=paid, got %+v", refreshed)
+	}
+	if refreshed.PaidAt == nil {
+		t.Fatalf("expected payment plan paidAt to be set, got %+v", refreshed)
 	}
 }

@@ -60,6 +60,7 @@ const (
 	ConfigKeySurveyDepositRefundRate     = "booking.survey_deposit_refund_rate" // 退款比例(0-1)
 	ConfigKeySurveyDepositMin            = "booking.survey_deposit_min"         // 设计师可设最低
 	ConfigKeySurveyDepositMax            = "booking.survey_deposit_max"         // 设计师可设最高
+	ConfigKeyBudgetConfirmRejectLimit    = "booking.budget_confirm_reject_limit"
 	ConfigKeyDesignFeeQuoteExpireHours   = "design.fee_quote_expire_hours"      // 报价有效期(小时)
 	ConfigKeyDeliverableDeadlineDays     = "design.deliverable_deadline_days"   // 交付截止天数
 	ConfigKeyConstructionReleaseDelay    = "construction.release_delay_days"    // T+N 放款延迟天数
@@ -133,10 +134,15 @@ type PaymentPlan struct {
 	Name        string     `json:"name" gorm:"size:50"` // e.g., "开工款"
 	Amount      float64    `json:"amount"`
 	Percentage  float32    `json:"percentage"`
-	Status      int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付
+	Status      int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付 2:已失效
+	ActivatedAt *time.Time `json:"activatedAt"`
 	DueAt       *time.Time `json:"dueAt"`                   // 应付日期
 	PaidAt      *time.Time `json:"paidAt"`
 	MilestoneID uint64     `json:"milestoneId" gorm:"index"` // 关联里程碑ID（施工费分期）
+	Payable     bool       `json:"payable" gorm:"-"`
+	PayableReason string   `json:"payableReason,omitempty" gorm:"-"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty" gorm:"-"`
+	PlanType    string     `json:"planType,omitempty" gorm:"-"`
 }
 
 // TableName 指定表名
@@ -153,6 +159,12 @@ const (
 	OrderStatusPaid      int8 = 1 // 已支付
 	OrderStatusCancelled int8 = 2 // 已取消
 	OrderStatusRefunded  int8 = 3 // 已退款
+)
+
+const (
+	PaymentPlanStatusPending int8 = 0
+	PaymentPlanStatusPaid    int8 = 1
+	PaymentPlanStatusExpired int8 = 2
 )
 
 const (

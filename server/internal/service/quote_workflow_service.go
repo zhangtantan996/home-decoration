@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ import (
 type quoteExtensions struct {
 	Required bool `json:"required,omitempty"`
 }
+
+var projectRegionTokenPattern = regexp.MustCompile(`[\p{Han}A-Za-z0-9]{2,}(?:特别行政区|自治区|自治州|高新区|开发区|新区|省|市|区|县|旗|盟|州)`)
 
 type QuoteCategoryCreateInput struct {
 	Code      string `json:"code"`
@@ -70,6 +73,7 @@ type QuotePriceBookItemView struct {
 	Remark           string `json:"remark"`
 	Status           int8   `json:"status"`
 	Required         bool   `json:"required"`
+	Applicable       bool   `json:"applicable"`
 }
 
 type QuotePriceBookDetail struct {
@@ -121,15 +125,24 @@ type RecommendedForeman struct {
 }
 
 type QuoteTaskUserView struct {
-	QuoteList        model.QuoteList               `json:"quoteList"`
-	Submission       model.QuoteSubmission         `json:"submission"`
-	Items            []model.QuoteSubmissionItem   `json:"items"`
-	TaskSummary      QuoteTaskPrerequisiteSnapshot `json:"taskSummary"`
-	QuantityBase     *model.QuantityBase           `json:"quantityBase,omitempty"`
-	QuantityItems    []model.QuantityBaseItem      `json:"quantityItems,omitempty"`
-	BusinessStage    string                        `json:"businessStage,omitempty"`
-	FlowSummary      string                        `json:"flowSummary,omitempty"`
-	AvailableActions []string                      `json:"availableActions,omitempty"`
+	QuoteList                      model.QuoteList               `json:"quoteList"`
+	Submission                     model.QuoteSubmission         `json:"submission"`
+	Items                          []model.QuoteSubmissionItem   `json:"items"`
+	TaskSummary                    QuoteTaskPrerequisiteSnapshot `json:"taskSummary"`
+	QuantityBase                   *model.QuantityBase           `json:"quantityBase,omitempty"`
+	QuantityItems                  []model.QuantityBaseItem      `json:"quantityItems,omitempty"`
+	PaymentPlanSummary             []QuotePaymentPlanSummary     `json:"paymentPlanSummary,omitempty"`
+	BusinessStage                  string                        `json:"businessStage,omitempty"`
+	FlowSummary                    string                        `json:"flowSummary,omitempty"`
+	AvailableActions               []string                      `json:"availableActions,omitempty"`
+	BaselineStatus                 string                        `json:"baselineStatus,omitempty"`
+	BaselineSubmittedAt            *time.Time                    `json:"baselineSubmittedAt,omitempty"`
+	ConstructionSubjectType        string                        `json:"constructionSubjectType,omitempty"`
+	ConstructionSubjectID          uint64                        `json:"constructionSubjectId,omitempty"`
+	ConstructionSubjectDisplayName string                        `json:"constructionSubjectDisplayName,omitempty"`
+	KickoffStatus                  string                        `json:"kickoffStatus,omitempty"`
+	PlannedStartDate               *time.Time                    `json:"plannedStartDate,omitempty"`
+	SupervisorSummary              *BridgeSupervisorSummary      `json:"supervisorSummary,omitempty"`
 }
 
 type UserQuoteTaskSummary struct {
@@ -453,6 +466,11 @@ func (s *QuoteService) GetProviderPriceBook(providerID uint64) (*QuotePriceBookD
 	if err != nil {
 		return nil, err
 	}
+	var provider model.Provider
+	providerWorkTypes := []string(nil)
+	if err := repository.DB.Select("id", "work_types").First(&provider, providerID).Error; err == nil {
+		providerWorkTypes = parseDelimitedString(provider.WorkTypes)
+	}
 	var priceItems []model.QuotePriceBookItem
 	if err := repository.DB.Where("price_book_id = ?", book.ID).Order("id ASC").Find(&priceItems).Error; err != nil {
 		return nil, fmt.Errorf("查询价格簿明细失败: %w", err)
@@ -493,6 +511,7 @@ func (s *QuoteService) GetProviderPriceBook(providerID uint64) (*QuotePriceBookD
 			Remark:           priceItem.Remark,
 			Status:           maxPriceItemStatus(priceItem.Status),
 			Required:         parseQuoteRequiredFlag(libraryItem.ExtensionsJSON),
+			Applicable:       isQuoteLibraryItemApplicableToProviderWorkTypes(&libraryItem, providerWorkTypes),
 		})
 	}
 
@@ -585,9 +604,18 @@ func (s *QuoteService) PublishProviderPriceBook(providerID uint64) (*QuotePriceB
 		return nil, err
 	}
 
+	var provider model.Provider
+	if err := repository.DB.Select("id", "work_types").First(&provider, providerID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("施工主体不存在")
+		}
+		return nil, fmt.Errorf("查询施工主体失败: %w", err)
+	}
+	providerWorkTypes := parseDelimitedString(provider.WorkTypes)
+
 	var libraryItems []model.QuoteLibraryItem
 	if err := repository.DB.
-		Select("id, name, extensions_json").
+		Select("id, name, category_l1, category_l2, extensions_json").
 		Where("status = ?", model.QuoteLibraryItemStatusEnabled).
 		Find(&libraryItems).Error; err != nil {
 		return nil, fmt.Errorf("查询标准项失败: %w", err)
@@ -608,6 +636,9 @@ func (s *QuoteService) PublishProviderPriceBook(providerID uint64) (*QuotePriceB
 	requiredMissing := make([]string, 0)
 	for _, libraryItem := range libraryItems {
 		if !parseQuoteRequiredFlag(libraryItem.ExtensionsJSON) {
+			continue
+		}
+		if !isQuoteLibraryItemApplicableToProviderWorkTypes(&libraryItem, providerWorkTypes) {
 			continue
 		}
 		priceItem, ok := priceByStandardID[libraryItem.ID]
@@ -688,18 +719,15 @@ func (s *QuoteService) UpdateTaskPrerequisites(quoteListID uint64, input *QuoteT
 		return nil, err
 	}
 
-	snapshot := QuoteTaskPrerequisiteSnapshot{
-		Area:              input.Area,
-		Layout:            strings.TrimSpace(input.Layout),
-		RenovationType:    strings.TrimSpace(input.RenovationType),
-		ConstructionScope: strings.TrimSpace(input.ConstructionScope),
-		ServiceAreas:      normalizeStringSlice(input.ServiceAreas),
-		WorkTypes:         normalizeStringSlice(input.WorkTypes),
-		HouseUsage:        strings.TrimSpace(input.HouseUsage),
-		Notes:             strings.TrimSpace(input.Notes),
+	snapshot, err := s.buildQuoteTaskPrerequisiteSnapshot(quoteList, input)
+	if err != nil {
+		return nil, err
 	}
 	raw, _ := json.Marshal(snapshot)
-	result := validateQuoteTaskPrerequisites(snapshot)
+	result, err := s.validateQuoteTaskReadinessWithDB(repository.DB, quoteList, snapshot)
+	if err != nil {
+		return nil, err
+	}
 	nextStatus := model.QuoteListStatusDraft
 	if result.OK {
 		nextStatus = model.QuoteListStatusReadyForSelection
@@ -726,7 +754,10 @@ func (s *QuoteService) ValidateTaskPrerequisites(quoteListID uint64) (*QuoteTask
 	if err != nil {
 		return nil, err
 	}
-	result := validateQuoteTaskPrerequisites(snapshot)
+	result, err := s.validateQuoteTaskReadinessWithDB(repository.DB, &quoteList, snapshot)
+	if err != nil {
+		return nil, err
+	}
 	nextStatus := quoteList.Status
 	if result.OK {
 		nextStatus = model.QuoteListStatusReadyForSelection
@@ -743,7 +774,7 @@ func (s *QuoteService) ValidateTaskPrerequisites(quoteListID uint64) (*QuoteTask
 }
 
 func validateQuoteTaskPrerequisites(snapshot QuoteTaskPrerequisiteSnapshot) *QuoteTaskValidationResult {
-	missing := make([]string, 0, 4)
+	missing := make([]string, 0, 6)
 	if snapshot.Area <= 0 {
 		missing = append(missing, "area")
 	}
@@ -756,16 +787,10 @@ func validateQuoteTaskPrerequisites(snapshot QuoteTaskPrerequisiteSnapshot) *Quo
 	if strings.TrimSpace(snapshot.ConstructionScope) == "" {
 		missing = append(missing, "constructionScope")
 	}
-	status := model.QuoteTaskPrerequisiteDraft
-	if len(missing) == 0 {
-		status = model.QuoteTaskPrerequisiteComplete
+	if len(normalizeRegionInputs(snapshot.ServiceAreas)) == 0 {
+		missing = append(missing, "serviceAreas")
 	}
-	return &QuoteTaskValidationResult{
-		OK:            len(missing) == 0,
-		Status:        status,
-		MissingFields: missing,
-		Message:       buildQuoteTaskPrerequisiteMessage(missing),
-	}
+	return buildQuoteTaskValidationResult(missing)
 }
 
 func buildQuoteTaskPrerequisiteMessage(missing []string) string {
@@ -783,11 +808,337 @@ func buildQuoteTaskPrerequisiteMessage(missing []string) string {
 			labels = append(labels, "装修类型")
 		case "constructionScope":
 			labels = append(labels, "施工范围")
+		case "serviceAreas":
+			labels = append(labels, "项目区域")
+		case "quantityItems":
+			labels = append(labels, "施工基线清单")
 		default:
 			labels = append(labels, field)
 		}
 	}
 	return fmt.Sprintf("报价前置资料未补齐，缺少：%s", strings.Join(labels, "、"))
+}
+
+func buildQuoteTaskValidationResult(missing []string) *QuoteTaskValidationResult {
+	normalizedMissing := uniqueStringSlice(missing)
+	status := model.QuoteTaskPrerequisiteDraft
+	if len(normalizedMissing) == 0 {
+		status = model.QuoteTaskPrerequisiteComplete
+	}
+	return &QuoteTaskValidationResult{
+		OK:            len(normalizedMissing) == 0,
+		Status:        status,
+		MissingFields: normalizedMissing,
+		Message:       buildQuoteTaskPrerequisiteMessage(normalizedMissing),
+	}
+}
+
+func (s *QuoteService) buildQuoteTaskPrerequisiteSnapshot(quoteList *model.QuoteList, input *QuoteTaskPrerequisiteUpdateInput) (QuoteTaskPrerequisiteSnapshot, error) {
+	if input == nil {
+		input = &QuoteTaskPrerequisiteUpdateInput{}
+	}
+	snapshot := QuoteTaskPrerequisiteSnapshot{
+		Area:              input.Area,
+		Layout:            strings.TrimSpace(input.Layout),
+		RenovationType:    strings.TrimSpace(input.RenovationType),
+		ConstructionScope: normalizeConstructionScopeText(input.ConstructionScope),
+		ServiceAreas:      normalizeRegionInputs(input.ServiceAreas),
+		HouseUsage:        strings.TrimSpace(input.HouseUsage),
+		Notes:             strings.TrimSpace(input.Notes),
+	}
+	if quoteList == nil {
+		snapshot.WorkTypes = normalizeStringSlice(input.WorkTypes)
+		return snapshot, nil
+	}
+	derivedWorkTypes, err := s.deriveWorkTypesForQuoteListWithDB(repository.DB, quoteList)
+	if err != nil {
+		return QuoteTaskPrerequisiteSnapshot{}, err
+	}
+	if len(derivedWorkTypes) == 0 {
+		derivedWorkTypes = normalizeStringSlice(input.WorkTypes)
+	}
+	snapshot.WorkTypes = derivedWorkTypes
+	return snapshot, nil
+}
+
+func (s *QuoteService) validateQuoteTaskReadinessWithDB(db *gorm.DB, quoteList *model.QuoteList, snapshot QuoteTaskPrerequisiteSnapshot) (*QuoteTaskValidationResult, error) {
+	result := validateQuoteTaskPrerequisites(snapshot)
+	if quoteList == nil {
+		return result, nil
+	}
+	missing := append([]string{}, result.MissingFields...)
+	baselineCount, err := s.countQuoteTaskBaselineItemsWithDB(db, quoteList)
+	if err != nil {
+		return nil, err
+	}
+	templateState, err := s.buildPreparationTemplateStateWithDB(db, quoteList, snapshot, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	hasTemplate := templateState.TemplateID > 0 && len(templateState.Sections) > 0
+	switch {
+	case hasTemplate && (len(templateState.MissingRequiredNames) > 0 || templateState.EffectiveItemCount == 0):
+		missing = append(missing, "quantityItems")
+	case !hasTemplate && baselineCount == 0:
+		missing = append(missing, "quantityItems")
+	}
+	return buildQuoteTaskValidationResult(missing), nil
+}
+
+func (s *QuoteService) syncQuoteTaskPrerequisiteState(quoteList *model.QuoteList) error {
+	tx := repository.DB.Begin()
+	if tx.Error != nil {
+		return fmt.Errorf("开启事务失败: %w", tx.Error)
+	}
+	if err := s.syncQuoteTaskPrerequisiteStateTx(tx, quoteList); err != nil {
+		tx.Rollback()
+		return err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("同步施工报价前置状态失败: %w", err)
+	}
+	return nil
+}
+
+func (s *QuoteService) syncQuoteTaskPrerequisiteStateTx(tx *gorm.DB, quoteList *model.QuoteList) error {
+	if quoteList == nil || quoteList.ID == 0 {
+		return nil
+	}
+	snapshot, err := s.getPrerequisiteSnapshot(quoteList)
+	if err != nil {
+		return err
+	}
+	derivedWorkTypes, err := s.deriveWorkTypesForQuoteListWithDB(tx, quoteList)
+	if err != nil {
+		return err
+	}
+	if len(derivedWorkTypes) > 0 {
+		snapshot.WorkTypes = derivedWorkTypes
+	}
+	result, err := s.validateQuoteTaskReadinessWithDB(tx, quoteList, snapshot)
+	if err != nil {
+		return err
+	}
+	nextStatus := quoteList.Status
+	switch quoteList.Status {
+	case model.QuoteListStatusDraft, model.QuoteListStatusReadyForSelection, model.QuoteListStatusRejected:
+		nextStatus = model.QuoteListStatusDraft
+		if result.OK {
+			nextStatus = model.QuoteListStatusReadyForSelection
+		}
+	}
+	raw, _ := json.Marshal(snapshot)
+	if err := tx.Model(&model.QuoteList{}).Where("id = ?", quoteList.ID).Updates(map[string]interface{}{
+		"prerequisite_snapshot_json": string(raw),
+		"prerequisite_status":        result.Status,
+		"status":                     nextStatus,
+	}).Error; err != nil {
+		return fmt.Errorf("同步施工报价前置状态失败: %w", err)
+	}
+	quoteList.PrerequisiteSnapshotJSON = string(raw)
+	quoteList.PrerequisiteStatus = result.Status
+	quoteList.Status = nextStatus
+	return nil
+}
+
+func (s *QuoteService) countQuoteTaskBaselineItemsWithDB(db *gorm.DB, quoteList *model.QuoteList) (int, error) {
+	if quoteList == nil || quoteList.ID == 0 {
+		return 0, nil
+	}
+	var count int64
+	if quoteList.QuantityBaseID > 0 {
+		if err := db.Model(&model.QuantityBaseItem{}).Where("quantity_base_id = ?", quoteList.QuantityBaseID).Count(&count).Error; err != nil {
+			return 0, fmt.Errorf("查询施工基线数量失败: %w", err)
+		}
+		if count > 0 {
+			return int(count), nil
+		}
+	}
+	if err := db.Model(&model.QuoteListItem{}).Where("quote_list_id = ?", quoteList.ID).Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("查询施工报价明细数量失败: %w", err)
+	}
+	return int(count), nil
+}
+
+func (s *QuoteService) deriveWorkTypesForQuoteListWithDB(db *gorm.DB, quoteList *model.QuoteList) ([]string, error) {
+	if quoteList == nil || quoteList.ID == 0 {
+		return nil, nil
+	}
+	if quoteList.QuantityBaseID > 0 {
+		var quantityItems []model.QuantityBaseItem
+		if err := db.Where("quantity_base_id = ?", quoteList.QuantityBaseID).Order("sort_order ASC, id ASC").Find(&quantityItems).Error; err != nil {
+			return nil, fmt.Errorf("查询施工基线失败: %w", err)
+		}
+		if len(quantityItems) > 0 {
+			return deriveWorkTypesFromQuantityBaseItems(quantityItems), nil
+		}
+	}
+	var quoteItems []model.QuoteListItem
+	if err := db.Where("quote_list_id = ?", quoteList.ID).Order("sort_order ASC, id ASC").Find(&quoteItems).Error; err != nil {
+		return nil, fmt.Errorf("查询施工报价明细失败: %w", err)
+	}
+	return deriveWorkTypesFromQuoteListItems(quoteItems), nil
+}
+
+func deriveWorkTypesFromQuantityBaseItems(items []model.QuantityBaseItem) []string {
+	derived := make([]string, 0, len(items))
+	for _, item := range items {
+		derived = append(derived, deriveWorkTypesForQuoteItem(item.CategoryL1, item.CategoryL2, item.SourceItemName)...)
+	}
+	return normalizeStringSlice(derived)
+}
+
+func deriveWorkTypesFromQuoteListItems(items []model.QuoteListItem) []string {
+	derived := make([]string, 0, len(items))
+	for _, item := range items {
+		derived = append(derived, deriveWorkTypesForQuoteItem(item.CategoryL1, item.CategoryL2, item.Name)...)
+	}
+	return normalizeStringSlice(derived)
+}
+
+func deriveWorkTypesForQuoteItem(categoryL1, categoryL2, name string) []string {
+	matched := make([]string, 0, 3)
+	add := func(values ...string) {
+		for _, value := range values {
+			if normalized := normalizeWorkTypeCode(value); normalized != "" {
+				matched = append(matched, normalized)
+			}
+		}
+	}
+
+	text := strings.Join([]string{
+		strings.TrimSpace(categoryL1),
+		strings.TrimSpace(categoryL2),
+		strings.TrimSpace(name),
+	}, " ")
+	normalizedText := strings.ToLower(strings.TrimSpace(text))
+	switch {
+	case containsAnyKeyword(normalizedText, "防水"):
+		add("waterproof", "mason")
+	case containsAnyKeyword(normalizedText, "水电"):
+		add("plumber", "electrician")
+	case containsAnyKeyword(normalizedText, "电工", "电路", "强电", "弱电"):
+		add("electrician")
+	case containsAnyKeyword(normalizedText, "水路", "给排水", "洁具", "管道"):
+		add("plumber")
+	case containsAnyKeyword(normalizedText, "泥瓦", "瓦工", "墙砖", "地砖", "找平", "砌筑", "抹灰", "包管", "石材"):
+		add("mason")
+	case containsAnyKeyword(normalizedText, "木作", "木工", "吊顶", "隔墙", "基层板", "柜体", "窗帘盒"):
+		add("carpenter")
+	case containsAnyKeyword(normalizedText, "油工", "油漆", "乳胶漆", "腻子", "刷漆", "壁纸"):
+		add("painter")
+	}
+	return normalizeStringSlice(matched)
+}
+
+func isQuoteLibraryItemApplicableToProviderWorkTypes(item *model.QuoteLibraryItem, providerWorkTypes []string) bool {
+	if item == nil {
+		return false
+	}
+	normalizedProviderTypes := normalizeStringSlice(providerWorkTypes)
+	if len(normalizedProviderTypes) == 0 {
+		return true
+	}
+	itemWorkTypes := deriveWorkTypesForQuoteItem(item.CategoryL1, item.CategoryL2, item.Name)
+	if len(itemWorkTypes) == 0 {
+		return true
+	}
+	return workTypeOverlapExists(itemWorkTypes, normalizedProviderTypes)
+}
+
+func normalizeConstructionScopeText(raw string) string {
+	values := strings.FieldsFunc(strings.TrimSpace(raw), func(r rune) bool {
+		switch r {
+		case '、', ',', '，', '/', '\n':
+			return true
+		default:
+			return false
+		}
+	})
+	return strings.Join(normalizeStringSlice(values), "、")
+}
+
+func normalizeWorkTypeCode(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	switch normalized {
+	case "mason", "masonry", "泥瓦", "瓦工":
+		return "mason"
+	case "electrician", "electric", "电工", "电路":
+		return "electrician"
+	case "plumber", "plumbing", "水工", "水路", "水电":
+		return "plumber"
+	case "carpenter", "wood", "woodwork", "木工", "木作":
+		return "carpenter"
+	case "painter", "paint", "painting", "油工", "油漆工", "油漆":
+		return "painter"
+	case "waterproof", "防水":
+		return "waterproof"
+	case "general", "all", "综合", "全能":
+		return "general"
+	default:
+		return normalized
+	}
+}
+
+func normalizeWorkTypeCodes(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		if code := normalizeWorkTypeCode(value); code != "" {
+			normalized = append(normalized, code)
+		}
+	}
+	return normalizeStringSlice(normalized)
+}
+
+func workTypeOverlapExists(taskTypes, providerTypes []string) bool {
+	normalizedTaskTypes := normalizeWorkTypeCodes(taskTypes)
+	normalizedProviderTypes := normalizeWorkTypeCodes(providerTypes)
+	if len(normalizedTaskTypes) == 0 || len(normalizedProviderTypes) == 0 {
+		return false
+	}
+	for _, providerType := range normalizedProviderTypes {
+		if providerType == "general" {
+			return true
+		}
+	}
+	return overlapExists(normalizedTaskTypes, normalizedProviderTypes)
+}
+
+func resolveRegionMatchTokens(values []string) []string {
+	result := make([]string, 0, len(values)*2)
+	normalizedInputs := normalizeRegionInputs(values)
+	result = append(result, normalizedInputs...)
+	regionService := &RegionService{}
+	if _, cityNames, err := regionService.ResolveServiceAreaInputsToCityDisplay(normalizedInputs); err == nil {
+		result = append(result, cityNames...)
+	}
+	for _, value := range normalizedInputs {
+		result = append(result, extractProjectRegionHints(value)...)
+	}
+	return uniqueStringSlice(result)
+}
+
+func regionOverlapExists(projectAreas, providerAreas []string) bool {
+	return overlapExists(resolveRegionMatchTokens(projectAreas), resolveRegionMatchTokens(providerAreas))
+}
+
+func extractProjectRegionHints(text string) []string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+	matches := projectRegionTokenPattern.FindAllString(trimmed, -1)
+	return uniqueStringSlice(matches)
+}
+
+func containsAnyKeyword(text string, keywords ...string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(text, strings.ToLower(strings.TrimSpace(keyword))) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForeman, error) {
@@ -799,7 +1150,10 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 	if err != nil {
 		return nil, err
 	}
-	validation := validateQuoteTaskPrerequisites(snapshot)
+	validation, err := s.validateQuoteTaskReadinessWithDB(repository.DB, &quoteList, snapshot)
+	if err != nil {
+		return nil, err
+	}
 	if !validation.OK {
 		return nil, errors.New(validation.Message)
 	}
@@ -809,8 +1163,8 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 	}
 
 	var providers []model.Provider
-	if err := repository.DB.Where("provider_type = ? AND status = ?", 3, 1).Find(&providers).Error; err != nil {
-		return nil, fmt.Errorf("查询工长失败: %w", err)
+	if err := repository.DB.Where("provider_type IN ? AND status = ?", []int8{2, 3}, 1).Find(&providers).Error; err != nil {
+		return nil, fmt.Errorf("查询施工主体失败: %w", err)
 	}
 
 	recommendations := make([]RecommendedForeman, 0, len(providers))
@@ -853,8 +1207,8 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 		}
 
 		providerAreas := parseJSONStringArray(provider.ServiceArea)
-		regionMatched := overlapExists(snapshot.ServiceAreas, providerAreas)
-		workTypesMatched := overlapExists(snapshot.WorkTypes, parseDelimitedString(provider.WorkTypes))
+		regionMatched := regionOverlapExists(snapshot.ServiceAreas, providerAreas)
+		workTypesMatched := workTypeOverlapExists(snapshot.WorkTypes, parseDelimitedString(provider.WorkTypes))
 		reasons := make([]string, 0, 4)
 		if regionMatched {
 			reasons = append(reasons, "服务城市匹配")
@@ -918,7 +1272,7 @@ func (s *QuoteService) SelectForemen(quoteListID, operatorID uint64, providerIDs
 		return nil, errors.New("报价任务不存在")
 	}
 	if quoteList.Status != model.QuoteListStatusReadyForSelection && quoteList.Status != model.QuoteListStatusRejected {
-		return nil, fmt.Errorf("当前报价任务状态不允许选择工长: %s", quoteList.Status)
+		return nil, fmt.Errorf("当前报价任务状态不允许选择施工主体: %s", quoteList.Status)
 	}
 	return s.InviteProviders(quoteListID, operatorID, providerIDs)
 }
@@ -933,7 +1287,10 @@ func (s *QuoteService) GenerateDrafts(quoteListID uint64) (*QuoteComparisonRespo
 		if snapshotErr != nil {
 			return nil, snapshotErr
 		}
-		validation := validateQuoteTaskPrerequisites(snapshot)
+		validation, validationErr := s.validateQuoteTaskReadinessWithDB(repository.DB, &quoteList, snapshot)
+		if validationErr != nil {
+			return nil, validationErr
+		}
 		return nil, errors.New(validation.Message)
 	}
 
@@ -947,10 +1304,10 @@ func (s *QuoteService) GenerateDrafts(quoteListID uint64) (*QuoteComparisonRespo
 
 	var invitations []model.QuoteInvitation
 	if err := repository.DB.Where("quote_list_id = ?", quoteListID).Find(&invitations).Error; err != nil {
-		return nil, fmt.Errorf("查询参与工长失败: %w", err)
+		return nil, fmt.Errorf("查询参与施工主体失败: %w", err)
 	}
 	if len(invitations) == 0 {
-		return nil, errors.New("尚未选择工长")
+		return nil, errors.New("尚未选择施工主体")
 	}
 
 	tx := repository.DB.Begin()
@@ -958,17 +1315,17 @@ func (s *QuoteService) GenerateDrafts(quoteListID uint64) (*QuoteComparisonRespo
 		var provider model.Provider
 		if err := tx.First(&provider, invitation.ProviderID).Error; err != nil {
 			tx.Rollback()
-			return nil, fmt.Errorf("工长不存在: %d", invitation.ProviderID)
+			return nil, fmt.Errorf("施工主体不存在: %d", invitation.ProviderID)
 		}
 		priceBook, err := s.getCurrentPriceBookWithDB(tx, provider.ID)
 		if err != nil {
 			tx.Rollback()
-			return nil, fmt.Errorf("工长 %d 缺少价格库", provider.ID)
+			return nil, fmt.Errorf("施工主体 %d 缺少价格库", provider.ID)
 		}
 		var priceItems []model.QuotePriceBookItem
 		if err := tx.Where("price_book_id = ? AND status = ?", priceBook.ID, model.QuoteLibraryItemStatusEnabled).Find(&priceItems).Error; err != nil {
 			tx.Rollback()
-			return nil, fmt.Errorf("查询工长价格库明细失败: %w", err)
+			return nil, fmt.Errorf("查询施工主体价格库明细失败: %w", err)
 		}
 		priceByStandardID := make(map[uint64]model.QuotePriceBookItem, len(priceItems))
 		for _, item := range priceItems {
@@ -1091,6 +1448,11 @@ func (s *QuoteService) SubmitTaskToUser(quoteListID, submissionID uint64) (*mode
 	if submission.Status != model.QuoteSubmissionStatusSubmitted {
 		return nil, errors.New("只能提交已由工长正式提交的报价版本")
 	}
+	if submission.ReviewStatus != "" &&
+		submission.ReviewStatus != model.QuoteSubmissionReviewStatusNotRequired &&
+		submission.ReviewStatus != model.QuoteSubmissionReviewStatusApproved {
+		return nil, errors.New("当前报价版本仍待平台复核，不能提交给用户")
+	}
 	now := time.Now()
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.QuoteSubmission{}).Where("quote_list_id = ?", quoteListID).Update("submitted_to_user", false).Error; err != nil {
@@ -1137,6 +1499,52 @@ func (s *QuoteService) SubmitTaskToUser(quoteListID, submissionID uint64) (*mode
 		}()),
 	)
 	return &quoteList, nil
+}
+
+type QuoteSubmissionReviewInput struct {
+	Approved bool   `json:"approved"`
+	Reason   string `json:"reason"`
+}
+
+func (s *QuoteService) ReviewQuoteSubmission(submissionID, adminID uint64, input *QuoteSubmissionReviewInput) (*model.QuoteSubmission, error) {
+	if input == nil {
+		return nil, errors.New("复核参数不能为空")
+	}
+
+	var submission model.QuoteSubmission
+	if err := repository.DB.First(&submission, submissionID).Error; err != nil {
+		return nil, errors.New("报价版本不存在")
+	}
+
+	reason := strings.TrimSpace(input.Reason)
+	reviewStatus := model.QuoteSubmissionReviewStatusApproved
+	if !input.Approved {
+		if reason == "" {
+			return nil, errors.New("驳回复核必须填写原因")
+		}
+		reviewStatus = model.QuoteSubmissionReviewStatusRejected
+	}
+
+	now := time.Now()
+	updates := map[string]interface{}{
+		"review_status": reviewStatus,
+		"reviewed_by":   adminID,
+		"reviewed_at":   &now,
+		"review_reason": reason,
+	}
+	if !input.Approved {
+		updates["submitted_to_user"] = false
+	}
+
+	if err := repository.DB.Model(&submission).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("更新报价复核结果失败: %w", err)
+	}
+
+	submission.ReviewStatus = reviewStatus
+	submission.ReviewedBy = adminID
+	submission.ReviewedAt = &now
+	submission.ReviewReason = reason
+	return &submission, nil
 }
 
 func (s *QuoteService) RequoteTask(quoteListID uint64) (*model.QuoteList, error) {
@@ -1225,6 +1633,11 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 	if err := repository.DB.Where("quote_submission_id = ?", submission.ID).Order("quote_list_item_id ASC").Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("查询报价明细失败: %w", err)
 	}
+	var listItems []model.QuoteListItem
+	if err := repository.DB.Where("quote_list_id = ?", quoteList.ID).Order("sort_order ASC, id ASC").Find(&listItems).Error; err != nil {
+		return nil, fmt.Errorf("查询报价清单失败: %w", err)
+	}
+	itemByID := buildQuoteListItemMap(listItems)
 	var quantityBase *model.QuantityBase
 	var quantityItems []model.QuantityBaseItem
 	if quoteList.QuantityBaseID > 0 {
@@ -1238,17 +1651,31 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 	if err != nil {
 		return nil, err
 	}
+	paymentPlanSummary, err := s.loadQuotePaymentPlanSummaries(quoteList.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("查询支付计划摘要失败: %w", err)
+	}
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
+	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
 	return &QuoteTaskUserView{
-		QuoteList:        quoteList,
-		Submission:       submission,
-		Items:            items,
-		TaskSummary:      snapshot,
-		QuantityBase:     quantityBase,
-		QuantityItems:    quantityItems,
-		BusinessStage:    stageSummary.CurrentStage,
-		FlowSummary:      stageSummary.FlowSummary,
-		AvailableActions: stageSummary.AvailableActions,
+		QuoteList:                      quoteList,
+		Submission:                     submission,
+		Items:                          enrichQuoteSubmissionItems(items, itemByID),
+		TaskSummary:                    snapshot,
+		QuantityBase:                   quantityBase,
+		QuantityItems:                  quantityItems,
+		PaymentPlanSummary:             paymentPlanSummary,
+		BusinessStage:                  stageSummary.CurrentStage,
+		FlowSummary:                    stageSummary.FlowSummary,
+		AvailableActions:               stageSummary.AvailableActions,
+		BaselineStatus:                 bridgeSummary.BaselineStatus,
+		BaselineSubmittedAt:            bridgeSummary.BaselineSubmittedAt,
+		ConstructionSubjectType:        bridgeSummary.ConstructionSubjectType,
+		ConstructionSubjectID:          bridgeSummary.ConstructionSubjectID,
+		ConstructionSubjectDisplayName: bridgeSummary.ConstructionSubjectDisplayName,
+		KickoffStatus:                  bridgeSummary.KickoffStatus,
+		PlannedStartDate:               bridgeSummary.PlannedStartDate,
+		SupervisorSummary:              bridgeSummary.SupervisorSummary,
 	}, nil
 }
 
@@ -1304,6 +1731,7 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	}
 	now := time.Now()
 	var projectID uint64
+	var orderBundle *ConstructionOrderPlanBundle
 	auditService := &AuditLogService{}
 	beforeState := map[string]interface{}{
 		"quoteList": map[string]interface{}{
@@ -1367,10 +1795,23 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 				"construction_quote_snapshot":  string(snapshotBytes),
 				"quote_confirmed_at":           &now,
 				"business_status":              model.ProjectBusinessStatusConstructionQuoteConfirmed,
-				"current_phase":                "待开工",
+				"current_phase":                "待监理协调开工",
+				"payment_paused":               true,
+				"payment_paused_at":            &now,
+				"payment_paused_reason":        "等待支付首付款",
 			}).Error; err != nil {
 				return err
 			}
+		}
+
+		orderBundle, err = (&OrderService{}).EnsureConstructionOrderAndPaymentPlansTx(tx, projectID, &quoteList, &submission)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&quoteList).Updates(map[string]interface{}{
+			"payment_plan_generated_flag": orderBundle != nil && len(orderBundle.Plans) > 0,
+		}).Error; err != nil {
+			return err
 		}
 
 		if err := businessFlowSvc.AdvanceBySource(tx, sourceType, sourceID, map[string]interface{}{
@@ -1422,7 +1863,14 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	quoteList.UserConfirmedAt = &now
 	quoteList.ActiveSubmissionID = submission.ID
 	quoteList.ProjectID = projectID
+	quoteList.PaymentPlanGeneratedFlag = orderBundle != nil && len(orderBundle.Plans) > 0
 	NewNotificationDispatcher().NotifyQuoteDecision(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, true, "")
+	if orderBundle != nil {
+		NewNotificationDispatcher().NotifyConstructionQuoteAwarded(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, orderBundle.Order.ID)
+		if len(orderBundle.Plans) > 0 {
+			NewNotificationDispatcher().NotifyConstructionPaymentPlanCreated(quoteList.OwnerUserID, quoteList.ID, projectID, orderBundle.Order.ID, orderBundle.Plans[0])
+		}
+	}
 	return &quoteList, nil
 }
 

@@ -158,6 +158,17 @@ func respondLegacyConflict(c *gin.Context, message, errorCode string) {
 
 // HealthCheck 健康检查
 func HealthCheck(c *gin.Context) {
+	response.Success(c, gin.H{
+		"status": healthStatusSnapshot(),
+	})
+}
+
+// HealthCheckDetailed 管理侧健康检查详情。
+func HealthCheckDetailed(c *gin.Context) {
+	response.Success(c, healthDetailSnapshot())
+}
+
+func healthStatusSnapshot() string {
 	smsAuditHealth := repository.RefreshSMSAuditLogHealth()
 	userAuthHealth := repository.RefreshUserAuthSchemaHealth()
 	merchantOnboardingHealth := repository.RefreshMerchantOnboardingSchemaHealth()
@@ -178,8 +189,21 @@ func HealthCheck(c *gin.Context) {
 		overallStatus = "degraded"
 	}
 
-	response.Success(c, gin.H{
-		"status":               overallStatus,
+	return overallStatus
+}
+
+func healthDetailSnapshot() gin.H {
+	smsAuditHealth := repository.RefreshSMSAuditLogHealth()
+	userAuthHealth := repository.RefreshUserAuthSchemaHealth()
+	merchantOnboardingHealth := repository.RefreshMerchantOnboardingSchemaHealth()
+	bookingP0Health := repository.RefreshBookingP0SchemaHealth()
+	projectRiskHealth := repository.RefreshProjectRiskSchemaHealth()
+	auditLogHealth := repository.RefreshAuditLogSchemaHealth()
+	commerceRuntimeHealth := repository.RefreshCommerceRuntimeSchemaHealth()
+	alerts := repository.CurrentOperationalAlerts()
+
+	return gin.H{
+		"status":               healthStatusSnapshot(),
 		"service":              "home-decoration-server",
 		"alertCount":           len(alerts),
 		"alerts":               alerts,
@@ -193,7 +217,7 @@ func HealthCheck(c *gin.Context) {
 			"auditLogSchema":           auditLogHealth,
 			"commerceRuntimeSchema":    commerceRuntimeHealth,
 		},
-	})
+	}
 }
 
 func getNotificationRealtimeHealth() gin.H {

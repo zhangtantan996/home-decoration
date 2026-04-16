@@ -25,6 +25,7 @@ func AdminListSupervisionProjects(c *gin.Context) {
 		PageSize:       pageSize,
 		Keyword:        c.Query("keyword"),
 		PhaseStatus:    c.Query("phaseStatus"),
+		BusinessStage:  c.Query("businessStage"),
 		HasPendingRisk: hasPendingRisk,
 	})
 	if err != nil {

@@ -14,13 +14,127 @@ func TestEnsureRuntimeSchemaColumnsCreatesUserRuntimeTables(t *testing.T) {
 	}
 
 	for name, runtimeModel := range map[string]interface{}{
-		"user_settings":      &model.UserSettings{},
-		"user_verifications": &model.UserVerification{},
-		"user_login_devices": &model.UserLoginDevice{},
-		"user_feedbacks":     &model.UserFeedback{},
+		"user_settings":              &model.UserSettings{},
+		"user_verifications":         &model.UserVerification{},
+		"user_login_devices":         &model.UserLoginDevice{},
+		"user_feedbacks":             &model.UserFeedback{},
+		"quantity_bases":             &model.QuantityBase{},
+		"quantity_base_items":        &model.QuantityBaseItem{},
+		"quote_categories":           &model.QuoteCategory{},
+		"quote_library_items":        &model.QuoteLibraryItem{},
+		"quote_price_books":          &model.QuotePriceBook{},
+		"quote_price_book_items":     &model.QuotePriceBookItem{},
+		"quote_price_tiers":          &model.QuotePriceTier{},
+		"quote_category_rules":       &model.QuoteCategoryRule{},
+		"quote_templates":            &model.QuoteTemplate{},
+		"quote_template_items":       &model.QuoteTemplateItem{},
+		"quote_lists":                &model.QuoteList{},
+		"quote_list_items":           &model.QuoteListItem{},
+		"quote_invitations":          &model.QuoteInvitation{},
+		"quote_submissions":          &model.QuoteSubmission{},
+		"quote_submission_items":     &model.QuoteSubmissionItem{},
+		"quote_submission_revisions": &model.QuoteSubmissionRevision{},
 	} {
 		if !DB.Migrator().HasTable(runtimeModel) {
 			t.Fatalf("expected table %s to exist", name)
+		}
+	}
+}
+
+func TestEnsureRuntimeSchemaColumnsAlignsLegacyQuoteWorkflowTables(t *testing.T) {
+	setupSchemaHealthDB(t)
+
+	for _, statement := range []string{
+		`CREATE TABLE quote_lists (
+			id INTEGER PRIMARY KEY,
+			project_id INTEGER,
+			customer_id INTEGER,
+			house_id INTEGER,
+			owner_user_id INTEGER,
+			scenario_type TEXT,
+			title TEXT,
+			status TEXT,
+			currency TEXT,
+			deadline_at DATETIME,
+			awarded_provider_id INTEGER,
+			awarded_quote_submission_id INTEGER,
+			extensions_json TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE quote_list_items (
+			id INTEGER PRIMARY KEY,
+			quote_list_id INTEGER,
+			standard_item_id INTEGER,
+			line_no INTEGER,
+			name TEXT,
+			unit TEXT,
+			quantity REAL,
+			pricing_note TEXT,
+			category_l1 TEXT,
+			category_l2 TEXT,
+			sort_order INTEGER,
+			extensions_json TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE quote_submissions (
+			id INTEGER PRIMARY KEY,
+			quote_list_id INTEGER,
+			provider_id INTEGER,
+			provider_type INTEGER,
+			provider_sub_type TEXT,
+			status TEXT,
+			currency TEXT,
+			total_cent INTEGER,
+			estimated_days INTEGER,
+			remark TEXT,
+			attachments_json TEXT,
+			team_size INTEGER,
+			work_types TEXT,
+			construction_method_note TEXT,
+			site_visit_required BOOLEAN,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE quote_submission_items (
+			id INTEGER PRIMARY KEY,
+			quote_submission_id INTEGER,
+			quote_list_item_id INTEGER,
+			unit_price_cent INTEGER,
+			amount_cent INTEGER,
+			remark TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := DB.Exec(statement).Error; err != nil {
+			t.Fatalf("create legacy quote table: %v", err)
+		}
+	}
+
+	if err := ensureRuntimeSchemaColumns(); err != nil {
+		t.Fatalf("ensure runtime schema columns: %v", err)
+	}
+
+	for _, check := range []struct {
+		model  interface{}
+		column string
+		label  string
+	}{
+		{model: &model.QuoteList{}, column: "QuantityBaseID", label: "quote_lists.quantity_base_id"},
+		{model: &model.QuoteList{}, column: "QuantityBaseVersion", label: "quote_lists.quantity_base_version"},
+		{model: &model.QuoteList{}, column: "PaymentPlanGeneratedFlag", label: "quote_lists.payment_plan_generated_flag"},
+		{model: &model.QuoteListItem{}, column: "MatchedStandardItemID", label: "quote_list_items.matched_standard_item_id"},
+		{model: &model.QuoteListItem{}, column: "QuantityBaseItemID", label: "quote_list_items.quantity_base_item_id"},
+		{model: &model.QuoteSubmission{}, column: "TaskStatus", label: "quote_submissions.task_status"},
+		{model: &model.QuoteSubmission{}, column: "ReviewStatus", label: "quote_submissions.review_status"},
+		{model: &model.QuoteSubmissionItem{}, column: "GeneratedUnitPriceCent", label: "quote_submission_items.generated_unit_price_cent"},
+		{model: &model.QuoteSubmissionItem{}, column: "QuotedQuantity", label: "quote_submission_items.quoted_quantity"},
+		{model: &model.QuoteSubmissionItem{}, column: "QuantityChangeReason", label: "quote_submission_items.quantity_change_reason"},
+	} {
+		if !DB.Migrator().HasColumn(check.model, check.column) {
+			t.Fatalf("expected %s to exist", check.label)
 		}
 	}
 }

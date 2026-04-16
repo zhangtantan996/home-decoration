@@ -44,6 +44,14 @@ log:
   file: "logs/backend.log"
   audit_retention_days: 180
 
+storage:
+  driver: "${STORAGE_DRIVER}"
+  oss_endpoint: "${STORAGE_OSS_ENDPOINT}"
+  oss_access_key_id: "${STORAGE_OSS_ACCESS_KEY_ID}"
+  oss_access_key_secret: "${STORAGE_OSS_ACCESS_KEY_SECRET}"
+  oss_bucket: "${STORAGE_OSS_BUCKET}"
+  public_base_url: "${STORAGE_PUBLIC_BASE_URL}"
+
 wechat_mini:
   app_id: "${WECHAT_MINI_APPID}"
   app_secret: "${WECHAT_MINI_SECRET}"
@@ -86,6 +94,15 @@ sms:
   access_key_secret: "${SMS_ACCESS_KEY_SECRET}"
   sign_name: "${SMS_SIGN_NAME}"
   template_code: "${SMS_TEMPLATE_CODE}"
+  template_code_login: "${SMS_TEMPLATE_CODE_LOGIN}"
+  template_code_register: "${SMS_TEMPLATE_CODE_REGISTER}"
+  template_code_identity_apply: "${SMS_TEMPLATE_CODE_IDENTITY_APPLY}"
+  template_code_merchant_withdraw: "${SMS_TEMPLATE_CODE_MERCHANT_WITHDRAW}"
+  template_code_merchant_bank_bind: "${SMS_TEMPLATE_CODE_MERCHANT_BANK_BIND}"
+  template_code_merchant_apply_approved: "${SMS_TEMPLATE_CODE_MERCHANT_APPLY_APPROVED}"
+  template_code_merchant_apply_rejected: "${SMS_TEMPLATE_CODE_MERCHANT_APPLY_REJECTED}"
+  template_code_change_phone: "${SMS_TEMPLATE_CODE_CHANGE_PHONE}"
+  template_code_delete_account: "${SMS_TEMPLATE_CODE_DELETE_ACCOUNT}"
   region_id: "${SMS_REGION_ID}"
   debug_bypass: false
   risk_enabled: true

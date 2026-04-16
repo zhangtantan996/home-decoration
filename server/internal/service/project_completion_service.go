@@ -150,6 +150,8 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		generatedProject *model.Project
 		audit            *model.CaseAudit
 		providerUserID   uint64
+		ownerUserID      uint64
+		activatedPlan    *model.PaymentPlan
 	)
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
@@ -159,6 +161,7 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		if project.OwnerID != userID {
 			return errors.New("无权操作此项目")
 		}
+		ownerUserID = project.OwnerID
 		if err := ensureCompletionSubmissionApprovable(&project, "审批完工材料"); err != nil {
 			return err
 		}
@@ -174,6 +177,18 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		}); err != nil {
 			return err
 		}
+		if usesMilestonePaymentMode(&project) {
+			finalPlan, err := findFinalConstructionPaymentPlanTx(tx, projectID)
+			if err != nil {
+				return err
+			}
+			if finalPlan != nil && finalPlan.Status == model.PaymentPlanStatusPending && finalPlan.ActivatedAt == nil {
+				if err := activatePaymentPlanTx(tx, finalPlan, time.Now()); err != nil {
+					return err
+				}
+				activatedPlan = finalPlan
+			}
+		}
 
 		var err error
 		generatedProject, audit, err = GenerateCaseDraftFromProjectTx(tx, projectID, providerID, &ProjectCaseDraftInput{})
@@ -187,6 +202,9 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		return nil, err
 	}
 	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	if activatedPlan != nil {
+		NewNotificationDispatcher().NotifyConstructionFinalPaymentActivated(ownerUserID, providerUserID, projectID, activatedPlan.OrderID, *activatedPlan)
+	}
 	return &ProjectCompletionApprovalResult{Detail: detail, AuditID: audit.ID, Project: generatedProject}, nil
 }
 
@@ -237,12 +255,15 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 		generatedProject *model.Project
 		audit            *model.CaseAudit
 		providerUserID   uint64
+		ownerUserID      uint64
+		activatedPlan    *model.PaymentPlan
 	)
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
 			return errors.New("项目不存在")
 		}
+		ownerUserID = project.OwnerID
 		if err := ensureCompletionSubmissionApprovable(&project, "管理员审批完工材料"); err != nil {
 			return err
 		}
@@ -268,6 +289,18 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 			Source:       "admin.project_completion_approve",
 		}); err != nil {
 			return err
+		}
+		if usesMilestonePaymentMode(&project) {
+			finalPlan, err := findFinalConstructionPaymentPlanTx(tx, projectID)
+			if err != nil {
+				return err
+			}
+			if finalPlan != nil && finalPlan.Status == model.PaymentPlanStatusPending && finalPlan.ActivatedAt == nil {
+				if err := activatePaymentPlanTx(tx, finalPlan, time.Now()); err != nil {
+					return err
+				}
+				activatedPlan = finalPlan
+			}
 		}
 
 		var err error
@@ -311,6 +344,9 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 		return nil, err
 	}
 	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	if activatedPlan != nil {
+		NewNotificationDispatcher().NotifyConstructionFinalPaymentActivated(ownerUserID, providerUserID, projectID, activatedPlan.OrderID, *activatedPlan)
+	}
 	return &ProjectCompletionApprovalResult{Detail: detail, AuditID: audit.ID, Project: generatedProject}, nil
 }
 

@@ -21,6 +21,13 @@ type SMSProviderRequest struct {
 	Template SMSTemplateContext
 }
 
+type SMSTemplateMessageRequest struct {
+	Phone        string
+	TemplateKey  string
+	TemplateCode string
+	Params       map[string]string
+}
+
 // SMSProviderResult captures provider-level metadata for observability/auditing.
 type SMSProviderResult struct {
 	Provider     string
@@ -29,6 +36,10 @@ type SMSProviderResult struct {
 	ErrorCode    string
 	TemplateKey  string
 	TemplateCode string
+}
+
+type SMSMessageProvider interface {
+	SendTemplateMessage(req SMSTemplateMessageRequest) (SMSProviderResult, error)
 }
 
 // SMSProviderError is a typed provider error that can be safely logged by code.

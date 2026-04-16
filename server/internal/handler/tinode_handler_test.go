@@ -35,7 +35,40 @@ type responseEnvelope struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func setupSQLiteDB(t *testing.T) *gorm.DB {
+func migrateHandlerRuntimeTestSchema(t *testing.T, db *gorm.DB, extraModels ...interface{}) {
+	t.Helper()
+
+	models := []interface{}{
+		&model.User{},
+		&model.SysAdmin{},
+		&model.Provider{},
+		&model.MaterialShop{},
+		&model.MerchantApplication{},
+		&model.MaterialShopApplication{},
+		&model.MaterialShopApplicationProduct{},
+		&model.MaterialShopProduct{},
+		&model.UserIdentity{},
+		&model.SystemConfig{},
+		&model.Notification{},
+		&model.UserSettings{},
+		&model.SMSAuditLog{},
+		&model.MerchantServiceSetting{},
+		&model.MaterialShopServiceSetting{},
+		&model.Project{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Order{},
+		&model.PaymentOrder{},
+		&model.DemandMatch{},
+		&model.AuditLog{},
+	}
+	models = append(models, extraModels...)
+	if err := db.AutoMigrate(models...); err != nil {
+		t.Fatalf("auto migrate runtime schema: %v", err)
+	}
+}
+
+func setupRawSQLiteDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	sqliteRegisterOnce.Do(func() {
@@ -68,20 +101,24 @@ func setupSQLiteDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func setupSQLiteDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db := setupRawSQLiteDB(t)
+	migrateHandlerRuntimeTestSchema(t, db)
+	return db
+}
+
 func setupAppDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db := setupSQLiteDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.SystemConfig{}); err != nil {
-		t.Fatalf("auto migrate models: %v", err)
-	}
-	return db
+	return setupSQLiteDB(t)
 }
 
 func setupTinodeUsersDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db := setupSQLiteDB(t)
+	db := setupRawSQLiteDB(t)
 	if err := db.Exec(`CREATE TABLE users (
 		id INTEGER PRIMARY KEY,
 		createdat TEXT,
@@ -98,7 +135,7 @@ func setupTinodeUsersDB(t *testing.T) *gorm.DB {
 func setupTinodeChatDB(t *testing.T, includeMessages bool) *gorm.DB {
 	t.Helper()
 
-	db := setupSQLiteDB(t)
+	db := setupRawSQLiteDB(t)
 	if err := db.Exec(`CREATE TABLE subscriptions (
 		topic TEXT,
 		userid INTEGER,

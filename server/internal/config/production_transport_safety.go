@@ -27,6 +27,9 @@ func ValidateProductionTransportSafety(cfg *Config) error {
 		if !isHTTPSURL(cfg.Server.PublicURL) {
 			return fmt.Errorf("transport safety: production/release 环境要求 SERVER_PUBLIC_URL 使用 https，当前值=%q", cfg.Server.PublicURL)
 		}
+		if strings.TrimSpace(cfg.Storage.PublicBaseURL) != "" && !isHTTPSURL(cfg.Storage.PublicBaseURL) {
+			return fmt.Errorf("transport safety: production/release 环境要求 STORAGE_PUBLIC_BASE_URL 使用 https，当前值=%q", cfg.Storage.PublicBaseURL)
+		}
 	}
 
 	if NormalizeAppEnv(appEnv) != AppEnvProduction {

@@ -1,11 +1,9 @@
 package service
 
 import (
-	crand "crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -20,6 +18,12 @@ import (
 type DesignPaymentService struct{}
 
 var incomeService = &MerchantIncomeService{}
+var designPaymentNotificationSvc = &NotificationService{}
+
+type DesignFeeQuoteView struct {
+	Quote *model.DesignFeeQuote `json:"quote"`
+	Order *model.Order          `json:"order,omitempty"`
+}
 
 // ---------------------------------------------------------------------------
 // Input structs
@@ -327,6 +331,12 @@ func (s *DesignPaymentService) CreateDesignFeeQuote(providerID, bookingID uint64
 	_ = businessFlowSvc.AdvanceBySource(nil, model.BusinessFlowSourceBooking, bookingID, map[string]interface{}{
 		"current_stage": model.BusinessFlowStageDesignQuotePending,
 	})
+	_ = designPaymentNotificationSvc.NotifyDesignFeeQuoteCreated(
+		booking.ID,
+		quote.ID,
+		booking.UserID,
+		readBookingProviderRoleText(booking.ProviderType),
+	)
 
 	return quote, nil
 }
@@ -336,12 +346,27 @@ func (s *DesignPaymentService) CreateDesignFeeQuote(providerID, bookingID uint64
 // ---------------------------------------------------------------------------
 
 func (s *DesignPaymentService) GetDesignFeeQuote(bookingID uint64) (*model.DesignFeeQuote, error) {
+	view, err := s.GetDesignFeeQuoteView(bookingID)
+	if err != nil {
+		return nil, err
+	}
+	return view.Quote, nil
+}
+
+func (s *DesignPaymentService) GetDesignFeeQuoteView(bookingID uint64) (*DesignFeeQuoteView, error) {
 	var quote model.DesignFeeQuote
 	if err := repository.DB.Where("booking_id = ?", bookingID).
 		Order("created_at DESC").First(&quote).Error; err != nil {
 		return nil, errors.New("暂无设计费报价")
 	}
-	return &quote, nil
+	view := &DesignFeeQuoteView{Quote: &quote}
+	if quote.OrderID > 0 {
+		var order model.Order
+		if err := repository.DB.First(&order, quote.OrderID).Error; err == nil {
+			view.Order = &order
+		}
+	}
+	return view, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +485,12 @@ func (s *DesignPaymentService) ConfirmDesignFeeQuote(userID, quoteID uint64) (*m
 	}); err != nil {
 		return nil, err
 	}
+	_ = designPaymentNotificationSvc.NotifyDesignFeeOrderCreated(
+		booking.ID,
+		order.ID,
+		booking.UserID,
+		quote.NetAmount,
+	)
 
 	return order, nil
 }
@@ -565,6 +596,7 @@ func (s *DesignPaymentService) SubmitDesignDeliverable(providerID uint64, input 
 	})
 
 	hydrateDesignDeliverable(&deliverable)
+	NewNotificationDispatcher().NotifyDesignDeliverableSubmitted(booking.UserID, deliverable.ID, deliverable.BookingID)
 	return &deliverable, nil
 }
 
@@ -575,6 +607,37 @@ func (s *DesignPaymentService) GetDesignDeliverableByProject(projectID uint64) (
 	}
 	hydrateDesignDeliverable(&deliverable)
 	return &deliverable, nil
+}
+
+func (s *DesignPaymentService) GetDesignDeliverableByBooking(bookingID uint64) (*model.DesignDeliverable, error) {
+	var deliverable model.DesignDeliverable
+	if err := repository.DB.Where("booking_id = ?", bookingID).Order("created_at DESC, id DESC").First(&deliverable).Error; err != nil {
+		return nil, errors.New("未找到设计交付物")
+	}
+	hydrateDesignDeliverable(&deliverable)
+	return &deliverable, nil
+}
+
+func (s *DesignPaymentService) GetDesignDeliverableByBookingForUser(userID, bookingID uint64) (*model.DesignDeliverable, error) {
+	var booking model.Booking
+	if err := repository.DB.Select("id", "user_id").First(&booking, bookingID).Error; err != nil {
+		return nil, errors.New("关联预约不存在")
+	}
+	if booking.UserID != userID {
+		return nil, errors.New("无权查看此交付物")
+	}
+	return s.GetDesignDeliverableByBooking(bookingID)
+}
+
+func (s *DesignPaymentService) GetDesignDeliverableByProjectForUser(userID, projectID uint64) (*model.DesignDeliverable, error) {
+	var project model.Project
+	if err := repository.DB.Select("id", "owner_id").First(&project, projectID).Error; err != nil {
+		return nil, errors.New("关联项目不存在")
+	}
+	if project.OwnerID != userID {
+		return nil, errors.New("无权查看此交付物")
+	}
+	return s.GetDesignDeliverableByProject(projectID)
 }
 
 func hydrateDesignWorkingDoc(doc *model.DesignWorkingDoc) {
@@ -696,29 +759,4 @@ func (s *DesignPaymentService) RejectDesignDeliverable(userID, deliverableID uin
 
 	repository.DB.First(&deliverable, deliverableID)
 	return &deliverable, nil
-}
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-func generateDesignOrderNo() (string, error) {
-	randomNumber, err := secureRandomInt(10000)
-	if err != nil {
-		return "", fmt.Errorf("generate design order number: %w", err)
-	}
-	return fmt.Sprintf("DF%s%04d", time.Now().Format("20060102150405"), randomNumber), nil
-}
-
-func secureRandomInt(max int64) (int64, error) {
-	if max <= 0 {
-		return 0, errors.New("max must be positive")
-	}
-
-	n, err := crand.Int(crand.Reader, big.NewInt(max))
-	if err != nil {
-		return 0, err
-	}
-
-	return n.Int64(), nil
 }

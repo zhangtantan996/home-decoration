@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
@@ -287,7 +288,23 @@ func normalizeLegacyDiscount(entry service.OrderCenterEntrySummary) float64 {
 
 func legacyActionPath(entry service.OrderCenterEntrySummary) string {
 	if entry.SourceKind == service.OrderCenterSourceSurveyDeposit {
+		if bookingID := entryBookingID(entry.Booking); bookingID > 0 {
+			return fmt.Sprintf("/bookings/%d", bookingID)
+		}
 		return ""
+	}
+	if entry.SourceKind == service.OrderCenterSourceDesignOrder {
+		bookingID := entryBookingID(entry.Booking)
+		if bookingID == 0 {
+			return ""
+		}
+		if entry.StatusGroup == service.OrderCenterStatusPendingPayment {
+			return fmt.Sprintf("/bookings/%d/design-quote", bookingID)
+		}
+		if entryBookingProposalID(entry.Booking) > 0 {
+			return fmt.Sprintf("/proposals/%d", entryBookingProposalID(entry.Booking))
+		}
+		return fmt.Sprintf("/bookings/%d", bookingID)
 	}
 	return ""
 }

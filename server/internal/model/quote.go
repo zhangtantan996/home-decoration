@@ -45,6 +45,13 @@ const (
 )
 
 const (
+	QuoteSubmissionReviewStatusNotRequired = "not_required"
+	QuoteSubmissionReviewStatusPending     = "pending"
+	QuoteSubmissionReviewStatusApproved    = "approved"
+	QuoteSubmissionReviewStatusRejected    = "rejected"
+)
+
+const (
 	QuotePriceBookStatusDraft    = "draft"
 	QuotePriceBookStatusActive   = "active"
 	QuotePriceBookStatusArchived = "archived"
@@ -66,6 +73,10 @@ const (
 	QuoteListItemSourceTypeStandard  = "standard"
 	QuoteListItemSourceTypeManual    = "manual"
 	QuoteListItemSourceTypeGenerated = "generated"
+)
+
+const (
+	QuotePricingModeHalfPackage = "half_package"
 )
 
 const (
@@ -138,6 +149,9 @@ type QuoteList struct {
 	Title                    string     `json:"title" gorm:"size:200;index"`
 	Status                   string     `json:"status" gorm:"size:20;default:'draft';index"`
 	Currency                 string     `json:"currency" gorm:"size:10;default:'CNY'"`
+	PricingMode              string     `json:"pricingMode" gorm:"size:30;default:'half_package'"`
+	MaterialIncluded         bool       `json:"materialIncluded" gorm:"default:false"`
+	PaymentPlanGeneratedFlag bool       `json:"paymentPlanGeneratedFlag" gorm:"default:false"`
 	DeadlineAt               *time.Time `json:"deadlineAt"`
 	PrerequisiteSnapshotJSON string     `json:"prerequisiteSnapshotJson" gorm:"type:text"`
 	PrerequisiteStatus       string     `json:"prerequisiteStatus" gorm:"size:20;default:'draft';index"`
@@ -176,18 +190,18 @@ func (QuantityBase) TableName() string {
 
 type QuantityBaseItem struct {
 	Base
-	QuantityBaseID    uint64  `json:"quantityBaseId" gorm:"index"`
-	StandardItemID    uint64  `json:"standardItemId" gorm:"index"`
-	SourceLineNo      int     `json:"sourceLineNo" gorm:"default:0"`
-	SourceItemCode    string  `json:"sourceItemCode" gorm:"size:100;index"`
-	SourceItemName    string  `json:"sourceItemName" gorm:"size:255"`
-	Unit              string  `json:"unit" gorm:"size:20"`
-	Quantity          float64 `json:"quantity" gorm:"default:0"`
-	BaselineNote      string  `json:"baselineNote" gorm:"type:text"`
-	CategoryL1        string  `json:"categoryL1" gorm:"size:50;index"`
-	CategoryL2        string  `json:"categoryL2" gorm:"size:50;index"`
-	SortOrder         int     `json:"sortOrder" gorm:"default:0"`
-	ExtensionsJSON    string  `json:"extensionsJson" gorm:"type:text"`
+	QuantityBaseID uint64  `json:"quantityBaseId" gorm:"index"`
+	StandardItemID uint64  `json:"standardItemId" gorm:"index"`
+	SourceLineNo   int     `json:"sourceLineNo" gorm:"default:0"`
+	SourceItemCode string  `json:"sourceItemCode" gorm:"size:100;index"`
+	SourceItemName string  `json:"sourceItemName" gorm:"size:255"`
+	Unit           string  `json:"unit" gorm:"size:20"`
+	Quantity       float64 `json:"quantity" gorm:"default:0"`
+	BaselineNote   string  `json:"baselineNote" gorm:"type:text"`
+	CategoryL1     string  `json:"categoryL1" gorm:"size:50;index"`
+	CategoryL2     string  `json:"categoryL2" gorm:"size:50;index"`
+	SortOrder      int     `json:"sortOrder" gorm:"default:0"`
+	ExtensionsJSON string  `json:"extensionsJson" gorm:"type:text"`
 }
 
 func (QuantityBaseItem) TableName() string {
@@ -196,21 +210,25 @@ func (QuantityBaseItem) TableName() string {
 
 type QuoteListItem struct {
 	Base
-	QuoteListID           uint64  `json:"quoteListId" gorm:"index"`
-	StandardItemID        uint64  `json:"standardItemId" gorm:"index"`
-	MatchedStandardItemID uint64  `json:"matchedStandardItemId" gorm:"index"`
-	SelectedTierID        uint64  `json:"selectedTierId" gorm:"index;default:0"`
-	LineNo                int     `json:"lineNo" gorm:"default:0"`
-	SourceType            string  `json:"sourceType" gorm:"size:20;default:'standard'"`
-	Name                  string  `json:"name" gorm:"size:255"`
-	Unit                  string  `json:"unit" gorm:"size:20"`
-	Quantity              float64 `json:"quantity" gorm:"default:0"`
-	PricingNote           string  `json:"pricingNote" gorm:"type:text"`
-	CategoryL1            string  `json:"categoryL1" gorm:"size:50;index"`
-	CategoryL2            string  `json:"categoryL2" gorm:"size:50;index"`
-	SortOrder             int     `json:"sortOrder" gorm:"default:0"`
-	MissingMappingFlag    bool    `json:"missingMappingFlag" gorm:"default:false"`
-	ExtensionsJSON        string  `json:"extensionsJson" gorm:"type:text"`
+	QuoteListID            uint64  `json:"quoteListId" gorm:"index"`
+	StandardItemID         uint64  `json:"standardItemId" gorm:"index"`
+	MatchedStandardItemID  uint64  `json:"matchedStandardItemId" gorm:"index"`
+	QuantityBaseItemID     uint64  `json:"quantityBaseItemId" gorm:"index"`
+	SelectedTierID         uint64  `json:"selectedTierId" gorm:"index;default:0"`
+	LineNo                 int     `json:"lineNo" gorm:"default:0"`
+	SourceType             string  `json:"sourceType" gorm:"size:20;default:'standard'"`
+	SourceStage            string  `json:"sourceStage" gorm:"size:40"`
+	Name                   string  `json:"name" gorm:"size:255"`
+	Unit                   string  `json:"unit" gorm:"size:20"`
+	Quantity               float64 `json:"quantity" gorm:"default:0"`
+	QuantityAdjustableFlag bool    `json:"quantityAdjustableFlag" gorm:"default:true"`
+	PricingNote            string  `json:"pricingNote" gorm:"type:text"`
+	CategoryL1             string  `json:"categoryL1" gorm:"size:50;index"`
+	CategoryL2             string  `json:"categoryL2" gorm:"size:50;index"`
+	SortOrder              int     `json:"sortOrder" gorm:"default:0"`
+	MissingMappingFlag     bool    `json:"missingMappingFlag" gorm:"default:false"`
+	ExtensionsJSON         string  `json:"extensionsJson" gorm:"type:text"`
+	BaselineQuantity       float64 `json:"baselineQuantity,omitempty" gorm:"-"`
 }
 
 func (QuoteListItem) TableName() string {
@@ -251,6 +269,10 @@ type QuoteSubmission struct {
 	ConstructionMethodNote   string     `json:"constructionMethodNote" gorm:"type:text"`
 	SiteVisitRequired        bool       `json:"siteVisitRequired" gorm:"default:false"`
 	SubmittedToUser          bool       `json:"submittedToUser" gorm:"default:false"`
+	ReviewStatus             string     `json:"reviewStatus" gorm:"size:20;default:'not_required';index"`
+	ReviewedBy               uint64     `json:"reviewedBy" gorm:"index"`
+	ReviewedAt               *time.Time `json:"reviewedAt"`
+	ReviewReason             string     `json:"reviewReason" gorm:"type:text"`
 	LockedAt                 *time.Time `json:"lockedAt"`
 	UserConfirmedAt          *time.Time `json:"userConfirmedAt"`
 	SupersededBy             uint64     `json:"supersededBy" gorm:"index"`
@@ -262,17 +284,28 @@ func (QuoteSubmission) TableName() string {
 
 type QuoteSubmissionItem struct {
 	Base
-	QuoteSubmissionID      uint64 `json:"quoteSubmissionId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
-	QuoteListItemID        uint64 `json:"quoteListItemId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
-	PriceTierID            uint64 `json:"priceTierId" gorm:"index;default:0"`
-	GeneratedUnitPriceCent int64  `json:"generatedUnitPriceCent" gorm:"default:0"`
-	UnitPriceCent          int64  `json:"unitPriceCent" gorm:"default:0"`
-	AmountCent             int64  `json:"amountCent" gorm:"default:0"`
-	AdjustedFlag           bool   `json:"adjustedFlag" gorm:"default:false"`
-	MissingPriceFlag       bool   `json:"missingPriceFlag" gorm:"default:false"`
-	MissingMappingFlag     bool   `json:"missingMappingFlag" gorm:"default:false"`
-	MinChargeAppliedFlag   bool   `json:"minChargeAppliedFlag" gorm:"default:false"`
-	Remark                 string `json:"remark" gorm:"type:text"`
+	QuoteSubmissionID        uint64  `json:"quoteSubmissionId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
+	QuoteListItemID          uint64  `json:"quoteListItemId" gorm:"uniqueIndex:idx_quote_submission_item;index"`
+	PriceTierID              uint64  `json:"priceTierId" gorm:"index;default:0"`
+	GeneratedUnitPriceCent   int64   `json:"generatedUnitPriceCent" gorm:"default:0"`
+	UnitPriceCent            int64   `json:"unitPriceCent" gorm:"default:0"`
+	QuotedQuantity           float64 `json:"quotedQuantity" gorm:"default:0"`
+	AmountCent               int64   `json:"amountCent" gorm:"default:0"`
+	AdjustedFlag             bool    `json:"adjustedFlag" gorm:"default:false"`
+	MissingPriceFlag         bool    `json:"missingPriceFlag" gorm:"default:false"`
+	MissingMappingFlag       bool    `json:"missingMappingFlag" gorm:"default:false"`
+	MinChargeAppliedFlag     bool    `json:"minChargeAppliedFlag" gorm:"default:false"`
+	QuantityChangeReason     string  `json:"quantityChangeReason" gorm:"type:text"`
+	DeviationFlag            bool    `json:"deviationFlag" gorm:"default:false"`
+	RequiresUserConfirmation bool    `json:"requiresUserConfirmation" gorm:"default:false"`
+	PlatformReviewFlag       bool    `json:"platformReviewFlag" gorm:"default:false"`
+	Remark                   string  `json:"remark" gorm:"type:text"`
+	BaselineQuantity         float64 `json:"baselineQuantity,omitempty" gorm:"-"`
+	ItemName                 string  `json:"itemName,omitempty" gorm:"-"`
+	Unit                     string  `json:"unit,omitempty" gorm:"-"`
+	CategoryL1               string  `json:"categoryL1,omitempty" gorm:"-"`
+	CategoryL2               string  `json:"categoryL2,omitempty" gorm:"-"`
+	PricingNote              string  `json:"pricingNote,omitempty" gorm:"-"`
 }
 
 func (QuoteSubmissionItem) TableName() string {

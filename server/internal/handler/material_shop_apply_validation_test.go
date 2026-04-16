@@ -199,6 +199,13 @@ func TestMaterialShopUpdateProduct_PersistsDescriptionAndStatus(t *testing.T) {
 	if err := db.Create(&product).Error; err != nil {
 		t.Fatalf("create product: %v", err)
 	}
+	if err := db.Create(&model.MaterialShop{
+		Base:  model.Base{ID: 88},
+		Name:  "测试主材店",
+		Cover: "",
+	}).Error; err != nil {
+		t.Fatalf("create shop: %v", err)
+	}
 
 	payload := `{"name":"新商品","unit":"套","description":"新描述","price":199,"images":["https://img.example.com/new.jpg"],"status":0}`
 	w := httptest.NewRecorder()

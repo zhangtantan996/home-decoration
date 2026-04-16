@@ -10,20 +10,22 @@ import (
 )
 
 const (
-	SMSAuditLogTableName           = "sms_audit_logs"
-	SMSAuditMigrationPath          = CanonicalSchemaReconcileMigrationPath
-	SMSAuditHealthStatusOK         = "ok"
-	SMSAuditHealthStatusDegraded   = "degraded"
-	UserAuthHealthComponent        = "user_auth_schema"
-	MerchantOnboardingComponent    = "merchant_onboarding_schema"
-	BookingP0HealthComponent       = "booking_p0_schema"
-	ProjectRiskHealthComponent     = "project_risk_schema"
-	AuditLogHealthComponent        = "audit_log_schema"
-	CommerceRuntimeHealthComponent = "commerce_runtime_schema"
-	BookingP0MigrationPath         = "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
-	ProjectRiskMigrationPath       = "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
-	AuditLogMigrationPath          = "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
-	CommerceRuntimeMigrationPath   = "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
+	SMSAuditLogTableName             = "sms_audit_logs"
+	SMSAuditMigrationPath            = CanonicalSchemaReconcileMigrationPath
+	SMSAuditHealthStatusOK           = "ok"
+	SMSAuditHealthStatusDegraded     = "degraded"
+	UserAuthHealthComponent          = "user_auth_schema"
+	MerchantOnboardingComponent      = "merchant_onboarding_schema"
+	BookingP0HealthComponent         = "booking_p0_schema"
+	ProjectRiskHealthComponent       = "project_risk_schema"
+	AuditLogHealthComponent          = "audit_log_schema"
+	CommerceRuntimeHealthComponent   = "commerce_runtime_schema"
+	BookingP0MigrationPath           = "server/migrations/v1.13.5_align_booking_budget_bridge_schema.sql"
+	ProjectRiskMigrationPath         = "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
+	AuditLogMigrationPath            = "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
+	CommerceRuntimeBaseMigrationPath = "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
+	QuoteRuntimeMigrationPath        = "server/migrations/v1.13.6_reconcile_quote_runtime_schema.sql"
+	CommerceRuntimeMigrationPath     = CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath
 )
 
 var claimedCompletionSchemaFields = map[string]struct{}{
@@ -31,6 +33,25 @@ var claimedCompletionSchemaFields = map[string]struct{}{
 	"material_shop_applications.application_scene": {},
 	"providers.needs_onboarding_completion":        {},
 	"material_shops.needs_onboarding_completion":   {},
+}
+
+var quoteRuntimeTables = map[string]struct{}{
+	"quantity_bases":             {},
+	"quantity_base_items":        {},
+	"quote_categories":           {},
+	"quote_library_items":        {},
+	"quote_price_books":          {},
+	"quote_price_book_items":     {},
+	"quote_price_tiers":          {},
+	"quote_category_rules":       {},
+	"quote_templates":            {},
+	"quote_template_items":       {},
+	"quote_lists":                {},
+	"quote_list_items":           {},
+	"quote_invitations":          {},
+	"quote_submissions":          {},
+	"quote_submission_items":     {},
+	"quote_submission_revisions": {},
 }
 
 // SMSAuditLogHealthSnapshot describes runtime health for SMS audit persistence.
@@ -155,7 +176,7 @@ var commerceRuntimeHealthStore = struct {
 		Component:         CommerceRuntimeHealthComponent,
 		MigrationRequired: true,
 		RequiredMigration: CommerceRuntimeMigrationPath,
-		Missing:           []string{"providers.is_settled", "material_shops.is_settled", "bookings.survey_deposit_source"},
+		Missing:           []string{"providers.is_settled", "material_shops.is_settled", "bookings.survey_deposit_source", "quote_lists.quantity_base_id"},
 	},
 }
 
@@ -175,7 +196,7 @@ var merchantOnboardingRequirements = map[string][]string{
 
 var bookingP0Requirements = map[string][]string{
 	"site_surveys":         {"booking_id", "provider_id", "photos", "dimensions", "status", "submitted_at", "confirmed_at", "revision_requested_at", "revision_request_reason"},
-	"budget_confirmations": {"booking_id", "provider_id", "budget_min", "budget_max", "includes", "design_intent", "status", "submitted_at", "accepted_at", "rejected_at", "rejection_reason"},
+	"budget_confirmations": {"booking_id", "provider_id", "budget_min", "budget_max", "includes", "design_intent", "style_direction", "space_requirements", "expected_duration_days", "special_requirements", "status", "reject_count", "reject_limit", "submitted_at", "accepted_at", "rejected_at", "last_rejected_at", "rejection_reason"},
 }
 
 var projectRiskRequirements = map[string][]string{
@@ -189,17 +210,33 @@ var auditLogRequirements = map[string][]string{
 }
 
 var commerceRuntimeRequirements = map[string][]string{
-	"providers":                 {"survey_deposit_price", "is_settled", "collected_source"},
-	"material_shops":            {"service_area", "main_brands", "main_categories", "delivery_capability", "installation_capability", "after_sales_policy", "invoice_capability", "is_settled", "collected_source", "status"},
-	"bookings":                  {"survey_deposit_source", "survey_refund_notice", "survey_deposit", "survey_deposit_paid", "survey_deposit_paid_at", "survey_deposit_converted", "survey_deposit_refunded", "survey_deposit_refund_amt", "survey_deposit_refund_at"},
-	"proposals":                 {"internal_draft_json", "preview_package_json", "delivery_package_json"},
-	"milestones":                {"release_scheduled_at", "released_at"},
-	"projects":                  {"construction_payment_mode", "payment_paused", "payment_paused_at", "payment_paused_reason"},
-	"merchant_service_settings": {"survey_deposit_amount", "design_payment_mode"},
-	"payment_plans":             {"milestone_id"},
-	"design_working_docs":       {"booking_id", "provider_id", "doc_type", "title", "description", "files", "submitted_at"},
-	"design_fee_quotes":         {"booking_id", "provider_id", "total_fee", "deposit_deduction", "net_amount", "payment_mode", "stages_json", "status", "expire_at", "confirmed_at", "rejected_at", "rejection_reason", "order_id"},
-	"design_deliverables":       {"booking_id", "project_id", "order_id", "provider_id", "color_floor_plan", "renderings", "rendering_link", "text_description", "cad_drawings", "attachments", "status", "submitted_at", "accepted_at", "rejected_at", "rejection_reason"},
+	"providers":                  {"survey_deposit_price", "is_settled", "collected_source"},
+	"material_shops":             {"service_area", "main_brands", "main_categories", "delivery_capability", "installation_capability", "after_sales_policy", "invoice_capability", "is_settled", "collected_source", "status"},
+	"bookings":                   {"survey_deposit_source", "survey_refund_notice", "survey_deposit", "survey_deposit_paid", "survey_deposit_paid_at", "survey_deposit_converted", "survey_deposit_refunded", "survey_deposit_refund_amt", "survey_deposit_refund_at"},
+	"proposals":                  {"internal_draft_json", "preview_package_json", "delivery_package_json"},
+	"milestones":                 {"release_scheduled_at", "released_at"},
+	"projects":                   {"construction_payment_mode", "payment_paused", "payment_paused_at", "payment_paused_reason"},
+	"merchant_service_settings":  {"survey_deposit_amount", "design_payment_mode"},
+	"payment_plans":              {"milestone_id"},
+	"design_working_docs":        {"booking_id", "provider_id", "doc_type", "title", "description", "files", "submitted_at"},
+	"design_fee_quotes":          {"booking_id", "provider_id", "total_fee", "deposit_deduction", "net_amount", "payment_mode", "stages_json", "status", "expire_at", "confirmed_at", "rejected_at", "rejection_reason", "order_id"},
+	"design_deliverables":        {"booking_id", "project_id", "order_id", "provider_id", "color_floor_plan", "renderings", "rendering_link", "text_description", "cad_drawings", "attachments", "status", "submitted_at", "accepted_at", "rejected_at", "rejection_reason"},
+	"quantity_bases":             {"proposal_id", "proposal_version", "designer_provider_id", "source_type", "source_id", "status", "version", "title", "snapshot_json"},
+	"quantity_base_items":        {"quantity_base_id", "source_item_name", "unit", "quantity", "category_l1", "category_l2", "sort_order"},
+	"quote_categories":           {"code", "name", "parent_id", "sort_order", "status"},
+	"quote_library_items":        {"category_id", "standard_code", "name", "unit", "category_l1", "category_l2", "category_l3", "erp_seq_no", "reference_price_cent", "status", "keywords_json", "erp_mapping_json", "quantity_formula_json"},
+	"quote_price_books":          {"provider_id", "status", "version"},
+	"quote_price_book_items":     {"price_book_id", "standard_item_id", "price_tier_id", "unit", "unit_price_cent", "min_charge_cent", "status"},
+	"quote_price_tiers":          {"library_item_id", "tier_key", "condition_json", "sort_order"},
+	"quote_category_rules":       {"category_id", "keywords", "priority"},
+	"quote_templates":            {"name", "room_type", "renovation_type", "status"},
+	"quote_template_items":       {"template_id", "library_item_id", "default_quantity", "sort_order", "required"},
+	"quote_lists":                {"proposal_id", "proposal_version", "quantity_base_id", "quantity_base_version", "source_type", "source_id", "designer_provider_id", "status", "pricing_mode", "material_included", "payment_plan_generated_flag", "prerequisite_status", "user_confirmation_status", "active_submission_id"},
+	"quote_list_items":           {"quote_list_id", "standard_item_id", "matched_standard_item_id", "quantity_base_item_id", "selected_tier_id", "source_type", "source_stage", "name", "unit", "quantity", "quantity_adjustable_flag", "category_l1", "category_l2", "missing_mapping_flag"},
+	"quote_invitations":          {"quote_list_id", "provider_id", "status", "invited_by_user_id"},
+	"quote_submissions":          {"quote_list_id", "provider_id", "status", "task_status", "generation_status", "generated_from_price_book_id", "submitted_to_user", "review_status", "reviewed_by", "superseded_by"},
+	"quote_submission_items":     {"quote_submission_id", "quote_list_item_id", "price_tier_id", "generated_unit_price_cent", "unit_price_cent", "quoted_quantity", "adjusted_flag", "missing_price_flag", "quantity_change_reason", "requires_user_confirmation", "platform_review_flag"},
+	"quote_submission_revisions": {"quote_submission_id", "quote_list_id", "provider_id", "revision_no", "action", "previous_items_json", "next_items_json", "change_reason"},
 }
 
 func recordSMSAuditSchemaCheck(tableExists bool, err error) {
@@ -395,8 +432,37 @@ func RefreshAuditLogSchemaHealth() CriticalSchemaHealthSnapshot {
 
 func RefreshCommerceRuntimeSchemaHealth() CriticalSchemaHealthSnapshot {
 	missing, err := checkSchemaRequirements(commerceRuntimeRequirements)
-	recordCriticalSchemaCheck(&commerceRuntimeHealthStore, CommerceRuntimeHealthComponent, CommerceRuntimeMigrationPath, missing, err)
+	recordCriticalSchemaCheck(&commerceRuntimeHealthStore, CommerceRuntimeHealthComponent, resolveCommerceRuntimeMigrationPath(missing), missing, err)
 	return snapshotCriticalSchemaHealth(&commerceRuntimeHealthStore)
+}
+
+func resolveCommerceRuntimeMigrationPath(missing []string) string {
+	if len(missing) == 0 {
+		return CommerceRuntimeMigrationPath
+	}
+
+	hasBaseRuntimeGap := false
+	hasQuoteRuntimeGap := false
+	for _, item := range missing {
+		table := strings.TrimSpace(item)
+		if idx := strings.Index(table, "."); idx >= 0 {
+			table = table[:idx]
+		}
+		if _, ok := quoteRuntimeTables[table]; ok {
+			hasQuoteRuntimeGap = true
+			continue
+		}
+		hasBaseRuntimeGap = true
+	}
+
+	switch {
+	case hasBaseRuntimeGap && hasQuoteRuntimeGap:
+		return CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath
+	case hasQuoteRuntimeGap:
+		return QuoteRuntimeMigrationPath
+	default:
+		return CommerceRuntimeBaseMigrationPath
+	}
 }
 
 // CurrentOperationalAlerts returns structured alerts for operational consumers.

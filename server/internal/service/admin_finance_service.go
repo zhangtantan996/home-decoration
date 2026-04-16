@@ -534,19 +534,12 @@ func createNotificationTx(tx *gorm.DB, input *CreateNotificationInput) error {
 	if input.UserID == 0 || strings.TrimSpace(input.Title) == "" || strings.TrimSpace(input.Content) == "" {
 		return nil
 	}
-
-	notification := &model.Notification{
-		UserID:      input.UserID,
-		UserType:    input.UserType,
-		Title:       input.Title,
-		Content:     input.Content,
-		Type:        input.Type,
-		RelatedID:   input.RelatedID,
-		RelatedType: input.RelatedType,
-		ActionURL:   input.ActionURL,
-		Extra:       marshalAuditJSON(input.Extra),
-		IsRead:      false,
+	shouldCreate, err := shouldCreateNotificationTx(tx, input)
+	if err != nil || !shouldCreate {
+		return err
 	}
+
+	notification := buildNotificationRecord(input)
 	return tx.Create(notification).Error
 }
 

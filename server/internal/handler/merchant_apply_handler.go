@@ -25,6 +25,15 @@ import (
 
 var regionService = &service.RegionService{}
 
+func firstNonEmptyMerchantApplicantName(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 // MerchantApplyInput 入驻申请输入
 type MerchantApplyInput struct {
 	Phone                  string `json:"phone" binding:"required"`
@@ -930,6 +939,12 @@ createProviderApplication:
 
 	tx.Commit()
 
+	service.NewNotificationDispatcher().NotifyMerchantApplicationSubmittedToAdmins(
+		application.ID,
+		input.Role,
+		firstNonEmptyMerchantApplicantName(input.CompanyName, input.RealName),
+	)
+
 	// 9. TODO: 发送短信通知
 	// sendSMS(input.Phone, "您的商家入驻申请已提交，预计1-3个工作日内完成审核")
 
@@ -1810,6 +1825,8 @@ func AdminApproveApplication(c *gin.Context) {
 
 	// TODO: 发送短信通知
 	// sendSMS(app.Phone, "恭喜！您的商家入驻申请已通过审核，请使用手机号登录商家中心")
+	service.NewNotificationDispatcher().NotifyMerchantApplicationApproved(user.ID, app.ID, service.ResolveProviderDisplayName(provider, &user))
+	_ = service.SendMerchantApplicationReviewSMS(app.Phone, true, "")
 
 	response.Success(c, gin.H{
 		"message":    "审核通过",
@@ -1871,6 +1888,8 @@ func AdminRejectApplication(c *gin.Context) {
 
 	// TODO: 发送短信通知
 	// sendSMS(app.Phone, "您的商家入驻申请未通过审核，原因："+input.Reason)
+	service.NewNotificationDispatcher().NotifyMerchantApplicationRejected(app.UserID, app.ID, input.Reason)
+	_ = service.SendMerchantApplicationReviewSMS(app.Phone, false, input.Reason)
 
 	response.Success(c, gin.H{"message": "已拒绝"})
 }
