@@ -1258,6 +1258,56 @@ export interface MerchantProjectExecutionDetail {
     completionSubmittedAt?: string | null;
     completionRejectedAt?: string | null;
     completionRejectionReason?: string;
+    bridgeConversionSummary?: {
+        constructionSubjectComparison?: Array<{
+            providerId?: number;
+            subjectType?: string;
+            displayName?: string;
+            rating?: number;
+            reviewCount?: number;
+            completedCnt?: number;
+            caseCount?: number;
+            highlightTags?: string[];
+            priceHint?: string;
+            deliveryHint?: string;
+            trustSummary?: string;
+            selected?: boolean;
+        }>;
+        quoteBaselineSummary?: {
+            title?: string;
+            sourceStage?: string;
+            submittedAt?: string;
+            itemCount?: number;
+            highlights?: string[];
+            readyForUser?: boolean;
+        };
+        responsibilityBoundarySummary?: { title?: string; items?: string[] };
+        scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
+        platformGuaranteeSummary?: { title?: string; items?: string[] };
+        trustSignals?: {
+            rating?: number;
+            reviewCount?: number;
+            completedCnt?: number;
+            caseCount?: number;
+            highlightTags?: string[];
+            officialReviewHint?: string;
+        };
+        bridgeNextStep?: {
+            title?: string;
+            owner?: string;
+            reason?: string;
+            actionHint?: string;
+        };
+    };
+    closureSummary?: {
+        completionStatus?: string;
+        archiveStatus?: string;
+        settlementStatus?: string;
+        payoutStatus?: string;
+        caseDraftStatus?: string;
+        financialClosureStatus?: string;
+        nextPendingAction?: string;
+    };
     paymentPlans?: MerchantProjectPaymentPlan[];
     nextPayablePlan?: MerchantProjectPaymentPlan | null;
     changeOrders?: MerchantProjectChangeOrder[];
@@ -1359,6 +1409,29 @@ export interface MerchantDashboardStats {
     orders?: {
         pending: number;
         paid: number;
+    };
+    governanceTier?: string;
+    riskFlags?: string[];
+    recommendedAction?: string;
+    scoreSummary?: {
+        responseRate?: number;
+        proposalRate?: number;
+        designConfirmRate?: number;
+        constructionConfirmRate?: number;
+        completionRate?: number;
+        acceptancePassRate?: number;
+        complaintRate?: number;
+        refundRate?: number;
+        caseCount?: number;
+        officialReviewCount?: number;
+    };
+    funnelMetrics?: {
+        bookingsTotal?: number;
+        respondedBookings?: number;
+        proposalSubmittedCount?: number;
+        designConfirmedCount?: number;
+        constructionConfirmedCount?: number;
+        completedProjectCount?: number;
     };
 }
 

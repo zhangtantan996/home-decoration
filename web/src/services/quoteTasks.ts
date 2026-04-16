@@ -1,5 +1,6 @@
 import type { QuoteTaskDetailVM } from '../types/viewModels';
 import { formatCurrency } from '../utils/format';
+import { adaptBridgeConversionSummary } from './bridgeSummary';
 import { requestJson } from './http';
 
 interface QuoteTaskUserViewResponse {
@@ -46,6 +47,7 @@ interface QuoteTaskUserViewResponse {
   };
   businessStage?: string;
   flowSummary?: string;
+  bridgeConversionSummary?: unknown;
 }
 
 interface QuoteTaskSummaryResponse {
@@ -126,6 +128,7 @@ export async function getQuoteTaskDetail(id: number): Promise<QuoteTaskDetailVM>
       dueAt: plan.dueAt || undefined,
     })),
     submissionId: data.submission.id,
+    bridgeConversionSummary: adaptBridgeConversionSummary(data.bridgeConversionSummary),
   };
 }
 

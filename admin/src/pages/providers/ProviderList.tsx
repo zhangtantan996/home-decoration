@@ -674,6 +674,31 @@ const ProviderList: React.FC = () => {
       render: (val: number) => val?.toFixed(1) || "-",
     },
     {
+      title: "治理分层",
+      dataIndex: "governanceTier",
+      width: 130,
+      render: (val?: string) => <Tag color={val === '风险观察期' ? 'red' : val === '重点扶持期' ? 'gold' : 'blue'}>{val || '-'}</Tag>,
+    },
+    {
+      title: "治理提示",
+      key: "governanceHint",
+      width: 260,
+      render: (_: unknown, record: Provider) => (
+        <Space size={[4, 4]} wrap>
+          {(record.riskFlags || []).slice(0, 2).map((flag) => (
+            <Tag color="red" key={flag}>{flag}</Tag>
+          ))}
+          {record.recommendedAction ? (
+            <Tooltip title={record.recommendedAction}>
+              <Text ellipsis style={{ maxWidth: 180 }}>{record.recommendedAction}</Text>
+            </Tooltip>
+          ) : (
+            <Text type="secondary">-</Text>
+          )}
+        </Space>
+      ),
+    },
+    {
       title: "公开结果",
       key: "publicVisible",
       width: 120,

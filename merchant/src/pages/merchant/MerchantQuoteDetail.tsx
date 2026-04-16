@@ -606,6 +606,48 @@ const MerchantQuoteDetail: React.FC = () => {
                 ) : null}
             </Card>
 
+            {detail?.bridgeConversionSummary ? (
+                <Card style={{ marginBottom: 16 }} loading={loading} title="桥接解释与用户端预览">
+                    <Descriptions column={2} size="small" style={{ marginBottom: 16 }}>
+                        <Descriptions.Item label="报价基线">
+                            {detail.bridgeConversionSummary.quoteBaselineSummary?.title || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="下一责任人">
+                            {detail.bridgeConversionSummary.bridgeNextStep?.owner || '待平台继续推进'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="推进原因" span={2}>
+                            {detail.bridgeConversionSummary.bridgeNextStep?.reason || '待同步'}
+                        </Descriptions.Item>
+                    </Descriptions>
+                    {(detail.bridgeConversionSummary.responsibilityBoundarySummary?.items || []).length ? (
+                        <Alert
+                            type="info"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={detail.bridgeConversionSummary.responsibilityBoundarySummary?.title || '责任边界'}
+                            description={(detail.bridgeConversionSummary.responsibilityBoundarySummary?.items || []).join('；')}
+                        />
+                    ) : null}
+                    {(detail.bridgeConversionSummary.scheduleAndAcceptanceSummary?.items || []).length ? (
+                        <Alert
+                            type="success"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message={detail.bridgeConversionSummary.scheduleAndAcceptanceSummary?.title || '工期与验收'}
+                            description={(detail.bridgeConversionSummary.scheduleAndAcceptanceSummary?.items || []).join('；')}
+                        />
+                    ) : null}
+                    {(detail.bridgeConversionSummary.platformGuaranteeSummary?.items || []).length ? (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            message={detail.bridgeConversionSummary.platformGuaranteeSummary?.title || '平台保障'}
+                            description={(detail.bridgeConversionSummary.platformGuaranteeSummary?.items || []).join('；')}
+                        />
+                    ) : null}
+                </Card>
+            ) : null}
+
             <Card style={{ marginBottom: 16 }} loading={loading} title="来源与工程量基线">
                 <Descriptions column={3} size="small" style={{ marginBottom: 16 }}>
                     <Descriptions.Item label="来源类型">{sourceTypeLabel(detail?.quoteList?.sourceType)}</Descriptions.Item>

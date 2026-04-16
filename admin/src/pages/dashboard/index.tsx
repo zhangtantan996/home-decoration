@@ -29,20 +29,40 @@ interface OverviewStats {
     pendingBookings: number;
     materialShopCount: number;
     monthlyGMV: number;
+    northStar?: { key: string; label: string; value: number };
+    coreMetrics?: Array<{ key: string; label: string; value: number }>;
+    dashboardSections?: Array<{ key: string; title: string; metrics: Array<{ key: string; label: string; value: number }> }>;
+    userFunnel?: Array<{ key: string; label: string; value: number }>;
+    merchantFunnel?: Array<{ key: string; label: string; value: number }>;
 }
 
 interface TrendItem {
     date: string;
-    users: number;
-    bookings: number;
-    projects: number;
-    gmv: number;
+    effectiveBookings: number;
+    designConfirmed: number;
+    constructionConfirmed: number;
+    completedProjects: number;
+    disputeRate: number;
+    refundRate: number;
+}
+
+interface DistributionMetric {
+    key: string;
+    label: string;
+    value: number;
+}
+
+interface DistributionStats {
+    providerTiers?: DistributionMetric[];
+    serviceTypes?: DistributionMetric[];
+    projectStages?: DistributionMetric[];
 }
 
 const Dashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<OverviewStats | null>(null);
     const [trends, setTrends] = useState<TrendItem[]>([]);
+    const [distribution, setDistribution] = useState<DistributionStats | null>(null);
 
     useEffect(() => {
         void loadData();
@@ -51,19 +71,24 @@ const Dashboard: React.FC = () => {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [overviewRes, trendsRes] = await Promise.all([
+            const [overviewRes, trendsRes, distributionRes] = await Promise.all([
                 adminStatsApi.overview(),
                 adminStatsApi.trends({ days: 7 }),
+                adminStatsApi.distribution(),
             ]);
 
             const overviewData = overviewRes as { code?: number; data?: OverviewStats };
             const trendsData = trendsRes as { code?: number; data?: TrendItem[] };
+            const distributionData = distributionRes as { code?: number; data?: DistributionStats };
 
             if (overviewData.code === 0 && overviewData.data) {
                 setStats(overviewData.data);
             }
             if (trendsData.code === 0) {
                 setTrends(trendsData.data || []);
+            }
+            if (distributionData.code === 0 && distributionData.data) {
+                setDistribution(distributionData.data);
             }
         } catch (error) {
             console.error('Fetch dashboard data failed', error);
@@ -91,7 +116,7 @@ const Dashboard: React.FC = () => {
     const userTrendConfig = {
         data: trends,
         xField: 'date',
-        yField: 'users',
+        yField: 'effectiveBookings',
         smooth: true,
         point: {
             size: 4,
@@ -113,17 +138,17 @@ const Dashboard: React.FC = () => {
         legend: false,
         tooltip: {
             showTitle: true,
-            title: '新增用户',
+            title: '有效预约',
         },
     };
 
     const gmvTrendConfig = {
         data: trends.map((item) => ({
             ...item,
-            gmvDisplay: item.gmv / 10000,
+            completedDisplay: item.completedProjects,
         })),
         xField: 'date',
-        yField: 'gmvDisplay',
+        yField: 'completedDisplay',
         legend: false,
         columnStyle: {
             radius: [8, 8, 0, 0],
@@ -132,11 +157,10 @@ const Dashboard: React.FC = () => {
     };
 
     const providerDistributionConfig = {
-        data: [
-            { type: '设计师', value: stats?.designerCount || 0 },
-            { type: '装修公司', value: stats?.companyCount || 0 },
-            { type: '工长', value: stats?.foremanCount || 0 },
-        ],
+        data: (distribution?.providerTiers || []).map((item) => ({
+            type: item.label,
+            value: item.value,
+        })),
         angleField: 'value',
         colorField: 'type',
         radius: 0.84,
@@ -173,49 +197,49 @@ const Dashboard: React.FC = () => {
 
             <div className="hz-stat-grid">
                 <StatCard
-                    title="用户总数"
-                    value={(stats?.userCount || 0).toLocaleString()}
+                    title={stats?.northStar?.label || "北极星指标"}
+                    value={Math.round(stats?.northStar?.value || 0).toLocaleString()}
                     icon={<UserOutlined />}
                     tone="accent"
                     trend={`+${stats?.todayNewUsers || 0} 今日新增`}
                 />
                 <StatCard
-                    title="认证服务商"
-                    value={(stats?.providerCount || 0).toLocaleString()}
+                    title="有效预约数"
+                    value={Math.round((stats?.coreMetrics || []).find((item) => item.key === 'effective_bookings')?.value || 0).toLocaleString()}
                     icon={<TeamOutlined />}
                     tone="success"
-                    trend={`${stats?.designerCount || 0} 设计师`}
+                    trend={`服务商 ${stats?.providerCount || 0} 个`}
                 />
                 <StatCard
-                    title="进行中项目"
-                    value={(stats?.activeProjects || 0).toLocaleString()}
+                    title="施工确认数"
+                    value={Math.round((stats?.coreMetrics || []).find((item) => item.key === 'construction_confirmed')?.value || 0).toLocaleString()}
                     icon={<ProjectOutlined />}
                     tone="warning"
-                    trend={`${stats?.completedProjects || 0} 已完工`}
+                    trend={`${Math.round((stats?.coreMetrics || []).find((item) => item.key === 'completed_projects')?.value || 0)} 已完工`}
                 />
                 <StatCard
-                    title="月度成交额"
-                    value={`¥${((stats?.monthlyGMV || 0) / 10000).toFixed(1)}万`}
+                    title="售后风险"
+                    value={`${(((stats?.coreMetrics || []).find((item) => item.key === 'refund_rate')?.value || 0) * 100).toFixed(1)}%`}
                     icon={<DollarOutlined />}
                     tone="danger"
-                    trend={`${stats?.bookingCount || 0} 预约总数`}
+                    trend={`退款率 / 争议率联动观察`}
                 />
             </div>
 
             <div className="hz-dashboard-grid">
-                <Card className="hz-panel-card" title="用户增长趋势">
+                <Card className="hz-panel-card" title="有效预约趋势">
                     <div className="hz-chart-wrap">
                         <Line {...userTrendConfig} />
                     </div>
                 </Card>
 
-                <Card className="hz-panel-card" title="服务商结构">
+                <Card className="hz-panel-card" title="服务商分层">
                     <div className="hz-chart-wrap">
                         <Pie {...providerDistributionConfig} />
                     </div>
                 </Card>
 
-                <Card className="hz-panel-card" title="月度成交额趋势">
+                <Card className="hz-panel-card" title="完工趋势">
                     <div className="hz-chart-wrap">
                         <Column {...gmvTrendConfig} />
                     </div>
@@ -237,6 +261,42 @@ const Dashboard: React.FC = () => {
                                     title={item.title}
                                     description={item.value}
                                 />
+                            </List.Item>
+                        )}
+                    />
+                </Card>
+            </div>
+
+            <div className="hz-dashboard-grid">
+                <Card className="hz-panel-card" title="一级看板摘要">
+                    <List
+                        dataSource={stats?.dashboardSections || []}
+                        renderItem={(item) => (
+                            <List.Item>
+                                <List.Item.Meta
+                                    title={item.title}
+                                    description={(item.metrics || []).map((metric) => `${metric.label}: ${metric.value}`).join(' · ')}
+                                />
+                            </List.Item>
+                        )}
+                    />
+                </Card>
+                <Card className="hz-panel-card" title="用户侧漏斗">
+                    <List
+                        dataSource={stats?.userFunnel || []}
+                        renderItem={(item) => (
+                            <List.Item>
+                                <List.Item.Meta title={item.label} description={`${Math.round(item.value)} 个`} />
+                            </List.Item>
+                        )}
+                    />
+                </Card>
+                <Card className="hz-panel-card" title="商家侧漏斗">
+                    <List
+                        dataSource={stats?.merchantFunnel || []}
+                        renderItem={(item) => (
+                            <List.Item>
+                                <List.Item.Meta title={item.label} description={`${Math.round(item.value)} 个`} />
                             </List.Item>
                         )}
                     />

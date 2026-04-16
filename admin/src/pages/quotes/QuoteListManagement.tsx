@@ -966,6 +966,15 @@ const QuoteListManagement: React.FC = () => {
                   {detail.supervisorSummary?.unhandledRiskCount ?? 0}
                 </Descriptions.Item>
               </Descriptions>
+              {detail.bridgeConversionSummary?.bridgeNextStep?.reason ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginTop: 16 }}
+                  message="用户端桥接解释预览"
+                  description={detail.bridgeConversionSummary.bridgeNextStep.reason}
+                />
+              ) : null}
             </Card>
 
             <Card

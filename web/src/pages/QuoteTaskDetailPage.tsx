@@ -19,6 +19,7 @@ export function QuoteTaskDetailPage() {
 
   if (loading) return <div className="container page-stack"><LoadingBlock title="加载施工报价确认页" /></div>;
   if (error || !data) return <div className="container page-stack"><ErrorBlock description={error || '施工报价任务不存在'} onRetry={() => void reload()} /></div>;
+  const bridgeSummary = data.bridgeConversionSummary;
 
   return (
     <div className="container page-stack">
@@ -53,6 +54,31 @@ export function QuoteTaskDetailPage() {
               <article><span>户型</span><strong>{data.taskSummary.layout || '待补充'}</strong></article>
             </div>
           </section>
+
+          {bridgeSummary ? (
+            <section className="card section-card">
+              <div className="panel-head">
+                <div>
+                  <p className="kicker eyebrow-accent">为什么这个报价成立</p>
+                  <h2 className="section-title">桥接解释与平台保障</h2>
+                </div>
+              </div>
+              {bridgeSummary.bridgeNextStep?.reason ? <div className="status-note" style={{ marginBottom: 16 }}>{bridgeSummary.bridgeNextStep.reason}</div> : null}
+              <div className="data-grid detail-grid-two">
+                <article><span>报价基线</span><strong>{bridgeSummary.quoteBaselineSummary?.title || '待同步'}</strong></article>
+                <article><span>下一责任人</span><strong>{bridgeSummary.bridgeNextStep?.owner || '待平台继续推进'}</strong></article>
+                <article><span>平台保障</span><strong>{bridgeSummary.trustSignals?.officialReviewHint || '平台留痕、争议处理与评价沉淀'}</strong></article>
+                <article><span>可对比主体</span><strong>{bridgeSummary.constructionSubjectComparison?.length || 0} 个</strong></article>
+              </div>
+              {(bridgeSummary.responsibilityBoundarySummary?.items || []).length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.responsibilityBoundarySummary?.items?.map((item) => (
+                    <div className="surface-card" key={item}><p>{item}</p></div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="card section-card">
             <div className="panel-head">

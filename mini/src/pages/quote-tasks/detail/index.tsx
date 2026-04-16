@@ -152,6 +152,29 @@ const QuoteTaskDetailPage: React.FC = () => {
           </View>
         </View>
 
+        {detail.bridgeConversionSummary ? (
+          <View className="bg-white p-md mb-sm">
+            <View className="font-bold mb-md text-base">桥接解释与平台保障</View>
+            {detail.bridgeConversionSummary.bridgeNextStep?.reason ? (
+              <View className="text-sm text-gray-700 mb-sm">{detail.bridgeConversionSummary.bridgeNextStep.reason}</View>
+            ) : null}
+            <View className="space-y-sm">
+              <View className="flex justify-between text-sm py-xs border-b border-gray-100">
+                <Text className="text-gray-500">报价基线</Text>
+                <Text>{detail.bridgeConversionSummary.quoteBaselineSummary?.title || '待同步'}</Text>
+              </View>
+              <View className="flex justify-between text-sm py-xs border-b border-gray-100">
+                <Text className="text-gray-500">下一责任人</Text>
+                <Text>{detail.bridgeConversionSummary.bridgeNextStep?.owner || '待平台继续推进'}</Text>
+              </View>
+              <View className="flex justify-between text-sm py-xs">
+                <Text className="text-gray-500">平台保障</Text>
+                <Text>{detail.bridgeConversionSummary.trustSignals?.officialReviewHint || '评价、验收与争议链路留痕'}</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         <View className="bg-white p-md mb-xl">
           <View className="font-bold mb-md text-base">施工清单</View>
           {detail.items.length === 0 ? (

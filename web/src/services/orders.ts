@@ -3,6 +3,7 @@ import type { OrderDetailPlanVM, OrderDetailVM, OrderListItemVM } from '../types
 import { ORDER_STATUS_LABELS } from '../constants/statuses';
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { detectTerminalType } from '../utils/terminal';
+import { adaptBridgeConversionSummary, adaptProjectClosureSummary } from './bridgeSummary';
 import { requestJson } from './http';
 import type { PaymentLaunchPayload, PaymentLaunchRequest } from './payments';
 
@@ -38,6 +39,10 @@ interface OrderDetailDTO {
   projectId?: number;
   proposalId?: number;
   createdAt?: string;
+  bridgeConversionSummary?: unknown;
+  closureSummary?: unknown;
+  businessStage?: string;
+  flowSummary?: string;
 }
 
 interface OrderPlanDTO {
@@ -169,6 +174,10 @@ function toOrderDetail(dto: OrderDetailDTO, plans: OrderPlanDTO[]): OrderDetailV
     primaryActionLabel: action.label,
     canPay: status === 0,
     planItems: plans.map(toOrderPlanItem),
+    bridgeConversionSummary: adaptBridgeConversionSummary(dto.bridgeConversionSummary),
+    closureSummary: adaptProjectClosureSummary(dto.closureSummary),
+    businessStage: dto.businessStage || undefined,
+    flowSummary: dto.flowSummary || undefined,
   };
 }
 

@@ -1329,6 +1329,29 @@ export interface AdminProviderListItem {
   visibility?: AdminAuditVisibility;
   actions?: AdminAuditActions;
   legacyInfo?: AdminAuditLegacyInfo;
+  governanceTier?: string;
+  scoreSummary?: {
+    responseRate?: number;
+    proposalRate?: number;
+    designConfirmRate?: number;
+    constructionConfirmRate?: number;
+    completionRate?: number;
+    acceptancePassRate?: number;
+    complaintRate?: number;
+    refundRate?: number;
+    caseCount?: number;
+    officialReviewCount?: number;
+  };
+  riskFlags?: string[];
+  recommendedAction?: string;
+  funnelMetrics?: {
+    bookingsTotal?: number;
+    respondedBookings?: number;
+    proposalSubmittedCount?: number;
+    designConfirmedCount?: number;
+    constructionConfirmedCount?: number;
+    completedProjectCount?: number;
+  };
 }
 
 export interface AdminMaterialShopListItem {

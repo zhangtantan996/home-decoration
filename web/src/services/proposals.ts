@@ -1,6 +1,7 @@
 import type { ProposalDetailVM, ProposalListItemVM, ProposalOrderPlanVM } from '../types/viewModels';
 import { ORDER_STATUS_LABELS, PROPOSAL_STATUS_LABELS } from '../constants/statuses';
 import { formatCurrency, formatDateTime } from '../utils/format';
+import { adaptBridgeConversionSummary } from './bridgeSummary';
 import { requestJson } from './http';
 
 interface ProposalDTO {
@@ -36,6 +37,10 @@ interface ProposalResponse {
   order?: OrderDTO | null;
   hasOrder?: boolean;
   deliveryUnlocked?: boolean;
+  businessStage?: string;
+  flowSummary?: string;
+  availableActions?: string[];
+  bridgeConversionSummary?: unknown;
 }
 
 type ProposalPackage = {
@@ -144,6 +149,10 @@ export async function getProposalDetail(id: number) {
     canConfirm,
     canReject,
     blockingReason,
+    businessStage: data.businessStage || undefined,
+    flowSummary: data.flowSummary || undefined,
+    availableActions: data.availableActions || [],
+    bridgeConversionSummary: adaptBridgeConversionSummary(data.bridgeConversionSummary),
     deliveryUnlocked: Boolean(data.deliveryUnlocked),
   };
 

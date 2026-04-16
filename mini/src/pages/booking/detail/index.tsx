@@ -1164,6 +1164,21 @@ const BookingDetailPage: React.FC = () => {
                   : '计划进场时间待监理登记'}
                 {detail.supervisorSummary?.latestLogTitle ? `；最近监理同步：${detail.supervisorSummary.latestLogTitle}` : ''}
               </Text>
+              {detail.bridgeConversionSummary?.bridgeNextStep?.reason ? (
+                <Text className="booking-detail-page__budget-actions-copy">
+                  {detail.bridgeConversionSummary.bridgeNextStep.reason}
+                </Text>
+              ) : null}
+              {detail.bridgeConversionSummary?.responsibilityBoundarySummary?.items?.length ? (
+                <Text className="booking-detail-page__budget-actions-copy">
+                  {detail.bridgeConversionSummary.responsibilityBoundarySummary.items.join('；')}
+                </Text>
+              ) : null}
+              {detail.bridgeConversionSummary?.platformGuaranteeSummary?.items?.length ? (
+                <Text className="booking-detail-page__budget-actions-copy">
+                  平台保障：{detail.bridgeConversionSummary.platformGuaranteeSummary.items.join('；')}
+                </Text>
+              ) : null}
             </View>
           ) : null}
         </View>

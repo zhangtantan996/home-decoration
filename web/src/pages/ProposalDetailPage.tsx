@@ -163,6 +163,7 @@ export function ProposalDetailPage() {
     { label: '总价估算', value: data.totalFeeText },
   ];
   const canShowOrderPanel = Boolean(data.hasOrder || data.orderId);
+  const bridgeSummary = data.bridgeConversionSummary;
 
   const handleConfirm = async () => {
     setActing(true);
@@ -245,6 +246,14 @@ export function ProposalDetailPage() {
             <span className={styles.sectionLabel}>方案概述</span>
             <p>{data.summary}</p>
           </div>
+
+          {bridgeSummary ? (
+            <div className={styles.summaryBlock}>
+              <span className={styles.sectionLabel}>施工桥接下一步</span>
+              <p>{bridgeSummary.bridgeNextStep?.reason || data.flowSummary || '正式方案确认后，会继续进入施工主体选择与施工报价确认。'}</p>
+              {bridgeSummary.bridgeNextStep?.actionHint ? <p>{bridgeSummary.bridgeNextStep.actionHint}</p> : null}
+            </div>
+          ) : null}
         </section>
 
         <aside className={styles.sideStack}>
@@ -348,6 +357,26 @@ export function ProposalDetailPage() {
                       </div>
                     </article>
                   ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {bridgeSummary ? (
+            <section className={styles.sideCard}>
+              <div className={styles.sideHead}>
+                <span className={styles.sectionLabel}>桥接解释</span>
+                <strong>{bridgeSummary.quoteBaselineSummary?.title || '报价基线待整理'}</strong>
+                <p>{bridgeSummary.trustSignals?.officialReviewHint || '平台会在报价、验收与争议链路中持续留痕。'}</p>
+              </div>
+              {(bridgeSummary.responsibilityBoundarySummary?.items || []).length ? (
+                <div className={styles.assetList}>
+                  {bridgeSummary.responsibilityBoundarySummary?.items?.map((item) => <span className={styles.assetLink} key={item}>{item}</span>)}
+                </div>
+              ) : null}
+              {(bridgeSummary.scheduleAndAcceptanceSummary?.items || []).length ? (
+                <div className={styles.assetList}>
+                  {bridgeSummary.scheduleAndAcceptanceSummary?.items?.map((item) => <span className={styles.assetLink} key={item}>{item}</span>)}
                 </div>
               ) : null}
             </section>

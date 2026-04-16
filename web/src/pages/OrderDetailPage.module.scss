@@ -188,6 +188,12 @@
   gap: 6px;
 }
 
+.helperText {
+  margin: 14px 0 0;
+  color: var(--color-secondary);
+  line-height: 1.7;
+}
+
 .actionStack {
   display: grid;
   gap: 12px;

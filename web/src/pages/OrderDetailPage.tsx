@@ -251,6 +251,30 @@ export function OrderDetailPage() {
               </dl>
             </section>
 
+            {(detail.closureSummary || detail.bridgeConversionSummary) ? (
+              <section className={`card ${styles.panel}`}>
+                <div className={styles.panelHead}>
+                  <h2>履约后链状态</h2>
+                </div>
+                <div className={styles.infoGrid}>
+                  <article className={styles.infoCard}>
+                    <span>业务阶段</span>
+                    <strong>{detail.businessStage || '待同步'}</strong>
+                  </article>
+                  <article className={styles.infoCard}>
+                    <span>资料归档</span>
+                    <strong>{detail.closureSummary?.archiveStatus || '待同步'}</strong>
+                  </article>
+                  <article className={styles.infoCard}>
+                    <span>资金闭环</span>
+                    <strong>{detail.closureSummary?.financialClosureStatus || '待同步'}</strong>
+                  </article>
+                </div>
+                {detail.flowSummary ? <p className={styles.helperText}>{detail.flowSummary}</p> : null}
+                {detail.closureSummary?.nextPendingAction ? <p className={styles.helperText}>{detail.closureSummary.nextPendingAction}</p> : null}
+              </section>
+            ) : null}
+
             {detail.planItems.length ? (
               <section className={`card ${styles.panel}`}>
                 <div className={styles.panelHead}>

@@ -365,6 +365,24 @@ const MerchantProjectExecution: React.FC = () => {
             <Descriptions.Item label="预算">{formatCurrency(detail?.budget)}</Descriptions.Item>
             <Descriptions.Item label="当前阶段">{detail?.currentPhase || '-'}</Descriptions.Item>
           </Descriptions>
+          {detail?.bridgeConversionSummary?.bridgeNextStep?.reason ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginTop: 16 }}
+              message="施工桥接解释"
+              description={detail.bridgeConversionSummary.bridgeNextStep.reason}
+            />
+          ) : null}
+          {detail?.closureSummary ? (
+            <Alert
+              type="success"
+              showIcon
+              style={{ marginTop: 16 }}
+              message={`资料归档：${detail.closureSummary.archiveStatus || '待同步'} / 结算：${detail.closureSummary.settlementStatus || '待同步'} / 出款：${detail.closureSummary.payoutStatus || '待同步'}`}
+              description={detail.closureSummary.nextPendingAction || '待后续资金链继续推进'}
+            />
+          ) : null}
         </MerchantSectionCard>
 
         <MerchantSectionCard

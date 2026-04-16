@@ -18,6 +18,7 @@ import {
 import { formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
 import { buildProviderAvatarPlaceholder, getProviderRatingMeta, parseTextArray } from '../utils/provider';
 import { detectTerminalType } from '../utils/terminal';
+import { adaptBridgeConversionSummary } from './bridgeSummary';
 import { requestJson } from './http';
 import type { PaymentLaunchPayload, PaymentLaunchRequest } from './payments';
 
@@ -92,6 +93,7 @@ interface BookingDetailResponse {
   kickoffStatus?: string;
   plannedStartDate?: string;
   supervisorSummary?: BridgeSupervisorSummaryDTO | null;
+  bridgeConversionSummary?: unknown;
 }
 
 interface BridgeSupervisorSummaryDTO {
@@ -633,6 +635,7 @@ function adaptBookingDetail(response: BookingDetailResponse): BookingDetailVM {
           unhandledRiskCount: Number(response.supervisorSummary.unhandledRiskCount || 0),
         }
       : undefined,
+    bridgeConversionSummary: adaptBridgeConversionSummary(response.bridgeConversionSummary),
     surveyDepositSource: response.booking.surveyDepositSource || undefined,
     surveyRefundNotice: response.booking.surveyRefundNotice || undefined,
     surveyDepositPaymentId: response.surveyDepositPaymentId ? Number(response.surveyDepositPaymentId) : undefined,

@@ -215,6 +215,71 @@ export interface BridgeSupervisorSummaryVM {
   unhandledRiskCount?: number;
 }
 
+export interface ConstructionSubjectComparisonItemVM {
+  providerId: number;
+  subjectType?: string;
+  displayName: string;
+  rating?: number;
+  reviewCount?: number;
+  completedCnt?: number;
+  caseCount?: number;
+  highlightTags?: string[];
+  priceHint?: string;
+  deliveryHint?: string;
+  trustSummary?: string;
+  selected?: boolean;
+}
+
+export interface BridgeQuoteBaselineSummaryVM {
+  title?: string;
+  sourceStage?: string;
+  submittedAt?: string;
+  itemCount?: number;
+  highlights?: string[];
+  readyForUser?: boolean;
+}
+
+export interface BridgeChecklistSummaryVM {
+  title?: string;
+  items?: string[];
+}
+
+export interface BridgeTrustSignalsVM {
+  rating?: number;
+  reviewCount?: number;
+  completedCnt?: number;
+  caseCount?: number;
+  highlightTags?: string[];
+  officialReviewHint?: string;
+}
+
+export interface BridgeNextStepVM {
+  title?: string;
+  owner?: string;
+  reason?: string;
+  actionHint?: string;
+}
+
+export interface BridgeConversionSummaryVM {
+  constructionSubjectComparison?: ConstructionSubjectComparisonItemVM[];
+  quoteBaselineSummary?: BridgeQuoteBaselineSummaryVM;
+  responsibilityBoundarySummary?: BridgeChecklistSummaryVM;
+  scheduleAndAcceptanceSummary?: BridgeChecklistSummaryVM;
+  platformGuaranteeSummary?: BridgeChecklistSummaryVM;
+  trustSignals?: BridgeTrustSignalsVM;
+  bridgeNextStep?: BridgeNextStepVM;
+}
+
+export interface ProjectClosureSummaryVM {
+  completionStatus?: string;
+  archiveStatus?: string;
+  settlementStatus?: string;
+  payoutStatus?: string;
+  caseDraftStatus?: string;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
+}
+
 export interface BookingDetailVM {
   id: number;
   statusCode: number;
@@ -249,6 +314,7 @@ export interface BookingDetailVM {
   kickoffStatus?: string;
   plannedStartDate?: string;
   supervisorSummary?: BridgeSupervisorSummaryVM;
+  bridgeConversionSummary?: BridgeConversionSummaryVM;
   surveyDepositSource?: string;
   surveyRefundNotice?: string;
   surveyDepositPaymentId?: number;
@@ -347,6 +413,7 @@ export interface ProposalDetailVM {
   businessStage?: string;
   flowSummary?: string;
   availableActions?: string[];
+  bridgeConversionSummary?: BridgeConversionSummaryVM;
   deliveryUnlocked?: boolean;
   previewSummary?: string;
   previewFloorPlanImages?: string[];
@@ -594,6 +661,8 @@ export interface ProjectDetailVM {
   kickoffStatus?: string;
   plannedStartDate?: string;
   supervisorSummary?: BridgeSupervisorSummaryVM;
+  bridgeConversionSummary?: BridgeConversionSummaryVM;
+  closureSummary?: ProjectClosureSummaryVM;
   selectedQuoteTaskId?: number;
   areaText: string;
   budgetText: string;
@@ -629,6 +698,7 @@ export interface ProjectCompletionVM {
   completionRejectedAt?: string;
   completionRejectionReason?: string;
   inspirationCaseDraftId?: number;
+  closureSummary?: ProjectClosureSummaryVM;
   projectReview?: {
     id: number;
     projectId: number;
@@ -691,6 +761,7 @@ export interface QuoteTaskDetailVM {
   items: QuoteTaskSubmissionItemVM[];
   paymentPlanSummary: QuoteTaskPaymentPlanVM[];
   submissionId: number;
+  bridgeConversionSummary?: BridgeConversionSummaryVM;
 }
 
 export interface OrderListItemVM {
@@ -741,6 +812,10 @@ export interface OrderDetailVM {
   primaryActionLabel: string;
   canPay: boolean;
   planItems: OrderDetailPlanVM[];
+  bridgeConversionSummary?: BridgeConversionSummaryVM;
+  closureSummary?: ProjectClosureSummaryVM;
+  businessStage?: string;
+  flowSummary?: string;
 }
 
 export interface MessageListItemVM {

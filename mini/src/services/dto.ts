@@ -228,6 +228,56 @@ export interface ProjectPhaseDTO {
 
 export interface ProjectDetailDTO extends ProjectDTO {
   selectedQuoteTaskId?: number;
+  bridgeConversionSummary?: {
+    constructionSubjectComparison?: Array<{
+      providerId?: number;
+      subjectType?: string;
+      displayName?: string;
+      rating?: number;
+      reviewCount?: number;
+      completedCnt?: number;
+      caseCount?: number;
+      highlightTags?: string[];
+      priceHint?: string;
+      deliveryHint?: string;
+      trustSummary?: string;
+      selected?: boolean;
+    }>;
+    quoteBaselineSummary?: {
+      title?: string;
+      sourceStage?: string;
+      submittedAt?: string;
+      itemCount?: number;
+      highlights?: string[];
+      readyForUser?: boolean;
+    };
+    responsibilityBoundarySummary?: { title?: string; items?: string[] };
+    scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
+    platformGuaranteeSummary?: { title?: string; items?: string[] };
+    trustSignals?: {
+      rating?: number;
+      reviewCount?: number;
+      completedCnt?: number;
+      caseCount?: number;
+      highlightTags?: string[];
+      officialReviewHint?: string;
+    };
+    bridgeNextStep?: {
+      title?: string;
+      owner?: string;
+      reason?: string;
+      actionHint?: string;
+    };
+  };
+  closureSummary?: {
+    completionStatus?: string;
+    archiveStatus?: string;
+    settlementStatus?: string;
+    payoutStatus?: string;
+    caseDraftStatus?: string;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
+  };
   milestones?: Array<Record<string, unknown>>;
   logs?: Array<Record<string, unknown>>;
   escrow?: Record<string, unknown>;

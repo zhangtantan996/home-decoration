@@ -33,6 +33,7 @@ export function ProjectCompletionPage() {
   const canReject = data.availableActions?.includes('reject_completion');
   const canSubmitReview = data.availableActions?.includes('submit_review');
   const canReview = Boolean(canApprove || canReject);
+  const closureSummary = data.closureSummary;
 
   const actionHint = (() => {
     if (canReview) {
@@ -72,6 +73,19 @@ export function ProjectCompletionPage() {
         <div className="section-head"><h2>完工说明</h2></div>
         <p className="detail-note">{data.completionNotes || '暂无完工说明'}</p>
       </section>
+
+      {closureSummary ? (
+        <section className="card section-card">
+          <div className="section-head"><h2>归档与资金收口</h2></div>
+          <div className="detail-stat-grid">
+            <article className="detail-stat"><span>资料归档</span><strong>{closureSummary.archiveStatus || '待同步'}</strong></article>
+            <article className="detail-stat"><span>结算状态</span><strong>{closureSummary.settlementStatus || '待同步'}</strong></article>
+            <article className="detail-stat"><span>出款状态</span><strong>{closureSummary.payoutStatus || '待同步'}</strong></article>
+            <article className="detail-stat"><span>资金闭环</span><strong>{closureSummary.financialClosureStatus || '待同步'}</strong></article>
+          </div>
+          {closureSummary.nextPendingAction ? <p className="detail-note" style={{ marginTop: 16 }}>{closureSummary.nextPendingAction}</p> : null}
+        </section>
+      ) : null}
 
       <section className="card section-card">
         <div className="section-head"><h2>完工照片</h2></div>

@@ -69,6 +69,15 @@ export interface ProjectCompletionDetail {
   completionRejectionReason?: string;
   completionRejectedAt?: string;
   inspirationCaseDraftId?: number;
+  closureSummary?: {
+    completionStatus?: string;
+    archiveStatus?: string;
+    settlementStatus?: string;
+    payoutStatus?: string;
+    caseDraftStatus?: string;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
+  };
 }
 
 export interface ChangeOrderDecisionPayload {

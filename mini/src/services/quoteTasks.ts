@@ -52,6 +52,47 @@ export interface QuoteTaskDetail {
     status: number;
     dueAt?: string;
   }>;
+  bridgeConversionSummary?: {
+    constructionSubjectComparison?: Array<{
+      providerId?: number;
+      subjectType?: string;
+      displayName?: string;
+      rating?: number;
+      reviewCount?: number;
+      completedCnt?: number;
+      caseCount?: number;
+      highlightTags?: string[];
+      priceHint?: string;
+      deliveryHint?: string;
+      trustSummary?: string;
+      selected?: boolean;
+    }>;
+    quoteBaselineSummary?: {
+      title?: string;
+      sourceStage?: string;
+      submittedAt?: string;
+      itemCount?: number;
+      highlights?: string[];
+      readyForUser?: boolean;
+    };
+    responsibilityBoundarySummary?: { title?: string; items?: string[] };
+    scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
+    platformGuaranteeSummary?: { title?: string; items?: string[] };
+    trustSignals?: {
+      rating?: number;
+      reviewCount?: number;
+      completedCnt?: number;
+      caseCount?: number;
+      highlightTags?: string[];
+      officialReviewHint?: string;
+    };
+    bridgeNextStep?: {
+      title?: string;
+      owner?: string;
+      reason?: string;
+      actionHint?: string;
+    };
+  };
 }
 
 interface QuoteTaskSummaryDTO {
@@ -110,6 +151,7 @@ interface QuoteTaskUserViewDTO {
   };
   businessStage?: string;
   flowSummary?: string;
+  bridgeConversionSummary?: QuoteTaskDetail['bridgeConversionSummary'];
 }
 
 export async function listMyQuoteTasks() {
@@ -175,6 +217,7 @@ export async function getQuoteTaskDetail(id: number) {
       status: plan.status,
       dueAt: plan.dueAt || undefined,
     })),
+    bridgeConversionSummary: data.bridgeConversionSummary,
   } satisfies QuoteTaskDetail;
 }
 

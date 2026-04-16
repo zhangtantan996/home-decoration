@@ -272,6 +272,27 @@ const ProjectDetailPage: React.FC = () => {
           </View>
         </View>
 
+        {detail.closureSummary ? (
+          <View className="bg-white p-md mb-md">
+            <View className="font-bold mb-md text-base">归档与资金收口</View>
+            <View className="space-y-sm text-sm text-gray-700">
+              <View className="flex justify-between py-xs border-b border-gray-100">
+                <Text className="text-gray-500">资料归档</Text>
+                <Text>{detail.closureSummary.archiveStatus || '待同步'}</Text>
+              </View>
+              <View className="flex justify-between py-xs border-b border-gray-100">
+                <Text className="text-gray-500">结算状态</Text>
+                <Text>{detail.closureSummary.settlementStatus || '待同步'}</Text>
+              </View>
+              <View className="flex justify-between py-xs border-b border-gray-100">
+                <Text className="text-gray-500">出款状态</Text>
+                <Text>{detail.closureSummary.payoutStatus || '待同步'}</Text>
+              </View>
+              <View className="text-sm text-gray-500">{detail.closureSummary.nextPendingAction || '待后续资金链继续推进'}</View>
+            </View>
+          </View>
+        ) : null}
+
         {(paused || disputed || riskSummary?.escrowFrozen) ? (
           <View className="bg-white p-md mb-md">
             <View className="text-base font-bold mb-sm">异常闭环</View>

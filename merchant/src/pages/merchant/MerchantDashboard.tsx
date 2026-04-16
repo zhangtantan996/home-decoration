@@ -236,6 +236,12 @@ const MerchantDashboard: React.FC = () => {
     const readyProductsCount = products.filter((item) => (item.images || []).length > 0 && String(item.description || '').trim()).length;
     const pendingImproveCount = missingImagesCount + missingDescriptionCount;
     const remainingTargetCount = Math.max(0, 20 - products.length);
+    const governanceTier = String(stats?.governanceTier || '').trim();
+    const governanceRiskSummary = (stats?.riskFlags || []).join('、');
+    const governanceHint = compactText(
+        stats?.recommendedAction,
+        governanceRiskSummary || '当前以主链成交、履约和评价沉淀为主。',
+    );
 
     const dashboardModel: DashboardModel = isMaterialShop
         ? {
@@ -263,10 +269,11 @@ const MerchantDashboard: React.FC = () => {
         : {
             roleTag: isForeman ? '工长' : isCompany ? '装修公司' : '设计师',
             title: '今日重点',
+            subtitle: governanceTier ? `当前治理分层：${governanceTier}` : undefined,
             statusLabel: providerStatusMeta.label,
             statusTone: providerStatusMeta.tone,
             statusHelper: compactText(
-                providerStatusMeta.helperText,
+                providerStatusMeta.helperText || governanceHint,
                 isForeman ? '当前可继续承接施工机会。' : '当前可继续推进主链路。',
             ),
             metrics: isForeman
@@ -275,23 +282,27 @@ const MerchantDashboard: React.FC = () => {
                     { label: '待转施工报价', value: Number(stats?.pendingProposals || 0), note: '正式进入报价', tone: Number(stats?.pendingProposals || 0) > 0 ? 'warning' : 'neutral' },
                     { label: '项目履约中', value: Number(stats?.activeProjects || 0), note: '施工与验收推进', tone: Number(stats?.activeProjects || 0) > 0 ? 'accent' : 'neutral' },
                     { label: '待验收推进', value: Number(stats?.todayBookings || 0), note: '盯关键节点', tone: Number(stats?.todayBookings || 0) > 0 ? 'accent' : 'neutral' },
+                    { label: '治理分层', value: governanceTier || '待同步', note: governanceHint, tone: governanceTier === '风险观察期' ? 'warning' : 'success' },
                 ]
                 : [
                     { label: isCompany ? '待推进线索' : '待响应线索', value: Number(stats?.pendingLeads || 0), note: '先判断是否接手', tone: Number(stats?.pendingLeads || 0) > 0 ? 'warning' : 'neutral' },
                     { label: '方案流程待推进', value: proposalWorkflowCount, note: '量房、沟通、报价、交付链路', tone: proposalWorkflowCount > 0 ? 'accent' : 'neutral' },
                     { label: '待确认方案', value: Number(stats?.pendingProposals || 0), note: '用户确认中的方案', tone: Number(stats?.pendingProposals || 0) > 0 ? 'warning' : 'neutral' },
                     { label: isCompany ? '项目总览' : '已转项目', value: Number(stats?.activeProjects || 0), note: '只看已转项目', tone: Number(stats?.activeProjects || 0) > 0 ? 'success' : 'neutral' },
+                    { label: '治理分层', value: governanceTier || '待同步', note: governanceHint, tone: governanceTier === '风险观察期' ? 'warning' : 'success' },
                 ],
             tasks: isForeman
                 ? [
                     { label: '待接施工机会', value: Number(stats?.pendingLeads || 0), hint: '先做承接判断', path: '/bookings', actionLabel: '去查看' },
                     { label: '待转施工报价', value: Number(stats?.pendingProposals || 0), hint: '把报价推进到确认', path: '/proposals', actionLabel: '去推进' },
                     { label: '项目履约中', value: Number(stats?.activeProjects || 0), hint: '持续盯开工和验收', path: '/projects', actionLabel: '去查看' },
+                    { label: '平台建议', value: governanceTier || '待同步', hint: governanceHint, path: '/settings', actionLabel: '去查看' },
                 ]
                 : [
                     { label: isCompany ? '待推进线索' : '待响应线索', value: Number(stats?.pendingLeads || 0), hint: '先看新进入的机会', path: '/bookings', actionLabel: '去处理' },
                     { label: '方案流程待推进', value: proposalWorkflowCount, hint: '继续推进量房、沟通、报价或交付', path: proposalWorkflowPath, actionLabel: '去推进' },
                     { label: '待确认方案', value: Number(stats?.pendingProposals || 0), hint: '查看等待用户确认的方案', path: '/proposals', actionLabel: '去查看' },
+                    { label: '平台建议', value: governanceTier || '待同步', hint: governanceHint, path: '/settings', actionLabel: '去查看' },
                 ],
             secondaryActions: [
                 { icon: <WalletOutlined />, label: '财务中心', hint: `可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', emphasis: true },

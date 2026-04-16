@@ -116,6 +116,12 @@ export function BookingDetailPage() {
     { label: '装修类型', value: data.renovationType || '待确认' },
     { label: '期望时间', value: data.preferredDate || '待确认' },
   ];
+  const bridgeSummary = data.bridgeConversionSummary;
+  const bridgeChecklistCards = [
+    bridgeSummary?.responsibilityBoundarySummary,
+    bridgeSummary?.scheduleAndAcceptanceSummary,
+    bridgeSummary?.platformGuaranteeSummary,
+  ].filter(Boolean);
 
   const handlePaySurveyDeposit = async () => {
     setPaymentSubmitting(true);
@@ -264,6 +270,64 @@ export function BookingDetailPage() {
           </div>
         </aside>
       </section>
+
+      {bridgeSummary ? (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionCopy}>
+              <h2>施工桥接说明</h2>
+            </div>
+          </div>
+          <div className={styles.summaryGrid}>
+            <article className={styles.summaryItem}>
+              <span>下一责任人</span>
+              <strong>{bridgeSummary.bridgeNextStep?.owner || '待平台继续推进'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>报价基线</span>
+              <strong>{bridgeSummary.quoteBaselineSummary?.title || '待提交'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>可信背书</span>
+              <strong>{bridgeSummary.trustSignals?.officialReviewHint || '平台会展示案例、评价与履约标签'}</strong>
+            </article>
+          </div>
+          {bridgeSummary.bridgeNextStep?.reason ? (
+            <div className={styles.summaryNote}>
+              <span>为什么值得继续</span>
+              <p>{bridgeSummary.bridgeNextStep.reason}</p>
+            </div>
+          ) : null}
+          {bridgeSummary.constructionSubjectComparison?.length ? (
+            <div className={styles.stepper}>
+              {bridgeSummary.constructionSubjectComparison.slice(0, 3).map((item) => (
+                <article className={styles.step} data-state={item.selected ? 'active' : 'pending'} key={`${item.providerId}-${item.displayName}`}>
+                  <div className={styles.stepIndicator} />
+                  <div className={styles.stepContent}>
+                    <div className={styles.stepTitleRow}>
+                      <h3>{item.displayName}</h3>
+                      <span className="status-chip" data-tone={item.selected ? 'brand' : 'warning'}>
+                        {item.subjectType === 'company' ? '公司主体' : item.subjectType === 'foreman' ? '独立工长' : '施工主体'}
+                      </span>
+                    </div>
+                    <p className={styles.stepDescription}>{item.deliveryHint || item.trustSummary || '待补充施工主体说明'}</p>
+                    <div className="inline-actions">
+                      {item.priceHint ? <span className="status-chip">{item.priceHint}</span> : null}
+                      {item.highlightTags?.slice(0, 2).map((tag) => <span className="status-chip" key={tag}>{tag}</span>)}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          {bridgeChecklistCards.map((card) => (
+            <div className={styles.summaryNote} key={card?.title}>
+              <span>{card?.title || '桥接说明'}</span>
+              <p>{(card?.items || []).join('；') || '待补充'}</p>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>

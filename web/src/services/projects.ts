@@ -22,6 +22,7 @@ import {
   TRANSACTION_STATUS_LABELS,
 } from '../constants/statuses';
 import { compactPhone, formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
+import { adaptBridgeConversionSummary, adaptProjectClosureSummary } from './bridgeSummary';
 import { requestJson } from './http';
 import { readThroughCache } from './runtimeCache';
 
@@ -66,6 +67,8 @@ interface ProjectDetailResponse {
   kickoffStatus?: string;
   plannedStartDate?: string;
   supervisorSummary?: BridgeSupervisorSummaryDTO | null;
+  bridgeConversionSummary?: unknown;
+  closureSummary?: unknown;
   area?: number;
   budget?: number;
   ownerName?: string;
@@ -148,6 +151,7 @@ interface ProjectCompletionResponse {
   completionRejectedAt?: string;
   completionRejectionReason?: string;
   inspirationCaseDraftId?: number;
+  closureSummary?: unknown;
   projectReview?: {
     id: number;
     projectId: number;
@@ -448,6 +452,8 @@ export async function getProjectDetail(id: number) {
               unhandledRiskCount: Number(detail.supervisorSummary.unhandledRiskCount || 0),
             }
           : undefined,
+        bridgeConversionSummary: adaptBridgeConversionSummary(detail.bridgeConversionSummary),
+        closureSummary: adaptProjectClosureSummary(detail.closureSummary),
         selectedQuoteTaskId: detail.selectedQuoteTaskId || undefined,
         areaText: formatArea(detail.area),
         budgetText: formatCurrency(detail.budget),
@@ -591,6 +597,7 @@ function adaptProjectCompletion(data: ProjectCompletionResponse): ProjectComplet
     completionRejectedAt: formatDateTime(data.completionRejectedAt),
     completionRejectionReason: data.completionRejectionReason || undefined,
     inspirationCaseDraftId: data.inspirationCaseDraftId || undefined,
+    closureSummary: adaptProjectClosureSummary(data.closureSummary),
     projectReview: data.projectReview
       ? {
           id: data.projectReview.id,
