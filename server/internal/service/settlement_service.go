@@ -77,6 +77,7 @@ func (s *SettlementService) ReleaseMilestone(input *ReleaseMilestoneInput) (*Rel
 	if err != nil {
 		return nil, err
 	}
+	notifySettlementLifecycle(result.SettlementOrder)
 	return result, nil
 }
 
@@ -299,7 +300,11 @@ func (s *SettlementService) ExecuteSettlement(id uint64) (*model.SettlementOrder
 		}
 		return err
 	})
-	return result, err
+	if err != nil {
+		return result, err
+	}
+	notifySettlementLifecycle(result)
+	return result, nil
 }
 
 func (s *SettlementService) ExecuteSettlementTx(tx *gorm.DB, id uint64) (*model.SettlementOrder, error) {
@@ -528,6 +533,27 @@ func (s *SettlementService) executeSettlementNowTx(tx *gorm.DB, settlement *mode
 		return &payout, nil, nil
 	}
 	return &payout, &transaction, nil
+}
+
+func notifySettlementLifecycle(settlement *model.SettlementOrder) {
+	if settlement == nil || settlement.ID == 0 {
+		return
+	}
+	providerUserID := providerUserIDFromProvider(settlement.ProviderID)
+	if providerUserID == 0 {
+		return
+	}
+	dispatcher := NewNotificationDispatcher()
+	switch settlement.Status {
+	case model.SettlementStatusScheduled:
+		dispatcher.NotifyProjectSettlementScheduled(providerUserID, settlement.ProjectID, settlement.ID, settlement.DueAt)
+	case model.SettlementStatusPayoutProcessing:
+		dispatcher.NotifyProjectPayoutProcessing(providerUserID, settlement.ProjectID, settlement.PayoutOrderID)
+	case model.SettlementStatusPaid:
+		dispatcher.NotifyProjectPayoutPaid(providerUserID, settlement.ProjectID, settlement.PayoutOrderID)
+	case model.SettlementStatusPayoutFailed:
+		dispatcher.NotifyProjectPayoutFailed(providerUserID, settlement.ProjectID, settlement.PayoutOrderID, settlement.FailureReason)
+	}
 }
 
 func (s *SettlementService) validateMilestoneSettlementScopeTx(tx *gorm.DB, input *ReleaseMilestoneInput) (*model.Project, *model.Milestone, *model.EscrowAccount, uint64, error) {

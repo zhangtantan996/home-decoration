@@ -160,6 +160,55 @@ func TestNotificationDispatcherRefundAndCompletionActionURLsUseRealRoutes(t *tes
 	}
 }
 
+func TestNotificationDispatcherClosureLifecycleActionURLsUseRealRoutes(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+	dispatcher := NewNotificationDispatcher()
+
+	admin := &model.SysAdmin{
+		ID:       7002,
+		Username: "admin_closure_test",
+		Password: "hashed",
+		Status:   1,
+	}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+
+	dispatcher.NotifyProjectSettlementScheduled(2001, 3001, 4001, nil)
+	dispatcher.NotifyProjectPayoutProcessing(2001, 3001, 5001)
+	dispatcher.NotifyProjectPayoutFailed(2001, 3001, 5001, "银行卡校验失败")
+	dispatcher.NotifyProjectCaseDraftGenerated(2001, 3001, 6001)
+
+	var notifications []model.Notification
+	if err := db.Order("id ASC").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 6 {
+		t.Fatalf("expected 6 notifications, got %d", len(notifications))
+	}
+
+	expected := []struct {
+		notificationType string
+		actionURL        string
+	}{
+		{NotificationTypeProjectSettlementScheduled, "/projects/3001"},
+		{NotificationTypeProjectPayoutProcessing, "/projects/3001"},
+		{NotificationTypeProjectPayoutFailed, "/projects/3001"},
+		{NotificationTypeProjectPayoutFailed, "/finance/payouts"},
+		{NotificationTypeProjectCaseDraftGenerated, "/cases"},
+		{NotificationTypeCaseAuditCreated, "/cases/manage"},
+	}
+
+	for idx, item := range notifications {
+		if item.Type != expected[idx].notificationType {
+			t.Fatalf("expected notification %d type=%s, got %s", idx, expected[idx].notificationType, item.Type)
+		}
+		if item.ActionURL != expected[idx].actionURL {
+			t.Fatalf("expected notification %d actionUrl=%s, got %s", idx, expected[idx].actionURL, item.ActionURL)
+		}
+	}
+}
+
 func TestAdminActionURLHelpersUseFrontendRoutes(t *testing.T) {
 	if got := buildAdminRefundActionURL(18); got != "/refunds/18" {
 		t.Fatalf("expected admin refund route /refunds/18, got %s", got)

@@ -772,6 +772,163 @@ func (d *NotificationDispatcher) NotifyProjectCompletionDecision(providerUserID,
 	})
 }
 
+func (d *NotificationDispatcher) NotifyProjectSettlementScheduled(providerUserID, projectID, settlementID uint64, dueAt *time.Time) {
+	if providerUserID == 0 {
+		return
+	}
+	content := "平台已记录当前项目的结算计划，后续将按排期推进出款。"
+	if dueAt != nil {
+		content = fmt.Sprintf("平台已记录当前项目的结算计划，预计 %s 进入出款处理。", dueAt.Format("2006-01-02"))
+	}
+	relatedID := settlementID
+	relatedType := "settlement_order"
+	if relatedID == 0 {
+		relatedID = projectID
+		relatedType = "project"
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "项目已进入待结算",
+		Content:     content,
+		Type:        NotificationTypeProjectSettlementScheduled,
+		RelatedID:   relatedID,
+		RelatedType: relatedType,
+		ActionURL:   buildProviderClosureActionURL(projectID),
+		Category:    NotificationCategoryPayment,
+		Extra: map[string]interface{}{
+			"projectId":     projectID,
+			"settlementId":  settlementID,
+			"settlementDue": dueAt,
+		},
+	})
+}
+
+func (d *NotificationDispatcher) NotifyProjectPayoutProcessing(providerUserID, projectID, payoutID uint64) {
+	if providerUserID == 0 || payoutID == 0 {
+		return
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "项目出款处理中",
+		Content:     "项目结算已进入出款处理，请留意资金中心状态变化。",
+		Type:        NotificationTypeProjectPayoutProcessing,
+		RelatedID:   payoutID,
+		RelatedType: "payout_order",
+		ActionURL:   buildProviderClosureActionURL(projectID),
+		Category:    NotificationCategoryPayment,
+		Extra: map[string]interface{}{
+			"projectId": projectID,
+			"payoutId":  payoutID,
+		},
+	})
+}
+
+func (d *NotificationDispatcher) NotifyProjectPayoutPaid(providerUserID, projectID, payoutID uint64) {
+	if providerUserID == 0 || payoutID == 0 {
+		return
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "项目已出款",
+		Content:     "项目结算已完成出款，请在资金中心查看明细。",
+		Type:        NotificationTypeProjectPayoutPaid,
+		RelatedID:   payoutID,
+		RelatedType: "payout_order",
+		ActionURL:   buildProviderClosureActionURL(projectID),
+		Category:    NotificationCategoryPayment,
+		Extra: map[string]interface{}{
+			"projectId": projectID,
+			"payoutId":  payoutID,
+		},
+	})
+}
+
+func (d *NotificationDispatcher) NotifyProjectPayoutFailed(providerUserID, projectID, payoutID uint64, reason string) {
+	reason = strings.TrimSpace(reason)
+	if providerUserID > 0 && payoutID > 0 {
+		content := "项目出款失败，请在资金中心查看处理结果。"
+		if reason != "" {
+			content = fmt.Sprintf("项目出款失败，原因：%s", reason)
+		}
+		_ = d.service.Create(&CreateNotificationInput{
+			UserID:      providerUserID,
+			UserType:    "provider",
+			Title:       "项目出款失败",
+			Content:     content,
+			Type:        NotificationTypeProjectPayoutFailed,
+			RelatedID:   payoutID,
+			RelatedType: "payout_order",
+			ActionURL:   buildProviderClosureActionURL(projectID),
+			Category:    NotificationCategoryPayment,
+			Extra: map[string]interface{}{
+				"projectId": projectID,
+				"payoutId":  payoutID,
+				"reason":    reason,
+			},
+		})
+	}
+	if payoutID == 0 {
+		return
+	}
+	adminContent := fmt.Sprintf("项目 #%d 的出款处理失败。", projectID)
+	if reason != "" {
+		adminContent = fmt.Sprintf("%s 原因：%s", adminContent, reason)
+	}
+	_ = d.service.NotifyAdmins(&CreateNotificationInput{
+		Title:       "项目出款失败待处理",
+		Content:     adminContent,
+		Type:        NotificationTypeProjectPayoutFailed,
+		RelatedID:   payoutID,
+		RelatedType: "payout_order",
+		ActionURL:   buildAdminPayoutActionURL(),
+		Category:    NotificationCategoryPayment,
+		Extra: map[string]interface{}{
+			"projectId": projectID,
+			"payoutId":  payoutID,
+			"reason":    reason,
+		},
+	})
+}
+
+func (d *NotificationDispatcher) NotifyProjectCaseDraftGenerated(providerUserID, projectID, caseAuditID uint64) {
+	if providerUserID > 0 && caseAuditID > 0 {
+		_ = d.service.Create(&CreateNotificationInput{
+			UserID:      providerUserID,
+			UserType:    "provider",
+			Title:       "完工案例草稿已生成",
+			Content:     "项目完工资料已沉淀为案例草稿，可继续在案例资产中补充与维护。",
+			Type:        NotificationTypeProjectCaseDraftGenerated,
+			RelatedID:   caseAuditID,
+			RelatedType: "case_audit",
+			ActionURL:   buildProviderCaseDraftActionURL(projectID),
+			Category:    NotificationCategoryProject,
+			Extra: map[string]interface{}{
+				"projectId":   projectID,
+				"caseAuditId": caseAuditID,
+			},
+		})
+	}
+	if caseAuditID == 0 {
+		return
+	}
+	_ = d.service.NotifyAdmins(&CreateNotificationInput{
+		Title:       "新的案例草稿待审核",
+		Content:     fmt.Sprintf("项目 #%d 已生成案例草稿，请进入案例审核工作面处理。", projectID),
+		Type:        NotificationTypeCaseAuditCreated,
+		RelatedID:   caseAuditID,
+		RelatedType: "case_audit",
+		ActionURL:   buildAdminCaseManagementActionURL(),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"projectId":   projectID,
+			"caseAuditId": caseAuditID,
+		},
+	})
+}
+
 func (d *NotificationDispatcher) NotifyProviderRefundApplicationCreated(providerUserID, refundApplicationID, projectID, bookingID uint64) {
 	if providerUserID == 0 || refundApplicationID == 0 {
 		return
@@ -1149,8 +1306,34 @@ func buildAdminWithdrawActionURL(withdrawID uint64) string {
 	return fmt.Sprintf("/withdraws/%d", withdrawID)
 }
 
+func buildProviderClosureActionURL(projectID uint64) string {
+	if projectID > 0 {
+		return fmt.Sprintf("/projects/%d", projectID)
+	}
+	return "/income"
+}
+
 func buildAdminMerchantApplicationActionURL() string {
 	return "/providers/audit"
+}
+
+func buildAdminPayoutActionURL() string {
+	return "/finance/payouts"
+}
+
+func buildAdminSettlementActionURL() string {
+	return "/finance/settlements"
+}
+
+func buildProviderCaseDraftActionURL(projectID uint64) string {
+	if projectID > 0 {
+		return "/cases"
+	}
+	return "/cases"
+}
+
+func buildAdminCaseManagementActionURL() string {
+	return "/cases/manage"
 }
 
 func buildAdminComplaintActionURL() string {

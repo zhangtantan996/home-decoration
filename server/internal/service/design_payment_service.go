@@ -682,6 +682,7 @@ func (s *DesignPaymentService) AcceptDesignDeliverable(userID, deliverableID uin
 	now := time.Now()
 	releaseDays := configSvc.GetConstructionReleaseDelayDays()
 	releaseAt := now.AddDate(0, 0, releaseDays)
+	var settlement *model.SettlementOrder
 
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		// a. 更新交付物状态
@@ -705,8 +706,10 @@ func (s *DesignPaymentService) AcceptDesignDeliverable(userID, deliverableID uin
 		if deliverable.OrderID > 0 {
 			var order model.Order
 			if err := tx.First(&order, deliverable.OrderID).Error; err == nil {
-				if _, _, err := (&SettlementService{}).CreateDesignSettlementScheduleTx(tx, &deliverable, &order); err != nil {
-					return err
+				var settlementErr error
+				settlement, _, settlementErr = (&SettlementService{}).CreateDesignSettlementScheduleTx(tx, &deliverable, &order)
+				if settlementErr != nil {
+					return settlementErr
 				}
 			}
 		}
@@ -720,6 +723,9 @@ func (s *DesignPaymentService) AcceptDesignDeliverable(userID, deliverableID uin
 	}
 
 	repository.DB.First(&deliverable, deliverableID)
+	if settlement != nil {
+		NewNotificationDispatcher().NotifyProjectSettlementScheduled(providerUserIDFromProvider(deliverable.ProviderID), deliverable.ProjectID, settlement.ID, settlement.DueAt)
+	}
 	return &deliverable, nil
 }
 

@@ -203,6 +203,8 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		return nil, err
 	}
 	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	NewNotificationDispatcher().NotifyProjectSettlementScheduled(providerUserID, projectID, 0, nil)
+	NewNotificationDispatcher().NotifyProjectCaseDraftGenerated(providerUserID, projectID, audit.ID)
 	if activatedPlan != nil {
 		NewNotificationDispatcher().NotifyConstructionFinalPaymentActivated(ownerUserID, providerUserID, projectID, activatedPlan.OrderID, *activatedPlan)
 	}
@@ -345,6 +347,8 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 		return nil, err
 	}
 	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	NewNotificationDispatcher().NotifyProjectSettlementScheduled(providerUserID, projectID, 0, nil)
+	NewNotificationDispatcher().NotifyProjectCaseDraftGenerated(providerUserID, projectID, audit.ID)
 	if activatedPlan != nil {
 		NewNotificationDispatcher().NotifyConstructionFinalPaymentActivated(ownerUserID, providerUserID, projectID, activatedPlan.OrderID, *activatedPlan)
 	}

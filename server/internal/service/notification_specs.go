@@ -23,18 +23,24 @@ const (
 	NotificationActionStatusProcessed = "processed"
 	NotificationActionStatusExpired   = "expired"
 
-	NotificationTypeSiteSurveySubmitted          = "booking.site_survey_submitted"
-	NotificationTypeBudgetConfirmationSubmitted = "booking.budget_confirmation_submitted"
+	NotificationTypeSiteSurveySubmitted           = "booking.site_survey_submitted"
+	NotificationTypeBudgetConfirmationSubmitted   = "booking.budget_confirmation_submitted"
 	NotificationTypeBudgetConfirmationResubmitted = "booking.budget_confirmation_resubmitted"
-	NotificationTypeBudgetConfirmationRejected   = "booking.budget_confirmation_rejected"
-	NotificationTypeDesignFeeQuoteCreated       = "proposal.design_fee_quote_created"
-	NotificationTypeDeliverableSubmitted        = "proposal.deliverable_submitted"
-	NotificationTypeContractPendingConfirm      = "project.contract_pending_confirm"
-	NotificationTypeConstructionBridgePending   = "project.construction_bridge_pending"
-	NotificationTypeProjectPlannedStartUpdated  = "project.planned_start_updated"
-	NotificationTypeSupervisionRiskEscalated    = "project.supervision_risk_escalated"
-	NotificationTypePaymentBookingSurveyPaid    = "payment.booking.survey_paid"
-	NotificationTypePaymentOrderPaid            = "payment.order.paid"
+	NotificationTypeBudgetConfirmationRejected    = "booking.budget_confirmation_rejected"
+	NotificationTypeDesignFeeQuoteCreated         = "proposal.design_fee_quote_created"
+	NotificationTypeDeliverableSubmitted          = "proposal.deliverable_submitted"
+	NotificationTypeContractPendingConfirm        = "project.contract_pending_confirm"
+	NotificationTypeConstructionBridgePending     = "project.construction_bridge_pending"
+	NotificationTypeProjectPlannedStartUpdated    = "project.planned_start_updated"
+	NotificationTypeSupervisionRiskEscalated      = "project.supervision_risk_escalated"
+	NotificationTypeProjectSettlementScheduled    = "project.settlement.scheduled"
+	NotificationTypeProjectPayoutProcessing       = "project.payout.processing"
+	NotificationTypeProjectPayoutPaid             = "project.payout.paid"
+	NotificationTypeProjectPayoutFailed           = "project.payout.failed"
+	NotificationTypeProjectCaseDraftGenerated     = "project.case_draft.generated"
+	NotificationTypeCaseAuditCreated              = "case_audit.created"
+	NotificationTypePaymentBookingSurveyPaid      = "payment.booking.survey_paid"
+	NotificationTypePaymentOrderPaid              = "payment.order.paid"
 )
 
 type NotificationSpec struct {
@@ -262,6 +268,64 @@ var notificationSpecs = map[string]NotificationSpec{
 		Kind:               NotificationKindRisk,
 		Priority:           NotificationPriorityUrgent,
 		CanonicalActionURL: "/supervision/:id",
+		SupportsWeb:        true,
+		SupportsMini:       false,
+	},
+	NotificationTypeProjectSettlementScheduled: {
+		Type:               NotificationTypeProjectSettlementScheduled,
+		Category:           NotificationCategoryPayment,
+		Kind:               NotificationKindInfo,
+		Priority:           NotificationPriorityHigh,
+		CanonicalActionURL: "/income",
+		SupportsWeb:        true,
+		SupportsMini:       false,
+	},
+	NotificationTypeProjectPayoutProcessing: {
+		Type:               NotificationTypeProjectPayoutProcessing,
+		Category:           NotificationCategoryPayment,
+		Kind:               NotificationKindInfo,
+		Priority:           NotificationPriorityHigh,
+		CanonicalActionURL: "/income",
+		SupportsWeb:        true,
+		SupportsMini:       false,
+	},
+	NotificationTypeProjectPayoutPaid: {
+		Type:               NotificationTypeProjectPayoutPaid,
+		Category:           NotificationCategoryPayment,
+		Kind:               NotificationKindResult,
+		Priority:           NotificationPriorityNormal,
+		CanonicalActionURL: "/income",
+		SupportsWeb:        true,
+		SupportsMini:       false,
+	},
+	NotificationTypeProjectPayoutFailed: {
+		Type:               NotificationTypeProjectPayoutFailed,
+		Category:           NotificationCategoryPayment,
+		Kind:               NotificationKindRisk,
+		Priority:           NotificationPriorityUrgent,
+		ActionRequired:     true,
+		ActionLabel:        "查看资金",
+		CanonicalActionURL: "/income",
+		SupportsWeb:        true,
+		SupportsMini:       false,
+	},
+	NotificationTypeProjectCaseDraftGenerated: {
+		Type:               NotificationTypeProjectCaseDraftGenerated,
+		Category:           NotificationCategoryProject,
+		Kind:               NotificationKindResult,
+		Priority:           NotificationPriorityNormal,
+		CanonicalActionURL: "/cases",
+		SupportsWeb:        true,
+		SupportsMini:       false,
+	},
+	NotificationTypeCaseAuditCreated: {
+		Type:               NotificationTypeCaseAuditCreated,
+		Category:           NotificationCategoryProject,
+		Kind:               NotificationKindGovernance,
+		Priority:           NotificationPriorityHigh,
+		ActionRequired:     true,
+		ActionLabel:        "去审核",
+		CanonicalActionURL: "/cases/manage",
 		SupportsWeb:        true,
 		SupportsMini:       false,
 	},

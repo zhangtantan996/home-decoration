@@ -29,6 +29,9 @@ import WorkbenchDetail from './pages/supervision/WorkbenchDetail';
 import WorkbenchList from './pages/supervision/WorkbenchList';
 import FinanceOverview from './pages/finance/FinanceOverview';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
+import FinanceReconciliationList from './pages/finance/FinanceReconciliationList';
+import PayoutList from './pages/finance/PayoutList';
+import SettlementList from './pages/finance/SettlementList';
 import TransactionList from './pages/finance/TransactionList';
 import RiskWarningList from './pages/risk/RiskWarningList';
 import ArbitrationCenter from './pages/risk/ArbitrationCenter';
@@ -137,6 +140,9 @@ const router = createBrowserRouter([
             { path: 'finance/overview', element: <ProtectedRoute permission="finance:escrow:list"><FinanceOverview /></ProtectedRoute> },
             { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
             { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
+            { path: 'finance/reconciliations', element: <ProtectedRoute permission="finance:transaction:list"><FinanceReconciliationList /></ProtectedRoute> },
+            { path: 'finance/settlements', element: <ProtectedRoute permission="finance:transaction:list"><SettlementList /></ProtectedRoute> },
+            { path: 'finance/payouts', element: <ProtectedRoute permission="finance:transaction:list"><PayoutList /></ProtectedRoute> },
             { path: 'orders', element: <ProtectedRoute permission="order:center:list"><OrderList /></ProtectedRoute> },
             { path: 'refunds', element: <ProtectedRoute permission="finance:transaction:list"><RefundList /></ProtectedRoute> },
             { path: 'refunds/:id', element: <ProtectedRoute permission="finance:transaction:view"><RefundDetail /></ProtectedRoute> },
