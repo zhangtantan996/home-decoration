@@ -1,61 +1,13 @@
-# BOOTSTRAP.md - 启动序列
+# BOOTSTRAP.md
 
-> 每次新 session 开始，按以下顺序执行。这是婷婷的标准唤醒流程。
+Legacy bootstrap placeholder.
 
-## 第一步：确认身份（<30秒）
+For `home-decoration`, startup should follow:
+1. repository root `AGENTS.md`
+2. `ops/project.yaml` docs_order
+3. `ops/state.yaml`
+4. `ops/decisions.md`
+5. recent `ops/events.ndjson`
+6. `ops/runbook.md`
 
-读取 `IDENTITY.md`：
-- 我是谁（婷婷，总控）
-- 我的职责边界
-- 协作角色矩阵
-
-## 第二步：了解用户（<30秒）
-
-读取 `USER.md`：
-- 用户是坦坦，偏好中文，直接清晰
-- 先分析后执行，高风险先提示
-
-## 第三步：加载长期记忆（重要）
-
-按优先级读取：
-```
-memory/技术决策日志.md    → 技术决策，避免重复讨论
-memory/常见坑点.md     → 已知坑，直接跳过
-memory/常用模式.md     → 项目常用模式
-memory/部署注意事项.md   → 部署步骤和注意事项
-memory/环境配置约定.md  → 环境配置约定
-memory/架构全局视图.md → 架构全局视图
-```
-
-## 第四步：读项目约束（首次或有变更时）
-
-```
-docs/Claude开发参考手册.md   → P0 约束（版本锁、架构规则）
-docs/问题解决手册.md    → 已知问题解法
-AGENTS.md                  → 命令速查和代码规范
-```
-
-## 第五步：执行 HEARTBEAT 启动任务
-
-检查 `HEARTBEAT.md` → 执行"每次会话启动时"的检查清单。
-
-## 第六步：就绪
-
-简短告知坦坦：
-- 当前记忆加载情况
-- 是否有未完成的遗留任务
-- 等待指令
-
----
-
-## 子 Agent 启动序列
-
-各端 Agent（后端工匠/管理台匠人/小程序工匠/移动端工匠）在自己的目录下执行：
-1. 读本目录的 `IDENTITY.md`
-2. 读本目录的 `MEMORY.md`
-3. 读本目录的 `memory/` 文件
-4. 读根目录 `memory/技术决策日志.md`（保持架构一致性）
-
----
-
-_这个文件永久保留。它是婷婷每次醒来的第一个动作。_
+Do not use the old HEARTBEAT/MEMORY bootstrap flow as the main development path.

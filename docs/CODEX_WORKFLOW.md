@@ -10,6 +10,14 @@
 
 ---
 
+## 0. 文档定位
+
+- 根目录 `AGENTS.md` 是仓库级硬规则，优先级高于本文件。
+- 本文件只说明默认工作流与执行习惯，不覆盖 `AGENTS.md` 里的业务基线、硬约束、验证规则和安全边界。
+- 如果本文件与真实代码、脚本、配置冲突，以当前仓库可执行事实和根 `AGENTS.md` 为准。
+
+---
+
 ## 1. 默认执行方式
 
 - 默认使用原生 Codex 进行读取、规划、编辑、测试与总结。
@@ -68,9 +76,10 @@
 按以下顺序阅读：
 1. `docs/CLAUDE_DEV_GUIDE.md`
 2. `docs/TROUBLESHOOTING.md`
-3. `SECURITY_QUICKSTART.md` / `SECURITY_FIXES.md` / `SECURITY_AUDIT_REPORT.md`
+3. `docs/CODEX_WORKFLOW.md`
+4. `docs/SECURITY.md`
 
-如果文档冲突，以 `docs/CLAUDE_DEV_GUIDE.md` 为准。
+如果文档冲突，以根目录 `AGENTS.md` 和 `docs/CLAUDE_DEV_GUIDE.md` 为准。
 
 不要过度阅读。能明确改哪些文件后就停止扩展搜索。
 
@@ -95,12 +104,26 @@
 - 不改无关代码
 - 不顺手做无关重构
 - 复用现有模式
-- 尽量保持向后兼容
+- 不默认为了“兼容”加入补丁式兜底、降级分支或 just-in-case 复杂度
 - 注释只在意图不明显时补充
 
 ---
 
-## 6. 验证原则
+## 6. 子代理与 skill 使用
+
+- 子代理用于并行处理有边界的子问题，不用于把整个任务模糊外包出去。
+- 主代理负责范围判断、最终决策、集成、验证和对用户汇报。
+- 默认先考虑只读 `explorer`；写入型 `worker` 只在 owned paths 和验证目标明确时使用。
+- 前端相关任务的默认路由：
+  - `ui-orchestrator`：用户不知道怎么描述 UI，或需要先把页面方向聊清楚
+  - `frontend-design` / `frontend-skill`：品牌、landing、营销、下载、强视觉页面
+  - `ui-ux-pro-max`：`admin` / `merchant` / dashboard / form / table / detail / approval 等状态型页面
+  - `build-web-apps:shadcn`：仅用于目标页面本身已是 shadcn 体系；不要默认往 Ant Design 页面上套
+- `admin`、`merchant`、`web` 按应用面拆分；`mobile`、`mini` 视作独立交付面；`deploy` 保持单 owner。
+
+---
+
+## 7. 验证原则
 
 验证必须基于需求，而不是只基于实现细节。
 
@@ -114,10 +137,11 @@
 - 先跑最小必要验证
 - 再视情况扩大
 - 不要在没有说明验证范围的情况下宣称“完成”
+- 验证失败时，要明确写出失败现象、复现方式、初步原因和下一步处理策略
 
 ---
 
-## 7. 前端 UI / 布局要求
+## 8. 前端 UI / 布局要求
 
 所有用户可见页面都必须注意：
 - 信息层级清楚
@@ -128,7 +152,15 @@
 
 ---
 
-## 8. 汇报格式
+## 9. 默认确认边界
+
+- 默认可直接做：读文件、搜索、低风险代码修改、文档更新、本地 lint / build / test、非破坏性本地 Git 检查。
+- 需要先确认：破坏性删除/回滚/reset、加依赖、破坏性 schema 变更、`git push`、生产影响操作、真实账号/真实数据/外部服务写操作。
+- 如果出现预期外的用户改动或工作区脏变更，先停下来确认，不要擅自覆盖。
+
+---
+
+## 10. 汇报格式
 
 默认按以下结构简要汇报：
 - 当前状态判断

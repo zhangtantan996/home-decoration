@@ -254,8 +254,8 @@ ls server/.env
 
 **docker-compose.tinode.yml中的配置**：
 ```yaml
-UID_ENCRYPTION_KEY=la6YsO+bNX/+XIkOqc5Svw==
-AUTH_TOKEN_KEY=jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI==
+UID_ENCRYPTION_KEY=REPLACE_WITH_16_BYTE_BASE64_KEY
+AUTH_TOKEN_KEY=REPLACE_WITH_MATCHING_JWT_SECRET
 ```
 
 **结论**: ⚠️ **环境变量可能使用docker-compose配置，需要验证后端是否正确读取**
@@ -279,8 +279,8 @@ cp server/.env.example server/.env
 cat >> server/.env <<EOF
 
 # Tinode IM Configuration
-TINODE_UID_ENCRYPTION_KEY=la6YsO+bNX/+XIkOqc5Svw==
-TINODE_AUTH_TOKEN_KEY=jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI==
+TINODE_UID_ENCRYPTION_KEY=REPLACE_WITH_16_BYTE_BASE64_KEY
+TINODE_AUTH_TOKEN_KEY=REPLACE_WITH_MATCHING_JWT_SECRET
 TINODE_GRPC_LISTEN=:16060
 EOF
 
@@ -712,4 +712,3 @@ POST /api/v1/chat/groups/:groupId/members
 **文档维护**: 本文档应每周更新一次，反映最新的实施进度。
 
 **联系方式**: 如有问题，请在项目中提Issue或联系技术负责人。
-
