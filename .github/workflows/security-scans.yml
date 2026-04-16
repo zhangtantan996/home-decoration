@@ -1,0 +1,103 @@
+name: Security Scans
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 18 * * *'
+  pull_request:
+    branches: ["dev"]
+    paths:
+      - 'server/**'
+      - 'admin/**'
+      - 'merchant/**'
+      - 'web/**'
+      - 'mini/**'
+      - 'mobile/**'
+      - 'package-lock.json'
+      - 'admin/package-lock.json'
+      - 'merchant/package-lock.json'
+      - 'web/package-lock.json'
+      - 'mini/package-lock.json'
+      - 'mobile/package-lock.json'
+      - '.github/workflows/security-scans.yml'
+
+jobs:
+  security-scans:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.0'
+          cache-dependency-path: server/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create report directory
+        run: mkdir -p security-reports
+
+      - name: Run gitleaks
+        run: |
+          set +e
+          go install github.com/gitleaks/gitleaks/v8@latest
+          "$(go env GOPATH)/bin/gitleaks" detect . \
+            --no-git \
+            --report-format sarif \
+            --report-path security-reports/gitleaks.sarif
+          echo $? > security-reports/gitleaks.exitcode
+          exit 0
+
+      - name: Run Semgrep
+        run: |
+          set +e
+          python -m pip install --upgrade pip semgrep
+          semgrep --config auto server admin merchant web mini mobile \
+            --json \
+            --output security-reports/semgrep.json
+          echo $? > security-reports/semgrep.exitcode
+          exit 0
+
+      - name: Run govulncheck
+        run: |
+          set +e
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          (
+            cd server
+            "$(go env GOPATH)/bin/govulncheck" ./... > ../security-reports/govulncheck.txt
+          )
+          echo $? > security-reports/govulncheck.exitcode
+          exit 0
+
+      - name: Run npm audit (package-lock only)
+        run: |
+          set +e
+          apps=(admin merchant web mini mobile)
+          for app in "${apps[@]}"; do
+            if [ -f "$app/package-lock.json" ]; then
+              (
+                cd "$app"
+                npm audit --package-lock-only --omit=dev --audit-level=high --json > "../security-reports/${app}-npm-audit.json"
+              )
+              echo $? > "security-reports/${app}-npm-audit.exitcode"
+            fi
+          done
+          exit 0
+
+      - name: Upload security scan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-reports
+          path: security-reports/
+          if-no-files-found: warn

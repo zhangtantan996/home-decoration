@@ -180,6 +180,11 @@ validate_transport_safety() {
     exit 1
   fi
 
+  if [[ -n "${STORAGE_PUBLIC_BASE_URL:-}" && ! "${STORAGE_PUBLIC_BASE_URL}" =~ ^https:// ]]; then
+    echo "Production deploy requires STORAGE_PUBLIC_BASE_URL to use https:// when set, current=${STORAGE_PUBLIC_BASE_URL}" >&2
+    exit 1
+  fi
+
   if [[ -n "${DATABASE_HOST:-}" ]] && ! is_safe_internal_host "${DATABASE_HOST}"; then
     echo "Production deploy requires DATABASE_HOST to be internal/private, current=${DATABASE_HOST}" >&2
     exit 1
