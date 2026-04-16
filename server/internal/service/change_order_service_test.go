@@ -169,6 +169,9 @@ func TestChangeOrderServiceConfirmPositiveImpactCreatesPaymentPlan(t *testing.T)
 	if changePlan.Type != "change_order" {
 		t.Fatalf("expected change_order plan type, got %s", changePlan.Type)
 	}
+	if changePlan.ChangeOrderID == nil || *changePlan.ChangeOrderID != created.ID {
+		t.Fatalf("expected change order payment plan link, got %+v", changePlan.ChangeOrderID)
+	}
 	if changePlan.Name != "新增定制柜" {
 		t.Fatalf("expected change order plan name, got %s", changePlan.Name)
 	}
@@ -197,6 +200,110 @@ func TestChangeOrderServiceConfirmPositiveImpactCreatesPaymentPlan(t *testing.T)
 	findNotification(t, db, fixture.owner.ID, "user", "change_order.payment_pending")
 	findNotification(t, db, fixture.providerUser.ID, "provider", "change_order.confirmed")
 	findNotification(t, db, fixture.providerUser.ID, "provider", "change_order.payment_pending")
+}
+
+func TestChangeOrderServiceDuplicateTitlesKeepIndependentPayablePlans(t *testing.T) {
+	db := setupChangeOrderServiceTestDB(t)
+	fixture := seedChangeOrderFixture(t, db)
+
+	svc := &ChangeOrderService{}
+	first, err := svc.CreateByProvider(fixture.project.ID, fixture.provider.ID, &ChangeOrderCreateInput{
+		ChangeType:   "scope",
+		Title:        "新增柜体",
+		Reason:       "第一次增项",
+		Description:  "补充玄关柜",
+		AmountImpact: 1200,
+	})
+	if err != nil {
+		t.Fatalf("CreateByProvider first: %v", err)
+	}
+	firstConfirmed, err := svc.ConfirmByOwner(first.ID, fixture.owner.ID)
+	if err != nil {
+		t.Fatalf("ConfirmByOwner first: %v", err)
+	}
+	if firstConfirmed.PayablePlanID == 0 {
+		t.Fatalf("expected first payable plan")
+	}
+
+	second, err := svc.CreateByProvider(fixture.project.ID, fixture.provider.ID, &ChangeOrderCreateInput{
+		ChangeType:   "scope",
+		Title:        "新增柜体",
+		Reason:       "第二次增项",
+		Description:  "补充阳台柜",
+		AmountImpact: 1800,
+	})
+	if err != nil {
+		t.Fatalf("CreateByProvider second: %v", err)
+	}
+	secondConfirmed, err := svc.ConfirmByOwner(second.ID, fixture.owner.ID)
+	if err != nil {
+		t.Fatalf("ConfirmByOwner second: %v", err)
+	}
+	if secondConfirmed.PayablePlanID == 0 {
+		t.Fatalf("expected second payable plan")
+	}
+	if secondConfirmed.PayablePlanID == firstConfirmed.PayablePlanID {
+		t.Fatalf("expected duplicate-title change orders to use different payment plans")
+	}
+
+	items, err := svc.ListForOwner(fixture.project.ID, fixture.owner.ID)
+	if err != nil {
+		t.Fatalf("ListByOwner: %v", err)
+	}
+	byID := make(map[uint64]ChangeOrderView, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+	if byID[first.ID].PayablePlanID != firstConfirmed.PayablePlanID {
+		t.Fatalf("expected first change order payable plan %d, got %d", firstConfirmed.PayablePlanID, byID[first.ID].PayablePlanID)
+	}
+	if byID[second.ID].PayablePlanID != secondConfirmed.PayablePlanID {
+		t.Fatalf("expected second change order payable plan %d, got %d", secondConfirmed.PayablePlanID, byID[second.ID].PayablePlanID)
+	}
+}
+
+func TestChangeOrderServiceLegacyUnlinkedPlanDoesNotSoftBindByTitle(t *testing.T) {
+	db := setupChangeOrderServiceTestDB(t)
+	fixture := seedChangeOrderFixture(t, db)
+
+	legacyChange := model.ChangeOrder{
+		Base:          model.Base{ID: 9001},
+		ProjectID:     fixture.project.ID,
+		InitiatorType: "provider",
+		InitiatorID:   fixture.provider.ID,
+		ChangeType:    "scope",
+		Title:         "历史增项",
+		Reason:        "历史数据",
+		Description:   "缺失强关联字段的旧变更单",
+		AmountImpact:  2000,
+		Status:        model.ChangeOrderStatusUserConfirmed,
+	}
+	if err := db.Create(&legacyChange).Error; err != nil {
+		t.Fatalf("create legacy change order: %v", err)
+	}
+	legacyPlan := model.PaymentPlan{
+		Base:        model.Base{ID: 9002},
+		OrderID:     fixture.order.ID,
+		Type:        "change_order",
+		Seq:         2,
+		Name:        legacyChange.Title,
+		Amount:      2000,
+		Status:      model.PaymentPlanStatusPending,
+		ActivatedAt: ptrTimeChangeOrder(time.Now()),
+	}
+	if err := db.Create(&legacyPlan).Error; err != nil {
+		t.Fatalf("create legacy change plan: %v", err)
+	}
+
+	items, err := (&ChangeOrderService{}).ListForOwner(fixture.project.ID, fixture.owner.ID)
+	if err != nil {
+		t.Fatalf("ListByOwner legacy: %v", err)
+	}
+	for _, item := range items {
+		if item.ID == legacyChange.ID && item.PayablePlanID != 0 {
+			t.Fatalf("expected legacy unlinked plan to stay unbound, got %d", item.PayablePlanID)
+		}
+	}
 }
 
 func TestChangeOrderServiceConfirmNegativeImpactRequiresAdminSettlement(t *testing.T) {

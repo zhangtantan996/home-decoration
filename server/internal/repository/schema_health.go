@@ -25,7 +25,8 @@ const (
 	AuditLogMigrationPath            = "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
 	CommerceRuntimeBaseMigrationPath = "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
 	QuoteRuntimeMigrationPath        = "server/migrations/v1.13.6_reconcile_quote_runtime_schema.sql"
-	CommerceRuntimeMigrationPath     = CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath
+	ChangeOrderLinkMigrationPath     = "server/migrations/v1.13.7_link_change_orders_to_payment_plans.sql"
+	CommerceRuntimeMigrationPath     = CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath + "," + ChangeOrderLinkMigrationPath
 )
 
 var claimedCompletionSchemaFields = map[string]struct{}{
@@ -217,7 +218,7 @@ var commerceRuntimeRequirements = map[string][]string{
 	"milestones":                 {"release_scheduled_at", "released_at"},
 	"projects":                   {"construction_payment_mode", "payment_paused", "payment_paused_at", "payment_paused_reason"},
 	"merchant_service_settings":  {"survey_deposit_amount", "design_payment_mode"},
-	"payment_plans":              {"milestone_id"},
+	"payment_plans":              {"milestone_id", "change_order_id"},
 	"design_working_docs":        {"booking_id", "provider_id", "doc_type", "title", "description", "files", "submitted_at"},
 	"design_fee_quotes":          {"booking_id", "provider_id", "total_fee", "deposit_deduction", "net_amount", "payment_mode", "stages_json", "status", "expire_at", "confirmed_at", "rejected_at", "rejection_reason", "order_id"},
 	"design_deliverables":        {"booking_id", "project_id", "order_id", "provider_id", "color_floor_plan", "renderings", "rendering_link", "text_description", "cad_drawings", "attachments", "status", "submitted_at", "accepted_at", "rejected_at", "rejection_reason"},
@@ -443,10 +444,16 @@ func resolveCommerceRuntimeMigrationPath(missing []string) string {
 
 	hasBaseRuntimeGap := false
 	hasQuoteRuntimeGap := false
+	hasChangeOrderLinkGap := false
 	for _, item := range missing {
-		table := strings.TrimSpace(item)
+		column := strings.TrimSpace(item)
+		table := column
 		if idx := strings.Index(table, "."); idx >= 0 {
 			table = table[:idx]
+		}
+		if column == "payment_plans.change_order_id" {
+			hasChangeOrderLinkGap = true
+			continue
 		}
 		if _, ok := quoteRuntimeTables[table]; ok {
 			hasQuoteRuntimeGap = true
@@ -455,14 +462,20 @@ func resolveCommerceRuntimeMigrationPath(missing []string) string {
 		hasBaseRuntimeGap = true
 	}
 
-	switch {
-	case hasBaseRuntimeGap && hasQuoteRuntimeGap:
-		return CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath
-	case hasQuoteRuntimeGap:
-		return QuoteRuntimeMigrationPath
-	default:
-		return CommerceRuntimeBaseMigrationPath
+	paths := make([]string, 0, 3)
+	if hasBaseRuntimeGap {
+		paths = append(paths, CommerceRuntimeBaseMigrationPath)
 	}
+	if hasQuoteRuntimeGap {
+		paths = append(paths, QuoteRuntimeMigrationPath)
+	}
+	if hasChangeOrderLinkGap {
+		paths = append(paths, ChangeOrderLinkMigrationPath)
+	}
+	if len(paths) == 0 {
+		return CommerceRuntimeMigrationPath
+	}
+	return strings.Join(paths, ",")
 }
 
 // CurrentOperationalAlerts returns structured alerts for operational consumers.

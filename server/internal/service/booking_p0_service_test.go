@@ -214,6 +214,82 @@ func TestMerchantDesignerFlowWorkspaceSurveyDirectsToBudget(t *testing.T) {
 	}
 }
 
+func TestBookingP0RejectBudgetAfterAcceptIsBlocked(t *testing.T) {
+	db := setupBookingP0TestDB(t)
+	user, provider, booking := seedConfirmedBookingFlow(t, db)
+	svc := &BookingService{}
+
+	if _, err := svc.SubmitMerchantSiteSurvey(provider.ID, booking.ID, &SiteSurveyPayload{
+		Photos: []string{"/uploads/survey-accepted.jpg"},
+	}); err != nil {
+		t.Fatalf("SubmitMerchantSiteSurvey: %v", err)
+	}
+	if _, err := svc.SubmitMerchantBudgetConfirmation(provider.ID, booking.ID, &BudgetConfirmationPayload{
+		BudgetMin:            60000,
+		BudgetMax:            90000,
+		Includes:             BudgetIncludes{DesignFee: true, ConstructionFee: true},
+		DesignIntent:         "现代简约",
+		StyleDirection:       "现代简约",
+		SpaceRequirements:    "收纳优先",
+		ExpectedDurationDays: 75,
+		SpecialRequirements:  "保留主卧阳台",
+	}); err != nil {
+		t.Fatalf("SubmitMerchantBudgetConfirmation: %v", err)
+	}
+	if _, err := svc.AcceptBudgetConfirmation(user.ID, booking.ID); err != nil {
+		t.Fatalf("AcceptBudgetConfirmation: %v", err)
+	}
+
+	var before model.BudgetConfirmation
+	if err := db.Where("booking_id = ?", booking.ID).First(&before).Error; err != nil {
+		t.Fatalf("load accepted confirmation: %v", err)
+	}
+	var beforeFlow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, booking.ID).First(&beforeFlow).Error; err != nil {
+		t.Fatalf("load accepted flow: %v", err)
+	}
+	var beforeNotifications int64
+	if err := db.Model(&model.Notification{}).Count(&beforeNotifications).Error; err != nil {
+		t.Fatalf("count notifications before reject: %v", err)
+	}
+
+	if _, err := svc.RejectBudgetConfirmation(user.ID, booking.ID, "已确认后不允许再次拒绝"); err == nil || err.Error() != "当前沟通确认不可拒绝" {
+		t.Fatalf("expected reject after accept to be blocked, got %v", err)
+	}
+
+	var after model.BudgetConfirmation
+	if err := db.Where("booking_id = ?", booking.ID).First(&after).Error; err != nil {
+		t.Fatalf("reload confirmation after reject: %v", err)
+	}
+	if after.Status != model.BudgetConfirmationStatusAccepted || after.RejectCount != before.RejectCount {
+		t.Fatalf("expected accepted confirmation unchanged, got %+v", after)
+	}
+
+	var afterFlow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, booking.ID).First(&afterFlow).Error; err != nil {
+		t.Fatalf("reload flow after reject: %v", err)
+	}
+	if afterFlow.CurrentStage != beforeFlow.CurrentStage {
+		t.Fatalf("expected flow unchanged after blocked reject, got %s", afterFlow.CurrentStage)
+	}
+
+	var updatedBooking model.Booking
+	if err := db.First(&updatedBooking, booking.ID).Error; err != nil {
+		t.Fatalf("reload booking after reject: %v", err)
+	}
+	if updatedBooking.Status != booking.Status {
+		t.Fatalf("expected booking status unchanged, got %d", updatedBooking.Status)
+	}
+
+	var afterNotifications int64
+	if err := db.Model(&model.Notification{}).Count(&afterNotifications).Error; err != nil {
+		t.Fatalf("count notifications after reject: %v", err)
+	}
+	if afterNotifications != beforeNotifications {
+		t.Fatalf("expected notifications unchanged after blocked reject, before=%d after=%d", beforeNotifications, afterNotifications)
+	}
+}
+
 func TestBookingP0RequiresSurveyDepositPaidBeforeMerchantSubmission(t *testing.T) {
 	db := setupBookingP0TestDB(t)
 	user := &model.User{Base: model.Base{ID: 2001}, Phone: "13800138002", Status: 1}

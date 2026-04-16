@@ -58,6 +58,7 @@ type AdminDashboardService struct{}
 func (s *AdminDashboardService) GetOverview() (*DashboardOverview, error) {
 	today := timeutil.StartOfDay(timeutil.Now())
 	monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, today.Location())
+	windowStart := timeutil.Now().AddDate(0, 0, -30)
 	providerGovernance := &ProviderGovernanceService{}
 
 	var todayNewUsers, providerCount, materialShopCount int64
@@ -69,10 +70,14 @@ func (s *AdminDashboardService) GetOverview() (*DashboardOverview, error) {
 	designConfirmed := countConfirmedProposals()
 	constructionConfirmed := countProjects()
 	completedProjects := countCompletedProjects()
-	majorDisputes := countOpenDisputesAndComplaints()
-	refundRate := computeRefundRate()
-	disputeRate := ratio(majorDisputes, maxInt64(constructionConfirmed, 1))
-	northStar := float64(maxInt64(completedProjects-int64(majorDisputes), 0))
+	completedProjectsWithoutMajorRisk := countCompletedProjectsWithoutMajorRisk()
+	recentConstructionConfirmed := countConstructionConfirmedProjectsSince(windowStart)
+	recentDesignConfirmed := countConfirmedProposalsSince(windowStart)
+	recentMajorDisputes := countMajorRiskProjects(majorRiskProjectFilter{Start: &windowStart})
+	recentRefunds := countRefundApplicationsSince(windowStart)
+	refundRate := ratio(recentRefunds, maxInt64(recentDesignConfirmed, recentConstructionConfirmed, 1))
+	disputeRate := ratio(recentMajorDisputes, maxInt64(recentConstructionConfirmed, 1))
+	northStar := float64(completedProjectsWithoutMajorRisk)
 
 	var monthlyDesignRevenue, monthlyConstructionRevenue float64
 	_ = repository.DB.Model(&model.Order{}).Where("status = ? AND order_type = ? AND paid_at >= ?", model.OrderStatusPaid, model.OrderTypeDesign, monthStart).Select("COALESCE(SUM(total_amount),0)").Scan(&monthlyDesignRevenue).Error
@@ -105,7 +110,7 @@ func (s *AdminDashboardService) GetOverview() (*DashboardOverview, error) {
 			{Key: "construction", Title: "施工成交看板", Metrics: []DashboardMetricValue{{Key: "construction_confirmed", Label: "工长确认", Value: float64(constructionConfirmed)}, {Key: "monthly_construction_revenue", Label: "本月施工成交额", Value: monthlyConstructionRevenue}}},
 			{Key: "delivery", Title: "履约质量看板", Metrics: []DashboardMetricValue{{Key: "completed_projects", Label: "完工项目", Value: float64(completedProjects)}, {Key: "dispute_rate", Label: "争议率", Value: disputeRate}}},
 			{Key: "supply", Title: "供给质量看板", Metrics: []DashboardMetricValue{{Key: "provider_count", Label: "服务商数", Value: float64(providerCount)}, {Key: "support_tier", Label: "重点扶持商家", Value: providerTierCounts["重点扶持期"]}}},
-			{Key: "after_sales", Title: "售后治理看板", Metrics: []DashboardMetricValue{{Key: "refund_rate", Label: "退款率", Value: refundRate}, {Key: "major_disputes", Label: "争议/投诉量", Value: float64(majorDisputes)}}},
+			{Key: "after_sales", Title: "售后治理看板", Metrics: []DashboardMetricValue{{Key: "refund_rate", Label: "退款率", Value: refundRate}, {Key: "major_disputes", Label: "近30天争议/投诉项目", Value: float64(recentMajorDisputes)}}},
 		},
 		UserFunnel:        []DashboardFunnelStep{{Key: "enter", Label: "进入/留资", Value: float64(todayNewUsers)}, {Key: "booking", Label: "预约", Value: float64(effectiveBookings)}, {Key: "design", Label: "设计确认", Value: float64(designConfirmed)}, {Key: "construction", Label: "工长确认", Value: float64(constructionConfirmed)}, {Key: "completed", Label: "完工", Value: float64(completedProjects)}},
 		MerchantFunnel:    []DashboardFunnelStep{{Key: "approved", Label: "审核通过", Value: float64(providerCount)}, {Key: "proposal", Label: "首次提案", Value: float64(countProvidersWithProposal())}, {Key: "deal", Label: "首次成交", Value: float64(countProvidersWithProject())}, {Key: "completed", Label: "首次完工", Value: float64(countProvidersWithCompletedProject())}},
@@ -130,7 +135,7 @@ func (s *AdminDashboardService) GetTrends(days int) ([]DashboardTrendItem, error
 		constructionConfirmed := countProjectsBetween(day, nextDay)
 		completedProjects := countCompletedProjectsBetween(day, nextDay)
 		refunds := countRefundsBetween(day, nextDay)
-		disputes := countComplaintsBetween(day, nextDay)
+		disputes := countMajorRiskProjects(majorRiskProjectFilter{Start: &day, End: &nextDay})
 		items = append(items, DashboardTrendItem{
 			Date:                  day.Format("01-02"),
 			EffectiveBookings:     float64(effectiveBookings),
@@ -201,15 +206,13 @@ func countCompletedProjects() int64 {
 }
 
 func countOpenDisputesAndComplaints() int64 {
-	var complaints int64
-	_ = repository.DB.Model(&model.Complaint{}).Where("status NOT IN ?", []string{"resolved", "closed", "completed"}).Count(&complaints).Error
-	return complaints
+	return countMajorRiskProjects(majorRiskProjectFilter{})
 }
 
 func computeRefundRate() float64 {
-	var refunds int64
-	_ = repository.DB.Model(&model.RefundApplication{}).Where("status IN ?", []string{"pending", "approved", "completed"}).Count(&refunds).Error
-	denominator := maxInt64(countConfirmedProposals(), countProjects(), 1)
+	windowStart := timeutil.Now().AddDate(0, 0, -30)
+	refunds := countRefundApplicationsSince(windowStart)
+	denominator := maxInt64(countConfirmedProposalsSince(windowStart), countConstructionConfirmedProjectsSince(windowStart), 1)
 	return ratio(refunds, denominator)
 }
 
@@ -257,13 +260,34 @@ func countCompletedProjectsBetween(start, end time.Time) int64 {
 
 func countRefundsBetween(start, end time.Time) int64 {
 	var count int64
-	_ = repository.DB.Model(&model.RefundApplication{}).Where("created_at >= ? AND created_at < ?", start, end).Count(&count).Error
+	_ = repository.DB.Model(&model.RefundApplication{}).Where("created_at >= ? AND created_at < ? AND status IN ?", start, end, []string{"pending", "approved", "completed"}).Count(&count).Error
 	return count
 }
 
 func countComplaintsBetween(start, end time.Time) int64 {
+	return countMajorRiskProjects(majorRiskProjectFilter{Start: &start, End: &end})
+}
+
+func countCompletedProjectsWithoutMajorRisk() int64 {
+	completedProjects := countCompletedProjects()
+	return maxInt64(completedProjects-countMajorRiskProjects(majorRiskProjectFilter{OnlyCompleted: true}), 0)
+}
+
+func countConstructionConfirmedProjectsSince(start time.Time) int64 {
 	var count int64
-	_ = repository.DB.Model(&model.Complaint{}).Where("created_at >= ? AND created_at < ?", start, end).Count(&count).Error
+	_ = repository.DB.Model(&model.Project{}).Where("created_at >= ?", start).Count(&count).Error
+	return count
+}
+
+func countConfirmedProposalsSince(start time.Time) int64 {
+	var count int64
+	_ = repository.DB.Model(&model.Proposal{}).Where("confirmed_at >= ? AND status = ?", start, model.ProposalStatusConfirmed).Count(&count).Error
+	return count
+}
+
+func countRefundApplicationsSince(start time.Time) int64 {
+	var count int64
+	_ = repository.DB.Model(&model.RefundApplication{}).Where("created_at >= ? AND status IN ?", start, []string{"pending", "approved", "completed"}).Count(&count).Error
 	return count
 }
 

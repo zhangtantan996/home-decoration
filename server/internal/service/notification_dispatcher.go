@@ -240,22 +240,46 @@ func (d *NotificationDispatcher) NotifyQuoteDecision(providerUserID, quoteListID
 }
 
 func (d *NotificationDispatcher) NotifyConstructionQuoteAwarded(providerUserID, quoteListID, projectID, orderID uint64) {
+	d.notifyConstructionQuoteAwarded(providerUserID, quoteListID, projectID, orderID)
+}
+
+func (d *NotificationDispatcher) NotifyProjectConstructionQuoteAwarded(providerUserID, projectID uint64) {
+	d.notifyConstructionQuoteAwarded(providerUserID, 0, projectID, 0)
+}
+
+func (d *NotificationDispatcher) notifyConstructionQuoteAwarded(providerUserID, quoteListID, projectID, orderID uint64) {
+	relatedID := quoteListID
+	relatedType := "quote_list"
+	actionURL := ""
+	if projectID > 0 {
+		relatedID = projectID
+		relatedType = "project"
+		actionURL = fmt.Sprintf("/projects/%d", projectID)
+	} else if quoteListID > 0 {
+		actionURL = fmt.Sprintf("/quote-tasks/%d", quoteListID)
+	}
 	if providerUserID > 0 {
+		extra := map[string]interface{}{}
+		if quoteListID > 0 {
+			extra["quoteListId"] = quoteListID
+		}
+		if projectID > 0 {
+			extra["projectId"] = projectID
+		}
+		if orderID > 0 {
+			extra["orderId"] = orderID
+		}
 		_ = d.service.Create(&CreateNotificationInput{
 			UserID:      providerUserID,
 			UserType:    "provider",
 			Title:       "施工报价已中标",
 			Content:     "用户已确认施工报价，施工订单与支付计划已生成，下一步由监理协调进场时间并推进开工。",
 			Type:        "quote.awarded",
-			RelatedID:   quoteListID,
-			RelatedType: "quote_list",
-			ActionURL:   fmt.Sprintf("/projects/%d", projectID),
+			RelatedID:   relatedID,
+			RelatedType: relatedType,
+			ActionURL:   actionURL,
 			Category:    NotificationCategoryProject,
-			Extra: map[string]interface{}{
-				"quoteListId": quoteListID,
-				"projectId":   projectID,
-				"orderId":     orderID,
-			},
+			Extra:       extra,
 		})
 	}
 	if projectID == 0 {

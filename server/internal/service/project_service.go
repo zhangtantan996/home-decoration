@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -1161,16 +1160,7 @@ func (s *ProjectService) ConfirmConstructionQuote(projectID, userID uint64, req 
 		providerID = updated.ForemanID
 	}
 	if providerUserID := providerUserIDFromProvider(providerID); providerUserID > 0 {
-		_ = (&NotificationService{}).Create(&CreateNotificationInput{
-			UserID:      providerUserID,
-			UserType:    "provider",
-			Title:       "施工报价已确认",
-			Content:     fmt.Sprintf("项目 #%d 的施工报价已由业主确认，当前进入待监理协调开工阶段。", updated.ID),
-			Type:        "project.construction_quote.confirmed",
-			RelatedID:   updated.ID,
-			RelatedType: "project",
-			ActionURL:   fmt.Sprintf("/projects/%d", updated.ID),
-		})
+		NewNotificationDispatcher().NotifyProjectConstructionQuoteAwarded(providerUserID, updated.ID)
 	}
 	NewNotificationDispatcher().NotifyPlannedStartDateUpdated(updated.OwnerID, providerUserIDFromProvider(providerID), updated.ID, updated.EntryStartDate)
 	return &updated, nil

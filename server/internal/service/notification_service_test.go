@@ -221,6 +221,63 @@ func TestAdminActionURLHelpersUseFrontendRoutes(t *testing.T) {
 	}
 }
 
+func TestNotificationListItemUsesUnifiedTypeLabelAndRoleAwareActionLabel(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+	svc := &NotificationService{}
+
+	order := &model.Order{Base: model.Base{ID: 1001}, Status: model.OrderStatusPending}
+	if err := db.Create(order).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+
+	providerItem := svc.buildNotificationListItem(model.Notification{
+		Type:      "payment.construction.expiring",
+		UserType:  "provider",
+		RelatedID: 1001,
+		ActionURL: "/projects/3001",
+	})
+	if providerItem.TypeLabel != "施工付款" {
+		t.Fatalf("expected provider typeLabel=施工付款, got %s", providerItem.TypeLabel)
+	}
+	if providerItem.ActionLabel != "查看项目" {
+		t.Fatalf("expected provider actionLabel=查看项目, got %s", providerItem.ActionLabel)
+	}
+
+	userItem := svc.buildNotificationListItem(model.Notification{
+		Type:      "payment.construction.expiring",
+		UserType:  "user",
+		RelatedID: 1001,
+		ActionURL: "/orders/1001",
+	})
+	if userItem.ActionLabel != "去支付" {
+		t.Fatalf("expected user actionLabel=去支付, got %s", userItem.ActionLabel)
+	}
+
+	startItem := svc.buildNotificationListItem(model.Notification{
+		Type:      NotificationTypeProjectPlannedStartUpdated,
+		UserType:  "user",
+		ActionURL: "/projects/3001",
+	})
+	if startItem.TypeLabel != "待开工" {
+		t.Fatalf("expected planned-start typeLabel=待开工, got %s", startItem.TypeLabel)
+	}
+	if startItem.ActionLabel != "查看项目" {
+		t.Fatalf("expected planned-start actionLabel=查看项目, got %s", startItem.ActionLabel)
+	}
+
+	quoteAwardedItem := svc.buildNotificationListItem(model.Notification{
+		Type:      "quote.awarded",
+		UserType:  "provider",
+		ActionURL: "/projects/3001",
+	})
+	if quoteAwardedItem.TypeLabel != "施工报价" {
+		t.Fatalf("expected quote-awarded typeLabel=施工报价, got %s", quoteAwardedItem.TypeLabel)
+	}
+	if quoteAwardedItem.ActionLabel != "查看详情" {
+		t.Fatalf("expected quote-awarded actionLabel=查看详情, got %s", quoteAwardedItem.ActionLabel)
+	}
+}
+
 func TestNotificationServiceRespectsUserPaymentPreference(t *testing.T) {
 	db := setupNotificationServiceTestDB(t)
 	if err := db.Model(&model.UserSettings{}).Create(map[string]any{

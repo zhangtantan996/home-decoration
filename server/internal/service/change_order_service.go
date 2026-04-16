@@ -160,7 +160,7 @@ func (s *ChangeOrderService) ConfirmByOwner(changeOrderID, userID uint64) (*Chan
 		changeOrder.UserRejectReason = ""
 
 		if changeOrder.AmountImpact > 0 {
-			plan, err := s.createChangeOrderPaymentPlanTx(tx, order, changeOrder.Title, changeOrder.AmountImpact, now)
+			plan, err := s.createChangeOrderPaymentPlanTx(tx, order, changeOrder.ID, changeOrder.Title, changeOrder.AmountImpact, now)
 			if err != nil {
 				return err
 			}
@@ -449,9 +449,8 @@ func (s *ChangeOrderService) toViewTx(tx *gorm.DB, changeOrder *model.ChangeOrde
 	}
 	var payablePlan model.PaymentPlan
 	if err := tx.
-		Joins("JOIN orders ON orders.id = payment_plans.order_id").
-		Where("orders.project_id = ? AND payment_plans.type = ? AND payment_plans.name = ?", changeOrder.ProjectID, "change_order", changeOrder.Title).
-		Order("payment_plans.id DESC").
+		Where("change_order_id = ?", changeOrder.ID).
+		Order("id DESC").
 		First(&payablePlan).Error; err == nil {
 		view.PayablePlanID = payablePlan.ID
 	}
@@ -509,7 +508,7 @@ func (s *ChangeOrderService) lockConstructionOrderTx(tx *gorm.DB, projectID uint
 	return &order, nil
 }
 
-func (s *ChangeOrderService) createChangeOrderPaymentPlanTx(tx *gorm.DB, order *model.Order, title string, amount float64, activatedAt time.Time) (*model.PaymentPlan, error) {
+func (s *ChangeOrderService) createChangeOrderPaymentPlanTx(tx *gorm.DB, order *model.Order, changeOrderID uint64, title string, amount float64, activatedAt time.Time) (*model.PaymentPlan, error) {
 	if order == nil || order.ID == 0 {
 		return nil, errors.New("施工订单不存在")
 	}
@@ -518,13 +517,14 @@ func (s *ChangeOrderService) createChangeOrderPaymentPlanTx(tx *gorm.DB, order *
 		return nil, err
 	}
 	plan := &model.PaymentPlan{
-		OrderID:     order.ID,
-		Type:        "change_order",
-		Seq:         maxSeq + 1,
-		Name:        strings.TrimSpace(title),
-		Amount:      normalizeAmount(amount),
-		Status:      model.PaymentPlanStatusPending,
-		ActivatedAt: &activatedAt,
+		OrderID:       order.ID,
+		Type:          "change_order",
+		Seq:           maxSeq + 1,
+		Name:          strings.TrimSpace(title),
+		Amount:        normalizeAmount(amount),
+		Status:        model.PaymentPlanStatusPending,
+		ActivatedAt:   &activatedAt,
+		ChangeOrderID: &changeOrderID,
 	}
 	dueAt := activatedAt.Add(constructionPaymentPlanActiveWindow)
 	plan.DueAt = &dueAt

@@ -67,15 +67,16 @@ func (s *ProviderGovernanceService) BuildSummary(providerID uint64) *ProviderGov
 	_ = repository.DB.Model(&model.Milestone{}).Where("project_id IN (?) AND submitted_at IS NOT NULL", projectScope).Count(&submittedMilestones).Error
 	_ = repository.DB.Model(&model.Milestone{}).Where("project_id IN (?) AND accepted_at IS NOT NULL", projectScope).Count(&acceptedMilestones).Error
 
-	var complaints, refunds, cases, officialReviews int64
-	_ = repository.DB.Model(&model.Complaint{}).Where("provider_id = ? AND created_at >= ?", providerID, windowStart).Count(&complaints).Error
-	_ = repository.DB.Model(&model.RefundApplication{}).
-		Where("created_at >= ? AND (project_id IN (?) OR booking_id IN (?))", windowStart,
-			projectScope,
-			repository.DB.Model(&model.Booking{}).Select("id").Where("provider_id = ?", providerID),
-		).Count(&refunds).Error
+	var cases, officialReviews int64
+	complaints := countMajorRiskProjects(majorRiskProjectFilter{
+		Start:      &windowStart,
+		ProviderID: providerID,
+	})
+	refunds := countProviderRefundApplicationsSince(providerID, windowStart)
+	recentConstructionConfirmed := countProviderProjectsSince(providerID, windowStart)
+	recentDesignConfirmed := countProviderConfirmedProposalsSince(providerID, windowStart)
 	_ = repository.DB.Model(&model.ProviderCase{}).Where("provider_id = ?", providerID).Count(&cases).Error
-	_ = validOfficialProviderReviewScope(repository.DB).Where("provider_id = ?", providerID).Count(&officialReviews).Error
+	_ = validOfficialProviderReviewScope(repository.DB).Where("provider_reviews.provider_id = ?", providerID).Count(&officialReviews).Error
 
 	summary.FunnelMetrics = ProviderGovernanceFunnelMetrics{
 		BookingsTotal:              bookingTotal,
@@ -92,8 +93,8 @@ func (s *ProviderGovernanceService) BuildSummary(providerID uint64) *ProviderGov
 		ConstructionConfirmRate: safeDivide(constructionConfirmed, designConfirmed),
 		CompletionRate:          safeDivide(completedProjects, constructionConfirmed),
 		AcceptancePassRate:      safeDivide(acceptedMilestones, submittedMilestones),
-		ComplaintRate:           safeDivide(complaints, maxInt64(completedProjects, constructionConfirmed, 1)),
-		RefundRate:              safeDivide(refunds, maxInt64(designConfirmed, constructionConfirmed, 1)),
+		ComplaintRate:           safeDivide(complaints, maxInt64(recentConstructionConfirmed, 1)),
+		RefundRate:              safeDivide(refunds, maxInt64(recentDesignConfirmed, recentConstructionConfirmed, 1)),
 		CaseCount:               cases,
 		OfficialReviewCount:     officialReviews,
 	}
@@ -175,4 +176,30 @@ func resolveGovernanceAction(tier string, riskFlags []string) string {
 	default:
 		return "继续观察并按主链指标调整分发"
 	}
+}
+
+func countProviderProjectsSince(providerID uint64, start time.Time) int64 {
+	var count int64
+	_ = repository.DB.Model(&model.Project{}).Where("provider_id = ? AND created_at >= ?", providerID, start).Count(&count).Error
+	return count
+}
+
+func countProviderConfirmedProposalsSince(providerID uint64, start time.Time) int64 {
+	var count int64
+	_ = repository.DB.Model(&model.Proposal{}).Where("designer_id = ? AND confirmed_at >= ? AND status = ?", providerID, start, model.ProposalStatusConfirmed).Count(&count).Error
+	return count
+}
+
+func countProviderRefundApplicationsSince(providerID uint64, start time.Time) int64 {
+	var count int64
+	projectScope := repository.DB.Model(&model.Project{}).Select("id").Where("provider_id = ?", providerID)
+	bookingScope := repository.DB.Model(&model.Booking{}).Select("id").Where("provider_id = ?", providerID)
+	_ = repository.DB.Model(&model.RefundApplication{}).
+		Where("created_at >= ? AND status IN ? AND (project_id IN (?) OR booking_id IN (?))", start,
+			[]string{"pending", "approved", "completed"},
+			projectScope,
+			bookingScope,
+		).
+		Count(&count).Error
+	return count
 }

@@ -94,7 +94,8 @@ func TestRefreshCommerceRuntimeSchemaHealthReportsMissingTables(t *testing.T) {
 			t.Fatalf("expected missing to contain %s, got %+v", required, snapshot.Missing)
 		}
 	}
-	if snapshot.RequiredMigration != CommerceRuntimeMigrationPath {
+	expectedMigration := CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath
+	if snapshot.RequiredMigration != expectedMigration {
 		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
 	}
 }
@@ -106,7 +107,10 @@ func TestResolveCommerceRuntimeMigrationPath(t *testing.T) {
 	if got := resolveCommerceRuntimeMigrationPath([]string{"quote_lists.quantity_base_id"}); got != QuoteRuntimeMigrationPath {
 		t.Fatalf("expected quote runtime migration path, got %s", got)
 	}
-	if got := resolveCommerceRuntimeMigrationPath([]string{"providers.is_settled", "quote_lists.quantity_base_id"}); got != CommerceRuntimeMigrationPath {
+	if got := resolveCommerceRuntimeMigrationPath([]string{"payment_plans.change_order_id"}); got != ChangeOrderLinkMigrationPath {
+		t.Fatalf("expected change-order link migration path, got %s", got)
+	}
+	if got := resolveCommerceRuntimeMigrationPath([]string{"providers.is_settled", "quote_lists.quantity_base_id", "payment_plans.change_order_id"}); got != CommerceRuntimeMigrationPath {
 		t.Fatalf("expected combined runtime migration path, got %s", got)
 	}
 }

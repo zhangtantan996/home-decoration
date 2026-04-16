@@ -221,9 +221,9 @@ func (s *BookingService) SubmitMerchantBudgetConfirmation(providerID, bookingID 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			confirmation = model.BudgetConfirmation{
-				BookingID:    booking.ID,
-				ProviderID:   booking.ProviderID,
-				RejectLimit:  configSvc.GetBudgetConfirmRejectLimit(),
+				BookingID:   booking.ID,
+				ProviderID:  booking.ProviderID,
+				RejectLimit: configSvc.GetBudgetConfirmRejectLimit(),
 			}
 		} else {
 			return nil, err
@@ -332,7 +332,7 @@ func (s *BookingService) RejectBudgetConfirmation(userID, bookingID uint64, reas
 	if err := repository.DB.Where("booking_id = ?", booking.ID).First(&confirmation).Error; err != nil {
 		return nil, errors.New("沟通确认不存在")
 	}
-	if confirmation.Status != model.BudgetConfirmationStatusSubmitted && confirmation.Status != model.BudgetConfirmationStatusAccepted {
+	if confirmation.Status != model.BudgetConfirmationStatusSubmitted {
 		return nil, errors.New("当前沟通确认不可拒绝")
 	}
 
@@ -345,13 +345,13 @@ func (s *BookingService) RejectBudgetConfirmation(userID, bookingID uint64, reas
 		}
 		nextRejectCount := confirmation.RejectCount + 1
 		updates := map[string]interface{}{
-			"status":             model.BudgetConfirmationStatusRejected,
-			"accepted_at":        nil,
-			"rejected_at":        now,
-			"last_rejected_at":   now,
-			"rejection_reason":   reason,
-			"reject_count":       nextRejectCount,
-			"reject_limit":       rejectLimit,
+			"status":           model.BudgetConfirmationStatusRejected,
+			"accepted_at":      nil,
+			"rejected_at":      now,
+			"last_rejected_at": now,
+			"rejection_reason": reason,
+			"reject_count":     nextRejectCount,
+			"reject_limit":     rejectLimit,
 		}
 		if err := tx.Model(&confirmation).Updates(updates).Error; err != nil {
 			return err
