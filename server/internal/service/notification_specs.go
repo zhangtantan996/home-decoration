@@ -58,6 +58,7 @@ type NotificationSpec struct {
 type NotificationListItem struct {
 	model.Notification
 	Category       string `json:"category"`
+	TypeLabel      string `json:"typeLabel,omitempty"`
 	Kind           string `json:"kind"`
 	Priority       string `json:"priority"`
 	ActionRequired bool   `json:"actionRequired"`
@@ -436,9 +437,6 @@ func resolveNotificationSpec(notification *model.Notification) NotificationSpec 
 		if spec.CanonicalActionURL == "" {
 			spec.CanonicalActionURL = strings.TrimSpace(notification.ActionURL)
 		}
-		if !spec.SupportsMini {
-			spec.SupportsMini = notificationRouteSupportedInMini(notification.ActionURL)
-		}
 		return spec
 	}
 
@@ -518,16 +516,207 @@ func notificationRouteSupportedInMini(actionURL string) bool {
 
 func (s *NotificationService) buildNotificationListItem(notification model.Notification) NotificationListItem {
 	spec := resolveNotificationSpec(&notification)
+	actionRequired := resolveNotificationActionRequired(notification, spec)
+	actionLabel := resolveNotificationActionLabel(notification, spec)
+	actionSpec := spec
+	actionSpec.ActionRequired = actionRequired
 	return NotificationListItem{
 		Notification:   notification,
 		Category:       spec.Category,
+		TypeLabel:      resolveNotificationTypeLabel(notification, spec),
 		Kind:           spec.Kind,
 		Priority:       spec.Priority,
-		ActionRequired: spec.ActionRequired,
-		ActionStatus:   s.resolveNotificationActionStatus(notification, spec),
-		ActionLabel:    spec.ActionLabel,
+		ActionRequired: actionRequired,
+		ActionStatus:   s.resolveNotificationActionStatus(notification, actionSpec),
+		ActionLabel:    actionLabel,
 		SupportsWeb:    spec.SupportsWeb,
 		SupportsMini:   spec.SupportsMini,
+	}
+}
+
+func resolveNotificationTypeLabel(notification model.Notification, spec NotificationSpec) string {
+	typeKey := strings.TrimSpace(notification.Type)
+	switch typeKey {
+	case NotificationTypeSiteSurveySubmitted:
+		return "量房资料"
+	case NotificationTypeBudgetConfirmationSubmitted,
+		NotificationTypeBudgetConfirmationResubmitted,
+		NotificationTypeBudgetConfirmationRejected:
+		return "沟通确认"
+	case NotificationTypeDesignFeeQuoteCreated:
+		return "设计费报价"
+	case NotificationTypeDeliverableSubmitted:
+		return "设计交付"
+	case NotificationTypeContractPendingConfirm:
+		return "合同确认"
+	case NotificationTypeConstructionBridgePending:
+		return "施工桥接"
+	case NotificationTypeProjectPlannedStartUpdated:
+		return "待开工"
+	case NotificationTypeSupervisionRiskEscalated:
+		return "监理风险"
+	case NotificationTypeProjectSettlementScheduled:
+		return "结算提醒"
+	case NotificationTypeProjectPayoutProcessing,
+		NotificationTypeProjectPayoutPaid,
+		NotificationTypeProjectPayoutFailed:
+		return "出款提醒"
+	case NotificationTypeProjectCaseDraftGenerated:
+		return "案例沉淀"
+	case NotificationTypeCaseAuditCreated, "case_audit.approved", "case_audit.rejected":
+		return "案例审核"
+	case NotificationTypePaymentBookingSurveyPaid:
+		return "量房费支付"
+	case NotificationTypePaymentOrderPaid, model.NotificationTypeOrderCreated, model.NotificationTypeOrderExpiring, model.NotificationTypeOrderExpired:
+		return "支付提醒"
+	case "payment.construction.pending",
+		"payment.construction.stage_pending",
+		"payment.construction.final_pending",
+		"payment.construction.expiring",
+		"payment.construction.expired":
+		return "施工付款"
+	case "change_order.created",
+		"change_order.confirmed",
+		"change_order.rejected",
+		"change_order.payment_pending",
+		"change_order.settlement_required",
+		"change_order.settled":
+		return "项目变更"
+	case model.NotificationTypeProposalSubmitted,
+		model.NotificationTypeProposalConfirmed,
+		model.NotificationTypeProposalRejected,
+		"proposal.timeout":
+		return "设计方案"
+	case "quote.submitted", "quote.confirmed", "quote.rejected", "quote.awarded":
+		return "施工报价"
+	case "project.milestone.submitted", "project.milestone.approved", "project.milestone.rejected":
+		return "阶段验收"
+	case "project.completion.submitted", "project.completion.approved", "project.completion.rejected":
+		return "完工验收"
+	case "refund.application.created", "refund.application.approved", "refund.application.rejected", "refund.succeeded", "refund.completed":
+		return "退款处理"
+	case "withdraw.created", "withdraw.approved", "withdraw.rejected", "withdraw.completed":
+		return "提现审核"
+	case "merchant.application.submitted", "merchant.application.approved", "merchant.application.rejected":
+		return "入驻审核"
+	case "project.dispute.created", "project.audit.completed":
+		return "争议仲裁"
+	case "complaint.created", "complaint.resolved":
+		return "投诉处理"
+	case model.NotificationTypeBookingCreated, model.NotificationTypeBookingConfirmed, model.NotificationTypeBookingCancelled, model.NotificationTypeBookingIntentPaid:
+		return "预约提醒"
+	}
+
+	switch spec.Category {
+	case NotificationCategoryProject:
+		return "项目提醒"
+	case NotificationCategoryPayment:
+		return "支付提醒"
+	default:
+		return "系统通知"
+	}
+}
+
+func resolveNotificationActionLabel(notification model.Notification, spec NotificationSpec) string {
+	typeKey := strings.TrimSpace(notification.Type)
+	userType := strings.ToLower(strings.TrimSpace(notification.UserType))
+	actionURL := strings.TrimSpace(notification.ActionURL)
+	actionLabel := strings.TrimSpace(spec.ActionLabel)
+
+	switch typeKey {
+	case "payment.construction.pending",
+		"payment.construction.stage_pending",
+		"payment.construction.final_pending",
+		"payment.construction.expiring",
+		"payment.construction.expired",
+		"change_order.payment_pending":
+		if userType == "provider" {
+			return "查看项目"
+		}
+	case NotificationTypeProjectSettlementScheduled,
+		NotificationTypeProjectPayoutProcessing,
+		NotificationTypeProjectPayoutPaid:
+		if userType == "provider" {
+			return "查看资金"
+		}
+	case NotificationTypeProjectPayoutFailed:
+		if userType == "admin" {
+			return "查看出款"
+		}
+		if userType == "provider" {
+			return "查看资金"
+		}
+	case NotificationTypeSupervisionRiskEscalated:
+		if userType == "admin" {
+			return "查看监理"
+		}
+		if userType == "provider" {
+			return "查看项目"
+		}
+	case "change_order.created":
+		if userType == "provider" || userType == "admin" {
+			if strings.Contains(actionURL, "/projects/") {
+				return "查看项目"
+			}
+			return "查看变更"
+		}
+	}
+
+	if actionLabel != "" {
+		return actionLabel
+	}
+
+	if actionURL == "" {
+		return ""
+	}
+
+	switch typeKey {
+	case NotificationTypeSiteSurveySubmitted:
+		return "查看资料"
+	case NotificationTypeProjectPlannedStartUpdated:
+		return "查看项目"
+	case NotificationTypeConstructionBridgePending:
+		return "查看桥接"
+	case NotificationTypeProjectCaseDraftGenerated:
+		return "查看案例"
+	case NotificationTypeProjectSettlementScheduled,
+		NotificationTypeProjectPayoutProcessing,
+		NotificationTypeProjectPayoutPaid:
+		if strings.Contains(actionURL, "/income") || strings.Contains(actionURL, "/finance/") {
+			return "查看资金"
+		}
+		return "查看项目"
+	case "change_order.confirmed",
+		"change_order.rejected",
+		"change_order.settlement_required",
+		"change_order.settled":
+		return "查看变更"
+	case "refund.application.approved",
+		"refund.application.rejected",
+		"refund.succeeded",
+		"refund.completed":
+		return "查看退款"
+	case "withdraw.created", "withdraw.approved", "withdraw.rejected", "withdraw.completed":
+		return "查看提现"
+	case "project.completion.approved", "project.completion.rejected",
+		"project.milestone.approved", "project.milestone.rejected",
+		"quote.confirmed", "quote.rejected", "quote.awarded":
+		return "查看详情"
+	}
+
+	return actionLabel
+}
+
+func resolveNotificationActionRequired(notification model.Notification, spec NotificationSpec) bool {
+	if !spec.ActionRequired {
+		return false
+	}
+
+	switch strings.TrimSpace(notification.Type) {
+	case "change_order.created":
+		return strings.EqualFold(strings.TrimSpace(notification.UserType), "user")
+	default:
+		return true
 	}
 }
 

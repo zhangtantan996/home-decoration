@@ -229,6 +229,13 @@ func TestNotificationListItemUsesUnifiedTypeLabelAndRoleAwareActionLabel(t *test
 	if err := db.Create(order).Error; err != nil {
 		t.Fatalf("create order: %v", err)
 	}
+	changeOrder := &model.ChangeOrder{
+		Base:   model.Base{ID: 2001},
+		Status: model.ChangeOrderStatusPendingUserConfirm,
+	}
+	if err := db.Create(changeOrder).Error; err != nil {
+		t.Fatalf("create change order: %v", err)
+	}
 
 	providerItem := svc.buildNotificationListItem(model.Notification{
 		Type:      "payment.construction.expiring",
@@ -275,6 +282,35 @@ func TestNotificationListItemUsesUnifiedTypeLabelAndRoleAwareActionLabel(t *test
 	}
 	if quoteAwardedItem.ActionLabel != "查看详情" {
 		t.Fatalf("expected quote-awarded actionLabel=查看详情, got %s", quoteAwardedItem.ActionLabel)
+	}
+
+	budgetRejectedItem := svc.buildNotificationListItem(model.Notification{
+		Type:      NotificationTypeBudgetConfirmationRejected,
+		UserType:  "provider",
+		ActionURL: "/bookings/5001/flow?step=budget&mode=edit",
+	})
+	if budgetRejectedItem.SupportsMini {
+		t.Fatalf("expected rejected budget confirmation to remain unsupported in mini, got %+v", budgetRejectedItem)
+	}
+
+	changeOrderUserItem := svc.buildNotificationListItem(model.Notification{
+		Type:      "change_order.created",
+		UserType:  "user",
+		RelatedID: changeOrder.ID,
+		ActionURL: "/projects/3001/change-request",
+	})
+	if !changeOrderUserItem.ActionRequired || changeOrderUserItem.ActionStatus != NotificationActionStatusPending || changeOrderUserItem.ActionLabel != "处理变更" {
+		t.Fatalf("expected owner change-order notification to stay actionable, got %+v", changeOrderUserItem)
+	}
+
+	changeOrderProviderItem := svc.buildNotificationListItem(model.Notification{
+		Type:      "change_order.created",
+		UserType:  "provider",
+		RelatedID: changeOrder.ID,
+		ActionURL: "/projects/3001",
+	})
+	if changeOrderProviderItem.ActionRequired || changeOrderProviderItem.ActionStatus != NotificationActionStatusNone || changeOrderProviderItem.ActionLabel != "查看项目" {
+		t.Fatalf("expected provider change-order notification to be informational, got %+v", changeOrderProviderItem)
 	}
 }
 
