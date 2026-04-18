@@ -1745,8 +1745,11 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 			"totalCent":  submission.TotalCent,
 		},
 	}
-	projectParticipantUpdates := buildQuoteConfirmationProjectParticipantUpdates(submission)
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		projectParticipantUpdates, err := buildQuoteConfirmationProjectParticipantUpdatesTx(tx, submission)
+		if err != nil {
+			return err
+		}
 		if projectID, err = s.getOrCreateProjectForQuoteConfirmationTx(tx, &quoteList); err != nil {
 			return err
 		}
@@ -1875,18 +1878,29 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	return &quoteList, nil
 }
 
-func buildQuoteConfirmationProjectParticipantUpdates(submission model.QuoteSubmission) map[string]interface{} {
+func buildQuoteConfirmationProjectParticipantUpdatesTx(tx *gorm.DB, submission model.QuoteSubmission) (map[string]interface{}, error) {
+	providerType := submission.ProviderType
+	providerSubType := strings.ToLower(strings.TrimSpace(submission.ProviderSubType))
+	if providerType != 2 && providerType != 3 && tx != nil && submission.ProviderID > 0 {
+		var provider model.Provider
+		if err := tx.Select("provider_type", "sub_type").First(&provider, submission.ProviderID).Error; err == nil {
+			providerType = provider.ProviderType
+			if providerSubType == "" {
+				providerSubType = strings.ToLower(strings.TrimSpace(provider.SubType))
+			}
+		}
+	}
 	updates := map[string]interface{}{
 		"provider_id":              submission.ProviderID,
 		"construction_provider_id": uint64(0),
 		"foreman_id":               uint64(0),
 	}
-	if submission.ProviderType == 2 || strings.EqualFold(strings.TrimSpace(submission.ProviderSubType), "company") {
+	if providerType == 2 || providerSubType == "company" {
 		updates["construction_provider_id"] = submission.ProviderID
-		return updates
+		return updates, nil
 	}
 	updates["foreman_id"] = submission.ProviderID
-	return updates
+	return updates, nil
 }
 
 func (s *QuoteService) UserRejectQuoteSubmission(submissionID, userID uint64, reason string) (*model.QuoteList, error) {
