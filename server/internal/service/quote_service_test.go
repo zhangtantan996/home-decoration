@@ -2026,8 +2026,8 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	if !project.PaymentPaused {
 		t.Fatalf("expected project payment paused before first construction payment")
 	}
-	if project.ConstructionProviderID != fixture.foreman.ID || project.ForemanID != fixture.foreman.ID {
-		t.Fatalf("expected foreman bound to project, got construction_provider_id=%d foreman_id=%d", project.ConstructionProviderID, project.ForemanID)
+	if project.ProviderID != fixture.foreman.ID || project.ConstructionProviderID != 0 || project.ForemanID != fixture.foreman.ID {
+		t.Fatalf("expected foreman-only subject binding, got provider_id=%d construction_provider_id=%d foreman_id=%d", project.ProviderID, project.ConstructionProviderID, project.ForemanID)
 	}
 
 	var order model.Order
@@ -2098,6 +2098,56 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	}
 	if persistedSubmission.Status != model.QuoteSubmissionStatusUserConfirmed {
 		t.Fatalf("expected submission user confirmed, got %s", persistedSubmission.Status)
+	}
+}
+
+func TestUserConfirmQuoteSubmissionBindsCompanyConstructionSubject(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+	fixture := seedQuoteConfirmationFixture(t, db, model.QuoteListStatusSubmittedToUser)
+
+	company := model.Provider{
+		Base:         model.Base{ID: 9203},
+		ProviderType: 2,
+		SubType:      "company",
+		CompanyName:  "装修公司B",
+		Status:       1,
+	}
+	if err := db.Create(&company).Error; err != nil {
+		t.Fatalf("create company provider: %v", err)
+	}
+	if err := db.Model(&fixture.flow).Updates(map[string]interface{}{
+		"selected_foreman_provider_id": company.ID,
+	}).Error; err != nil {
+		t.Fatalf("update flow selected subject: %v", err)
+	}
+	if err := db.Model(&fixture.submission).Updates(map[string]interface{}{
+		"provider_id":       company.ID,
+		"provider_type":     company.ProviderType,
+		"provider_sub_type": company.SubType,
+	}).Error; err != nil {
+		t.Fatalf("update submission provider: %v", err)
+	}
+
+	confirmedTask, err := svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
+	if err != nil {
+		t.Fatalf("UserConfirmQuoteSubmission company subject: %v", err)
+	}
+
+	var project model.Project
+	if err := db.First(&project, confirmedTask.ProjectID).Error; err != nil {
+		t.Fatalf("load created project: %v", err)
+	}
+	if project.ProviderID != company.ID || project.ConstructionProviderID != company.ID || project.ForemanID != 0 {
+		t.Fatalf("expected company-only subject binding, got provider_id=%d construction_provider_id=%d foreman_id=%d", project.ProviderID, project.ConstructionProviderID, project.ForemanID)
+	}
+
+	var updatedFlow model.BusinessFlow
+	if err := db.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, fixture.booking.ID).First(&updatedFlow).Error; err != nil {
+		t.Fatalf("reload flow: %v", err)
+	}
+	if updatedFlow.SelectedForemanProviderID != company.ID {
+		t.Fatalf("expected business flow selected subject=%d, got %d", company.ID, updatedFlow.SelectedForemanProviderID)
 	}
 }
 
@@ -2504,6 +2554,418 @@ func TestGetMerchantQuoteListDetailIncludesQuantityBase(t *testing.T) {
 	}
 	if detail.QuantityItems[0].BaselineNote != "按设计方案基准量计算" {
 		t.Fatalf("expected baseline note to be returned")
+	}
+}
+
+func TestReplaceMerchantConstructionPreparationItems_AllowsDraftSaveWithMissingRequiredItems(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	_, designer, booking := seedConfirmedBookingFlow(t, db)
+
+	proposal := &model.Proposal{
+		Base:              model.Base{ID: 9981},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "施工报价准备草稿",
+		Status:            model.ProposalStatusConfirmed,
+		SourceType:        model.ProposalSourceBooking,
+		Version:           1,
+		InternalDraftJSON: `{"rooms":[]}`,
+	}
+	if err := db.Create(proposal).Error; err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+
+	_, libraryItem := seedQuotePreparationTemplate(t, db, "三居", "全屋翻新", model.QuoteLibraryItem{
+		Base:         model.Base{ID: 9982},
+		StandardCode: "STD-WP-9982",
+		ERPItemCode:  "ERP-WP-9982",
+		Name:         "墙地面防水",
+		Unit:         "㎡",
+		CategoryL1:   "泥瓦",
+		CategoryL2:   "防水",
+	}, true)
+
+	svc := &QuoteService{}
+	preparation, err := svc.StartMerchantConstructionPreparation(designer.ID, booking.ID)
+	if err != nil {
+		t.Fatalf("StartMerchantConstructionPreparation: %v", err)
+	}
+	if preparation.QuoteListID == 0 {
+		t.Fatalf("expected quote list id after start")
+	}
+
+	preparation, err = svc.UpdateMerchantConstructionPreparationPrerequisites(designer.ID, preparation.QuoteListID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              booking.Area,
+		Layout:            "3室2厅",
+		RenovationType:    "全屋翻新",
+		ConstructionScope: "防水",
+		ServiceAreas:      []string{"测试小区"},
+		HouseUsage:        "自住",
+		Notes:             "先保存草稿",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMerchantConstructionPreparationPrerequisites: %v", err)
+	}
+
+	preparation, err = svc.ReplaceMerchantConstructionPreparationItems(designer.ID, preparation.QuoteListID, []MerchantQuantityItemInput{{
+		StandardItemID: libraryItem.ID,
+		Quantity:       0,
+	}})
+	if err != nil {
+		t.Fatalf("ReplaceMerchantConstructionPreparationItems should allow incomplete draft, got %v", err)
+	}
+	if preparation.PrerequisiteStatus != model.QuoteTaskPrerequisiteDraft {
+		t.Fatalf("expected prerequisite status draft, got %s", preparation.PrerequisiteStatus)
+	}
+	if !slices.Contains(preparation.MissingFields, "quantityItems") {
+		t.Fatalf("expected missingFields include quantityItems, got %+v", preparation.MissingFields)
+	}
+	if len(preparation.QuantityItems) != 0 {
+		t.Fatalf("expected no persisted quantity items for incomplete draft, got %d", len(preparation.QuantityItems))
+	}
+
+	var quoteList model.QuoteList
+	if err := db.First(&quoteList, preparation.QuoteListID).Error; err != nil {
+		t.Fatalf("reload quote list: %v", err)
+	}
+	if quoteList.Status != model.QuoteListStatusDraft {
+		t.Fatalf("expected quote list remain draft after incomplete save, got %s", quoteList.Status)
+	}
+
+	validation, err := svc.ValidateTaskPrerequisites(preparation.QuoteListID)
+	if err != nil {
+		t.Fatalf("ValidateTaskPrerequisites: %v", err)
+	}
+	if validation.OK {
+		t.Fatalf("expected validation not ok for incomplete construction preparation")
+	}
+	if !slices.Contains(validation.MissingFields, "quantityItems") {
+		t.Fatalf("expected validation missing quantityItems, got %+v", validation.MissingFields)
+	}
+}
+
+func TestMerchantConstructionPreparation_FiltersTemplateSectionsByConstructionScope(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	_, designer, booking := seedConfirmedBookingFlow(t, db)
+
+	proposal := &model.Proposal{
+		Base:              model.Base{ID: 9983},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "施工范围过滤测试",
+		Status:            model.ProposalStatusConfirmed,
+		SourceType:        model.ProposalSourceBooking,
+		Version:           1,
+		InternalDraftJSON: `{"rooms":[]}`,
+	}
+	if err := db.Create(proposal).Error; err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+
+	waterproofItem := model.QuoteLibraryItem{
+		Base:                model.Base{ID: 9984},
+		StandardCode:        "STD-WP-9984",
+		ERPItemCode:         "ERP-WP-9984",
+		Name:                "墙地面防水",
+		Unit:                "㎡",
+		CategoryL1:          "泥瓦",
+		CategoryL2:          "防水",
+		Status:              model.QuoteLibraryItemStatusEnabled,
+		QuantityFormulaJSON: `{"type":"area_multiplier","factor":1.2}`,
+	}
+	electricItem := model.QuoteLibraryItem{
+		Base:                model.Base{ID: 9985},
+		StandardCode:        "STD-EL-9985",
+		ERPItemCode:         "ERP-EL-9985",
+		Name:                "强弱电改造",
+		Unit:                "m",
+		CategoryL1:          "水电",
+		CategoryL2:          "电路",
+		Status:              model.QuoteLibraryItemStatusEnabled,
+		QuantityFormulaJSON: `{"type":"fixed","factor":20}`,
+	}
+	for _, item := range []model.QuoteLibraryItem{waterproofItem, electricItem} {
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("create quote library item: %v", err)
+		}
+	}
+
+	tmpl := model.QuoteTemplate{
+		Name:           "三居-全屋翻新-模板",
+		RoomType:       "三居",
+		RenovationType: "全屋翻新",
+		Status:         1,
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create quote template: %v", err)
+	}
+	for idx, libraryItemID := range []uint64{waterproofItem.ID, electricItem.ID} {
+		if err := db.Create(&model.QuoteTemplateItem{
+			TemplateID:    tmpl.ID,
+			LibraryItemID: libraryItemID,
+			Required:      true,
+			SortOrder:     idx + 1,
+		}).Error; err != nil {
+			t.Fatalf("create quote template item: %v", err)
+		}
+	}
+
+	svc := &QuoteService{}
+	preparation, err := svc.StartMerchantConstructionPreparation(designer.ID, booking.ID)
+	if err != nil {
+		t.Fatalf("StartMerchantConstructionPreparation: %v", err)
+	}
+
+	preparation, err = svc.UpdateMerchantConstructionPreparationPrerequisites(designer.ID, preparation.QuoteListID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              booking.Area,
+		Layout:            "三室两厅",
+		RenovationType:    "全屋翻新",
+		ConstructionScope: "防水",
+		ServiceAreas:      []string{"测试小区"},
+		HouseUsage:        "自住",
+		Notes:             "仅做防水",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMerchantConstructionPreparationPrerequisites: %v", err)
+	}
+
+	if len(preparation.TemplateSections) != 1 {
+		t.Fatalf("expected 1 filtered template section, got %d", len(preparation.TemplateSections))
+	}
+	if len(preparation.TemplateSections[0].Rows) != 1 {
+		t.Fatalf("expected 1 filtered template row, got %d", len(preparation.TemplateSections[0].Rows))
+	}
+	row := preparation.TemplateSections[0].Rows[0]
+	if row.StandardItemID != waterproofItem.ID {
+		t.Fatalf("expected waterproof item kept by scope, got %d", row.StandardItemID)
+	}
+	if row.SuggestedQuantity <= 0 {
+		t.Fatalf("expected suggested quantity to be returned, got %v", row.SuggestedQuantity)
+	}
+	if row.InputQuantity != 0 {
+		t.Fatalf("expected suggested quantity not auto applied to input, got %v", row.InputQuantity)
+	}
+	if !slices.Contains(preparation.MissingFields, "quantityItems") {
+		t.Fatalf("expected quantityItems missing before fill, got %+v", preparation.MissingFields)
+	}
+
+	preparation, err = svc.ReplaceMerchantConstructionPreparationItems(designer.ID, preparation.QuoteListID, []MerchantQuantityItemInput{{
+		StandardItemID: waterproofItem.ID,
+		Quantity:       118,
+	}})
+	if err != nil {
+		t.Fatalf("ReplaceMerchantConstructionPreparationItems: %v", err)
+	}
+	if slices.Contains(preparation.MissingFields, "quantityItems") {
+		t.Fatalf("expected scoped required items to be complete, got %+v", preparation.MissingFields)
+	}
+	if preparation.PrerequisiteStatus != model.QuoteTaskPrerequisiteComplete {
+		t.Fatalf("expected prerequisite status complete, got %s", preparation.PrerequisiteStatus)
+	}
+	if len(preparation.QuantityItems) != 1 || preparation.QuantityItems[0].StandardItemID != waterproofItem.ID {
+		t.Fatalf("expected only waterproof baseline item persisted, got %+v", preparation.QuantityItems)
+	}
+}
+
+func TestMerchantConstructionPreparation_ScopeFilteringUsesExactScopes(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	_, designer, booking := seedConfirmedBookingFlow(t, db)
+
+	proposal := &model.Proposal{
+		Base:              model.Base{ID: 9986},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "施工范围精确过滤",
+		Status:            model.ProposalStatusConfirmed,
+		SourceType:        model.ProposalSourceBooking,
+		Version:           1,
+		InternalDraftJSON: `{"rooms":[]}`,
+	}
+	if err := db.Create(proposal).Error; err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+
+	items := []model.QuoteLibraryItem{
+		{
+			Base:         model.Base{ID: 9987},
+			StandardCode: "STD-PAI-9987",
+			ERPItemCode:  "ERP-PAI-9987",
+			Name:         "普通墙面腻子基层处理",
+			Unit:         "㎡",
+			CategoryL1:   "油工",
+			CategoryL2:   "腻子找平",
+			Status:       model.QuoteLibraryItemStatusEnabled,
+		},
+		{
+			Base:         model.Base{ID: 9988},
+			StandardCode: "STD-CEI-9988",
+			ERPItemCode:  "ERP-CEI-9988",
+			Name:         "防水石膏板吊平顶",
+			Unit:         "㎡",
+			CategoryL1:   "木作",
+			CategoryL2:   "吊顶",
+			Status:       model.QuoteLibraryItemStatusEnabled,
+		},
+		{
+			Base:         model.Base{ID: 9989},
+			StandardCode: "STD-WT-9989",
+			ERPItemCode:  "ERP-WT-9989",
+			Name:         "地砖铺贴",
+			Unit:         "㎡",
+			CategoryL1:   "泥瓦",
+			CategoryL2:   "地砖铺贴",
+			Status:       model.QuoteLibraryItemStatusEnabled,
+		},
+	}
+	for _, item := range items {
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("create quote library item: %v", err)
+		}
+	}
+
+	tmpl := model.QuoteTemplate{
+		Name:           "三居-全案设计服务-模板",
+		RoomType:       "三居",
+		RenovationType: "全案设计服务",
+		Status:         1,
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create quote template: %v", err)
+	}
+	for idx, libraryItemID := range []uint64{9987, 9988, 9989} {
+		if err := db.Create(&model.QuoteTemplateItem{
+			TemplateID:    tmpl.ID,
+			LibraryItemID: libraryItemID,
+			Required:      true,
+			SortOrder:     idx + 1,
+		}).Error; err != nil {
+			t.Fatalf("create quote template item: %v", err)
+		}
+	}
+
+	svc := &QuoteService{}
+	preparation, err := svc.StartMerchantConstructionPreparation(designer.ID, booking.ID)
+	if err != nil {
+		t.Fatalf("StartMerchantConstructionPreparation: %v", err)
+	}
+
+	preparation, err = svc.UpdateMerchantConstructionPreparationPrerequisites(designer.ID, preparation.QuoteListID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              booking.Area,
+		Layout:            "三室两厅",
+		RenovationType:    "全案设计服务",
+		ConstructionScope: "泥瓦",
+		ServiceAreas:      []string{"测试小区"},
+		HouseUsage:        "自住",
+		Notes:             "只做泥瓦",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMerchantConstructionPreparationPrerequisites: %v", err)
+	}
+
+	if len(preparation.TemplateSections) != 1 {
+		t.Fatalf("expected only one section for exact mudwork scope, got %d", len(preparation.TemplateSections))
+	}
+	if len(preparation.TemplateSections[0].Rows) != 1 {
+		t.Fatalf("expected only one row for exact mudwork scope, got %d", len(preparation.TemplateSections[0].Rows))
+	}
+	if preparation.TemplateSections[0].Rows[0].StandardItemID != 9989 {
+		t.Fatalf("expected only mudwork item kept, got %+v", preparation.TemplateSections[0].Rows[0])
+	}
+}
+
+func TestMerchantConstructionPreparation_SuggestsQuantityWithoutFormula(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	_, designer, booking := seedConfirmedBookingFlow(t, db)
+
+	proposal := &model.Proposal{
+		Base:              model.Base{ID: 9990},
+		BookingID:         booking.ID,
+		DesignerID:        designer.ID,
+		Summary:           "建议量兜底测试",
+		Status:            model.ProposalStatusConfirmed,
+		SourceType:        model.ProposalSourceBooking,
+		Version:           1,
+		InternalDraftJSON: `{"rooms":[]}`,
+	}
+	if err := db.Create(proposal).Error; err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+
+	libraryItem := model.QuoteLibraryItem{
+		Base:         model.Base{ID: 9991},
+		StandardCode: "STD-WAT-9991",
+		ERPItemCode:  "ERP-WAT-9991",
+		Name:         "墙地面防水",
+		Unit:         "㎡",
+		CategoryL1:   "防水",
+		CategoryL2:   "墙地面防水",
+		Status:       model.QuoteLibraryItemStatusEnabled,
+	}
+	if err := db.Create(&libraryItem).Error; err != nil {
+		t.Fatalf("create quote library item: %v", err)
+	}
+
+	tmpl := model.QuoteTemplate{
+		Name:           "三居-全案设计服务-防水模板",
+		RoomType:       "三居",
+		RenovationType: "全案设计服务",
+		Status:         1,
+	}
+	if err := db.Create(&tmpl).Error; err != nil {
+		t.Fatalf("create quote template: %v", err)
+	}
+	if err := db.Create(&model.QuoteTemplateItem{
+		TemplateID:    tmpl.ID,
+		LibraryItemID: libraryItem.ID,
+		Required:      true,
+		SortOrder:     1,
+	}).Error; err != nil {
+		t.Fatalf("create quote template item: %v", err)
+	}
+
+	svc := &QuoteService{}
+	preparation, err := svc.StartMerchantConstructionPreparation(designer.ID, booking.ID)
+	if err != nil {
+		t.Fatalf("StartMerchantConstructionPreparation: %v", err)
+	}
+
+	preparation, err = svc.UpdateMerchantConstructionPreparationPrerequisites(designer.ID, preparation.QuoteListID, &QuoteTaskPrerequisiteUpdateInput{
+		Area:              90,
+		Layout:            "三室两厅",
+		RenovationType:    "全案设计服务",
+		ConstructionScope: "防水",
+		ServiceAreas:      []string{"测试小区"},
+		HouseUsage:        "自住",
+		Notes:             "只做防水",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMerchantConstructionPreparationPrerequisites: %v", err)
+	}
+
+	if len(preparation.TemplateSections) != 1 || len(preparation.TemplateSections[0].Rows) != 1 {
+		t.Fatalf("expected one waterproof row, got %+v", preparation.TemplateSections)
+	}
+	row := preparation.TemplateSections[0].Rows[0]
+	if row.SuggestedQuantity <= 0 {
+		t.Fatalf("expected heuristic suggested quantity, got %+v", row)
+	}
+	if row.SuggestedQuantity != 108 {
+		t.Fatalf("expected heuristic suggested quantity 108, got %v", row.SuggestedQuantity)
+	}
+}
+
+func TestParseRoomTypeSupportsChineseLabels(t *testing.T) {
+	cases := map[string]string{
+		"三室两厅": "三居",
+		"三室":   "三居",
+		"二居":   "二居",
+		"4室2厅": "四居",
+	}
+
+	for input, expected := range cases {
+		if actual := parseRoomType(input); actual != expected {
+			t.Fatalf("expected parseRoomType(%q)=%q, got %q", input, expected, actual)
+		}
 	}
 }
 

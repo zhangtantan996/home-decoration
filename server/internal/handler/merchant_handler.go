@@ -1394,7 +1394,35 @@ func MerchantDashboardStats(c *gin.Context) {
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&monthRevenue)
 
-	activeProjects := paidOrders
+	activeProjects := int64(0)
+	var provider model.Provider
+	if err := repository.DB.Select("provider_type").First(&provider, providerID).Error; err == nil {
+		projectDomainStages := []string{
+			model.BusinessFlowStageReadyToStart,
+			model.BusinessFlowStageInConstruction,
+			model.BusinessFlowStageNodeAcceptanceInProgress,
+			model.BusinessFlowStageCompleted,
+			model.BusinessFlowStageArchived,
+			model.BusinessFlowStageDisputed,
+			model.BusinessFlowStagePaymentPaused,
+		}
+		query := repository.DB.
+			Model(&model.BusinessFlow{}).
+			Distinct("project_id").
+			Where("project_id > 0").
+			Where("current_stage IN ?", projectDomainStages)
+
+		switch provider.ProviderType {
+		case 3:
+			query = query.Where("selected_foreman_provider_id = ?", providerID)
+		case 2:
+			query = query.Where("(designer_provider_id = ? OR selected_foreman_provider_id = ?)", providerID, providerID)
+		default:
+			query = query.Where("designer_provider_id = ?", providerID)
+		}
+
+		query.Count(&activeProjects)
+	}
 
 	response.Success(c, gin.H{
 		"pendingLeads":     pendingLeads,

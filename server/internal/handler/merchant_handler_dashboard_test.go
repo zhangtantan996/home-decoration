@@ -24,6 +24,8 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 		&model.Booking{},
 		&model.Proposal{},
 		&model.Order{},
+		&model.Project{},
+		&model.BusinessFlow{},
 		&model.MerchantIncome{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
@@ -74,6 +76,32 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 	}
 	if err := db.Create(&order2).Error; err != nil {
 		t.Fatalf("seed order2: %v", err)
+	}
+
+	project := model.Project{
+		Base:           model.Base{ID: 9001},
+		OwnerID:        userID,
+		ProposalID:     proposal2.ID,
+		ProviderID:     providerID,
+		Status:         model.ProjectStatusActive,
+		BusinessStatus: model.ProjectBusinessStatusConstructionQuoteConfirmed,
+		CurrentPhase:   "待监理协调开工",
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	flow := model.BusinessFlow{
+		Base:                      model.Base{ID: 9901},
+		SourceType:                model.BusinessFlowSourceBooking,
+		SourceID:                  2,
+		CustomerUserID:            userID,
+		DesignerProviderID:        providerID,
+		SelectedForemanProviderID: providerID,
+		ProjectID:                 project.ID,
+		CurrentStage:              model.BusinessFlowStageReadyToStart,
+	}
+	if err := db.Create(&flow).Error; err != nil {
+		t.Fatalf("seed business flow: %v", err)
 	}
 
 	incomes := []model.MerchantIncome{
@@ -145,5 +173,161 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 	}
 	if data.Orders.Pending != 1 || data.Orders.Paid != 1 {
 		t.Fatalf("orders grouped mismatch: %+v", data.Orders)
+	}
+}
+
+func TestMerchantDashboardStats_ActiveProjectsIgnorePaidOrdersWithoutProject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Provider{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Order{},
+		&model.Project{},
+		&model.BusinessFlow{},
+		&model.MerchantIncome{},
+	); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	providerID := uint64(301)
+	userID := uint64(3001)
+
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000002", Nickname: "测试设计师"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{Base: model.Base{ID: providerID}, UserID: userID, ProviderType: 1, SubType: "designer", Status: 1}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	booking := model.Booking{Base: model.Base{ID: 11}, ProviderID: providerID, Status: 2}
+	if err := db.Create(&booking).Error; err != nil {
+		t.Fatalf("seed booking: %v", err)
+	}
+	proposal := model.Proposal{Base: model.Base{ID: 21}, BookingID: booking.ID, DesignerID: providerID, Status: 2}
+	if err := db.Create(&proposal).Error; err != nil {
+		t.Fatalf("seed proposal: %v", err)
+	}
+	order := model.Order{BookingID: booking.ID, OrderNo: "T-ORDER-3", Status: 1}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatalf("seed order: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/merchant/dashboard", bytes.NewReader(nil))
+	c.Set("providerId", providerID)
+
+	MerchantDashboardStats(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: %d, message=%s", resp.Code, resp.Message)
+	}
+
+	var data struct {
+		ActiveProjects int64 `json:"activeProjects"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if data.ActiveProjects != 0 {
+		t.Fatalf("activeProjects mismatch: got=%d want=0", data.ActiveProjects)
+	}
+}
+
+func TestMerchantDashboardStats_CompanyConstructionProjectsCountSelectedSubject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Provider{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Order{},
+		&model.Project{},
+		&model.BusinessFlow{},
+		&model.MerchantIncome{},
+	); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	designerProviderID := uint64(401)
+	companyProviderID := uint64(402)
+	userID := uint64(4001)
+
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000003", Nickname: "测试装修公司"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{Base: model.Base{ID: designerProviderID}, ProviderType: 1, SubType: "designer", Status: 1, CompanyName: "设计师A"}).Error; err != nil {
+		t.Fatalf("seed designer provider: %v", err)
+	}
+	if err := db.Create(&model.Provider{Base: model.Base{ID: companyProviderID}, UserID: userID, ProviderType: 2, SubType: "company", Status: 1, CompanyName: "施工公司A"}).Error; err != nil {
+		t.Fatalf("seed company provider: %v", err)
+	}
+
+	project := model.Project{
+		Base:                   model.Base{ID: 9101},
+		OwnerID:                userID,
+		ProviderID:             companyProviderID,
+		ConstructionProviderID: companyProviderID,
+		Status:                 model.ProjectStatusActive,
+		BusinessStatus:         model.ProjectBusinessStatusConstructionQuoteConfirmed,
+		CurrentPhase:           "待监理协调开工",
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+
+	flow := model.BusinessFlow{
+		Base:                      model.Base{ID: 9902},
+		SourceType:                model.BusinessFlowSourceBooking,
+		SourceID:                  88,
+		CustomerUserID:            userID,
+		DesignerProviderID:        designerProviderID,
+		SelectedForemanProviderID: companyProviderID,
+		ProjectID:                 project.ID,
+		CurrentStage:              model.BusinessFlowStageReadyToStart,
+	}
+	if err := db.Create(&flow).Error; err != nil {
+		t.Fatalf("seed business flow: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/merchant/dashboard", bytes.NewReader(nil))
+	c.Set("providerId", companyProviderID)
+
+	MerchantDashboardStats(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: %d, message=%s", resp.Code, resp.Message)
+	}
+
+	var data struct {
+		ActiveProjects int64 `json:"activeProjects"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if data.ActiveProjects != 1 {
+		t.Fatalf("activeProjects mismatch for company construction subject: got=%d want=1", data.ActiveProjects)
 	}
 }

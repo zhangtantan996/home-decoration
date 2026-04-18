@@ -868,19 +868,14 @@ func (s *QuoteService) validateQuoteTaskReadinessWithDB(db *gorm.DB, quoteList *
 		return result, nil
 	}
 	missing := append([]string{}, result.MissingFields...)
-	baselineCount, err := s.countQuoteTaskBaselineItemsWithDB(db, quoteList)
-	if err != nil {
-		return nil, err
+	if len(missing) > 0 {
+		return buildQuoteTaskValidationResult(missing), nil
 	}
 	templateState, err := s.buildPreparationTemplateStateWithDB(db, quoteList, snapshot, nil, false)
 	if err != nil {
 		return nil, err
 	}
-	hasTemplate := templateState.TemplateID > 0 && len(templateState.Sections) > 0
-	switch {
-	case hasTemplate && (len(templateState.MissingRequiredNames) > 0 || templateState.EffectiveItemCount == 0):
-		missing = append(missing, "quantityItems")
-	case !hasTemplate && baselineCount == 0:
+	if templateState.TemplateError != "" || len(templateState.MissingRequiredNames) > 0 || templateState.EffectiveItemCount == 0 {
 		missing = append(missing, "quantityItems")
 	}
 	return buildQuoteTaskValidationResult(missing), nil
@@ -1750,6 +1745,7 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 			"totalCent":  submission.TotalCent,
 		},
 	}
+	projectParticipantUpdates := buildQuoteConfirmationProjectParticipantUpdates(submission)
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		if projectID, err = s.getOrCreateProjectForQuoteConfirmationTx(tx, &quoteList); err != nil {
 			return err
@@ -1790,9 +1786,10 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 				"confirmedAt":       now,
 				"quoteStatus":       model.QuoteListStatusUserConfirmed,
 			})
-			if err := tx.Model(&model.Project{}).Where("id = ?", projectID).Updates(map[string]interface{}{
-				"construction_provider_id":     submission.ProviderID,
-				"foreman_id":                   submission.ProviderID,
+			projectUpdates := map[string]interface{}{
+				"provider_id":                  projectParticipantUpdates["provider_id"],
+				"construction_provider_id":     projectParticipantUpdates["construction_provider_id"],
+				"foreman_id":                   projectParticipantUpdates["foreman_id"],
 				"selected_quote_submission_id": submission.ID,
 				"construction_quote":           float64(submission.TotalCent) / 100,
 				"construction_quote_snapshot":  string(snapshotBytes),
@@ -1802,7 +1799,8 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 				"payment_paused":               true,
 				"payment_paused_at":            &now,
 				"payment_paused_reason":        "等待支付首付款",
-			}).Error; err != nil {
+			}
+			if err := tx.Model(&model.Project{}).Where("id = ?", projectID).Updates(projectUpdates).Error; err != nil {
 				return err
 			}
 		}
@@ -1875,6 +1873,20 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 		}
 	}
 	return &quoteList, nil
+}
+
+func buildQuoteConfirmationProjectParticipantUpdates(submission model.QuoteSubmission) map[string]interface{} {
+	updates := map[string]interface{}{
+		"provider_id":              submission.ProviderID,
+		"construction_provider_id": uint64(0),
+		"foreman_id":               uint64(0),
+	}
+	if submission.ProviderType == 2 || strings.EqualFold(strings.TrimSpace(submission.ProviderSubType), "company") {
+		updates["construction_provider_id"] = submission.ProviderID
+		return updates
+	}
+	updates["foreman_id"] = submission.ProviderID
+	return updates
 }
 
 func (s *QuoteService) UserRejectQuoteSubmission(submissionID, userID uint64, reason string) (*model.QuoteList, error) {
