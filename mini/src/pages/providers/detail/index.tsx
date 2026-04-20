@@ -227,6 +227,46 @@ const ProviderDetailPage: React.FC = () => {
     return parsed.length > 0 ? parsed : ["本地服务"];
   }, [providerDetail?.serviceArea]);
 
+  const settled =
+    providerDetail?.isSettled !== false && providerRaw.isSettled !== false;
+
+  const trustTagItems = useMemo(() => {
+    const tags = [
+      ...parseStringListValue(providerDetail?.highlightTags),
+      ...parseStringListValue(providerDetail?.certifications),
+    ];
+
+    if (settled) {
+      tags.unshift("平台已认证");
+    }
+    if (Number(providerDetail?.completedCnt || 0) > 0) {
+      tags.push(`已交付${providerDetail?.completedCnt}单`);
+    }
+    if ((reviewTotal || reviews.length) > 0) {
+      tags.push(`${reviewTotal || reviews.length}条评价`);
+    }
+
+    return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
+  }, [
+    providerDetail?.certifications,
+    providerDetail?.completedCnt,
+    providerDetail?.highlightTags,
+    reviewTotal,
+    reviews.length,
+    settled,
+  ]);
+
+  const ruleItems = useMemo(() => {
+    const steps = [
+      "提交预约后先沟通需求与量房安排，商家确认承接后才进入下一步。",
+      "设计确认、施工主体选择、施工报价确认是分步推进，不会跳步创建项目。",
+      settled
+        ? "订单、报价、评价和履约节点都会在平台留痕，异常可继续走退款或争议链路。"
+        : "当前商家未入驻，页面信息仅供参考，平台暂不承接后续履约保障。",
+    ];
+    return steps;
+  }, [settled]);
+
   const quoteDisplay =
     detail?.priceDisplay ||
     providerDetail?.priceDisplay ||
@@ -296,8 +336,6 @@ const ProviderDetailPage: React.FC = () => {
     [companyAlbumImages],
   );
 
-  const settled =
-    providerDetail?.isSettled !== false && providerRaw.isSettled !== false;
   const hasFixedFooter = !settled || !isForeman;
   const slowLoadingVisible = useSlowLoadingHint(loading);
   const ratingValue = Number(providerDetail?.rating || 0);
@@ -711,6 +749,19 @@ const ProviderDetailPage: React.FC = () => {
         </View>
       </View>
 
+      {trustTagItems.length > 0 ? (
+        <View className="provider-detail-page__section provider-detail-page__section--trust">
+          <Text className="provider-detail-page__section-title">履约标签</Text>
+          <View className="provider-detail-page__trust-list">
+            {trustTagItems.map((item) => (
+              <View key={item} className="provider-detail-page__trust-chip">
+                <Text className="provider-detail-page__trust-chip-text">{item}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       {isCompany
         ? renderIntroSection
         : isDesigner
@@ -722,6 +773,20 @@ const ProviderDetailPage: React.FC = () => {
           ? renderQuoteSection
           : renderIntroSection}
       {renderCompanyAlbumSection}
+
+      <View className="provider-detail-page__section provider-detail-page__section--rules">
+        <Text className="provider-detail-page__section-title">预约与成交规则</Text>
+        <View className="provider-detail-page__rule-list">
+          {ruleItems.map((item, index) => (
+            <View key={item} className="provider-detail-page__rule-item">
+              <View className="provider-detail-page__rule-index">
+                <Text className="provider-detail-page__rule-index-text">{index + 1}</Text>
+              </View>
+              <Text className="provider-detail-page__rule-copy">{item.trim()}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
 
       <View className="provider-detail-page__section">
         <View className="provider-detail-page__section-head">

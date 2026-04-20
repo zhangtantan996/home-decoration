@@ -39,6 +39,32 @@ const TIME_SLOT_OPTIONS = [
   { id: "night", label: "19:00-21:00 晚上" },
 ];
 
+const BOOKING_NEXT_STEPS: Array<{
+  id: string;
+  title: string;
+  description: string;
+  iconName: "pending" | "orders" | "success";
+}> = [
+  {
+    id: "confirm",
+    title: "商家确认承接",
+    description: "提交预约后先由商家确认是否承接，再决定下一步安排。",
+    iconName: "pending",
+  },
+  {
+    id: "survey",
+    title: "支付量房费并安排量房",
+    description: "商家确认后，你会在预约详情页继续支付量房费并约定上门时间。",
+    iconName: "orders",
+  },
+  {
+    id: "bridge",
+    title: "继续进入方案与报价确认",
+    description: "量房和预算确认完成后，再进入设计确认、施工报价确认与项目创建。",
+    iconName: "success",
+  },
+];
+
 type SheetType = "budget" | "layout" | "schedule" | null;
 
 interface WeekDayOption {
@@ -406,8 +432,29 @@ const BookingCreatePage: React.FC = () => {
           </View>
         ) : null}
 
+        <View className="booking-create-page__next-card">
+          <View className="booking-create-page__next-head">
+            <Text className="booking-create-page__section-title">提交后下一步</Text>
+            <Text className="booking-create-page__section-desc">先留必要信息，后续动作会在预约详情页继续引导。</Text>
+          </View>
+          <View className="booking-create-page__next-list">
+            {BOOKING_NEXT_STEPS.map((item, index) => (
+              <View key={item.id} className="booking-create-page__next-item">
+                <View className="booking-create-page__next-index">
+                  <Icon name={item.iconName} size={18} color="#111111" />
+                </View>
+                <View className="booking-create-page__next-copy">
+                  <Text className="booking-create-page__next-title">{`${index + 1}. ${item.title}`}</Text>
+                  <Text className="booking-create-page__next-desc">{item.description}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
         <View className="booking-create-page__form-card">
           <Text className="booking-create-page__section-title">预约信息</Text>
+          <Text className="booking-create-page__section-desc">仅保留本次预约的必要留资，备注为选填。</Text>
 
           <View className="booking-create-page__field">
             <Text className="booking-create-page__label">
@@ -535,10 +582,15 @@ const BookingCreatePage: React.FC = () => {
                 </Text>
               )}
             </View>
+            <Text className="booking-create-page__field-hint">
+              {phoneEditable
+                ? "用于接收商家确认、量房费支付和后续状态提醒。"
+                : "将使用当前登录手机号接收预约确认和支付提醒。"}
+            </Text>
           </View>
 
           <View className="booking-create-page__field booking-create-page__field--textarea">
-            <Text className="booking-create-page__label">备注信息</Text>
+            <Text className="booking-create-page__label">备注信息（选填）</Text>
             <View className="booking-create-page__textarea-shell">
               <Textarea
                 className="booking-create-page__textarea"
@@ -551,6 +603,9 @@ const BookingCreatePage: React.FC = () => {
                 {notes.length}/500
               </Text>
             </View>
+            <Text className="booking-create-page__field-hint">
+              不填也可以提交，后续可以在沟通或量房阶段继续补充。
+            </Text>
           </View>
         </View>
       </View>

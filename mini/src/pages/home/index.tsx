@@ -45,6 +45,32 @@ const HOME_CATEGORIES: Array<{
   { id: "material", title: "主材", iconName: "material-service" },
 ];
 
+const HOME_TRUST_SIGNALS: Array<{
+  id: string;
+  title: string;
+  description: string;
+  iconName: IconName;
+}> = [
+  {
+    id: "review",
+    title: "案例与评价可看",
+    description: "先看履约标签、案例与业主评价，再决定联系谁。",
+    iconName: "success",
+  },
+  {
+    id: "audit",
+    title: "需求先审核",
+    description: "提交需求后平台先审核，再进入服务商匹配与沟通。",
+    iconName: "identity",
+  },
+  {
+    id: "quote",
+    title: "施工报价后再创建项目",
+    description: "设计确认和施工报价确认是两步，项目不会提前生成。",
+    iconName: "orders",
+  },
+];
+
 const DESIGNER_SORT_OPTIONS = [
   { id: "recommend", label: "综合排序" },
   { id: "rating", label: "评分最高" },
@@ -1071,6 +1097,18 @@ export default function Home() {
           </View>
         </View>
         <Text className="home-page__demand-entry-action">去填写</Text>
+      </View>
+
+      <View className="home-page__trust-strip">
+        {HOME_TRUST_SIGNALS.map((item) => (
+          <View key={item.id} className="home-page__trust-card">
+            <View className="home-page__trust-icon">
+              <Icon name={item.iconName} size={26} color="#111111" />
+            </View>
+            <Text className="home-page__trust-title">{item.title}</Text>
+            <Text className="home-page__trust-desc">{item.description}</Text>
+          </View>
+        ))}
       </View>
 
       {sortMenuVisible ? (
