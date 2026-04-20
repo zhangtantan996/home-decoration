@@ -201,6 +201,49 @@ function isConstructionBridgeStage(stage?: string) {
   ].includes(String(stage || '').trim());
 }
 
+function readConstructionTimelineTitle(stage?: string) {
+  switch (String(stage || '').trim()) {
+    case 'construction_quote_pending':
+      return '施工报价确认';
+    case 'ready_to_start':
+      return '待监理协调开工';
+    case 'in_construction':
+    case 'node_acceptance_in_progress':
+    case 'completed':
+    case 'archived':
+    case 'disputed':
+    case 'payment_paused':
+      return '施工进度';
+    default:
+      return '施工报价准备';
+  }
+}
+
+function readConstructionBridgeDescription(stage?: string, flowSummary?: string, baselineStatus?: string) {
+  const normalizedStage = String(stage || '').trim();
+  const normalizedBaselineStatus = String(baselineStatus || '').trim();
+
+  if (normalizedStage === 'construction_party_pending') {
+    if (normalizedBaselineStatus === 'ready_for_selection') {
+      return '施工报价基础已整理，当前正在匹配施工主体。';
+    }
+    if (normalizedBaselineStatus === 'submitted') {
+      return '施工报价基础已提交，当前正在推进施工主体匹配。';
+    }
+    return '正式方案已确认，设计师正在整理施工报价基础。';
+  }
+
+  if (normalizedStage === 'construction_quote_pending') {
+    return '施工主体已确认，当前待提交正式施工报价。';
+  }
+
+  if (normalizedStage === 'ready_to_start') {
+    return flowSummary || '施工报价已确认，项目进入待监理协调开工。';
+  }
+
+  return flowSummary || '施工桥接已完成，项目已进入监理协调开工或执行阶段。';
+}
+
 function buildBookingTimeline(
   dto: BookingDTO,
   providerType: ProviderRole,
@@ -211,6 +254,7 @@ function buildBookingTimeline(
   designDeliverable?: DesignDeliverableSummaryDTO | null,
   currentStage?: string,
   flowSummary?: string,
+  baselineStatus?: string,
 ): BookingTimelineItemVM[] {
   const providerTypeText = formatProviderTypeText(providerType);
   const depositPaid = readDepositPaid(dto);
@@ -306,16 +350,10 @@ function buildBookingTimeline(
       state: bridgeStarted ? 'done' : proposalId ? 'active' : readTimelineState(deliverableAccepted && !proposalId, false),
     },
     {
-      title: '施工桥接 / 待监理协调开工',
-      description: currentStage === 'construction_party_pending'
-        ? (flowSummary || '报价基线已提交，当前进入施工主体选择与施工桥接。')
-        : currentStage === 'construction_quote_pending'
-          ? (flowSummary || '施工主体已确认，当前等待施工报价确认。')
-          : currentStage === 'ready_to_start'
-            ? (flowSummary || '施工报价已确认，项目进入待监理协调开工。')
-            : bridgeStarted
-              ? (flowSummary || '施工桥接已完成，项目已进入监理协调开工或执行阶段。')
-              : '正式方案确认完成后，会依次进入报价基线、施工主体选择、施工报价确认与待监理协调开工。',
+      title: readConstructionTimelineTitle(currentStage),
+      description: bridgeStarted
+        ? readConstructionBridgeDescription(currentStage, flowSummary, baselineStatus)
+        : '正式方案确认完成后，会依次进入施工报价准备、施工主体选择、施工报价确认与待监理协调开工。',
       state: bridgeStarted ? 'active' : 'pending',
     },
   ];
@@ -381,25 +419,16 @@ function buildStageOverview(response: BookingDetailResponse): BookingStageOvervi
 
   if (bridgeStarted) {
     if (response.currentStage === 'construction_party_pending') {
-      const baselineStatus = String(response.baselineStatus || '').trim();
       return {
-        title: '施工桥接中',
-        description: response.flowSummary
-          || (baselineStatus === 'submitted' || baselineStatus === 'ready_for_selection'
-            ? '报价基线已提交，当前进入施工主体选择与桥接准备。'
-            : '正式方案已确认，当前待提交报价基线并进入施工桥接。'),
-        helperText: '下一步会对比装修公司主体或独立工长，并继续推进施工报价。',
+        title: '施工报价准备中',
+        description: readConstructionBridgeDescription(response.currentStage, response.flowSummary, response.baselineStatus),
+        helperText: '设计师会先整理施工报价基础，再推进施工主体匹配与正式报价。',
       };
     }
     if (response.currentStage === 'construction_quote_pending') {
-      const subjectText = response.constructionSubjectType === 'company'
-        ? `装修公司主体${response.constructionSubjectDisplayName ? `（${response.constructionSubjectDisplayName}）` : ''}`
-        : response.constructionSubjectType === 'foreman'
-          ? `独立工长主体${response.constructionSubjectDisplayName ? `（${response.constructionSubjectDisplayName}）` : ''}`
-          : '施工主体';
       return {
         title: '待确认施工报价',
-        description: response.flowSummary || `${subjectText}已确认，当前等待施工报价提交与确认。`,
+        description: readConstructionBridgeDescription(response.currentStage, response.flowSummary, response.baselineStatus),
         helperText: '施工报价确认后，项目会直接进入待监理协调开工。',
       };
     }
@@ -413,8 +442,8 @@ function buildStageOverview(response: BookingDetailResponse): BookingStageOvervi
       };
     }
     return {
-      title: '施工报价推进中',
-      description: response.flowSummary || '设计阶段已结束，当前进入施工桥接与履约推进。',
+      title: '施工进度中',
+      description: readConstructionBridgeDescription(response.currentStage, response.flowSummary, response.baselineStatus),
       helperText: '监理会持续同步待开工协同、施工执行与节点进展。',
     };
   }
@@ -615,6 +644,7 @@ function adaptBookingDetail(response: BookingDetailResponse): BookingDetailVM {
       response.designDeliverableSummary,
       response.currentStage,
       response.flowSummary,
+      response.baselineStatus,
     ),
     stageOverview: buildStageOverview(response),
     flowSummary: response.flowSummary || undefined,

@@ -43,6 +43,18 @@ function readButtonClassName(tone: StepAction['tone']) {
   return 'button-secondary';
 }
 
+function canViewConstructionProgress(stage?: string) {
+  return [
+    'ready_to_start',
+    'in_construction',
+    'node_acceptance_in_progress',
+    'completed',
+    'archived',
+    'disputed',
+    'payment_paused',
+  ].includes(String(stage || '').trim());
+}
+
 export function BookingDetailPage() {
   const params = useParams();
   const bookingId = Number(params.id || 0);
@@ -101,8 +113,6 @@ export function BookingDetailPage() {
   const budgetIncludes = Object.entries(data.budgetConfirmSummary?.includes || {})
     .filter(([, checked]) => checked)
     .map(([key]) => BUDGET_INCLUDE_LABELS[key] || key);
-  const surveyPhotoCount = data.siteSurveySummary?.photos?.length || 0;
-  const surveyDimensionCount = Object.keys(data.siteSurveySummary?.dimensions || {}).length;
   const budgetRejectProgress = data.budgetConfirmSummary
     ? (data.budgetConfirmSummary.rejectLimit > 0
       ? `${data.budgetConfirmSummary.rejectCount}/${data.budgetConfirmSummary.rejectLimit}`
@@ -116,12 +126,6 @@ export function BookingDetailPage() {
     { label: '装修类型', value: data.renovationType || '待确认' },
     { label: '期望时间', value: data.preferredDate || '待确认' },
   ];
-  const bridgeSummary = data.bridgeConversionSummary;
-  const bridgeChecklistCards = [
-    bridgeSummary?.responsibilityBoundarySummary,
-    bridgeSummary?.scheduleAndAcceptanceSummary,
-    bridgeSummary?.platformGuaranteeSummary,
-  ].filter(Boolean);
 
   const handlePaySurveyDeposit = async () => {
     setPaymentSubmitting(true);
@@ -150,10 +154,10 @@ export function BookingDetailPage() {
       {
         const actions: StepAction[] = [];
         if (data.siteSurveySummary) {
-          actions.push({ key: 'view-site-survey', label: '查看量房资料', to: `/bookings/${data.id}/site-survey`, tone: 'outline' });
+          actions.push({ key: 'view-site-survey', label: '量房资料', to: `/bookings/${data.id}/site-survey`, tone: 'outline' });
         }
         if (data.budgetConfirmSummary) {
-          actions.push({ key: 'view-budget-confirm', label: '查看沟通确认', onClick: () => setBudgetDialogOpen(true), tone: 'outline' });
+          actions.push({ key: 'view-budget-confirm', label: '沟通确认', onClick: () => setBudgetDialogOpen(true), tone: 'outline' });
         }
         return actions;
       }
@@ -192,8 +196,8 @@ export function BookingDetailPage() {
         if (!data.proposalId) return [];
         return [{ key: 'view-proposal', label: '查看方案', to: `/proposals/${data.proposalId}` }];
       case 7:
-        if (!constructionBridgeStarted) return [];
-        return [{ key: 'view-construction-bridge', label: '查看后续进度', to: '/progress' }];
+        if (!constructionBridgeStarted || !canViewConstructionProgress(data.currentStage)) return [];
+        return [{ key: 'view-construction-bridge', label: '项目进度', to: '/progress' }];
       default:
         return [];
     }
@@ -223,19 +227,6 @@ export function BookingDetailPage() {
             <div className={styles.summaryNote}>
               <span>补充说明</span>
               <p>{bookingNote}</p>
-            </div>
-          ) : null}
-
-          {data.siteSurveySummary ? (
-            <div className={styles.summaryNote}>
-              <span>量房资料摘要</span>
-              <p>
-                状态：{data.siteSurveySummary.statusText}；图片 {surveyPhotoCount} 张；空间尺寸 {surveyDimensionCount} 项。
-                {data.siteSurveySummary.submittedAt ? ` 提交于 ${data.siteSurveySummary.submittedAt}。` : ''}
-              </p>
-              <div className="inline-actions">
-                <Link className="button-outline" to={`/bookings/${data.id}/site-survey`}>查看量房明细</Link>
-              </div>
             </div>
           ) : null}
         </article>
@@ -270,64 +261,6 @@ export function BookingDetailPage() {
           </div>
         </aside>
       </section>
-
-      {bridgeSummary ? (
-        <section className={styles.section}>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionCopy}>
-              <h2>施工桥接说明</h2>
-            </div>
-          </div>
-          <div className={styles.summaryGrid}>
-            <article className={styles.summaryItem}>
-              <span>下一责任人</span>
-              <strong>{bridgeSummary.bridgeNextStep?.owner || '待平台继续推进'}</strong>
-            </article>
-            <article className={styles.summaryItem}>
-              <span>报价基线</span>
-              <strong>{bridgeSummary.quoteBaselineSummary?.title || '待提交'}</strong>
-            </article>
-            <article className={styles.summaryItem}>
-              <span>可信背书</span>
-              <strong>{bridgeSummary.trustSignals?.officialReviewHint || '平台会展示案例、评价与履约标签'}</strong>
-            </article>
-          </div>
-          {bridgeSummary.bridgeNextStep?.reason ? (
-            <div className={styles.summaryNote}>
-              <span>为什么值得继续</span>
-              <p>{bridgeSummary.bridgeNextStep.reason}</p>
-            </div>
-          ) : null}
-          {bridgeSummary.constructionSubjectComparison?.length ? (
-            <div className={styles.stepper}>
-              {bridgeSummary.constructionSubjectComparison.slice(0, 3).map((item) => (
-                <article className={styles.step} data-state={item.selected ? 'active' : 'pending'} key={`${item.providerId}-${item.displayName}`}>
-                  <div className={styles.stepIndicator} />
-                  <div className={styles.stepContent}>
-                    <div className={styles.stepTitleRow}>
-                      <h3>{item.displayName}</h3>
-                      <span className="status-chip" data-tone={item.selected ? 'brand' : 'warning'}>
-                        {item.subjectType === 'company' ? '公司主体' : item.subjectType === 'foreman' ? '独立工长' : '施工主体'}
-                      </span>
-                    </div>
-                    <p className={styles.stepDescription}>{item.deliveryHint || item.trustSummary || '待补充施工主体说明'}</p>
-                    <div className="inline-actions">
-                      {item.priceHint ? <span className="status-chip">{item.priceHint}</span> : null}
-                      {item.highlightTags?.slice(0, 2).map((tag) => <span className="status-chip" key={tag}>{tag}</span>)}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : null}
-          {bridgeChecklistCards.map((card) => (
-            <div className={styles.summaryNote} key={card?.title}>
-              <span>{card?.title || '桥接说明'}</span>
-              <p>{(card?.items || []).join('；') || '待补充'}</p>
-            </div>
-          ))}
-        </section>
-      ) : null}
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>

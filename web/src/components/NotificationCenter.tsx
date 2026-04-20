@@ -44,6 +44,14 @@ function mapCategory(item: MessageListItemVM) {
   return mapType(item.type);
 }
 
+function readTypeLabel(item: MessageListItemVM) {
+  const value = item.typeLabel?.trim();
+  if (value) return value;
+  if (item.category === 'payment') return '支付提醒';
+  if (item.category === 'project') return '项目提醒';
+  return '系统通知';
+}
+
 function readActionBadge(item: MessageListItemVM) {
   if (item.actionStatus === 'processed') {
     return { label: '已处理', tone: 'muted' as const };
@@ -298,6 +306,9 @@ export function NotificationCenter({ title, pageSize = 12, topPage = false, show
                   <div className={styles.body}>
                     <strong>{item.title}</strong>
                     <p>{item.content}</p>
+                    <div className={styles.metaRow}>
+                      <span className={styles.typeChip}>{readTypeLabel(item)}</span>
+                    </div>
                   </div>
                 </button>
                 <div className={styles.meta}>

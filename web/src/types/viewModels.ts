@@ -826,6 +826,7 @@ export interface MessageListItemVM {
   createdAt: string;
   isRead: boolean;
   type: string;
+  typeLabel: string;
   category: 'system' | 'project' | 'payment';
   kind: 'info' | 'todo' | 'risk' | 'result' | 'governance';
   priority: 'normal' | 'high' | 'urgent';
