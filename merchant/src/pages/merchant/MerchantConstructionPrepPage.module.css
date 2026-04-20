@@ -1,0 +1,4 @@
+.contentPanel {
+  display: grid;
+  gap: 16px;
+}

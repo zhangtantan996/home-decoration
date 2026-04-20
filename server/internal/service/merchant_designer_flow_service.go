@@ -322,7 +322,7 @@ func buildDesignerFlowSteps(
 		resolveDesignerQuoteStep(budgetConfirm, quote, quoteOrder),
 		resolveDesignerDeliverableStep(quote, quoteOrder, deliverable),
 		resolveDesignerUserConfirmStep(deliverable, proposal, proposalConfirmed),
-		resolveDesignerConstructionPrepStep(proposalConfirmed, preparation),
+		resolveDesignerConstructionPrepStep(booking, proposalConfirmed, preparation),
 		resolveDesignerConstructionStep(proposalConfirmed, preparation, handoff),
 	}
 	return steps
@@ -586,16 +586,20 @@ func resolveDesignerUserConfirmStep(deliverable *model.DesignDeliverable, propos
 	return step
 }
 
-func resolveDesignerConstructionPrepStep(proposalConfirmed bool, preparation *MerchantFlowConstructionPreparation) MerchantFlowStep {
+func resolveDesignerConstructionPrepStep(booking *model.Booking, proposalConfirmed bool, preparation *MerchantFlowConstructionPreparation) MerchantFlowStep {
+	path := ""
+	if booking != nil && booking.ID > 0 {
+		path = fmt.Sprintf("/proposals/flow/%d/construction-prep", booking.ID)
+	}
 	step := MerchantFlowStep{
 		Key:          "construction_prep",
 		Title:        "施工报价准备",
 		UserState:    "设计师会先整理施工报价基础，再进入施工主体选择。",
 		MerchantTodo: "补齐施工前置参数和施工基线清单。",
 		PrimaryAction: &MerchantFlowPrimaryAction{
-			Kind:      "modal",
-			Label:     "去整理",
-			ModalType: "construction_prep",
+			Kind:  "link",
+			Label: "去整理",
+			Path:  path,
 		},
 	}
 	if !proposalConfirmed {
@@ -620,6 +624,9 @@ func resolveDesignerConstructionPrepStep(proposalConfirmed bool, preparation *Me
 	}
 	step.Status = "completed"
 	step.Summary = "施工报价基础已整理完成。"
+	if step.PrimaryAction != nil {
+		step.PrimaryAction.Label = "查看详情"
+	}
 	return step
 }
 

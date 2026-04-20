@@ -26,7 +26,6 @@ import StepPanelBudget from './components/StepPanelBudget';
 import StepPanelQuote from './components/StepPanelQuote';
 import StepPanelDesign from './components/StepPanelDesign';
 import StepPanelProposalConfirm from './components/StepPanelProposalConfirm';
-import StepPanelConstructionPrep from './components/StepPanelConstructionPrep';
 import StepPanelConstructionHandoff from './components/StepPanelConstructionHandoff';
 import {
   merchantBookingApi,
@@ -98,7 +97,6 @@ const MerchantProjectFlow: React.FC = () => {
     | 'design_fee_quote'
     | 'design_deliverable'
     | 'proposal_confirm'
-    | 'construction_prep'
     | 'construction_handoff'
     | null
   >(null);
@@ -128,13 +126,28 @@ const MerchantProjectFlow: React.FC = () => {
     const step = searchParams.get('step') as MerchantFlowStep['key'] | null;
     const mode = searchParams.get('mode');
     if (mode !== 'edit' || !step) return;
+    if (step === 'construction_prep') {
+      navigate(`/proposals/flow/${bookingId}/construction-prep`, { replace: true });
+      return;
+    }
     const target = sortedSteps.find((item) => item.key === step);
     if (target?.primaryAction?.kind === 'modal' && target.primaryAction.modalType) {
       setActiveModal(target.primaryAction.modalType);
       setActiveModalStepKey(target.key);
       setActiveModalMode('edit');
     }
-  }, [flowData, searchParams, sortedSteps]);
+  }, [bookingId, flowData, navigate, searchParams, sortedSteps]);
+
+  useEffect(() => {
+    if (!flowData) return;
+    const step = searchParams.get('step') as MerchantFlowStep['key'] | null;
+    if (!step) return;
+    const rafId = window.requestAnimationFrame(() => {
+      const target = document.getElementById(`merchant-flow-step-${step}`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [flowData, searchParams]);
 
   const loadFlowData = async () => {
     if (!Number.isFinite(bookingId) || bookingId <= 0) {
@@ -244,7 +257,7 @@ const MerchantProjectFlow: React.FC = () => {
     if (linkAction?.kind === 'link' && linkPath && step.status !== 'not_started') {
       return (
         <Button type={isCurrent ? 'primary' : 'default'} onClick={() => navigate(linkPath)}>
-          {linkAction.label || '查看详情'}
+          {linkAction.label || getStepActionLabel(step)}
         </Button>
       );
     }
@@ -385,18 +398,6 @@ const MerchantProjectFlow: React.FC = () => {
             initialQuote={flowData.designFeeQuote || null}
           />
         );
-      case 'construction_prep':
-        return (
-          <StepPanelConstructionPrep
-            bookingId={bookingId}
-            bookingAddress={flowData.booking.address}
-            isActive={editable}
-            onComplete={handleModalComplete}
-            isPast={isPast}
-            viewOnly={viewOnly}
-            initialSummary={flowData.constructionPreparation || null}
-          />
-        );
       case 'construction_handoff':
         return (
           <StepPanelConstructionHandoff
@@ -531,7 +532,7 @@ const MerchantProjectFlow: React.FC = () => {
         title={activeModalStep ? `${activeModalStep.title}${activeModalMode === 'view' ? '详情' : '处理'}` : '流程操作'}
         onCancel={closeModal}
         footer={null}
-        width={activeModal === 'construction_prep' ? 1120 : 960}
+        width={960}
         centered
         destroyOnClose={false}
       >

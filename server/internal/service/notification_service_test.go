@@ -191,9 +191,9 @@ func TestNotificationDispatcherClosureLifecycleActionURLsUseRealRoutes(t *testin
 		notificationType string
 		actionURL        string
 	}{
-		{NotificationTypeProjectSettlementScheduled, "/projects/3001"},
-		{NotificationTypeProjectPayoutProcessing, "/projects/3001"},
-		{NotificationTypeProjectPayoutFailed, "/projects/3001"},
+		{NotificationTypeProjectSettlementScheduled, "/income?projectId=3001"},
+		{NotificationTypeProjectPayoutProcessing, "/income?projectId=3001"},
+		{NotificationTypeProjectPayoutFailed, "/income?projectId=3001"},
 		{NotificationTypeProjectPayoutFailed, "/finance/payouts"},
 		{NotificationTypeProjectCaseDraftGenerated, "/cases"},
 		{NotificationTypeCaseAuditCreated, "/cases/manage"},
@@ -205,6 +205,39 @@ func TestNotificationDispatcherClosureLifecycleActionURLsUseRealRoutes(t *testin
 		}
 		if item.ActionURL != expected[idx].actionURL {
 			t.Fatalf("expected notification %d actionUrl=%s, got %s", idx, expected[idx].actionURL, item.ActionURL)
+		}
+	}
+}
+
+func TestNotificationDispatcherChangeOrderAdminActionURLsUseOrderCenterFilters(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+	dispatcher := NewNotificationDispatcher()
+
+	admin := &model.SysAdmin{
+		ID:       7102,
+		Username: "admin_change_order_route_test",
+		Password: "hashed",
+		Status:   1,
+	}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+
+	dispatcher.NotifyChangeOrderDecision(0, 0, 901, 1001, true, "")
+	dispatcher.NotifyChangeOrderSettlementRequired(901, 1002, "减项结算")
+	dispatcher.NotifyChangeOrderSettled(901, 1003, "减项结算")
+
+	var notifications []model.Notification
+	if err := db.Where("user_type = ?", "admin").Order("id ASC").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 3 {
+		t.Fatalf("expected 3 admin notifications, got %d", len(notifications))
+	}
+
+	for idx, item := range notifications {
+		if item.ActionURL != "/orders?projectId=901&focus=change-order" {
+			t.Fatalf("expected notification %d actionUrl to target filtered order center, got %s", idx, item.ActionURL)
 		}
 	}
 }

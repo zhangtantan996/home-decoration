@@ -661,7 +661,6 @@ export interface MerchantFlowPrimaryAction {
         | 'design_fee_quote'
         | 'design_deliverable'
         | 'proposal_confirm'
-        | 'construction_prep'
         | 'construction_handoff';
     path?: string;
 }
@@ -766,6 +765,8 @@ export interface MerchantRecommendedForeman {
     priceCoverageRate?: number;
     matchedItemCount?: number;
     missingItemCount?: number;
+    estimatedTotalCent?: number;
+    missingPriceTotalCent?: number;
     reasons?: string[];
 }
 
@@ -1455,10 +1456,18 @@ export interface MerchantIncomeListData<T> {
     pageSize: number;
 }
 
+export interface MerchantIncomeListParams {
+    type?: string;
+    status?: string;
+    page?: number;
+    pageSize?: number;
+    projectId?: number;
+}
+
 // 财务管理
 export const merchantIncomeApi = {
     summary: async () => unwrapData<MerchantIncomeSummary>(await merchantApi.get('/merchant/income/summary'), '获取收入概览失败'),
-    list: async <T = Record<string, unknown>>(params?: Record<string, unknown>) =>
+    list: async <T = Record<string, unknown>>(params?: MerchantIncomeListParams) =>
         unwrapData<MerchantIncomeListData<T>>(await merchantApi.get('/merchant/income/list', { params }), '获取收入列表失败'),
 };
 
@@ -1592,11 +1601,15 @@ export interface MerchantNotificationItem {
     title: string;
     content: string;
     type: string;
+    typeLabel?: string;
     relatedId: number;
     relatedType: string;
     isRead: boolean;
     actionUrl: string;
     createdAt: string;
+    actionRequired?: boolean;
+    actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+    actionLabel?: string;
 }
 
 export interface MerchantNotificationListData {

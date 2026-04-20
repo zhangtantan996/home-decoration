@@ -128,6 +128,8 @@ export const MERCHANT_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   'merchant.application.rejected': '入驻提醒',
   'case_audit.approved': '案例审核',
   'case_audit.rejected': '案例审核',
+  'project.planned_start_updated': '待开工',
+  'project.supervision_risk_escalated': '监理风险',
   'booking.created': '预约提醒',
   'booking.confirmed': '预约提醒',
   'booking.cancelled': '预约提醒',

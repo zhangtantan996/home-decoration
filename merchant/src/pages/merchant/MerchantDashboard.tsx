@@ -288,14 +288,14 @@ const MerchantDashboard: React.FC = () => {
                     { label: isCompany ? '待推进线索' : '待响应线索', value: Number(stats?.pendingLeads || 0), note: '先判断是否接手', tone: Number(stats?.pendingLeads || 0) > 0 ? 'warning' : 'neutral' },
                     { label: '方案流程待推进', value: proposalWorkflowCount, note: '量房、沟通、报价、交付链路', tone: proposalWorkflowCount > 0 ? 'accent' : 'neutral' },
                     { label: '待确认方案', value: Number(stats?.pendingProposals || 0), note: '用户确认中的方案', tone: Number(stats?.pendingProposals || 0) > 0 ? 'warning' : 'neutral' },
-                    { label: isCompany ? '项目总览' : '已转项目', value: Number(stats?.activeProjects || 0), note: '只看已转项目', tone: Number(stats?.activeProjects || 0) > 0 ? 'success' : 'neutral' },
+                    { label: '已进履约', value: Number(stats?.activeProjects || 0), note: '只看待开工 / 开工中 / 已完工项目', tone: Number(stats?.activeProjects || 0) > 0 ? 'success' : 'neutral' },
                     { label: '治理分层', value: governanceTier || '待同步', note: governanceHint, tone: governanceTier === '风险观察期' ? 'warning' : 'success' },
                 ],
             tasks: isForeman
                 ? [
-                    { label: '待接施工机会', value: Number(stats?.pendingLeads || 0), hint: '先做承接判断', path: '/bookings', actionLabel: '去查看' },
-                    { label: '待转施工报价', value: Number(stats?.pendingProposals || 0), hint: '把报价推进到确认', path: '/proposals', actionLabel: '去推进' },
+                    { label: '待报价清单', value: Number(stats?.pendingProposals || 0), hint: '查看已分配给我的施工报价任务', path: '/quote-lists', actionLabel: '去报价' },
                     { label: '项目履约中', value: Number(stats?.activeProjects || 0), hint: '持续盯开工和验收', path: '/projects', actionLabel: '去查看' },
+                    { label: '价格库维护', value: '去确认', hint: '确保价格库初始化和更新', path: '/price-book', actionLabel: '去查看' },
                     { label: '平台建议', value: governanceTier || '待同步', hint: governanceHint, path: '/settings', actionLabel: '去查看' },
                 ]
                 : [
@@ -306,7 +306,9 @@ const MerchantDashboard: React.FC = () => {
                 ],
             secondaryActions: [
                 { icon: <WalletOutlined />, label: '财务中心', hint: `可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', emphasis: true },
-                { icon: <AppstoreOutlined />, label: '内容资产', hint: isForeman ? '工艺与案例内容' : '案例与作品管理', path: '/cases' },
+                isForeman
+                    ? { icon: <AppstoreOutlined />, label: '价格库', hint: '维护工长报价单价库', path: '/price-book' }
+                    : { icon: <AppstoreOutlined />, label: '内容资产', hint: isForeman ? '工艺与案例内容' : '案例与作品管理', path: '/cases' },
                 { icon: <SettingOutlined />, label: '资料设置', hint: '维护对外资料', path: '/settings' },
             ],
         };

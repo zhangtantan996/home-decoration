@@ -16,11 +16,15 @@ interface Notification {
     title: string;
     content: string;
     type: string;
+    typeLabel?: string;
     relatedId: number;
     relatedType: string;
     isRead: boolean;
     actionUrl: string;
     createdAt: string;
+    actionRequired?: boolean;
+    actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+    actionLabel?: string;
 }
 
 type NotificationListResponse = { data?: { list?: Notification[] } };
@@ -64,6 +68,9 @@ const ADMIN_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
     'project.completion.submitted': '完工验收',
     'project.completion.approved': '完工验收',
     'project.completion.rejected': '完工验收',
+    'project.construction_bridge_pending': '施工桥接',
+    'project.planned_start_updated': '待开工',
+    'project.supervision_risk_escalated': '监理风险',
     'project.settlement.scheduled': '结算提醒',
     'project.payout.processing': '出款提醒',
     'project.payout.paid': '出款提醒',
@@ -83,6 +90,25 @@ const ADMIN_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
 };
 
 const resolveAdminNotificationLabel = (type: string) => ADMIN_NOTIFICATION_TYPE_LABELS[type] || '系统通知';
+
+const resolveAdminNotificationTypeLabel = (item: Notification) =>
+    String(item.typeLabel || '').trim() || resolveAdminNotificationLabel(item.type);
+
+const resolveAdminNotificationActionTag = (item: Notification) => {
+    if (item.actionStatus === 'processed') {
+        return { label: '已处理', color: 'default' as const };
+    }
+    if (item.actionStatus === 'expired') {
+        return { label: '已过期', color: 'orange' as const };
+    }
+    if (item.actionRequired && item.actionLabel) {
+        return { label: item.actionLabel, color: 'blue' as const };
+    }
+    if (item.actionLabel) {
+        return { label: item.actionLabel, color: 'default' as const };
+    }
+    return null;
+};
 
 const resolveAdminNotificationTagColor = (type: string) => {
     if (type.startsWith('payment.') || type.startsWith('refund.') || type.startsWith('withdraw.')) {
@@ -467,7 +493,9 @@ const NotificationDropdown: React.FC = () => {
                         style={{ padding: 40 }}
                     />
                 ) : (
-                    notifications.map(item => (
+                    notifications.map(item => {
+                        const actionTag = resolveAdminNotificationActionTag(item);
+                        return (
                         <div
                             key={item.id}
                             onClick={() => handleNotificationClick(item)}
@@ -495,8 +523,13 @@ const NotificationDropdown: React.FC = () => {
                                             color={resolveAdminNotificationTagColor(item.type)}
                                             style={{ marginInlineStart: 8, marginInlineEnd: 0 }}
                                         >
-                                            {resolveAdminNotificationLabel(item.type)}
+                                            {resolveAdminNotificationTypeLabel(item)}
                                         </Tag>
+                                        {actionTag ? (
+                                            <Tag color={actionTag.color} style={{ marginInlineStart: 8, marginInlineEnd: 0 }}>
+                                                {actionTag.label}
+                                            </Tag>
+                                        ) : null}
                                         {!item.isRead && (
                                             <span style={{
                                                 display: 'inline-block',
@@ -545,7 +578,8 @@ const NotificationDropdown: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
         </div>

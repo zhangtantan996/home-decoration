@@ -52,7 +52,7 @@ func TestAdminBusinessFlowServiceResolveAvailableAdminActionsForQuoteAndChangeOr
 	if !ok {
 		t.Fatalf("expected view_change_orders action")
 	}
-	if viewChangeAction.Route != "/orders?projectId=901" {
+	if viewChangeAction.Route != "/orders?projectId=901&focus=change-order" {
 		t.Fatalf("unexpected change order route: %s", viewChangeAction.Route)
 	}
 }

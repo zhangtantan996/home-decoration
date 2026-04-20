@@ -111,17 +111,19 @@ type QuoteTaskValidationResult struct {
 }
 
 type RecommendedForeman struct {
-	ProviderID        uint64   `json:"providerId"`
-	ProviderName      string   `json:"providerName"`
-	ProviderType      int8     `json:"providerType"`
-	ProviderSubType   string   `json:"providerSubType"`
-	RegionMatched     bool     `json:"regionMatched"`
-	WorkTypeMatched   bool     `json:"workTypeMatched"`
-	AcceptBooking     bool     `json:"acceptBooking"`
-	PriceCoverageRate float64  `json:"priceCoverageRate"`
-	MatchedItemCount  int      `json:"matchedItemCount"`
-	MissingItemCount  int      `json:"missingItemCount"`
-	Reasons           []string `json:"reasons"`
+	ProviderID            uint64   `json:"providerId"`
+	ProviderName          string   `json:"providerName"`
+	ProviderType          int8     `json:"providerType"`
+	ProviderSubType       string   `json:"providerSubType"`
+	RegionMatched         bool     `json:"regionMatched"`
+	WorkTypeMatched       bool     `json:"workTypeMatched"`
+	AcceptBooking         bool     `json:"acceptBooking"`
+	PriceCoverageRate     float64  `json:"priceCoverageRate"`
+	MatchedItemCount      int      `json:"matchedItemCount"`
+	MissingItemCount      int      `json:"missingItemCount"`
+	EstimatedTotalCent    int64    `json:"estimatedTotalCent"`
+	MissingPriceTotalCent int64    `json:"missingPriceTotalCent"`
+	Reasons               []string `json:"reasons"`
 }
 
 type QuoteTaskUserView struct {
@@ -1137,6 +1139,13 @@ func containsAnyKeyword(text string, keywords ...string) bool {
 	return false
 }
 
+// recommendForemanMinCoverageRate is the minimum price coverage rate required
+// for a foreman to appear in the recommendation list.
+const recommendForemanMinCoverageRate = 0.60
+
+// recommendForemanMaxResults is the maximum number of foremen returned.
+const recommendForemanMaxResults = 3
+
 func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForeman, error) {
 	var quoteList model.QuoteList
 	if err := repository.DB.First(&quoteList, quoteListID).Error; err != nil {
@@ -1158,6 +1167,35 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 		return nil, fmt.Errorf("查询报价任务明细失败: %w", err)
 	}
 
+	// Build a lookup for reference prices from the standard library, used to
+	// estimate missing-price items when a foreman's price book doesn't cover them.
+	libraryRefPrices := make(map[uint64]int64)
+	{
+		standardIDs := make([]uint64, 0, len(taskItems))
+		for _, item := range taskItems {
+			sid := item.StandardItemID
+			if sid == 0 {
+				sid = item.MatchedStandardItemID
+			}
+			if sid > 0 {
+				standardIDs = append(standardIDs, sid)
+			}
+		}
+		if len(standardIDs) > 0 {
+			var libraryItems []model.QuoteLibraryItem
+			if err := repository.DB.
+				Select("id", "reference_price_cent").
+				Where("id IN ?", standardIDs).
+				Find(&libraryItems).Error; err == nil {
+				for _, li := range libraryItems {
+					if li.ReferencePriceCent > 0 {
+						libraryRefPrices[li.ID] = li.ReferencePriceCent
+					}
+				}
+			}
+		}
+	}
+
 	var providers []model.Provider
 	if err := repository.DB.Where("provider_type IN ? AND status = ?", []int8{2, 3}, 1).Find(&providers).Error; err != nil {
 		return nil, fmt.Errorf("查询施工主体失败: %w", err)
@@ -1170,10 +1208,21 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 		if err := repository.DB.Where("provider_id = ?", provider.ID).First(&setting).Error; err == nil {
 			acceptBooking = setting.AcceptBooking
 		}
+
+		// Filter: must be accepting bookings
+		if !acceptBooking {
+			continue
+		}
+
 		book, err := s.getCurrentPriceBook(provider.ID)
 		if err != nil {
 			continue
 		}
+		// Filter: must have an active (published) price book
+		if book.Status != model.QuotePriceBookStatusActive {
+			continue
+		}
+
 		var priceItems []model.QuotePriceBookItem
 		if err := repository.DB.Where("price_book_id = ? AND status = ?", book.ID, model.QuoteLibraryItemStatusEnabled).Find(&priceItems).Error; err != nil {
 			return nil, fmt.Errorf("查询工长价格项失败: %w", err)
@@ -1183,7 +1232,10 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 			priceByStandardID[item.StandardItemID] = item
 		}
 
+		// Calculate price coverage and estimated construction total.
 		matchedItems := 0
+		var estimatedTotalCent int64
+		var missingPriceTotalCent int64
 		for _, taskItem := range taskItems {
 			standardID := taskItem.StandardItemID
 			if standardID == 0 {
@@ -1192,14 +1244,33 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 			if standardID == 0 {
 				continue
 			}
-			if _, ok := priceByStandardID[standardID]; ok {
+			quantity := taskItem.Quantity
+			if quantity <= 0 {
+				quantity = 1
+			}
+			if priceItem, ok := priceByStandardID[standardID]; ok {
 				matchedItems++
+				lineAmount := int64(math.Ceil(float64(priceItem.UnitPriceCent) * quantity))
+				if priceItem.MinChargeCent > 0 && lineAmount < priceItem.MinChargeCent {
+					lineAmount = priceItem.MinChargeCent
+				}
+				estimatedTotalCent += lineAmount
+			} else {
+				// Use standard library reference price as fallback for missing items.
+				if refPrice, hasRef := libraryRefPrices[standardID]; hasRef {
+					missingPriceTotalCent += int64(math.Ceil(float64(refPrice) * quantity))
+				}
 			}
 		}
 		totalItems := len(taskItems)
 		coverage := 0.0
 		if totalItems > 0 {
 			coverage = float64(matchedItems) / float64(totalItems)
+		}
+
+		// Filter: minimum price coverage rate
+		if coverage < recommendForemanMinCoverageRate {
+			continue
 		}
 
 		providerAreas := parseJSONStringArray(provider.ServiceArea)
@@ -1212,9 +1283,7 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 		if workTypesMatched {
 			reasons = append(reasons, "工种匹配")
 		}
-		if acceptBooking {
-			reasons = append(reasons, "当前可接单")
-		}
+		reasons = append(reasons, "当前可接单")
 		if coverage > 0 {
 			reasons = append(reasons, fmt.Sprintf("价格覆盖率 %.0f%%", coverage*100))
 		}
@@ -1230,24 +1299,23 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 				}
 				return nil
 			}()),
-			ProviderType:      provider.ProviderType,
-			ProviderSubType:   provider.SubType,
-			RegionMatched:     regionMatched,
-			WorkTypeMatched:   workTypesMatched,
-			AcceptBooking:     acceptBooking,
-			PriceCoverageRate: coverage,
-			MatchedItemCount:  matchedItems,
-			MissingItemCount:  totalItems - matchedItems,
-			Reasons:           reasons,
+			ProviderType:          provider.ProviderType,
+			ProviderSubType:       provider.SubType,
+			RegionMatched:         regionMatched,
+			WorkTypeMatched:       workTypesMatched,
+			AcceptBooking:         acceptBooking,
+			PriceCoverageRate:     coverage,
+			MatchedItemCount:      matchedItems,
+			MissingItemCount:      totalItems - matchedItems,
+			EstimatedTotalCent:    estimatedTotalCent,
+			MissingPriceTotalCent: missingPriceTotalCent,
+			Reasons:               reasons,
 		})
 	}
 
 	sort.SliceStable(recommendations, func(i, j int) bool {
 		left := recommendations[i]
 		right := recommendations[j]
-		if left.AcceptBooking != right.AcceptBooking {
-			return left.AcceptBooking
-		}
 		if left.RegionMatched != right.RegionMatched {
 			return left.RegionMatched
 		}
@@ -1257,8 +1325,17 @@ func (s *QuoteService) RecommendForemen(quoteListID uint64) ([]RecommendedForema
 		if math.Abs(left.PriceCoverageRate-right.PriceCoverageRate) > 0.0001 {
 			return left.PriceCoverageRate > right.PriceCoverageRate
 		}
+		// Lower estimated price is preferred when coverage is similar.
+		if left.EstimatedTotalCent != right.EstimatedTotalCent {
+			return left.EstimatedTotalCent < right.EstimatedTotalCent
+		}
 		return left.ProviderID < right.ProviderID
 	})
+
+	// Cap the result set.
+	if len(recommendations) > recommendForemanMaxResults {
+		recommendations = recommendations[:recommendForemanMaxResults]
+	}
 	return recommendations, nil
 }
 

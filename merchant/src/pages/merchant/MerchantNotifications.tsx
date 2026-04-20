@@ -37,6 +37,32 @@ const formatRelativeTime = (value: string) => {
     return formatServerDateTime(value);
 };
 
+const resolveNotificationTypeLabel = (item: MerchantNotificationItem) =>
+    String(item.typeLabel || '').trim() || MERCHANT_NOTIFICATION_TYPE_LABELS[item.type] || '系统通知';
+
+const resolveNotificationActionTag = (item: MerchantNotificationItem) => {
+    if (item.actionStatus === 'processed') {
+        return { label: '已处理', color: 'default' as const };
+    }
+    if (item.actionStatus === 'expired') {
+        return { label: '已过期', color: 'orange' as const };
+    }
+    if (item.actionRequired && item.actionLabel) {
+        return { label: item.actionLabel, color: 'blue' as const };
+    }
+    if (item.actionLabel) {
+        return { label: item.actionLabel, color: 'default' as const };
+    }
+  return null;
+};
+
+const resolveOpenLabel = (item: MerchantNotificationItem) => {
+    if (item.actionStatus === 'processed' || item.actionStatus === 'expired') {
+        return '查看详情';
+    }
+    return String(item.actionLabel || '').trim() || '查看详情';
+};
+
 const MerchantNotifications: React.FC = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
@@ -177,7 +203,9 @@ const MerchantNotifications: React.FC = () => {
                         <List
                             itemLayout="vertical"
                             dataSource={notifications}
-                            renderItem={(item) => (
+                            renderItem={(item) => {
+                                const actionTag = resolveNotificationActionTag(item);
+                                return (
                                 <List.Item
                                     key={item.id}
                                     actions={[
@@ -203,7 +231,7 @@ const MerchantNotifications: React.FC = () => {
                                                 disabled={mutating}
                                                 onClick={() => void handleOpen(item)}
                                             >
-                                                查看详情
+                                                {resolveOpenLabel(item)}
                                             </Button>
                                         ) : (
                                             <span key={`open-${item.id}`} />
@@ -227,15 +255,17 @@ const MerchantNotifications: React.FC = () => {
                                                 <span>{item.title}</span>
                                                 {!item.isRead ? <Tag color="gold">未读</Tag> : <Tag>已读</Tag>}
                                                 <Tag color={getMerchantNotificationTagColor(item.type)}>
-                                                    {MERCHANT_NOTIFICATION_TYPE_LABELS[item.type] || '系统通知'}
+                                                    {resolveNotificationTypeLabel(item)}
                                                 </Tag>
+                                                {actionTag ? <Tag color={actionTag.color}>{actionTag.label}</Tag> : null}
                                             </Space>
                                         )}
                                         description={formatRelativeTime(item.createdAt)}
                                     />
                                     <div style={{ color: '#475569', lineHeight: 1.7 }}>{item.content}</div>
                                 </List.Item>
-                            )}
+                                );
+                            }}
                         />
 
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 16 }}>

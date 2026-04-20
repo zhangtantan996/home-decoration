@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { merchantIncomeApi } from '../../services/merchantApi';
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Space, Table, Tabs, Tag, message } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { Alert, Button, Space, Table, Tabs, Tag, message } from 'antd';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
@@ -16,6 +16,7 @@ interface IncomeRecord {
     id: number;
     orderId: number;
     bookingId: number;
+    projectId: number;
     type: string;
     typeLabel: string;
     amount: number;
@@ -44,6 +45,7 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 
 const MerchantIncome: React.FC = () => {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [loading, setLoading] = useState(false);
     const [summary, setSummary] = useState({
         totalIncome: 0,
@@ -56,25 +58,23 @@ const MerchantIncome: React.FC = () => {
     const [total, setTotal] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [activeTab, setActiveTab] = useState('all');
+    const projectIdFilter = useMemo(() => {
+        const raw = searchParams.get('projectId');
+        if (!raw) return undefined;
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    }, [searchParams]);
 
-    useEffect(() => {
-        void fetchSummary();
-    }, []);
-
-    useEffect(() => {
-        void fetchIncomeList();
-    }, [currentPage, activeTab]);
-
-    const fetchSummary = async () => {
+    const fetchSummary = useCallback(async () => {
         try {
             const result = await merchantIncomeApi.summary();
             setSummary(result);
         } catch (error) {
             message.error(getErrorMessage(error, '获取收入概览失败'));
         }
-    };
+    }, []);
 
-    const fetchIncomeList = async () => {
+    const fetchIncomeList = useCallback(async () => {
         setLoading(true);
         try {
             const status = activeTab === 'all' ? '' : activeTab;
@@ -82,6 +82,7 @@ const MerchantIncome: React.FC = () => {
                 page: currentPage,
                 pageSize: 10,
                 status,
+                projectId: projectIdFilter,
             });
             setIncomeList(result.list || []);
             setTotal(result.total || 0);
@@ -90,7 +91,28 @@ const MerchantIncome: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [activeTab, currentPage, projectIdFilter]);
+
+    const clearProjectFilter = useCallback(() => {
+        const next = new URLSearchParams(searchParams);
+        next.delete('projectId');
+        setSearchParams(next, { replace: true });
+    }, [searchParams, setSearchParams]);
+
+    useEffect(() => {
+        void fetchSummary();
+    }, [fetchSummary]);
+
+    useEffect(() => {
+        void fetchIncomeList();
+    }, [fetchIncomeList]);
+
+    useEffect(() => {
+        if (projectIdFilter) {
+            setActiveTab('all');
+        }
+        setCurrentPage(1);
+    }, [projectIdFilter]);
 
     const getStatusTag = (status: number, label: string) => {
         const colors: Record<number, string> = {
@@ -147,6 +169,13 @@ const MerchantIncome: React.FC = () => {
             title: '关联订单',
             dataIndex: 'orderId',
             key: 'orderId',
+            render: (id: number) => (id ? `#${id}` : '-'),
+            width: 100,
+        },
+        {
+            title: '关联项目',
+            dataIndex: 'projectId',
+            key: 'projectId',
             render: (id: number) => (id ? `#${id}` : '-'),
             width: 100,
         },
@@ -234,6 +263,20 @@ const MerchantIncome: React.FC = () => {
                         style={{ marginBottom: 16 }}
                     />
 
+                    {projectIdFilter ? (
+                        <Alert
+                            showIcon
+                            type="info"
+                            style={{ marginBottom: 16 }}
+                            message={`当前列表仅查看项目 #${projectIdFilter} 的结算/出款记录，顶部概览仍为全局累计`}
+                            action={(
+                                <Button size="small" onClick={clearProjectFilter}>
+                                    清除筛选
+                                </Button>
+                            )}
+                        />
+                    ) : null}
+
                     <Table
                         columns={columns}
                         dataSource={incomeList}
@@ -247,7 +290,7 @@ const MerchantIncome: React.FC = () => {
                             onChange: (page) => setCurrentPage(page),
                             showTotal: (count) => `共 ${count} 条`,
                         }}
-                        scroll={{ x: 800 }}
+                        scroll={{ x: 900 }}
                     />
                 </MerchantSectionCard>
             </MerchantContentPanel>

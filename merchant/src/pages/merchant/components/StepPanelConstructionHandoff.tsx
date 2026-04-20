@@ -235,73 +235,105 @@ const StepPanelConstructionHandoff: React.FC<StepPanelConstructionHandoffProps> 
           </div>
         </Card>
 
-        <Card title="施工主体推荐" bordered={false} style={sectionCardStyle}>
-          {(preparation?.recommendedForemen?.length || 0) === 0 ? (
-            <Empty
-              description={preparation?.missingFields?.length ? '请先完成施工报价准备' : '暂无推荐结果'}
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-            />
-          ) : (
-            <Radio.Group
-              value={selectedForemanId || undefined}
-              onChange={(event) => setSelectedForemanId(Number(event.target.value))}
-              style={{ width: '100%' }}
-              disabled={viewOnly || !isActive || Boolean(preparation?.selectedForemanId)}
-            >
-              <div style={{ display: 'grid', gap: 12 }}>
-                {(preparation?.recommendedForemen || []).map((item: MerchantRecommendedForeman) => (
-                  (() => {
-                    const totalItemCount = (item.matchedItemCount || 0) + (item.missingItemCount || 0);
+        <Card title={preparation?.selectedForemanId ? "已选施工主体" : "施工主体推荐"} bordered={false} style={sectionCardStyle}>
+          {(() => {
+            const isAlreadySelected = Boolean(preparation?.selectedForemanId);
+            const displayForemen = isAlreadySelected && preparation?.recommendedForemen
+              ? preparation.recommendedForemen.filter(
+                  (item: MerchantRecommendedForeman) => item.providerId === preparation.selectedForemanId
+                )
+              : preparation?.recommendedForemen || [];
+
+            if (displayForemen.length === 0) {
+              return (
+                <Empty
+                  description={preparation?.missingFields?.length ? '请先完成施工报价准备' : '暂无推荐结果'}
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              );
+            }
+
+            return (
+              <Radio.Group
+                value={selectedForemanId || undefined}
+                onChange={(event) => setSelectedForemanId(Number(event.target.value))}
+                style={{ width: '100%' }}
+                disabled={viewOnly || !isActive || isAlreadySelected}
+              >
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {displayForemen.map((item: MerchantRecommendedForeman) => {
+                    const estimatedYuan = (item.estimatedTotalCent || 0) / 100;
+                    const coveragePct = Math.round((item.priceCoverageRate || 0) * 100);
+                    const missingCount = item.missingItemCount || 0;
+                    const isSelected = selectedForemanId === item.providerId;
+                    const isDisabled = viewOnly || !isActive || isAlreadySelected;
                     return (
-                  <label
-                    key={item.providerId}
-                    style={{
-                      display: 'grid',
-                      gap: 10,
-                      padding: 16,
-                      borderRadius: 16,
-                      border: selectedForemanId === item.providerId ? '1px solid #2563eb' : '1px solid #e2e8f0',
-                      background: selectedForemanId === item.providerId ? '#eff6ff' : '#ffffff',
-                      cursor: viewOnly || !isActive || Boolean(preparation?.selectedForemanId) ? 'default' : 'pointer',
-                    }}
-                  >
-                    <Space align="start" style={{ justifyContent: 'space-between', width: '100%' }}>
-                      <Space size={12} align="start">
-                        <Radio value={item.providerId} />
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          <div style={{ color: '#0f172a', fontSize: 16, fontWeight: 600 }}>
-                            {item.providerName}
-                          </div>
-                          <Space wrap size={8}>
-                            {item.acceptBooking ? <Tag color="success">可接单</Tag> : <Tag>暂停接单</Tag>}
-                            {item.regionMatched ? <Tag color="blue">区域匹配</Tag> : null}
-                            {item.workTypeMatched ? <Tag color="purple">工种匹配</Tag> : null}
+                      <label
+                        key={item.providerId}
+                        style={{
+                          display: 'grid',
+                          gap: 12,
+                          padding: 16,
+                          borderRadius: 16,
+                          border: isSelected ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                          background: isSelected ? '#eff6ff' : '#ffffff',
+                          cursor: isDisabled ? 'default' : 'pointer',
+                        }}
+                      >
+                        <Space align="start" style={{ justifyContent: 'space-between', width: '100%' }}>
+                          <Space size={12} align="start">
+                            {!isAlreadySelected && <Radio value={item.providerId} />}
+                            <div style={{ display: 'grid', gap: 6 }}>
+                              <div style={{ color: '#0f172a', fontSize: 16, fontWeight: 600 }}>
+                                {item.providerName}
+                              </div>
+                              <Space wrap size={6}>
+                                <Tag color="success">可接单</Tag>
+                                {item.regionMatched ? <Tag color="blue">区域匹配</Tag> : null}
+                                {item.workTypeMatched ? <Tag color="purple">工种匹配</Tag> : null}
+                              </Space>
+                            </div>
                           </Space>
-                        </div>
-                      </Space>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: '#0f172a', fontSize: 18, fontWeight: 700 }}>
-                          {Math.round((item.priceCoverageRate || 0) * 100)}%
-                        </div>
-                        <Text type="secondary">价格覆盖率</Text>
-                      </div>
-                    </Space>
+                          <div style={{ textAlign: 'right', minWidth: 120 }}>
+                            <div style={{ color: '#0f172a', fontSize: 22, fontWeight: 700, lineHeight: 1.2 }}>
+                              ¥{estimatedYuan > 0 ? estimatedYuan.toLocaleString('zh-CN', { maximumFractionDigits: 0 }) : '—'}
+                            </div>
+                            <Text type="secondary" style={{ fontSize: 12 }}>系统预估施工报价</Text>
+                          </div>
+                        </Space>
 
-                    <Space wrap size={10}>
-                      <Text type="secondary">{`命中 ${item.matchedItemCount || 0}${totalItemCount > 0 ? ` / ${totalItemCount}` : ''}`}</Text>
-                      <Text type="secondary">{`缺价 ${item.missingItemCount || 0} 项`}</Text>
-                    </Space>
-
-                    {item.reasons?.length ? (
-                      <Text type="secondary">{item.reasons.join('；')}</Text>
-                    ) : null}
-                  </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: isAlreadySelected ? 0 : 32 }}>
+                          <div
+                            style={{
+                              flex: 1,
+                              maxWidth: 120,
+                              height: 4,
+                              borderRadius: 2,
+                              background: '#e2e8f0',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: '100%',
+                                width: `${coveragePct}%`,
+                                borderRadius: 2,
+                                background: coveragePct >= 90 ? '#22c55e' : coveragePct >= 70 ? '#f59e0b' : '#ef4444',
+                                transition: 'width 0.3s ease',
+                              }}
+                            />
+                          </div>
+                          <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                            价格覆盖 {coveragePct}%{missingCount > 0 ? `（${missingCount}项待补）` : ''}
+                          </Text>
+                        </div>
+                      </label>
                     );
-                  })()
-                ))}
-              </div>
-            </Radio.Group>
-          )}
+                  })}
+                </div>
+              </Radio.Group>
+            );
+          })()}
         </Card>
 
         {!viewOnly && !preparation?.selectedForemanId ? (

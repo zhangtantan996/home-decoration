@@ -11,11 +11,15 @@ interface NotificationItem {
   title: string;
   content: string;
   type: string;
+  typeLabel?: string;
   relatedId?: number;
   relatedType?: string;
   isRead: boolean;
   actionUrl?: string;
   createdAt: string;
+  actionRequired?: boolean;
+  actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+  actionLabel?: string;
 }
 
 const NOTIFICATION_LABELS: Record<string, string> = {
@@ -50,6 +54,9 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   'project.completion.submitted': '完工验收',
   'project.completion.approved': '完工验收',
   'project.completion.rejected': '完工验收',
+  'project.construction_bridge_pending': '施工桥接',
+  'project.planned_start_updated': '待开工',
+  'project.supervision_risk_escalated': '监理风险',
   'project.settlement.scheduled': '结算提醒',
   'project.payout.processing': '出款提醒',
   'project.payout.paid': '出款提醒',
@@ -72,6 +79,31 @@ const NOTIFICATION_LABELS: Record<string, string> = {
 };
 
 const resolveTypeLabel = (type: string) => NOTIFICATION_LABELS[type] || '系统通知';
+
+const readTypeLabel = (item: NotificationItem) => String(item.typeLabel || '').trim() || resolveTypeLabel(item.type);
+
+const readActionTag = (item: NotificationItem) => {
+  if (item.actionStatus === 'processed') {
+    return { label: '已处理', color: 'default' as const };
+  }
+  if (item.actionStatus === 'expired') {
+    return { label: '已过期', color: 'orange' as const };
+  }
+  if (item.actionRequired && item.actionLabel) {
+    return { label: item.actionLabel, color: 'blue' as const };
+  }
+  if (item.actionLabel) {
+    return { label: item.actionLabel, color: 'default' as const };
+  }
+  return null;
+};
+
+const readOpenLabel = (item: NotificationItem) => {
+  if (item.actionStatus === 'processed' || item.actionStatus === 'expired') {
+    return '查看详情';
+  }
+  return String(item.actionLabel || '').trim() || '查看详情';
+};
 
 export default function NotificationListPage() {
   const navigate = useNavigate();
@@ -201,11 +233,13 @@ export default function NotificationListPage() {
             <List
               itemLayout="vertical"
               dataSource={items}
-              renderItem={(item) => (
+              renderItem={(item) => {
+                const actionTag = readActionTag(item);
+                return (
                 <List.Item
                   key={item.id}
                   actions={[
-                    item.actionUrl ? <Button key={`open-${item.id}`} type="link" onClick={() => void handleOpen(item)}>查看详情</Button> : <span key={`empty-open-${item.id}`} />,
+                    item.actionUrl ? <Button key={`open-${item.id}`} type="link" onClick={() => void handleOpen(item)}>{readOpenLabel(item)}</Button> : <span key={`empty-open-${item.id}`} />,
                     !item.isRead ? <Button key={`read-${item.id}`} type="link" onClick={() => void handleMarkAsRead(item)}>标记已读</Button> : <span key={`readed-${item.id}`} />,
                     <Button key={`delete-${item.id}`} danger type="link" icon={<DeleteOutlined />} onClick={() => void handleDelete(item)}>删除</Button>,
                   ]}
@@ -215,14 +249,16 @@ export default function NotificationListPage() {
                       <Space wrap>
                         <span>{item.title}</span>
                         {!item.isRead ? <Tag color="gold">未读</Tag> : <Tag>已读</Tag>}
-                        <Tag color="blue">{resolveTypeLabel(item.type)}</Tag>
+                        <Tag color="blue">{readTypeLabel(item)}</Tag>
+                        {actionTag ? <Tag color={actionTag.color}>{actionTag.label}</Tag> : null}
                       </Space>
                     )}
                     description={formatServerDateTime(item.createdAt)}
                   />
                   <Typography.Paragraph style={{ marginBottom: 0 }}>{item.content}</Typography.Paragraph>
                 </List.Item>
-              )}
+                );
+              }}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
               <Typography.Text type="secondary">共 {total} 条通知</Typography.Text>

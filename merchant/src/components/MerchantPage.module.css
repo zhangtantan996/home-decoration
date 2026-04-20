@@ -6,6 +6,11 @@
   gap: 16px;
 }
 
+.pageFullWidth {
+  max-width: none;
+  width: 100%;
+}
+
 .headerCard,
 .sectionCard,
 .statCard,

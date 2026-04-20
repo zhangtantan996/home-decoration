@@ -948,6 +948,25 @@ func parseRoomType(layout string) string {
 			}
 		}
 	}
+	chineseRoomTypeMap := map[string]string{
+		"一室": "一居",
+		"二室": "二居",
+		"三室": "三居",
+		"四室": "四居",
+		"五室": "五居",
+		"六室": "六居",
+		"一居": "一居",
+		"二居": "二居",
+		"三居": "三居",
+		"四居": "四居",
+		"五居": "五居",
+		"六居": "六居",
+	}
+	for keyword, normalized := range chineseRoomTypeMap {
+		if strings.Contains(layout, keyword) {
+			return normalized
+		}
+	}
 	if strings.Contains(layout, "复式") {
 		return "复式"
 	}

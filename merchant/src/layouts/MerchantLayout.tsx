@@ -18,6 +18,8 @@ import {
     LogoutOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
+    BookOutlined,
+    SolutionOutlined,
 } from '@ant-design/icons';
 import merchantAppIcon from '../assets/branding/company-logo.png';
 
@@ -123,6 +125,51 @@ const MerchantLayout: React.FC = () => {
         },
     ];
 
+    // Foreman-specific menu: primary work is construction quoting
+    const foremanMenuItems: MenuProps['items'] = [
+        {
+            key: '/dashboard',
+            icon: <DashboardOutlined />,
+            label: '工作台',
+        },
+        {
+            key: '/quote-lists',
+            icon: <SolutionOutlined />,
+            label: '施工报价',
+        },
+        {
+            key: '/price-book',
+            icon: <BookOutlined />,
+            label: '价格库',
+        },
+        {
+            key: '/projects',
+            icon: <ProjectOutlined />,
+            label: '项目履约',
+        },
+        {
+            type: 'divider',
+        },
+        {
+            key: 'finance',
+            icon: <DollarOutlined />,
+            label: '财务中心',
+            children: [
+                { key: '/income', label: '结算中心' },
+                { key: '/bank-accounts', label: '银行卡' },
+            ],
+        },
+        {
+            key: '/settings',
+            icon: <SettingOutlined />,
+            label: '资料设置',
+        },
+    ];
+
+    const foremanAvailableKeys = new Set<string>(
+        ['/dashboard', '/quote-lists', '/price-book', '/projects', '/income', '/bank-accounts', '/settings'],
+    );
+
     const menuItems = isMaterialShop
         ? [
             {
@@ -141,13 +188,15 @@ const MerchantLayout: React.FC = () => {
                 label: '店铺设置',
             },
         ]
-        : serviceMenuItems;
+        : normalizedProviderSubType === 'foreman'
+            ? foremanMenuItems
+            : serviceMenuItems;
 
-    const availableKeys = new Set<string>(
-        isMaterialShop
-            ? ['/dashboard', '/material-shop/products', '/material-shop/settings']
-            : ['/dashboard', '/bookings', '/proposals', '/projects', '/income', '/bond', '/bank-accounts', '/cases', '/settings'],
-    );
+    const availableKeys = isMaterialShop
+        ? new Set<string>(['/dashboard', '/material-shop/products', '/material-shop/settings'])
+        : normalizedProviderSubType === 'foreman'
+            ? foremanAvailableKeys
+            : new Set<string>(['/dashboard', '/bookings', '/proposals', '/projects', '/income', '/bond', '/bank-accounts', '/cases', '/settings']);
 
     const resolveSelectedMenuKey = (pathname: string) => {
         if (isMaterialShop) {
@@ -189,6 +238,16 @@ const MerchantLayout: React.FC = () => {
         }
         if (isMaterialShop) {
             return false;
+        }
+        if (normalizedProviderSubType === 'foreman') {
+            return (
+                pathname === '/notifications'
+                || pathname === '/withdraw'
+                || pathname === '/payments/result'
+                || pathname.startsWith('/quote-lists')
+                || pathname.startsWith('/projects/')
+                || pathname.startsWith('/contracts/')
+            );
         }
         return (
             pathname === '/leads'

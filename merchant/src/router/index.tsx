@@ -33,6 +33,7 @@ import MaterialShopSettings from '../pages/merchant/MaterialShopSettings';
 import MaterialShopProducts from '../pages/merchant/MaterialShopProducts';
 import MerchantDesignWorkflow from '../pages/merchant/MerchantDesignWorkflow';
 import MerchantProjectFlow from '../pages/merchant/MerchantProjectFlow';
+import MerchantConstructionPrepPage from '../pages/merchant/MerchantConstructionPrepPage';
 import OnboardingAgreementPage from '../pages/merchant/legal/OnboardingAgreementPage';
 import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
               { path: '/bookings/:id/design-workflow', element: <MerchantDesignWorkflow /> },
               { path: '/bookings/:id/flow', element: <LegacyBookingFlowRedirect /> },
               { path: '/proposals/flow/:id', element: <MerchantProjectFlow /> },
+              { path: '/proposals/flow/:id/construction-prep', element: <MerchantConstructionPrepPage /> },
               { path: '/proposals', element: <MerchantProposals /> },
               { path: '/price-book', element: <MerchantPriceBook /> },
               { path: '/quote-lists', element: <MerchantQuoteLists /> },

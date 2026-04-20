@@ -525,7 +525,7 @@ func (d *NotificationDispatcher) NotifyChangeOrderDecision(ownerUserID, provider
 		Type:        notificationType,
 		RelatedID:   changeOrderID,
 		RelatedType: "change_order",
-		ActionURL:   fmt.Sprintf("/orders?projectId=%d", projectID),
+		ActionURL:   buildAdminChangeOrderActionURL(projectID),
 		Category:    NotificationCategoryProject,
 	})
 	if !approved && ownerUserID > 0 {
@@ -579,7 +579,7 @@ func (d *NotificationDispatcher) NotifyChangeOrderSettlementRequired(projectID, 
 		Type:        "change_order.settlement_required",
 		RelatedID:   changeOrderID,
 		RelatedType: "change_order",
-		ActionURL:   fmt.Sprintf("/orders?projectId=%d", projectID),
+		ActionURL:   buildAdminChangeOrderActionURL(projectID),
 		Category:    NotificationCategoryPayment,
 	})
 }
@@ -591,7 +591,7 @@ func (d *NotificationDispatcher) NotifyChangeOrderSettled(projectID, changeOrder
 		Type:        "change_order.settled",
 		RelatedID:   changeOrderID,
 		RelatedType: "change_order",
-		ActionURL:   fmt.Sprintf("/orders?projectId=%d", projectID),
+		ActionURL:   buildAdminChangeOrderActionURL(projectID),
 		Category:    NotificationCategoryPayment,
 	})
 }
@@ -1330,9 +1330,16 @@ func buildAdminWithdrawActionURL(withdrawID uint64) string {
 	return fmt.Sprintf("/withdraws/%d", withdrawID)
 }
 
+func buildAdminChangeOrderActionURL(projectID uint64) string {
+	if projectID > 0 {
+		return fmt.Sprintf("/orders?projectId=%d&focus=change-order", projectID)
+	}
+	return "/orders?focus=change-order"
+}
+
 func buildProviderClosureActionURL(projectID uint64) string {
 	if projectID > 0 {
-		return fmt.Sprintf("/projects/%d", projectID)
+		return fmt.Sprintf("/income?projectId=%d", projectID)
 	}
 	return "/income"
 }

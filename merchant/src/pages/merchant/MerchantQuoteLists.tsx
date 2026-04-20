@@ -88,7 +88,11 @@ const MerchantQuoteLists: React.FC = () => {
             dataIndex: 'status',
             key: 'status',
             width: 110,
-            render: (value: string) => {
+            render: (value: string, record) => {
+                const isSubmitted = String(record.mySubmissionStatus || '').toLowerCase() === 'submitted';
+                if (isSubmitted && ['quoting', 'pricing_in_progress'].includes(String(value).toLowerCase())) {
+                    return <Tag color="blue">已提交报价</Tag>;
+                }
                 const mapped = statusLabel(value);
                 return <Tag color={mapped.color}>{mapped.text}</Tag>;
             },
@@ -121,15 +125,21 @@ const MerchantQuoteLists: React.FC = () => {
             title: '操作',
             key: 'actions',
             width: 120,
-            render: (_: unknown, record) => (
-                <Button
-                    type="link"
-                    onClick={() => navigate(`/quote-lists/${record.id}`)}
-                    icon={<ArrowRightOutlined />}
-                >
-                    {['quoting', 'pricing_in_progress'].includes(String(record.status || '').toLowerCase()) ? '去报价' : '查看'}
-                </Button>
-            ),
+            render: (_: unknown, record) => {
+                const isPricing = ['quoting', 'pricing_in_progress'].includes(String(record.status || '').toLowerCase());
+                const isSubmitted = String(record.mySubmissionStatus || '').toLowerCase() === 'submitted';
+                const actionLabel = (isPricing && !isSubmitted) ? '去递交' : '查看详情';
+
+                return (
+                    <Button
+                        type="link"
+                        onClick={() => navigate(`/quote-lists/${record.id}`)}
+                        icon={<ArrowRightOutlined />}
+                    >
+                        {actionLabel}
+                    </Button>
+                );
+            },
         },
     ], [navigate]);
 

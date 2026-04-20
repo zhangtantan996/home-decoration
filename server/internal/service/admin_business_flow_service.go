@@ -1015,7 +1015,7 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 				Label:      "查看变更单",
 				Kind:       "navigate",
 				Permission: "project:view",
-				Route:      fmt.Sprintf("/orders?projectId=%d", ctx.project.ID),
+				Route:      buildAdminChangeOrderActionURL(ctx.project.ID),
 				Payload:    map[string]interface{}{"projectId": ctx.project.ID, "changeOrderId": pendingChange.ID},
 			})
 		}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -19,7 +19,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { EyeOutlined, ReloadOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import { usePermission } from '../../hooks/usePermission';
@@ -177,7 +177,9 @@ const flattenPaymentPlans = (detail?: AdminBusinessFlowDetail | null): AdminBusi
 
 const OrderList: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { hasPermission } = usePermission();
+  const autoOpenedFocusRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -198,11 +200,19 @@ const OrderList: React.FC = () => {
   const [activeAction, setActiveAction] = useState<AdminBusinessFlowAction | null>(null);
   const [actionModalOpen, setActionModalOpen] = useState(false);
   const [actionForm] = Form.useForm();
+  const projectIdFilter = useMemo(() => {
+    const raw = searchParams.get('projectId');
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }, [searchParams]);
+  const focusTarget = searchParams.get('focus') || undefined;
 
   const query = useMemo(
     () => ({
       keyword: keyword.trim() || undefined,
       currentStage,
+      projectId: projectIdFilter,
       orderStatus,
       paymentPlanStatus,
       refundStatus,
@@ -211,7 +221,7 @@ const OrderList: React.FC = () => {
       page,
       pageSize,
     }),
-    [currentStage, keyword, orderStatus, page, pageSize, paymentPaused, paymentPlanStatus, refundStatus, riskStatus],
+    [currentStage, keyword, orderStatus, page, pageSize, paymentPaused, paymentPlanStatus, projectIdFilter, refundStatus, riskStatus],
   );
 
   const governanceStats = useMemo(() => {
@@ -253,6 +263,20 @@ const OrderList: React.FC = () => {
     void loadList();
   }, [loadList]);
 
+  useEffect(() => {
+    if (projectIdFilter) {
+      setKeyword('');
+      setCurrentStage(undefined);
+      setOrderStatus(undefined);
+      setPaymentPlanStatus(undefined);
+      setRefundStatus(undefined);
+      setRiskStatus(undefined);
+      setPaymentPaused(undefined);
+    }
+    setPage(1);
+    autoOpenedFocusRef.current = null;
+  }, [projectIdFilter, focusTarget]);
+
   const loadDetail = useCallback(async (flowId: string) => {
     try {
       setDetailLoading(true);
@@ -271,17 +295,46 @@ const OrderList: React.FC = () => {
     }
   }, []);
 
-  const openDrawer = async (record: AdminBusinessFlowListItem) => {
+  const openDrawer = useCallback(async (record: AdminBusinessFlowListItem) => {
     setSelectedFlowId(record.flowId);
     setDrawerOpen(true);
     await loadDetail(record.flowId);
-  };
+  }, [loadDetail]);
 
-  const closeDrawer = () => {
+  useEffect(() => {
+    if (!projectIdFilter || focusTarget !== 'change-order' || loading || drawerOpen || rows.length === 0) {
+      return;
+    }
+    const target = rows.find((row) => row.projectId === projectIdFilter);
+    if (!target) {
+      return;
+    }
+    const focusKey = `${projectIdFilter}:${focusTarget}`;
+    if (autoOpenedFocusRef.current === focusKey) {
+      return;
+    }
+    autoOpenedFocusRef.current = focusKey;
+    void openDrawer(target);
+  }, [drawerOpen, focusTarget, loading, openDrawer, projectIdFilter, rows]);
+
+  const closeDrawer = useCallback(() => {
     setDrawerOpen(false);
     setSelectedFlowId(null);
     setDetail(null);
-  };
+    if (searchParams.has('focus')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('focus');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  const clearProjectFilter = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('projectId');
+    next.delete('focus');
+    autoOpenedFocusRef.current = null;
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const getAllowedActions = (actions: AdminBusinessFlowAction[]) =>
     actions.filter((action) => !action.permission || hasPermission(action.permission));
@@ -724,6 +777,19 @@ const OrderList: React.FC = () => {
       />
 
       <ToolbarCard>
+        {projectIdFilter ? (
+          <Alert
+            showIcon
+            type="info"
+            style={{ marginBottom: 16 }}
+            message={`当前仅查看项目 #${projectIdFilter} 的治理链路${focusTarget === 'change-order' ? '，已定位变更治理待办' : ''}`}
+            action={(
+              <Button size="small" onClick={clearProjectFilter}>
+                清除筛选
+              </Button>
+            )}
+          />
+        ) : null}
         <Space wrap size={[12, 12]}>
           <Input
             allowClear

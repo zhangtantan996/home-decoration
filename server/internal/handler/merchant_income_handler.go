@@ -96,6 +96,13 @@ func MerchantIncomeList(c *gin.Context) {
 	query := repository.DB.Where("provider_id = ?", providerID).
 		Order("created_at DESC")
 
+	if projectID := parseUint64(c.Query("projectId")); projectID > 0 {
+		query = query.Where(
+			"order_id IN (?)",
+			repository.DB.Model(&model.Order{}).Select("id").Where("project_id = ?", projectID),
+		)
+	}
+
 	// 筛选类型
 	if incomeType := c.Query("type"); incomeType != "" {
 		query = query.Where("type = ?", incomeType)
@@ -115,6 +122,28 @@ func MerchantIncomeList(c *gin.Context) {
 	query.Model(&model.MerchantIncome{}).Count(&total)
 	query.Offset(offset).Limit(pageSize).Find(&incomes)
 
+	projectByOrderID := make(map[uint64]uint64, len(incomes))
+	orderIDs := make([]uint64, 0, len(incomes))
+	seenOrderIDs := make(map[uint64]struct{}, len(incomes))
+	for _, income := range incomes {
+		if income.OrderID == 0 {
+			continue
+		}
+		if _, exists := seenOrderIDs[income.OrderID]; exists {
+			continue
+		}
+		seenOrderIDs[income.OrderID] = struct{}{}
+		orderIDs = append(orderIDs, income.OrderID)
+	}
+	if len(orderIDs) > 0 {
+		var orders []model.Order
+		if err := repository.DB.Select("id", "project_id").Where("id IN ?", orderIDs).Find(&orders).Error; err == nil {
+			for _, order := range orders {
+				projectByOrderID[order.ID] = order.ProjectID
+			}
+		}
+	}
+
 	// 收入类型文案
 	typeLabels := map[string]string{
 		"intent_fee":     "量房费",
@@ -130,6 +159,7 @@ func MerchantIncomeList(c *gin.Context) {
 			"id":          income.ID,
 			"orderId":     income.OrderID,
 			"bookingId":   income.BookingID,
+			"projectId":   projectByOrderID[income.OrderID],
 			"type":        income.Type,
 			"typeLabel":   typeLabels[income.Type],
 			"amount":      income.Amount,

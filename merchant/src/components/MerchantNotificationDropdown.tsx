@@ -17,11 +17,15 @@ interface Notification {
     title: string;
     content: string;
     type: string;
+    typeLabel?: string;
     relatedId: number;
     relatedType: string;
     isRead: boolean;
     actionUrl: string;
     createdAt: string;
+    actionRequired?: boolean;
+    actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+    actionLabel?: string;
 }
 
 type NotificationListResponse = { data?: { list?: Notification[] } };
@@ -37,6 +41,25 @@ const POLL_POLICY: AutoRetryPolicy = {
 };
 
 const resolveNotificationLabel = (type: string) => MERCHANT_NOTIFICATION_TYPE_LABELS[type] || '系统通知';
+
+const resolveNotificationTypeLabel = (item: Notification) =>
+    String(item.typeLabel || '').trim() || resolveNotificationLabel(item.type);
+
+const resolveNotificationActionTag = (item: Notification) => {
+    if (item.actionStatus === 'processed') {
+        return { label: '已处理', color: 'default' as const };
+    }
+    if (item.actionStatus === 'expired') {
+        return { label: '已过期', color: 'orange' as const };
+    }
+    if (item.actionRequired && item.actionLabel) {
+        return { label: item.actionLabel, color: 'blue' as const };
+    }
+    if (item.actionLabel) {
+        return { label: item.actionLabel, color: 'default' as const };
+    }
+    return null;
+};
 
 const getErrorStatus = (error: unknown): number | undefined => {
     if (typeof error !== 'object' || error === null || !('response' in error)) {
@@ -417,6 +440,9 @@ const MerchantNotificationDropdown: React.FC = () => {
                     />
                 ) : (
                     notifications.map(item => (
+                        (() => {
+                            const actionTag = resolveNotificationActionTag(item);
+                            return (
                         <div
                             key={item.id}
                             onClick={() => handleNotificationClick(item)}
@@ -444,8 +470,13 @@ const MerchantNotificationDropdown: React.FC = () => {
                                             color={getMerchantNotificationTagColor(item.type)}
                                             style={{ marginInlineStart: 8, marginInlineEnd: 0 }}
                                         >
-                                            {resolveNotificationLabel(item.type)}
+                                            {resolveNotificationTypeLabel(item)}
                                         </Tag>
+                                        {actionTag ? (
+                                            <Tag color={actionTag.color} style={{ marginInlineStart: 8, marginInlineEnd: 0 }}>
+                                                {actionTag.label}
+                                            </Tag>
+                                        ) : null}
                                         {!item.isRead && (
                                             <span style={{
                                                 display: 'inline-block',
@@ -494,6 +525,8 @@ const MerchantNotificationDropdown: React.FC = () => {
                                 </div>
                             </div>
                         </div>
+                            );
+                        })()
                     ))
                 )}
             </div>

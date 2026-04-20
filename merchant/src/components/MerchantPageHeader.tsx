@@ -10,6 +10,7 @@ type MerchantPageHeaderProps = {
   extra?: React.ReactNode;
   meta?: React.ReactNode;
   className?: string;
+  children?: React.ReactNode;
 };
 
 const MerchantPageHeader: React.FC<MerchantPageHeaderProps> = ({
@@ -18,6 +19,7 @@ const MerchantPageHeader: React.FC<MerchantPageHeaderProps> = ({
   extra,
   meta,
   className,
+  children,
 }) => {
   return (
     <Card className={[styles.headerCard, className].filter(Boolean).join(' ')}>
@@ -29,6 +31,7 @@ const MerchantPageHeader: React.FC<MerchantPageHeaderProps> = ({
         </div>
         {extra ? <div className={styles.headerActions}>{extra}</div> : null}
       </div>
+      {children ? <div style={{ marginTop: 16 }}>{children}</div> : null}
     </Card>
   );
 };

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 
@@ -130,35 +131,18 @@ func (s *QuoteService) ReplaceMerchantConstructionPreparationItems(providerID, q
 		inputByStandardID[raw.StandardItemID] = raw
 	}
 
-	requiredMissing := make([]string, 0)
 	effectiveInputs := make([]MerchantQuantityItemInput, 0, len(templateResolved.Items))
 	for _, templateItem := range templateResolved.Items {
 		raw, ok := inputByStandardID[templateItem.LibraryItemID]
 		if !ok {
-			if templateItem.Required {
-				if libraryItem, exists := templateResolved.LibraryByID[templateItem.LibraryItemID]; exists {
-					requiredMissing = append(requiredMissing, libraryItem.Name)
-				}
-			}
 			continue
 		}
-		quantity := roundPreparationQuantity(raw.Quantity)
-		if quantity <= 0 {
-			if templateItem.Required {
-				if libraryItem, exists := templateResolved.LibraryByID[templateItem.LibraryItemID]; exists {
-					requiredMissing = append(requiredMissing, libraryItem.Name)
-				}
-			}
+		quantity := roundQuantityByUnit(raw.Quantity, templateResolved.LibraryByID[templateItem.LibraryItemID].Unit)
+		if quantity < 0 {
 			continue
 		}
 		raw.Quantity = quantity
 		effectiveInputs = append(effectiveInputs, raw)
-	}
-	if len(requiredMissing) > 0 {
-		return nil, fmt.Errorf("以下必填施工项未填写数量：%s", strings.Join(requiredMissing, "、"))
-	}
-	if len(effectiveInputs) == 0 {
-		return nil, errors.New("请至少填写 1 项施工报价基础")
 	}
 
 	tx := repository.DB.Begin()
@@ -510,8 +494,13 @@ func (s *QuoteService) buildPreparationTemplateStateWithDB(
 	}
 	sectionIndexes := make(map[string]sectionIndexEntry)
 	sectionSortOrder := make(map[string]int)
+	filteredTemplateItems := filterPreparationTemplateItemsByConstructionScope(
+		templateResolved.Items,
+		templateResolved.LibraryByID,
+		snapshot.ConstructionScope,
+	)
 
-	for _, templateItem := range templateResolved.Items {
+	for _, templateItem := range filteredTemplateItems {
 		libraryItem, exists := templateResolved.LibraryByID[templateItem.LibraryItemID]
 		if !exists {
 			continue
@@ -537,15 +526,14 @@ func (s *QuoteService) buildPreparationTemplateStateWithDB(
 			Applicable:     true,
 		}
 		if existing, exists := existingByStandardID[templateItem.LibraryItemID]; exists {
-			row.InputQuantity = roundPreparationQuantity(existing.Quantity)
+			row.InputQuantity = roundQuantityByUnit(existing.Quantity, row.Unit)
 			row.BaselineNote = strings.TrimSpace(existing.BaselineNote)
 		} else if includeSuggestions {
 			if suggestedQuantity := suggestPreparationQuantity(libraryItem, snapshot); suggestedQuantity > 0 {
 				row.SuggestedQuantity = suggestedQuantity
-				row.InputQuantity = suggestedQuantity
 			}
 		}
-		if row.InputQuantity > 0 {
+		if row.InputQuantity >= 0 {
 			state.EffectiveItemCount++
 		} else if templateItem.Required {
 			state.MissingRequiredNames = append(state.MissingRequiredNames, row.Name)
@@ -569,6 +557,97 @@ func (s *QuoteService) buildPreparationTemplateStateWithDB(
 	})
 	state.MissingRequiredNames = uniqueStringSlice(state.MissingRequiredNames)
 	return state, nil
+}
+
+func filterPreparationTemplateItemsByConstructionScope(
+	items []model.QuoteTemplateItem,
+	libraryByID map[uint64]model.QuoteLibraryItem,
+	rawScope string,
+) []model.QuoteTemplateItem {
+	scopeValues := normalizeConstructionScopeValues(rawScope)
+	if len(scopeValues) == 0 {
+		return []model.QuoteTemplateItem{}
+	}
+	filtered := make([]model.QuoteTemplateItem, 0, len(items))
+	for _, item := range items {
+		libraryItem, exists := libraryByID[item.LibraryItemID]
+		if !exists {
+			continue
+		}
+		if quoteLibraryItemMatchesConstructionScopes(libraryItem, scopeValues) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func normalizeConstructionScopeValues(raw string) []string {
+	normalized := normalizeConstructionScopeText(raw)
+	if normalized == "" {
+		return nil
+	}
+	parts := strings.Split(normalized, "、")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	return uniqueStringSlice(values)
+}
+
+func quoteLibraryItemMatchesConstructionScopes(item model.QuoteLibraryItem, scopes []string) bool {
+	if len(scopes) == 0 {
+		return false
+	}
+	itemScopes := deriveConstructionScopesForQuoteItem(item)
+	for _, scope := range scopes {
+		if slices.Contains(itemScopes, scope) {
+			return true
+		}
+	}
+	return false
+}
+
+func deriveConstructionScopesForQuoteItem(item model.QuoteLibraryItem) []string {
+	searchText := strings.ToLower(strings.Join([]string{
+		strings.TrimSpace(item.CategoryL1),
+		strings.TrimSpace(item.CategoryL2),
+		strings.TrimSpace(item.Name),
+	}, " "))
+	scopes := make([]string, 0, 3)
+	add := func(scope string) {
+		if scope == "" || slices.Contains(scopes, scope) {
+			return
+		}
+		scopes = append(scopes, scope)
+	}
+
+	if containsAnyKeyword(searchText, "拆改", "拆除", "拆旧", "铲除", "开槽", "新建墙", "砌墙", "打拆") {
+		add("拆改")
+	}
+	if containsAnyKeyword(searchText, "清运", "保洁", "垃圾", "外运", "成品保护", "清理") {
+		add("清运保洁")
+	}
+	if containsAnyKeyword(searchText, "安装", "洁具", "卫浴", "灯具", "开关", "面板", "五金", "门锁", "厨电", "门窗", "橱柜") {
+		add("安装")
+	}
+	if containsAnyKeyword(searchText, "防水") {
+		add("防水")
+	}
+	if containsAnyKeyword(searchText, "水电", "电路", "强电", "弱电", "给排水", "管道", "水路") {
+		add("水电")
+	}
+	if containsAnyKeyword(searchText, "油工", "油漆", "乳胶漆", "腻子", "刷漆", "壁纸", "墙面拉毛", "修补找补") {
+		add("油工")
+	}
+	if containsAnyKeyword(searchText, "木作", "木工", "吊顶", "吊平顶", "隔墙", "基层板", "柜体", "窗帘盒", "石膏板") {
+		add("木作")
+	}
+	if containsAnyKeyword(searchText, "泥瓦", "瓦工", "墙砖", "地砖", "砌筑", "抹灰", "包管", "石材", "自流平", "地面找平", "找平层", "水泥砂浆") {
+		add("泥瓦")
+	}
+	return scopes
 }
 
 func (s *QuoteService) resolvePreparationTemplateWithDB(
@@ -849,38 +928,154 @@ func buildAutoPreparationTemplateName(roomType, renovationType string) string {
 	return "自动模板｜" + firstNonBlank(strings.TrimSpace(renovationType), "通用") + "｜" + firstNonBlank(strings.TrimSpace(roomType), "通用户型")
 }
 
-func roundPreparationQuantity(value float64) float64 {
-	if value <= 0 {
+func unitCategory(unit string) string {
+	switch strings.TrimSpace(unit) {
+	case "m", "米", "延米", "㎡", "m²", "平米", "平方":
+		return "continuous"
+	case "个", "处", "项", "套", "樘", "扇", "组":
+		return "count"
+	default:
+		return "other"
+	}
+}
+
+func roundQuantityByUnit(value float64, unit string) float64 {
+	if value < 0 {
 		return 0
 	}
-	return math.Round(value*100) / 100
+	if value == 0 {
+		return 0
+	}
+	switch unitCategory(unit) {
+	case "continuous":
+		return math.Round(value*2) / 2
+	case "count":
+		return math.Round(value)
+	default:
+		return math.Round(value*100) / 100
+	}
+}
+
+func roundPreparationQuantity(value float64) float64 {
+	return roundQuantityByUnit(value, "other")
 }
 
 func suggestPreparationQuantity(libraryItem model.QuoteLibraryItem, snapshot QuoteTaskPrerequisiteSnapshot) float64 {
 	raw := strings.TrimSpace(libraryItem.QuantityFormulaJSON)
-	if raw == "" || raw == "{}" {
-		return 0
-	}
-	var formula QuantityFormula
-	if err := json.Unmarshal([]byte(raw), &formula); err != nil || formula.Type == "" {
-		return 0
-	}
-	var suggested float64
-	switch formula.Type {
-	case "area_multiplier":
-		suggested = snapshot.Area * formula.Factor
-	case "fixed_by_room_type":
-		roomType := parseRoomType(snapshot.Layout)
-		suggested = formula.Values[roomType]
-	case "perimeter":
-		if snapshot.Area > 0 {
-			side := math.Sqrt(snapshot.Area)
-			suggested = side * 4 * formula.Factor
+	if raw != "" && raw != "{}" {
+		var formula QuantityFormula
+		if err := json.Unmarshal([]byte(raw), &formula); err == nil && formula.Type != "" {
+			var suggested float64
+			switch formula.Type {
+			case "area_multiplier":
+				suggested = snapshot.Area * formula.Factor
+			case "fixed_by_room_type":
+				roomType := parseRoomType(snapshot.Layout)
+				suggested = formula.Values[roomType]
+			case "perimeter":
+				if snapshot.Area > 0 {
+					side := math.Sqrt(snapshot.Area)
+					suggested = side * 4 * formula.Factor
+				}
+			case "fixed":
+				suggested = formula.Factor
+			}
+			if suggested > 0 {
+				return roundQuantityByUnit(suggested, libraryItem.Unit)
+			}
 		}
-	case "fixed":
-		suggested = formula.Factor
 	}
-	return roundPreparationQuantity(suggested)
+	return suggestPreparationQuantityByHeuristic(libraryItem, snapshot)
+}
+
+func suggestPreparationQuantityByHeuristic(libraryItem model.QuoteLibraryItem, snapshot QuoteTaskPrerequisiteSnapshot) float64 {
+	if snapshot.Area <= 0 {
+		return 0
+	}
+	searchText := strings.ToLower(strings.Join([]string{
+		strings.TrimSpace(libraryItem.CategoryL1),
+		strings.TrimSpace(libraryItem.CategoryL2),
+		strings.TrimSpace(libraryItem.Name),
+	}, " "))
+	scopes := deriveConstructionScopesForQuoteItem(libraryItem)
+	hasScope := func(scope string) bool {
+		return slices.Contains(scopes, scope)
+	}
+	unit := strings.ToLower(strings.TrimSpace(firstNonBlank(libraryItem.Unit, "项")))
+	area := snapshot.Area
+	perimeter := math.Sqrt(area) * 4
+	roomCount := guessRoomCountFromLayout(snapshot.Layout)
+
+	switch unit {
+	case "㎡", "m²", "m2", "平米", "平方":
+		switch {
+		case hasScope("防水"):
+			return roundQuantityByUnit(area*1.2, libraryItem.Unit)
+		case hasScope("油工"):
+			if containsAnyKeyword(searchText, "基层处理", "腻子", "乳胶漆", "墙面") {
+				return roundQuantityByUnit(area*2.8, libraryItem.Unit)
+			}
+			return roundQuantityByUnit(area*1.6, libraryItem.Unit)
+		case hasScope("木作"):
+			if containsAnyKeyword(searchText, "吊顶", "吊平顶", "石膏板") {
+				return roundQuantityByUnit(area*0.28, libraryItem.Unit)
+			}
+			return roundQuantityByUnit(area*0.18, libraryItem.Unit)
+		case hasScope("泥瓦"):
+			switch {
+			case containsAnyKeyword(searchText, "墙砖"):
+				return roundQuantityByUnit(area*1.15, libraryItem.Unit)
+			case containsAnyKeyword(searchText, "地砖"):
+				return roundQuantityByUnit(area*0.9, libraryItem.Unit)
+			case containsAnyKeyword(searchText, "找平", "自流平"):
+				return roundQuantityByUnit(area*0.35, libraryItem.Unit)
+			case containsAnyKeyword(searchText, "石材"):
+				return roundQuantityByUnit(area*0.22, libraryItem.Unit)
+			default:
+				return roundQuantityByUnit(area*0.6, libraryItem.Unit)
+			}
+		case hasScope("水电"):
+			return roundQuantityByUnit(area*0.35, libraryItem.Unit)
+		}
+	case "m", "米", "延米":
+		switch {
+		case hasScope("水电"):
+			return roundQuantityByUnit(perimeter*0.45, libraryItem.Unit)
+		case hasScope("木作") && containsAnyKeyword(searchText, "线", "石膏线", "窗帘盒"):
+			return roundQuantityByUnit(perimeter*0.6, libraryItem.Unit)
+		case hasScope("泥瓦") && containsAnyKeyword(searchText, "踢脚", "收边", "包管"):
+			return roundQuantityByUnit(perimeter*0.3, libraryItem.Unit)
+		}
+	case "项", "套", "个", "处", "樘", "扇", "组":
+		switch {
+		case containsAnyKeyword(searchText, "灯具", "面板", "洁具", "卫浴", "厨电"):
+			return roundQuantityByUnit(roomCount, libraryItem.Unit)
+		case containsAnyKeyword(searchText, "窗帘盒", "吊顶", "地台"):
+			return 1
+		default:
+			return 1
+		}
+	}
+	return 0
+}
+
+func guessRoomCountFromLayout(layout string) float64 {
+	switch parseRoomType(layout) {
+	case "一居":
+		return 1
+	case "二居":
+		return 2
+	case "三居":
+		return 3
+	case "四居":
+		return 4
+	case "五居":
+		return 5
+	case "六居":
+		return 6
+	default:
+		return 1
+	}
 }
 
 func (s *QuoteService) syncQuoteListItemsFromQuantityBase(quoteList *model.QuoteList) error {

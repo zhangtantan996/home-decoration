@@ -1,0 +1,255 @@
+.page {
+  display: grid;
+  gap: 16px;
+}
+
+.content {
+  display: grid;
+  gap: 16px;
+}
+
+.headerCard {
+  display: grid;
+  gap: 12px;
+}
+
+.phaseRail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.phaseChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid #dbe4f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.phaseChip:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.phaseChipActive {
+  border-color: #1677ff;
+  background: rgba(22, 119, 255, 0.08);
+  color: #0f172a;
+}
+
+.phaseIndex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.headerIntro {
+  display: grid;
+  gap: 6px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.identifyActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.baselineSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.baselineSummaryText {
+  display: grid;
+  gap: 4px;
+}
+
+.sectionList {
+  display: grid;
+  gap: 16px;
+}
+
+.rowList {
+  display: grid;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.rowTableHead {
+  display: grid;
+  grid-template-columns: minmax(240px, 2.2fr) 72px 132px minmax(180px, 1.6fr);
+  gap: 12px;
+  padding: 0 16px 10px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.rowCard {
+  display: grid;
+  grid-template-columns: minmax(240px, 2.2fr) 72px 132px minmax(180px, 1.6fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #eef2f7;
+  background: #fff;
+}
+
+.rowCard:last-child {
+  border-bottom: 0;
+}
+
+.rowTitleCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.rowTitle {
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rowMetaBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.rowMetaBadgeRequired {
+  background: #fff1f0;
+  color: #cf1322;
+  border: 1px solid #ffa39e;
+}
+
+.rowMetaBadgeOptional {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #dbe4f0;
+}
+
+.rowUnitCell,
+.rowQuantityCell,
+.rowNoteCell {
+  min-width: 0;
+}
+
+.rowUnitCell {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.rowQuantityCell {
+  min-width: 132px;
+}
+
+.rowQuantityCell :global(.ant-input-number),
+.rowNoteCell :global(.ant-input),
+.rowNoteCell :global(.ant-input-affix-wrapper) {
+  width: 100%;
+}
+
+.actionBar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 5;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.confirmBody {
+  display: grid;
+  gap: 12px;
+}
+
+.confirmStats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 840px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .identifyActions,
+  .baselineSummary,
+  .actionRow {
+    align-items: stretch;
+  }
+
+  .rowTableHead,
+  .rowCard {
+    grid-template-columns: 1fr;
+  }
+
+  .rowTableHead {
+    display: none;
+  }
+
+  .rowCard {
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .rowTitleCell {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .rowTitle {
+    white-space: normal;
+  }
+}

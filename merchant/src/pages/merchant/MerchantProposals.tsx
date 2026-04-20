@@ -132,7 +132,10 @@ const isProposalWorkspaceBooking = (booking: MerchantBookingEntry) => {
     return booking.hasProposal || (booking.availableActions || []).length > 0;
 };
 
-const buildFlowPath = (booking: MerchantBookingEntry) => {
+const buildFlowPath = (booking: MerchantBookingEntry, stageKey: WorkspaceStageKey) => {
+    if (stageKey === 'construction_prep') {
+        return `/proposals/flow/${booking.id}/construction-prep`;
+    }
     return `/proposals/flow/${booking.id}`;
 };
 
@@ -300,7 +303,7 @@ const buildProposalWorkspaceRows = (
                 statusColor: statusMeta.color,
                 nextActionText: buildNextActionText(booking, linkedProposal, stageKey),
                 updatedAt: linkedProposal?.createdAt || booking.createdAt,
-                flowPath: buildFlowPath(booking),
+                flowPath: buildFlowPath(booking, stageKey),
             };
         })
         .sort((left, right) => {
@@ -411,7 +414,7 @@ const MerchantProposals: React.FC = () => {
             width: 150,
             render: (_value, record) => (
                 <Button type="primary" onClick={() => navigate(record.flowPath)}>
-                    进入流程
+                    {record.stageKey === 'construction_prep' ? '去整理' : '进入流程'}
                 </Button>
             ),
         },
