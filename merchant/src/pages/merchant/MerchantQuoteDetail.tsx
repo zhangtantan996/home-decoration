@@ -590,7 +590,7 @@ const MerchantQuoteDetail: React.FC = () => {
                 </div>
             </MerchantPageHeader>
 
-            <MerchantContentPanel loading={loading}>
+            <MerchantContentPanel>
                 {renderNotices()}
                 
                 <Space direction="vertical" size={16} style={{ display: 'flex' }}>

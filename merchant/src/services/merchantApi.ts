@@ -665,6 +665,70 @@ export interface MerchantFlowPrimaryAction {
     path?: string;
 }
 
+export interface MerchantFlowStepCompleteness {
+    completed: number;
+    total: number;
+    summary?: string;
+}
+
+export interface MerchantBridgeConstructionSubjectComparison {
+    providerId?: number;
+    subjectType?: string;
+    displayName?: string;
+    rating?: number;
+    reviewCount?: number;
+    completedCnt?: number;
+    caseCount?: number;
+    highlightTags?: string[];
+    priceHint?: string;
+    deliveryHint?: string;
+    trustSummary?: string;
+    selected?: boolean;
+}
+
+export interface MerchantBridgeSectionSummary {
+    title?: string;
+    items?: string[];
+}
+
+export interface MerchantBridgeNextStep {
+    actionKey?: string;
+    actionText?: string;
+    title?: string;
+    owner?: string;
+    reason?: string;
+    actionHint?: string;
+    blockingHint?: string;
+}
+
+export interface MerchantBridgeQuoteBaselineSummary {
+    title?: string;
+    sourceStage?: string;
+    submittedAt?: string;
+    itemCount?: number;
+    highlights?: string[];
+    readyForUser?: boolean;
+}
+
+export interface MerchantBridgeTrustSignals {
+    rating?: number;
+    reviewCount?: number;
+    completedCnt?: number;
+    caseCount?: number;
+    highlightTags?: string[];
+    officialReviewHint?: string;
+}
+
+export interface MerchantBridgeConversionSummary {
+    constructionSubjectComparison?: MerchantBridgeConstructionSubjectComparison[];
+    quoteBaselineSummary?: MerchantBridgeQuoteBaselineSummary;
+    responsibilityBoundarySummary?: MerchantBridgeSectionSummary;
+    scheduleAndAcceptanceSummary?: MerchantBridgeSectionSummary;
+    platformGuaranteeSummary?: MerchantBridgeSectionSummary;
+    trustSignals?: MerchantBridgeTrustSignals;
+    bridgeNextStep?: MerchantBridgeNextStep;
+}
+
 export interface MerchantFlowStep {
     key: 'booking' | 'survey' | 'budget' | 'quote' | 'design' | 'confirm' | 'construction_prep' | 'construction';
     title: string;
@@ -673,6 +737,9 @@ export interface MerchantFlowStep {
     userState: string;
     summary: string;
     blockedReason?: string;
+    completeness?: MerchantFlowStepCompleteness;
+    userFacingExplainers?: string[];
+    nextAction?: MerchantFlowPrimaryAction;
     primaryAction?: MerchantFlowPrimaryAction;
 }
 
@@ -794,6 +861,9 @@ export interface MerchantConstructionPreparationSummary {
     missingFields?: string[];
     selectedForemanId?: number;
     recommendedForemen?: MerchantRecommendedForeman[];
+    completeness?: MerchantFlowStepCompleteness;
+    userFacingExplainers?: string[];
+    bridgeConversionSummary?: MerchantBridgeConversionSummary;
 }
 
 export interface MerchantDesignerFlowWorkspace {
@@ -1259,47 +1329,7 @@ export interface MerchantProjectExecutionDetail {
     completionSubmittedAt?: string | null;
     completionRejectedAt?: string | null;
     completionRejectionReason?: string;
-    bridgeConversionSummary?: {
-        constructionSubjectComparison?: Array<{
-            providerId?: number;
-            subjectType?: string;
-            displayName?: string;
-            rating?: number;
-            reviewCount?: number;
-            completedCnt?: number;
-            caseCount?: number;
-            highlightTags?: string[];
-            priceHint?: string;
-            deliveryHint?: string;
-            trustSummary?: string;
-            selected?: boolean;
-        }>;
-        quoteBaselineSummary?: {
-            title?: string;
-            sourceStage?: string;
-            submittedAt?: string;
-            itemCount?: number;
-            highlights?: string[];
-            readyForUser?: boolean;
-        };
-        responsibilityBoundarySummary?: { title?: string; items?: string[] };
-        scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
-        platformGuaranteeSummary?: { title?: string; items?: string[] };
-        trustSignals?: {
-            rating?: number;
-            reviewCount?: number;
-            completedCnt?: number;
-            caseCount?: number;
-            highlightTags?: string[];
-            officialReviewHint?: string;
-        };
-        bridgeNextStep?: {
-            title?: string;
-            owner?: string;
-            reason?: string;
-            actionHint?: string;
-        };
-    };
+    bridgeConversionSummary?: MerchantBridgeConversionSummary;
     closureSummary?: {
         completionStatus?: string;
         archiveStatus?: string;

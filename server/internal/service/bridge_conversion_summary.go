@@ -48,10 +48,13 @@ type BridgeTrustSignals struct {
 }
 
 type BridgeNextStep struct {
-	Title      string `json:"title,omitempty"`
-	Owner      string `json:"owner,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	ActionHint string `json:"actionHint,omitempty"`
+	ActionKey    string `json:"actionKey,omitempty"`
+	ActionText   string `json:"actionText,omitempty"`
+	Title        string `json:"title,omitempty"`
+	Owner        string `json:"owner,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	ActionHint   string `json:"actionHint,omitempty"`
+	BlockingHint string `json:"blockingHint,omitempty"`
 }
 
 type BridgeConversionSummary struct {
@@ -364,15 +367,53 @@ func buildBridgeNextStep(ctx bridgeContext) *BridgeNextStep {
 	}
 	switch stage {
 	case model.BusinessFlowStageConstructionPartyPending:
-		return &BridgeNextStep{Title: "等待施工桥接推进", Owner: "设计师 / 平台", Reason: "需要先补齐报价基线并明确施工主体候选。", ActionHint: "先查看基线与施工主体对比，再进入施工报价确认。"}
+		return &BridgeNextStep{
+			ActionKey:    "complete_construction_prep",
+			ActionText:   "完善施工准备",
+			Title:        "等待施工桥接推进",
+			Owner:        "设计师 / 平台",
+			Reason:       "需要先补齐报价基线并明确施工主体候选。",
+			ActionHint:   "先查看基线与施工主体对比，再进入施工报价确认。",
+			BlockingHint: "基线、施工主体和报价前置项未齐备前，不会进入项目创建。",
+		}
 	case model.BusinessFlowStageConstructionQuotePending:
-		return &BridgeNextStep{Title: "等待你确认施工报价", Owner: "用户", Reason: "施工主体已给出正式报价，需要你确认价格、工期、责任边界与保障规则。", ActionHint: "确认后会立即生成订单与支付计划，并进入待监理协调开工。"}
+		return &BridgeNextStep{
+			ActionKey:    "confirm_construction_quote",
+			ActionText:   "确认施工报价",
+			Title:        "等待你确认施工报价",
+			Owner:        "用户",
+			Reason:       "施工主体已给出正式报价，需要你确认价格、工期、责任边界与保障规则。",
+			ActionHint:   "确认后会立即生成订单与支付计划，并进入待监理协调开工。",
+			BlockingHint: "未确认施工报价前，不会创建项目。",
+		}
 	case model.BusinessFlowStageReadyToStart:
-		return &BridgeNextStep{Title: "等待监理协调开工", Owner: "监理", Reason: "施工报价已确认，当前需要登记计划进场时间并同步开工准备。", ActionHint: "关注计划进场时间、首笔支付和最新监理同步。"}
+		return &BridgeNextStep{
+			ActionKey:  "view_kickoff_sync",
+			ActionText: "查看开工协调",
+			Title:      "等待监理协调开工",
+			Owner:      "监理",
+			Reason:     "施工报价已确认，当前需要登记计划进场时间并同步开工准备。",
+			ActionHint: "关注计划进场时间、首笔支付和最新监理同步。",
+		}
 	default:
 		if ctx.project != nil {
-			return &BridgeNextStep{Title: "项目已进入履约链", Owner: "商家 / 监理 / 用户", Reason: "当前重点转为阶段执行、验收与支付计划收口。", ActionHint: "继续跟踪节点验收、变更单与资金状态。"}
+			return &BridgeNextStep{
+				ActionKey:  "track_project_delivery",
+				ActionText: "查看履约进展",
+				Title:      "项目已进入履约链",
+				Owner:      "商家 / 监理 / 用户",
+				Reason:     "当前重点转为阶段执行、验收与支付计划收口。",
+				ActionHint: "继续跟踪节点验收、变更单与资金状态。",
+			}
 		}
-		return &BridgeNextStep{Title: "等待主链推进", Owner: "平台", Reason: "当前桥接链路尚未形成可确认施工报价的完整上下文。", ActionHint: "先补齐设计确认、基线或施工主体信息。"}
+		return &BridgeNextStep{
+			ActionKey:    "complete_previous_stage",
+			ActionText:   "补齐前置阶段",
+			Title:        "等待主链推进",
+			Owner:        "平台",
+			Reason:       "当前桥接链路尚未形成可确认施工报价的完整上下文。",
+			ActionHint:   "先补齐设计确认、基线或施工主体信息。",
+			BlockingHint: "只有设计确认完成后，施工桥接才会成为主动作。",
+		}
 	}
 }

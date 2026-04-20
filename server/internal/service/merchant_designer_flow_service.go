@@ -17,15 +17,24 @@ type MerchantFlowPrimaryAction struct {
 	Path      string `json:"path,omitempty"`
 }
 
+type MerchantFlowStepCompleteness struct {
+	Completed int    `json:"completed"`
+	Total     int    `json:"total"`
+	Summary   string `json:"summary,omitempty"`
+}
+
 type MerchantFlowStep struct {
-	Key           string                     `json:"key"`
-	Title         string                     `json:"title"`
-	Status        string                     `json:"status"`
-	MerchantTodo  string                     `json:"merchantTodo"`
-	UserState     string                     `json:"userState"`
-	Summary       string                     `json:"summary"`
-	BlockedReason string                     `json:"blockedReason,omitempty"`
-	PrimaryAction *MerchantFlowPrimaryAction `json:"primaryAction,omitempty"`
+	Key                  string                        `json:"key"`
+	Title                string                        `json:"title"`
+	Status               string                        `json:"status"`
+	MerchantTodo         string                        `json:"merchantTodo"`
+	UserState            string                        `json:"userState"`
+	Summary              string                        `json:"summary"`
+	BlockedReason        string                        `json:"blockedReason,omitempty"`
+	Completeness         *MerchantFlowStepCompleteness `json:"completeness,omitempty"`
+	UserFacingExplainers []string                      `json:"userFacingExplainers,omitempty"`
+	NextAction           *MerchantFlowPrimaryAction    `json:"nextAction,omitempty"`
+	PrimaryAction        *MerchantFlowPrimaryAction    `json:"primaryAction,omitempty"`
 }
 
 type MerchantFlowConstructionHandoff struct {
@@ -47,17 +56,20 @@ type MerchantFlowConstructionHandoff struct {
 }
 
 type MerchantFlowConstructionPreparation struct {
-	QuoteListID          uint64                        `json:"quoteListId,omitempty"`
-	PrerequisiteStatus   string                        `json:"prerequisiteStatus,omitempty"`
-	PrerequisiteSnapshot QuoteTaskPrerequisiteSnapshot `json:"prerequisiteSnapshot"`
-	QuantityBase         *model.QuantityBase           `json:"quantityBase,omitempty"`
-	QuantityItems        []model.QuantityBaseItem      `json:"quantityItems,omitempty"`
-	MissingFields        []string                      `json:"missingFields,omitempty"`
-	TemplateID           uint64                        `json:"templateId,omitempty"`
-	TemplateError        string                        `json:"templateError,omitempty"`
-	TemplateSections     []MerchantTemplateSection     `json:"templateSections,omitempty"`
-	SelectedForemanID    uint64                        `json:"selectedForemanId,omitempty"`
-	RecommendedForemen   []RecommendedForeman          `json:"recommendedForemen,omitempty"`
+	QuoteListID             uint64                        `json:"quoteListId,omitempty"`
+	PrerequisiteStatus      string                        `json:"prerequisiteStatus,omitempty"`
+	PrerequisiteSnapshot    QuoteTaskPrerequisiteSnapshot `json:"prerequisiteSnapshot"`
+	QuantityBase            *model.QuantityBase           `json:"quantityBase,omitempty"`
+	QuantityItems           []model.QuantityBaseItem      `json:"quantityItems,omitempty"`
+	MissingFields           []string                      `json:"missingFields,omitempty"`
+	TemplateID              uint64                        `json:"templateId,omitempty"`
+	TemplateError           string                        `json:"templateError,omitempty"`
+	TemplateSections        []MerchantTemplateSection     `json:"templateSections,omitempty"`
+	SelectedForemanID       uint64                        `json:"selectedForemanId,omitempty"`
+	RecommendedForemen      []RecommendedForeman          `json:"recommendedForemen,omitempty"`
+	Completeness            *MerchantFlowStepCompleteness `json:"completeness,omitempty"`
+	UserFacingExplainers    []string                      `json:"userFacingExplainers,omitempty"`
+	BridgeConversionSummary *BridgeConversionSummary      `json:"bridgeConversionSummary,omitempty"`
 }
 
 type MerchantFlowEvent struct {
@@ -181,17 +193,20 @@ func resolveConstructionPreparation(providerID uint64, flow *model.BusinessFlow,
 		return nil
 	}
 	return &MerchantFlowConstructionPreparation{
-		QuoteListID:          detail.QuoteListID,
-		PrerequisiteStatus:   detail.PrerequisiteStatus,
-		PrerequisiteSnapshot: detail.PrerequisiteSnapshot,
-		QuantityBase:         detail.QuantityBase,
-		QuantityItems:        detail.QuantityItems,
-		MissingFields:        detail.MissingFields,
-		TemplateID:           detail.TemplateID,
-		TemplateError:        detail.TemplateError,
-		TemplateSections:     detail.TemplateSections,
-		SelectedForemanID:    detail.SelectedForemanID,
-		RecommendedForemen:   detail.RecommendedForemen,
+		QuoteListID:             detail.QuoteListID,
+		PrerequisiteStatus:      detail.PrerequisiteStatus,
+		PrerequisiteSnapshot:    detail.PrerequisiteSnapshot,
+		QuantityBase:            detail.QuantityBase,
+		QuantityItems:           detail.QuantityItems,
+		MissingFields:           detail.MissingFields,
+		TemplateID:              detail.TemplateID,
+		TemplateError:           detail.TemplateError,
+		TemplateSections:        detail.TemplateSections,
+		SelectedForemanID:       detail.SelectedForemanID,
+		RecommendedForemen:      detail.RecommendedForemen,
+		Completeness:            detail.Completeness,
+		UserFacingExplainers:    detail.UserFacingExplainers,
+		BridgeConversionSummary: detail.BridgeConversionSummary,
 	}
 }
 
@@ -610,8 +625,12 @@ func resolveDesignerConstructionPrepStep(booking *model.Booking, proposalConfirm
 	if preparation == nil || preparation.QuoteListID == 0 {
 		step.Status = "pending_submit"
 		step.Summary = "待创建施工报价准备并补齐施工基础。"
+		step.NextAction = step.PrimaryAction
 		return step
 	}
+	step.Completeness = preparation.Completeness
+	step.UserFacingExplainers = preparation.UserFacingExplainers
+	step.NextAction = step.PrimaryAction
 	if strings.TrimSpace(preparation.TemplateError) != "" {
 		step.Status = "pending_submit"
 		step.Summary = preparation.TemplateError
@@ -627,6 +646,7 @@ func resolveDesignerConstructionPrepStep(booking *model.Booking, proposalConfirm
 	if step.PrimaryAction != nil {
 		step.PrimaryAction.Label = "查看详情"
 	}
+	step.NextAction = step.PrimaryAction
 	return step
 }
 
@@ -654,6 +674,9 @@ func resolveDesignerConstructionStep(proposalConfirmed bool, preparation *Mercha
 	}
 	step.Status = "pending_submit"
 	step.Summary = "施工报价基础已就绪，待选择施工主体。"
+	step.Completeness = buildConstructionHandoffCompleteness(preparation, handoff)
+	step.UserFacingExplainers = buildConstructionHandoffExplainers(handoff)
+	step.NextAction = step.PrimaryAction
 	if handoff != nil {
 		step.Summary = firstNonBlank(strings.TrimSpace(handoff.Summary), step.Summary)
 		switch handoff.QuoteListStatus {
@@ -672,7 +695,72 @@ func resolveDesignerConstructionStep(proposalConfirmed bool, preparation *Mercha
 			step.PrimaryAction = &MerchantFlowPrimaryAction{Kind: "modal", Label: "查看进度", ModalType: "construction_handoff"}
 		}
 	}
+	step.NextAction = step.PrimaryAction
 	return step
+}
+
+func buildConstructionHandoffCompleteness(preparation *MerchantFlowConstructionPreparation, handoff *MerchantFlowConstructionHandoff) *MerchantFlowStepCompleteness {
+	total := 3
+	completed := 0
+	if preparation != nil && strings.TrimSpace(preparation.TemplateError) == "" && len(preparation.MissingFields) == 0 {
+		completed++
+	}
+	if handoff != nil && handoff.ConstructionSubjectID > 0 {
+		completed++
+	}
+	if handoff != nil && (handoff.ProjectID > 0 ||
+		handoff.QuoteListStatus == model.QuoteListStatusSubmittedToUser ||
+		handoff.QuoteListStatus == model.QuoteListStatusUserConfirmed ||
+		handoff.QuoteListStatus == model.QuoteListStatusAwarded) {
+		completed++
+	}
+	return &MerchantFlowStepCompleteness{
+		Completed: completed,
+		Total:     total,
+		Summary:   fmt.Sprintf("%d/%d 项桥接动作已推进", completed, total),
+	}
+}
+
+func buildConstructionHandoffExplainers(handoff *MerchantFlowConstructionHandoff) []string {
+	if handoff == nil || handoff.BridgeConversionSummary == nil {
+		return []string{
+			"施工桥接会围绕施工主体选择、施工报价确认和项目移交推进。",
+		}
+	}
+
+	summary := handoff.BridgeConversionSummary
+	items := make([]string, 0, 4)
+	if summary.BridgeNextStep != nil {
+		items = append(items, firstNonBlank(summary.BridgeNextStep.Reason, summary.BridgeNextStep.ActionHint))
+	}
+	if summary.QuoteBaselineSummary != nil && len(summary.QuoteBaselineSummary.Highlights) > 0 {
+		items = append(items, fmt.Sprintf("报价基线：%s", strings.Join(summary.QuoteBaselineSummary.Highlights, "；")))
+	}
+	if summary.ScheduleAndAcceptanceSummary != nil && len(summary.ScheduleAndAcceptanceSummary.Items) > 0 {
+		items = append(items, fmt.Sprintf("%s：%s", firstNonBlank(summary.ScheduleAndAcceptanceSummary.Title, "工期与验收"), strings.Join(summary.ScheduleAndAcceptanceSummary.Items, "；")))
+	}
+	if summary.PlatformGuaranteeSummary != nil && len(summary.PlatformGuaranteeSummary.Items) > 0 {
+		items = append(items, fmt.Sprintf("%s：%s", firstNonBlank(summary.PlatformGuaranteeSummary.Title, "平台保障"), strings.Join(summary.PlatformGuaranteeSummary.Items, "；")))
+	}
+	return trimExplainers(items)
+}
+
+func trimExplainers(items []string) []string {
+	trimmed := make([]string, 0, len(items))
+	for _, item := range items {
+		value := strings.TrimSpace(item)
+		if value == "" {
+			continue
+		}
+		trimmed = append(trimmed, value)
+		if len(trimmed) >= 4 {
+			break
+		}
+	}
+	if len(trimmed) == 0 {
+		return nil
+	}
+	return trimmed
 }
 
 func resolveCurrentDesignerStepKey(steps []MerchantFlowStep) string {

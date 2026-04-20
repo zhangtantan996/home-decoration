@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Alert, Button, Empty, Space, Spin, Tag, message } from 'antd';
+import { Alert, Button, Empty, Progress, Space, Spin, Tag, Typography, message } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
@@ -9,6 +9,8 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import StepPanelConstructionPrep from './components/StepPanelConstructionPrep';
 import { merchantFlowApi, type MerchantDesignerFlowWorkspace } from '../../services/merchantApi';
 import styles from './MerchantConstructionPrepPage.module.css';
+
+const { Text } = Typography;
 
 const STEP_STATUS_META: Record<string, { label: string; color: string }> = {
   not_started: { label: '未开始', color: 'default' },
@@ -57,6 +59,14 @@ const MerchantConstructionPrepPage: React.FC = () => {
     (quoteListStatus && ['draft', 'ready_for_selection'].includes(quoteListStatus))
       || (!quoteListStatus && prepStep && (prepStep.status === 'pending_submit' || prepStep.status === 'returned')),
   );
+  const completeness = flowData?.constructionPreparation?.completeness || prepStep?.completeness;
+  const explainers = flowData?.constructionPreparation?.userFacingExplainers?.length
+    ? flowData.constructionPreparation.userFacingExplainers
+    : (prepStep?.userFacingExplainers || []);
+  const nextActionLabel = prepStep?.nextAction?.label || prepStep?.primaryAction?.label;
+  const completenessPercent = completeness && completeness.total > 0
+    ? Math.max(0, Math.min(100, Math.round((completeness.completed / completeness.total) * 100)))
+    : 0;
 
   if (loading) {
     return (
@@ -111,6 +121,42 @@ const MerchantConstructionPrepPage: React.FC = () => {
         {prepStep.blockedReason ? (
           <MerchantSectionCard>
             <Alert type="warning" showIcon message={prepStep.blockedReason} />
+          </MerchantSectionCard>
+        ) : null}
+
+        {(completeness || explainers.length || nextActionLabel) ? (
+          <MerchantSectionCard>
+            <div className={styles.bridgeSummaryCard}>
+              {completeness ? (
+                <div className={styles.bridgeSummaryMain}>
+                  <div className={styles.bridgeSummaryTop}>
+                    <Text className={styles.bridgeSummaryLabel}>施工准备完整度</Text>
+                    <Text className={styles.bridgeSummaryValue}>
+                      {completeness.completed}/{completeness.total}
+                    </Text>
+                  </div>
+                  <Progress percent={completenessPercent} showInfo={false} strokeColor="#2563eb" trailColor="#dbeafe" />
+                  {completeness.summary ? <Text type="secondary">{completeness.summary}</Text> : null}
+                </div>
+              ) : null}
+
+              {explainers.length ? (
+                <div className={styles.explainerList}>
+                  {explainers.map((item) => (
+                    <div key={item} className={styles.explainerItem}>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {nextActionLabel ? (
+                <div className={styles.nextActionHint}>
+                  <Tag color="blue" style={{ margin: 0 }}>下一步</Tag>
+                  <span>{nextActionLabel}</span>
+                </div>
+              ) : null}
+            </div>
           </MerchantSectionCard>
         ) : null}
 

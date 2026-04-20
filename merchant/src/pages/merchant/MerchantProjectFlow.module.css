@@ -291,6 +291,39 @@
   gap: 12px;
 }
 
+.completenessCard {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  border: 1px solid #dbeafe;
+}
+
+.completenessHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.completenessTitle {
+  font-size: 12px;
+  color: #475569;
+  letter-spacing: 0.04em;
+}
+
+.completenessValue {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.completenessSummary {
+  color: #334155;
+  line-height: 1.6;
+}
+
 .stepMetaGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -336,6 +369,44 @@
 .summaryText {
   color: #334155;
   line-height: 1.7;
+}
+
+.explainerBox {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.explainerLabel {
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.explainerList {
+  display: grid;
+  gap: 8px;
+}
+
+.explainerItem {
+  position: relative;
+  padding-left: 14px;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.explainerItem::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #60a5fa;
 }
 
 .eventItem {

@@ -24,10 +24,12 @@ func setupAdminDashboardTestDB(t *testing.T) *gorm.DB {
 		&model.User{},
 		&model.Provider{},
 		&model.Booking{},
+		&model.BusinessFlow{},
 		&model.MaterialShop{},
 		&model.Order{},
 		&model.Project{},
 		&model.Proposal{},
+		&model.QuoteList{},
 		&model.RefundApplication{},
 		&model.Complaint{},
 		&model.ProjectAudit{},
@@ -165,5 +167,56 @@ func TestAdminDashboardOverviewRatesUseRecentRollingWindow(t *testing.T) {
 	}
 	if diff := math.Abs(dashboardMetricValueByKey(overview.CoreMetrics, "refund_rate") - 0.5); diff > 0.0001 {
 		t.Fatalf("expected rolling-window refund rate 0.5, got %.4f", dashboardMetricValueByKey(overview.CoreMetrics, "refund_rate"))
+	}
+}
+
+func TestAdminDashboardOverviewIncludesBridgeMetrics(t *testing.T) {
+	db := setupAdminDashboardTestDB(t)
+	now := time.Now()
+
+	for _, proposal := range []model.Proposal{
+		{Base: model.Base{ID: 4101, CreatedAt: now, UpdatedAt: now}, Status: model.ProposalStatusConfirmed, ConfirmedAt: &now},
+		{Base: model.Base{ID: 4102, CreatedAt: now, UpdatedAt: now}, Status: model.ProposalStatusConfirmed, ConfirmedAt: &now},
+	} {
+		if err := db.Create(&proposal).Error; err != nil {
+			t.Fatalf("create proposal %d: %v", proposal.ID, err)
+		}
+	}
+
+	for _, flow := range []model.BusinessFlow{
+		{Base: model.Base{ID: 4201, CreatedAt: now, UpdatedAt: now}, SourceType: model.BusinessFlowSourceBooking, SourceID: 1, CurrentStage: model.BusinessFlowStageConstructionPartyPending},
+		{Base: model.Base{ID: 4202, CreatedAt: now, UpdatedAt: now}, SourceType: model.BusinessFlowSourceBooking, SourceID: 2, CurrentStage: model.BusinessFlowStageReadyToStart},
+	} {
+		if err := db.Create(&flow).Error; err != nil {
+			t.Fatalf("create business flow %d: %v", flow.ID, err)
+		}
+	}
+
+	if err := db.Create(&model.QuoteList{
+		Base:   model.Base{ID: 4301, CreatedAt: now, UpdatedAt: now},
+		Status: model.QuoteListStatusRejected,
+	}).Error; err != nil {
+		t.Fatalf("create rejected quote list: %v", err)
+	}
+
+	overview, err := (&AdminDashboardService{}).GetOverview()
+	if err != nil {
+		t.Fatalf("GetOverview: %v", err)
+	}
+
+	if got := dashboardMetricValueByKey(overview.BridgeMetrics, "bridge_entries"); got != 2 {
+		t.Fatalf("expected bridge entries 2, got %.0f", got)
+	}
+	if got := dashboardMetricValueByKey(overview.BridgeMetrics, "bridge_pending"); got != 1 {
+		t.Fatalf("expected bridge pending 1, got %.0f", got)
+	}
+	if got := dashboardMetricValueByKey(overview.BridgeMetrics, "bridge_confirmed"); got != 1 {
+		t.Fatalf("expected bridge confirmed 1, got %.0f", got)
+	}
+	if got := dashboardMetricValueByKey(overview.BridgeMetrics, "bridge_returned"); got != 1 {
+		t.Fatalf("expected bridge returned 1, got %.0f", got)
+	}
+	if diff := math.Abs(dashboardMetricValueByKey(overview.BridgeMetrics, "bridge_conversion_rate") - 0.5); diff > 0.0001 {
+		t.Fatalf("expected bridge conversion rate 0.5, got %.4f", dashboardMetricValueByKey(overview.BridgeMetrics, "bridge_conversion_rate"))
 	}
 }

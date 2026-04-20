@@ -31,6 +31,7 @@ interface OverviewStats {
     monthlyGMV: number;
     northStar?: { key: string; label: string; value: number };
     coreMetrics?: Array<{ key: string; label: string; value: number }>;
+    bridgeMetrics?: Array<{ key: string; label: string; value: number }>;
     dashboardSections?: Array<{ key: string; title: string; metrics: Array<{ key: string; label: string; value: number }> }>;
     userFunnel?: Array<{ key: string; label: string; value: number }>;
     merchantFunnel?: Array<{ key: string; label: string; value: number }>;
@@ -112,6 +113,15 @@ const Dashboard: React.FC = () => {
             { title: '主材商总量', value: `${currentStats.materialShopCount} 个`, path: '/materials/list' },
         ];
     }, [stats]);
+
+    const bridgeMetrics = stats?.bridgeMetrics || [];
+
+    const formatBridgeMetricValue = (item: { key: string; value: number }) => {
+        if (item.key.endsWith("_rate")) {
+            return `${(item.value * 100).toFixed(1)}%`;
+        }
+        return Math.round(item.value).toLocaleString();
+    };
 
     const userTrendConfig = {
         data: trends,
@@ -225,6 +235,35 @@ const Dashboard: React.FC = () => {
                     trend={`退款率 / 争议率联动观察`}
                 />
             </div>
+
+            {bridgeMetrics.length ? (
+                <Card className="hz-panel-card" title="施工桥接监控">
+                    <Row gutter={[16, 16]}>
+                        {bridgeMetrics.map((item) => (
+                            <Col key={item.key} xs={24} sm={12} lg={8} xl={4}>
+                                <div
+                                    style={{
+                                        display: "grid",
+                                        gap: 6,
+                                        padding: "16px 18px",
+                                        borderRadius: 18,
+                                        background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
+                                        border: "1px solid #dbeafe",
+                                        height: "100%",
+                                    }}
+                                >
+                                    <span style={{ fontSize: 12, color: "#64748b", letterSpacing: "0.04em" }}>
+                                        {item.label}
+                                    </span>
+                                    <span style={{ fontSize: 24, color: "#0f172a", fontWeight: 700, lineHeight: 1.2 }}>
+                                        {formatBridgeMetricValue(item)}
+                                    </span>
+                                </div>
+                            </Col>
+                        ))}
+                    </Row>
+                </Card>
+            ) : null}
 
             <div className="hz-dashboard-grid">
                 <Card className="hz-panel-card" title="有效预约趋势">

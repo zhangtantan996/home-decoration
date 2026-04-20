@@ -29,6 +29,7 @@ type DashboardFunnelStep struct {
 type DashboardOverview struct {
 	NorthStar         DashboardMetricValue      `json:"northStar"`
 	CoreMetrics       []DashboardMetricValue    `json:"coreMetrics"`
+	BridgeMetrics     []DashboardMetricValue    `json:"bridgeMetrics,omitempty"`
 	DashboardSections []DashboardSectionSummary `json:"dashboardSections"`
 	UserFunnel        []DashboardFunnelStep     `json:"userFunnel"`
 	MerchantFunnel    []DashboardFunnelStep     `json:"merchantFunnel"`
@@ -69,6 +70,10 @@ func (s *AdminDashboardService) GetOverview() (*DashboardOverview, error) {
 	effectiveBookings := countBookingsWithStatusAtLeast(2)
 	designConfirmed := countConfirmedProposals()
 	constructionConfirmed := countProjects()
+	bridgePending := countBridgePendingFlows()
+	bridgeConfirmed := countBridgeConfirmedFlows()
+	bridgeReturned := countRejectedBridgeQuoteLists()
+	bridgeConversionRate := ratio(bridgeConfirmed, maxInt64(designConfirmed, 1))
 	completedProjects := countCompletedProjects()
 	completedProjectsWithoutMajorRisk := countCompletedProjectsWithoutMajorRisk()
 	recentConstructionConfirmed := countConstructionConfirmedProjectsSince(windowStart)
@@ -103,6 +108,13 @@ func (s *AdminDashboardService) GetOverview() (*DashboardOverview, error) {
 			{Key: "completed_projects", Label: "完工项目数", Value: float64(completedProjects)},
 			{Key: "dispute_rate", Label: "争议率", Value: disputeRate},
 			{Key: "refund_rate", Label: "退款率", Value: refundRate},
+		},
+		BridgeMetrics: []DashboardMetricValue{
+			{Key: "bridge_entries", Label: "进入施工桥接数", Value: float64(designConfirmed)},
+			{Key: "bridge_pending", Label: "桥接处理中", Value: float64(bridgePending)},
+			{Key: "bridge_confirmed", Label: "工长确认数", Value: float64(bridgeConfirmed)},
+			{Key: "bridge_conversion_rate", Label: "桥接转化率", Value: bridgeConversionRate},
+			{Key: "bridge_returned", Label: "桥接退回量", Value: float64(bridgeReturned)},
 		},
 		DashboardSections: []DashboardSectionSummary{
 			{Key: "acquisition", Title: "拉新看板", Metrics: []DashboardMetricValue{{Key: "today_new_users", Label: "今日新增用户", Value: float64(todayNewUsers)}, {Key: "effective_bookings", Label: "有效预约", Value: float64(effectiveBookings)}}},
@@ -231,6 +243,42 @@ func countProvidersWithProject() int64 {
 func countProvidersWithCompletedProject() int64 {
 	var count int64
 	_ = repository.DB.Model(&model.Project{}).Where("status = ? OR business_status = ?", model.ProjectStatusCompleted, model.ProjectBusinessStatusCompleted).Distinct("provider_id").Count(&count).Error
+	return count
+}
+
+func countBridgePendingFlows() int64 {
+	var count int64
+	_ = repository.DB.Model(&model.BusinessFlow{}).
+		Where("current_stage IN ?", []string{
+			model.BusinessFlowStageConstructionPartyPending,
+			model.BusinessFlowStageConstructionQuotePending,
+		}).
+		Count(&count).Error
+	return count
+}
+
+func countBridgeConfirmedFlows() int64 {
+	var count int64
+	_ = repository.DB.Model(&model.BusinessFlow{}).
+		Where("current_stage IN ?", []string{
+			model.BusinessFlowStageReadyToStart,
+			model.BusinessFlowStageInConstruction,
+			model.BusinessFlowStageCompleted,
+			model.BusinessFlowStageArchived,
+			model.BusinessFlowStageDisputed,
+			model.BusinessFlowStagePaymentPaused,
+			model.BusinessFlowStageNodeAcceptanceInProgress,
+			model.BusinessFlowStageCasePendingGeneration,
+		}).
+		Count(&count).Error
+	return count
+}
+
+func countRejectedBridgeQuoteLists() int64 {
+	var count int64
+	_ = repository.DB.Model(&model.QuoteList{}).
+		Where("status = ?", model.QuoteListStatusRejected).
+		Count(&count).Error
 	return count
 }
 

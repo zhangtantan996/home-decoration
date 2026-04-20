@@ -16,18 +16,21 @@ import (
 )
 
 type MerchantQuotePreparation struct {
-	QuoteList            model.QuoteList               `json:"quoteList"`
-	QuoteListID          uint64                        `json:"quoteListId"`
-	PrerequisiteStatus   string                        `json:"prerequisiteStatus"`
-	PrerequisiteSnapshot QuoteTaskPrerequisiteSnapshot `json:"prerequisiteSnapshot"`
-	QuantityBase         *model.QuantityBase           `json:"quantityBase,omitempty"`
-	QuantityItems        []model.QuantityBaseItem      `json:"quantityItems"`
-	MissingFields        []string                      `json:"missingFields"`
-	TemplateID           uint64                        `json:"templateId,omitempty"`
-	TemplateError        string                        `json:"templateError,omitempty"`
-	TemplateSections     []MerchantTemplateSection     `json:"templateSections,omitempty"`
-	SelectedForemanID    uint64                        `json:"selectedForemanId,omitempty"`
-	RecommendedForemen   []RecommendedForeman          `json:"recommendedForemen,omitempty"`
+	QuoteList               model.QuoteList               `json:"quoteList"`
+	QuoteListID             uint64                        `json:"quoteListId"`
+	PrerequisiteStatus      string                        `json:"prerequisiteStatus"`
+	PrerequisiteSnapshot    QuoteTaskPrerequisiteSnapshot `json:"prerequisiteSnapshot"`
+	QuantityBase            *model.QuantityBase           `json:"quantityBase,omitempty"`
+	QuantityItems           []model.QuantityBaseItem      `json:"quantityItems"`
+	MissingFields           []string                      `json:"missingFields"`
+	TemplateID              uint64                        `json:"templateId,omitempty"`
+	TemplateError           string                        `json:"templateError,omitempty"`
+	TemplateSections        []MerchantTemplateSection     `json:"templateSections,omitempty"`
+	SelectedForemanID       uint64                        `json:"selectedForemanId,omitempty"`
+	RecommendedForemen      []RecommendedForeman          `json:"recommendedForemen,omitempty"`
+	Completeness            *MerchantFlowStepCompleteness `json:"completeness,omitempty"`
+	UserFacingExplainers    []string                      `json:"userFacingExplainers,omitempty"`
+	BridgeConversionSummary *BridgeConversionSummary      `json:"bridgeConversionSummary,omitempty"`
 }
 
 type MerchantTemplateSection struct {
@@ -429,20 +432,88 @@ func (s *QuoteService) buildMerchantQuotePreparation(quoteList *model.QuoteList)
 		}
 	}
 
-	return &MerchantQuotePreparation{
-		QuoteList:            refreshed,
-		QuoteListID:          refreshed.ID,
-		PrerequisiteStatus:   refreshed.PrerequisiteStatus,
-		PrerequisiteSnapshot: snapshot,
-		QuantityBase:         quantityBase,
-		QuantityItems:        quantityItems,
-		MissingFields:        uniqueStringSlice(missingFields),
-		TemplateID:           templateState.TemplateID,
-		TemplateError:        templateState.TemplateError,
-		TemplateSections:     templateState.Sections,
-		SelectedForemanID:    selectedForemanID,
-		RecommendedForemen:   recommended,
-	}, nil
+	bridgeConversionSummary := BuildBridgeConversionSummaryByQuoteList(&refreshed)
+	result := &MerchantQuotePreparation{
+		QuoteList:               refreshed,
+		QuoteListID:             refreshed.ID,
+		PrerequisiteStatus:      refreshed.PrerequisiteStatus,
+		PrerequisiteSnapshot:    snapshot,
+		QuantityBase:            quantityBase,
+		QuantityItems:           quantityItems,
+		MissingFields:           uniqueStringSlice(missingFields),
+		TemplateID:              templateState.TemplateID,
+		TemplateError:           templateState.TemplateError,
+		TemplateSections:        templateState.Sections,
+		SelectedForemanID:       selectedForemanID,
+		RecommendedForemen:      recommended,
+		BridgeConversionSummary: bridgeConversionSummary,
+	}
+	result.Completeness = buildMerchantPreparationCompleteness(result.MissingFields)
+	result.UserFacingExplainers = buildMerchantPreparationExplainers(result)
+	return result, nil
+}
+
+func buildMerchantPreparationCompleteness(missingFields []string) *MerchantFlowStepCompleteness {
+	checkpoints := []string{"area", "layout", "renovationType", "constructionScope", "serviceAreas", "houseUsage", "quantityItems"}
+	missingSet := make(map[string]struct{}, len(missingFields))
+	for _, field := range missingFields {
+		missingSet[strings.TrimSpace(field)] = struct{}{}
+	}
+	completed := 0
+	for _, field := range checkpoints {
+		if _, missing := missingSet[field]; !missing {
+			completed++
+		}
+	}
+	return &MerchantFlowStepCompleteness{
+		Completed: completed,
+		Total:     len(checkpoints),
+		Summary:   fmt.Sprintf("%d/%d 项施工准备已完善", completed, len(checkpoints)),
+	}
+}
+
+func buildMerchantPreparationExplainers(preparation *MerchantQuotePreparation) []string {
+	if preparation == nil {
+		return nil
+	}
+
+	items := make([]string, 0, 4)
+	if preparation.BridgeConversionSummary != nil && preparation.BridgeConversionSummary.BridgeNextStep != nil {
+		items = append(items, firstNonBlank(preparation.BridgeConversionSummary.BridgeNextStep.Reason, preparation.BridgeConversionSummary.BridgeNextStep.ActionHint))
+	}
+	if len(preparation.MissingFields) > 0 {
+		items = append(items, fmt.Sprintf("当前仍缺少：%s。", strings.Join(mapPreparationFieldLabels(preparation.MissingFields), "、")))
+	} else {
+		items = append(items, "施工报价基础已齐备，可以继续选择施工主体并推进正式施工报价。")
+	}
+	if preparation.BridgeConversionSummary != nil && preparation.BridgeConversionSummary.ResponsibilityBoundarySummary != nil && len(preparation.BridgeConversionSummary.ResponsibilityBoundarySummary.Items) > 0 {
+		items = append(items, fmt.Sprintf("%s：%s", firstNonBlank(preparation.BridgeConversionSummary.ResponsibilityBoundarySummary.Title, "责任边界"), strings.Join(preparation.BridgeConversionSummary.ResponsibilityBoundarySummary.Items, "；")))
+	}
+	if preparation.BridgeConversionSummary != nil && preparation.BridgeConversionSummary.ScheduleAndAcceptanceSummary != nil && len(preparation.BridgeConversionSummary.ScheduleAndAcceptanceSummary.Items) > 0 {
+		items = append(items, fmt.Sprintf("%s：%s", firstNonBlank(preparation.BridgeConversionSummary.ScheduleAndAcceptanceSummary.Title, "工期与验收"), strings.Join(preparation.BridgeConversionSummary.ScheduleAndAcceptanceSummary.Items, "；")))
+	}
+	return trimExplainers(items)
+}
+
+func mapPreparationFieldLabels(missingFields []string) []string {
+	labels := map[string]string{
+		"area":              "面积",
+		"layout":            "户型",
+		"renovationType":    "装修类型",
+		"constructionScope": "施工范围",
+		"serviceAreas":      "施工区域",
+		"houseUsage":        "房屋用途",
+		"quantityItems":     "施工基线清单",
+	}
+	result := make([]string, 0, len(missingFields))
+	for _, field := range missingFields {
+		key := strings.TrimSpace(field)
+		if key == "" {
+			continue
+		}
+		result = append(result, firstNonBlank(labels[key], key))
+	}
+	return uniqueStringSlice(result)
 }
 
 func (s *QuoteService) buildPreparationTemplateStateWithDB(

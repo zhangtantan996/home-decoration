@@ -60,20 +60,23 @@ const STEP_ORDER: MerchantFlowStep['key'][] = [
 
 const getStepSortIndex = (key: MerchantFlowStep['key']) => STEP_ORDER.indexOf(key);
 
+const getResolvedStepAction = (step: MerchantFlowStep) => step.nextAction || step.primaryAction;
+
 const getStepActionLabel = (step: MerchantFlowStep) => {
+  const action = getResolvedStepAction(step);
   if (step.status === 'returned') {
     return '处理退回内容';
   }
   if (step.status === 'pending_submit') {
-    return step.primaryAction?.label || '提交本步骤';
+    return action?.label || '提交本步骤';
   }
   if (step.status === 'pending_other') {
-    return step.primaryAction?.label || '查看进度';
+    return action?.label || '查看进度';
   }
   if (step.status === 'pending_user' || step.status === 'completed') {
     return '查看详情';
   }
-  return step.primaryAction?.label || '查看详情';
+  return action?.label || '查看详情';
 };
 
 const getSummaryLabel = (step: MerchantFlowStep) => {
@@ -131,8 +134,9 @@ const MerchantProjectFlow: React.FC = () => {
       return;
     }
     const target = sortedSteps.find((item) => item.key === step);
-    if (target?.primaryAction?.kind === 'modal' && target.primaryAction.modalType) {
-      setActiveModal(target.primaryAction.modalType);
+    const targetAction = target ? getResolvedStepAction(target) : null;
+    if (target && targetAction?.kind === 'modal' && targetAction.modalType) {
+      setActiveModal(targetAction.modalType);
       setActiveModalStepKey(target.key);
       setActiveModalMode('edit');
     }
@@ -180,8 +184,9 @@ const MerchantProjectFlow: React.FC = () => {
     step.status === 'completed' || step.status === 'pending_user' || step.status === 'pending_other' || step.status === 'returned';
 
   const openModalForStep = (step: MerchantFlowStep, mode: 'view' | 'edit') => {
-    if (step.primaryAction?.kind !== 'modal' || !step.primaryAction.modalType) return;
-    setActiveModal(step.primaryAction.modalType);
+    const action = getResolvedStepAction(step);
+    if (action?.kind !== 'modal' || !action.modalType) return;
+    setActiveModal(action.modalType);
     setActiveModalStepKey(step.key);
     setActiveModalMode(mode);
   };
@@ -206,6 +211,8 @@ const MerchantProjectFlow: React.FC = () => {
   };
 
   const renderStepAction = (step: MerchantFlowStep, isCurrent: boolean, compact = false) => {
+    const action = getResolvedStepAction(step);
+
     if (step.key === 'booking' && step.status === 'pending_submit') {
       return (
         <Space wrap size={compact ? 8 : 12}>
@@ -219,7 +226,7 @@ const MerchantProjectFlow: React.FC = () => {
       );
     }
 
-    if (step.primaryAction?.kind === 'modal' && step.primaryAction.modalType) {
+    if (action?.kind === 'modal' && action.modalType) {
       if (step.status === 'returned') {
         return (
           <Space size={8} wrap>
@@ -252,7 +259,7 @@ const MerchantProjectFlow: React.FC = () => {
       }
     }
 
-    const linkAction = step.primaryAction;
+    const linkAction = action;
     const linkPath = linkAction?.path;
     if (linkAction?.kind === 'link' && linkPath && step.status !== 'not_started') {
       return (
@@ -263,6 +270,46 @@ const MerchantProjectFlow: React.FC = () => {
     }
 
     return null;
+  };
+
+  const renderStepCompleteness = (step: MerchantFlowStep) => {
+    if (!step.completeness || step.completeness.total <= 0) return null;
+    const percent = Math.max(
+      0,
+      Math.min(100, Math.round((step.completeness.completed / step.completeness.total) * 100)),
+    );
+
+    return (
+      <div className={styles.completenessCard}>
+        <div className={styles.completenessHeader}>
+          <span className={styles.completenessTitle}>推进完整度</span>
+          <span className={styles.completenessValue}>
+            {step.completeness.completed}/{step.completeness.total}
+          </span>
+        </div>
+        <Progress percent={percent} size="small" showInfo={false} strokeColor="#2563eb" trailColor="#dbeafe" />
+        {step.completeness.summary ? (
+          <div className={styles.completenessSummary}>{step.completeness.summary}</div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderStepExplainers = (step: MerchantFlowStep) => {
+    const explainers = step.userFacingExplainers || [];
+    if (!explainers.length) return null;
+    return (
+      <div className={styles.explainerBox}>
+        <span className={styles.explainerLabel}>用户可见说明</span>
+        <div className={styles.explainerList}>
+          {explainers.map((item) => (
+            <div key={item} className={styles.explainerItem}>
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const renderStatusSummary = (step: MerchantFlowStep) => {
@@ -324,7 +371,9 @@ const MerchantProjectFlow: React.FC = () => {
           </div>
 
           <div className={styles.stepBody}>
+            {renderStepCompleteness(step)}
             {renderStatusSummary(step)}
+            {renderStepExplainers(step)}
           </div>
         </div>
       </div>
