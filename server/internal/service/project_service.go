@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -130,6 +131,18 @@ type ConfirmConstructionQuoteRequest struct {
 type StartProjectRequest struct {
 	StartDate string `json:"startDate"`
 	Reason    string `json:"reason"`
+}
+
+// SelectConstructionPartyRequest 用户选择工长请求
+type SelectConstructionPartyRequest struct {
+	ProviderID   uint64 `json:"providerId" binding:"required"`
+	ProviderType int8   `json:"providerType" binding:"required"` // 2=装修公司 3=独立工长
+}
+
+// ConfirmConstructionPartyRequest 工长确认请求
+type ConfirmConstructionPartyRequest struct {
+	Accept bool   `json:"accept" binding:"required"`
+	Reason string `json:"reason"`
 }
 
 type CreateWorkLogRequest struct {
@@ -2658,4 +2671,235 @@ func (s *ProjectService) InitProjectMilestones(tx *gorm.DB, projectID uint64, to
 	}
 
 	return tx.Create(&milestones).Error
+}
+
+// SelectConstructionParty 用户选择工长
+func (s *ProjectService) SelectConstructionParty(bookingID uint64, userID uint64, req *SelectConstructionPartyRequest) error {
+	// 1. 检查 booking 是否存在
+	var booking model.Booking
+	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("预约不存在")
+		}
+		return fmt.Errorf("查询预约失败: %w", err)
+	}
+
+	// 2. 验证用户权限
+	if booking.UserID != userID {
+		return errors.New("无权操作此预约")
+	}
+
+	// 3. 检查业务流程状态
+	var flow model.BusinessFlow
+	if err := repository.DB.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, bookingID).First(&flow).Error; err != nil {
+		return errors.New("业务流程不存在")
+	}
+
+	if flow.CurrentStage != model.BusinessFlowStageDesignConfirmed {
+		return errors.New("当前状态不允许选择工长，请先完成设计确认")
+	}
+
+	// 4. 验证 provider 是否存在且类型正确
+	var provider model.Provider
+	if err := repository.DB.First(&provider, req.ProviderID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("服务商不存在")
+		}
+		return fmt.Errorf("查询服务商失败: %w", err)
+	}
+
+	// 验证 provider 类型：2=装修公司 3=独立工长
+	if provider.ProviderType != 2 && provider.ProviderType != 3 {
+		return errors.New("只能选择装修公司或独立工长")
+	}
+
+	if req.ProviderType != provider.ProviderType {
+		return errors.New("服务商类型不匹配")
+	}
+
+	// 5. 使用事务更新 BusinessFlow
+	tx := repository.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	now := time.Now()
+	updates := map[string]interface{}{
+		"selected_foreman_provider_id": req.ProviderID,
+		"current_stage":                 model.BusinessFlowStageConstructionPartyPending,
+		"stage_changed_at":              now,
+	}
+
+	if err := tx.Model(&flow).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("更新业务流程失败: %w", err)
+	}
+
+	// 6. 记录审计日志
+	auditSvc := &AuditLogService{}
+	if err := auditSvc.CreateRecordTx(tx, &CreateAuditRecordInput{
+		RecordKind:    "business",
+		OperatorType:  "user",
+		OperatorID:    userID,
+		Action:        "select_construction_party",
+		OperationType: "update",
+		Resource:      fmt.Sprintf("booking:%d", bookingID),
+		ResourceType:  "booking",
+		ResourceID:    bookingID,
+		Result:        "success",
+		Metadata: map[string]interface{}{
+			"provider_id":   req.ProviderID,
+			"provider_type": req.ProviderType,
+		},
+	}); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("记录审计日志失败: %w", err)
+	}
+
+	// 7. 发送通知给工长
+	notificationSvc := &NotificationService{}
+	var providerUser model.User
+	if err := repository.DB.First(&providerUser, provider.UserID).Error; err == nil {
+		providerTypeName := "装修公司"
+		if provider.ProviderType == 3 {
+			providerTypeName = "工长"
+		}
+
+		if err := notificationSvc.Create(&CreateNotificationInput{
+			UserID:      providerUser.ID,
+			UserType:    "provider",
+			Title:       "新的施工邀请",
+			Content:     fmt.Sprintf("业主已选择您作为%s，请尽快确认", providerTypeName),
+			Type:        "construction_party_selected",
+			RelatedID:   bookingID,
+			RelatedType: "booking",
+			ActionURL:   fmt.Sprintf("/bookings/%d", bookingID),
+			Category:    NotificationCategoryProject,
+		}); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("发送通知失败: %w", err)
+		}
+	}
+
+	return tx.Commit().Error
+}
+
+// ConfirmConstructionParty 工长确认
+func (s *ProjectService) ConfirmConstructionParty(bookingID uint64, providerID uint64, req *ConfirmConstructionPartyRequest) error {
+	// 1. 检查 booking 是否存在
+	var booking model.Booking
+	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("预约不存在")
+		}
+		return fmt.Errorf("查询预约失败: %w", err)
+	}
+
+	// 2. 检查业务流程状态
+	var flow model.BusinessFlow
+	if err := repository.DB.Where("source_type = ? AND source_id = ?", model.BusinessFlowSourceBooking, bookingID).First(&flow).Error; err != nil {
+		return errors.New("业务流程不存在")
+	}
+
+	if flow.CurrentStage != model.BusinessFlowStageConstructionPartyPending {
+		return errors.New("当前状态不允许确认，请等待业主选择")
+	}
+
+	// 3. 验证当前 provider 是否是被选中的工长
+	if flow.SelectedForemanProviderID != providerID {
+		return errors.New("您不是被选中的工长，无权确认")
+	}
+
+	// 4. 使用事务处理
+	tx := repository.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	now := time.Now()
+	var updates map[string]interface{}
+
+	if req.Accept {
+		// 工长接受
+		updates = map[string]interface{}{
+			"current_stage":    model.BusinessFlowStageConstructorConfirmed,
+			"stage_changed_at": now,
+		}
+	} else {
+		// 工长拒绝，回退到设计确认状态
+		updates = map[string]interface{}{
+			"selected_foreman_provider_id": 0,
+			"current_stage":                 model.BusinessFlowStageDesignConfirmed,
+			"stage_changed_at":              now,
+		}
+	}
+
+	if err := tx.Model(&flow).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("更新业务流程失败: %w", err)
+	}
+
+	// 5. 记录审计日志
+	auditSvc := &AuditLogService{}
+	action := "confirm_construction_party"
+	if !req.Accept {
+		action = "reject_construction_party"
+	}
+
+	if err := auditSvc.CreateRecordTx(tx, &CreateAuditRecordInput{
+		RecordKind:    "business",
+		OperatorType:  "provider",
+		OperatorID:    providerID,
+		Action:        action,
+		OperationType: "update",
+		Resource:      fmt.Sprintf("booking:%d", bookingID),
+		ResourceType:  "booking",
+		ResourceID:    bookingID,
+		Reason:        req.Reason,
+		Result:        "success",
+		Metadata: map[string]interface{}{
+			"accept": req.Accept,
+		},
+	}); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("记录审计日志失败: %w", err)
+	}
+
+	// 6. 发送通知给用户
+	notificationSvc := &NotificationService{}
+	var user model.User
+	if err := repository.DB.First(&user, booking.UserID).Error; err == nil {
+		var title, content string
+		if req.Accept {
+			title = "工长已确认"
+			content = "工长已确认接受施工邀请，可以继续下一步操作"
+		} else {
+			title = "工长已拒绝"
+			content = "工长拒绝了施工邀请，请重新选择工长"
+			if req.Reason != "" {
+				content = fmt.Sprintf("工长拒绝了施工邀请：%s", req.Reason)
+			}
+		}
+
+		if err := notificationSvc.Create(&CreateNotificationInput{
+			UserID:      user.ID,
+			UserType:    "user",
+			Title:       title,
+			Content:     content,
+			Type:        "construction_party_confirmed",
+			RelatedID:   bookingID,
+			RelatedType: "booking",
+			ActionURL:   fmt.Sprintf("/bookings/%d", bookingID),
+			Category:    NotificationCategoryProject,
+		}); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("发送通知失败: %w", err)
+		}
+	}
+
+	return tx.Commit().Error
 }

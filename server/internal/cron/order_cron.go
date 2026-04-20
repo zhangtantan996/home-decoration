@@ -27,6 +27,13 @@ func StartOrderCron() {
 }
 
 func notifyExpiringOrders() {
+	// P1修复：添加错误恢复机制，防止单次失败导致整个定时任务停止
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Cron] Panic in notifyExpiringOrders: %v", r)
+		}
+	}()
+
 	now := time.Now()
 	horizon := now.Add(30 * time.Minute)
 
@@ -63,6 +70,13 @@ func notifyExpiringOrders() {
 
 // cancelExpiredOrders 自动取消过期订单
 func cancelExpiredOrders() {
+	// P1修复：添加错误恢复机制，防止单次失败导致整个定时任务停止
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Cron] Panic in cancelExpiredOrders: %v", r)
+		}
+	}()
+
 	now := time.Now()
 
 	var orders []model.Order
@@ -114,6 +128,13 @@ func cancelExpiredOrders() {
 }
 
 func syncPendingRefundOrders() {
+	// P1修复：添加错误恢复机制，防止单次失败导致整个定时任务停止
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Cron] Panic in syncPendingRefundOrders: %v", r)
+		}
+	}()
+
 	count, err := service.NewPaymentService(nil).SyncPendingRefundOrders(20)
 	if err != nil {
 		log.Printf("[Cron] Failed to sync pending refunds: %v", err)

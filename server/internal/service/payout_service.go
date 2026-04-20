@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -80,16 +82,21 @@ func (s *PayoutService) CreateSettlementPayoutTx(tx *gorm.DB, settlement *model.
 	if settlement.DueAt != nil {
 		scheduledAt = *settlement.DueAt
 	}
+
+	// 生成幂等性键（防止重复出款）
+	idempotencyKey := generatePayoutIdempotencyKey(model.PayoutBizTypeSettlementOrder, settlement.ID, settlement.ProviderID)
+
 	payout, _, err := s.createOrReusePayoutOrderTx(tx, &model.PayoutOrder{
-		BizType:     model.PayoutBizTypeSettlementOrder,
-		BizID:       settlement.ID,
-		ProviderID:  settlement.ProviderID,
-		Amount:      amount,
-		Channel:     model.PayoutChannelCustody,
-		FundScene:   settlement.FundScene,
-		OutPayoutNo: outPayoutNo,
-		Status:      model.PayoutStatusCreated,
-		ScheduledAt: &scheduledAt,
+		BizType:        model.PayoutBizTypeSettlementOrder,
+		BizID:          settlement.ID,
+		ProviderID:     settlement.ProviderID,
+		Amount:         amount,
+		Channel:        model.PayoutChannelCustody,
+		FundScene:      settlement.FundScene,
+		OutPayoutNo:    outPayoutNo,
+		Status:         model.PayoutStatusCreated,
+		ScheduledAt:    &scheduledAt,
+		IdempotencyKey: idempotencyKey,
 	})
 	return payout, err
 }
@@ -184,6 +191,23 @@ func (s *PayoutService) createOrReusePayoutOrderTx(tx *gorm.DB, draft *model.Pay
 	if draft == nil {
 		return nil, false, errors.New("出款单不能为空")
 	}
+
+	// 优先使用幂等性键查询（防止重复出款）
+	if draft.IdempotencyKey != "" {
+		var existing model.PayoutOrder
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("idempotency_key = ?", draft.IdempotencyKey).
+			First(&existing).Error
+		if err == nil {
+			// 幂等性键已存在，返回已有记录
+			return &existing, false, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, err
+		}
+	}
+
+	// 降级到业务键查询
 	var existing model.PayoutOrder
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("biz_type = ? AND biz_id = ?", draft.BizType, draft.BizID).
@@ -205,7 +229,17 @@ func (s *PayoutService) createOrReusePayoutOrderTx(tx *gorm.DB, draft *model.Pay
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, err
 	}
+
+	// 创建新记录（数据库唯一约束会防止并发重复）
 	if err := tx.Create(draft).Error; err != nil {
+		// 检查是否是幂等性键冲突
+		if strings.Contains(err.Error(), "idempotency_key") || strings.Contains(err.Error(), "duplicate") {
+			// 重新查询已存在的记录
+			var retry model.PayoutOrder
+			if retryErr := tx.Where("idempotency_key = ?", draft.IdempotencyKey).First(&retry).Error; retryErr == nil {
+				return &retry, false, nil
+			}
+		}
 		return nil, false, err
 	}
 	return draft, true, nil
@@ -782,4 +816,12 @@ func calculateProjectedIncomeByTypeTx(tx *gorm.DB, incomeType string, amount flo
 		platformFee = normalizeAmount(amount)
 	}
 	return platformFee, netAmount
+}
+
+// generatePayoutIdempotencyKey 生成出款幂等性键（防止重复出款）
+// 格式: SHA256(bizType:bizID:providerID)
+func generatePayoutIdempotencyKey(bizType string, bizID, providerID uint64) string {
+	data := fmt.Sprintf("%s:%d:%d", bizType, bizID, providerID)
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])
 }

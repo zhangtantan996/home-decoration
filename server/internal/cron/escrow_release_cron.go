@@ -30,6 +30,13 @@ func StartEscrowReleaseCron() {
 
 // processEscrowReleases 处理到期的托管资金释放
 func processEscrowReleases() {
+	// P1修复：添加错误恢复机制，防止单次失败导致整个定时任务停止
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Cron] Panic in processEscrowReleases: %v", r)
+		}
+	}()
+
 	log.Println("[Cron] Starting escrow release task...")
 
 	escrowSvc := &service.EscrowService{}

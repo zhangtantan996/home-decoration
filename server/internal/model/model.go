@@ -245,6 +245,11 @@ type Project struct {
 	CompletionSubmittedAt     *time.Time `json:"completionSubmittedAt"`
 	CompletionRejectionReason string     `json:"completionRejectionReason" gorm:"type:text"`
 	CompletionRejectedAt      *time.Time `json:"completionRejectedAt"`
+
+	// 项目关闭信息
+	ClosedReason string     `json:"closedReason" gorm:"size:500"` // 关闭原因
+	ClosedAt     *time.Time `json:"closedAt"`                     // 关闭时间
+	ClosureType  string     `json:"closureType" gorm:"size:20"`   // normal, abnormal
 }
 
 // Milestone 验收节点

@@ -286,7 +286,12 @@ export default function InspirationDetailPage() {
         });
       }
     } catch (error) {
-      showErrorToast(error, '评论失败');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('敏感词')) {
+        Taro.showToast({ title: '评论包含敏感词，请修改后重试', icon: 'none', duration: 2500 });
+      } else {
+        showErrorToast(error, '评论失败');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -310,6 +315,72 @@ export default function InspirationDetailPage() {
         void handleSubmitComment(nextContent);
       },
     } as any);
+  };
+
+  const handleReplyComment = (comment: InspirationCommentDTO) => {
+    if (!ensureAuth()) return;
+
+    Taro.navigateTo({
+      url: `/pages/inspiration/comment-detail/index?id=${comment.id}&caseId=${detail?.id || 0}`,
+    });
+  };
+
+  const handleCommentAction = (comment: InspirationCommentDTO) => {
+    if (!ensureAuth()) return;
+
+    const isOwnComment = auth.user?.id === comment.user?.id;
+    const itemList = isOwnComment ? ['删除评论'] : ['举报评论'];
+
+    Taro.showActionSheet({
+      itemList,
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          if (isOwnComment) {
+            handleDeleteComment(comment);
+          } else {
+            handleReportComment(comment);
+          }
+        }
+      },
+    });
+  };
+
+  const handleDeleteComment = (comment: InspirationCommentDTO) => {
+    Taro.showModal({
+      title: '确认删除',
+      content: '删除后无法恢复，确定要删除这条评论吗？',
+      success: async (res) => {
+        if (!res.confirm) return;
+
+        try {
+          await inspirationService.deleteComment(comment.id);
+          Taro.showToast({ title: '删除成功', icon: 'success' });
+
+          // 刷新评论列表
+          await fetchDetail();
+        } catch (error) {
+          showErrorToast(error, '删除失败');
+        }
+      },
+    });
+  };
+
+  const handleReportComment = (comment: InspirationCommentDTO) => {
+    const reasonList = ['垃圾广告', '色情低俗', '政治敏感', '人身攻击', '其他'];
+
+    Taro.showActionSheet({
+      itemList: reasonList,
+      success: async (res) => {
+        const reason = reasonList[res.tapIndex];
+
+        try {
+          await inspirationService.reportComment(comment.id, reason);
+          Taro.showToast({ title: '举报成功，我们会尽快处理', icon: 'success', duration: 2000 });
+        } catch (error) {
+          showErrorToast(error, '举报失败');
+        }
+      },
+    });
   };
 
   const solidNav = <MiniPageNav title="灵感详情" onBack={handleBack} placeholder />;
@@ -461,8 +532,16 @@ export default function InspirationDetailPage() {
                       {formatServerDateTime(item.createdAt)}
                     </Text>
                   </View>
+                  <View className="inspiration-detail-page__comment-actions" onClick={() => handleCommentAction(item)}>
+                    <Text className="inspiration-detail-page__comment-actions-icon">···</Text>
+                  </View>
                 </View>
                 <Text className="inspiration-detail-page__comment-content">{item.content}</Text>
+                <View className="inspiration-detail-page__comment-footer">
+                  <View className="inspiration-detail-page__comment-reply-btn" onClick={() => handleReplyComment(item)}>
+                    <Text className="inspiration-detail-page__comment-reply-text">回复</Text>
+                  </View>
+                </View>
               </View>
             ))
           )}

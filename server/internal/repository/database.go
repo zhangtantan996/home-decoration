@@ -197,10 +197,17 @@ func autoMigrate() error {
 		&model.QuoteCategoryRule{},
 		&model.QuoteTemplate{},
 		&model.QuoteTemplateItem{},
+		&model.QuoteEstimateTemplate{},
 		// 设计服务支付体系 (v1.12.0)
 		&model.DesignWorkingDoc{},
 		&model.DesignFeeQuote{},
 		&model.DesignDeliverable{},
+		// 验收清单系统 (v1.13.0)
+		&model.InspectionChecklist{},
+		&model.InspectionTemplate{},
+		// 对账系统
+		&model.ReconciliationRecord{},
+		&model.ReconciliationDifference{},
 	)
 }
 

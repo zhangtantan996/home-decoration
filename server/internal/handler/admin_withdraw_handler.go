@@ -111,7 +111,9 @@ func AdminWithdrawApprove(c *gin.Context) {
 	adminID := c.GetUint64("admin_id")
 
 	var input struct {
-		Remark string `json:"remark"`
+		Remark         string `json:"remark"`
+		AutoPayout     bool   `json:"autoPayout"`     // 是否启用自动出款
+		SettlementID   uint64 `json:"settlementId"`   // 关联的结算单ID（如果有）
 	}
 	if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
 		response.Error(c, 400, "参数错误")
@@ -165,6 +167,7 @@ func AdminWithdrawApprove(c *gin.Context) {
 				"providerId": withdraw.ProviderID,
 				"orderNo":    withdraw.OrderNo,
 				"amount":     withdraw.Amount,
+				"autoPayout": input.AutoPayout,
 			},
 		})
 	})
@@ -173,13 +176,29 @@ func AdminWithdrawApprove(c *gin.Context) {
 		return
 	}
 
+	// 自动出款逻辑
+	var payoutMessage string
+	if input.AutoPayout && input.SettlementID > 0 {
+		payoutService := service.NewPayoutRoutingService()
+		payoutOrder, payoutErr := payoutService.ExecutePayout(input.SettlementID)
+		if payoutErr != nil {
+			log.Printf("[AdminWithdrawApprove] Auto payout failed for settlement #%d: %v", input.SettlementID, payoutErr)
+			payoutMessage = "自动出款失败，请手动打款"
+		} else {
+			log.Printf("[AdminWithdrawApprove] Auto payout succeeded: payout order #%d", payoutOrder.ID)
+			payoutMessage = "自动出款已提交，请等待处理"
+		}
+	} else {
+		payoutMessage = "审核通过，等待线下打款"
+	}
+
 	notifService := &service.NotificationService{}
 	if err := notifService.NotifyWithdrawApproved(&withdraw, provider.UserID); err != nil {
 		log.Printf("[AdminWithdrawApprove] Failed to send notification: %v", err)
 	}
 
 	response.Success(c, gin.H{
-		"message":  "审核通过，等待线下打款",
+		"message":  payoutMessage,
 		"withdraw": serializeAdminWithdraw(withdraw, provider),
 	})
 }

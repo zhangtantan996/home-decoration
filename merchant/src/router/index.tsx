@@ -34,6 +34,8 @@ import MaterialShopProducts from '../pages/merchant/MaterialShopProducts';
 import MerchantDesignWorkflow from '../pages/merchant/MerchantDesignWorkflow';
 import MerchantProjectFlow from '../pages/merchant/MerchantProjectFlow';
 import MerchantConstructionPrepPage from '../pages/merchant/MerchantConstructionPrepPage';
+import MerchantDesignerTasks from '../pages/merchant/MerchantDesignerTasks';
+import MerchantCrewTasks from '../pages/merchant/MerchantCrewTasks';
 import OnboardingAgreementPage from '../pages/merchant/legal/OnboardingAgreementPage';
 import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
@@ -74,6 +76,8 @@ const router = createBrowserRouter([
             children: [
               { path: '/dashboard', element: <MerchantDashboard /> },
               { path: '/notifications', element: <MerchantNotifications /> },
+              { path: '/designer-tasks', element: <MerchantDesignerTasks /> },
+              { path: '/crew-tasks', element: <MerchantCrewTasks /> },
               { path: '/leads', element: <Navigate to="/bookings" replace /> },
               { path: '/bookings', element: <MerchantBookings /> },
               { path: '/bookings/:id/site-survey', element: <MerchantBookingSiteSurvey /> },

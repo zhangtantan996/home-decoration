@@ -3,7 +3,10 @@ package model
 import "time"
 
 const (
-	PayoutChannelCustody = "custody"
+	PayoutChannelCustody       = "custody"
+	PayoutChannelWechatBalance = "wechat_balance" // 微信企业付款（<2万）
+	PayoutChannelWechatBank    = "wechat_bank"    // 微信商家转账（2-10万）
+	PayoutChannelBankTransfer  = "bank_transfer"  // 银行转账（≥10万）
 )
 
 const (
@@ -35,6 +38,9 @@ type PayoutOrder struct {
 	FailureReason    string     `json:"failureReason" gorm:"size:500"`
 	RawResponseJSON  string     `json:"rawResponseJson" gorm:"type:jsonb;default:'{}'"`
 	RetryCount       int        `json:"retryCount" gorm:"default:0"`
+
+	// 幂等性保护（防止重复出款）
+	IdempotencyKey string `json:"idempotencyKey" gorm:"size:64;uniqueIndex"` // 幂等性键
 }
 
 func (PayoutOrder) TableName() string {

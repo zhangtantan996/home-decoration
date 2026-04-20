@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth"
@@ -328,6 +329,103 @@ func amountFenToYuan(amount int64) float64 {
 	return float64(amount) / 100
 }
 
+func (g *WechatPayGateway) QueryOrderByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentChannelQueryResult, error) {
+	if strings.TrimSpace(outTradeNo) == "" {
+		return nil, errors.New("商户订单号不能为空")
+	}
+	if err := g.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	cfg := config.GetConfig()
+	svc := jsapi.JsapiApiService{Client: g.client}
+	resp, _, err := svc.QueryOrderByOutTradeNo(ctx, jsapi.QueryOrderByOutTradeNoRequest{
+		OutTradeNo: core.String(strings.TrimSpace(outTradeNo)),
+		Mchid:      core.String(strings.TrimSpace(cfg.WechatPay.MchID)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("查询支付单失败: %w", err)
+	}
+	amount := float64(0)
+	if resp.Amount != nil && resp.Amount.Total != nil {
+		amount = amountFenToYuan(*resp.Amount.Total)
+	}
+	return &PaymentChannelQueryResult{
+		OutTradeNo:      stringValue(resp.OutTradeNo),
+		ProviderTradeNo: stringValue(resp.TransactionId),
+		TradeStatus:     stringValue(resp.TradeState),
+		Amount:          amount,
+		RawJSON:         mustMarshalJSON(resp),
+	}, nil
+}
+
+func (g *WechatPayGateway) CloseOrder(ctx context.Context, outTradeNo string) error {
+	if strings.TrimSpace(outTradeNo) == "" {
+		return errors.New("商户订单号不能为空")
+	}
+	if err := g.ensureInitialized(ctx); err != nil {
+		return err
+	}
+	cfg := config.GetConfig()
+	svc := jsapi.JsapiApiService{Client: g.client}
+	_, err := svc.CloseOrder(ctx, jsapi.CloseOrderRequest{
+		OutTradeNo: core.String(strings.TrimSpace(outTradeNo)),
+		Mchid:      core.String(strings.TrimSpace(cfg.WechatPay.MchID)),
+	})
+	if err != nil {
+		return fmt.Errorf("关闭订单失败: %w", err)
+	}
+	return nil
+}
+
+func (g *WechatPayGateway) QueryRefund(ctx context.Context, outRefundNo string) (*RefundQueryResult, error) {
+	if strings.TrimSpace(outRefundNo) == "" {
+		return nil, errors.New("商户退款单号不能为空")
+	}
+	if err := g.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	svc := refunddomestic.RefundsApiService{Client: g.client}
+	resp, _, err := svc.QueryByOutRefundNo(ctx, refunddomestic.QueryByOutRefundNoRequest{
+		OutRefundNo: core.String(strings.TrimSpace(outRefundNo)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("查询退款失败: %w", err)
+	}
+	status := strings.TrimSpace(refundStatusValue(resp.Status))
+	refundAmount := float64(0)
+	if resp.Amount != nil && resp.Amount.Refund != nil {
+		refundAmount = amountFenToYuan(*resp.Amount.Refund)
+	}
+	return &RefundQueryResult{
+		OutRefundNo:     stringValue(resp.OutRefundNo),
+		ProviderTradeNo: stringValue(resp.TransactionId),
+		OutTradeNo:      stringValue(resp.OutTradeNo),
+		RefundStatus:    status,
+		RefundAmount:    refundAmount,
+		Success:         status == string(refunddomestic.STATUS_SUCCESS),
+		Pending:         status == string(refunddomestic.STATUS_PROCESSING),
+		FailureReason:   wechatRefundFailureReason(status),
+		RawJSON:         mustMarshalJSON(resp),
+	}, nil
+}
+
+func (g *WechatPayGateway) DownloadBill(ctx context.Context, billDate string, billType string) ([]byte, error) {
+	if strings.TrimSpace(billDate) == "" {
+		return nil, errors.New("账单日期不能为空")
+	}
+	if strings.TrimSpace(billType) == "" {
+		billType = "ALL"
+	}
+	validBillTypes := map[string]bool{"ALL": true, "SUCCESS": true, "REFUND": true}
+	if !validBillTypes[strings.ToUpper(billType)] {
+		return nil, fmt.Errorf("账单类型无效，可选值: ALL/SUCCESS/REFUND")
+	}
+	if err := g.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("微信支付账单下载功能暂未实现")
+}
+
 func wechatRefundFailureReason(status string) string {
 	switch status {
 	case string(refunddomestic.STATUS_CLOSED):
@@ -337,4 +435,56 @@ func wechatRefundFailureReason(status string) string {
 	default:
 		return ""
 	}
+}
+
+type TransferToBankCardInput struct {
+	OutBatchNo      string  // 商户批次单号
+	BatchName       string  // 批次名称
+	BatchRemark     string  // 批次备注
+	TransferSceneID string  // 转账场景ID
+	OutDetailNo     string  // 商户明细单号
+	TransferAmount  int64   // 转账金额（分）
+	TransferRemark  string  // 转账备注
+	UserName        string  // 收款人姓名（需加密）
+	BankCardNumber  string  // 银行卡号（需加密）
+}
+
+type TransferToBankCardResult struct {
+	BatchID     string    // 微信批次单号
+	CreateTime  time.Time // 批次创建时间
+	BatchStatus string    // 批次状态
+	RawJSON     string    // 原始响应JSON
+}
+
+func (g *WechatPayGateway) TransferToBankCard(ctx context.Context, input *TransferToBankCardInput) (*TransferToBankCardResult, error) {
+	if input == nil {
+		return nil, errors.New("转账参数不能为空")
+	}
+	if strings.TrimSpace(input.OutBatchNo) == "" {
+		return nil, errors.New("商户批次单号不能为空")
+	}
+	if strings.TrimSpace(input.BatchName) == "" {
+		return nil, errors.New("批次名称不能为空")
+	}
+	if strings.TrimSpace(input.OutDetailNo) == "" {
+		return nil, errors.New("商户明细单号不能为空")
+	}
+	if input.TransferAmount <= 0 {
+		return nil, errors.New("转账金额必须大于0")
+	}
+	if input.TransferAmount > 1000000 {
+		return nil, errors.New("单笔转账金额不能超过10万元")
+	}
+	if strings.TrimSpace(input.UserName) == "" {
+		return nil, errors.New("收款人姓名不能为空")
+	}
+	if strings.TrimSpace(input.BankCardNumber) == "" {
+		return nil, errors.New("银行卡号不能为空")
+	}
+
+	if err := g.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+
+	return nil, errors.New("微信商家转账到银行卡功能暂未实现：需要对接微信支付SDK的转账到银行卡API，并实现RSA加密功能")
 }

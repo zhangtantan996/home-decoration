@@ -14,7 +14,12 @@ const (
 	BusinessFlowStageDesignPendingSubmission  = "design_pending_submission"
 	BusinessFlowStageDesignPendingConfirmation = "design_pending_confirmation"
 	BusinessFlowStageProposalPending          = "proposal_pending"
-	BusinessFlowStageConstructionPartyPending = "construction_party_pending"
+
+	// 设计确认后的新状态（PRD v2.3规则1：双成交点分离）
+	BusinessFlowStageDesignConfirmed          = "design_confirmed"          // 设计确认完成，待选择工长
+	BusinessFlowStageConstructionPartyPending = "construction_party_pending" // 工长已选择，待工长确认
+	BusinessFlowStageConstructorConfirmed     = "constructor_confirmed"     // 工长已确认，待创建项目
+
 	BusinessFlowStageProposalConfirmed        = "proposal_confirmed"
 	BusinessFlowStageConstructorPending       = "constructor_pending"
 	BusinessFlowStageConstructionQuotePending = "construction_quote_pending"
@@ -52,10 +57,15 @@ func NormalizeBusinessFlowStage(stage string) string {
 		return BusinessFlowStageDesignPendingConfirmation
 	case BusinessFlowStageDesignPendingConfirmation:
 		return BusinessFlowStageDesignPendingConfirmation
+	// 新增：设计确认后的状态流转
+	case BusinessFlowStageDesignConfirmed:
+		return BusinessFlowStageDesignConfirmed
 	case BusinessFlowStageProposalConfirmed, BusinessFlowStageConstructorPending:
 		return BusinessFlowStageConstructionPartyPending
 	case BusinessFlowStageConstructionPartyPending:
 		return BusinessFlowStageConstructionPartyPending
+	case BusinessFlowStageConstructorConfirmed:
+		return BusinessFlowStageConstructorConfirmed
 	case BusinessFlowStageConstructionQuotePending:
 		return BusinessFlowStageConstructionQuotePending
 	case BusinessFlowStageReadyToStart:

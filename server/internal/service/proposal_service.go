@@ -350,8 +350,10 @@ func (s *ProposalService) confirmProposalForBooking(
 		tx.Rollback()
 		return nil, err
 	}
+	// PRD v2.3规则1：设计确认后进入 design_confirmed 状态，不再自动推进到工长选择
+	// 用户需要主动选择工长
 	if err := businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
-		"current_stage":         model.BusinessFlowStageConstructionPartyPending,
+		"current_stage":         model.BusinessFlowStageDesignConfirmed,
 		"confirmed_proposal_id": proposal.ID,
 		"designer_provider_id":  booking.ProviderID,
 		"project_id":            0,

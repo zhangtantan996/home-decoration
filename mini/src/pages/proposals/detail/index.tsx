@@ -79,7 +79,26 @@ const ProposalDetail: React.FC = () => {
           setSubmitting(true);
           const result = await confirmProposal(id);
           Taro.showToast({ title: result.message || '已确认方案，请继续支付设计费', icon: 'success' });
-          Taro.navigateTo({ url: '/pages/orders/pending/index?type=design_fee' });
+
+          // 设计确认成功后，引导用户选择施工方
+          const bookingId = detail?.bookingId;
+          if (bookingId) {
+            Taro.showModal({
+              title: '下一步',
+              content: '设计方案已确认。接下来需要选择施工方（装修公司或独立工长）。',
+              confirmText: '去选择',
+              cancelText: '稍后',
+              success: (modalRes) => {
+                if (modalRes.confirm) {
+                  Taro.navigateTo({ url: `/pages/booking/construction-subject-select/index?bookingId=${bookingId}` });
+                } else {
+                  Taro.navigateTo({ url: '/pages/orders/pending/index?type=design_fee' });
+                }
+              }
+            });
+          } else {
+            Taro.navigateTo({ url: '/pages/orders/pending/index?type=design_fee' });
+          }
         } catch (error) {
           showErrorToast(error, '操作失败');
         } finally {

@@ -1390,3 +1390,128 @@ func resolveOrderTypeText(orderType string) string {
 		return "待支付"
 	}
 }
+
+// NotifyProjectClosed 通知项目关闭
+func (d *NotificationDispatcher) NotifyProjectClosed(projectID, ownerUserID, providerUserID uint64, closureType, reason string) {
+	var title, content string
+	if closureType == "normal" {
+		title = "项目已正常关闭"
+		content = fmt.Sprintf("项目已正常关闭。关闭原因：%s", reason)
+	} else {
+		title = "项目已异常关闭"
+		content = fmt.Sprintf("项目已异常关闭。关闭原因：%s", reason)
+	}
+
+	if ownerUserID > 0 {
+		_ = d.service.Create(&CreateNotificationInput{
+			UserID:      ownerUserID,
+			UserType:    "user",
+			Title:       title,
+			Content:     content,
+			Type:        "project.closed",
+			RelatedID:   projectID,
+			RelatedType: "project",
+			ActionURL:   fmt.Sprintf("/projects/%d/closure", projectID),
+			Category:    NotificationCategoryProject,
+			Extra: map[string]interface{}{
+				"closureType": closureType,
+			},
+		})
+	}
+	if providerUserID > 0 {
+		_ = d.service.Create(&CreateNotificationInput{
+			UserID:      providerUserID,
+			UserType:    "provider",
+			Title:       title,
+			Content:     content,
+			Type:        "project.closed",
+			RelatedID:   projectID,
+			RelatedType: "project",
+			ActionURL:   fmt.Sprintf("/projects/%d", projectID),
+			Category:    NotificationCategoryProject,
+			Extra: map[string]interface{}{
+				"closureType": closureType,
+			},
+		})
+	}
+}
+
+// NotifyMilestoneAccepted 通知商家验收通过
+func (d *NotificationDispatcher) NotifyMilestoneAccepted(providerID, projectID, milestoneID uint64) {
+	if providerID == 0 || projectID == 0 || milestoneID == 0 {
+		return
+	}
+	providerUserID := providerUserIDFromProvider(providerID)
+	if providerUserID == 0 {
+		return
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "阶段验收已通过",
+		Content:     "业主已通过阶段验收，款项已自动放款。",
+		Type:        "project.milestone.accepted",
+		RelatedID:   milestoneID,
+		RelatedType: "milestone",
+		ActionURL:   fmt.Sprintf("/projects/%d", projectID),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"projectId":   projectID,
+			"milestoneId": milestoneID,
+		},
+	})
+}
+
+// NotifyMilestoneRejected 通知商家验收被拒
+func (d *NotificationDispatcher) NotifyMilestoneRejected(providerID, projectID, milestoneID uint64, reason string) {
+	if providerID == 0 || projectID == 0 || milestoneID == 0 {
+		return
+	}
+	providerUserID := providerUserIDFromProvider(providerID)
+	if providerUserID == 0 {
+		return
+	}
+	content := "业主已驳回阶段验收，请根据反馈整改后重新提交。"
+	if strings.TrimSpace(reason) != "" {
+		content = fmt.Sprintf("业主已驳回阶段验收。驳回原因：%s", strings.TrimSpace(reason))
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "阶段验收被驳回",
+		Content:     content,
+		Type:        "project.milestone.rejected",
+		RelatedID:   milestoneID,
+		RelatedType: "milestone",
+		ActionURL:   fmt.Sprintf("/projects/%d", projectID),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"projectId":   projectID,
+			"milestoneId": milestoneID,
+			"reason":      strings.TrimSpace(reason),
+		},
+	})
+}
+
+// NotifyMilestoneResubmitted 通知用户重新提交
+func (d *NotificationDispatcher) NotifyMilestoneResubmitted(userID, projectID, milestoneID uint64) {
+	if userID == 0 || projectID == 0 || milestoneID == 0 {
+		return
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      userID,
+		UserType:    "user",
+		Title:       "阶段验收已重新提交",
+		Content:     "商家已根据你的反馈整改完成并重新提交验收，请再次查看。",
+		Type:        "project.milestone.resubmitted",
+		RelatedID:   milestoneID,
+		RelatedType: "milestone",
+		ActionURL:   fmt.Sprintf("/projects/%d", projectID),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"projectId":   projectID,
+			"milestoneId": milestoneID,
+		},
+	})
+}
+

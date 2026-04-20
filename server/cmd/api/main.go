@@ -95,6 +95,27 @@ func main() {
 	cron.StartFinanceReconciliationCron()
 	log.Println("Finance reconciliation cron job started")
 
+	cron.StartSettlementReconciliationCron()
+	log.Println("Settlement reconciliation cron job started")
+
+	cron.StartReconciliationAlertCron()
+	log.Println("Reconciliation alert escalation cron job started")
+
+	cron.StartPayoutQueryCron()
+	log.Println("Payout query cron job started")
+
+	cron.StartPaymentCompensationCron()
+	log.Println("Payment compensation cron job started")
+
+	cron.StartRefundReconciliationCron()
+	log.Println("Refund reconciliation cron job started")
+
+	cron.StartPaymentTimeoutCron()
+	log.Println("Payment timeout cron job started")
+
+	cron.StartPaymentReconciliationCron()
+	log.Println("Payment reconciliation cron job started")
+
 	// 设置运行模式
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"strings"
@@ -129,7 +131,9 @@ func (g *serialNumberGenerator) nextLocalSequence(namespace, bucket string) uint
 
 	state := g.local[namespace]
 	if state.bucket != bucket {
-		state = localSequenceState{bucket: bucket, value: 1}
+		// 使用加密安全的随机数作为初始值（防止序列号可预测）
+		randomStart := secureRandomUint64() % 1000
+		state = localSequenceState{bucket: bucket, value: randomStart + 1}
 	} else {
 		state.value++
 	}
@@ -206,4 +210,15 @@ func maxSequenceValue(width int) uint64 {
 		value *= 10
 	}
 	return value - 1
+}
+
+// secureRandomUint64 生成加密安全的随机uint64（防止订单号可预测）
+func secureRandomUint64() uint64 {
+	var bytes [8]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		// 降级到时间戳（不应该发生）
+		log.Printf("[serial_number] crypto/rand failed, fallback to timestamp: %v", err)
+		return uint64(time.Now().UnixNano())
+	}
+	return binary.BigEndian.Uint64(bytes[:])
 }

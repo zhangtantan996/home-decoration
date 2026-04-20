@@ -30,6 +30,7 @@ import WorkbenchList from './pages/supervision/WorkbenchList';
 import FinanceOverview from './pages/finance/FinanceOverview';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
 import FinanceReconciliationList from './pages/finance/FinanceReconciliationList';
+import FinanceAuditList from './pages/finance/FinanceAuditList';
 import PayoutList from './pages/finance/PayoutList';
 import SettlementList from './pages/finance/SettlementList';
 import TransactionList from './pages/finance/TransactionList';
@@ -46,6 +47,7 @@ import IdentityApplicationAudit from './pages/audits/IdentityApplicationAudit';
 import ProjectAuditList from './pages/projectAudits/ProjectAuditList';
 import ProjectAuditDetail from './pages/projectAudits/ProjectAuditDetail';
 import ProjectAuditArbitrate from './pages/projectAudits/ProjectAuditArbitrate';
+import ProjectClosureReview from './pages/projectAudits/ProjectClosureReview';
 import RefundList from './pages/refunds/RefundList';
 import RefundDetail from './pages/refunds/RefundDetail';
 import WithdrawList from './pages/withdraws/WithdrawList';
@@ -129,6 +131,7 @@ const router = createBrowserRouter([
             { path: 'project-audits', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectAuditList /></ProtectedRoute> },
             { path: 'project-audits/:id', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectAuditDetail /></ProtectedRoute> },
             { path: 'project-audits/:id/arbitrate', element: <ProtectedRoute permission="risk:arbitration:judge"><ProjectAuditArbitrate /></ProtectedRoute> },
+            { path: 'project-audits/closure-review', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectClosureReview /></ProtectedRoute> },
 
             // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
@@ -143,6 +146,8 @@ const router = createBrowserRouter([
             { path: 'finance/reconciliations', element: <ProtectedRoute permission="finance:transaction:list"><FinanceReconciliationList /></ProtectedRoute> },
             { path: 'finance/settlements', element: <ProtectedRoute permission="finance:transaction:list"><SettlementList /></ProtectedRoute> },
             { path: 'finance/payouts', element: <ProtectedRoute permission="finance:transaction:list"><PayoutList /></ProtectedRoute> },
+            { path: 'finance/audit-list', element: <ProtectedRoute permission="finance:transaction:list"><FinanceAuditList /></ProtectedRoute> },
+
             { path: 'orders', element: <ProtectedRoute permission="order:center:list"><OrderList /></ProtectedRoute> },
             { path: 'refunds', element: <ProtectedRoute permission="finance:transaction:list"><RefundList /></ProtectedRoute> },
             { path: 'refunds/:id', element: <ProtectedRoute permission="finance:transaction:view"><RefundDetail /></ProtectedRoute> },

@@ -147,6 +147,45 @@ export const inspirationService = {
       showLoading: true,
     }),
 
+  // 删除评论（待后端实现）
+  deleteComment: (commentId: number) =>
+    request<{ message: string }>({
+      url: `/inspiration/comments/${commentId}`,
+      method: 'DELETE',
+      showLoading: true,
+    }),
+
+  // 举报评论（待后端实现）
+  reportComment: (commentId: number, reason: string) =>
+    request<{ message: string }>({
+      url: `/inspiration/comments/${commentId}/report`,
+      method: 'POST',
+      data: { reason },
+      showLoading: true,
+    }),
+
+  // 获取评论详情（待后端实现）
+  getCommentDetail: (commentId: number) =>
+    request<InspirationCommentDTO>({
+      url: `/inspiration/comments/${commentId}`,
+    }),
+
+  // 获取评论回复列表（待后端实现）
+  getCommentReplies: (commentId: number, query: InspirationCommentQuery = {}) =>
+    request<PageData<InspirationCommentDTO>>({
+      url: `/inspiration/comments/${commentId}/replies`,
+      data: query,
+    }),
+
+  // 回复评论（待后端实现）
+  replyComment: (commentId: number, data: { content: string; replyToUserId?: number }) =>
+    request<InspirationCommentDTO>({
+      url: `/inspiration/comments/${commentId}/replies`,
+      method: 'POST',
+      data,
+      showLoading: true,
+    }),
+
   // 获取案例报价
   getQuote: (id: number) =>
     request<CaseQuote>({

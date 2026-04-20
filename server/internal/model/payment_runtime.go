@@ -13,6 +13,7 @@ const (
 	PaymentBizTypeOrder                = "order"
 	PaymentBizTypePaymentPlan          = "payment_plan"
 	PaymentBizTypeMerchantBond         = "merchant_bond"
+	PaymentBizTypeContractDeposit      = "contract_deposit"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 	FundSceneConstructionStage = "construction_stage"
 	FundSceneRefund            = "refund"
 	FundSceneSettlementPayout  = "settlement_payout"
+	FundSceneContractDeposit   = "contract_deposit"
 )
 
 const (

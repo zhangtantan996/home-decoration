@@ -300,6 +300,8 @@ func menuSpecs() []menuSpec {
 		menuButton("finance_transaction_view", "finance_root", "查看交易", "finance:transaction:view", 4),
 		menuButton("finance_transaction_export", "finance_root", "导出交易", "finance:transaction:export", 5),
 		menuButton("finance_transaction_approve", "finance_root", "审批交易", "finance:transaction:approve", 6),
+		menuPage("finance_payouts", "finance_root", "自动出款", "/finance/payouts", "pages/finance/PayoutList", "", 3, "finance:transaction:list"),
+		menuPage("finance_settlements", "finance_root", "结算管理", "/finance/settlements", "pages/finance/SettlementList", "", 4, "finance:transaction:list"),
 		menuPage("refunds", "finance_root", "退款审核", "/refunds", "pages/refunds/RefundList", "AccountBookOutlined", 5, "finance:transaction:list"),
 
 		menuDir("reviews_root", "", "评价管理", "/reviews", "StarOutlined", 70, "review:list"),
@@ -408,7 +410,8 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"projects_root", "projects_list", "project_view",
 		"order_center", "order_center_view",
 		"finance_root", "finance_overview", "finance_escrow", "finance_escrow_view", "finance_escrow_freeze", "finance_escrow_unfreeze",
-		"finance_transactions", "finance_transaction_view", "finance_transaction_export", "finance_transaction_approve", "refunds",
+		"finance_transactions", "finance_transaction_view", "finance_transaction_export", "finance_transaction_approve",
+		"finance_payouts", "finance_settlements", "refunds",
 	}, "财务管理", menus)
 
 	assignPermissionsByKeys(roles["risk"].ID, []string{
@@ -441,6 +444,7 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"demands_root", "demands_list",
 		"bookings_root", "bookings_list", "booking_view",
 		"finance_root", "finance_overview", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view", "finance_transaction_export",
+		"finance_payouts", "finance_settlements",
 		"reviews_root", "reviews_list", "review_view",
 		"risk_root", "risk_warnings", "risk_warning_view", "risk_arbitration", "risk_arbitration_view",
 		"logs_root", "logs_list", "log_view", "audit_logs",

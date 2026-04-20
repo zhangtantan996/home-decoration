@@ -47,6 +47,26 @@ type PaymentChannelNotifyResult struct {
 	RawJSON         string
 }
 
+type PaymentChannelQueryResult struct {
+	OutTradeNo      string
+	ProviderTradeNo string
+	TradeStatus     string
+	Amount          float64
+	RawJSON         string
+}
+
+type RefundQueryResult struct {
+	OutRefundNo     string
+	ProviderTradeNo string
+	OutTradeNo      string
+	RefundStatus    string
+	RefundAmount    float64
+	Success         bool
+	Pending         bool
+	FailureReason   string
+	RawJSON         string
+}
+
 type PaymentChannelService interface {
 	Channel() string
 	CreateCollectOrder(ctx context.Context, order *model.PaymentOrder) (string, error)

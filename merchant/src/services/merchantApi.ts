@@ -623,6 +623,7 @@ export interface MerchantBookingEntry {
     statusText?: string;
     currentStage?: string;
     currentStageText?: string;
+    businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
     surveyDepositAmount?: number;
@@ -898,6 +899,11 @@ export const merchantBookingApi = {
         unwrapData<{ message?: string }>(
             await merchantApi.put(`/merchant/bookings/${id}/handle`, { action }),
             '处理预约失败'
+        ),
+    confirmCrew: async (id: number, payload: { accept: boolean; reason?: string }) =>
+        unwrapData<{ message?: string }>(
+            await merchantApi.post(`/merchant/bookings/${id}/confirm-crew`, payload),
+            '工长确认失败'
         ),
 };
 
@@ -1212,7 +1218,7 @@ export interface MerchantContractRecord {
 
 export const merchantContractApi = {
     create: async (data: MerchantContractPayload) =>
-        unwrapData<MerchantContractRecord>(await merchantApi.post('/contracts', data), '创建合同失败'),
+        unwrapData<MerchantContractRecord>(await merchantApi.post('/merchant/contracts', data), '创建合同失败'),
 };
 
 export interface MerchantProjectMilestone {

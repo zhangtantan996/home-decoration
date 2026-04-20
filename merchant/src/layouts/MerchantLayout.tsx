@@ -87,6 +87,11 @@ const MerchantLayout: React.FC = () => {
             label: '工作台',
         },
         {
+            key: '/designer-tasks',
+            icon: <SolutionOutlined />,
+            label: '设计师任务',
+        },
+        {
             key: '/bookings',
             icon: <CalendarOutlined />,
             label: '线索预约',
@@ -133,6 +138,11 @@ const MerchantLayout: React.FC = () => {
             label: '工作台',
         },
         {
+            key: '/crew-tasks',
+            icon: <SolutionOutlined />,
+            label: '工长任务',
+        },
+        {
             key: '/quote-lists',
             icon: <SolutionOutlined />,
             label: '施工报价',
@@ -167,7 +177,7 @@ const MerchantLayout: React.FC = () => {
     ];
 
     const foremanAvailableKeys = new Set<string>(
-        ['/dashboard', '/quote-lists', '/price-book', '/projects', '/income', '/bank-accounts', '/settings'],
+        ['/dashboard', '/crew-tasks', '/quote-lists', '/price-book', '/projects', '/income', '/bank-accounts', '/settings'],
     );
 
     const menuItems = isMaterialShop
@@ -196,7 +206,7 @@ const MerchantLayout: React.FC = () => {
         ? new Set<string>(['/dashboard', '/material-shop/products', '/material-shop/settings'])
         : normalizedProviderSubType === 'foreman'
             ? foremanAvailableKeys
-            : new Set<string>(['/dashboard', '/bookings', '/proposals', '/projects', '/income', '/bond', '/bank-accounts', '/cases', '/settings']);
+            : new Set<string>(['/dashboard', '/designer-tasks', '/bookings', '/proposals', '/projects', '/income', '/bond', '/bank-accounts', '/cases', '/settings']);
 
     const resolveSelectedMenuKey = (pathname: string) => {
         if (isMaterialShop) {
@@ -210,6 +220,12 @@ const MerchantLayout: React.FC = () => {
         }
         if (pathname === '/leads' || pathname.startsWith('/bookings/')) {
             return '/bookings';
+        }
+        if (pathname === '/designer-tasks') {
+            return '/designer-tasks';
+        }
+        if (pathname === '/crew-tasks') {
+            return '/crew-tasks';
         }
         if (pathname.startsWith('/quote-lists') || pathname === '/price-book') {
             return '/proposals';
@@ -244,6 +260,7 @@ const MerchantLayout: React.FC = () => {
                 pathname === '/notifications'
                 || pathname === '/withdraw'
                 || pathname === '/payments/result'
+                || pathname === '/crew-tasks'
                 || pathname.startsWith('/quote-lists')
                 || pathname.startsWith('/projects/')
                 || pathname.startsWith('/contracts/')
@@ -257,6 +274,7 @@ const MerchantLayout: React.FC = () => {
             || pathname === '/complaints'
             || pathname === '/withdraw'
             || pathname === '/payments/result'
+            || pathname === '/designer-tasks'
             || pathname.startsWith('/bookings/')
             || pathname.startsWith('/proposals/flow/')
             || pathname.startsWith('/quote-lists')

@@ -3,6 +3,8 @@ package handler
 import (
 	"strings"
 
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
@@ -181,6 +183,83 @@ func AdminArbitrateProjectAudit(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"audit": result})
+}
+
+// AdminCloseProject 管理员关闭项目
+func AdminCloseProject(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+	adminID := c.GetUint64("admin_id")
+	var input struct {
+		ClosureType string `json:"closureType" binding:"required"`
+		Reason      string `json:"reason" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	err := projectAuditService.CloseProject(projectID, adminID, input.ClosureType, input.Reason)
+	if err != nil {
+		respondDomainMutationError(c, err, "关闭项目失败")
+		return
+	}
+	response.Success(c, gin.H{"message": "项目已关闭"})
+}
+
+// GetProjectClosure 获取项目关闭信息（用户端）
+func GetProjectClosure(c *gin.Context) {
+	projectID := parseUint64(c.Param("id"))
+	if projectID == 0 {
+		response.BadRequest(c, "无效项目ID")
+		return
+	}
+	userID := c.GetUint64("userId")
+
+	var project model.Project
+	if err := repository.DB.Select("id, owner_id, name, status, closed_reason, closed_at, closure_type").First(&project, projectID).Error; err != nil {
+		response.NotFound(c, "项目不存在")
+		return
+	}
+
+	if project.OwnerID != userID {
+		response.Forbidden(c, "无权查看此项目")
+		return
+	}
+
+	if project.Status != model.ProjectStatusClosed {
+		response.BadRequest(c, "项目未关闭")
+		return
+	}
+
+	result := gin.H{
+		"projectId":    project.ID,
+		"projectName":  project.Name,
+		"closureType":  project.ClosureType,
+		"closedReason": project.ClosedReason,
+		"closedAt":     project.ClosedAt,
+	}
+
+	// 查询退款信息
+	if project.ClosureType == "abnormal" {
+		var refundApp model.RefundApplication
+		if err := repository.DB.Where("project_id = ?", projectID).Order("id DESC").First(&refundApp).Error; err == nil {
+			result["refundAmount"] = refundApp.ApprovedAmount
+			result["refundStatus"] = refundApp.Status
+		}
+	}
+
+	// 查询结算信息
+	if project.ClosureType == "normal" {
+		var escrow model.EscrowAccount
+		if err := repository.DB.Where("project_id = ?", projectID).First(&escrow).Error; err == nil {
+			result["settlementAmount"] = escrow.ReleasedAmount
+		}
+	}
+
+	response.Success(c, result)
 }
 
 func AdminListRefundApplications(c *gin.Context) {
