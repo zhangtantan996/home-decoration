@@ -53,6 +53,24 @@ export const resolveMiniNotificationRoute = (actionUrl?: string) => {
     return '/pages/booking/list/index';
   }
 
+  match = normalized.match(/^\/demands\/(\d+)\/compare$/);
+  if (match) {
+    return `/pages/demands/compare/index?id=${match[1]}`;
+  }
+
+  if (normalized === '/demands/new') {
+    return '/pages/demands/create/index';
+  }
+
+  match = normalized.match(/^\/demands\/(\d+)$/);
+  if (match) {
+    return `/pages/demands/detail/index?id=${match[1]}`;
+  }
+
+  if (normalized === '/demands' || normalized === '/me/demands') {
+    return '/pages/demands/list/index';
+  }
+
   match = normalized.match(/^\/orders\/(\d+)$/);
   if (match) {
     return `/pages/orders/detail/index?id=${match[1]}`;
@@ -104,6 +122,27 @@ export const resolveMiniNotificationRoute = (actionUrl?: string) => {
   match = normalized.match(/^\/quote-tasks\/(\d+)$/);
   if (match) {
     return `/pages/quote-tasks/detail/index?id=${match[1]}`;
+  }
+
+  match = normalized.match(/^\/after-sales\/(\d+)$/);
+  if (match) {
+    return `/pages/after-sales/detail/index?id=${match[1]}`;
+  }
+
+  if (normalized === '/after-sales/new') {
+    return '/pages/after-sales/create/index';
+  }
+
+  if (normalized === '/after-sales' || normalized === '/me/after-sales') {
+    return '/pages/after-sales/list/index';
+  }
+
+  if (normalized === '/complaints' || normalized === '/me/complaints') {
+    return '/pages/complaints/list/index';
+  }
+
+  if (normalized === '/complaints/new') {
+    return '/pages/complaints/create/index';
   }
 
   if (normalized.startsWith('/pages/chat/index')) {

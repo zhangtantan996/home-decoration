@@ -19,6 +19,7 @@ import {
   type ProviderType,
 } from "@/services/providers";
 import { showErrorToast } from "@/utils/error";
+import { openAuthLoginPage } from "@/utils/authRedirect";
 import {
   setCustomTabBarInteractionDisabled,
   syncCurrentTabBar,
@@ -26,6 +27,7 @@ import {
 import { getMiniNavMetrics } from "@/utils/navLayout";
 import { normalizeProviderMediaUrl } from "@/utils/providerMedia";
 import { storage } from "@/utils/storage";
+import { useAuthStore } from "@/store/auth";
 import "./index.scss";
 
 type HomeProviderCategory = "designer" | "foreman" | "company";
@@ -621,6 +623,16 @@ export default function Home() {
     });
   };
 
+  const handleOpenDemandCreate = () => {
+    if (!useAuthStore.getState().token) {
+      void openAuthLoginPage('/pages/demands/create/index');
+      return;
+    }
+    Taro.navigateTo({
+      url: "/pages/demands/create/index",
+    });
+  };
+
   const handleCloseQuotePopup = () => {
     markHomeQuotePopupHandledToday();
     setShowQuotePopup(false);
@@ -1046,6 +1058,19 @@ export default function Home() {
             </View>
           );
         })}
+      </View>
+
+      <View className="home-page__demand-entry" onClick={handleOpenDemandCreate}>
+        <View className="home-page__demand-entry-main">
+          <View className="home-page__demand-entry-icon">
+            <Icon name="plus" size={34} color="#FFFFFF" />
+          </View>
+          <View className="home-page__demand-entry-copy">
+            <Text className="home-page__demand-entry-title">提交需求</Text>
+            <Text className="home-page__demand-entry-desc">把你的装修诉求整理成任务，平台审核后开始匹配服务商。</Text>
+          </View>
+        </View>
+        <Text className="home-page__demand-entry-action">去填写</Text>
       </View>
 
       {sortMenuVisible ? (

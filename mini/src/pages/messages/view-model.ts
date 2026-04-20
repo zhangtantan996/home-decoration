@@ -45,6 +45,14 @@ const FILTER_LABELS: Record<NotificationFilterKey, string> = {
   system: '系统',
 };
 
+const readTypeLabel = (item: NotificationItem, tone: NotificationTone) => {
+  const value = String(item.typeLabel || '').trim();
+  if (value) {
+    return value;
+  }
+  return FILTER_LABELS[tone];
+};
+
 const resolveNotificationTone = (item: NotificationItem): NotificationTone => {
   if (item.category === 'project') {
     return 'project';
@@ -60,11 +68,11 @@ const resolveNotificationTone = (item: NotificationItem): NotificationTone => {
     .map((value) => String(value || '').toLowerCase())
     .join(' ');
 
-  if (/(project|项目|阶段|施工|验收|进度|milestone|phase|quote|audit|仲裁|争议|complaint|投诉|change[_ -]?order|变更)/.test(haystack)) {
+  if (/(project|项目|预约|booking|量房|沟通|设计|阶段|施工|验收|进度|milestone|phase|quote|deliverable|contract|bridge|桥接|planned[_ -]?start|monitor|supervision|监理|audit|仲裁|争议|complaint|投诉|change[_ -]?order|变更)/.test(haystack)) {
     return 'project';
   }
 
-  if (/(order|订单|booking|预约|payment|支付|deposit|plan|账单|expire|失效)/.test(haystack)) {
+  if (/(order|订单|payment|支付|deposit|plan|账单|expire|失效|refund|退款|withdraw|提现|settlement|结算|payout|出款)/.test(haystack)) {
     return 'payment';
   }
 
@@ -128,7 +136,7 @@ const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
     title: item.title || '未命名通知',
     content: item.content || '暂无更多说明',
     typeTone,
-    typeLabel: FILTER_LABELS[typeTone],
+    typeLabel: readTypeLabel(item, typeTone),
     isRead: Boolean(item.isRead),
     relativeTime: formatServerRelativeTime(item.createdAt, '--'),
     absoluteTime: formatServerDateTime(item.createdAt, '--'),

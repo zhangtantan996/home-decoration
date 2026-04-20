@@ -390,6 +390,7 @@ export interface NotificationDTO {
   title: string;
   content: string;
   type: string;
+  typeLabel?: string;
   isRead: boolean;
   createdAt?: string;
   actionUrl?: string;
