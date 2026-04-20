@@ -3,6 +3,7 @@ import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
+import BridgeConversionPanel from '@/components/BridgeConversionPanel';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getProposalStatus } from '@/constants/status';
@@ -13,12 +14,6 @@ import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedL
 
 const isPendingProposal = (status: number) => {
   return status === 0 || status === 1;
-};
-
-const getConstructionSubjectLabel = (type?: string) => {
-  if (type === 'company') return '公司施工主体';
-  if (type === 'foreman') return '独立工长主体';
-  return '施工主体';
 };
 
 const ProposalDetail: React.FC = () => {
@@ -206,86 +201,12 @@ const ProposalDetail: React.FC = () => {
         </View>
 
         {detail.bridgeConversionSummary ? (
-          <View className="bg-white p-md mb-xl">
-            <View className="font-bold mb-md text-base">施工桥接解释</View>
-            {detail.bridgeConversionSummary.bridgeNextStep?.reason ? (
-              <View className="mb-md p-sm bg-blue-50 rounded">
-                <View className="text-sm text-blue-700">{detail.bridgeConversionSummary.bridgeNextStep.reason}</View>
-                {detail.bridgeConversionSummary.bridgeNextStep.actionHint ? (
-                  <View className="text-xs text-blue-500 mt-xs">{detail.bridgeConversionSummary.bridgeNextStep.actionHint}</View>
-                ) : null}
-              </View>
-            ) : null}
-
-            <View className="space-y-sm">
-              <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-                <Text className="text-gray-500">报价基线</Text>
-                <Text>{detail.bridgeConversionSummary.quoteBaselineSummary?.title || '待提交'}</Text>
-              </View>
-              <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-                <Text className="text-gray-500">下一责任人</Text>
-                <Text>{detail.bridgeConversionSummary.bridgeNextStep?.owner || '待平台继续推进'}</Text>
-              </View>
-              <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-                <Text className="text-gray-500">可对比主体</Text>
-                <Text>{detail.bridgeConversionSummary.constructionSubjectComparison?.length || 0} 个</Text>
-              </View>
-              <View className="flex justify-between text-sm py-xs">
-                <Text className="text-gray-500">平台背书</Text>
-                <Text>{detail.bridgeConversionSummary.trustSignals?.officialReviewHint || '平台会展示案例、评价与履约标签'}</Text>
-              </View>
-            </View>
-
-            {detail.bridgeConversionSummary.quoteBaselineSummary?.highlights?.length ? (
-              <View className="mt-md p-sm bg-gray-50 rounded">
-                <View className="text-sm text-gray-500 mb-xs">报价基线说明</View>
-                <View className="text-sm text-gray-700">
-                  {detail.bridgeConversionSummary.quoteBaselineSummary.highlights.join('；')}
-                </View>
-              </View>
-            ) : null}
-
-            {detail.bridgeConversionSummary.constructionSubjectComparison?.length ? (
-              <View className="mt-md">
-                <View className="text-sm text-gray-500 mb-sm">施工主体对比</View>
-                <View className="space-y-sm">
-                  {detail.bridgeConversionSummary.constructionSubjectComparison.slice(0, 3).map((item) => (
-                    <View key={`${item.providerId || 0}-${item.displayName || 'subject'}`} className="border border-gray-100 rounded-lg p-sm">
-                      <View className="flex items-center justify-between mb-xs">
-                        <Text className="font-medium">{item.displayName || '施工主体'}</Text>
-                        <Tag variant={item.selected ? 'brand' : 'default'}>{getConstructionSubjectLabel(item.subjectType)}</Tag>
-                      </View>
-                      <View className="text-sm text-gray-700">{item.deliveryHint || item.trustSummary || '待补充施工主体说明'}</View>
-                      {item.priceHint ? <View className="text-sm text-brand mt-xs">{item.priceHint}</View> : null}
-                      {!!item.highlightTags?.length ? (
-                        <View className="text-xs text-gray-500 mt-xs">{item.highlightTags.slice(0, 3).join(' · ')}</View>
-                      ) : null}
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            {[
-              detail.bridgeConversionSummary.responsibilityBoundarySummary,
-              detail.bridgeConversionSummary.scheduleAndAcceptanceSummary,
-              detail.bridgeConversionSummary.platformGuaranteeSummary,
-            ].filter((item) => item?.items?.length).map((item) => (
-              <View key={item?.title} className="mt-md p-sm bg-gray-50 rounded">
-                <View className="text-sm text-gray-500 mb-xs">{item?.title || '桥接说明'}</View>
-                <View className="text-sm text-gray-700">{(item?.items || []).join('；')}</View>
-              </View>
-            ))}
-
-            {detail.bridgeConversionSummary.trustSignals ? (
-              <View className="mt-md p-sm bg-green-50 rounded">
-                <View className="text-sm text-green-700">
-                  案例 {detail.bridgeConversionSummary.trustSignals.caseCount || 0} 个 ·
-                  完工 {detail.bridgeConversionSummary.trustSignals.completedCnt || 0} 个 ·
-                  评价 {detail.bridgeConversionSummary.trustSignals.reviewCount || 0} 条
-                </View>
-              </View>
-            ) : null}
+          <View className="px-md pb-xl">
+            <BridgeConversionPanel
+              summary={detail.bridgeConversionSummary}
+              title="施工桥接解释"
+              flowSummary={detail.flowSummary}
+            />
           </View>
         ) : null}
       </ScrollView>

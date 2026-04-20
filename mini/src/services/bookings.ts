@@ -1,6 +1,6 @@
 import { request } from '@/utils/request';
 import type { MiniPaymentLaunchResponse, PaymentChannel, PaymentLaunchMode } from './payments';
-import type { RefundSummaryDTO } from './dto';
+import type { BridgeConversionSummaryDTO, RefundSummaryDTO } from './dto';
 
 export type ProviderType = 'designer' | 'company' | 'foreman';
 
@@ -174,47 +174,7 @@ export interface BookingDetailResponse {
     latestLogTitle?: string;
     unhandledRiskCount?: number;
   };
-  bridgeConversionSummary?: {
-    constructionSubjectComparison?: Array<{
-      providerId?: number;
-      subjectType?: string;
-      displayName?: string;
-      rating?: number;
-      reviewCount?: number;
-      completedCnt?: number;
-      caseCount?: number;
-      highlightTags?: string[];
-      priceHint?: string;
-      deliveryHint?: string;
-      trustSummary?: string;
-      selected?: boolean;
-    }>;
-    quoteBaselineSummary?: {
-      title?: string;
-      sourceStage?: string;
-      submittedAt?: string;
-      itemCount?: number;
-      highlights?: string[];
-      readyForUser?: boolean;
-    };
-    responsibilityBoundarySummary?: { title?: string; items?: string[] };
-    scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
-    platformGuaranteeSummary?: { title?: string; items?: string[] };
-    trustSignals?: {
-      rating?: number;
-      reviewCount?: number;
-      completedCnt?: number;
-      caseCount?: number;
-      highlightTags?: string[];
-      officialReviewHint?: string;
-    };
-    bridgeNextStep?: {
-      title?: string;
-      owner?: string;
-      reason?: string;
-      actionHint?: string;
-    };
-  };
+  bridgeConversionSummary?: BridgeConversionSummaryDTO;
 }
 
 export async function createBooking(payload: CreateBookingPayload) {

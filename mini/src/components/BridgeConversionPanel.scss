@@ -1,0 +1,176 @@
+@import "../theme/tokens";
+
+.bridge-conversion-panel {
+  display: grid;
+  gap: 24rpx;
+  padding: 28rpx;
+  border-radius: 28rpx;
+  background: $color-white;
+}
+
+.bridge-conversion-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.bridge-conversion-panel__head-main {
+  display: grid;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+.bridge-conversion-panel__title {
+  font-size: 32rpx;
+  line-height: 44rpx;
+  font-weight: 700;
+  color: $color-gray-900;
+}
+
+.bridge-conversion-panel__subtitle {
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: $color-secondary;
+}
+
+.bridge-conversion-panel__meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.bridge-conversion-panel__hero {
+  display: grid;
+  gap: 10rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 24rpx;
+  background: rgba($color-primary, 0.06);
+}
+
+.bridge-conversion-panel__hero-copy {
+  font-size: 28rpx;
+  line-height: 42rpx;
+  color: $color-primary;
+  font-weight: 600;
+}
+
+.bridge-conversion-panel__hero-hint,
+.bridge-conversion-panel__hero-blocking {
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: rgba($color-primary, 0.86);
+}
+
+.bridge-conversion-panel__hero-blocking {
+  color: $color-warning;
+}
+
+.bridge-conversion-panel__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.bridge-conversion-panel__metric,
+.bridge-conversion-panel__baseline,
+.bridge-conversion-panel__section-card {
+  display: grid;
+  gap: 10rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 24rpx;
+  background: $color-border-soft;
+}
+
+.bridge-conversion-panel__metric-label,
+.bridge-conversion-panel__section-title {
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: $color-secondary;
+}
+
+.bridge-conversion-panel__metric-value,
+.bridge-conversion-panel__section-copy {
+  font-size: 26rpx;
+  line-height: 40rpx;
+  color: $color-gray-900;
+}
+
+.bridge-conversion-panel__subject-list {
+  display: grid;
+  gap: 16rpx;
+}
+
+.bridge-conversion-panel__subject-grid,
+.bridge-conversion-panel__section-grid {
+  display: grid;
+  gap: 16rpx;
+}
+
+.bridge-conversion-panel__subject-card {
+  display: grid;
+  gap: 10rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 24rpx;
+  border: 2rpx solid $color-border;
+  background: $color-white;
+}
+
+.bridge-conversion-panel__subject-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.bridge-conversion-panel__subject-name {
+  font-size: 28rpx;
+  line-height: 40rpx;
+  color: $color-gray-900;
+  font-weight: 600;
+}
+
+.bridge-conversion-panel__subject-copy,
+.bridge-conversion-panel__subject-tags {
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: $color-secondary;
+}
+
+.bridge-conversion-panel__subject-price {
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: $color-brand;
+  font-weight: 600;
+}
+
+.bridge-conversion-panel__trust {
+  padding: 20rpx 24rpx;
+  border-radius: 24rpx;
+  background: rgba($color-success, 0.1);
+}
+
+.bridge-conversion-panel__trust-copy {
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: $color-success;
+}
+
+@media (max-width: 520px) {
+  .bridge-conversion-panel__head,
+  .bridge-conversion-panel__subject-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .bridge-conversion-panel__meta,
+  .bridge-conversion-panel__subject-top {
+    justify-content: flex-start;
+  }
+
+  .bridge-conversion-panel__metrics {
+    grid-template-columns: 1fr;
+  }
+}

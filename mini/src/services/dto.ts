@@ -226,49 +226,67 @@ export interface ProjectPhaseDTO {
   tasks?: ProjectPhaseTaskDTO[];
 }
 
+export interface BridgeConversionSubjectComparisonDTO {
+  providerId?: number;
+  subjectType?: string;
+  displayName?: string;
+  rating?: number;
+  reviewCount?: number;
+  completedCnt?: number;
+  caseCount?: number;
+  highlightTags?: string[];
+  priceHint?: string;
+  deliveryHint?: string;
+  trustSummary?: string;
+  selected?: boolean;
+}
+
+export interface BridgeConversionQuoteBaselineSummaryDTO {
+  title?: string;
+  sourceStage?: string;
+  submittedAt?: string;
+  itemCount?: number;
+  highlights?: string[];
+  readyForUser?: boolean;
+}
+
+export interface BridgeConversionSectionDTO {
+  title?: string;
+  items?: string[];
+}
+
+export interface BridgeConversionTrustSignalsDTO {
+  rating?: number;
+  reviewCount?: number;
+  completedCnt?: number;
+  caseCount?: number;
+  highlightTags?: string[];
+  officialReviewHint?: string;
+}
+
+export interface BridgeNextStepDTO {
+  actionKey?: string;
+  actionText?: string;
+  title?: string;
+  owner?: string;
+  reason?: string;
+  actionHint?: string;
+  blockingHint?: string;
+}
+
+export interface BridgeConversionSummaryDTO {
+  constructionSubjectComparison?: BridgeConversionSubjectComparisonDTO[];
+  quoteBaselineSummary?: BridgeConversionQuoteBaselineSummaryDTO;
+  responsibilityBoundarySummary?: BridgeConversionSectionDTO;
+  scheduleAndAcceptanceSummary?: BridgeConversionSectionDTO;
+  platformGuaranteeSummary?: BridgeConversionSectionDTO;
+  trustSignals?: BridgeConversionTrustSignalsDTO;
+  bridgeNextStep?: BridgeNextStepDTO;
+}
+
 export interface ProjectDetailDTO extends ProjectDTO {
   selectedQuoteTaskId?: number;
-  bridgeConversionSummary?: {
-    constructionSubjectComparison?: Array<{
-      providerId?: number;
-      subjectType?: string;
-      displayName?: string;
-      rating?: number;
-      reviewCount?: number;
-      completedCnt?: number;
-      caseCount?: number;
-      highlightTags?: string[];
-      priceHint?: string;
-      deliveryHint?: string;
-      trustSummary?: string;
-      selected?: boolean;
-    }>;
-    quoteBaselineSummary?: {
-      title?: string;
-      sourceStage?: string;
-      submittedAt?: string;
-      itemCount?: number;
-      highlights?: string[];
-      readyForUser?: boolean;
-    };
-    responsibilityBoundarySummary?: { title?: string; items?: string[] };
-    scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
-    platformGuaranteeSummary?: { title?: string; items?: string[] };
-    trustSignals?: {
-      rating?: number;
-      reviewCount?: number;
-      completedCnt?: number;
-      caseCount?: number;
-      highlightTags?: string[];
-      officialReviewHint?: string;
-    };
-    bridgeNextStep?: {
-      title?: string;
-      owner?: string;
-      reason?: string;
-      actionHint?: string;
-    };
-  };
+  bridgeConversionSummary?: BridgeConversionSummaryDTO;
   closureSummary?: {
     completionStatus?: string;
     archiveStatus?: string;
