@@ -119,6 +119,7 @@
   - `frontend-design` / `frontend-skill`：品牌、landing、营销、下载、强视觉页面
   - `ui-ux-pro-max`：`admin` / `merchant` / dashboard / form / table / detail / approval 等状态型页面
   - `build-web-apps:shadcn`：仅用于目标页面本身已是 shadcn 体系；不要默认往 Ant Design 页面上套
+  - 完整前端 UI skill 路由矩阵、sidecar 规则与 SwiftUI 映射，见 `docs/FRONTEND_UI_SKILL_ROUTING.md`
 - `admin`、`merchant`、`web` 按应用面拆分；`mobile`、`mini` 视作独立交付面；`deploy` 保持单 owner。
 
 ---
