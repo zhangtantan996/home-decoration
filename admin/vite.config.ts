@@ -14,7 +14,7 @@ const normalizeRouterBasename = (raw: string | undefined): string => {
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const appEnv = (env.VITE_APP_ENV ?? '').trim().toLowerCase()
+  const appEnv = (env.VITE_APP_ENV ?? mode).trim().toLowerCase()
   const configuredBasename = normalizeRouterBasename(env.VITE_ROUTER_BASENAME)
   const routerBasename = configuredBasename !== '/' ? configuredBasename : (appEnv === 'production' ? '/admin' : '/')
   const base = routerBasename === '/' ? '/' : `${routerBasename}/`

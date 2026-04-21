@@ -26,6 +26,10 @@ backend.log
 .env
 .env.local
 .env.*.local
+admin/.env.production
+mini/.env.development
+mobile/.env.development
+mobile/.env.production
 
 # IDEs
 .vscode/*
