@@ -1,3 +1,0 @@
-✅ Generated Mobile tokens:
-   - /Volumes/tantan/AI_project/home-decoration-ui-sync/mobile/src/theme/tokens.ts
-   - /Volumes/tantan/AI_project/home-decoration-ui-sync/mobile/src/theme/tokens.raw.ts
