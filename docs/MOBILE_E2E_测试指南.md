@@ -371,7 +371,7 @@ npm run android # Android 模拟器
 ## 记录测试结果
 
 ### 每个场景
-在 `.sisyphus/notepads/tinode-im-completion-week1/verification.md` 中记录:
+记录到当前测试记录中（建议写入专题文档、issue 或 PR 评论）:
 
 ```markdown
 ### 场景 2.X: [名称]
@@ -382,7 +382,7 @@ npm run android # Android 模拟器
 ```
 
 ### 发现的问题
-在 `.sisyphus/notepads/tinode-im-completion-week1/issues.md` 中记录:
+记录到当前缺陷记录中（建议写入 issue、缺陷清单或 PR 评论）:
 
 ```markdown
 ## 问题X: [简要描述]
@@ -400,8 +400,8 @@ npm run android # Android 模拟器
 ## 下一步
 
 完成任务 2 手动测试后:
-1. 在计划文件中标记复选框 (`.sisyphus/plans/tinode-im-completion-week1.md`)
-2. 在记事本中记录所有发现
+1. 更新当前执行清单或测试 checklist
+2. 在当前测试记录、issue 或 PR 备注中记录所有发现
 3. 如果发现 P0 问题: 继续任务 6（Bug 修复）
 4. 如果无阻塞问题: 继续任务 3（Admin 管理后台端到端测试）
 

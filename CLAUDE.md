@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## ⚠️ 开发约束（最高优先级）
 
 **所有代码修改必须先阅读以下文档**:
-1. **[.speckit/constitution.md](.speckit/constitution.md)** - 项目宪法（P0 优先级）
+1. **[AGENTS.md](AGENTS.md)** - 仓库级工程约束（P0 优先级）
 2. **[docs/Claude开发参考手册.md](docs/Claude开发参考手册.md)** - 开发约束和规范
 3. **[docs/问题解决手册.md](docs/问题解决手册.md)** - 已知问题解决方案
 
@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **[.claude/rules/project-specific.md](.claude/rules/project-specific.md)** - 项目特定规则（IM 迁移等）
 
 这些文档包含:
-- ✅ 项目原则和架构约束（constitution.md）
+- ✅ 项目原则和仓库级工程约束（AGENTS.md）
 - ✅ 技术栈版本约束（React 18.3.1 vs 19.2.0）
 - ✅ 文件命名规范（Go: snake_case, React: PascalCase）
 - ✅ 分层架构和安全规范（托管支付）

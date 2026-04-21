@@ -188,7 +188,7 @@ cd admin && npm run dev
 
 ### During Testing
 
-**For Each Scenario**, document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
+**For Each Scenario**, record it in the current test record (topic doc, issue, or PR comment):
 
 ```markdown
 ### Scenario X.Y: [Name]
@@ -200,7 +200,7 @@ cd admin && npm run dev
 
 ### For Issues Found
 
-Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
+Record in the current issue log (recommended: issue tracker, defect list, or PR comment):
 
 ```markdown
 ## 问题X: [Brief Description]
@@ -215,7 +215,7 @@ Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
 
 ### Performance Metrics
 
-Record in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
+Record in the current test record (recommended: topic doc, issue, or PR comment):
 
 ```markdown
 ## Performance Metrics
@@ -298,15 +298,15 @@ curl -X POST http://localhost:8080/api/v1/upload \
 ### Summary & Templates
 - `docs/TINODE_TESTING_SUMMARY.md` - Overall summary + final report template
 
-### Notepad (For Recording Results)
-- `.sisyphus/notepads/tinode-im-completion-week1/learnings.md` - Findings
-- `.sisyphus/notepads/tinode-im-completion-week1/issues.md` - Bugs found
-- `.sisyphus/notepads/tinode-im-completion-week1/verification.md` - Test results
-- `.sisyphus/notepads/tinode-im-completion-week1/decisions.md` - Strategy
-- `.sisyphus/notepads/tinode-im-completion-week1/problems.md` - Unresolved questions
+### Shared Recording Locations
+- 当前专题文档中的测试结果 / 问题记录
+- 对应 issue、PR 评论或缺陷清单
+- 发布 / 验收记录中的执行备注
 
-### Plan File
-- `.sisyphus/plans/tinode-im-completion-week1.md` - Original plan
+### Execution Checklist
+- 当前任务说明中的 checklist
+- issue / PR checklist
+- 团队自己的测试执行清单
 
 ### Code References
 - `mobile/src/services/TinodeService.ts` - Mobile IM service

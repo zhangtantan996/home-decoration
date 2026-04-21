@@ -63,12 +63,9 @@ The remaining checkboxes (Tasks 2-7) require **manual human interaction** that c
 6. `docs/TINODE_TESTING_SUMMARY.md` - Summary + report template
 7. `docs/TINODE_TESTING_INDEX.md` - Document navigation
 
-**Notepad Files** (5 tracking files):
-8. `.sisyphus/notepads/tinode-im-completion-week1/learnings.md`
-9. `.sisyphus/notepads/tinode-im-completion-week1/verification.md`
-10. `.sisyphus/notepads/tinode-im-completion-week1/issues.md`
-11. `.sisyphus/notepads/tinode-im-completion-week1/decisions.md`
-12. `.sisyphus/notepads/tinode-im-completion-week1/problems.md`
+**Result Recording**:
+8. 历史 repo-local 跟踪文件已移出仓库
+9. 当前测试结果请记录到专题文档、issue / PR 评论或发布验收记录中
 
 ---
 

@@ -251,7 +251,7 @@ After completing all 3 scenarios, verify:
 ## Recording Test Results
 
 ### For Each Scenario
-Document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
+Record in the current test record (recommended: topic doc, issue, or PR comment):
 
 ```markdown
 ### Scenario 3.X: [Name]
@@ -262,7 +262,7 @@ Document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
 ```
 
 ### For Issues Found
-Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
+Record in the current issue log (recommended: issue tracker, defect list, or PR comment):
 
 ```markdown
 ## 问题X: [Brief Description]
@@ -299,8 +299,8 @@ Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
 ## Next Steps
 
 After completing Task 3 manual testing:
-1. Mark checkboxes in plan file (`.sisyphus/plans/tinode-im-completion-week1.md`)
-2. Document all findings in notepad
+1. Update the current execution checklist or test checklist
+2. Document all findings in the current test record / issue / PR notes
 3. If P0 issues found: Proceed to Task 6 (Bug Fixes) before continuing
 4. If no blocking issues: Proceed to Task 4 (Cross-platform Sync Testing)
 

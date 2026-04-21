@@ -161,7 +161,7 @@ All test guides are comprehensive, production-ready, and include:
 
 For each bug discovered:
 
-1. **Document** in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
+1. **Document** it in the current issue log (issue tracker, defect list, or PR comment):
    ```markdown
    ## 问题X: [Brief Description]
    - **Scenario**: [Which test scenario]
@@ -360,12 +360,10 @@ For each bug discovered:
 3. `docs/CROSS_PLATFORM_SYNC_TEST_GUIDE.md` - Sync testing
 4. `docs/IMAGE_UPLOAD_TEST_GUIDE.md` - Image functionality testing
 
-### Notepad Files
-1. `.sisyphus/notepads/tinode-im-completion-week1/learnings.md` - Findings and insights
-2. `.sisyphus/notepads/tinode-im-completion-week1/issues.md` - Known issues
-3. `.sisyphus/notepads/tinode-im-completion-week1/decisions.md` - Strategy decisions
-4. `.sisyphus/notepads/tinode-im-completion-week1/verification.md` - Test results
-5. `.sisyphus/notepads/tinode-im-completion-week1/problems.md` - Unresolved questions
+### Shared Result Records
+1. 当前专题文档中的测试结果 / 问题记录
+2. 对应 issue、PR 评论或缺陷清单
+3. 发布 / 验收记录中的执行备注
 
 ---
 

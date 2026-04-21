@@ -277,7 +277,7 @@ Document actual performance metrics:
 ## Recording Test Results
 
 ### For Each Scenario
-Document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
+Record in the current test record (recommended: topic doc, issue, or PR comment):
 
 ```markdown
 ### Scenario 4.X: [Name]
@@ -289,7 +289,7 @@ Document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
 ```
 
 ### For Issues Found
-Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
+Record in the current issue log (recommended: issue tracker, defect list, or PR comment):
 
 ```markdown
 ## 问题X: [Brief Description]

@@ -377,7 +377,7 @@ Response:
 ## Recording Test Results
 
 ### For Each Scenario
-Document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
+Record in the current test record (recommended: topic doc, issue, or PR comment):
 
 ```markdown
 ### Scenario 5.X: [Name]
@@ -390,7 +390,7 @@ Document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
 ```
 
 ### For Issues Found
-Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`
+Record in the current issue log (recommended: issue tracker, defect list, or PR comment)
 
 ---
 
@@ -398,7 +398,7 @@ Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`
 
 After completing Task 5 image upload testing:
 1. Mark checkboxes in plan file
-2. Document all findings in notepad
+2. Document all findings in the current test record / issue / PR notes
 3. If P0 issues found: Proceed to Task 6 (Bug Fixes)
 4. If no blocking issues: Proceed to Task 7 (Final Report)
 

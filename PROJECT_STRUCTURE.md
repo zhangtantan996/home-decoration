@@ -17,25 +17,27 @@
 
 ```
 home_decoration/
-├── .agent/                    # Agent工作流配置
-├── .claude/                   # Claude Code配置
 ├── .git/                      # Git仓库
-├── .vscode/                   # VSCode工作区配置
+├── .github/                   # CI / GitHub 配置
+├── .vscode/                   # 共享 VSCode 任务配置
 ├── admin/                     # 管理后台 (React)
-├── db_data_local/             # 本地PostgreSQL数据 (gitignored)
+├── merchant/                  # 商家端 (React)
+├── mini/                      # 微信小程序 (Taro)
+├── mobile/                    # 移动端 App (React Native)
+├── web/                       # 用户侧 Web
+├── website/                   # 官网
+├── server/                    # 后端 API 服务 (Go)
 ├── deploy/                    # 部署配置
 ├── docs/                      # 项目文档
-├── mobile/                    # 移动端App (React Native)
-├── server/                    # 后端API服务 (Go)
-├── stitch/                    # Stitch相关文件
-├── .gitignore                 # Git忽略规则
-├── CLAUDE.md                  # Claude Code项目指引
-├── docker-compose.local.yml   # 本地开发Docker配置
-├── docker-compose.yml         # Docker Compose配置
-├── docker_start.bat           # Windows启动脚本
-├── SECURITY_AUDIT_REPORT.md   # 安全审计报告
-├── SECURITY_FIXES.md          # 安全修复说明
-├── test_*.ps1                 # PowerShell测试脚本
+├── documentation/             # 标准化文档
+├── ops/                       # 共享运维与控制面
+├── scripts/                   # 辅助脚本
+├── tests/                     # 自动化测试
+├── .gitignore                 # Git 忽略规则
+├── AGENTS.md                  # 仓库级工程规则
+├── CLAUDE.md                  # Claude Code 项目指引
+├── docker-compose.local.yml   # 本地开发 Docker 配置
+├── docker-compose.yml         # Docker Compose 配置
 └── PROJECT_STRUCTURE.md       # 本文档
 ```
 

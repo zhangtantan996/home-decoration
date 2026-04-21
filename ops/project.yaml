@@ -213,7 +213,6 @@
     "scripts/openspec-dev.ps1",
     ".amazonq/prompts/openspec-apply.md",
     ".amazonq/prompts/openspec-archive.md",
-    ".amazonq/prompts/openspec-proposal.md",
-    ".speckit/constitution.md"
+    ".amazonq/prompts/openspec-proposal.md"
   ]
 }
