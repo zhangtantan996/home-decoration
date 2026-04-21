@@ -119,6 +119,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 	// 静态文件服务 (上传文件)
 	r.Static("/uploads", "./uploads")
 	r.Static("/static/inspiration", "./static/inspiration")
+	r.Static("/static/home-popup", "./static/home-popup")
 	r.GET("/metrics", handler.HandleNotificationRealtimeMetrics)
 
 	// API版本分组
@@ -206,6 +207,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 		// 智能报价 (公开)
 		v1.POST("/quote-estimate", handler.GenerateQuoteEstimate)
+
+		// 智能报价询价 (公开接口，支持未登录用户)
+		v1.POST("/quote-inquiries", middleware.OptionalJWT(cfg.JWT.Secret), handler.CreateQuoteInquiry)
+		v1.GET("/quote-inquiries/:id", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetQuoteInquiry)
+		v1.GET("/public/mini/home-popup", handler.GetMiniHomePopup)
 
 		// 案例详情 (公开)
 		v1.GET("/cases/:id", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetCaseDetail)
@@ -402,10 +408,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				// 节点验收
 				milestones := authorized.Group("/milestones")
 				{
-					milestones.POST("/:id/submit-inspection", handler.SubmitInspection)       // 商家提交验收申请
-					milestones.POST("/:id/inspect", handler.InspectMilestone)                 // 用户验收节点
+					milestones.POST("/:id/submit-inspection", handler.SubmitInspection)         // 商家提交验收申请
+					milestones.POST("/:id/inspect", handler.InspectMilestone)                   // 用户验收节点
 					milestones.POST("/:id/request-rectification", handler.RequestRectification) // 用户要求整改
-					milestones.POST("/:id/resubmit-inspection", handler.ResubmitInspection)   // 商家重新提交
+					milestones.POST("/:id/resubmit-inspection", handler.ResubmitInspection)     // 商家重新提交
 
 					// 节点付款
 					milestones.POST("/:id/pay", milestonePaymentHandler.PayMilestone)
@@ -470,10 +476,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 多工长报价PK系统
 			quotePK := authorized.Group("/quote-pk")
 			{
-				quotePK.POST("/tasks", handler.CreateQuoteTask)                    // 用户发起报价需求
-				quotePK.GET("/tasks/:id", handler.GetQuoteTask)                    // 获取报价任务详情
-				quotePK.GET("/tasks/:id/submissions", handler.GetQuoteComparison)  // 获取报价对比表
-				quotePK.POST("/tasks/:id/select", handler.SelectQuote)             // 用户选择报价
+				quotePK.POST("/tasks", handler.CreateQuoteTask)                   // 用户发起报价需求
+				quotePK.GET("/tasks/:id", handler.GetQuoteTask)                   // 获取报价任务详情
+				quotePK.GET("/tasks/:id/submissions", handler.GetQuoteComparison) // 获取报价对比表
+				quotePK.POST("/tasks/:id/select", handler.SelectQuote)            // 用户选择报价
 			}
 
 			quoteSubmissions := authorized.Group("/quote-submissions")
@@ -940,6 +946,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/refunds/:id/approve", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminApproveRefundApplication)
 			admin.POST("/refunds/:id/reject", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminRejectRefundApplication)
 
+			// ========== 智能报价询价管理 ==========
+			admin.GET("/quote-inquiries", demandListPerm, handler.AdminListQuoteInquiries)
+			admin.GET("/quote-inquiries/:id", demandListPerm, handler.AdminGetQuoteInquiry)
+
 			// ========== 争议预约管理 ==========
 			admin.GET("/disputed-bookings", bookingListPerm, handler.AdminListDisputedBookings)
 			admin.GET("/disputed-bookings/:id", disputeDetailPerm, handler.AdminGetDisputedBooking)
@@ -1019,7 +1029,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.POST("/quote-tasks/:id/select-foremen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSelectForemen)
 
 			// 多工长报价PK系统（商家端）
-			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                  // 商家获取报价任务列表
+			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                         // 商家获取报价任务列表
 			merchant.POST("/quote-pk/tasks/:id/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuote) // 商家提交报价
 			merchant.POST("/bookings/:id/working-docs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)
 			merchant.GET("/bookings/:id/working-docs", handler.MerchantListWorkingDocs)

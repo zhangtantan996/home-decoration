@@ -4,6 +4,12 @@ import Taro from "@tarojs/taro";
 
 import MiniPageNav from "@/components/MiniPageNav";
 import { showErrorToast } from "@/utils/error";
+import {
+  isResidentialAreaValid,
+  normalizeResidentialAreaInput,
+  RESIDENTIAL_AREA_MAX,
+  RESIDENTIAL_AREA_MIN,
+} from "@/utils/residentialArea";
 import { request } from "@/utils/request";
 
 import "./index.scss";
@@ -55,14 +61,19 @@ const QuoteEstimatePage: React.FC = () => {
   };
 
   const handleAreaInput = (e: any) => {
-    setArea(e.detail.value);
+    const nextArea = normalizeResidentialAreaInput(String(e.detail.value || ""));
+    if (!nextArea.value) {
+      setArea("");
+      return;
+    }
+    setArea(nextArea.value);
   };
 
   const handleGenerateQuote = async () => {
     // 输入校验
     const areaNum = parseFloat(area);
-    if (!area || isNaN(areaNum) || areaNum < 10 || areaNum > 9999) {
-      showErrorToast("请输入有效的房屋面积（10-9999㎡）");
+    if (!area || isNaN(areaNum) || !isResidentialAreaValid(areaNum)) {
+      showErrorToast(`请输入有效的房屋面积（${RESIDENTIAL_AREA_MIN}-${RESIDENTIAL_AREA_MAX}㎡）`);
       return;
     }
 
@@ -250,4 +261,3 @@ const QuoteEstimatePage: React.FC = () => {
 };
 
 export default QuoteEstimatePage;
-

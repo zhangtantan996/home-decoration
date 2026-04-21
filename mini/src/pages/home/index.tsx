@@ -10,6 +10,11 @@ import { Skeleton } from "@/components/Skeleton";
 import { Tag } from "@/components/Tag";
 import { usePullToRefreshFeedback } from "@/hooks/usePullToRefreshFeedback";
 import {
+  getHomePopup,
+  type HomePopupAction,
+  type HomePopupConfig,
+} from "@/services/homePopup";
+import {
   listMaterialShops,
   type MaterialShopItem,
 } from "@/services/materialShops";
@@ -24,6 +29,10 @@ import {
   syncCurrentTabBar,
 } from "@/utils/customTabBar";
 import { getMiniNavMetrics } from "@/utils/navLayout";
+import {
+  consumePendingHomeProviderEntry,
+  resolveLegacyProviderListTarget,
+} from "@/utils/homeProviderEntry";
 import { normalizeProviderMediaUrl } from "@/utils/providerMedia";
 import { storage } from "@/utils/storage";
 import "./index.scss";
@@ -73,12 +82,20 @@ const PROVIDER_FILTER_OPTIONS = [
 
 const HOME_FETCH_PAGE_SIZE = 50;
 const HIDDEN_DISPLAY_TAGS = new Set(["沟通中"]);
-const HOME_QUOTE_POPUP_STORAGE_KEY = "home-quote-popup-state-v1";
-const HOME_QUOTE_POPUP_UI_VERSION = "2026-04-14-home-popup-v1";
+const HOME_POPUP_STORAGE_KEY = "home-popup-state-v2";
+const TAB_PAGE_PATHS = new Set([
+  "/pages/home/index",
+  "/pages/inspiration/index",
+  "/pages/progress/index",
+  "/pages/messages/index",
+  "/pages/profile/index",
+]);
 
-interface HomeQuotePopupState {
+interface HomePopupHandledState {
+  campaignVersion?: string;
+  frequency?: HomePopupConfig["frequency"];
   handledDate?: string;
-  version?: string;
+  handledCount?: number;
 }
 
 const getTodayStorageDate = () => {
@@ -89,18 +106,60 @@ const getTodayStorageDate = () => {
   return `${year}-${month}-${day}`;
 };
 
-const isHomeQuotePopupHandledToday = () => {
-  const payload = storage.get<HomeQuotePopupState>(HOME_QUOTE_POPUP_STORAGE_KEY);
-  return (
-    payload?.version === HOME_QUOTE_POPUP_UI_VERSION &&
-    payload?.handledDate === getTodayStorageDate()
-  );
+const getHomePopupDailyLimit = (frequency: HomePopupConfig["frequency"]) => {
+  switch (frequency) {
+    case "every_time":
+      return Infinity;
+    case "daily_twice":
+      return 2;
+    case "daily_three_times":
+      return 3;
+    case "campaign_once":
+      return Infinity;
+    case "daily_once":
+    default:
+      return 1;
+  }
 };
 
-const markHomeQuotePopupHandledToday = () => {
-  storage.set<HomeQuotePopupState>(HOME_QUOTE_POPUP_STORAGE_KEY, {
-    handledDate: getTodayStorageDate(),
-    version: HOME_QUOTE_POPUP_UI_VERSION,
+const isHomePopupHandled = (popup: HomePopupConfig) => {
+  const payload = storage.get<HomePopupHandledState>(HOME_POPUP_STORAGE_KEY);
+  if (!payload || payload.campaignVersion !== popup.campaignVersion) {
+    return false;
+  }
+
+  if (popup.frequency === "every_time") {
+    return false;
+  }
+
+  if (popup.frequency === "campaign_once") {
+    return true;
+  }
+
+  const today = getTodayStorageDate();
+  if (payload.handledDate !== today) {
+    return false;
+  }
+
+  const handledCount =
+    payload.handledCount ?? (payload.handledDate === today ? 1 : 0);
+  return handledCount >= getHomePopupDailyLimit(popup.frequency);
+};
+
+const markHomePopupHandled = (popup: HomePopupConfig) => {
+  const today = getTodayStorageDate();
+  const payload = storage.get<HomePopupHandledState>(HOME_POPUP_STORAGE_KEY);
+  const nextCount =
+    payload?.campaignVersion === popup.campaignVersion &&
+    payload.handledDate === today
+      ? (payload.handledCount ?? 1) + 1
+      : 1;
+
+  storage.set<HomePopupHandledState>(HOME_POPUP_STORAGE_KEY, {
+    campaignVersion: popup.campaignVersion,
+    frequency: popup.frequency,
+    handledDate: today,
+    handledCount: nextCount,
   });
 };
 
@@ -164,6 +223,14 @@ const getProviderTags = (provider: ProviderListItem) => {
 const getProviderPrimaryStyleText = (provider: ProviderListItem) => {
   const tags = getProviderTags(provider);
   return tags.length > 0 ? tags.join(" · ") : "风格信息待补充";
+};
+
+const normalizePopupPath = (value?: string) => {
+  const next = String(value || "").trim();
+  if (!next) return "";
+  if (next.startsWith("/pages/")) return next;
+  if (next.startsWith("pages/")) return `/${next}`;
+  return "";
 };
 
 const getProviderWorkTags = (provider: ProviderListItem) => {
@@ -392,6 +459,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
   const [showQuotePopup, setShowQuotePopup] = useState(false);
+  const [homePopup, setHomePopup] = useState<HomePopupConfig | null>(null);
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const headerInsetStyle = useMemo(
     () => ({
@@ -436,8 +504,42 @@ export default function Home() {
   );
 
   useDidShow(() => {
+    const providerEntryState = consumePendingHomeProviderEntry() as
+      | {
+          activeCategory?: HomeCategory;
+          providerOrgFilter?: ProviderOrgFilter;
+          sortBy?: string;
+        }
+      | undefined;
+
+    if (providerEntryState?.activeCategory) {
+      setActiveCategory(providerEntryState.activeCategory);
+    }
+    if (providerEntryState?.providerOrgFilter) {
+      setProviderOrgFilter(providerEntryState.providerOrgFilter);
+    }
+    if (providerEntryState?.sortBy) {
+      if (providerEntryState.activeCategory === "designer") {
+        setDesignerSortBy(providerEntryState.sortBy);
+      } else if (providerEntryState.activeCategory === "foreman") {
+        setForemanSortBy(providerEntryState.sortBy);
+      } else if (providerEntryState.activeCategory === "company") {
+        setCompanySortBy(providerEntryState.sortBy);
+      }
+    }
+
     syncCurrentTabBar("/pages/home/index");
-    setShowQuotePopup(!isHomeQuotePopupHandledToday());
+    void (async () => {
+      try {
+        const { popup } = await getHomePopup();
+        setHomePopup(popup);
+        setShowQuotePopup(Boolean(popup && !isHomePopupHandled(popup)));
+      } catch (error) {
+        console.warn("[home-popup] load failed", error);
+        setHomePopup(null);
+        setShowQuotePopup(false);
+      }
+    })();
   });
 
   useEffect(() => {
@@ -483,74 +585,84 @@ export default function Home() {
     );
   }, [currentSortOptions, currentSortValue]);
 
-  const loadPageData = useCallback(async (fromPullDown = false) => {
-    if (!fromPullDown) {
-      setLoading(true);
-    }
-
-    try {
-      if (activeCategory === "designer") {
-        const list = await loadAllProviders({
-          type: "designer",
-          sortBy: designerSortBy === "rating" ? "rating" : undefined,
-          keyword: "",
-        });
-
-        const filtered = list.filter((provider) =>
-          providerOrgFilter === "all"
-            ? true
-            : getProviderOrgType(provider) === providerOrgFilter,
-        );
-        setProviderItems(sortProviders(filtered, designerSortBy));
-        setMaterialItems([]);
-        return;
+  const loadPageData = useCallback(
+    async (fromPullDown = false) => {
+      if (!fromPullDown) {
+        setLoading(true);
       }
 
-      if (activeCategory === "foreman" || activeCategory === "company") {
-        const requestType = activeCategory === "foreman" ? "foreman" : "company";
-        const sortBy = activeCategory === "foreman" ? foremanSortBy : companySortBy;
-        const list = await loadAllProviders({
-          type: requestType,
-          sortBy: sortBy === "rating" ? "rating" : undefined,
-          keyword: "",
-        });
+      try {
+        if (activeCategory === "designer") {
+          const list = await loadAllProviders({
+            type: "designer",
+            sortBy: designerSortBy === "rating" ? "rating" : undefined,
+            keyword: "",
+          });
 
-        const filtered = list.filter((provider) =>
-          activeCategory === "company"
-            ? true
-            : providerOrgFilter === "all"
+          const filtered = list.filter((provider) =>
+            providerOrgFilter === "all"
               ? true
               : getProviderOrgType(provider) === providerOrgFilter,
+          );
+          setProviderItems(sortProviders(filtered, designerSortBy));
+          setMaterialItems([]);
+          return;
+        }
+
+        if (activeCategory === "foreman" || activeCategory === "company") {
+          const requestType =
+            activeCategory === "foreman" ? "foreman" : "company";
+          const sortBy =
+            activeCategory === "foreman" ? foremanSortBy : companySortBy;
+          const list = await loadAllProviders({
+            type: requestType,
+            sortBy: sortBy === "rating" ? "rating" : undefined,
+            keyword: "",
+          });
+
+          const filtered = list.filter((provider) =>
+            activeCategory === "company"
+              ? true
+              : providerOrgFilter === "all"
+                ? true
+                : getProviderOrgType(provider) === providerOrgFilter,
+          );
+          setProviderItems(sortProviders(filtered, sortBy));
+          setMaterialItems([]);
+          return;
+        }
+
+        const list = await loadAllMaterialShops(
+          materialSortBy === "distance" ? "distance" : "recommend",
         );
-        setProviderItems(sortProviders(filtered, sortBy));
-        setMaterialItems([]);
-        return;
-      }
 
-      const list = await loadAllMaterialShops(
-        materialSortBy === "distance" ? "distance" : "recommend",
-      );
-
-      setMaterialItems(list);
-      setProviderItems([]);
-    } catch (error) {
-      showErrorToast(error, "加载失败");
-    } finally {
-      setLoading(false);
-      if (fromPullDown) {
-        Taro.stopPullDownRefresh();
+        setMaterialItems(list);
+        setProviderItems([]);
+      } catch (error) {
+        showErrorToast(error, "加载失败");
+      } finally {
+        setLoading(false);
+        if (fromPullDown) {
+          Taro.stopPullDownRefresh();
+        }
       }
-    }
-  }, [
-    activeCategory,
-    designerSortBy,
-    foremanSortBy,
-    companySortBy,
-    materialSortBy,
-    providerOrgFilter,
-  ]);
-  const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
-    usePullToRefreshFeedback(loadPageData);
+    },
+    [
+      activeCategory,
+      designerSortBy,
+      foremanSortBy,
+      companySortBy,
+      materialSortBy,
+      providerOrgFilter,
+    ],
+  );
+  const {
+    refreshStatus,
+    drawerHeight,
+    drawerProgress,
+    bindPullToRefresh,
+    runReload,
+  } = usePullToRefreshFeedback(loadPageData);
 
   useEffect(() => {
     void runReload();
@@ -613,25 +725,29 @@ export default function Home() {
     });
   };
 
-  const handleOpenQuoteGenerator = () => {
-    markHomeQuotePopupHandledToday();
+  const handleOpenHomePopupAction = async (action?: HomePopupAction) => {
+    if (!homePopup || !action) return;
+    const target = resolveLegacyProviderListTarget(normalizePopupPath(action.path));
+    if (!target) {
+      Taro.showToast({ title: "弹窗跳转配置无效", icon: "none" });
+      return;
+    }
+
+    markHomePopupHandled(homePopup);
     setShowQuotePopup(false);
-    Taro.navigateTo({
-      url: "/pages/quote-generator/index",
-    });
+    if (TAB_PAGE_PATHS.has(target.split("?")[0] || target)) {
+      await Taro.switchTab({ url: (target.split("?")[0] || target) as string });
+      return;
+    }
+
+    await Taro.navigateTo({ url: target });
   };
 
   const handleCloseQuotePopup = () => {
-    markHomeQuotePopupHandledToday();
+    if (homePopup) {
+      markHomePopupHandled(homePopup);
+    }
     setShowQuotePopup(false);
-  };
-
-  const handleViewProviders = () => {
-    markHomeQuotePopupHandledToday();
-    setShowQuotePopup(false);
-    Taro.navigateTo({
-      url: "/pages/providers/list/index?type=designer",
-    });
   };
 
   const handleSecondaryFilterChange = (value: string) => {
@@ -1110,9 +1226,13 @@ export default function Home() {
           className="home-page__quote-popup-overlay"
           style={quotePopupOverlayStyle}
         >
-          <View className="home-page__quote-popup-card">
+          <View
+            className={`home-page__quote-popup-card home-page__quote-popup-card--${homePopup?.theme || "sunrise"}`}
+          >
             <View className="home-page__quote-popup-header">
-              <Text className="home-page__quote-popup-kicker">免费预估</Text>
+              <Text className="home-page__quote-popup-kicker">
+                {homePopup?.kicker || "免费预估"}
+              </Text>
               <View
                 className="home-page__quote-popup-close"
                 onClick={handleCloseQuotePopup}
@@ -1123,35 +1243,33 @@ export default function Home() {
 
             <View className="home-page__quote-popup-body">
               <Text className="home-page__quote-popup-title">
-                30 秒生成装修报价 
+                {homePopup?.title || "30 秒生成装修报价"}
               </Text>
+              {homePopup?.subtitle ? (
+                <Text className="home-page__quote-popup-subtitle">
+                  {homePopup.subtitle}
+                </Text>
+              ) : null}
 
               <View className="home-page__quote-popup-hero">
-                <View className="home-page__quote-popup-hero-scene">
-                  <View className="home-page__quote-popup-hero-mesh" />
-                  <View className="home-page__quote-popup-hero-glow home-page__quote-popup-hero-glow--1" />
-                  <View className="home-page__quote-popup-hero-glow home-page__quote-popup-hero-glow--2" />
-                  <View className="home-page__quote-popup-hero-glass-card">
-                    <View className="home-page__quote-popup-hero-glass-skeleton-row" />
-                    <View className="home-page__quote-popup-hero-glass-skeleton-row home-page__quote-popup-hero-glass-skeleton-row--short" />
-                    <View className="home-page__quote-popup-hero-glass-skeleton-chart" />
+                {homePopup?.heroImageUrl ? (
+                  <Image
+                    className="home-page__quote-popup-hero-image"
+                    mode="aspectFill"
+                    src={homePopup.heroImageUrl}
+                  />
+                ) : (
+                  <View className="home-page__quote-popup-hero-scene">
+                    <View className="home-page__quote-popup-hero-mesh" />
+                    <View className="home-page__quote-popup-hero-glow home-page__quote-popup-hero-glow--1" />
+                    <View className="home-page__quote-popup-hero-glow home-page__quote-popup-hero-glow--2" />
+                    <View className="home-page__quote-popup-hero-glass-card">
+                      <View className="home-page__quote-popup-hero-glass-skeleton-row" />
+                      <View className="home-page__quote-popup-hero-glass-skeleton-row home-page__quote-popup-hero-glass-skeleton-row--short" />
+                      <View className="home-page__quote-popup-hero-glass-skeleton-chart" />
+                    </View>
                   </View>
-                </View>
-              </View>
-
-              <View className="home-page__quote-popup-meta">
-                <View className="home-page__quote-popup-meta-item">
-                  <View className="home-page__quote-popup-meta-dot" />
-                  <Text className="home-page__quote-popup-meta-text">
-                    免费预估价
-                  </Text>
-                </View>
-                <View className="home-page__quote-popup-meta-item">
-                  <View className="home-page__quote-popup-meta-dot" />
-                  <Text className="home-page__quote-popup-meta-text">
-                    热选方案参考
-                  </Text>
-                </View>
+                )}
               </View>
 
               <Button
@@ -1159,19 +1277,25 @@ export default function Home() {
                 size="lg"
                 variant="primary"
                 className="home-page__quote-popup-primary"
-                onClick={handleOpenQuoteGenerator}
+                onClick={() =>
+                  void handleOpenHomePopupAction(homePopup?.primaryAction)
+                }
               >
-                立即生成
+                {homePopup?.primaryAction.text || "立即生成"}
               </Button>
 
-              <View className="home-page__quote-popup-footer">
-                <Text
-                  className="home-page__quote-popup-footer-link"
-                  onClick={handleViewProviders}
-                >
-                  先看看服务商
-                </Text>
-              </View>
+              {homePopup?.secondaryAction.enabled ? (
+                <View className="home-page__quote-popup-footer">
+                  <Text
+                    className="home-page__quote-popup-footer-link"
+                    onClick={() =>
+                      void handleOpenHomePopupAction(homePopup.secondaryAction)
+                    }
+                  >
+                    {homePopup.secondaryAction.text}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>

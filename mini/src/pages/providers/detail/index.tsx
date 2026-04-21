@@ -256,17 +256,6 @@ const ProviderDetailPage: React.FC = () => {
     settled,
   ]);
 
-  const ruleItems = useMemo(() => {
-    const steps = [
-      "提交预约后先沟通需求与量房安排，商家确认承接后才进入下一步。",
-      "设计确认、施工主体选择、施工报价确认是分步推进，不会跳步创建项目。",
-      settled
-        ? "订单、报价、评价和履约节点都会在平台留痕，异常可继续走退款或争议链路。"
-        : "当前商家未入驻，页面信息仅供参考，平台暂不承接后续履约保障。",
-    ];
-    return steps;
-  }, [settled]);
-
   const quoteDisplay =
     detail?.priceDisplay ||
     providerDetail?.priceDisplay ||
@@ -379,13 +368,6 @@ const ProviderDetailPage: React.FC = () => {
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
       url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}${params.fromQuote ? "&quoteDraft=1" : ""}`,
-    });
-  };
-
-  const handleOpenQuoteGenerator = () => {
-    const providerName = encodeURIComponent(displayName);
-    Taro.navigateTo({
-      url: `/pages/quote-generator/index?providerId=${params.id}&providerName=${providerName}&providerType=${params.type}`,
     });
   };
 
@@ -541,16 +523,6 @@ const ProviderDetailPage: React.FC = () => {
             {quoteDisplay.secondary}
           </Text>
         ) : null}
-      </View>
-      <View className="provider-detail-page__quote-actions">
-        <Button
-          variant="outline"
-          size="md"
-          className="provider-detail-page__quote-action-button"
-          onClick={handleOpenQuoteGenerator}
-        >
-          先测一测方案报价
-        </Button>
       </View>
     </View>
   ) : null;
@@ -773,20 +745,6 @@ const ProviderDetailPage: React.FC = () => {
           ? renderQuoteSection
           : renderIntroSection}
       {renderCompanyAlbumSection}
-
-      <View className="provider-detail-page__section provider-detail-page__section--rules">
-        <Text className="provider-detail-page__section-title">预约与成交规则</Text>
-        <View className="provider-detail-page__rule-list">
-          {ruleItems.map((item, index) => (
-            <View key={item} className="provider-detail-page__rule-item">
-              <View className="provider-detail-page__rule-index">
-                <Text className="provider-detail-page__rule-index-text">{index + 1}</Text>
-              </View>
-              <Text className="provider-detail-page__rule-copy">{item.trim()}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
 
       <View className="provider-detail-page__section">
         <View className="provider-detail-page__section-head">

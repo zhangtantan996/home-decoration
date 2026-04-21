@@ -11,6 +11,17 @@ import {
   formatEstimateRange,
   type QuoteEstimateResult,
 } from "@/utils/quoteEstimate";
+import {
+  HOME_PROVIDER_ENTRY_PATH,
+  setPendingHomeProviderEntry,
+} from "@/utils/homeProviderEntry";
+import {
+  getResidentialAreaFeedback,
+  isResidentialAreaValid,
+  normalizeResidentialAreaInput,
+  RESIDENTIAL_AREA_MAX,
+  RESIDENTIAL_AREA_MIN,
+} from "@/utils/residentialArea";
 import { setQuoteLeadDraft, type QuoteGeneratorProviderType } from "@/utils/quoteLeadDraft";
 import {
   getFixedBottomBarStyle,
@@ -27,7 +38,6 @@ const TIME_SLOT_OPTIONS = [
   { id: "pm", label: "14:00-18:00 下午" },
   { id: "night", label: "19:00-21:00 晚上" },
 ];
-
 type SheetType = "budget" | "layout" | "schedule" | null;
 
 interface WeekDayOption {
@@ -101,6 +111,7 @@ const QuoteGeneratorPage: React.FC = () => {
   );
   const [activeSheet, setActiveSheet] = useState<SheetType>(null);
   const [estimate, setEstimate] = useState<QuoteEstimateResult | null>(null);
+  const [areaCapped, setAreaCapped] = useState(false);
 
   useLoad((options) => {
     setProviderId(Number(options.providerId || 0));
@@ -120,7 +131,7 @@ const QuoteGeneratorPage: React.FC = () => {
   }, [auth.user?.phone]);
 
   useShareAppMessage(() => ({
-    title: "30 秒生成装修方案报价预估",
+    title: providerName ? `${providerName} 报价参考` : "30 秒生成装修方案报价预估",
     path: "/pages/quote-generator/index",
   }));
 
@@ -132,13 +143,12 @@ const QuoteGeneratorPage: React.FC = () => {
     TIME_SLOT_OPTIONS[0];
   const phoneEditable = !auth.user?.phone;
   const areaNum = Number(area);
+  const areaFeedback = getResidentialAreaFeedback(area, areaCapped);
   const isPhoneValid = /^1\d{10}$/.test(
     phoneEditable ? phone : auth.user?.phone || "",
   );
   const isFormValid =
-    Number.isFinite(areaNum) &&
-    areaNum >= 10 &&
-    areaNum <= 9999 &&
+    isResidentialAreaValid(areaNum) &&
     Boolean(budgetRange) &&
     Boolean(preferredDate) &&
     isPhoneValid;
@@ -152,8 +162,9 @@ const QuoteGeneratorPage: React.FC = () => {
   };
 
   const handleAreaInput = (event: { detail: { value: string } }) => {
-    const value = event.detail.value.replace(/[^\d.]/g, "").slice(0, 6);
-    setArea(value);
+    const nextArea = normalizeResidentialAreaInput(event.detail.value);
+    setAreaCapped(nextArea.cappedToMax);
+    setArea(nextArea.value);
   };
 
   const handlePhoneInput = (event: { detail: { value: string } }) => {
@@ -174,8 +185,8 @@ const QuoteGeneratorPage: React.FC = () => {
 
   const validateBeforeGenerate = () => {
     if (!area.trim()) return "请输入房屋面积";
-    if (!Number.isFinite(areaNum) || areaNum < 10 || areaNum > 9999) {
-      return "房屋面积需在 10-9999㎡ 之间";
+    if (!isResidentialAreaValid(areaNum)) {
+      return `房屋面积需在 ${RESIDENTIAL_AREA_MIN}-${RESIDENTIAL_AREA_MAX}㎡ 之间`;
     }
     if (!budgetRange) return "请选择预算范围";
     if (!preferredDate) return "请选择期望上门时间";
@@ -232,9 +243,8 @@ const QuoteGeneratorPage: React.FC = () => {
   ) => {
     if (!estimate) return;
     persistDraft(recommendedProviderType);
-    Taro.navigateTo({
-      url: `/pages/providers/list/index?type=${recommendedProviderType}&fromQuote=1`,
-    });
+    setPendingHomeProviderEntry(recommendedProviderType);
+    Taro.switchTab({ url: HOME_PROVIDER_ENTRY_PATH });
   };
 
   const handleGoToBooking = () => {
@@ -249,17 +259,20 @@ const QuoteGeneratorPage: React.FC = () => {
   const providerContextTitle = providerName
     ? `先测一测，再决定要不要预约 ${providerName}`
     : "30 秒生成装修方案报价预估";
+  const pageTitle = providerId ? "服务商报价参考" : "方案报价预估";
+  const heroKicker = providerId ? "服务商参考 · 非正式报价" : "免费预估 · 非正式报价";
   const primaryActionText = providerId
     ? "立即预约，获取正式方案报价"
     : "立即预约，获取正式方案报价";
+  const generateActionText = providerId ? "生成报价参考" : "一键生成方案报价";
 
   return (
     <View className="quote-generator-page" style={pageBottomStyle}>
-      <MiniPageNav title="方案报价预估" onBack={handleBack} placeholder />
+      <MiniPageNav title={pageTitle} onBack={handleBack} placeholder />
 
       <View className="quote-generator-page__content">
         <View className="quote-generator-page__hero-card">
-          <Text className="quote-generator-page__hero-kicker">免费预估 · 非正式报价</Text>
+          <Text className="quote-generator-page__hero-kicker">{heroKicker}</Text>
           <Text className="quote-generator-page__hero-title">
             {providerContextTitle}
           </Text>
@@ -295,11 +308,22 @@ const QuoteGeneratorPage: React.FC = () => {
                   className="quote-generator-page__input"
                   value={area}
                   type="number"
-                  placeholder="10-9999"
+                  placeholder="10-2000"
                   onInput={handleAreaInput}
                 />
                 <Text className="quote-generator-page__unit">㎡</Text>
               </View>
+              <Text
+                className={`quote-generator-page__field-hint ${
+                  areaFeedback.tone === "warning"
+                    ? "quote-generator-page__field-hint--warning"
+                    : areaFeedback.tone === "error"
+                      ? "quote-generator-page__field-hint--error"
+                      : ""
+                }`}
+              >
+                {areaFeedback.message}
+              </Text>
             </View>
 
             <View className="quote-generator-page__field quote-generator-page__field--half">
@@ -513,7 +537,7 @@ const QuoteGeneratorPage: React.FC = () => {
             onClick={handleGenerate}
             disabled={!isFormValid}
           >
-            一键生成方案报价
+            {generateActionText}
           </Button>
         )}
       </View>

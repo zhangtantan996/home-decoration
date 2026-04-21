@@ -67,13 +67,13 @@ func TestQuoteEstimateService_EstimateQuote(t *testing.T) {
 	t.Run("面积过小", func(t *testing.T) {
 		_, err := service.EstimateQuote(5, "现代简约", "一线城市")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "房屋面积需在 10-9999 ㎡ 之间")
+		assert.Contains(t, err.Error(), "房屋面积需在 10-2000 ㎡ 之间")
 	})
 
 	t.Run("面积过大", func(t *testing.T) {
-		_, err := service.EstimateQuote(10000, "现代简约", "一线城市")
+		_, err := service.EstimateQuote(2001, "现代简约", "一线城市")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "房屋面积需在 10-9999 ㎡ 之间")
+		assert.Contains(t, err.Error(), "房屋面积需在 10-2000 ㎡ 之间")
 	})
 
 	t.Run("风格为空", func(t *testing.T) {

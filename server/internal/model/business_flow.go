@@ -69,6 +69,7 @@ const (
 	ConfigKeyPaymentPayoutAutoEnabled    = "payment.payout_auto_enabled"
 	ConfigKeyPaymentChannelWechatEnabled = "payment.channel.wechat.enabled"
 	ConfigKeyPaymentChannelAlipayEnabled = "payment.channel.alipay.enabled"
+	ConfigKeyMiniHomePopup               = "mini.home_popup.config"
 )
 
 // Proposal 设计方案

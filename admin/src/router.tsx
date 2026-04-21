@@ -25,6 +25,8 @@ import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
 import QuoteTemplateManagement from './pages/quotes/QuoteTemplateManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
+import QuoteInquiryList from './pages/quote-inquiries/QuoteInquiryList';
+import QuoteInquiryDetail from './pages/quote-inquiries/QuoteInquiryDetail';
 import WorkbenchDetail from './pages/supervision/WorkbenchDetail';
 import WorkbenchList from './pages/supervision/WorkbenchList';
 import FinanceOverview from './pages/finance/FinanceOverview';
@@ -137,6 +139,11 @@ const router = createBrowserRouter([
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
             { path: 'bookings/list', element: <ProtectedRoute permission="booking:list"><BookingList /></ProtectedRoute> },
             { path: 'bookings/disputed', element: <ProtectedRoute permission="booking:dispute:detail"><DisputedBookings /></ProtectedRoute> },
+
+            // Quote Inquiries
+            { path: 'quote-inquiries', element: <Navigate to="/quote-inquiries/list" replace /> },
+            { path: 'quote-inquiries/list', element: <ProtectedRoute permission="quote:inquiry:list"><QuoteInquiryList /></ProtectedRoute> },
+            { path: 'quote-inquiries/:id', element: <ProtectedRoute permission="quote:inquiry:list"><QuoteInquiryDetail /></ProtectedRoute> },
 
             // Finance
             { path: 'finance', element: <Navigate to="/finance/overview" replace /> },

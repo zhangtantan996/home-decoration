@@ -19,6 +19,10 @@ import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
 import { resolveMiniNotificationRoute } from '@/utils/notificationActionRoute';
+import {
+  clearNotificationRouteValidationCache,
+  validateNotificationRoute,
+} from '@/utils/notificationRouteValidation';
 import { NotificationWebSocket, isNotificationRealtimeEnabled } from '@/utils/notificationWebSocket';
 import {
   buildNotificationFilters,
@@ -55,6 +59,7 @@ const NotificationsHeader = ({
   <>
     <View className="notifications-page__header" style={insetStyle}>
       <View className="notifications-page__header-main" style={mainStyle}>
+        <View className="notifications-page__capsule-spacer" style={capsuleStyle} />
         <Text className="notifications-page__header-title">通知</Text>
         <View className="notifications-page__capsule-spacer" style={capsuleStyle} />
       </View>
@@ -151,7 +156,7 @@ const FilterBar = ({
 
     <View className="notifications-page__toolbar-actions">
       <View className="notifications-page__toolbar-action" onClick={onReadAll}>
-        <Text className={`notifications-page__toolbar-action-text ${unreadCount > 0 ? 'is-active' : ''}`}>已读</Text>
+        <Text className={`notifications-page__toolbar-action-text ${unreadCount > 0 ? 'is-active' : ''}`}>全部已读</Text>
       </View>
     </View>
   </View>
@@ -160,47 +165,53 @@ const FilterBar = ({
 const NotificationCard = ({
   item,
   onOpen,
-  onDelete,
+  onManage,
 }: {
   item: NotificationCardViewModel;
   onOpen: (item: NotificationItem) => void;
-  onDelete: (id: number) => void;
+  onManage: (item: NotificationCardViewModel) => void;
 }) => (
-  <View className={`notifications-page__notification-card ${item.isRead ? '' : 'is-unread'}`} onClick={() => onOpen(item.raw)}>
-    <View className="notifications-page__notification-rail">
-      <View className={`notifications-page__notification-rail-dot notifications-page__notification-rail-dot--${item.typeTone}`} />
-      <View className="notifications-page__notification-rail-line" />
-    </View>
-
-    <View className={`notifications-page__notification-icon notifications-page__notification-icon--${item.typeTone}`}>
-      <Text className="notifications-page__notification-icon-text">{item.typeLabel}</Text>
-    </View>
-
+  <View
+    className={`notifications-page__notification-card ${item.isRead ? '' : 'is-unread'} ${item.isActionable ? 'is-actionable' : ''}`}
+    onClick={() => onOpen(item.raw)}
+    onLongPress={() => onManage(item)}
+  >
     <View className="notifications-page__notification-main">
       <View className="notifications-page__notification-head">
+        <View className="notifications-page__notification-pill-row">
+          <Text className={`notifications-page__notification-type notifications-page__notification-type--${item.typeTone}`}>
+            {item.typeLabel}
+          </Text>
+          <Text className={`notifications-page__notification-status notifications-page__notification-status--${item.statusTone}`}>
+            {item.statusLabel}
+          </Text>
+        </View>
+        <Text className="notifications-page__notification-time">{item.timeLabel}</Text>
+      </View>
+
+      <View className="notifications-page__notification-title-row">
         <Text className="notifications-page__notification-title">{item.title}</Text>
         {!item.isRead ? <View className="notifications-page__notification-dot" /> : null}
       </View>
-      <Text className="notifications-page__notification-content line-clamp-2">{item.content}</Text>
-      <View className="notifications-page__notification-meta">
-        <Text className={`notifications-page__notification-type notifications-page__notification-type--${item.typeTone}`}>{item.typeLabel}</Text>
-        <Text className="notifications-page__notification-time">{item.relativeTime}</Text>
-        {item.canNavigate ? <Text className="notifications-page__notification-jump">{item.actionText}</Text> : null}
-      </View>
-    </View>
 
-    <View className="notifications-page__notification-side">
-      <Text className="notifications-page__notification-absolute">{item.absoluteTime}</Text>
-      <Text className={`notifications-page__notification-link ${item.canNavigate ? 'is-active' : ''}`}>{item.actionText}</Text>
-      <Text
-        className="notifications-page__notification-delete"
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete(item.id);
-        }}
-      >
-        删除
-      </Text>
+      <Text className="notifications-page__notification-content line-clamp-2">{item.content}</Text>
+
+      <View className="notifications-page__notification-footer">
+        <Text className="notifications-page__notification-hint">长按可删除</Text>
+        {item.canNavigate && item.actionText ? (
+          <View
+            className={`notifications-page__notification-action ${item.isActionable ? 'is-primary' : ''}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpen(item.raw);
+            }}
+          >
+            <Text className={`notifications-page__notification-action-text ${item.isActionable ? 'is-primary' : ''}`}>
+              {item.actionText}
+            </Text>
+          </View>
+        ) : null}
+      </View>
     </View>
   </View>
 );
@@ -210,6 +221,7 @@ export default function NotificationsPage() {
   const redirectingRef = useRef(false);
   const redirectResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchRequestIdRef = useRef(0);
+  const hiddenInvalidNotificationIdsRef = useRef<Set<number>>(new Set());
   const mountedRef = useRef(true);
   const pageVisibleRef = useRef(false);
   const realtimeRef = useRef<NotificationWebSocket | null>(null);
@@ -248,6 +260,11 @@ export default function NotificationsPage() {
     [activeFilter, filters],
   );
 
+  const hideInvalidNotificationLocally = useCallback((id: number) => {
+    hiddenInvalidNotificationIdsRef.current.add(id);
+    setNotifications((prev) => prev.filter((entry) => entry.id !== id));
+  }, []);
+
   useEffect(() => {
     if (activeFilter !== 'all' && !filters.some((item) => item.key === activeFilter)) {
       setActiveFilter('all');
@@ -269,7 +286,37 @@ export default function NotificationsPage() {
       if (requestId !== fetchRequestIdRef.current || !mountedRef.current || !pageVisibleRef.current) {
         return;
       }
-      setNotifications(data.list || []);
+      const rawList = (data.list || []).filter(
+        (item) => !hiddenInvalidNotificationIdsRef.current.has(item.id),
+      );
+      const validation = await Promise.all(rawList.map(async (item) => {
+        const pagePath = resolveMiniNotificationRoute(item.actionUrl);
+        if (!pagePath) {
+          return { item, valid: true };
+        }
+
+        const result = await validateNotificationRoute(pagePath);
+        if (result === 'invalid') {
+          hiddenInvalidNotificationIdsRef.current.add(item.id);
+          await deleteNotification(item.id).catch(() => undefined);
+          return { item, valid: false };
+        }
+
+        return { item, valid: true };
+      }));
+
+      if (requestId !== fetchRequestIdRef.current || !mountedRef.current || !pageVisibleRef.current) {
+        return;
+      }
+
+      const invalidCount = validation.filter((entry) => !entry.valid).length;
+      setNotifications(validation.filter((entry) => entry.valid).map((entry) => entry.item));
+      if (invalidCount >= 2) {
+        Taro.showToast({
+          title: `已清理${invalidCount}条失效通知`,
+          icon: 'none',
+        });
+      }
     } catch (error) {
       if (requestId === fetchRequestIdRef.current && mountedRef.current) {
         showErrorToast(error, '加载通知失败');
@@ -288,10 +335,13 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     mountedRef.current = true;
+    const hiddenInvalidIds = hiddenInvalidNotificationIdsRef.current;
 
     return () => {
       mountedRef.current = false;
       fetchRequestIdRef.current += 1;
+      hiddenInvalidIds.clear();
+      clearNotificationRouteValidationCache();
       if (redirectResetTimerRef.current) {
         clearTimeout(redirectResetTimerRef.current);
         redirectResetTimerRef.current = null;
@@ -397,6 +447,13 @@ export default function NotificationsPage() {
         return;
       }
 
+      const validationResult = await validateNotificationRoute(pagePath);
+      if (validationResult === 'invalid') {
+        await deleteNotification(item.id).catch(() => undefined);
+        hideInvalidNotificationLocally(item.id);
+        return;
+      }
+
       const plainPath = stripQuery(pagePath);
       if (TAB_PAGE_PATHS.includes(plainPath)) {
         await Taro.switchTab({ url: plainPath });
@@ -406,7 +463,7 @@ export default function NotificationsPage() {
     } catch (error) {
       showErrorToast(error, '打开通知失败');
     }
-  }, []);
+  }, [hideInvalidNotificationLocally]);
 
   const handleDeleteNotification = useCallback(async (id: number) => {
     try {
@@ -417,6 +474,21 @@ export default function NotificationsPage() {
       showErrorToast(error, '删除失败');
     }
   }, []);
+
+  const handleManageNotification = useCallback(async (item: NotificationCardViewModel) => {
+    try {
+      const result = await Taro.showActionSheet({
+        itemList: ['删除通知'],
+        itemColor: '#ef4444',
+      });
+
+      if (result.tapIndex === 0) {
+        await handleDeleteNotification(item.id);
+      }
+    } catch {
+      return;
+    }
+  }, [handleDeleteNotification]);
 
   const handleClearNotifications = useCallback(async () => {
     if (!auth.token) {
@@ -493,15 +565,15 @@ export default function NotificationsPage() {
                         key={item.id}
                         item={item}
                         onOpen={handleOpenNotification}
-                        onDelete={handleDeleteNotification}
+                        onManage={handleManageNotification}
                       />
                     ))}
                   </View>
                 </View>
               ))}
 
-              <View className="notifications-page__danger-zone" onClick={handleClearNotifications}>
-                <Text className="notifications-page__danger-text">清空当前通知列表</Text>
+              <View className="notifications-page__footer-utility" onClick={handleClearNotifications}>
+                <Text className="notifications-page__footer-utility-text">清空当前通知列表</Text>
               </View>
             </>
           ) : (

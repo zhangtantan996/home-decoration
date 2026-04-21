@@ -226,7 +226,9 @@
     color: #9ca3af;
     font-size: 28rpx;
     font-weight: 500;
-    transition: color 0.18s ease, font-weight 0.18s ease;
+    transition:
+      color 0.18s ease,
+      font-weight 0.18s ease;
 
     &--active {
       color: #111111;
@@ -621,15 +623,55 @@
   }
 
   &__quote-popup-card {
+    --popup-kicker-bg: linear-gradient(
+      135deg,
+      rgba(255, 94, 0, 0.1) 0%,
+      rgba(255, 50, 0, 0.05) 100%
+    );
+    --popup-kicker-color: #ff5000;
+    --popup-hero-bg: linear-gradient(135deg, #fffafa 0%, #fef5f0 100%);
+    --popup-mesh-primary: rgba(255, 115, 0, 0.08);
+    --popup-mesh-secondary: rgba(255, 60, 0, 0.06);
+    --popup-glow-primary: rgba(255, 94, 0, 0.15);
+    --popup-glow-secondary: rgba(255, 150, 0, 0.12);
+    --popup-chart-bg: linear-gradient(
+      135deg,
+      rgba(255, 115, 0, 0.1) 0%,
+      rgba(255, 60, 0, 0.05) 100%
+    );
+    --popup-primary-bg: #111111;
+    --popup-primary-shadow: rgba(17, 17, 17, 0.15);
     width: 100%;
     max-width: 640rpx;
     padding: 32rpx;
     border-radius: 40rpx;
     background: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 40rpx 80rpx rgba(17, 17, 17, 0.12), 
-                inset 0 2rpx 0 rgba(255, 255, 255, 1);
+    box-shadow:
+      0 40rpx 80rpx rgba(17, 17, 17, 0.12),
+      inset 0 2rpx 0 rgba(255, 255, 255, 1);
     backdrop-filter: blur(24rpx);
     animation: popupScaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+    &--graphite {
+      --popup-kicker-bg: linear-gradient(
+        135deg,
+        rgba(31, 41, 55, 0.08) 0%,
+        rgba(51, 65, 85, 0.04) 100%
+      );
+      --popup-kicker-color: #1f2937;
+      --popup-hero-bg: linear-gradient(135deg, #f5f7fb 0%, #e2e8f0 100%);
+      --popup-mesh-primary: rgba(71, 85, 105, 0.08);
+      --popup-mesh-secondary: rgba(100, 116, 139, 0.06);
+      --popup-glow-primary: rgba(71, 85, 105, 0.12);
+      --popup-glow-secondary: rgba(148, 163, 184, 0.12);
+      --popup-chart-bg: linear-gradient(
+        135deg,
+        rgba(71, 85, 105, 0.12) 0%,
+        rgba(148, 163, 184, 0.08) 100%
+      );
+      --popup-primary-bg: #1f2937;
+      --popup-primary-shadow: rgba(31, 41, 55, 0.18);
+    }
   }
 
   &__quote-popup-header {
@@ -648,8 +690,8 @@
     align-items: center;
     padding: 10rpx 20rpx;
     border-radius: 999rpx;
-    background: linear-gradient(135deg, rgba(255, 94, 0, 0.1) 0%, rgba(255, 50, 0, 0.05) 100%);
-    color: #ff5000;
+    background: var(--popup-kicker-bg);
+    color: var(--popup-kicker-color);
     font-size: 24rpx;
     font-weight: 700;
   }
@@ -699,9 +741,16 @@
     overflow: hidden;
     position: relative;
     background: #ffffff;
-    box-shadow: 
+    box-shadow:
       inset 0 1rpx 0 rgba(255, 255, 255, 0.8),
       0 16rpx 40rpx rgba(17, 17, 17, 0.06);
+  }
+
+  &__quote-popup-hero-image {
+    display: block;
+    width: 100%;
+    height: 280rpx;
+    background: var(--popup-hero-bg);
   }
 
   &__quote-popup-hero-scene {
@@ -711,15 +760,23 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    background: linear-gradient(135deg, #fffafa 0%, #fef5f0 100%);
+    background: var(--popup-hero-bg);
   }
 
   &__quote-popup-hero-mesh {
     position: absolute;
     inset: -50%;
-    background: 
-      radial-gradient(circle at 50% 50%, rgba(255, 115, 0, 0.08) 0%, transparent 50%),
-      radial-gradient(circle at 80% 20%, rgba(255, 60, 0, 0.06) 0%, transparent 40%);
+    background:
+      radial-gradient(
+        circle at 50% 50%,
+        var(--popup-mesh-primary) 0%,
+        transparent 50%
+      ),
+      radial-gradient(
+        circle at 80% 20%,
+        var(--popup-mesh-secondary) 0%,
+        transparent 40%
+      );
     animation: meshRotate 15s linear infinite;
   }
 
@@ -727,22 +784,22 @@
     position: absolute;
     border-radius: 50%;
     filter: blur(40rpx);
-    
+
     &--1 {
       width: 200rpx;
       height: 200rpx;
       top: -20rpx;
       left: 10%;
-      background: rgba(255, 94, 0, 0.15);
+      background: var(--popup-glow-primary);
       animation: floatGlow 6s ease-in-out infinite;
     }
-    
+
     &--2 {
       width: 240rpx;
       height: 240rpx;
       bottom: -40rpx;
       right: 5%;
-      background: rgba(255, 150, 0, 0.12);
+      background: var(--popup-glow-secondary);
       animation: floatGlow 8s ease-in-out infinite reverse;
     }
   }
@@ -766,8 +823,12 @@
   &__quote-popup-hero-glass-skeleton-row {
     height: 12rpx;
     border-radius: 6rpx;
-    background: linear-gradient(90deg, rgba(243, 244, 246, 0.8) 0%, rgba(229, 231, 235, 0.4) 100%);
-    
+    background: linear-gradient(
+      90deg,
+      rgba(243, 244, 246, 0.8) 0%,
+      rgba(229, 231, 235, 0.4) 100%
+    );
+
     &--short {
       width: 60%;
     }
@@ -777,7 +838,7 @@
     height: 60rpx;
     margin-top: 12rpx;
     border-radius: 12rpx;
-    background: linear-gradient(135deg, rgba(255, 115, 0, 0.1) 0%, rgba(255, 60, 0, 0.05) 100%);
+    background: var(--popup-chart-bg);
   }
 
   &__quote-popup-meta {
@@ -813,11 +874,11 @@
     font-size: 32rpx;
     font-weight: 600;
     margin-top: 36rpx;
-    background: #111111;
+    background: var(--popup-primary-bg);
     color: #ffffff;
     border-radius: 20rpx;
     border: none;
-    box-shadow: 0 16rpx 32rpx rgba(17, 17, 17, 0.15);
+    box-shadow: 0 16rpx 32rpx var(--popup-primary-shadow);
   }
 
   &__quote-popup-footer {
@@ -836,8 +897,12 @@
 }
 
 @keyframes popupFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes popupScaleUp {
@@ -852,16 +917,30 @@
 }
 
 @keyframes meshRotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes floatGlow {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-20rpx) scale(1.05); }
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-20rpx) scale(1.05);
+  }
 }
 
 @keyframes floatingCard {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10rpx); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10rpx);
+  }
 }

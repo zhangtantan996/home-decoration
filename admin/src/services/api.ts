@@ -2199,4 +2199,85 @@ export const identityApi = {
   }) => api.post("/identities/apply", data),
 };
 
+// 智能报价询价管理
+export interface AdminQuoteInquiryPriceRange {
+  min: number;
+  max: number;
+}
+
+export interface AdminQuoteInquiryBreakdownItem {
+  category: string;
+  description: string;
+  min: number;
+  max: number;
+}
+
+export interface AdminQuoteInquiryResult {
+  totalMin: number;
+  totalMax: number;
+  designFee: AdminQuoteInquiryPriceRange;
+  constructionFee: AdminQuoteInquiryPriceRange;
+  materialFee: AdminQuoteInquiryPriceRange;
+  estimatedDuration: number;
+  breakdown: AdminQuoteInquiryBreakdownItem[];
+  cityCoefficient: number;
+  areaCoefficient: number;
+  styleCoefficient: number;
+  complexityCoefficient: number;
+  tips?: string[];
+}
+
+export interface AdminQuoteInquiryListItem {
+  id: number;
+  userId?: number;
+  phoneMasked?: string;
+  addressMasked?: string;
+  cityCode?: string;
+  cityName?: string;
+  area?: number;
+  houseLayout?: string;
+  renovationType?: string;
+  style?: string;
+  budgetRange?: string;
+  totalMin?: number;
+  totalMax?: number;
+  conversionStatus: string;
+  source: string;
+  hasPhone: boolean;
+  createdAt: string;
+}
+
+export interface AdminQuoteInquiryDetail extends AdminQuoteInquiryListItem {
+  phone?: string;
+  address?: string;
+  result?: AdminQuoteInquiryResult;
+  estimatedDurationDays?: number;
+  openId?: string;
+  updatedAt: string;
+}
+
+export interface AdminQuoteInquiryQuery {
+  page?: number;
+  pageSize?: number;
+  conversionStatus?: string;
+  city?: string;
+  hasPhone?: boolean;
+  startDate?: string;
+  endDate?: string;
+  keyword?: string;
+}
+
+export const adminQuoteInquiryApi = {
+  list: (params?: AdminQuoteInquiryQuery) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminQuoteInquiryListItem>>,
+      AdminApiResponse<AdminListData<AdminQuoteInquiryListItem>>
+    >("/admin/quote-inquiries", { params }),
+  detail: (id: number) =>
+    api.get<
+      AdminApiResponse<AdminQuoteInquiryDetail>,
+      AdminApiResponse<AdminQuoteInquiryDetail>
+    >(`/admin/quote-inquiries/${id}`),
+};
+
 export default api;

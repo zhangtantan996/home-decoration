@@ -364,59 +364,6 @@
     line-height: 1.6;
   }
 
-  &__quote-actions {
-    margin-top: 18rpx;
-  }
-
-  &__quote-action-button {
-    width: 100%;
-  }
-
-  &__section--rules {
-    background: linear-gradient(180deg, #f8fbff 0%, rgba(255, 255, 255, 0.98) 100%);
-  }
-
-  &__rule-list {
-    display: grid;
-    gap: 18rpx;
-    margin-top: 18rpx;
-  }
-
-  &__rule-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 18rpx;
-    padding: 20rpx 22rpx;
-    border-radius: 24rpx;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1rpx solid rgba(17, 17, 17, 0.05);
-  }
-
-  &__rule-index {
-    width: 44rpx;
-    height: 44rpx;
-    border-radius: 22rpx;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    background: #111111;
-  }
-
-  &__rule-index-text {
-    color: #ffffff;
-    font-size: 22rpx;
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  &__rule-copy {
-    flex: 1;
-    color: #404040;
-    font-size: 26rpx;
-    line-height: 1.7;
-  }
-
   &__album-hint {
     display: block;
     margin-top: 12rpx;

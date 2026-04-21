@@ -56,3 +56,13 @@ func (b *Booking) AfterFind(_ *gorm.DB) error {
 	}
 	return nil
 }
+
+func (q *QuoteInquiry) AfterFind(_ *gorm.DB) error {
+	if plain, ok := tryDecryptString(q.AddressEncrypted); ok {
+		q.Address = plain
+	}
+	if plain, ok := tryDecryptString(q.PhoneEncrypted); ok {
+		q.Phone = plain
+	}
+	return nil
+}

@@ -22,6 +22,13 @@ import {
   getPageBottomSpacerStyle,
 } from "@/utils/fixedLayout";
 import {
+  getResidentialAreaFeedback,
+  isResidentialAreaValid,
+  normalizeResidentialAreaInput,
+  RESIDENTIAL_AREA_MAX,
+  RESIDENTIAL_AREA_MIN,
+} from "@/utils/residentialArea";
+import {
   clearQuoteLeadDraft,
   getQuoteLeadDraft,
   type QuoteLeadDraft,
@@ -37,32 +44,6 @@ const TIME_SLOT_OPTIONS = [
   { id: "am", label: "09:00-12:00 上午" },
   { id: "pm", label: "14:00-18:00 下午" },
   { id: "night", label: "19:00-21:00 晚上" },
-];
-
-const BOOKING_NEXT_STEPS: Array<{
-  id: string;
-  title: string;
-  description: string;
-  iconName: "pending" | "orders" | "success";
-}> = [
-  {
-    id: "confirm",
-    title: "商家确认承接",
-    description: "提交预约后先由商家确认是否承接，再决定下一步安排。",
-    iconName: "pending",
-  },
-  {
-    id: "survey",
-    title: "支付量房费并安排量房",
-    description: "商家确认后，你会在预约详情页继续支付量房费并约定上门时间。",
-    iconName: "orders",
-  },
-  {
-    id: "bridge",
-    title: "继续进入方案与报价确认",
-    description: "量房和预算确认完成后，再进入设计确认、施工报价确认与项目创建。",
-    iconName: "success",
-  },
 ];
 
 type SheetType = "budget" | "layout" | "schedule" | null;
@@ -150,6 +131,7 @@ const BookingCreatePage: React.FC = () => {
   const [selectedSlotId, setSelectedSlotId] = useState(
     TIME_SLOT_OPTIONS[0]?.id || "am",
   );
+  const [areaCapped, setAreaCapped] = useState(false);
   const [quoteDraftSummary, setQuoteDraftSummary] = useState<QuoteLeadDraft | null>(null);
 
   useLoad((options) => {
@@ -248,14 +230,13 @@ const BookingCreatePage: React.FC = () => {
 
   const phoneEditable = !auth.user?.phone;
   const areaNum = Number(area);
+  const areaFeedback = getResidentialAreaFeedback(area, areaCapped);
   const isPhoneValid = /^1\d{10}$/.test(
     phoneEditable ? phone : auth.user?.phone || "",
   );
   const isFormValid =
     address.trim().length >= 5 &&
-    Number.isFinite(areaNum) &&
-    areaNum >= 10 &&
-    areaNum <= 9999 &&
+    isResidentialAreaValid(areaNum) &&
     Boolean(renovationType) &&
     Boolean(budgetRange) &&
     Boolean(preferredDate) &&
@@ -272,8 +253,9 @@ const BookingCreatePage: React.FC = () => {
   };
 
   const handleAreaInput = (event: { detail: { value: string } }) => {
-    const value = event.detail.value.replace(/[^\d.]/g, "").slice(0, 6);
-    setArea(value);
+    const nextArea = normalizeResidentialAreaInput(event.detail.value);
+    setAreaCapped(nextArea.cappedToMax);
+    setArea(nextArea.value);
   };
 
   const handlePhoneInput = (event: { detail: { value: string } }) => {
@@ -295,8 +277,8 @@ const BookingCreatePage: React.FC = () => {
     if (!address.trim()) return "请输入房屋地址";
     if (address.trim().length < 5) return "地址至少输入 5 个字符";
     if (!area.trim()) return "请输入房屋面积";
-    if (!Number.isFinite(areaNum) || areaNum < 10 || areaNum > 9999)
-      return "房屋面积需在 10-9999㎡ 之间";
+    if (!isResidentialAreaValid(areaNum))
+      return `房屋面积需在 ${RESIDENTIAL_AREA_MIN}-${RESIDENTIAL_AREA_MAX}㎡ 之间`;
     if (!budgetRange) return "请选择预算范围";
     if (!preferredDate) return "请选择期望上门时间";
     if (!isPhoneValid) return "请输入有效手机号";
@@ -432,26 +414,6 @@ const BookingCreatePage: React.FC = () => {
           </View>
         ) : null}
 
-        <View className="booking-create-page__next-card">
-          <View className="booking-create-page__next-head">
-            <Text className="booking-create-page__section-title">提交后下一步</Text>
-            <Text className="booking-create-page__section-desc">先留必要信息，后续动作会在预约详情页继续引导。</Text>
-          </View>
-          <View className="booking-create-page__next-list">
-            {BOOKING_NEXT_STEPS.map((item, index) => (
-              <View key={item.id} className="booking-create-page__next-item">
-                <View className="booking-create-page__next-index">
-                  <Icon name={item.iconName} size={18} color="#111111" />
-                </View>
-                <View className="booking-create-page__next-copy">
-                  <Text className="booking-create-page__next-title">{`${index + 1}. ${item.title}`}</Text>
-                  <Text className="booking-create-page__next-desc">{item.description}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-
         <View className="booking-create-page__form-card">
           <Text className="booking-create-page__section-title">预约信息</Text>
           <Text className="booking-create-page__section-desc">仅保留本次预约的必要留资，备注为选填。</Text>
@@ -481,11 +443,22 @@ const BookingCreatePage: React.FC = () => {
                   className="booking-create-page__input"
                   value={area}
                   type="number"
-                  placeholder="10-9999"
+                  placeholder="10-2000"
                   onInput={handleAreaInput}
                 />
                 <Text className="booking-create-page__unit">㎡</Text>
               </View>
+              <Text
+                className={`booking-create-page__field-hint ${
+                  areaFeedback.tone === "warning"
+                    ? "booking-create-page__field-hint--warning"
+                    : areaFeedback.tone === "error"
+                      ? "booking-create-page__field-hint--error"
+                      : ""
+                }`}
+              >
+                {areaFeedback.message}
+              </Text>
             </View>
 
             <View className="booking-create-page__field booking-create-page__field--half">

@@ -38,8 +38,8 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 	if addressLen < 5 || addressLen > 100 {
 		return nil, errors.New("地址长度需在 5-100 字符之间")
 	}
-	if req.Area < 10 || req.Area > 9999 {
-		return nil, errors.New("房屋面积需在 10-9999 ㎡ 之间")
+	if req.Area < residentialAreaMin || req.Area > residentialAreaMax {
+		return nil, errors.New("房屋面积需在 10-2000 ㎡ 之间")
 	}
 	if len(req.Notes) > 500 {
 		return nil, errors.New("补充说明不能超过 500 字符")

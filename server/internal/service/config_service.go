@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -118,10 +119,26 @@ func (s *ConfigService) GetConfigJSON(key string, target interface{}) error {
 	return json.Unmarshal([]byte(val), target)
 }
 
-// SetConfig 设置配置值（管理后台使用）
-func (s *ConfigService) SetConfig(key, value, description string) error {
+func (s *ConfigService) setConfigValue(tx *gorm.DB, key, value, description string) error {
+	if key == model.ConfigKeyMiniHomePopup {
+		normalized, err := normalizeMiniHomePopupConfigPayload(value, time.Now())
+		if err != nil {
+			return err
+		}
+		bytes, err := json.Marshal(normalized)
+		if err != nil {
+			return err
+		}
+		value = string(bytes)
+	}
+
+	queryDB := repository.DB
+	if tx != nil {
+		queryDB = tx
+	}
+
 	var config model.SystemConfig
-	err := repository.DB.Where("key = ?", key).First(&config).Error
+	err := queryDB.Where("key = ?", key).First(&config).Error
 	if err != nil {
 		// 不存在则创建
 		config = model.SystemConfig{
@@ -130,15 +147,22 @@ func (s *ConfigService) SetConfig(key, value, description string) error {
 			Description: description,
 			Editable:    true,
 		}
-		if err := repository.DB.Create(&config).Error; err != nil {
+		if err := queryDB.Create(&config).Error; err != nil {
 			return err
 		}
 	} else {
 		// 存在则更新
 		config.Value = value
-		if err := repository.DB.Save(&config).Error; err != nil {
+		if description != "" {
+			config.Description = description
+		}
+		if err := queryDB.Save(&config).Error; err != nil {
 			return err
 		}
+	}
+
+	if tx != nil {
+		return nil
 	}
 
 	// 更新缓存
@@ -147,6 +171,16 @@ func (s *ConfigService) SetConfig(key, value, description string) error {
 	configCacheMu.Unlock()
 
 	return nil
+}
+
+// SetConfig 设置配置值（管理后台使用）
+func (s *ConfigService) SetConfig(key, value, description string) error {
+	return s.setConfigValue(nil, key, value, description)
+}
+
+// SetConfigTx 在事务中设置配置值。
+func (s *ConfigService) SetConfigTx(tx *gorm.DB, key, value, description string) error {
+	return s.setConfigValue(tx, key, value, description)
 }
 
 // ClearCache 清除配置缓存
@@ -190,6 +224,7 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		{model.ConfigKeyPaymentPayoutAutoEnabled, "false", "是否启用自动出款"},
 		{model.ConfigKeyPaymentChannelWechatEnabled, "false", "是否启用微信支付"},
 		{model.ConfigKeyPaymentChannelAlipayEnabled, strconv.FormatBool(appconfig.GetConfig().Alipay.Enabled), "是否启用支付宝"},
+		{model.ConfigKeyMiniHomePopup, defaultMiniHomePopupConfigJSON(), "小程序首页运营弹窗配置"},
 	}
 
 	for _, d := range defaults {

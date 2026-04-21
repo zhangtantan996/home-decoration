@@ -139,6 +139,44 @@ func TestEnsureRuntimeSchemaColumnsAlignsLegacyQuoteWorkflowTables(t *testing.T)
 	}
 }
 
+func TestEnsureRuntimeSchemaColumnsRenamesLegacyQuoteInquiryOpenIDColumn(t *testing.T) {
+	setupSchemaHealthDB(t)
+
+	if err := DB.Exec(`
+		CREATE TABLE quote_inquiries (
+			id INTEGER PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			openid TEXT
+		)
+	`).Error; err != nil {
+		t.Fatalf("create legacy quote_inquiries table: %v", err)
+	}
+
+	if err := DB.Exec(`INSERT INTO quote_inquiries (id, created_at, updated_at, openid) VALUES (1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'legacy-open-id')`).Error; err != nil {
+		t.Fatalf("seed legacy quote_inquiries row: %v", err)
+	}
+
+	if err := ensureRuntimeSchemaColumns(); err != nil {
+		t.Fatalf("ensure runtime schema columns: %v", err)
+	}
+
+	if !DB.Migrator().HasColumn(&model.QuoteInquiry{}, "OpenID") {
+		t.Fatalf("expected quote_inquiries.open_id to exist")
+	}
+
+	type quoteInquiryRow struct {
+		OpenID string
+	}
+	var row quoteInquiryRow
+	if err := DB.Raw(`SELECT open_id FROM quote_inquiries WHERE id = 1`).Scan(&row).Error; err != nil {
+		t.Fatalf("load renamed open_id: %v", err)
+	}
+	if row.OpenID != "legacy-open-id" {
+		t.Fatalf("expected legacy openid value preserved, got %q", row.OpenID)
+	}
+}
+
 func TestEnsureRuntimeSchemaColumnsAlignsOnboardingTables(t *testing.T) {
 	setupSchemaHealthDB(t)
 

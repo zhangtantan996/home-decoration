@@ -2604,11 +2604,17 @@ func AdminBatchUpdateSystemConfigs(c *gin.Context) {
 		}
 	}
 
-	// 批量更新，SetConfig需要3个参数，这里简化处理
-	for key, value := range input {
-		if err := configSvc.SetConfig(key, value, ""); err != nil {
-			log.Printf("[AdminBatchUpdateSystemConfigs] Failed to update %s: %v", key, err)
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		for key, value := range input {
+			if err := configSvc.SetConfigTx(tx, key, value, ""); err != nil {
+				log.Printf("[AdminBatchUpdateSystemConfigs] Failed to update %s: %v", key, err)
+				return fmt.Errorf("更新配置 %s 失败: %w", key, err)
+			}
 		}
+		return nil
+	}); err != nil {
+		response.Error(c, 400, err.Error())
+		return
 	}
 
 	// 清除配置缓存

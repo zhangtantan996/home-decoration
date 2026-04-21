@@ -1,7 +1,6 @@
 import type { NotificationItem } from '@/services/notifications';
 import {
   formatServerDateTime,
-  formatServerRelativeTime,
   getServerDateParts,
   getServerTimeMs,
 } from '@/utils/serverTime';
@@ -24,11 +23,13 @@ export interface NotificationCardViewModel {
   typeTone: NotificationTone;
   typeLabel: string;
   isRead: boolean;
-  relativeTime: string;
-  absoluteTime: string;
+  timeLabel: string;
   canNavigate: boolean;
   actionText: string;
   actionStatus: 'none' | 'pending' | 'processed' | 'expired';
+  statusLabel: string;
+  statusTone: 'neutral' | 'brand' | 'danger' | 'success';
+  isActionable: boolean;
   priority: 'normal' | 'high' | 'urgent';
 }
 
@@ -81,18 +82,58 @@ const resolveNotificationTone = (item: NotificationItem): NotificationTone => {
 
 const readActionText = (item: NotificationItem, canNavigate: boolean) => {
   if (item.actionStatus === 'processed') {
-    return '已处理';
+    return '';
   }
   if (item.actionStatus === 'expired') {
-    return '已过期';
+    return '';
   }
   if (item.actionRequired && item.actionLabel) {
-    return item.priority === 'urgent' ? `${item.actionLabel} · 紧急` : item.actionLabel;
+    return item.actionLabel;
   }
   if (item.actionLabel) {
     return item.actionLabel;
   }
-  return canNavigate ? '查看详情' : '仅通知';
+  return canNavigate ? '查看详情' : '';
+};
+
+const resolveStatusMeta = (item: NotificationItem) => {
+  if (item.actionStatus === 'processed') {
+    return {
+      label: '已处理',
+      tone: 'success' as const,
+      actionable: false,
+    };
+  }
+
+  if (item.actionStatus === 'expired') {
+    return {
+      label: '已过期',
+      tone: 'neutral' as const,
+      actionable: false,
+    };
+  }
+
+  if (item.priority === 'urgent') {
+    return {
+      label: '紧急处理',
+      tone: 'danger' as const,
+      actionable: true,
+    };
+  }
+
+  if (item.actionRequired || item.actionStatus === 'pending') {
+    return {
+      label: '待处理',
+      tone: 'brand' as const,
+      actionable: true,
+    };
+  }
+
+  return {
+    label: item.isRead ? '已读' : '新通知',
+    tone: 'neutral' as const,
+    actionable: false,
+  };
 };
 
 const buildSectionKey = (value?: string) => {
@@ -130,6 +171,7 @@ const buildSectionMeta = (value?: string) => {
 const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
   const typeTone = resolveNotificationTone(item);
   const miniRoute = resolveMiniNotificationRoute(item.actionUrl);
+  const statusMeta = resolveStatusMeta(item);
   return {
     id: item.id,
     raw: item,
@@ -138,11 +180,13 @@ const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
     typeTone,
     typeLabel: readTypeLabel(item, typeTone),
     isRead: Boolean(item.isRead),
-    relativeTime: formatServerRelativeTime(item.createdAt, '--'),
-    absoluteTime: formatServerDateTime(item.createdAt, '--'),
+    timeLabel: formatServerDateTime(item.createdAt, '--'),
     canNavigate: Boolean(miniRoute),
     actionText: readActionText(item, Boolean(miniRoute)),
     actionStatus: item.actionStatus || 'none',
+    statusLabel: statusMeta.label,
+    statusTone: statusMeta.tone,
+    isActionable: statusMeta.actionable,
     priority: item.priority || 'normal',
   };
 };
@@ -155,6 +199,19 @@ const sortNotifications = (items: NotificationItem[]) => {
     }
     return right.id - left.id;
   });
+};
+
+const getPriorityWeight = (item: NotificationItem) => {
+  if (item.priority === 'urgent') return 3;
+  if (item.priority === 'high') return 2;
+  return 1;
+};
+
+const isPendingNotification = (item: NotificationItem) => {
+  if (item.actionStatus === 'processed' || item.actionStatus === 'expired') {
+    return false;
+  }
+  return Boolean(item.actionRequired) || item.actionStatus === 'pending' || item.priority === 'urgent';
 };
 
 export const buildNotificationFilters = (
@@ -188,21 +245,51 @@ export const buildNotificationSections = (
       ? sorted
       : sorted.filter((item) => resolveNotificationTone(item) === activeFilter);
 
-  const sectionMap = new Map<string, NotificationSectionViewModel>();
+  const pendingItems = filtered
+    .filter(isPendingNotification)
+    .sort((left, right) => {
+      const priorityDiff = getPriorityWeight(right) - getPriorityWeight(left);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return getServerTimeMs(right.createdAt) - getServerTimeMs(left.createdAt);
+    });
 
-  filtered.forEach((item) => {
+  const regularItems = filtered.filter((item) => !isPendingNotification(item));
+  const recentItems = regularItems.filter((item) => {
     const sectionMeta = buildSectionMeta(item.createdAt);
-    const existing = sectionMap.get(sectionMeta.key);
-    if (!existing) {
-      sectionMap.set(sectionMeta.key, {
-        key: sectionMeta.key,
-        title: sectionMeta.title,
-        items: [toCardViewModel(item)],
-      });
-      return;
-    }
-    existing.items.push(toCardViewModel(item));
+    return sectionMeta.key !== 'earlier';
+  });
+  const earlierItems = regularItems.filter((item) => {
+    const sectionMeta = buildSectionMeta(item.createdAt);
+    return sectionMeta.key === 'earlier';
   });
 
-  return Array.from(sectionMap.values());
+  const sections: NotificationSectionViewModel[] = [];
+
+  if (pendingItems.length > 0) {
+    sections.push({
+      key: 'pending',
+      title: '待处理',
+      items: pendingItems.map(toCardViewModel),
+    });
+  }
+
+  if (recentItems.length > 0) {
+    sections.push({
+      key: 'recent',
+      title: '最近更新',
+      items: recentItems.map(toCardViewModel),
+    });
+  }
+
+  if (earlierItems.length > 0) {
+    sections.push({
+      key: 'earlier',
+      title: '更早',
+      items: earlierItems.map(toCardViewModel),
+    });
+  }
+
+  return sections;
 };

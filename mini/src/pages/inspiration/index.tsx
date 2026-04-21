@@ -267,21 +267,37 @@ export default function Inspiration() {
     [navMetrics.menuBottom],
   );
 
-  useLoad((options) => {
+  const applyStoredFilterState = () => {
     const savedFilter = Taro.getStorageSync(INSPIRATION_FILTER_KEY) as Partial<InspirationFilterState> | undefined;
 
     if (savedFilter?.activeStyle && STYLE_OPTIONS.some((item) => item.value === savedFilter.activeStyle)) {
       setActiveStyle(savedFilter.activeStyle);
+    } else {
+      setActiveStyle(ALL_FILTER_VALUE);
     }
+
     if (savedFilter?.activeLayout && LAYOUT_OPTIONS.some((item) => item.value === savedFilter.activeLayout)) {
       setActiveLayout(savedFilter.activeLayout);
+    } else {
+      setActiveLayout(ALL_FILTER_VALUE);
     }
+
     if (savedFilter?.activeArea && AREA_OPTIONS.some((item) => item.value === savedFilter.activeArea)) {
       setActiveArea(savedFilter.activeArea);
+    } else {
+      setActiveArea(ALL_FILTER_VALUE);
     }
+
     if (savedFilter?.sortMode && SORT_OPTIONS.some((item) => item.value === savedFilter.sortMode)) {
       setSortMode(savedFilter.sortMode);
+    } else {
+      setSortMode('recommend');
     }
+  };
+
+  useLoad((options) => {
+    void options;
+    applyStoredFilterState();
   });
 
   useEffect(() => {
@@ -433,6 +449,7 @@ export default function Inspiration() {
 
   useDidShow(() => {
     syncCurrentTabBar('/pages/inspiration/index');
+    applyStoredFilterState();
 
     const syncPayload = Taro.getStorageSync(INSPIRATION_CASE_SYNC_KEY) as Partial<InspirationCaseSyncPayload> | undefined;
     if (!syncPayload || typeof syncPayload.id !== 'number') {

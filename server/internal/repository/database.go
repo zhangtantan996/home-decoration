@@ -224,6 +224,7 @@ func ensureRuntimeSchemaColumns() error {
 		{name: "user_verifications", model: &model.UserVerification{}},
 		{name: "user_login_devices", model: &model.UserLoginDevice{}},
 		{name: "user_feedbacks", model: &model.UserFeedback{}},
+		{name: "quote_inquiries", model: &model.QuoteInquiry{}},
 		{name: "quantity_bases", model: &model.QuantityBase{}},
 		{name: "quantity_base_items", model: &model.QuantityBaseItem{}},
 		{name: "quote_categories", model: &model.QuoteCategory{}},
@@ -240,6 +241,10 @@ func ensureRuntimeSchemaColumns() error {
 		{name: "quote_submissions", model: &model.QuoteSubmission{}},
 		{name: "quote_submission_items", model: &model.QuoteSubmissionItem{}},
 		{name: "quote_submission_revisions", model: &model.QuoteSubmissionRevision{}},
+	}
+
+	if err := alignLegacyQuoteInquirySchema(); err != nil {
+		return err
 	}
 
 	for _, runtimeTable := range runtimeTables {
@@ -449,6 +454,26 @@ func ensureRuntimeSchemaColumns() error {
 		if err := ensureTableColumns(onboardingTable.name, onboardingTable.model); err != nil {
 			return fmt.Errorf("align onboarding runtime schema %s: %w", onboardingTable.name, err)
 		}
+	}
+
+	return nil
+}
+
+func alignLegacyQuoteInquirySchema() error {
+	if DB == nil || !DB.Migrator().HasTable(&model.QuoteInquiry{}) {
+		return nil
+	}
+
+	if DB.Migrator().HasColumn(&model.QuoteInquiry{}, "OpenID") {
+		return nil
+	}
+
+	if !DB.Migrator().HasColumn("quote_inquiries", "openid") {
+		return nil
+	}
+
+	if err := DB.Exec(`ALTER TABLE quote_inquiries RENAME COLUMN openid TO open_id`).Error; err != nil {
+		return fmt.Errorf("rename quote_inquiries.openid to open_id: %w", err)
 	}
 
 	return nil

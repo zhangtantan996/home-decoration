@@ -38,8 +38,8 @@ type QuoteEstimateResult struct {
 // EstimateQuote 根据面积、风格、区域生成报价区间
 func (s *QuoteEstimateService) EstimateQuote(area float64, style string, region string) (*QuoteEstimateResult, error) {
 	// 输入校验
-	if area < 10 || area > 9999 {
-		return nil, errors.New("房屋面积需在 10-9999 ㎡ 之间")
+	if area < residentialAreaMin || area > residentialAreaMax {
+		return nil, fmt.Errorf("房屋面积需在 %d-%d ㎡ 之间", residentialAreaMin, residentialAreaMax)
 	}
 	if style == "" {
 		return nil, errors.New("装修风格不能为空")

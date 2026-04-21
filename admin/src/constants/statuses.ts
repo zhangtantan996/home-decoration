@@ -523,3 +523,19 @@ export const SETTLED_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'true', label: '已入驻' },
   { value: 'false', label: '未入驻' },
 ];
+
+export const ADMIN_QUOTE_INQUIRY_CONVERSION_STATUS_META: Record<string, { text: string; color: string }> = {
+  pending: { text: '待跟进', color: 'default' },
+  contacted: { text: '已联系', color: 'processing' },
+  booking_created: { text: '已预约', color: 'success' },
+  converted: { text: '已转化', color: 'success' },
+  abandoned: { text: '已放弃', color: 'error' },
+};
+
+export const ADMIN_QUOTE_INQUIRY_CONVERSION_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'pending', label: '待跟进' },
+  { value: 'contacted', label: '已联系' },
+  { value: 'booking_created', label: '已预约' },
+  { value: 'converted', label: '已转化' },
+  { value: 'abandoned', label: '已放弃' },
+];

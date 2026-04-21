@@ -1,5 +1,6 @@
 import Taro from '@tarojs/taro';
 
+import { resolveLegacyProviderListTarget } from '@/utils/homeProviderEntry';
 import { storage } from '@/utils/storage';
 
 const AUTH_RETURN_URL_KEY = 'hd-mini-auth-return-url';
@@ -31,7 +32,7 @@ const normalizePath = (value?: string) => {
 const stripQuery = (value: string) => value.split('?')[0] || value;
 
 export const setPendingAuthReturnUrl = (value?: string) => {
-  const target = normalizePath(value);
+  const target = resolveLegacyProviderListTarget(normalizePath(value));
   if (!target) {
     storage.remove(AUTH_RETURN_URL_KEY);
     return;
@@ -41,7 +42,9 @@ export const setPendingAuthReturnUrl = (value?: string) => {
 };
 
 export const getPendingAuthReturnUrl = () => {
-  return normalizePath(storage.get<string>(AUTH_RETURN_URL_KEY) || '');
+  return resolveLegacyProviderListTarget(
+    normalizePath(storage.get<string>(AUTH_RETURN_URL_KEY) || ''),
+  );
 };
 
 export const clearPendingAuthReturnUrl = () => {
@@ -49,7 +52,7 @@ export const clearPendingAuthReturnUrl = () => {
 };
 
 export const buildAuthLoginUrl = (value?: string) => {
-  const target = normalizePath(value);
+  const target = resolveLegacyProviderListTarget(normalizePath(value));
   setPendingAuthReturnUrl(target);
 
   if (!target) {
@@ -64,7 +67,9 @@ export const openAuthLoginPage = async (value?: string) => {
 };
 
 export const resolveAuthReturnUrl = (value?: string) => {
-  return normalizePath(value) || getPendingAuthReturnUrl() || DEFAULT_AFTER_LOGIN_URL;
+  return resolveLegacyProviderListTarget(normalizePath(value))
+    || getPendingAuthReturnUrl()
+    || DEFAULT_AFTER_LOGIN_URL;
 };
 
 export const navigateAfterAuthSuccess = async (value?: string) => {
