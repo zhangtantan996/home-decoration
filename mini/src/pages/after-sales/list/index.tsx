@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Text, View } from '@tarojs/components';
+import { ScrollView, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationInboxCell } from '@/components/NotificationInboxCell';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
@@ -22,17 +23,49 @@ const FILTERS = [
   { key: '3', label: '已关闭' },
 ] as const;
 
-const getProgressColor = (status: number) => {
-  if (status === 2) return '#10B981';
-  if (status === 1) return '#2563EB';
-  if (status === 3) return '#94A3B8';
-  return '#F59E0B';
+const sectionStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '16rpx',
 };
 
-const getProgressWidth = (status: number) => {
-  if (status === 2 || status === 3) return '100%';
-  if (status === 1) return '62%';
-  return '28%';
+const cellCardStyle = {
+  overflow: 'hidden',
+  borderRadius: '28rpx',
+  background: 'rgba(255, 255, 255, 0.98)',
+  border: '1rpx solid rgba(226, 232, 240, 0.96)',
+  boxShadow: '0 10rpx 24rpx rgba(15, 23, 42, 0.04)',
+};
+
+const badgeRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8rpx',
+  flexWrap: 'wrap' as const,
+};
+
+const toolbarStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: '16rpx',
+};
+
+const filterWrapStyle = {
+  marginBottom: '8rpx',
+  whiteSpace: 'nowrap' as const,
+};
+
+const filterRowStyle = {
+  display: 'inline-flex',
+  gap: '12rpx',
+  paddingRight: '12rpx',
+};
+
+const getStatusTone = (status: number) => {
+  if (status === 2) return 'success' as const;
+  if (status === 1) return 'brand' as const;
+  return 'neutral' as const;
 };
 
 const AfterSalesListPage: React.FC = () => {
@@ -85,82 +118,105 @@ const AfterSalesListPage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen flex items-center justify-center" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看售后记录"
           action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/after-sales/list/index') }}
         />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   if (loading && list.length === 0) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <View className="flex justify-end mb-md">
-          <Button size="small" variant="primary" onClick={openCreate}>发起售后</Button>
+        <View style={sectionStyle}>
+          <View style={toolbarStyle}>
+            <View className="text-sm text-gray-400">最近更新</View>
+            <Button size="small" variant="outline" onClick={openCreate}>发起售后</Button>
+          </View>
+          <Skeleton height={148} />
+          <Skeleton height={148} />
+          <Skeleton height={148} />
         </View>
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={180} />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-      <View className="flex justify-end mb-md">
-        <Button size="small" variant="primary" onClick={openCreate}>发起售后</Button>
-      </View>
 
-      <View className="flex gap-sm overflow-x-auto mb-md">
-        {FILTERS.map((item) => {
-          const active = activeFilter === item.key;
-          return (
-            <View
-              key={item.key}
-              className={`px-md py-xs rounded-full ${active ? 'bg-blue-50' : 'bg-white'}`}
-              style={{ border: active ? '1px solid #2563EB' : '1px solid #E5E7EB', flexShrink: 0 }}
-              onClick={() => setActiveFilter(item.key)}
-            >
-              <Text className={active ? 'text-brand text-sm' : 'text-sm text-gray-500'}>{item.label}</Text>
-            </View>
-          );
-        })}
-      </View>
+      <View style={sectionStyle}>
+        <View style={toolbarStyle}>
+          <View className="text-sm text-gray-400">{`共 ${filteredList.length} 条记录`}</View>
+          <Button size="small" variant="outline" onClick={openCreate}>发起售后</Button>
+        </View>
 
-      {filteredList.length === 0 ? (
-        <Empty description={activeFilter === 'all' ? '暂无售后申请' : '当前筛选下暂无记录'} />
-      ) : (
-        filteredList.map((item) => (
-          <Card key={item.id} className="mb-md" onClick={() => openDetail(item.id)}>
-            <View className="flex items-start justify-between gap-sm mb-sm">
-              <View className="min-w-0 flex-1">
-                <Text className="block font-bold text-base">{item.reason}</Text>
-                <Text className="block text-sm text-gray-500 mt-xs">关联预约 #{item.bookingId} · 单号 {item.orderNo}</Text>
+        <ScrollView scrollX showScrollbar={false} style={filterWrapStyle}>
+          <View style={filterRowStyle}>
+            {FILTERS.map((item) => {
+              const active = activeFilter === item.key;
+              return (
+                <View
+                  key={item.key}
+                  onClick={() => setActiveFilter(item.key)}
+                  style={{
+                    minHeight: '60rpx',
+                    padding: '0 24rpx',
+                    borderRadius: '999rpx',
+                    background: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)',
+                    color: active ? '#2563EB' : '#64748B',
+                    border: active ? '1rpx solid rgba(37, 99, 235, 0.18)' : '1rpx solid rgba(226, 232, 240, 0.96)',
+                    boxShadow: active ? '0 10rpx 22rpx rgba(37, 99, 235, 0.08)' : 'none',
+                    fontSize: '24rpx',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {item.label}
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        {filteredList.length === 0 ? (
+          <Empty description={activeFilter === 'all' ? '暂无售后申请' : '当前筛选下暂无记录'} />
+        ) : (
+          <View style={sectionStyle}>
+            {filteredList.map((item) => (
+              <View key={item.id} style={cellCardStyle}>
+                <NotificationInboxCell
+                  title={item.reason}
+                  summary={`${item.typeText} · ${item.amountText} · ${item.orderNo || `预约 #${item.bookingId}`}`}
+                  timeLabel={item.createdAt || ''}
+                  statusLabel={item.statusText}
+                  statusTone={getStatusTone(item.status)}
+                  typeBadge={
+                    <View style={badgeRowStyle}>
+                      <Tag variant="default">{item.typeText}</Tag>
+                    </View>
+                  }
+                  actionText="查看详情"
+                  actionSecondary
+                  actionTone="neutral"
+                  onClick={() => openDetail(item.id)}
+                  onActionClick={(event) => {
+                    event.stopPropagation?.();
+                    openDetail(item.id);
+                  }}
+                />
               </View>
-              <Tag variant={item.status === 2 ? 'success' : item.status === 1 ? 'primary' : item.status === 3 ? 'default' : 'warning'}>
-                {item.statusText}
-              </Tag>
-            </View>
-            <View className="flex justify-between items-center text-sm">
-              <Text className="text-gray-400">{item.typeText}</Text>
-              <Text className="font-medium">{item.amountText}</Text>
-            </View>
-            <View className="mt-sm h-1 bg-gray-100 rounded-full overflow-hidden">
-              <View className="h-full rounded-full" style={{ width: getProgressWidth(item.status), background: getProgressColor(item.status) }} />
-            </View>
-            <View className="flex justify-between items-center mt-sm">
-              <Text className="text-xs text-gray-400">提交于 {item.createdAt || '--'}</Text>
-              <Text className="text-sm text-brand">查看详情</Text>
-            </View>
-          </Card>
-        ))
-      )}
-    </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </NotificationSurfaceShell>
   );
 };
 

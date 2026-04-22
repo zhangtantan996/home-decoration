@@ -1,3 +1,5 @@
+import { buildAbsoluteUrl, parseAbsoluteUrl } from '@/utils/url';
+
 export type AppEnv = "local" | "test" | "staging" | "production";
 
 const PLACEHOLDER_API_HOST_PATTERN = /api\.yourdomain\.com/i;
@@ -33,11 +35,9 @@ const normalizeAppEnv = (raw?: string): AppEnv => {
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 const normalizePath = (value: string) => `/${value.replace(/^\/+/, "")}`;
 const createApiUrl = (path: string) => {
-  const resolvedUrl = new URL(API_BASE_URL);
-  resolvedUrl.pathname = `${resolvedUrl.pathname.replace(/\/+$/, "")}${normalizePath(path)}`;
-  resolvedUrl.search = "";
-  resolvedUrl.hash = "";
-  return resolvedUrl;
+  const apiBasePath = trimTrailingSlash(API_BASE_URL).replace(/\/+$/, '');
+  const suffixPath = `${apiBasePath.replace(/^https?:\/\/[^/]+/i, '')}${normalizePath(path)}`;
+  return buildAbsoluteUrl(API_BASE_URL, suffixPath);
 };
 
 const getDefaultApiBaseUrl = (appEnv: AppEnv) => {
@@ -70,13 +70,16 @@ const ENABLE_NOTIFICATION_WS = (() => {
   return !IS_LOCAL_API_BASE;
 })();
 
-export const buildMiniApiUrl = (path: string) => createApiUrl(path).toString();
+export const buildMiniApiUrl = (path: string) => createApiUrl(path);
 
 export const buildMiniRealtimeUrl = (token: string) => {
-  const resolvedUrl = createApiUrl("/realtime/notifications");
-  resolvedUrl.protocol = resolvedUrl.protocol === "https:" ? "wss:" : "ws:";
-  resolvedUrl.search = `token=${encodeURIComponent(token)}`;
-  return resolvedUrl.toString();
+  const httpUrl = createApiUrl("/realtime/notifications");
+  const parsedUrl = parseAbsoluteUrl(httpUrl);
+  if (!parsedUrl) {
+    return httpUrl;
+  }
+  const wsProtocol = parsedUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${wsProtocol}//${parsedUrl.host}${parsedUrl.pathname}?token=${encodeURIComponent(token)}`;
 };
 
 export const MINI_ENV = {

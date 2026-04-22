@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
-import { Button } from '@nutui/nutui-react-taro';
 
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import {
@@ -14,6 +19,7 @@ import {
   type ProjectChangeOrder,
 } from '@/services/projects';
 import { showErrorToast } from '@/utils/error';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDateTime } from '@/utils/serverTime';
 
 const statusMeta = (status?: string) => {
@@ -35,11 +41,21 @@ const statusMeta = (status?: string) => {
   }
 };
 
+const formatCurrency = (value?: number | string) => {
+  const amount = Number(value || 0);
+  if (!amount) {
+    return '无';
+  }
+  return `¥${amount.toLocaleString()}`;
+};
+
 const ProjectChangeRequestPage: React.FC = () => {
   const [projectId, setProjectId] = useState(0);
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState('');
   const [items, setItems] = useState<ProjectChangeOrder[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
 
   const loadData = useCallback(async () => {
     if (!projectId) return;
@@ -51,6 +67,7 @@ const ProjectChangeRequestPage: React.FC = () => {
       ]);
       setProjectName(project.name || `项目 #${projectId}`);
       setItems(changeOrders || []);
+      setSelectedId((prev) => prev || changeOrders?.[0]?.id || null);
     } catch (error) {
       showErrorToast(error, '加载变更单失败');
     } finally {
@@ -74,6 +91,8 @@ const ProjectChangeRequestPage: React.FC = () => {
     () => items.filter((item) => item.status === 'pending_user_confirm'),
     [items],
   );
+  const selected = items.find((item) => item.id === selectedId) || items[0] || null;
+  const selectedStatus = statusMeta(selected?.status);
 
   const handleConfirm = (item: ProjectChangeOrder) => {
     Taro.showModal({
@@ -119,58 +138,93 @@ const ProjectChangeRequestPage: React.FC = () => {
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen">
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-md">
-          <View className="text-xl font-bold mb-xs">{projectName || '项目变更单'}</View>
-          <View className="text-sm text-gray-500">这里只展示已经进入项目主链的正式变更单，增项确认后会生成待支付计划，减项会进入平台人工结算。</View>
-          <View className="flex" style={{ gap: '12rpx', marginTop: '20rpx', flexWrap: 'wrap' }}>
-            <Tag variant="brand">{`全部 ${items.length}`}</Tag>
-            <Tag variant={pendingItems.length ? 'warning' : 'default'}>{`待确认 ${pendingItems.length}`}</Tag>
-          </View>
-        </View>
+        <View className="notification-surface-shell__body">
+          <NotificationSurfaceHero
+            eyebrow="项目变更"
+            title={projectName || '项目变更单'}
+            subtitle={selected ? selected.title || `变更单 #${selected.id}` : `项目 #${projectId}`}
+            status={selected ? <Tag variant={selectedStatus.variant}>{selectedStatus.text}</Tag> : undefined}
+            summary={selected?.description || selected?.reason || '先选择当前变更单，再查看变更影响'}
+            metrics={[
+              { label: '全部变更', value: `${items.length}` },
+              { label: '待确认', value: `${pendingItems.length}`, emphasis: true },
+            ]}
+          />
 
-        {!items.length ? (
-          <View className="p-md">
-            <Empty description="当前项目还没有正式变更单" />
-          </View>
-        ) : (
-          <View className="p-md" style={{ display: 'flex', flexDirection: 'column', gap: '24rpx' }}>
-            {items.map((item) => {
-              const status = statusMeta(item.status);
-              const title = item.title || `变更单 #${item.id}`;
-              return (
-                <View key={item.id} className="bg-white rounded-xl p-md">
-                  <View className="flex items-center justify-between mb-sm" style={{ gap: '16rpx' }}>
-                    <View>
-                      <View className="text-base font-bold">{title}</View>
-                      <Text className="text-xs text-gray-500">{formatServerDateTime(item.createdAt)}</Text>
-                    </View>
-                    <Tag variant={status.variant}>{status.text}</Tag>
-                  </View>
-                  <View className="text-sm text-gray-700 mb-xs">{`变更原因：${item.reason || '未填写'}`}</View>
-                  {item.description ? <View className="text-sm text-gray-500 mb-xs">{`补充说明：${item.description}`}</View> : null}
-                  {item.amountImpact ? <View className="text-sm text-gray-500 mb-xs">{`金额影响：¥${Number(item.amountImpact).toLocaleString()}`}</View> : null}
-                  {item.timelineImpact ? <View className="text-sm text-gray-500 mb-xs">{`工期影响：${item.timelineImpact} 天`}</View> : null}
-                  {item.userRejectReason ? <View className="text-sm text-red-500 mb-xs">{`拒绝原因：${item.userRejectReason}`}</View> : null}
-                  {item.settlementReason ? <View className="text-sm text-gray-500 mb-xs">{`结算说明：${item.settlementReason}`}</View> : null}
-                  {item.status === 'pending_user_confirm' ? (
-                    <View className="flex" style={{ gap: '16rpx', marginTop: '20rpx' }}>
-                      <View className="flex-1">
-                        <Button type="primary" block onClick={() => handleConfirm(item)}>确认变更</Button>
+          {!items.length ? (
+            <Card className="notification-surface-card" title="当前状态">
+              <Empty description="当前项目还没有正式变更单" />
+            </Card>
+          ) : (
+            <>
+              <Card className="notification-surface-card" title="变更列表">
+                <ScrollView scrollX className="notification-object-selector">
+                  {items.map((item) => {
+                    const itemStatus = statusMeta(item.status);
+                    const active = item.id === selected?.id;
+                    return (
+                      <View
+                        key={item.id}
+                        className={`notification-object-selector__item ${active ? 'is-active' : ''}`}
+                        onClick={() => setSelectedId(item.id)}
+                      >
+                        <Text className="notification-object-selector__title">{item.title || `变更单 #${item.id}`}</Text>
+                        <Text className="notification-object-selector__meta">{itemStatus.text}</Text>
                       </View>
-                      <View className="flex-1">
-                        <Button type="default" block onClick={() => handleReject(item)}>拒绝变更</Button>
-                      </View>
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-        )}
+                    );
+                  })}
+                </ScrollView>
+              </Card>
+
+              {selected ? (
+                <Card className="notification-surface-card" title="当前变更影响">
+                  <NotificationFactRows
+                    items={[
+                      { label: '当前状态', value: selectedStatus.text },
+                      { label: '金额影响', value: formatCurrency(selected.amountImpact) },
+                      {
+                        label: '工期影响',
+                        value: selected.timelineImpact ? `${selected.timelineImpact} 天` : '无',
+                      },
+                      { label: '创建时间', value: formatServerDateTime(selected.createdAt, '--') },
+                      {
+                        label: '变更原因',
+                        value: selected.reason || '未填写变更原因',
+                        multiline: true,
+                      },
+                      {
+                        label: '变更说明',
+                        value: selected.description || '暂无补充说明',
+                        multiline: true,
+                      },
+                    ]}
+                  />
+                </Card>
+              ) : null}
+
+              {selected?.userRejectReason ? (
+                <Card className="notification-surface-card" title="最近一次拒绝原因">
+                  <Text className="notification-section-row__note is-danger">{selected.userRejectReason}</Text>
+                </Card>
+              ) : null}
+            </>
+          )}
+        </View>
       </ScrollView>
-    </View>
+
+      {selected?.status === 'pending_user_confirm' ? (
+        <NotificationActionBar>
+          <Button variant="secondary" onClick={() => handleReject(selected)}>
+            拒绝变更
+          </Button>
+          <Button variant="primary" onClick={() => handleConfirm(selected)}>
+            确认变更
+          </Button>
+        </NotificationActionBar>
+      ) : null}
+    </NotificationSurfaceShell>
   );
 };
 

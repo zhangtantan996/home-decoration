@@ -1,14 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { confirmProjectContract, getProjectContract, type ProjectContractDetail } from '@/services/projects';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDateTime } from '@/utils/serverTime';
 
 const readStatusMeta = (status?: string) => {
@@ -30,16 +35,71 @@ const readStatusMeta = (status?: string) => {
 
 const parseList = (value?: string | string[]) => {
   if (Array.isArray(value)) {
-    return value.filter(Boolean);
+    return value.filter(Boolean) as unknown[];
   }
   if (!value) {
-    return [] as string[];
+    return [] as unknown[];
   }
   try {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
   } catch {
-    return [];
+    return value
+      .split(/\n|,|，/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const formatMoney = (value: unknown) => {
+  const amount = Number(value || 0);
+  if (!amount) return '';
+  return `¥${amount.toLocaleString()}`;
+};
+
+const readPlanDisplay = (value: unknown, index: number) => {
+  if (typeof value === 'string') {
+    return {
+      title: `付款节点 ${index + 1}`,
+      note: value,
+      amount: '',
+    };
+  }
+
+  if (isRecord(value)) {
+    const title = [value.name, value.title, value.label].find((item) => typeof item === 'string' && item.trim()) as string | undefined;
+    const due = [value.dueAt, value.deadline, value.time].find((item) => typeof item === 'string' && item.trim()) as string | undefined;
+    const status = [value.statusText, value.status, value.state].find((item) => typeof item === 'string' && item.trim()) as string | undefined;
+    const amount = formatMoney(value.amount);
+    const note = [due ? `时间 ${due}` : '', status || ''].filter(Boolean).join(' · ');
+
+    return {
+      title: title || `付款节点 ${index + 1}`,
+      note: note || '付款信息待同步',
+      amount,
+    };
+  }
+
+  return {
+    title: `付款节点 ${index + 1}`,
+    note: '付款信息待同步',
+    amount: '',
+  };
+};
+
+const readAttachmentLabel = (value: unknown, index: number) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return `附件 ${index + 1}`;
+  }
+  const plain = value.split('?')[0].split('#')[0];
+  const last = plain.split('/').filter(Boolean).pop();
+  if (!last) return `附件 ${index + 1}`;
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return last;
   }
 };
 
@@ -49,7 +109,6 @@ const ProjectContractPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -57,7 +116,7 @@ const ProjectContractPage: React.FC = () => {
     }
   });
 
-  const fetchDetail = async () => {
+  const fetchDetail = useCallback(async () => {
     if (!projectId) {
       setDetail(null);
       setLoading(false);
@@ -73,11 +132,11 @@ const ProjectContractPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
 
   useEffect(() => {
     void fetchDetail();
-  }, [projectId]);
+  }, [fetchDetail]);
 
   const handleConfirm = async () => {
     if (!detail?.id || submitting) {
@@ -107,18 +166,18 @@ const ProjectContractPage: React.FC = () => {
   if (loading) {
     return (
       <View className="p-md bg-gray-50 min-h-screen">
+        <Skeleton height={180} className="mb-md" />
         <Skeleton height={220} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={120} />
+        <Skeleton height={180} />
       </View>
     );
   }
 
   if (!detail) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
         <Empty description="当前项目暂无待确认合同" />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
@@ -126,75 +185,91 @@ const ProjectContractPage: React.FC = () => {
   const attachments = parseList(detail.attachmentUrls);
   const status = readStatusMeta(detail.status);
   const canConfirm = detail.status === 'pending_confirm' || detail.status === 'draft';
+  const totalAmountText = `¥${Number(detail.totalAmount || 0).toLocaleString()}`;
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-sm flex justify-between items-center">
-          <View>
-            <View className="text-lg font-bold mb-xs">{detail.title || '装修合同'}</View>
-            <View className="text-sm text-gray-500">合同编号 {detail.contractNo || '待生成'}</View>
-          </View>
-          <Tag variant={status.variant}>{status.text}</Tag>
-        </View>
+        <View className="notification-surface-shell__body">
+          <NotificationSurfaceHero
+            eyebrow="项目合同"
+            title={totalAmountText}
+            subtitle={detail.title || '装修合同'}
+            status={<Tag variant={status.variant}>{status.text}</Tag>}
+            summary={detail.contractNo ? `合同编号 ${detail.contractNo}` : '合同编号待生成'}
+            metrics={[
+              { label: '付款节点', value: `${paymentPlans.length} 项`, emphasis: true },
+              { label: '合同附件', value: `${attachments.length} 份` },
+            ]}
+          />
 
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">合同摘要</View>
-          <View className="space-y-sm">
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">合同总额</Text>
-              <Text>¥{Number(detail.totalAmount || 0).toLocaleString()}</Text>
-            </View>
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">当前状态</Text>
-              <Text>{status.text}</Text>
-            </View>
-            <View className="flex justify-between text-sm py-xs">
-              <Text className="text-gray-500">确认时间</Text>
-              <Text>{formatServerDateTime(detail.confirmedAt, '待确认')}</Text>
-            </View>
-          </View>
-        </View>
+          <Card className="notification-surface-card" title="关键信息">
+            <NotificationFactRows
+              items={[
+                { label: '合同编号', value: detail.contractNo || '待生成' },
+                { label: '当前状态', value: status.text },
+                { label: '确认时间', value: formatServerDateTime(detail.confirmedAt, '待确认') },
+              ]}
+            />
+          </Card>
 
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">付款计划</View>
-          {paymentPlans.length === 0 ? (
-            <View className="text-sm text-gray-500">暂无付款计划明细</View>
-          ) : (
-            <View className="space-y-sm">
-              {paymentPlans.map((plan, index) => (
-                <View key={`${String(plan)}-${index}`} className="border border-gray-100 rounded-lg p-sm">
-                  <Text className="text-sm text-gray-700">{typeof plan === 'string' ? plan : JSON.stringify(plan)}</Text>
+          <Card className="notification-surface-card" title="付款计划">
+            {paymentPlans.length === 0 ? (
+              <View className="text-sm text-gray-500">付款计划待同步</View>
+            ) : (
+              <View className="notification-section-list">
+                {paymentPlans.map((plan, index) => {
+                  const item = readPlanDisplay(plan, index);
+                  return (
+                    <View key={`${item.title}-${index}`} className="notification-section-row">
+                      <View className="notification-section-row__head">
+                        <Text className="notification-section-row__title">{item.title}</Text>
+                        {item.amount ? (
+                          <Text className="notification-section-row__value">{item.amount}</Text>
+                        ) : null}
+                      </View>
+                      <Text className="notification-section-row__note">{item.note}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </Card>
+
+          <Card className="notification-surface-card" title="合同附件">
+            {attachments.length === 0 ? (
+              <View className="text-sm text-gray-500">暂无附件</View>
+            ) : (
+              <>
+                <Text className="notification-section-row__note" style={{ marginTop: 0 }}>
+                  当前端仅展示附件清单，完整文件请在支持端查看。
+                </Text>
+                <View className="notification-section-list">
+                  {attachments.map((item, index) => (
+                    <View key={`${String(item)}-${index}`} className="notification-section-row">
+                      <View className="notification-section-row__head">
+                        <Text className="notification-section-row__title">{readAttachmentLabel(item, index)}</Text>
+                        <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                          附件 {index + 1}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-          )}
-        </View>
-
-        <View className="bg-white p-md mb-xl">
-          <View className="font-bold mb-md text-base">合同附件</View>
-          {attachments.length === 0 ? (
-            <View className="text-sm text-gray-500">暂无附件</View>
-          ) : (
-            <View className="space-y-sm">
-              {attachments.map((item, index) => (
-                <View key={`${item}-${index}`} className="border border-gray-100 rounded-lg p-sm">
-                  <Text className="text-sm text-brand break-all">{item}</Text>
-                </View>
-              ))}
-            </View>
-          )}
+              </>
+            )}
+          </Card>
         </View>
       </ScrollView>
 
       {canConfirm ? (
-        <View style={fixedBottomBarStyle}>
+        <NotificationActionBar single>
           <Button variant="primary" onClick={handleConfirm} loading={submitting} disabled={submitting} block>
             确认合同
           </Button>
-        </View>
+        </NotificationActionBar>
       ) : null}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

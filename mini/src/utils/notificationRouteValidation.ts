@@ -58,16 +58,16 @@ const validateRouteInternal = async (pagePath: string): Promise<NotificationRout
   match = pagePath.match(/^\/pages\/booking\/site-survey\/index\?id=(\d+)$/);
   if (match) {
     return withGuard(async () => {
-      const result = await getBookingSiteSurvey(Number(match?.[1] || 0));
-      return Boolean(result.siteSurvey);
+      await getBookingSiteSurvey(Number(match?.[1] || 0));
+      return true;
     });
   }
 
   match = pagePath.match(/^\/pages\/booking\/design-quote\/index\?id=(\d+)$/);
   if (match) {
     return withGuard(async () => {
-      const result = await getBookingDesignFeeQuote(Number(match?.[1] || 0));
-      return Boolean(result.quote);
+      await getBookingDesignFeeQuote(Number(match?.[1] || 0));
+      return true;
     });
   }
 

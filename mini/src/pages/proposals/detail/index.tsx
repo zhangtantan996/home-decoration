@@ -1,19 +1,41 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, Text, View } from '@tarojs/components';
+import { Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
-import BridgeConversionPanel from '@/components/BridgeConversionPanel';
+import { Card } from '@/components/Card';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getProposalStatus } from '@/constants/status';
 import { confirmProposal, getProposalDetail, rejectProposal, type ProposalDetailItem } from '@/services/proposals';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { formatServerDateTime } from '@/utils/serverTime';
 
-const isPendingProposal = (status: number) => {
-  return status === 0 || status === 1;
+import './index.scss';
+
+const isPendingProposal = (status: number) => status === 0 || status === 1;
+
+const formatCurrency = (value?: number) => `¥${Number(value || 0).toLocaleString()}`;
+
+const parseAttachments = (value?: string) => {
+  if (!value) {
+    return [] as string[];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return String(value)
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
 };
 
 const ProposalDetail: React.FC = () => {
@@ -23,7 +45,6 @@ const ProposalDetail: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [id, setId] = useState<number>(0);
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -52,8 +73,9 @@ const ProposalDetail: React.FC = () => {
       setLoading(false);
     }
   };
+
   useEffect(() => {
-    fetchDetail();
+    void fetchDetail();
   }, [id, auth.token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleConfirm = async () => {
@@ -80,7 +102,6 @@ const ProposalDetail: React.FC = () => {
           const result = await confirmProposal(id);
           Taro.showToast({ title: result.message || '已确认方案，请继续支付设计费', icon: 'success' });
 
-          // 设计确认成功后，引导用户选择施工方
           const bookingId = detail?.bookingId;
           if (bookingId) {
             Taro.showModal({
@@ -94,7 +115,7 @@ const ProposalDetail: React.FC = () => {
                 } else {
                   Taro.navigateTo({ url: '/pages/orders/pending/index?type=design_fee' });
                 }
-              }
+              },
             });
           } else {
             Taro.navigateTo({ url: '/pages/orders/pending/index?type=design_fee' });
@@ -104,7 +125,7 @@ const ProposalDetail: React.FC = () => {
         } finally {
           setSubmitting(false);
         }
-      }
+      },
     });
   };
 
@@ -138,120 +159,108 @@ const ProposalDetail: React.FC = () => {
   };
 
   if (!auth.token) {
-    return <View className="p-md text-center text-gray-500">登录后查看方案详情</View>;
+    return (
+      <NotificationSurfaceShell>
+        <View className="notification-surface-state-card">登录后查看方案详情</View>
+      </NotificationSurfaceShell>
+    );
   }
 
   if (loading) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
-        <Skeleton height={300} className="mb-md" />
-        <Skeleton height={200} className="mb-md" />
-        <Skeleton height={100} />
+      <View className="proposal-detail-page">
+        <Skeleton height={300} className="proposal-detail-page__section" />
+        <Skeleton height={200} className="proposal-detail-page__section" />
+        <Skeleton height={100} className="proposal-detail-page__section" />
       </View>
     );
   }
 
   if (!detail) {
-    return <View className="p-md text-center text-gray-500">未找到方案</View>;
+    return (
+      <NotificationSurfaceShell>
+        <View className="notification-surface-state-card">未找到方案</View>
+      </NotificationSurfaceShell>
+    );
   }
 
   const total = (detail.designFee || 0) + (detail.constructionFee || 0) + (detail.materialFee || 0);
   const statusConfig = getProposalStatus(detail.status);
+  const orderStatusText = detail.hasOrder
+    ? detail.order?.status === 1
+      ? '待支付'
+      : detail.order?.status === 2
+        ? '已支付'
+        : '已生成'
+    : '未生成';
+  const attachments = parseAttachments(detail.attachments);
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
-      <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-sm flex justify-between items-center">
-          <View>
-            <View className="text-lg font-bold mb-xs">方案 #{detail.id}</View>
-            <View className="text-sm text-gray-500">版本 v{detail.version}</View>
-          </View>
-          <Tag variant={statusConfig.variant}>{statusConfig.label}</Tag>
-        </View>
+    <NotificationSurfaceShell className="proposal-detail-page" style={pageBottomStyle}>
+      <View className="notification-surface-shell__body">
+        <NotificationSurfaceHero
+          eyebrow="方案详情"
+          title={formatCurrency(total)}
+          subtitle={`方案 #${detail.id} · v${detail.version}`}
+          status={<Tag variant={statusConfig.variant}>{statusConfig.label}</Tag>}
+          summary={detail.rejectionReason || detail.summary || detail.flowSummary || '查看本次方案关键费用与时长'}
+          metrics={[
+            {
+              label: '响应截止',
+              value: formatServerDateTime(detail.userResponseDeadline, '未设置'),
+            },
+            {
+              label: '预估工期',
+              value: detail.estimatedDays > 0 ? `${detail.estimatedDays} 天` : '待补充',
+              emphasis: true,
+            },
+          ]}
+        />
 
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">费用明细</View>
-          <View className="space-y-sm">
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">设计费</Text>
-              <Text>¥{detail.designFee?.toLocaleString()}</Text>
-            </View>
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">施工费 (预估)</Text>
-              <Text>¥{detail.constructionFee?.toLocaleString()}</Text>
-            </View>
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">材料费 (预估)</Text>
-              <Text>¥{detail.materialFee?.toLocaleString()}</Text>
-            </View>
-            <View className="flex justify-between items-center pt-md mt-sm">
-              <Text className="font-bold">总计</Text>
-              <Text className="text-xl font-bold text-brand">¥{total.toLocaleString()}</Text>
-            </View>
-          </View>
-        </View>
+        <Card className="notification-surface-card" title="关键结果">
+          <NotificationFactRows
+            items={[
+              { label: '当前状态', value: statusConfig.label },
+              { label: '设计费', value: formatCurrency(detail.designFee) },
+              { label: '施工费', value: formatCurrency(detail.constructionFee) },
+              { label: '主材费', value: formatCurrency(detail.materialFee) },
+              { label: '设计费订单', value: orderStatusText },
+              { label: '提交时间', value: formatServerDateTime(detail.submittedAt, '待同步') },
+            ]}
+          />
+        </Card>
 
-        <View className="bg-white p-md mb-xl">
-          <View className="font-bold mb-md text-base">方案详情</View>
-          <View className="mb-md p-sm bg-yellow-50 rounded">
-            <View className="text-sm text-yellow-700">设计确认不会直接创建项目。支付设计费后，待服务商提交施工报价，再到“进度”页确认施工报价。</View>
-          </View>
-          {detail.flowSummary ? (
-            <View className="mb-md p-sm bg-blue-50 rounded">
-              <View className="text-sm text-blue-700">{detail.flowSummary}</View>
-            </View>
-          ) : null}
-          <View className="mb-md">
-            <View className="text-sm text-gray-500 mb-xs">预估工期</View>
-            <View className="font-medium">{detail.estimatedDays} 天</View>
-          </View>
-          <View>
-            <View className="text-sm text-gray-500 mb-xs">方案说明</View>
-            <View className="text-gray-800 leading-relaxed text-sm bg-gray-50 p-sm rounded">
-              {detail.summary || '暂无说明'}
-            </View>
-          </View>
-          {detail.attachments ? (
-            <View className="mt-md pt-md border-t border-gray-100">
-              <View className="text-sm text-gray-500 mb-xs">附件</View>
-              <View className="text-brand text-sm">查看附件 (需在PC端查看)</View>
-            </View>
-          ) : null}
-        </View>
-
-        {detail.bridgeConversionSummary ? (
-          <View className="px-md pb-xl">
-            <BridgeConversionPanel
-              summary={detail.bridgeConversionSummary}
-              title="施工桥接解释"
-              flowSummary={detail.flowSummary}
-            />
-          </View>
+        {detail.rejectionReason ? (
+          <Card className="notification-surface-card" title="最近一次退回原因">
+            <Text className="notification-section-row__note is-danger">{detail.rejectionReason}</Text>
+          </Card>
         ) : null}
-      </ScrollView>
+
+        <Card className="notification-surface-card" title="附件状态">
+          <NotificationFactRows
+            items={[
+              { label: '附件数量', value: `${attachments.length} 个` },
+              {
+                label: '查看能力',
+                value: attachments.length > 0 ? '需在支持端查看' : '暂无附件',
+                multiline: true,
+              },
+            ]}
+          />
+        </Card>
+      </View>
 
       {isPendingProposal(detail.status) ? (
-        <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
-          <Button
-            variant="secondary"
-            onClick={handleReject}
-            className="flex-1"
-            disabled={submitting}
-          >
-            拒绝
+        <NotificationActionBar>
+          <Button variant="secondary" onClick={handleReject} disabled={submitting}>
+            拒绝方案
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleConfirm}
-            className="flex-1"
-            disabled={submitting}
-            loading={submitting}
-          >
-            接受方案
+          <Button variant="primary" onClick={handleConfirm} disabled={submitting} loading={submitting}>
+            确认方案
           </Button>
-        </View>
+        </NotificationActionBar>
       ) : null}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

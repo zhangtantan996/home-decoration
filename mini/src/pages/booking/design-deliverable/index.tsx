@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import {
@@ -13,7 +18,7 @@ import {
   type BookingDesignDeliverableDetail,
 } from '@/services/bookings';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDateTime } from '@/utils/serverTime';
 
 const readStatusMeta = (status?: string) => {
@@ -50,7 +55,6 @@ const BookingDesignDeliverablePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -58,7 +62,7 @@ const BookingDesignDeliverablePage: React.FC = () => {
     }
   });
 
-  const fetchDetail = async () => {
+  const fetchDetail = useCallback(async () => {
     if (!bookingId) {
       setDetail(null);
       setLoading(false);
@@ -74,11 +78,11 @@ const BookingDesignDeliverablePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [bookingId]);
 
   useEffect(() => {
     void fetchDetail();
-  }, [bookingId]);
+  }, [fetchDetail]);
 
   const handleAccept = async () => {
     if (!detail?.id || submitting) {
@@ -135,9 +139,11 @@ const BookingDesignDeliverablePage: React.FC = () => {
 
   if (!detail) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
-        <Empty description="当前预约暂无待确认的设计交付" />
-      </View>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
+        <View className="notification-surface-state-card">
+          <Empty description="当前预约暂无待确认的设计交付" />
+        </View>
+      </NotificationSurfaceShell>
     );
   }
 
@@ -146,92 +152,88 @@ const BookingDesignDeliverablePage: React.FC = () => {
   const renderings = parseList(detail.renderings);
   const cadDrawings = parseList(detail.cadDrawings);
   const attachments = parseList(detail.attachments);
+  const files = [
+    ...colorFloorPlan.map((item) => ({ name: '彩平图', value: item })),
+    ...renderings.map((item) => ({ name: '效果图', value: item })),
+    ...cadDrawings.map((item) => ({ name: 'CAD 图纸', value: item })),
+    ...attachments.map((item) => ({ name: '附件', value: item })),
+  ];
   const canReview = detail.status === 'submitted';
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-sm flex justify-between items-center">
-          <View>
-            <View className="text-lg font-bold mb-xs">设计交付确认</View>
-            <View className="text-sm text-gray-500">预约单 #{bookingId}</View>
-          </View>
-          <Tag variant={status.variant}>{status.text}</Tag>
-        </View>
+        <View className="notification-surface-shell__body">
+          <NotificationSurfaceHero
+            eyebrow="设计交付"
+            title={status.text}
+            subtitle={`预约单 #${bookingId}`}
+            status={<Tag variant={status.variant}>{status.text}</Tag>}
+            summary={detail.rejectionReason || detail.textDescription || '查看本次设计交付内容'}
+            metrics={[
+              { label: '彩平图', value: `${colorFloorPlan.length} 项` },
+              { label: '效果图', value: `${renderings.length} 项`, hint: `${attachments.length} 项附件`, emphasis: true },
+            ]}
+          />
 
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">交付摘要</View>
-          <View className="space-y-sm text-sm text-gray-700">
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">彩平图</Text>
-              <Text>{colorFloorPlan.length} 项</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">效果图</Text>
-              <Text>{renderings.length} 项</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">CAD 图纸</Text>
-              <Text>{cadDrawings.length} 项</Text>
-            </View>
-            <View className="flex justify-between py-xs">
-              <Text className="text-gray-500">附件</Text>
-              <Text>{attachments.length} 项</Text>
-            </View>
-          </View>
-        </View>
+          <Card className="notification-surface-card" title="交付概览">
+            <NotificationFactRows
+              items={[
+                { label: '当前状态', value: status.text },
+                { label: '提交时间', value: formatServerDateTime(detail.submittedAt, '待提交') },
+                { label: '彩平图', value: `${colorFloorPlan.length} 项` },
+                { label: '效果图', value: `${renderings.length} 项` },
+                { label: 'CAD 图纸', value: `${cadDrawings.length} 项` },
+                { label: '附件', value: `${attachments.length} 项` },
+              ]}
+            />
+          </Card>
 
-        {detail.textDescription ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">设计说明</View>
-            <View className="text-sm text-gray-700 leading-relaxed">{detail.textDescription}</View>
-          </View>
-        ) : null}
+          {detail.rejectionReason ? (
+            <Card className="notification-surface-card" title="退回原因">
+              <Text className="notification-section-row__note is-danger">{detail.rejectionReason}</Text>
+            </Card>
+          ) : null}
 
-        {detail.renderingLink ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">效果图链接</View>
-            <Text className="text-sm text-brand break-all">{detail.renderingLink}</Text>
-          </View>
-        ) : null}
+          {detail.renderingLink ? (
+            <Card className="notification-surface-card" title="效果图链接">
+              <Text className="notification-section-row__note">{detail.renderingLink}</Text>
+            </Card>
+          ) : null}
 
-        {detail.rejectionReason ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">退回原因</View>
-            <Text className="text-sm text-red-500 leading-relaxed">{detail.rejectionReason}</Text>
-          </View>
-        ) : null}
-
-        <View className="bg-white p-md mb-xl">
-          <View className="font-bold mb-md text-base">交付文件</View>
-          {[...colorFloorPlan, ...renderings, ...cadDrawings, ...attachments].length === 0 ? (
-            <View className="text-sm text-gray-500">暂无附件清单</View>
-          ) : (
-            <View className="space-y-sm">
-              {[...colorFloorPlan, ...renderings, ...cadDrawings, ...attachments].map((item, index) => (
-                <View key={`${item}-${index}`} className="border border-gray-100 rounded-lg p-sm">
-                  <Text className="text-sm text-brand break-all">{item}</Text>
-                </View>
-              ))}
+          <Card className="notification-surface-card" title="交付文件清单">
+            {files.length === 0 ? (
+              <Text className="notification-section-row__note">暂无附件清单</Text>
+            ) : (
+              <View className="notification-section-list">
+                {files.map((item, index) => (
+                  <View key={`${item.value}-${index}`} className="notification-section-row">
+                    <View className="notification-section-row__head">
+                      <Text className="notification-section-row__title">{`${item.name} ${index + 1}`}</Text>
+                    </View>
+                    <Text className="notification-section-row__note">{item.value}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <View className="notification-support-note">
+              <Text>小程序当前仅展示文件清单，完整文件请在支持端查看。</Text>
             </View>
-          )}
-          <View className="text-xs text-gray-400 mt-md">
-            提交时间 {formatServerDateTime(detail.submittedAt, '待提交')}
-          </View>
+          </Card>
         </View>
       </ScrollView>
 
       {canReview ? (
-        <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
-          <Button variant="secondary" onClick={handleReject} className="flex-1" disabled={submitting}>
+        <NotificationActionBar>
+          <Button variant="secondary" onClick={handleReject} disabled={submitting}>
             退回修改
           </Button>
-          <Button variant="primary" onClick={handleAccept} className="flex-1" loading={submitting} disabled={submitting}>
+          <Button variant="primary" onClick={handleAccept} loading={submitting} disabled={submitting}>
             确认交付
           </Button>
-        </View>
+        </NotificationActionBar>
       ) : null}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

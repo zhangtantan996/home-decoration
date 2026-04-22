@@ -5,6 +5,8 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationFactGrid } from '@/components/NotificationFactGrid';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getDemandDetail, type DemandDetail, type DemandMatch } from '@/services/demands';
@@ -13,6 +15,16 @@ import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 
 const formatCurrency = (amount: number) => `¥${amount.toLocaleString()}`;
+
+const formatBudget = (detail: DemandDetail) => {
+  if (detail.budgetMin > 0 && detail.budgetMax > 0) {
+    return `¥${detail.budgetMin.toLocaleString()} - ¥${detail.budgetMax.toLocaleString()}`;
+  }
+  if (detail.budgetMax > 0) {
+    return `¥${detail.budgetMax.toLocaleString()}以内`;
+  }
+  return '待补充';
+};
 
 const getTotalPrice = (item: DemandMatch) => {
   if (!item.proposal) return 0;
@@ -63,102 +75,127 @@ const DemandComparePage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
         <Empty
           description="登录后查看方案对比"
           action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/demands/list/index') }}
         />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   if (loading) {
     return (
       <View className="page bg-gray-50 min-h-screen p-md">
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={260} className="mb-md" />
-        <Skeleton height={260} />
+        <Skeleton height={180} className="mb-md" />
+        <Skeleton height={240} className="mb-md" />
+        <Skeleton height={240} />
       </View>
     );
   }
 
   if (!detail) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
         <Empty description="未找到需求信息" />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen p-md pb-xl">
-      <Card className="mb-md">
-        <View className="flex items-start justify-between gap-sm mb-sm">
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
+      <Card className="notification-surface-card" extra={<Tag variant="brand">{quotedMatches.length} 份对比</Tag>}>
+        <View style={{ display: 'flex', flexDirection: 'column', gap: '20rpx' }}>
           <View>
-            <Text className="font-bold text-lg">{detail.title || `需求 #${detail.id}`}</Text>
-            <View className="text-sm text-gray-500 mt-xs">把已提交的方案按总价、工期和说明放在同一视图里快速比较。</View>
+            <Text style={{ display: 'block', fontSize: '22rpx', color: '#8E8E93' }}>方案对比</Text>
+            <Text style={{ display: 'block', marginTop: '12rpx', fontSize: '34rpx', lineHeight: 1.25, fontWeight: 700, color: '#0F172A' }}>
+              {detail.title || `需求 #${detail.id}`}
+            </Text>
+            <Text style={{ display: 'block', marginTop: '10rpx', fontSize: '24rpx', lineHeight: 1.5, color: '#64748B' }}>
+              价格 / 工期 / 版本 / 附件
+            </Text>
           </View>
-          <Tag variant="brand">{quotedMatches.length} 份方案</Tag>
+          <NotificationFactGrid
+            items={[
+              { label: '可比方案', value: `${quotedMatches.length} 份`, emphasis: quotedMatches.length > 0 },
+              { label: '预算范围', value: formatBudget(detail) },
+              { label: '建筑面积', value: detail.area > 0 ? `${detail.area}㎡` : '待补充' },
+              { label: '需求城市', value: detail.city || '待补充' },
+            ]}
+          />
+          <View>
+            <Button
+              size="small"
+              variant="outline"
+              onClick={() => Taro.navigateTo({ url: `/pages/demands/detail/index?id=${detail.id}` })}
+            >
+              返回需求详情
+            </Button>
+          </View>
         </View>
-        <Button size="small" variant="outline" onClick={() => Taro.navigateTo({ url: `/pages/demands/detail/index?id=${detail.id}` })}>
-          返回需求详情
-        </Button>
       </Card>
 
       {quotedMatches.length === 0 ? (
-        <Empty description="当前还没有服务商提交正式方案" />
+        <Empty
+          description="当前还没有服务商提交正式方案"
+          action={{ text: '返回需求详情', onClick: () => Taro.navigateTo({ url: `/pages/demands/detail/index?id=${detail.id}` }) }}
+        />
       ) : (
         quotedMatches.map((item) => {
           const proposal = item.proposal!;
           return (
-            <Card key={item.id} className="mb-md">
-              <View className="flex items-start justify-between gap-sm mb-sm">
-                <View className="min-w-0 flex-1">
-                  <Text className="block font-bold text-base">{item.provider.name}</Text>
-                  <Text className="block text-sm text-gray-500 mt-xs">{item.provider.specialty || '平台认证服务商'}</Text>
+            <Card
+              key={item.id}
+              className="notification-surface-card"
+              extra={<Tag variant="success">v{proposal.version}</Tag>}
+            >
+              <View style={{ display: 'flex', flexDirection: 'column', gap: '18rpx' }}>
+                <View>
+                  <Text style={{ display: 'block', fontSize: '30rpx', lineHeight: 1.3, fontWeight: 700, color: '#0F172A' }}>
+                    {item.provider.name}
+                  </Text>
+                  <Text style={{ display: 'block', marginTop: '8rpx', fontSize: '22rpx', color: '#64748B' }}>
+                    {item.provider.specialty || '平台认证服务商'}
+                  </Text>
+                  <Text style={{ display: 'block', marginTop: '14rpx', fontSize: '40rpx', lineHeight: 1.1, fontWeight: 700, color: '#2563EB' }}>
+                    {formatCurrency(getTotalPrice(item))}
+                  </Text>
                 </View>
-                <Tag variant="success">v{proposal.version}</Tag>
-              </View>
 
-              <View className="grid grid-cols-2 gap-sm text-sm">
-                <View className="border border-gray-100 rounded p-sm">
-                  <Text className="block text-gray-400 text-xs">总价估算</Text>
-                  <Text className="block font-bold text-brand mt-xs">{formatCurrency(getTotalPrice(item))}</Text>
-                </View>
-                <View className="border border-gray-100 rounded p-sm">
-                  <Text className="block text-gray-400 text-xs">预计工期</Text>
-                  <Text className="block font-medium mt-xs">{proposal.estimatedDays > 0 ? `${proposal.estimatedDays} 天` : '待补充'}</Text>
-                </View>
-                <View className="border border-gray-100 rounded p-sm">
-                  <Text className="block text-gray-400 text-xs">设计费</Text>
-                  <Text className="block mt-xs">{formatCurrency(proposal.designFee)}</Text>
-                </View>
-                <View className="border border-gray-100 rounded p-sm">
-                  <Text className="block text-gray-400 text-xs">施工费</Text>
-                  <Text className="block mt-xs">{formatCurrency(proposal.constructionFee)}</Text>
-                </View>
-                <View className="border border-gray-100 rounded p-sm">
-                  <Text className="block text-gray-400 text-xs">主材费</Text>
-                  <Text className="block mt-xs">{formatCurrency(proposal.materialFee)}</Text>
-                </View>
-                <View className="border border-gray-100 rounded p-sm">
-                  <Text className="block text-gray-400 text-xs">响应时间</Text>
-                  <Text className="block mt-xs">{proposal.submittedAt || '待同步'}</Text>
+                <NotificationFactGrid
+                  items={[
+                    { label: '预计工期', value: proposal.estimatedDays > 0 ? `${proposal.estimatedDays} 天` : '待补充' },
+                    { label: '设计费', value: formatCurrency(proposal.designFee) },
+                    { label: '施工费', value: formatCurrency(proposal.constructionFee) },
+                    { label: '主材费', value: formatCurrency(proposal.materialFee) },
+                  ]}
+                />
+
+                <View className="notification-section-list">
+                  <View className="notification-section-row">
+                    <View className="notification-section-row__head">
+                      <Text className="notification-section-row__title">提交时间</Text>
+                      <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                        {proposal.submittedAt || '待同步'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View className="notification-section-row">
+                    <View className="notification-section-row__head">
+                      <Text className="notification-section-row__title">附件状态</Text>
+                      <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                        {proposal.attachments.length} 份
+                      </Text>
+                    </View>
+                    <Text className="notification-section-row__note">附件仅显示数量，完整文件请在支持端查看。</Text>
+                  </View>
                 </View>
               </View>
-
-              <View className="mt-md p-sm bg-gray-50 rounded text-sm text-gray-700 leading-relaxed">
-                {proposal.summary || '暂无方案说明'}
-              </View>
-
-              {proposal.attachments.length > 0 ? (
-                <View className="mt-md text-xs text-gray-500">方案附件：{proposal.attachments.length} 个</View>
-              ) : null}
             </Card>
           );
         })
       )}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

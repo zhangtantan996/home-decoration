@@ -3,6 +3,7 @@ import { Tinode } from './tinodeSdk';
 import TaroWebSocketAdapter from './TaroWebSocketAdapter';
 import { getTinodeUserId } from './tinode';
 import { MINI_ENV } from '@/config/env';
+import { parseAbsoluteUrl } from '@/utils/url';
 
 type Listener = (...args: unknown[]) => void;
 
@@ -38,34 +39,34 @@ const parseTinodeUrl = (value: string): { host: string; secure: boolean } | null
   const trimmed = value.trim();
   if (!trimmed) return null;
 
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-      return null;
-    }
-    return {
-      host: url.host,
-      secure: url.protocol === 'wss:',
-    };
-  } catch {
+  const url = parseAbsoluteUrl(trimmed);
+  if (!url) {
     return null;
   }
+
+  if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    return null;
+  }
+
+  return {
+    host: url.host,
+    secure: url.protocol === 'wss:',
+  };
 };
 
 const deriveTinodeUrlFromApiBase = (): { host: string; secure: boolean } | null => {
   const apiBase = MINI_ENV.API_BASE_URL.trim();
   if (!apiBase) return null;
 
-  try {
-    const url = new URL(ensureTrailingSlashRemoved(apiBase));
-    if (!url.hostname) return null;
-    return {
-      host: `${url.hostname}:6060`,
-      secure: url.protocol === 'https:',
-    };
-  } catch {
+  const url = parseAbsoluteUrl(ensureTrailingSlashRemoved(apiBase));
+  if (!url || !url.hostname) {
     return null;
   }
+
+  return {
+    host: `${url.hostname}:6060`,
+    secure: url.protocol === 'https:',
+  };
 };
 
 const getTinodeServerHost = (): { host: string; secure: boolean } => {

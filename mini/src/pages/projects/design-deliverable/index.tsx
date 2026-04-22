@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactGrid } from '@/components/NotificationFactGrid';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import {
@@ -13,7 +17,7 @@ import {
   type ProjectDesignDeliverableDetail,
 } from '@/services/projects';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDateTime } from '@/utils/serverTime';
 
 const readStatusMeta = (status?: string) => {
@@ -40,8 +44,15 @@ const parseList = (value?: string | string[]) => {
     const parsed = JSON.parse(value);
     return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
   } catch {
-    return [];
+    return [] as string[];
   }
+};
+
+const shortenText = (value?: string, max = 48) => {
+  const next = String(value || '').trim();
+  if (!next) return '';
+  if (next.length <= max) return next;
+  return `${next.slice(0, max)}...`;
 };
 
 const ProjectDesignDeliverablePage: React.FC = () => {
@@ -50,7 +61,6 @@ const ProjectDesignDeliverablePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -58,7 +68,7 @@ const ProjectDesignDeliverablePage: React.FC = () => {
     }
   });
 
-  const fetchDetail = async () => {
+  const fetchDetail = useCallback(async () => {
     if (!projectId) {
       setDetail(null);
       setLoading(false);
@@ -74,11 +84,11 @@ const ProjectDesignDeliverablePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
 
   useEffect(() => {
     void fetchDetail();
-  }, [projectId]);
+  }, [fetchDetail]);
 
   const handleAccept = async () => {
     if (!detail?.id || submitting) {
@@ -126,18 +136,18 @@ const ProjectDesignDeliverablePage: React.FC = () => {
   if (loading) {
     return (
       <View className="p-md bg-gray-50 min-h-screen">
-        <Skeleton height={240} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={140} />
+        <Skeleton height={180} className="mb-md" />
+        <Skeleton height={210} className="mb-md" />
+        <Skeleton height={220} />
       </View>
     );
   }
 
   if (!detail) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
         <Empty description="当前项目暂无待确认的设计交付" />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
@@ -147,88 +157,126 @@ const ProjectDesignDeliverablePage: React.FC = () => {
   const cadDrawings = parseList(detail.cadDrawings);
   const attachments = parseList(detail.attachments);
   const canReview = detail.status === 'submitted';
+  const shortDescription = shortenText(detail.textDescription);
+  const sections = [
+    { label: '彩平图', items: colorFloorPlan },
+    { label: '效果图', items: renderings },
+    { label: 'CAD 图纸', items: cadDrawings },
+    { label: '其他附件', items: attachments },
+  ];
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-sm flex justify-between items-center">
-          <View>
-            <View className="text-lg font-bold mb-xs">设计交付确认</View>
-            <View className="text-sm text-gray-500">提交时间 {formatServerDateTime(detail.submittedAt, '待提交')}</View>
-          </View>
-          <Tag variant={status.variant}>{status.text}</Tag>
-        </View>
-
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">交付摘要</View>
-          <View className="space-y-sm text-sm text-gray-700">
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">彩平图</Text>
-              <Text>{colorFloorPlan.length} 项</Text>
+        <Card className="notification-surface-card" extra={<Tag variant={status.variant}>{status.text}</Tag>}>
+          <View style={{ display: 'flex', flexDirection: 'column', gap: '20rpx' }}>
+            <View>
+              <Text style={{ display: 'block', fontSize: '22rpx', color: '#8E8E93' }}>项目设计交付</Text>
+              <Text style={{ display: 'block', marginTop: '12rpx', fontSize: '36rpx', lineHeight: 1.2, fontWeight: 700, color: '#0F172A' }}>
+                {status.text}
+              </Text>
+              <Text style={{ display: 'block', marginTop: '10rpx', fontSize: '24rpx', lineHeight: 1.5, color: '#64748B' }}>
+                项目 #{projectId} · 文件清单与数量已同步
+              </Text>
             </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">效果图</Text>
-              <Text>{renderings.length} 项</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">CAD 图纸</Text>
-              <Text>{cadDrawings.length} 项</Text>
-            </View>
-            <View className="flex justify-between py-xs">
-              <Text className="text-gray-500">附件</Text>
-              <Text>{attachments.length} 项</Text>
-            </View>
+            <NotificationFactGrid
+              items={[
+                { label: '彩平图', value: `${colorFloorPlan.length} 份` },
+                { label: '效果图', value: `${renderings.length} 份` },
+                { label: 'CAD 图纸', value: `${cadDrawings.length} 份` },
+                { label: '其他附件', value: `${attachments.length} 份` },
+                { label: '提交时间', value: formatServerDateTime(detail.submittedAt, '待提交'), full: true },
+              ]}
+            />
           </View>
-        </View>
-
-        {detail.textDescription ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">设计说明</View>
-            <View className="text-sm text-gray-700 leading-relaxed">{detail.textDescription}</View>
-          </View>
-        ) : null}
-
-        {detail.renderingLink ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">效果图链接</View>
-            <Text className="text-sm text-brand break-all">{detail.renderingLink}</Text>
-          </View>
-        ) : null}
+        </Card>
 
         {detail.rejectionReason ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">退回原因</View>
-            <Text className="text-sm text-red-500 leading-relaxed">{detail.rejectionReason}</Text>
-          </View>
+          <Card className="notification-surface-card" title="退回原因">
+            <Text className="notification-section-row__note is-danger" style={{ marginTop: 0 }}>
+              {detail.rejectionReason}
+            </Text>
+          </Card>
         ) : null}
 
-        <View className="bg-white p-md mb-xl">
-          <View className="font-bold mb-md text-base">交付文件</View>
-          {[...colorFloorPlan, ...renderings, ...cadDrawings, ...attachments].length === 0 ? (
-            <View className="text-sm text-gray-500">暂无附件清单</View>
-          ) : (
-            <View className="space-y-sm">
-              {[...colorFloorPlan, ...renderings, ...cadDrawings, ...attachments].map((item, index) => (
-                <View key={`${item}-${index}`} className="border border-gray-100 rounded-lg p-sm">
-                  <Text className="text-sm text-brand break-all">{item}</Text>
-                </View>
-              ))}
+        <Card className="notification-surface-card" title="时间记录">
+          <View className="notification-section-list">
+            <View className="notification-section-row">
+              <View className="notification-section-row__head">
+                <Text className="notification-section-row__title">提交时间</Text>
+                <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                  {formatServerDateTime(detail.submittedAt, '待提交')}
+                </Text>
+              </View>
             </View>
-          )}
-        </View>
+            <View className="notification-section-row">
+              <View className="notification-section-row__head">
+                <Text className="notification-section-row__title">确认时间</Text>
+                <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                  {formatServerDateTime(detail.acceptedAt, '待确认')}
+                </Text>
+              </View>
+            </View>
+            <View className="notification-section-row">
+              <View className="notification-section-row__head">
+                <Text className="notification-section-row__title">退回时间</Text>
+                <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                  {formatServerDateTime(detail.rejectedAt, '无')}
+                </Text>
+              </View>
+            </View>
+            {detail.renderingLink ? (
+              <View className="notification-section-row">
+                <View className="notification-section-row__head">
+                  <Text className="notification-section-row__title">效果图链接</Text>
+                </View>
+                <Text className="notification-section-row__note">已提供外部链接，完整访问请在支持端查看。</Text>
+              </View>
+            ) : null}
+            {detail.textDescription ? (
+              <View className="notification-section-row">
+                <View className="notification-section-row__head">
+                  <Text className="notification-section-row__title">交付说明</Text>
+                </View>
+                <Text className="notification-section-row__note">{shortDescription}</Text>
+              </View>
+            ) : null}
+          </View>
+        </Card>
+
+        <Card className="notification-surface-card" title="文件清单">
+          <Text className="notification-section-row__note" style={{ marginTop: 0 }}>
+            当前端仅展示文件数量与清单，完整文件请在支持端查看。
+          </Text>
+          <View className="notification-section-list">
+            {sections.map((section) => (
+              <View key={section.label} className="notification-section-row">
+                <View className="notification-section-row__head">
+                  <Text className="notification-section-row__title">{section.label}</Text>
+                  <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                    {section.items.length} 份
+                  </Text>
+                </View>
+                <Text className="notification-section-row__note">
+                  {section.items.length > 0 ? `已提交 ${section.items.length} 份${section.label}` : `暂无${section.label}`}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </Card>
       </ScrollView>
 
       {canReview ? (
-        <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
-          <Button variant="secondary" onClick={handleReject} className="flex-1" disabled={submitting}>
+        <NotificationActionBar>
+          <Button variant="secondary" onClick={handleReject} disabled={submitting}>
             退回修改
           </Button>
-          <Button variant="primary" onClick={handleAccept} className="flex-1" loading={submitting} disabled={submitting}>
+          <Button variant="primary" onClick={handleAccept} loading={submitting} disabled={submitting}>
             确认交付
           </Button>
-        </View>
+        </NotificationActionBar>
       ) : null}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

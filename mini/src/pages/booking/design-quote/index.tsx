@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, Text, View } from '@tarojs/components';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import {
@@ -13,8 +18,10 @@ import {
   type BookingDesignFeeQuoteDetail,
 } from '@/services/bookings';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDateTime } from '@/utils/serverTime';
+
+import './index.scss';
 
 const formatCurrency = (amount: number) => `¥${Number(amount || 0).toLocaleString()}`;
 
@@ -42,13 +49,15 @@ const parseStageLines = (raw?: string) => {
     if (!Array.isArray(parsed)) {
       return [] as string[];
     }
-    return parsed.map((item) => {
-      const seq = item?.seq ? `第${item.seq}期` : '分期';
-      const name = String(item?.name || '').trim();
-      const amount = typeof item?.amount === 'number' ? formatCurrency(item.amount) : '';
-      const percent = typeof item?.percentage === 'number' ? `${item.percentage}%` : '';
-      return [seq, name, amount || percent].filter(Boolean).join(' · ');
-    }).filter(Boolean);
+    return parsed
+      .map((item) => {
+        const seq = item?.seq ? `第${item.seq}期` : '分期';
+        const name = String(item?.name || '').trim();
+        const amount = typeof item?.amount === 'number' ? formatCurrency(item.amount) : '';
+        const percent = typeof item?.percentage === 'number' ? `${item.percentage}%` : '';
+        return [seq, name, amount || percent].filter(Boolean).join(' · ');
+      })
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -62,7 +71,6 @@ const BookingDesignQuotePage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -70,7 +78,7 @@ const BookingDesignQuotePage: React.FC = () => {
     }
   });
 
-  const fetchDetail = async () => {
+  const fetchDetail = useCallback(async () => {
     if (!bookingId) {
       setQuote(null);
       setOrder(null);
@@ -89,11 +97,11 @@ const BookingDesignQuotePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [bookingId]);
 
   useEffect(() => {
     void fetchDetail();
-  }, [bookingId]);
+  }, [fetchDetail]);
 
   const handleReject = () => {
     if (!quote || submitting) {
@@ -141,7 +149,7 @@ const BookingDesignQuotePage: React.FC = () => {
         Taro.navigateTo({ url: `/pages/orders/detail/index?id=${result.id}` });
         return;
       }
-      setMessage('设计费订单已生成，请返回预约详情刷新后继续支付。');
+      setMessage('设计费订单已生成，请返回预约详情继续支付。');
       await fetchDetail();
     } catch (error) {
       showErrorToast(error, '确认失败');
@@ -152,25 +160,27 @@ const BookingDesignQuotePage: React.FC = () => {
 
   if (loading) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={180} />
+      <View className="design-quote-page">
+        <Skeleton height={220} className="design-quote-page__section" />
+        <Skeleton height={220} className="design-quote-page__section" />
+        <Skeleton height={180} className="design-quote-page__section" />
       </View>
     );
   }
 
   if (!quote) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen" style={pageBottomStyle}>
-        <Empty
-          description="当前预约暂无设计费报价"
-          action={{
-            text: '返回预约详情',
-            onClick: () => Taro.redirectTo({ url: `/pages/booking/detail/index?id=${bookingId}` }),
-          }}
-        />
-      </View>
+      <NotificationSurfaceShell className="design-quote-page" style={pageBottomStyle}>
+        <View className="notification-surface-state-card">
+          <Empty
+            description="当前预约暂无设计费报价"
+            action={{
+              text: '返回预约详情',
+              onClick: () => Taro.redirectTo({ url: `/pages/booking/detail/index?id=${bookingId}` }),
+            }}
+          />
+        </View>
+      </NotificationSurfaceShell>
     );
   }
 
@@ -179,130 +189,103 @@ const BookingDesignQuotePage: React.FC = () => {
   const canConfirm = quote.status === 'pending';
   const canPay = quote.status === 'confirmed' && orderStatus === 0 && (order?.id || quote.orderId);
   const stageLines = parseStageLines(quote.stagesJson);
+  const orderStatusText =
+    orderStatus === 1 ? '已支付' : orderStatus === 0 ? '待支付' : quote.status === 'pending' ? '待生成' : '待同步';
+  const nextStepText = canConfirm ? '确认后生成支付订单' : canPay ? '订单已生成，可继续支付' : '当前阶段已处理完成';
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
-      <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-sm flex justify-between items-center">
-          <View>
-            <View className="text-lg font-bold mb-xs">设计费报价</View>
-            <View className="text-sm text-gray-500">预约单 #{bookingId}</View>
-          </View>
-          <Tag variant={status.variant}>{status.text}</Tag>
-        </View>
+    <NotificationSurfaceShell className="design-quote-page" style={pageBottomStyle}>
+      <View className="notification-surface-shell__body">
+        <NotificationSurfaceHero
+          eyebrow="设计费报价"
+          title={formatCurrency(quote.netAmount)}
+          subtitle={`预约单 #${bookingId}`}
+          status={<Tag variant={status.variant}>{status.text}</Tag>}
+          summary={quote.rejectionReason || message || nextStepText}
+          metrics={[
+            {
+              label: '待支付金额',
+              value: formatCurrency(quote.netAmount),
+              emphasis: true,
+            },
+            {
+              label: '订单状态',
+              value: orderStatusText,
+              hint: quote.paymentMode === 'staged' ? '按节点支付' : '一次性支付',
+            },
+          ]}
+        />
 
-        {message ? (
-          <View className="bg-white p-md mb-sm">
-            <Text className="text-sm text-brand">{message}</Text>
-          </View>
-        ) : null}
-
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">报价结构</View>
-          <View className="space-y-sm text-sm text-gray-700">
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">设计费</Text>
-              <Text>{formatCurrency(quote.totalFee)}</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">量房定金抵扣</Text>
-              <Text>{formatCurrency(quote.depositDeduction)}</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">本次应付</Text>
-              <Text className="text-brand font-bold">{formatCurrency(quote.netAmount)}</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">支付方式</Text>
-              <Text>{quote.paymentMode === 'staged' ? '分期支付' : '一次性支付'}</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">订单状态</Text>
-              <Text>
-                {orderStatus === 1
-                  ? '已支付'
-                  : orderStatus === 0
-                    ? '待支付'
-                    : quote.status === 'pending'
-                      ? '待生成订单'
-                      : '待同步'}
-              </Text>
-            </View>
-            <View className="flex justify-between py-xs">
-              <Text className="text-gray-500">有效期</Text>
-              <Text>{formatServerDateTime(quote.expireAt, '待补充')}</Text>
-            </View>
-          </View>
-        </View>
-
-        {quote.description ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">报价说明</View>
-            <Text className="text-sm text-gray-700 leading-relaxed">{quote.description}</Text>
-          </View>
-        ) : null}
+        <Card className="notification-surface-card" title="报价信息">
+          <NotificationFactRows
+            items={[
+              { label: '报价状态', value: status.text },
+              { label: '设计费', value: formatCurrency(quote.totalFee) },
+              {
+                label: '定金抵扣',
+                value: quote.depositDeduction > 0 ? formatCurrency(quote.depositDeduction) : '无抵扣',
+              },
+              { label: '支付方式', value: quote.paymentMode === 'staged' ? '分期支付' : '一次性支付' },
+              { label: '有效期', value: formatServerDateTime(quote.expireAt, '待同步') },
+              { label: '当前进展', value: nextStepText, multiline: true },
+            ]}
+          />
+        </Card>
 
         {stageLines.length > 0 ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">分期说明</View>
-            <View className="space-y-sm">
+          <Card className="notification-surface-card" title="支付节点">
+            <View className="notification-section-list">
               {stageLines.map((line, index) => (
-                <View key={`${line}-${index}`} className="border border-gray-100 rounded-lg p-sm">
-                  <Text className="text-sm text-gray-700">{line}</Text>
+                <View key={`${line}-${index}`} className="notification-section-row">
+                  <View className="notification-section-row__head">
+                    <Text className="notification-section-row__title">{`节点 ${index + 1}`}</Text>
+                  </View>
+                  <Text className="notification-section-row__note">{line}</Text>
                 </View>
               ))}
             </View>
-          </View>
+          </Card>
         ) : null}
 
         {quote.rejectionReason ? (
-          <View className="bg-white p-md mb-xl">
-            <View className="font-bold mb-md text-base">最近一次退回原因</View>
-            <Text className="text-sm text-red-500 leading-relaxed">{quote.rejectionReason}</Text>
-          </View>
-        ) : (
-          <View className="mb-xl" />
-        )}
-      </ScrollView>
+          <Card className="notification-surface-card" title="退回原因">
+            <Text className="notification-section-row__note is-danger">{quote.rejectionReason}</Text>
+          </Card>
+        ) : null}
+      </View>
 
-      <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
+      <NotificationActionBar single={!canConfirm && !canPay}>
         {canConfirm ? (
           <>
-            <Button variant="secondary" className="flex-1" disabled={submitting} onClick={handleReject}>
+            <Button variant="secondary" disabled={submitting} onClick={handleReject}>
               退回报价
             </Button>
-            <Button variant="primary" className="flex-1" disabled={submitting} loading={submitting} onClick={handleConfirm}>
-              确认并支付
+            <Button variant="primary" disabled={submitting} loading={submitting} onClick={handleConfirm}>
+              确认报价
             </Button>
           </>
         ) : canPay ? (
           <>
             <Button
               variant="secondary"
-              className="flex-1"
               onClick={() => Taro.redirectTo({ url: `/pages/booking/detail/index?id=${bookingId}` })}
             >
               返回预约详情
             </Button>
             <Button
               variant="primary"
-              className="flex-1"
               onClick={() => Taro.navigateTo({ url: `/pages/orders/detail/index?id=${order?.id || quote.orderId}` })}
             >
-              去支付设计费
+              去支付
             </Button>
           </>
         ) : (
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={() => Taro.redirectTo({ url: `/pages/booking/detail/index?id=${bookingId}` })}
-          >
+          <Button variant="primary" onClick={() => Taro.redirectTo({ url: `/pages/booking/detail/index?id=${bookingId}` })}>
             返回预约详情
           </Button>
         )}
-      </View>
-    </View>
+      </NotificationActionBar>
+    </NotificationSurfaceShell>
   );
 };
 

@@ -82,6 +82,7 @@ export default {
     'pages/settings/general/index',
     'pages/settings/feedback/index',
     'pages/auth/login/index',
+    'pages/auth/sms-login/index',
     'pages/auth/wechat-callback/index',
     'pages/auth/wechat-bind-phone/index',
     'pages/legal/user-agreement/index',

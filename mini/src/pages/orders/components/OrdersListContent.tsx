@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, Text, View } from '@tarojs/components';
+import { ScrollView, View } from '@tarojs/components';
 import Taro, { useDidShow, useReachBottom } from '@tarojs/taro';
 
-import { Button } from '@/components/Button';
 import { Empty } from '@/components/Empty';
-import { Icon, type IconName } from '@/components/Icon';
+import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
@@ -21,9 +20,7 @@ import { deriveOrderEntryActions } from '@/utils/orderEntryActions';
 import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
 import { buildOrderCenterDetailUrl } from '@/utils/orderRoutes';
 import { formatServerDateTime } from '@/utils/serverTime';
-import {
-  openSurveyDepositDetail,
-} from '@/utils/surveyDepositPayment';
+import { openSurveyDepositDetail } from '@/utils/surveyDepositPayment';
 
 import './OrdersListContent.scss';
 
@@ -35,20 +32,13 @@ const FILTERS: Array<{ key: OrderCenterStatusGroup | ''; label: string }> = [
   { key: 'cancelled', label: '已取消' },
 ];
 
-const STATUS_META: Record<OrderCenterStatusGroup, { label: string; variant: 'warning' | 'success' | 'brand' | 'default' }> = {
-  pending_payment: { label: '待支付', variant: 'warning' },
-  paid: { label: '已支付', variant: 'success' },
-  refund: { label: '退款中', variant: 'brand' },
-  cancelled: { label: '已取消', variant: 'default' },
-};
-
-const SOURCE_ICON_MAP: Record<OrderCenterSourceKind, IconName> = {
-  design_order: 'designer-service',
-  construction_order: 'construction-service',
-  material_order: 'material-service',
-  survey_deposit: 'orders',
-  refund_record: 'history',
-  merchant_bond: 'company-service',
+const SOURCE_LABEL_MAP: Record<OrderCenterSourceKind, string> = {
+  design_order: '设计费',
+  construction_order: '施工费',
+  material_order: '主材费',
+  survey_deposit: '量房费',
+  refund_record: '退款',
+  merchant_bond: '保证金',
 };
 
 interface OrdersListContentProps {
@@ -59,6 +49,8 @@ interface OrdersListContentProps {
   disableLoadMore?: boolean;
   emptyDescriptions?: Partial<Record<OrderCenterStatusGroup | 'all', string>>;
 }
+
+const formatCurrency = (amount: number) => `¥${Number(amount || 0).toLocaleString()}`;
 
 const getEmptyDescription = (
   filter: OrderCenterStatusGroup | '',
@@ -72,32 +64,34 @@ const getEmptyDescription = (
     return emptyDescriptions[filter] as string;
   }
 
-  switch (filter) {
-    case 'pending_payment':
-      return '暂无待支付订单';
-    case 'paid':
-      return '暂无已支付订单';
-    case 'refund':
-      return '暂无退款记录';
-    case 'cancelled':
-      return '暂无已取消订单';
-    default:
-      return '暂无订单';
-  }
+  return '暂无相关订单';
 };
 
-const getOrderStatusMeta = (entry: OrderCenterEntrySummary) => {
-  return STATUS_META[entry.statusGroup] || { label: entry.statusText || '处理中', variant: 'default' as const };
-};
+const getRelativeExpiryLabel = (expireAt?: string) => {
+  if (!expireAt) {
+    return '';
+  }
 
-const getEntryAmountLabel = (entry: OrderCenterEntrySummary) => {
-  if (entry.statusGroup === 'pending_payment') {
-    return '待支付';
+  const expireTime = new Date(expireAt).getTime();
+  if (Number.isNaN(expireTime)) {
+    return `截止 ${formatServerDateTime(expireAt)}`;
   }
-  if (entry.statusGroup === 'refund') {
-    return '订单金额';
+
+  const diffMs = expireTime - Date.now();
+  if (diffMs <= 0) {
+    return '即将到期';
   }
-  return '实付金额';
+
+  const diffMinutes = Math.ceil(diffMs / 60000);
+  if (diffMinutes < 60) {
+    return `剩 ${diffMinutes} 分钟`;
+  }
+
+  if (diffMinutes < 24 * 60) {
+    return `剩 ${Math.ceil(diffMinutes / 60)} 小时`;
+  }
+
+  return `截止 ${formatServerDateTime(expireAt)}`;
 };
 
 const getEntryDisplayAmount = (entry: OrderCenterEntrySummary) => {
@@ -107,8 +101,65 @@ const getEntryDisplayAmount = (entry: OrderCenterEntrySummary) => {
   return entry.amount || 0;
 };
 
-const getEntryHeaderNo = (entry: OrderCenterEntrySummary) => {
-  return entry.referenceNo || entry.subtitle || entry.entryKey;
+const getEntryStatusText = (entry: OrderCenterEntrySummary) => {
+  const amount = formatCurrency(getEntryDisplayAmount(entry));
+  switch (entry.statusGroup) {
+    case 'pending_payment':
+      return `待支付 ${amount}`;
+    case 'refund':
+      return `退款中 ${amount}`;
+    case 'cancelled':
+      return `已取消 ${amount}`;
+    default:
+      return `已支付 ${amount}`;
+  }
+};
+
+const getEntryBadgeLabel = (entry: OrderCenterEntrySummary) => {
+  switch (entry.statusGroup) {
+    case 'pending_payment':
+      return '待支付';
+    case 'refund':
+      return '退款中';
+    case 'cancelled':
+      return '已取消';
+    default:
+      return '已支付';
+  }
+};
+
+const getEntryStatusTone = (entry: OrderCenterEntrySummary) => {
+  switch (entry.statusGroup) {
+    case 'pending_payment':
+      return 'brand' as const;
+    case 'refund':
+      return 'danger' as const;
+    case 'paid':
+      return 'success' as const;
+    default:
+      return 'neutral' as const;
+  }
+};
+
+const getEntrySummary = (entry: OrderCenterEntrySummary) => {
+  const parts = [
+    entry.provider?.name,
+    entry.project?.name || entry.project?.address || entry.booking?.address,
+    entry.referenceNo,
+  ].filter(Boolean) as string[];
+
+  if (entry.statusGroup === 'pending_payment') {
+    const expiryLabel = getRelativeExpiryLabel(entry.expireAt);
+    if (expiryLabel) {
+      parts.push(expiryLabel);
+    }
+  }
+
+  return parts.join(' · ');
+};
+
+const getEntryTimeLabel = (entry: OrderCenterEntrySummary) => {
+  return entry.createdAt ? formatServerDateTime(entry.createdAt) : '';
 };
 
 export const OrdersListContent: React.FC<OrdersListContentProps> = ({
@@ -215,11 +266,6 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
     await navigateToOrderPage(buildOrderCenterDetailUrl(entry.entryKey));
   };
 
-  const handlePrimaryAction = async (event: { stopPropagation: () => void }, entry: OrderCenterEntrySummary) => {
-    event.stopPropagation();
-    await openEntryDetail(entry);
-  };
-
   const filterBar = useMemo(() => {
     if (hideFilters || fixedFilter) {
       return null;
@@ -254,7 +300,7 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       {filterBar}
 
-      <View className="p-md">
+      <View className="orders-list-content__inner">
         {!auth.token ? (
           <Empty
             description="登录后查看订单"
@@ -262,19 +308,15 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
           />
         ) : !initialized && loading ? (
           <View>
-            <Skeleton height={320} className="mb-lg" />
-            <Skeleton height={320} className="mb-lg" />
-            <Skeleton height={320} className="mb-lg" />
+            <Skeleton height={150} className="mb-md" />
+            <Skeleton height={150} className="mb-md" />
+            <Skeleton height={150} className="mb-md" />
           </View>
         ) : list.length === 0 ? (
           <Empty description={getEmptyDescription(activeFilter, emptyDescriptions)} />
         ) : (
-          <View>
+          <View className="orders-list-content__list">
             {list.map((entry) => {
-              const statusMeta = getOrderStatusMeta(entry);
-              const amount = getEntryDisplayAmount(entry);
-              const headerNo = getEntryHeaderNo(entry);
-              const sourceIcon = SOURCE_ICON_MAP[entry.sourceKind] || 'orders';
               const entryActions = deriveOrderEntryActions({
                 statusGroup: entry.statusGroup,
                 canPay: entry.statusGroup === 'pending_payment',
@@ -282,102 +324,50 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
               const primaryAction = entryActions.listPrimaryAction;
 
               return (
-                <View
-                  key={entry.entryKey}
-                  className={`orders-list-content__card orders-list-content__card--${entry.statusGroup}`}
-                  onClick={() => {
-                    void openEntryDetail(entry).catch((error) => {
-                      showErrorToast(error, '跳转失败');
-                    });
-                  }}
-                >
-                  <View className="orders-list-content__card-header">
-                    <View className="orders-list-content__card-title-group">
-                      <Text className="orders-list-content__card-title">{entry.title}</Text>
-                      {headerNo ? (
-                        <Text className="orders-list-content__card-no">{headerNo}</Text>
-                      ) : null}
-                    </View>
-                    <Tag variant={statusMeta.variant} outline>{entry.statusText || statusMeta.label}</Tag>
-                  </View>
-
-                  <View className="orders-list-content__body">
-                    {entry.provider?.name ? (
-                      <View className="orders-list-content__row">
-                        <View className="orders-list-content__icon-box">
-                          <Icon name={sourceIcon} size={32} color="#71717A" />
-                        </View>
-                        <View className="orders-list-content__info-group">
-                          <Text className="orders-list-content__label">服务方</Text>
-                          <Text className="orders-list-content__value">{entry.provider.name}</Text>
+                <View key={entry.entryKey} className="orders-list-content__item">
+                  <NotificationInboxCell
+                    title={entry.title}
+                    summary={getEntrySummary(entry)}
+                    timeLabel={getEntryTimeLabel(entry)}
+                    statusLabel={getEntryStatusText(entry)}
+                    statusTone={getEntryStatusTone(entry)}
+                    leading={(
+                      <View className="orders-list-content__amount-card">
+                        <View className="orders-list-content__amount-value">{formatCurrency(getEntryDisplayAmount(entry))}</View>
+                        <View className="orders-list-content__amount-caption">
+                          {entry.statusGroup === 'pending_payment' ? '待支付' : '订单金额'}
                         </View>
                       </View>
-                    ) : null}
-                    
-                    {entry.project?.name || entry.booking?.address ? (
-                      <View className="orders-list-content__row">
-                        <View className="orders-list-content__icon-box">
-                          <Icon name="location-pin" size={32} color="#71717A" />
-                        </View>
-                        <View className="orders-list-content__info-group">
-                          <Text className="orders-list-content__label">项目信息</Text>
-                          <Text className="orders-list-content__value orders-list-content__value--multiline">
-                            {entry.project?.name || entry.booking?.address}
-                          </Text>
-                        </View>
+                    )}
+                    typeBadge={(
+                      <View className="orders-list-content__badge-row">
+                        <Tag variant="default">{SOURCE_LABEL_MAP[entry.sourceKind] || '订单'}</Tag>
+                        <Tag variant={entry.statusGroup === 'pending_payment' ? 'warning' : entry.statusGroup === 'paid' ? 'success' : entry.statusGroup === 'refund' ? 'error' : 'default'}>
+                          {getEntryBadgeLabel(entry)}
+                        </Tag>
                       </View>
-                    ) : null}
-
-                    {entry.expireAt && entry.statusGroup === 'pending_payment' ? (
-                      <View className="orders-list-content__row">
-                        <View className="orders-list-content__icon-box">
-                          <Icon name="history" size={32} color="#F59E0B" />
-                        </View>
-                        <View className="orders-list-content__info-group">
-                          <Text className="orders-list-content__label">剩余支付时间</Text>
-                          <Text className="orders-list-content__value orders-list-content__value--warning">
-                            {formatServerDateTime(entry.expireAt)}
-                          </Text>
-                        </View>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <View className="orders-list-content__footer">
-                    <View className="orders-list-content__amount-group">
-                      <Text className="orders-list-content__amount-label">{getEntryAmountLabel(entry)}</Text>
-                      <View className="orders-list-content__amount-box">
-                        <Text className="orders-list-content__currency">¥</Text>
-                        <Text className="orders-list-content__amount-value">{amount.toLocaleString()}</Text>
-                      </View>
-                    </View>
-
-                    <View className="orders-list-content__action">
-                      <Button
-                        size="sm"
-                        variant={primaryAction.variant}
-                        className={`orders-list-content__button orders-list-content__button--${primaryAction.variant}`}
-                        onClick={(event) => {
-                          if (primaryAction.key === 'pay') {
-                            void handlePrimaryAction(event, entry);
-                            return;
-                          }
-                          event.stopPropagation();
-                          void openEntryDetail(entry).catch((error) => {
-                            showErrorToast(error, '跳转失败');
-                          });
-                        }}
-                      >
-                        {primaryAction.label}
-                      </Button>
-                    </View>
-                  </View>
+                    )}
+                    actionText={primaryAction.label}
+                    actionSecondary={primaryAction.variant !== 'primary'}
+                    actionTone={primaryAction.variant === 'primary' ? 'payment' : 'neutral'}
+                    onClick={() => {
+                      void openEntryDetail(entry).catch((error) => {
+                        showErrorToast(error, '跳转失败');
+                      });
+                    }}
+                    onActionClick={(event) => {
+                      event.stopPropagation();
+                      void openEntryDetail(entry).catch((error) => {
+                        showErrorToast(error, '跳转失败');
+                      });
+                    }}
+                  />
                 </View>
               );
             })}
 
-            {loadingMore ? <View className="orders-list-content__loading">正在努力加载...</View> : null}
-            {!disableLoadMore && !hasMore ? <View className="orders-list-content__loading">已经到底啦</View> : null}
+            {loadingMore ? <View className="orders-list-content__loading">加载中</View> : null}
+            {!disableLoadMore && !hasMore ? <View className="orders-list-content__loading">没有更多了</View> : null}
           </View>
         )}
       </View>

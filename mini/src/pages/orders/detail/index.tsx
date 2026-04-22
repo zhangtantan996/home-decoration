@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Text, View } from '@tarojs/components';
+import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
-import { Icon, type IconName } from '@/components/Icon';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactGrid } from '@/components/NotificationFactGrid';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { SurveyDepositQrDialog } from '@/components/SurveyDepositQrDialog';
@@ -23,11 +27,11 @@ import { getOrderDetail } from '@/services/orders';
 import type { PaymentChannel, PaymentLaunchMode } from '@/services/payments';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { deriveOrderEntryActions } from '@/utils/orderEntryActions';
 import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
 import { buildOrderCenterDetailUrl, buildSurveyDepositDetailUrl } from '@/utils/orderRoutes';
-import { formatServerDate, formatServerDateTime } from '@/utils/serverTime';
+import { formatServerDateTime } from '@/utils/serverTime';
 import {
   normalizeSurveyDepositPaymentAction,
   resolveSurveyDepositTerminalType,
@@ -35,6 +39,29 @@ import {
 } from '@/utils/surveyDepositPayment';
 
 import './index.scss';
+
+interface DetailRowProps {
+  label: string;
+  value?: string;
+  extra?: React.ReactNode;
+  multiline?: boolean;
+  onClick?: () => void;
+}
+
+const DetailRow: React.FC<DetailRowProps> = ({ label, value = '-', extra, multiline = false, onClick }) => (
+  <View
+    className={`order-detail-page__row${multiline ? ' order-detail-page__row--multiline' : ''}${onClick ? ' order-detail-page__row--clickable' : ''}`}
+    onClick={onClick}
+  >
+    <View className="order-detail-page__row-main">
+      <Text className="order-detail-page__row-label">{label}</Text>
+      <View className="order-detail-page__row-value-wrap">
+        <Text className="order-detail-page__row-value">{value || '-'}</Text>
+        {extra}
+      </View>
+    </View>
+  </View>
+);
 
 const formatDate = (dateStr?: string) => {
   if (!dateStr) {
@@ -51,62 +78,34 @@ const getStatusMeta = (detail: OrderCenterEntryDetail) => {
       return {
         label: detail.statusText || '待支付',
         variant: 'warning' as const,
-        desc: '请尽快完成支付，以免订单失效',
-        icon: 'history' as IconName,
+        summary: detail.expireAt ? `请在 ${formatDate(detail.expireAt)} 前完成支付` : '当前订单等待支付',
       };
     case 'paid':
       return {
         label: detail.statusText || '已支付',
         variant: 'success' as const,
-        desc: '订单已支付，服务人员将尽快与您联系',
-        icon: 'success' as IconName,
+        summary: '款项已确认，后续由服务流程继续推进',
       };
     case 'refund':
       return {
         label: detail.statusText || '退款中',
         variant: 'brand' as const,
-        desc: '退款申请正在处理，请耐心等待',
-        icon: 'pending' as IconName,
+        summary: '退款申请处理中，请留意后续更新',
       };
     case 'cancelled':
       return {
         label: detail.statusText || '已取消',
         variant: 'default' as const,
-        desc: '订单已取消，如有需要请重新下单',
-        icon: 'about' as IconName,
+        summary: '当前订单已结束',
       };
     default:
       return {
         label: detail.statusText || '处理中',
         variant: 'default' as const,
-        desc: '订单正在稳步处理中',
-        icon: 'progress' as IconName,
+        summary: '订单状态持续更新中',
       };
   }
 };
-
-interface DetailRowProps {
-  label: string;
-  value?: string;
-  extra?: React.ReactNode;
-  multiline?: boolean;
-  onClick?: () => void;
-}
-
-const DetailRow: React.FC<DetailRowProps> = ({ label, value = '-', extra, multiline = false, onClick }) => (
-  <View
-    className={`order-detail-page__detail-row${multiline ? ' order-detail-page__detail-row--multiline' : ''}${onClick ? ' order-detail-page__detail-row--clickable' : ''}`}
-    onClick={onClick}
-  >
-    <View className="order-detail-page__detail-main">
-      <Text className="order-detail-page__detail-label">{label}</Text>
-      <View className="flex items-center">
-        <Text className="order-detail-page__detail-value">{value || '-'}</Text>
-        {extra}
-      </View>
-    </View>
-  </View>
-);
 
 const OrderDetail: React.FC = () => {
   const auth = useAuthStore();
@@ -121,7 +120,6 @@ const OrderDetail: React.FC = () => {
   const [resolvedEntryKey, setResolvedEntryKey] = useState(entryKeyParam);
 
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
   const autoLaunchAction = useMemo(
     () => normalizeSurveyDepositPaymentAction({
       channel: router.params?.autoPayChannel as PaymentChannel | undefined,
@@ -317,32 +315,38 @@ const OrderDetail: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
+      <View className="page order-detail-page" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <Empty
-          description="登录后查看订单详情"
-          action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
-        />
+        <NotificationSurfaceShell>
+          <Empty
+            description="登录后查看订单详情"
+            action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
+          />
+        </NotificationSurfaceShell>
       </View>
     );
   }
 
   if (loading) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <View className="page order-detail-page" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <Skeleton height={380} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
+        <View className="order-detail-page__loading">
+          <Skeleton height={220} className="order-detail-page__section" />
+          <Skeleton height={180} className="order-detail-page__section" />
+          <Skeleton height={220} className="order-detail-page__section" />
+        </View>
       </View>
     );
   }
 
   if (!detail) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
+      <View className="page order-detail-page" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <Empty description="订单不存在" />
+        <NotificationSurfaceShell>
+          <Empty description="订单不存在" />
+        </NotificationSurfaceShell>
       </View>
     );
   }
@@ -387,33 +391,75 @@ const OrderDetail: React.FC = () => {
     projectRisk?.pausedAt ? `项目暂停：${projectRisk.pauseReason || '等待恢复中'}` : '',
     projectRisk?.disputedAt ? `争议处理中：${projectRisk.disputeReason || '平台处理中'}` : '',
     projectRisk?.escrowFrozen
-      ? `托管资金已冻结${projectRisk.frozenAmount ? `（¥${Number(projectRisk.frozenAmount).toLocaleString()}）` : ''}`
+      ? `托管资金已冻结${projectRisk.frozenAmount ? `（${formatCurrency(projectRisk.frozenAmount)}）` : ''}`
       : '',
   ].filter(Boolean);
+  const showActionBar = showPendingFooter || detailActions.length > 0;
+  const heroTitle = detail.statusGroup === 'pending_payment'
+    ? formatCurrency(payableAmount)
+    : detail.statusGroup === 'refund'
+      ? formatCurrency(bookingRefund?.refundableAmount || detail.amount || 0)
+      : formatCurrency(totalAmount || paidAmount || detail.amount || 0);
+  const heroSubtitle = detail.title || '家装服务订单';
 
   return (
-    <View className="order-detail-page page" style={showPendingFooter ? pageBottomStyle : undefined} {...bindPullToRefresh}>
+    <View
+      className="page order-detail-page"
+      style={showActionBar ? pageBottomStyle : undefined}
+      {...bindPullToRefresh}
+    >
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
+      <NotificationSurfaceShell className="order-detail-page__shell">
+        <ScrollView scrollY className="h-full">
+          <NotificationSurfaceHero
+            eyebrow="订单详情"
+            title={heroTitle}
+            subtitle={heroSubtitle}
+            status={<Tag variant={statusConfig.variant}>{statusConfig.label}</Tag>}
+            summary={statusConfig.summary}
+            metrics={[
+              {
+                label: showPendingFooter ? '订单总额' : '已支付',
+                value: formatCurrency(showPendingFooter ? totalAmount : paidAmount || totalAmount),
+                hint: stageMeta?.label || undefined,
+              },
+              {
+                label: '订单编号',
+                value: orderNo || '-',
+                hint: detail.createdAt ? `下单于 ${formatDate(detail.createdAt)}` : undefined,
+                emphasis: true,
+              },
+            ]}
+          />
 
-      <View className={`order-detail-page__status-header order-detail-page__status-header--${detail.statusGroup}`}>
-        <View className="order-detail-page__status-main">
-          <Text className="order-detail-page__status-title">{statusConfig.label}</Text>
-          <Text className="order-detail-page__status-desc">{statusConfig.desc}</Text>
-        </View>
-        <View className="order-detail-page__status-icon-wrapper">
-          <Icon name={statusConfig.icon} size={64} color="#FFFFFF" />
-        </View>
-      </View>
-
-      <View className="order-detail-page__container">
-        {(detail.provider || detail.booking || detail.project || stageMeta) ? (
-          <Card className="order-detail-page__card" title="关联服务信息">
-            <View className="order-detail-page__section">
+          <Card className="notification-surface-card" title="关键信息">
+            <NotificationFactRows
+              items={[
+                { label: '当前状态', value: detail.statusText || statusConfig.label },
+                { label: '待支付金额', value: formatCurrency(payableAmount), emphasis: showPendingFooter },
+                { label: '服务方', value: detail.provider?.name || '-' },
+                { label: '当前阶段', value: stageMeta?.label || detail.statusText || '-' },
+                { label: '关联项目', value: detail.project?.name || '-' },
+                {
+                  label: '项目地址',
+                  value: detail.project?.address || detail.booking?.address || '-',
+                  multiline: true,
+                },
+                { label: '下单时间', value: formatDate(detail.createdAt) },
+                { label: '支付时间', value: formatDate(detail.order?.paidAt) },
+              ]}
+            />
+            <View className="order-detail-page__rows">
+              <DetailRow
+                label="订单编号"
+                value={orderNo}
+                extra={<Text className="order-detail-page__row-link" onClick={() => handleCopy(orderNo)}>复制</Text>}
+              />
               {detail.provider ? (
                 <DetailRow
-                  label="服务方"
+                  label="服务方详情"
                   value={detail.provider.name}
-                  extra={<Text className="order-detail-page__link">查看</Text>}
+                  extra={<Text className="order-detail-page__row-link">查看</Text>}
                   onClick={() => {
                     Taro.navigateTo({
                       url: `/pages/providers/detail/index?id=${detail.provider?.id}&type=${detail.provider?.providerType || 'designer'}`,
@@ -423,222 +469,148 @@ const OrderDetail: React.FC = () => {
               ) : null}
               {detail.project ? (
                 <DetailRow
-                  label="关联项目"
+                  label="项目详情"
                   value={detail.project.name}
-                  extra={<Text className="order-detail-page__link">查看</Text>}
+                  extra={<Text className="order-detail-page__row-link">查看</Text>}
                   onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${detail.project?.id}` })}
                 />
               ) : null}
               {showBookingLink ? (
                 <DetailRow
-                  label="项目地址"
+                  label="预约详情"
                   value={detail.booking?.address || `预约 #${detail.booking?.id}`}
-                  extra={<Text className="order-detail-page__link">查看详情</Text>}
+                  extra={<Text className="order-detail-page__row-link">查看</Text>}
                   multiline
                   onClick={() => Taro.navigateTo({ url: `/pages/booking/detail/index?id=${detail.booking?.id}` })}
                 />
               ) : null}
-              {!detail.project && detail.booking?.address && !showBookingLink ? (
-                <DetailRow label="项目地址" value={detail.booking.address} multiline />
-              ) : null}
-              {stageMeta ? (
-                <DetailRow
-                  label="当前进展"
-                  value={stageMeta.label}
-                />
-              ) : null}
             </View>
           </Card>
-        ) : null}
 
-        {(detail.flowSummary || riskNotes.length > 0) ? (
-          <Card className="order-detail-page__card" title="温馨提醒">
-            <View className="order-detail-page__section pb-md">
-              {detail.flowSummary ? (
-                <View className="order-detail-page__note">{detail.flowSummary}</View>
-              ) : null}
-              {riskNotes.length > 0 ? (
-                <View className="order-detail-page__alerts">
-                  {riskNotes.map((note) => (
-                    <View key={note} className="order-detail-page__alert">
-                      <Icon name="about" size={28} color="#9A3412" />
-                      <Text className="order-detail-page__alert-text">{note}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          </Card>
-        ) : null}
-
-        <Card className="order-detail-page__card" title="费用清单">
-          <View className="order-detail-page__section pb-md pt-sm">
-            <View className="order-detail-page__amount-row">
-              <Text className="order-detail-page__amount-label">订单总额</Text>
-              <Text className="order-detail-page__amount-value">{formatCurrency(totalAmount)}</Text>
-            </View>
-            {discountAmount > 0 ? (
-              <View className="order-detail-page__amount-row">
-                <Text className="order-detail-page__amount-label">优惠金额</Text>
-                <Text className="order-detail-page__amount-value order-detail-page__amount-value--discount">
-                  -{formatCurrency(discountAmount)}
-                </Text>
-              </View>
-            ) : null}
-            <View className="order-detail-page__amount-row">
-              <Text className="order-detail-page__amount-label">已支付</Text>
-              <Text className="order-detail-page__amount-value">{formatCurrency(paidAmount)}</Text>
-            </View>
-            <View className="order-detail-page__amount-row order-detail-page__amount-row--highlight">
-              <Text className="order-detail-page__amount-label">{showPendingFooter ? '待支付金额' : '合计应付'}</Text>
-              <Text className="order-detail-page__amount-value">{formatCurrency(payableAmount)}</Text>
-            </View>
-          </View>
-        </Card>
-
-        {paymentPlans.length > 0 ? (
-          <Card className="order-detail-page__card" title="付款计划">
-            <View className="order-detail-page__plan-list pb-md">
-              {paymentPlans.map((plan) => {
-                const isPaid = plan.status === 'paid';
-                const isOverdue = plan.status === 'overdue';
-
-                return (
-                  <View key={plan.id} className="order-detail-page__plan-card">
-                    <View className="order-detail-page__plan-header">
-                      <View>
-                        <Text className="order-detail-page__plan-title">{plan.name || `第 ${plan.seq} 期`}</Text>
-                        <Text className="order-detail-page__plan-meta">到期：{formatServerDate(plan.dueAt)}</Text>
-                      </View>
-                      <Tag variant={isPaid ? 'success' : isOverdue ? 'error' : 'warning'} outline>
-                        {isPaid ? '已支付' : isOverdue ? '已逾期' : '待支付'}
-                      </Tag>
-                    </View>
-                    <View className="order-detail-page__plan-footer">
-                      <Text className="order-detail-page__plan-amount">{formatCurrency(plan.amount)}</Text>
-                      {isPaid && plan.paidAt ? (
-                        <Text className="order-detail-page__plan-extra">支付于 {formatServerDate(plan.paidAt)}</Text>
-                      ) : null}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </Card>
-        ) : null}
-
-        {showRefundSection ? (
-          <Card className="order-detail-page__card" title="退款服务">
-            <View className="order-detail-page__section pb-md">
-              <DetailRow
-                label="当前状态"
-                value={refundStatus.label}
-                extra={<Tag className="ml-sm" variant={refundStatus.variant}>{refundStatus.label}</Tag>}
-              />
-              <DetailRow label="可退金额" value={formatCurrency(bookingRefund?.refundableAmount || 0)} />
-            </View>
-          </Card>
-        ) : null}
-
-        <Card className="order-detail-page__card" title="订单基础信息">
-          <View className="order-detail-page__section pb-md">
-            <DetailRow
-              label="订单编号"
-              value={orderNo}
-              extra={<Text className="order-detail-page__link" onClick={() => handleCopy(orderNo)}>复制</Text>}
+          <Card className="notification-surface-card" title="费用明细">
+            <NotificationFactRows
+              items={[
+                { label: '订单总额', value: formatCurrency(totalAmount) },
+                { label: '优惠金额', value: discountAmount > 0 ? `-${formatCurrency(discountAmount)}` : '无优惠' },
+                { label: '已支付', value: formatCurrency(paidAmount) },
+                {
+                  label: showPendingFooter ? '待支付金额' : '合计应付',
+                  value: formatCurrency(payableAmount),
+                  emphasis: true,
+                },
+              ]}
             />
-            <DetailRow label="订单类型" value={detail.title || '家装服务订单'} />
-            <DetailRow label="下单时间" value={formatDate(detail.createdAt)} />
-            {detail.order?.paidAt ? (
-              <DetailRow label="支付时间" value={formatDate(detail.order.paidAt)} />
-            ) : null}
-          </View>
-        </Card>
+          </Card>
 
-        {detailActions.length > 0 ? (
-          <View
-            className={`order-detail-page__footer-actions${detailActions.length === 1 ? ' order-detail-page__footer-actions--single' : ''}`}
-          >
-            {detailActions.map((action) => (
-              <Button
-                key={action.key}
-                variant={action.variant}
-                className="order-detail-page__footer-action-button"
-                onClick={() => {
-                  if (action.key === 'view_refund') {
-                    handleViewRefundRecords();
-                    return;
-                  }
-                  handleApplyRefund();
-                }}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </View>
-        ) : null}
-      </View>
+          {paymentPlans.length > 0 ? (
+            <Card className="notification-surface-card" title="付款计划">
+              <View className="notification-section-list">
+                {paymentPlans.map((plan) => {
+                  const isPaid = plan.status === 'paid';
+                  const isOverdue = plan.status === 'overdue';
+                  return (
+                    <View key={plan.id} className="notification-section-row">
+                      <View className="notification-section-row__head">
+                        <Text className="notification-section-row__title">{plan.name || `第 ${plan.seq} 期`}</Text>
+                        <Tag variant={isPaid ? 'success' : isOverdue ? 'error' : 'warning'}>
+                          {isPaid ? '已支付' : isOverdue ? '已逾期' : '待支付'}
+                        </Tag>
+                      </View>
+                      <Text className="notification-section-row__note">到期：{formatDate(plan.dueAt)}</Text>
+                      <Text className="notification-section-row__value">{formatCurrency(plan.amount)}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </Card>
+          ) : null}
 
-      {showPendingFooter ? (
-        <View className="order-detail-page__bottom-bar" style={fixedBottomBarStyle}>
-          {showCancelButton ? (
+          {riskNotes.length > 0 ? (
+            <Card className="notification-surface-card" title="风险状态">
+              <View className="notification-section-list">
+                {riskNotes.map((note) => (
+                  <View key={note} className="notification-section-row">
+                    <Text className="notification-section-row__note is-danger">{note}</Text>
+                  </View>
+                ))}
+              </View>
+            </Card>
+          ) : null}
+
+          {showRefundSection ? (
+            <Card className="notification-surface-card" title="退款服务">
+              <NotificationFactRows
+                items={[
+                  { label: '当前状态', value: refundStatus.label },
+                  { label: '可退金额', value: formatCurrency(bookingRefund?.refundableAmount || 0) },
+                ]}
+              />
+            </Card>
+          ) : null}
+        </ScrollView>
+      </NotificationSurfaceShell>
+
+      {showActionBar ? (
+        <NotificationActionBar single={!showPendingFooter && detailActions.length <= 1}>
+          {showPendingFooter && showCancelButton ? (
             <Button
-              variant="outline"
+              variant="secondary"
               onClick={handleCancel}
-              className="order-detail-page__bottom-button"
               disabled={submitting || !!launchingChannel}
             >
               取消订单
             </Button>
-          ) : (
-            <View className="order-detail-page__bottom-amount">
-              <Text className="order-detail-page__bottom-amount-label">待支付</Text>
-              <Text className="order-detail-page__bottom-amount-value">{formatCurrency(payableAmount)}</Text>
-            </View>
-          )}
-          <Button
-            variant="primary"
-            onClick={() => void handlePay()}
-            className="order-detail-page__bottom-button"
-            loading={!!launchingChannel}
-            disabled={submitting || !!launchingChannel}
-          >
-            {canPayWithWechat ? '微信支付' : '去支付'}
-          </Button>
-          {canPayWithAlipay ? (
+          ) : null}
+          {showPendingFooter ? (
+            <Button
+              variant="primary"
+              onClick={() => void handlePay()}
+              loading={!!launchingChannel}
+              disabled={submitting || !!launchingChannel}
+            >
+              {canPayWithWechat ? '微信支付' : '去支付'}
+            </Button>
+          ) : null}
+          {showPendingFooter && canPayWithAlipay ? (
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
                 void launchPreferredChannel('alipay');
               }}
-              className="order-detail-page__bottom-secondary-button"
               disabled={submitting || !!launchingChannel}
             >
               支付宝扫码
             </Button>
           ) : null}
-        </View>
+          {!showPendingFooter && detailActions.some((action) => action.key === 'view_refund') ? (
+            <Button variant="outline" onClick={handleViewRefundRecords}>
+              查看退款记录
+            </Button>
+          ) : null}
+          {!showPendingFooter && detailActions.some((action) => action.key === 'apply_refund') ? (
+            <Button variant="primary" onClick={handleApplyRefund}>
+              申请退款
+            </Button>
+          ) : null}
+        </NotificationActionBar>
       ) : null}
 
       {qrPayment ? (
         <SurveyDepositQrDialog
+          open
           amount={qrPayment.amount}
-          amountLabel="待支付金额"
-          classNamePrefix="order-detail-page"
+          qrCode={qrPayment.qrCode}
+          channel={qrPayment.channel}
+          expiresAt={qrPayment.expiresAt}
+          title={qrPayment.title}
+          description={qrPayment.description}
+          successHint={qrPayment.successHint}
+          countdownSeconds={remainingSeconds}
+          confirming={qrConfirmLoading}
           onClose={closeQrPayment}
-          onConfirmPaid={() => {
-            void confirmQrPayment();
-          }}
-          onRetry={() => {
-            void retryQrPayment();
-          }}
-          phase={qrPayment.phase}
-          confirmLoading={qrConfirmLoading}
-          qrCodeImageUrl={qrPayment.qrCodeImageUrl}
-          remainingSeconds={remainingSeconds}
-          statusText={qrPayment.statusText}
-          statusTone={qrPayment.statusTone}
+          onConfirm={confirmQrPayment}
+          onRetry={retryQrPayment}
         />
       ) : null}
     </View>

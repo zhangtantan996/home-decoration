@@ -1,5 +1,6 @@
 import { MINI_ENV } from '@/config/env';
 import { request } from '@/utils/request';
+import { buildAbsoluteUrl, parseAbsoluteUrl } from '@/utils/url';
 
 export type PaymentChannel = 'alipay' | 'wechat';
 
@@ -47,14 +48,15 @@ export const normalizePaymentLaunchUrl = (rawUrl?: string) => {
     return '';
   }
 
-  try {
-    return new URL(value).toString();
-  } catch (error) {
-    if (!value.startsWith('/')) {
-      return value;
-    }
-
-    const apiBase = new URL(MINI_ENV.API_BASE_URL);
-    return `${apiBase.origin}${value}`;
+  const parsedValue = parseAbsoluteUrl(value);
+  if (parsedValue) {
+    return parsedValue.href;
   }
+
+  if (!value.startsWith('/')) {
+    return value;
+  }
+
+  const apiOrigin = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+  return buildAbsoluteUrl(apiOrigin, value);
 };

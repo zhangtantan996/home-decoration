@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from '@tarojs/components';
+import { View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationInboxCell } from '@/components/NotificationInboxCell';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
@@ -14,10 +15,54 @@ import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 
+const sectionStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '16rpx',
+};
+
+const cellCardStyle = {
+  overflow: 'hidden',
+  borderRadius: '28rpx',
+  background: 'rgba(255, 255, 255, 0.98)',
+  border: '1rpx solid rgba(226, 232, 240, 0.96)',
+  boxShadow: '0 10rpx 24rpx rgba(15, 23, 42, 0.04)',
+};
+
+const badgeRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8rpx',
+  flexWrap: 'wrap' as const,
+};
+
+const toolbarStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: '16rpx',
+};
+
 const getComplaintMeta = (status?: string) => {
-  if (status === 'resolved') return { label: '已处理', variant: 'success' as const, progress: 100 };
-  if (status === 'processing') return { label: '处理中', variant: 'primary' as const, progress: 62 };
-  return { label: '已提交', variant: 'warning' as const, progress: 24 };
+  if (status === 'resolved') return { label: '已处理', tone: 'success' as const };
+  if (status === 'processing') return { label: '处理中', tone: 'brand' as const };
+  return { label: '已提交', tone: 'neutral' as const };
+};
+
+const getComplaintSummary = (item: ComplaintListItem) => {
+  if (item.resolution) {
+    return `处理结果：${item.resolution}`;
+  }
+
+  if (item.merchantResponse) {
+    return `商家回复：${item.merchantResponse}`;
+  }
+
+  if (item.freezePayment) {
+    return '当前投诉已触发资金冻结';
+  }
+
+  return item.description || '等待平台处理';
 };
 
 const ComplaintListPage: React.FC = () => {
@@ -60,69 +105,70 @@ const ComplaintListPage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen flex items-center justify-center" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看投诉记录"
           action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/complaints/list/index') }}
         />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   if (loading && list.length === 0) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <View className="flex justify-end mb-md">
-          <Button size="small" variant="primary" onClick={openCreate}>发起投诉</Button>
+        <View style={sectionStyle}>
+          <View style={toolbarStyle}>
+            <View className="text-sm text-gray-400">最近更新</View>
+            <Button size="small" variant="outline" onClick={openCreate}>发起投诉</Button>
+          </View>
+          <Skeleton height={148} />
+          <Skeleton height={148} />
         </View>
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={180} className="mb-md" />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-      <View className="flex justify-end mb-md">
-        <Button size="small" variant="primary" onClick={openCreate}>发起投诉</Button>
-      </View>
 
-      {list.length === 0 ? (
-        <Empty description="暂无投诉记录" />
-      ) : (
-        list.map((item) => {
-          const meta = getComplaintMeta(item.status);
-          return (
-            <Card key={item.id} className="mb-md">
-              <View className="flex items-start justify-between gap-sm mb-sm">
-                <View className="min-w-0 flex-1">
-                  <Text className="block font-bold text-base">{item.title}</Text>
-                  <Text className="block text-sm text-gray-500 mt-xs">项目 #{item.projectId || 0} · {item.category || '其他'}</Text>
+      <View style={sectionStyle}>
+        <View style={toolbarStyle}>
+          <View className="text-sm text-gray-400">{`共 ${list.length} 条投诉`}</View>
+          <Button size="small" variant="outline" onClick={openCreate}>发起投诉</Button>
+        </View>
+
+        {list.length === 0 ? (
+          <Empty description="暂无投诉记录" />
+        ) : (
+          <View style={sectionStyle}>
+            {list.map((item) => {
+              const meta = getComplaintMeta(item.status);
+              return (
+                <View key={item.id} style={cellCardStyle}>
+                  <NotificationInboxCell
+                    title={item.title}
+                    summary={getComplaintSummary(item)}
+                    timeLabel={item.createdAt || ''}
+                    statusLabel={meta.label}
+                    statusTone={meta.tone}
+                    typeBadge={
+                      <View style={badgeRowStyle}>
+                        <Tag variant="default">{item.category || '投诉'}</Tag>
+                        {item.freezePayment ? <Tag variant="error">冻结中</Tag> : null}
+                      </View>
+                    }
+                  />
                 </View>
-                <Tag variant={meta.variant}>{meta.label}</Tag>
-              </View>
-              <View className="text-sm text-gray-700 leading-relaxed">{item.description || '暂无补充说明。'}</View>
-              {item.merchantResponse ? (
-                <View className="mt-sm text-sm text-blue-600">商家回复：{item.merchantResponse}</View>
-              ) : null}
-              {item.resolution ? (
-                <View className="mt-sm text-sm text-green-600">处理结果：{item.resolution}</View>
-              ) : null}
-              {item.freezePayment ? (
-                <View className="mt-sm text-xs text-red-500">当前投诉已触发资金冻结。</View>
-              ) : null}
-              <View className="mt-sm h-1 bg-gray-100 rounded-full overflow-hidden">
-                <View className="h-full rounded-full" style={{ width: `${meta.progress}%`, background: meta.variant === 'success' ? '#10B981' : meta.variant === 'primary' ? '#2563EB' : '#F59E0B' }} />
-              </View>
-              <View className="text-xs text-gray-400 mt-sm">提交于 {item.createdAt || '--'}</View>
-            </Card>
-          );
-        })
-      )}
-    </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    </NotificationSurfaceShell>
   );
 };
 

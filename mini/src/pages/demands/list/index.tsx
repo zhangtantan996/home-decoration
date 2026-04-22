@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Text, View } from '@tarojs/components';
+import { View } from '@tarojs/components';
 import Taro, { useReachBottom } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationInboxCell } from '@/components/NotificationInboxCell';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
@@ -16,20 +17,61 @@ import { showErrorToast } from '@/utils/error';
 
 const PAGE_SIZE = 10;
 
+const sectionStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '16rpx',
+};
+
+const cellCardStyle = {
+  overflow: 'hidden',
+  borderRadius: '28rpx',
+  background: 'rgba(255, 255, 255, 0.98)',
+  border: '1rpx solid rgba(226, 232, 240, 0.96)',
+  boxShadow: '0 10rpx 24rpx rgba(15, 23, 42, 0.04)',
+};
+
+const badgeRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8rpx',
+  flexWrap: 'wrap' as const,
+};
+
+const toolbarStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: '16rpx',
+};
+
 const getDemandStatusMeta = (status?: string) => {
   switch (status) {
     case 'matched':
-      return { label: '已匹配', variant: 'success' as const, progress: 78 };
+      return { label: '已匹配', variant: 'success' as const, tone: 'success' as const };
     case 'matching':
-      return { label: '匹配中', variant: 'primary' as const, progress: 56 };
+      return { label: '匹配中', variant: 'primary' as const, tone: 'brand' as const };
     case 'submitted':
     case 'reviewing':
-      return { label: '审核中', variant: 'warning' as const, progress: 32 };
+      return { label: '审核中', variant: 'warning' as const, tone: 'brand' as const };
     case 'closed':
-      return { label: '已关闭', variant: 'default' as const, progress: 100 };
+      return { label: '已关闭', variant: 'default' as const, tone: 'neutral' as const };
     case 'draft':
     default:
-      return { label: '草稿', variant: 'default' as const, progress: 12 };
+      return { label: '草稿', variant: 'default' as const, tone: 'neutral' as const };
+  }
+};
+
+const getDemandTypeLabel = (type?: string) => {
+  switch (type) {
+    case 'renovation':
+      return '整装需求';
+    case 'design':
+      return '设计需求';
+    case 'construction':
+      return '施工需求';
+    default:
+      return type || '需求';
   }
 };
 
@@ -41,6 +83,24 @@ const formatBudget = (item: DemandSummary) => {
     return `¥${item.budgetMax.toLocaleString()}以内`;
   }
   return '预算待补充';
+};
+
+const getDemandSummary = (item: DemandSummary) => {
+  if (item.status === 'closed' && item.closedReason) {
+    return `关闭原因：${item.closedReason}`;
+  }
+
+  if (item.reviewNote) {
+    return item.reviewNote;
+  }
+
+  const parts = [
+    [item.city, item.district].filter(Boolean).join(' · '),
+    item.area > 0 ? `${item.area}㎡` : '',
+    formatBudget(item),
+  ].filter(Boolean);
+
+  return parts.join(' · ');
 };
 
 const DemandListPage: React.FC = () => {
@@ -106,101 +166,87 @@ const DemandListPage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen flex items-center justify-center" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看我的需求"
           action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/demands/list/index') }}
         />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   if (loading && list.length === 0) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <View className="flex justify-end mb-md">
-          <Button size="small" variant="primary" onClick={openCreate}>新建需求</Button>
+        <View style={sectionStyle}>
+          <View style={toolbarStyle}>
+            <View className="text-sm text-gray-400">最近更新</View>
+            <Button size="small" variant="outline" onClick={openCreate}>新建需求</Button>
+          </View>
+          <Skeleton height={148} />
+          <Skeleton height={148} />
+          <Skeleton height={148} />
         </View>
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={180} />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-      <View className="flex justify-end mb-md">
-        <Button size="small" variant="primary" onClick={openCreate}>新建需求</Button>
-      </View>
 
-      {list.length === 0 ? (
-        <Empty
-          description="还没有提交过需求"
-          action={{ text: '去创建', onClick: openCreate }}
-        />
-      ) : (
-        <>
-          {list.map((item) => {
-            const statusMeta = getDemandStatusMeta(item.status);
-            return (
-              <Card key={item.id} className="mb-md" onClick={() => openDetail(item.id)}>
-                <View className="flex items-start justify-between gap-sm mb-sm">
-                  <View className="min-w-0 flex-1">
-                    <Text className="font-bold text-base">{item.title || `需求 #${item.id}`}</Text>
-                    <View className="text-sm text-gray-500 mt-xs">
-                      {item.city || '城市待补充'}{item.district ? ` · ${item.district}` : ''}
-                    </View>
-                  </View>
-                  <Tag variant={statusMeta.variant}>{statusMeta.label}</Tag>
-                </View>
+      <View style={sectionStyle}>
+        <View style={toolbarStyle}>
+          <View className="text-sm text-gray-400">{`共 ${list.length} 条需求`}</View>
+          <Button size="small" variant="outline" onClick={openCreate}>新建需求</Button>
+        </View>
 
-                <View className="flex flex-col gap-xs text-sm">
-                  <View className="flex justify-between">
-                    <Text className="text-gray-400">需求类型</Text>
-                    <Text>{item.demandType || '未填写'}</Text>
-                  </View>
-                  <View className="flex justify-between">
-                    <Text className="text-gray-400">建筑面积</Text>
-                    <Text>{item.area > 0 ? `${item.area}㎡` : '待补充'}</Text>
-                  </View>
-                  <View className="flex justify-between items-start gap-sm">
-                    <Text className="text-gray-400">预算范围</Text>
-                    <Text style={{ textAlign: 'right' }}>{formatBudget(item)}</Text>
-                  </View>
-                  <View className="flex justify-between">
-                    <Text className="text-gray-400">当前进度</Text>
-                    <Text>{statusMeta.progress}%</Text>
-                  </View>
-                </View>
-
-                <View className="mt-sm h-1 bg-gray-100 rounded-full overflow-hidden">
-                  <View
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${statusMeta.progress}%`,
-                      background: statusMeta.variant === 'success' ? '#10B981' : statusMeta.variant === 'warning' ? '#F59E0B' : statusMeta.variant === 'primary' ? '#2563EB' : '#94A3B8',
+        {list.length === 0 ? (
+          <Empty
+            description="还没有提交过需求"
+            action={{ text: '去创建', onClick: openCreate }}
+          />
+        ) : (
+          <View style={sectionStyle}>
+            {list.map((item) => {
+              const statusMeta = getDemandStatusMeta(item.status);
+              const matchLabel = item.maxMatch > 0 ? `匹配 ${item.matchedCount}/${item.maxMatch}` : statusMeta.label;
+              return (
+                <View key={item.id} style={cellCardStyle}>
+                  <NotificationInboxCell
+                    title={item.title || `需求 #${item.id}`}
+                    summary={getDemandSummary(item)}
+                    timeLabel={item.updatedAt || item.createdAt || ''}
+                    statusLabel={matchLabel}
+                    statusTone={statusMeta.tone}
+                    typeBadge={
+                      <View style={badgeRowStyle}>
+                        <Tag variant={statusMeta.variant}>{statusMeta.label}</Tag>
+                        <Tag variant="default">{getDemandTypeLabel(item.demandType)}</Tag>
+                      </View>
+                    }
+                    actionText={item.matchedCount > 0 ? '查看匹配' : '查看详情'}
+                    actionSecondary={item.matchedCount === 0}
+                    actionTone={item.matchedCount > 0 ? 'project' : 'neutral'}
+                    onClick={() => openDetail(item.id)}
+                    onActionClick={(event) => {
+                      event.stopPropagation?.();
+                      openDetail(item.id);
                     }}
                   />
                 </View>
+              );
+            })}
 
-                <View className="flex justify-between items-center mt-sm">
-                  <Text className="text-xs text-gray-400">更新于 {item.updatedAt || item.createdAt || '--'}</Text>
-                  <Text className="text-sm text-brand">查看详情</Text>
-                </View>
-              </Card>
-            );
-          })}
-
-          {loading && hasMore ? (
-            <View className="text-center text-gray-400 text-xs py-md">加载中...</View>
-          ) : null}
-        </>
-      )}
-    </View>
+            {loading && hasMore ? (
+              <View className="text-center text-gray-400 text-xs py-md">加载中...</View>
+            ) : null}
+          </View>
+        )}
+      </View>
+    </NotificationSurfaceShell>
   );
 };
 

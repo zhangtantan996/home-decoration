@@ -1,16 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { cancelAfterSales, getAfterSalesDetail, type AfterSalesDetail } from '@/services/afterSales';
 import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+
+const statusVariantMap: Record<number, 'warning' | 'primary' | 'success' | 'default'> = {
+  0: 'warning',
+  1: 'primary',
+  2: 'success',
+  3: 'default',
+};
+
+const isMeaningfulText = (value?: string, placeholder?: string) => {
+  const next = String(value || '').trim();
+  if (!next) return false;
+  if (placeholder && next === placeholder) return false;
+  return true;
+};
 
 const AfterSalesDetailPage: React.FC = () => {
   const auth = useAuthStore();
@@ -18,6 +37,7 @@ const AfterSalesDetailPage: React.FC = () => {
   const [detail, setDetail] = useState<AfterSalesDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
 
   useLoad((options) => {
     setId(Number(options.id || 0));
@@ -67,20 +87,20 @@ const AfterSalesDetailPage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
         <Empty
           description="登录后查看售后详情"
           action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/after-sales/list/index') }}
         />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   if (loading) {
     return (
       <View className="page bg-gray-50 min-h-screen p-md">
+        <Skeleton height={170} className="mb-md" />
         <Skeleton height={180} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
         <Skeleton height={220} />
       </View>
     );
@@ -88,69 +108,92 @@ const AfterSalesDetailPage: React.FC = () => {
 
   if (!detail) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
         <Empty description="未找到售后详情" />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
+  const canCancel = [0, 1].includes(detail.status);
+  const statusVariant = statusVariantMap[detail.status] || 'default';
+  const hasReply = isMeaningfulText(detail.reply, '平台尚未回复。');
+  const hasDescription = isMeaningfulText(detail.description, '暂无补充说明。');
+
   return (
-    <View className="page bg-gray-50 min-h-screen p-md pb-xl">
-      <Card className="mb-md">
-        <View className="flex items-start justify-between gap-sm mb-sm">
-          <View>
-            <Text className="font-bold text-lg">{detail.reason}</Text>
-            <View className="text-sm text-gray-500 mt-xs">单号 {detail.orderNo} · 关联预约 #{detail.bookingId}</View>
-          </View>
-          <Tag variant={detail.status === 2 ? 'success' : detail.status === 1 ? 'primary' : detail.status === 3 ? 'default' : 'warning'}>
-            {detail.statusText}
-          </Tag>
-        </View>
-        <View className="flex gap-sm flex-wrap">
-          <Tag variant="default">{detail.typeText}</Tag>
-          <Tag variant="default">涉及金额 {detail.amountText}</Tag>
-        </View>
-      </Card>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+      <View className="notification-surface-shell__body">
+        <NotificationSurfaceHero
+          eyebrow="售后详情"
+          title={detail.reason}
+          subtitle={`${detail.typeText} · 订单号 ${detail.orderNo}`}
+          status={<Tag variant={statusVariant}>{detail.statusText}</Tag>}
+          summary={hasReply ? detail.reply : '售后处理进展会持续同步'}
+          metrics={[
+            { label: '涉及金额', value: detail.amountText, emphasis: true },
+            { label: '当前状态', value: detail.statusText },
+          ]}
+        />
 
-      <Card title="申请信息" className="mb-md">
-        <View className="flex flex-col gap-sm text-sm">
-          <View className="flex justify-between gap-sm"><Text className="text-gray-400">提交时间</Text><Text>{detail.createdAt || '--'}</Text></View>
-          <View className="flex justify-between gap-sm"><Text className="text-gray-400">完成时间</Text><Text>{detail.resolvedAt || '待处理'}</Text></View>
-        </View>
-        <View className="mt-md text-sm text-gray-700 leading-relaxed">{detail.description || '暂无补充说明。'}</View>
-      </Card>
+        <Card className="notification-surface-card" title="关键信息">
+          <NotificationFactRows
+            items={[
+              { label: '提交时间', value: detail.createdAt || '待同步' },
+              { label: '完成时间', value: detail.resolvedAt || '待处理' },
+              { label: '关联预约', value: detail.bookingId > 0 ? `#${detail.bookingId}` : '待同步' },
+            ]}
+          />
+        </Card>
 
-      <Card title="平台处理" className="mb-md">
-        <View className="flex flex-col gap-sm text-sm">
-          <View className="border border-gray-100 rounded p-sm">
-            <Text className="block text-gray-400 text-xs">当前状态</Text>
-            <Text className="block mt-xs">{detail.statusText}</Text>
-          </View>
-          <View className="border border-gray-100 rounded p-sm">
-            <Text className="block text-gray-400 text-xs">平台回复</Text>
-            <Text className="block mt-xs leading-relaxed">{detail.reply || '平台尚未回复。'}</Text>
-          </View>
-        </View>
-      </Card>
+        {hasReply ? (
+          <Card className="notification-surface-card" title="处理结果">
+            <Text className="notification-section-row__note" style={{ marginTop: 0, color: '#0F172A' }}>
+              {detail.reply}
+            </Text>
+          </Card>
+        ) : null}
 
-      <Card title="证据材料" className="mb-md">
-        {detail.images.length === 0 ? (
-          <View className="text-sm text-gray-400">本次申请没有上传图片证据。</View>
-        ) : (
-          <View className="flex flex-col gap-sm">
-            {detail.images.map((item) => (
-              <Image key={item} src={item} mode="widthFix" style={{ width: '100%', borderRadius: '16px', background: '#F3F4F6' }} onClick={() => Taro.previewImage({ urls: detail.images, current: item })} />
-            ))}
-          </View>
-        )}
-      </Card>
+        {hasDescription ? (
+          <Card className="notification-surface-card" title="申请说明">
+            <Text className="notification-section-row__note" style={{ marginTop: 0, color: '#0F172A' }}>
+              {detail.description}
+            </Text>
+          </Card>
+        ) : null}
 
-      {[0, 1].includes(detail.status) ? (
-        <Button block variant="outline" loading={acting} onClick={() => void handleCancel()}>
-          取消申请
-        </Button>
+        <Card
+          className="notification-surface-card"
+          title="证据材料"
+          extra={<Text style={{ fontSize: '22rpx', color: '#8E8E93' }}>{detail.images.length} 张</Text>}
+        >
+          {detail.images.length === 0 ? (
+            <View className="text-sm text-gray-400">未上传图片证据</View>
+          ) : (
+            <View className="notification-gallery">
+              {detail.images.map((item, index) => (
+                <View key={item}>
+                  <Image
+                    className="notification-gallery__item"
+                    src={item}
+                    mode="aspectFill"
+                    style={{ height: '220rpx' }}
+                    onClick={() => Taro.previewImage({ urls: detail.images, current: item })}
+                  />
+                  <Text className="notification-gallery__caption">{`证据 ${index + 1}`}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </Card>
+      </View>
+
+      {canCancel ? (
+        <NotificationActionBar single>
+          <Button block variant="outline" loading={acting} onClick={() => void handleCancel()}>
+            取消申请
+          </Button>
+        </NotificationActionBar>
       ) : null}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

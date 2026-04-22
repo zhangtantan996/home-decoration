@@ -8,6 +8,7 @@ import {
   formatServerMonthDay,
   getServerTimeMs,
 } from '@/utils/serverTime';
+import { DEFAULT_PROGRESS_COVER } from './default-cover';
 
 export type ProgressTone = 'default' | 'active' | 'success' | 'danger';
 export type ProjectWorkLogRecord = Record<string, unknown>;
@@ -80,6 +81,19 @@ const toStringList = (value: unknown) => {
   return parseStringListValue(value)
     .map((item) => normalizeProviderMediaUrl(item))
     .filter(Boolean);
+};
+
+const isMiniSafeImageUrl = (value?: string) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    /^https:\/\//i.test(normalized)
+    || /^data:image\//i.test(normalized)
+    || /^(\/|\.{1,2}\/)/.test(normalized)
+    || /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(normalized)
+  );
 };
 
 const resolveLogTime = (log: ProjectWorkLogRecord) => {
@@ -234,7 +248,7 @@ export const buildMilestoneViewModels = (
       id: `phase-${phase.id}`,
       name: phase.name || '未命名阶段',
       statusLabel: meta.label,
-      dateText: formatServerMonthDay(phase.endDate || phase.startDate, '待定'),
+      dateText: formatServerMonthDay(phase.startDate || phase.endDate, '待定'),
       tone: meta.tone,
       isActive: meta.tone === 'active',
       isDone: meta.tone === 'success',
@@ -273,13 +287,13 @@ export const buildProgressHeroViewModel = ({
   const coverImage =
     normalizeProviderMediaUrl(String(((project as unknown as Record<string, unknown>).coverImage) || ''))
     || logs.flatMap(resolveLogImages)[0]
-    || '';
+    || DEFAULT_PROGRESS_COVER;
 
   return {
     title: project.name || '未命名项目',
     address: project.address || project.flowSummary || '项目地址待补充',
     daysText: days > 0 ? `第 ${days} 天` : '待排期',
-    coverImage,
+    coverImage: isMiniSafeImageUrl(coverImage) ? coverImage : DEFAULT_PROGRESS_COVER,
   };
 };
 
@@ -331,12 +345,22 @@ export const buildProgressPhaseSections = (
       statusLabel: meta.label,
       taskSummary:
         tasks.length > 0
-          ? `已完成 ${completedTaskCount} / ${tasks.length} 项阶段任务`
+          ? meta.tone === 'default'
+            ? `${tasks.length} 项任务待开始`
+            : `已完成 ${completedTaskCount} / ${tasks.length} 项阶段任务`
           : '该阶段暂未配置任务清单。',
-      emptyText: '该阶段施工日志待同步。',
+      emptyText:
+        meta.tone === 'active'
+          ? '施工日志待同步'
+          : meta.tone === 'success'
+            ? '暂无已同步日志'
+            : '',
       tone: meta.tone,
       tasks,
-      logs: phaseLogs.map(normalizeLog),
+      logs: phaseLogs.map(normalizeLog).map((log) => ({
+        ...log,
+        images: log.images.filter((image) => isMiniSafeImageUrl(image)),
+      })),
     };
   });
 };

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Text, View } from '@tarojs/components';
+import { ScrollView, View } from '@tarojs/components';
 import Taro, { useDidShow, useLoad, useReachBottom } from '@tarojs/taro';
 
-import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationInboxCell } from '@/components/NotificationInboxCell';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
@@ -22,6 +23,82 @@ const FILTERS = [
   { key: 'completed', label: '已完成' },
   { key: 'rejected', label: '已驳回' },
 ] as const;
+
+const sectionStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '16rpx',
+};
+
+const cellCardStyle = {
+  overflow: 'hidden',
+  borderRadius: '28rpx',
+  background: 'rgba(255, 255, 255, 0.98)',
+  border: '1rpx solid rgba(226, 232, 240, 0.96)',
+  boxShadow: '0 10rpx 24rpx rgba(15, 23, 42, 0.04)',
+};
+
+const badgeRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8rpx',
+  flexWrap: 'wrap' as const,
+};
+
+const filterWrapStyle = {
+  marginBottom: '8rpx',
+  whiteSpace: 'nowrap' as const,
+};
+
+const filterRowStyle = {
+  display: 'inline-flex',
+  gap: '12rpx',
+  paddingRight: '12rpx',
+};
+
+const formatCurrency = (value: number) => `¥${Number(value || 0).toLocaleString()}`;
+
+const getRefundTypeLabel = (type?: RefundApplicationItem['refundType']) => {
+  switch (type) {
+    case 'intent_fee':
+      return '量房费退款';
+    case 'design_fee':
+      return '设计费退款';
+    case 'construction_fee':
+      return '施工费退款';
+    case 'full':
+      return '整单退款';
+    default:
+      return '退款申请';
+  }
+};
+
+const getRefundSummary = (item: RefundApplicationItem) => {
+  const note = item.status === 'rejected' ? item.adminNotes : '';
+  const parts = [
+    item.order?.orderNo || '',
+    item.project?.name || item.booking?.address || '',
+    note ? `原因：${note}` : '',
+  ].filter(Boolean);
+
+  return parts.join(' · ');
+};
+
+const getRefundStatusTone = (status?: RefundApplicationItem['status']) => {
+  if (status === 'completed') return 'success' as const;
+  if (status === 'rejected') return 'danger' as const;
+  if (status === 'approved') return 'brand' as const;
+  return 'neutral' as const;
+};
+
+const getAmountLabel = (item: RefundApplicationItem) => {
+  if (item.status === 'completed' || item.status === 'approved') {
+    const amount = item.approvedAmount || item.requestedAmount;
+    return `退款金额 ${formatCurrency(amount)}`;
+  }
+
+  return `申请金额 ${formatCurrency(item.requestedAmount)}`;
+};
 
 const RefundListPage: React.FC = () => {
   const auth = useAuthStore();
@@ -66,6 +143,7 @@ const RefundListPage: React.FC = () => {
       setLoadingMore(false);
     }
   }, [auth.token, bookingId, status]);
+
   const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
     usePullToRefreshFeedback(() => fetchList(1, true));
 
@@ -85,84 +163,85 @@ const RefundListPage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty description="登录后查看退款记录" action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }} />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-      <View className="flex" style={{ gap: '12rpx', flexWrap: 'wrap', marginBottom: '24rpx' }}>
-        {FILTERS.map((item) => {
-          const active = status === item.key;
-          return (
-            <View
-              key={item.key || 'all'}
-              onClick={() => {
-                setStatus(item.key);
-                setHasMore(true);
-                setPage(1);
-              }}
-              style={{
-                padding: '12rpx 24rpx',
-                borderRadius: '999rpx',
-                background: active ? '#2C3E50' : '#FFFFFF',
-                color: active ? '#FFFFFF' : '#52525B',
-                border: active ? '2rpx solid #2C3E50' : '2rpx solid #E4E4E7',
-                fontSize: '24rpx',
-              }}
-            >
-              {item.label}
-            </View>
-          );
-        })}
-      </View>
+
+      <ScrollView scrollX showScrollbar={false} style={filterWrapStyle}>
+        <View style={filterRowStyle}>
+          {FILTERS.map((item) => {
+            const active = status === item.key;
+            return (
+              <View
+                key={item.key || 'all'}
+                onClick={() => {
+                  setStatus(item.key);
+                  setHasMore(true);
+                  setPage(1);
+                }}
+                style={{
+                  minHeight: '60rpx',
+                  padding: '0 24rpx',
+                  borderRadius: '999rpx',
+                  background: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)',
+                  color: active ? '#2563EB' : '#64748B',
+                  border: active ? '1rpx solid rgba(37, 99, 235, 0.18)' : '1rpx solid rgba(226, 232, 240, 0.96)',
+                  boxShadow: active ? '0 10rpx 22rpx rgba(37, 99, 235, 0.08)' : 'none',
+                  fontSize: '24rpx',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {item.label}
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
 
       {loading ? (
-        <View>
-          <Skeleton height={180} className="mb-md" />
-          <Skeleton height={180} className="mb-md" />
+        <View style={sectionStyle}>
+          <Skeleton height={148} />
+          <Skeleton height={148} />
         </View>
       ) : list.length === 0 ? (
         <Empty description="暂无退款记录" />
       ) : (
-        <View>
+        <View style={sectionStyle}>
           {list.map((item) => {
             const statusMeta = getRefundStatus(item.status);
             return (
-              <Card key={item.id} className="mb-md" title={`退款申请 #${item.id}`} extra={<Tag variant={statusMeta.variant}>{statusMeta.label}</Tag>}>
-                <View className="flex flex-col gap-sm text-sm text-gray-600">
-                  <View className="flex justify-between">
-                    <Text>退款类型</Text>
-                    <Text>{item.refundType}</Text>
-                  </View>
-                  <View className="flex justify-between">
-                    <Text>申请金额</Text>
-                    <Text>¥{item.requestedAmount.toLocaleString()}</Text>
-                  </View>
-                  <View className="flex justify-between">
-                    <Text>预约地址</Text>
-                    <Text>{item.booking?.address || '-'}</Text>
-                  </View>
-                  <View className="flex justify-between">
-                    <Text>提交时间</Text>
-                    <Text>{formatServerDateTime(item.createdAt)}</Text>
-                  </View>
-                  {item.adminNotes ? (
-                    <View className="text-sm text-gray-500">审核备注：{item.adminNotes}</View>
-                  ) : null}
-                </View>
-              </Card>
+              <View key={item.id} style={cellCardStyle}>
+                <NotificationInboxCell
+                  title={item.project?.name || item.booking?.address || `退款申请 #${item.id}`}
+                  summary={getRefundSummary(item)}
+                  timeLabel={formatServerDateTime(item.createdAt)}
+                  statusLabel={getAmountLabel(item)}
+                  statusTone={getRefundStatusTone(item.status)}
+                  typeBadge={
+                    <View style={badgeRowStyle}>
+                      <Tag variant={statusMeta.variant}>{statusMeta.label}</Tag>
+                      <Tag variant="default">{getRefundTypeLabel(item.refundType)}</Tag>
+                    </View>
+                  }
+                />
+              </View>
             );
           })}
           {loadingMore ? <View className="p-md text-center text-gray-400 text-sm">加载中...</View> : null}
           {!hasMore ? <View className="p-md text-center text-gray-400 text-sm">没有更多了</View> : null}
         </View>
       )}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

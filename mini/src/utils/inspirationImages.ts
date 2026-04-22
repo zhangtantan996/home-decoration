@@ -1,3 +1,5 @@
+import { parseAbsoluteUrl, replaceAbsoluteUrlOrigin } from '@/utils/url';
+
 const API_BASE = (process.env.TARO_APP_API_BASE || 'http://127.0.0.1:8080/api/v1').trim();
 
 export const DEFAULT_INSPIRATION_IMAGE_PATH = '/static/inspiration/default-cover.png';
@@ -52,19 +54,17 @@ const normalizeFirstPartyAbsoluteUrl = (raw: string) => {
     return value;
   }
 
-  try {
-    const assetBaseUrl = new URL(getAssetBaseUrl());
-    const targetUrl = new URL(value);
-    if (targetUrl.hostname !== assetBaseUrl.hostname) {
-      return value;
-    }
-
-    targetUrl.protocol = assetBaseUrl.protocol;
-    targetUrl.host = assetBaseUrl.host;
-    return targetUrl.toString();
-  } catch {
+  const assetBaseUrl = parseAbsoluteUrl(getAssetBaseUrl());
+  const targetUrl = parseAbsoluteUrl(value);
+  if (!assetBaseUrl || !targetUrl) {
     return value;
   }
+
+  if (targetUrl.hostname !== assetBaseUrl.hostname) {
+    return value;
+  }
+
+  return replaceAbsoluteUrlOrigin(value, getAssetBaseUrl());
 };
 
 const isKnownUnstableImageUrl = (raw: string) => {

@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, Text, View } from '@tarojs/components';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Image, ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactGrid } from '@/components/NotificationFactGrid';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import {
@@ -13,7 +17,7 @@ import {
   type ProjectCompletionDetail,
 } from '@/services/projects';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDateTime } from '@/utils/serverTime';
 
 const readStageText = (stage?: string) => {
@@ -34,7 +38,6 @@ const ProjectCompletionPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -42,7 +45,7 @@ const ProjectCompletionPage: React.FC = () => {
     }
   });
 
-  const fetchDetail = async () => {
+  const fetchDetail = useCallback(async () => {
     if (!projectId) {
       setDetail(null);
       setLoading(false);
@@ -58,11 +61,11 @@ const ProjectCompletionPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
 
   useEffect(() => {
     void fetchDetail();
-  }, [projectId]);
+  }, [fetchDetail]);
 
   const handleReject = () => {
     if (!detail || submitting) {
@@ -105,9 +108,7 @@ const ProjectCompletionPage: React.FC = () => {
       setSubmitting(true);
       setMessage('');
       const result = await approveProjectCompletion(projectId);
-      const tip = result.auditId
-        ? `验收通过，已生成案例草稿 #${result.auditId}`
-        : '验收通过';
+      const tip = result.auditId ? `已生成案例草稿 #${result.auditId}` : '验收通过';
       Taro.showToast({ title: '验收通过', icon: 'success' });
       setMessage(tip);
       await fetchDetail();
@@ -121,16 +122,16 @@ const ProjectCompletionPage: React.FC = () => {
   if (loading) {
     return (
       <View className="p-md bg-gray-50 min-h-screen">
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={180} />
+        <Skeleton height={180} className="mb-md" />
+        <Skeleton height={180} className="mb-md" />
+        <Skeleton height={220} />
       </View>
     );
   }
 
   if (!detail) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen" style={pageBottomStyle}>
+      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
         <Empty
           description="当前项目暂无完工审批记录"
           action={{
@@ -138,136 +139,138 @@ const ProjectCompletionPage: React.FC = () => {
             onClick: () => Taro.redirectTo({ url: `/pages/projects/detail/index?id=${projectId}` }),
           }}
         />
-      </View>
+      </NotificationSurfaceShell>
     );
   }
 
   const canApprove = Boolean(detail.availableActions?.includes('approve_completion'));
   const canReject = Boolean(detail.availableActions?.includes('reject_completion'));
   const canReview = canApprove || canReject;
+  const stageText = readStageText(detail.businessStage);
+  const closure = detail.closureSummary;
+  const photos = detail.completedPhotos || [];
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-sm flex justify-between items-center">
-          <View>
-            <View className="text-lg font-bold mb-xs">完工审批</View>
-            <View className="text-sm text-gray-500">项目 #{projectId}</View>
+        <Card className="notification-surface-card" extra={<Tag variant={canReview ? 'warning' : 'default'}>{canReview ? '待验收' : '已归档'}</Tag>}>
+          <View style={{ display: 'flex', flexDirection: 'column', gap: '20rpx' }}>
+            <View>
+              <Text style={{ display: 'block', fontSize: '22rpx', color: '#8E8E93' }}>完工验收</Text>
+              <Text style={{ display: 'block', marginTop: '12rpx', fontSize: '36rpx', lineHeight: 1.22, fontWeight: 700, color: '#0F172A' }}>
+                {canReview ? '待验收' : '已归档'}
+              </Text>
+              <Text style={{ display: 'block', marginTop: '10rpx', fontSize: '24rpx', lineHeight: 1.5, color: '#64748B' }}>
+                {stageText} · 项目 #{projectId}
+              </Text>
+            </View>
+            <NotificationFactGrid
+              items={[
+                { label: '提交时间', value: formatServerDateTime(detail.completionSubmittedAt, '待提交') },
+                { label: '照片数量', value: `${photos.length} 张`, emphasis: photos.length > 0 },
+                { label: '归档状态', value: closure?.archiveStatus || '待同步' },
+                { label: '结算状态', value: closure?.settlementStatus || '待同步' },
+                { label: '案例草稿', value: detail.inspirationCaseDraftId ? `#${detail.inspirationCaseDraftId}` : '待生成', full: true },
+              ]}
+            />
           </View>
-          <Tag variant={canReview ? 'warning' : 'default'}>{canReview ? '待处理' : '已归档'}</Tag>
-        </View>
+        </Card>
 
         {message ? (
-          <View className="bg-white p-md mb-sm">
-            <Text className="text-sm text-brand">{message}</Text>
-          </View>
-        ) : null}
-
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">审批摘要</View>
-          <View className="space-y-sm text-sm text-gray-700">
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">当前阶段</Text>
-              <Text>{readStageText(detail.businessStage)}</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">提交时间</Text>
-              <Text>{formatServerDateTime(detail.completionSubmittedAt, '待提交')}</Text>
-            </View>
-            <View className="flex justify-between py-xs border-b border-gray-100">
-              <Text className="text-gray-500">驳回时间</Text>
-              <Text>{formatServerDateTime(detail.completionRejectedAt, '无')}</Text>
-            </View>
-            <View className="flex justify-between py-xs">
-              <Text className="text-gray-500">案例草稿</Text>
-              <Text>{detail.inspirationCaseDraftId ? `#${detail.inspirationCaseDraftId}` : '待生成'}</Text>
-            </View>
-          </View>
-          {detail.flowSummary ? (
-            <View className="text-sm text-gray-500 mt-md">{detail.flowSummary}</View>
-          ) : null}
-        </View>
-
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">完工说明</View>
-          <Text className="text-sm text-gray-700 leading-relaxed">{detail.completionNotes || '暂无完工说明'}</Text>
-        </View>
-
-        {detail.closureSummary ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">归档与资金收口</View>
-            <View className="space-y-sm text-sm text-gray-700">
-              <View className="flex justify-between py-xs border-b border-gray-100">
-                <Text className="text-gray-500">资料归档</Text>
-                <Text>{detail.closureSummary.archiveStatus || '待同步'}</Text>
-              </View>
-              <View className="flex justify-between py-xs border-b border-gray-100">
-                <Text className="text-gray-500">结算状态</Text>
-                <Text>{detail.closureSummary.settlementStatus || '待同步'}</Text>
-              </View>
-              <View className="flex justify-between py-xs border-b border-gray-100">
-                <Text className="text-gray-500">出款状态</Text>
-                <Text>{detail.closureSummary.payoutStatus || '待同步'}</Text>
-              </View>
-              <Text className="text-sm text-gray-500">{detail.closureSummary.nextPendingAction || '待后续资金链继续推进'}</Text>
-            </View>
-          </View>
+          <Card className="notification-surface-card" title="处理结果">
+            <Text className="notification-section-row__note" style={{ marginTop: 0, color: '#0F172A' }}>
+              {message}
+            </Text>
+          </Card>
         ) : null}
 
         {detail.completionRejectionReason ? (
-          <View className="bg-white p-md mb-sm">
-            <View className="font-bold mb-md text-base">最近一次驳回原因</View>
-            <Text className="text-sm text-red-500 leading-relaxed">{detail.completionRejectionReason}</Text>
-          </View>
+          <Card className="notification-surface-card" title="最近一次驳回原因">
+            <Text className="notification-section-row__note is-danger" style={{ marginTop: 0 }}>
+              {detail.completionRejectionReason}
+            </Text>
+          </Card>
         ) : null}
 
-        <View className="bg-white p-md mb-xl">
-          <View className="font-bold mb-md text-base">完工照片</View>
-          {(detail.completedPhotos || []).length === 0 ? (
+        <Card className="notification-surface-card" title="验收记录">
+          <View className="notification-section-list">
+            <View className="notification-section-row">
+              <View className="notification-section-row__head">
+                <Text className="notification-section-row__title">提交时间</Text>
+                <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                  {formatServerDateTime(detail.completionSubmittedAt, '待提交')}
+                </Text>
+              </View>
+            </View>
+            <View className="notification-section-row">
+              <View className="notification-section-row__head">
+                <Text className="notification-section-row__title">驳回时间</Text>
+                <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                  {formatServerDateTime(detail.completionRejectedAt, '无')}
+                </Text>
+              </View>
+            </View>
+            <View className="notification-section-row">
+              <View className="notification-section-row__head">
+                <Text className="notification-section-row__title">归档状态</Text>
+                <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                  {closure?.archiveStatus || '待同步'}
+                </Text>
+              </View>
+            </View>
+            <View className="notification-section-row">
+              <View className="notification-section-row__head">
+                <Text className="notification-section-row__title">后续动作</Text>
+              </View>
+              <Text className="notification-section-row__note">{closure?.nextPendingAction || '暂无额外待处理事项'}</Text>
+            </View>
+          </View>
+        </Card>
+
+        <Card
+          className="notification-surface-card"
+          title="完工照片"
+          extra={<Text style={{ fontSize: '22rpx', color: '#8E8E93' }}>{photos.length} 张</Text>}
+        >
+          {photos.length === 0 ? (
             <View className="text-sm text-gray-500">暂未上传完工照片</View>
           ) : (
-            <View className="space-y-sm">
-              {(detail.completedPhotos || []).map((photo, index) => (
-                <View key={`${photo}-${index}`} className="border border-gray-100 rounded-lg overflow-hidden">
-                  <Text
-                    className="text-sm text-brand break-all p-sm"
+            <View style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14rpx' }}>
+              {photos.map((photo, index) => (
+                <View key={`${photo}-${index}`} style={{ display: 'flex', flexDirection: 'column', gap: '8rpx' }}>
+                  <Image
+                    src={photo}
+                    mode="aspectFill"
+                    style={{ width: '100%', height: '220rpx', borderRadius: '22rpx', background: '#F3F4F6' }}
                     onClick={() => {
-                      Taro.previewImage({
-                        current: photo,
-                        urls: detail.completedPhotos || [],
-                      });
+                      Taro.previewImage({ current: photo, urls: photos });
                     }}
-                  >
-                    查看图片 {index + 1}
-                  </Text>
+                  />
+                  <Text style={{ fontSize: '22rpx', color: '#8E8E93' }}>完工照片 {index + 1}</Text>
                 </View>
               ))}
             </View>
           )}
-        </View>
+        </Card>
       </ScrollView>
 
       {canReview ? (
-        <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
-          <Button variant="secondary" className="flex-1" disabled={submitting || !canReject} onClick={handleReject}>
+        <NotificationActionBar>
+          <Button variant="secondary" disabled={submitting || !canReject} onClick={handleReject}>
             驳回整改
           </Button>
-          <Button variant="primary" className="flex-1" disabled={submitting || !canApprove} loading={submitting} onClick={handleApprove}>
+          <Button variant="primary" disabled={submitting || !canApprove} loading={submitting} onClick={handleApprove}>
             验收通过
           </Button>
-        </View>
+        </NotificationActionBar>
       ) : (
-        <View className="shadow-top" style={fixedBottomBarStyle}>
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={() => Taro.redirectTo({ url: `/pages/projects/detail/index?id=${projectId}` })}
-          >
+        <NotificationActionBar single>
+          <Button variant="outline" onClick={() => Taro.redirectTo({ url: `/pages/projects/detail/index?id=${projectId}` })}>
             返回项目详情
           </Button>
-        </View>
+        </NotificationActionBar>
       )}
-    </View>
+    </NotificationSurfaceShell>
   );
 };
 

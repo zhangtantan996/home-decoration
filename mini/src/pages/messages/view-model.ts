@@ -1,9 +1,6 @@
+import type { IconName } from '@/components/Icon';
 import type { NotificationItem } from '@/services/notifications';
-import {
-  formatServerDateTime,
-  getServerDateParts,
-  getServerTimeMs,
-} from '@/utils/serverTime';
+import { formatServerRelativeTime, getServerTimeMs } from '@/utils/serverTime';
 import { resolveMiniNotificationRoute } from '@/utils/notificationActionRoute';
 
 export type NotificationFilterKey = 'all' | 'project' | 'payment' | 'system';
@@ -22,10 +19,13 @@ export interface NotificationCardViewModel {
   content: string;
   typeTone: NotificationTone;
   typeLabel: string;
+  iconName: IconName;
+  visualTone: 'orange' | 'green' | 'blue' | 'gray';
   isRead: boolean;
   timeLabel: string;
   canNavigate: boolean;
   actionText: string;
+  actionTone: 'project' | 'payment' | 'system' | 'neutral';
   actionStatus: 'none' | 'pending' | 'processed' | 'expired';
   statusLabel: string;
   statusTone: 'neutral' | 'brand' | 'danger' | 'success';
@@ -35,7 +35,7 @@ export interface NotificationCardViewModel {
 
 export interface NotificationSectionViewModel {
   key: string;
-  title: string;
+  title: '待处理' | '最近更新' | '更早';
   items: NotificationCardViewModel[];
 }
 
@@ -46,149 +46,102 @@ const FILTER_LABELS: Record<NotificationFilterKey, string> = {
   system: '系统',
 };
 
-const readTypeLabel = (item: NotificationItem, tone: NotificationTone) => {
-  const value = String(item.typeLabel || '').trim();
-  if (value) {
-    return value;
-  }
-  return FILTER_LABELS[tone];
-};
-
 const resolveNotificationTone = (item: NotificationItem): NotificationTone => {
-  if (item.category === 'project') {
-    return 'project';
-  }
-  if (item.category === 'payment') {
-    return 'payment';
-  }
-  if (item.category === 'system') {
-    return 'system';
+  if (item.category === 'project' || item.category === 'payment' || item.category === 'system') {
+    return item.category;
   }
 
   const haystack = [item.type, item.title, item.content, item.actionUrl]
     .map((value) => String(value || '').toLowerCase())
     .join(' ');
 
-  if (/(project|项目|预约|booking|量房|沟通|设计|阶段|施工|验收|进度|milestone|phase|quote|deliverable|contract|bridge|桥接|planned[_ -]?start|monitor|supervision|监理|audit|仲裁|争议|complaint|投诉|change[_ -]?order|变更)/.test(haystack)) {
+  if (/(project|项目|预约|booking|量房|设计|施工|验收|进度|milestone|phase|quote|deliverable|contract|bridge|桥接|monitor|supervision|投诉|change|变更|proposal|方案)/.test(haystack)) {
     return 'project';
   }
 
-  if (/(order|订单|payment|支付|deposit|plan|账单|expire|失效|refund|退款|withdraw|提现|settlement|结算|payout|出款)/.test(haystack)) {
+  if (/(order|订单|payment|支付|deposit|账单|expire|失效|refund|退款|withdraw|settlement|结算|payout|出款)/.test(haystack)) {
     return 'payment';
   }
 
   return 'system';
 };
 
-const readActionText = (item: NotificationItem, canNavigate: boolean) => {
-  if (item.actionStatus === 'processed') {
-    return '';
+const readTypeLabel = (item: NotificationItem, tone: NotificationTone) => {
+  const value = String(item.typeLabel || '').trim();
+  return value || FILTER_LABELS[tone];
+};
+
+const resolveNotificationIcon = (item: NotificationItem, tone: NotificationTone): IconName => {
+  const haystack = [item.type, item.title, item.content, item.actionUrl, item.typeLabel]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+
+  if (/(合同|contract|方案|proposal|交付|deliverable|设计)/.test(haystack)) {
+    return 'identity';
   }
-  if (item.actionStatus === 'expired') {
-    return '';
+  if (/(退款|payment|支付|订单|deposit|settlement|结算)/.test(haystack)) {
+    return 'orders';
   }
-  if (item.actionRequired && item.actionLabel) {
-    return item.actionLabel;
+  if (/(进度|施工|验收|量房|project|booking|site)/.test(haystack)) {
+    return 'progress';
   }
-  if (item.actionLabel) {
-    return item.actionLabel;
+  if (tone === 'payment') {
+    return 'orders';
   }
-  return canNavigate ? '查看详情' : '';
+  if (tone === 'project') {
+    return 'progress';
+  }
+  return 'notification';
+};
+
+const resolveNotificationVisualTone = (item: NotificationItem): 'orange' | 'green' | 'blue' | 'gray' => {
+  const haystack = [item.type, item.title, item.content, item.actionUrl, item.typeLabel]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+
+  if (/(报价|quote|待确认|待处理|变更|change|即将过期|过期)/.test(haystack)) {
+    return 'orange';
+  }
+  if (/(已完成|accepted|paid|已支付|交付|deliverable|方案)/.test(haystack)) {
+    return 'green';
+  }
+  if (/(支付|payment|订单|退款|预约|项目|施工|量房|project|booking)/.test(haystack)) {
+    return 'blue';
+  }
+  return 'gray';
 };
 
 const resolveStatusMeta = (item: NotificationItem) => {
   if (item.actionStatus === 'processed') {
-    return {
-      label: '已处理',
-      tone: 'success' as const,
-      actionable: false,
-    };
+    return { label: '已处理', tone: 'success' as const, actionable: false };
   }
-
   if (item.actionStatus === 'expired') {
-    return {
-      label: '已过期',
-      tone: 'neutral' as const,
-      actionable: false,
-    };
+    return { label: '已过期', tone: 'danger' as const, actionable: false };
   }
-
-  if (item.priority === 'urgent') {
-    return {
-      label: '紧急处理',
-      tone: 'danger' as const,
-      actionable: true,
-    };
-  }
-
   if (item.actionRequired || item.actionStatus === 'pending') {
-    return {
-      label: '待处理',
-      tone: 'brand' as const,
-      actionable: true,
-    };
+    return { label: '待处理', tone: 'brand' as const, actionable: true };
   }
-
-  return {
-    label: item.isRead ? '已读' : '新通知',
-    tone: 'neutral' as const,
-    actionable: false,
-  };
+  if (item.kind === 'risk') {
+    return { label: '需关注', tone: 'danger' as const, actionable: Boolean(item.actionLabel) };
+  }
+  if (item.kind === 'result') {
+    return { label: '有结果', tone: 'success' as const, actionable: Boolean(item.actionLabel) };
+  }
+  return { label: '已更新', tone: 'neutral' as const, actionable: Boolean(item.actionLabel) };
 };
 
-const buildSectionKey = (value?: string) => {
-  const parts = getServerDateParts(value);
-  if (!parts) {
-    return 'earlier';
+const readActionText = (item: NotificationItem, canNavigate: boolean) => {
+  if (item.actionStatus === 'processed' || item.actionStatus === 'expired') {
+    return '';
   }
-  return `${parts.year}-${parts.month}-${parts.day}`;
-};
-
-const buildSectionMeta = (value?: string) => {
-  const nowParts = getServerDateParts(Date.now());
-  const targetParts = getServerDateParts(value);
-
-  if (!nowParts || !targetParts) {
-    return { key: 'earlier', title: '更早' };
+  const actionLabel = String(item.actionLabel || '').trim();
+  if (actionLabel) {
+    return actionLabel;
   }
-
-  const now = new Date(nowParts.year, nowParts.month - 1, nowParts.day).getTime();
-  const target = new Date(targetParts.year, targetParts.month - 1, targetParts.day).getTime();
-  const diffDays = Math.floor((now - target) / (24 * 60 * 60 * 1000));
-
-  if (diffDays <= 0) {
-    return { key: buildSectionKey(value), title: '今天' };
+  if (item.actionRequired) {
+    return canNavigate ? '立即处理' : '';
   }
-  if (diffDays === 1) {
-    return { key: buildSectionKey(value), title: '昨天' };
-  }
-  if (diffDays <= 7) {
-    return { key: 'recent', title: '最近 7 天' };
-  }
-  return { key: 'earlier', title: '更早' };
-};
-
-const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
-  const typeTone = resolveNotificationTone(item);
-  const miniRoute = resolveMiniNotificationRoute(item.actionUrl);
-  const statusMeta = resolveStatusMeta(item);
-  return {
-    id: item.id,
-    raw: item,
-    title: item.title || '未命名通知',
-    content: item.content || '暂无更多说明',
-    typeTone,
-    typeLabel: readTypeLabel(item, typeTone),
-    isRead: Boolean(item.isRead),
-    timeLabel: formatServerDateTime(item.createdAt, '--'),
-    canNavigate: Boolean(miniRoute),
-    actionText: readActionText(item, Boolean(miniRoute)),
-    actionStatus: item.actionStatus || 'none',
-    statusLabel: statusMeta.label,
-    statusTone: statusMeta.tone,
-    isActionable: statusMeta.actionable,
-    priority: item.priority || 'normal',
-  };
+  return canNavigate ? '查看' : '';
 };
 
 const sortNotifications = (items: NotificationItem[]) => {
@@ -212,6 +165,50 @@ const isPendingNotification = (item: NotificationItem) => {
     return false;
   }
   return Boolean(item.actionRequired) || item.actionStatus === 'pending' || item.priority === 'urgent';
+};
+
+const isRecentNotification = (item: NotificationItem) => {
+  const createdAt = getServerTimeMs(item.createdAt);
+  if (createdAt <= 0) {
+    return false;
+  }
+  const diff = Date.now() - createdAt;
+  return diff <= 7 * 24 * 60 * 60 * 1000;
+};
+
+const toCardViewModel = (item: NotificationItem): NotificationCardViewModel => {
+  const typeTone = resolveNotificationTone(item);
+  const canNavigate = Boolean(resolveMiniNotificationRoute(item.actionUrl));
+  const statusMeta = resolveStatusMeta(item);
+  const actionTone =
+    item.actionStatus === 'processed' || item.actionStatus === 'expired'
+      ? 'neutral'
+      : typeTone === 'payment'
+        ? 'payment'
+        : typeTone === 'project'
+          ? 'project'
+          : 'system';
+
+  return {
+    id: item.id,
+    raw: item,
+    title: item.title || '未命名通知',
+    content: item.content || '暂无更多说明',
+    typeTone,
+    typeLabel: readTypeLabel(item, typeTone),
+    iconName: resolveNotificationIcon(item, typeTone),
+    visualTone: resolveNotificationVisualTone(item),
+    isRead: Boolean(item.isRead),
+    timeLabel: formatServerRelativeTime(item.createdAt, '--'),
+    canNavigate,
+    actionText: readActionText(item, canNavigate),
+    actionTone,
+    actionStatus: item.actionStatus || 'none',
+    statusLabel: statusMeta.label,
+    statusTone: statusMeta.tone,
+    isActionable: statusMeta.actionable,
+    priority: item.priority || 'normal',
+  };
 };
 
 export const buildNotificationFilters = (
@@ -245,7 +242,7 @@ export const buildNotificationSections = (
       ? sorted
       : sorted.filter((item) => resolveNotificationTone(item) === activeFilter);
 
-  const pendingItems = filtered
+  const pending = filtered
     .filter(isPendingNotification)
     .sort((left, right) => {
       const priorityDiff = getPriorityWeight(right) - getPriorityWeight(left);
@@ -253,43 +250,16 @@ export const buildNotificationSections = (
         return priorityDiff;
       }
       return getServerTimeMs(right.createdAt) - getServerTimeMs(left.createdAt);
-    });
+    })
+    .map(toCardViewModel);
 
-  const regularItems = filtered.filter((item) => !isPendingNotification(item));
-  const recentItems = regularItems.filter((item) => {
-    const sectionMeta = buildSectionMeta(item.createdAt);
-    return sectionMeta.key !== 'earlier';
-  });
-  const earlierItems = regularItems.filter((item) => {
-    const sectionMeta = buildSectionMeta(item.createdAt);
-    return sectionMeta.key === 'earlier';
-  });
+  const regular = filtered.filter((item) => !isPendingNotification(item));
+  const recent = regular.filter(isRecentNotification).map(toCardViewModel);
+  const earlier = regular.filter((item) => !isRecentNotification(item)).map(toCardViewModel);
 
-  const sections: NotificationSectionViewModel[] = [];
-
-  if (pendingItems.length > 0) {
-    sections.push({
-      key: 'pending',
-      title: '待处理',
-      items: pendingItems.map(toCardViewModel),
-    });
-  }
-
-  if (recentItems.length > 0) {
-    sections.push({
-      key: 'recent',
-      title: '最近更新',
-      items: recentItems.map(toCardViewModel),
-    });
-  }
-
-  if (earlierItems.length > 0) {
-    sections.push({
-      key: 'earlier',
-      title: '更早',
-      items: earlierItems.map(toCardViewModel),
-    });
-  }
-
-  return sections;
+  return [
+    pending.length > 0 ? { key: 'pending', title: '待处理' as const, items: pending } : null,
+    recent.length > 0 ? { key: 'recent', title: '最近更新' as const, items: recent } : null,
+    earlier.length > 0 ? { key: 'earlier', title: '更早' as const, items: earlier } : null,
+  ].filter(Boolean) as NotificationSectionViewModel[];
 };

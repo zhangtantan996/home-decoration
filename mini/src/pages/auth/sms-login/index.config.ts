@@ -1,5 +1,5 @@
 export default definePageConfig({
   navigationStyle: 'custom',
-  navigationBarTitleText: '预约详情',
+  navigationBarTitleText: '登录',
   backgroundColor: '#FFFFFF',
 });
