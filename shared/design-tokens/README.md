@@ -1,31 +1,67 @@
 # Design Tokens
 
-This directory contains the shared design tokens for the home-decoration project. These tokens serve as the single source of truth for UI constants across different platforms, currently focusing on the mobile application.
+`shared/design-tokens/tokens.json` is the single source of truth for visual constants across all frontend surfaces.
 
-## Source of Truth
-- `tokens.json`: The primary definition file for colors, spacing, radii, and typography.
+## Generate
 
-## Generation
-Tokens are transformed into platform-specific formats using generation scripts.
+```bash
+npm run gen:tokens
+```
 
-- **Command**: `npm run gen:tokens`
-- **Script**: `shared/design-tokens/scripts/generate-rn.js`
+Scoped generation is also supported:
+
+```bash
+node shared/design-tokens/scripts/generate-platforms.mjs --scope web
+node shared/design-tokens/scripts/generate-platforms.mjs --scope website
+node shared/design-tokens/scripts/generate-platforms.mjs --scope mini
+node shared/design-tokens/scripts/generate-platforms.mjs --scope mobile
+node shared/design-tokens/scripts/generate-platforms.mjs --scope admin
+node shared/design-tokens/scripts/generate-platforms.mjs --scope merchant
+```
 
 ## Outputs
-Running the generation command updates the following files in the mobile project:
-- `mobile/src/theme/tokens.ts`: Standard TypeScript tokens for styling.
-- `mobile/src/theme/tokens.raw.ts`: Raw string values (primarily for animations).
 
-## Usage Example
+- `admin/src/styles/theme.ts`
+- `merchant/src/styles/theme.ts`
+- `merchant/src/constants/merchantTheme.ts`
+- `web/src/app/tokens.css`
+- `website/styles/tokens.css`
+- `mini/src/theme/tokens.ts`
+- `mini/src/theme/tokens.scss`
+- `mobile/src/theme/tokens.ts`
+- `mobile/src/theme/tokens.raw.ts`
+
+Do not edit generated files directly. Change `tokens.json`, regenerate, then run the scoped frontend style guard.
+
+## Usage
+
+Web and website:
+
+```css
+.panel {
+  color: var(--color-primary);
+  border-radius: var(--radius-md);
+}
+```
+
+Mini:
+
+```scss
+@import "../../theme/tokens";
+
+.panel {
+  color: $color-primary;
+  padding: $spacing-md;
+}
+```
+
+Mobile:
+
 ```typescript
 import { colors, spacing } from '../theme/tokens';
 
 const style = {
-  backgroundColor: colors.brand,
+  backgroundColor: colors.bgCard,
   padding: spacing.md,
 };
 ```
-
-## Rules
-- **Do not edit generated files manually.** Any changes made directly to `mobile/src/theme/tokens.ts` or `mobile/src/theme/tokens.raw.ts` will be overwritten.
-- Always modify `tokens.json` first, then run the generation script to propagate changes.

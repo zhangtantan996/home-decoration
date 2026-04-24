@@ -1,3 +1,9 @@
+/**
+ * Web CSS design tokens
+ * Auto-generated from shared/design-tokens/tokens.json.
+ * Do not edit manually.
+ */
+
 :root {
   --color-brand: #041627;
   --color-brand-strong: #11263C;

@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, Table, Tag, Button, message, Modal, Descriptions, Timeline, Statistic, Row, Col } from 'antd'
-import { DollarOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
-import api from '@/services/api'
-import { useAuthStore } from '@/stores/authStore'
+import { CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import api from '../../services/api'
 
 interface Milestone {
   id: number
@@ -34,7 +33,6 @@ export default function MerchantMilestonePayments() {
   const [milestones, setMilestones] = useState<MilestoneWithProject[]>([])
   const [selectedMilestone, setSelectedMilestone] = useState<MilestoneWithProject | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
-  const { user } = useAuthStore()
 
   useEffect(() => {
     loadMilestones()
