@@ -187,6 +187,7 @@ release_apply_known_migrations() {
     "server/migrations/v1.14.3_add_admin_payment_order_menu.sql"
     "server/migrations/v1.14.4_reconcile_contract_runtime_schema.sql"
     "server/migrations/v1.14.5_add_reconciliation_runtime_tables.sql"
+    "server/migrations/v1.14.6_add_booking_survey_deposit_status.sql"
   )
   local migration_file
   local latest_known_migration

@@ -214,7 +214,7 @@ var auditLogRequirements = map[string][]string{
 var commerceRuntimeRequirements = map[string][]string{
 	"providers":                  {"survey_deposit_price", "is_settled", "collected_source"},
 	"material_shops":             {"service_area", "main_brands", "main_categories", "delivery_capability", "installation_capability", "after_sales_policy", "invoice_capability", "is_settled", "collected_source", "status"},
-	"bookings":                   {"survey_deposit_source", "survey_refund_notice", "survey_deposit", "survey_deposit_paid", "survey_deposit_paid_at", "survey_deposit_converted", "survey_deposit_refunded", "survey_deposit_refund_amt", "survey_deposit_refund_at"},
+	"bookings":                   {"survey_deposit_source", "survey_refund_notice", "survey_deposit", "survey_deposit_status", "survey_deposit_paid", "survey_deposit_paid_at", "survey_deposit_converted", "survey_deposit_refunded", "survey_deposit_refund_amt", "survey_deposit_refund_at"},
 	"proposals":                  {"internal_draft_json", "preview_package_json", "delivery_package_json"},
 	"milestones":                 {"release_scheduled_at", "released_at"},
 	"projects":                   {"construction_payment_mode", "construction_quote_snapshot", "selected_quote_submission_id", "payment_paused", "payment_paused_at", "payment_paused_reason"},
