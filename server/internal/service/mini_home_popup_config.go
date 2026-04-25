@@ -65,7 +65,7 @@ func defaultMiniHomePopupConfig() MiniHomePopupConfig {
 		SecondaryAction: MiniHomePopupSecondaryAction{
 			Enabled: true,
 			Text:    "先看看服务商",
-			Path:    "/pages/providers/list/index?type=designer",
+			Path:    "/pages/home/index",
 		},
 		Frequency: MiniHomePopupFrequencyDailyOnce,
 	}

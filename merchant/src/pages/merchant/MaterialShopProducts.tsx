@@ -32,6 +32,7 @@ import { materialShopCenterApi, merchantUploadApi, type MaterialShopProduct } fr
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { buildStoredAssetFile, getStoredPathFromUploadFile, getUploadedAssetStoredPath } from '../../utils/uploadAsset';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const PRODUCT_PRICE_MAX = 999999;
 const UNIT_MAX_LENGTH = 20;
@@ -43,13 +44,7 @@ const toProductUploadFileList = (images?: string[]): UploadFile[] =>
         .map((value, index) => buildStoredAssetFile(value, `${index}-${value}`))
         .filter(Boolean) as UploadFile[];
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-    const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
-    return maybeAxiosError.response?.data?.message || maybeAxiosError.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 interface ProductFormValues {
     name: string;
@@ -460,7 +455,7 @@ const MaterialShopProducts: React.FC = () => {
                         className={sharedStyles.tableCard}
                     />
                     <div className={sharedStyles.mutedNote} style={{ marginTop: 12 }}>
-                        当前商品数：{products.length} / 20。P0 阶段先做前端筛选与分页，不改服务端查询接口。
+                        当前商品数：{products.length} / 20。可按名称、分类和状态快速筛选。
                     </div>
                 </MerchantSectionCard>
             </MerchantContentPanel>

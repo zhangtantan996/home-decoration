@@ -101,7 +101,7 @@ const HOME_POPUP_DEFAULTS: HomePopupFormValues = {
   primaryPath: "/pages/quote-inquiry/create/index",
   secondaryEnabled: true,
   secondaryText: "先看看服务商",
-  secondaryPath: "/pages/providers/list/index?type=designer",
+  secondaryPath: "/pages/home/index",
   frequency: "daily_once",
   startAt: null,
   endAt: null,
@@ -1196,7 +1196,7 @@ const SystemSettings: React.FC = () => {
             <div style={{ marginBottom: 16 }}>
               <AdminGuideHint
                 summary="当前只支持首页一个运营弹窗位"
-                description="采用固定模板，后台维护单个生效活动。保存后服务端会自动刷新活动版本号，用于小程序频控去重。"
+                description="采用固定模板，后台维护单个生效活动。保存后配置会同步生效，并避免重复触达用户。"
               />
             </div>
 
@@ -1428,7 +1428,7 @@ const SystemSettings: React.FC = () => {
                     </Col>
                     <Col span={8}>
                       <Form.Item label="次按钮跳转路径" name="secondaryPath">
-                        <Input placeholder="/pages/providers/list/index?type=designer" />
+                        <Input placeholder="/pages/home/index" />
                       </Form.Item>
                     </Col>
                   </Row>
