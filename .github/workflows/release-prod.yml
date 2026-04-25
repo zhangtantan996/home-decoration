@@ -34,6 +34,9 @@ jobs:
     timeout-minutes: 45
     env:
       USER_WEB_FIXTURE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/home_decoration?sslmode=disable
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
     outputs:
       release_tag: ${{ steps.release.outputs.tag }}
       service_scope: ${{ steps.release.outputs.service_scope }}
@@ -146,8 +149,8 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install PostgreSQL and Redis clients
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client redis-tools
 
       - name: Restore base schema/data
         env:
