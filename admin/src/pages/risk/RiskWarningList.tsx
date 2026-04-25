@@ -20,6 +20,7 @@ import {
   RISK_WARNING_STATUS_OPTIONS,
 } from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { toSafeUserFacingText } from '../../utils/userFacingText';
 
 const downloadJson = (filename: string, payload: unknown) => {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
@@ -173,6 +174,7 @@ const RiskWarningList: React.FC = () => {
       title: '描述',
       dataIndex: 'description',
       ellipsis: true,
+      render: (val?: string) => toSafeUserFacingText(val, '系统任务异常，请进入风险中心查看处理。'),
     },
     {
       title: '处理说明',

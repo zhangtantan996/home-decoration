@@ -17,6 +17,7 @@ import {
   Table,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { readSafeErrorMessage } from "../../utils/userFacingText";
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -27,7 +28,7 @@ import {
   TeamOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   adminQuoteApi,
   type AdminQuoteListDetail,
@@ -104,9 +105,9 @@ const ACTION_LABELS: Record<string, string> = {
   confirm_proposal: "确认设计方案",
   reject_proposal: "驳回设计方案",
   create_quote_task: "创建施工报价任务",
-  select_constructor: "运营干预施工方",
+  select_constructor: "项目内施工协调",
   submit_construction_quote: "跟进施工报价提交",
-  confirm_construction_quote: "运营干预施工报价",
+  confirm_construction_quote: "项目内报价干预",
   reject_construction_quote: "驳回施工报价",
   start_project: "发起开工",
   submit_milestone: "提交节点验收",
@@ -147,16 +148,7 @@ const safeJsonParse = <T,>(value?: string, fallback: T = {} as T): T => {
   }
 };
 
-const readErrorMessage = (error: unknown, fallback: string) => {
-  if (error && typeof error === "object") {
-    const candidate = error as {
-      message?: string;
-      response?: { data?: { message?: string } };
-    };
-    return candidate.response?.data?.message || candidate.message || fallback;
-  }
-  return fallback;
-};
+const readErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const quoteSourceTypeLabel = (value?: string) => {
   switch (String(value || "").toLowerCase()) {
@@ -203,9 +195,11 @@ const kickoffStatusLabel = (kickoffStatus?: string, plannedStartDate?: string) =
 
 const QuoteListManagement: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
+  const [rebuildVisible, setRebuildVisible] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [libraryVisible, setLibraryVisible] = useState(false);
   const [rows, setRows] = useState<QuoteListSummary[]>([]);
@@ -228,6 +222,13 @@ const QuoteListManagement: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [taskForm] = Form.useForm();
   const [prerequisiteForm] = Form.useForm();
+  const [rebuildForm] = Form.useForm();
+  const providerIdFilter = useMemo(() => {
+    const raw = searchParams.get("providerId");
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }, [searchParams]);
 
   const loadQuoteTasks = useCallback(async () => {
     try {
@@ -330,6 +331,29 @@ const QuoteListManagement: React.FC = () => {
     } catch (error) {
       if (error && typeof error === "object" && "errorFields" in error) return;
       message.error(readErrorMessage(error, "创建报价任务失败"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRebuildLegacy = async () => {
+    try {
+      const values = await rebuildForm.validateFields();
+      setSubmitting(true);
+      const result = await adminQuoteApi.rebuildFromLegacy({
+        legacyTaskId: Number(values.legacyTaskId),
+        quantityBaseId: values.quantityBaseId ? Number(values.quantityBaseId) : undefined,
+        templateId: values.templateId ? Number(values.templateId) : undefined,
+        title: values.title || undefined,
+      });
+      message.success(result.created ? '已重建为新报价清单' : '已返回既有重建清单');
+      setRebuildVisible(false);
+      rebuildForm.resetFields();
+      await loadQuoteTasks();
+      await openDetail(result.quoteListId);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) return;
+      message.error(readErrorMessage(error, '重建 legacy quote-pk 失败'));
     } finally {
       setSubmitting(false);
     }
@@ -474,20 +498,34 @@ const QuoteListManagement: React.FC = () => {
     }
   };
 
+  const filteredRows = useMemo(() => {
+    if (!providerIdFilter) {
+      return rows;
+    }
+    return rows.filter((item) => {
+      const candidateIds = [
+        item.awardedProviderId,
+        item.constructionSubjectId,
+        item.quoteTruthSummary?.awardedProviderId,
+      ].filter((value): value is number => Number(value || 0) > 0);
+      return candidateIds.includes(providerIdFilter);
+    });
+  }, [providerIdFilter, rows]);
+
   const stats = useMemo(() => {
-    const readyCount = rows.filter(
+    const readyCount = filteredRows.filter(
       (item) => item.status === "ready_for_selection",
     ).length;
-    const draftCount = rows.filter((item) => item.status === "draft").length;
-    const confirmedCount = rows.filter(
+    const draftCount = filteredRows.filter((item) => item.status === "draft").length;
+    const confirmedCount = filteredRows.filter(
       (item) => item.status === "user_confirmed",
     ).length;
-    const submissionTotal = rows.reduce(
+    const submissionTotal = filteredRows.reduce(
       (sum, item) => sum + item.submissionCount,
       0,
     );
     return { readyCount, draftCount, confirmedCount, submissionTotal };
-  }, [rows]);
+  }, [filteredRows]);
 
   const taskColumns: ColumnsType<QuoteListSummary> = [
     {
@@ -507,6 +545,9 @@ const QuoteListManagement: React.FC = () => {
               text={`方案 v${record.proposalVersion || "-"}`}
             />
             <InlinePill tone="muted" text={formatDateTime(record.updatedAt)} />
+            {record.sourceType === 'legacy_quote_pk_rebuild' ? (
+              <InlinePill tone="warning" text="legacy 重建" />
+            ) : null}
           </Space>
           {record.flowSummary ? (
             <span style={{ color: "#64748b", fontSize: 12 }}>
@@ -553,6 +594,18 @@ const QuoteListManagement: React.FC = () => {
       key: "invitationCount",
       width: 100,
       render: (value: number) => <InlinePill tone="accent" text={`${value}`} />,
+    },
+    {
+      title: '作业健康',
+      key: 'submissionHealth',
+      width: 260,
+      render: (_value, record) => (
+        <Space size={[4, 6]} wrap>
+          <InlinePill tone={(record.submissionHealth?.missingPriceCount || 0) > 0 ? 'danger' : 'success'} text={`缺价 ${record.submissionHealth?.missingPriceCount || 0}`} />
+          <InlinePill tone={(record.submissionHealth?.deviationItemCount || 0) > 0 ? 'warning' : 'muted'} text={`偏差 ${record.submissionHealth?.deviationItemCount || 0}`} />
+          <InlinePill tone={record.submissionHealth?.canSubmit ? 'accent' : 'warning'} text={record.submissionHealth?.canSubmit ? '可提交' : '待补齐'} />
+        </Space>
+      ),
     },
     {
       title: "报价版本",
@@ -605,7 +658,7 @@ const QuoteListManagement: React.FC = () => {
       <div className="hz-stat-grid">
         <StatCard
           title="报价任务总数"
-          value={rows.length}
+          value={filteredRows.length}
           icon={<UnorderedListOutlined />}
           tone="accent"
           footer="当前列表范围内任务数"
@@ -662,6 +715,11 @@ const QuoteListManagement: React.FC = () => {
             onClick={() => {
               setKeyword("");
               setStatusFilter(undefined);
+              if (providerIdFilter) {
+                const next = new URLSearchParams(searchParams);
+                next.delete("providerId");
+                setSearchParams(next, { replace: true });
+              }
               void loadQuoteTasks();
             }}
           >
@@ -681,15 +739,35 @@ const QuoteListManagement: React.FC = () => {
           >
             新建报价任务
           </Button>
+          <Button onClick={() => setRebuildVisible(true)}>
+            重建 legacy quote-pk
+          </Button>
         </div>
       </ToolbarCard>
+
+      {providerIdFilter ? (
+        <Alert
+          type="info"
+          showIcon
+          message={`当前仅查看施工主体 #${providerIdFilter} 相关的报价清单；如需恢复全量视图，可清除筛选。`}
+          action={(
+            <Button type="link" onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete("providerId");
+              setSearchParams(next, { replace: true });
+            }}>
+              清除筛选
+            </Button>
+          )}
+        />
+      ) : null}
 
       <Card className="hz-table-card">
         <Table
           rowKey="id"
           loading={loading}
           columns={taskColumns}
-          dataSource={rows}
+          dataSource={filteredRows}
           pagination={{ pageSize: 10, showSizeChanger: false }}
           scroll={{ x: 1280 }}
         />
@@ -763,6 +841,44 @@ const QuoteListManagement: React.FC = () => {
           </Space>
           <Form.Item name="deadlineAt" label="截止时间">
             <DatePicker showTime style={{ width: "100%" }} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="重建 legacy quote-pk"
+        open={rebuildVisible}
+        onCancel={() => setRebuildVisible(false)}
+        onOk={() => void handleRebuildLegacy()}
+        confirmLoading={submitting}
+        destroyOnClose
+        width={640}
+      >
+        <Form form={rebuildForm} layout="vertical">
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="只重建为新的 QuoteList 草稿"
+            description="不会迁移旧 PK 报价结果，不会自动选中旧报价，也不会覆盖现有项目数据。"
+          />
+          <Form.Item
+            name="legacyTaskId"
+            label="legacyTaskId"
+            rules={[{ required: true, message: '请填写 legacy 任务 ID' }]}
+          >
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Space style={{ width: '100%' }} size={16} align="start">
+            <Form.Item name="quantityBaseId" label="quantityBaseId" style={{ flex: 1 }}>
+              <InputNumber min={1} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="templateId" label="templateId" style={{ flex: 1 }}>
+              <InputNumber min={1} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="title" label="新标题">
+            <Input placeholder="可选，不填则自动使用 legacy quote-pk 重建标题" />
           </Form.Item>
         </Form>
       </Modal>
@@ -974,6 +1090,37 @@ const QuoteListManagement: React.FC = () => {
                   message="用户端桥接解释预览"
                   description={detail.bridgeConversionSummary.bridgeNextStep.reason}
                 />
+              ) : null}
+              {(detail.quoteTruthSummary || detail.submissionHealth || detail.changeOrderSummary || detail.settlementSummary || detail.payoutSummary) ? (
+                <Descriptions bordered column={3} size="small" style={{ marginTop: 16 }}>
+                  <Descriptions.Item label="成交总额">
+                    {detail.quoteTruthSummary?.totalCent ? `¥${(detail.quoteTruthSummary.totalCent / 100).toFixed(2)}` : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="预计工期">
+                    {detail.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="版本链">
+                    第 {detail.submissionHealth?.lastRevisionNo || detail.quoteTruthSummary?.revisionCount || 0} 版
+                  </Descriptions.Item>
+                  <Descriptions.Item label="缺价项">
+                    {detail.submissionHealth?.missingPriceCount || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="偏差项">
+                    {detail.submissionHealth?.deviationItemCount || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="平台复核">
+                    {detail.submissionHealth?.platformReviewStatus || '待同步'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="变更待结算">
+                    {detail.changeOrderSummary?.pendingSettlementCount || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="结算状态">
+                    {detail.settlementSummary?.status || '待同步'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="出款状态">
+                    {detail.payoutSummary?.status || '待同步'}
+                  </Descriptions.Item>
+                </Descriptions>
               ) : null}
             </Card>
 

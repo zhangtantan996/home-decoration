@@ -23,6 +23,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import { usePermission } from '../../hooks/usePermission';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 import {
   adminOrderCenterApi,
   type AdminBusinessFlowAction,
@@ -69,6 +70,27 @@ const PAYMENT_PLAN_OPTIONS = [
   { label: '已支付', value: 'paid' },
   { label: '已逾期', value: 'overdue' },
   { label: '无分期', value: 'none' },
+];
+
+const SETTLEMENT_OPTIONS = [
+  { label: '全部结算', value: undefined },
+  { label: '待结算排期', value: 'scheduled' },
+  { label: '出款处理中', value: 'payout_processing' },
+  { label: '已结算', value: 'paid' },
+  { label: '退款冻结', value: 'refund_frozen' },
+  { label: '已退款', value: 'refunded' },
+  { label: '出款失败', value: 'payout_failed' },
+  { label: '结算异常', value: 'exception' },
+  { label: '无结算单', value: 'none' },
+];
+
+const PAYOUT_OPTIONS = [
+  { label: '全部出款', value: undefined },
+  { label: '已创建', value: 'created' },
+  { label: '出款中', value: 'processing' },
+  { label: '已出款', value: 'paid' },
+  { label: '出款失败', value: 'failed' },
+  { label: '无出款单', value: 'none' },
 ];
 
 const RISK_OPTIONS = [
@@ -123,6 +145,14 @@ const STATUS_LABELS: Record<string, { text: string; color: string }> = {
   refund_pending: { text: '待退款', color: 'warning' },
   warning_open: { text: '预警中', color: 'warning' },
   audit_open: { text: '审计中', color: 'processing' },
+  scheduled: { text: '待排结算', color: 'warning' },
+  payout_processing: { text: '出款处理中', color: 'processing' },
+  refund_frozen: { text: '退款冻结', color: 'warning' },
+  payout_failed: { text: '出款失败', color: 'error' },
+  exception: { text: '异常', color: 'error' },
+  created: { text: '已创建', color: 'default' },
+  processing: { text: '处理中', color: 'processing' },
+  failed: { text: '失败', color: 'error' },
 };
 
 const PROJECT_STATUS_LABELS: Record<string, string> = {
@@ -150,16 +180,7 @@ const CHANGE_ORDER_STATUS_META: Record<string, { text: string; color: string }> 
   cancelled: { text: '已取消', color: 'default' },
 };
 
-const readErrorMessage = (error: unknown, fallback: string) => {
-  if (error && typeof error === 'object') {
-    const candidate = error as {
-      message?: string;
-      response?: { data?: { message?: string } };
-    };
-    return candidate.response?.data?.message || candidate.message || fallback;
-  }
-  return fallback;
-};
+const readErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const formatDateTime = (value?: string) => (value ? formatServerDateTime(value) : '-');
 const formatMoney = (value?: number) => `¥${Number(value || 0).toLocaleString()}`;
@@ -171,6 +192,10 @@ const statusTag = (status?: string | number, labels: Record<string, { text: stri
 };
 
 const extractName = (name?: string) => name || '-';
+const readQueryStatus = (searchParams: URLSearchParams, key: string) => {
+  const value = searchParams.get(key);
+  return value && value.trim() ? value.trim() : undefined;
+};
 
 const flattenPaymentPlans = (detail?: AdminBusinessFlowDetail | null): AdminBusinessFlowPaymentPlan[] =>
   (detail?.orders || []).flatMap((order) => order.paymentPlans || []);
@@ -191,6 +216,8 @@ const OrderList: React.FC = () => {
   const [currentStage, setCurrentStage] = useState<string | undefined>();
   const [orderStatus, setOrderStatus] = useState<string | undefined>();
   const [paymentPlanStatus, setPaymentPlanStatus] = useState<string | undefined>();
+  const [settlementStatus, setSettlementStatus] = useState<string | undefined>(() => readQueryStatus(searchParams, 'settlementStatus'));
+  const [payoutStatus, setPayoutStatus] = useState<string | undefined>(() => readQueryStatus(searchParams, 'payoutStatus'));
   const [refundStatus, setRefundStatus] = useState<string | undefined>();
   const [riskStatus, setRiskStatus] = useState<string | undefined>();
   const [paymentPaused, setPaymentPaused] = useState<boolean | undefined>();
@@ -215,13 +242,15 @@ const OrderList: React.FC = () => {
       projectId: projectIdFilter,
       orderStatus,
       paymentPlanStatus,
+      settlementStatus,
+      payoutStatus,
       refundStatus,
       riskStatus,
       paymentPaused,
       page,
       pageSize,
     }),
-    [currentStage, keyword, orderStatus, page, pageSize, paymentPaused, paymentPlanStatus, projectIdFilter, refundStatus, riskStatus],
+    [currentStage, keyword, orderStatus, page, pageSize, paymentPaused, paymentPlanStatus, payoutStatus, projectIdFilter, refundStatus, riskStatus, settlementStatus],
   );
 
   const governanceStats = useMemo(() => {
@@ -247,13 +276,13 @@ const OrderList: React.FC = () => {
       setLoading(true);
       const res = await adminOrderCenterApi.list(query);
       if (res.code !== 0) {
-        message.error(res.message || '加载订单控制台失败');
+        message.error(res.message || '加载变更与结算失败');
         return;
       }
       setRows(res.data.list || []);
       setTotal(res.data.total || 0);
     } catch (error) {
-      message.error(readErrorMessage(error, '加载订单控制台失败'));
+      message.error(readErrorMessage(error, '加载变更与结算失败'));
     } finally {
       setLoading(false);
     }
@@ -276,6 +305,12 @@ const OrderList: React.FC = () => {
     setPage(1);
     autoOpenedFocusRef.current = null;
   }, [projectIdFilter, focusTarget]);
+
+  useEffect(() => {
+    setSettlementStatus(readQueryStatus(searchParams, 'settlementStatus'));
+    setPayoutStatus(readQueryStatus(searchParams, 'payoutStatus'));
+    setPage(1);
+  }, [searchParams]);
 
   const loadDetail = useCallback(async (flowId: string) => {
     try {
@@ -333,6 +368,16 @@ const OrderList: React.FC = () => {
     next.delete('projectId');
     next.delete('focus');
     autoOpenedFocusRef.current = null;
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const updateStatusQueryParam = useCallback((key: 'settlementStatus' | 'payoutStatus', value?: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) {
+      next.set(key, value);
+    } else {
+      next.delete(key);
+    }
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -711,6 +756,8 @@ const OrderList: React.FC = () => {
           <Space wrap>
             {statusTag(record.orderStatus)}
             {statusTag(record.paymentPlanStatus)}
+            {record.settlementStatus && record.settlementStatus !== 'none' ? statusTag(record.settlementStatus) : null}
+            {record.payoutStatus && record.payoutStatus !== 'none' ? statusTag(record.payoutStatus) : null}
             {record.refundStatus ? statusTag(record.refundStatus) : null}
           </Space>
           <Space wrap>
@@ -767,8 +814,8 @@ const OrderList: React.FC = () => {
   return (
     <div className="hz-page-stack">
       <PageHeader
-        title="订单控制台"
-        description="按 business flow 聚合预约、方案、报价、项目、订单、资金与售后，作为后台统一控制塔。"
+        title="变更与结算"
+        description="按项目聚合成交报价、变更单、结算、出款与售后风险，是报价 ERP 的履约后链治理入口。"
         extra={(
           <Button icon={<ReloadOutlined />} onClick={() => void loadList()}>
             刷新
@@ -804,6 +851,8 @@ const OrderList: React.FC = () => {
           <Select allowClear placeholder="阶段" style={{ width: 180 }} value={currentStage} options={STAGE_OPTIONS} onChange={(value) => { setPage(1); setCurrentStage(value); }} />
           <Select allowClear placeholder="支付状态" style={{ width: 160 }} value={orderStatus} options={ORDER_STATUS_OPTIONS} onChange={(value) => { setPage(1); setOrderStatus(value); }} />
           <Select allowClear placeholder="分期状态" style={{ width: 160 }} value={paymentPlanStatus} options={PAYMENT_PLAN_OPTIONS} onChange={(value) => { setPage(1); setPaymentPlanStatus(value); }} />
+          <Select allowClear placeholder="结算状态" style={{ width: 160 }} value={settlementStatus} options={SETTLEMENT_OPTIONS} onChange={(value) => { setPage(1); setSettlementStatus(value); updateStatusQueryParam('settlementStatus', value); }} />
+          <Select allowClear placeholder="出款状态" style={{ width: 160 }} value={payoutStatus} options={PAYOUT_OPTIONS} onChange={(value) => { setPage(1); setPayoutStatus(value); updateStatusQueryParam('payoutStatus', value); }} />
           <Select allowClear placeholder="退款状态" style={{ width: 160 }} value={refundStatus} options={REFUND_OPTIONS} onChange={(value) => { setPage(1); setRefundStatus(value); }} />
           <Select allowClear placeholder="风险状态" style={{ width: 160 }} value={riskStatus} options={RISK_OPTIONS} onChange={(value) => { setPage(1); setRiskStatus(value); }} />
           <Select
@@ -888,6 +937,51 @@ const OrderList: React.FC = () => {
                 <Descriptions.Item label="报价 / 项目">#{detail.quoteTask?.id || '-'} / #{detail.project?.id || '-'}</Descriptions.Item>
                 <Descriptions.Item label="最近变更">{formatDateTime(detail.stageChangedAt)}</Descriptions.Item>
                 <Descriptions.Item label="可用动作">{(detail.availableAdminActions || []).map((action) => action.label).join('、') || '无'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card size="small" title="报价经营摘要">
+              <Descriptions column={2} size="small" bordered>
+                <Descriptions.Item label="成交报价单">
+                  {detail.quoteTruthSummary?.quoteListId ? `#${detail.quoteTruthSummary.quoteListId}` : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="确认报价版本">
+                  {detail.quoteTruthSummary?.activeSubmissionId ? `#${detail.quoteTruthSummary.activeSubmissionId}` : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="成交报价金额">
+                  {detail.quoteTruthSummary?.totalCent ? formatMoney((detail.quoteTruthSummary.totalCent || 0) / 100) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="报价修订次数">
+                  {detail.quoteTruthSummary?.revisionCount ?? '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="变更单汇总">
+                  {detail.changeOrderSummary
+                    ? `${detail.changeOrderSummary.totalCount || 0} 单 / 待结算 ${detail.changeOrderSummary.pendingSettlementCount || 0} / 净影响 ${formatMoney((detail.changeOrderSummary.netAmountCent || 0) / 100)}`
+                    : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="下一步动作">
+                  {detail.nextPendingAction || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="结算状态">
+                  {detail.settlementSummary?.status ? statusTag(detail.settlementSummary.status) : statusTag('none')}
+                </Descriptions.Item>
+                <Descriptions.Item label="结算金额">
+                  {detail.settlementSummary
+                    ? `${formatMoney(detail.settlementSummary.netAmount)} / 待结 ${formatMoney(detail.settlementSummary.pendingAmount)}`
+                    : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="出款状态">
+                  {detail.payoutSummary?.status ? statusTag(detail.payoutSummary.status) : statusTag('none')}
+                </Descriptions.Item>
+                <Descriptions.Item label="出款金额">
+                  {detail.payoutSummary
+                    ? `${formatMoney(detail.payoutSummary.paidAmount)} / 待出 ${formatMoney(detail.payoutSummary.pendingAmount)}`
+                    : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="资金闭环" span={2}>
+                  {detail.financialClosureStatus || '-'}
+                  {detail.payoutSummary?.failureReason ? ` · ${detail.payoutSummary.failureReason}` : ''}
+                </Descriptions.Item>
               </Descriptions>
             </Card>
 

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Empty, List, Space, Spin, Tag, Typography, message } from 'antd';
+import { Button, Empty, Segmented, Spin, Tag, Typography, message } from 'antd';
 import { BellOutlined, CheckOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
 import { notificationApi } from '../../services/api';
+import { resolveAdminNotificationNavigation } from '../../utils/adminNotificationNavigation';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { toSafeNotificationContent } from '../../utils/userFacingText';
+import styles from './NotificationList.module.css';
 
 interface NotificationItem {
   id: number;
@@ -105,6 +108,27 @@ const readOpenLabel = (item: NotificationItem) => {
   return String(item.actionLabel || '').trim() || '查看详情';
 };
 
+type FilterKey = 'all' | 'unread' | 'action' | 'read';
+
+const resolveToneClass = (type: string) => {
+  if (type.startsWith('payment.') || type.startsWith('refund.') || type.startsWith('withdraw.') || type.startsWith('order.')) {
+    return styles.tonePayment;
+  }
+  if (type.startsWith('quote.') || type.startsWith('proposal.')) {
+    return styles.toneQuote;
+  }
+  if (type.startsWith('project.') || type.startsWith('change_order.') || type.startsWith('complaint.')) {
+    return styles.toneProject;
+  }
+  if (type.startsWith('merchant.application.') || type.startsWith('case_audit.')) {
+    return styles.toneAudit;
+  }
+  return styles.toneSystem;
+};
+
+const isPendingAction = (item: NotificationItem) =>
+  Boolean(item.actionRequired && item.actionStatus !== 'processed' && item.actionStatus !== 'expired');
+
 export default function NotificationListPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -112,17 +136,36 @@ export default function NotificationListPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const [globalUnreadCount, setGlobalUnreadCount] = useState(0);
+  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const pageSize = 12;
 
   const unreadCount = useMemo(() => items.filter((item) => !item.isRead).length, [items]);
+  const pendingActionCount = useMemo(() => items.filter(isPendingAction).length, [items]);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const filteredItems = useMemo(() => {
+    if (activeFilter === 'unread') {
+      return items.filter((item) => !item.isRead);
+    }
+    if (activeFilter === 'read') {
+      return items.filter((item) => item.isRead);
+    }
+    if (activeFilter === 'action') {
+      return items.filter(isPendingAction);
+    }
+    return items;
+  }, [activeFilter, items]);
 
   const loadData = useCallback(async (targetPage = page) => {
     setLoading(true);
     try {
-      const result = await notificationApi.list({ page: targetPage, pageSize }) as { data?: { list?: NotificationItem[]; total?: number } };
+      const [result, unreadResult] = await Promise.all([
+        notificationApi.list({ page: targetPage, pageSize }) as Promise<{ data?: { list?: NotificationItem[]; total?: number } }>,
+        notificationApi.getUnreadCount() as Promise<{ data?: { count?: number } }>,
+      ]);
       setItems(result.data?.list || []);
       setTotal(Number(result.data?.total || 0));
+      setGlobalUnreadCount(Number(unreadResult.data?.count || 0));
     } catch (error) {
       console.error('Failed to load admin notifications', error);
       message.error('加载通知失败');
@@ -149,10 +192,20 @@ export default function NotificationListPage() {
       if (!item.isRead) {
         await notificationApi.markAsRead(item.id);
         setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)));
+        setGlobalUnreadCount((current) => Math.max(0, current - 1));
       }
     });
     if (item.actionUrl) {
-      navigate(item.actionUrl);
+      const target = resolveAdminNotificationNavigation(item.actionUrl);
+      if (!target) {
+        message.warning('该通知暂无可跳转页面');
+        return;
+      }
+      if (target.type === 'internal') {
+        navigate(target.path);
+      } else {
+        window.location.assign(target.href);
+      }
     }
   };
 
@@ -161,14 +214,16 @@ export default function NotificationListPage() {
     await withMutation(async () => {
       await notificationApi.markAsRead(item.id);
       setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)));
+      setGlobalUnreadCount((current) => Math.max(0, current - 1));
     });
   };
 
   const handleMarkAllAsRead = async () => {
-    if (!unreadCount) return;
+    if (!globalUnreadCount) return;
     await withMutation(async () => {
       await notificationApi.markAllAsRead();
       setItems((current) => current.map((entry) => ({ ...entry, isRead: true })));
+      setGlobalUnreadCount(0);
     });
   };
 
@@ -176,6 +231,9 @@ export default function NotificationListPage() {
     await withMutation(async () => {
       await notificationApi.delete(item.id);
       setItems((current) => current.filter((entry) => entry.id !== item.id));
+      if (!item.isRead) {
+        setGlobalUnreadCount((current) => Math.max(0, current - 1));
+      }
       setTotal((current) => Math.max(0, current - 1));
       if (items.length === 1 && page > 1) {
         setPage((current) => current - 1);
@@ -184,92 +242,140 @@ export default function NotificationListPage() {
   };
 
   return (
-    <div>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <Typography.Title level={3} style={{ marginBottom: 4 }}>通知中心</Typography.Title>
-          <Typography.Text type="secondary">集中处理审核、退款、提现、投诉、仲裁与业务流提醒。</Typography.Text>
+    <div className={styles.page}>
+      <section className={styles.hero}>
+        <div className={styles.heroContent}>
+          <span className={styles.eyebrow}>消息工作台</span>
+          <Typography.Title level={2} className={styles.title}>通知中心</Typography.Title>
+          <Typography.Text className={styles.subtitle}>
+            汇总审核、退款、提现、投诉、仲裁与项目提醒，优先处理未读和待办事项。
+          </Typography.Text>
+          <div className={styles.heroSummary}>
+            <span><strong>{globalUnreadCount}</strong> 未读</span>
+            <span><strong>{pendingActionCount}</strong> 本页待处理</span>
+            <span><strong>{total}</strong> 全部通知</span>
+          </div>
         </div>
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => void loadData(page)}>刷新</Button>
-          <Button type="primary" icon={<CheckOutlined />} disabled={!unreadCount || mutating} onClick={() => void handleMarkAllAsRead()}>
+        <div className={styles.heroActions}>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadData(page)}>刷新</Button>
+          <Button
+            type="primary"
+            icon={<CheckOutlined />}
+            disabled={!globalUnreadCount || mutating}
+            onClick={() => void handleMarkAllAsRead()}
+          >
             全部已读
           </Button>
-        </Space>
-      </Space>
+        </div>
+      </section>
 
-      <Space style={{ width: '100%', marginBottom: 16 }} size={16}>
-        <Card size="small" style={{ minWidth: 180 }}>
-          <Space align="center">
-            <BellOutlined />
-            <div>
-              <div>当前页通知</div>
-              <Typography.Title level={4} style={{ margin: 0 }}>{items.length}</Typography.Title>
-            </div>
-          </Space>
-        </Card>
-        <Card size="small" style={{ minWidth: 180 }}>
-          <Space align="center">
-            <Badge count={unreadCount} />
-            <div>
-              <div>未读通知</div>
-              <Typography.Title level={4} style={{ margin: 0 }}>{unreadCount}</Typography.Title>
-            </div>
-          </Space>
-        </Card>
-        <Card size="small" style={{ minWidth: 180 }}>
-          <div>总页数</div>
-          <Typography.Title level={4} style={{ margin: 0 }}>{Math.min(page, totalPages)} / {totalPages}</Typography.Title>
-        </Card>
-      </Space>
+      <section className={styles.listPanel}>
+        <div className={styles.listToolbar}>
+          <div>
+            <Typography.Title level={4} className={styles.listTitle}>全部通知</Typography.Title>
+            <Typography.Text className={styles.listHint}>按状态筛选后，可直接进入对应业务页面处理。</Typography.Text>
+          </div>
+          <Segmented
+            value={activeFilter}
+            onChange={(value) => setActiveFilter(value as FilterKey)}
+            options={[
+              { label: `全部 ${items.length}`, value: 'all' },
+              { label: `未读 ${unreadCount}`, value: 'unread' },
+              { label: `待处理 ${pendingActionCount}`, value: 'action' },
+              { label: `已读 ${Math.max(0, items.length - unreadCount)}`, value: 'read' },
+            ]}
+          />
+        </div>
 
-      <Card title="通知列表">
         {loading ? (
-          <div style={{ padding: '48px 0', textAlign: 'center' }}><Spin /></div>
+          <div className={styles.loadingState}><Spin /></div>
         ) : items.length === 0 ? (
-          <Empty description="暂无通知" />
+          <Empty className={styles.emptyState} description="暂无通知" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : filteredItems.length === 0 ? (
+          <Empty className={styles.emptyState} description="当前筛选暂无通知" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <>
-            <List
-              itemLayout="vertical"
-              dataSource={items}
-              renderItem={(item) => {
+            <div className={styles.notificationList}>
+              {filteredItems.map((item) => {
                 const actionTag = readActionTag(item);
+                const typeLabel = readTypeLabel(item);
+                const safeContent = toSafeNotificationContent(item.content, item.type);
                 return (
-                <List.Item
+                <article
+                  className={`${styles.notificationItem} ${item.isRead ? styles.readItem : styles.unreadItem}`}
                   key={item.id}
-                  actions={[
-                    item.actionUrl ? <Button key={`open-${item.id}`} type="link" onClick={() => void handleOpen(item)}>{readOpenLabel(item)}</Button> : <span key={`empty-open-${item.id}`} />,
-                    !item.isRead ? <Button key={`read-${item.id}`} type="link" onClick={() => void handleMarkAsRead(item)}>标记已读</Button> : <span key={`readed-${item.id}`} />,
-                    <Button key={`delete-${item.id}`} danger type="link" icon={<DeleteOutlined />} onClick={() => void handleDelete(item)}>删除</Button>,
-                  ]}
                 >
-                  <List.Item.Meta
-                    title={(
-                      <Space wrap>
-                        <span>{item.title}</span>
+                  <span className={styles.itemRail} />
+                  <div className={`${styles.typeIcon} ${resolveToneClass(item.type)}`}>
+                    <BellOutlined />
+                  </div>
+                  <div className={styles.itemMain}>
+                    <div className={styles.itemHeader}>
+                      <button
+                        className={styles.itemTitle}
+                        disabled={!item.actionUrl || mutating}
+                        onClick={() => void handleOpen(item)}
+                        type="button"
+                      >
+                        {item.title || typeLabel}
+                      </button>
+                    </div>
+                    <time className={styles.itemTime}>{formatServerDateTime(item.createdAt)}</time>
+                    <p className={styles.itemContent}>{safeContent}</p>
+                  </div>
+                  <div className={styles.itemSide}>
+                    <div className={styles.sideMetaRow}>
+                      <div className={styles.tagRow}>
                         {!item.isRead ? <Tag color="gold">未读</Tag> : <Tag>已读</Tag>}
-                        <Tag color="blue">{readTypeLabel(item)}</Tag>
+                        <Tag color="blue">{typeLabel}</Tag>
                         {actionTag ? <Tag color={actionTag.color}>{actionTag.label}</Tag> : null}
-                      </Space>
-                    )}
-                    description={formatServerDateTime(item.createdAt)}
-                  />
-                  <Typography.Paragraph style={{ marginBottom: 0 }}>{item.content}</Typography.Paragraph>
-                </List.Item>
+                      </div>
+                      {!item.isRead ? (
+                        <Button
+                          className={styles.readAction}
+                          disabled={mutating}
+                          size="small"
+                          type="default"
+                          onClick={() => void handleMarkAsRead(item)}
+                        >
+                          标记已读
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className={styles.itemActions}>
+                      {item.actionUrl ? (
+                        <Button disabled={mutating} size="small" type={item.isRead ? 'default' : 'primary'} onClick={() => void handleOpen(item)}>
+                          {readOpenLabel(item)}
+                        </Button>
+                      ) : null}
+                      <Button
+                        danger
+                        icon={<DeleteOutlined />}
+                        disabled={mutating}
+                        size="small"
+                        type="text"
+                        onClick={() => void handleDelete(item)}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                </article>
                 );
-              }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
-              <Typography.Text type="secondary">共 {total} 条通知</Typography.Text>
-              <Space>
+              })}
+            </div>
+            <div className={styles.paginationBar}>
+              <Typography.Text className={styles.paginationText}>
+                第 {Math.min(page, totalPages)} / {totalPages} 页，共 {total} 条
+              </Typography.Text>
+              <div className={styles.paginationActions}>
                 <Button disabled={page <= 1 || mutating} onClick={() => setPage((current) => current - 1)}>上一页</Button>
                 <Button disabled={page >= totalPages || mutating} onClick={() => setPage((current) => current + 1)}>下一页</Button>
-              </Space>
+              </div>
             </div>
           </>
         )}
-      </Card>
+      </section>
     </div>
   );
 }

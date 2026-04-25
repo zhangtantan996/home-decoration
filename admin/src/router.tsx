@@ -25,6 +25,7 @@ import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
 import QuoteTemplateManagement from './pages/quotes/QuoteTemplateManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
+import ProviderPriceBookInspection from './pages/quotes/ProviderPriceBookInspection';
 import QuoteInquiryList from './pages/quote-inquiries/QuoteInquiryList';
 import QuoteInquiryDetail from './pages/quote-inquiries/QuoteInquiryDetail';
 import WorkbenchDetail from './pages/supervision/WorkbenchDetail';
@@ -34,6 +35,7 @@ import EscrowAccountList from './pages/finance/EscrowAccountList';
 import FinanceReconciliationList from './pages/finance/FinanceReconciliationList';
 import FinanceAuditList from './pages/finance/FinanceAuditList';
 import PayoutList from './pages/finance/PayoutList';
+import PaymentOrderList from './pages/finance/PaymentOrderList';
 import SettlementList from './pages/finance/SettlementList';
 import TransactionList from './pages/finance/TransactionList';
 import RiskWarningList from './pages/risk/RiskWarningList';
@@ -113,10 +115,12 @@ const router = createBrowserRouter([
             { path: 'projects/list', element: <ProtectedRoute permission="project:list"><ProjectList /></ProtectedRoute> },
             { path: 'projects/detail/:id', element: <ProtectedRoute permission="project:view"><ProjectDetail /></ProtectedRoute> },
             { path: 'projects/map', element: <ProtectedRoute permission="project:map"><ProjectMap /></ProtectedRoute> },
+            { path: 'projects/quotes', element: <Navigate to="/projects/quotes/lists" replace /> },
             { path: 'projects/quotes/library', element: <ProtectedRoute permission="project:list"><QuoteLibraryManagement /></ProtectedRoute> },
             { path: 'projects/quotes/templates', element: <ProtectedRoute permission="project:list"><QuoteTemplateManagement /></ProtectedRoute> },
             { path: 'projects/quotes/lists', element: <ProtectedRoute permission="project:edit"><QuoteListManagement /></ProtectedRoute> },
             { path: 'projects/quotes/compare/:id', element: <ProtectedRoute permission="project:view"><QuoteComparison /></ProtectedRoute> },
+            { path: 'projects/quotes/price-books', element: <ProtectedRoute permission="provider:list"><ProviderPriceBookInspection /></ProtectedRoute> },
 
             // Supervision Workspace
             { path: 'supervision', element: <Navigate to="/supervision/projects" replace /> },
@@ -149,6 +153,7 @@ const router = createBrowserRouter([
             { path: 'finance', element: <Navigate to="/finance/overview" replace /> },
             { path: 'finance/overview', element: <ProtectedRoute permission="finance:escrow:list"><FinanceOverview /></ProtectedRoute> },
             { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
+            { path: 'finance/payment-orders', element: <ProtectedRoute permission="finance:transaction:list"><PaymentOrderList /></ProtectedRoute> },
             { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
             { path: 'finance/reconciliations', element: <ProtectedRoute permission="finance:transaction:list"><FinanceReconciliationList /></ProtectedRoute> },
             { path: 'finance/settlements', element: <ProtectedRoute permission="finance:transaction:list"><SettlementList /></ProtectedRoute> },

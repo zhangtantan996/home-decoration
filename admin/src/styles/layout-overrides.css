@@ -606,6 +606,48 @@ body {
   grid-column: 1 / -1;
 }
 
+.hz-dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.hz-dashboard-summary-card {
+  display: grid;
+  gap: 12px;
+  min-height: 136px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--hz-border-soft);
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.hz-dashboard-summary-card__title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--hz-brand);
+}
+
+.hz-dashboard-summary-card__metrics {
+  display: grid;
+  gap: 10px;
+}
+
+.hz-dashboard-summary-card__metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--hz-muted);
+  font-size: 0.78rem;
+}
+
+.hz-dashboard-summary-card__metric strong {
+  color: var(--hz-brand);
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
 .hz-panel-card .ant-card-head {
   border-bottom-color: var(--hz-border-soft);
 }

@@ -33,6 +33,7 @@ import PageHeader from '../../components/PageHeader';
 import StatusTag from '../../components/StatusTag';
 import ToolbarCard from '../../components/ToolbarCard';
 import { usePermission } from '../../hooks/usePermission';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 import { useAuthStore } from '../../stores/authStore';
 import { isSecurityAuditorRole } from '../../constants/statuses';
 import { formatServerDateTime } from '../../utils/serverTime';
@@ -132,13 +133,7 @@ const getNodeMeta = (type: number, expanded: boolean) => {
     };
 };
 
-const readErrorMessage = (error: unknown, fallback: string) => {
-    if (error && typeof error === 'object') {
-        const candidate = error as { message?: string; response?: { data?: { message?: string } } };
-        return candidate.response?.data?.message || candidate.message || fallback;
-    }
-    return fallback;
-};
+const readErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const getReservedRoleMeta = (roleKey: string) => RESERVED_ROLE_META[roleKey];
 

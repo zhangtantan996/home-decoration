@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/authStore';
 import merchantAppIcon from '../assets/branding/company-logo.png';
 import NotificationDropdown from '../components/NotificationDropdown';
 import { designTokens } from '../styles/theme';
+import { resolveMenuTargetPath } from '../utils/menuRouting';
 import {
     DashboardOutlined,
     ProjectOutlined,
@@ -65,13 +66,23 @@ type MenuRoute = {
 };
 
 const isDynamicDetailPath = (path?: string) => typeof path === 'string' && /\/:[^/]+/.test(path);
+const trimTrailingSlash = (path: string) => path.replace(/\/+$/, '') || '/';
 
-const transformMenuData = (data: MenuNode[]): MenuRoute[] => {
+type ActiveMenuState = {
+    selectedKeys: string[];
+    openKeys: string[];
+};
+
+type MenuIndex = {
+    parentByKey: Map<string, string | undefined>;
+    hasChildren: Set<string>;
+};
+
+const transformMenuData = (data: MenuNode[], seenPaths = new Set<string>()): MenuRoute[] => {
     if (!data || !Array.isArray(data)) {
         console.warn('菜单数据不是数组:', data);
         return [];
     }
-    const seenPaths = new Set<string>();
 
     return data.reduce<MenuRoute[]>((acc, item) => {
         if (item.path) {
@@ -85,12 +96,107 @@ const transformMenuData = (data: MenuNode[]): MenuRoute[] => {
             path: item.path,
             name: item.title,
             icon: item.icon ? iconMap[item.icon] : null,
-            children: item.children ? transformMenuData(item.children) : undefined,
+            children: item.children ? transformMenuData(item.children, seenPaths) : undefined,
             hideInMenu: !item.visible || isDynamicDetailPath(item.path),
         });
 
         return acc;
     }, []);
+};
+
+const buildMenuIndex = (routes: MenuRoute[]): MenuIndex => {
+    const parentByKey = new Map<string, string | undefined>();
+    const hasChildren = new Set<string>();
+
+    const visit = (items: MenuRoute[], parentKey?: string) => {
+        items.forEach((item) => {
+            const key = item.path;
+            if (!key) {
+                return;
+            }
+            parentByKey.set(key, parentKey);
+            if (Array.isArray(item.children) && item.children.length > 0) {
+                hasChildren.add(key);
+                visit(item.children, key);
+            }
+        });
+    };
+
+    visit(routes);
+    return { parentByKey, hasChildren };
+};
+
+const routePathMatches = (routePath: string, pathname: string) => {
+    const normalizedRoutePath = trimTrailingSlash(routePath);
+    const normalizedPathname = trimTrailingSlash(pathname);
+
+    if (isDynamicDetailPath(normalizedRoutePath)) {
+        const pattern = normalizedRoutePath
+            .split('/')
+            .map((segment) => (segment.startsWith(':') ? '[^/]+' : segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+            .join('/');
+        return new RegExp(`^${pattern}(?:/|$)`).test(normalizedPathname);
+    }
+
+    return normalizedPathname === normalizedRoutePath || normalizedPathname.startsWith(`${normalizedRoutePath}/`);
+};
+
+const resolveActiveMenuState = (routes: MenuRoute[], pathname: string): ActiveMenuState => {
+    let bestMatch: { selectedKey: string; openKeys: string[]; score: number } | undefined;
+
+    const visit = (items: MenuRoute[], parentKeys: string[]) => {
+        items.forEach((item) => {
+            const key = item.path;
+            if (!key || item.hideInMenu) {
+                return;
+            }
+
+            const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+            const matches = routePathMatches(key, pathname);
+            if (matches) {
+                const exact = trimTrailingSlash(pathname) === trimTrailingSlash(key);
+                const openKeys = hasChildren && !exact ? [...parentKeys, key] : parentKeys;
+                const score = trimTrailingSlash(key).length * 10 + openKeys.length;
+                if (!bestMatch || score > bestMatch.score) {
+                    bestMatch = { selectedKey: key, openKeys, score };
+                }
+            }
+
+            if (hasChildren) {
+                visit(item.children || [], [...parentKeys, key]);
+            }
+        });
+    };
+
+    visit(routes, []);
+
+    return {
+        selectedKeys: bestMatch?.selectedKey ? [bestMatch.selectedKey] : [],
+        openKeys: bestMatch?.openKeys || [],
+    };
+};
+
+const rootKeyFor = (key: string, parentByKey: MenuIndex['parentByKey']) => {
+    let current = key;
+    let parent = parentByKey.get(current);
+
+    while (parent) {
+        current = parent;
+        parent = parentByKey.get(current);
+    }
+
+    return current;
+};
+
+const normalizeOpenKeys = (keys: string[], menuIndex: MenuIndex) => {
+    const submenuKeys = Array.from(new Set(keys)).filter((key) => menuIndex.hasChildren.has(key));
+    const latestKey = submenuKeys[submenuKeys.length - 1];
+    if (!latestKey) {
+        return [];
+    }
+
+    const latestRoot = rootKeyFor(latestKey, menuIndex.parentByKey);
+    return submenuKeys.filter((key) => rootKeyFor(key, menuIndex.parentByKey) === latestRoot);
 };
 
 const BasicLayout: React.FC = () => {
@@ -116,6 +222,16 @@ const BasicLayout: React.FC = () => {
     const menuData = React.useMemo(() => {
         return transformMenuData(menus);
     }, [menus]);
+    const menuIndex = React.useMemo(() => buildMenuIndex(menuData), [menuData]);
+    const activeMenuState = React.useMemo(
+        () => resolveActiveMenuState(menuData, location.pathname),
+        [location.pathname, menuData],
+    );
+    const [openKeys, setOpenKeys] = React.useState<string[]>(activeMenuState.openKeys);
+
+    React.useEffect(() => {
+        setOpenKeys(activeMenuState.openKeys);
+    }, [activeMenuState]);
 
     return (
         <ProLayout
@@ -151,8 +267,26 @@ const BasicLayout: React.FC = () => {
             }}
             route={{ routes: menuData }}
             location={{ pathname: location.pathname }}
+            selectedKeys={activeMenuState.selectedKeys}
+            openKeys={openKeys}
+            onOpenChange={(keys) => {
+                if (keys === false) {
+                    setOpenKeys([]);
+                    return;
+                }
+                setOpenKeys(normalizeOpenKeys(keys, menuIndex));
+            }}
             menuItemRender={(item, dom) => (
-                <div onClick={() => item.path && navigate(item.path)}>{dom}</div>
+                <div
+                    onClick={() => {
+                        const nextPath = resolveMenuTargetPath(item as MenuRoute);
+                        if (nextPath) {
+                            navigate(nextPath);
+                        }
+                    }}
+                >
+                    {dom}
+                </div>
             )}
             actionsRender={() => [
                 <Input

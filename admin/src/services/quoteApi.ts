@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
 import { adminProviderApi, type AdminApiResponse, type AdminListData, type AdminProviderListItem } from './api';
 import api from './api';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 
 export interface QuoteLibraryItem {
     id: number;
@@ -132,6 +133,13 @@ export interface QuoteListSummary {
         latestLogTitle?: string;
         unhandledRiskCount?: number;
     };
+    quoteTruthSummary?: QuoteTruthSummary;
+    submissionHealth?: SubmissionHealthSummary;
+    changeOrderSummary?: ChangeOrderSummary;
+    settlementSummary?: SettlementSummary;
+    payoutSummary?: PayoutSummary;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
 }
 
 export interface QuoteListItem {
@@ -256,6 +264,84 @@ export interface QuoteComparisonSubmission {
     categoryTotals: Array<{ category: string; totalCent: number }>;
 }
 
+export interface QuoteTruthSummary {
+    quoteListId: number;
+    sourceType?: string;
+    sourceId?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    activeSubmissionId?: number;
+    awardedProviderId?: number;
+    confirmedAt?: string;
+    totalCent?: number;
+    estimatedDays?: number;
+    revisionCount?: number;
+}
+
+export interface CommercialExplanation {
+    baselineSummary?: {
+        title?: string;
+        sourceStage?: string;
+        submittedAt?: string;
+        itemCount?: number;
+        highlights?: string[];
+        readyForUser?: boolean;
+    };
+    scopeIncluded?: string[];
+    scopeExcluded?: string[];
+    teamSize?: number;
+    workTypes?: string[];
+    constructionMethodNote?: string;
+    siteVisitRequired?: boolean;
+    paymentPlanSummary?: QuotePaymentPlanSummary[];
+}
+
+export interface SubmissionHealthSummary {
+    missingPriceCount: number;
+    deviationItemCount: number;
+    platformReviewStatus?: string;
+    lastRevisionNo?: number;
+    lastChangeReason?: string;
+    canSubmit: boolean;
+    blockingReasons?: string[];
+}
+
+export interface ChangeOrderSummary {
+    totalCount: number;
+    pendingUserConfirmCount: number;
+    pendingSettlementCount: number;
+    settledCount: number;
+    netAmountCent: number;
+    latestChangeOrderId?: number;
+}
+
+export interface SettlementSummary {
+    latestSettlementId?: number;
+    status?: string;
+    grossAmount?: number;
+    netAmount?: number;
+    totalGrossAmount?: number;
+    totalNetAmount?: number;
+    settledAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+}
+
+export interface PayoutSummary {
+    latestPayoutId?: number;
+    status?: string;
+    channel?: string;
+    totalAmount?: number;
+    paidAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+    failureReason?: string;
+}
+
 export interface QuotePaymentPlanSummary {
     id: number;
     orderId: number;
@@ -331,6 +417,14 @@ export interface QuoteComparisonResponse {
             actionHint?: string;
         };
     };
+    quoteTruthSummary?: QuoteTruthSummary;
+    commercialExplanation?: CommercialExplanation;
+    submissionHealth?: SubmissionHealthSummary;
+    changeOrderSummary?: ChangeOrderSummary;
+    settlementSummary?: SettlementSummary;
+    payoutSummary?: PayoutSummary;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
 }
 
 export interface QuoteSubmissionRevisionItem {
@@ -391,6 +485,44 @@ export interface AdminQuoteListDetail {
         unhandledRiskCount?: number;
     };
     bridgeConversionSummary?: QuoteComparisonResponse['bridgeConversionSummary'];
+    quoteTruthSummary?: QuoteTruthSummary;
+    commercialExplanation?: CommercialExplanation;
+    submissionHealth?: SubmissionHealthSummary;
+    changeOrderSummary?: ChangeOrderSummary;
+    settlementSummary?: SettlementSummary;
+    payoutSummary?: PayoutSummary;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
+}
+
+export interface ProviderPriceBookInspectionItem {
+    providerId: number;
+    providerName: string;
+    priceBookStatus: string;
+    activeVersion?: number;
+    publishedAt?: string;
+    coverageRate: number;
+    applicableItemCount?: number;
+    pricedItemCount?: number;
+    missingRequiredCount: number;
+    abnormalPriceCount: number;
+    lastQuotedAt?: string;
+    governanceTier?: string;
+    issues?: ProviderPriceBookInspectionIssue[];
+}
+
+export interface ProviderPriceBookInspectionIssue {
+    issueType: 'missing_required' | 'abnormal_price' | string;
+    standardItemId: number;
+    itemName: string;
+    unit?: string;
+    categoryL1?: string;
+    categoryL2?: string;
+    required?: boolean;
+    referencePriceCent?: number;
+    unitPriceCent?: number;
+    diffRate?: number;
+    reason?: string;
 }
 
 const unwrapEnvelope = <T,>(payload: unknown, fallbackMessage: string): T => {
@@ -399,7 +531,7 @@ const unwrapEnvelope = <T,>(payload: unknown, fallbackMessage: string): T => {
         throw new Error(fallbackMessage);
     }
     if (envelope.code !== 0) {
-        throw new Error(envelope.message || fallbackMessage);
+        throw new Error(toSafeUserFacingText(envelope.message, fallbackMessage));
     }
     return (envelope.data as T) ?? ({} as T);
 };
@@ -611,6 +743,21 @@ export const adminQuoteApi = {
         unwrapEnvelope<QuoteListSummary>(
             await api.post(`/admin/quote-lists/${quoteListId}/award`, { submissionId }),
             '定标失败'
+        ),
+    rebuildFromLegacy: async (payload: {
+        legacyTaskId: number;
+        quantityBaseId?: number;
+        templateId?: number;
+        title?: string;
+    }) =>
+        unwrapEnvelope<{ quoteListId: number; created: boolean }>(
+            await api.post('/admin/quote-lists/rebuild-from-legacy', payload),
+            '重建 legacy quote-pk 报价单失败'
+        ),
+    listProviderPriceBookInspection: async (params?: { keyword?: string }) =>
+        unwrapEnvelope<{ list: ProviderPriceBookInspectionItem[] }>(
+            await api.get('/admin/provider-price-books/inspection', { params }),
+            '加载施工主体价格库巡检失败'
         ),
 
     // Price Tier 阶梯价

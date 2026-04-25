@@ -9,6 +9,7 @@ import { dictionaryApi } from '../../services/dictionaryApi';
 import type { DictItem, DictCategory } from '../../services/dictionaryApi';
 import { useDictStore } from '../../stores/dictStore';
 import type { ColumnsType } from 'antd/es/table';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const RANGE_EXTRA_CATEGORIES = new Set(['provider_budget_range', 'inspiration_area_bucket']);
 
@@ -198,7 +199,7 @@ const DictionaryManagement: React.FC = () => {
                 message.error('扩展配置不是合法 JSON');
                 return;
             }
-            message.error(error.response?.data?.message || '操作失败');
+            message.error(readSafeErrorMessage(error, '操作失败'));
         }
     };
 

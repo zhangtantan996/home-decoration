@@ -118,7 +118,7 @@ const IdentitySwitcher: React.FC = () => {
             </span>
         ),
         onClick: () => {
-            message.info('申请新身份功能开发中');
+            message.info('该入口暂未开放');
         },
     });
 

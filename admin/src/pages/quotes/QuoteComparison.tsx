@@ -392,6 +392,49 @@ const QuoteComparison: React.FC = () => {
                 ) : null}
             </Card>
 
+            {(data?.quoteTruthSummary || data?.submissionHealth || data?.changeOrderSummary || data?.settlementSummary || data?.payoutSummary) ? (
+                <Card className="hz-panel-card" title="统一报价真相与履约后链">
+                    <Descriptions column={4} size="small">
+                        <Descriptions.Item label="成交总额">
+                            {data?.quoteTruthSummary?.totalCent ? formatCent(data.quoteTruthSummary.totalCent) : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="预计工期">
+                            {data?.quoteTruthSummary?.estimatedDays ? `${data.quoteTruthSummary.estimatedDays} 天` : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="版本链">
+                            第 {data?.submissionHealth?.lastRevisionNo || data?.quoteTruthSummary?.revisionCount || 0} 版
+                        </Descriptions.Item>
+                        <Descriptions.Item label="当前待办">
+                            {data?.nextPendingAction || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="缺价项">
+                            {data?.submissionHealth?.missingPriceCount || 0}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="偏差项">
+                            {data?.submissionHealth?.deviationItemCount || 0}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="平台复核">
+                            {reviewStatusText(data?.submissionHealth?.platformReviewStatus)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="资金闭环">
+                            {data?.financialClosureStatus || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="变更待结算">
+                            {data?.changeOrderSummary?.pendingSettlementCount || 0}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="结算状态">
+                            {data?.settlementSummary?.status || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="出款状态">
+                            {data?.payoutSummary?.status || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="最近改价原因">
+                            {data?.submissionHealth?.lastChangeReason || '待同步'}
+                        </Descriptions.Item>
+                    </Descriptions>
+                </Card>
+            ) : null}
+
             <Card className="hz-table-card" title="报价对比">
                 <Table rowKey="submissionId" loading={loading} columns={columns} dataSource={data?.submissions || []} pagination={false} />
             </Card>

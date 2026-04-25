@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Dropdown, Badge, Button, Empty, Spin, Tag, message } from 'antd';
-import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
+import { BellOutlined, CheckOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { getHandledAdminStatus, notificationApi } from '../services/api';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
@@ -10,6 +10,9 @@ import {
     NotificationWebSocket,
 } from '../utils/notificationWebSocket';
 import { formatServerDate } from '../utils/serverTime';
+import { resolveAdminNotificationNavigation } from '../utils/adminNotificationNavigation';
+import { toSafeNotificationContent } from '../utils/userFacingText';
+import styles from './NotificationDropdown.module.css';
 
 interface Notification {
     id: number;
@@ -138,7 +141,6 @@ const NotificationDropdown: React.FC = () => {
     const [notificationAvailable, setNotificationAvailable] = useState(true);
     const [pollingPaused, setPollingPaused] = useState(false);
     const authErrorNotifiedRef = useRef(false);
-    const pollPauseNotifiedRef = useRef(false);
     const unreadPollGuardRef = useRef(new AutoRetryGuard(POLL_POLICY));
     const websocketRef = useRef<NotificationWebSocket | null>(null);
     const openRef = useRef(false);
@@ -188,14 +190,9 @@ const NotificationDropdown: React.FC = () => {
         if (trigger === 'manual') {
             unreadPollGuardRef.current.resetByManual();
             setPollingPaused(false);
-            pollPauseNotifiedRef.current = false;
         } else {
             if (!unreadPollGuardRef.current.shouldAttempt('auto')) {
                 setPollingPaused(true);
-                if (!pollPauseNotifiedRef.current) {
-                    pollPauseNotifiedRef.current = true;
-                    message.warning('通知自动刷新已暂停，请手动刷新恢复');
-                }
                 const state = unreadPollGuardRef.current.getState();
                 console.warn('[AutoRetry]', {
                     businessKey: POLL_BUSINESS_KEY,
@@ -222,7 +219,6 @@ const NotificationDropdown: React.FC = () => {
             unreadPollGuardRef.current.recordSuccess();
             if (pollingPaused) {
                 setPollingPaused(false);
-                pollPauseNotifiedRef.current = false;
                 console.info('[AutoRetry]', {
                     businessKey: POLL_BUSINESS_KEY,
                     trigger,
@@ -250,10 +246,6 @@ const NotificationDropdown: React.FC = () => {
 
             if (state.paused) {
                 setPollingPaused(true);
-                if (!pollPauseNotifiedRef.current) {
-                    pollPauseNotifiedRef.current = true;
-                    message.warning('通知自动刷新已暂停，请点击“重试刷新”恢复');
-                }
             }
 
             console.error('Failed to load unread count', error);
@@ -265,7 +257,6 @@ const NotificationDropdown: React.FC = () => {
 
         unreadPollGuardRef.current.resetByManual();
         setPollingPaused(false);
-        pollPauseNotifiedRef.current = false;
 
         console.info('[AutoRetry]', {
             businessKey: POLL_BUSINESS_KEY,
@@ -419,9 +410,17 @@ const NotificationDropdown: React.FC = () => {
                 setUnreadCount(prev => Math.max(0, prev - 1));
             }
 
-            // 根据通知类型跳转（可选，根据实际需求扩展）
             if (item.actionUrl) {
-                window.location.href = item.actionUrl;
+                const target = resolveAdminNotificationNavigation(item.actionUrl);
+                if (!target) {
+                    message.warning('该通知暂无可跳转页面');
+                    return;
+                }
+                if (target.type === 'internal') {
+                    navigate(target.path);
+                } else {
+                    window.location.assign(target.href);
+                }
             }
         } catch (error: unknown) {
             const handledStatus = getHandledAdminStatus(error);
@@ -435,33 +434,33 @@ const NotificationDropdown: React.FC = () => {
         }
     };
 
-    // 渲染下拉菜单内容
     const dropdownContent = (
-        <div style={{ width: 380, maxHeight: 500, overflow: 'auto', backgroundColor: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-            {/* Header */}
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 16, fontWeight: 600, color: '#262626' }}>通知</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {pollingPaused && (
-                        <span style={{ fontSize: 12, color: '#fa8c16' }}>自动刷新已暂停</span>
-                    )}
-                    {pollingPaused && (
-                        <Button
-                            type="link"
-                            size="small"
-                            onClick={() => void handleManualRefresh()}
-                            style={{ fontSize: 12 }}
-                        >
-                            重试刷新
-                        </Button>
-                    )}
+        <div className={styles.panel}>
+            <div className={styles.header}>
+                <div>
+                    <div className={styles.title}>通知</div>
+                    <div className={styles.subtitle}>
+                        {unreadCount > 0 ? `${unreadCount} 条未读消息` : '暂无未读消息'}
+                    </div>
+                </div>
+                <div className={styles.headerActions}>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        loading={loading}
+                        onClick={() => void handleManualRefresh()}
+                        title="刷新通知"
+                        aria-label="刷新通知"
+                        className={styles.iconButton}
+                    />
                     {unreadCount > 0 && (
                         <Button
                             type="link"
                             size="small"
                             icon={<CheckOutlined />}
                             onClick={handleMarkAllAsRead}
-                            style={{ fontSize: 12 }}
+                            className={styles.linkButton}
                         >
                             全部已读
                         </Button>
@@ -473,98 +472,68 @@ const NotificationDropdown: React.FC = () => {
                             setOpen(false);
                             navigate('/notifications');
                         }}
-                        style={{ fontSize: 12 }}
+                        className={styles.linkButton}
                     >
                         查看全部
                     </Button>
                 </div>
             </div>
 
-            {/* Notification List */}
-            <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            <div className={styles.list}>
                 {loading ? (
-                    <div style={{ padding: 40, textAlign: 'center' }}>
+                    <div className={styles.loading}>
                         <Spin />
                     </div>
                 ) : notifications.length === 0 ? (
                     <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description="暂无通知"
-                        style={{ padding: 40 }}
+                        className={styles.empty}
                     />
                 ) : (
                     notifications.map(item => {
                         const actionTag = resolveAdminNotificationActionTag(item);
+                        const typeLabel = resolveAdminNotificationTypeLabel(item);
                         return (
-                        <div
-                            key={item.id}
-                            onClick={() => handleNotificationClick(item)}
-                            style={{
-                                padding: '12px 16px',
-                                borderBottom: '1px solid #f0f0f0',
-                                cursor: 'pointer',
-                                backgroundColor: item.isRead ? '#fff' : '#f6f9ff',
-                                transition: 'background-color 0.3s',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fafafa')}
-                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = item.isRead ? '#fff' : '#f6f9ff')}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div style={{ flex: 1, marginRight: 8 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                                        <span style={{
-                                            fontSize: 14,
-                                            fontWeight: item.isRead ? 400 : 600,
-                                            color: item.isRead ? '#595959' : '#262626',
-                                        }}>
-                                            {item.title}
-                                        </span>
+                            <div
+                                key={item.id}
+                                onClick={() => handleNotificationClick(item)}
+                                className={`${styles.item} ${item.isRead ? styles.readItem : styles.unreadItem}`}
+                            >
+                                <div className={styles.itemRail} />
+                                <div className={styles.itemMain}>
+                                    <div className={styles.itemHeader}>
+                                        <div className={styles.itemTitle}>{item.title || typeLabel}</div>
+                                        {!item.isRead ? <span className={styles.unreadDot} aria-label="未读" /> : null}
+                                    </div>
+                                    <div className={styles.tagLine}>
                                         <Tag
                                             color={resolveAdminNotificationTagColor(item.type)}
-                                            style={{ marginInlineStart: 8, marginInlineEnd: 0 }}
+                                            className={styles.tag}
                                         >
-                                            {resolveAdminNotificationTypeLabel(item)}
+                                            {typeLabel}
                                         </Tag>
                                         {actionTag ? (
-                                            <Tag color={actionTag.color} style={{ marginInlineStart: 8, marginInlineEnd: 0 }}>
+                                            <Tag color={actionTag.color} className={styles.tag}>
                                                 {actionTag.label}
                                             </Tag>
                                         ) : null}
-                                        {!item.isRead && (
-                                            <span style={{
-                                                display: 'inline-block',
-                                                width: 6,
-                                                height: 6,
-                                                borderRadius: '50%',
-                                                backgroundColor: '#1890ff',
-                                                marginLeft: 8,
-                                            }} />
-                                        )}
                                     </div>
-                                    <div style={{
-                                        fontSize: 13,
-                                        color: '#8c8c8c',
-                                        marginBottom: 4,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: 'vertical',
-                                    }}>
-                                        {item.content}
+                                    <div className={styles.itemContent}>
+                                        {toSafeNotificationContent(item.content, item.type)}
                                     </div>
-                                    <div style={{ fontSize: 12, color: '#bfbfbf' }}>
-                                        {formatTime(item.createdAt)}
-                                    </div>
+                                    <div className={styles.itemTime}>{formatTime(item.createdAt)}</div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 4 }}>
+                                <div className={styles.itemActions}>
                                     {!item.isRead && (
                                         <Button
                                             type="text"
                                             size="small"
                                             icon={<CheckOutlined />}
                                             onClick={(e) => handleMarkAsRead(item.id, e)}
-                                            style={{ padding: '4px 8px' }}
+                                            className={styles.itemButton}
+                                            title="标记已读"
+                                            aria-label="标记已读"
                                         />
                                     )}
                                     <Button
@@ -573,11 +542,12 @@ const NotificationDropdown: React.FC = () => {
                                         danger
                                         icon={<DeleteOutlined />}
                                         onClick={(e) => handleDelete(item.id, e)}
-                                        style={{ padding: '4px 8px' }}
+                                        className={styles.itemButton}
+                                        title="删除通知"
+                                        aria-label="删除通知"
                                     />
                                 </div>
                             </div>
-                        </div>
                         );
                     })
                 )}

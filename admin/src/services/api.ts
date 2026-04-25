@@ -1,6 +1,7 @@
 import axios from "axios";
 import { message } from "antd";
 import { getApiBaseUrl, getLoginPath } from "../utils/env";
+import { toSafeUserFacingText } from "../utils/userFacingText";
 import {
   useAuthStore,
   type AdminSecurityStatus,
@@ -118,7 +119,7 @@ const normalizeAdminError = (error: unknown) => {
       : undefined;
 
   return new AdminApiError(
-    payload?.message || `请求失败${status ? `(${status})` : ""}`,
+    toSafeUserFacingText(payload?.message, "操作失败"),
     {
       status,
       code: payload?.code,
@@ -872,6 +873,68 @@ export interface AdminFinanceTransactionQuery {
   pageSize?: number;
   type?: string;
   projectId?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface AdminPaymentOrderItem {
+  id: number;
+  bizType: string;
+  bizId: number;
+  payerUserId: number;
+  channel: string;
+  fundScene: string;
+  terminalType: string;
+  subject: string;
+  amount: number;
+  amountCent: number;
+  refundedAmount: number;
+  refundedAmountCent: number;
+  refundStatus: "none" | "partial_refunded" | "refunded" | string;
+  outTradeNo: string;
+  providerTradeNo?: string;
+  status: string;
+  expiredAt?: string;
+  paidAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  launchTokenSet?: boolean;
+  refundOrderCount?: number;
+  refundSucceededCount?: number;
+}
+
+export interface AdminRefundOrderItem {
+  id: number;
+  paymentOrderId: number;
+  bizType: string;
+  bizId: number;
+  fundScene: string;
+  refundApplicationId: number;
+  outRefundNo: string;
+  amount: number;
+  amountCent: number;
+  reason?: string;
+  status: string;
+  failureReason?: string;
+  succeededAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminPaymentOrderDetail {
+  payment: AdminPaymentOrderItem;
+  refunds: AdminRefundOrderItem[];
+}
+
+export interface AdminPaymentOrderQuery {
+  page?: number;
+  pageSize?: number;
+  channel?: string;
+  status?: string;
+  bizType?: string;
+  fundScene?: string;
+  refundStatus?: string;
+  outTradeNo?: string;
   startDate?: string;
   endDate?: string;
 }
@@ -1910,6 +1973,26 @@ export const adminFinanceApi = {
         }
       >
     >("/admin/finance/transactions", { params }),
+  paymentOrders: (params?: AdminPaymentOrderQuery) =>
+    api.get<
+      AdminApiResponse<
+        AdminListData<AdminPaymentOrderItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >,
+      AdminApiResponse<
+        AdminListData<AdminPaymentOrderItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >
+    >("/admin/finance/payment-orders", { params }),
+  paymentOrderDetail: (id: number) =>
+    api.get<
+      AdminApiResponse<AdminPaymentOrderDetail>,
+      AdminApiResponse<AdminPaymentOrderDetail>
+    >(`/admin/finance/payment-orders/${id}`),
   reconciliations: (params?: AdminFinanceReconciliationQuery) =>
     api.get<
       AdminApiResponse<

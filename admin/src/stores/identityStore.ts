@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { identityApi } from '../services/api';
+import { readSafeErrorMessage } from '../utils/userFacingText';
 
 export type IdentityType = 'owner' | 'provider' | 'admin';
 export type ProviderSubType = 'designer' | 'company' | 'foreman';
@@ -43,7 +44,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
             set({ identities, loading: false });
         } catch (error: any) {
             set({
-                error: error.response?.data?.message || '获取身份列表失败',
+                error: readSafeErrorMessage(error, '获取身份列表失败'),
                 loading: false,
             });
         }
@@ -58,7 +59,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
             set({ currentIdentity, loading: false });
         } catch (error: any) {
             set({
-                error: error.response?.data?.message || '获取当前身份失败',
+                error: readSafeErrorMessage(error, '获取当前身份失败'),
                 loading: false,
             });
         }
@@ -83,7 +84,7 @@ export const useIdentityStore = create<IdentityState>((set, get) => ({
             set({ loading: false });
             return newToken;
         } catch (error: any) {
-            const errorMessage = error.response?.data?.message || error.message || '切换身份失败';
+            const errorMessage = readSafeErrorMessage(error, '切换身份失败');
             set({ error: errorMessage, loading: false });
             throw new Error(errorMessage);
         }

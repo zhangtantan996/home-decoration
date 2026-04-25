@@ -65,7 +65,7 @@ const FinanceAuditList: React.FC = () => {
 
   const handleExport = async () => {
     try {
-      message.info('导出功能开发中');
+      message.info('导出暂未开放');
     } catch (error) {
       message.error('导出失败');
     }

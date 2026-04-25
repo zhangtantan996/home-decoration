@@ -422,8 +422,8 @@ const ProjectDetail: React.FC = () => {
         extra={
           <Space>
             {!readonlyMode && project.status === 0 && (
-              <Button type="primary" onClick={() => handleStatusChange(1)}>
-                开始施工
+              <Button type="primary" onClick={() => navigate(`/supervision/projects/${id}`)}>
+                去监理工作台
               </Button>
             )}
             {!readonlyMode && project.status === 1 && (
@@ -449,7 +449,7 @@ const ProjectDetail: React.FC = () => {
                 icon={<ApartmentOutlined />}
                 onClick={() => void handleOpenConstructionModal()}
               >
-                干预施工方
+                项目内施工协调
               </Button>
             )}
             {!readonlyMode && (project.businessStage === "construction_party_pending" ||
@@ -458,7 +458,7 @@ const ProjectDetail: React.FC = () => {
                 icon={<DollarCircleOutlined />}
                 onClick={handleOpenQuoteModal}
               >
-                干预施工报价
+                项目内报价干预
               </Button>
             )}
             <Button onClick={() => navigate(-1)}>返回</Button>
@@ -544,7 +544,7 @@ const ProjectDetail: React.FC = () => {
       </Card>
 
       <Modal
-        title="运营干预施工方"
+        title="项目内施工协调"
         open={constructionModalVisible}
         onCancel={() => setConstructionModalVisible(false)}
         onOk={() => void handleConfirmConstruction()}

@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, List, Row, Col, Spin, Button } from 'antd';
+import { Card, List, Spin, Button } from 'antd';
 import {
     UserOutlined,
     TeamOutlined,
     ProjectOutlined,
     DollarOutlined,
     AuditOutlined,
-    BankOutlined,
-    SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { Line, Column, Pie } from '@ant-design/charts';
@@ -31,10 +29,7 @@ interface OverviewStats {
     monthlyGMV: number;
     northStar?: { key: string; label: string; value: number };
     coreMetrics?: Array<{ key: string; label: string; value: number }>;
-    bridgeMetrics?: Array<{ key: string; label: string; value: number }>;
     dashboardSections?: Array<{ key: string; title: string; metrics: Array<{ key: string; label: string; value: number }> }>;
-    userFunnel?: Array<{ key: string; label: string; value: number }>;
-    merchantFunnel?: Array<{ key: string; label: string; value: number }>;
 }
 
 interface TrendItem {
@@ -107,18 +102,19 @@ const Dashboard: React.FC = () => {
         };
 
         return [
-            { title: '待处理预约', value: `${currentStats.pendingBookings} 条`, path: '/bookings/list' },
-            { title: '进行中项目', value: `${currentStats.activeProjects} 个`, path: '/projects/list' },
-            { title: '服务商总量', value: `${currentStats.providerCount} 个`, path: '/providers/designers' },
-            { title: '主材商总量', value: `${currentStats.materialShopCount} 个`, path: '/materials/list' },
+            { title: '待处理预约', value: `${currentStats.pendingBookings} 条`, path: '/bookings/list', actionText: '处理' },
+            { title: '进行中项目', value: `${currentStats.activeProjects} 个`, path: '/projects/list', actionText: '查看' },
+            { title: '服务商总量', value: `${currentStats.providerCount} 个`, path: '/providers/designers', actionText: '查看' },
+            { title: '主材商总量', value: `${currentStats.materialShopCount} 个`, path: '/materials/list', actionText: '查看' },
         ];
     }, [stats]);
 
-    const bridgeMetrics = stats?.bridgeMetrics || [];
-
-    const formatBridgeMetricValue = (item: { key: string; value: number }) => {
-        if (item.key.endsWith("_rate")) {
+    const formatMetricValue = (item: { key: string; value: number }) => {
+        if (item.key.endsWith('_rate')) {
             return `${(item.value * 100).toFixed(1)}%`;
+        }
+        if (/(amount|revenue|gmv)/i.test(item.key)) {
+            return `¥${Math.round(item.value).toLocaleString()}`;
         }
         return Math.round(item.value).toLocaleString();
     };
@@ -236,35 +232,6 @@ const Dashboard: React.FC = () => {
                 />
             </div>
 
-            {bridgeMetrics.length ? (
-                <Card className="hz-panel-card" title="施工桥接监控">
-                    <Row gutter={[16, 16]}>
-                        {bridgeMetrics.map((item) => (
-                            <Col key={item.key} xs={24} sm={12} lg={8} xl={4}>
-                                <div
-                                    style={{
-                                        display: "grid",
-                                        gap: 6,
-                                        padding: "16px 18px",
-                                        borderRadius: 18,
-                                        background: "linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)",
-                                        border: "1px solid #dbeafe",
-                                        height: "100%",
-                                    }}
-                                >
-                                    <span style={{ fontSize: 12, color: "#64748b", letterSpacing: "0.04em" }}>
-                                        {item.label}
-                                    </span>
-                                    <span style={{ fontSize: 24, color: "#0f172a", fontWeight: 700, lineHeight: 1.2 }}>
-                                        {formatBridgeMetricValue(item)}
-                                    </span>
-                                </div>
-                            </Col>
-                        ))}
-                    </Row>
-                </Card>
-            ) : null}
-
             <div className="hz-dashboard-grid">
                 <Card className="hz-panel-card" title="有效预约趋势">
                     <div className="hz-chart-wrap">
@@ -272,7 +239,7 @@ const Dashboard: React.FC = () => {
                     </div>
                 </Card>
 
-                <Card className="hz-panel-card" title="服务商分层">
+                <Card className="hz-panel-card" title="供给治理分层">
                     <div className="hz-chart-wrap">
                         <Pie {...providerDistributionConfig} />
                     </div>
@@ -291,7 +258,7 @@ const Dashboard: React.FC = () => {
                             <List.Item
                                 actions={[
                                     <Button key={item.path} type="link">
-                                        <Link to={item.path}>立即处理</Link>
+                                        <Link to={item.path}>{item.actionText}</Link>
                                     </Button>,
                                 ]}
                             >
@@ -306,74 +273,25 @@ const Dashboard: React.FC = () => {
                 </Card>
             </div>
 
-            <div className="hz-dashboard-grid">
-                <Card className="hz-panel-card" title="一级看板摘要">
-                    <List
-                        dataSource={stats?.dashboardSections || []}
-                        renderItem={(item) => (
-                            <List.Item>
-                                <List.Item.Meta
-                                    title={item.title}
-                                    description={(item.metrics || []).map((metric) => `${metric.label}: ${metric.value}`).join(' · ')}
-                                />
-                            </List.Item>
-                        )}
-                    />
+            {(stats?.dashboardSections || []).length ? (
+                <Card className="hz-panel-card hz-dashboard-grid--full" title="经营健康摘要">
+                    <div className="hz-dashboard-summary-grid">
+                        {(stats?.dashboardSections || []).map((section) => (
+                            <div key={section.key} className="hz-dashboard-summary-card">
+                                <div className="hz-dashboard-summary-card__title">{section.title}</div>
+                                <div className="hz-dashboard-summary-card__metrics">
+                                    {(section.metrics || []).map((metric) => (
+                                        <div key={metric.key} className="hz-dashboard-summary-card__metric">
+                                            <span>{metric.label}</span>
+                                            <strong>{formatMetricValue(metric)}</strong>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </Card>
-                <Card className="hz-panel-card" title="用户侧漏斗">
-                    <List
-                        dataSource={stats?.userFunnel || []}
-                        renderItem={(item) => (
-                            <List.Item>
-                                <List.Item.Meta title={item.label} description={`${Math.round(item.value)} 个`} />
-                            </List.Item>
-                        )}
-                    />
-                </Card>
-                <Card className="hz-panel-card" title="商家侧漏斗">
-                    <List
-                        dataSource={stats?.merchantFunnel || []}
-                        renderItem={(item) => (
-                            <List.Item>
-                                <List.Item.Meta title={item.label} description={`${Math.round(item.value)} 个`} />
-                            </List.Item>
-                        )}
-                    />
-                </Card>
-            </div>
-
-            <Card className="hz-panel-card hz-dashboard-grid--full" title="快捷操作">
-                <Row gutter={[16, 16]}>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/audits">
-                            <Button block size="large" icon={<AuditOutlined />}>
-                                进入审核中心
-                            </Button>
-                        </Link>
-                    </Col>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/projects/list">
-                            <Button block size="large" icon={<ProjectOutlined />}>
-                                查看工地列表
-                            </Button>
-                        </Link>
-                    </Col>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/finance/escrow">
-                            <Button block size="large" icon={<BankOutlined />}>
-                                资金中心
-                            </Button>
-                        </Link>
-                    </Col>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/risk/warnings">
-                            <Button block size="large" icon={<SafetyCertificateOutlined />}>
-                                风险预警
-                            </Button>
-                        </Link>
-                    </Col>
-                </Row>
-            </Card>
+            ) : null}
         </div>
     );
 };
