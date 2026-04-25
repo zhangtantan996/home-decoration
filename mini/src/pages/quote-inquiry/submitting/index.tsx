@@ -11,6 +11,7 @@ import {
   clearQuoteInquirySubmitDraft,
   getQuoteInquirySubmitDraft,
 } from '@/utils/quoteInquirySubmitDraft';
+import { XIAN_CITY_CODE } from '@/utils/xianAddress';
 
 import './index.scss';
 
@@ -107,6 +108,7 @@ const QuoteInquirySubmittingPage: React.FC = () => {
     try {
       const response = await createQuoteInquiry({
         address: draft.address,
+        cityCode: draft.cityCode || XIAN_CITY_CODE,
         area: draft.area,
         houseLayout: draft.houseLayout,
         renovationType: draft.renovationType,

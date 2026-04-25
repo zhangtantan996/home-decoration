@@ -1,8 +1,8 @@
-import { View, Text } from '@tarojs/components'
-import { useEffect, useState } from 'react'
+import { View, Text, Progress } from '@tarojs/components'
+import { useCallback, useEffect, useState } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
-import { AtButton, AtProgress } from 'taro-ui'
-import request from '@/utils/request'
+import { request } from '@/utils/request'
+import { getErrorMessage } from '@/utils/error'
 import './index.scss'
 
 interface Milestone {
@@ -35,27 +35,29 @@ export default function MilestonePaymentList() {
   const [loading, setLoading] = useState(true)
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null)
 
-  useEffect(() => {
-    loadPaymentStatus()
-  }, [projectId])
-
-  const loadPaymentStatus = async () => {
+  const loadPaymentStatus = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await request.get(`/projects/${projectId}/milestone-payments`)
-      setPaymentStatus(res.data)
+      const res = await request<PaymentStatus>({
+        url: `/projects/${projectId}/milestone-payments`
+      })
+      setPaymentStatus(res)
     } catch (error: any) {
       Taro.showToast({
-        title: error.message || '加载失败',
+        title: getErrorMessage(error, '加载失败'),
         icon: 'none'
       })
     } finally {
       setLoading(false)
     }
-  }
+  }, [projectId])
+
+  useEffect(() => {
+    void loadPaymentStatus()
+  }, [loadPaymentStatus])
 
   const getStatusText = (milestone: Milestone) => {
-    if (milestone.releasedAt) return '已放款'
+    if (milestone.releasedAt) return '已打款'
     if (milestone.paidAt) return '已支付'
     return '待支付'
   }
@@ -109,12 +111,12 @@ export default function MilestonePaymentList() {
           <Text className="value paid">¥{paymentStatus.paidAmount.toFixed(2)}</Text>
         </View>
         <View className="summary-row">
-          <Text className="label">已放款</Text>
+          <Text className="label">已打款</Text>
           <Text className="value released">¥{paymentStatus.releasedAmount.toFixed(2)}</Text>
         </View>
         <View className="progress-section">
           <Text className="progress-label">支付进度</Text>
-          <AtProgress percent={paymentProgress} strokeWidth={8} />
+          <Progress percent={paymentProgress} strokeWidth={8} activeColor="#1677ff" />
           <Text className="progress-text">
             {paymentStatus.paidCount}/{paymentStatus.milestoneCount} 个节点已支付
           </Text>

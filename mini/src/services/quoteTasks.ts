@@ -54,6 +54,61 @@ export interface QuoteTaskDetail {
     dueAt?: string;
   }>;
   bridgeConversionSummary?: BridgeConversionSummaryDTO;
+  quoteTruthSummary?: {
+    quoteListId: number;
+    sourceType?: string;
+    sourceId?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    activeSubmissionId?: number;
+    awardedProviderId?: number;
+    confirmedAt?: string;
+    totalCent?: number;
+    estimatedDays?: number;
+    revisionCount?: number;
+  };
+  commercialExplanation?: {
+    baselineSummary?: {
+      title?: string;
+      sourceStage?: string;
+      submittedAt?: string;
+      itemCount?: number;
+      highlights?: string[];
+      readyForUser?: boolean;
+    };
+    scopeIncluded?: string[];
+    scopeExcluded?: string[];
+    teamSize?: number;
+    workTypes?: string[];
+    constructionMethodNote?: string;
+    siteVisitRequired?: boolean;
+  };
+  changeOrderSummary?: {
+    totalCount: number;
+    pendingUserConfirmCount: number;
+    pendingSettlementCount: number;
+    settledCount: number;
+    netAmountCent?: number;
+    latestChangeOrderId?: number;
+  };
+  settlementSummary?: {
+    latestSettlementId?: number;
+    status?: string;
+    grossAmount?: number;
+    netAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+  };
+  payoutSummary?: {
+    latestPayoutId?: number;
+    status?: string;
+    channel?: string;
+    scheduledAt?: string;
+    paidAt?: string;
+    failureReason?: string;
+  };
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
 }
 
 interface QuoteTaskSummaryDTO {
@@ -113,6 +168,13 @@ interface QuoteTaskUserViewDTO {
   businessStage?: string;
   flowSummary?: string;
   bridgeConversionSummary?: QuoteTaskDetail['bridgeConversionSummary'];
+  quoteTruthSummary?: QuoteTaskDetail['quoteTruthSummary'];
+  commercialExplanation?: QuoteTaskDetail['commercialExplanation'];
+  changeOrderSummary?: QuoteTaskDetail['changeOrderSummary'];
+  settlementSummary?: QuoteTaskDetail['settlementSummary'];
+  payoutSummary?: QuoteTaskDetail['payoutSummary'];
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
 }
 
 export async function listMyQuoteTasks() {
@@ -179,6 +241,13 @@ export async function getQuoteTaskDetail(id: number) {
       dueAt: plan.dueAt || undefined,
     })),
     bridgeConversionSummary: data.bridgeConversionSummary,
+    quoteTruthSummary: data.quoteTruthSummary,
+    commercialExplanation: data.commercialExplanation,
+    changeOrderSummary: data.changeOrderSummary,
+    settlementSummary: data.settlementSummary,
+    payoutSummary: data.payoutSummary,
+    financialClosureStatus: data.financialClosureStatus || undefined,
+    nextPendingAction: data.nextPendingAction || undefined,
   } satisfies QuoteTaskDetail;
 }
 

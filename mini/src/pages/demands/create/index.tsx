@@ -9,6 +9,10 @@ import { Input } from '@/components/Input';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import {
+  XianAddressFields,
+  type XianAddressValue,
+} from '@/components/XianAddressFields';
+import {
   createDemand,
   getDemandDetail,
   submitDemand,
@@ -19,7 +23,13 @@ import {
 } from '@/services/demands';
 import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
-import { showErrorToast } from '@/utils/error';
+import { isUserCancelError, showErrorToast } from '@/utils/error';
+import {
+  buildXianFullAddress,
+  normalizeXianDetailAddress,
+  parseXianAddress,
+  XIAN_CITY_SHORT_NAME,
+} from '@/utils/xianAddress';
 
 const DEMAND_TYPE_OPTIONS = [
   { value: 'renovation', label: '整装/全案' },
@@ -54,8 +64,9 @@ const DemandCreatePage: React.FC = () => {
   const [form, setForm] = useState({
     demandType: 'renovation',
     title: '',
-    city: '',
+    city: XIAN_CITY_SHORT_NAME,
     district: '',
+    districtCode: '',
     address: '',
     area: '',
     budgetMin: '',
@@ -79,12 +90,14 @@ const DemandCreatePage: React.FC = () => {
       setLoading(true);
       try {
         const detail = await getDemandDetail(demandId);
+        const parsedAddress = parseXianAddress(detail.address || '', detail.district || '');
         setForm({
           demandType: detail.demandType || 'renovation',
           title: detail.title || '',
-          city: detail.city || '',
-          district: detail.district || '',
-          address: detail.address || '',
+          city: XIAN_CITY_SHORT_NAME,
+          district: detail.district || parsedAddress.districtName,
+          districtCode: '',
+          address: parsedAddress.detailAddress || detail.address || '',
           area: detail.area > 0 ? String(detail.area) : '',
           budgetMin: detail.budgetMin > 0 ? String(detail.budgetMin) : '',
           budgetMax: detail.budgetMax > 0 ? String(detail.budgetMax) : '',
@@ -106,9 +119,9 @@ const DemandCreatePage: React.FC = () => {
   const payload = useMemo(() => ({
     demandType: form.demandType,
     title: form.title.trim(),
-    city: form.city.trim(),
+    city: XIAN_CITY_SHORT_NAME,
     district: form.district.trim(),
-    address: form.address.trim(),
+    address: buildXianFullAddress(form.district, form.address),
     area: Number(form.area || 0),
     budgetMin: Number(form.budgetMin || 0),
     budgetMax: Number(form.budgetMax || 0),
@@ -117,6 +130,14 @@ const DemandCreatePage: React.FC = () => {
     description: form.description.trim(),
     attachments,
   } satisfies DemandUpsertPayload), [attachments, form]);
+
+  const validateBeforeSubmit = () => {
+    const detailAddress = normalizeXianDetailAddress(form.district, form.address);
+    if (!form.district.trim()) return '请选择所在区县';
+    if (!detailAddress) return '请输入详细地址';
+    if (detailAddress.length < 2) return '详细地址至少输入 2 个字符';
+    return '';
+  };
 
   const persistDraft = async () => {
     if (demandId > 0) {
@@ -160,6 +181,9 @@ const DemandCreatePage: React.FC = () => {
         })),
       ].slice(0, 9));
     } catch (error) {
+      if (isUserCancelError(error)) {
+        return;
+      }
       showErrorToast(error, '附件上传失败');
     } finally {
       setUploading(false);
@@ -168,6 +192,13 @@ const DemandCreatePage: React.FC = () => {
 
   const handleSubmit = async (submitNow: boolean) => {
     if (submitting || uploading) return;
+
+    const errorMessage = validateBeforeSubmit();
+    if (errorMessage) {
+      Taro.showToast({ title: errorMessage, icon: 'none' });
+      return;
+    }
+
     setSubmitting(true);
     setMessage('');
 
@@ -244,9 +275,23 @@ const DemandCreatePage: React.FC = () => {
           })}
         </View>
         <Input label="需求标题" value={form.title} onChange={(value) => setForm((prev) => ({ ...prev, title: value }))} placeholder="例如：三室两厅老房翻新，希望改善收纳与动线" />
-        <Input label="城市" value={form.city} onChange={(value) => setForm((prev) => ({ ...prev, city: value }))} placeholder="例如：西安" />
-        <Input label="区域" value={form.district} onChange={(value) => setForm((prev) => ({ ...prev, district: value }))} placeholder="例如：雁塔区" />
-        <Input label="详细地址" value={form.address} onChange={(value) => setForm((prev) => ({ ...prev, address: value }))} placeholder="提交后仅平台可见，用于匹配服务范围" />
+        <XianAddressFields
+          value={{
+            districtName: form.district,
+            districtCode: form.districtCode,
+            detailAddress: form.address,
+          }}
+          onChange={(value: XianAddressValue) =>
+            setForm((prev) => ({
+              ...prev,
+              city: XIAN_CITY_SHORT_NAME,
+              district: value.districtName,
+              districtCode: value.districtCode,
+              address: value.detailAddress,
+            }))
+          }
+          detailPlaceholder="请输入街道、小区或门牌号"
+        />
         <Input label="建筑面积（㎡）" type="number" value={form.area} onChange={(value) => setForm((prev) => ({ ...prev, area: normalizeNumber(value) }))} placeholder="例如：98" />
         <View className="flex gap-sm">
           <View className="flex-1">

@@ -1,7 +1,8 @@
 import { View, Text, Button, Checkbox, Textarea } from '@tarojs/components'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Taro from '@tarojs/taro'
 import { request } from '@/utils/request'
+import { getErrorMessage } from '@/utils/error'
 import './index.scss'
 
 interface InspectionItem {
@@ -31,6 +32,10 @@ interface InspectionChecklist {
   itemsList: InspectionItem[]
 }
 
+interface ApiDataResponse<T> {
+  data?: T
+}
+
 export default function InspectionPage() {
   const [projectId, setProjectId] = useState<number>(0)
   const [milestones, setMilestones] = useState<Milestone[]>([])
@@ -42,61 +47,9 @@ export default function InspectionPage() {
   const [loading, setLoading] = useState(false)
   const [showRectificationInput, setShowRectificationInput] = useState(false)
 
-  useEffect(() => {
-    const params = Taro.getCurrentInstance().router?.params
-    if (params?.projectId) {
-      setProjectId(Number(params.projectId))
-      loadMilestones(Number(params.projectId))
-    }
-  }, [])
-
-  const loadMilestones = async (projectId: number) => {
+  const loadTemplate = useCallback(async (category: string) => {
     try {
-      const res = await request({
-        url: `/projects/${projectId}/milestones`,
-        method: 'GET',
-      })
-      setMilestones(res.data || [])
-      if (res.data && res.data.length > 0) {
-        setCurrentMilestoneId(res.data[0].id)
-        loadChecklist(projectId, res.data[0].id)
-      }
-    } catch (error) {
-      Taro.showToast({
-        title: '加载失败',
-        icon: 'none',
-      })
-    }
-  }
-
-  const loadChecklist = async (projectId: number, milestoneId: number) => {
-    try {
-      const res = await request({
-        url: `/projects/${projectId}/inspections?milestoneId=${milestoneId}`,
-        method: 'GET',
-      })
-      if (res.data && res.data.itemsList) {
-        setChecklist(res.data)
-        setChecklistItems(res.data.itemsList)
-      } else {
-        // 加载默认模板
-        const milestone = milestones.find(m => m.id === milestoneId)
-        if (milestone) {
-          loadTemplate(milestone.name)
-        }
-      }
-    } catch (error) {
-      // 如果没有验收清单，加载默认模板
-      const milestone = milestones.find(m => m.id === milestoneId)
-      if (milestone) {
-        loadTemplate(milestone.name)
-      }
-    }
-  }
-
-  const loadTemplate = async (category: string) => {
-    try {
-      const res = await request({
+      const res = await request<ApiDataResponse<InspectionChecklist>>({
         url: `/projects/inspection-template?category=${category}`,
         method: 'GET',
       })
@@ -106,7 +59,66 @@ export default function InspectionPage() {
     } catch (error) {
       console.error('加载模板失败', error)
     }
-  }
+  }, [])
+
+  const loadChecklist = useCallback(async (
+    projectId: number,
+    milestoneId: number,
+    milestoneList: Milestone[],
+  ) => {
+    try {
+      const res = await request<ApiDataResponse<InspectionChecklist>>({
+        url: `/projects/${projectId}/inspections?milestoneId=${milestoneId}`,
+        method: 'GET',
+      })
+      if (res.data && res.data.itemsList) {
+        setChecklist(res.data)
+        setChecklistItems(res.data.itemsList)
+      } else {
+        // 加载默认模板
+        const milestone = milestoneList.find(m => m.id === milestoneId)
+        if (milestone) {
+          await loadTemplate(milestone.name)
+        }
+      }
+    } catch (error) {
+      // 如果没有验收清单，加载默认模板
+      const milestone = milestoneList.find(m => m.id === milestoneId)
+      if (milestone) {
+        await loadTemplate(milestone.name)
+      }
+    }
+  }, [loadTemplate])
+
+  const loadMilestones = useCallback(async (projectId: number) => {
+    try {
+      const res = await request<ApiDataResponse<Milestone[]>>({
+        url: `/projects/${projectId}/milestones`,
+        method: 'GET',
+      })
+      const nextMilestones = res.data || []
+      setMilestones(nextMilestones)
+      if (nextMilestones.length > 0) {
+        const firstMilestone = nextMilestones[0]
+        setCurrentMilestoneId(firstMilestone.id)
+        await loadChecklist(projectId, firstMilestone.id, nextMilestones)
+      }
+    } catch (error) {
+      Taro.showToast({
+        title: '加载失败',
+        icon: 'none',
+      })
+    }
+  }, [loadChecklist])
+
+  useEffect(() => {
+    const params = Taro.getCurrentInstance().router?.params
+    if (params?.projectId) {
+      const nextProjectId = Number(params.projectId)
+      setProjectId(nextProjectId)
+      void loadMilestones(nextProjectId)
+    }
+  }, [loadMilestones])
 
   const handleItemCheck = (index: number, checked: boolean) => {
     const newItems = [...checklistItems]
@@ -172,7 +184,7 @@ export default function InspectionPage() {
         }, 1500)
       } catch (error: any) {
         Taro.showToast({
-          title: error.message || '操作失败',
+          title: getErrorMessage(error, '操作失败'),
           icon: 'none',
         })
       } finally {
@@ -205,7 +217,7 @@ export default function InspectionPage() {
         }, 1500)
       } catch (error: any) {
         Taro.showToast({
-          title: error.message || '验收失败',
+          title: getErrorMessage(error, '验收失败'),
           icon: 'none',
         })
       } finally {
@@ -241,7 +253,7 @@ export default function InspectionPage() {
               }`}
               onClick={() => {
                 setCurrentMilestoneId(milestone.id)
-                loadChecklist(projectId, milestone.id)
+                void loadChecklist(projectId, milestone.id, milestones)
               }}
             >
               {milestone.name}
@@ -281,8 +293,9 @@ export default function InspectionPage() {
               <View key={index} className="checklist-item">
                 <View className="item-header">
                   <Checkbox
+                    value={`inspection-${index}`}
                     checked={item.passed}
-                    onChange={e => handleItemCheck(index, e.detail.value)}
+                    onChange={e => handleItemCheck(index, e.detail.value.length > 0)}
                   />
                   <Text className="item-name">
                     {item.name}
@@ -302,8 +315,9 @@ export default function InspectionPage() {
             <View className="inspection-actions">
               <View className="action-item">
                 <Checkbox
+                  value="rectification"
                   checked={showRectificationInput}
-                  onChange={e => setShowRectificationInput(e.detail.value)}
+                  onChange={e => setShowRectificationInput(e.detail.value.length > 0)}
                 />
                 <Text>验收不通过，要求整改</Text>
               </View>

@@ -296,6 +296,75 @@ export interface ProjectDetailDTO extends ProjectDTO {
     financialClosureStatus?: string;
     nextPendingAction?: string;
   };
+  quoteTruthSummary?: {
+    quoteListId: number;
+    sourceType?: string;
+    sourceId?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    activeSubmissionId?: number;
+    awardedProviderId?: number;
+    confirmedAt?: string;
+    totalCent?: number;
+    estimatedDays?: number;
+    revisionCount?: number;
+  };
+  commercialExplanation?: {
+    baselineSummary?: BridgeConversionQuoteBaselineSummaryDTO;
+    scopeIncluded?: string[];
+    scopeExcluded?: string[];
+    teamSize?: number;
+    workTypes?: string[];
+    constructionMethodNote?: string;
+    siteVisitRequired?: boolean;
+    paymentPlanSummary?: Array<{
+      id: number;
+      orderId: number;
+      milestoneId?: number;
+      type: string;
+      seq: number;
+      name: string;
+      amount?: number;
+      status: number;
+      dueAt?: string;
+      paidAt?: string;
+    }>;
+  };
+  changeOrderSummary?: {
+    totalCount: number;
+    pendingUserConfirmCount: number;
+    pendingSettlementCount: number;
+    settledCount: number;
+    netAmountCent?: number;
+    latestChangeOrderId?: number;
+  };
+  settlementSummary?: {
+    latestSettlementId?: number;
+    status?: string;
+    grossAmount?: number;
+    netAmount?: number;
+    totalGrossAmount?: number;
+    totalNetAmount?: number;
+    settledAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+  };
+  payoutSummary?: {
+    latestPayoutId?: number;
+    status?: string;
+    channel?: string;
+    totalAmount?: number;
+    paidAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+    failureReason?: string;
+  };
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   milestones?: Array<Record<string, unknown>>;
   logs?: Array<Record<string, unknown>>;
   escrow?: Record<string, unknown>;

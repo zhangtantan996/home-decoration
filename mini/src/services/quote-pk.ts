@@ -1,4 +1,6 @@
-import request from '@/utils/request';
+// Legacy compatibility only: quote-pk 主链已退役。
+// 保留此文件仅用于历史兼容排查，不应再接入任何运行时入口。
+import { request } from '@/utils/request';
 
 export interface CreateQuoteTaskRequest {
   bookingId: number;
@@ -43,17 +45,31 @@ export interface QuoteComparisonItem {
 }
 
 export const createQuoteTask = (data: CreateQuoteTaskRequest): Promise<QuoteTask> => {
-  return request.post('/quote-pk/tasks', data);
+  return request<QuoteTask>({
+    url: '/quote-pk/tasks',
+    method: 'POST',
+    data,
+  });
 };
 
 export const getQuoteTask = (taskId: number): Promise<QuoteTask> => {
-  return request.get(`/quote-pk/tasks/${taskId}`);
+  return request<QuoteTask>({
+    url: `/quote-pk/tasks/${taskId}`,
+    method: 'GET',
+  });
 };
 
 export const getQuoteComparison = (taskId: number): Promise<QuoteComparisonItem[]> => {
-  return request.get(`/quote-pk/tasks/${taskId}/submissions`);
+  return request<QuoteComparisonItem[]>({
+    url: `/quote-pk/tasks/${taskId}/submissions`,
+    method: 'GET',
+  });
 };
 
 export const selectQuote = (taskId: number, submissionId: number): Promise<void> => {
-  return request.post(`/quote-pk/tasks/${taskId}/select`, { submissionId });
+  return request<void>({
+    url: `/quote-pk/tasks/${taskId}/select`,
+    method: 'POST',
+    data: { submissionId },
+  });
 };

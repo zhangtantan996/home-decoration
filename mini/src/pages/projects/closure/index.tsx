@@ -1,6 +1,6 @@
 import { Button, Text, View } from "@tarojs/components";
 import Taro, { useRouter } from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { request } from "@/utils/request";
 
@@ -44,11 +44,7 @@ export default function ProjectClosurePage() {
   const [loading, setLoading] = useState(true);
   const [closure, setClosure] = useState<ProjectClosure | null>(null);
 
-  useEffect(() => {
-    void fetchClosureInfo();
-  }, [projectId]);
-
-  const fetchClosureInfo = async () => {
+  const fetchClosureInfo = useCallback(async () => {
     if (!projectId) {
       setLoading(false);
       setClosure(null);
@@ -71,7 +67,11 @@ export default function ProjectClosurePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId]);
+
+  useEffect(() => {
+    void fetchClosureInfo();
+  }, [fetchClosureInfo]);
 
   if (loading) {
     return (

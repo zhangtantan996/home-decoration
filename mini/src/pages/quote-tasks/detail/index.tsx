@@ -151,6 +151,21 @@ const QuoteTaskDetailPage: React.FC = () => {
             ]}
           />
 
+          {(detail.quoteTruthSummary || detail.commercialExplanation || detail.changeOrderSummary || detail.settlementSummary || detail.payoutSummary) ? (
+            <Card className="notification-surface-card" title="统一报价与后链摘要">
+              <NotificationFactRows
+                items={[
+                  { label: '成交报价', value: detail.quoteTruthSummary?.totalCent ? formatCurrency(Math.round(detail.quoteTruthSummary.totalCent / 100)) : '待同步' },
+                  { label: '预计工期', value: detail.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '待同步' },
+                  { label: '施工范围内', value: detail.commercialExplanation?.scopeIncluded?.join('、') || '待同步', multiline: true },
+                  { label: '施工范围外', value: detail.commercialExplanation?.scopeExcluded?.join('、') || '待同步', multiline: true },
+                  { label: '资金闭环', value: detail.financialClosureStatus || '待同步' },
+                  { label: '下一步', value: detail.nextPendingAction || '待同步', multiline: true },
+                ]}
+              />
+            </Card>
+          ) : null}
+
           <Card className="notification-surface-card" title="房屋与范围">
             <NotificationFactRows
               items={[

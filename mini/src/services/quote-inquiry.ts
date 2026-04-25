@@ -2,6 +2,7 @@ import { request } from '@/utils/request';
 
 export interface CreateQuoteInquiryPayload {
   address: string;
+  cityCode?: string;
   area: number;
   houseLayout: string;
   renovationType: string;

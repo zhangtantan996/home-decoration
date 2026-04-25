@@ -14,7 +14,7 @@ import { Tag } from '@/components/Tag';
 import { submitProjectDispute, getProjectDetail, type ProjectDetail } from '@/services/projects';
 import { uploadFile } from '@/services/uploads';
 import { useAuthStore } from '@/store/auth';
-import { showErrorToast } from '@/utils/error';
+import { isUserCancelError, showErrorToast } from '@/utils/error';
 import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { formatServerDateTime } from '@/utils/serverTime';
 
@@ -75,6 +75,9 @@ const ProjectDisputePage: React.FC = () => {
       setEvidence((prev) => [...prev, ...uploaded.map((item) => item.path || item.url)].slice(0, 6));
       Taro.showToast({ title: '证据已上传', icon: 'success' });
     } catch (error) {
+      if (isUserCancelError(error)) {
+        return;
+      }
       showErrorToast(error, '上传失败');
     } finally {
       setUploading(false);

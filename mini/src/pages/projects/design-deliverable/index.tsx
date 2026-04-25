@@ -246,7 +246,7 @@ const ProjectDesignDeliverablePage: React.FC = () => {
 
         <Card className="notification-surface-card" title="文件清单">
           <Text className="notification-section-row__note" style={{ marginTop: 0 }}>
-            当前端仅展示文件数量与清单，完整文件请在支持端查看。
+            当前仅展示文件数量与清单，完整文件请在支持端查看。
           </Text>
           <View className="notification-section-list">
             {sections.map((section) => (

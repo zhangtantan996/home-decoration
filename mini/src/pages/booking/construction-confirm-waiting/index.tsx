@@ -83,7 +83,7 @@ const ConstructionConfirmWaiting: React.FC = () => {
     }
 
     const currentStage = detail.currentStage || detail.booking.currentStage || detail.businessStage;
-    // 如果还在等待工长确认，启动轮询
+    // 如果还在施工桥接中，启动轮询
     if (currentStage === 'construction_party_pending') {
       pollingTimerRef.current = setInterval(() => {
         fetchDetail();
@@ -155,7 +155,7 @@ const ConstructionConfirmWaiting: React.FC = () => {
           </View>
 
           <Text className="construction-waiting-page__title">
-            {isConfirmed ? '工长已确认' : '等待工长确认'}
+            {isConfirmed ? '施工主体已确认' : '施工桥接推进中'}
           </Text>
 
           <Text className="construction-waiting-page__subtitle">

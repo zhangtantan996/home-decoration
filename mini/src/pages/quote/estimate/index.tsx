@@ -96,7 +96,7 @@ const QuoteEstimatePage: React.FC = () => {
         duration: 1500,
       });
     } catch (error: any) {
-      showErrorToast(error.message || "生成报价失败");
+      showErrorToast(error, "生成报价失败");
     } finally {
       setLoading(false);
     }

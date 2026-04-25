@@ -217,7 +217,7 @@ const BookingDesignDeliverablePage: React.FC = () => {
               </View>
             )}
             <View className="notification-support-note">
-              <Text>小程序当前仅展示文件清单，完整文件请在支持端查看。</Text>
+              <Text>当前仅展示文件清单，完整文件请在支持端查看。</Text>
             </View>
           </Card>
         </View>

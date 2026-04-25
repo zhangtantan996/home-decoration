@@ -77,7 +77,7 @@ const ConstructionSubjectSelect: React.FC = () => {
             providerType: provider.providerType as 2 | 3,
           });
 
-          Taro.showToast({ title: '已提交选择，等待工长确认', icon: 'success' });
+          Taro.showToast({ title: '已提交选择，进入施工桥接推进', icon: 'success' });
           Taro.redirectTo({
             url: `/pages/booking/construction-confirm-waiting/index?bookingId=${bookingId}&providerId=${provider.id}`,
           });

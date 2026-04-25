@@ -1,3 +1,5 @@
+// Legacy compatibility only: quote-pk 主链已退役。
+// 当前页面不在运行时入口，仅保留历史代码供兼容排查。
 import React, { useEffect, useState } from 'react';
 import { Image, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
@@ -73,7 +75,7 @@ const QuoteComparisonPage: React.FC = () => {
   if (loading) {
     return (
       <View className="min-h-screen bg-gray-50 p-4">
-        <Skeleton rows={3} />
+        <Skeleton row={3} />
       </View>
     );
   }
@@ -103,13 +105,13 @@ const QuoteComparisonPage: React.FC = () => {
             <View className="flex-1">
               <Text className="text-base font-semibold">{item.providerName}</Text>
               <View className="flex items-center mt-1">
-                <Tag type="warning" size="small">
+                <Tag variant="warning">
                   评分 {item.rating.toFixed(1)}
                 </Tag>
-                <Tag type="info" size="small" className="ml-2">
+                <Tag variant="secondary" className="ml-2">
                   {item.yearsExperience}年经验
                 </Tag>
-                <Tag type="success" size="small" className="ml-2">
+                <Tag variant="success" className="ml-2">
                   完成{item.completedCnt}单
                 </Tag>
               </View>
@@ -156,12 +158,12 @@ const QuoteComparisonPage: React.FC = () => {
             </Button>
           )}
           {item.status === 'selected' && (
-            <Tag type="success" className="mt-4">
+            <Tag variant="success" className="mt-4">
               已选择
             </Tag>
           )}
           {item.status === 'rejected' && (
-            <Tag type="default" className="mt-4">
+            <Tag variant="default" className="mt-4">
               未选择
             </Tag>
           )}
@@ -172,4 +174,3 @@ const QuoteComparisonPage: React.FC = () => {
 };
 
 export default QuoteComparisonPage;
-

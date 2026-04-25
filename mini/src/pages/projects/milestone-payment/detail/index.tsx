@@ -1,8 +1,11 @@
-import { View, Text } from '@tarojs/components'
-import { useEffect, useState } from 'react'
+import { View, Text, Button } from '@tarojs/components'
+import { useCallback, useEffect, useState } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
-import { AtButton, AtModal, AtModalHeader, AtModalContent, AtModalAction } from 'taro-ui'
-import request from '@/utils/request'
+import { request } from '@/utils/request'
+import { getErrorMessage } from '@/utils/error'
+import { miniPaymentAdapter } from '@/adapters/payment'
+import { getPaymentStatus } from '@/services/payments'
+import { startOrderCenterEntryPayment } from '@/services/orderCenter'
 import './index.scss'
 
 interface Milestone {
@@ -19,51 +22,80 @@ interface Milestone {
   acceptedAt: string | null
 }
 
+interface PaymentPlan {
+  id: number
+  milestoneId?: number
+  payable?: boolean
+  status?: string | number
+}
+
+interface MilestonePaymentStatus {
+  milestones: Milestone[]
+  paymentPlans?: PaymentPlan[]
+  constructionOrderEntryKey?: string
+}
+
 export default function MilestonePaymentDetail() {
   const router = useRouter()
   const { projectId, milestoneId } = router.params
   const [loading, setLoading] = useState(true)
   const [milestone, setMilestone] = useState<Milestone | null>(null)
-  const [showPayModal, setShowPayModal] = useState(false)
-  const [showReleaseModal, setShowReleaseModal] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [constructionOrderEntryKey, setConstructionOrderEntryKey] = useState('')
+  const [nextPayablePlan, setNextPayablePlan] = useState<PaymentPlan | null>(null)
 
-  useEffect(() => {
-    loadMilestoneDetail()
-  }, [milestoneId])
-
-  const loadMilestoneDetail = async () => {
+  const loadMilestoneDetail = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await request.get(`/projects/${projectId}/milestone-payments`)
-      const milestones = res.data.milestones || []
+      const res = await request<MilestonePaymentStatus>({
+        url: `/projects/${projectId}/milestone-payments`
+      })
+      const milestones = res.milestones || []
       const found = milestones.find((m: Milestone) => m.id === Number(milestoneId))
       setMilestone(found || null)
+      setConstructionOrderEntryKey(res.constructionOrderEntryKey || '')
+      const plans: PaymentPlan[] = res.paymentPlans || []
+      setNextPayablePlan(plans.find((plan) => plan.payable) || null)
     } catch (error: any) {
       Taro.showToast({
-        title: error.message || '加载失败',
+        title: getErrorMessage(error, '加载失败'),
         icon: 'none'
       })
     } finally {
       setLoading(false)
     }
-  }
+  }, [projectId, milestoneId])
+
+  useEffect(() => {
+    void loadMilestoneDetail()
+  }, [loadMilestoneDetail])
 
   const handlePay = async () => {
     try {
       setProcessing(true)
-      await request.post(`/milestones/${milestoneId}/pay?projectId=${projectId}`, {
-        paymentType: 'wechat'
+      if (!constructionOrderEntryKey) {
+        throw new Error('施工订单暂未生成，请稍后再试')
+      }
+      if (!nextPayablePlan || nextPayablePlan.milestoneId !== Number(milestoneId)) {
+        throw new Error('请按施工付款计划顺序支付当前应付节点')
+      }
+      const launch = await startOrderCenterEntryPayment(constructionOrderEntryKey, {
+        channel: 'wechat',
+        terminalType: 'mini_wechat_jsapi'
       })
+      if (launch.launchMode !== 'wechat_jsapi' || !launch.wechatPayParams) {
+        throw new Error('当前节点暂不支持小程序微信支付')
+      }
+      await miniPaymentAdapter.requestPayment(launch.wechatPayParams)
+      const backendStatus = await waitPaymentCompleted(launch.paymentId)
       Taro.showToast({
-        title: '支付成功',
-        icon: 'success'
+        title: backendStatus === 'paid' ? '支付已确认' : '支付结果确认中',
+        icon: backendStatus === 'paid' ? 'success' : 'none'
       })
-      setShowPayModal(false)
-      loadMilestoneDetail()
+      await loadMilestoneDetail()
     } catch (error: any) {
       Taro.showToast({
-        title: error.message || '支付失败',
+        title: getErrorMessage(error, '支付失败'),
         icon: 'none'
       })
     } finally {
@@ -71,23 +103,62 @@ export default function MilestonePaymentDetail() {
     }
   }
 
+  const confirmPay = async () => {
+    if (!milestone) {
+      return
+    }
+    const res = await Taro.showModal({
+      title: '确认支付',
+      content: `确认通过微信支付 ¥${milestone.amount.toFixed(2)}？支付结果以后端确认为准。`
+    })
+    if (res.confirm) {
+      await handlePay()
+    }
+  }
+
+  const waitPaymentCompleted = async (paymentId: number): Promise<'paid' | 'pending'> => {
+    for (let i = 0; i < 8; i++) {
+      const status = await getPaymentStatus(paymentId)
+      if (status.status === 'paid') {
+        return 'paid'
+      }
+      if (status.status === 'closed' || status.status === 'failed') {
+        throw new Error('支付未完成，请重新发起')
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    }
+    return 'pending'
+  }
+
   const handleRelease = async () => {
     try {
       setProcessing(true)
-      await request.post(`/milestones/${milestoneId}/release-payment?projectId=${projectId}`)
+      await request({
+        url: `/milestones/${milestoneId}/release-payment?projectId=${projectId}`,
+        method: 'POST'
+      })
       Taro.showToast({
-        title: '放款成功',
+        title: '已提交结算',
         icon: 'success'
       })
-      setShowReleaseModal(false)
-      loadMilestoneDetail()
+      await loadMilestoneDetail()
     } catch (error: any) {
       Taro.showToast({
-        title: error.message || '放款失败',
+        title: getErrorMessage(error, '结算提交失败'),
         icon: 'none'
       })
     } finally {
       setProcessing(false)
+    }
+  }
+
+  const confirmRelease = async () => {
+    const res = await Taro.showModal({
+      title: '确认结算',
+      content: '确认节点已完成验收？系统将生成结算记录并等待线下打款确认。'
+    })
+    if (res.confirm) {
+      await handleRelease()
     }
   }
 
@@ -107,8 +178,8 @@ export default function MilestonePaymentDetail() {
     )
   }
 
-  const canPay = milestone.status === 0
-  const canRelease = milestone.status === 1 && milestone.paidAt && !milestone.releasedAt
+  const canPay = milestone.status === 0 && nextPayablePlan?.milestoneId === milestone.id
+  const canRelease = milestone.status === 3 && milestone.acceptedAt && !milestone.releasedAt
 
   return (
     <View className="milestone-payment-detail">
@@ -160,7 +231,7 @@ export default function MilestonePaymentDetail() {
           <View className={`timeline-item ${milestone.releasedAt ? 'completed' : 'pending'}`}>
             <View className="timeline-dot" />
             <View className="timeline-content">
-              <Text className="timeline-title">平台放款给商家</Text>
+              <Text className="timeline-title">线下打款确认</Text>
               {milestone.releasedAt && (
                 <Text className="timeline-time">
                   {new Date(milestone.releasedAt).toLocaleString()}
@@ -173,42 +244,16 @@ export default function MilestonePaymentDetail() {
 
       <View className="actions">
         {canPay && (
-          <AtButton type="primary" onClick={() => setShowPayModal(true)}>
+          <Button className="primary-action" onClick={confirmPay} disabled={processing}>
             支付节点款项
-          </AtButton>
+          </Button>
         )}
         {canRelease && (
-          <AtButton type="primary" onClick={() => setShowReleaseModal(true)}>
-            确认完成并放款
-          </AtButton>
+          <Button className="primary-action" onClick={confirmRelease} disabled={processing}>
+            确认验收并结算
+          </Button>
         )}
       </View>
-
-      <AtModal isOpened={showPayModal}>
-        <AtModalHeader>确认支付</AtModalHeader>
-        <AtModalContent>
-          <Text>确认支付 ¥{milestone.amount.toFixed(2)} 到托管账户？</Text>
-        </AtModalContent>
-        <AtModalAction>
-          <button onClick={() => setShowPayModal(false)}>取消</button>
-          <button onClick={handlePay} disabled={processing}>
-            {processing ? '处理中...' : '确认'}
-          </button>
-        </AtModalAction>
-      </AtModal>
-
-      <AtModal isOpened={showReleaseModal}>
-        <AtModalHeader>确认放款</AtModalHeader>
-        <AtModalContent>
-          <Text>确认节点已完成验收，平台将放款 ¥{milestone.amount.toFixed(2)} 给商家</Text>
-        </AtModalContent>
-        <AtModalAction>
-          <button onClick={() => setShowReleaseModal(false)}>取消</button>
-          <button onClick={handleRelease} disabled={processing}>
-            {processing ? '处理中...' : '确认'}
-          </button>
-        </AtModalAction>
-      </AtModal>
     </View>
   )
 }

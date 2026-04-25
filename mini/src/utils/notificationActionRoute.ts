@@ -142,7 +142,7 @@ export const resolveMiniNotificationRoute = (actionUrl?: string) => {
   }
 
   if (normalized === '/complaints/new') {
-    return '/pages/complaints/create/index';
+    return '/pages/complaints/list/index';
   }
 
   if (normalized.startsWith('/pages/chat/index')) {

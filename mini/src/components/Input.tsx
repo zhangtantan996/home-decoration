@@ -4,13 +4,14 @@ import './Input.scss';
 
 interface InputProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
   label?: string;
   placeholder?: string;
   type?: 'text' | 'number' | 'password' | 'phone';
   disabled?: boolean;
   error?: string;
   className?: string;
+  maxLength?: number;
 }
 
 const buildClassName = (base: string, parts: Array<string | false | undefined>) => {
@@ -25,7 +26,8 @@ export const Input: React.FC<InputProps> = ({
   type = 'text',
   disabled,
   error,
-  className
+  className,
+  maxLength
 }) => {
   const wrapperClass = buildClassName('input-wrapper', [className]);
   const fieldClass = buildClassName('input-wrapper__field', [
@@ -39,12 +41,13 @@ export const Input: React.FC<InputProps> = ({
       <TaroInput
         className={fieldClass}
         value={value}
-        onInput={(e) => onChange(e.detail.value)}
+        onInput={(e) => onChange?.(e.detail.value)}
         placeholder={placeholder}
         placeholderClass="text-placeholder"
         placeholderStyle="color: #A1A1AA"
         type={type as any}
         disabled={disabled}
+        maxlength={maxLength}
       />
       {error && <Text className="input-wrapper__error">{error}</Text>}
     </View>

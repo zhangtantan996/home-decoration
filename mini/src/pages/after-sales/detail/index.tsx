@@ -17,6 +17,8 @@ import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 
+import './index.scss';
+
 const statusVariantMap: Record<number, 'warning' | 'primary' | 'success' | 'default'> = {
   0: 'warning',
   1: 'primary',
@@ -117,45 +119,35 @@ const AfterSalesDetailPage: React.FC = () => {
   const canCancel = [0, 1].includes(detail.status);
   const statusVariant = statusVariantMap[detail.status] || 'default';
   const hasReply = isMeaningfulText(detail.reply, '平台尚未回复。');
-  const hasDescription = isMeaningfulText(detail.description, '暂无补充说明。');
 
   return (
-    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+    <NotificationSurfaceShell className="after-sales-detail-page" style={pageBottomStyle}>
       <View className="notification-surface-shell__body">
         <NotificationSurfaceHero
           eyebrow="售后详情"
           title={detail.reason}
-          subtitle={`${detail.typeText} · 订单号 ${detail.orderNo}`}
+          subtitle={detail.typeText}
           status={<Tag variant={statusVariant}>{detail.statusText}</Tag>}
-          summary={hasReply ? detail.reply : '售后处理进展会持续同步'}
           metrics={[
             { label: '涉及金额', value: detail.amountText, emphasis: true },
-            { label: '当前状态', value: detail.statusText },
+            { label: '提交时间', value: detail.createdAt || '待同步' },
           ]}
         />
 
         <Card className="notification-surface-card" title="关键信息">
           <NotificationFactRows
             items={[
-              { label: '提交时间', value: detail.createdAt || '待同步' },
+              { label: '当前状态', value: detail.statusText },
+              { label: '关联对象', value: detail.bookingId > 0 ? '预约服务' : '待同步' },
               { label: '完成时间', value: detail.resolvedAt || '待处理' },
-              { label: '关联预约', value: detail.bookingId > 0 ? `#${detail.bookingId}` : '待同步' },
             ]}
           />
         </Card>
 
         {hasReply ? (
           <Card className="notification-surface-card" title="处理结果">
-            <Text className="notification-section-row__note" style={{ marginTop: 0, color: '#0F172A' }}>
+            <Text className="after-sales-detail-page__result-text">
               {detail.reply}
-            </Text>
-          </Card>
-        ) : null}
-
-        {hasDescription ? (
-          <Card className="notification-surface-card" title="申请说明">
-            <Text className="notification-section-row__note" style={{ marginTop: 0, color: '#0F172A' }}>
-              {detail.description}
             </Text>
           </Card>
         ) : null}
@@ -163,10 +155,10 @@ const AfterSalesDetailPage: React.FC = () => {
         <Card
           className="notification-surface-card"
           title="证据材料"
-          extra={<Text style={{ fontSize: '22rpx', color: '#8E8E93' }}>{detail.images.length} 张</Text>}
+          extra={<Text className="after-sales-detail-page__image-count">{detail.images.length} 张</Text>}
         >
           {detail.images.length === 0 ? (
-            <View className="text-sm text-gray-400">未上传图片证据</View>
+            <View className="after-sales-detail-page__empty-evidence">未上传图片证据</View>
           ) : (
             <View className="notification-gallery">
               {detail.images.map((item, index) => (
@@ -175,7 +167,6 @@ const AfterSalesDetailPage: React.FC = () => {
                     className="notification-gallery__item"
                     src={item}
                     mode="aspectFill"
-                    style={{ height: '220rpx' }}
                     onClick={() => Taro.previewImage({ urls: detail.images, current: item })}
                   />
                   <Text className="notification-gallery__caption">{`证据 ${index + 1}`}</Text>

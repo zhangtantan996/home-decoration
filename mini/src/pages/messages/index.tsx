@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { Icon } from '@/components/Icon';
 import MiniPageNav, { MINI_PAGE_NAV_EXTRA_BOTTOM } from '@/components/MiniPageNav';
-import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
@@ -80,25 +79,18 @@ const NotificationsHeader = ({
   filters,
   activeFilter,
   onChange,
-  onManage,
 }: {
   filterShellStyle: CSSProperties;
   placeholderStyle: CSSProperties;
   filters: NotificationFilterViewModel[];
   activeFilter: NotificationFilterKey;
   onChange: (key: NotificationFilterKey) => void;
-  onManage: () => void;
 }) => (
   <>
     <MiniPageNav
       title="通知"
       onBack={() => undefined}
       showBack={false}
-      rightSlot={(
-        <View className="notifications-page__nav-action" onClick={onManage}>
-          <Icon name="settings" size={18} color="#8E8E93" />
-        </View>
-      )}
     />
     <View className="notifications-page__filters-shell" style={filterShellStyle}>
       <FilterBar activeFilter={activeFilter} filters={filters} onChange={onChange} />
@@ -167,23 +159,65 @@ const SectionHeader = ({
   </View>
 );
 
-const NotificationLeading = ({ tone, iconName }: Pick<NotificationCardViewModel, 'visualTone' | 'iconName'>) => (
-  <View className={`notifications-page__leading notifications-page__leading--${tone}`}>
-    <Icon
-      name={iconName}
-      size={22}
-      color={
-        tone === 'orange'
-          ? '#D97706'
-          : tone === 'green'
-            ? '#059669'
-            : tone === 'blue'
-              ? '#2563EB'
-              : '#94A3B8'
-      }
-    />
-  </View>
-);
+const resolveCardActionText = (item: NotificationCardViewModel) => {
+  if (!item.canNavigate) {
+    return '';
+  }
+  if (item.actionStatus === 'expired') {
+    return '查看';
+  }
+  return item.actionText || '查看详情';
+};
+
+const NotificationCard = ({
+  item,
+  onOpen,
+  onManage,
+}: {
+  item: NotificationCardViewModel;
+  onOpen: () => void;
+  onManage: () => void;
+}) => {
+  const actionText = resolveCardActionText(item);
+  const unsupportedText = !item.canNavigate && item.raw.actionUrl ? '当前通知暂不支持小程序内查看' : '';
+
+  return (
+    <View
+      className={`notifications-page__card ${!item.isRead ? 'is-unread' : ''}`}
+      onClick={onOpen}
+      onLongPress={onManage}
+    >
+      <View className="notifications-page__card-head">
+        <Text className="notifications-page__card-title line-clamp-1">{item.title}</Text>
+        <Text className={`notifications-page__card-status is-${item.statusTone}`}>{item.statusLabel}</Text>
+      </View>
+
+      <View className="notifications-page__card-body">
+        <View className="notifications-page__card-main">
+          <Text className={`notifications-page__card-type is-${item.visualTone}`}>{item.typeLabel}</Text>
+          <Text className="notifications-page__card-summary line-clamp-2">
+            {unsupportedText ? `${item.content} · ${unsupportedText}` : item.content}
+          </Text>
+        </View>
+      </View>
+
+      <View className="notifications-page__card-foot">
+        <Text className="notifications-page__card-time">{item.timeLabel}</Text>
+        {actionText ? (
+          <View
+            className="notifications-page__card-action"
+            onClick={(event) => {
+              event.stopPropagation?.();
+              onOpen();
+            }}
+          >
+            <Text className="notifications-page__card-action-text">{actionText}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+};
 
 export default function NotificationsPage() {
   const auth = useAuthStore();
@@ -428,58 +462,6 @@ export default function NotificationsPage() {
     }
   }, [notifications]);
 
-  const handleClearCurrentList = useCallback(async () => {
-    const currentIds = sections.flatMap((section) => section.items.map((item) => item.id));
-    if (currentIds.length === 0) {
-      return;
-    }
-    try {
-      const results = await Promise.allSettled(
-        currentIds.map(async (id) => {
-          await deleteNotification(id);
-          return id;
-        }),
-      );
-      const successIds = results
-        .filter((result): result is PromiseFulfilledResult<number> => result.status === 'fulfilled')
-        .map((result) => result.value);
-      const failedCount = results.length - successIds.length;
-
-      if (successIds.length > 0) {
-        setNotifications((prev) => prev.filter((item) => !successIds.includes(item.id)));
-      }
-
-      if (failedCount === 0) {
-        Taro.showToast({ title: '已清空当前列表', icon: 'none' });
-        return;
-      }
-
-      if (successIds.length > 0) {
-        Taro.showToast({ title: `已删除${successIds.length}条，${failedCount}条失败`, icon: 'none' });
-        return;
-      }
-
-      Taro.showToast({ title: '清空失败，请重试', icon: 'none' });
-    } catch (error) {
-      showErrorToast(error, '清空失败');
-    }
-  }, [sections]);
-
-  const handleOpenManage = useCallback(async () => {
-    const hasUnread = notifications.some((item) => !item.isRead);
-    const itemList = hasUnread ? ['全部标记已读', '清空当前列表'] : ['清空当前列表'];
-    try {
-      const result = await Taro.showActionSheet({ itemList });
-      if (hasUnread && result.tapIndex === 0) {
-        await handleMarkAllRead();
-        return;
-      }
-      await handleClearCurrentList();
-    } catch {
-      return;
-    }
-  }, [handleClearCurrentList, handleMarkAllRead, notifications]);
-
   if (!auth.token) {
     return <View className="notifications-page" />;
   }
@@ -492,7 +474,6 @@ export default function NotificationsPage() {
         filters={filters}
         activeFilter={activeFilter}
         onChange={setActiveFilter}
-        onManage={handleOpenManage}
       />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
@@ -510,33 +491,15 @@ export default function NotificationsPage() {
                   onReadAll={handleMarkAllRead}
                 />
                 <View className="notifications-page__section-sheet">
-                  {section.items.map((item, index) => (
+                  {section.items.map((item) => (
                     <View
                       key={item.id}
-                      className={`notifications-page__cell-wrap ${index < section.items.length - 1 ? 'has-divider' : ''}`}
+                      className="notifications-page__cell-wrap"
                     >
-                      <NotificationInboxCell
-                        title={item.title}
-                        summary={
-                          !item.canNavigate && item.raw.actionUrl
-                            ? `${item.content} · 当前通知暂不支持小程序内查看`
-                            : item.content
-                        }
-                        timeLabel={item.timeLabel}
-                        unread={!item.isRead}
-                        statusLabel={item.statusLabel}
-                        statusTone={item.statusTone}
-                        leading={<NotificationLeading tone={item.visualTone} iconName={item.iconName} />}
-                        typeBadge={<Text className={`notifications-page__type-badge notifications-page__type-badge--${item.visualTone}`}>{item.typeLabel}</Text>}
-                        actionText={item.actionText}
-                        actionSecondary={!item.isActionable}
-                        actionTone={item.actionTone}
-                        onClick={() => void handleOpenNotification(item.raw)}
-                        onActionClick={(event) => {
-                          event.stopPropagation?.();
-                          void handleOpenNotification(item.raw);
-                        }}
-                        onLongPress={() => void handleManageNotification(item)}
+                      <NotificationCard
+                        item={item}
+                        onOpen={() => void handleOpenNotification(item.raw)}
+                        onManage={() => void handleManageNotification(item)}
                       />
                     </View>
                   ))}
@@ -548,15 +511,6 @@ export default function NotificationsPage() {
               <EmptyState activeFilterLabel={activeFilterLabel} />
             </View>
           )}
-
-          {notifications.length > 0 ? (
-            <View className="notifications-page__footer-actions">
-              <View className="notifications-page__footer-action" onClick={handleClearCurrentList}>
-                <Icon name="trash" size={20} color="#8E8E93" />
-                <Text className="notifications-page__footer-action-text">清空当前列表</Text>
-              </View>
-            </View>
-          ) : null}
         </View>
       ) : null}
     </View>

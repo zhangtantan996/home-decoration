@@ -19,7 +19,7 @@ import {
 } from '@/services/projects';
 import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
-import { syncCurrentTabBar } from '@/utils/customTabBar';
+import { setCustomTabBarHidden, syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
 import { getServerDateParts } from '@/utils/serverTime';
@@ -150,7 +150,10 @@ const ProgressHeroCard = ({ hero }: { hero: ProgressHeroViewModel }) => (
         <Image className="progress-page__hero-image" src={hero.coverImage} mode="aspectFill" lazyLoad />
       ) : (
         <View className="progress-page__hero-placeholder">
-          <Icon name="home" size={40} color="#D1D5DB" />
+          <View className="progress-page__hero-placeholder-mark">
+            <Icon name="home" size={40} color="#FFFFFF" />
+          </View>
+          <Text className="progress-page__hero-placeholder-text">项目封面待上传</Text>
         </View>
       )}
       <View className="progress-page__hero-day-badge">
@@ -358,6 +361,11 @@ const ProjectSelectorSheet = ({
       <View className="progress-page__sheet">
         <View className="progress-page__sheet-handle" />
         <Text className="progress-page__sheet-title">切换项目</Text>
+        {projects.length <= 1 ? (
+          <Text className="progress-page__sheet-note">
+            {projects.length === 1 ? '当前只有一个项目，已为你选中。' : '暂无可切换项目。'}
+          </Text>
+        ) : null}
         <View className="progress-page__sheet-list">
           {projects.map((item) => {
             const active = item.id === currentProjectId;
@@ -453,8 +461,17 @@ export default function Progress() {
         clearTimeout(redirectResetTimerRef.current);
         redirectResetTimerRef.current = null;
       }
+      setCustomTabBarHidden(false);
     };
   }, []);
+
+  useEffect(() => {
+    setCustomTabBarHidden(selectorVisible);
+
+    return () => {
+      setCustomTabBarHidden(false);
+    };
+  }, [selectorVisible]);
 
   useDidShow(() => {
     syncCurrentTabBar('/pages/progress/index');
@@ -603,8 +620,8 @@ export default function Progress() {
 
   const handleOpenProjectSelector = useCallback(() => {
     setSwitchFeedbackActive(true);
-    if (projects.length <= 1) {
-      Taro.showToast({ title: projects.length === 1 ? '当前只有一个项目' : '暂无可切换项目', icon: 'none' });
+    if (projects.length === 0) {
+      Taro.showToast({ title: '暂无可切换项目', icon: 'none' });
       return;
     }
     setSelectorVisible(true);

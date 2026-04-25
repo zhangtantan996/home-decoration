@@ -7,6 +7,10 @@ import { Icon } from "@/components/Icon";
 import MiniPageNav from "@/components/MiniPageNav";
 import { Skeleton } from "@/components/Skeleton";
 import {
+  XianAddressFields,
+  type XianAddressValue,
+} from "@/components/XianAddressFields";
+import {
   createBooking,
   type ProviderType as BookingProviderType,
 } from "@/services/bookings";
@@ -28,6 +32,10 @@ import {
   RESIDENTIAL_AREA_MAX,
   RESIDENTIAL_AREA_MIN,
 } from "@/utils/residentialArea";
+import {
+  buildXianFullAddress,
+  normalizeXianDetailAddress,
+} from "@/utils/xianAddress";
 import {
   clearQuoteLeadDraft,
   getQuoteLeadDraft,
@@ -116,7 +124,9 @@ const BookingCreatePage: React.FC = () => {
   const [providerLoading, setProviderLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const [address, setAddress] = useState("");
+  const [districtName, setDistrictName] = useState("");
+  const [districtCode, setDistrictCode] = useState("");
+  const [detailAddress, setDetailAddress] = useState("");
   const [area, setArea] = useState("");
   const [room, setRoom] = useState(2);
   const [hall, setHall] = useState(1);
@@ -231,11 +241,17 @@ const BookingCreatePage: React.FC = () => {
   const phoneEditable = !auth.user?.phone;
   const areaNum = Number(area);
   const areaFeedback = getResidentialAreaFeedback(area, areaCapped);
+  const normalizedDetailAddress = normalizeXianDetailAddress(
+    districtName,
+    detailAddress,
+  );
+  const fullAddress = buildXianFullAddress(districtName, detailAddress);
   const isPhoneValid = /^1\d{10}$/.test(
     phoneEditable ? phone : auth.user?.phone || "",
   );
   const isFormValid =
-    address.trim().length >= 5 &&
+    Boolean(districtName) &&
+    normalizedDetailAddress.length >= 2 &&
     isResidentialAreaValid(areaNum) &&
     Boolean(renovationType) &&
     Boolean(budgetRange) &&
@@ -274,8 +290,9 @@ const BookingCreatePage: React.FC = () => {
 
   const validateBeforeSubmit = () => {
     if (!providerId) return "缺少服务商信息";
-    if (!address.trim()) return "请输入房屋地址";
-    if (address.trim().length < 5) return "地址至少输入 5 个字符";
+    if (!districtName) return "请选择所在区县";
+    if (!normalizedDetailAddress) return "请输入详细地址";
+    if (normalizedDetailAddress.length < 2) return "详细地址至少输入 2 个字符";
     if (!area.trim()) return "请输入房屋面积";
     if (!isResidentialAreaValid(areaNum))
       return `房屋面积需在 ${RESIDENTIAL_AREA_MIN}-${RESIDENTIAL_AREA_MAX}㎡ 之间`;
@@ -305,7 +322,7 @@ const BookingCreatePage: React.FC = () => {
       const booking = await createBooking({
         providerId,
         providerType: providerType as BookingProviderType,
-        address: address.trim(),
+        address: fullAddress,
         area: areaNum,
         renovationType,
         budgetRange,
@@ -422,15 +439,19 @@ const BookingCreatePage: React.FC = () => {
             <Text className="booking-create-page__label">
               房屋地址<Text className="booking-create-page__required">*</Text>
             </Text>
-            <View className="booking-create-page__input-shell">
-              <Input
-                className="booking-create-page__input"
-                value={address}
-                placeholder="请输入具体地址（街道 / 小区 / 门牌号）"
-                maxlength={100}
-                onInput={(event) => setAddress(event.detail.value)}
-              />
-            </View>
+            <XianAddressFields
+              value={{
+                districtName,
+                districtCode,
+                detailAddress,
+              }}
+              onChange={(value: XianAddressValue) => {
+                setDistrictName(value.districtName);
+                setDistrictCode(value.districtCode);
+                setDetailAddress(value.detailAddress);
+              }}
+              detailPlaceholder="请输入街道、小区或门牌号"
+            />
           </View>
 
           <View className="booking-create-page__row">

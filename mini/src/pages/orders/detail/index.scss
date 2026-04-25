@@ -14,6 +14,108 @@
     margin-bottom: 24rpx;
   }
 
+  &__summary-card {
+    margin-bottom: 16rpx;
+    padding: 28rpx;
+    border-radius: 32rpx;
+    border-color: rgba(226, 232, 240, 0.96);
+    box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.038);
+
+    .card__content {
+      padding: 0;
+    }
+
+    .tag {
+      flex-shrink: 0;
+      min-height: 44rpx;
+      padding: 0 16rpx;
+      border-radius: 12rpx;
+      font-size: 20rpx;
+      font-weight: 700;
+      line-height: 1;
+    }
+  }
+
+  &__summary-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18rpx;
+  }
+
+  &__summary-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__summary-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40rpx;
+    padding: 0 14rpx;
+    border-radius: 12rpx;
+    background: #f2f4f7;
+    color: #6b7280;
+    font-size: 20rpx;
+    font-weight: 700;
+    letter-spacing: 0.4rpx;
+  }
+
+  &__summary-amount {
+    display: block;
+    margin-top: 10rpx;
+    color: #111827;
+    font-size: 44rpx;
+    line-height: 1.16;
+    font-weight: 800;
+  }
+
+  &__summary-title {
+    display: block;
+    margin-top: 8rpx;
+    color: #8e8e93;
+    font-size: 24rpx;
+    line-height: 1.45;
+  }
+
+  &__summary-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12rpx;
+    margin-top: 22rpx;
+  }
+
+  &__summary-fact {
+    min-width: 0;
+    min-height: 112rpx;
+    padding: 20rpx 20rpx;
+    border-radius: 22rpx;
+    background: #f7f8fb;
+    border: 1rpx solid #ebeff4;
+    box-sizing: border-box;
+  }
+
+  &__summary-fact-label {
+    display: block;
+    color: #8e8e93;
+    font-size: 20rpx;
+    line-height: 1.4;
+  }
+
+  &__summary-fact-value {
+    display: block;
+    margin-top: 10rpx;
+    color: #111827;
+    font-size: 28rpx;
+    line-height: 1.28;
+    font-weight: 700;
+    word-break: break-word;
+  }
+
+  &__summary-rows {
+    margin-top: 10rpx;
+  }
+
   &__rows {
     margin-top: 12rpx;
   }

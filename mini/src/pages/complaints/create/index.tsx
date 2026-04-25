@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Image, Text, Textarea, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
@@ -11,7 +11,7 @@ import { createComplaint } from '@/services/complaints';
 import { uploadFile } from '@/services/uploads';
 import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
-import { showErrorToast } from '@/utils/error';
+import { isUserCancelError, showErrorToast } from '@/utils/error';
 
 const CATEGORY_OPTIONS = [
   { value: 'quality', label: '施工质量' },
@@ -41,9 +41,11 @@ const ComplaintCreatePage: React.FC = () => {
 
   useLoad((options) => {
     if (options.projectId) {
-      setProjectId(String(options.projectId));
+      setProjectId(String(options.projectId).replace(/\D/g, '').slice(0, 12));
     }
   });
+
+  const projectIdNumber = useMemo(() => Number(projectId || 0), [projectId]);
 
   const handleUploadEvidence = async () => {
     if (uploading) return;
@@ -69,6 +71,9 @@ const ComplaintCreatePage: React.FC = () => {
         ...uploaded.map((item) => item.path || item.url),
       ].slice(0, 6));
     } catch (error) {
+      if (isUserCancelError(error)) {
+        return;
+      }
       showErrorToast(error, '证据上传失败');
     } finally {
       setUploading(false);
@@ -77,11 +82,15 @@ const ComplaintCreatePage: React.FC = () => {
 
   const handleSubmit = async () => {
     if (submitting || uploading) return;
+    if (projectIdNumber <= 0) {
+      Taro.showToast({ title: '请从项目详情发起投诉', icon: 'none' });
+      return;
+    }
 
     setSubmitting(true);
     try {
       await createComplaint({
-        projectId: Number(projectId || 0),
+        projectId: projectIdNumber,
         category,
         title: title.trim(),
         description: description.trim(),
@@ -99,11 +108,28 @@ const ComplaintCreatePage: React.FC = () => {
   };
 
   if (!auth.token) {
+    const loginReturnPath = projectId
+      ? `/pages/complaints/create/index?projectId=${projectId}`
+      : '/pages/complaints/create/index';
     return (
       <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
         <Empty
           description="登录后发起投诉"
-          action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/complaints/create/index') }}
+          action={{ text: '去登录', onClick: () => void openAuthLoginPage(loginReturnPath) }}
+        />
+      </View>
+    );
+  }
+
+  if (projectIdNumber <= 0) {
+    return (
+      <View className="page bg-gray-50 min-h-screen p-md flex items-center justify-center">
+        <Empty
+          description="请从项目详情发起投诉"
+          action={{
+            text: '去项目进度',
+            onClick: () => void Taro.switchTab({ url: '/pages/progress/index' }),
+          }}
         />
       </View>
     );
@@ -122,7 +148,7 @@ const ComplaintCreatePage: React.FC = () => {
       </Card>
 
       <Card title="投诉信息" className="mb-md">
-        <Input label="项目 ID" type="number" value={projectId} onChange={(value) => setProjectId(value.replace(/\D/g, '').slice(0, 12))} placeholder="例如：99140，可留空" />
+        <Input label="项目 ID" type="number" value={projectId} disabled placeholder="系统已自动带入当前项目" />
         <View className="mb-md">
           <Text className="block text-sm text-gray-500 mb-sm">投诉类别</Text>
           <View className="flex flex-wrap gap-sm">

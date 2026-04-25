@@ -6,9 +6,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
-import { NotificationFactGrid } from '@/components/NotificationFactGrid';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
-import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
@@ -106,6 +104,11 @@ const getStatusMeta = (detail: OrderCenterEntryDetail) => {
       };
   }
 };
+
+const getOrderAddress = (detail: OrderCenterEntryDetail) =>
+  detail.project?.address || detail.booking?.address || '地址待同步';
+
+const getOrderProviderName = (detail: OrderCenterEntryDetail) => detail.provider?.name || '服务商待同步';
 
 const OrderDetail: React.FC = () => {
   const auth = useAuthStore();
@@ -354,11 +357,10 @@ const OrderDetail: React.FC = () => {
   const statusConfig = getStatusMeta(detail);
   const stageMeta = detail.businessStage ? getBusinessStageStatus(detail.businessStage) : null;
   const totalAmount = Number(detail.order?.totalAmount || detail.amount || 0);
-  const discountAmount = Number(detail.order?.discount || 0);
   const paidAmount = Number(
     detail.order?.paidAmount || (detail.statusGroup === 'paid' || detail.statusGroup === 'refund' ? detail.amount : 0),
   );
-  const payableAmount = Math.max(0, Number(detail.payableAmount || totalAmount - discountAmount - paidAmount || detail.amount || 0));
+  const payableAmount = Math.max(0, Number(detail.payableAmount || totalAmount - paidAmount || detail.amount || 0));
   const projectRisk = detail.project?.riskSummary;
   const bookingRefund = detail.refundSummary;
   const refundStatus = bookingRefund?.latestRefundStatus
@@ -368,7 +370,6 @@ const OrderDetail: React.FC = () => {
       : getRefundStatus(undefined);
   const paymentPlans = detail.paymentPlans || [];
   const orderNo = detail.referenceNo || detail.order?.orderNo || resolvedEntryKey;
-  const showBookingLink = detail.booking?.id && detail.sourceKind !== 'survey_deposit';
   const entryActions = deriveOrderEntryActions({
     statusGroup: detail.statusGroup,
     refundSummary: bookingRefund,
@@ -377,7 +378,9 @@ const OrderDetail: React.FC = () => {
   });
   const showPendingFooter = detail.statusGroup === 'pending_payment' && entryActions.showFooterPayBar;
   const showCancelButton = showPendingFooter && entryActions.showFooterCancel;
-  const showRefundSection = entryActions.showRefundSection && Boolean(bookingRefund || detail.statusGroup === 'refund');
+  const showRefundSection = Boolean(
+    bookingRefund?.latestRefundId || bookingRefund?.latestRefundStatus || detail.statusGroup === 'refund',
+  );
   const detailActions = entryActions.detailActions.filter((action) => {
     if (action.key === 'view_refund') {
       return Boolean(detail.booking?.id && entryActions.hasRefundRecord);
@@ -401,6 +404,18 @@ const OrderDetail: React.FC = () => {
       ? formatCurrency(bookingRefund?.refundableAmount || detail.amount || 0)
       : formatCurrency(totalAmount || paidAmount || detail.amount || 0);
   const heroSubtitle = detail.title || '家装服务订单';
+  const providerName = getOrderProviderName(detail);
+  const orderAddress = getOrderAddress(detail);
+  const summaryRows = [
+    { label: '当前阶段', value: stageMeta?.label || detail.statusText || '待同步' },
+    ...(detail.expireAt && detail.statusGroup === 'pending_payment'
+      ? [{ label: '支付截止', value: formatDate(detail.expireAt) }]
+      : []),
+    ...(detail.order?.paidAt ? [{ label: '支付时间', value: formatDate(detail.order.paidAt) }] : []),
+  ];
+  const showPaymentPlans = paymentPlans.length > 0 && (
+    paymentPlans.length > 1 || paymentPlans.some((plan) => plan.status !== 'paid')
+  );
 
   return (
     <View
@@ -411,98 +426,41 @@ const OrderDetail: React.FC = () => {
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       <NotificationSurfaceShell className="order-detail-page__shell">
         <ScrollView scrollY className="h-full">
-          <NotificationSurfaceHero
-            eyebrow="订单详情"
-            title={heroTitle}
-            subtitle={heroSubtitle}
-            status={<Tag variant={statusConfig.variant}>{statusConfig.label}</Tag>}
-            summary={statusConfig.summary}
-            metrics={[
-              {
-                label: showPendingFooter ? '订单总额' : '已支付',
-                value: formatCurrency(showPendingFooter ? totalAmount : paidAmount || totalAmount),
-                hint: stageMeta?.label || undefined,
-              },
-              {
-                label: '订单编号',
-                value: orderNo || '-',
-                hint: detail.createdAt ? `下单于 ${formatDate(detail.createdAt)}` : undefined,
-                emphasis: true,
-              },
-            ]}
-          />
+          <Card className="order-detail-page__summary-card">
+            <View className="order-detail-page__summary-head">
+              <View className="order-detail-page__summary-main">
+                <Text className="order-detail-page__summary-eyebrow">订单详情</Text>
+                <Text className="order-detail-page__summary-amount">{heroTitle}</Text>
+                <Text className="order-detail-page__summary-title">{heroSubtitle}</Text>
+              </View>
+              <Tag variant={statusConfig.variant}>{statusConfig.label}</Tag>
+            </View>
 
-          <Card className="notification-surface-card" title="关键信息">
-            <NotificationFactRows
-              items={[
-                { label: '当前状态', value: detail.statusText || statusConfig.label },
-                { label: '待支付金额', value: formatCurrency(payableAmount), emphasis: showPendingFooter },
-                { label: '服务方', value: detail.provider?.name || '-' },
-                { label: '当前阶段', value: stageMeta?.label || detail.statusText || '-' },
-                { label: '关联项目', value: detail.project?.name || '-' },
-                {
-                  label: '项目地址',
-                  value: detail.project?.address || detail.booking?.address || '-',
-                  multiline: true,
-                },
-                { label: '下单时间', value: formatDate(detail.createdAt) },
-                { label: '支付时间', value: formatDate(detail.order?.paidAt) },
-              ]}
-            />
-            <View className="order-detail-page__rows">
+            <View className="order-detail-page__summary-facts">
+              <View className="order-detail-page__summary-fact">
+                <Text className="order-detail-page__summary-fact-label">服务商</Text>
+                <Text className="order-detail-page__summary-fact-value">{providerName}</Text>
+              </View>
+              <View className="order-detail-page__summary-fact">
+                <Text className="order-detail-page__summary-fact-label">地址</Text>
+                <Text className="order-detail-page__summary-fact-value">{orderAddress}</Text>
+              </View>
+            </View>
+
+            <View className="order-detail-page__summary-rows">
+              {summaryRows.map((item) => (
+                <DetailRow key={item.label} label={item.label} value={item.value} />
+              ))}
+              <DetailRow label="下单时间" value={formatDate(detail.createdAt)} />
               <DetailRow
                 label="订单编号"
-                value={orderNo}
-                extra={<Text className="order-detail-page__row-link" onClick={() => handleCopy(orderNo)}>复制</Text>}
+                value={orderNo || '-'}
+                extra={orderNo ? <Text className="order-detail-page__row-link" onClick={() => handleCopy(orderNo)}>复制</Text> : undefined}
               />
-              {detail.provider ? (
-                <DetailRow
-                  label="服务方详情"
-                  value={detail.provider.name}
-                  extra={<Text className="order-detail-page__row-link">查看</Text>}
-                  onClick={() => {
-                    Taro.navigateTo({
-                      url: `/pages/providers/detail/index?id=${detail.provider?.id}&type=${detail.provider?.providerType || 'designer'}`,
-                    });
-                  }}
-                />
-              ) : null}
-              {detail.project ? (
-                <DetailRow
-                  label="项目详情"
-                  value={detail.project.name}
-                  extra={<Text className="order-detail-page__row-link">查看</Text>}
-                  onClick={() => Taro.navigateTo({ url: `/pages/projects/detail/index?id=${detail.project?.id}` })}
-                />
-              ) : null}
-              {showBookingLink ? (
-                <DetailRow
-                  label="预约详情"
-                  value={detail.booking?.address || `预约 #${detail.booking?.id}`}
-                  extra={<Text className="order-detail-page__row-link">查看</Text>}
-                  multiline
-                  onClick={() => Taro.navigateTo({ url: `/pages/booking/detail/index?id=${detail.booking?.id}` })}
-                />
-              ) : null}
             </View>
           </Card>
 
-          <Card className="notification-surface-card" title="费用明细">
-            <NotificationFactRows
-              items={[
-                { label: '订单总额', value: formatCurrency(totalAmount) },
-                { label: '优惠金额', value: discountAmount > 0 ? `-${formatCurrency(discountAmount)}` : '无优惠' },
-                { label: '已支付', value: formatCurrency(paidAmount) },
-                {
-                  label: showPendingFooter ? '待支付金额' : '合计应付',
-                  value: formatCurrency(payableAmount),
-                  emphasis: true,
-                },
-              ]}
-            />
-          </Card>
-
-          {paymentPlans.length > 0 ? (
+          {showPaymentPlans ? (
             <Card className="notification-surface-card" title="付款计划">
               <View className="notification-section-list">
                 {paymentPlans.map((plan) => {
@@ -598,19 +556,19 @@ const OrderDetail: React.FC = () => {
 
       {qrPayment ? (
         <SurveyDepositQrDialog
-          open
           amount={qrPayment.amount}
-          qrCode={qrPayment.qrCode}
-          channel={qrPayment.channel}
-          expiresAt={qrPayment.expiresAt}
-          title={qrPayment.title}
-          description={qrPayment.description}
-          successHint={qrPayment.successHint}
-          countdownSeconds={remainingSeconds}
-          confirming={qrConfirmLoading}
+          classNamePrefix="order-detail-page"
           onClose={closeQrPayment}
-          onConfirm={confirmQrPayment}
+          onConfirmPaid={() => {
+            void confirmQrPayment();
+          }}
           onRetry={retryQrPayment}
+          phase={qrPayment.phase}
+          confirmLoading={qrConfirmLoading}
+          qrCodeImageUrl={qrPayment.qrCodeImageUrl}
+          remainingSeconds={remainingSeconds}
+          statusText={qrPayment.statusText}
+          statusTone={qrPayment.statusTone}
         />
       ) : null}
     </View>

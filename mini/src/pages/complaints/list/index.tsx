@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View } from '@tarojs/components';
-import Taro from '@tarojs/taro';
 
-import { Button } from '@/components/Button';
 import { Empty } from '@/components/Empty';
 import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
@@ -15,33 +13,7 @@ import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 
-const sectionStyle = {
-  display: 'flex',
-  flexDirection: 'column' as const,
-  gap: '16rpx',
-};
-
-const cellCardStyle = {
-  overflow: 'hidden',
-  borderRadius: '28rpx',
-  background: 'rgba(255, 255, 255, 0.98)',
-  border: '1rpx solid rgba(226, 232, 240, 0.96)',
-  boxShadow: '0 10rpx 24rpx rgba(15, 23, 42, 0.04)',
-};
-
-const badgeRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8rpx',
-  flexWrap: 'wrap' as const,
-};
-
-const toolbarStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: '16rpx',
-};
+import './index.scss';
 
 const getComplaintMeta = (status?: string) => {
   if (status === 'resolved') return { label: '已处理', tone: 'success' as const };
@@ -95,17 +67,9 @@ const ComplaintListPage: React.FC = () => {
     void runReload();
   }, [auth.token, runReload]);
 
-  const openCreate = () => {
-    if (!auth.token) {
-      void openAuthLoginPage('/pages/complaints/list/index');
-      return;
-    }
-    Taro.navigateTo({ url: '/pages/complaints/create/index' });
-  };
-
   if (!auth.token) {
     return (
-      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen flex items-center justify-center" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="complaints-list-page" contentClassName="complaints-list-page__content complaints-list-page__content--center" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看投诉记录"
@@ -117,12 +81,11 @@ const ComplaintListPage: React.FC = () => {
 
   if (loading && list.length === 0) {
     return (
-      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="complaints-list-page" contentClassName="complaints-list-page__content" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <View style={sectionStyle}>
-          <View style={toolbarStyle}>
-            <View className="text-sm text-gray-400">最近更新</View>
-            <Button size="small" variant="outline" onClick={openCreate}>发起投诉</Button>
+        <View className="complaints-list-page__section">
+          <View className="complaints-list-page__toolbar">
+            <View className="complaints-list-page__count">最近更新</View>
           </View>
           <Skeleton height={148} />
           <Skeleton height={148} />
@@ -132,23 +95,22 @@ const ComplaintListPage: React.FC = () => {
   }
 
   return (
-    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+    <NotificationSurfaceShell className="complaints-list-page" contentClassName="complaints-list-page__content" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
-      <View style={sectionStyle}>
-        <View style={toolbarStyle}>
-          <View className="text-sm text-gray-400">{`共 ${list.length} 条投诉`}</View>
-          <Button size="small" variant="outline" onClick={openCreate}>发起投诉</Button>
+      <View className="complaints-list-page__section">
+        <View className="complaints-list-page__toolbar">
+          <View className="complaints-list-page__count">{`共 ${list.length} 条投诉`}</View>
         </View>
 
         {list.length === 0 ? (
           <Empty description="暂无投诉记录" />
         ) : (
-          <View style={sectionStyle}>
+          <View className="complaints-list-page__section">
             {list.map((item) => {
               const meta = getComplaintMeta(item.status);
               return (
-                <View key={item.id} style={cellCardStyle}>
+                <View key={item.id} className="complaints-list-page__card">
                   <NotificationInboxCell
                     title={item.title}
                     summary={getComplaintSummary(item)}
@@ -156,7 +118,7 @@ const ComplaintListPage: React.FC = () => {
                     statusLabel={meta.label}
                     statusTone={meta.tone}
                     typeBadge={
-                      <View style={badgeRowStyle}>
+                      <View className="complaints-list-page__badge-row">
                         <Tag variant="default">{item.category || '投诉'}</Tag>
                         {item.freezePayment ? <Tag variant="error">冻结中</Tag> : null}
                       </View>

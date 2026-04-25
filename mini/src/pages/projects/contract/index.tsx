@@ -242,7 +242,7 @@ const ProjectContractPage: React.FC = () => {
             ) : (
               <>
                 <Text className="notification-section-row__note" style={{ marginTop: 0 }}>
-                  当前端仅展示附件清单，完整文件请在支持端查看。
+                  当前仅展示附件清单，完整文件请在支持端查看。
                 </Text>
                 <View className="notification-section-list">
                   {attachments.map((item, index) => (

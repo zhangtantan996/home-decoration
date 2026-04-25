@@ -324,6 +324,22 @@ const ProjectDetailPage: React.FC = () => {
               />
             </Card>
 
+            {(detail.quoteTruthSummary || detail.commercialExplanation || detail.changeOrderSummary || detail.settlementSummary || detail.payoutSummary) ? (
+              <Card className="notification-surface-card" title="统一报价与资金摘要">
+                <NotificationFactRows
+                  items={[
+                    { label: '成交报价', value: detail.quoteTruthSummary?.totalCent ? formatCurrency(Math.round(detail.quoteTruthSummary.totalCent / 100)) : '待同步' },
+                    { label: '预计工期', value: detail.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '待同步' },
+                    { label: '施工范围内', value: detail.commercialExplanation?.scopeIncluded?.join('、') || '待同步', multiline: true },
+                    { label: '施工范围外', value: detail.commercialExplanation?.scopeExcluded?.join('、') || '待同步', multiline: true },
+                    { label: '结算状态', value: detail.settlementSummary?.status || detail.closureSummary?.settlementStatus || '待同步' },
+                    { label: '出款状态', value: detail.payoutSummary?.status || detail.closureSummary?.payoutStatus || '待同步' },
+                    { label: '下一步', value: detail.nextPendingAction || detail.closureSummary?.nextPendingAction || '待同步', multiline: true },
+                  ]}
+                />
+              </Card>
+            ) : null}
+
             {(paused || disputed || riskSummary?.escrowFrozen) ? (
               <Card className="notification-surface-card" title="异常状态">
                 <NotificationFactRows
@@ -402,6 +418,11 @@ const ProjectDetailPage: React.FC = () => {
                     </Button>
                   </View>
                 ) : null}
+                <View style={{ flex: '1 1 48%' }}>
+                  <Button block variant="outline" onClick={() => Taro.navigateTo({ url: `/pages/complaints/create/index?projectId=${id}` })}>
+                    发起投诉
+                  </Button>
+                </View>
               </View>
             </Card>
 

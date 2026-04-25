@@ -5,6 +5,10 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { Button } from '@/components/Button';
 import MiniPageNav from '@/components/MiniPageNav';
 import { Input } from '@/components/Input';
+import {
+  XianAddressFields,
+  type XianAddressValue,
+} from '@/components/XianAddressFields';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
@@ -21,6 +25,12 @@ import {
   getQuoteInquirySubmitDraft,
   setQuoteInquirySubmitDraft,
 } from '@/utils/quoteInquirySubmitDraft';
+import {
+  buildXianFullAddress,
+  normalizeXianDetailAddress,
+  parseXianAddress,
+  XIAN_CITY_CODE,
+} from '@/utils/xianAddress';
 
 import './index.scss';
 
@@ -151,7 +161,9 @@ const QuoteInquiryCreatePage: React.FC = () => {
 
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
-    address: '',
+    districtName: '',
+    districtCode: '',
+    detailAddress: '',
     area: '',
     room: 2,
     hall: 1,
@@ -173,8 +185,14 @@ const QuoteInquiryCreatePage: React.FC = () => {
     }
 
     const layout = parseHouseLayout(draft.houseLayout);
+    const parsedAddress = parseXianAddress(
+      draft.detailAddress || draft.address,
+      draft.districtName,
+    );
     setForm({
-      address: draft.address,
+      districtName: draft.districtName || parsedAddress.districtName,
+      districtCode: draft.districtCode || '',
+      detailAddress: draft.detailAddress || parsedAddress.detailAddress,
       area: String(draft.area),
       room: layout.room,
       hall: layout.hall,
@@ -211,8 +229,14 @@ const QuoteInquiryCreatePage: React.FC = () => {
   const areaNum = Number(form.area);
   const isPhoneValid = !form.phone || /^1\d{10}$/.test(form.phone);
   const areaFeedback = getResidentialAreaFeedback(form.area, areaCapped);
+  const detailAddress = normalizeXianDetailAddress(
+    form.districtName,
+    form.detailAddress,
+  );
+  const fullAddress = buildXianFullAddress(form.districtName, form.detailAddress);
   const isFormValid =
-    form.address.trim().length >= 5 &&
+    Boolean(form.districtName) &&
+    detailAddress.length >= 2 &&
     isResidentialAreaValid(areaNum) &&
     Boolean(form.renovationType) &&
     Boolean(form.style) &&
@@ -241,8 +265,9 @@ const QuoteInquiryCreatePage: React.FC = () => {
     : '输入面积后会自动生成一份预算参考';
 
   const validateBeforeSubmit = () => {
-    if (!form.address.trim()) return '请输入房屋地址';
-    if (form.address.trim().length < 5) return '地址至少输入 5 个字符';
+    if (!form.districtName) return '请选择所在区县';
+    if (!detailAddress) return '请输入详细地址';
+    if (detailAddress.length < 2) return '详细地址至少输入 2 个字符';
     if (!form.area.trim()) return '请输入房屋面积';
     if (!isResidentialAreaValid(areaNum)) {
       return `房屋面积需在 ${RESIDENTIAL_AREA_MIN}-${RESIDENTIAL_AREA_MAX}㎡ 之间`;
@@ -273,7 +298,11 @@ const QuoteInquiryCreatePage: React.FC = () => {
       }
 
       setQuoteInquirySubmitDraft({
-        address: form.address.trim(),
+        address: fullAddress,
+        cityCode: XIAN_CITY_CODE,
+        districtName: form.districtName,
+        districtCode: form.districtCode,
+        detailAddress,
         area: areaNum,
         houseLayout: layoutLabel,
         renovationType: form.renovationType,
@@ -334,11 +363,20 @@ const QuoteInquiryCreatePage: React.FC = () => {
         <View className="quote-inquiry-create__form-card">
           <View className="quote-inquiry-create__field">
             <Text className="quote-inquiry-create__field-label">房屋位置</Text>
-            <Input
-              className="quote-inquiry-create__input"
-              value={form.address}
-              onChange={(value) => setForm((prev) => ({ ...prev, address: value }))}
-              placeholder="输入街道、小区或门牌号"
+            <XianAddressFields
+              value={{
+                districtName: form.districtName,
+                districtCode: form.districtCode,
+                detailAddress: form.detailAddress,
+              }}
+              onChange={(value: XianAddressValue) =>
+                setForm((prev) => ({
+                  ...prev,
+                  districtName: value.districtName,
+                  districtCode: value.districtCode,
+                  detailAddress: value.detailAddress,
+                }))
+              }
             />
           </View>
 

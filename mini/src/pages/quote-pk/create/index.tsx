@@ -1,3 +1,5 @@
+// Legacy compatibility only: quote-pk 主链已退役。
+// 当前页面不在运行时入口，仅保留历史代码供兼容排查。
 import React, { useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
@@ -74,7 +76,7 @@ const CreateQuoteTaskPage: React.FC = () => {
             <Input
               type="number"
               value={area}
-              onInput={(e) => setArea(e.detail.value)}
+              onChange={setArea}
               placeholder="请输入房屋面积"
             />
           </View>
@@ -83,7 +85,7 @@ const CreateQuoteTaskPage: React.FC = () => {
             <Text className="text-sm text-gray-700 mb-2">装修风格*</Text>
             <Input
               value={style}
-              onInput={(e) => setStyle(e.detail.value)}
+              onChange={setStyle}
               placeholder="如：现代简约、北欧、中式等"
             />
           </View>
@@ -92,7 +94,7 @@ const CreateQuoteTaskPage: React.FC = () => {
             <Text className="text-sm text-gray-700 mb-2">所在区域*</Text>
             <Input
               value={region}
-              onInput={(e) => setRegion(e.detail.value)}
+              onChange={setRegion}
               placeholder="请输入所在区域"
             />
           </View>
@@ -102,7 +104,7 @@ const CreateQuoteTaskPage: React.FC = () => {
             <Input
               type="number"
               value={budget}
-              onInput={(e) => setBudget(e.detail.value)}
+              onChange={setBudget}
               placeholder="请输入装修预算"
             />
           </View>
@@ -111,9 +113,9 @@ const CreateQuoteTaskPage: React.FC = () => {
             <Text className="text-sm text-gray-700 mb-2">需求描述</Text>
             <Input
               value={description}
-              onInput={(e) => setDescription(e.detail.value)}
+              onChange={setDescription}
               placeholder="请描述您的装修需求"
-              maxlength={500}
+              maxLength={500}
             />
           </View>
         </View>
@@ -137,4 +139,3 @@ const CreateQuoteTaskPage: React.FC = () => {
 };
 
 export default CreateQuoteTaskPage;
-

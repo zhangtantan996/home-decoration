@@ -16,6 +16,8 @@ import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { formatServerDateTime } from '@/utils/serverTime';
 
+import './index.scss';
+
 const FILTERS = [
   { key: '', label: '全部' },
   { key: 'pending', label: '待审核' },
@@ -23,38 +25,6 @@ const FILTERS = [
   { key: 'completed', label: '已完成' },
   { key: 'rejected', label: '已驳回' },
 ] as const;
-
-const sectionStyle = {
-  display: 'flex',
-  flexDirection: 'column' as const,
-  gap: '16rpx',
-};
-
-const cellCardStyle = {
-  overflow: 'hidden',
-  borderRadius: '28rpx',
-  background: 'rgba(255, 255, 255, 0.98)',
-  border: '1rpx solid rgba(226, 232, 240, 0.96)',
-  boxShadow: '0 10rpx 24rpx rgba(15, 23, 42, 0.04)',
-};
-
-const badgeRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8rpx',
-  flexWrap: 'wrap' as const,
-};
-
-const filterWrapStyle = {
-  marginBottom: '8rpx',
-  whiteSpace: 'nowrap' as const,
-};
-
-const filterRowStyle = {
-  display: 'inline-flex',
-  gap: '12rpx',
-  paddingRight: '12rpx',
-};
 
 const formatCurrency = (value: number) => `¥${Number(value || 0).toLocaleString()}`;
 
@@ -163,7 +133,7 @@ const RefundListPage: React.FC = () => {
 
   if (!auth.token) {
     return (
-      <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+      <NotificationSurfaceShell className="refunds-list-page" contentClassName="refunds-list-page__content" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty description="登录后查看退款记录" action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }} />
       </NotificationSurfaceShell>
@@ -171,11 +141,11 @@ const RefundListPage: React.FC = () => {
   }
 
   return (
-    <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+    <NotificationSurfaceShell className="refunds-list-page" contentClassName="refunds-list-page__content" {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
-      <ScrollView scrollX showScrollbar={false} style={filterWrapStyle}>
-        <View style={filterRowStyle}>
+      <ScrollView scrollX showScrollbar={false} className="refunds-list-page__filters-scroll">
+        <View className="refunds-list-page__filters">
           {FILTERS.map((item) => {
             const active = status === item.key;
             return (
@@ -186,20 +156,7 @@ const RefundListPage: React.FC = () => {
                   setHasMore(true);
                   setPage(1);
                 }}
-                style={{
-                  minHeight: '60rpx',
-                  padding: '0 24rpx',
-                  borderRadius: '999rpx',
-                  background: active ? '#FFFFFF' : 'rgba(255,255,255,0.92)',
-                  color: active ? '#2563EB' : '#64748B',
-                  border: active ? '1rpx solid rgba(37, 99, 235, 0.18)' : '1rpx solid rgba(226, 232, 240, 0.96)',
-                  boxShadow: active ? '0 10rpx 22rpx rgba(37, 99, 235, 0.08)' : 'none',
-                  fontSize: '24rpx',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                className={`refunds-list-page__filter${active ? ' refunds-list-page__filter--active' : ''}`}
               >
                 {item.label}
               </View>
@@ -209,18 +166,18 @@ const RefundListPage: React.FC = () => {
       </ScrollView>
 
       {loading ? (
-        <View style={sectionStyle}>
+        <View className="refunds-list-page__section">
           <Skeleton height={148} />
           <Skeleton height={148} />
         </View>
       ) : list.length === 0 ? (
         <Empty description="暂无退款记录" />
       ) : (
-        <View style={sectionStyle}>
+        <View className="refunds-list-page__section">
           {list.map((item) => {
             const statusMeta = getRefundStatus(item.status);
             return (
-              <View key={item.id} style={cellCardStyle}>
+              <View key={item.id} className="refunds-list-page__card">
                 <NotificationInboxCell
                   title={item.project?.name || item.booking?.address || `退款申请 #${item.id}`}
                   summary={getRefundSummary(item)}
@@ -228,7 +185,7 @@ const RefundListPage: React.FC = () => {
                   statusLabel={getAmountLabel(item)}
                   statusTone={getRefundStatusTone(item.status)}
                   typeBadge={
-                    <View style={badgeRowStyle}>
+                    <View className="refunds-list-page__badge-row">
                       <Tag variant={statusMeta.variant}>{statusMeta.label}</Tag>
                       <Tag variant="default">{getRefundTypeLabel(item.refundType)}</Tag>
                     </View>
@@ -237,8 +194,8 @@ const RefundListPage: React.FC = () => {
               </View>
             );
           })}
-          {loadingMore ? <View className="p-md text-center text-gray-400 text-sm">加载中...</View> : null}
-          {!hasMore ? <View className="p-md text-center text-gray-400 text-sm">没有更多了</View> : null}
+          {loadingMore ? <View className="refunds-list-page__loading">加载中...</View> : null}
+          {!hasMore ? <View className="refunds-list-page__loading">没有更多了</View> : null}
         </View>
       )}
     </NotificationSurfaceShell>

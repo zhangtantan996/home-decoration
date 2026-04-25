@@ -13,7 +13,7 @@ import { listBookings, type BookingItem } from '@/services/bookings';
 import { uploadFile } from '@/services/uploads';
 import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
-import { showErrorToast } from '@/utils/error';
+import { isUserCancelError, showErrorToast } from '@/utils/error';
 
 const TYPE_OPTIONS: Array<{ value: AfterSalesType; label: string; description: string }> = [
   { value: 'complaint', label: '投诉争议', description: '沟通失联、履约分歧、服务态度等问题。' },
@@ -110,6 +110,9 @@ const AfterSalesCreatePage: React.FC = () => {
         ...uploaded.map((item) => item.path || item.url),
       ].slice(0, 6));
     } catch (error) {
+      if (isUserCancelError(error)) {
+        return;
+      }
       showErrorToast(error, '证据上传失败');
     } finally {
       setUploading(false);

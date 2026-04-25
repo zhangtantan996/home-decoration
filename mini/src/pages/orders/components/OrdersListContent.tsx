@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, View } from '@tarojs/components';
+import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow, useReachBottom } from '@tarojs/taro';
 
 import { Empty } from '@/components/Empty';
-import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
@@ -32,15 +31,6 @@ const FILTERS: Array<{ key: OrderCenterStatusGroup | ''; label: string }> = [
   { key: 'cancelled', label: '已取消' },
 ];
 
-const SOURCE_LABEL_MAP: Record<OrderCenterSourceKind, string> = {
-  design_order: '设计费',
-  construction_order: '施工费',
-  material_order: '主材费',
-  survey_deposit: '量房费',
-  refund_record: '退款',
-  merchant_bond: '保证金',
-};
-
 interface OrdersListContentProps {
   fixedFilter?: OrderCenterStatusGroup;
   sourceKindFilter?: OrderCenterSourceKind;
@@ -67,33 +57,6 @@ const getEmptyDescription = (
   return '暂无相关订单';
 };
 
-const getRelativeExpiryLabel = (expireAt?: string) => {
-  if (!expireAt) {
-    return '';
-  }
-
-  const expireTime = new Date(expireAt).getTime();
-  if (Number.isNaN(expireTime)) {
-    return `截止 ${formatServerDateTime(expireAt)}`;
-  }
-
-  const diffMs = expireTime - Date.now();
-  if (diffMs <= 0) {
-    return '即将到期';
-  }
-
-  const diffMinutes = Math.ceil(diffMs / 60000);
-  if (diffMinutes < 60) {
-    return `剩 ${diffMinutes} 分钟`;
-  }
-
-  if (diffMinutes < 24 * 60) {
-    return `剩 ${Math.ceil(diffMinutes / 60)} 小时`;
-  }
-
-  return `截止 ${formatServerDateTime(expireAt)}`;
-};
-
 const getEntryDisplayAmount = (entry: OrderCenterEntrySummary) => {
   if (entry.statusGroup === 'pending_payment') {
     return entry.payableAmount || entry.amount || 0;
@@ -102,20 +65,6 @@ const getEntryDisplayAmount = (entry: OrderCenterEntrySummary) => {
 };
 
 const getEntryStatusText = (entry: OrderCenterEntrySummary) => {
-  const amount = formatCurrency(getEntryDisplayAmount(entry));
-  switch (entry.statusGroup) {
-    case 'pending_payment':
-      return `待支付 ${amount}`;
-    case 'refund':
-      return `退款中 ${amount}`;
-    case 'cancelled':
-      return `已取消 ${amount}`;
-    default:
-      return `已支付 ${amount}`;
-  }
-};
-
-const getEntryBadgeLabel = (entry: OrderCenterEntrySummary) => {
   switch (entry.statusGroup) {
     case 'pending_payment':
       return '待支付';
@@ -128,35 +77,11 @@ const getEntryBadgeLabel = (entry: OrderCenterEntrySummary) => {
   }
 };
 
-const getEntryStatusTone = (entry: OrderCenterEntrySummary) => {
-  switch (entry.statusGroup) {
-    case 'pending_payment':
-      return 'brand' as const;
-    case 'refund':
-      return 'danger' as const;
-    case 'paid':
-      return 'success' as const;
-    default:
-      return 'neutral' as const;
-  }
-};
+const getEntryProviderName = (entry: OrderCenterEntrySummary) => entry.provider?.name || '服务商待同步';
 
-const getEntrySummary = (entry: OrderCenterEntrySummary) => {
-  const parts = [
-    entry.provider?.name,
-    entry.project?.name || entry.project?.address || entry.booking?.address,
-    entry.referenceNo,
-  ].filter(Boolean) as string[];
+const getEntryAddress = (entry: OrderCenterEntrySummary) =>
+  entry.project?.address || entry.booking?.address || entry.project?.name || '地址待同步';
 
-  if (entry.statusGroup === 'pending_payment') {
-    const expiryLabel = getRelativeExpiryLabel(entry.expireAt);
-    if (expiryLabel) {
-      parts.push(expiryLabel);
-    }
-  }
-
-  return parts.join(' · ');
-};
 
 const getEntryTimeLabel = (entry: OrderCenterEntrySummary) => {
   return entry.createdAt ? formatServerDateTime(entry.createdAt) : '';
@@ -322,46 +247,54 @@ export const OrdersListContent: React.FC<OrdersListContentProps> = ({
                 canPay: entry.statusGroup === 'pending_payment',
               });
               const primaryAction = entryActions.listPrimaryAction;
+              const goDetail = () => {
+                void openEntryDetail(entry).catch((error) => {
+                  showErrorToast(error, '跳转失败');
+                });
+              };
 
               return (
-                <View key={entry.entryKey} className="orders-list-content__item">
-                  <NotificationInboxCell
-                    title={entry.title}
-                    summary={getEntrySummary(entry)}
-                    timeLabel={getEntryTimeLabel(entry)}
-                    statusLabel={getEntryStatusText(entry)}
-                    statusTone={getEntryStatusTone(entry)}
-                    leading={(
-                      <View className="orders-list-content__amount-card">
-                        <View className="orders-list-content__amount-value">{formatCurrency(getEntryDisplayAmount(entry))}</View>
-                        <View className="orders-list-content__amount-caption">
-                          {entry.statusGroup === 'pending_payment' ? '待支付' : '订单金额'}
-                        </View>
-                      </View>
-                    )}
-                    typeBadge={(
-                      <View className="orders-list-content__badge-row">
-                        <Tag variant="default">{SOURCE_LABEL_MAP[entry.sourceKind] || '订单'}</Tag>
-                        <Tag variant={entry.statusGroup === 'pending_payment' ? 'warning' : entry.statusGroup === 'paid' ? 'success' : entry.statusGroup === 'refund' ? 'error' : 'default'}>
-                          {getEntryBadgeLabel(entry)}
-                        </Tag>
-                      </View>
-                    )}
-                    actionText={primaryAction.label}
-                    actionSecondary={primaryAction.variant !== 'primary'}
-                    actionTone={primaryAction.variant === 'primary' ? 'payment' : 'neutral'}
-                    onClick={() => {
-                      void openEntryDetail(entry).catch((error) => {
-                        showErrorToast(error, '跳转失败');
-                      });
-                    }}
-                    onActionClick={(event) => {
-                      event.stopPropagation();
-                      void openEntryDetail(entry).catch((error) => {
-                        showErrorToast(error, '跳转失败');
-                      });
-                    }}
-                  />
+                <View key={entry.entryKey} className="orders-list-content__item" onClick={goDetail}>
+                  <View className="orders-list-content__floating">
+                    <View className="orders-list-content__status-wrap">
+                      <Tag variant={entry.statusGroup === 'pending_payment' ? 'warning' : entry.statusGroup === 'paid' ? 'success' : entry.statusGroup === 'refund' ? 'error' : 'default'}>
+                        {getEntryStatusText(entry)}
+                      </Tag>
+                    </View>
+                    <View className={`orders-list-content__amount-wrap ${entry.statusGroup === 'pending_payment' ? 'is-pending' : ''}`}>
+                      <Text className={`orders-list-content__amount ${entry.statusGroup === 'pending_payment' ? 'is-pending' : ''}`}>
+                        {formatCurrency(getEntryDisplayAmount(entry))}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text className="orders-list-content__title line-clamp-1">{entry.title}</Text>
+
+                  <View className="orders-list-content__facts">
+                    <View className="orders-list-content__fact-row">
+                      <Text className="orders-list-content__fact-label">服务商</Text>
+                      <Text className="orders-list-content__fact-value line-clamp-1">{getEntryProviderName(entry)}</Text>
+                    </View>
+                    <View className="orders-list-content__fact-row">
+                      <Text className="orders-list-content__fact-label">地址</Text>
+                      <Text className="orders-list-content__fact-value line-clamp-2">{getEntryAddress(entry)}</Text>
+                    </View>
+                  </View>
+
+                  <View className="orders-list-content__footer">
+                    <Text className="orders-list-content__time">{getEntryTimeLabel(entry) || '时间待同步'}</Text>
+                    <View
+                      className={`orders-list-content__action ${primaryAction.variant === 'primary' ? 'is-primary' : ''}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        goDetail();
+                      }}
+                    >
+                      <Text className={`orders-list-content__action-text ${primaryAction.variant === 'primary' ? 'is-primary' : ''}`}>
+                        {primaryAction.label}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               );
             })}

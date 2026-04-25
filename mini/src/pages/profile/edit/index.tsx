@@ -10,7 +10,7 @@ import { useMountedRef } from '@/hooks/useMountedRef';
 import { getUserProfile, updateUserProfile, type UpdateProfileDTO } from '@/services/profile';
 import { uploadFile } from '@/services/uploads';
 import { useAuthStore } from '@/store/auth';
-import { showErrorToast } from '@/utils/error';
+import { isUserCancelError, showErrorToast } from '@/utils/error';
 import { resolveProfileAvatarDisplayUrl } from '@/utils/profileAvatar';
 
 import './index.scss';
@@ -101,6 +101,9 @@ export default function ProfileEdit() {
       setAvatarPreview(result.tempFilePaths[0]);
       Taro.showToast({ title: '头像已更新', icon: 'success' });
     } catch (error) {
+      if (isUserCancelError(error)) {
+        return;
+      }
       if (mountedRef.current) {
         showErrorToast(error, '头像上传失败');
       }
@@ -157,7 +160,6 @@ export default function ProfileEdit() {
   return (
     <SettingsLayout
       title="个人资料"
-      description="头像、昵称和个人简介会同步展示在你的个人页。"
       className="profile-edit-page"
       footer={
         <Button block loading={loading} onClick={handleSubmit}>
@@ -183,7 +185,6 @@ export default function ProfileEdit() {
           </View>
         </View>
         <Text className="profile-edit-page__name">{displayName}</Text>
-        <Text className="profile-edit-page__hint">{uploading ? '头像上传中...' : '点击头像即可更换'}</Text>
       </View>
 
       <View className="profile-edit-page__form-card">
@@ -197,7 +198,6 @@ export default function ProfileEdit() {
         <View className="profile-edit-page__field">
           <View className="profile-edit-page__label-row">
             <Text className="profile-edit-page__label">生日</Text>
-            <Text className="profile-edit-page__field-tip">选填</Text>
           </View>
           <Picker
             mode="date"
@@ -218,7 +218,6 @@ export default function ProfileEdit() {
         <View className="profile-edit-page__field profile-edit-page__field--textarea">
           <View className="profile-edit-page__label-row">
             <Text className="profile-edit-page__label">个人简介</Text>
-            <Text className="profile-edit-page__field-tip">最多 200 字</Text>
           </View>
           <View className="profile-edit-page__textarea-wrap">
             <Textarea

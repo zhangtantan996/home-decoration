@@ -35,21 +35,6 @@ export default function NotificationSettingsPage() {
               checked={settings.notifyPayment}
               onChange={(value) => void savePatch({ notifyPayment: value })}
             />
-            <SettingsSwitchRow
-              label="营销活动"
-              checked={settings.notifyPromo}
-              onChange={(value) => void savePatch({ notifyPromo: value })}
-            />
-            <SettingsSwitchRow
-              label="提示音"
-              checked={settings.notifySound}
-              onChange={(value) => void savePatch({ notifySound: value })}
-            />
-            <SettingsSwitchRow
-              label="振动提醒"
-              checked={settings.notifyVibrate}
-              onChange={(value) => void savePatch({ notifyVibrate: value })}
-            />
           </>
         )}
       </SettingsGroup>

@@ -1,10 +1,10 @@
 .profile-favorites-page {
   min-height: 100vh;
   background: #f6f7f8;
-  padding-bottom: 48rpx;
+  padding-bottom: calc(80rpx + env(safe-area-inset-bottom));
 
   &__content {
-    padding: 18rpx 24rpx 0;
+    padding: 18rpx 24rpx calc(32rpx + env(safe-area-inset-bottom));
   }
 
   &__waterfall {

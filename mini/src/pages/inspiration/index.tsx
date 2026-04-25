@@ -312,20 +312,21 @@ export default function Inspiration() {
   }, [activeArea, activeLayout, activeStyle, sortMode]);
 
   useEffect(() => {
+    return () => {
+      if (filterSheetTimerRef.current) {
+        clearTimeout(filterSheetTimerRef.current);
+      }
+      setCustomTabBarHidden(false);
+    };
+  }, []);
+
+  useEffect(() => {
     setCustomTabBarHidden(filterSheetMounted);
 
     return () => {
       setCustomTabBarHidden(false);
     };
   }, [filterSheetMounted]);
-
-  useEffect(() => {
-    return () => {
-      if (filterSheetTimerRef.current) {
-        clearTimeout(filterSheetTimerRef.current);
-      }
-    };
-  }, []);
 
   const fetchCases = async (reset = false) => {
     if (reset) {
@@ -657,10 +658,22 @@ export default function Inspiration() {
   };
 
   const handleApplyFilters = () => {
-    setActiveStyle(draftStyle);
-    setActiveLayout(draftLayout);
-    setActiveArea(draftArea);
-    setFilterSheetVisible(false);
+    const unchanged = draftStyle === activeStyle && draftLayout === activeLayout && draftArea === activeArea;
+    if (unchanged) {
+      handleCloseFilterSheet();
+      return;
+    }
+
+    if (draftStyle !== activeStyle) {
+      setActiveStyle(draftStyle);
+    }
+    if (draftLayout !== activeLayout) {
+      setActiveLayout(draftLayout);
+    }
+    if (draftArea !== activeArea) {
+      setActiveArea(draftArea);
+    }
+    handleCloseFilterSheet();
   };
 
   const handleResetDraftFilters = () => {

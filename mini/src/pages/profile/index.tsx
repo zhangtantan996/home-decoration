@@ -219,12 +219,6 @@ export default function Profile() {
     });
   };
 
-  const handleDemands = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/demands/list/index' });
-    });
-  };
-
   const handleProposals = () => {
     requireAuth(() => {
       Taro.navigateTo({ url: '/pages/proposals/list/index' });
@@ -256,6 +250,12 @@ export default function Profile() {
   const handleAfterSales = () => {
     requireAuth(() => {
       Taro.navigateTo({ url: '/pages/after-sales/list/index' });
+    });
+  };
+
+  const handleRefunds = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/refunds/list/index' });
     });
   };
 
@@ -346,13 +346,7 @@ export default function Profile() {
                 onClick={handleBookings}
               />
               <ListItem
-                title="我的需求"
-                arrow
-                icon={<Icon name="plus" size={28} color="#71717A" />}
-                onClick={handleDemands}
-              />
-              <ListItem
-                title="我的报价"
+                title="我的方案"
                 arrow
                 icon={<Icon name="orders" size={28} color="#71717A" />}
                 onClick={handleProposals}
@@ -379,10 +373,16 @@ export default function Profile() {
                 onClick={handleComplaints}
               />
               <ListItem
-                title="售后 / 争议"
+                title="售后服务"
                 arrow
                 icon={<Icon name="history" size={28} color="#71717A" />}
                 onClick={handleAfterSales}
+              />
+              <ListItem
+                title="退款记录"
+                arrow
+                icon={<Icon name="history" size={28} color="#71717A" />}
+                onClick={handleRefunds}
               />
               <ListItem
                 title="灵感收藏"

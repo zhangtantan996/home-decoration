@@ -276,7 +276,7 @@ const DemandDetailPage: React.FC = () => {
           extra={<Text style={{ fontSize: '22rpx', color: '#8E8E93' }}>{detail.attachments.length} 份</Text>}
         >
           <Text className="notification-section-row__note" style={{ marginTop: 0 }}>
-            当前端仅展示附件清单，完整查看请在支持端打开。
+            当前仅展示附件清单，完整内容请在支持端打开。
           </Text>
           <View className="notification-section-list">
             {detail.attachments.map((item, index) => (

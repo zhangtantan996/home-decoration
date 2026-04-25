@@ -3,6 +3,10 @@ import Taro from '@tarojs/taro';
 export interface QuoteInquirySubmitDraft {
   createdAt: number;
   address: string;
+  cityCode?: string;
+  districtName?: string;
+  districtCode?: string;
+  detailAddress?: string;
   area: number;
   houseLayout: string;
   renovationType: string;

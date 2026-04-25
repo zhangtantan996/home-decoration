@@ -227,6 +227,45 @@ const ProjectCompletionPage: React.FC = () => {
           </View>
         </Card>
 
+        {(detail.quoteTruthSummary || detail.changeOrderSummary || detail.settlementSummary || detail.payoutSummary) ? (
+          <Card className="notification-surface-card" title="成交报价与后链摘要">
+            <View className="notification-section-list">
+              <View className="notification-section-row">
+                <View className="notification-section-row__head">
+                  <Text className="notification-section-row__title">成交报价</Text>
+                  <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                    {detail.quoteTruthSummary?.totalCent ? `¥${Math.round(detail.quoteTruthSummary.totalCent / 100).toLocaleString()}` : '待同步'}
+                  </Text>
+                </View>
+              </View>
+              <View className="notification-section-row">
+                <View className="notification-section-row__head">
+                  <Text className="notification-section-row__title">预计工期</Text>
+                  <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                    {detail.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '待同步'}
+                  </Text>
+                </View>
+              </View>
+              <View className="notification-section-row">
+                <View className="notification-section-row__head">
+                  <Text className="notification-section-row__title">变更待结算</Text>
+                  <Text className="notification-section-row__value" style={{ color: '#0F172A', fontWeight: 600 }}>
+                    {detail.changeOrderSummary?.pendingSettlementCount || 0}
+                  </Text>
+                </View>
+              </View>
+              <View className="notification-section-row">
+                <View className="notification-section-row__head">
+                  <Text className="notification-section-row__title">结算 / 出款</Text>
+                </View>
+                <Text className="notification-section-row__note">
+                  {detail.settlementSummary?.status || closure?.settlementStatus || '待同步'} / {detail.payoutSummary?.status || closure?.payoutStatus || '待同步'}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        ) : null}
+
         <Card
           className="notification-surface-card"
           title="完工照片"

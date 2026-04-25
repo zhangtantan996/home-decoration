@@ -1,0 +1,55 @@
+.xian-address-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 14rpx;
+}
+
+.xian-address-fields__row {
+  min-height: 92rpx;
+  padding: 0 24rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 24rpx;
+  background: #f8fafc;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.xian-address-fields__row--select {
+  background: #ffffff;
+}
+
+.xian-address-fields__label {
+  flex: 0 0 auto;
+  color: #52525b;
+  font-size: 26rpx;
+  line-height: 1.4;
+}
+
+.xian-address-fields__value {
+  min-width: 0;
+  flex: 1;
+  color: #111827;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.xian-address-fields__value--placeholder {
+  color: #a1a1aa;
+  font-weight: 400;
+}
+
+.xian-address-fields__error {
+  color: #dc2626;
+  font-size: 24rpx;
+  line-height: 1.4;
+}
+
+.xian-address-fields__detail {
+  margin: 0;
+}
