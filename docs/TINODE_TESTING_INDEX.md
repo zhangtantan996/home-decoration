@@ -25,26 +25,26 @@
 
 ### Phase 1: Individual Platform Testing
 
-**[MOBILE_E2E_TEST_GUIDE.md](./MOBILE_E2E_TEST_GUIDE.md)**
+**[MOBILE_E2E_测试指南.md](./MOBILE_E2E_测试指南.md)**
 - 7 test scenarios for Mobile app
 - Estimated time: 2 hours
 - Prerequisites: iOS/Android simulator
 
-**[ADMIN_E2E_TEST_GUIDE.md](./ADMIN_E2E_TEST_GUIDE.md)**
+**[ADMIN_E2E_测试指南.md](./ADMIN_E2E_测试指南.md)**
 - 3 test scenarios for Admin panel
 - Estimated time: 1 hour
 - Prerequisites: Chrome browser
 
 ### Phase 2: Integration Testing
 
-**[CROSS_PLATFORM_SYNC_TEST_GUIDE.md](./CROSS_PLATFORM_SYNC_TEST_GUIDE.md)**
+**[跨平台同步测试指南.md](./跨平台同步测试指南.md)**
 - 5 test scenarios for cross-platform sync
 - Estimated time: 30 minutes
 - Prerequisites: Mobile + Admin running simultaneously
 
 ### Phase 3: Feature Testing
 
-**[IMAGE_UPLOAD_TEST_GUIDE.md](./IMAGE_UPLOAD_TEST_GUIDE.md)**
+**[图片上传测试指南.md](./图片上传测试指南.md)**
 - 7 test scenarios for image upload
 - Estimated time: 2 hours
 - Prerequisites: Mobile simulator + test images

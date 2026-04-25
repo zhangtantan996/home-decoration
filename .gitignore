@@ -11,8 +11,12 @@ bin/
 *.so
 server/server_linux
 server/main
+server/api
 server/api.exe
 server/tmp/
+server/.gopath/
+server/coverage.out
+server/tmp_check_duplicate_items.go
 
 # Logs
 npm-debug.log*

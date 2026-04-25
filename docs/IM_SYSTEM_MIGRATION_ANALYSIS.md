@@ -1265,7 +1265,7 @@ func getIMProvider(userID uint64) string {
    ```
 
 3. **更新文档**
-   - 更新 `CLAUDE.md`
+   - 更新 `AGENTS.md` 与 `docs/CODEX_WORKFLOW.md`
    - 更新 `docs/Backend_Design.md`
    - 更新 API 文档
 
@@ -1827,8 +1827,8 @@ curl -X POST https://your-api.com/notify \
 
 - [Tinode 官方文档](https://github.com/tinode/chat)
 - [腾讯云 IM 文档](https://cloud.tencent.com/document/product/269)
-- [项目 CLAUDE.md](../CLAUDE.md)
-- [IM 迁移规则](./.claude/rules/im-migration-rules.md)
+- [仓库规则 AGENTS.md](../AGENTS.md)
+- [Codex 工作流](./CODEX_WORKFLOW.md)
 
 ### 14.3 联系人
 

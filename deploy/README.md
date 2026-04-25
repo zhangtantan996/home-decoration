@@ -273,7 +273,7 @@ curl -fsS http://127.0.0.1:8888/api/v1/health
 
 ## 8. 关联文档索引
 
-- 完整部署与运维说明：`docs/部署指南.md`
+- 完整部署与运维说明：`docs/DEPLOYMENT_GUIDE_ZH.md`
 - 发布与回滚策略：`docs/版本发布与回滚指南.md`
 - 上线检查清单：`docs/发布检查清单.md`
 - 数据库迁移规范：`docs/DATABASE_MIGRATIONS.md`

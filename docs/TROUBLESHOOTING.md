@@ -195,7 +195,7 @@ docker-compose -f docker-compose.prod.yml up web
 - `deploy/docker-compose.prod.yml` - 生产环境配置
 
 **参考 Commit**: `f9edcf6`
-**关联文档**: [全栈部署指南.md#Docker构建优化](全栈部署指南.md)
+**关联文档**: [DEPLOYMENT_GUIDE_ZH.md](DEPLOYMENT_GUIDE_ZH.md)
 
 ---
 

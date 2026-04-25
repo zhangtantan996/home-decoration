@@ -454,13 +454,15 @@
 
 ---
 
-### 5.4 施工报价（quote_tasks / quote_submissions）
+### 5.4 施工报价（QuoteList / QuoteSubmission）
 
 **状态枚举**：
-- `pending` - 待工长报价
-- `submitted` - 已提交报价
-- `confirmed` - 已确认
-- `rejected` - 已拒绝
+- `pricing_in_progress` - 施工报价中
+- `submitted_to_user` - 待用户确认施工报价
+- `user_confirmed` - 用户已确认施工报价
+- `rejected` - 用户已拒绝，待商家按原因重提
+
+> `quote_tasks / quote_pk_submissions` 已退为 legacy 只读兼容，不再作为现行施工报价主链。
 
 **状态流转**：
 - 创建报价任务 → `pending`

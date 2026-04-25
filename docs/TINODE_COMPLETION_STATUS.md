@@ -53,10 +53,10 @@ The remaining checkboxes (Tasks 2-7) require **manual human interaction** that c
 ### Documents Created (12 Files)
 
 **Test Guides** (4 comprehensive guides):
-1. `docs/MOBILE_E2E_TEST_GUIDE.md` - 7 scenarios, 2 hours
-2. `docs/ADMIN_E2E_TEST_GUIDE.md` - 3 scenarios, 1 hour
-3. `docs/CROSS_PLATFORM_SYNC_TEST_GUIDE.md` - 5 scenarios, 30 minutes
-4. `docs/IMAGE_UPLOAD_TEST_GUIDE.md` - 7 scenarios, 2 hours
+1. `docs/MOBILE_E2E_测试指南.md` - 7 scenarios, 2 hours
+2. `docs/ADMIN_E2E_测试指南.md` - 3 scenarios, 1 hour
+3. `docs/跨平台同步测试指南.md` - 5 scenarios, 30 minutes
+4. `docs/图片上传测试指南.md` - 7 scenarios, 2 hours
 
 **Summary & Handoff**:
 5. `docs/TINODE_TESTING_HANDOFF.md` - Complete handoff guide

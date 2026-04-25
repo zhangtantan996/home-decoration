@@ -5,8 +5,8 @@
 ## 使用方式
 
 1. 先读根目录 `AGENTS.md`
-2. 再读 `docs/Claude开发参考手册.md`
-3. 必要时查 `docs/问题解决手册.md`
+2. 再读 `docs/CODEX_WORKFLOW.md`
+3. 必要时查 `docs/CLAUDE_DEV_GUIDE.md` 与 `docs/TROUBLESHOOTING.md`
 4. 最后再看 `admin/` 目录下的实际代码、路由、API 封装和构建配置
 
 ## admin/ 关注点
@@ -19,4 +19,4 @@
 ## 说明
 
 - 旧的 repo-local Agent 状态与记忆工作流已移出仓库，不再作为上下文来源
-- 需要长期沉淀的共享规则，请写入根目录 `AGENTS.md`、`docs/`、`documentation/` 或 `ops/`
+- 需要长期沉淀的共享规则，请写入根目录 `AGENTS.md`、`docs/`、`documentation/`

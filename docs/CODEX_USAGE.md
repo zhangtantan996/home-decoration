@@ -158,7 +158,7 @@ Done when
 - 当前没有反复出现的信息搬运痛点时，不要新增 MCP server
 
 ## 6. 什么时候把流程沉淀成 skill
-当前仓库不再保存个人或本地 AI skill 目录；共享流程优先沉淀到 `docs/`、`documentation/` 或 `ops/`，个人 skill 放到各自本机环境管理。
+当前仓库不再保存个人或本地 AI skill 目录；共享流程优先沉淀到 `AGENTS.md`、`docs/` 或 `documentation/`，个人 skill 放到各自本机环境管理。
 
 适合新增 skill 的条件：
 - 同一类流程已经重复 2 到 3 次以上

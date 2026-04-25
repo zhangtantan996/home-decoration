@@ -146,6 +146,7 @@ router/ → handler/ → service/ → repository/
 - State management: **Zustand** everywhere — do not introduce Redux, MobX, or Recoil.
 - Backend: `handler → service → repository` is strict. Do not skip layers.
 - Secrets: use env/config. Never hardcode JWT secrets, DB passwords, API keys, or tokens.
+- User-facing UI copy must not expose implementation details. Do not show API URLs, SQL/schema/database errors, token/JWT, WebSocket, polling/auto-refresh internals, fallback/debug/mock/test-code text, npm/Docker/localhost instructions, stack traces, or raw backend error strings in `admin/`, `merchant/`, `web/`, `mini/`, or `mobile/`. Put technical detail in logs/audit records; show business-readable fallback text in the UI.
 - Artifact directories are off-limits unless the task explicitly requires it: `**/node_modules/**`, `**/dist/**`, `output/`, `playwright-report/`, `test-results/`, `db_data_local/`, `server/tmp/`, `server/uploads/`.
 
 ## Testing
@@ -168,7 +169,7 @@ All CI workflows trigger on the **`dev` branch** (not `main`). Paths are filtere
 - `mini/**` → ci-mini
 - `mobile/**` → ci-mobile
 - `web/**` + `tests/**` → ci-user-web
-- `deploy/**` → ci-ops
+- `deploy/**` → deployment workflows (`deploy-test` / `release-prod` / `rollback-*`)
 
 CI uses `npm ci --legacy-peer-deps` for all frontends and `go test -v -race ./...` for backend.
 

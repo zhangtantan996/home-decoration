@@ -1,10 +1,10 @@
-# Claude 开发参考手册 (CLAUDE_DEV_GUIDE.md)
+# 仓库开发参考手册 (CLAUDE_DEV_GUIDE.md)
 
-> **本文档是 Claude Code AI 的开发约束规范，所有代码编辑修改必须遵循此文档。**
+> **本文档是仓库通用开发约束手册，供 Codex / Agent 工作流配合使用。**
 
 ## 🎯 文档定位
 
-- **优先级**: P0（最高优先级，与 CLAUDE.md 并列参考）
+- **优先级**: P0（最高优先级，配合根目录 `AGENTS.md` 与 `docs/CODEX_WORKFLOW.md` 参考）
 - **适用范围**: 所有代码生成、修改、重构任务
 - **更新频率**: 每次技术选型变更后立即更新
 - **最后更新**: 2026-01-07
@@ -1060,7 +1060,7 @@ SELECT * FROM pg_locks WHERE NOT granted;
 3. **技术架构设计总览.md** - 技术选型和架构设计
 4. **BUSINESS_FLOW.md** - 业务流程规范
 5. **DEPLOYMENT_GUIDE_ZH.md** - 部署运维指南
-6. **CLAUDE.md** - Claude Code 使用指南
+6. **CODEX_WORKFLOW.md** - 默认 Codex 工作流说明
 7. **产品需求文档(PRD).md** - 产品需求
 
 ---

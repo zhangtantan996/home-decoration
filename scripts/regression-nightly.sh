@@ -13,5 +13,4 @@ node ./scripts/testing/run_command_suite.mjs \
   --step "verify-web::npm run verify:web" \
   --step "verify-mobile::npm run verify:mobile" \
   --step "verify-mini::npm run verify:mini" \
-  --step "verify-ops::npm run verify:ops" \
   --step "playwright-regression::./scripts/testing/run_playwright_stack.sh"

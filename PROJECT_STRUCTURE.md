@@ -30,12 +30,11 @@ home_decoration/
 ├── deploy/                    # 部署配置
 ├── docs/                      # 项目文档
 ├── documentation/             # 标准化文档
-├── ops/                       # 共享运维与控制面
+├── ops/                       # 本地遗留状态快照（仅保留 state.yaml / events.ndjson）
 ├── scripts/                   # 辅助脚本
 ├── tests/                     # 自动化测试
 ├── .gitignore                 # Git 忽略规则
 ├── AGENTS.md                  # 仓库级工程规则
-├── CLAUDE.md                  # Claude Code 项目指引
 ├── docker-compose.local.yml   # 本地开发 Docker 配置
 ├── docker-compose.yml         # Docker Compose 配置
 └── PROJECT_STRUCTURE.md       # 本文档
@@ -363,7 +362,6 @@ docs/
 - **docker-compose.local.yml** - 本地开发环境，包含数据库、Redis、后端API
 - **docker-compose.yml** - 通用Docker配置
 - **.gitignore** - 忽略 `node_modules/`, `db_data_local/`, `tmp/`, `dist/` 等
-- **CLAUDE.md** - Claude Code项目指引文档
 
 ### 后端配置
 

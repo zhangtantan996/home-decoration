@@ -73,6 +73,12 @@ bash deploy/scripts/rollback_test.sh --tag v1.2.2 --service api
 
 > 如果生产环境或测试环境使用托管 RDS/Redis、宿主机 Nginx 或阿里云变体部署，也建议沿用**同一套发布规则**，只是替换为对应的 compose 文件和环境变量。
 
+## 2.1 构建资源建议
+
+- 前端镜像构建建议至少预留 4GB 可用内存。
+- 如果服务器内存偏小，先补 Swap，再执行前端构建或整站发布。
+- 排查构建时内存不足、前端镜像构建失败时，先看 `deploy/Dockerfile.frontend`、相关 compose 配置与宿主机内存/Swap 状态。
+
 ---
 
 ## 3. 日常发版 SOP
