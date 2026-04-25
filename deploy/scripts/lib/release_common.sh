@@ -178,6 +178,14 @@ release_apply_known_migrations() {
     "server/migrations/v1.13.2_add_unique_index_sys_menus_button_permission.sql"
     "server/migrations/v1.13.3_add_supervision_workspace_menu.sql"
     "server/migrations/v1.13.4_add_public_visibility_switches.sql"
+    "server/migrations/v1.13.5_align_booking_budget_bridge_schema.sql"
+    "server/migrations/v1.13.6_reconcile_quote_runtime_schema.sql"
+    "server/migrations/v1.13.7_link_change_orders_to_payment_plans.sql"
+    "server/migrations/v1.14.0_add_quote_inquiries.sql"
+    "server/migrations/v1.14.1_restructure_admin_quote_erp_menu.sql"
+    "server/migrations/v1.14.2_payment_refund_projection_and_money_cents.sql"
+    "server/migrations/v1.14.3_add_admin_payment_order_menu.sql"
+    "server/migrations/v1.14.4_reconcile_contract_runtime_schema.sql"
   )
   local migration_file
   local latest_known_migration
