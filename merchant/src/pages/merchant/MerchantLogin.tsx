@@ -7,6 +7,7 @@ import { MerchantApiError, merchantAuthApi, type MerchantLoginGuideData, type Me
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import merchantAppIcon from '../../assets/branding/company-logo.png';
 import { MERCHANT_THEME } from '../../constants/merchantTheme';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -122,11 +123,11 @@ const MerchantLogin: React.FC = () => {
             }, 1000);
         } catch (error: unknown) {
             if (error instanceof MerchantApiError) {
-                message.error(error.message || '发送失败');
+                message.error(readSafeErrorMessage(error, '发送失败'));
                 return;
             }
             if (axios.isAxiosError(error)) {
-                message.error(error.response?.data?.message || error.message || '发送失败');
+                message.error(readSafeErrorMessage(error, '发送失败'));
                 return;
             }
             message.error('发送失败');
@@ -213,12 +214,12 @@ const MerchantLogin: React.FC = () => {
                     handleLoginGuide(values.phone, guideData.nextAction, guideData.applyStatus);
                     return;
                 }
-                message.error(error.message || '登录失败');
+                message.error(readSafeErrorMessage(error, '登录失败'));
                 return;
             }
 
             if (axios.isAxiosError(error)) {
-                message.error(error.response?.data?.message || error.message || '登录失败');
+                message.error(readSafeErrorMessage(error, '登录失败'));
                 return;
             }
             message.error('登录失败');

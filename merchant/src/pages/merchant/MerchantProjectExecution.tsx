@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, DatePicker, Descriptions, Empty, Form, Image, Input, InputNumber, List, Modal, Select, Space, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, DatePicker, Descriptions, Empty, Form, Image, Input, List, Modal, Select, Space, Tag, Typography, Upload, message } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
 import { ArrowLeftOutlined, CheckCircleOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -12,8 +12,6 @@ import { isMerchantConflictError } from '../../services/api';
 import {
   merchantProjectApi,
   merchantUploadApi,
-  type MerchantCreateChangeOrderPayload,
-  type MerchantProjectChangeOrder,
   type MerchantProjectExecutionDetail,
   type MerchantProjectMilestone,
   type MerchantProjectPaymentPlan,
@@ -22,6 +20,7 @@ import {
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { formatServerDate, formatServerDateTime } from '../../utils/serverTime';
 import { getStoredPathFromUploadFile } from '../../utils/uploadAsset';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -90,7 +89,7 @@ const resolveActionError = async (
     await reload();
     return '状态已变化，请刷新后重试';
   }
-  return error instanceof Error && error.message ? error.message : fallback;
+  return readSafeErrorMessage(error, fallback);
 };
 
 const MerchantProjectExecution: React.FC = () => {
@@ -100,19 +99,14 @@ const MerchantProjectExecution: React.FC = () => {
 
   const [loading, setLoading] = useState(false);
   const [submittingMilestoneId, setSubmittingMilestoneId] = useState<number | null>(null);
-  const [startingProject, setStartingProject] = useState(false);
   const [logModalVisible, setLogModalVisible] = useState(false);
   const [logSubmitting, setLogSubmitting] = useState(false);
   const [logFileList, setLogFileList] = useState<UploadFile[]>([]);
   const [completionFileList, setCompletionFileList] = useState<UploadFile[]>([]);
   const [completionSubmitting, setCompletionSubmitting] = useState(false);
-  const [changeOrderModalVisible, setChangeOrderModalVisible] = useState(false);
-  const [changeOrderSubmitting, setChangeOrderSubmitting] = useState(false);
-  const [changeOrderFileList, setChangeOrderFileList] = useState<UploadFile[]>([]);
   const [detail, setDetail] = useState<MerchantProjectExecutionDetail | null>(null);
   const [logForm] = Form.useForm();
   const [completionForm] = Form.useForm();
-  const [changeOrderForm] = Form.useForm();
 
   const load = async () => {
     if (!Number.isFinite(projectId) || projectId <= 0) {
@@ -170,9 +164,37 @@ const MerchantProjectExecution: React.FC = () => {
   const stageTag = businessStageLabel(detail?.businessStage);
   const canCreateLog = detail?.businessStage === 'in_construction' || detail?.businessStage === 'node_acceptance_in_progress';
   const canSubmitCompletion = detail?.availableActions?.includes('submit_completion');
-  const canStartProject = detail?.businessStage === 'ready_to_start'
-    && (detail?.availableActions?.includes('start_project') ?? false);
-  const canCreateChangeOrder = ['ready_to_start', 'in_construction', 'node_acceptance_in_progress', 'completed'].includes(detail?.businessStage || '');
+  const isReadyToStart = detail?.businessStage === 'ready_to_start';
+  const nextResponsible = isReadyToStart
+    ? '监理'
+    : detail?.businessStage === 'node_acceptance_in_progress'
+      ? '业主'
+      : detail?.businessStage === 'in_construction' || detail?.businessStage === 'completed'
+        ? '施工方'
+        : '待同步';
+  const currentTodo = isReadyToStart
+    ? (detail?.plannedStartDate ? '待监理确认开工' : '待监理登记计划进场时间')
+    : (detail?.nextPendingAction || '待同步');
+  const executionWarning = detail?.riskSummary?.disputeReason
+    ? { message: '项目当前存在争议', description: detail.riskSummary.disputeReason }
+    : detail?.riskSummary?.pauseReason
+      ? { message: '项目当前已暂停', description: detail.riskSummary.pauseReason }
+      : null;
+  const statusStripItems: Array<{ label: string; value: React.ReactNode }> = [
+    {
+      label: '当前阶段',
+      value: (
+        <Space wrap size={8}>
+          <Tag color={stageTag.color}>{stageTag.text}</Tag>
+          <Text strong>{detail?.currentPhase || '-'}</Text>
+        </Space>
+      ),
+    },
+    { label: '下一责任人', value: nextResponsible },
+    { label: '计划进场时间', value: detail?.plannedStartDate ? formatServerDateTime(detail.plannedStartDate) : '待登记' },
+    { label: '最近监理同步', value: detail?.supervisorSummary?.latestLogTitle || '暂无' },
+    { label: '当前待办', value: currentTodo },
+  ];
 
   const beforeUpload = (file: File) => {
     const isImage = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type);
@@ -226,19 +248,6 @@ const MerchantProjectExecution: React.FC = () => {
     }
   };
 
-  const handleStartProject = async () => {
-    try {
-      setStartingProject(true);
-      await merchantProjectApi.start(projectId);
-      message.success('项目已开工');
-      await load();
-    } catch (error: any) {
-      message.error(await resolveActionError(error, load, '发起开工失败'));
-    } finally {
-      setStartingProject(false);
-    }
-  };
-
   const handleSubmitCompletion = async () => {
     try {
       const values = await completionForm.validateFields();
@@ -258,57 +267,6 @@ const MerchantProjectExecution: React.FC = () => {
     } finally {
       setCompletionSubmitting(false);
     }
-  };
-
-  const handleCreateChangeOrder = async () => {
-    try {
-      const values = await changeOrderForm.validateFields();
-      setChangeOrderSubmitting(true);
-      const evidenceUrls = changeOrderFileList
-        .map((file) => getStoredPathFromUploadFile(file as UploadFile<any>))
-        .filter((url): url is string => Boolean(url));
-      const payload: MerchantCreateChangeOrderPayload = {
-        changeType: values.changeType,
-        title: values.title,
-        reason: values.reason,
-        description: values.description,
-        amountImpact: Number(values.amountImpact || 0),
-        timelineImpact: Number(values.timelineImpact || 0),
-        evidenceUrls,
-        items: [{
-          title: values.title,
-          description: values.description,
-          amountImpact: Number(values.amountImpact || 0),
-        }],
-      };
-      await merchantProjectApi.createChangeOrder(projectId, payload);
-      message.success('项目变更单已创建');
-      setChangeOrderModalVisible(false);
-      changeOrderForm.resetFields();
-      setChangeOrderFileList([]);
-      await load();
-    } catch (error: any) {
-      if (error?.errorFields) return;
-      message.error(await resolveActionError(error, load, '创建项目变更单失败'));
-    } finally {
-      setChangeOrderSubmitting(false);
-    }
-  };
-
-  const handleCancelChangeOrder = async (item: MerchantProjectChangeOrder) => {
-    Modal.confirm({
-      title: '取消变更单',
-      content: `确认取消“${item.title || `变更单 #${item.id}`}”吗？`,
-      onOk: async () => {
-        try {
-          await merchantProjectApi.cancelChangeOrder(item.id, '商家主动取消');
-          message.success('变更单已取消');
-          await load();
-        } catch (error: any) {
-          message.error(await resolveActionError(error, load, '取消变更单失败'));
-        }
-      },
-    });
   };
 
   return (
@@ -338,25 +296,36 @@ const MerchantProjectExecution: React.FC = () => {
       />
 
       <MerchantContentPanel>
-        <MerchantSectionCard>
-          {detail?.flowSummary ? (
-            <Alert
-              type={detail.businessStage === 'completed' || detail.businessStage === 'archived' ? 'success' : 'info'}
-              showIcon
-              style={{ marginBottom: 16 }}
-              message={detail.flowSummary}
-              description={
-                detail.businessStage === 'ready_to_start'
-                  ? '施工报价已确认，当前由监理协同计划进场时间并推进开工。'
-                  : detail.businessStage === 'node_acceptance_in_progress'
-                    ? '节点已提交，等待业主验收结果。'
-                    : detail.businessStage === 'in_construction'
-                      ? '当前可由施工方推进节点并提交验收。'
-                      : '当前页展示项目执行视图与节点进度。'
-              }
-            />
-          ) : null}
+        <MerchantSectionCard title="协同状态">
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+              {statusStripItems.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 14,
+                    background: '#f8fafc',
+                    padding: '12px 14px',
+                  }}
+                >
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>{item.label}</Text>
+                  <div style={{ color: '#0f172a', fontWeight: 600 }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+            {executionWarning ? (
+              <Alert
+                type="warning"
+                showIcon
+                message={executionWarning.message}
+                description={executionWarning.description}
+              />
+            ) : null}
+          </div>
+        </MerchantSectionCard>
 
+        <MerchantSectionCard title="项目基本信息">
           <Descriptions column={3} size="small">
             <Descriptions.Item label="项目ID">{detail?.id || projectId}</Descriptions.Item>
             <Descriptions.Item label="业主">{detail?.ownerName || '-'}</Descriptions.Item>
@@ -364,35 +333,51 @@ const MerchantProjectExecution: React.FC = () => {
             <Descriptions.Item label="项目地址">{detail?.address || '-'}</Descriptions.Item>
             <Descriptions.Item label="预算">{formatCurrency(detail?.budget)}</Descriptions.Item>
             <Descriptions.Item label="当前阶段">{detail?.currentPhase || '-'}</Descriptions.Item>
+            <Descriptions.Item label="设计师">{detail?.designerName || '-'}</Descriptions.Item>
+            <Descriptions.Item label="计划进场">{detail?.plannedStartDate ? formatServerDateTime(detail.plannedStartDate) : '待登记'}</Descriptions.Item>
+            <Descriptions.Item label="闭环摘要">{detail?.flowSummary || '-'}</Descriptions.Item>
           </Descriptions>
-          {detail?.bridgeConversionSummary?.bridgeNextStep?.reason ? (
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginTop: 16 }}
-              message="施工桥接解释"
-              description={detail.bridgeConversionSummary.bridgeNextStep.reason}
-            />
-          ) : null}
-          {detail?.closureSummary ? (
-            <Alert
-              type="success"
-              showIcon
-              style={{ marginTop: 16 }}
-              message={`资料归档：${detail.closureSummary.archiveStatus || '待同步'} / 结算：${detail.closureSummary.settlementStatus || '待同步'} / 出款：${detail.closureSummary.payoutStatus || '待同步'}`}
-              description={detail.closureSummary.nextPendingAction || '待后续资金链继续推进'}
-            />
+          {(detail?.quoteTruthSummary || detail?.changeOrderSummary || detail?.settlementSummary || detail?.payoutSummary) ? (
+            <Descriptions column={3} size="small" style={{ marginTop: 16 }}>
+              <Descriptions.Item label="成交报价">
+                {detail?.quoteTruthSummary?.totalCent ? `¥${(detail.quoteTruthSummary.totalCent / 100).toFixed(2)}` : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="成交工期">
+                {detail?.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="资金闭环">
+                {detail?.financialClosureStatus || detail?.closureSummary?.financialClosureStatus || '待同步'}
+              </Descriptions.Item>
+              <Descriptions.Item label="变更待结算">
+                {detail?.changeOrderSummary?.pendingSettlementCount || 0}
+              </Descriptions.Item>
+              <Descriptions.Item label="结算状态">
+                {detail?.settlementSummary?.status || detail?.closureSummary?.settlementStatus || '待同步'}
+              </Descriptions.Item>
+              <Descriptions.Item label="出款状态">
+                {detail?.payoutSummary?.status || detail?.closureSummary?.payoutStatus || '待同步'}
+              </Descriptions.Item>
+            </Descriptions>
           ) : null}
         </MerchantSectionCard>
 
         <MerchantSectionCard
           title="节点执行"
-          extra={canStartProject ? (
-            <Button type="primary" loading={startingProject} onClick={() => void handleStartProject()}>
-              {startingProject ? '开工中…' : '发起开工'}
-            </Button>
-          ) : activeMilestone ? <Tag color="blue">当前施工节点：{activeMilestone.name}</Tag> : undefined}
+          extra={activeMilestone ? <Tag color="blue">当前施工节点：{activeMilestone.name}</Tag> : undefined}
         >
+          {isReadyToStart ? (
+            <div
+              style={{
+                marginBottom: 16,
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+                background: '#f8fafc',
+              }}
+            >
+              <Text type="secondary">待监理协调计划进场并确认开工，开工后才可提交节点。</Text>
+            </div>
+          ) : null}
           {!detail?.milestones?.length ? (
             <Empty description="当前项目还没有节点数据" />
           ) : (
@@ -440,36 +425,29 @@ const MerchantProjectExecution: React.FC = () => {
           )}
         </MerchantSectionCard>
 
-        <MerchantSectionCard
-          title="支付与变更治理"
-          extra={canCreateChangeOrder ? (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setChangeOrderModalVisible(true)}>
-              发起变更单
-            </Button>
-          ) : undefined}
-        >
-          {detail?.nextPayablePlan ? (
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message={`当前待支付：${detail.nextPayablePlan.name || `第 ${detail.nextPayablePlan.seq || '-'} 期`} · ${formatCurrency(detail.nextPayablePlan.amount)}`}
-              description={detail.nextPayablePlan.dueAt ? `到期时间：${formatServerDateTime(detail.nextPayablePlan.dueAt)}` : '已生成支付计划，等待业主处理。'}
-            />
-          ) : null}
-
+        <MerchantSectionCard title="支付计划">
           <Descriptions column={3} size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="首笔支付">
               {detail?.paymentPlans?.[0] ? `${detail.paymentPlans[0].name || '首付款'} / ${formatCurrency(detail.paymentPlans[0].amount)}` : '-'}
             </Descriptions.Item>
             <Descriptions.Item label="当前待办">
-              {detail?.nextPayablePlan ? (detail.nextPayablePlan.name || `第 ${detail.nextPayablePlan.seq || '-'} 期`) : '无'}
+              {detail?.nextPendingAction || (detail?.nextPayablePlan ? (detail.nextPayablePlan.name || `第 ${detail.nextPayablePlan.seq || '-'} 期`) : '无')}
             </Descriptions.Item>
-            <Descriptions.Item label="变更单数量">{detail?.changeOrders?.length || 0}</Descriptions.Item>
+            <Descriptions.Item label="当前待支付">
+              {detail?.nextPayablePlan ? `${detail.nextPayablePlan.name || `第 ${detail.nextPayablePlan.seq || '-'} 期`} / ${formatCurrency(detail.nextPayablePlan.amount)}` : '无'}
+            </Descriptions.Item>
+            <Descriptions.Item label="结算状态">
+              {detail?.settlementSummary?.status || detail?.closureSummary?.settlementStatus || '待同步'}
+            </Descriptions.Item>
+            <Descriptions.Item label="出款状态">
+              {detail?.payoutSummary?.status || detail?.closureSummary?.payoutStatus || '待同步'}
+            </Descriptions.Item>
+            <Descriptions.Item label="资金闭环">
+              {detail?.financialClosureStatus || detail?.closureSummary?.financialClosureStatus || '待同步'}
+            </Descriptions.Item>
           </Descriptions>
 
           <List
-            header="支付计划"
             dataSource={detail?.paymentPlans || []}
             locale={{ emptyText: '暂无支付计划' }}
             renderItem={(plan) => {
@@ -496,25 +474,21 @@ const MerchantProjectExecution: React.FC = () => {
               );
             }}
           />
+        </MerchantSectionCard>
 
+        <MerchantSectionCard title="变更历史">
+          <Descriptions column={3} size="small" style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="变更单数量">{detail?.changeOrders?.length || 0}</Descriptions.Item>
+            <Descriptions.Item label="待业主确认">{detail?.changeOrderSummary?.pendingUserConfirmCount || 0}</Descriptions.Item>
+            <Descriptions.Item label="待平台结算">{detail?.changeOrderSummary?.pendingSettlementCount || 0}</Descriptions.Item>
+          </Descriptions>
           <List
-            style={{ marginTop: 16 }}
-            header="项目变更单"
             dataSource={detail?.changeOrders || []}
             locale={{ emptyText: '当前还没有正式变更单' }}
             renderItem={(item) => {
               const status = changeOrderStatusLabel(item.status);
-              const cancelable = item.status === 'pending_user_confirm';
               return (
-                <List.Item
-                  actions={[
-                    cancelable ? (
-                      <Button key="cancel" danger type="link" onClick={() => handleCancelChangeOrder(item)}>
-                        取消
-                      </Button>
-                    ) : null,
-                  ].filter(Boolean)}
-                >
+                <List.Item>
                   <List.Item.Meta
                     title={(
                       <Space wrap>
@@ -603,13 +577,20 @@ const MerchantProjectExecution: React.FC = () => {
             />
           ) : null}
           {detail?.completionSubmittedAt ? (
-            <Alert
-              type={detail.businessStage === 'completed' ? 'info' : 'success'}
-              showIcon
-              style={{ marginBottom: 16 }}
-              message={`最近一次完工提交：${formatServerDateTime(detail.completionSubmittedAt)}`}
-              description={detail.businessStage === 'completed' ? '当前等待业主整体验收。' : '当前已进入后续归档链路。'}
-            />
+            <div
+              style={{
+                marginBottom: 16,
+                padding: '12px 14px',
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+                background: '#f8fafc',
+              }}
+            >
+              <Text strong>最近一次完工提交</Text>
+              <div style={{ marginTop: 4, color: '#475569' }}>
+                {formatServerDateTime(detail.completionSubmittedAt)} · {detail.businessStage === 'completed' ? '待业主整体验收' : '已进入后续归档链路'}
+              </div>
+            </div>
           ) : null}
           <Form form={completionForm} layout="vertical">
             <Form.Item
@@ -705,70 +686,6 @@ const MerchantProjectExecution: React.FC = () => {
               {logFileList.length < 6 ? <div>上传图片</div> : null}
             </Upload>
             <div style={{ color: '#64748b', fontSize: 12 }}>最多 6 张，支持 JPG/PNG/WEBP，单张不超过 5MB</div>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="发起项目变更单"
-        open={changeOrderModalVisible}
-        onOk={() => void handleCreateChangeOrder()}
-        confirmLoading={changeOrderSubmitting}
-        onCancel={() => {
-          setChangeOrderModalVisible(false);
-          changeOrderForm.resetFields();
-          setChangeOrderFileList([]);
-        }}
-        okText="提交变更单"
-        cancelText="取消"
-      >
-        <Form
-          form={changeOrderForm}
-          layout="vertical"
-          initialValues={{ changeType: 'scope', amountImpact: 0, timelineImpact: 0 }}
-        >
-          <Form.Item name="changeType" label="变更类型" rules={[{ required: true, message: '请选择变更类型' }]}>
-            <Select
-              options={[
-                { label: '增减项', value: 'scope' },
-                { label: '工期调整', value: 'timeline' },
-                { label: '说明留痕', value: 'note' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="title" label="变更标题" rules={[{ required: true, message: '请输入变更标题' }]}>
-            <Input maxLength={60} placeholder="例如：卫生间防水增项" />
-          </Form.Item>
-          <Form.Item name="reason" label="变更原因" rules={[{ required: true, message: '请输入变更原因' }]}>
-            <TextArea rows={3} maxLength={300} showCount placeholder="说明为什么需要变更" />
-          </Form.Item>
-          <Form.Item name="description" label="补充说明">
-            <TextArea rows={4} maxLength={1000} showCount placeholder="写清责任边界、工期或材料变化" />
-          </Form.Item>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="amountImpact" label="金额影响">
-              <InputNumber style={{ width: 220 }} min={-999999} precision={2} placeholder="减项填负数" />
-            </Form.Item>
-            <Form.Item name="timelineImpact" label="工期影响（天）">
-              <InputNumber style={{ width: 220 }} min={-365} max={365} precision={0} />
-            </Form.Item>
-          </Space>
-          <Form.Item label="附件说明">
-            <Upload
-              listType="picture-card"
-              fileList={changeOrderFileList}
-              customRequest={uploadLogImage}
-              beforeUpload={(file) => beforeUpload(file as File)}
-              onChange={({ fileList }) => setChangeOrderFileList(fileList.slice(0, 6))}
-              onPreview={(file) => {
-                const response = file.response as { url?: string } | undefined;
-                const url = file.url || response?.url;
-                if (url) window.open(toAbsoluteAssetUrl(url), '_blank');
-              }}
-            >
-              {changeOrderFileList.length < 6 ? <div>上传图片</div> : null}
-            </Upload>
-            <div style={{ color: '#64748b', fontSize: 12 }}>最多 6 张，建议上传现场照片或补充说明截图。</div>
           </Form.Item>
         </Form>
       </Modal>

@@ -1,4 +1,5 @@
 import api, { MerchantRequestError } from './api';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 
 const quoteApi = api;
 
@@ -39,7 +40,7 @@ const unwrapData = <T,>(payload: unknown, fallbackMessage: string): T => {
         const errorCode = isRecord(envelope.data) && 'errorCode' in envelope.data
             ? String(envelope.data.errorCode || '')
             : undefined;
-        throw new QuoteApiError(envelope.code, envelope.message || fallbackMessage, envelope.data, 200, errorCode);
+        throw new QuoteApiError(envelope.code, toSafeUserFacingText(envelope.message, fallbackMessage), envelope.data, 200, errorCode);
     }
     return (envelope.data as T) ?? ({} as T);
 };
@@ -68,6 +69,99 @@ export interface QuoteListSummary {
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
+    submissionHealth?: SubmissionHealthSummary;
+    quoteTruthSummary?: QuoteTruthSummary;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
+}
+
+export interface QuoteTruthSummary {
+    quoteListId: number;
+    sourceType?: string;
+    sourceId?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    activeSubmissionId?: number;
+    awardedProviderId?: number;
+    confirmedAt?: string;
+    totalCent?: number;
+    estimatedDays?: number;
+    revisionCount?: number;
+}
+
+export interface CommercialExplanation {
+    baselineSummary?: {
+        title?: string;
+        sourceStage?: string;
+        submittedAt?: string;
+        itemCount?: number;
+        highlights?: string[];
+        readyForUser?: boolean;
+    };
+    scopeIncluded?: string[];
+    scopeExcluded?: string[];
+    teamSize?: number;
+    workTypes?: string[];
+    constructionMethodNote?: string;
+    siteVisitRequired?: boolean;
+    paymentPlanSummary?: Array<{
+        id: number;
+        orderId: number;
+        milestoneId?: number;
+        type: string;
+        seq: number;
+        name: string;
+        amount: number;
+        status: number;
+        dueAt?: string;
+        paidAt?: string;
+    }>;
+}
+
+export interface SubmissionHealthSummary {
+    missingPriceCount: number;
+    deviationItemCount: number;
+    platformReviewStatus?: string;
+    lastRevisionNo?: number;
+    lastChangeReason?: string;
+    canSubmit: boolean;
+    blockingReasons?: string[];
+}
+
+export interface ChangeOrderSummary {
+    totalCount: number;
+    pendingUserConfirmCount: number;
+    pendingSettlementCount: number;
+    settledCount: number;
+    netAmountCent: number;
+    latestChangeOrderId?: number;
+}
+
+export interface SettlementSummary {
+    latestSettlementId?: number;
+    status?: string;
+    grossAmount?: number;
+    netAmount?: number;
+    totalGrossAmount?: number;
+    totalNetAmount?: number;
+    settledAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+}
+
+export interface PayoutSummary {
+    latestPayoutId?: number;
+    status?: string;
+    channel?: string;
+    totalAmount?: number;
+    paidAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+    failureReason?: string;
 }
 
 export interface QuoteListItem {
@@ -230,6 +324,14 @@ export interface MerchantQuoteListDetail {
             actionHint?: string;
         };
     };
+    quoteTruthSummary?: QuoteTruthSummary;
+    commercialExplanation?: CommercialExplanation;
+    submissionHealth?: SubmissionHealthSummary;
+    changeOrderSummary?: ChangeOrderSummary;
+    settlementSummary?: SettlementSummary;
+    payoutSummary?: PayoutSummary;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
 }
 
 export interface QuotePriceBookItem {

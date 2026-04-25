@@ -12,6 +12,7 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 interface WithdrawRecord {
     id: number;
@@ -49,20 +50,7 @@ const STATUS_META: Record<number, { text: string; color: string }> = {
     3: { text: '已拒绝', color: 'error' },
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-
-    const maybeAxiosError = error as {
-        response?: {
-            data?: {
-                message?: string;
-            };
-        };
-    };
-    return maybeAxiosError.response?.data?.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const formatCurrency = (value?: number) => `¥${Number(value || 0).toFixed(2)}`;
 
@@ -204,8 +192,10 @@ const MerchantWithdraw: React.FC = () => {
         setSendingCode(true);
         try {
             const res = await merchantAuthApi.sendCode(phone, 'merchant_withdraw');
-            const debugSuffix = import.meta.env.DEV && res?.debugCode ? ` (测试码: ${res.debugCode})` : '';
-            message.success(`验证码已发送${debugSuffix}`);
+            if (import.meta.env.DEV && res?.debugCode) {
+                console.debug(`[DEV] 提现验证码: ${res.debugCode}`);
+            }
+            message.success('验证码已发送');
             setCountdown(60);
         } catch (error) {
             message.error(getErrorMessage(error, '发送验证码失败'));

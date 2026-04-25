@@ -77,6 +77,7 @@ const router = createBrowserRouter([
               { path: '/dashboard', element: <MerchantDashboard /> },
               { path: '/notifications', element: <MerchantNotifications /> },
               { path: '/designer-tasks', element: <MerchantDesignerTasks /> },
+              // Legacy compatibility surface for old quote-pk / crew-task deep links.
               { path: '/crew-tasks', element: <MerchantCrewTasks /> },
               { path: '/leads', element: <Navigate to="/bookings" replace /> },
               { path: '/bookings', element: <MerchantBookings /> },

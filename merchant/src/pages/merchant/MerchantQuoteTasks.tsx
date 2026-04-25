@@ -1,3 +1,5 @@
+// Legacy compatibility only: quote-pk 主链已退役。
+// 当前页面只用于旧深链兼容，不应再出现在主导航与现行报价作业路径中。
 import React, { useEffect, useState } from 'react';
 import { Button, Card, Empty, Form, Input, InputNumber, message, Modal, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -214,4 +216,3 @@ const MerchantQuoteTasks: React.FC = () => {
 };
 
 export default MerchantQuoteTasks;
-

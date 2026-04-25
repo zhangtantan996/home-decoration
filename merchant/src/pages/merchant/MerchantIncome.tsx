@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { merchantIncomeApi } from '../../services/merchantApi';
 import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Space, Table, Tabs, Tag, message } from 'antd';
+import { Alert, Button, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import MerchantPageShell from '../../components/MerchantPageShell';
@@ -11,6 +11,7 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 interface IncomeRecord {
     id: number;
@@ -28,20 +29,7 @@ interface IncomeRecord {
     createdAt: string;
 }
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-
-    const maybeAxiosError = error as {
-        response?: {
-            data?: {
-                message?: string;
-            };
-        };
-    };
-    return maybeAxiosError.response?.data?.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const MerchantIncome: React.FC = () => {
     const navigate = useNavigate();
@@ -53,11 +41,17 @@ const MerchantIncome: React.FC = () => {
         settledAmount: 0,
         withdrawnAmount: 0,
         availableAmount: 0,
+        frozenAmount: 0,
+        abnormalAmount: 0,
+        pendingPayoutAmount: 0,
+        rejectedWithdrawAmount: 0,
+        latestRejectReason: '',
     });
     const [incomeList, setIncomeList] = useState<IncomeRecord[]>([]);
     const [total, setTotal] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [activeTab, setActiveTab] = useState('all');
+    const [bizType, setBizType] = useState<string | undefined>();
     const projectIdFilter = useMemo(() => {
         const raw = searchParams.get('projectId');
         if (!raw) return undefined;
@@ -82,6 +76,7 @@ const MerchantIncome: React.FC = () => {
                 page: currentPage,
                 pageSize: 10,
                 status,
+                type: bizType,
                 projectId: projectIdFilter,
             });
             setIncomeList(result.list || []);
@@ -91,7 +86,7 @@ const MerchantIncome: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [activeTab, currentPage, projectIdFilter]);
+    }, [activeTab, bizType, currentPage, projectIdFilter]);
 
     const clearProjectFilter = useCallback(() => {
         const next = new URLSearchParams(searchParams);
@@ -220,9 +215,23 @@ const MerchantIncome: React.FC = () => {
                     {
                         label: '待出款',
                         value: `¥${summary.availableAmount.toFixed(2)}`,
-                        meta: '待平台自动出款的结算金额',
+                        meta: '当前可申请提现的结算金额',
                         percent: summary.totalIncome > 0 ? (summary.availableAmount / summary.totalIncome) * 100 : 0,
                         tone: 'green',
+                    },
+                    {
+                        label: '提现冻结',
+                        value: `¥${summary.frozenAmount.toFixed(2)}`,
+                        meta: '已申请提现，等待审核或线下打款',
+                        percent: summary.totalIncome > 0 ? (summary.frozenAmount / summary.totalIncome) * 100 : 0,
+                        tone: 'amber',
+                    },
+                    {
+                        label: '异常资金',
+                        value: `¥${summary.abnormalAmount.toFixed(2)}`,
+                        meta: summary.latestRejectReason || '退款、追偿或出款失败会进入此类',
+                        percent: summary.totalIncome > 0 ? (summary.abnormalAmount / summary.totalIncome) * 100 : 0,
+                        tone: 'red',
                     },
                     {
                         label: '已出款',
@@ -234,11 +243,37 @@ const MerchantIncome: React.FC = () => {
                 ]}
             />
 
+            {summary.rejectedWithdrawAmount > 0 ? (
+                <Alert
+                    showIcon
+                    type="warning"
+                    style={{ marginBottom: 16 }}
+                    message={`近期有 ¥${summary.rejectedWithdrawAmount.toFixed(2)} 提现被驳回`}
+                    description={summary.latestRejectReason || '请核对提现账户信息后重新提交。'}
+                />
+            ) : null}
+
             <MerchantContentPanel>
                 <MerchantSectionCard
                     title="结算记录"
                     extra={(
                         <Space>
+                            <Select
+                                allowClear
+                                placeholder="业务类型"
+                                style={{ width: 180 }}
+                                value={bizType}
+                                onChange={(value) => {
+                                    setBizType(value);
+                                    setCurrentPage(1);
+                                }}
+                                options={[
+                                    { value: 'construction', label: '施工主链' },
+                                    { value: 'change_order', label: '项目变更' },
+                                    { value: 'settlement', label: '项目结算' },
+                                    { value: 'payout', label: '项目出款' },
+                                ]}
+                            />
                             <Button type="primary" onClick={() => navigate('/withdraw')}>
                                 查看出款状态
                             </Button>
@@ -270,9 +305,17 @@ const MerchantIncome: React.FC = () => {
                             style={{ marginBottom: 16 }}
                             message={`当前列表仅查看项目 #${projectIdFilter} 的结算/出款记录，顶部概览仍为全局累计`}
                             action={(
-                                <Button size="small" onClick={clearProjectFilter}>
-                                    清除筛选
-                                </Button>
+                                <Space>
+                                    <Button size="small" onClick={() => {
+                                        setBizType(undefined);
+                                        setCurrentPage(1);
+                                    }}>
+                                        重置业务类型
+                                    </Button>
+                                    <Button size="small" onClick={clearProjectFilter}>
+                                        清除项目筛选
+                                    </Button>
+                                </Space>
                             )}
                         />
                     ) : null}

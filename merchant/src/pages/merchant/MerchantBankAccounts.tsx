@@ -30,6 +30,7 @@ import MerchantPageHeader from '../../components/MerchantPageHeader';
 import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const BANK_OPTIONS = [
     '中国工商银行',
@@ -49,20 +50,7 @@ const BANK_OPTIONS = [
     '广发银行',
 ];
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-
-    const maybeAxiosError = error as {
-        response?: {
-            data?: {
-                message?: string;
-            };
-        };
-    };
-    return maybeAxiosError.response?.data?.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const MerchantBankAccounts: React.FC = () => {
     const navigate = useNavigate();
@@ -101,8 +89,10 @@ const MerchantBankAccounts: React.FC = () => {
         setSendingCode(true);
         try {
             const res = await merchantAuthApi.sendCode(phone, 'merchant_bank_bind');
-            const debugSuffix = import.meta.env.DEV && res?.debugCode ? ` (测试码: ${res.debugCode})` : '';
-            message.success(`验证码已发送${debugSuffix}`);
+            if (import.meta.env.DEV && res?.debugCode) {
+                console.debug(`[DEV] 银行账户验证码: ${res.debugCode}`);
+            }
+            message.success('验证码已发送');
             setCountdown(60);
             const timer = window.setInterval(() => {
                 setCountdown((prev) => {

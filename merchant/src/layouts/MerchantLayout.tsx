@@ -18,7 +18,6 @@ import {
     LogoutOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
-    BookOutlined,
     SolutionOutlined,
 } from '@ant-design/icons';
 import merchantAppIcon from '../assets/branding/company-logo.png';
@@ -104,7 +103,7 @@ const MerchantLayout: React.FC = () => {
         {
             key: '/projects',
             icon: <ProjectOutlined />,
-            label: '项目履约',
+            label: '项目履约 / 变更',
         },
         {
             type: 'divider',
@@ -114,7 +113,7 @@ const MerchantLayout: React.FC = () => {
             icon: <DollarOutlined />,
             label: '财务中心',
             children: [
-                { key: '/income', label: '结算中心' },
+                { key: '/income', label: '结算与出款' },
                 { key: '/bank-accounts', label: '银行卡' },
             ],
         },
@@ -138,24 +137,18 @@ const MerchantLayout: React.FC = () => {
             label: '工作台',
         },
         {
-            key: '/crew-tasks',
+            key: 'erp-quote',
             icon: <SolutionOutlined />,
-            label: '工长任务',
-        },
-        {
-            key: '/quote-lists',
-            icon: <SolutionOutlined />,
-            label: '施工报价',
-        },
-        {
-            key: '/price-book',
-            icon: <BookOutlined />,
-            label: '价格库',
+            label: '报价经营',
+            children: [
+                { key: '/quote-lists', label: '施工报价' },
+                { key: '/price-book', label: '价格库' },
+            ],
         },
         {
             key: '/projects',
             icon: <ProjectOutlined />,
-            label: '项目履约',
+            label: '项目履约 / 变更',
         },
         {
             type: 'divider',
@@ -163,9 +156,9 @@ const MerchantLayout: React.FC = () => {
         {
             key: 'finance',
             icon: <DollarOutlined />,
-            label: '财务中心',
+            label: '结算与出款',
             children: [
-                { key: '/income', label: '结算中心' },
+                { key: '/income', label: '结算与出款' },
                 { key: '/bank-accounts', label: '银行卡' },
             ],
         },
@@ -225,10 +218,10 @@ const MerchantLayout: React.FC = () => {
             return '/designer-tasks';
         }
         if (pathname === '/crew-tasks') {
-            return '/crew-tasks';
+            return '/quote-lists';
         }
         if (pathname.startsWith('/quote-lists') || pathname === '/price-book') {
-            return '/proposals';
+            return pathname === '/price-book' ? '/price-book' : '/quote-lists';
         }
         if (
             pathname === '/orders'

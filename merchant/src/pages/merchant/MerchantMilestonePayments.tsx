@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, Table, Tag, Button, message, Modal, Descriptions, Timeline, Statistic, Row, Col } from 'antd'
-import { DollarOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
-import api from '@/services/api'
-import { useAuthStore } from '@/stores/authStore'
+import { CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import api from '../../services/api'
+import { readSafeErrorMessage } from '../../utils/userFacingText'
 
 interface Milestone {
   id: number
@@ -34,7 +34,6 @@ export default function MerchantMilestonePayments() {
   const [milestones, setMilestones] = useState<MilestoneWithProject[]>([])
   const [selectedMilestone, setSelectedMilestone] = useState<MilestoneWithProject | null>(null)
   const [detailVisible, setDetailVisible] = useState(false)
-  const { user } = useAuthStore()
 
   useEffect(() => {
     loadMilestones()
@@ -69,8 +68,8 @@ export default function MerchantMilestonePayments() {
       }
 
       setMilestones(allMilestones)
-    } catch (error: any) {
-      message.error(error.message || '加载失败')
+    } catch (error: unknown) {
+      message.error(readSafeErrorMessage(error, '加载失败'))
     } finally {
       setLoading(false)
     }

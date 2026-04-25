@@ -2,6 +2,7 @@ import axios from 'axios';
 import { message } from 'antd';
 import { getApiBaseUrl, getLoginPath } from '../utils/env';
 import { useMerchantAuthStore } from '../stores/merchantAuthStore';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -95,7 +96,7 @@ const normalizeMerchantError = (error: unknown) => {
     ? String(payload.data.errorCode || '')
     : undefined;
 
-  return new MerchantRequestError(payload?.message || `请求失败${status ? `(${status})` : ''}`, {
+  return new MerchantRequestError(toSafeUserFacingText(payload?.message, '操作失败'), {
     status,
     code: payload?.code,
     errorCode,

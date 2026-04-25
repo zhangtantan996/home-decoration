@@ -3,6 +3,7 @@ import { Alert, Button, Card, Form, Input, InputNumber, Space, message } from 'a
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { merchantContractApi } from '../../services/merchantApi';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const MerchantContractCreate: React.FC = () => {
     const [searchParams] = useSearchParams();
@@ -47,7 +48,7 @@ const MerchantContractCreate: React.FC = () => {
             message.success('合同已创建');
         } catch (error) {
             if (error instanceof Error) {
-                message.error(error.message);
+                message.error(readSafeErrorMessage(error, '合同创建失败'));
             }
         } finally {
             setSubmitting(false);

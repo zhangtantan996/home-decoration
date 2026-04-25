@@ -57,6 +57,7 @@ import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import { buildStoredAssetFile, getAssetPreviewUrl, getStoredPathFromUploadFile, normalizeStoredAssetValue, normalizeStoredAssetValues } from '../../utils/uploadAsset';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
 const { Title, Text } = Typography;
@@ -232,20 +233,7 @@ const normalizePortfolioCasesForForm = (cases: unknown, isForeman: boolean): Por
     });
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-
-    const maybeAxiosError = error as {
-        response?: {
-            data?: {
-                message?: string;
-            };
-        };
-    };
-    return maybeAxiosError.response?.data?.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const resolveApplyMeta = (searchParams: URLSearchParams): ResolvedApplyMeta => {
     const roleParam = (searchParams.get('role') || '').toLowerCase();

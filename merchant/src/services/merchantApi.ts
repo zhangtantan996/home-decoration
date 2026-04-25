@@ -1,4 +1,5 @@
 import api, { MerchantRequestError } from './api';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 
 const merchantApi = api;
 
@@ -39,7 +40,7 @@ const unwrapData = <T,>(payload: unknown, fallbackMessage: string): T => {
         const errorCode = isRecord(envelope.data) && 'errorCode' in envelope.data
             ? String(envelope.data.errorCode || '')
             : undefined;
-        throw new MerchantApiError(envelope.code, envelope.message || fallbackMessage, envelope.data, 200, errorCode);
+        throw new MerchantApiError(envelope.code, toSafeUserFacingText(envelope.message, fallbackMessage), envelope.data, 200, errorCode);
     }
     return (envelope.data as T) ?? ({} as T);
 };
@@ -1326,7 +1327,29 @@ export interface MerchantProjectExecutionDetail {
     availableActions?: string[];
     ownerName?: string;
     providerName?: string;
+    designerName?: string;
     budget?: number;
+    plannedStartDate?: string | null;
+    supervisorSummary?: {
+        plannedStartDate?: string | null;
+        latestLogAt?: string | null;
+        latestLogTitle?: string;
+        unhandledRiskCount?: number;
+    };
+    riskSummary?: {
+        pausedAt?: string | null;
+        resumedAt?: string | null;
+        pauseReason?: string;
+        pauseInitiator?: string;
+        disputedAt?: string | null;
+        disputeReason?: string;
+        disputeEvidence?: string[];
+        auditId?: number;
+        auditStatus?: string;
+        escrowFrozen?: boolean;
+        escrowStatus?: number;
+        frozenAmount?: number;
+    };
     phases?: MerchantProjectPhase[];
     milestones: MerchantProjectMilestone[];
     recentLogs?: MerchantProjectLog[];
@@ -1345,6 +1368,73 @@ export interface MerchantProjectExecutionDetail {
         financialClosureStatus?: string;
         nextPendingAction?: string;
     };
+    quoteTruthSummary?: {
+        quoteListId: number;
+        sourceType?: string;
+        sourceId?: number;
+        quantityBaseId?: number;
+        quantityBaseVersion?: number;
+        activeSubmissionId?: number;
+        awardedProviderId?: number;
+        confirmedAt?: string;
+        totalCent?: number;
+        estimatedDays?: number;
+        revisionCount?: number;
+    };
+    commercialExplanation?: {
+        baselineSummary?: {
+            title?: string;
+            sourceStage?: string;
+            submittedAt?: string;
+            itemCount?: number;
+            highlights?: string[];
+            readyForUser?: boolean;
+        };
+        scopeIncluded?: string[];
+        scopeExcluded?: string[];
+        teamSize?: number;
+        workTypes?: string[];
+        constructionMethodNote?: string;
+        siteVisitRequired?: boolean;
+        paymentPlanSummary?: Array<{
+            id: number;
+            orderId: number;
+            milestoneId?: number;
+            type: string;
+            seq: number;
+            name: string;
+            amount: number;
+            status: number;
+            dueAt?: string;
+            paidAt?: string;
+        }>;
+    };
+    changeOrderSummary?: {
+        totalCount: number;
+        pendingUserConfirmCount: number;
+        pendingSettlementCount: number;
+        settledCount: number;
+        netAmountCent: number;
+        latestChangeOrderId?: number;
+    };
+    settlementSummary?: {
+        latestSettlementId?: number;
+        status?: string;
+        grossAmount?: number;
+        netAmount?: number;
+        scheduledAt?: string;
+        paidAt?: string;
+    };
+    payoutSummary?: {
+        latestPayoutId?: number;
+        status?: string;
+        channel?: string;
+        scheduledAt?: string;
+        paidAt?: string;
+        failureReason?: string;
+    };
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
     paymentPlans?: MerchantProjectPaymentPlan[];
     nextPayablePlan?: MerchantProjectPaymentPlan | null;
     changeOrders?: MerchantProjectChangeOrder[];
@@ -1432,6 +1522,24 @@ export interface MerchantDashboardStats {
     pendingLeads: number;
     todayBookings: number;
     pendingProposals: number;
+    pendingQuoteInvitations?: number;
+    draftQuoteSubmissions?: number;
+    rejectedQuoteSubmissions?: number;
+    submittedToUserQuotes?: number;
+    missingPriceRequiredCount?: number;
+    pendingChangeOrders?: number;
+    pendingSettlementAmount?: number;
+    failedPayoutCount?: number;
+    quoteErp?: {
+        pendingQuoteInvitations?: number;
+        draftQuoteSubmissions?: number;
+        rejectedQuoteSubmissions?: number;
+        submittedToUserQuotes?: number;
+        missingPriceRequiredCount?: number;
+        pendingChangeOrders?: number;
+        pendingSettlementAmount?: number;
+        failedPayoutCount?: number;
+    };
     activeProjects: number;
     totalRevenue: number;
     monthRevenue: number;
@@ -1483,6 +1591,11 @@ export interface MerchantIncomeSummary {
     settledAmount: number;
     withdrawnAmount: number;
     availableAmount: number;
+    frozenAmount: number;
+    abnormalAmount: number;
+    pendingPayoutAmount: number;
+    rejectedWithdrawAmount: number;
+    latestRejectReason: string;
 }
 
 export interface MerchantIncomeListData<T> {

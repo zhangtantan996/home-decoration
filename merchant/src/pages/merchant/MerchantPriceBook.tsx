@@ -226,6 +226,58 @@ const MerchantPriceBook: React.FC = () => {
                 />
             ),
         },
+        {
+            title: '最低起收(元)',
+            dataIndex: 'minChargeCent',
+            key: 'minChargeCent',
+            width: 160,
+            render: (_value, record) => (
+                <InputNumber
+                    {...sharedForemanPriceInputProps}
+                    className={styles.priceInput}
+                    value={(record.minChargeCent || 0) / 100}
+                    placeholder="可选"
+                    onChange={(value) => {
+                        const nextCent = normalizePriceCent(value as number | null) ?? 0;
+                        setRows((prev) => prev.map((row) =>
+                            row.standardItemId === record.standardItemId
+                                ? { ...row, minChargeCent: nextCent }
+                                : row
+                        ));
+                    }}
+                    onBlur={(event) => {
+                        const normalizedYuan = normalizePriceYuan(Number(event.target.value || 0));
+                        const nextCent = normalizePriceCent(normalizedYuan ?? 0) ?? 0;
+                        setRows((prev) => prev.map((row) =>
+                            row.standardItemId === record.standardItemId
+                                ? { ...row, minChargeCent: nextCent }
+                                : row
+                        ));
+                    }}
+                />
+            ),
+        },
+        {
+            title: '报价说明',
+            dataIndex: 'remark',
+            key: 'remark',
+            width: 240,
+            render: (_value, record) => (
+                <Input
+                    allowClear
+                    placeholder="如：不含拆除/辅材/特殊施工"
+                    value={record.remark || ''}
+                    onChange={(event) => {
+                        const remark = event.target.value;
+                        setRows((prev) => prev.map((row) =>
+                            row.standardItemId === record.standardItemId
+                                ? { ...row, remark }
+                                : row
+                        ));
+                    }}
+                />
+            ),
+        },
     ], []);
 
     const handleSave = async () => {
@@ -234,13 +286,17 @@ const MerchantPriceBook: React.FC = () => {
             const payload = {
                 remark: detail?.book?.remark || '',
                 items: rows
-                    .filter((row) => (row.unitPriceCent || 0) > 0)
+                    .filter((row) => (
+                        (row.unitPriceCent || 0) > 0
+                        || (row.minChargeCent || 0) > 0
+                        || String(row.remark || '').trim() !== ''
+                    ))
                     .map((row) => ({
                         standardItemId: row.standardItemId,
                         unit: row.unit,
                         unitPriceCent: row.unitPriceCent,
-                        minChargeCent: 0,
-                        remark: '',
+                        minChargeCent: row.minChargeCent || 0,
+                        remark: String(row.remark || '').trim(),
                         status: 1,
                     })),
             };
@@ -285,7 +341,7 @@ const MerchantPriceBook: React.FC = () => {
         <MerchantPageShell>
             <MerchantPageHeader
                 title="工长价格库"
-                description="按平台提供的施工标准录入你的报价，保存后可作为后续项目报价的基础价格。"
+                description="按平台标准录入单价、最低起收和报价说明，发布后作为施工报价草稿的基础价格。"
                 extra={(
                     <>
                         <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
@@ -310,7 +366,7 @@ const MerchantPriceBook: React.FC = () => {
                 }))}
             />
 
-            <MerchantFilterBar hint="未填写价格的标准项默认不参与当前价格库发布。">
+            <MerchantFilterBar hint="未填写价格、最低起收或说明的标准项默认不参与当前价格库发布。">
                 <Input
                     allowClear
                     prefix={<SearchOutlined />}
@@ -377,6 +433,7 @@ const MerchantPriceBook: React.FC = () => {
                                         columns={columns}
                                         pagination={false}
                                         className={styles.groupTable}
+                                        scroll={{ x: 980 }}
                                         rowClassName={(record) => {
                                             if (record.required && (record.unitPriceCent || 0) <= 0) return styles.requiredPendingRow;
                                             if ((record.unitPriceCent || 0) <= 0) return styles.pendingRow;

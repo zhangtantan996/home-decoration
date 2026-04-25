@@ -44,6 +44,7 @@ import {
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import { buildStoredAssetFile, getAssetPreviewUrl, getStoredPathFromUploadFile, normalizeStoredAssetValue, normalizeStoredAssetValues } from '../../utils/uploadAsset';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
 
@@ -153,13 +154,7 @@ const resolveProductUnit = (product: Record<string, unknown>) => {
     return legacyUnit === undefined || legacyUnit === null ? '' : String(legacyUnit).trim();
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-    const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
-    return maybeAxiosError.response?.data?.message || maybeAxiosError.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
     mode = 'apply',

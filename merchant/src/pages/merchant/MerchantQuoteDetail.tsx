@@ -114,8 +114,28 @@ const sourceTypeLabel = (value?: string): string => {
             return '方案内部草稿';
         case 'admin_imported':
             return 'Admin 导入';
+        case 'legacy_quote_pk_rebuild':
+            return 'legacy quote-pk 重建';
         default:
             return value || '未标记';
+    }
+};
+
+const financeStatusLabel = (value?: string) => {
+    switch (String(value || '').toLowerCase()) {
+        case 'scheduled':
+            return '已排期';
+        case 'processing':
+            return '处理中';
+        case 'paid':
+        case 'completed':
+            return '已完成';
+        case 'failed':
+            return '失败待处理';
+        case 'pending':
+            return '待处理';
+        default:
+            return value || '待同步';
     }
 };
 
@@ -514,13 +534,26 @@ const MerchantQuoteDetail: React.FC = () => {
                 : quoteListStatus === 'submitted_to_user'
                     ? '该报价已发送给用户，如需改价请联系平台发起重报价。'
                     : quoteListStatus === 'user_confirmed' || quoteListStatus === 'awarded' || quoteListStatus === 'locked'
-                        ? '该报价已锁定，如需调整请联系平台发起变更单或重报价。'
+                        ? '该报价已锁定，后续金额变化只能走项目变更单。'
                         : `当前清单状态为 ${quoteListStatus || '-'}，不可编辑。`;
             notices.push(<Alert key="readonly" type="warning" showIcon message={`当前为只读状态：${whyText}`} style={{ padding: '6px 12px' }} />);
         }
 
         if (hasMissingOrRequired) {
             notices.push(<Alert key="missing" type="warning" showIcon message="必须补充信息：存在缺失映射、缺价格的条目或必填项，请完善后提交" style={{ padding: '6px 12px' }} />);
+        }
+
+        if (detail.submissionHealth) {
+            notices.push(
+                <Alert
+                    key="submission-health"
+                    type={detail.submissionHealth.canSubmit ? 'success' : 'warning'}
+                    showIcon
+                    message={`作业健康：缺价 ${detail.submissionHealth.missingPriceCount || 0} 项，偏差 ${detail.submissionHealth.deviationItemCount || 0} 项，平台复核 ${detail.submissionHealth.platformReviewStatus || '待同步'}`}
+                    description={detail.submissionHealth.blockingReasons?.length ? detail.submissionHealth.blockingReasons.join('；') : detail.submissionHealth.lastChangeReason || '当前无额外阻塞'}
+                    style={{ padding: '6px 12px' }}
+                />,
+            );
         }
 
         if (detail.paymentPlanSummary?.length) {
@@ -594,6 +627,113 @@ const MerchantQuoteDetail: React.FC = () => {
                 {renderNotices()}
                 
                 <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+                    <MerchantSectionCard title="统一报价真相">
+                        <Descriptions bordered column={3} size="small">
+                            <Descriptions.Item label="成交快照总额">
+                                {formatCentToYuanText(detail?.quoteTruthSummary?.totalCent)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="预计工期">
+                                {detail?.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="报价版本链">
+                                第 {detail?.submissionHealth?.lastRevisionNo || detail?.quoteTruthSummary?.revisionCount || 0} 版
+                            </Descriptions.Item>
+                            <Descriptions.Item label="来源类型">
+                                {sourceTypeLabel(detail?.quoteTruthSummary?.sourceType || detail?.quoteList?.sourceType)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="来源记录">
+                                {detail?.quoteTruthSummary?.sourceId || detail?.quoteList?.sourceId || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="工程量基线">
+                                {detail?.quoteTruthSummary?.quantityBaseId || detail?.quoteList?.quantityBaseId || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="成交确认时间">
+                                {detail?.quoteTruthSummary?.confirmedAt ? detail.quoteTruthSummary.confirmedAt.replace('T', ' ').replace('Z', '') : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="资金闭环">
+                                {detail?.financialClosureStatus || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="下一步动作">
+                                {detail?.nextPendingAction || '待同步'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                    </MerchantSectionCard>
+
+                    <MerchantSectionCard title="用户解释与责任边界">
+                        <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
+                            <Descriptions.Item label="施工范围内">
+                                {(detail?.commercialExplanation?.scopeIncluded || []).join('、') || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="施工范围外">
+                                {(detail?.commercialExplanation?.scopeExcluded || []).join('、') || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="班组规模">
+                                {detail?.commercialExplanation?.teamSize || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="工种">
+                                {(detail?.commercialExplanation?.workTypes || []).join('、') || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="施工方法" span={2}>
+                                {detail?.commercialExplanation?.constructionMethodNote || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="是否需上门复核">
+                                {detail?.commercialExplanation?.siteVisitRequired ? '需要' : '无需或待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="基线摘要">
+                                {detail?.commercialExplanation?.baselineSummary?.title || detail?.bridgeConversionSummary?.quoteBaselineSummary?.title || '待同步'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        {detail?.bridgeConversionSummary?.bridgeNextStep?.reason ? (
+                            <Alert
+                                type="info"
+                                showIcon
+                                message="用户侧解释摘要"
+                                description={detail.bridgeConversionSummary.bridgeNextStep.reason}
+                            />
+                        ) : null}
+                    </MerchantSectionCard>
+
+                    <MerchantSectionCard title="变更、结算与出款">
+                        <Descriptions bordered column={3} size="small">
+                            <Descriptions.Item label="变更单总数">
+                                {detail?.changeOrderSummary?.totalCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="待业主确认">
+                                {detail?.changeOrderSummary?.pendingUserConfirmCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="待结算">
+                                {detail?.changeOrderSummary?.pendingSettlementCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="已结算">
+                                {detail?.changeOrderSummary?.settledCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="变更净额">
+                                {formatCentToYuanText(detail?.changeOrderSummary?.netAmountCent)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="最新变更单">
+                                {detail?.changeOrderSummary?.latestChangeOrderId || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="结算状态">
+                                {financeStatusLabel(detail?.settlementSummary?.status)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="待结算净额">
+                                {typeof detail?.settlementSummary?.netAmount === 'number' ? `¥${detail.settlementSummary.netAmount.toFixed(2)}` : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="结算排期">
+                                {detail?.settlementSummary?.scheduledAt ? detail.settlementSummary.scheduledAt.replace('T', ' ').replace('Z', '') : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="出款状态">
+                                {financeStatusLabel(detail?.payoutSummary?.status)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="出款渠道">
+                                {detail?.payoutSummary?.channel || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="异常原因">
+                                {detail?.payoutSummary?.failureReason || '无'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                    </MerchantSectionCard>
+
                     {reviewGroups
                         .filter((group) => group.rows.length > 0)
                         .map((group) => (

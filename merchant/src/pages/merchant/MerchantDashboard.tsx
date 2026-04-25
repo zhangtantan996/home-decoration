@@ -242,6 +242,16 @@ const MerchantDashboard: React.FC = () => {
         stats?.recommendedAction,
         governanceRiskSummary || '当前以主链成交、履约和评价沉淀为主。',
     );
+    const quoteErp = stats?.quoteErp || {};
+    const pendingQuoteInvitations = Number(stats?.pendingQuoteInvitations ?? quoteErp.pendingQuoteInvitations ?? 0);
+    const draftQuoteSubmissions = Number(stats?.draftQuoteSubmissions ?? quoteErp.draftQuoteSubmissions ?? 0);
+    const rejectedQuoteSubmissions = Number(stats?.rejectedQuoteSubmissions ?? quoteErp.rejectedQuoteSubmissions ?? 0);
+    const submittedToUserQuotes = Number(stats?.submittedToUserQuotes ?? quoteErp.submittedToUserQuotes ?? 0);
+    const missingPriceRequiredCount = Number(stats?.missingPriceRequiredCount ?? quoteErp.missingPriceRequiredCount ?? 0);
+    const pendingChangeOrders = Number(stats?.pendingChangeOrders ?? quoteErp.pendingChangeOrders ?? 0);
+    const pendingSettlementAmount = Number(stats?.pendingSettlementAmount ?? quoteErp.pendingSettlementAmount ?? income?.pendingSettle ?? 0);
+    const failedPayoutCount = Number(stats?.failedPayoutCount ?? quoteErp.failedPayoutCount ?? 0);
+    const pendingQuoteWorkCount = pendingQuoteInvitations + draftQuoteSubmissions + rejectedQuoteSubmissions;
 
     const dashboardModel: DashboardModel = isMaterialShop
         ? {
@@ -267,21 +277,21 @@ const MerchantDashboard: React.FC = () => {
             ],
         }
         : {
-            roleTag: isForeman ? '工长' : isCompany ? '装修公司' : '设计师',
-            title: '今日重点',
+            roleTag: isForeman ? '工长 · 报价经营' : isCompany ? '装修公司' : '设计师',
+            title: isForeman ? '报价经营工作台' : '今日重点',
             subtitle: governanceTier ? `当前治理分层：${governanceTier}` : undefined,
             statusLabel: providerStatusMeta.label,
             statusTone: providerStatusMeta.tone,
             statusHelper: compactText(
                 providerStatusMeta.helperText || governanceHint,
-                isForeman ? '当前可继续承接施工机会。' : '当前可继续推进主链路。',
+                isForeman ? '先处理施工报价，再推进项目履约、变更与结算。' : '当前可继续推进主链路。',
             ),
             metrics: isForeman
                 ? [
-                    { label: '待接施工机会', value: Number(stats?.pendingLeads || 0), note: '先判断是否承接', tone: Number(stats?.pendingLeads || 0) > 0 ? 'warning' : 'neutral' },
-                    { label: '待转施工报价', value: Number(stats?.pendingProposals || 0), note: '正式进入报价', tone: Number(stats?.pendingProposals || 0) > 0 ? 'warning' : 'neutral' },
-                    { label: '项目履约中', value: Number(stats?.activeProjects || 0), note: '施工与验收推进', tone: Number(stats?.activeProjects || 0) > 0 ? 'accent' : 'neutral' },
-                    { label: '待验收推进', value: Number(stats?.todayBookings || 0), note: '盯关键节点', tone: Number(stats?.todayBookings || 0) > 0 ? 'accent' : 'neutral' },
+                    { label: '待处理施工报价', value: pendingQuoteWorkCount, note: `待接单 ${pendingQuoteInvitations} · 草稿 ${draftQuoteSubmissions} · 驳回 ${rejectedQuoteSubmissions}`, tone: pendingQuoteWorkCount > 0 ? 'warning' : 'neutral' },
+                    { label: '项目履约中', value: Number(stats?.activeProjects || 0), note: '施工、变更与验收推进', tone: Number(stats?.activeProjects || 0) > 0 ? 'accent' : 'neutral' },
+                    { label: '待结算金额', value: formatCurrency(pendingSettlementAmount), note: failedPayoutCount > 0 ? `含 ${failedPayoutCount} 笔出款异常` : '待排期或待结算', tone: pendingSettlementAmount > 0 || failedPayoutCount > 0 ? 'warning' : 'neutral' },
+                    { label: '可提现金额', value: formatCurrency(income?.availableAmount || 0), note: '可进入出款流程', tone: Number(income?.availableAmount || 0) > 0 ? 'success' : 'neutral' },
                     { label: '治理分层', value: governanceTier || '待同步', note: governanceHint, tone: governanceTier === '风险观察期' ? 'warning' : 'success' },
                 ]
                 : [
@@ -293,10 +303,10 @@ const MerchantDashboard: React.FC = () => {
                 ],
             tasks: isForeman
                 ? [
-                    { label: '待报价清单', value: Number(stats?.pendingProposals || 0), hint: '查看已分配给我的施工报价任务', path: '/quote-lists', actionLabel: '去报价' },
-                    { label: '项目履约中', value: Number(stats?.activeProjects || 0), hint: '持续盯开工和验收', path: '/projects', actionLabel: '去查看' },
-                    { label: '价格库维护', value: '去确认', hint: '确保价格库初始化和更新', path: '/price-book', actionLabel: '去查看' },
-                    { label: '平台建议', value: governanceTier || '待同步', hint: governanceHint, path: '/settings', actionLabel: '去查看' },
+                    { label: '施工报价清单', value: pendingQuoteWorkCount, hint: `用户确认中 ${submittedToUserQuotes} 单，驳回待重提 ${rejectedQuoteSubmissions} 单`, path: '/quote-lists', actionLabel: '去处理' },
+                    { label: '价格库维护', value: missingPriceRequiredCount > 0 ? `${missingPriceRequiredCount} 项缺价` : '立即检查', hint: '补齐单价、最低起收和适用范围，避免报价草稿缺价', path: '/price-book', actionLabel: '去维护' },
+                    { label: '项目履约 / 变更', value: pendingChangeOrders > 0 ? `${pendingChangeOrders} 个变更待处理` : Number(stats?.activeProjects || 0), hint: '进入执行中的项目处理变更、验收和异常', path: '/projects', actionLabel: '去查看' },
+                    { label: '结算与出款', value: formatCurrency(pendingSettlementAmount), hint: `待结算 ${formatCurrency(pendingSettlementAmount)}，可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', actionLabel: '去处理' },
                 ]
                 : [
                     { label: isCompany ? '待推进线索' : '待响应线索', value: Number(stats?.pendingLeads || 0), hint: '先看新进入的机会', path: '/bookings', actionLabel: '去处理' },
@@ -305,9 +315,9 @@ const MerchantDashboard: React.FC = () => {
                     { label: '平台建议', value: governanceTier || '待同步', hint: governanceHint, path: '/settings', actionLabel: '去查看' },
                 ],
             secondaryActions: [
-                { icon: <WalletOutlined />, label: '财务中心', hint: `可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', emphasis: true },
+                { icon: <WalletOutlined />, label: isForeman ? '结算与出款' : '财务中心', hint: isForeman ? `待结算 ${formatCurrency(pendingSettlementAmount)} · 可提现 ${formatCurrency(income?.availableAmount || 0)}` : `可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', emphasis: true },
                 isForeman
-                    ? { icon: <AppstoreOutlined />, label: '价格库', hint: '维护工长报价单价库', path: '/price-book' }
+                    ? { icon: <AppstoreOutlined />, label: '价格库', hint: '维护报价经营所需的单价和适用范围', path: '/price-book' }
                     : { icon: <AppstoreOutlined />, label: '内容资产', hint: isForeman ? '工艺与案例内容' : '案例与作品管理', path: '/cases' },
                 { icon: <SettingOutlined />, label: '资料设置', hint: '维护对外资料', path: '/settings' },
             ],

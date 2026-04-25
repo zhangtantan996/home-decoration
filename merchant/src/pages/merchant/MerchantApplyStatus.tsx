@@ -9,6 +9,7 @@ import {
     type MerchantApplyStatusData,
 } from '../../services/merchantApi';
 import { formatServerDateTime } from '../../utils/serverTime';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
@@ -44,8 +45,7 @@ const MerchantApplyStatus: React.FC = () => {
             }
             setQueried(true);
         } catch (error: unknown) {
-            const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
-            message.error(maybeAxiosError.response?.data?.message || maybeAxiosError.message || '查询失败，请稍后重试');
+            message.error(readSafeErrorMessage(error, '查询失败，请稍后重试'));
             setApplicationStatus(null);
             setQueried(true);
         } finally {

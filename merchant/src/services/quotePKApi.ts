@@ -1,4 +1,8 @@
-import request from '../utils/request';
+// Legacy compatibility only: quote-pk 主链已退役。
+// 保留此文件仅用于历史深链诊断，不应再作为现行业务入口。
+import api from './api';
+
+const request = api;
 
 export interface QuoteTask {
   id: number;

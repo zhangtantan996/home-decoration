@@ -32,17 +32,12 @@ import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import { resolveDisplayStatusMeta } from '../../utils/displayStatus';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { getUploadedAssetPreviewUrl, getUploadedAssetStoredPath } from '../../utils/uploadAsset';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/BusinessHoursEditor';
 
 const { TextArea } = Input;
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-    const maybeAxiosError = error as { response?: { data?: { message?: string } }; message?: string };
-    return maybeAxiosError.response?.data?.message || maybeAxiosError.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const parseLegacyBusinessHoursText = (value?: string): BusinessHoursRange[] => {
     const text = String(value || '').trim();

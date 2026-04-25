@@ -46,6 +46,7 @@ import {
     getUploadedAssetStoredPath,
     normalizeStoredAssetValues,
 } from '../../utils/uploadAsset';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 import styles from './MerchantSettings.module.css';
 
 const FOREMAN_HIGHLIGHT_OPTIONS = [
@@ -67,20 +68,7 @@ const DEFAULT_SERVICE_SETTINGS: MerchantServiceSetting = {
     servicePackages: [],
 };
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-
-    const maybeAxiosError = error as {
-        response?: {
-            data?: {
-                message?: string;
-            };
-        };
-    };
-    return maybeAxiosError.response?.data?.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const toAlbumFileList = (urls: string[] = []) =>
     urls
